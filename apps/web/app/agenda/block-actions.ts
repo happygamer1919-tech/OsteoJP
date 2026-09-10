@@ -29,7 +29,39 @@ export type AgendaBlockInput = {
   startTime: string;
   /** "HH:mm" Lisbon. */
   endTime: string;
+  /**
+   * SCHED-18 - WHY. REQUIRED HERE, NOT NULL IN THE DATABASE, AND THE TWO ARE
+   * DIFFERENT CLAIMS.
+   *
+   * `time_off.note` is nullable and stays nullable. A NOT NULL column would be a
+   * statement about every row ever written, and this clinic already holds
+   * blocks with no note - 19 of one therapist's 35 are in the past. Migrating
+   * those would mean inventing a reason for each, which is worse than the gap.
+   *
+   * What IS new is a rule about writes through THIS dialog, and a rule about
+   * writes is the action layer's to enforce. So: required at the door, optional
+   * in the archive.
+   */
+  note: string;
 };
+
+/**
+ * SCHED-18 - the note rule, in ONE place because there are two callers.
+ *
+ * The single and the batch action both write blocks and both must refuse an
+ * empty note. Restating the test in each is how two write paths come to disagree
+ * about the same rule; `blockNote` returns the trimmed value or null, and null
+ * IS the refusal.
+ *
+ * TRIMMED, so a space bar is not a reason. The whole point of the field is that
+ * somebody reading the agenda in three weeks can tell what the block was for -
+ * "Atende em LV" is what the September outage's note said, and it was the only
+ * thing on the row that recorded anybody's intent.
+ */
+function blockNote(note: string | undefined): string | null {
+  const trimmed = (note ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
 
 export async function createAgendaBlockAction(
   input: AgendaBlockInput,
@@ -38,6 +70,12 @@ export async function createAgendaBlockAction(
   if (!input.userId || !input.date || !input.startTime || !input.endTime) {
     return { ok: false, error: "validation" };
   }
+  const note = blockNote(input.note);
+  // A DISTINCT CODE, not "validation". The dialog can only say the useful
+  // sentence - "write a note saying why" - if it can tell this refusal from a
+  // missing date, and a caller that lumps them together sends somebody looking
+  // at the wrong field.
+  if (note === null) return { ok: false, error: "note_required" };
   try {
     const { overlaps } = await createTimeOffBlock(actor, {
       userId: input.userId,
@@ -45,6 +83,7 @@ export async function createAgendaBlockAction(
       startDate: input.date,
       startTime: input.startTime,
       endTime: input.endTime,
+      note,
     });
     return { ok: true, overlaps: overlaps.length };
   } catch (e) {
@@ -80,6 +119,11 @@ export async function createAgendaBlockBatchAction(
   if (!input.userId || !input.date || !input.startTime || !input.endTime) {
     return { ok: false, error: "validation" };
   }
+  // ALL MODES, which is what the card asks for. A repeated block is many rows
+  // and every one of them carries the same note; an unexplained block is no
+  // better for being one of eight.
+  const note = blockNote(input.note);
+  if (note === null) return { ok: false, error: "note_required" };
   try {
     const { dates, overlaps } = await createTimeOffBlockBatch(actor, {
       userId: input.userId,
@@ -89,6 +133,7 @@ export async function createAgendaBlockBatchAction(
       end: input.end,
       startTime: input.startTime,
       endTime: input.endTime,
+      note,
     });
     return { ok: true, blocks: dates.length, overlaps: overlaps.length };
   } catch (e) {

@@ -44,7 +44,21 @@ const day = (over: Partial<InspectedDay> = {}): InspectedDay => ({
   date: "2026-09-07",
   weekday: 1,
   windows: [],
-  exceptions: [],
+  blocks: [],
+  fullyBlocked: false,
+  ...over,
+});
+
+/** One block on one day, with the SCHED-21 defaults an ordinary block has. */
+const blk = (over: Partial<InspectedDay["blocks"][number]> = {}) => ({
+  blockId: "b1",
+  start: "10:00",
+  end: "12:00",
+  allDay: false,
+  continuesBefore: false,
+  continuesAfter: false,
+  reason: "vacation",
+  note: null,
   ...over,
 });
 
@@ -77,10 +91,85 @@ describe("SCHED-09 — the inspector renders the resolver's answer", () => {
   });
 
   it("time_off renders as excecao, in its own row, never as working time", () => {
-    const html = render([day({ exceptions: [{ start: "10:00", end: "12:00", reason: "vacation" }] })]);
+    const html = render([day({ blocks: [blk()] })]);
     expect(html).toContain(s["inspector.ruleExcecao"]);
     expect(html).toContain("10:00–12:00");
     expect(html).toContain("vacation");
+  });
+
+  /**
+   * ========================================================================
+   * SCHED-21 - THE CASE THAT HAD NEVER BEEN ASSERTED, WHICH IS WHY IT SHIPPED
+   * ========================================================================
+   * Every earlier test in this file put a block on a day whose window list was
+   * EMPTY. A window and a covering block on ONE day - the only shape that can
+   * produce the defect - was never exercised, so a screen printing a green
+   * "this day is set up correctly" chip over a day the agenda greyed out end to
+   * end passed its own suite for as long as it existed.
+   */
+  describe("SCHED-21 - a window and a covering block on the SAME day", () => {
+    const covered = day({
+      windows: [
+        { start: "09:00", end: "20:00", locationId: "lv", locationName: "Linda-a-Velha", rule: "dia_definido" },
+      ],
+      blocks: [blk({ allDay: true, note: "Atende em LV" })],
+      fullyBlocked: true,
+    });
+
+    it("does NOT show the green Dia definido chip", () => {
+      const html = render([covered]);
+      expect(
+        html,
+        "the inspector still calls a fully blocked day 'Dia definido' in the success tone - it " +
+          "is telling the reader this day is fine while the agenda greys out every slot on it",
+      ).not.toContain(s["inspector.ruleDiaDefinido"]);
+    });
+
+    it("says Bloqueado instead, and keeps the hours on the row", () => {
+      const html = render([covered]);
+      expect(html).toContain(s["inspector.blockedFully"]);
+      // The hours are still TRUE - the day really is defined 09:00-20:00 - so
+      // they stay. It is the verdict that changes, not the facts.
+      expect(html).toContain("09:00–20:00");
+    });
+
+    it("renders the block INLINE, carrying its note, not in a trailing appendix", () => {
+      const html = render([covered]);
+      expect(html).toContain("Atende em LV");
+      expect(html).toContain(`inspector-block-${covered.date}`);
+    });
+
+    it("an all-day block reads as a word, never as 00:00-00:00", () => {
+      const html = render([covered]);
+      expect(html).toContain(s["inspector.blockAllDay"]);
+      expect(
+        html,
+        "the five-day-block rendering is back: raw midnights printed as a time range",
+      ).not.toContain("00:00–00:00");
+    });
+
+    it("a PARTLY blocked day keeps its ordinary chip", () => {
+      // The negative arm. Only a day whose hours are entirely taken loses the
+      // rule chip; a 10:00-12:00 block on a 09:00-20:00 day has not.
+      const html = render([
+        day({
+          windows: [
+            { start: "09:00", end: "20:00", locationId: "lv", locationName: "Linda-a-Velha", rule: "dia_definido" },
+          ],
+          blocks: [blk()],
+          fullyBlocked: false,
+        }),
+      ]);
+      expect(html).toContain(s["inspector.ruleDiaDefinido"]);
+      expect(html).not.toContain(s["inspector.blockedFully"]);
+    });
+
+    it("marks a block that continues past the day", () => {
+      const html = render([
+        day({ blocks: [blk({ allDay: true, continuesAfter: true })], fullyBlocked: false }),
+      ]);
+      expect(html).toContain(s["inspector.blockContinues"]);
+    });
   });
 
   it("TWO windows on one day both render - the merge that hides them is upstream", () => {

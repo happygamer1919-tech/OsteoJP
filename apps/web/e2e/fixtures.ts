@@ -135,6 +135,34 @@ export const AI_DELETE_DRAFT = {
   patientName: PATIENTS.joao.name,
 } as const;
 
+/**
+ * B1 — a seeded IMPORTED Fisiozero registo clínico, in the shape the importer
+ * actually writes: `source='manual'`, `status='locked'` (the profile badges it
+ * "Bloqueada"), `form_template_id` NULL, and `data` keyed by the VENDOR's own
+ * column names rather than any Ficha Médica field path.
+ *
+ * The null template is not incidental — `clinicalRecordValues`
+ * (packages/db/src/migration/upsert.ts) never sets the column, so EVERY imported
+ * record has it. The record viewer is schema-driven, so with no template there
+ * is no schema and no form to draw.
+ *
+ * Locked rows are immutable, so the seed inserts this once and never rewrites it.
+ */
+export const IMPORTED_RECORD = {
+  id: "00000000-0000-0000-0000-00000000fe01",
+  patientId: PATIENTS.ana.id,
+  patientName: PATIENTS.ana.name,
+  /** Values stored in `clinical_records.data` — what a reader must be able to see. */
+  values: {
+    especialidade: "Osteopatia",
+    queixas: "Lombalgia com irradiacao para o membro inferior direito",
+    antecedentes: "Hernia discal L5-S1 diagnosticada em 2019",
+    tratamento: "Mobilizacao lombar e alongamento do piriforme",
+    observacoes: "Melhoria referida no final da sessao",
+    escala_eva: 6,
+  },
+} as const;
+
 /** W6-04: a dedicated soft-deleted patient for the Pacientes eliminados restore
  *  e2e (digit-free name, no associated data, re-soft-deleted each seed run). */
 export const RECOVER_PATIENT = {

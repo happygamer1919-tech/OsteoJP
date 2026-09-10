@@ -30,6 +30,19 @@ test("W12-28: block a slot from the agenda; it renders as a band + is non-bookab
   // W12-31: block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(dialog.getByTestId("block-start"), "09:00");
   await fillTime(dialog.getByTestId("block-end"), "11:00");
+
+  // ---- SCHED-18: THE NOTE IS REQUIRED, ASSERTED BEFORE IT IS SUPPLIED -----
+  // Pressing Bloquear with every OTHER field filled must refuse and say why. If
+  // this passed straight through, the rest of the test would be proving the
+  // happy path over a form that never had the rule.
+  await dialog.getByRole("button", { name: "Bloquear", exact: true }).click();
+  await expect(
+    dialog,
+    "the dialog closed with no note - SCHED-18's rule is not on this form",
+  ).toBeVisible();
+  await expect(dialog).toContainText("Escreva uma nota");
+
+  await dialog.getByTestId("block-note").fill("Formação NESA");
   await dialog.getByRole("button", { name: "Bloquear", exact: true }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
@@ -42,6 +55,17 @@ test("W12-28: block a slot from the agenda; it renders as a band + is non-bookab
   const band = page.getByTestId("agenda-blocked-band");
   await expect(band.first()).toBeVisible({ timeout: 8_000 });
   await expect(band.first()).toContainText("Tempo bloqueado");
+
+  // ---- SCHED-19: THE BAND SAYS WHY, NOT JUST THAT --------------------------
+  // The note typed into the dialog above is on the band. This is the whole
+  // journey in one assertion - dialog -> action -> time_off.note -> the read
+  // path -> the client boundary -> the band - and every link in it was added
+  // for this, so a break anywhere shows up here.
+  await expect(
+    band.first().getByTestId("agenda-blocked-note"),
+    "the band does not carry the note that was typed when the block was made - " +
+      "reception is back to an anonymous grey band it cannot explain",
+  ).toHaveText("Formação NESA");
 
   // ... and a slot inside 09:00-11:00 is non-bookable (its button is disabled -
   // unreachable by mouse AND keyboard), same check as agenda-blocked-time.spec.

@@ -533,6 +533,7 @@ export default async function PatientProfilePage({
             isDeleted={Boolean(patient.deletedAt)}
             canHardDelete={canHardDelete}
             hardDeleteBlocked={hardDeleteBlocked}
+            hardDeleteCounts={hardDeleteBlockers?.counts ?? []}
           />
         </section>
       )}

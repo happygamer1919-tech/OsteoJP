@@ -23,7 +23,8 @@ import {
 import { confirmLinkEnabled, generateConfirmCode } from "./confirm-code";
 import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
 import { renderReminderSmsBody } from "./sms-body";
-import { sendEmail, sendSms, type SendResult } from "./clients";
+import { ProviderSendError, sendEmail, sendSms, type SendResult } from "./clients";
+import { recordDispatch } from "./dispatch-ledger";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
 import { isSmsCapablePT } from "@osteojp/notify";
@@ -297,18 +298,89 @@ async function sendPatientSms(args: {
     );
     return null;
   }
-  return sendSms({
-    to,
-    body: args.body,
-    templateId: args.templateId,
-    appointmentId: args.appointmentId,
-  });
+  // A Twilio rejection leaves a `provider_error` row before it propagates, for
+  // the reason in sendRecordingProviderError: the ledger write in the caller
+  // sits after this await and a throw jumps over it. Function declarations
+  // hoist, so the helper below is available here.
+  return sendRecordingProviderError(
+    {
+      tenantId: args.tenantId,
+      appointmentId: args.appointmentId,
+      channel: "sms",
+      templateId: args.templateId,
+    },
+    () =>
+      sendSms({
+        to,
+        body: args.body,
+        templateId: args.templateId,
+        appointmentId: args.appointmentId,
+      }),
+  );
 }
 
 function tenantPhone(settings: unknown): string {
   const s = settings as { contacts?: { phone?: unknown } } | null | undefined;
   const phone = s?.contacts?.phone;
   return typeof phone === "string" ? phone : "";
+}
+
+/* ================================================================== */
+/* Provider rejections — the ledger's third outcome, finally written   */
+/* ================================================================== */
+
+/**
+ * THE HOLE THIS CLOSES. 0075 gave `reminder_dispatches` three outcomes - sent,
+ * suppressed and `provider_error` - and until now the code wrote two. A message
+ * the provider REFUSED produced no row at all, because every ledger write in
+ * this file sits AFTER its `await` and a throw jumps straight over it. The
+ * wrapper on `dispatchReminder` could not save it either: that wrapper records
+ * not-dispatched OUTCOMES, and a throw is not an outcome.
+ *
+ * So the one case an operator most needs to see - "we handed it over and it came
+ * back refused" - was the one case that left nothing behind but a failed Inngest
+ * run, which expires. External evidence said zero reminder emails had ever
+ * arrived; nothing in this system could tell that apart from zero ever ATTEMPTED.
+ * That is the distinction this row exists to make, and it now gets written.
+ *
+ * IT RETHROWS. The run must still fail: Inngest's retry is the delivery
+ * behaviour, and swallowing the error to get a tidy row would trade a real
+ * retry for a record of not retrying. The ledger observes, it does not decide -
+ * the same rule dispatch-ledger.ts states about never throwing INTO the send.
+ */
+async function sendRecordingProviderError(
+  row: { tenantId: string; appointmentId: string; channel: "sms" | "email"; templateId: string },
+  send: () => Promise<SendResult>,
+): Promise<SendResult> {
+  try {
+    return await send();
+  } catch (e) {
+    await recordDispatch({ ...row, outcome: "provider_error", providerErrorCode: providerErrorCode(e) });
+    throw e;
+  }
+}
+
+/**
+ * A bounded, PII-free reason class for `provider_error_code`.
+ *
+ * Two shapes, because the two providers fail differently and neither is ours to
+ * change: our own `ProviderSendError` carries Resend's `error.name`, and a
+ * Twilio SDK error carries a numeric `code` (21211, 30003) on the error object.
+ * Anything else yields NULL rather than a guess - `provider_error` with no code
+ * is an honest row, and a made-up code is not.
+ *
+ * NEVER the provider's message. Both providers put the recipient in theirs.
+ */
+function providerErrorCode(e: unknown): string | null {
+  if (e instanceof ProviderSendError) return e.code;
+  if (typeof e === "object" && e !== null && "code" in e) {
+    const c = (e as { code: unknown }).code;
+    if (typeof c === "number") return String(c);
+    // Bounded: the audit metadata contract refuses a string over 64 chars or
+    // carrying whitespace, and this column answers to the same instinct.
+    if (typeof c === "string" && c.length <= 64 && !/\s/.test(c)) return c;
+  }
+  return null;
 }
 
 /**
@@ -477,7 +549,48 @@ async function loadDispatchable(
   return { ok: true, data };
 }
 
+/**
+ * OBS-04 — THE LEDGER WRAPPER, AND WHY IT IS A WRAPPER.
+ *
+ * `dispatchReminder` has TEN return points and every one of them is a fact
+ * worth recording: a suppression is "we deliberately sent nothing, and here is
+ * why", which is the half that would have made 2026-09-02 legible. Threading a
+ * write through ten branches would have missed one, and the one it missed would
+ * be the one that mattered - that is how this pipeline came to have a table
+ * nobody wrote to in the first place.
+ *
+ * So the real function is renamed and this wrapper records whatever it returns.
+ * A NEW RETURN BRANCH CANNOT ESCAPE THE LEDGER, which is the property worth
+ * having and the reason not to do it by hand.
+ *
+ * THE SENT CASE IS ALREADY RECORDED INSIDE, per channel, because only the inner
+ * function knows the provider id, the body length and the segment count. The
+ * wrapper therefore records only the NOT-dispatched outcomes, and
+ * `dispatched: true` falls through untouched.
+ */
 export async function dispatchReminder(
+  tenantId: string,
+  appointmentId: string,
+  offsetId: ReminderOffsetId,
+  channel: Channel,
+): Promise<DispatchOutcome> {
+  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel);
+  if (!outcome.dispatched) {
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: channel as "sms" | "email",
+      // The id the send WOULD have gone out under. A suppression is about a
+      // specific message, and a row that cannot say which one is half a record.
+      templateId: `reminder.${offsetId}.${channel}`,
+      outcome: "suppressed",
+      suppressionReason: outcome.reason,
+    });
+  }
+  return outcome;
+}
+
+async function dispatchReminderInner(
   tenantId: string,
   appointmentId: string,
   offsetId: ReminderOffsetId,
@@ -529,15 +642,35 @@ export async function dispatchReminder(
   const channels: SendResult[] = [];
   if (wantEmail && data.patientEmail) {
     const email = renderEmail(offsetId, locale, ctx);
-    channels.push(
-      await sendEmail({
-        to: data.patientEmail,
-        subject: email.subject,
-        body: email.body,
-        templateId: `reminder.${offsetId}.email`,
-        appointmentId,
-      }),
+    const emailTemplateId = `reminder.${offsetId}.email`;
+    const result = await sendRecordingProviderError(
+      { tenantId, appointmentId, channel: "email", templateId: emailTemplateId },
+      () =>
+        sendEmail({
+          to: data.patientEmail!,
+          subject: email.subject,
+          body: email.body,
+          templateId: emailTemplateId,
+          appointmentId,
+        }),
     );
+    // THE 48h EMAIL'S ONLY RECORD. Until now this send produced nothing
+    // anywhere queryable: `sendEmail` returns a SendResult that was pushed onto
+    // an array and returned into an Inngest run output that expires. External
+    // evidence says zero reminder emails have ever arrived while SMS runs, and
+    // NOTHING IN THIS SYSTEM COULD TELL "never attempted" FROM "attempted and
+    // refused by Resend". `sandbox` is what distinguishes them: it is true when
+    // any gate suppressed the send without a network call.
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "email",
+      templateId: emailTemplateId,
+      outcome: result.sandbox ? "suppressed" : "sent",
+      suppressionReason: result.sandbox ? "sandbox" : null,
+      providerMessageId: result.sandbox ? null : result.id,
+    });
+    channels.push(result);
   }
   if (wantSms && data.patientPhone) {
     // W13-05 DOUBLE GATE, evaluated ONCE, here. `shouldRenderFeeNotice` is the
@@ -648,6 +781,29 @@ export async function dispatchReminder(
         );
       }
     }
+    // LENGTH COMES FROM THE RENDER THAT PRODUCED THIS BODY, so a historical row
+    // says what was actually sent rather than what a re-render would produce.
+    //
+    // `segments` STAYS NULL, DELIBERATELY. 0075 gave the column to a segment
+    // COUNT, and this repository has no segment counter: `SmsBodyResult` carries
+    // `length` and nothing else, and the only other caller that wanted one
+    // (messaging-check.ts) writes `segmentLength: body.length`, which is a
+    // character count wearing a segment name. Storing a character count in a
+    // column called `segments` would be a wrong number that reads as a right
+    // one, and the billing question this table exists to answer would then be
+    // answered wrongly and confidently. NULL means "not counted", which is true.
+    // COST-24h-sms-worst-case-is-three-segments is the card that owes the count.
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "sms",
+      templateId: smsTemplateIdFor(offsetId, feeNotice),
+      outcome: sent && !sent.sandbox ? "sent" : "suppressed",
+      suppressionReason: sent && !sent.sandbox ? null : sent ? "sandbox" : "send_refused",
+      bodyLength: rendered.length,
+      segments: null,
+      providerMessageId: sent && !sent.sandbox ? sent.id : null,
+    });
     if (sent) channels.push(sent);
   }
 

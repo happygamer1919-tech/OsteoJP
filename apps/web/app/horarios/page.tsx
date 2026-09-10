@@ -51,12 +51,14 @@ const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 export default async function HorariosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; t?: string; p?: string }>;
+  searchParams: Promise<{ m?: string; t?: string; p?: string; editBlock?: string }>;
 }) {
   const actor = await requireRequestContext();
   if (!can(actor.role, "schedule:read")) redirect("/dashboard");
 
-  const { m, t: inspectT, p: inspectP } = await searchParams;
+  // SCHED-21: `editBlock` is the inspector's Editar link. It names a block; the
+  // card that owns it opens its Bloquear horario dialog on that block.
+  const { m, t: inspectT, p: inspectP, editBlock } = await searchParams;
   const [options, availability] = await Promise.all([
     getAgendaOptions(actor),
     listAvailabilityTemplates(actor),
@@ -161,6 +163,8 @@ export default async function HorariosPage({
     block: s["admin.workingHours.block"],
     blocksFor: s["admin.workingHours.blocksFor"],
     none: s["admin.workingHours.blocksNone"],
+    noneUpcoming: s["admin.workingHours.blocksNoneUpcoming"],
+    expired: s["admin.workingHours.blocksExpired"],
     addBlock: s["admin.workingHours.addBlock"],
     mode: s["admin.workingHours.blockMode"],
     pontual: s["admin.workingHours.blockPontual"],
@@ -333,6 +337,7 @@ export default async function HorariosPage({
                       blocks={timeOff.blocks}
                       labels={blockLabels}
                       actions={blockActions}
+                      openBlockId={editBlock ?? null}
                     />
                   </div>
                 </div>

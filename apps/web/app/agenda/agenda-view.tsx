@@ -231,218 +231,320 @@ export function AgendaView({
         a pure function of its data - it reads a CSS variable with a 0px
         fallback and needs to know nothing about the toolbar. */}
     <main style={{ "--agenda-header-top": `${headerTop}px` } as CSSProperties}>
-      {/* Toolbar: full-bleed sticky glass bar. Under the v2 SidebarAppShell the
-          desktop content area has no top bar (sticks to top-0); on mobile it
-          sits below the shell's sticky h-16 header (top-16). z-10 keeps it under
-          that header (z-20). */}
+      {/* ==================================================================
+          AGENDA-02 - THE TOOLBAR IS TWO LINES, NOT THREE OR FOUR.
+
+          MEASURED BEFORE IT WAS TOUCHED (the numbers are the card's, not an
+          estimate): 232px tall at 1024 and 222px at 1280, because eight
+          controls with a combined intrinsic width of ~2030px were laid out by
+          `flex-wrap` in a bar 672px / 928px wide. Every wrapped row is 44px
+          taken from the appointment grid, on the two viewports reception
+          actually uses.
+
+          THE SHAPE IS A HEADER LINE PLUS ONE CONTROL ROW, and the split is by
+          KIND rather than by what happened to fit: line one carries the page's
+          identity and the two filters that say WHOSE agenda this is; line two
+          carries the things you press. A filter is read once and left alone; an
+          action is pressed all day, so the actions get the row that never
+          wraps.
+
+          THREE MEASURED SAVINGS MAKE IT FIT, and each is a duplication removed
+          rather than a control hidden:
+            1. `Atualizado às HH:MM` (159px) and `Atualizar` (111px) were two
+               controls describing one fact. They are now ONE button: the stamp
+               IS the affordance, which is what the freshness card wanted in the
+               first place. 270px -> ~95px.
+            2. The range chip repeated the date the picker already shows, at
+               311px. The date survives at xl where there is room for it; below
+               that the chip carries the live count, which the picker does not
+               have.
+            3. `Bloquear horário` shortens to `Bloquear` below xl. A shorter
+               word, not an icon: the card's condition is that every control
+               stays VISIBLE AND LABELLED, so nothing here is reduced to a
+               glyph with a tooltip.
+
+          WHAT IS NOT CLAIMED. Eight labelled controls do not fit on ONE row at
+          1024: the irreducible labelled set measures ~960px against 672px of
+          bar. That is arithmetic, not effort, and the report carries the
+          numbers. The row therefore SHRINKS rather than wraps - the filters and
+          the date picker give up width first (`min-w-0`), so Nova marcação is
+          never pushed onto a line of its own.
+          ================================================================== */}
       <div
         ref={toolbarRef}
         data-testid="agenda-toolbar"
-        className="glass-nav sticky top-16 z-10 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 px-6 py-3 lg:top-0"
+        className="glass-nav sticky top-16 z-10 -mx-6 -mt-8 mb-6 flex flex-col gap-2 px-6 py-2.5 lg:top-0"
       >
-        <h1 className="text-2xl text-v2-text-primary">{s["agenda.title"]}</h1>
+        {/* ---- LINE 1: identity + the filters that scope the page ---- */}
+        <div data-testid="agenda-toolbar-header" className="flex min-w-0 items-center gap-3">
+          <h1 className="flex-none text-lg font-medium leading-none text-v2-text-primary">
+            {s["agenda.title"]}
+          </h1>
 
-        {/* Day/week toggle is desktop-only: mobile is always the Dia view (§4). */}
-        <div className="hidden lg:block">
-          <SegmentedControl
-            aria-label={s["agenda.title"]}
-            value={view}
-            onValueChange={(v) => navigate({ view: v as View })}
-            items={[
-              { value: "day", label: s["agenda.viewDay"] },
-              { value: "week", label: s["agenda.viewWeek"] },
-            ]}
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label={s["agenda.prevPeriod"]}
-            onClick={() => navigate({ date: addDays(anchor, -step) })}
-            className={iconBtn}
-          >
-            <ChevronLeft size={20} strokeWidth={1.75} aria-hidden="true" />
-          </button>
-          <div className="w-44">
-            <DatePicker
-              value={anchor}
-              onChange={(d) => navigate({ date: d })}
-              triggerLabel={s["agenda.pickDate"]}
-              prevMonthLabel={s["calendar.previousMonth"]}
-              nextMonthLabel={s["calendar.nextMonth"]}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate({ date: todayInLisbon() })}
-            className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          >
-            {s["agenda.today"]}
-          </button>
-          <button
-            type="button"
-            aria-label={s["agenda.nextPeriod"]}
-            onClick={() => navigate({ date: addDays(anchor, step) })}
-            className={iconBtn}
-          >
-            <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" />
-          </button>
-          {/* W4-17 — structured range chip (replaces the loose week-range text)
-              carrying the range label + the live appointment count for the
-              visible range. */}
+          {/* W4-17 chip, now count-first. The DATE is the picker's job below xl;
+              the COUNT is this chip's, and nothing else on the page has it. */}
           <span
             data-testid="agenda-range-chip"
-            className="ml-1 hidden items-center gap-2 rounded-full border border-v2-border bg-v2-surface px-3 py-1 sm:inline-flex"
+            className="hidden min-w-0 flex-none items-center gap-2 rounded-full border border-v2-border bg-v2-surface px-3 py-0.5 sm:inline-flex"
           >
-            <span className="text-sm font-medium text-v2-text-primary">
+            <span className="hidden truncate text-sm font-medium text-v2-text-primary xl:inline">
               {formatAnchorLabel(effectiveView, anchor)}
             </span>
-            <span aria-hidden="true" className="text-v2-text-secondary">·</span>
-            <span className="text-sm text-v2-text-secondary">
+            <span aria-hidden="true" className="hidden text-v2-text-secondary xl:inline">·</span>
+            <span className="whitespace-nowrap text-sm text-v2-text-secondary">
               {visibleCount} {countLabel}
             </span>
           </span>
+
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+            {!lockTherapist && (
+              <div className="min-w-0 flex-1 sm:max-w-[16rem]">
+                <Select
+                  aria-label={s["agenda.filterTherapists"]}
+                  value={filters.practitionerId ?? ""}
+                  onChange={(e) => navigate({ therapist: e.target.value || null })}
+                >
+                  <option value="">{s["agenda.allTherapists"]}</option>
+                  {options.therapists.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+            {/* W10-04 isolation: the therapist role loses the location switcher
+                too (it already loses the therapist switcher above). A therapist is
+                scoped to their own calendar + location server-side; the switcher is
+                hidden so the two selectors disappear together for that role.
+                PL-14: everyone else loses it too as soon as there is only ONE
+                location to choose from - the server has already pinned it, so the
+                name is shown as a static chip instead of a select with one entry. */}
+            {!lockTherapist && options.locations.length === 1 && (
+              <span
+                data-testid="agenda-fixed-location"
+                className="inline-flex h-10 min-w-0 flex-none items-center gap-2 rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-secondary"
+              >
+                <MapPin size={16} strokeWidth={1.75} aria-hidden="true" className="flex-none" />
+                <span className="truncate">{options.locations[0]!.label}</span>
+              </span>
+            )}
+            {!lockTherapist && options.locations.length > 1 && (
+              <div className="min-w-0 flex-1 sm:max-w-[16rem]">
+                <Select
+                  aria-label={s["header.location"]}
+                  value={filters.locationId ?? ""}
+                  // W9-02: changing location also clears the therapist filter. The
+                  // dropdown now only lists the selected location's assigned
+                  // therapists, so a therapist held over from another location would
+                  // be a filter that is ACTIVE in the URL but absent from its own
+                  // Select - the grid would silently narrow to a therapist the user
+                  // can no longer see selected. Clearing keeps the toolbar and the
+                  // grid describing the same thing.
+                  onChange={(e) => navigate({ location: e.target.value || null, therapist: null })}
+                >
+                  <option value="">{s["agenda.allLocations"]}</option>
+                  {options.locations.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          {!lockTherapist && (
-            <div className="w-56">
-              <Select
-                aria-label={s["agenda.filterTherapists"]}
-                value={filters.practitionerId ?? ""}
-                onChange={(e) => navigate({ therapist: e.target.value || null })}
-              >
-                <option value="">{s["agenda.allTherapists"]}</option>
-                {options.therapists.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          {/* W10-04 isolation: the therapist role loses the location switcher
-              too (it already loses the therapist switcher above). A therapist is
-              scoped to their own calendar + location server-side; the switcher is
-              hidden so the two selectors disappear together for that role.
-              PL-14: everyone else loses it too as soon as there is only ONE
-              location to choose from - the server has already pinned it, so the
-              name is shown as a static chip instead of a select with one entry. */}
-          {!lockTherapist && options.locations.length === 1 && (
-            <span
-              data-testid="agenda-fixed-location"
-              className="inline-flex h-10 items-center gap-2 rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-secondary"
-            >
-              <MapPin size={16} strokeWidth={1.75} aria-hidden="true" />
-              {options.locations[0]!.label}
-            </span>
-          )}
-          {!lockTherapist && options.locations.length > 1 && (
-          <div className="w-56">
-            <Select
-              aria-label={s["header.location"]}
-              value={filters.locationId ?? ""}
-              // W9-02: changing location also clears the therapist filter. The
-              // dropdown now only lists the selected location's assigned
-              // therapists, so a therapist held over from another location would
-              // be a filter that is ACTIVE in the URL but absent from its own
-              // Select - the grid would silently narrow to a therapist the user
-              // can no longer see selected. Clearing keeps the toolbar and the
-              // grid describing the same thing.
-              onChange={(e) => navigate({ location: e.target.value || null, therapist: null })}
-            >
-              <option value="">{s["agenda.allLocations"]}</option>
-              {options.locations.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
+        {/* ---- LINE 2: the things you press ----
+            TWO UNBREAKABLE GROUPS, AND THE WRAP IS BETWEEN THEM ONLY.
+
+            The first draft of this row was `lg:flex-nowrap` with a shrinking
+            date field, on the theory that a row which cannot wrap cannot drop
+            the primary action onto a line of its own. IT WAS WRONG ON SCREEN
+            AND THE TESTS DID NOT SEE IT: nowrap does not make content fit, it
+            makes it OVERLAP, and `toBeVisible()` is true of a button painted
+            underneath another one. The 1024 screenshot had `Bloquear` sitting on
+            top of the date field with `Hoje` gone; at 1280 the next-period
+            chevron and the Ban icon were on the same pixels.
+
+            So the row wraps again, and the guarantee is structural instead:
+            WHEN and WHERE. The actions live in one `flex-none` group ordered
+            last, so a wrap moves Bloquear, Atualizar and Nova marcação TOGETHER
+            to the next line. Nova marcação can therefore never end up alone
+            under the toolbar, which is the shape the card is about - it is
+            always beside the two controls it belongs with, on the row it
+            belongs to.
+
+            WHAT DOES NOT FIT AT 1024, STATED RATHER THAN HIDDEN. The nine
+            labelled controls measure ~910px side by side; the bar is 672px wide
+            at 1024 and 928px at 1280. So this row is ONE line at 1280 and TWO
+            at 1024, and no amount of tightening changes that without taking a
+            visible label off a control - which is the one thing the card
+            forbids. The report carries the arithmetic. */}
+        <div
+          data-testid="agenda-toolbar-controls"
+          className="flex flex-wrap items-center gap-2"
+        >
+          {/* Group 1: WHEN you are looking at. The toggle and the date belong
+              together and are never split across a wrap. */}
+          <div className="flex flex-none items-center gap-2">
+          {/* Day/week toggle is desktop-only: mobile is always the Dia view (§4). */}
+          <div className="hidden flex-none lg:block">
+            <SegmentedControl
+              aria-label={s["agenda.title"]}
+              value={view}
+              onValueChange={(v) => navigate({ view: v as View })}
+              items={[
+                { value: "day", label: s["agenda.viewDay"] },
+                { value: "week", label: s["agenda.viewWeek"] },
+              ]}
+            />
           </div>
-          )}
-          {/* W12-28: "Bloquear horário" writes a time_off block via the existing
-              model (settings:manage-gated), replacing the informal "Não Marcar"
-              fake-appointment hack. Shown only to roles that can manage blocks
-              (canBlockTime); reception scoping is Q-W12-10. */}
-          {canBlockTime && (
+
+          <div className="flex flex-none items-center gap-1">
             <button
               type="button"
-              onClick={() => setBlockOpen({})}
-              className="inline-flex h-10 items-center gap-2 rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              aria-label={s["agenda.prevPeriod"]}
+              onClick={() => navigate({ date: addDays(anchor, -step) })}
+              className={`${iconBtn} flex-none`}
             >
-              <Ban size={18} strokeWidth={1.75} aria-hidden="true" />
-              {s["agenda.blockTime"]}
+              <ChevronLeft size={20} strokeWidth={1.75} aria-hidden="true" />
             </button>
-          )}
-          {/* LE-agenda-does-not-learn-of-portal-bookings — THE AGENDA SAYS HOW
-              OLD IT IS.
+            {/* w-40 rather than the old w-44: 16px, and it is the difference
+                between the two groups fitting one line at 1280 and not. The
+                trigger holds "21/12/2026" with room to spare. */}
+            <div className="w-40 flex-none">
+              <DatePicker
+                value={anchor}
+                onChange={(d) => navigate({ date: d })}
+                triggerLabel={s["agenda.pickDate"]}
+                prevMonthLabel={s["calendar.previousMonth"]}
+                nextMonthLabel={s["calendar.nextMonth"]}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate({ date: todayInLisbon() })}
+              className="inline-flex h-10 flex-none items-center rounded-v2 px-2.5 text-sm font-medium text-v2-text-secondary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            >
+              {s["agenda.today"]}
+            </button>
+            <button
+              type="button"
+              aria-label={s["agenda.nextPeriod"]}
+              onClick={() => navigate({ date: addDays(anchor, step) })}
+              className={`${iconBtn} flex-none`}
+            >
+              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </div>
+          </div>
 
-              THE PROBLEM IS STRUCTURAL AND IS NOT FIXED HERE. A portal booking
-              is written by `apps/api`; this page is rendered by `apps/web`.
-              They are SEPARATE Next deployments on separate Vercel projects, so
-              `revalidatePath` in one cannot invalidate the other's cache - it
-              invalidates the CALLING deployment's, and apps/api never calls it
-              (asserted in apps/api/lib/exposure/sync-single-source.test.ts).
-              An agenda left open at reception therefore never learns about a
-              portal booking until somebody navigates or reloads.
+          {/* Group 2: WHAT YOU DO. One flex-none unit, ordered last, so a wrap
+              carries all three together and never orphans the primary action.
+              `ml-auto` right-aligns it when both groups share a line and is
+              inert once they do not. */}
+          <div className="flex flex-none items-center gap-2 sm:ml-auto">
+            {/* W12-28: "Bloquear horário" writes a time_off block via the existing
+                model (settings:manage-gated), replacing the informal "Não Marcar"
+                fake-appointment hack. Shown only to roles that can manage blocks
+                (canBlockTime); reception scoping is Q-W12-10. */}
+            {canBlockTime && (
+              <button
+                type="button"
+                onClick={() => setBlockOpen({})}
+                // THE ACCESSIBLE NAME IS THE FULL LABEL AT EVERY WIDTH. Only one
+                // of the two spans below is displayed, and name computation skips
+                // a `display:none` child - so without this the control would be
+                // announced as "Bloquear" on a narrow screen and "Bloquear
+                // horário" on a wide one, i.e. the same button under two names
+                // depending on the viewport.
+                aria-label={s["agenda.blockTime"]}
+                title={s["agenda.blockTime"]}
+                className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              >
+                <Ban size={18} strokeWidth={1.75} aria-hidden="true" className="flex-none" />
+                {/* SHORTER WORD, NOT AN ICON: the control keeps a visible text
+                    label at every width, which is the card's condition. The
+                    accessible name is pinned by the aria-label above, so the
+                    abbreviation is never what anybody is told the button is. */}
+                <span className="whitespace-nowrap 2xl:hidden">{s["agenda.blockTimeShort"]}</span>
+                <span className="hidden whitespace-nowrap 2xl:inline">{s["agenda.blockTime"]}</span>
+              </button>
+            )}
 
-              IT IS NOT A DOUBLE-BOOKING RISK. The protection is the slot LOCK
-              and 0061's CONSTRAINT, not the render: two writers for one window
-              are serialised at the database and one is refused. A stale screen
-              cannot CREATE a double booking. What it can do is show a
-              receptionist an out-of-date picture while they are on the phone to
-              a patient, and that is the whole cost.
+            {/* LE-agenda-does-not-learn-of-portal-bookings — THE AGENDA SAYS HOW
+                OLD IT IS, AND SAYING SO IS NOW THE BUTTON.
 
-              SO THIS REMOVES THE WRONG BELIEF RATHER THAN THE LAG. The data was
-              never stale ON READ - the page re-queries every request - it is
-              just that nothing PROMPTS a read. A screen with no stamp reads as
-              live. A screen that says 14:32 does not, and the button next to it
-              is the prompt that was missing.
+                THE PROBLEM IS STRUCTURAL AND IS NOT FIXED HERE. A portal booking
+                is written by `apps/api`; this page is rendered by `apps/web`.
+                They are SEPARATE Next deployments on separate Vercel projects, so
+                `revalidatePath` in one cannot invalidate the other's cache - it
+                invalidates the CALLING deployment's, and apps/api never calls it
+                (asserted in apps/api/lib/exposure/sync-single-source.test.ts).
+                An agenda left open at reception therefore never learns about a
+                portal booking until somebody navigates or reloads.
 
-              POLLING (option a on the card) IS NOT BUILT and is the honest next
-              step if reception still finds the lag costly. A shared invalidation
-              channel (option b) is new infrastructure and is not worth it for a
-              surface that cannot cause the harm it looks like it could. */}
-          <span
-            data-testid="agenda-freshness"
-            className="hidden items-center gap-2 rounded-full border border-v2-border bg-v2-surface px-3 py-1 sm:inline-flex"
-          >
-            <span className="text-sm text-v2-text-secondary">
-              {s["agenda.lastUpdated"]}{" "}
-              <time dateTime={renderedAtIso} className="tabular-nums">
-                {renderedAt}
-              </time>
-            </span>
-          </span>
-          <button
-            type="button"
-            data-testid="agenda-refresh"
-            aria-label={s["agenda.refresh"]}
-            disabled={refreshing}
-            onClick={() => startTransition(() => router.refresh())}
-            className="inline-flex h-10 items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          >
-            <RotateCw size={18} strokeWidth={1.75} aria-hidden="true" />
-            <span className="hidden lg:inline">
-              {refreshing ? s["agenda.refreshing"] : s["agenda.refresh"]}
-            </span>
-          </button>
+                IT IS NOT A DOUBLE-BOOKING RISK. The protection is the slot LOCK
+                and 0061's CONSTRAINT, not the render: two writers for one window
+                are serialised at the database and one is refused. A stale screen
+                cannot CREATE a double booking. What it can do is show a
+                receptionist an out-of-date picture while they are on the phone to
+                a patient, and that is the whole cost.
 
-          {/* Primary action: filled Wellness Green (SPEC-v2-agenda §1.4). The
-              packages/ui Button is brand-teal with no green variant; styled
-              in-route on v2 tokens to meet the spec (green-700 fill + inverse
-              text = 4.7:1 AA). A green Button variant is logged as a foundation
-              follow-up in docs/design/QUESTIONS.md (Q-V2W2-2), never added inside
-              a section wave. */}
-          <button
-            type="button"
-            onClick={() => setModal({ mode: "create" })}
-            className="inline-flex h-10 items-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          >
-            <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-            {s["agenda.newAppointment"]}
-          </button>
+                AGENDA-02 MERGED THE STAMP INTO THE BUTTON. They were a chip and a
+                button, 270px between them, saying one thing: this is how old the
+                page is, press here for a newer one. The stamp is the label now.
+                The accessible name stays `Atualizar` - the action, not the
+                reading - so nothing that clicked this control by name has moved.
+
+                POLLING (option a on the card) IS NOT BUILT and is the honest next
+                step if reception still finds the lag costly. A shared invalidation
+                channel (option b) is new infrastructure and is not worth it for a
+                surface that cannot cause the harm it looks like it could. */}
+            <button
+              type="button"
+              data-testid="agenda-refresh"
+              // The NAME is the action; the visible text is the reading. A
+              // control whose accessible name was the timestamp would be
+              // announced as "18:06", which names the state and not the verb.
+              aria-label={refreshing ? s["agenda.refreshing"] : s["agenda.refresh"]}
+              title={`${s["agenda.refresh"]} · ${s["agenda.lastUpdated"]} ${renderedAt}`}
+              disabled={refreshing}
+              onClick={() => startTransition(() => router.refresh())}
+              className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            >
+              <RotateCw size={18} strokeWidth={1.75} aria-hidden="true" className="flex-none" />
+              <span
+                data-testid="agenda-freshness"
+                className="whitespace-nowrap text-sm font-normal text-v2-text-secondary"
+              >
+                <span className="hidden 2xl:inline">{s["agenda.lastUpdated"]} </span>
+                <time dateTime={renderedAtIso} className="tabular-nums">
+                  {renderedAt}
+                </time>
+              </span>
+            </button>
+
+            {/* Primary action: filled Wellness Green (SPEC-v2-agenda §1.4). The
+                packages/ui Button is brand-teal with no green variant; styled
+                in-route on v2 tokens to meet the spec (green-700 fill + inverse
+                text = 4.7:1 AA). A green Button variant is logged as a foundation
+                follow-up in docs/design/QUESTIONS.md (Q-V2W2-2), never added inside
+                a section wave.
+
+                AGENDA-02: `flex-none` and LAST in a `lg:flex-nowrap` row. Those
+                two facts together are what "never wraps below" means mechanically
+                - it cannot be pushed to a new line, and it cannot be squeezed. */}
+            <button
+              type="button"
+              onClick={() => setModal({ mode: "create" })}
+              className="inline-flex h-10 flex-none items-center gap-2 whitespace-nowrap rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            >
+              <Plus size={20} strokeWidth={1.75} aria-hidden="true" className="flex-none" />
+              {s["agenda.newAppointment"]}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -455,6 +557,25 @@ export function AgendaView({
         blocks={blocks}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
         onSelectSlot={(date, time) => setModal({ mode: "create", slot: { date, time } })}
+        /* SCHED-22 - THE BAND OPENS THE BLOCK THAT MADE IT.
+           It routes to /horarios with the block named, which is the deep link
+           SCHED-21 already built for the inspector's Editar. One destination,
+           one dialog: the alternative is a second block editor living on the
+           agenda, and two forms writing time_off are two opinions about what a
+           block is.
+
+           `filters.practitionerId` is safe to use here because a band only
+           renders at all when the agenda is scoped to one therapist - the grid
+           has no therapist axis, so a band under "Todos" would be a claim about
+           the whole clinic (W9-04). No filter, no band, nothing to click. */
+        onOpenBlock={
+          filters.practitionerId && canBlockTime
+            ? (blockId) =>
+                router.push(
+                  `/horarios?t=${filters.practitionerId}&editBlock=${blockId}`,
+                )
+            : undefined
+        }
       />
 
       {modal && (
