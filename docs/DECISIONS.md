@@ -4005,3 +4005,57 @@ each rendering as a personal absence. It is also OVERRIDABLE: `time_off` is a
 blocking conflict that staff may push past with "Guardar mesmo assim"
 (conflict-core.ts:13). The dispatch says the closure is "not blockable-around",
 so it must be in neither the advisory set nor the `allowConflict` override.
+
+---
+
+## 2026-09-10 — PURPLE, client batch (P3, P4)
+
+**A block's NOTE is the only thing on a `time_off` row that records intent, and
+three screens were dropping it.** The September outage's note read "Atende em LV"
+and no surface displayed it: the agenda's block query did not select it
+(`blockSelection`), the Disponibilidade panel never mentioned blocks at all, and
+the inspector listed them in an appendix. SCHED-18/19/20/21 are one omission seen
+from four angles, so the note is now selected in the SHARED reader rather than in
+any one caller's query - the standing restriction on this table is "reuse the
+existing time_off read; do not derive a second, divergent block source", and a
+note selected for one reader and not the other is exactly that divergence.
+
+**A required field can be a rule about WRITES without being a NOT NULL column.**
+SCHED-18 makes the note mandatory at the action layer and leaves
+`time_off.note` nullable. A NOT NULL column is a claim about every row ever
+written; 19 of JP's 35 blocks are already in the past with no note, and migrating
+them means inventing a reason for each. Required at the door, optional in the
+archive.
+
+**"No free time" is a QUESTION, not an answer.** SCHED-20: `free` being empty has
+three causes that send the reader to three different actions - set some hours,
+remove a block, move an appointment - and the panel had one sentence for all
+three, naming booking. `noFreeReason` computes it from the same DayAvailability
+the panel renders. `blocked` wins over `booked` when both are true, because
+moving every appointment off a blocked day frees nothing.
+
+**"Expired" is decided by a block's END, not its START.** SCHED-22. A block
+running from yesterday to next Friday is the most urgent row in the list;
+sorting or collapsing by start buries it, which is how the September block stayed
+invisible WHILE IT WAS IN FORCE. The partition is a pure function taking `today`
+rather than an `ORDER BY`, because a clock reading in the database leaves the
+order and the collapse in different layers.
+
+**TWO BUTTONS IN ONE JSX SLOT SHARE A DOM NODE, AND A CLICK'S DEFAULT ACTION RUNS
+AFTER ITS HANDLERS.** SCHED-23's first draft wrote the block TWICE - two
+identical five-day absences 102ms apart, found by querying the lane database, not
+by looking at the screen, where the dialog closed and looked correct. The
+sequence: click the primary button (`type="button"`, harmless), the handler opens
+the warning, React flushes synchronously inside a discrete event and rewrites
+that very node to `type="submit"`, and the browser then performs the click's
+default action on what has become a submit button. Fixed with distinct `key`s
+(so React replaces the node) AND `preventDefault` (so the default action dies
+regardless). Recorded because "a warning panel appeared" passed throughout.
+
+**A layout defect can be entirely correct classes in the wrong container.**
+UX-02: Seguradora and Numero measured 94px each because the whole repeatable
+block was a child of the form's `grid grid-cols-2` and lived in HALF a column.
+Every class on the inputs was right. `col-span-2` is most of the fix, and the
+test asserts a WIDTH IN PIXELS rather than a class name - a class assertion
+passes the moment somebody writes the right class in the wrong place, which is
+this defect exactly.
