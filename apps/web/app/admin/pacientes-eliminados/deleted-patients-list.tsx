@@ -8,6 +8,11 @@ import { Button, StatusChip } from "@osteojp/ui";
 import type { DeletedPatientRow } from "@/lib/patients/queries";
 import type { HardDeletePatientError } from "@/lib/patients/actions";
 import { restoreDeletedPatientAction, permanentDeletePatientAction } from "./actions";
+import {
+  blockingCounts,
+  classLabel,
+  type HardDeleteCount,
+} from "@/lib/patients/hard-delete-preflight";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -20,6 +25,7 @@ const HARD_DELETE_ERROR_TEXT: Partial<Record<HardDeletePatientError, string>> = 
 
 export type DeletedPatientView = DeletedPatientRow & {
   hardDeleteBlocked: "records" | "references" | null;
+  hardDeleteCounts: HardDeleteCount[];
 };
 
 export function DeletedPatientsList({ patients }: { patients: DeletedPatientView[] }) {
@@ -51,6 +57,8 @@ function DeletedPatientRowItem({ patient }: { patient: DeletedPatientView }) {
   const isMerged = patient.mergedIntoId !== null;
   const isSoftDeleted = patient.deletedAt !== null;
   const canRestore = isSoftDeleted && !isMerged;
+
+  const blockedList = blockingCounts(patient.hardDeleteCounts);
 
   const hardDeleteBlockedText =
     patient.hardDeleteBlocked === "records"
@@ -132,6 +140,24 @@ function DeletedPatientRowItem({ patient }: { patient: DeletedPatientView }) {
 
       {hardDeleteBlockedText && (
         <span className="text-xs text-v2-text-secondary">{hardDeleteBlockedText}</span>
+      )}
+
+      {/* The same itemisation as the patient profile's danger zone. This screen
+          is where an operator goes SPECIFICALLY to remove people, so a refusal
+          with no cause is at its most expensive here. */}
+      {blockedList.length > 0 && (
+        <div className="flex flex-col gap-1" data-testid="hard-delete-preflight">
+          <span className="text-xs font-medium text-v2-text-secondary">
+            {s["patients.hardDeleteWhatBlocks"]}
+          </span>
+          <ul className="flex flex-col gap-0.5">
+            {blockedList.map((c) => (
+              <li key={c.key} className="text-xs tabular-nums text-v2-text-secondary">
+                {classLabel(c.key)}: {c.count}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {hardDeleteOpen && patient.hardDeleteBlocked === null && (

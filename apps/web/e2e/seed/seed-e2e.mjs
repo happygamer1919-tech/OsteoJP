@@ -1054,6 +1054,58 @@ async function ensureAiReviewDraft() {
 }
 
 // ---------------------------------------------------------------------------
+// B1 — AN IMPORTED FISIOZERO REGISTO CLÍNICO, IN THE SHAPE THE IMPORTER WRITES.
+//
+// This is not an invented shape. `clinicalRecordValues` in
+// packages/db/src/migration/upsert.ts sets patient, episode, practitioner,
+// `data`, `status` and `source: 'manual'` — and NEVER `form_template_id`, so
+// every imported record carries NULL there. The `data` keys are the vendor's
+// own column names, because the Fisiozero adapter folds each non-empty cell in
+// under the name it had ("Renaming them into a house vocabulary would be a
+// clinical judgement ... this adapter is not entitled to make one"), plus
+// `especialidade` and a numeric `escala_eva`.
+//
+// status is 'locked', which is what the profile badges "Bloqueada".
+// ---------------------------------------------------------------------------
+
+const IMPORTED_RECORD_ID = "00000000-0000-0000-0000-00000000fe01";
+const IMPORTED_RECORD_PATIENT = "00000000-0000-0000-0000-00000000a303"; // Ana Costa
+
+/** The vendor-named cells the adapter carries through verbatim. */
+const IMPORTED_RECORD_DATA = {
+  especialidade: "Osteopatia",
+  queixas: "Lombalgia com irradiacao para o membro inferior direito",
+  antecedentes: "Hernia discal L5-S1 diagnosticada em 2019",
+  tratamento: "Mobilizacao lombar e alongamento do piriforme",
+  observacoes: "Melhoria referida no final da sessao",
+  escala_eva: 6,
+};
+
+async function ensureImportedRecord() {
+  const status = await clinicalRecordStatus(IMPORTED_RECORD_ID);
+  // A locked row is immutable (0001/0005 trigger refuses UPDATE and DELETE), so
+  // once it exists it is left exactly as it is. That is the point: an imported
+  // record is immutable in production too.
+  if (status !== null) return IMPORTED_RECORD_ID;
+  const { error } = await db.from("clinical_records").insert({
+    id: IMPORTED_RECORD_ID,
+    tenant_id: TENANT_A,
+    patient_id: IMPORTED_RECORD_PATIENT,
+    source: "manual",
+    status: "locked",
+    ai_review_state: null,
+    form_template_id: null,
+    version: 1,
+    supersedes_id: null,
+    signed_by: null,
+    signed_at: null,
+    data: IMPORTED_RECORD_DATA,
+  });
+  must(error, "imported registo clinico");
+  return IMPORTED_RECORD_ID;
+}
+
+// ---------------------------------------------------------------------------
 // W6-01a: an AI-ingested draft that carries an ai_ingestion_requests
 // back-pointer (clinical_record_id → this record). This is the shape that made
 // the ficha hard-delete fail on the owner's test patients (paol / paul): the
@@ -1193,6 +1245,8 @@ async function main() {
   const aiReviewDraftId = await ensureAiReviewDraft();
   // W6-01a: an AI-ingested draft with an ai_ingestion_requests back-pointer.
   await ensureAiDeleteDraft();
+  // B1: an imported Fisiozero registo clinico (locked, form_template_id NULL).
+  await ensureImportedRecord();
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
