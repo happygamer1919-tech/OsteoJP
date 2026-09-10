@@ -223,10 +223,24 @@ test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
   await expect(drawer).toBeVisible();
   await drawer.getByRole("button", { name: /Cancelar marcação/i }).click();
 
-  // The row refreshes to Cancelada and no longer offers edit actions.
+  // The row refreshes to Cancelada and no longer offers any LIFECYCLE edit.
+  //
+  // AMENDED BY THE 2026-09-10 CORRECTION RULING. This asserted the disclosure
+  // was absent entirely, which was true when a terminal row offered nothing at
+  // all. It now offers exactly one thing - Corrigir estado, for a viewer holding
+  // appointments:delete, which this spec's reception/admin session does - so the
+  // disclosure opens and the old count of 0 is wrong.
+  //
+  // The property this line was really guarding is asserted directly instead: no
+  // Reagendar and no Cancelar on a cancelled row. That is stronger than counting
+  // the container, which would have gone quiet if the container were renamed.
   const cancelled = row(page, date, "15:00");
   await expect(cancelled.getByText("Cancelada")).toBeVisible({ timeout: 8_000 });
-  await expect(cancelled.getByText("Gerir marcação")).toHaveCount(0);
+  await cancelled.getByText("Gerir marcação").click();
+  await expect(cancelled.getByRole("button", { name: /Reagendar/i })).toHaveCount(0);
+  await expect(cancelled.getByRole("button", { name: /Cancelar marcação/i })).toHaveCount(0);
+  // ...and the one affordance the ruling added is there.
+  await expect(cancelled.getByTestId("corrigir-estado")).toHaveCount(1);
 });
 
 test("PL-02 (b): the Marcações row shows who created the appointment and when", async ({
