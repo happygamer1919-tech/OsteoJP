@@ -107,14 +107,39 @@ describe("AppointmentsList — per-row edit actions (W5-09)", () => {
     expect(html).not.toContain(">Cancelada<");
   });
 
-  it("does not offer edit actions on a terminal (completed) row", () => {
+  /**
+   * AMENDED BY B6, AND THE OLD ASSERTION IS KEPT AS THE NARROWER ONE IT ALWAYS
+   * MEANT. Before the 2026-09-10 ruling a terminal row offered NOTHING, and
+   * these two cases asserted "no Gerir marcação at all". The ruling adds ONE
+   * affordance to exactly those rows - Corrigir estado, reception and up - so
+   * the disclosure now opens on a terminal row for a viewer who holds
+   * appointments:delete.
+   *
+   * WHAT HAS NOT CHANGED, AND IS WHAT THESE CASES ARE REALLY FOR: no LIFECYCLE
+   * edit is offered. No Reagendar, no Cancelar, and no Estado <Select>. That is
+   * the property the originals were guarding, and it is now asserted directly
+   * rather than through the absence of the container.
+   */
+  it("offers NO lifecycle edit on a terminal (completed) row — only the correction door", () => {
     const html = render({ ...base, status: "completed" });
-    expect(count(html, "Gerir marcação")).toBe(0);
     expect(count(html, "Reagendar")).toBe(0);
+    expect(count(html, "Cancelar marcação")).toBe(0);
+    // The ordinary Estado control is absent; the correction control is present.
+    expect(count(html, 'data-testid="corrigir-estado"')).toBe(1);
+    expect(count(html, "Corrigir estado")).toBeGreaterThan(0);
   });
 
-  it("does not offer edit actions on a cancelled row", () => {
+  it("offers NO lifecycle edit on a cancelled row — only the correction door", () => {
     const html = render({ ...base, status: "cancelled" });
+    expect(count(html, "Reagendar")).toBe(0);
+    expect(count(html, 'data-testid="corrigir-estado"')).toBe(1);
+  });
+
+  it("a viewer WITHOUT appointments:delete gets no correction door on a terminal row", () => {
+    // "Reception and up" is the capability, not a role list: a therapist holds
+    // appointments:write and not :delete, so canCancel=false is that viewer.
+    const html = render({ ...base, status: "cancelled" }, { canEdit: true, canCancel: false });
+    expect(count(html, 'data-testid="corrigir-estado"')).toBe(0);
     expect(count(html, "Gerir marcação")).toBe(0);
   });
 
