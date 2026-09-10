@@ -887,7 +887,45 @@ export async function batchScheduleAppointments(
   }
   try {
     const result = await batchSchedule(actor, input);
-    revalidateAppointmentSurfaces();
+    /**
+     * OBS-05 — THE BATCH PATH NOW EMITS, AND IT IS THE FOURTH CREATION PATH TO
+     * DO SO RATHER THAN THE FIRST TO NEED IT.
+     *
+     * `batchSchedule` commits real appointment rows and this action returned
+     * without ever reaching Stream E, so no `appointment/scheduled` event was
+     * emitted, no reminder run was ever created, and the patient got neither the
+     * 48h email nor the 24h SMS. Nothing failed anywhere: there was no run to
+     * fail. It is the same omission shape as the portal booking path
+     * (W14-portal-bookings-emit-no-reminder-events), reached through a third
+     * door, which is why this batch also lands the gate that makes a fourth one
+     * impossible to add silently - see creation-paths-emit-reminders.test.ts.
+     *
+     * IT MOVES INSIDE `afterCommit`, WITH THE REVALIDATE, AND THAT IS PART OF
+     * THE FIX RATHER THAN TIDYING. The rows are already durable by this line.
+     * `enqueueRemindersAfterCommit` THROWS ReminderBurstError above its
+     * occurrence ceiling, and the revalidate can throw too; either one landing
+     * in the catch below would return `fail(...)` for appointments that exist.
+     * At the desk that reads as "it did not save", and the natural next action
+     * is to book the whole batch again. `afterCommit` is the helper the other
+     * five mutations already use for exactly this, and the batch path was the
+     * one that never got it.
+     *
+     * ONLY WHAT WAS ACTUALLY BOOKED. `result.booked` excludes every slot that
+     * failed on availability, so a partial-success batch enqueues reminders for
+     * its successes and nothing for its refusals.
+     */
+    await afterCommit("batchSchedule", async () => {
+      revalidateAppointmentSurfaces();
+      await enqueueRemindersAfterCommit(
+        actor.tenantId,
+        result.booked.map((b) => ({
+          appointmentId: b.appointmentId,
+          // `BatchBooked.startsAt` is an ISO string (it crosses the server-action
+          // boundary to the client); the enqueue takes the instant.
+          startsAt: new Date(b.startsAt),
+        })),
+      );
+    });
     return { ok: true, data: result };
   } catch (e) {
     /**
