@@ -14,7 +14,24 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // returns ok. They are the regression guard for `afterCommit`.
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+/**
+ * `updateTag` IS MOCKED, AND ITS ABSENCE HAD DISARMED THIS WHOLE FILE.
+ *
+ * `revalidateAppointmentSurfaces()` calls revalidatePath AND updateTag, and it
+ * runs FIRST inside every `afterCommit` block. With only revalidatePath mocked,
+ * updateTag was `undefined`, calling it threw a TypeError, afterCommit swallowed
+ * it exactly as designed - and the reminder enqueue on the next line never ran.
+ *
+ * So every assertion below that says "the enqueue threw and the action still
+ * returned ok" was passing because the enqueue was never reached. The guard was
+ * green and testing nothing, which is the failure mode a post-commit test is
+ * least able to notice: swallowing errors is its subject.
+ *
+ * Found by writing the OBS-05 batch case, which asserts the enqueue was CALLED
+ * rather than only that the action returned ok - an assertion no test in this
+ * file previously made.
+ */
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn() }));
 
 vi.mock("@/lib/auth/context", () => ({
   requireRequestContext: vi.fn(),
@@ -31,10 +48,24 @@ vi.mock("./reminders", () => ({
   enqueueStatusNotificationsAfterCommit: vi.fn(async () => {}),
 }));
 
+// OBS-05. The batch path is the fourth creation path and the last one that was
+// still committing rows without emitting. Mocking the ENGINE (not the DB) keeps
+// this file's subject what it has always been: what the ACTION does after a
+// commit succeeds.
+vi.mock("./batch", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./batch")>();
+  return { ...actual, batchSchedule: vi.fn() };
+});
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  bookingLocationScope: vi.fn(async () => null),
+  isLocationBookable: vi.fn(() => true),
+}));
+
 import { revalidatePath } from "next/cache";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { enqueueRemindersAfterCommit } from "./reminders";
-import { createAppointment } from "./actions";
+import { batchSchedule, type BatchScheduleResult } from "./batch";
+import { batchScheduleAppointments, createAppointment } from "./actions";
 import type { RequestContext } from "@osteojp/auth";
 import type { CreateAppointmentInput } from "./types";
 
@@ -42,6 +73,7 @@ const mockCtx = vi.mocked(requireRequestContext);
 const mockRunScoped = vi.mocked(runScoped);
 const mockRevalidate = vi.mocked(revalidatePath);
 const mockEnqueue = vi.mocked(enqueueRemindersAfterCommit);
+const mockBatch = vi.mocked(batchSchedule);
 
 const actor: RequestContext = { tenantId: "tenant-A", role: "admin", userId: "user-1" };
 
@@ -106,5 +138,95 @@ describe("post-commit steps cannot fail a committed create", () => {
     mockRunScoped.mockImplementation(async () => ({ ok: false, error: "conflict" }) as never);
     const r = await createAppointment(input);
     expect(r.ok).toBe(false);
+  });
+});
+
+/* ======================================================================== */
+/* OBS-05 — the batch path emits, and its post-commit steps cannot fail it   */
+/* ======================================================================== */
+
+/**
+ * WHAT WAS WRONG. `batchScheduleAppointments` committed real appointment rows
+ * and returned without ever reaching Stream E. No `appointment/scheduled` event,
+ * so no reminder run, so no 48h email and no 24h SMS - and NOTHING FAILED, which
+ * is why no alert, no log and no test caught it. The patient simply got nothing.
+ *
+ * These assert the behaviour rather than the presence of a line; the source-scan
+ * gate in creation-paths-emit-reminders.test.ts covers the class.
+ */
+describe("the batch path enqueues reminders for what it booked", () => {
+  const batchInput = {
+    patientId: "11111111-1111-1111-1111-111111111111",
+    practitionerId: "22222222-2222-2222-2222-222222222222",
+    locationId: "33333333-3333-3333-3333-333333333333",
+    slots: [],
+  } as never;
+
+  function booked(...rows: { appointmentId: string; startsAt: string }[]) {
+    return {
+      batchId: "batch-1",
+      requested: rows.length,
+      booked: rows.map((r, i) => ({ ...r, date: "2027-06-0" + (i + 1), hhmm: "09:00" })),
+      failures: [],
+    } as unknown as BatchScheduleResult;
+  }
+
+  beforeEach(() => {
+    mockBatch.mockResolvedValue(booked({ appointmentId: "appt-1", startsAt: "2027-06-01T09:00:00.000Z" }));
+  });
+
+  it("emits one target per BOOKED appointment, with the start instant", async () => {
+    mockBatch.mockResolvedValue(
+      booked(
+        { appointmentId: "appt-1", startsAt: "2027-06-01T09:00:00.000Z" },
+        { appointmentId: "appt-2", startsAt: "2027-06-08T09:00:00.000Z" },
+      ),
+    );
+
+    const r = await batchScheduleAppointments(batchInput);
+
+    expect(r.ok).toBe(true);
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    const [tenantId, targets] = mockEnqueue.mock.calls[0]!;
+    expect(tenantId).toBe("tenant-A");
+    expect(targets).toEqual([
+      { appointmentId: "appt-1", startsAt: new Date("2027-06-01T09:00:00.000Z") },
+      { appointmentId: "appt-2", startsAt: new Date("2027-06-08T09:00:00.000Z") },
+    ]);
+    // A Date, not the ISO string it crossed the boundary as. computeDueReminders
+    // does arithmetic on it, and a string would have produced NaN silently.
+    expect(targets[0]!.startsAt).toBeInstanceOf(Date);
+  });
+
+  it("enqueues NOTHING for a batch that booked nothing", async () => {
+    mockBatch.mockResolvedValue(booked());
+    const r = await batchScheduleAppointments(batchInput);
+    expect(r.ok).toBe(true);
+    expect(mockEnqueue).toHaveBeenCalledWith("tenant-A", []);
+  });
+
+  it("returns ok when the enqueue throws after the batch committed", async () => {
+    // The reason this sits inside afterCommit. enqueueRemindersAfterCommit
+    // THROWS above its occurrence ceiling, and a batch is the one path that can
+    // legitimately approach it - so the burst guard must not turn committed
+    // appointments into "algo correu mal" at the desk.
+    mockEnqueue.mockRejectedValueOnce(new Error("ReminderBurstError"));
+    const r = await batchScheduleAppointments(batchInput);
+    expect(r.ok).toBe(true);
+  });
+
+  it("returns ok when revalidatePath throws after the batch committed", async () => {
+    mockRevalidate.mockImplementationOnce(() => {
+      throw new Error("revalidate boom");
+    });
+    const r = await batchScheduleAppointments(batchInput);
+    expect(r.ok).toBe(true);
+  });
+
+  it("still returns the failure when the batch ENGINE itself throws", async () => {
+    mockBatch.mockRejectedValueOnce(new Error("engine down"));
+    const r = await batchScheduleAppointments(batchInput);
+    expect(r.ok).toBe(false);
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });
