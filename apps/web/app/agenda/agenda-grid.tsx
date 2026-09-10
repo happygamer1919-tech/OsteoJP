@@ -189,6 +189,7 @@ export function AgendaGrid({
   blocks = [],
   onSelectAppointment,
   onSelectSlot,
+  onOpenBlock,
 }: {
   view: AgendaView;
   anchor: string;
@@ -199,6 +200,9 @@ export function AgendaGrid({
   blocks?: BlockSpan[];
   onSelectAppointment: (appt: AgendaAppointment) => void;
   onSelectSlot: (date: string, time: string) => void;
+  /** SCHED-22: open the block a band belongs to. Absent when the caller has
+   *  nowhere to route (bands only render under a single-therapist filter). */
+  onOpenBlock?: (blockId: string) => void;
 }) {
   const dates = viewDates(view, anchor);
   const slots = daySlots();
@@ -445,7 +449,12 @@ export function AgendaGrid({
                   reads, below the appointment names (z-10) so a booking made
                   before the block was entered stays visible and fixable. */}
               {dayBlocks.map((p) => (
-                <BlockedBand key={p.id} placement={p} minToPx={minToPx} />
+                <BlockedBand
+                  key={p.id}
+                  placement={p}
+                  minToPx={minToPx}
+                  onOpenBlock={onOpenBlock}
+                />
               ))}
 
               {/* W11-00 v3: appointment names as a Fisiozero-style vertical list.
@@ -509,8 +518,12 @@ export function AgendaGrid({
 function BlockedBand({
   placement,
   minToPx,
+  onOpenBlock,
 }: {
   placement: BlockPlacement;
+  /** SCHED-22: opens the block this band belongs to, or absent when the caller
+   *  cannot route there (no single therapist selected, or no permission). */
+  onOpenBlock?: (blockId: string) => void;
   // STAFF-03: the mapper is PASSED, not closed over. A blocked band that kept
   // the old linear scale would drift off the slots it is meant to cover the
   // moment an hour expanded - and the band is the visual half of a fact whose
@@ -539,10 +552,39 @@ function BlockedBand({
    */
   const note = placement.note?.trim();
 
+  /**
+   * SCHED-22 - THE BAND IS WHERE THE PROBLEM IS VISIBLE, SO IT IS WHERE THE
+   * ACTION GOES.
+   *
+   * It was `pointer-events-none` with the slots beneath it disabled, so a
+   * blocked day offered the reader nothing at all: they could see the block and
+   * had to go to another screen, open a modal and find it in a list of 35 to do
+   * anything about it. Clicking the band now opens that block.
+   *
+   * IT DOES NOT MAKE THE SLOTS BOOKABLE. The buttons underneath stay `disabled`,
+   * which is the actual enforcement (an overlay alone never was - a keyboard
+   * user could tab straight in). Enabling pointer events on the band means a
+   * click lands on the BAND, which is one more thing that cannot reach them.
+   *
+   * A `<button>` rather than a div with an onClick, so it is reachable by
+   * keyboard and announced as an action.
+   */
+  const Tag = onOpenBlock ? "button" : "div";
+  const interactive = onOpenBlock
+    ? "pointer-events-auto cursor-pointer text-left hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
+    : "pointer-events-none";
+
   return (
-    <div
+    <Tag
+      {...(onOpenBlock
+        ? {
+            type: "button" as const,
+            onClick: () => onOpenBlock(placement.id),
+            "aria-label": `${s["agenda.blockedTime"]}${note ? `: ${note}` : ""}`,
+          }
+        : {})}
       data-testid="agenda-blocked-band"
-      className="pointer-events-none absolute inset-x-0 z-10 overflow-hidden rounded-v2 border border-v2-border bg-surface-muted/80 bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.05)_6px,rgba(0,0,0,0.05)_12px)]"
+      className={`absolute inset-x-0 z-10 overflow-hidden rounded-v2 border border-v2-border bg-surface-muted/80 bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.05)_6px,rgba(0,0,0,0.05)_12px)] ${interactive}`}
       style={{ top, height }}
     >
       {showLabel && (
@@ -570,7 +612,7 @@ function BlockedBand({
           )}
         </span>
       )}
-    </div>
+    </Tag>
   );
 }
 

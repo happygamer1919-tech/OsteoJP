@@ -557,6 +557,25 @@ export function AgendaView({
         blocks={blocks}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
         onSelectSlot={(date, time) => setModal({ mode: "create", slot: { date, time } })}
+        /* SCHED-22 - THE BAND OPENS THE BLOCK THAT MADE IT.
+           It routes to /horarios with the block named, which is the deep link
+           SCHED-21 already built for the inspector's Editar. One destination,
+           one dialog: the alternative is a second block editor living on the
+           agenda, and two forms writing time_off are two opinions about what a
+           block is.
+
+           `filters.practitionerId` is safe to use here because a band only
+           renders at all when the agenda is scoped to one therapist - the grid
+           has no therapist axis, so a band under "Todos" would be a claim about
+           the whole clinic (W9-04). No filter, no band, nothing to click. */
+        onOpenBlock={
+          filters.practitionerId && canBlockTime
+            ? (blockId) =>
+                router.push(
+                  `/horarios?t=${filters.practitionerId}&editBlock=${blockId}`,
+                )
+            : undefined
+        }
       />
 
       {modal && (
