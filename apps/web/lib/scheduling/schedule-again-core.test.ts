@@ -14,46 +14,59 @@ const PAST = "2020-01-02T09:00:00.000Z";
 const FUTURE = "2099-01-02T09:00:00.000Z";
 const NOW = Date.parse("2026-09-06T12:00:00.000Z");
 
-describe("isPastConsuming — the agenda drawer's gate", () => {
-  // THE PIN. This is a NODE test, so it may import the database constant that a
-  // "use client" component must never reach (importing @osteojp/db there pulls
-  // the postgres driver into the browser bundle and the page will not build).
-  // The predicate is written as "not cancelled"; this asserts that answer agrees
-  // with PACK_CONSUMING_STATUSES for every status the enum actually has, in both
-  // directions, so the two cannot drift apart in silence.
-  it("agrees with PACK_CONSUMING_STATUSES on EVERY status in the enum", () => {
-    for (const status of ALL) {
-      const consuming = (PACK_CONSUMING_STATUSES as readonly string[]).includes(status);
-      expect(isPastConsuming({ status, startsAt: PAST }, NOW)).toBe(consuming);
-    }
-  });
-
+/**
+ * ==========================================================================
+ * REWRITTEN BY B6. FOUR ASSERTIONS WERE RETIRED, AND WHY IS THE POINT.
+ * ==========================================================================
+ * The owner ruled 2026-09-10 that Marcar novamente renders on EVERY
+ * appointment, past and future, whatever the estado. Both predicates are now
+ * unconditional, so four cases that pinned the OLD gates are gone:
+ *
+ *   "agrees with PACK_CONSUMING_STATUSES on EVERY status"   the gate no longer
+ *                                                           consults it at all
+ *   "requires the instant to be PAST, whatever the status"  it no longer does
+ *   "offers a past CANCELLED visit, which the drawer's
+ *    gate does not"                                         they no longer differ
+ *   "does NOT offer a future scheduled visit"               it now does
+ *
+ * THE PACK PIN IS THE ONE WORTH EXPLAINING RATHER THAN JUST DELETING. It
+ * existed because `isPastConsuming` RESTATED the consuming-status rule in plain
+ * TypeScript - the client may not import `@osteojp/db`, since that pulls the
+ * postgres driver into the browser bundle and the page stops building - and the
+ * pin stopped the restatement drifting from the constant. With the predicate no
+ * longer expressing that rule, the pin guards a relationship that does not
+ * exist; keeping it would assert a coupling the code has dropped.
+ *
+ * WHAT SURVIVES IS THE HALF THAT WAS NEVER ABOUT THE GATE: the enum-coverage
+ * case. It asserts that `ALL` really is the whole status enum, which is what
+ * makes every `it.each(ALL)` in this directory mean something. It does not
+ * depend on the gate's rule and it keeps the driver-free import boundary
+ * documented in a NODE test where the import is legal.
+ *
+ * The after-state of the ruling is asserted in marcar-novamente.test.ts, which
+ * also records the before-state it replaced.
+ */
+describe("the status enum this directory's it.each(ALL) loops depend on", () => {
   it("covers the whole enum — a status added without updating ALL would slip through", () => {
     // PACK_CONSUMING_STATUSES holds four of the five; the fifth is `cancelled`.
+    // Still a NODE test, so importing @osteojp/db here is legal and is the
+    // reason the client-side restatement exists at all.
     expect(new Set([...PACK_CONSUMING_STATUSES, "cancelled"])).toEqual(new Set(ALL));
-  });
-
-  it("requires the instant to be PAST, whatever the status", () => {
-    for (const status of ALL) {
-      expect(isPastConsuming({ status, startsAt: FUTURE }, NOW)).toBe(false);
-    }
   });
 });
 
-describe("isEligibleForScheduleAgain — the patient profile's WIDER gate", () => {
-  it("offers a past CANCELLED visit, which the drawer's gate does not", () => {
-    // The one row the two gates disagree on, asserted so the divergence is a
-    // decision on the record rather than something a reader has to notice.
-    const cancelled = { status: "cancelled" as const, startsAt: PAST };
-    expect(isEligibleForScheduleAgain(cancelled, NOW)).toBe(true);
-    expect(isPastConsuming(cancelled, NOW)).toBe(false);
+describe("both gates are unconditional after the 2026-09-10 ruling", () => {
+  it("neither gate consults the status", () => {
+    for (const status of ALL) {
+      expect(isPastConsuming({ status, startsAt: PAST }, NOW), status).toBe(true);
+      expect(isEligibleForScheduleAgain({ status, startsAt: PAST }, NOW), status).toBe(true);
+    }
   });
 
-  it("offers a FUTURE completed visit (status wins over the instant)", () => {
-    expect(isEligibleForScheduleAgain({ status: "completed", startsAt: FUTURE }, NOW)).toBe(true);
-  });
-
-  it("does NOT offer a future scheduled visit — the ordinary upcoming case", () => {
-    expect(isEligibleForScheduleAgain({ status: "scheduled", startsAt: FUTURE }, NOW)).toBe(false);
+  it("neither gate consults the instant", () => {
+    for (const startsAt of [PAST, FUTURE]) {
+      expect(isPastConsuming({ status: "scheduled", startsAt }, NOW)).toBe(true);
+      expect(isEligibleForScheduleAgain({ status: "scheduled", startsAt }, NOW)).toBe(true);
+    }
   });
 });
