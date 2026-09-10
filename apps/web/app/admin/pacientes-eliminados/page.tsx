@@ -35,7 +35,7 @@ export default async function PacientesEliminadosPage() {
         : blockers.hasOtherReferences
           ? "references"
           : null;
-      return { ...r, hardDeleteBlocked };
+      return { ...r, hardDeleteBlocked, hardDeleteCounts: blockers.counts };
     }),
   );
 
