@@ -584,7 +584,20 @@ function HealthInsuranceFields({
     onChange(entries.map((e, j) => (j === i ? { ...e, ...patch } : e)));
 
   return (
-    <fieldset className="flex flex-col gap-2">
+    /**
+     * UX-02 - IT SPANS BOTH COLUMNS, AND THAT ONE CLASS IS MOST OF THE FIX.
+     *
+     * MEASURED BEFORE ANYTHING CHANGED, at 1280 wide: Seguradora 94px and
+     * Numero 94px, inside a 280px row. A 15-digit policy number does not fit in
+     * 94px at 14px type; neither does "Multicare Seguros de Saude".
+     *
+     * The cause was structural rather than cosmetic. This block is a direct
+     * child of the form's `grid grid-cols-2`, so the WHOLE repeatable list lived
+     * in HALF a form column, and inside it two flex-1 fields and a button split
+     * that half three ways. Every class on the inputs was already "correct";
+     * they were correct inside a container a quarter of the width they needed.
+     */
+    <fieldset className="col-span-2 flex flex-col gap-2">
       <legend className="text-sm font-medium">{s["patients.fieldHealthInsurance"]}</legend>
       {entries.length === 0 && (
         <p className="text-sm text-text-secondary">{s["patients.insuranceNone"]}</p>
@@ -592,8 +605,24 @@ function HealthInsuranceFields({
       {entries.map((entry, i) => (
         // Index key: rows are positional and only ever appended or removed
         // wholesale, exactly like the lote rows in the booking drawer.
-        <div key={i} className="flex flex-wrap items-end gap-2" data-testid="insurance-row">
-          <label className="flex flex-1 flex-col gap-1 text-sm">
+        // UX-02 - A GRID, NOT A WRAPPING FLEX ROW.
+        //
+        // The number column is wider than the insurer's (1.2fr against 1fr):
+        // an insurer name is a word or two and a policy number is fifteen
+        // digits that must be readable end to end to be checked against a card.
+        //
+        // `auto` FOR REMOVER, so it takes what it needs and gives the rest
+        // away - and the row no longer WRAPS, which is the other half. Under
+        // `flex-wrap` the button dropped to its own line as soon as the fields
+        // grew, and a Remover sitting under a row is ambiguous the moment there
+        // are two rows on screen. It stacks below `sm` on purpose, where a
+        // single column is the only honest layout.
+        <div
+          key={i}
+          className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] sm:items-end"
+          data-testid="insurance-row"
+        >
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-xs text-text-secondary">{s["patients.insuranceInsurer"]}</span>
             <input
               value={entry.insurer ?? ""}
@@ -601,7 +630,7 @@ function HealthInsuranceFields({
               className={inputCls}
             />
           </label>
-          <label className="flex flex-1 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-xs text-text-secondary">{s["patients.insuranceNumber"]}</span>
             <input
               value={entry.number}
@@ -614,6 +643,7 @@ function HealthInsuranceFields({
             type="button"
             variant="ghost"
             size="sm"
+            className="justify-self-start whitespace-nowrap"
             onClick={() => onChange(entries.filter((_, j) => j !== i))}
           >
             {s["patients.insuranceRemove"]}
