@@ -74,6 +74,8 @@ export function ScheduleInspector({
   onTherapistChange,
   onPeriodChange,
   onSaveDay,
+  onRemoveBlock,
+  onEditBlock,
 }: {
   days: InspectedDay[];
   therapists: { id: string; label: string }[];
@@ -93,6 +95,18 @@ export function ScheduleInspector({
     draft: DayEditDraft,
     opts: { replace?: boolean },
   ) => Promise<{ ok: boolean; collisionDates?: string[]; error?: string }>;
+  /**
+   * SCHED-21 - the two things a block row can do, supplied by the page because
+   * only the page knows WHOSE blocks these are.
+   *
+   * THE INSPECTOR IS WHERE THE PROBLEM IS VISIBLE AND IT OFFERED NOTHING. The
+   * affordance to remove a block lived only inside the Bloquear horario modal,
+   * below nineteen expired entries, on a screen you reach from somewhere else.
+   * A row that shows a block and cannot act on it is the shape that made the
+   * owner report there was no UI at all.
+   */
+  onRemoveBlock?: (blockId: string) => void;
+  onEditBlock?: (blockId: string) => void;
 }) {
   // WHICH ROW IS OPEN, by date. One at a time: two open editors on one screen
   // invite a save that reads as applying to both.
@@ -232,7 +246,8 @@ export function ScheduleInspector({
                 // "Not working" and "not shown" are different facts, and a table
                 // that silently omits the second teaches nobody anything.
                 const rows = day.windows.length === 0 ? [null] : day.windows;
-                return rows.map((w, i) => (
+                return [
+                  ...rows.map((w, i) => (
                   <tr
                     key={`${day.date}-${i}`}
                     className="border-b border-v2-border/60 last:border-0"
@@ -250,11 +265,24 @@ export function ScheduleInspector({
                       {w?.locationName ?? ""}
                     </td>
                     <td className="py-2 align-top">
-                      {w && (
-                        <span title={RULE_HINT[w.rule]}>
-                          <StatusChip tone={RULE_TONE[w.rule]}>{RULE_LABEL[w.rule]}</StatusChip>
-                        </span>
-                      )}
+                      {w &&
+                        /* SCHED-21 - THE GREEN CHIP IS A CLAIM ABOUT BOOKABILITY
+                           AND IT WAS BEING MADE ON DAYS NOTHING COULD BE BOOKED.
+                           `dia_definido` renders in the SUCCESS tone, which on a
+                           day a block has taken whole is the screen saying "this
+                           is set up correctly" about a day the agenda greys out
+                           end to end. The hours are still true and still shown -
+                           the day IS defined - so the row keeps its times and
+                           swaps the verdict for the one the agenda would give. */
+                        (day.fullyBlocked ? (
+                          <span title={s["inspector.blockedFullyHint"]}>
+                            <StatusChip tone="warning">{s["inspector.blockedFully"]}</StatusChip>
+                          </span>
+                        ) : (
+                          <span title={RULE_HINT[w.rule]}>
+                            <StatusChip tone={RULE_TONE[w.rule]}>{RULE_LABEL[w.rule]}</StatusChip>
+                          </span>
+                        ))}
                     </td>
                     {canEdit && (
                       <td className="py-2 pl-3 align-top">
@@ -275,7 +303,82 @@ export function ScheduleInspector({
                       </td>
                     )}
                   </tr>
-                ));
+                  )),
+                  /* SCHED-21 - THE BLOCK SITS UNDER THE DAY IT BLOCKS.
+                     These rows used to be appended AFTER the entire table, so a
+                     blocked Monday and the block that blocked it could be twenty
+                     rows apart, and nothing on the Monday row referred to it.
+                     Rendering them inline is the whole fix: the reader sees the
+                     hours and the thing that cancels them in one glance. */
+                  ...day.blocks.map((b) => (
+                    <tr
+                      key={`${day.date}-b-${b.blockId}`}
+                      className="border-b border-v2-border/60 bg-amber-50/40 last:border-0"
+                      data-testid={`inspector-block-${day.date}`}
+                    >
+                      <td className="py-2 pr-3 align-top text-v2-text-secondary" />
+                      <td className="py-2 pr-3 align-top tabular-nums text-v2-text-primary">
+                        {/* CLIPPED TO THE DAY, and an all-day block says so in a
+                            word. The old rendering printed the row's raw bounds,
+                            so a five-day absence showed `00:00-00:00` under each
+                            of its days - the same two midnights three times over,
+                            which reads as a broken time rather than as a day. */}
+                        {b.allDay ? s["inspector.blockAllDay"] : `${b.start}–${b.end}`}
+                        {(b.continuesBefore || b.continuesAfter) && (
+                          <span className="ml-1 text-xs text-v2-text-secondary">
+                            ({s["inspector.blockContinues"]})
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 align-top text-v2-text-secondary">
+                        {b.note ? (
+                          <span className="font-medium text-v2-text-primary">{b.note}</span>
+                        ) : (
+                          <span className="italic">{b.reason}</span>
+                        )}
+                      </td>
+                      <td className="py-2 align-top">
+                        <span title={RULE_HINT.excecao}>
+                          <StatusChip tone={RULE_TONE.excecao}>{RULE_LABEL.excecao}</StatusChip>
+                        </span>
+                      </td>
+                      {canEdit && (
+                        <td className="py-2 pl-3 align-top">
+                          <span className="flex gap-2">
+                            {onEditBlock && (
+                              <button
+                                type="button"
+                                className="text-xs underline decoration-dotted underline-offset-2 text-v2-text-secondary hover:text-v2-text-primary"
+                                data-testid={`inspector-block-edit-${b.blockId}`}
+                                onClick={() => onEditBlock(b.blockId)}
+                              >
+                                {s["common.edit"]}
+                              </button>
+                            )}
+                            {onRemoveBlock && (
+                              <button
+                                type="button"
+                                className="text-xs underline decoration-dotted underline-offset-2 text-red-700 hover:text-red-900"
+                                data-testid={`inspector-block-remove-${b.blockId}`}
+                                onClick={() => {
+                                  // A block removal frees availability and
+                                  // touches no appointment, so it is safe - but
+                                  // it is still somebody else's schedule, and an
+                                  // undo does not exist.
+                                  if (window.confirm(s["inspector.blockRemoveConfirm"])) {
+                                    onRemoveBlock(b.blockId);
+                                  }
+                                }}
+                              >
+                                {s["admin.workingHours.blockRemove"]}
+                              </button>
+                            )}
+                          </span>
+                        </td>
+                      )}
+                    </tr>
+                  )),
+                ];
               })}
               {/* THE EDITOR IS ITS OWN ROW, under the day it edits, so nothing
                   about the day's rendering moves when it opens. */}
@@ -398,24 +501,6 @@ export function ScheduleInspector({
                     </div>
                   </td>
                 </tr>
-              )}
-              {days.flatMap((day) =>
-                day.exceptions.map((x, i) => (
-                  <tr key={`${day.date}-x-${i}`} className="border-b border-v2-border/60 last:border-0">
-                    <td className="py-2 pr-3 align-top text-v2-text-primary">
-                      {dayLabel(day.date, day.weekday)}
-                    </td>
-                    <td className="py-2 pr-3 align-top tabular-nums text-v2-text-primary">
-                      {x.start}–{x.end}
-                    </td>
-                    <td className="py-2 pr-3 align-top text-v2-text-secondary">{x.reason}</td>
-                    <td className="py-2 align-top">
-                      <span title={RULE_HINT.excecao}>
-                        <StatusChip tone={RULE_TONE.excecao}>{RULE_LABEL.excecao}</StatusChip>
-                      </span>
-                    </td>
-                  </tr>
-                )),
               )}
             </tbody>
           </table>
