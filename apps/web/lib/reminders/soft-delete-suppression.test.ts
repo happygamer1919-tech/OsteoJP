@@ -218,7 +218,25 @@ describe("the gate cannot be bypassed by a fifth dispatcher", () => {
     expect(callAt).toBeGreaterThan(doorAt);
   });
 
-  it("all four exported dispatchers go through it", () => {
+  /**
+   * AMENDED BY OBS-04, AND THE PROPERTY IS UNCHANGED.
+   *
+   * This case read the first 600 characters after each `export async function`
+   * and required `loadDispatchable(` in them. `dispatchReminder` is now a thin
+   * LEDGER WRAPPER that delegates to `dispatchReminderInner`, so the gate is one
+   * function further down and the literal scan stopped finding it - correctly,
+   * on its own terms: it cannot see through a delegation.
+   *
+   * WHAT IT IS REALLY GUARDING is that no exported dispatcher can reach a send
+   * without passing the soft-delete door. So it now follows ONE level of
+   * delegation, and only to a callee it can name and locate. A dispatcher that
+   * neither gates nor delegates still fails, which is the fifth-dispatcher case
+   * this exists for. A dispatcher that delegates to something that does not gate
+   * fails too, because the callee is then checked by the same rule.
+   */
+  it("all four exported dispatchers go through it, directly or by one named delegation", () => {
+    const gatedBody = (at: number): boolean => src.slice(at, at + 600).includes("loadDispatchable(");
+
     for (const fn of [
       "dispatchReminder",
       "dispatchConfirmation",
@@ -227,11 +245,25 @@ describe("the gate cannot be bypassed by a fifth dispatcher", () => {
     ]) {
       const at = src.indexOf(`export async function ${fn}(`);
       expect(at, `${fn} is gone`).toBeGreaterThan(-1);
+      if (gatedBody(at)) continue;
+
+      // Not gated directly: it must delegate to exactly one named inner function
+      // in this same file, and THAT one must be gated.
       const body = src.slice(at, at + 600);
+      const delegate = body.match(/await (\w*Inner)\(/)?.[1];
       expect(
-        body,
-        `${fn} does not call loadDispatchable - it can send to a soft-deleted patient`,
-      ).toContain("loadDispatchable(");
+        delegate,
+        `${fn} neither calls loadDispatchable nor delegates to a *Inner function - ` +
+          `it can send to a soft-deleted patient`,
+      ).toBeTruthy();
+
+      const innerAt = src.indexOf(`async function ${delegate}(`);
+      expect(innerAt, `${fn} delegates to ${delegate}, which does not exist`).toBeGreaterThan(-1);
+      expect(
+        gatedBody(innerAt),
+        `${fn} delegates to ${delegate}, which does not call loadDispatchable - ` +
+          `it can send to a soft-deleted patient`,
+      ).toBe(true);
     }
   });
 
