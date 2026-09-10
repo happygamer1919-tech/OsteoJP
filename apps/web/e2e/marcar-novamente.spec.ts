@@ -278,7 +278,13 @@ test.describe("SCHED-15 - Marcar novamente", () => {
     const target = lisbonDateTimeToUtc(day, "10:00");
 
     await page.goto(`/patients/${PATIENTS.maria.id}?tab=consultas`);
-    const button = page.getByRole("button", { name: SCHEDULE_AGAIN }).first();
+    // SCOPED TO THE ROW THIS TEST SEEDED, not `.first()`. With the estado gate
+    // removed (2026-09-10 ruling) Marcar novamente renders on EVERY row, so
+    // `.first()` means "whichever sorts first" rather than "the fixture's" - and
+    // it would copy somebody else's appointment while still going green.
+    const seededRow = page.locator(`[data-appointment-id="${fx.appointmentId}"]`);
+    await expect(seededRow).toHaveCount(1, { timeout: 15_000 });
+    const button = seededRow.getByRole("button", { name: SCHEDULE_AGAIN });
     await expect(button).toBeVisible({ timeout: 15_000 });
     await button.click();
     await pickAndConfirm(page, day, "10:00");
@@ -320,7 +326,18 @@ test.describe("SCHED-15 - Marcar novamente", () => {
     expect(await packAvailable(db, fx.packInstanceId)).toBe(9);
   });
 
-  test("the drawer does NOT offer it on a CANCELLED past visit - the rule-2 gate arm", async ({
+  /**
+   * INVERTED BY THE 2026-09-10 RULING. This asserted the drawer's old status
+   * arm - `isPastConsuming` refused a cancelled visit - and the owner ruled that
+   * Marcar novamente renders on EVERY appointment, past and future, whatever the
+   * estado. The gate is gone, so the button is present here now.
+   *
+   * KEPT AND INVERTED RATHER THAN DELETED: a cancelled past visit is the exact
+   * row the old gate was cut around, and rebooking after a cancellation is the
+   * case the profile surface always argued was the point of "schedule again".
+   * It is worth an assertion in the new world too.
+   */
+  test("the drawer NOW offers it on a CANCELLED past visit - the old gate arm is gone", async ({
     page,
   }) => {
     const db = serviceClient();
@@ -338,8 +355,9 @@ test.describe("SCHED-15 - Marcar novamente", () => {
     await card.click();
     const edit = page.getByRole("dialog");
     await expect(edit).toBeVisible();
-    // Present for a consuming visit, absent for a cancelled one. Asserting the
-    // dialog is open first is what stops this passing because nothing rendered.
-    await expect(edit.getByRole("button", { name: SCHEDULE_AGAIN })).toHaveCount(0);
+    // Present whatever the estado. Asserting the dialog is open first is what
+    // stops this passing because nothing rendered - the guard the original had,
+    // and it matters MORE for a presence assertion than it did for an absence.
+    await expect(edit.getByRole("button", { name: SCHEDULE_AGAIN })).toHaveCount(1);
   });
 });

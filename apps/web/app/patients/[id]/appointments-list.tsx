@@ -209,6 +209,17 @@ function AppointmentRow({
   const showManage = showReschedule || showEstado || showCancel;
 
   return (
+    // WRAPPED, NOT PASSED TO <Card>. `Card` destructures a fixed prop set and
+    // forwards nothing else, so a `data-*` attribute handed to it is dropped in
+    // silence - the reader would see the attribute in the source and never in
+    // the DOM. The clinical records list solves it exactly this way
+    // (`<div data-record-id>` around its Card), so this follows that precedent
+    // rather than widening a shared component for one caller.
+    //
+    // IT BECAME NECESSARY WITH THE MARCAR NOVAMENTE GATE REMOVED: the button now
+    // appears on EVERY row, so `.first()` no longer means "the row the fixture
+    // seeded", it means whichever one sorts first.
+    <div data-testid="consulta-row" data-appointment-id={a.id}>
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -290,6 +301,7 @@ function AppointmentRow({
         </details>
       )}
     </Card>
+    </div>
   );
 }
 
