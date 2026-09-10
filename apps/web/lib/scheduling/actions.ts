@@ -33,6 +33,7 @@ import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { checkAvailability } from "./availability-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
+import { isLegalEstadoCorrection } from "./estado-correction";
 import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
 import {
   emitCancelledNotification,
@@ -1904,6 +1905,91 @@ export async function confirmAppointmentRequest(
     return result;
   } catch (e) {
     return fail("confirmRequest", e);
+  }
+}
+
+/**
+ * CORRIGIR ESTADO — move one FINAL state to another. Owner ruling 2026-09-10.
+ *
+ * ==========================================================================
+ * WHY THIS IS NOT `updateAppointment` WITH A LOOSER MAP
+ * ==========================================================================
+ * `updateAppointment` enforces `isLegalEstadoTransition` (INC-08 (a)), and that
+ * map sends all three final states to `[]`. Widening it would have put
+ * "cancelada -> concluida" inside the same Estado <Select> that records real
+ * lifecycle events, and the audit trail could no longer separate an operator
+ * CORRECTING a mistake from one RECORDING an outcome. The ruling is explicit
+ * that a correction never goes through the normal control, so this is a second
+ * action with a second audit action, and `LEGAL` is untouched.
+ *
+ * ==========================================================================
+ * RECEPTION AND UP, EXPRESSED AS A CAPABILITY RATHER THAN A ROLE LIST
+ * ==========================================================================
+ * `appointments:delete` is held by owner, admin and reception and NOT by
+ * therapist - checked in packages/auth/permissions.ts, not assumed. It is the
+ * same gate `cancelAppointment` uses, and it is the existing name for exactly
+ * the population the ruling calls "reception and up". A hand-written role list
+ * here would rot the next time a role is added; this cannot.
+ *
+ * ONE ROW, NEVER A SERIES. A correction is about one record being wrong. There
+ * is no `scope` parameter on purpose: applying a typo fix to a whole recurrence
+ * would assert that every occurrence was mistyped the same way.
+ */
+export async function correctAppointmentEstadoAction(
+  id: string,
+  to: AppointmentStatusValue,
+): Promise<ActionResult<{ id: string }>> {
+  const auth = await authorize("appointments:delete");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+
+  if (!id || !to) return { ok: false, error: "validation" };
+
+  const ip = await clientIp();
+  try {
+    const result = await runScoped<ActionResult<{ id: string }>>(actor, async (tx) => {
+      const [row] = await tx
+        .select({ id: appointments.id, status: appointments.status })
+        .from(appointments)
+        .where(eq(appointments.id, id))
+        .limit(1); // RLS scopes the tenant
+      if (!row) return { ok: false, error: "not_found" };
+
+      // The SAME predicate the UI offers from, re-asserted here. The affordance
+      // is never the enforcement: a hand-made request naming a non-final state,
+      // or naming the state the row is already in, is refused on the server.
+      if (!isLegalEstadoCorrection(row.status, to)) {
+        return { ok: false, error: "illegal_transition" };
+      }
+
+      await tx.update(appointments).set({ status: to }).where(eq(appointments.id, id));
+
+      await writeAppointmentAudit(tx, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: "appointment.estado_correction",
+        appointmentId: id,
+        metadata: {
+          // STRUCTURED FROM AND TO, NO FREE TEXT. Both are enum values - one
+          // word, no whitespace - so they pass assertPiiFreeAuditMetadata by
+          // being identifiers rather than by being short. No reason field: the
+          // ruling did not ask for one, and a prose "why" in an append-only log
+          // is the defect SEC-audit-metadata-free-text-in-scheduling removed.
+          fromStatus: row.status,
+          toStatus: to,
+          // So a reader filtering this log can tell a correction from a
+          // lifecycle event without knowing that the ACTION name encodes it.
+          correction: true,
+        },
+        ip,
+      });
+      return { ok: true, data: { id } };
+    });
+    if (result.ok) revalidateAppointmentSurfaces();
+    return result;
+  } catch (e) {
+    console.error("scheduling: estado correction failed", e instanceof Error ? e.name : "unknown");
+    return { ok: false, error: "error" };
   }
 }
 
