@@ -33,6 +33,9 @@ import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
 import { PatientDocuments } from "./PatientDocuments";
 import { DeclaracaoDialog, type DeclaracaoAppointment } from "./DeclaracaoDialog";
+import { listGuestIntakesForPatient } from "../../../lib/guest-intake/queries";
+import { toGuestIntakeDisplay } from "../../../lib/guest-intake/view";
+import { GuestIntakeAnswers } from "../../../components/guest-intake-answers";
 
 export const dynamic = "force-dynamic";
 
@@ -205,6 +208,17 @@ export default async function PatientProfilePage({
     tab === "registos" && canReadClinical
       ? await listRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
       : [];
+  // INTAKE-01: the clinical questionnaire(s) this person answered at their first
+  // online booking, reaching the ficha once reception converted the request to
+  // this patient. Read-only, verbatim, attributed and dated. Every staff role
+  // holds `guest_intake:read`; 0087's policy decides which rows come back (a
+  // therapist only for a patient they see clinically). Empty until 0087 is
+  // applied. It NEVER feeds the contraindication flags above: those are a
+  // clinician's assertion, and these are the person's own words.
+  const guestIntakes =
+    tab === "resumo" && can(ctx.role, "guest_intake:read")
+      ? await listGuestIntakesForPatient(ctx, patient.id)
+      : [];
   // Faturação tab: fetch invoices for this patient when the tab is active.
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
@@ -321,6 +335,22 @@ export default async function PatientProfilePage({
             >
               <Rows rows={personalRows} />
             </Card>
+            {/* INTAKE-01: the person's own answers from the online booking,
+                read-only and dated. One card per converted request (ruling 1:
+                a second booking adds a dated submission, never overwrites). */}
+            {guestIntakes.length > 0 && (
+              <section
+                data-testid="ficha-guest-intakes"
+                aria-label={s["guestIntake.fichaTitle"]}
+                className="mt-6 flex flex-col gap-6"
+              >
+                {guestIntakes.map((intake) => (
+                  <Card key={intake.guestBookingRequestId} title={s["guestIntake.fichaTitle"]}>
+                    <GuestIntakeAnswers display={toGuestIntakeDisplay(intake)} />
+                  </Card>
+                ))}
+              </section>
+            )}
           </div>
         </div>
       )}

@@ -13,6 +13,11 @@ import {
 } from "@/lib/scheduling/guest-convert";
 import { bookingDeepLink, pressAction } from "@/lib/scheduling/guest-convert-handoff";
 import { s } from "@/lib/i18n";
+// A TYPE and a hook-free component only. The intake is read and shaped on the
+// server (notificacoes/page.tsx); nothing that touches the database is imported
+// into this client module.
+import type { GuestIntakeDisplay } from "@/lib/guest-intake/view";
+import { GuestIntakeAnswers } from "@/components/guest-intake-answers";
 
 /**
  * ITEM 6 — reception's queue of GUEST booking requests.
@@ -80,6 +85,18 @@ export type GuestRequestRow = {
    * the thing to show - what is left to do is.
    */
   converted: boolean;
+  /**
+   * INTAKE-01: the clinical questionnaire the guest answered with THIS request,
+   * shown beside it. THREE STATES, and the difference is load-bearing:
+   *   undefined  the feature is off (0087 not applied, or the viewer may not
+   *              read intakes): nothing renders, the row is exactly as before;
+   *   null       the feature is on and this request carries no intake (sent
+   *              before the fifth step existed, or by a stale page): said in
+   *              words, so reception does not go looking for answers;
+   *   a display  the answers, collapsed by default so a queue on a front-desk
+   *              screen does not show health answers to whoever walks past.
+   */
+  intake?: GuestIntakeDisplay | null;
 };
 
 function messageFor(err: GuestConvertError): string {
@@ -262,6 +279,30 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
                   <dd>{r.requestedAt}</dd>
                 </div>
               </dl>
+
+              {/* INTAKE-01: the clinical questionnaire beside THIS request.
+                  Absent entirely while the feature is off (intake undefined).
+                  Collapsed by default: a front-desk screen is read by whoever
+                  walks past, and these are health answers. <details> opens
+                  with no JavaScript. */}
+              {r.intake === null && (
+                <p data-testid="guest-intake-missing" className="text-sm text-v2-text-secondary">
+                  {s["guestIntake.missing"]}
+                </p>
+              )}
+              {r.intake && (
+                <details
+                  data-testid="guest-intake"
+                  className="rounded-v2 border border-v2-border p-3"
+                >
+                  <summary className="cursor-pointer py-1 text-sm font-medium text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
+                    {s["guestIntake.show"]}
+                  </summary>
+                  <div className="mt-3">
+                    <GuestIntakeAnswers display={r.intake} />
+                  </div>
+                </details>
+              )}
 
               {err && (
                 <div
