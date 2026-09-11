@@ -1,5 +1,9 @@
-import { sql, type SQL } from "drizzle-orm";
-import { guestIntakeSchemaPresent } from "@osteojp/db";
+import type { SQL } from "drizzle-orm";
+import {
+  guestIntakeSchemaPresent,
+  listTenantIdsForRetention,
+  purgeTenantGuestIntakes,
+} from "@osteojp/db";
 
 /**
  * INTAKE-01 - THE RETENTION JOB'S DRIVER. Seven days, all four conditions.
@@ -14,18 +18,16 @@ import { guestIntakeSchemaPresent } from "@osteojp/db";
  *   2. lists every tenant; and
  *   3. calls the function ONCE PER TENANT (CLAUDE.md rule 3: a job never runs
  *      globally, and the function refuses a NULL tenant for the same reason).
- * So there is no predicate here to get wrong, and in particular none on
- * `guest_booking_requests.converted_appointment_id`, which nothing writes and
- * which would read a treated patient as never booked.
- *
- * EVERY TENANT, NOT ONLY ACTIVE ONES. A suspended clinic's unconverted guest
- * answers still expire at seven days; the ruling has no exception for status.
+ * The two statements themselves live in packages/db
+ * (`src/guest-intake-reads.ts`); there is no SQL here, and no predicate to get
+ * wrong - in particular none on `guest_booking_requests.converted_appointment_id`,
+ * which nothing writes and which would read a treated patient as never booked.
  *
  * THE CONNECTION IS THE OWNING ROLE. The caller passes `getDbAdmin()`, which
  * connects as the database owner (BYPASSRLS; `packages/db/src/client.ts`).
  * 0087 revokes EXECUTE on the function from anon, authenticated, patient AND
  * service_role, so only its owner can run it. That is on purpose and is not
- * worked around here: no grant, no SECURITY DEFINER wrapper.
+ * worked around: no grant, no SECURITY DEFINER wrapper.
  *
  * LOGS COUNTS ONLY. One line per run: how many tenants, how many intakes went.
  * No tenant id, no request id, no answer. The per-deletion detail is the audit
@@ -54,25 +56,6 @@ export type RetentionDeps = {
   purgeTenant?: (db: SqlExecutor, tenantId: string) => Promise<number>;
   log?: (line: string) => void;
 };
-
-export async function listTenantIdsForRetention(db: SqlExecutor): Promise<string[]> {
-  const rows = (await db.execute(
-    sql`select id::text as id from public.tenants order by id`,
-  )) as unknown as ReadonlyArray<{ id: string }>;
-  return rows.map((r) => r.id);
-}
-
-/** One tenant. The tenant id is a BOUND parameter, never interpolated. */
-export async function purgeTenantGuestIntakes(db: SqlExecutor, tenantId: string): Promise<number> {
-  const rows = (await db.execute(
-    sql`select public.purge_expired_guest_intakes(${tenantId}::uuid) as purged`,
-  )) as unknown as ReadonlyArray<{ purged: number | string | null }>;
-  const n = Number(rows[0]?.purged);
-  if (!Number.isInteger(n) || n < 0) {
-    throw new Error("purge_expired_guest_intakes returned no count");
-  }
-  return n;
-}
 
 export async function runGuestIntakeRetention(
   db: SqlExecutor,

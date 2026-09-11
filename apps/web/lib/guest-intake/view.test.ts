@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+// The row type, the enum labels and the parser live with the SQL in packages/db
+// (src/guest-intake-reads.ts); packages/db only collects tests/**, so the parser's
+// unit tests stay here beside the display they feed.
+import { INTAKE_ANSWERS, parseGuestIntakeRow } from "@osteojp/db";
 import { s } from "@/lib/i18n";
 import {
-  INTAKE_ANSWERS,
   intakeAnswerWords,
-  parseGuestIntakeRow,
   toGuestIntakeDisplay,
   type GuestIntakeDisplay,
   type GuestIntakeRecord,

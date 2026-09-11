@@ -1,11 +1,12 @@
 /**
  * INTAKE-01 (staff side) - how a guest clinical intake READS on a staff screen.
  *
- * PURE ON PURPOSE. No database, no `server-only`: the reception queue that shows
- * these answers is a client component, and importing `@osteojp/db` into anything
- * a client component reaches pulls the postgres driver into the browser bundle.
- * The server reads the row (`./queries.ts`), builds the display here, and hands
- * the client a plain object.
+ * PURE ON PURPOSE. No database and no `server-only`: the reception queue that
+ * shows these answers is a client component, and a RUNTIME import of
+ * `@osteojp/db` anywhere a client component reaches pulls the postgres driver
+ * into the browser bundle. The only thing taken from `@osteojp/db` here is a
+ * TYPE (`import type`, erased at compile time). The server reads the row, builds
+ * the display here, and hands the client a plain object.
  *
  * THREE RULES THIS FILE EXISTS TO HOLD (SPEC-guest-clinical-intake sections 3
  * and 5, Strategy 2026-09-07 ruling 2):
@@ -21,30 +22,10 @@
  * "the person said so"; the ficha's contraindication flags are "a clinician
  * confirmed it". Nothing here, or anywhere that uses this, sets those flags.
  */
+import type { GuestIntakeRecord, IntakeAnswer } from "@osteojp/db";
 import { s } from "@/lib/i18n";
 
-/** 0087's enum `public.intake_answer`, label for label. */
-export const INTAKE_ANSWERS = ["sim", "nao", "nao_perguntado"] as const;
-export type IntakeAnswer = (typeof INTAKE_ANSWERS)[number];
-
-/** One `guest_clinical_intakes` row, as the staff reads select it. */
-export type GuestIntakeRecord = {
-  guestBookingRequestId: string;
-  /** YYYY-MM-DD, as stored. Never passed through a Date, so no zone can shift it. */
-  dateOfBirth: string;
-  reason: string;
-  healthConditions: string | null;
-  medication: string | null;
-  fallsAccidents: string | null;
-  surgeries: string | null;
-  pacemaker: IntakeAnswer;
-  pregnancy: IntakeAnswer;
-  consentVersion: string;
-  /** ISO 8601, UTC. */
-  consentAt: string;
-  /** ISO 8601, UTC. When the intake ARRIVED; the retention clock runs on it. */
-  createdAt: string;
-};
+export type { GuestIntakeRecord, IntakeAnswer };
 
 export type GuestIntakeField =
   | "dateOfBirth"
@@ -75,10 +56,6 @@ export type GuestIntakeDisplay = {
   /** Received-at, consent-at and consent version, in that order. */
   meta: { label: string; value: string }[];
 };
-
-function isIntakeAnswer(value: unknown): value is IntakeAnswer {
-  return typeof value === "string" && (INTAKE_ANSWERS as readonly string[]).includes(value);
-}
 
 /** The words for a three-state answer. Exhaustive: a new label fails to compile. */
 export function intakeAnswerWords(answer: IntakeAnswer): string {
@@ -147,45 +124,5 @@ export function toGuestIntakeDisplay(r: GuestIntakeRecord): GuestIntakeDisplay {
       { label: s["guestIntake.consentAt"], value: formatIntakeInstant(r.consentAt) },
       { label: s["guestIntake.consentVersion"], value: r.consentVersion },
     ],
-  };
-}
-
-/**
- * Narrows one raw row from the staff reads. It REFUSES rather than coerces: an
- * answer label this file does not know is a schema change nobody carried here,
- * and guessing its words would put a claim on a clinical screen that nobody made.
- *
- * THE ERROR NAMES THE FIELD, NEVER THE VALUE. The value is an Article 9 answer.
- */
-export function parseGuestIntakeRow(raw: Record<string, unknown>): GuestIntakeRecord {
-  const str = (key: string): string => {
-    const v = raw[key];
-    if (typeof v !== "string") throw new Error(`guest intake row: ${key} is not text`);
-    return v;
-  };
-  const optional = (key: string): string | null => {
-    const v = raw[key];
-    if (v === null || v === undefined) return null;
-    if (typeof v !== "string") throw new Error(`guest intake row: ${key} is not text`);
-    return v;
-  };
-  const answer = (key: string): IntakeAnswer => {
-    const v = raw[key];
-    if (!isIntakeAnswer(v)) throw new Error(`guest intake row: ${key} is not a known intake_answer label`);
-    return v;
-  };
-  return {
-    guestBookingRequestId: str("guest_booking_request_id"),
-    dateOfBirth: str("date_of_birth"),
-    reason: str("reason"),
-    healthConditions: optional("health_conditions"),
-    medication: optional("medication"),
-    fallsAccidents: optional("falls_accidents"),
-    surgeries: optional("surgeries"),
-    pacemaker: answer("pacemaker"),
-    pregnancy: answer("pregnancy"),
-    consentVersion: str("consent_version"),
-    consentAt: str("consent_at"),
-    createdAt: str("created_at"),
   };
 }

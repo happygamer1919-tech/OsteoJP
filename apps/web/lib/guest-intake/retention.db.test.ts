@@ -74,8 +74,7 @@ if (!live || !TABLE_PRESENT) {
       });
 
       it("negative control: the function really is absent, so calling it directly fails 42883", async () => {
-        const { getDbAdmin } = await import("@osteojp/db");
-        const { purgeTenantGuestIntakes } = await import("./retention");
+        const { getDbAdmin, purgeTenantGuestIntakes } = await import("@osteojp/db");
         const err = await purgeTenantGuestIntakes(getDbAdmin(), randomUUID()).then(
           () => null,
           (e: unknown) => e,
@@ -235,7 +234,7 @@ if (!live || !TABLE_PRESENT) {
     });
 
     it("the default lister walks tenants, and this tenant is among them", async () => {
-      const { listTenantIdsForRetention } = await import("./retention");
+      const { listTenantIdsForRetention } = await import("@osteojp/db");
       expect(await listTenantIdsForRetention(db)).toContain(T);
     });
   });
