@@ -16,6 +16,8 @@ import { MarkAllReadButton } from "./mark-all-read";
 import { PendingRequests, type PendingRequestView } from "./pending-requests";
 import { GuestRequestsQueue, type GuestRequestRow } from "./guest-requests-queue";
 import { listPendingGuestRequests } from "@/lib/scheduling/guest-requests";
+import { listGuestIntakesForRequests } from "@/lib/guest-intake/queries";
+import { toGuestIntakeDisplay } from "@/lib/guest-intake/view";
 import { StuckConsultations, type StuckConsultationRow } from "./stuck-consultations";
 import {
   RescheduleRequestsQueue,
@@ -182,6 +184,19 @@ export default async function NotificacoesPage() {
   ]);
   const unread = entries.filter((e) => e.readAt === null).length;
 
+  // INTAKE-01: the guest's clinical questionnaire BESIDE THE REQUEST. Read only
+  // for a viewer who is already shown the queue AND may read intakes; which
+  // intakes come back is 0087's policy (the same location scope as the queue).
+  // `null` means the feature is off (0087 not applied) and the rows render
+  // exactly as they did before.
+  const intakesByRequest =
+    canReadGuestQueue && can(ctx.role, "guest_intake:read") && guestRequests.length > 0
+      ? await listGuestIntakesForRequests(
+          ctx,
+          guestRequests.map((g) => g.id),
+        )
+      : null;
+
   // Preformatted server-side, in Europe/Lisbon, so the queue and the log below
   // it read the same instant the same way. A client-side format would use the
   // browser's zone and quietly disagree with the agenda.
@@ -216,6 +231,13 @@ export default async function NotificacoesPage() {
     requestedAt: stamp(g.createdAt),
     possiblePatientMatches: g.possiblePatientMatches,
     converted: g.converted,
+    // INTAKE-01: undefined = feature off; null = on, and no intake on this request.
+    intake:
+      intakesByRequest === null
+        ? undefined
+        : intakesByRequest.has(g.id)
+          ? toGuestIntakeDisplay(intakesByRequest.get(g.id)!)
+          : null,
   }));
 
   // Same server-side Lisbon formatting as both queues above, for the same
