@@ -207,7 +207,21 @@ Nothing changes for anyone until the owner flags the NESA resource. That is a da
 
 ## Rehearsed
 
-Not yet rehearsed. This section is filled from the rehearsal run before the PR is opened.
+Both stages were run **as printed above**, on 2026-09-11, against a throwaway Postgres built from `origin/main`'s `supabase/migrations`, plus 0083, 0084 and 0085 applied from their own branches. It carried a drizzle journal of 83 rows with the real file hash of every migration, and a synthetic tenant: two therapists, a receptionist, two clinics, a patient and two appointments. Only the four lines that cannot run off production were replaced mechanically:
+- `/tmp` became a scratch directory (replaced first, so no inserted path was itself rewritten);
+- the apply tree became this branch's worktree;
+- the env file became the throwaway's URL;
+- the target guard became an echo.
+
+| Run | Result |
+|---|---|
+| stage 2 **before** stage 1 | `STOP: stage 1 did not complete an apply in this sitting`, exit 1 |
+| stage 1 | `applying from 8c14c016`; pre-check **16 OK / 0 FAIL**; gate `0 | 0 | 0 | 0 | 3 | 2 | INERT`; `verified-migrate` found **1 pending** (`0086_nesa_shared_resource`), moved the journal **83 → 84** and carried the approved sha256; exit 0 |
+| stage 2 | carries parsed as `journal_before=83 users_before=3 appointments_before=2 clinics_before=2 links_before=0`; `NOTICE: ARMS F1 V1 V2 V3 W1 W2 OK`; post-check **15 OK / 0 FAIL**; owner checker `22 SECURITY DEFINER function(s)`, `all 22 owned by postgres`; `0086 APPLIED` |
+
+Afterwards the database carried the column, and `appointments_rls` read md5 `22e128271c25d59ca149731cb04e55aa` (941 characters) where it read 0078's `ded52b80dfb77f36a2166633c29b95db` (641) before. Users (3), appointments (2) and clinics (2) were unchanged, and no post-check fixture row survived: the arms kept nothing.
+
+**The first rehearsal found a defect in this document's post-check, and that is why a second one exists.** In the arms' `INSERT … SELECT … UNION ALL` seed, the literal `'scheduled'` resolved to text before it reached the enum column, and stage 2 halted with `column "status" is of type appointment_status but expression is of type text`. The stage stopped as designed (pipefail, exit 3), and the aborted transaction kept nothing. Every status literal in the post-check is now cast explicitly. The database was then reset to its pre-0086 state and both stages re-run from the top, with the results above.
 
 ## Order of the sitting
 
