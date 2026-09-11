@@ -145,10 +145,11 @@ somebody asks for "closed Saturday afternoons too".
 
 ## 4. Questions for strategy: all four answered 2026-09-10
 
-1. **Option A or Option B.** **RULED 2026-09-10: Option A**, on dispatch E2.
-   The board's cards disagree on who ruled it (strategy on SCHED-16 and
-   SCHED-24, the owner on MIG-0085); this record does not pick one. The Saturday
-   answer directly below is what removed the case for B.
+1. **Option A or Option B.** **RULED 2026-09-10: Option A**, on dispatch E2,
+   **by strategy under the owner's delegation.** The Saturday answer directly
+   below is the owner's own, and it is what removed the case for B.
+   *(Attribution ruled 2026-09-11. Until then the board's cards disagreed on who
+   ruled A, and this line said so rather than picking a side.)*
 2. ~~**Does the closure apply on Saturday?**~~ **ANSWERED by the owner,
    2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
    including Saturday."*
@@ -207,6 +208,15 @@ patient's appointment list) runs `checkAvailability` and has no closure check on
 #1264's branch, so as authored a *Marcar novamente* into CB's 13:00-14:00 is not
 refused.
 The fix belongs in #1264, before it is applied. This docs PR changes no code.
+
+**Closed on #1264's branch, 2026-09-11, commit `72c863b0`.** Reproduced first on
+the purple lane with 0085 applied: before the fix, a *Marcar novamente* into
+13:30 at the closed clinic wrote a scheduled appointment and the screen said
+*Nova marcação criada.* `cloneAppointment` now calls `checkClinicClosure` beside
+`checkAvailability` and outside the `allowConflict` gate, like the other two
+paths, and the drawer renders the same clinic-named sentence with no *mesmo
+assim*. The migration file is unchanged (the sha256 above still holds), and #1264
+is still held until 0085 is applied.
 
 **What makes it ship.** SCHED-16 and SCHED-24 stay `in_flight` on the board until
 #1264 merges, and #1264 merges only after the owner applies 0085, which waits on
