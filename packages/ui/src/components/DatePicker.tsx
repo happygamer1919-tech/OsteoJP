@@ -125,6 +125,44 @@ const asIsoDate = (value: string | null | undefined): string | null =>
 export function datePickerAnchor(value: string | null | undefined, today: string = todayIso()): string {
   return asIsoDate(value) ?? today;
 }
+
+/**
+ * SR-62 U1 - WHETHER A BLUR MEANS THE USER LEFT THE PICKER: only when focus
+ * arrived on another element that is neither inside the picker nor a
+ * container of it.
+ *
+ * ==========================================================================
+ * THE DEFECT IT CLOSES (clinic video, 2026-09-11, Safari)
+ * ==========================================================================
+ * Opening the calendar moves focus onto a day cell. WebKit does not focus a
+ * <button> that is clicked; focus falls back to a container instead. MEASURED
+ * in WebKit, pressing "Mes seguinte" inside the drawer: the day cell's focusout
+ * carries `relatedTarget` = the drawer's own modal <dialog>, focus lands on
+ * that dialog, and no click event fires at all. The old rule was
+ * `!contains(relatedTarget)`. The dialog is not inside the picker, so the
+ * popover unmounted between mousedown and click, and the calendar opened but
+ * could never be used - in every drawer and dialog that has one. Nothing threw,
+ * which is why Sentry holds no issue for it. Chromium, same press, reports the
+ * button itself, which is inside - so a Chromium-only suite passed over it.
+ *
+ * TWO DESTINATIONS ARE THEREFORE NOT "LEAVING": a container of the picker
+ * (focus falling back, which a press anywhere inside that container produces)
+ * and null (no destination at all). A press that really is outside is decided
+ * by the pointerdown listener in the component, which reads the press's own
+ * target instead of inferring it from a focus move. What still closes here is
+ * focus arriving on another element - Tab, or a press on a focusable control.
+ *
+ * EXPORTED AND PURE so the rule is pinned by a unit test in a package whose
+ * tests have no DOM; the e2e drives the same rule through a real click.
+ */
+export function blurLeavesPicker(
+  next: EventTarget | null,
+  root: { contains(other: unknown): boolean },
+): boolean {
+  if (next == null || root.contains(next)) return false;
+  const container = next as unknown as { contains?: (other: unknown) => boolean };
+  return !(typeof container.contains === "function" && container.contains(root));
+}
 /**
  * SCHED-07 / SR-38 — TYPED ENTRY. The picker accepts a date TYPED as dd/mm/aaaa,
  * and typed entry is never removed from any field it replaces.
@@ -258,6 +296,28 @@ export function DatePicker({
     if (open) dayRefs.current.get(focused)?.focus();
   }, [open, focused]);
 
+  /**
+   * SR-62 U1 - A PRESS OUTSIDE CLOSES THE CALENDAR, decided by the press.
+   *
+   * This used to be the blur's job, and in WebKit the blur cannot do it: a
+   * press on empty space in the drawer sends focus to the drawer's <dialog>,
+   * the same destination as a press on a button INSIDE the popover, so no
+   * focus rule can tell them apart (see blurLeavesPicker). The press's own
+   * target can.
+   * Capture phase, so a handler below that stops propagation cannot hide it;
+   * attached only while open, so a closed picker listens to nothing.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const root = rootRef.current;
+      if (root && e.target instanceof Node && !root.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [open]);
+
   const inRange = (iso: string): boolean => (!min || iso >= min) && (!max || iso <= max);
 
   const move = (delta: number) => {
@@ -291,9 +351,13 @@ export function DatePicker({
 
   return (
     <div
+      ref={rootRef}
       className={cx("relative", className)}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false);
+        // Tab, or a press on a focusable control elsewhere, closes it. Focus
+        // falling back to a container (WebKit, SR-62 U1) or to nothing does
+        // not; the pointerdown listener owns presses outside.
+        if (blurLeavesPicker(e.relatedTarget, e.currentTarget)) setOpen(false);
       }}
     >
       {/* SCHED-07 / SR-38 — A TEXT FIELD, NOT A BUTTON. This replaced a
