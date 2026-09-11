@@ -61,8 +61,34 @@ function naturalKey(n: Pick<MergeableNote, "content" | "createdAt">): string {
 }
 
 /**
+ * NOTES-03, the ruling of 2026-09-11: where a note sits in the history.
+ *
+ * A note on a marcação sits at the MARCAÇÃO's date; a patient-level note sits at
+ * its creation date; the two interleave, newest first. `editedAt` orders
+ * nothing - it is shown as "Editada por X" and that is all it does.
+ *
+ * Ordering by `createdAt` alone read shuffled on production: a second note typed
+ * in September on a March visit rose above June's, and a note typed at booking
+ * for a visit weeks away sank below visits that happened in between. Ties (two
+ * notes on one marcação) fall back to creation, later-written first, then id so
+ * the order is total and identical on every render.
+ */
+export function noteSortInstant(n: Pick<MergeableNote, "createdAt" | "appointment">): number {
+  return new Date(n.appointment?.startsAt ?? n.createdAt).getTime();
+}
+
+export function compareNotesNewestFirst(a: MergeableNote, b: MergeableNote): number {
+  return (
+    noteSortInstant(b) - noteSortInstant(a) ||
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+}
+
+/**
  * Merge unified-store notes with legacy revisions, dropping legacy revisions
- * that a unified row already represents (backfilled), newest-first.
+ * that a unified row already represents (backfilled), ordered by
+ * `compareNotesNewestFirst`.
  *
  * @param unified appointment_notes rows for the patient (any appointment scope).
  * @param legacy  patient_note_revisions rows for the patient.
@@ -73,7 +99,5 @@ export function mergePatientNotes(
 ): MergeableNote[] {
   const unifiedKeys = new Set(unified.map(naturalKey));
   const legacyOnly = legacy.filter((r) => !unifiedKeys.has(naturalKey(r)));
-  return [...unified, ...legacyOnly].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
+  return [...unified, ...legacyOnly].sort(compareNotesNewestFirst);
 }
