@@ -33,4 +33,4 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0085_nesa_shared_resource.sql` | `0085` (clinic hours) | 2026-09-10 | strategy reading the gate output from `scripts/nesa-equivalence.sql` |
+| `NEXT-AFTER-0085_nesa_shared_resource.sql` | `0085` (clinic hours) | 2026-09-10 | 0085 being applied (it takes its number on promotion). The location test is ruled in; the gate re-ran 2026-09-10: default INERT 0/0, self-test 5/5, real-policy arm W1/W2/V1 PASS |
