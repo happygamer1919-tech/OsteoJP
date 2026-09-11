@@ -193,14 +193,26 @@ export async function readLatestPatientNotes(
  */
 export type LatestNoteOfKind = LatestNote & { kind: "patient" | "appointment" };
 
+/*
+ * NOTES-03: `sort_at` is where the note sits in the history - the marcação's
+ * start for a note on one, the creation instant otherwise - so "latest" here is
+ * the FIRST entry `listPatientNotes` draws, as the Recuperação popup promises.
+ * `at` stays the creation instant: it is half of the (content, created_at) key
+ * the backfill de-duplication counts on. An appointment this viewer's
+ * `appointments` policy hides yields NULL and falls back to creation, exactly as
+ * the LEFT join in `listPatientNotes` does.
+ */
 const anyNoteUnion = (patientIdCol: string, tenantIdCol: string) => `
   select an.body as content, an.created_at as at,
+         coalesce((select a.starts_at from appointments a
+                    where a.id = an.appointment_id and a.tenant_id = an.tenant_id),
+                  an.created_at) as sort_at,
          case when an.appointment_id is null then 'patient' else 'appointment' end as kind
     from appointment_notes an
    where an.patient_id = ${patientIdCol}
      and an.tenant_id  = ${tenantIdCol}
   union all
-  select r.content, r.created_at, 'patient' as kind
+  select r.content, r.created_at, r.created_at, 'patient' as kind
     from patient_note_revisions r
    where r.patient_id = ${patientIdCol}
      and r.tenant_id  = ${tenantIdCol}
@@ -221,18 +233,18 @@ export async function readLatestNoteEitherKind(
       patientId: patients.id,
       body: sql<string | null>`(
         select n.content from (${sql.raw(anyNoteUnion(P, T))}) n
-        order by n.at desc limit 1
+        order by n.sort_at desc, n.at desc limit 1
       )`.as("latest_any_body"),
       kind: sql<string | null>`(
         select n.kind from (${sql.raw(anyNoteUnion(P, T))}) n
-        order by n.at desc limit 1
+        order by n.sort_at desc, n.at desc limit 1
       )`.as("latest_any_kind"),
       total: sql<number>`(
         select count(distinct (n.content, n.at))::int
           from (${sql.raw(anyNoteUnion(P, T))}) n
          where n.kind = (
            select n2.kind from (${sql.raw(anyNoteUnion(P, T))}) n2
-           order by n2.at desc limit 1
+           order by n2.sort_at desc, n2.at desc limit 1
          )
       )`.as("latest_any_total"),
     })
