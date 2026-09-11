@@ -1077,8 +1077,8 @@ export async function cloneAppointment(
         }
 
         // ============================================================= //
-        // SCHED-15 — THE SAME TWO CHECKS `createAppointment` PAYS, IN THE
-        // SAME ORDER, ON THE SAME HELPERS.
+        // SCHED-15 — THE SAME CHECKS `createAppointment` PAYS, IN THE SAME
+        // ORDER, ON THE SAME HELPERS.
         // ============================================================= //
         // Deliberately AFTER buildClonedAppointment: the practitioner, the
         // location and the derived window are the CLONE's, read from the
@@ -1097,6 +1097,30 @@ export async function cloneAppointment(
             ok: false,
             error: "outside_availability",
             availabilityWindows: av.windows,
+          };
+        }
+
+        // 0085 - THE CLINIC BEING SHUT, and this was the one create path
+        // without it. createAppointment and rescheduleAppointment refused the
+        // closed hour; a Marcar novamente into CB 13:00-14:00 was simply
+        // written (reproduced on the purple lane with 0085 applied, recorded
+        // on the MIG-0085 card). Same helper, same place: beside availability
+        // and OUTSIDE the `allowConflict` gate below, because the closure is
+        // "not blockable-around" and "Marcar mesmo assim" is exactly the
+        // override that must not reach it.
+        //
+        // On the CLONE's location and window. The source's own window is in
+        // the past and says nothing about whether the new one is open.
+        const cl = await checkClinicClosure(tx, {
+          locationId: values.locationId,
+          startsAt: values.startsAt,
+          endsAt: values.endsAt,
+        });
+        if (!cl.ok) {
+          return {
+            ok: false,
+            error: "clinic_closed",
+            clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
           };
         }
 

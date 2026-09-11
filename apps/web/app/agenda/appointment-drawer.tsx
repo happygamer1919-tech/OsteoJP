@@ -36,6 +36,7 @@ import {
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
+import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
 import {
@@ -803,17 +804,9 @@ export function AppointmentDrawer({
     // outside the allowConflict gate on the server, so the override that clears
     // a double-booking or an absence cannot reach it (owner: "not
     // blockable-around").
-    else if (r.error === "clinic_closed") {
-      const c = r.clinicClosure;
-      setError(
-        c
-          ? `${s["appointment.clinicClosedTitle"]} ${s["appointment.clinicClosedBody"]
-              .replace("{clinica}", c.locationName)
-              .replace("{de}", c.from)
-              .replace("{ate}", c.to)}`
-          : s["appointment.clinicClosedTitle"],
-      );
-    }
+    // The sentence itself lives in clinic-closed-message.ts, shared with the
+    // Marcar novamente drawer so the two doors onto one diary say one thing.
+    else if (r.error === "clinic_closed") setError(clinicClosedMessage(r.clinicClosure));
     // STAFF-02. The form now offers only assigned locations, so reaching this is
     // either a stale tab or a request that did not come from the form - and in
     // both cases the honest message names the location, not a permission.

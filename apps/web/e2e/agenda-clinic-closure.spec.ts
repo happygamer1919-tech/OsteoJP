@@ -32,8 +32,22 @@
  * agenda-blocked-time.spec.ts uses for its block.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 
-import { LOCATION, LOCATION_B, TENANT_A, futureDate, RUN_DAY_BASE } from "./fixtures";
+// The app's own Lisbon conversion, for the same reason marcar-novamente.spec.ts
+// imports it: the form submits lisbonDateTimeToUtc(date, time), and a
+// hard-coded offset is right for half the year.
+import { lisbonDateTimeToUtc } from "@/lib/scheduling/time";
+import {
+  LOCATION,
+  LOCATION_B,
+  PATIENTS,
+  SERVICE,
+  TENANT_A,
+  futureDate,
+  RUN_DAY_BASE,
+} from "./fixtures";
+import { dateField, fillDate, fillTime } from "./helpers";
 import { serviceClient } from "./helpers/confirm-code";
 
 /** A weekday nothing else books, so the band is the only thing under test. */
@@ -150,4 +164,119 @@ test("0085: the band belongs to the clinic, not to the agenda", async ({ page })
   await page.goto(`/agenda?view=day&date=${DAY}`);
   await expect(page).not.toHaveURL(/location=/);
   await expect(page.getByTestId("agenda-closure-band")).toHaveCount(0);
+});
+
+/* ======================================================================== */
+/* MARCAR NOVAMENTE PAYS THE CLOSURE TOO                                     */
+/* ======================================================================== */
+/* Found while reconciling the clinic-hours record (the MIG-0085 card): a new */
+/* booking and a reschedule were refused inside the closed hour, and          */
+/* `cloneAppointment` - the write behind Marcar novamente on the agenda drawer */
+/* and on the patient's appointment list - was not. So "not blockable-around" */
+/* was untrue for anybody who booked by copying a finished visit.             */
+/*                                                                           */
+/* ASSERTED ON THE SCREEN AND ON THE ROW. The sentence has to name the CLINIC */
+/* and the hour, and say there is no therapist absence to remove; a refusal  */
+/* that fell through to the generic "could not schedule" would send reception */
+/* looking for a block. And the row count at that minute must not move: an    */
+/* error that arrived AFTER the insert would satisfy every screen assertion.  */
+/*                                                                           */
+/* COUNTED AS A DELTA, NOT AN ABSOLUTE, because a lane database accumulates   */
+/* (seed-e2e upserts and never deletes), and a row a previous run left at     */
+/* 13:30 must not make this one fail or pass for the wrong reason.            */
+/*                                                                           */
+/* DAY 46, PRIVATE TO THIS TEST. Retries move 100 days out.                   */
+
+async function e2eTherapistId(db: ReturnType<typeof serviceClient>): Promise<string> {
+  const { data, error } = await db
+    .from("users")
+    .select("id")
+    .eq("tenant_id", TENANT_A)
+    .eq("email", "e2e-therapist@osteojp.test")
+    .limit(1);
+  if (error) throw new Error(`users lookup failed: ${error.message}`);
+  const id = data?.[0]?.id as string | undefined;
+  if (!id) throw new Error("Seeded therapist missing. Run: node apps/web/e2e/seed/seed-e2e.mjs");
+  return id;
+}
+
+/** Appointments for the fixture patient at the CLOSED clinic starting at `at`. */
+async function rowsAt(db: ReturnType<typeof serviceClient>, at: Date): Promise<number> {
+  const { count, error } = await db
+    .from("appointments")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", TENANT_A)
+    .eq("patient_id", PATIENTS.maria.id)
+    .eq("location_id", LOCATION_B.id)
+    .eq("starts_at", at.toISOString());
+  if (error) throw new Error(`appointment count failed: ${error.message}`);
+  return count ?? 0;
+}
+
+test("0085: Marcar novamente into the closed hour is refused, and the refusal names the clinic", async ({
+  page,
+}, testInfo) => {
+  const db = serviceClient();
+
+  // A COMPLETED visit in the past AT THE CLOSED CLINIC. A clone inherits the
+  // source's location, so this is what puts the copy at LOCATION_B.
+  const sourceId = randomUUID();
+  const srcStart = new Date(Date.now() - 5 * 86_400_000);
+  srcStart.setUTCHours(9, 0, 0, 0);
+  const src = await db.from("appointments").insert({
+    id: sourceId,
+    tenant_id: TENANT_A,
+    patient_id: PATIENTS.maria.id,
+    practitioner_id: await e2eTherapistId(db),
+    location_id: LOCATION_B.id,
+    service_id: SERVICE.id,
+    starts_at: srcStart.toISOString(),
+    ends_at: new Date(srcStart.getTime() + 55 * 60_000).toISOString(),
+    status: "completed",
+    confirmation_state: "confirmed",
+  });
+  if (src.error) throw new Error(`source appointment insert failed: ${src.error.message}`);
+
+  const day = futureDate(RUN_DAY_BASE + 46 + testInfo.retry * 100);
+  const closedAt = lisbonDateTimeToUtc(day, "13:30");
+  const openAt = lisbonDateTimeToUtc(day, "10:00");
+  const closedBefore = await rowsAt(db, closedAt);
+  const openBefore = await rowsAt(db, openAt);
+
+  await page.goto(`/patients/${PATIENTS.maria.id}?tab=consultas`);
+  const row = page.locator(`[data-appointment-id="${sourceId}"]`);
+  await expect(row).toHaveCount(1, { timeout: 15_000 });
+  await row.getByRole("button", { name: "Marcar novamente" }).click();
+
+  const drawer = page.getByRole("dialog").filter({ hasText: "Marcar novamente" });
+  await expect(drawer).toBeVisible();
+  await fillDate(dateField(drawer), day);
+  await fillTime(drawer, "13:30");
+  await drawer.getByRole("button", { name: "Marcar", exact: true }).click();
+
+  // THE SCREEN. The clinic by name, the hour, and the sentence that stops
+  // reception looking for a block that does not exist.
+  const refusal = drawer.getByRole("alert");
+  await expect(
+    refusal,
+    "Marcar novamente booked into the clinic's closed hour - the clone path skips the closure",
+  ).toContainText(/encerrada/i);
+  await expect(refusal).toContainText(LOCATION_B.name);
+  await expect(refusal).toContainText("13:00");
+  await expect(refusal).toContainText("14:00");
+  await expect(refusal).toContainText("Não é uma ausência do terapeuta");
+  // No override. The closure sits outside the allowConflict gate on the
+  // server; offering "Marcar mesmo assim" here would be a button that cannot
+  // succeed.
+  await expect(drawer.getByRole("button", { name: /mesmo assim/i })).toHaveCount(0);
+
+  // THE ROW. Nothing was written at 13:30.
+  expect(await rowsAt(db, closedAt)).toBe(closedBefore);
+
+  // NEGATIVE ARM, same drawer: 10:00 at the same clinic books. Without it, a
+  // drawer that refused every slot would pass everything above.
+  await fillTime(drawer, "10:00");
+  await drawer.getByRole("button", { name: "Marcar", exact: true }).click();
+  await expect(page.getByText("Nova marcação criada.")).toBeVisible();
+  expect(await rowsAt(db, openAt)).toBe(openBefore + 1);
 });
