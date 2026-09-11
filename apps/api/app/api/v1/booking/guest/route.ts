@@ -6,13 +6,15 @@ import {
   compareCalendarDates,
   encodeGuestPreferredWindow,
   getDbAdmin,
-  guestBookingRequests,
+  guestIntakeSchemaPresent,
   isGuestPreferredPeriod,
   lisbonToday,
   parseCalendarDate,
 } from "@osteojp/db";
 
 import { hashPhone } from "@/lib/auth/otp";
+import { parseGuestIntake, type GuestIntake } from "@/lib/guest-intake/validate";
+import { writeGuestBooking } from "@/lib/guest-intake/write";
 import { isGuestSellable } from "@/lib/booking/sellable";
 import { isSmsCapablePT } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
@@ -38,9 +40,21 @@ import {
  * the database and never set by this route, so a future edit cannot make this
  * path auto-confirm by passing a field.
  *
- * NOTHING CLINICAL IS TOUCHED. The insert goes to guest_booking_requests and
- * nowhere else: no patient row, no appointment, no notification. Reception
- * converts on confirm, with a human already looking.
+ * NO PATIENT, NO APPOINTMENT, NO NOTIFICATION. The insert goes to
+ * guest_booking_requests and, when the body carries one, to its clinical intake
+ * row (INTAKE-01, migration 0087) in the SAME transaction, and nowhere else.
+ * Reception converts on confirm, with a human already looking.
+ *
+ * THE INTAKE IS ARTICLE 9 HEALTH DATA and this route holds it to three rules:
+ * it is never logged (the failure log below carries a SQLSTATE and nothing
+ * else), never echoed (every refusal is the same `invalid_input`), and never
+ * written to `patients.contraindication_*`. `scripts/guest-intake-article9-guard.test.mjs`
+ * guards the first two in source.
+ *
+ * INERT UNTIL 0087 IS APPLIED. A body carrying `intake` is refused while the
+ * table is absent (the portal only sends one when the catalog said
+ * `intakeEnabled`). A body WITHOUT `intake` is accepted either way, so a stale
+ * portal cannot break booking.
  *
  * IT ANSWERS 202 WHETHER OR NOT THE PHONE MATCHES A PATIENT, and that is the
  * whole no-oracle property. The duplicate flag is computed for RECEPTION and
@@ -119,7 +133,26 @@ type GuestBody = {
   preferredDate?: unknown;
   /** "manha" | "tarde". */
   preferredPeriod?: unknown;
+  /** INTAKE-01. Optional; see `lib/guest-intake/validate.ts` for the shape. */
+  intake?: unknown;
 };
+
+/**
+ * The SQLSTATE of a failed write, and nothing else from the error.
+ *
+ * NOT THE MESSAGE, NOT THE DETAIL. Drizzle's query error carries the statement
+ * and its PARAMETERS in its message, and a Postgres CHECK violation carries the
+ * failing row in its detail: on this route either one is a visitor's name, phone
+ * and health answers written to the server log. A five-character code is enough
+ * for an operator to find the class of failure, and it cannot hold a value.
+ */
+function sqlStateOf(e: unknown): string {
+  const code = (x: unknown): unknown =>
+    typeof x === "object" && x !== null && "code" in x ? (x as { code: unknown }).code : undefined;
+  const cause = typeof e === "object" && e !== null && "cause" in e ? (e as { cause: unknown }).cause : undefined;
+  const found = code(e) ?? code(cause);
+  return typeof found === "string" && /^[0-9A-Z]{5}$/.test(found) ? found : "unknown";
+}
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
 
@@ -205,6 +238,20 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
+  // INTAKE-01. VALIDATED HERE, WITH THE OTHER PURE CHECKS, so a malformed
+  // intake spends no per-phone budget and no tenant-wide one. Absent and null
+  // both mean "no intake": a booking without one is accepted whatever the
+  // schema, so a stale portal cannot break booking. A refusal is the same
+  // `invalid_input` as every other one and names no field and no value.
+  let intake: GuestIntake | null = null;
+  if (body?.intake !== undefined && body?.intake !== null) {
+    const parsed = parseGuestIntake(body.intake, today);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+    }
+    intake = parsed.intake;
+  }
+
   // PER PHONE, keyed by HASH so no number is a rate-limit key in the clear.
   // After normalisation, so "912345678" and "+351912345678" cannot be spent as
   // two budgets against one handset.
@@ -251,6 +298,18 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
+  // INTAKE-01: INERT UNTIL 0087 IS APPLIED. An intake with no table to hold it
+  // is refused rather than dropped: accepting the booking and discarding the
+  // answers would tell the visitor their health questionnaire arrived when it
+  // did not. The portal only sends one when the catalog reported
+  // `intakeEnabled`, so this refuses a hand-rolled or out-of-step client.
+  // AFTER the sellability gate and BEFORE the tenant-wide caps, for the same
+  // ordering reason as that gate: it can cost a database round trip.
+  const db = getDbAdmin();
+  if (intake && !(await guestIntakeSchemaPresent(db))) {
+    return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+
   // THE TENANT-WIDE BACKSTOP, CHECKED LAST, for the reason the OTP route
   // records: every gate above can refuse a request that would never have
   // written anything, and if the global counter were spent by malformed input
@@ -268,27 +327,40 @@ export async function POST(req: Request): Promise<Response> {
   // has no anon policy in either direction, so this is the only write path, and
   // it is guarded by everything above rather than by a WITH CHECK expression
   // that has to survive future edits.
-  const db = getDbAdmin();
-  await db.insert(guestBookingRequests).values({
-    tenantId,
-    fullName: fullName.trim(),
-    phone,
-    serviceId,
-    locationId,
-    // NULL, ALWAYS, AND NOT READ FROM THE BODY. Option A does not expose the
-    // therapist roster to an unauthenticated caller, so there is no public way
-    // to learn a practitioner id and no legitimate caller who has one. Reception
-    // sets it when they convert the request, with a person deciding.
-    practitionerId: null,
-    // The PERIOD's boundaries, not a slot. See the header, and
-    // @osteojp/db `guest-preferred-window` for what the pair means.
-    requestedStartsAt: start,
-    requestedEndsAt: end,
-    sourceIpHash: hashClientIp(req),
-    // `status` is NOT set. The database defaults it to 'pending' and a CHECK
-    // pins the vocabulary, so R-GUEST-1 cannot be broken by adding a field to
-    // this object.
-  });
+  //
+  // ONE TRANSACTION for the request and its intake (INTAKE-01): both rows commit
+  // or neither does. A failure answers the same 503 the API uses elsewhere, and
+  // the log line carries the SQLSTATE only - see `sqlStateOf` for why the
+  // error's message and detail must never reach it.
+  try {
+    await writeGuestBooking(
+      db,
+      {
+        tenantId,
+        fullName: fullName.trim(),
+        phone,
+        serviceId,
+        locationId,
+        // NULL, ALWAYS, AND NOT READ FROM THE BODY. Option A does not expose the
+        // therapist roster to an unauthenticated caller, so there is no public way
+        // to learn a practitioner id and no legitimate caller who has one. Reception
+        // sets it when they convert the request, with a person deciding.
+        practitionerId: null,
+        // The PERIOD's boundaries, not a slot. See the header, and
+        // @osteojp/db `guest-preferred-window` for what the pair means.
+        requestedStartsAt: start,
+        requestedEndsAt: end,
+        sourceIpHash: hashClientIp(req),
+        // `status` is NOT set. The database defaults it to 'pending' and a CHECK
+        // pins the vocabulary, so R-GUEST-1 cannot be broken by adding a field to
+        // this object.
+      },
+      intake,
+    );
+  } catch (e) {
+    console.error(`[guest-booking] write failed (sqlstate ${sqlStateOf(e)}); nothing was stored.`);
+    return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
+  }
 
   // 202 ACCEPTED, ALWAYS, and identical for a phone that matches a patient and
   // one that does not. The possible-existing-patient flag is computed for

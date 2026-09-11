@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
-import { getDbAdmin, locations, serviceLocationPrices, services } from "@osteojp/db";
+import {
+  getDbAdmin,
+  guestIntakeSchemaPresent,
+  locations,
+  serviceLocationPrices,
+  services,
+} from "@osteojp/db";
 
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
@@ -62,6 +68,17 @@ export type PublicBookingCatalog = {
      */
     locationIds: string[];
   }[];
+  /**
+   * INTAKE-01. Whether the portal may render the fifth step, the clinical
+   * intake: true iff migration 0087's table exists on this database. While it
+   * is false the portal shows today's four steps exactly, and the guest route
+   * refuses a body carrying an intake.
+   *
+   * A FACT ABOUT THE DEPLOYMENT, NOT ABOUT ANY PERSON OR TENANT. It is the same
+   * answer for every tenant id, real or invented, so it adds nothing to what
+   * this unauthenticated route can be used to learn.
+   */
+  intakeEnabled: boolean;
 };
 
 export async function GET(req: Request): Promise<Response> {
@@ -80,7 +97,7 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const db = getDbAdmin();
-  const [locationRows, serviceRows] = await Promise.all([
+  const [locationRows, serviceRows, intakeEnabled] = await Promise.all([
     db
       .select({ id: locations.id, name: locations.name })
       .from(locations)
@@ -108,6 +125,9 @@ export async function GET(req: Request): Promise<Response> {
         ),
       )
       .orderBy(asc(services.name)),
+    // Cached per process by the detector: one information_schema read per
+    // minute while 0087 is absent, none at all once it is present.
+    guestIntakeSchemaPresent(db),
   ]);
 
   const activeLocationIds = locationRows.map((l) => l.id);
@@ -200,6 +220,7 @@ export async function GET(req: Request): Promise<Response> {
       // an unpickable row: every clinic choice would filter it away, so the
       // visitor would see a name they can never reach.
       .filter((s) => s.locationIds.length > 0),
+    intakeEnabled,
   };
 
   return NextResponse.json(payload);
