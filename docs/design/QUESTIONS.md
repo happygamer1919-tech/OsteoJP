@@ -1164,9 +1164,9 @@ implies, is `docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
    is one band, one clinic, every day, permanent; A carries exactly that, adds no
    RLS surface and no join on any read path, and can be superseded by B later
    without a read-path rewrite.
-   **RULED 2026-09-10: Option A**, on dispatch E2. The board's cards disagree on
-   who ruled it (strategy on SCHED-16 and SCHED-24, the owner on MIG-0085).
-   Built as 0085 in #1264, held.
+   **RULED 2026-09-10: Option A**, on dispatch E2, by strategy under the owner's
+   delegation (attribution ruled 2026-09-11; question 2 below is the owner's own
+   answer). Built as 0085 in #1264, held.
 2. ~~**Does the CB closure apply on Saturday?**~~ **ANSWERED — owner,
    2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
    including Saturday."* A single `midday_closed_*` pair applies to every open
