@@ -52,9 +52,9 @@
 //
 // EXIT 0 OK, 1 FAILED, 2 BAD_INVOCATION (the repo's tooling convention).
 
-import { existsSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const PROD_REF = "dfotoodqvmjhbdcxyaxf";
 /** EVENT_APPOINTMENT_SCHEDULED, apps/web/lib/reminders/inngest/client.ts. */
@@ -163,6 +163,15 @@ async function main() {
         );
       }
     }
+    // THE MARKER MUST BE WRITABLE BEFORE ANYTHING IS SENT. It is what stops a second
+    // run from cancelling the first run's reminders, so a run that sends and then
+    // cannot record that it sent leaves the next run unguarded. Found in rehearsal:
+    // with a HOME that did not exist, two consecutive runs both sent every event.
+    try {
+      accessSync(dirname(marker), constants.W_OK);
+    } catch {
+      fail(`cannot write the marker in ${dirname(marker)}. Refusing to send without it.`);
+    }
   }
 
   // Lazy on purpose: the refusals above are testable without the driver.
@@ -226,6 +235,14 @@ async function main() {
 
   const origin = args.sink ?? "https://inn.gs";
   const marker = join(homedir(), ".osteojp-obs05-backfill.json");
+  // CLAIM FIRST. The marker is written before the first event, so a run that dies
+  // half-way still leaves the guard in place for the next one, and a marker that
+  // cannot be written stops the run while nothing has been sent.
+  try {
+    writeFileSync(marker, JSON.stringify({ at: new Date().toISOString(), tenantId, state: "sending", sent: [] }, null, 2) + "\n");
+  } catch {
+    fail(`could not write the marker ${marker}; nothing was sent.`);
+  }
   console.log(`sending  ${rows.length} x ${EVENT_NAME} to ${origin} (the event key is not printed)`);
   const sent = [];
   let stopped = null;
@@ -254,7 +271,13 @@ async function main() {
     sent.push(r.id);
     console.log(`  sent ${r.id}  starts ${startsAt}`);
   }
-  writeFileSync(marker, JSON.stringify({ at: new Date().toISOString(), tenantId, sent }, null, 2) + "\n");
+  try {
+    writeFileSync(marker, JSON.stringify({ at: new Date().toISOString(), tenantId, state: "done", sent }, null, 2) + "\n");
+  } catch {
+    // The claim written before the first send is still there, so the guard holds;
+    // only the list of what was sent is missing, and the SENT line below carries it.
+    console.error(`WARNING: could not update ${marker}; the claim written before sending still guards a re-run.`);
+  }
   console.log(`SENT: ${sent.length} of ${rows.length}  (recorded in ${marker})`);
   if (stopped) fail(`stopped at ${stopped}. Do NOT re-run inside ${MARKER_HOURS}h; report the SENT line.`);
 }

@@ -95,6 +95,28 @@ test("a second --confirm inside 25 hours is refused by the marker", () => {
   assert.match(r.stderr, /a previous --confirm ran/);
 });
 
+test("--confirm refuses BEFORE connecting when the marker cannot be written", () => {
+  // Found in rehearsal: with a HOME that did not exist, the script sent every event,
+  // crashed writing the marker, and the next run sent them all again.
+  const r = spawnSync(process.execPath, [SCRIPT, ...OK_ARGS, "--confirm", "--expect", "1"], {
+    env: {
+      PATH: process.env.PATH,
+      HOME: join(tmpdir(), "obs05-no-such-dir", "nested"),
+      DATABASE_URL_DIRECT: PROD_URL,
+      INNGEST_EVENT_KEY: "k",
+    },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /cannot write the marker/);
+});
+
+test("the claim is written before the first event is sent", () => {
+  const claim = SRC.indexOf('state: "sending"');
+  const firstSend = SRC.indexOf("await fetch(");
+  assert.ok(claim > 0 && firstSend > 0 && claim < firstSend, "the marker claim no longer precedes the first send");
+});
+
 test("the connection string is never echoed", () => {
   const r = run(OK_ARGS, { DATABASE_URL_DIRECT: "not a url at all" });
   assert.equal(r.status, 2);
