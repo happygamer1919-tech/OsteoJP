@@ -58,6 +58,8 @@ vi.mock('@/lib/guest/commitment-copy', () => ({
   }),
 }))
 
+import { CURRENT_INTAKE_CONSENT_VERSION } from '@osteojp/i18n'
+
 import { guestBookingAction } from './actions'
 import {
   GUEST_FORM_HORIZON_DAYS,
@@ -312,5 +314,172 @@ describe('LANG-01 — the commitment gate is per locale', () => {
     H.approved = ['pt']
     const out = await run(complete())
     expect(out.received).toBe(true)
+  })
+})
+
+/**
+ * ==========================================================================
+ * INTAKE-01: THE FIFTH STEP, ON THE SERVER.
+ * ==========================================================================
+ * The flow carries `intake=1` when the catalog said 0087's table exists. Every
+ * arm asserts whether the API was called, like every arm above: an intake that
+ * was refused on screen but sent anyway would be Article 9 data written behind
+ * an error message.
+ */
+const intakeAnswers = (over: Record<string, string> = {}) => ({
+  ...complete({ step: '5', intake: '1' }),
+  dateOfBirth: '1985-03-02',
+  reason: 'Dor lombar há três semanas',
+  healthConditions: 'Hipertensão',
+  medication: '',
+  fallsAccidents: '',
+  surgeries: 'Apendicectomia',
+  pacemaker: 'nao',
+  pregnancy: 'nao',
+  ...over,
+})
+
+describe('INTAKE-01: the fifth step', () => {
+  it('on the five-step flow, a complete step 4 advances to step 5, not to the submit', async () => {
+    const { consent: _c, ...details } = complete({ step: '4', intent: 'next', intake: '1' })
+    const out = await run(details)
+    expect(out.step).toBe(5)
+    expect(out.error).toBeNull()
+    expect(out.intake).toBe(true)
+    expect(H.submits).toHaveLength(0)
+  })
+
+  it('on the FOUR-step flow nothing changes: step 4 is still the last step', async () => {
+    const { consent: _c, ...details } = complete({ step: '4', intent: 'next' })
+    const out = await run(details)
+    expect(out.step).toBe(4)
+    expect(out.intake).toBe(false)
+  })
+
+  it('a complete five-step submit sends ONE intake object, in the wire shape, with the current label', async () => {
+    const out = await run(intakeAnswers())
+    expect(out.received).toBe(true)
+    expect(out.step).toBe(5)
+    expect(H.submits).toHaveLength(1)
+    const sent = H.submits[0]!
+    expect(Object.keys(sent).sort()).toEqual([
+      'fullName',
+      'intake',
+      'locationId',
+      'phone',
+      'preferredDate',
+      'preferredPeriod',
+      'serviceId',
+    ])
+    expect(sent.intake).toEqual({
+      dateOfBirth: '1985-03-02',
+      reason: 'Dor lombar há três semanas',
+      healthConditions: 'Hipertensão',
+      // BLANK OPTIONAL ANSWERS TRAVEL AS null, never as "".
+      medication: null,
+      fallsAccidents: null,
+      surgeries: 'Apendicectomia',
+      pacemaker: 'nao',
+      pregnancy: 'nao',
+      consentVersion: CURRENT_INTAKE_CONSENT_VERSION,
+    })
+  })
+
+  it('the body carries NO consent tick and NO consent time: the API sets both', async () => {
+    await run(intakeAnswers())
+    const intake = H.submits[0]!.intake as Record<string, unknown>
+    expect(intake).not.toHaveProperty('consentAt')
+    expect(intake).not.toHaveProperty('consentTicked')
+  })
+
+  it('the four-step flow NEVER sends an intake, even if intake fields are posted', async () => {
+    // Every intake answer posted, but NO `intake=1` flag: the four-step flow.
+    const posted: Record<string, string> = { ...intakeAnswers(), step: '4' }
+    delete posted.intake
+    await run(posted)
+    expect(H.submits).toHaveLength(1)
+    expect(H.submits[0]).not.toHaveProperty('intake')
+    expect(JSON.stringify(H.submits[0])).not.toContain('Dor lombar')
+  })
+
+  it.each([
+    ['no pacemaker answer', { pacemaker: '' }],
+    ['no pregnancy answer', { pregnancy: '' }],
+    ['the third state, which this form cannot produce', { pacemaker: 'nao_perguntado' }],
+    ['an answer outside the vocabulary', { pregnancy: 'talvez' }],
+    ['no date of birth', { dateOfBirth: '' }],
+    ['a date of birth that does not exist', { dateOfBirth: '1985-02-30' }],
+    ['a date of birth before 1900', { dateOfBirth: '1899-12-31' }],
+    ['a date of birth in the future', { dateOfBirth: dayOffset(1) }],
+    ['no reason', { reason: '   ' }],
+    ['a reason over 2000 characters', { reason: 'x'.repeat(2001) }],
+    ['an optional answer over 2000 characters', { surgeries: 'x'.repeat(2001) }],
+  ])('%s returns to step 5 with missing_field and SENDS NOTHING', async (_label, over) => {
+    const out = await run(intakeAnswers(over))
+    expect(out.step).toBe(5)
+    expect(out.error).toBe('missing_field')
+    expect(out.received).toBe(false)
+    expect(H.submits).toHaveLength(0)
+  })
+
+  it('THE CONTROL: 2000 characters exactly, and today as the date of birth, are accepted', async () => {
+    // Without this, every refusal above passes against a validator that refuses
+    // everything. The bounds are 0087's, inclusive.
+    const out = await run(
+      intakeAnswers({ reason: 'x'.repeat(2000), surgeries: 'y'.repeat(2000), dateOfBirth: dayOffset(0) }),
+    )
+    expect(out.received).toBe(true)
+    expect(H.submits).toHaveLength(1)
+  })
+
+  it('"sim" is carried as "sim" (the answer is not normalised to a boolean)', async () => {
+    await run(intakeAnswers({ pacemaker: 'sim', pregnancy: 'sim' }))
+    const intake = H.submits[0]!.intake as Record<string, unknown>
+    expect(intake.pacemaker).toBe('sim')
+    expect(intake.pregnancy).toBe('sim')
+  })
+
+  it('an unticked RGPD box on the five-step flow returns to STEP 5, where the box is', async () => {
+    const { consent: _c, ...unticked } = intakeAnswers()
+    const out = await run(unticked)
+    expect(out.error).toBe('consent_required')
+    expect(out.step).toBe(5)
+    expect(H.submits).toHaveLength(0)
+  })
+
+  it.each(['invalid', 'rate_limited', 'unavailable'] as const)(
+    'an API %s on the five-step flow is reported on step 5',
+    async (outcome) => {
+      H.outcome = outcome
+      const out = await run(intakeAnswers())
+      expect(out.step).toBe(5)
+      expect(out.error).toBe(outcome)
+      expect(out.received).toBe(false)
+    },
+  )
+
+  it('going back from step 5 keeps every answer, and the flow stays five steps', async () => {
+    const out = await run(intakeAnswers({ intent: 'back' }))
+    expect(out.step).toBe(4)
+    expect(out.intake).toBe(true)
+    expect(out.values.reason).toBe('Dor lombar há três semanas')
+    expect(out.values.pacemaker).toBe('nao')
+    expect(H.submits).toHaveLength(0)
+  })
+
+  it('a forged step 5 cannot skip the earlier questions', async () => {
+    const out = await run({ step: '5', intent: 'submit', intake: '1', pacemaker: 'nao', pregnancy: 'nao' })
+    expect(out.step).toBe(1)
+    expect(out.error).toBe('missing_field')
+    expect(H.submits).toHaveLength(0)
+  })
+
+  it('an unratified locale refuses the five-step submit BEFORE anything is sent', async () => {
+    H.locale = 'en'
+    H.approved = ['pt']
+    const out = await run(intakeAnswers())
+    expect(out.error).toBe('unavailable')
+    expect(out.step).toBe(5)
+    expect(H.submits).toHaveLength(0)
   })
 })

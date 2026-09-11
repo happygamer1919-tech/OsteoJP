@@ -14,7 +14,7 @@ import {
 } from '@/lib/guest/commitment-copy'
 
 import { GuestBookingForm } from './GuestBookingForm'
-import { GUEST_FORM_HORIZON_DAYS } from './state'
+import { GUEST_FORM_HORIZON_DAYS, GUEST_INTAKE_EARLIEST_BIRTH } from './state'
 
 /**
  * GUEST-04 — /marcacao, the public booking request form.
@@ -173,6 +173,15 @@ export default async function GuestBookingPage({
         })}
         rgpdLabel={staff['clinical.consent.rgpd.label']}
         rgpdBody={staff['clinical.consent.rgpd.body']}
+        /**
+         * INTAKE-01. The fifth step renders ONLY when the catalog says 0087's
+         * table exists; `=== true` so an API that predates the flag reads as
+         * off. The date-of-birth bounds are 0087's floor and today IN LISBON,
+         * computed here for the same reason as the preferred-date bounds.
+         */
+        intakeEnabled={catalog.intakeEnabled === true}
+        dobMin={GUEST_INTAKE_EARLIEST_BIRTH}
+        dobMax={formatCalendarDate(today)}
         /**
          * null while the commitment copy is unwritten OR UNRATIFIED for this
          * language. The submit is refused before either matters (actions.ts),

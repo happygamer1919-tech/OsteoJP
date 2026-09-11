@@ -16,8 +16,11 @@
 //   apps/portal/app/marcacao/          the five-step form, its action and state
 //   apps/portal/lib/guest/             the portal's server-to-server client
 //   apps/api/app/api/v1/booking/guest/ the write route and the catalog
-//   apps/api/lib/guest-intake/         validation and the transactional write
+//   apps/api/lib/guest-intake/         validation, the transactional write, and the
+//                                      patient's own read (patient-read.ts)
 //   packages/db/src/guest-intake.ts    the detector and the INSERT
+//   apps/api/app/api/v1/patient/intake/ the patient's read-only route (fork B)
+//   apps/portal/app/portal/forms/intake/ the patient's read-only page (fork B)
 //
 // THE VOCABULARY is read from the wire contract itself (GUEST_INTAKE_WIRE_KEYS in
 // apps/api/lib/guest-intake/validate.ts), in camelCase and snake_case, so a field
@@ -47,6 +50,10 @@ const SCOPE_DIRS = [
   "apps/portal/lib/guest",
   "apps/api/app/api/v1/booking/guest",
   "apps/api/lib/guest-intake",
+  // INTAKE-01 fork B: the patient's read-only view. It returns the answers
+  // themselves, so the same four rules hold on its way out.
+  "apps/api/app/api/v1/patient/intake",
+  "apps/portal/app/portal/forms/intake",
 ];
 const SCOPE_FILES = ["packages/db/src/guest-intake.ts"];
 
@@ -62,14 +69,19 @@ const MUST_COVER = [
   "apps/portal/app/marcacao/GuestBookingForm.tsx",
   "apps/portal/app/marcacao/state.ts",
   "apps/portal/lib/guest/api.ts",
+  "apps/api/lib/guest-intake/patient-read.ts",
+  "apps/api/app/api/v1/patient/intake/route.ts",
+  "apps/portal/app/portal/forms/intake/page.tsx",
 ];
 
 /** Names that hold MANY answers at once in this flow. */
 const CONTAINERS = ["intake", "values", "body", "formData", "form", "input", "parsed", "row"];
 
 /** The API's closed error vocabulary on these routes. A new member is a
- *  deliberate edit here, never an interpolated string. */
-const API_ERROR_CODES = new Set(["invalid_input", "service_unavailable"]);
+ *  deliberate edit here, never an interpolated string. `unauthorized` is the
+ *  patient read's 401 (apps/api/app/api/v1/patient/intake), the same literal
+ *  every patient route in this API answers with. */
+const API_ERROR_CODES = new Set(["invalid_input", "service_unavailable", "unauthorized"]);
 
 /** Calls that sanitise an error down to something that cannot hold a value. */
 const SANITISERS = ["sqlStateOf"];
@@ -535,4 +547,70 @@ test("CONTROL: a self-closing JSX tag after an attribute brace is not read as a 
   const found = fires(src, false);
   assert.ok(found.length > 0, "the log after the tag was not seen");
   assert.ok(!found.some((v) => v.startsWith("the lexer")), found.join("; "));
+});
+
+// ---------------------------------------------------------------------------
+// Negative controls on the REAL files of the patient's read-only view (fork B).
+// A scope entry proves nothing unless the guard, run over that exact file, can
+// go red: each control injects an intake field into the file's real source and
+// requires a violation, after first requiring the untouched file to be clean.
+// ---------------------------------------------------------------------------
+
+/** Replace `anchor` once, and refuse if it is not there: an injection that
+ *  matched nothing would leave the control testing the clean file. */
+function inject(src, anchor, replacement) {
+  assert.equal(src.split(anchor).length - 1, 1, `the anchor is not in the file exactly once: ${anchor}`);
+  const out = src.replace(anchor, replacement);
+  assert.notEqual(out, src);
+  return out;
+}
+
+const ROUTE = "apps/api/app/api/v1/patient/intake/route.ts";
+const PAGE = "apps/portal/app/portal/forms/intake/page.tsx";
+
+test("CONTROL: the patient intake route is clean as written, and the guard fires on an intake field injected into its log", () => {
+  const fields = wireFields();
+  const src = readFileSync(join(ROOT, ROUTE), "utf8");
+  assert.deepEqual(violations(src, { fields, server: true }), [], "the route as written");
+  const logged = inject(
+    src,
+    'console.error("[patient-intake] read failed; nothing was returned.");',
+    'console.error(`[patient-intake] read failed for ${result.intakes[0].reason}`);',
+  );
+  const found = violations(logged, { fields, server: true });
+  assert.ok(
+    found.some((v) => v.startsWith("log call console.error(...) references")),
+    `the guard did NOT fire on an intake field logged by the route: ${found.join("; ")}`,
+  );
+});
+
+test("CONTROL: the guard fires on an intake answer injected into the route's error body", () => {
+  const fields = wireFields();
+  const src = readFileSync(join(ROOT, ROUTE), "utf8");
+  const echoed = inject(
+    src,
+    '{ error: "service_unavailable" }',
+    "{ error: `refused ${pacemaker}` }",
+  );
+  const found = violations(echoed, { fields, server: true });
+  assert.ok(
+    found.some((v) => v.startsWith("an API error value is not a closed-vocabulary literal")),
+    `the guard did NOT fire on an answer echoed in the route's error: ${found.join("; ")}`,
+  );
+});
+
+test("CONTROL: the patient intake page is clean as written, and the guard fires on an answer injected into a URL", () => {
+  const fields = wireFields();
+  const src = readFileSync(join(ROOT, PAGE), "utf8");
+  assert.deepEqual(violations(src, { fields, server: false }), [], "the page as written");
+  const leaked = inject(
+    src,
+    "if (!enabled) notFound()",
+    "if (!enabled) redirect(`/portal/forms?reason=${intakes[0].reason}`)",
+  );
+  const found = violations(leaked, { fields, server: false });
+  assert.ok(
+    found.some((v) => v.includes("names `reason`") || v.includes("builds its URL from")),
+    `the guard did NOT fire on an answer put in a URL by the page: ${found.join("; ")}`,
+  );
 });

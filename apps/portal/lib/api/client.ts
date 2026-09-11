@@ -245,6 +245,44 @@ export async function getDocumentDownloadUrl(id: string): Promise<string> {
   return data.url
 }
 
+// ─── Guest clinical intake (INTAKE-01), read only ─────────────────────────────
+
+/** Three states, as stored. `nao_perguntado` is rendered in words, never as a
+ *  blank and never as "Nao". */
+export type IntakeAnswer = 'sim' | 'nao' | 'nao_perguntado'
+
+export type PatientGuestIntake = {
+  id: string
+  submittedAt: string
+  /** YYYY-MM-DD. */
+  dateOfBirth: string
+  reason: string
+  healthConditions: string | null
+  medication: string | null
+  fallsAccidents: string | null
+  surgeries: string | null
+  pacemaker: IntakeAnswer
+  pregnancy: IntakeAnswer
+  consentAt: string
+}
+
+/** `enabled: false` means migration 0087 is not applied: show nothing for it. */
+export type OwnGuestIntakes = { enabled: boolean; intakes: PatientGuestIntake[] }
+
+/**
+ * The patient's OWN intake answers, from guest requests reception converted to
+ * them. Article 9 health data: GET with no query string, never cached, and a
+ * failure throws a status-only message (the page's error.tsx renders it).
+ */
+export async function getMyGuestIntakes(): Promise<OwnGuestIntakes> {
+  const res = await fetch(`${apiBase()}/api/v1/patient/intake`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`intake fetch failed: ${res.status}`)
+  return res.json() as Promise<OwnGuestIntakes>
+}
+
 // ─── Forms (intake submissions) ────────────────────────────────────────────────
 
 export async function getMyForms(): Promise<PatientFormSubmission[]> {
