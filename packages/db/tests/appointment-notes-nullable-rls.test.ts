@@ -59,7 +59,7 @@ describe.skipIf(!live)("appointment_notes nullable (0042) — patient-level note
     expect(rows.length).toBe(0);
   });
 
-  it("PL-13 (0050): an in-tenant UPDATE is ALLOWED and stamps edited_at; DELETE still denied (no policy)", async () => {
+  it("PL-13 (0050): an in-tenant UPDATE is ALLOWED and stamps edited_at; 0084: an in-tenant DELETE is ALLOWED too", async () => {
     const upd = await asRole(sql, "authenticated", claimsFor(A.tenant, "therapist"), (tx) =>
       tx<{ id: string }[]>`update appointment_notes
          set body = 'nota editada', edited_at = now(), last_edited_by = null
@@ -69,7 +69,10 @@ describe.skipIf(!live)("appointment_notes nullable (0042) — patient-level note
     const del = await asRole(sql, "authenticated", claimsFor(A.tenant, "therapist"), (tx) =>
       tx<{ id: string }[]>`delete from appointment_notes where id = ${A.note} returning id`,
     );
-    expect(del.length).toBe(0); // no DELETE policy — history is preserved
+    // 0084 added appointment_notes_tenant_delete, reversing 0050's "editable, not
+    // deletable" for the 2026-09-10 clinic batch. The cross-tenant arm, which is
+    // what still refuses, is asserted in note-delete-policies.db.test.ts.
+    expect(del.length).toBe(1);
   });
 
   it("PL-13 (0050): a CROSS-TENANT UPDATE affects 0 rows (isolation holds on the new UPDATE policy)", async () => {
