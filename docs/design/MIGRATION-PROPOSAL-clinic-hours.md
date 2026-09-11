@@ -145,9 +145,10 @@ somebody asks for "closed Saturday afternoons too".
 
 ## 4. Questions for strategy: all four answered 2026-09-10
 
-1. **Option A or Option B.** **RULED 2026-09-10: Option A.** The board records
-   it as a strategy ruling (#1265). The Saturday answer directly below is what
-   removed the case for B.
+1. **Option A or Option B.** **RULED 2026-09-10: Option A**, on dispatch E2.
+   The board's cards disagree on who ruled it (strategy on SCHED-16 and
+   SCHED-24, the owner on MIG-0085); this record does not pick one. The Saturday
+   answer directly below is what removed the case for B.
 2. ~~**Does the closure apply on Saturday?**~~ **ANSWERED by the owner,
    2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
    including Saturday."*
