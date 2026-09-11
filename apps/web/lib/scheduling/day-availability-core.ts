@@ -34,6 +34,9 @@ export type BookedInterval = IsoInterval & {
 export type BlockInterval = IsoInterval & {
   blockId: string;
   reason: string;
+  /** SCHED-19. Null for every block written before the note was required, and
+   *  for every block written through a path that does not collect one. */
+  note: string | null;
 };
 
 /**
@@ -68,6 +71,49 @@ export type DayAvailability = {
   sources: WorkingSource[];
 };
 
+/**
+ * SCHED-20 - WHY A DAY OFFERS NO SLOTS. Three answers, and the panel had one.
+ *
+ * ==========================================================================
+ * THE DEFECT THIS EXISTS FOR, AND IT NAMED THE WRONG CAUSE FOR FIVE DAYS
+ * ==========================================================================
+ * The availability panel printed "Sem horarios livres neste dia" whenever
+ * `free` came back empty, WHATEVER emptied it. On 23 September it printed that
+ * under "Horario: 09:00-20:00" and "Ocupado: 14:00-15:00" - eleven hours of
+ * working time, one hour booked, and no free time. That is arithmetic nobody
+ * can make sense of, and it sent the reader looking at the appointment list for
+ * an hour that was never the problem: a five-day BLOCK had taken the day, and
+ * the panel never mentioned blocks at all.
+ *
+ * SO THE REASON IS COMPUTED, NOT INFERRED FROM EMPTINESS. `free` being empty is
+ * the QUESTION, not the answer, and the three answers are genuinely different
+ * actions: set some hours, remove a block, or move an appointment.
+ *
+ * "blocked" WINS OVER "booked" WHEN BOTH ARE TRUE, deliberately. A day can be
+ * fully booked AND blocked; the block is the one that has to go first, because
+ * moving every appointment off a blocked day frees nothing.
+ */
+export type NoFreeReason = "no_working_hours" | "blocked" | "booked";
+
+/**
+ * The reason a day has no bookable time, or null when it has some.
+ *
+ * PURE, and it reads the SAME `DayAvailability` the panel renders, so the
+ * sentence on screen and the intervals above it can never describe different
+ * days.
+ */
+export function noFreeReason(day: DayAvailability): NoFreeReason | null {
+  if (day.working.length === 0) return "no_working_hours";
+  if (day.free.length > 0) return null;
+  // A block only explains the emptiness if it actually overlaps working time.
+  // A block at 21:00 on a day that ends at 19:00 has taken nothing, and naming
+  // it would be the same class of wrong answer in the other direction.
+  const overlapsWork = day.blocks.some((b) =>
+    day.working.some((w) => b.start < w.end && w.start < b.end),
+  );
+  return overlapsWork ? "blocked" : "booked";
+}
+
 export type BookedRow = {
   id: string;
   startsAt: Date;
@@ -80,6 +126,7 @@ export type BlockRow = {
   startsAt: Date;
   endsAt: Date;
   reason: string;
+  note: string | null;
 };
 
 const iso = (i: TimeInterval): IsoInterval => ({
@@ -152,6 +199,7 @@ export function buildDay(
     blocks: blocksForDay.map((r) => ({
       blockId: r.id,
       reason: r.reason,
+      note: r.note,
       start: r.startsAt.toISOString(),
       end: r.endsAt.toISOString(),
     })),

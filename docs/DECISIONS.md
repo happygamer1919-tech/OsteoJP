@@ -3864,3 +3864,235 @@ apply. `0083` is written and held.
 **INTAKE-01's hold is stamped**, including the reason for not writing code: every
 apparently independent part encodes the shape of a table nobody has created.
 Section 11's acceptance table is the agreed artefact.
+
+### Third board-artifact collision, 2026-09-09, and the recommended fix now has a case
+
+Detected by the artifact watch rather than by anybody noticing: a republish
+notification arrived, this session re-read the artifact and diffed its board-data
+island against `origin/main` at `7029255a`.
+
+**The owner's board was showing the state before #1233 on five objects:** WF-19
+and WF-20 absent, `LE-cancel-reason-is-not-retained` with no `deferred` marker,
+and PACK-06 and INTAKE-01 with their pre-#1233 notes. **Two owner rulings taken
+that afternoon were not on the owner's only status surface**, and a card he had
+ruled out of the queue was showing as live work.
+
+**It would have been hard to see by eye**, which is the part that makes this
+occurrence different from the two on 2026-09-06. Those moved cards and statuses.
+This one left the card SET identical — 352 rendered on both sides, AGENDA-02
+present in both — and changed only the insides of five objects. No lane count and
+no lane colour would have moved.
+
+**The recovery was cheaper than the documented one, and that is worth knowing.**
+The set difference `published − main` was **empty**: the republish added no card
+and no ruling that main did not already have. So the fix was a plain re-render
+from `origin/main` and a republish, with nothing committed and nothing recovered
+out of the island. The 2026-09-06 procedure — read the other board out of the
+island, merge additively, publish the union — is the EXPENSIVE case. **Check the
+set difference first**; a lane that assumes the additive recovery is always
+required will do unnecessary work and risk reintroducing state.
+
+**Fix (A) would have refused this publish, and that is now measured rather than
+argued.** (A) is *the renderer reads the live island's `as_of` and refuses when
+its own is older*. The incoming publish carried `as_of 16:51:35Z` over a live
+board at `17:10:00Z` — eighteen minutes older — and published anyway.
+
+**Detection is not prevention.** The watch is a real mechanism and it is better
+than the attention that caught the first two, but it only works while some
+session holds a live watch, and the window it leaves open is however long that
+session takes to read the notification. The card stays open, priority raised to
+high on the third occurrence. Building it is still not authorised.
+
+### Fourth republish, twenty minutes later, was NOT a collision — and it corrects the fix I had just recommended
+
+Same notification, opposite diagnosis. BLUE had published main **plus** nine of
+their own unmerged card updates (`board/2026-09-09-blue-b`, #1235). Nothing on
+main was missing, every ruling was present, and all nine differing cards had
+notes that had GROWN with `last_checkpoint` moved FORWARD. That is the artifact
+LEADING a PR, which is the documented behaviour both lanes use.
+
+**Nothing was done to the artifact, and that is the finding.** Republishing from
+main would have reverted nine of their card updates and caused collision five.
+**The notification is not the signal; the diff is.** A lane that restores on
+every notification becomes the thing the card is about.
+
+### Fix (A) is wrong, and this repository already knew why
+
+Thirty minutes ago I committed, on that card, that fix (A) — *compare `as_of`,
+refuse when yours is older* — would have caught the third occurrence. True, and
+half the story:
+
+| | incoming `as_of` | live `as_of` | reality | (A) says |
+|---|---|---|---|---|
+| third | 16:51:35Z | 17:10:00Z | genuinely behind | refuse — **right** |
+| fourth | 17:09:02Z | 17:10:00Z | ahead in content, 58s behind by the field | refuse — **wrong** |
+
+`as_of` is a hand-set field. It cannot order two boards that both descend from
+the same main, so it cannot separate *behind* from *leading with unmerged work*.
+
+**And `board-app.js:728` already records this lesson from PL-28**: the portal's
+own staleness check used to compare `as_of` DATES and could not see a same-day
+republish — *"Every publish on 2026-07-31 carried as_of 2026-07-31 … the owner
+kept looking at"* a stale board for two days. It was replaced by a content
+fingerprint, which `render-board.mjs` already computes. **Fix (A) as written
+proposes the mechanism PL-28 removed.**
+
+### Candidate (C), which is what this lane would build
+
+The renderer fetches `origin/main`'s committed JSON — the declared source of
+truth — and refuses to render if any card id or ruling id on main is absent from
+the board about to be published, or is at an older `last_checkpoint`. Local, no
+network read of the artifact, fails closed. It permits exactly what BLUE did
+today and refuses exactly what happened at the third occurrence.
+
+**The set difference is the test**, and it is what both diagnoses actually used:
+`published − incoming` non-empty means data loss; `incoming − main` non-empty is
+a legitimate lead. Recommendation updated from (A) to (C). Still not built;
+building it is still not authorised.
+
+---
+
+## 2026-09-10 — PURPLE, client batch (P1, P2)
+
+**AGENDA-02: the freshness stamp merged INTO the refresh button.** `Atualizado às
+HH:MM` (159px) and `Atualizar` (111px) were two toolbar controls describing one
+fact, and together they were 270px of a 672px bar at 1024. They are one button
+now: the timestamp is the visible label, the accessible name stays `Atualizar`
+(the verb, not the reading), and pressing it does what the chip was only
+describing. The freshness card's own note said "a screen that says 14:32 does not
+[read as live], and the button next to it is the prompt that was missing" - this
+makes them the same control.
+
+**When a label has to give, a SHORTER WORD beats an ICON.** `Bloquear horário`
+becomes `Bloquear` below 2xl rather than becoming a Ban glyph with a tooltip. The
+client's condition was "all controls remain visible and labelled"; an icon with
+an `aria-label` is labelled for a screen reader and unlabelled for the person
+reading the screen. `aria-label` pins the accessible name to the FULL label at
+every width, so the control is never announced under two different names
+depending on the viewport - which is what happens if you rely on the visible span
+alone, because accessible-name computation skips a `display:none` child.
+
+**A row that cannot wrap does not fit, it OVERLAPS.** The first draft used
+`lg:flex-nowrap` to guarantee `Nova marcação` never dropped to its own line. At
+1024 that produced `Bloquear` painted on top of the date field with `Hoje`
+underneath it, and the e2e went green, because `toBeVisible()` is true of an
+overlapped control. The guarantee is structural instead: the three actions are
+one `flex-none` group ordered last, so a wrap moves them TOGETHER and the primary
+action is never orphaned. The spec now compares every control's box against every
+other's, pairwise. Recorded because the class of mistake - a geometric claim
+tested by a visibility assertion - is the one this project keeps paying for.
+
+**AGENDA-02 does not deliver one row at 1024, and that is arithmetic.** Nine
+labelled controls measure ~850px after every reduction that keeps a label; the
+bar is 672px at 1024. The dispatch asked for "at most one row plus the header"
+AND "all controls remain visible and labelled" - at 1024 those are incompatible.
+Delivered: 232px -> 162px at 1024, 222px -> 114px at 1280. Owner decision is
+Q-AGENDA-02-1. **Ruled the same day: (A), leave it.** Two control rows at 1024
+is the accepted shape and Q-AGENDA-02-1 is closed.
+
+**SCHED-16/24: the working day is three unrelated definitions and none of them is
+a clinic.** `DAY_START_HOUR`/`DAY_END_HOUR` (apps/web/lib/scheduling/time.ts:18)
+bound the agenda grid and nothing else; Nova marcação bounds itself by
+`availability_templates`; the portal bounds itself by the same templates
+expanded in SQL. Opening hours are not stored anywhere, so there is no fact for
+the three to agree on. The migration is NOT written: the dispatch's own rule is
+"STOP and send the migration proposal to strategy first". Proposal is
+`docs/design/MIGRATION-PROPOSAL-clinic-hours.md`, questions are Q-SCHED-16-1.
+**Ruled the same day: Option A**, with the closure applying every day CB is open,
+Saturday included. Built as migration 0085 in #1264, authored and held until the
+owner applies it. See the clinic-hours entry below.
+
+**A CB midday closure must not be `time_off`, and not only for tidiness.**
+`time_off` is per THERAPIST with no location column, so a clinic closure would be
+one row per therapist per day forever, each individually deletable by reception,
+each rendering as a personal absence. It is also OVERRIDABLE: `time_off` is a
+blocking conflict that staff may push past with "Guardar mesmo assim"
+(conflict-core.ts:13). The dispatch says the closure is "not blockable-around",
+so it must be in neither the advisory set nor the `allowConflict` override.
+
+---
+
+## 2026-09-10 — PURPLE, client batch (P3, P4)
+
+**A block's NOTE is the only thing on a `time_off` row that records intent, and
+three screens were dropping it.** The September outage's note read "Atende em LV"
+and no surface displayed it: the agenda's block query did not select it
+(`blockSelection`), the Disponibilidade panel never mentioned blocks at all, and
+the inspector listed them in an appendix. SCHED-18/19/20/21 are one omission seen
+from four angles, so the note is now selected in the SHARED reader rather than in
+any one caller's query - the standing restriction on this table is "reuse the
+existing time_off read; do not derive a second, divergent block source", and a
+note selected for one reader and not the other is exactly that divergence.
+
+**A required field can be a rule about WRITES without being a NOT NULL column.**
+SCHED-18 makes the note mandatory at the action layer and leaves
+`time_off.note` nullable. A NOT NULL column is a claim about every row ever
+written; 19 of JP's 35 blocks are already in the past with no note, and migrating
+them means inventing a reason for each. Required at the door, optional in the
+archive.
+
+**"No free time" is a QUESTION, not an answer.** SCHED-20: `free` being empty has
+three causes that send the reader to three different actions - set some hours,
+remove a block, move an appointment - and the panel had one sentence for all
+three, naming booking. `noFreeReason` computes it from the same DayAvailability
+the panel renders. `blocked` wins over `booked` when both are true, because
+moving every appointment off a blocked day frees nothing.
+
+**"Expired" is decided by a block's END, not its START.** SCHED-22. A block
+running from yesterday to next Friday is the most urgent row in the list;
+sorting or collapsing by start buries it, which is how the September block stayed
+invisible WHILE IT WAS IN FORCE. The partition is a pure function taking `today`
+rather than an `ORDER BY`, because a clock reading in the database leaves the
+order and the collapse in different layers.
+
+**TWO BUTTONS IN ONE JSX SLOT SHARE A DOM NODE, AND A CLICK'S DEFAULT ACTION RUNS
+AFTER ITS HANDLERS.** SCHED-23's first draft wrote the block TWICE - two
+identical five-day absences 102ms apart, found by querying the lane database, not
+by looking at the screen, where the dialog closed and looked correct. The
+sequence: click the primary button (`type="button"`, harmless), the handler opens
+the warning, React flushes synchronously inside a discrete event and rewrites
+that very node to `type="submit"`, and the browser then performs the click's
+default action on what has become a submit button. Fixed with distinct `key`s
+(so React replaces the node) AND `preventDefault` (so the default action dies
+regardless). Recorded because "a warning panel appeared" passed throughout.
+
+**A layout defect can be entirely correct classes in the wrong container.**
+UX-02: Seguradora and Numero measured 94px each because the whole repeatable
+block was a child of the form's `grid grid-cols-2` and lived in HALF a column.
+Every class on the inputs was right. `col-span-2` is most of the fix, and the
+test asserts a WIDTH IN PIXELS rather than a class name - a class assertion
+passes the moment somebody writes the right class in the wrong place, which is
+this defect exactly.
+
+---
+
+## 2026-09-10 - PURPLE, clinic hours: the rulings, and what #1264 carries
+
+**Option A, and the Saturday answer is the reason.** Option B (a
+`location_closures` table with a nullable `weekday`) existed in the proposal only
+to express a closure that varies by weekday. The owner answered that CB's
+13:00-14:00 closure applies every day CB is open, including Saturday. That is
+exactly the case one column pair on `locations` carries, so B's table, RLS
+policy, isolation test and three read-path joins would have bought nothing that
+was asked for. B stays the right build the first time somebody asks for a closure
+that differs by day.
+
+**The other two answers, as stamped.** Appointments already inside the band
+render and are reported, and nothing is cancelled (Q-W5-4). "Todas as
+localizações" shows the union of both clinics' hours and draws no band, because a
+band there is false for LV.
+
+**A ruled proposal is annotated, not rewritten.** Sections 1 to 3 of
+`MIGRATION-PROPOSAL-clinic-hours.md` are the derivation the rulings were taken
+against, so they stay as filed. Its status line, section 4 and a new section 5
+record the outcome and where #1264 departed from the proposal. Same practice as
+`SPEC-forced-booking-outside-hours.md` (#1219).
+
+**#1264 is held, and the record says held.** Nothing about clinic hours is
+applied or merged as of this entry. SCHED-16 and SCHED-24 ship when #1264 merges,
+which waits on the owner applying 0085 after 0083 and 0084.
+
+**Found while reconciling: `cloneAppointment` has no closure check on #1264.**
+Create and reschedule call `checkClinicClosure`; clone calls `checkAvailability`
+only. Recorded in section 5 of the proposal. The fix belongs in #1264 before
+apply.

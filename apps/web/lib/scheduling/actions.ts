@@ -33,6 +33,7 @@ import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { checkAvailability } from "./availability-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
+import { isLegalEstadoCorrection } from "./estado-correction";
 import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
 import {
   emitCancelledNotification,
@@ -886,7 +887,45 @@ export async function batchScheduleAppointments(
   }
   try {
     const result = await batchSchedule(actor, input);
-    revalidateAppointmentSurfaces();
+    /**
+     * OBS-05 — THE BATCH PATH NOW EMITS, AND IT IS THE FOURTH CREATION PATH TO
+     * DO SO RATHER THAN THE FIRST TO NEED IT.
+     *
+     * `batchSchedule` commits real appointment rows and this action returned
+     * without ever reaching Stream E, so no `appointment/scheduled` event was
+     * emitted, no reminder run was ever created, and the patient got neither the
+     * 48h email nor the 24h SMS. Nothing failed anywhere: there was no run to
+     * fail. It is the same omission shape as the portal booking path
+     * (W14-portal-bookings-emit-no-reminder-events), reached through a third
+     * door, which is why this batch also lands the gate that makes a fourth one
+     * impossible to add silently - see creation-paths-emit-reminders.test.ts.
+     *
+     * IT MOVES INSIDE `afterCommit`, WITH THE REVALIDATE, AND THAT IS PART OF
+     * THE FIX RATHER THAN TIDYING. The rows are already durable by this line.
+     * `enqueueRemindersAfterCommit` THROWS ReminderBurstError above its
+     * occurrence ceiling, and the revalidate can throw too; either one landing
+     * in the catch below would return `fail(...)` for appointments that exist.
+     * At the desk that reads as "it did not save", and the natural next action
+     * is to book the whole batch again. `afterCommit` is the helper the other
+     * five mutations already use for exactly this, and the batch path was the
+     * one that never got it.
+     *
+     * ONLY WHAT WAS ACTUALLY BOOKED. `result.booked` excludes every slot that
+     * failed on availability, so a partial-success batch enqueues reminders for
+     * its successes and nothing for its refusals.
+     */
+    await afterCommit("batchSchedule", async () => {
+      revalidateAppointmentSurfaces();
+      await enqueueRemindersAfterCommit(
+        actor.tenantId,
+        result.booked.map((b) => ({
+          appointmentId: b.appointmentId,
+          // `BatchBooked.startsAt` is an ISO string (it crosses the server-action
+          // boundary to the client); the enqueue takes the instant.
+          startsAt: new Date(b.startsAt),
+        })),
+      );
+    });
     return { ok: true, data: result };
   } catch (e) {
     /**
@@ -1144,6 +1183,8 @@ export async function updateAppointment(
   const ip = await clientIp();
   // Captured inside the tx, emitted AFTER commit (network out of the tx).
   let statusTargets: StatusNotificationTarget[] = [];
+  // W14-02: the portal pedidos this patch ACCEPTS. Same capture-then-emit shape.
+  let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1153,6 +1194,31 @@ export async function updateAppointment(
           return { ok: false, error: "not_found" };
         }
         const ids = affected.map((a) => a.id);
+
+        // The is_unconfirmed_pedido answer for `ids`, read at most once. Both the
+        // conflict check (INC-08 (b)) and the acceptance emit (W14-02) need it,
+        // and both need it BEFORE the UPDATE, while the rows are still
+        // `scheduled` - afterwards the function answers false for every row.
+        let probedPedidoIds: Set<string> | null = null;
+        const unconfirmedPedidoIds = async (): Promise<Set<string>> => {
+          if (probedPedidoIds) return probedPedidoIds;
+          const pedidoRows = (await tx.execute(sql`
+            SELECT a.id::text AS id
+              FROM public.appointments a
+             WHERE a.id IN (${sql.join(
+               ids.map((i) => sql`${i}::uuid`),
+               sql`, `,
+             )})
+               AND public.is_unconfirmed_pedido(a.id)
+          `)) as unknown;
+          probedPedidoIds = new Set(
+            (Array.isArray(pedidoRows)
+              ? pedidoRows
+              : ((pedidoRows as { rows?: unknown[] }).rows ?? [])
+            ).map((r) => (r as { id: string }).id),
+          );
+          return probedPedidoIds;
+        };
 
         // ==============================================================
         // INC-08 (a) — THE ESTADO MAP IS ENFORCED HERE, ON THE SERVER.
@@ -1298,21 +1364,7 @@ export async function updateAppointment(
           // appointment of every day, and it can never enter the blocking set.
           const anyScheduled = affected.some((a) => a.status === "scheduled");
           if (willBlock && anyScheduled) {
-            const pedidoRows = (await tx.execute(sql`
-              SELECT a.id::text AS id
-                FROM public.appointments a
-               WHERE a.id IN (${sql.join(
-                 ids.map((i) => sql`${i}::uuid`),
-                 sql`, `,
-               )})
-                 AND public.is_unconfirmed_pedido(a.id)
-            `)) as unknown;
-            const pedidoIds = new Set(
-              (Array.isArray(pedidoRows)
-                ? pedidoRows
-                : ((pedidoRows as { rows?: unknown[] }).rows ?? [])
-              ).map((r) => (r as { id: string }).id),
-            );
+            const pedidoIds = await unconfirmedPedidoIds();
 
             // Rows already blocking are skipped: this patch changes nothing
             // about their occupancy, and re-checking a row against itself
@@ -1360,6 +1412,29 @@ export async function updateAppointment(
               };
             }
           }
+        }
+
+        // ==============================================================
+        // W14-02 — CONFIRMING AN UNACCEPTED PORTAL PEDIDO HERE IS ACCEPTING
+        // IT, AND IT EMITS EXACTLY AS confirmAppointmentRequest DOES. Owner
+        // ruling 2026-09-10 (M2 Option A).
+        //
+        // Reception can accept a pedido from Pedidos (confirmAppointmentRequest,
+        // which has emitted since #1085) OR by moving its Estado to Confirmada in
+        // the drawer, which is this function - and this function emitted nothing
+        // for a confirmation. The pedido became a confirmed appointment with no
+        // run behind it: no confirmation, no 48h email, no 24h SMS.
+        //
+        // ONLY UNACCEPTED PEDIDOS. A staff booking already has its run, and a
+        // second appointment/scheduled at an unchanged start would cancel it
+        // (see lib/scheduling/pedido-acceptance.ts). Read BEFORE the UPDATE and
+        // regardless of allowConflict: "Guardar mesmo assim" overrides a
+        // conflict warning, not the acceptance.
+        // ==============================================================
+        let acceptedPedidos: SeriesMember[] = [];
+        if (patch.status === "confirmed" && affected.some((a) => a.status === "scheduled")) {
+          const pedidoIds = await unconfirmedPedidoIds();
+          acceptedPedidos = affected.filter((a) => a.status === "scheduled" && pedidoIds.has(a.id));
         }
 
         // Only run the column update when there is a column to change; a
@@ -1448,6 +1523,10 @@ export async function updateAppointment(
           statusTargets = affected.map((a) => ({ appointmentId: a.id, endsAt: a.endsAt }));
         }
 
+        reminderTargets = acceptedPedidos.map((a) => ({
+          appointmentId: a.id,
+          startsAt: a.startsAt,
+        }));
         return { ok: true, data: { id } };
       },
     );
@@ -1459,6 +1538,10 @@ export async function updateAppointment(
           statusTargets.length > 0
         ) {
           await enqueueStatusNotificationsAfterCommit(actor.tenantId, statusTargets, patch.status);
+        }
+        // W14-02: the accepted pedidos' confirmation and reminders, post-commit.
+        if (reminderTargets.length > 0) {
+          await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
         }
       });
     }
@@ -1904,6 +1987,91 @@ export async function confirmAppointmentRequest(
     return result;
   } catch (e) {
     return fail("confirmRequest", e);
+  }
+}
+
+/**
+ * CORRIGIR ESTADO — move one FINAL state to another. Owner ruling 2026-09-10.
+ *
+ * ==========================================================================
+ * WHY THIS IS NOT `updateAppointment` WITH A LOOSER MAP
+ * ==========================================================================
+ * `updateAppointment` enforces `isLegalEstadoTransition` (INC-08 (a)), and that
+ * map sends all three final states to `[]`. Widening it would have put
+ * "cancelada -> concluida" inside the same Estado <Select> that records real
+ * lifecycle events, and the audit trail could no longer separate an operator
+ * CORRECTING a mistake from one RECORDING an outcome. The ruling is explicit
+ * that a correction never goes through the normal control, so this is a second
+ * action with a second audit action, and `LEGAL` is untouched.
+ *
+ * ==========================================================================
+ * RECEPTION AND UP, EXPRESSED AS A CAPABILITY RATHER THAN A ROLE LIST
+ * ==========================================================================
+ * `appointments:delete` is held by owner, admin and reception and NOT by
+ * therapist - checked in packages/auth/permissions.ts, not assumed. It is the
+ * same gate `cancelAppointment` uses, and it is the existing name for exactly
+ * the population the ruling calls "reception and up". A hand-written role list
+ * here would rot the next time a role is added; this cannot.
+ *
+ * ONE ROW, NEVER A SERIES. A correction is about one record being wrong. There
+ * is no `scope` parameter on purpose: applying a typo fix to a whole recurrence
+ * would assert that every occurrence was mistyped the same way.
+ */
+export async function correctAppointmentEstadoAction(
+  id: string,
+  to: AppointmentStatusValue,
+): Promise<ActionResult<{ id: string }>> {
+  const auth = await authorize("appointments:delete");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+
+  if (!id || !to) return { ok: false, error: "validation" };
+
+  const ip = await clientIp();
+  try {
+    const result = await runScoped<ActionResult<{ id: string }>>(actor, async (tx) => {
+      const [row] = await tx
+        .select({ id: appointments.id, status: appointments.status })
+        .from(appointments)
+        .where(eq(appointments.id, id))
+        .limit(1); // RLS scopes the tenant
+      if (!row) return { ok: false, error: "not_found" };
+
+      // The SAME predicate the UI offers from, re-asserted here. The affordance
+      // is never the enforcement: a hand-made request naming a non-final state,
+      // or naming the state the row is already in, is refused on the server.
+      if (!isLegalEstadoCorrection(row.status, to)) {
+        return { ok: false, error: "illegal_transition" };
+      }
+
+      await tx.update(appointments).set({ status: to }).where(eq(appointments.id, id));
+
+      await writeAppointmentAudit(tx, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: "appointment.estado_correction",
+        appointmentId: id,
+        metadata: {
+          // STRUCTURED FROM AND TO, NO FREE TEXT. Both are enum values - one
+          // word, no whitespace - so they pass assertPiiFreeAuditMetadata by
+          // being identifiers rather than by being short. No reason field: the
+          // ruling did not ask for one, and a prose "why" in an append-only log
+          // is the defect SEC-audit-metadata-free-text-in-scheduling removed.
+          fromStatus: row.status,
+          toStatus: to,
+          // So a reader filtering this log can tell a correction from a
+          // lifecycle event without knowing that the ACTION name encodes it.
+          correction: true,
+        },
+        ip,
+      });
+      return { ok: true, data: { id } };
+    });
+    if (result.ok) revalidateAppointmentSurfaces();
+    return result;
+  } catch (e) {
+    console.error("scheduling: estado correction failed", e instanceof Error ? e.name : "unknown");
+    return { ok: false, error: "error" };
   }
 }
 

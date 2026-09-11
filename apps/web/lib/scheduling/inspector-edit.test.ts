@@ -134,7 +134,8 @@ describe("draftFromDay", () => {
     date: "2026-09-10",
     weekday: 4,
     windows,
-    exceptions: [],
+    blocks: [],
+    fullyBlocked: false,
   });
 
   it("opens on the day's FIRST window, which is what the row shows", () => {

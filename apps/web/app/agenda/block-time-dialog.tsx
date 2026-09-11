@@ -56,6 +56,9 @@ export function BlockTimeDialog({
   const [date, setDate] = useState(slot?.date ?? "");
   const [startTime, setStartTime] = useState(slot?.time ?? "");
   const [endTime, setEndTime] = useState("");
+  // SCHED-18: required. See the submit guard and block-actions.ts for why the
+  // rule lives at the action layer rather than in a NOT NULL column.
+  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   // PL-27: the agenda blocks a slot; this repeats that same slot. Off by
   // default, so the one-off block - still the common case - is unchanged.
@@ -75,9 +78,19 @@ export function BlockTimeDialog({
       setError(s["agenda.block.incomplete"]);
       return;
     }
+    // SCHED-18 - REFUSED HERE TOO, AND THIS IS NOT THE ENFORCEMENT.
+    // The server refuses an empty note whatever this dialog does
+    // (block-actions.ts). This exists so the person gets the sentence that
+    // names the field instead of a round trip ending in a generic banner, and
+    // it is trimmed to the same rule the server trims by, so the two cannot
+    // disagree about what "empty" means.
+    if (note.trim() === "") {
+      setError(s["agenda.block.noteRequired"]);
+      return;
+    }
     setError(null);
     startTransition(async () => {
-      const base = { userId, date, startTime, endTime };
+      const base = { userId, date, startTime, endTime, note: note.trim() };
       const r = repeat
         ? await createAgendaBlockBatchAction({
             ...base,
@@ -95,7 +108,16 @@ export function BlockTimeDialog({
         onDone();
         return;
       }
-      setError(r.error === "forbidden" ? s["errors.forbidden"] : s["agenda.block.error"]);
+      setError(
+        r.error === "forbidden"
+          ? s["errors.forbidden"]
+          : // The server has its own word for this one, so the banner can name
+            // the field even when the refusal did not come from the guard above
+            // (a stale tab, a client with JS off, a caller that is not this form).
+            r.error === "note_required"
+            ? s["agenda.block.noteRequired"]
+            : s["agenda.block.error"],
+      );
     });
   }
 
@@ -152,6 +174,22 @@ export function BlockTimeDialog({
             </div>
           </label>
         </div>
+        {/* SCHED-18 - WHY THIS BLOCK EXISTS, in the person's own words.
+            Placed under the window it describes and ABOVE the repeat toggle, so
+            it is read before the block is multiplied: a repeated block writes
+            this same sentence onto every row it generates. */}
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">{s["agenda.block.note"]}</span>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={s["agenda.block.notePlaceholder"]}
+            aria-label={s["agenda.block.note"]}
+            data-testid="block-note"
+            className={field}
+          />
+        </label>
         {/* PL-27: repeat the block. Same vocabulary as Agendar lote and the
             Bloquear horario modal, driven by the same generator, so all three
             recurrence forms behave identically. Ticking no weekday repeats the

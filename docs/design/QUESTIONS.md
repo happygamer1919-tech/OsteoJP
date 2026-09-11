@@ -1091,3 +1091,209 @@ intake label is the intake document's identity and is independent of
 `TERMS_VERSION`: the terms switch card can move on JP's timetable without
 touching the intake, and vice versa. Nothing here waits on
 `LE-terms-version-switch-on-jp-text`.
+
+## Q-AGENDA-02-1 — the 1024 control row cannot be one line with every label on it
+
+**Opened** 2026-09-10 (PURPLE, client batch P1). **Blocks nothing**; AGENDA-02
+shipped the best result that satisfies every other condition.
+
+The dispatch asks for two things that do not both hold at 1024: "at most one row
+plus the header" and "all controls remain visible and labelled".
+
+Measured on the seeded lane, not estimated:
+
+| | 1280 | 1024 |
+|---|---|---|
+| Bar width | 928px | 672px |
+| Nine labelled controls, side by side | ~850px | ~850px |
+| Result | one control row | two control rows |
+| Toolbar height, before | 222px | 232px |
+| Toolbar height, now | **114px** | **162px** |
+| Height handed to the grid | 108px | 70px |
+
+The ~850px is already after every reduction that does not remove a label:
+the freshness stamp merged into the refresh button, the range chip's duplicate
+date dropped below xl, `Bloquear horário` shortened to `Bloquear`, and the date
+field narrowed from w-44 to w-40. The remaining 180px at 1024 can only come from
+taking a control's visible text away.
+
+**Options, for the owner:**
+
+- **(A) Leave it.** 1024 keeps a header line plus two control rows at 162px, down
+  from 232px. Everything stays labelled. *Recommended:* 1280 is the machine
+  reception actually uses (the sticky-header card names it as "the small laptop
+  reception uses"), and it already gets the one-row shape.
+- **(B) Icon-only `Bloquear` below xl**, keeping `aria-label` and a tooltip. Gets
+  1024 to ~118px. Costs one visible label on a destructive-ish control.
+- **(C) Drop the `Hoje` button below xl** and rely on the date picker's own
+  calendar. Gets 1024 to ~135px. Costs a control that reception presses often.
+
+**Recommendation: (A).** Reopen if reception reports the 1024 layout as a
+problem in use rather than in the abstract.
+
+### ANSWERED — owner, 2026-09-10: (A). Leave it.
+
+> "Q-AGENDA-02-1 is ruled: leave it, two rows at 1024, close the card."
+
+Two control rows at 1024 is the shipped and accepted shape. No control loses its
+visible label, and no follow-up is owed. AGENDA-02 (#1242) needs no further work
+on this point; this question is CLOSED and is not to be reopened by a later
+sweep reading the tension in the dispatch as an open gap.
+
+---
+
+## Q-SCHED-16-1 — clinic working hours and the CB midday closure need a migration
+
+**Opened** 2026-09-10 (PURPLE, client batch P2). ~~**BLOCKS SCHED-16 and
+SCHED-24.** Nothing was written; the dispatch's own rule is "Any schema change:
+STOP and send the migration proposal to strategy first."~~
+
+**CLOSED 2026-09-10. All four decisions are answered below and this question
+blocks nothing.** Option A was ruled. The build is migration 0085 in PR #1264,
+authored and HELD until the owner applies it, and not before 0083 and 0084. What
+#1264 builds, and where it departs from the proposal, is section 5 of
+`docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
+
+The full proposal, with SQL, the two options and the read-path changes each
+implies, is `docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
+
+**The four decisions needed:**
+
+1. **Option A (two nullable `time` pairs on `locations`) or Option B (a new
+   `location_closures` table).** Recommendation: **A**. The requirement as stated
+   is one band, one clinic, every day, permanent; A carries exactly that, adds no
+   RLS surface and no join on any read path, and can be superseded by B later
+   without a read-path rewrite.
+   **RULED 2026-09-10: Option A**, on dispatch E2. The board's cards disagree on
+   who ruled it (strategy on SCHED-16 and SCHED-24, the owner on MIG-0085).
+   Built as 0085 in #1264, held.
+2. ~~**Does the CB closure apply on Saturday?**~~ **ANSWERED — owner,
+   2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
+   including Saturday."* A single `midday_closed_*` pair applies to every open
+   day, which is exactly what was ruled — so **this answer makes Option A
+   sufficient** and removes the one reason B was required. The remaining three
+   were answered the same day: 1, 3 and 4 here.
+3. **Appointments already inside a closure band.** Proposal, following Q-W5-4:
+   they render, they are reported, nothing is cancelled. Confirm.
+   **ANSWERED 2026-09-10: confirmed.** As authored, #1264 leaves such an
+   appointment rendering inside the band and counted; nothing is cancelled,
+   hidden or moved.
+4. **"Todas as localizações" on the agenda.** When no clinic is selected, does
+   the grid show the union of both clinics' hours (recommendation: yes, or a real
+   working hour is hidden) and does it draw the closure band at all
+   (recommendation: no, because it is only true of one clinic)?
+   **ANSWERED 2026-09-10: both recommendations taken.** The union of both
+   clinics' hours, and no band when no clinic is selected.
+
+**Migration number:** 0085 or later. 0083 is PACK-06, 0084 is reserved for
+INTAKE-01. **Taken: 0085, by #1264.**
+
+**The read half of P2 is already answered** and needs no decision: the agenda
+grid's window is `DAY_START_HOUR = 8` / `DAY_END_HOUR = 20`, two module constants
+in `apps/web/lib/scheduling/time.ts:18-19`, read by nothing else. The other two
+booking surfaces bound themselves by `availability_templates` instead. Three
+definitions of the working day, no clinic-level fact for any of them to agree on.
+
+## Q-W14-02-1 — portal bookings and reminders: emit at booking (as dispatched) or keep acceptance (BLUE, 2026-09-10)
+
+~~**OPEN. Card `W14-02-portal-booking-emit-halted`, blocked on the owner.**~~
+
+**CLOSED 2026-09-10. RULED A by the owner, and built in PR #1273.**
+
+> "M2 ruled Option A. The drawer Estado selector path and the SMS review queue path
+> emit on confirmation the same way confirmAppointmentRequest does; the creation-path
+> gate entry for the portal flips to acceptance-as-emitter and the mislabel is
+> corrected."
+
+#1273 reproduces both silent paths first (red, "got 0 times"), then makes each of them
+emit post-commit, once, only for an unaccepted pedido, read with
+`public.is_unconfirmed_pedido` before the write. It flips the gate entry to `emits`
+with `confirmAppointmentRequest` as the emitter. A third door found while fixing, the SMS
+"SIM" reply (`applyInboundReply`), got the same fix. Option B is not pursued. The one
+question this leaves is Q-W14-02-2 below.
+
+The 2026-09-10 dispatch (M2) asked for `apps/api` `store.createBooking` to emit the
+reminder event at booking time. It was **not built**, for three reasons measured or read
+from the code rather than assumed:
+
+1. **Portal bookings already get reminders, at acceptance, by the owner's 2026-08-31
+   ruling.** `confirmAppointmentRequest` (`apps/web/lib/scheduling/actions.ts`) emits
+   post-commit when reception accepts the pedido (#1085). The creation-path gate's
+   "known gap" entry, added by #1261, cites the W14 card as open, and that card shipped
+   2026-08-31. Reproduced: `apps/web/lib/reminders/acceptance-event-flow.test.ts` and
+   `apps/web/lib/scheduling/creation-paths-emit-reminders.test.ts`, 17/17.
+2. **A booking-time emit would remove the reminders the acceptance emit schedules.**
+   `send-appointment-reminder` is cancelled by any new `appointment/scheduled` for the
+   same appointment, and is idempotent for 24 h on `appointmentId:offset:channel:sendAt`.
+   A pedido accepted within a day of booking would get no reminder. This is derived from
+   `apps/web/lib/reminders/inngest/functions.ts` and Inngest's documented semantics; it
+   was not executed against Inngest.
+3. It would red #1085's own guard. `apps/api` has no inngest dependency, and the
+   osteojp-api project has no `INNGEST_EVENT_KEY`.
+
+**The real gap:** a pedido confirmed OUTSIDE "Aceitar pedido" gets no run. Both of
+these set status `confirmed` and enqueue nothing (read from source):
+- the drawer's Estado selector (`updateAppointment`);
+- the SMS review queue (`apps/web/lib/reminders/inbound-store.ts`).
+
+**Options:**
+- **A (recommended default):** keep acceptance-time emission. Make those two confirm
+  paths emit exactly as `confirmAppointmentRequest` does when they move a portal pedido
+  out of `scheduled`, and flip the gate entry to `emits` with `confirmAppointmentRequest`
+  as its emitter. No new dependency, and no double emit.
+- **B:** emit at booking, as dispatched. Only after re-emission is made safe in the
+  reminder engine, plus inngest in `apps/api` and `INNGEST_EVENT_KEY` on osteojp-api.
+
+## Q-SCHED-17-2 — NESA: where "a CB therapist cannot book NESA at LV" is enforced (BLUE, 2026-09-10)
+
+~~**OPEN. Card `SCHED-17-nesa-shared-agenda-at-cb`.**~~
+
+**CLOSED 2026-09-10. RULED app-layer refusal by the owner, and built in PR #1276.**
+
+> "NESA residual ruled: app-layer refusal. The NESA app-layer change now includes
+> refusing creation or move of a shared-resource appointment to a location outside the
+> actor's assigned locations, with an e2e test proving a CB therapist cannot create a
+> NESA appointment at LV through the staff UI. 0078 is not touched."
+
+0078 is unchanged, and the pending migration stays un-numbered and unapplied. #1276
+refuses on create, batch, reschedule and clone. It also refuses a location where the
+resource is not installed, because the ruled policy would hide such a row from every
+therapist. That condition is recorded on the card. The e2e proves both arms on a lane
+with the pending migration applied, and skips in CI, where the column does not exist.
+
+The ruled location test is in both arms of the pending NESA migration. Measured on the
+real policy, the new disjunct refuses a NESA insert at the other location (42501).
+
+But 0078's `created_by = auth.uid()` arm is also in WITH CHECK. It admits any row a
+principal stamps with its own id, at any location, and the staff create path stamps
+`created_by` = the actor. So through the app, the insert passes RLS by that arm. It was
+ADMITTED both before and after the migration.
+
+**Recommended default:** enforce it in the NESA app-layer change (spec section 3), with
+an e2e proving the refusal, and leave 0078's `created_by` arm unchanged. Narrowing that
+arm in WITH CHECK would govern every staff insert in the tenant, not only NESA.
+
+## Q-W14-02-2 - an SMS "SIM" reply accepts a portal pedido with no slot re-check (BLUE, 2026-09-10)
+
+**OPEN. Card `W14-02-portal-booking-emit-halted`. Blocks nothing: #1273 is complete
+without it.**
+
+`applyInboundReply` (`apps/web/lib/reminders/inbound-reply.ts`) confirms the patient's
+next future `scheduled` appointment inside its 24 h window when the patient replies
+"SIM". Nothing excluded an unaccepted portal pedido. #1273 made that door emit like the
+others, so a pedido confirmed this way now gets its confirmation and reminders. But the
+door still ACCEPTS the pedido without the slot re-check that "Aceitar pedido" runs. That
+predates #1273, which did not change it. This was read from source by the lane that built
+#1273, not executed against production.
+
+When it can happen: an unaccepted pedido receives no reminder and no confirmation link
+(`dispatch.ts` refuses both). So a "SIM" reaches a pedido only when the patient replies to
+a message about something else, or unprompted, while the pedido is their next
+appointment inside 24 h.
+
+**Options:**
+- **A (recommended default):** an SMS reply never accepts an unaccepted pedido. The
+  reply goes to the review queue, where reception accepts it through the door that
+  re-checks the slot. This is one exclusion in `applyInboundReply`, plus a test.
+- **B:** keep it. A patient's "SIM" counts as acceptance, and the slot is trusted as
+  booked.

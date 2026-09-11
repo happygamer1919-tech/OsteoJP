@@ -53,7 +53,7 @@ vi.mock("@/lib/notifications/centre", () => ({
 }));
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
-import { assertPiiFreeAuditMetadata, AuditMetadataError } from "./audit";
+import { assertPiiFreeAuditMetadata, AuditMetadataError } from "@/lib/audit/metadata-contract";
 import { cancelAppointment } from "./actions";
 import type { RequestContext } from "@osteojp/auth";
 import type { AppointmentStatusValue } from "./types";
@@ -145,37 +145,37 @@ describe("assertPiiFreeAuditMetadata accepts what the callers actually write", (
       { practitionerId: "9d1c2b3a-4e5f-6a7b-8c9d-0e1f2a3b4c5d", startsAt: "2026-09-01T09:00:00.000Z", endsAt: "2026-09-01T10:00:00.000Z", scope: "one", allowConflict: false },
       { hadReason: true, reasonRef: { entityType: "appointment", entityId: "appt-1" }, scope: "one", fromStatus: "confirmed", toStatus: "cancelled" },
     ];
-    for (const m of real) expect(() => assertPiiFreeAuditMetadata(m)).not.toThrow();
+    for (const m of real) expect(() => assertPiiFreeAuditMetadata(m, "test")).not.toThrow();
   });
 
   it("accepts an empty metadata object", () => {
-    expect(() => assertPiiFreeAuditMetadata({})).not.toThrow();
+    expect(() => assertPiiFreeAuditMetadata({}, "test")).not.toThrow();
   });
 });
 
 describe("assertPiiFreeAuditMetadata refuses free text", () => {
   it("refuses the exact string the old cancel path wrote", () => {
-    expect(() => assertPiiFreeAuditMetadata({ reason: CLINICAL_NOTE })).toThrow(AuditMetadataError);
+    expect(() => assertPiiFreeAuditMetadata({ reason: CLINICAL_NOTE }, "test")).toThrow(AuditMetadataError);
   });
 
   it("refuses a SHORT string that still contains a space — two words is already prose", () => {
     // The length rule alone would let "Maria Silva" through, and a patient name
     // is the PII this contract names first.
-    expect(() => assertPiiFreeAuditMetadata({ reason: "Maria Silva" })).toThrow(AuditMetadataError);
+    expect(() => assertPiiFreeAuditMetadata({ reason: "Maria Silva" }, "test")).toThrow(AuditMetadataError);
   });
 
   it("refuses a long string with no whitespace — a pasted identifier document, say", () => {
-    expect(() => assertPiiFreeAuditMetadata({ note: "x".repeat(65) })).toThrow(AuditMetadataError);
+    expect(() => assertPiiFreeAuditMetadata({ note: "x".repeat(65) }, "test")).toThrow(AuditMetadataError);
   });
 
   it("refuses prose NESTED in an object, not only at the top level", () => {
     expect(() =>
-      assertPiiFreeAuditMetadata({ reasonRef: { entityType: "appointment", why: CLINICAL_NOTE } }),
+      assertPiiFreeAuditMetadata({ reasonRef: { entityType: "appointment", why: CLINICAL_NOTE } }, "test"),
     ).toThrow(AuditMetadataError);
   });
 
   it("refuses prose inside an ARRAY — `changed` is a list and a list can carry values", () => {
-    expect(() => assertPiiFreeAuditMetadata({ changed: ["status", CLINICAL_NOTE] })).toThrow(
+    expect(() => assertPiiFreeAuditMetadata({ changed: ["status", CLINICAL_NOTE] }, "test")).toThrow(
       AuditMetadataError,
     );
   });
@@ -186,7 +186,7 @@ describe("assertPiiFreeAuditMetadata refuses free text", () => {
   it("names the key and NEVER quotes the value", () => {
     let msg = "";
     try {
-      assertPiiFreeAuditMetadata({ reason: CLINICAL_NOTE });
+      assertPiiFreeAuditMetadata({ reason: CLINICAL_NOTE }, "test");
     } catch (e) {
       msg = (e as Error).message;
     }
@@ -198,7 +198,7 @@ describe("assertPiiFreeAuditMetadata refuses free text", () => {
   it("names the PATH of a nested offender, so the caller knows which key to fix", () => {
     let msg = "";
     try {
-      assertPiiFreeAuditMetadata({ ref: { why: CLINICAL_NOTE } });
+      assertPiiFreeAuditMetadata({ ref: { why: CLINICAL_NOTE } }, "test");
     } catch (e) {
       msg = (e as Error).message;
     }
@@ -260,7 +260,7 @@ describe("the source keeps the contract", () => {
   it("the guard is invoked by the helper, not merely exported beside it", () => {
     // A guard nobody calls is the vacuous-pass shape criterion F names: it
     // proves a function exists, never that anything runs it.
-    expect(AUDIT).toMatch(/assertPiiFreeAuditMetadata\(args\.metadata\)/);
+    expect(AUDIT).toMatch(/assertPiiFreeAuditMetadata\(args\.metadata, "scheduling/);
   });
 
   it("no appointment audit metadata hands a raw `reason` through again", () => {

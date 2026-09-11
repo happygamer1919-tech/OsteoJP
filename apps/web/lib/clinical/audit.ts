@@ -1,6 +1,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import { auditLog, type DbTx } from "@osteojp/db";
+import { assertPiiFreeAuditMetadata } from "@/lib/audit/metadata-contract";
 
 export type ClinicalAuditAction =
   | "clinical_record.create"
@@ -27,7 +28,10 @@ export type ClinicalAuditAction =
  *
  * actor_user_id is non-null on every clinical mutation (it is ctx.userId).
  * `metadata` carries ids / status / ISO timestamps only — never clinical
- * content or patient PII (CLAUDE.md rule 7).
+ * content or patient PII (CLAUDE.md rule 7). ENFORCED by
+ * lib/audit/metadata-contract.ts. `annulRecord` in records.ts is the pattern the
+ * rest of the repo should copy: `{ hadReason: Boolean(trimmed) }` in the audit
+ * row, the prose in `record_annulments.reason`, a real domain column.
  */
 export async function writeClinicalAudit(
   tx: DbTx,
@@ -45,6 +49,7 @@ export async function writeClinicalAudit(
     ip: string | null;
   },
 ): Promise<void> {
+  assertPiiFreeAuditMetadata(args.metadata, "clinical/writeClinicalAudit");
   await tx.insert(auditLog).values({
     tenantId: args.tenantId,
     actorUserId: args.actorUserId,

@@ -5,6 +5,11 @@ import { Button, StatusBadge, useAnimatedDialog } from "@osteojp/ui";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { DateFieldInput } from "@/components/date-field-input";
 import { adminInputInline, adminLabel } from "../admin-ui";
+import { partitionBlocks } from "@/lib/admin/block-list-order";
+import {
+  needsProlongadaWarning,
+  prolongadaWarning,
+} from "@/lib/admin/prolongada-warning";
 import {
   createTimeOffBlockAction,
   updateTimeOffBlockAction,
@@ -36,6 +41,14 @@ export type BlockLabels = {
   block: string; // "Bloquear horário"
   blocksFor: string; // "Bloqueios de"
   none: string; // "Sem bloqueios"
+  noneUpcoming: string; // "Sem bloqueios futuros"
+  expired: string; // "Bloqueios passados"
+  // SCHED-23 - the pre-save warning. Owner-approved copy; see the card.
+  warnTitle: string;
+  warnScope: string;
+  warnEffect: string;
+  warnWrongTool: string;
+  warnConfirm: string; // "Bloquear na mesma"
   addBlock: string; // "Adicionar bloqueio"
   mode: string; // "Tipo"
   pontual: string; // "Bloqueio pontual"
@@ -92,6 +105,12 @@ export function TherapistBlocks({
   therapistName,
   blocks,
   labels,
+  /**
+   * SCHED-21: the inspector's Editar link names a block in the URL, and the
+   * card holding that block opens on it. The dialog is where blocks are edited
+   * and stays the only place; this is the deep link into it, not a second one.
+   */
+  openBlockId = null,
   // PL-09 Phase 5: the reception surface (/horarios) reuses this editor but posts
   // to actions that redirect to /horarios instead of /admin/staff. Defaults keep
   // the admin (Equipa) usage byte-identical.
@@ -105,23 +124,41 @@ export function TherapistBlocks({
   therapistName: string;
   blocks: BlockView[];
   labels: BlockLabels;
+  openBlockId?: string | null;
   actions?: {
     create: (fd: FormData) => Promise<void>;
     update: (fd: FormData) => Promise<void>;
     remove: (fd: FormData) => Promise<void>;
   };
 }) {
-  const [open, setOpen] = useState(false);
+  // SCHED-21: the deep-linked block, resolved against THIS card's own list. A
+  // block id that belongs to another therapist finds nothing here and the card
+  // stays shut, which is the right answer rather than an empty editor.
+  const linked = openBlockId ? (blocks.find((b) => b.id === openBlockId) ?? null) : null;
+  const [open, setOpen] = useState(linked !== null);
   const { ref, shown } = useAnimatedDialog(open);
-  const [editing, setEditing] = useState<BlockView | null>(null);
-  const [mode, setMode] = useState<BlockFormMode>("pontual");
+  const [editing, setEditing] = useState<BlockView | null>(linked);
+  const [mode, setMode] = useState<BlockFormMode>(linked?.mode ?? "pontual");
   // PL-22: the lote end condition. Local state because the two inputs it
   // switches between must not both post - a stale "until" beside a count is
   // exactly the kind of ambiguity the server would have to guess about.
   const [endMode, setEndMode] = useState<"count" | "until">("count");
+  /**
+   * SCHED-23 - the two dates, mirrored into state ONLY so the warning can quote
+   * them. The inputs stay uncontrolled and the form still posts their values;
+   * a controlled rewrite of this form to serve a warning would be a much larger
+   * change than the warning is worth.
+   */
+  const [fromDate, setFromDate] = useState(linked?.startDate ?? "");
+  const [toDate, setToDate] = useState(linked?.endDate ?? "");
+  /** Null until Guardar is pressed on a prolongada; then the panel is showing. */
+  const [warning, setWarning] = useState<ReturnType<typeof prolongadaWarning> | null>(null);
 
   const startEdit = (b: BlockView) => {
     setEditing(b);
+    setFromDate(b.startDate);
+    setToDate(b.endDate);
+    setWarning(null);
     // A stored block is one row: editing it is never a lote (the recurrence is
     // a creation-time shape, not something a single row remembers).
     setMode(b.mode);
@@ -129,10 +166,46 @@ export function TherapistBlocks({
   const startCreate = () => {
     setEditing(null);
     setMode("pontual");
+    setFromDate("");
+    setToDate("");
+    setWarning(null);
   };
 
   // Form field defaults come from the block being edited, or blank for create.
   const f = editing;
+
+  // SCHED-22. `today` is read once per render rather than inside the helper:
+  // the boundary is a date, and a function that reads its own clock cannot be
+  // tested at one.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" });
+  const { upcoming, expired } = partitionBlocks(blocks, today);
+
+  const row = (b: BlockView) => (
+    <li
+      key={b.id}
+      data-testid="block-row"
+      data-block-id={b.id}
+      className="flex flex-wrap items-center gap-2 rounded-v2 border border-v2-border p-3 text-sm"
+    >
+      <StatusBadge tone={b.mode === "prolongada" ? "pending" : "cancelled"}>
+        {b.mode === "prolongada" ? labels.prolongada : labels.pontual}
+      </StatusBadge>
+      <span className="text-v2-text-primary">{blockSummary(b)}</span>
+      {b.note ? <span className="text-v2-text-secondary">· {b.note}</span> : null}
+      <span className="ml-auto flex gap-1">
+        <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(b)}>
+          {labels.edit}
+        </Button>
+        <form action={actions.remove} onSubmit={() => setOpen(false)}>
+          <input type="hidden" name="id" value={b.id} />
+          <input type="hidden" name="userId" value={therapistId} />
+          <Button type="submit" variant="destructive" size="sm">
+            {labels.remove}
+          </Button>
+        </form>
+      </span>
+    </li>
+  );
 
   return (
     <>
@@ -171,46 +244,41 @@ export function TherapistBlocks({
             {labels.blocksFor} {therapistName}
           </h3>
 
-          {/* Existing blocks */}
+          {/* SCHED-22 - UPCOMING FIRST, EXPIRED FOLDED AWAY.
+              Measured on production: one therapist held 35 blocks, 19 of them
+              already over, listed oldest-first with no filter. The block causing
+              the September outage sat below nineteen dead rows, which is why the
+              owner reported there was no UI to remove one. There was. It was
+              under last month. */}
           {blocks.length === 0 ? (
             <p className="text-sm text-v2-text-secondary">{labels.none}</p>
           ) : (
-            <ul className="flex flex-col gap-2" data-testid="blocks-list">
-              {blocks.map((b) => (
-                <li
-                  key={b.id}
-                  className="flex flex-wrap items-center gap-2 rounded-v2 border border-v2-border p-3 text-sm"
-                >
-                  <StatusBadge tone={b.mode === "prolongada" ? "pending" : "cancelled"}>
-                    {b.mode === "prolongada" ? labels.prolongada : labels.pontual}
-                  </StatusBadge>
-                  <span className="text-v2-text-primary">{blockSummary(b)}</span>
-                  {b.note ? (
-                    <span className="text-v2-text-secondary">· {b.note}</span>
-                  ) : null}
-                  <span className="ml-auto flex gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => startEdit(b)}
-                    >
-                      {labels.edit}
-                    </Button>
-                    <form
-                      action={actions.remove}
-                      onSubmit={() => setOpen(false)}
-                    >
-                      <input type="hidden" name="id" value={b.id} />
-                      <input type="hidden" name="userId" value={therapistId} />
-                      <Button type="submit" variant="destructive" size="sm">
-                        {labels.remove}
-                      </Button>
-                    </form>
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-col gap-2">
+              {upcoming.length === 0 ? (
+                <p className="text-sm text-v2-text-secondary">{labels.noneUpcoming}</p>
+              ) : (
+                <ul className="flex flex-col gap-2" data-testid="blocks-list">
+                  {upcoming.map(row)}
+                </ul>
+              )}
+              {expired.length > 0 && (
+                /* NATIVE <details>: no state, no JS, keyboard and screen-reader
+                   behaviour for free, and CLOSED by default - which is the whole
+                   point. The expired rows are kept rather than hidden, because a
+                   past block is still the record of what happened. */
+                <details className="rounded-v2 border border-v2-border">
+                  <summary
+                    data-testid="blocks-expired-toggle"
+                    className="cursor-pointer list-none px-3 py-2 text-sm text-v2-text-secondary hover:text-v2-text-primary"
+                  >
+                    {labels.expired} ({expired.length})
+                  </summary>
+                  <ul className="flex flex-col gap-2 p-3 pt-0" data-testid="blocks-list-expired">
+                    {expired.map(row)}
+                  </ul>
+                </details>
+              )}
+            </div>
           )}
 
           {/* Create / edit form */}
@@ -347,9 +415,13 @@ export function TherapistBlocks({
               <div className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1">
                   <span className={adminLabel}>{labels.fromDate}</span>
+                  {/* SCHED-23: CONTROLLED, because the warning quotes these
+                      two dates and DateFieldInput keeps its own state unless it
+                      is given BOTH value and onChange. */}
                   <DateFieldInput
                     name="startDate"
-                    defaultValue={f?.startDate ?? ""}
+                    value={fromDate}
+                    onChange={setFromDate}
                     required
                     label={labels.fromDate}
                   />
@@ -358,7 +430,8 @@ export function TherapistBlocks({
                   <span className={adminLabel}>{labels.toDate}</span>
                   <DateFieldInput
                     name="endDate"
-                    defaultValue={f?.endDate ?? ""}
+                    value={toDate}
+                    onChange={setToDate}
                     required
                     label={labels.toDate}
                   />
@@ -377,15 +450,98 @@ export function TherapistBlocks({
               />
             </label>
 
+            {/* SCHED-23 - THE WARNING IS A STEP, NOT A CHECKBOX.
+                A checkbox beside a save button is read past; a panel that
+                REPLACES the button is not. It appears on the first press of
+                Guardar and the second press is a different, differently-worded
+                button, so nobody arrives here by muscle memory. */}
+            {warning && (
+              <div
+                role="alert"
+                data-testid="prolongada-warning"
+                className="flex flex-col gap-2 rounded-v2 border border-amber-400 bg-amber-50 p-3 text-sm text-v2-text-primary"
+              >
+                <p className="font-semibold">{warning.title}</p>
+                <p>{warning.scope}</p>
+                <p>{warning.effect}</p>
+                {/* THE PARAGRAPH THE OUTAGE NEEDED. Stating the consequence
+                    alone leaves somebody who genuinely needs "at the other
+                    clinic this week" with nowhere to go, so they press through
+                    and do the same thing again. */}
+                <p className="text-v2-text-secondary">{warning.wrongTool}</p>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
-              {editing ? (
-                <Button type="button" variant="ghost" size="sm" onClick={startCreate}>
+              {editing || warning ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => (warning ? setWarning(null) : startCreate())}
+                >
                   {labels.cancel}
                 </Button>
               ) : null}
-              <Button type="submit" variant="primary" size="sm">
-                {labels.save}
-              </Button>
+              {/* ==========================================================
+                  THE `key`s AND THE preventDefault ARE BOTH LOAD-BEARING, AND
+                  THE FIRST DRAFT WROTE TWO BLOCKS BECAUSE IT HAD NEITHER.
+                  ==========================================================
+                  Both branches render a <Button> in the SAME position, so React
+                  reconciles them onto the SAME <button> DOM node and simply
+                  changes its attributes. A click is dispatched to handlers
+                  FIRST and its default action runs afterwards - so the sequence
+                  was: click the primary button (type="button", harmless),
+                  onClick sets the warning, React flushes synchronously inside a
+                  discrete event and rewrites that very node to type="submit",
+                  and the browser then performs the default action of the click
+                  on a node that has become a submit button. The form posted.
+                  Pressing "Bloquear na mesma" posted it again.
+
+                  MEASURED, not deduced: two identical vacation rows 102ms
+                  apart in the lane database.
+
+                  The keys make React REPLACE the node instead of mutating it;
+                  preventDefault kills the default action regardless. Either
+                  alone would do; both are here because the failure was silent
+                  on screen - the dialog closed and looked like it had worked. */}
+              {warning ? (
+                <Button
+                  key="confirm"
+                  type="submit"
+                  variant="destructive"
+                  size="sm"
+                  data-testid="prolongada-confirm"
+                >
+                  {labels.warnConfirm}
+                </Button>
+              ) : (
+                <Button
+                  key="save"
+                  type={needsProlongadaWarning({ mode, startDate: fromDate, endDate: toDate }) ? "button" : "submit"}
+                  variant="primary"
+                  size="sm"
+                  data-testid="block-save"
+                  onClick={(e) => {
+                    // Only intercepts prolongada with both dates. Every other
+                    // mode keeps type="submit" and posts exactly as before.
+                    if (!needsProlongadaWarning({ mode, startDate: fromDate, endDate: toDate })) return;
+                    e.preventDefault();
+                    setWarning(
+                      prolongadaWarning(
+                        {
+                          title: labels.warnTitle,
+                          scope: labels.warnScope,
+                          effect: labels.warnEffect,
+                          wrongTool: labels.warnWrongTool,
+                        },
+                        { therapistName, startDate: fromDate, endDate: toDate },
+                      ),
+                    );
+                  }}
+                >
+                  {labels.save}
+                </Button>
+              )}
             </div>
           </form>
 
