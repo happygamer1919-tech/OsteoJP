@@ -4179,3 +4179,43 @@ weekday header (agenda-grid.tsx:309); Sentry's react-hydration-errors inbound
 filter dropped 5 such events in 72h, so it has never been an issue either. (2)
 In the Bloquear horario dialog the open month is clipped by the dialog's own
 scroll box. Neither blocks picking a date once the close rule is fixed.
+
+## 2026-09-11 - GREEN, H2 / NOTES-03: the note history orders by the marcação date
+
+**The ruling implemented.** A note on a marcação sits at the marcação's date,
+newest first; a patient-level note (unified row with no appointment, or a legacy
+revision) sits at its creation date; the two interleave. `edited_at` orders
+nothing and stays display metadata. Ties inside one marcação fall back to
+creation, later-written first, then id, so the order is total.
+
+**The clinic's words and the mechanism are not the same thing, and both were
+checked.** "An edited old note jumps above newer ones": an IN-PLACE edit never
+moved anything, because the edit stamps `edited_at` and `created_at` is never
+rewritten (0050), and no reader in the repository orders by `edited_at`. The
+history ordered by `created_at`, so what moved a note was CREATION out of step
+with its visit: a second note typed today on a March visit rose above June's,
+and a note typed at booking for a visit weeks away sank below visits in between.
+Reproduced on a lane screen before the fix, exactly that way. Production,
+read-only 2026-09-11: 43,528 appointment notes, 48 ever edited, 13 patients with
+at least one pair out of visit order (79 pairs: 58 involve a note written days
+before its visit, 13 a note written after its visit day, 12 an edited note).
+
+**Where it applies.** `mergePatientNotes` (the profile Notas tab and the
+Recuperação Notas popup, both through `listPatientNotes`) and
+`readLatestNoteEitherKind` (the Recuperação row's one-line latest note), so the
+line and the popup's first entry stay the same note, as NOTES-01 promised. An
+appointment the viewer's `appointments` policy hides falls back to the note's
+creation instant in both, the same way the existing LEFT join already did.
+Unchanged, because every note in them shares one visit date: the per-marcação
+thread (`listAppointmentNotes`), the Marcações per-visit preview and the agenda
+hover.
+
+**Two fixtures re-based, because they encoded the old order.** The NOTES-01 DB
+test's patient-level note and the seeded Recuperação patient note were each
+NEWER than the visit they are meant to lose to; both now predate it, which keeps
+each test's own intent ("the older patient note is not the one on the row").
+
+**A known consequence, stated rather than discovered later.** A note on a FUTURE
+marcação now sits above everything, because its marcação is the newest date.
+That is the ruling read literally; the Recuperação list is patients without a
+return booked, so it rarely meets one.

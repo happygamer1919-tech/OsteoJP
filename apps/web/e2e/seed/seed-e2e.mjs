@@ -629,7 +629,10 @@ async function ensureRecuperacaoFixtures(therapistUserId, otherTherapistUserId) 
       // insertion order. `upsert` on a fixed id keeps `created_at` from the FIRST
       // run on a persistent lane database, so "the newest one wins" would be a
       // property of when the seed happened to be run rather than of the seed.
-      created_at: new Date(Date.now() - 3 * day).toISOString(),
+      // NOTES-03: a note on a marcação now sits at the MARCAÇÃO's date, so to
+      // stay the OLDER of the two this note must predate the attendance itself,
+      // not merely the visit note's creation.
+      created_at: new Date(seen.getTime() - day).toISOString(),
     },
     { onConflict: "id" },
   );
