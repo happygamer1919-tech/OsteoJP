@@ -172,9 +172,12 @@ test("Agenda: the weekday row holds on a production-scale week (AGENDA-01)", asy
   // Not a pixel count: find the 11:00 hour label and scroll until it is at the
   // top of the reading area. That is literally the reader's position in the
   // report - "by 11:00 the reader is looking at a column of patient names".
+  // SCOPED TO THE GUTTER: the sticky toolbar's "Atualizar" button prints the
+  // render time as a bare HH:MM, so a page-wide "11:00" on a page loaded at
+  // 11:00 would anchor this scroll to the toolbar and test nothing.
   const elevenTop = await page
+    .getByTestId("agenda-time-gutter")
     .getByText("11:00", { exact: true })
-    .first()
     .evaluate((e) => e.getBoundingClientRect().top + window.scrollY);
   await scrollTo(page, Math.min(Math.round(elevenTop - 200), limit));
 
