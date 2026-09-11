@@ -1,6 +1,6 @@
 # 0084 production apply: a patient note becomes deletable
 
-**Status: NOT APPLIED.** Two stages. Every command is literal; there is nothing to
+**Status: APPLIED TO PRODUCTION 2026-09-11, by the owner's stage 1 at 17:27Z.** Pre-check 9 of 9 OK, journal to 82 rows, post-check 8 of 8 OK. Two stages. Every command is literal; there is nothing to
 substitute. Any `STOP:` line, any `FAIL` verdict, or any `ERROR` halts the sitting.
 
 | Fact | Value |
