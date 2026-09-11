@@ -33,6 +33,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+// W14-02: the ONE call that leaves the process. Everything else is real.
+const enqueueSpy = vi.hoisted(() =>
+  vi.fn<(tenantId: string, targets: unknown[]) => Promise<void>>(async () => {}),
+);
+vi.mock("@/lib/scheduling/reminders", () => ({ enqueueRemindersAfterCommit: enqueueSpy }));
+
 const url = process.env.DATABASE_URL;
 const live = Boolean(url);
 const d = live ? describe : describe.skip;
@@ -129,6 +135,8 @@ d("applyInboundReply against a real database", () => {
     hoursFromNow: number;
     status?: string;
     practitioner?: string;
+    /** 'patient_portal' makes a `scheduled` row an unaccepted pedido (0067). */
+    origin?: string;
   }): Promise<string> {
     const id = randomUUID();
     // ISO strings, not Date objects: the raw-template path binds through the
@@ -137,10 +145,10 @@ d("applyInboundReply against a real database", () => {
     const ends = new Date(Date.now() + (args.hoursFromNow + 1) * H).toISOString();
     await sql.execute(raw`insert into appointments
                 (id, tenant_id, patient_id, practitioner_id, location_id,
-                 starts_at, ends_at, status)
+                 starts_at, ends_at, status, origin)
               values (${id}, ${tenantId}, ${args.patientId},
                       ${args.practitioner ?? (await seedPractitioner())}, ${locationId},
-                      ${starts}, ${ends}, ${args.status ?? "scheduled"})`);
+                      ${starts}, ${ends}, ${args.status ?? "scheduled"}, ${args.origin ?? "staff"})`);
     return id;
   }
 
@@ -182,6 +190,37 @@ d("applyInboundReply against a real database", () => {
     // but redeem.ts had ever written.
     expect(row.confirmation_state).toBe("confirmed");
     expect(row.confirmation_channel).toBe("sms");
+  });
+
+  /* ---- W14-02: the third door - the patient's own SIM on a pedido ---- */
+  // Nothing in this path excludes a pedido: it confirms the patient's NEXT
+  // `scheduled` appointment inside the 24h window, and an unaccepted portal
+  // pedido is `scheduled`. So a SIM moved it to confirmed with no run behind
+  // it. It now emits exactly as confirmAppointmentRequest does; a staff booking
+  // stays silent because it already has its run.
+  it("W14-02: SIM on an unaccepted PORTAL PEDIDO confirms it AND emits its confirmation, once", async () => {
+    enqueueSpy.mockClear();
+    const n = nextSubscriber();
+    const patientId = await seedPatient("+351" + n);
+    const apptId = await seedAppointment({ patientId, hoursFromNow: 20, origin: "patient_portal" });
+
+    const out = await reply("Sim", "+351" + n);
+    expect(out).toEqual({ outcome: "confirmed", appointmentId: apptId, patientId });
+    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+    const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
+    expect(tenantArg).toBe(tenantId);
+    expect(targets).toEqual([{ appointmentId: apptId, startsAt: expect.any(Date) }]);
+  });
+
+  it("W14-02: SIM on a STAFF booking emits NOTHING - it already has its run", async () => {
+    enqueueSpy.mockClear();
+    const n = nextSubscriber();
+    const patientId = await seedPatient("+351" + n);
+    await seedAppointment({ patientId, hoursFromNow: 20 });
+
+    const out = await reply("Sim", "+351" + n);
+    expect(out.outcome).toBe("confirmed");
+    expect(enqueueSpy).not.toHaveBeenCalled();
   });
 
   it("NAO moves a scheduled appointment to cancelled", async () => {
