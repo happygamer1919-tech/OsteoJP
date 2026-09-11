@@ -2323,6 +2323,60 @@ export const guestBookingRequests = pgTable(
 );
 
 /**
+ * 0087 (INTAKE-01). Three states for a yes/no clinical safety question.
+ * `nao_perguntado` (never asked) is DISTINCT from `nao` and is never a default:
+ * the guest form can only produce `sim` or `nao`.
+ */
+export const intakeAnswer = pgEnum("intake_answer", ["sim", "nao", "nao_perguntado"]);
+
+/**
+ * 0087 (INTAKE-01): the guest clinical intake. GDPR Article 9 answers from the
+ * fifth step of the guest booking flow, one row per guest request at most.
+ *
+ * DECLARED FOR TYPES ONLY. The migration is the authority: the CHECKs (reason
+ * 1-2000 chars trimmed, the four free texts <= 2000, consent_ticked true,
+ * consent_version non-blank, date_of_birth >= 1900-01-01), the tenant-match
+ * trigger, the two SELECT policies and the grants all live in 0087 and are not
+ * restated here. No application role may UPDATE or DELETE a row; the only delete
+ * is `purge_expired_guest_intakes(tenant)`, at 7 days by ARRIVAL, and only while
+ * the request is unconverted. There is deliberately no `updatedAt`: the
+ * retention clock runs on `createdAt` and nothing may move it.
+ *
+ * NEVER a source for `patients.contraindication_*`. "The person said so" and "a
+ * clinician confirmed it" are different claims (strategy ruling 2).
+ */
+export const guestClinicalIntakes = pgTable(
+  "guest_clinical_intakes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    guestBookingRequestId: uuid("guest_booking_request_id")
+      .notNull()
+      .unique()
+      .references(() => guestBookingRequests.id, { onDelete: "cascade" }),
+    dateOfBirth: date("date_of_birth").notNull(),
+    reason: text("reason").notNull(),
+    healthConditions: text("health_conditions"),
+    medication: text("medication"),
+    fallsAccidents: text("falls_accidents"),
+    surgeries: text("surgeries"),
+    pacemaker: intakeAnswer("pacemaker").notNull(),
+    pregnancy: intakeAnswer("pregnancy").notNull(),
+    consentTicked: boolean("consent_ticked").notNull(),
+    consentAt: timestamp("consent_at", { withTimezone: true }).notNull(),
+    /** A LABEL from INTAKE_CONSENT_VERSIONS, never the consent text (WF-19). */
+    consentVersion: text("consent_version").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** The retention job's scan: one tenant, oldest arrivals first. */
+    index("guest_clinical_intakes_tenant_created_idx").on(t.tenantId, t.createdAt),
+  ],
+);
+
+/**
  * One row per recorded consultation, written BEFORE the M1 webhook fires.
  *
  * Migration 0064. Before it, nothing was persisted at fire time: the audio
