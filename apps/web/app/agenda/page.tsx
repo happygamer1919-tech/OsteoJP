@@ -1,9 +1,11 @@
 import { assertCan, can, ForbiddenError } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
 import { scopedLocationId } from "@/lib/auth/location-choice";
-import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { resolveViewerLocationIds, viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { getPatient } from "@/lib/patients/queries";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
+import { sharedResourcesForViewer } from "@/lib/scheduling/shared-resource-guard";
+import { listSharedResources } from "@/lib/scheduling/shared-resources";
 import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
 import {
   formatTimeOfDay,
@@ -58,7 +60,25 @@ export default async function AgendaPage({
   // reception/admin/owner see everyone unless a filter is set.
   const lockTherapist = actor.role === "therapist";
   let practitionerId = firstParam(sp.therapist);
-  if (lockTherapist) practitionerId = actor.userId;
+  // SCHED-17: a therapist's agenda is the SET { self } plus the shared resources
+  // (NESA) at their own locations, so the CB machine's diary is shared by the
+  // people standing next to it. An LV therapist's set is { self }: the resource
+  // is joined through staff_locations, so LV is unaffected as a property of the
+  // data. A therapist may narrow to one member of the set and to nothing else.
+  // `practitionerId` stays the viewer's own id, because it also chooses whose
+  // blocked time is drawn, and a shared device has no time off.
+  const sharedResources = lockTherapist
+    ? sharedResourcesForViewer(
+        await listSharedResources(actor),
+        await resolveViewerLocationIds(actor),
+      )
+    : [];
+  let practitionerIds: string[] | null = null;
+  if (lockTherapist) {
+    const own = [actor.userId, ...sharedResources.map((r) => r.id)];
+    practitionerIds = practitionerId && own.includes(practitionerId) ? [practitionerId] : own;
+    practitionerId = actor.userId;
+  }
   // W10-04 isolation: a therapist loses the location switch entirely - the server
   // ignores any location param for them so they cannot scope to another location's
   // agenda (they are already practitioner-locked to their own appointments).
@@ -92,7 +112,8 @@ export default async function AgendaPage({
     listAppointments(actor, {
       startUtc,
       endUtc,
-      practitionerId,
+      practitionerId: lockTherapist ? null : practitionerId,
+      practitionerIds,
       locationId,
     }),
     novaMarcacaoPacienteId ? getPatient(novaMarcacaoPacienteId) : Promise.resolve(null),
@@ -178,7 +199,7 @@ export default async function AgendaPage({
       // self-lock (practitioner forced to self, Terapeuta selector hidden for
       // role "therapist"). Read-scope isolation stays on `lockTherapist` above.
       viewer={{ role: actor.role, userId: actor.userId }}
-      options={options}
+      options={{ ...options, sharedResources }}
       appointments={appointments}
       blocks={blockSpans}
       lockedPatient={lockedPatient}
