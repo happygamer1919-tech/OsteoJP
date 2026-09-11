@@ -44,3 +44,9 @@ export * from "./src/followup-selection";
 // formula, and because `legacy_consumed` only makes sense next to the reasoning
 // that produced it.
 export * from "./src/pack-balance";
+
+// SCHED-17 - whether the NESA migration's column exists yet. Exported from the
+// package because both apps read it (the staff paths in apps/web and the portal
+// roster in apps/api), and each keeping its own check is how they would come to
+// disagree about whether NESA exists.
+export * from "./src/shared-resource";
