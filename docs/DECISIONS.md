@@ -4122,3 +4122,60 @@ that it would have failed without it.
 shared.** The booking drawer and the Marcar novamente drawer both render
 `clinic_closed`; the text now comes from one helper
 (`clinic-closed-message.ts`) instead of two copies of the same template fill.
+
+## 2026-09-11 - PURPLE, U1: the drawer calendar closed on the first press inside it
+
+**What the clinic filmed.** Safari on macOS, app.osteojp.pt, 11/09 12:41. The
+calendar icon opens the month; pressing "Mes seguinte" or a day makes it vanish
+and nothing is picked. Eight times in thirty seconds, on Marcar novamente and on
+Bloquear horario. No error text appears in any frame.
+
+**The mechanism, measured before it was fixed.** Opening the calendar focuses a
+day cell. A focus-event trace in real WebKit, pressing "Mes seguinte" inside the
+Marcar novamente drawer: the day cell's focusout carries `relatedTarget` = the
+drawer's own modal `<dialog>`, focus lands on that dialog, and no click event
+fires at all. Chromium, same press: `relatedTarget` = the button, which is inside
+the picker. The picker closed on `!contains(relatedTarget)`; the dialog is not
+inside the picker, so in WebKit it unmounted between mousedown and click. Real
+WebKit reproduces it with no emulation on both drawer paths; plain Chromium is
+green, which is why CI (Chromium only) never saw it, and the e2e helpers TYPE
+dates, so no spec ever opened the calendar.
+
+**My first version of this fix was wrong, and the real engine caught it.** It
+forgave only a null `relatedTarget`, written against a Chromium emulation that
+sent focus to the body. Chromium went green; real WebKit stayed red on the same
+line; the trace above showed the dialog. The emulation now reproduces the
+measured destination, and the rule covers it. An emulation guards only the case
+it copies.
+
+**Why there is no Sentry issue, and there never could be.** Nothing throws. The
+organisation has one project, osteojp-web, and zero issues with events in the
+last 72 hours, every status included; no issue in 90 days mentions the picker.
+Errors did reach the browser SDK and were discarded there (292 in 72h, reason
+`event_processor`, 94 of them in the 12:00Z hour of 2026-09-11), but a client
+discard keeps a count and no content, so none of them can be matched to this
+report.
+
+**Not this week's merges.** The blur rule and the open-focus effect are both in
+the W2-01 picker (2026-06-12). The picker reached the drawer's Data field and
+the Bloquear dialog in #1142 (2026-09-03) and the Marcar novamente drawer in
+#1197 (2026-09-07). Between the parent of SCHED-20 (d553667d) and main, the
+diff over packages/ui/src/components, schedule-again-drawer.tsx and
+block-time-dialog.tsx is empty, and appointment-drawer.tsx has no commit. #1273
+touched lib/scheduling only. The clinic-closure helper is #1264, which is OPEN
+and not on production. Run, not only diffed: the new spec on a worktree at
+d553667d, before every suspect, fails exactly as on main - the emulated arm red
+at the same line on both paths, the plain Chromium arm green.
+
+**The rule now.** A blur closes the calendar only when focus arrives on another
+element that is neither inside the picker nor a container of it
+(`blurLeavesPicker`); focus falling back to the drawer, or to nothing, no longer
+counts as leaving. A press outside is decided by a capture-phase pointerdown
+listener, attached only while the calendar is open, that reads the press's own
+target.
+
+**Recorded, not fixed here.** (1) WebKit logs a hydration mismatch on the agenda
+weekday header (agenda-grid.tsx:309); Sentry's react-hydration-errors inbound
+filter dropped 5 such events in 72h, so it has never been an issue either. (2)
+In the Bloquear horario dialog the open month is clipped by the dialog's own
+scroll box. Neither blocks picking a date once the close rule is fixed.
