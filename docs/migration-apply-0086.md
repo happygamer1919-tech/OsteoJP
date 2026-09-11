@@ -8,7 +8,7 @@ substitute. Any `STOP:` line, any `FAIL` verdict, or any `ERROR` halts the sitti
 | Branch | `db/0086-nesa-shared-resource` (BLUE, "DO NOT MERGE UNTIL APPLIED") |
 | Migration | `packages/db/migrations/0086_nesa_shared_resource.sql`, sha256 `d3eb9e41dff3f7ba6ccd0c250baf76198e60e884733e06043fcd9518bbac8d99` |
 | Pre-check | `scripts/0086-precheck.sql` on the branch, sha256 `bb3317e6a762f8a3d196d9495ee592e059223379a27a81a2b6a6382ef951164f` |
-| Post-check | `scripts/0086-postcheck.sql` on the branch, sha256 `afd055ae439af4fbe9ae533a9d43d452227a7e99a8788d4e1b36124e27317aa1` |
+| Post-check | `scripts/0086-postcheck.sql` on the branch, sha256 `030f7a4baab3cae26b7879570f0ba9e3b5fd4f3309cde8dab76653618db1b5bb` |
 | Gate | `scripts/nesa-equivalence.sql` on the branch, sha256 `cd0d748db2e07185a16f41a4def5cbc5e1cc9ff5114aba724613f13ab0044a75` (read-only; run against production in stage 1) |
 | Owner checker | `packages/db/scripts/check-security-definer-owner.mjs` on the branch, sha256 `df55a186d6d29832f93bfc09417e43892933f104b3c100e6cbe758e13ee3eadb` (read-only; expects 22 after this apply) |
 | Journal | tag `0086_nesa_shared_resource`, `when 1788001200000` (the `idx` renumbers as 0083, 0084 and 0085 merge; the file hash is the identity) |
@@ -111,7 +111,7 @@ touch /tmp/0086-applied.ok
 (
 set -eo pipefail
 SHA0086=d3eb9e41dff3f7ba6ccd0c250baf76198e60e884733e06043fcd9518bbac8d99
-SHAPOST=afd055ae439af4fbe9ae533a9d43d452227a7e99a8788d4e1b36124e27317aa1
+SHAPOST=030f7a4baab3cae26b7879570f0ba9e3b5fd4f3309cde8dab76653618db1b5bb
 SHAOWNER=df55a186d6d29832f93bfc09417e43892933f104b3c100e6cbe758e13ee3eadb
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply

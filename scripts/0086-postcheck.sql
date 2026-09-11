@@ -103,11 +103,11 @@ UNION ALL SELECT tenant_id, colleague, loc_a FROM pc_fixture;
 -- Seeded as the table owner, before any claim is set.
 INSERT INTO public.appointments
   (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_by)
-SELECT tenant_id, patient_id, res, loc_a, now() + interval '30 days', now() + interval '30 days 1 hour', 'scheduled', res FROM pc_fixture
+SELECT tenant_id, patient_id, res, loc_a, now() + interval '30 days', now() + interval '30 days 1 hour', 'scheduled'::appointment_status, res FROM pc_fixture
 UNION ALL
-SELECT tenant_id, patient_id, res, loc_b, now() + interval '31 days', now() + interval '31 days 1 hour', 'scheduled', res FROM pc_fixture
+SELECT tenant_id, patient_id, res, loc_b, now() + interval '31 days', now() + interval '31 days 1 hour', 'scheduled'::appointment_status, res FROM pc_fixture
 UNION ALL
-SELECT tenant_id, patient_id, colleague, loc_a, now() + interval '30 days', now() + interval '30 days 1 hour', 'scheduled', colleague FROM pc_fixture;
+SELECT tenant_id, patient_id, colleague, loc_a, now() + interval '30 days', now() + interval '30 days 1 hour', 'scheduled'::appointment_status, colleague FROM pc_fixture;
 
 CREATE TEMP TABLE pc_arm (probe text, outcome text) ON COMMIT DROP;
 GRANT SELECT ON pc_fixture TO authenticated;
@@ -144,7 +144,7 @@ BEGIN
     INSERT INTO public.appointments
       (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_by)
     VALUES (f.tenant_id, f.patient_id, f.res, f.loc_a,
-            now() + interval '32 days', now() + interval '32 days 1 hour', 'scheduled', f.res);
+            now() + interval '32 days', now() + interval '32 days 1 hour', 'scheduled'::appointment_status, f.res);
     INSERT INTO pc_arm VALUES ('W1', 'OK');
   EXCEPTION WHEN OTHERS THEN
     INSERT INTO pc_arm VALUES ('W1', 'REFUSED ' || SQLSTATE);
@@ -154,7 +154,7 @@ BEGIN
     INSERT INTO public.appointments
       (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_by)
     VALUES (f.tenant_id, f.patient_id, f.res, f.loc_b,
-            now() + interval '33 days', now() + interval '33 days 1 hour', 'scheduled', f.res);
+            now() + interval '33 days', now() + interval '33 days 1 hour', 'scheduled'::appointment_status, f.res);
     INSERT INTO pc_arm VALUES ('W2', 'ADMITTED');
   EXCEPTION
     WHEN insufficient_privilege THEN INSERT INTO pc_arm VALUES ('W2', 'OK');
