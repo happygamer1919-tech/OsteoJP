@@ -840,7 +840,7 @@ node scripts/lane-stack.mjs up   --lane purple   # start the lane's stack, migra
 node scripts/lane-stack.mjs e2e  --lane purple   # re-seed and run the suite against it
 ```
 
-`--lane` is one of `shared`, `purple`, `blue`, `amber`, and an unknown name is
+`--lane` is one of `shared`, `purple`, `blue`, `amber`, `green`, and an unknown name is
 REFUSED rather than defaulted - a typo that landed on another lane's ports would
 reproduce the exact failure this replaces. `status` prints the lane's ports and
 `down` stops it. The generated project lives in `.lane/<lane>/` (gitignored); its
@@ -849,10 +849,21 @@ migrations are SYMLINKS to the committed ones, so a lane can never run a stale
 schema.
 
 **PURPLE is `54521/54522` with the apps on `3020/3021/3022`; BLUE is
-`54621/54622` and `3030/3031/3032`.** The offsets are a table in
+`54621/54622` and `3030/3031/3032`; GREEN is `54921/54922` and
+`3050/3051/3052`.** The offsets are a table in
 `scripts/lane-stack.mjs` and `scripts/lane-stack.test.mjs` proves every pair of
 lanes is port-disjoint, which is the property that matters and the one nobody can
-check by reading.
+check by reading. GREEN skips +500 because an rc-inventory scratch stack held
+54821/54822 on the day it was added (#1285).
+
+**Two things GREEN's first run measured (2026-09-11).** Under Docker load the
+CLI's health probe for the analytics container timed out and the CLI then
+STOPPED every container it had started; the start that held was
+`supabase start --workdir .lane/<lane> -x logflare,vector,studio,imgproxy,edge-runtime,realtime`
+(storage and auth stay up). And a dev server reached as `127.0.0.1` never
+hydrates: Next 16 refuses its dev assets to an origin it was not started for, so
+every click is a no-op with no error on the page. Drive the lane at
+`http://localhost:<web port>`, which is what `playwright.config.ts` already does.
 
 **WHY, and it is measured rather than asserted.** Both lanes ran against ONE
 local stack, so either lane's `supabase db reset` deleted the other's e2e
