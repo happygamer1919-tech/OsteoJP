@@ -300,7 +300,7 @@ describe("AppointmentDrawer — a shared resource beside the therapist (SCHED-17
       { id: "therapist-self", label: "Dr. Self Terapeuta" },
       { id: "therapist-other", label: "Dr. Outro Terapeuta" },
     ],
-    locations: [{ id: "loc-cb", label: "Castelo Branco" }],
+    locations: [{ id: "loc-cb", label: "Castelo Branco" , opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null}],
     bookableLocations: [{ id: "loc-cb", label: "Castelo Branco" }],
     services: [
       { id: "svc-primary", label: "Osteopatia", durationMin: 60, contraindicationSensitive: false },
