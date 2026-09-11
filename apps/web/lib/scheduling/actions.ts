@@ -1230,6 +1230,8 @@ export async function updateAppointment(
   const ip = await clientIp();
   // Captured inside the tx, emitted AFTER commit (network out of the tx).
   let statusTargets: StatusNotificationTarget[] = [];
+  // W14-02: the portal pedidos this patch ACCEPTS. Same capture-then-emit shape.
+  let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1239,6 +1241,31 @@ export async function updateAppointment(
           return { ok: false, error: "not_found" };
         }
         const ids = affected.map((a) => a.id);
+
+        // The is_unconfirmed_pedido answer for `ids`, read at most once. Both the
+        // conflict check (INC-08 (b)) and the acceptance emit (W14-02) need it,
+        // and both need it BEFORE the UPDATE, while the rows are still
+        // `scheduled` - afterwards the function answers false for every row.
+        let probedPedidoIds: Set<string> | null = null;
+        const unconfirmedPedidoIds = async (): Promise<Set<string>> => {
+          if (probedPedidoIds) return probedPedidoIds;
+          const pedidoRows = (await tx.execute(sql`
+            SELECT a.id::text AS id
+              FROM public.appointments a
+             WHERE a.id IN (${sql.join(
+               ids.map((i) => sql`${i}::uuid`),
+               sql`, `,
+             )})
+               AND public.is_unconfirmed_pedido(a.id)
+          `)) as unknown;
+          probedPedidoIds = new Set(
+            (Array.isArray(pedidoRows)
+              ? pedidoRows
+              : ((pedidoRows as { rows?: unknown[] }).rows ?? [])
+            ).map((r) => (r as { id: string }).id),
+          );
+          return probedPedidoIds;
+        };
 
         // ==============================================================
         // INC-08 (a) — THE ESTADO MAP IS ENFORCED HERE, ON THE SERVER.
@@ -1384,21 +1411,7 @@ export async function updateAppointment(
           // appointment of every day, and it can never enter the blocking set.
           const anyScheduled = affected.some((a) => a.status === "scheduled");
           if (willBlock && anyScheduled) {
-            const pedidoRows = (await tx.execute(sql`
-              SELECT a.id::text AS id
-                FROM public.appointments a
-               WHERE a.id IN (${sql.join(
-                 ids.map((i) => sql`${i}::uuid`),
-                 sql`, `,
-               )})
-                 AND public.is_unconfirmed_pedido(a.id)
-            `)) as unknown;
-            const pedidoIds = new Set(
-              (Array.isArray(pedidoRows)
-                ? pedidoRows
-                : ((pedidoRows as { rows?: unknown[] }).rows ?? [])
-              ).map((r) => (r as { id: string }).id),
-            );
+            const pedidoIds = await unconfirmedPedidoIds();
 
             // Rows already blocking are skipped: this patch changes nothing
             // about their occupancy, and re-checking a row against itself
@@ -1446,6 +1459,29 @@ export async function updateAppointment(
               };
             }
           }
+        }
+
+        // ==============================================================
+        // W14-02 — CONFIRMING AN UNACCEPTED PORTAL PEDIDO HERE IS ACCEPTING
+        // IT, AND IT EMITS EXACTLY AS confirmAppointmentRequest DOES. Owner
+        // ruling 2026-09-10 (M2 Option A).
+        //
+        // Reception can accept a pedido from Pedidos (confirmAppointmentRequest,
+        // which has emitted since #1085) OR by moving its Estado to Confirmada in
+        // the drawer, which is this function - and this function emitted nothing
+        // for a confirmation. The pedido became a confirmed appointment with no
+        // run behind it: no confirmation, no 48h email, no 24h SMS.
+        //
+        // ONLY UNACCEPTED PEDIDOS. A staff booking already has its run, and a
+        // second appointment/scheduled at an unchanged start would cancel it
+        // (see lib/scheduling/pedido-acceptance.ts). Read BEFORE the UPDATE and
+        // regardless of allowConflict: "Guardar mesmo assim" overrides a
+        // conflict warning, not the acceptance.
+        // ==============================================================
+        let acceptedPedidos: SeriesMember[] = [];
+        if (patch.status === "confirmed" && affected.some((a) => a.status === "scheduled")) {
+          const pedidoIds = await unconfirmedPedidoIds();
+          acceptedPedidos = affected.filter((a) => a.status === "scheduled" && pedidoIds.has(a.id));
         }
 
         // Only run the column update when there is a column to change; a
@@ -1534,6 +1570,10 @@ export async function updateAppointment(
           statusTargets = affected.map((a) => ({ appointmentId: a.id, endsAt: a.endsAt }));
         }
 
+        reminderTargets = acceptedPedidos.map((a) => ({
+          appointmentId: a.id,
+          startsAt: a.startsAt,
+        }));
         return { ok: true, data: { id } };
       },
     );
@@ -1545,6 +1585,10 @@ export async function updateAppointment(
           statusTargets.length > 0
         ) {
           await enqueueStatusNotificationsAfterCommit(actor.tenantId, statusTargets, patch.status);
+        }
+        // W14-02: the accepted pedidos' confirmation and reminders, post-commit.
+        if (reminderTargets.length > 0) {
+          await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
         }
       });
     }
