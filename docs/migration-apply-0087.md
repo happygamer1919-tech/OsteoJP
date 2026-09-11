@@ -186,7 +186,28 @@ Pre-check row 16 reads `FAIL` until 0086 is applied (21 functions, not 22), for 
 
 ## Rehearsed, 2026-09-11
 
-REHEARSAL_RESULTS
+Both stages were extracted from this document by a script and run **under `zsh -f`** (zsh 5.9, no rc files, the shell the owner pastes into) against a throwaway Postgres 17.6 on ports 5518x. It was built from origin/main's `supabase/migrations` (through 0082), then 0083, 0084, 0085 and 0086 from their branches' mirrors, and given the drizzle journal the owner will have: 84 rows, one per main journal entry plus 0083 to 0086, each carrying its real file sha256 and its `when`. Synthetic rows: one location, one service and two guest requests in the seeded tenant.
+
+Only four things were replaced, mechanically, with the count of each asserted:
+- `/tmp/` became a scratch directory (7 occurrences in stage 1, 9 in stage 2);
+- the `cd` line became this branch's worktree;
+- the env-source line became `export DATABASE_URL_DIRECT=<the throwaway>`;
+- the target guard became an echo.
+
+| Run | Result |
+|---|---|
+| A: stage 2 first | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
+| B: stage 1 | `applying from 09d3aedb`, SR-58 assertions pass, pre-check **18 OK / 0 FAIL**, `verified-migrate` pending 1 `[0087_guest_clinical_intake]`, journal **84 → 85, delta 1**, sha256 present, exit 0, marker written |
+| C: stage 2 | carries parsed as `journal_before=84 secdef_before=22 guest_requests_before=2`, `ARMS S1 ... P5 OK`, post-check **18 OK / 0 FAIL**, `0087 APPLIED`, exit 0 |
+| D: stage 2, pre-check transcript backdated 61 minutes | exit 1, `STOP: stage 1's transcript is over an hour old; it is not this sitting's` |
+| E: stage 2, marker removed | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
+
+**Negative controls on the checks themselves**, each run against the same throwaway:
+- the pre-check on a database where 0087 is already applied: **12 OK / 6 FAIL** (rows 2, 8, 9, 10, 11, 16);
+- the post-check with `journal_before` one low, `secdef_before` one low, or `guest_requests_before` one high: **17 OK / 1 FAIL** each, on row 1, 16 and 17 respectively;
+- the post-check on a copy where `authenticated` had been granted DELETE: the arms halt with `POST-CHECK FAILED (arms): W3=ADMITTED`, psql exits 3, and no verdict row prints.
+
+**Found by rehearsing, fixed before this was committed:** the first post-check draft concatenated `"char"` catalog columns (`tgenabled`, `polcmd`, `provolatile`) to text and aborted at row 8 with `operator is not unique: text || "char"`. They are cast now. The build script for the throwaway also tripped the zsh rule this document follows: `$br:supabase` parsed as a `:s` modifier.
 
 ## Order of the sitting
 
