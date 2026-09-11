@@ -4096,3 +4096,157 @@ which waits on the owner applying 0085 after 0083 and 0084.
 Create and reschedule call `checkClinicClosure`; clone calls `checkAvailability`
 only. Recorded in section 5 of the proposal. The fix belongs in #1264 before
 apply.
+
+---
+
+## 2026-09-11 - PURPLE, who ruled Option A, and the clone gap closed
+
+**Option A was ruled by strategy under the owner's delegation; the owner
+answered the Saturday question.** Ruled 2026-09-11. Until then the board's own
+cards disagreed (strategy on SCHED-16 and SCHED-24, the owner on MIG-0085), and
+this record said so rather than pick a side. The three cards, the proposal's
+section 4 and Q-SCHED-16-1 now all say the same thing. The comment inside the
+0085 migration file still says "RULED BY THE OWNER"; it was left as it is,
+because changing it changes the file's sha256, which is how the apply is
+identified, and a comment is not the record of who ruled.
+
+**Reproduce first, on the database the change is for.** The Marcar novamente gap
+was reproduced on the purple lane with 0085 applied BEFORE anything was changed:
+the new browser test went red because the clone was written and the screen said
+*Nova marcação criada.* Only then was `cloneAppointment` given the same
+`checkClinicClosure` call as create and reschedule (#1264, commit `72c863b0`). A
+fix written first and tested after proves that the test passes on the fix, not
+that it would have failed without it.
+
+**A second door onto the same diary needs the same sentence, so the sentence is
+shared.** The booking drawer and the Marcar novamente drawer both render
+`clinic_closed`; the text now comes from one helper
+(`clinic-closed-message.ts`) instead of two copies of the same template fill.
+
+## 2026-09-11 - PURPLE, U1: the drawer calendar closed on the first press inside it
+
+**What the clinic filmed.** Safari on macOS, app.osteojp.pt, 11/09 12:41. The
+calendar icon opens the month; pressing "Mes seguinte" or a day makes it vanish
+and nothing is picked. Eight times in thirty seconds, on Marcar novamente and on
+Bloquear horario. No error text appears in any frame.
+
+**The mechanism, measured before it was fixed.** Opening the calendar focuses a
+day cell. A focus-event trace in real WebKit, pressing "Mes seguinte" inside the
+Marcar novamente drawer: the day cell's focusout carries `relatedTarget` = the
+drawer's own modal `<dialog>`, focus lands on that dialog, and no click event
+fires at all. Chromium, same press: `relatedTarget` = the button, which is inside
+the picker. The picker closed on `!contains(relatedTarget)`; the dialog is not
+inside the picker, so in WebKit it unmounted between mousedown and click. Real
+WebKit reproduces it with no emulation on both drawer paths; plain Chromium is
+green, which is why CI (Chromium only) never saw it, and the e2e helpers TYPE
+dates, so no spec ever opened the calendar.
+
+**My first version of this fix was wrong, and the real engine caught it.** It
+forgave only a null `relatedTarget`, written against a Chromium emulation that
+sent focus to the body. Chromium went green; real WebKit stayed red on the same
+line; the trace above showed the dialog. The emulation now reproduces the
+measured destination, and the rule covers it. An emulation guards only the case
+it copies.
+
+**Why there is no Sentry issue, and there never could be.** Nothing throws. The
+organisation has one project, osteojp-web, and zero issues with events in the
+last 72 hours, every status included; no issue in 90 days mentions the picker.
+Errors did reach the browser SDK and were discarded there (292 in 72h, reason
+`event_processor`, 94 of them in the 12:00Z hour of 2026-09-11), but a client
+discard keeps a count and no content, so none of them can be matched to this
+report.
+
+**Not this week's merges.** The blur rule and the open-focus effect are both in
+the W2-01 picker (2026-06-12). The picker reached the drawer's Data field and
+the Bloquear dialog in #1142 (2026-09-03) and the Marcar novamente drawer in
+#1197 (2026-09-07). Between the parent of SCHED-20 (d553667d) and main, the
+diff over packages/ui/src/components, schedule-again-drawer.tsx and
+block-time-dialog.tsx is empty, and appointment-drawer.tsx has no commit. #1273
+touched lib/scheduling only. The clinic-closure helper is #1264, which is OPEN
+and not on production. Run, not only diffed: the new spec on a worktree at
+d553667d, before every suspect, fails exactly as on main - the emulated arm red
+at the same line on both paths, the plain Chromium arm green.
+
+**The rule now.** A blur closes the calendar only when focus arrives on another
+element that is neither inside the picker nor a container of it
+(`blurLeavesPicker`); focus falling back to the drawer, or to nothing, no longer
+counts as leaving. A press outside is decided by a capture-phase pointerdown
+listener, attached only while the calendar is open, that reads the press's own
+target.
+
+**Recorded, not fixed here.** (1) WebKit logs a hydration mismatch on the agenda
+weekday header (agenda-grid.tsx:309); Sentry's react-hydration-errors inbound
+filter dropped 5 such events in 72h, so it has never been an issue either. (2)
+In the Bloquear horario dialog the open month is clipped by the dialog's own
+scroll box. Neither blocks picking a date once the close rule is fixed.
+
+## 2026-09-11 - GREEN, H2 / NOTES-03: the note history orders by the marcação date
+
+**The ruling implemented.** A note on a marcação sits at the marcação's date,
+newest first; a patient-level note (unified row with no appointment, or a legacy
+revision) sits at its creation date; the two interleave. `edited_at` orders
+nothing and stays display metadata. Ties inside one marcação fall back to
+creation, later-written first, then id, so the order is total.
+
+**The clinic's words and the mechanism are not the same thing, and both were
+checked.** "An edited old note jumps above newer ones": an IN-PLACE edit never
+moved anything, because the edit stamps `edited_at` and `created_at` is never
+rewritten (0050), and no reader in the repository orders by `edited_at`. The
+history ordered by `created_at`, so what moved a note was CREATION out of step
+with its visit: a second note typed today on a March visit rose above June's,
+and a note typed at booking for a visit weeks away sank below visits in between.
+Reproduced on a lane screen before the fix, exactly that way. Production,
+read-only 2026-09-11: 43,528 appointment notes, 48 ever edited, 13 patients with
+at least one pair out of visit order (79 pairs: 58 involve a note written days
+before its visit, 13 a note written after its visit day, 12 an edited note).
+
+**Where it applies.** `mergePatientNotes` (the profile Notas tab and the
+Recuperação Notas popup, both through `listPatientNotes`) and
+`readLatestNoteEitherKind` (the Recuperação row's one-line latest note), so the
+line and the popup's first entry stay the same note, as NOTES-01 promised. An
+appointment the viewer's `appointments` policy hides falls back to the note's
+creation instant in both, the same way the existing LEFT join already did.
+Unchanged, because every note in them shares one visit date: the per-marcação
+thread (`listAppointmentNotes`), the Marcações per-visit preview and the agenda
+hover.
+
+**Two fixtures re-based, because they encoded the old order.** The NOTES-01 DB
+test's patient-level note and the seeded Recuperação patient note were each
+NEWER than the visit they are meant to lose to; both now predate it, which keeps
+each test's own intent ("the older patient note is not the one on the row").
+
+**A known consequence, stated rather than discovered later.** A note on a FUTURE
+marcação now sits above everything, because its marcação is the newest date.
+That is the ruling read literally; the Recuperação list is patients without a
+return booked, so it rarely meets one.
+
+## 2026-09-11 - GREEN, H1: a patient document over 15 MB was refused
+
+**Where the cap actually lived: one constant, and nowhere else.**
+`MAX_DOCUMENT_BYTES = 15 * 1024 * 1024` in
+`apps/web/lib/patients/document-validation.ts`, enforced twice (the browser
+pre-flight in `PatientDocuments.tsx` and the server re-check in
+`confirmPatientDocument`), and quoted in two i18n strings. The dispatch asked to
+check two other candidates and both are clear, measured rather than assumed:
+
+- **No Vercel function body is in the path.** The upload is already direct to
+  Storage: a server action mints a signed upload URL, the browser PUTs the bytes
+  to Supabase, and only metadata (name, type, size) reaches the server. The
+  ~4.5 MB function body limit never applied, so no signed-upload rework was
+  needed.
+- **The bucket has no limit of its own.** Production `storage.buckets` row for
+  `clinical-attachments`: `file_size_limit` NULL, `allowed_mime_types` NULL (read
+  2026-09-11, read-only transaction). What remains above the app is the Storage
+  project's global upload limit, a dashboard-only setting; Supabase's default is
+  50 MB, which is why the new cap is 50 MiB and not more.
+
+**The change.** 50 MiB, both strings say 50 MB, and a test pins the strings to
+the constant so the number on screen cannot drift from the number enforced (it
+caught my own first pass, which updated the help text and not the refusal).
+
+**Verified on a lane, not on a preview, because PRs here get no preview build.**
+Before the fix, a real 22 MiB PDF was refused on screen with "O ficheiro excede o
+limite de 15 MB.". After it, the same file uploaded, was stored at 23,069,484
+bytes, and the app's own "Abrir" returned it as HTTP 200 application/pdf,
+byte-identical (sha256 2a65c9ad...). A 51 MiB PDF is refused with the new 50 MB
+wording. The lane bucket mirrors production's (no size or type limit).

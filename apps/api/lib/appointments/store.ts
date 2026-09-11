@@ -7,6 +7,7 @@ import {
   services,
   users,
   getDbAdmin,
+  sharedResourceSchemaPresent,
 } from "@osteojp/db";
 import type { PatientPrincipal } from "@osteojp/auth";
 import { runAsPatient } from "@/lib/auth/patient";
@@ -27,6 +28,27 @@ import type {
 } from "./booking";
 import type { TherapistCandidate } from "./therapist";
 import { acquireSlotLocks } from "./slot-lock";
+
+/**
+ * SCHED-17 - A SHARED RESOURCE IS NEVER OFFERED TO A PATIENT.
+ *
+ * NESA is a `users` row with `is_bookable = true` - that flag is what puts it in
+ * the STAFF Terapeuta list, where reception must see it. Every portal query below
+ * also filters on `is_bookable`, so without this a patient would be offered
+ * "NESA" as somebody to book with, and a slot grid expanded from a machine's
+ * hours. The spec names this a requirement, not a nicety.
+ *
+ * EMPTY until the NESA migration is applied: the column does not exist before
+ * then, and naming it would fail every portal booking query with 42703.
+ * sharedResourceSchemaPresent keeps the fragment out until it can be true.
+ * shared-resource-exclusion.test.ts holds every `u.is_bookable = true` in this
+ * file to carrying it.
+ */
+async function sharedResourceExclusion(): Promise<SQL> {
+  return (await sharedResourceSchemaPresent(getDbAdmin()))
+    ? sql`and u.is_shared_resource = false`
+    : sql``;
+}
 
 // Drizzle / Postgres implementation of the patient appointments store.
 //
@@ -407,6 +429,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // make_interval(mins => unknown) does not resolve.
     const endExpr = sql`(s.starts_at + make_interval(mins => ${durationMin}::int))`;
     const nowIso = now.toISOString();
+    const notShared = await sharedResourceExclusion();
     const rows = (await getDbAdmin().execute(sql`
       with step as (
         -- W12-29: per-location slot granularity, default 30. Lifted out of the
@@ -447,6 +470,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           -- non-bookable user's hours and then refused at confirm is exactly the
           -- step-3-vs-guard disagreement the header above says cannot happen.
           and u.is_bookable = true
+          ${notShared}
           -- A2: when the patient chose a specific therapist, the GRID itself is
           -- built from that therapist's hours only. Filtering just the EXISTS
           -- below would still expand everyone's templates into the series and
@@ -464,6 +488,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           where u.tenant_id = ${principal.tenantId}
             and u.is_active = true
             and u.is_bookable = true -- D2: same predicate as the assignment query
+            ${notShared}
             -- A2: and the SAME therapist restriction as the grid above. Both
             -- halves carry it for the reason the header gives - a slot this
             -- query advertises must be one the confirm guard will accept, and
@@ -519,12 +544,14 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // narrow who can be booked for a service, which is the opposite of what that
     // ruling says the mapping means. If JP ever wants the portal to respect
     // mappings, that is a change to PL-06a and belongs to him, not here.
+    const notShared = await sharedResourceExclusion();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
       from users u
       where u.tenant_id = ${principal.tenantId}
         and u.is_active = true
         and u.is_bookable = true
+        ${notShared}
         and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startsAt, endsAt)}
         and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt, [])}
         and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt)}
@@ -571,12 +598,14 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // going. A therapist with no active availability template at this clinic
     // cannot see them there, so they are excluded by the EXISTS below - which is
     // roster membership at the location, not free/busy.
+    const notShared = await sharedResourceExclusion();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
       from users u
       where u.tenant_id = ${principal.tenantId}
         and u.is_active = true
         and u.is_bookable = true
+        ${notShared}
         and exists (
           select 1 from availability_templates av
           where av.tenant_id = ${principal.tenantId}

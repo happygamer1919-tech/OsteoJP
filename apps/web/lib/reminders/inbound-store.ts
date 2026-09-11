@@ -10,6 +10,11 @@ import {
 } from "@osteojp/db";
 
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import {
+  emitAcceptedPedidoReminders,
+  isUnconfirmedPedido,
+} from "@/lib/scheduling/pedido-acceptance";
+import type { ReminderEnqueueTarget } from "@/lib/scheduling/reminders";
 import { withReminderTenantContext } from "./context";
 import { isExclusionViolation } from "./inbound-reply";
 
@@ -222,8 +227,10 @@ export async function resolveReviewItem(args: {
   resolution: ReviewResolution;
 }): Promise<ResolveOutcome> {
   const { ctx, itemId, resolution } = args;
+  // W14-02: captured inside the tx, emitted AFTER commit (network out of the tx).
+  let accepted: ReminderEnqueueTarget[] = [];
   try {
-    return await runScoped<ResolveOutcome>(ctx, async (tx) => {
+    const outcome = await runScoped<ResolveOutcome>(ctx, async (tx) => {
       // RLS scopes the read to this tenant AND this role, so an item another
       // clinic owns simply is not here. `resolution IS NULL` makes a second
       // press of the same button a no-op rather than a second appointment move.
@@ -242,6 +249,13 @@ export async function resolveReviewItem(args: {
 
       let applied = false;
       if (resolution !== "read" && item.appointmentId) {
+        // W14-02 (owner ruling 2026-09-10, M2 Option A). Marking an unaccepted
+        // PORTAL PEDIDO "confirmada" here IS reception accepting it, so it emits
+        // exactly as confirmAppointmentRequest does. Read BEFORE the write:
+        // is_unconfirmed_pedido requires `scheduled`. Every other row already
+        // has its run and must NOT be re-emitted (lib/scheduling/pedido-acceptance.ts).
+        const pedido =
+          resolution === "confirmed" && (await isUnconfirmedPedido(tx, item.appointmentId));
         const status = resolution === "confirmed" ? "confirmed" : "cancelled";
         const updated = await tx
           .update(appointments)
@@ -264,8 +278,11 @@ export async function resolveReviewItem(args: {
           .where(
             and(eq(appointments.id, item.appointmentId), eq(appointments.status, "scheduled")),
           )
-          .returning({ id: appointments.id });
+          .returning({ id: appointments.id, startsAt: appointments.startsAt });
         applied = updated.length > 0;
+        if (applied && pedido) {
+          accepted = [{ appointmentId: updated[0]!.id, startsAt: updated[0]!.startsAt }];
+        }
       }
 
       await tx
@@ -285,6 +302,10 @@ export async function resolveReviewItem(args: {
 
       return { ok: true, applied } as const;
     });
+    // Post-commit and best-effort: the pedido really is accepted by now, so a
+    // failed enqueue never turns a committed resolution into a reported failure.
+    if (outcome.ok) await emitAcceptedPedidoReminders("reviewResolve", ctx.tenantId, accepted);
+    return outcome;
   } catch (err) {
     // 0061 refused a second confirmed overlap. The whole transaction rolled
     // back, so the item is still unresolved and still in the queue - which is

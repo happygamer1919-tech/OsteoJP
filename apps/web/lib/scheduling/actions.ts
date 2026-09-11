@@ -34,7 +34,13 @@ import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conf
 import { checkAvailability } from "./availability-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
 import { isLegalEstadoCorrection } from "./estado-correction";
-import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
+import {
+  bookingLocationScope,
+  isLocationBookable,
+  resolveViewerLocationIds,
+} from "@/lib/auth/viewer-locations";
+import { sharedResourceLocationAllowed, type SharedResource } from "./shared-resource-guard";
+import { listSharedResources, listSharedResourcesTx } from "./shared-resources";
 import {
   emitCancelledNotification,
   emitConfirmedNotification,
@@ -66,6 +72,41 @@ import type {
 import { acquireSlotLocks, acquireSlotLocksForMany } from "./slot-lock";
 
 const AGENDA_PATH = "/agenda";
+
+/**
+ * SCHED-17 - THE APP-LAYER REFUSAL THE NESA RULING SAYS THE DATABASE CANNOT MAKE.
+ *
+ * Creating or moving an appointment on a SHARED RESOURCE (NESA) is refused at a
+ * location where the resource is not installed, or outside the actor's own
+ * assigned locations. The rule is sharedResourceLocationAllowed; this reads the
+ * two facts it needs. RLS cannot hold it alone: 0078's `created_by = auth.uid()`
+ * arm admits any row a therapist stamps with their own id, at any location, and
+ * the create path stamps exactly that. The NESA migration does not touch 0078.
+ *
+ * `resource` is returned so the therapist self-guard can admit a shared resource
+ * the actor may book, which is the other half of the requirement: a CB therapist
+ * CAN book the CB machine. Inert until the NESA migration is applied, because
+ * there are no shared resources before then (see shared-resources.ts).
+ *
+ * Pass `tx` when already inside a transaction, so the read joins it.
+ */
+async function sharedResourceBookingCheck(
+  actor: RequestContext,
+  practitionerId: string,
+  locationId: string,
+  tx?: DbTx,
+): Promise<{ ok: true; resource: SharedResource | null } | { ok: false }> {
+  const resources = tx ? await listSharedResourcesTx(tx) : await listSharedResources(actor);
+  const resource = resources.find((r) => r.id === practitionerId) ?? null;
+  if (!resource) return { ok: true, resource: null };
+  const allowed = sharedResourceLocationAllowed({
+    role: actor.role,
+    actorLocationIds: await resolveViewerLocationIds(actor),
+    resource,
+    targetLocationId: locationId,
+  });
+  return allowed ? { ok: true, resource } : { ok: false };
+}
 
 /**
  * EVERY APPOINTMENT MUTATION INVALIDATES THE AGENDA *AND* THE PATIENT STAT
@@ -557,7 +598,13 @@ export async function createAppointment(
   // request naming a DIFFERENT practitioner did not come from the form — reject
   // it. Gated on role "therapist" ONLY: admin/reception/owner book on behalf of
   // any therapist, unchanged. RLS is untouched; this is an app-layer guard.
-  if (actor.role === "therapist" && input.practitionerId !== actor.userId) {
+  //
+  // SCHED-17: ONE exception, a shared resource (NESA) installed at one of the
+  // therapist's own clinics - and first, for every role, the shared-resource
+  // location rule itself.
+  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
+  if (!shared.ok) return { ok: false, error: "shared_resource_location" };
+  if (actor.role === "therapist" && input.practitionerId !== actor.userId && !shared.resource) {
     return { ok: false, error: "forbidden" };
   }
   const firstStart = new Date(input.startsAt);
@@ -882,7 +929,13 @@ export async function batchScheduleAppointments(
   // PL-10 (defense in depth): the "Agendar lote" path is also a create form —
   // a self-locked therapist may only batch-book their OWN calendar. Same guard,
   // same role gate as createAppointment; admin/reception/owner unaffected.
-  if (actor.role === "therapist" && input.practitionerId !== actor.userId) {
+  //
+  // SCHED-17: the same shared-resource rule and the same one exception as single
+  // booking. Missing either here would leave Agendar lote refusing what Nova
+  // marcação allows, or allowing what it refuses.
+  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
+  if (!shared.ok) return { ok: false, error: "shared_resource_location" };
+  if (actor.role === "therapist" && input.practitionerId !== actor.userId && !shared.resource) {
     return { ok: false, error: "forbidden" };
   }
   try {
@@ -1042,6 +1095,15 @@ export async function cloneAppointment(
         if (!isLocationBookable(await bookingLocationScope(actor), source.locationId)) {
           return { ok: false, error: "location_not_assigned" };
         }
+        // SCHED-17: Marcar novamente creates an appointment too, on the source's
+        // practitioner and location. A NESA copy is held to the create rule.
+        const shared = await sharedResourceBookingCheck(
+          actor,
+          source.practitionerId,
+          source.locationId,
+          tx,
+        );
+        if (!shared.ok) return { ok: false, error: "shared_resource_location" };
 
         const values = buildClonedAppointment(source, newStart, {
           tenantId: actor.tenantId,
@@ -1183,6 +1245,8 @@ export async function updateAppointment(
   const ip = await clientIp();
   // Captured inside the tx, emitted AFTER commit (network out of the tx).
   let statusTargets: StatusNotificationTarget[] = [];
+  // W14-02: the portal pedidos this patch ACCEPTS. Same capture-then-emit shape.
+  let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1192,6 +1256,31 @@ export async function updateAppointment(
           return { ok: false, error: "not_found" };
         }
         const ids = affected.map((a) => a.id);
+
+        // The is_unconfirmed_pedido answer for `ids`, read at most once. Both the
+        // conflict check (INC-08 (b)) and the acceptance emit (W14-02) need it,
+        // and both need it BEFORE the UPDATE, while the rows are still
+        // `scheduled` - afterwards the function answers false for every row.
+        let probedPedidoIds: Set<string> | null = null;
+        const unconfirmedPedidoIds = async (): Promise<Set<string>> => {
+          if (probedPedidoIds) return probedPedidoIds;
+          const pedidoRows = (await tx.execute(sql`
+            SELECT a.id::text AS id
+              FROM public.appointments a
+             WHERE a.id IN (${sql.join(
+               ids.map((i) => sql`${i}::uuid`),
+               sql`, `,
+             )})
+               AND public.is_unconfirmed_pedido(a.id)
+          `)) as unknown;
+          probedPedidoIds = new Set(
+            (Array.isArray(pedidoRows)
+              ? pedidoRows
+              : ((pedidoRows as { rows?: unknown[] }).rows ?? [])
+            ).map((r) => (r as { id: string }).id),
+          );
+          return probedPedidoIds;
+        };
 
         // ==============================================================
         // INC-08 (a) — THE ESTADO MAP IS ENFORCED HERE, ON THE SERVER.
@@ -1337,21 +1426,7 @@ export async function updateAppointment(
           // appointment of every day, and it can never enter the blocking set.
           const anyScheduled = affected.some((a) => a.status === "scheduled");
           if (willBlock && anyScheduled) {
-            const pedidoRows = (await tx.execute(sql`
-              SELECT a.id::text AS id
-                FROM public.appointments a
-               WHERE a.id IN (${sql.join(
-                 ids.map((i) => sql`${i}::uuid`),
-                 sql`, `,
-               )})
-                 AND public.is_unconfirmed_pedido(a.id)
-            `)) as unknown;
-            const pedidoIds = new Set(
-              (Array.isArray(pedidoRows)
-                ? pedidoRows
-                : ((pedidoRows as { rows?: unknown[] }).rows ?? [])
-              ).map((r) => (r as { id: string }).id),
-            );
+            const pedidoIds = await unconfirmedPedidoIds();
 
             // Rows already blocking are skipped: this patch changes nothing
             // about their occupancy, and re-checking a row against itself
@@ -1399,6 +1474,29 @@ export async function updateAppointment(
               };
             }
           }
+        }
+
+        // ==============================================================
+        // W14-02 — CONFIRMING AN UNACCEPTED PORTAL PEDIDO HERE IS ACCEPTING
+        // IT, AND IT EMITS EXACTLY AS confirmAppointmentRequest DOES. Owner
+        // ruling 2026-09-10 (M2 Option A).
+        //
+        // Reception can accept a pedido from Pedidos (confirmAppointmentRequest,
+        // which has emitted since #1085) OR by moving its Estado to Confirmada in
+        // the drawer, which is this function - and this function emitted nothing
+        // for a confirmation. The pedido became a confirmed appointment with no
+        // run behind it: no confirmation, no 48h email, no 24h SMS.
+        //
+        // ONLY UNACCEPTED PEDIDOS. A staff booking already has its run, and a
+        // second appointment/scheduled at an unchanged start would cancel it
+        // (see lib/scheduling/pedido-acceptance.ts). Read BEFORE the UPDATE and
+        // regardless of allowConflict: "Guardar mesmo assim" overrides a
+        // conflict warning, not the acceptance.
+        // ==============================================================
+        let acceptedPedidos: SeriesMember[] = [];
+        if (patch.status === "confirmed" && affected.some((a) => a.status === "scheduled")) {
+          const pedidoIds = await unconfirmedPedidoIds();
+          acceptedPedidos = affected.filter((a) => a.status === "scheduled" && pedidoIds.has(a.id));
         }
 
         // Only run the column update when there is a column to change; a
@@ -1487,6 +1585,10 @@ export async function updateAppointment(
           statusTargets = affected.map((a) => ({ appointmentId: a.id, endsAt: a.endsAt }));
         }
 
+        reminderTargets = acceptedPedidos.map((a) => ({
+          appointmentId: a.id,
+          startsAt: a.startsAt,
+        }));
         return { ok: true, data: { id } };
       },
     );
@@ -1498,6 +1600,10 @@ export async function updateAppointment(
           statusTargets.length > 0
         ) {
           await enqueueStatusNotificationsAfterCommit(actor.tenantId, statusTargets, patch.status);
+        }
+        // W14-02: the accepted pedidos' confirmation and reminders, post-commit.
+        if (reminderTargets.length > 0) {
+          await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
         }
       });
     }
@@ -1524,6 +1630,11 @@ export async function rescheduleAppointment(
   if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
     return { ok: false, error: "location_not_assigned" };
   }
+  // SCHED-17: MOVING a shared-resource appointment is held to the same rule as
+  // creating one - the ruling names both. No therapist self-guard is added here:
+  // reschedule has never had one and relies on RLS for whose rows may move.
+  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
+  if (!shared.ok) return { ok: false, error: "shared_resource_location" };
   const inStart = new Date(input.startsAt);
   const inEnd = new Date(input.endsAt);
   if (!isValidInterval(inStart, inEnd)) {

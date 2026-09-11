@@ -329,8 +329,15 @@ export function AgendaGrid({
 
       {/* Body */}
       <div className="grid" style={gridCols}>
-        {/* Time gutter */}
-        <div className="relative border-r border-v2-border" style={{ height: totalHeight }}>
+        {/* Time gutter. The test id scopes agenda-sticky-header.spec.ts's hour
+            label to the gutter: the toolbar's "Atualizar" button renders the
+            refresh time as a bare HH:MM, and a page-wide match for "14:00"
+            found that pinned stamp instead whenever the page loaded at 14:00. */}
+        <div
+          data-testid="agenda-time-gutter"
+          className="relative border-r border-v2-border"
+          style={{ height: totalHeight }}
+        >
           {slots.map((m, i) => (
             <div
               key={m}
