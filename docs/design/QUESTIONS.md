@@ -1193,3 +1193,55 @@ grid's window is `DAY_START_HOUR = 8` / `DAY_END_HOUR = 20`, two module constant
 in `apps/web/lib/scheduling/time.ts:18-19`, read by nothing else. The other two
 booking surfaces bound themselves by `availability_templates` instead. Three
 definitions of the working day, no clinic-level fact for any of them to agree on.
+
+## Q-W14-02-1 — portal bookings and reminders: emit at booking (as dispatched) or keep acceptance (BLUE, 2026-09-10)
+
+**OPEN. Card `W14-02-portal-booking-emit-halted`, blocked on the owner.**
+
+The 2026-09-10 dispatch (M2) asked for `apps/api` `store.createBooking` to emit the
+reminder event at booking time. It was **not built**, for three reasons measured or read
+from the code rather than assumed:
+
+1. **Portal bookings already get reminders, at acceptance, by the owner's 2026-08-31
+   ruling.** `confirmAppointmentRequest` (`apps/web/lib/scheduling/actions.ts`) emits
+   post-commit when reception accepts the pedido (#1085). The creation-path gate's
+   "known gap" entry, added by #1261, cites the W14 card as open, and that card shipped
+   2026-08-31. Reproduced: `apps/web/lib/reminders/acceptance-event-flow.test.ts` and
+   `apps/web/lib/scheduling/creation-paths-emit-reminders.test.ts`, 17/17.
+2. **A booking-time emit would remove the reminders the acceptance emit schedules.**
+   `send-appointment-reminder` is cancelled by any new `appointment/scheduled` for the
+   same appointment, and is idempotent for 24 h on `appointmentId:offset:channel:sendAt`.
+   A pedido accepted within a day of booking would get no reminder. This is derived from
+   `apps/web/lib/reminders/inngest/functions.ts` and Inngest's documented semantics; it
+   was not executed against Inngest.
+3. It would red #1085's own guard. `apps/api` has no inngest dependency, and the
+   osteojp-api project has no `INNGEST_EVENT_KEY`.
+
+**The real gap:** a pedido confirmed OUTSIDE "Aceitar pedido" gets no run. Both of
+these set status `confirmed` and enqueue nothing (read from source):
+- the drawer's Estado selector (`updateAppointment`);
+- the SMS review queue (`apps/web/lib/reminders/inbound-store.ts`).
+
+**Options:**
+- **A (recommended default):** keep acceptance-time emission. Make those two confirm
+  paths emit exactly as `confirmAppointmentRequest` does when they move a portal pedido
+  out of `scheduled`, and flip the gate entry to `emits` with `confirmAppointmentRequest`
+  as its emitter. No new dependency, and no double emit.
+- **B:** emit at booking, as dispatched. Only after re-emission is made safe in the
+  reminder engine, plus inngest in `apps/api` and `INNGEST_EVENT_KEY` on osteojp-api.
+
+## Q-SCHED-17-2 — NESA: where "a CB therapist cannot book NESA at LV" is enforced (BLUE, 2026-09-10)
+
+**OPEN. Card `SCHED-17-nesa-shared-agenda-at-cb`.**
+
+The ruled location test is in both arms of the pending NESA migration. Measured on the
+real policy, the new disjunct refuses a NESA insert at the other location (42501).
+
+But 0078's `created_by = auth.uid()` arm is also in WITH CHECK. It admits any row a
+principal stamps with its own id, at any location, and the staff create path stamps
+`created_by` = the actor. So through the app, the insert passes RLS by that arm. It was
+ADMITTED both before and after the migration.
+
+**Recommended default:** enforce it in the NESA app-layer change (spec section 3), with
+an e2e proving the refusal, and leave 0078's `created_by` arm unchanged. Narrowing that
+arm in WITH CHECK would govern every staff insert in the tenant, not only NESA.
