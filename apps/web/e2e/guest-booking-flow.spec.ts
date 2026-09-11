@@ -24,6 +24,13 @@
  *
  * IT RUNS AGAINST THE PORTAL APP, anonymously: no storageState, PORTAL_BASE_URL
  * as the base. The seed's tenant is the one PORTAL_TENANT_ID names.
+ *
+ * FOUR STEPS OR FIVE, AND THE PAGE DECIDES (INTAKE-01). Once migration 0087's
+ * table exists the catalog reports `intakeEnabled` and the form grows a fifth
+ * step, the clinical intake, with the RGPD tick moved beneath it. This spec
+ * reads the step counter on step 1 and walks whatever the page shows, so it
+ * passes on a database with 0087 and on one without it; on five steps it answers
+ * step 5 and ticks the consent THERE, where it now sits.
  */
 import { test, expect } from "@playwright/test";
 import { LOCATION, PORTAL_BASE_URL } from "./fixtures";
@@ -34,7 +41,7 @@ test.describe("the public guest booking form (GUEST-04)", () => {
   // prove the page works for staff, which is not the question.
   test.use({ storageState: { cookies: [], origins: [] }, baseURL: PORTAL_BASE_URL });
 
-  test("an anonymous visitor walks four steps and gets a confirmation, with a NATIVE date field", async ({
+  test("an anonymous visitor walks every step (four, or five with the intake) and gets a confirmation, with a NATIVE date field", async ({
     page,
   }) => {
     await page.goto("/marcacao");
@@ -44,7 +51,10 @@ test.describe("the public guest booking form (GUEST-04)", () => {
     await expect(page.getByRole("heading", { name: "Pedido de marcação" })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText("Passo 1 de 4")).toBeVisible();
+    const counter = page.getByText(/^Passo 1 de [45]$/);
+    await expect(counter).toBeVisible();
+    const total = Number((await counter.textContent())?.trim().slice(-1));
+    expect([4, 5]).toContain(total);
 
     // No availability is disclosed anywhere on this screen (MN-27 / MN-28): a
     // visitor must not learn who works where or when a building is empty.
@@ -62,14 +72,14 @@ test.describe("the public guest booking form (GUEST-04)", () => {
     await page.getByRole("button", { name: "Continuar" }).click();
 
     // STEP 2 - service.
-    await expect(page.getByText("Passo 2 de 4")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(`Passo 2 de ${total}`)).toBeVisible({ timeout: 10_000 });
     await page.locator('input[name="serviceId"]').first().check();
     await page.getByRole("button", { name: "Continuar" }).click();
 
     // STEP 3 - when. THE DATE FIELD IS THE NATIVE CONTROL, deliberately, and it
     // still posts by NAME. If somebody converts it to the shared picker this
     // line fails, which is exactly the conversation that should happen first.
-    await expect(page.getByText("Passo 3 de 4")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(`Passo 3 de ${total}`)).toBeVisible({ timeout: 10_000 });
     const date = page.locator('input[type="date"][name="preferredDate"]');
     await expect(date).toHaveCount(1);
     // The bounds come from the SERVER, in Lisbon, so a browser in another zone
@@ -92,11 +102,38 @@ test.describe("the public guest booking form (GUEST-04)", () => {
 
     // STEP 4 - the review carries the date THIS BROWSER chose, which is what
     // proves the value survived two more posts as a hidden field.
-    await expect(page.getByText("Passo 4 de 4")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(`Passo 4 de ${total}`)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(preferred)).toBeVisible();
 
     await page.getByLabel("Nome completo").fill(`E2E Convidado ${Date.now()}`);
     await page.getByLabel("Telemóvel").fill("+351 916 000 123");
+
+    if (total === 5) {
+      // STEP 5 - the clinical intake (INTAKE-01). The RGPD tick is NOT on step 4
+      // any more: consent that covers the health answers sits beneath them.
+      await expect(page.locator('input[name="consent"]')).toHaveCount(0);
+      await page.getByRole("button", { name: "Continuar" }).click();
+      await expect(page.getByText("Passo 5 de 5")).toBeVisible({ timeout: 10_000 });
+
+      // The twin of preferredDate: NATIVE, posting by name.
+      const dob = page.locator('input[type="date"][name="dateOfBirth"]');
+      await expect(dob).toHaveCount(1);
+      await dob.fill("1985-03-02");
+      await page.getByLabel("Motivo da consulta").fill("E2E dor lombar");
+      // Neither answer is pre-checked (ruling 2); the visitor presses one.
+      await expect(page.locator('input[name="pacemaker"]:checked')).toHaveCount(0);
+      await expect(page.locator('input[name="pregnancy"]:checked')).toHaveCount(0);
+      await page
+        .getByRole("group", { name: "É portador de pacemaker?" })
+        .getByText("Não", { exact: true })
+        .click();
+      await page
+        .getByRole("group", { name: "Está grávida?" })
+        .getByText("Não", { exact: true })
+        .click();
+      await expect(page.getByTestId("guest-intake-consent")).toContainText("sete dias");
+    }
+
     await page.locator('input[name="consent"]').check();
     await page.getByRole("button", { name: "Enviar pedido" }).click();
 
