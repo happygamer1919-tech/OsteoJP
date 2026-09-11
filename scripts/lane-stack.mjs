@@ -64,12 +64,17 @@ export const REPO_ROOT = path.resolve(HERE, "..");
  * of 100 would have collided with it, and a collision here does not announce
  * itself - the CLI simply fails to bind, or worse, a client reaches a stack that
  * answers and holds somebody else's rows.
+ *
+ * GREEN SKIPS +500 FOR THE SAME REASON. On 2026-09-11 an rc-inventory scratch
+ * stack was listening on 54821/54822, which is exactly where +500 lands, so
+ * green takes +600 (549xx) and the apps take 3050-3052.
  */
 export const LANES = Object.freeze({
   shared: { db: 0, app: 0 },
   purple: { db: 200, app: 20 },
   blue: { db: 300, app: 30 },
   amber: { db: 400, app: 40 },
+  green: { db: 600, app: 50 },
 });
 
 /** Every host port in the committed config, and what it is, so a shift is auditable. */
