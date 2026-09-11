@@ -133,9 +133,10 @@ COMMENT ON FUNCTION public.shared_resource_practitioner_ids() IS
 /* give a CB therapist read and no edit, which is not the requirement.  */
 /* Adding the disjunct to WITH CHECK also governs INSERT and the        */
 /* post-UPDATE row state, so a CB therapist may CREATE a NESA           */
-/* appointment at any location this function returns. That is the       */
-/* intended grant. It is written here so it is granted on purpose and   */
-/* not discovered later as a side effect of wanting edit.               */
+/* appointment - but only one RECORDED at a location that is theirs,     */
+/* which is the location test in section 3b. That is the intended grant.*/
+/* It is written here so it is granted on purpose and not discovered     */
+/* later as a side effect of wanting edit.                              */
 /*                                                                      */
 /* WHAT THIS FIXES IS A HALF-STATE, NOT AN ABSENCE. Today the ONLY      */
 /* reason any NESA appointment is reachable by a therapist is the       */
@@ -166,7 +167,8 @@ ALTER POLICY appointments_rls ON public.appointments
           AND ((practitioner_id = ( SELECT auth.uid() ))
                OR (practitioner_2_id = ( SELECT auth.uid() ))))
       OR ((( SELECT public.jwt_role() ) = 'therapist'::text)
-          AND (practitioner_id = ANY (coalesce(( SELECT public.shared_resource_practitioner_ids() ), '{}'::uuid[]))))
+          AND (practitioner_id = ANY (coalesce(( SELECT public.shared_resource_practitioner_ids() ), '{}'::uuid[])))
+          AND (location_id = ANY (coalesce(( SELECT public.viewer_location_ids() ), '{}'::uuid[]))))
       OR ((( SELECT public.jwt_role() ) = ANY (ARRAY['admin'::text, 'reception'::text]))
           AND ((NOT ( SELECT public.viewer_has_location_assignment() ))
                OR ((location_id IS NOT NULL)
@@ -182,7 +184,8 @@ ALTER POLICY appointments_rls ON public.appointments
           AND ((practitioner_id = ( SELECT auth.uid() ))
                OR (practitioner_2_id = ( SELECT auth.uid() ))))
       OR ((( SELECT public.jwt_role() ) = 'therapist'::text)
-          AND (practitioner_id = ANY (coalesce(( SELECT public.shared_resource_practitioner_ids() ), '{}'::uuid[]))))
+          AND (practitioner_id = ANY (coalesce(( SELECT public.shared_resource_practitioner_ids() ), '{}'::uuid[])))
+          AND (location_id = ANY (coalesce(( SELECT public.viewer_location_ids() ), '{}'::uuid[]))))
       OR ((( SELECT public.jwt_role() ) = ANY (ARRAY['admin'::text, 'reception'::text]))
           AND ((NOT ( SELECT public.viewer_has_location_assignment() ))
                OR ((location_id IS NOT NULL)
@@ -194,7 +197,8 @@ COMMENT ON POLICY appointments_rls ON public.appointments IS
   'Tenant + role scope for staff. 0078 made the admin/reception location test '
   'a nullary set membership. This adds a fourth therapist disjunct: a therapist '
   'may read AND write appointments whose practitioner is a SHARED RESOURCE '
-  '(users.is_shared_resource) at a location they share with it, which is what '
+  '(users.is_shared_resource) at a location they share with it, and only where '
+  'the appointment itself is recorded at one of their locations, which is what '
   'makes NESA at Castelo Branco a genuinely shared agenda instead of one that '
   'is visible only to whoever booked it. Deliberately LOOSENING: the size and '
   'the shape of the loosening are measured by scripts/nesa-equivalence.sql, '
@@ -202,53 +206,47 @@ COMMENT ON POLICY appointments_rls ON public.appointments IS
 
 
 /* ==================================================================== */
-/* 3b. THE GATE HALTS ON THIS PREDICATE, AND THE NUMBER IS BELOW        */
+/* 3b. THE LOCATION TEST, RULED 2026-09-10, AND WHAT IT MEASURES        */
 /* ==================================================================== */
-/* MEASURED, NOT PREDICTED. scripts/nesa-equivalence-selftest.sql seeds  */
-/* the exact situation this change is for and runs the gate's counters   */
-/* over it. On the blue lane, 2026-09-10:                                */
+/* The first draft scoped the widening only by where the RESOURCE is,    */
+/* and the gate halted on it. The self-test measured, for the therapist  */
+/* sharing a location with the resource: loosened 2,                    */
+/* loosened_outside_expected 1. The one was a NESA appointment RECORDED  */
+/* at Linda-a-Velha, readable AND creatable by a CB therapist, because   */
+/* the disjunct sits in WITH CHECK too.                                 */
 /*                                                                      */
-/*     the therapist sharing a location with the resource               */
-/*       loosened_rows              2                                   */
-/*       loosened_outside_expected  1     <-- the gate HALTS on this     */
-/*       tightened_rows             0                                   */
-/*       expected_still_invisible   0                                   */
-/*     the therapist at the other location   all four 0                 */
-/*     every non-therapist principal          all four 0                */
+/* STRATEGY RULED THE CRITERION WINS. The new disjunct in BOTH arms now  */
+/* also requires                                                        */
 /*                                                                      */
-/* WHY THE ONE. The ruling scopes the widening by where the RESOURCE is  */
-/* - that is what "inside the nullary function" means, and it is        */
-/* implemented above exactly as ruled. The dispatch's acceptance        */
-/* criterion is written about the ROWS: "loosened = exactly             */
-/* shared-resource rows AT THE VIEWER'S LOCATIONS". Those two are not   */
-/* the same set. An appointment on the CB machine RECORDED against      */
-/* Linda-a-Velha satisfies the disjunct - its practitioner is a shared  */
-/* resource the viewer shares a location with - and fails the criterion */
-/* - its own location_id is not one of the viewer's.                    */
+/*   location_id = ANY (coalesce(( SELECT public.viewer_location_ids() ), '{}'::uuid[])) */
 /*                                                                      */
-/* AND IT IS A WRITE, NOT ONLY A READ. Because the disjunct is in WITH  */
-/* CHECK too, the same gap lets a CB therapist CREATE a NESA appointment */
-/* recorded at LV. That is a location boundary being crossed, which is   */
-/* the exact thing the gate exists to refuse silently passing.          */
+/* - the same nullary STABLE SECURITY DEFINER function 0078 already      */
+/* calls, in the same InitPlan shape, evaluated once per statement. A   */
+/* NULL location_id makes `= ANY` NULL, which RLS treats as false, so a  */
+/* row with no location is never reached through this arm; the admin    */
+/* arm's explicit IS NOT NULL is not needed for the same result here.    */
 /*                                                                      */
-/* THE PREDICATE IS NOT QUIETLY CHANGED HERE TO MAKE THE GATE GREEN.    */
-/* Strategy ruled the text; the gate reports what the text does. One of  */
-/* the two has to give and that is strategy's call, not this lane's.    */
+/* MEASURED ON THE BLUE LANE, 2026-09-10, AFTER THE CHANGE:             */
+/*   default arm (no resource row, i.e. production as it stands)        */
+/*     loosened 0, tightened 0 over 14 principals, verdict INERT        */
+/*   self-test, restated predicate                        5/5 PASS      */
+/*     sharing therapist  loosened 1, outside_expected 0, tightened 0,  */
+/*                        expected_still_invisible 0                    */
+/*     other-location therapist, every non-therapist      all 0         */
+/*   self-test, THIS FILE applied in a rolled-back transaction           */
+/*     W1 CB therapist creates NESA at CB, created_by reception  ADMITTED */
+/*     W2 the same at LV                          REFUSED 42501         */
+/*     V1 reception's NESA row at LV                  INVISIBLE         */
 /*                                                                      */
-/* THE ONE-LINE REMEDY, IF STRATEGY RULES THE CRITERION WINS: add       */
-/*                                                                      */
-/*   AND (location_id IS NOT NULL)                                      */
-/*   AND (location_id = ANY (coalesce(( SELECT public.viewer_location_ids() ), '{}'::uuid[]))) */
-/*                                                                      */
-/* to the new disjunct in BOTH arms. It keeps the nullary shape and the  */
-/* same two InitPlans, costs nothing measurable, and makes              */
-/* loosened_outside_expected structurally zero. It is the TIGHTER of the */
-/* two readings, which is why it is the recommendation.                 */
-/*                                                                      */
-/* IF STRATEGY RULES THE PREDICATE WINS, the gate's criterion is what    */
-/* changes - `expected` drops its location_id test - and the run is then */
-/* BOUNDED rather than HALT. Either way the two agree before anything is */
-/* applied, which is the whole purpose of measuring.                    */
+/* WHAT THIS DOES NOT CLOSE, MEASURED RATHER THAN ASSUMED. 0078's        */
+/* `created_by = auth.uid()` arm is in WITH CHECK as well, and it admits */
+/* any row a principal stamps with its own id, at any location in the    */
+/* tenant. The staff create path stamps created_by = the actor           */
+/* (apps/web/lib/scheduling/actions.ts, createAppointment), so a CB      */
+/* therapist booking NESA at LV THROUGH THE APP passes RLS by that arm - */
+/* ADMITTED before this migration and after it. That is a property of   */
+/* 0078, not of this file; narrowing it governs every staff insert, not  */
+/* only NESA, and is a separate ruling.                                 */
 
 /* ==================================================================== */
 /* 4. WHAT THIS MIGRATION DOES NOT DO                                   */
