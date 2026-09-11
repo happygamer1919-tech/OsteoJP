@@ -486,6 +486,36 @@ export const patientPackInstances = pgTable(
      */
     legacyConsumed: integer("legacy_consumed").notNull().default(0),
     status: text("status").notNull().default("active"),
+    /**
+     * 0083 (PACK-06) — WHAT RECEPTION SAID WAS CHARGED WHEN THIS INSTANCE WAS
+     * SWITCHED TO A DIFFERENT PACOTE, in minor units (cents), never float.
+     *
+     * NOTHING IN THE DATABASE CAN COMPUTE THIS. There is no price on an
+     * instance and invoices are per-appointment with no pack reference, so a
+     * number typed by the person who took the payment is the only honest
+     * record. Strategy's ruling is that a computed catalogue difference would
+     * be "a fact the system invented" while a typed number is "a fact somebody
+     * took responsibility for".
+     *
+     * NULL MEANS NEVER SWITCHED, AND IT IS NOT ZERO. Zero is a real value: a
+     * goodwill upgrade is a commercial act, and collapsing "nothing was
+     * charged" into "nobody said" would lose exactly the distinction the
+     * ruling is about. NO DEFAULT, and the absence IS the constraint — a
+     * pre-filled amount could not afterwards be told apart from an amount
+     * somebody looked at and accepted.
+     */
+    switchAmountCents: integer("switch_amount_cents"), // minor units (cents), never float
+    /**
+     * 0083 (PACK-06) — why that amount was what it was, in reception's own
+     * words. REQUIRED whenever the amount is set and refused when it is not
+     * (`..._switch_amount_and_reason_together`): an amount with no reason is a
+     * number nobody can audit. Blank and whitespace-only are refused too.
+     *
+     * IT LIVES HERE AND NOT IN `audit_log.metadata`, which was the cheap route
+     * and collides with that helper's PII-free contract — see 0083's header
+     * and the guard in apps/web/lib/scheduling/audit.ts.
+     */
+    switchReason: text("switch_reason"),
     purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -505,6 +535,19 @@ export const patientPackInstances = pgTable(
     check(
       "patient_pack_instances_legacy_consumed_range",
       sql`${t.legacyConsumed} >= 0 AND ${t.legacyConsumed} <= ${t.sessionsTotal}`,
+    ),
+    // 0083 — the three stamped constraints. Zero is accepted, negative is not.
+    check(
+      "patient_pack_instances_switch_amount_nonneg",
+      sql`${t.switchAmountCents} IS NULL OR ${t.switchAmountCents} >= 0`,
+    ),
+    check(
+      "patient_pack_instances_switch_reason_nonblank",
+      sql`${t.switchReason} IS NULL OR btrim(${t.switchReason}) <> ''`,
+    ),
+    check(
+      "patient_pack_instances_switch_amount_and_reason_together",
+      sql`(${t.switchAmountCents} IS NULL) = (${t.switchReason} IS NULL)`,
     ),
   ],
 );

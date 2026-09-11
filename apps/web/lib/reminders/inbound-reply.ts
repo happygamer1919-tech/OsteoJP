@@ -3,6 +3,13 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { appointments, auditLog, patients, type DbTx } from "@osteojp/db";
 import { normalizePhonePT } from "@osteojp/notify";
 
+import { blockingConflicts, findConflictsForWindow } from "@/lib/scheduling/conflict";
+import {
+  emitAcceptedPedidoReminders,
+  isUnconfirmedPedido,
+} from "@/lib/scheduling/pedido-acceptance";
+import { acquireSlotLocks } from "@/lib/scheduling/slot-lock";
+import type { ReminderEnqueueTarget } from "@/lib/scheduling/reminders";
 import { withReminderTenantContext } from "./context";
 import { classifyInboundReply, type InboundIntent } from "./inbound-classify";
 import { REMINDER_OFFSETS } from "./offsets";
@@ -64,7 +71,11 @@ export type ReviewReason =
   /** They have one, but the reply arrived before its reminder was due. */
   | "outside_window"
   /** The confirm would have violated appointments_no_double_confirmed. */
-  | "double_confirmed_refused";
+  | "double_confirmed_refused"
+  /** Q-W14-02-2: the reply would have accepted a portal pedido whose slot is no
+   *  longer free - another booking or the therapist's time off holds it. The
+   *  same check "Aceitar pedido" runs; the pedido stays unconfirmed. */
+  | "slot_taken";
 
 /**
  * WHAT THE REPLY MATCHED, carried on every outcome so the caller can file the
@@ -173,7 +184,9 @@ export async function applyInboundReply(args: {
   const classification = classifyInboundReply(body);
   const e164 = normalizePhonePT(args.fromPhone);
 
-  return withReminderTenantContext<InboundReplyResult>(tenantId, async (tx) => {
+  // W14-02: an accepted portal pedido, captured inside the tx, emitted after it.
+  let accepted: ReminderEnqueueTarget[] = [];
+  const result = await withReminderTenantContext<InboundReplyResult>(tenantId, async (tx) => {
     // A sender we cannot even normalize is a no-match, not an error. It is
     // recorded with no patient and no appointment, which is the honest row.
     if (!e164) {
@@ -252,6 +265,11 @@ export async function applyInboundReply(args: {
         id: appointments.id,
         status: appointments.status,
         startsAt: appointments.startsAt,
+        // Q-W14-02-2: the window and its occupants, for the pedido slot re-check.
+        endsAt: appointments.endsAt,
+        practitionerId: appointments.practitionerId,
+        locationId: appointments.locationId,
+        room: appointments.room,
       })
       .from(appointments)
       .where(
@@ -343,6 +361,47 @@ export async function applyInboundReply(args: {
     // The audit row is written in its OWN transaction afterwards, because this
     // one is already dead: writing it here would roll back with the failure it
     // is recording.
+    //
+    // W14-02 - THE THIRD DOOR. Nothing above excludes a pedido: this confirms the
+    // patient's NEXT `scheduled` appointment, and an unaccepted portal pedido is
+    // `scheduled`. So a SIM could accept a pedido with no run behind it. Read
+    // BEFORE the write (is_unconfirmed_pedido requires `scheduled`); a staff
+    // booking already has its run and is NOT re-emitted.
+    const pedido = await isUnconfirmedPedido(tx, appt.id);
+
+    // Q-W14-02-2 - THE SLOT RE-CHECK "ACEITAR PEDIDO" RUNS, AND ONLY FOR A PEDIDO.
+    // An unconfirmed pedido does not hold its slot (owner ruling 2026-08-06,
+    // W13-04a option B), so by the time the patient answers another booking or
+    // the therapist's time off may own it. confirmAppointmentRequest refuses in
+    // that case; this door confirmed anyway, and 0061 only ever catches a
+    // CONFIRMED overlap - never a scheduled staff booking, never an absence.
+    //
+    // THE SAME CHECK, NOT A SECOND ONE: the same slot lock every write path
+    // takes, then findConflictsForWindow excluding the pedido itself, through
+    // blockingConflicts (availability stays advisory, exactly as for Aceitar). A
+    // staff booking is not re-checked, for Aceitar's own reason: it already
+    // occupies its slot, and re-checking it against itself proves nothing.
+    //
+    // ON CONFLICT NOTHING IS WRITTEN BUT THE AUDIT ROW. The pedido stays
+    // `scheduled` and in reception's pedido queue, the reply is filed for
+    // reception's review as `slot_taken`, and no reminder is emitted. The patient
+    // receives the existing review acknowledgement - true as written: reception
+    // will get back to them.
+    if (pedido) {
+      await tx.execute(
+        acquireSlotLocks(tenantId, appt.practitionerId, appt.startsAt, appt.endsAt),
+      );
+      const found = await findConflictsForWindow(tx, {
+        practitionerId: appt.practitionerId,
+        locationId: appt.locationId,
+        room: appt.room,
+        startsAt: appt.startsAt,
+        endsAt: appt.endsAt,
+        excludeIds: [appt.id],
+      });
+      if (blockingConflicts(found).length > 0) return review("slot_taken");
+    }
+
     try {
       await tx
         .update(appointments)
@@ -372,6 +431,7 @@ export async function applyInboundReply(args: {
       outcome: "confirmed",
       reason: null,
     });
+    if (pedido) accepted = [{ appointmentId: appt.id, startsAt: appt.startsAt }];
     return { outcome: "confirmed", appointmentId: appt.id, patientId } as const;
   }).catch(async (err: unknown) => {
     if (err instanceof DoubleConfirmedRefusal) {
@@ -395,6 +455,13 @@ export async function applyInboundReply(args: {
     }
     throw err;
   });
+  // Post-commit and best-effort, exactly as confirmAppointmentRequest: the pedido
+  // really is confirmed by now. Inside the 24h window both reminder offsets have
+  // already passed, so in practice this sends the confirmation.
+  if (result.outcome === "confirmed") {
+    await emitAcceptedPedidoReminders("smsReply", tenantId, accepted);
+  }
+  return result;
 }
 
 /** Carries the ids across the transaction boundary the rollback destroys. */

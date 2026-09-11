@@ -33,6 +33,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+// W14-02: the ONE call that leaves the process. Everything else is real.
+const enqueueSpy = vi.hoisted(() =>
+  vi.fn<(tenantId: string, targets: unknown[]) => Promise<void>>(async () => {}),
+);
+vi.mock("@/lib/scheduling/reminders", () => ({ enqueueRemindersAfterCommit: enqueueSpy }));
+
 const url = process.env.DATABASE_URL;
 const live = Boolean(url);
 const d = live ? describe : describe.skip;
@@ -89,6 +95,8 @@ d("applyInboundReply against a real database", () => {
     await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from locations where tenant_id = ${tenantId}`);
+    // Q-W14-02-2's time-off case: time_off references users, so it goes first.
+    await sql.execute(raw`delete from time_off where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from users where tenant_id = ${tenantId}`);
   });
 
@@ -129,6 +137,8 @@ d("applyInboundReply against a real database", () => {
     hoursFromNow: number;
     status?: string;
     practitioner?: string;
+    /** 'patient_portal' makes a `scheduled` row an unaccepted pedido (0067). */
+    origin?: string;
   }): Promise<string> {
     const id = randomUUID();
     // ISO strings, not Date objects: the raw-template path binds through the
@@ -137,10 +147,10 @@ d("applyInboundReply against a real database", () => {
     const ends = new Date(Date.now() + (args.hoursFromNow + 1) * H).toISOString();
     await sql.execute(raw`insert into appointments
                 (id, tenant_id, patient_id, practitioner_id, location_id,
-                 starts_at, ends_at, status)
+                 starts_at, ends_at, status, origin)
               values (${id}, ${tenantId}, ${args.patientId},
                       ${args.practitioner ?? (await seedPractitioner())}, ${locationId},
-                      ${starts}, ${ends}, ${args.status ?? "scheduled"})`);
+                      ${starts}, ${ends}, ${args.status ?? "scheduled"}, ${args.origin ?? "staff"})`);
     return id;
   }
 
@@ -182,6 +192,99 @@ d("applyInboundReply against a real database", () => {
     // but redeem.ts had ever written.
     expect(row.confirmation_state).toBe("confirmed");
     expect(row.confirmation_channel).toBe("sms");
+  });
+
+  /* ---- W14-02: the third door - the patient's own SIM on a pedido ---- */
+  // Nothing in this path excludes a pedido: it confirms the patient's NEXT
+  // `scheduled` appointment inside the 24h window, and an unaccepted portal
+  // pedido is `scheduled`. So a SIM moved it to confirmed with no run behind
+  // it. It now emits exactly as confirmAppointmentRequest does; a staff booking
+  // stays silent because it already has its run.
+  it("W14-02: SIM on an unaccepted PORTAL PEDIDO confirms it AND emits its confirmation, once", async () => {
+    enqueueSpy.mockClear();
+    const n = nextSubscriber();
+    const patientId = await seedPatient("+351" + n);
+    const apptId = await seedAppointment({ patientId, hoursFromNow: 20, origin: "patient_portal" });
+
+    const out = await reply("Sim", "+351" + n);
+    expect(out).toEqual({ outcome: "confirmed", appointmentId: apptId, patientId });
+    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+    const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
+    expect(tenantArg).toBe(tenantId);
+    expect(targets).toEqual([{ appointmentId: apptId, startsAt: expect.any(Date) }]);
+  });
+
+  it("W14-02: SIM on a STAFF booking emits NOTHING - it already has its run", async () => {
+    enqueueSpy.mockClear();
+    const n = nextSubscriber();
+    const patientId = await seedPatient("+351" + n);
+    await seedAppointment({ patientId, hoursFromNow: 20 });
+
+    const out = await reply("Sim", "+351" + n);
+    expect(out.outcome).toBe("confirmed");
+    expect(enqueueSpy).not.toHaveBeenCalled();
+  });
+
+  /* ---- Q-W14-02-2: a SIM re-checks a pedido's slot, exactly as Aceitar does ---- */
+  // An unconfirmed pedido does NOT hold its slot (owner ruling 2026-08-06, W13-04a
+  // option B), so by the time the patient answers "SIM" someone else may own it.
+  // "Aceitar pedido" (confirmAppointmentRequest) re-checks under the slot lock and
+  // refuses; the SIM door confirmed anyway. Each case below leaves the pedido
+  // UNCONFIRMED, files it for reception as `slot_taken`, and emits nothing.
+  async function expectSlotTaken(pedidoId: string, out: Awaited<ReturnType<typeof reply>>) {
+    expect(out).toMatchObject({ outcome: "review", reason: "slot_taken", appointmentId: pedidoId });
+    const row = await apptRow(pedidoId);
+    expect(row.status).toBe("scheduled");
+    expect(row.confirmation_state).toBe("pending");
+    expect(row.confirmation_channel).toBeNull();
+    const audit = await auditRows(pedidoId);
+    expect(audit.at(-1)?.metadata).toMatchObject({
+      source: "patient-sms-reply",
+      outcome: "review",
+      reason: "slot_taken",
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+  }
+
+  it("Q-W14-02-2: SIM on a pedido whose slot a STAFF booking has since taken is NOT confirmed", async () => {
+    enqueueSpy.mockClear();
+    const shared = await seedPractitioner();
+    const n = nextSubscriber();
+    const patientId = await seedPatient("+351" + n);
+    const pedidoId = await seedAppointment({ patientId, hoursFromNow: 20, origin: "patient_portal", practitioner: shared });
+    // Another patient's staff booking on the same therapist and hour. It is only
+    // `scheduled`, so 0061's EXCLUDE (confirmed vs confirmed) would NOT refuse the
+    // confirm: this is exactly the double booking the database lets through.
+    const other = await seedPatient(null);
+    await seedAppointment({ patientId: other, hoursFromNow: 20, practitioner: shared });
+
+    await expectSlotTaken(pedidoId, await reply("SIM", "+351" + n));
+  });
+
+  it("Q-W14-02-2: a CONFIRMED booking on the hour is caught by the re-check BEFORE the write", async () => {
+    enqueueSpy.mockClear();
+    const shared = await seedPractitioner();
+    const n = nextSubscriber();
+    const patientId = await seedPatient("+351" + n);
+    const pedidoId = await seedAppointment({ patientId, hoursFromNow: 20, origin: "patient_portal", practitioner: shared });
+    const other = await seedPatient(null);
+    await seedAppointment({ patientId: other, hoursFromNow: 20, practitioner: shared, status: "confirmed" });
+
+    await expectSlotTaken(pedidoId, await reply("SIM", "+351" + n));
+  });
+
+  it("Q-W14-02-2: the therapist's TIME OFF over the slot blocks the confirm too", async () => {
+    enqueueSpy.mockClear();
+    const shared = await seedPractitioner();
+    const n = nextSubscriber();
+    const patientId = await seedPatient("+351" + n);
+    const pedidoId = await seedAppointment({ patientId, hoursFromNow: 20, origin: "patient_portal", practitioner: shared });
+    const offFrom = new Date(Date.now() + 19 * H).toISOString();
+    const offTo = new Date(Date.now() + 22 * H).toISOString();
+    await sql.execute(raw`insert into time_off (tenant_id, user_id, starts_at, ends_at, reason)
+              values (${tenantId}, ${shared}, ${offFrom}, ${offTo}, 'vacation')`);
+
+    await expectSlotTaken(pedidoId, await reply("SIM", "+351" + n));
   });
 
   it("NAO moves a scheduled appointment to cancelled", async () => {
