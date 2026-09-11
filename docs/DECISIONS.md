@@ -4250,3 +4250,35 @@ limite de 15 MB.". After it, the same file uploaded, was stored at 23,069,484
 bytes, and the app's own "Abrir" returned it as HTTP 200 application/pdf,
 byte-identical (sha256 2a65c9ad...). A 51 MiB PDF is refused with the new 50 MB
 wording. The lane bucket mirrors production's (no size or type limit).
+
+## 2026-09-11 - GREEN, J1 / STAFF-10: the JP split script (scripted, NOT run)
+
+`packages/db/scripts/staff-10-jp-split-lv.mjs` moves JP(cb)'s Linda-a-Velha rows to
+JP(lv) in one transaction, per the standing ruling. It is owner-run and runs only
+after strategy verifies it against the STAFF-09 counts. How the ruling was read,
+row class by row class:
+
+- **Moves because it is therapist-scoped and located at LV:** appointments (both
+  therapist slots), schedule rows (recurring and day-defined, active or not), and
+  analytics events located at LV.
+- **Moves because its link clearly implies LV:** 3 time-off blocks whose only
+  evidence is LV (JP scheduled at LV that day, or JP's LV appointments inside
+  it), and 8 episodes whose patient's primary clinic is LV and who has no CB
+  appointment at all. Both sets are PINNED by id and RE-DERIVED at run time; a
+  difference halts before any write.
+- **Copies (profile):** phone, job title, bookable flag, the CB agenda colour onto
+  the LV membership, and the service mapping. Not the name, email, role or active
+  flag, which the owner set on the LV row himself.
+- **Never moves:** clinical records (authorship; locked rows are trigger-immutable),
+  note authorship, audit_log, patients.created_by, every CB row. Asserted unchanged.
+- **Stays, and listed for an owner ruling rather than scripted:** 7 time-off blocks
+  with no clinic evidence, and 19 unread LV notifications in JP(cb)'s inbox (the
+  LV row has no login, so moving them would hide them from everyone).
+
+The audit row it writes carries every moved id, which is what makes `--rollback`
+exact rather than approximate: reversing "JP(lv)'s LV rows" would also take the
+2,214 LV appointments JP(lv) already held from the import. Rehearsed on the
+green lane against a fixture under the production ids: preview, a mid-transaction
+race that must fail two post-checks and roll back, a wrong count, the apply, a
+second apply, the rollback preview, the rollback (restoring the exact starting
+fingerprint), and a rollback with nothing to reverse.
