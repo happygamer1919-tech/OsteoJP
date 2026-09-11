@@ -87,10 +87,12 @@ d("NOTES-01: the latest note of either kind", () => {
     }
 
     // The patient-level note is the OLDEST, so a read that still preferred it
-    // would be visible as a wrong `kind` rather than as a missing row.
+    // would be visible as a wrong `kind` rather than as a missing row. NOTES-03:
+    // "oldest" is now measured against the VISITS (10 days ago), because a note
+    // on a marcação sits at the marcação's date - so it predates them.
     await db.execute(
       sql`insert into public.appointment_notes (tenant_id, patient_id, appointment_id, body, created_at)
-          values (${tenant}, ${both}, null, 'nota de paciente antiga', now() - interval '9 days')`,
+          values (${tenant}, ${both}, null, 'nota de paciente antiga', now() - interval '11 days')`,
     );
     await db.execute(
       sql`insert into public.appointment_notes (tenant_id, patient_id, appointment_id, body, created_at)
@@ -134,6 +136,40 @@ d("NOTES-01: the latest note of either kind", () => {
   it("a patient with no notes is ABSENT, not present and empty", async () => {
     const map = await run((tx) => readLatestNoteEitherKind(tx, [silent]));
     expect(map.has(silent)).toBe(false);
+  });
+
+  it("NOTES-03: a note typed today on an OLD marcação does not become the latest", async () => {
+    // Production's shape (2026-09-11): a March visit got a second note in
+    // September. By creation it wins; by the ruling it sits at March, so June's
+    // note is the latest - the same entry `listPatientNotes` draws first.
+    const shuffled = randomUUID();
+    const march = randomUUID();
+    const june = randomUUID();
+    const { sql } = await import("drizzle-orm");
+    await db.execute(
+      sql`insert into public.patients (id, tenant_id, full_name) values (${shuffled}, ${tenant}, 'Baralhado')`,
+    );
+    for (const [id, daysAgo] of [
+      [march, 180],
+      [june, 90],
+    ] as const) {
+      await db.execute(
+        sql`insert into public.appointments
+              (id, tenant_id, patient_id, practitioner_id, location_id, service_id, starts_at, ends_at)
+            values (${id}, ${tenant}, ${shuffled}, ${staff}, ${location}, ${service},
+                    now() - make_interval(days => ${daysAgo}),
+                    now() - make_interval(days => ${daysAgo}) + interval '45 minutes')`,
+      );
+    }
+    await db.execute(
+      sql`insert into public.appointment_notes (tenant_id, patient_id, appointment_id, body, created_at)
+          values (${tenant}, ${shuffled}, ${june}, 'nota de junho', now() - interval '90 days'),
+                 (${tenant}, ${shuffled}, ${march}, 'nota de marco escrita hoje', now() - interval '1 hour')`,
+    );
+    const hit = (await run((tx) => readLatestNoteEitherKind(tx, [shuffled]))).get(shuffled);
+    expect(hit!.excerpt.text).toContain("nota de junho");
+    expect(hit!.kind).toBe("appointment");
+    expect(hit!.total).toBe(2);
   });
 
   it("THE REGRESSION: the old patient-only read finds nothing for this patient", async () => {

@@ -5,8 +5,18 @@
 // one here because they are staff-uploaded arbitrary files (declarations,
 // consent forms, identity docs, referrals) rather than in-visit clinical media.
 
-/** Max upload size: 15 MB. Covers scanned multi-page PDFs and phone photos. */
-export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
+/**
+ * Max upload size: 50 MiB (INC-patient-document-over-15mb-refused). It was 15 MB,
+ * and a scanned RGPD document over that was refused at the desk.
+ *
+ * THIS CONSTANT IS THE WHOLE CAP. The bytes never pass through a Vercel function
+ * (browser -> Storage on a signed upload URL, see PatientDocuments.tsx), so the
+ * ~4.5 MB function body limit does not apply, and production's
+ * `clinical-attachments` bucket has file_size_limit NULL (read 2026-09-11). What
+ * sits above this is the Storage project's global upload limit, a dashboard
+ * setting that 50 MiB must not exceed.
+ */
+export const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
 /**
  * Accepted MIME types for patient documents. Documents (PDF), images (scans /

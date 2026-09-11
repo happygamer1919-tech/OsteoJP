@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 
-import { DatePicker, datePickerAnchor, formatTypedDate, parseTypedDate } from "./DatePicker";
+import { DatePicker, blurLeavesPicker, datePickerAnchor, formatTypedDate, parseTypedDate } from "./DatePicker";
 
 /**
  * SCHED-06 - an empty date field opens its calendar on TODAY, never on 1900.
@@ -234,5 +234,41 @@ describe("posting and validation", () => {
     const out = html({ name: "startDate", required: true });
     expect(out).toMatch(/<input[^>]*type="text"[^>]*required/);
     expect(out).not.toMatch(/<input type="hidden"[^>]*required/);
+  });
+});
+
+/**
+ * SR-62 U1 - the calendar opened and could never be used, in Safari.
+ *
+ * MEASURED in WebKit: a press on "Mes seguinte" blurs the focused day cell with
+ * relatedTarget = the drawer's modal <dialog>, which CONTAINS the picker. The
+ * old close rule asked only "is it inside the picker?", got no, and unmounted
+ * the popover before the click landed. This pins the rule on the pure
+ * predicate; date-picker-calendar-open.spec.ts drives it through a real click.
+ */
+describe("blurLeavesPicker - which blurs close the calendar (SR-62 U1)", () => {
+  // Stand-ins for DOM nodes: this project has no DOM, and the predicate only
+  // ever asks "who contains whom".
+  const inside = {};
+  const root = { contains: (n: unknown) => n === inside };
+  const container = { contains: (n: unknown) => n === root || n === inside };
+  const elsewhere = { contains: () => false };
+  const target = (x: object) => x as unknown as EventTarget;
+
+  it("focus falling back to a CONTAINER does NOT close it - the WebKit press, as measured", () => {
+    // The defect, as one assertion. Pre-fix this was `true`.
+    expect(blurLeavesPicker(target(container), root)).toBe(false);
+  });
+
+  it("a blur with NO destination does not close it either", () => {
+    expect(blurLeavesPicker(null, root)).toBe(false);
+  });
+
+  it("focus moving INSIDE keeps it open - the Chromium press, as measured", () => {
+    expect(blurLeavesPicker(target(inside), root)).toBe(false);
+  });
+
+  it("focus arriving on another element closes it - Tab out still dismisses", () => {
+    expect(blurLeavesPicker(target(elsewhere), root)).toBe(true);
   });
 });
