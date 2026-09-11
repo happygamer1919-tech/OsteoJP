@@ -23,9 +23,15 @@
  */
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+
+// W14-02: the ONE call that leaves the process. Everything else is real.
+const enqueueSpy = vi.hoisted(() =>
+  vi.fn<(tenantId: string, targets: unknown[]) => Promise<void>>(async () => {}),
+);
+vi.mock("@/lib/scheduling/reminders", () => ({ enqueueRemindersAfterCommit: enqueueSpy }));
 
 const url = process.env.DATABASE_URL;
 const live = Boolean(url);
@@ -121,6 +127,8 @@ d("the reception reply queue against a real database", () => {
     hoursFromNow?: number;
     status?: string;
     practitioner?: string;
+    /** 'patient_portal' makes a `scheduled` row an unaccepted pedido (0067). */
+    origin?: string;
   }): Promise<string> {
     const id = randomUUID();
     const h = args.hoursFromNow ?? 20;
@@ -128,10 +136,10 @@ d("the reception reply queue against a real database", () => {
     const ends = new Date(Date.now() + (h + 1) * H).toISOString();
     await sql.execute(raw`insert into appointments
                 (id, tenant_id, patient_id, practitioner_id, location_id,
-                 starts_at, ends_at, status)
+                 starts_at, ends_at, status, origin)
               values (${id}, ${tenantId}, ${args.patientId},
                       ${args.practitioner ?? (await seedPractitioner())}, ${locationId},
-                      ${starts}, ${ends}, ${args.status ?? "scheduled"})`);
+                      ${starts}, ${ends}, ${args.status ?? "scheduled"}, ${args.origin ?? "staff"})`);
     return id;
   }
 
@@ -286,6 +294,66 @@ d("the reception reply queue against a real database", () => {
     const meta = audit[0]!.metadata as Record<string, unknown>;
     expect(meta.source).toBe("reception-sms-review");
     expect(meta.applied).toBe(true);
+  });
+
+  /* ------------- W14-02: a portal pedido accepted at the desk ------------- */
+  // Owner ruling 2026-09-10 (M2 Option A): reception marking a pedido
+  // "confirmada" from this queue IS accepting it, and it emits exactly as
+  // confirmAppointmentRequest does. Every other row stays silent, because it
+  // already has its run and a second emit at an unchanged start would cancel it.
+  describe("W14-02 — the review queue accepting a portal pedido emits", () => {
+    beforeEach(() => enqueueSpy.mockClear());
+
+    it("CONFIRMADA on an unaccepted PORTAL PEDIDO emits its reminders and confirmation, once", async () => {
+      const patientId = await seedPatient();
+      const appointmentId = await seedAppointment({ patientId, origin: "patient_portal" });
+      await file({ patientId, appointmentId, body: "w14-02 confirmo o pedido" });
+      const item = (await queue()).find((r) => r.body === "w14-02 confirmo o pedido")!;
+
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+
+      const stored = await rows(raw`select starts_at from appointments where id = ${appointmentId}`);
+      expect(enqueueSpy).toHaveBeenCalledTimes(1);
+      const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
+      expect(tenantArg).toBe(tenantId);
+      expect(targets).toEqual([
+        { appointmentId, startsAt: new Date(stored[0]!.starts_at as string | Date) },
+      ]);
+    });
+
+    it("CONFIRMADA on a STAFF booking emits NOTHING - it already has its run", async () => {
+      const patientId = await seedPatient();
+      const appointmentId = await seedAppointment({ patientId });
+      await file({ patientId, appointmentId, body: "w14-02 staff sim" });
+      const item = (await queue()).find((r) => r.body === "w14-02 staff sim")!;
+
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+      expect(enqueueSpy).not.toHaveBeenCalled();
+    });
+
+    it("CANCELADA on a pedido emits NOTHING", async () => {
+      const patientId = await seedPatient();
+      const appointmentId = await seedAppointment({ patientId, origin: "patient_portal" });
+      await file({ patientId, appointmentId, body: "w14-02 pedido nao" });
+      const item = (await queue()).find((r) => r.body === "w14-02 pedido nao")!;
+
+      expect(await resolve(item.id, "cancelled")).toEqual({ ok: true, applied: true });
+      expect(enqueueSpy).not.toHaveBeenCalled();
+    });
+
+    it("an ALREADY-CONFIRMED pedido is not moved and emits NOTHING", async () => {
+      const patientId = await seedPatient();
+      const appointmentId = await seedAppointment({
+        patientId,
+        origin: "patient_portal",
+        status: "confirmed",
+      });
+      await file({ patientId, appointmentId, body: "w14-02 ja confirmado" });
+      const item = (await queue()).find((r) => r.body === "w14-02 ja confirmado")!;
+
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: false });
+      expect(enqueueSpy).not.toHaveBeenCalled();
+    });
   });
 
   it("marking CANCELADA cancels the matched appointment", async () => {
