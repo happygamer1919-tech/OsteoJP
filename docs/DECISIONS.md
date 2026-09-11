@@ -4097,6 +4097,32 @@ Create and reschedule call `checkClinicClosure`; clone calls `checkAvailability`
 only. Recorded in section 5 of the proposal. The fix belongs in #1264 before
 apply.
 
+---
+
+## 2026-09-11 - PURPLE, who ruled Option A, and the clone gap closed
+
+**Option A was ruled by strategy under the owner's delegation; the owner
+answered the Saturday question.** Ruled 2026-09-11. Until then the board's own
+cards disagreed (strategy on SCHED-16 and SCHED-24, the owner on MIG-0085), and
+this record said so rather than pick a side. The three cards, the proposal's
+section 4 and Q-SCHED-16-1 now all say the same thing. The comment inside the
+0085 migration file still says "RULED BY THE OWNER"; it was left as it is,
+because changing it changes the file's sha256, which is how the apply is
+identified, and a comment is not the record of who ruled.
+
+**Reproduce first, on the database the change is for.** The Marcar novamente gap
+was reproduced on the purple lane with 0085 applied BEFORE anything was changed:
+the new browser test went red because the clone was written and the screen said
+*Nova marcação criada.* Only then was `cloneAppointment` given the same
+`checkClinicClosure` call as create and reschedule (#1264, commit `72c863b0`). A
+fix written first and tested after proves that the test passes on the fix, not
+that it would have failed without it.
+
+**A second door onto the same diary needs the same sentence, so the sentence is
+shared.** The booking drawer and the Marcar novamente drawer both render
+`clinic_closed`; the text now comes from one helper
+(`clinic-closed-message.ts`) instead of two copies of the same template fill.
+
 ## 2026-09-11 - PURPLE, U1: the drawer calendar closed on the first press inside it
 
 **What the clinic filmed.** Safari on macOS, app.osteojp.pt, 11/09 12:41. The
