@@ -1,6 +1,6 @@
 # 0083 production apply — `switch_amount_cents` / `switch_reason`
 
-**Status: NOT APPLIED.** Two stages. Every command is literal; there is nothing to
+**Status: APPLIED TO PRODUCTION 2026-09-11, by the owner's stage 1 at 15:05Z.** The journal went to 81 rows. His pre-check re-run at 17:10Z halted as it must: it read 0083 present by file hash, both columns present and 6 CHECK constraints. Two stages. Every command is literal; there is nothing to
 substitute. Any `STOP:` line, any `FAIL` verdict, or any `ERROR` halts the sitting.
 
 | Fact | Value |
