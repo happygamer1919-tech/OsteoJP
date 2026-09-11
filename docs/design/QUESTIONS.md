@@ -1275,8 +1275,38 @@ arm in WITH CHECK would govern every staff insert in the tenant, not only NESA.
 
 ## Q-W14-02-2 - an SMS "SIM" reply accepts a portal pedido with no slot re-check (BLUE, 2026-09-10)
 
-**OPEN. Card `W14-02-portal-booking-emit-halted`. Blocks nothing: #1273 is complete
-without it.**
+~~**OPEN. Card `W14-02-portal-booking-emit-halted`. Blocks nothing: #1273 is complete
+without it.**~~
+
+**CLOSED 2026-09-11. RULED by the owner, and built on branch
+`reminders/Q-W14-02-2-sim-slot-recheck`.**
+
+> "Q-W14-02-2 closes: an SMS SIM reply currently accepts a pedido without re-checking
+> the slot. Reproduce first. Fix: at SIM processing the slot is re-verified; if taken,
+> the pedido is NOT confirmed, it flags for reception follow-up and the audit row
+> records slot_taken; no new patient-facing message content without copy sign-off."
+
+The ruling is neither option below as written. A "SIM" still accepts a pedido when its
+slot is free, as in B, but only after the slot is re-verified, which B lacked.
+
+- **Reproduced first**, on the DB-gated suite, against unchanged code. The patient's
+  therapist already had another scheduled staff booking in the same hour, and the SIM
+  confirmed the pedido anyway (`outcome: 'confirmed'`): a double booking the database
+  allows, because 0061 only forbids two CONFIRMED rows. Time off over the slot confirmed
+  it too.
+- **Built.** For an unaccepted pedido, `applyInboundReply` now runs the same check as
+  "Aceitar pedido", not a second implementation: the same slot lock, then
+  `findConflictsForWindow` excluding the pedido itself, then `blockingConflicts`.
+- **If the slot is taken:**
+  - nothing is written except the audit row: `appointment.patient_sms_reply`, with
+    `outcome: 'review'` and `reason: 'slot_taken'`;
+  - the pedido stays `scheduled` and in reception's pedido queue;
+  - the reply is filed in the SMS review queue as `slot_taken`;
+  - no reminder is emitted.
+- **What the patient receives:** the existing, approved review acknowledgement ("A
+  recepcao vai confirmar consigo"), which is true as written. No new copy.
+- **Unchanged:** a staff booking is not re-checked (it already occupies its slot), and a
+  free-slot pedido still confirms and emits exactly as #1273 built it.
 
 `applyInboundReply` (`apps/web/lib/reminders/inbound-reply.ts`) confirms the patient's
 next future `scheduled` appointment inside its 24 h window when the patient replies
