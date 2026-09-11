@@ -26,7 +26,8 @@ This is the same reasoning as 0083's block. A branch that keeps moving while a b
 **Two things this block does that 0083's does not.**
 
 1. **`set -o pipefail`, and psql's stderr goes into the transcript.** In `psql … | tee file` without pipefail, psql's own non-zero exit is replaced by `tee`'s zero. psql writes `ERROR:` lines to stderr, which `tee` never sees. So a check that aborts leaves a transcript with no `FAIL` in it, and the block goes on to print its success line. Here the pipeline's failure ends the stage, and any error text is also in the file.
-2. **Stale transcripts are deleted first**, so stage 2 can only ever read the file this sitting's stage 1 produced.
+2. **Stale transcripts are deleted first**, so stage 2 can only ever read the file this sitting's stage 1 produced. Stage 1 also writes `/tmp/0084-applied.ok`, but only after `verified-migrate` exits 0. Stage 2 refuses without a fresh one, so a stage 1 that halted cannot be followed by a post-check that reads an unchanged database.
+3. **A verdict is matched in its column, and the OKs are counted.** Found by rehearsing this block. The pre-check's own banner reads `Any FAIL halts`, so `grep -q FAIL` matched on a run where all nine rows read OK, and stage 1 stopped every time. The block now looks for `| FAIL` at the end of a row, and also requires exactly 9 (pre) and 8 (post) `| OK` rows, so a run that printed fewer rows cannot pass either.
 
 ## STAGE 1: pre-flight, pre-check, apply
 
@@ -37,7 +38,7 @@ SHA0084=6636764d1759ebbedf4124f192da2e1f56fe6b259613b8bc2f2c363721d4ca36
 SHAPRE=1e0df1773a0595b9e76629248466df16be310825ab3db74b75e3f41cb80fc41d
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-rm -f /tmp/0084-precheck.out /tmp/0084-postcheck.out
+rm -f /tmp/0084-precheck.out /tmp/0084-postcheck.out /tmp/0084-applied.ok
 
 # --- pre-flight: the tree holds nothing but the checkout -------------------
 STRAY=$(git status --short)
@@ -65,13 +66,18 @@ node scripts/assert-production-target.mjs
 # --- the pre-check. Its transcript IS the carry, so it is kept -------------
 psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -P pager=off \
      -f scripts/0084-precheck.sql 2>&1 | tee /tmp/0084-precheck.out
-grep -q FAIL /tmp/0084-precheck.out && { echo "STOP: a pre-check verdict read FAIL"; exit 1; }
+# A verdict is the LAST column of a row. The word FAIL is also in the file's own
+# banner ("Any FAIL halts"), so a bare `grep FAIL` stops every sitting.
+grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0084-precheck.out && { echo "STOP: a pre-check verdict read FAIL"; exit 1; }
+[ "$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0084-precheck.out)" = 9 ] \
+  || { echo "STOP: the pre-check did not print 9 OK verdicts"; exit 1; }
 
 # --- the apply. It is the only writing command in this document -----------
 node packages/db/scripts/verified-migrate.mjs \
      --tag 0084_note_delete_policies \
      --sha256 $SHA0084 \
      --expect-pending 1
+touch /tmp/0084-applied.ok
 )
 ```
 
@@ -99,6 +105,10 @@ test -f scripts/0084-postcheck.sql                           || { echo "STOP: th
 [ "$(shasum -a 256 scripts/0084-postcheck.sql | cut -d' ' -f1)" = "$SHAPOST" ] \
   || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
 
+# --- stage 1 must have APPLIED, in this sitting, not merely run ------------
+[ -n "$(find /tmp/0084-applied.ok -mmin -60 2>/dev/null)" ] \
+  || { echo "STOP: stage 1 did not complete an apply in this sitting"; exit 1; }
+
 # --- SR-59: the carry comes out of THIS SITTING's pre-check transcript -----
 test -f /tmp/0084-precheck.out || { echo "STOP: stage 1's transcript is missing; re-run stage 1"; exit 1; }
 [ -n "$(find /tmp/0084-precheck.out -mmin -60)" ] \
@@ -114,7 +124,9 @@ node scripts/assert-production-target.mjs
 psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -P pager=off \
      -v expected_before="$J" \
      -f scripts/0084-postcheck.sql 2>&1 | tee /tmp/0084-postcheck.out
-grep -q FAIL /tmp/0084-postcheck.out && { echo "STOP: a post-check verdict read FAIL"; exit 1; }
+grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0084-postcheck.out && { echo "STOP: a post-check verdict read FAIL"; exit 1; }
+[ "$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0084-postcheck.out)" = 8 ] \
+  || { echo "STOP: the post-check did not print 8 OK verdicts"; exit 1; }
 echo "0084 APPLIED. 9/9 pre-check OK, 8/8 post-check OK."
 )
 ```
@@ -141,6 +153,21 @@ echo "0084 APPLIED. 9/9 pre-check OK, 8/8 post-check OK."
 **Rows 8 and 9 read `FAIL` until 0082 and then 0083 have been applied.** That is the queue enforced, not a defect. 0083's journal `when` is `1787701200000` and 0084's is `1787801200000`. drizzle applies a file only when its `when` exceeds the newest `created_at` already recorded. So applying 0084 first would make 0083 unapplyable for ever while printing "migrations applied successfully": the INC-07 / 0058 failure, predictable in advance.
 
 Row 5 does **not** guard this, and until 2026-09-10 the pre-check's header said it did. Row 5 passes whenever nothing newer than 0084 is applied, and it passed with 0083 still pending. Rows 8 and 9 were added for exactly that reason.
+
+## Rehearsed, 2026-09-10
+
+Both stages were run **as printed above** against a throwaway Postgres. It was brought up from `supabase/migrations` through 0082, plus 0083 from its branch, and given a drizzle journal of 81 rows carrying the real file hash of every applied migration. Only the lines that cannot run off production were replaced mechanically:
+- the apply tree became a lane worktree;
+- the env file became the throwaway's URL;
+- the target guard became an echo;
+- `/tmp` became a scratch directory.
+
+| Stage | Result |
+|---|---|
+| 1 | pre-flight and SR-58 assertions pass, `applying from 785ad9d3`, pre-check **9 OK / 0 FAIL**, `verified-migrate` journal **81 → 82, delta 1**, exit 0 |
+| 2 | applied-marker present, carry parsed as `expected_before=81`, post-check **8 OK / 0 FAIL**, `0084 APPLIED` |
+
+**The first rehearsal failed, and that is why the verdict matching reads the way it does.** On the first run all nine pre-check rows read OK and stage 1 still printed `STOP: a pre-check verdict read FAIL`: the pre-check's banner line contains the word. The stage 2 of that run then read a database 0084 had never touched, which is why the applied-marker now exists.
 
 ## Order of the sitting
 
