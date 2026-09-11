@@ -152,6 +152,13 @@ export type AgendaOptions = {
   bookableLocations: Option[];
   services: ServiceOption[];
   packs: PackOption[];
+  /**
+   * SCHED-17 - the shared resources (NESA) at the VIEWER's own locations, set for
+   * a therapist only. A self-locked therapist's drawer offers these besides
+   * themselves; everyone else already sees a bookable resource in the ordinary
+   * Terapeuta list. Absent or empty until the NESA migration is applied.
+   */
+  sharedResources?: { id: string; label: string; locationIds: string[] }[];
 };
 
 export type AgendaFilters = {
@@ -308,6 +315,12 @@ export type ActionErrorCode =
   // service alone or unlinks the pacote first. A generic message would send
   // them looking for a blank field that is not there.
   | "pack_service_locked"
+  // SCHED-17: a SHARED RESOURCE (NESA) booked or moved to a location where it is
+  // not installed, or outside the actor's own assigned locations. Its own code
+  // for the reason every code above is its own: "location_not_assigned" would
+  // tell a therapist assigned to both clinics that LV is not theirs, when the
+  // truth is that the machine is not there.
+  | "shared_resource_location"
   | "error";
 
 export type ActionResult<T> =

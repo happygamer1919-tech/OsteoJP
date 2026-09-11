@@ -368,6 +368,7 @@
   "appointment.correctEstadoDone": "Status corrected.",
   "appointment.doubleBooked": "This therapist already has a confirmed appointment at this time. Two confirmed appointments cannot overlap.",
   "appointment.locationNotAssigned": "You cannot book at this location. You can only book at the locations assigned to you. If you need access to another, contact administration.",
+  "appointment.sharedResourceLocation": "This equipment can only be booked at a location where it is installed and that is assigned to you. Choose that location or another therapist.",
   "appointment.selectPatient": "Select patient",
   "appointment.patientTypeToSearch": "Type to search…",
   "appointment.selectService": "Select service",

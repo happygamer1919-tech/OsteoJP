@@ -368,6 +368,7 @@
   "appointment.correctEstadoDone": "Estado corrigido.",
   "appointment.doubleBooked": "Este terapeuta já tem uma marcação confirmada neste horário. Duas marcações confirmadas não podem sobrepor-se.",
   "appointment.locationNotAssigned": "Não pode marcar nesta localização. Só pode marcar nas localizações que lhe estão atribuídas. Se precisar de acesso a outra, contacte a administração.",
+  "appointment.sharedResourceLocation": "Este equipamento só pode ser marcado numa localização onde está instalado e que lhe esteja atribuída. Escolha essa localização ou outro terapeuta.",
   "appointment.selectPatient": "Selecionar paciente",
   "appointment.patientTypeToSearch": "Digite para pesquisar…",
   "appointment.selectService": "Selecionar serviço",

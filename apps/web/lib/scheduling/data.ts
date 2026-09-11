@@ -271,7 +271,16 @@ function baseAppointmentQuery(tx: DbTx) {
 /** Appointments whose start falls in [startUtc, endUtc), optionally filtered. */
 export async function listAppointments(
   ctx: RequestContext,
-  args: { startUtc: Date; endUtc: Date } & Partial<AgendaFilters>,
+  args: {
+    startUtc: Date;
+    endUtc: Date;
+    /**
+     * SCHED-17: a SET of practitioners, for a therapist's merged default view
+     * ({ self } plus the shared resources at their locations). Takes precedence
+     * over `practitionerId` when non-empty.
+     */
+    practitionerIds?: readonly string[] | null;
+  } & Partial<AgendaFilters>,
 ): Promise<AgendaAppointment[]> {
   // PL-09 Phase 1: reception + admin only see their assigned location(s)' agenda,
   // enforced HERE so every caller (agenda, marcacoes, dashboard) is consistent.
@@ -283,7 +292,9 @@ export async function listAppointments(
       gte(appointments.startsAt, args.startUtc),
       lt(appointments.startsAt, args.endUtc),
     ];
-    if (args.practitionerId) {
+    if (args.practitionerIds && args.practitionerIds.length > 0) {
+      conds.push(inArray(appointments.practitionerId, [...args.practitionerIds]));
+    } else if (args.practitionerId) {
       conds.push(eq(appointments.practitionerId, args.practitionerId));
     }
     if (args.locationId) {

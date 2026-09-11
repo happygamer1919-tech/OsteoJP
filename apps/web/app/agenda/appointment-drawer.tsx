@@ -728,6 +728,10 @@ export function AppointmentDrawer({
   const selfTherapistName = selfLocked
     ? therapistPool.find((t) => t.id === selfUserId)?.label ?? ""
     : "";
+  // SCHED-17: the shared resources (NESA) at a self-locked therapist's own
+  // locations. With none - every clinic until the NESA migration is applied -
+  // the drawer renders exactly as before.
+  const sharedResourceOptions = selfLocked ? options.sharedResources ?? [] : [];
   // Scope ONLY after the user actively picks a location (userChangedLocation).
   // On open, the default location keeps the FULL list, so a therapist-first
   // booking is unaffected and an unassigned therapist stays bookable until the
@@ -812,6 +816,11 @@ export function AppointmentDrawer({
     // both cases the honest message names the location, not a permission.
     else if (r.error === "location_not_assigned")
       setError(s["appointment.locationNotAssigned"]);
+    // SCHED-17: a shared resource (NESA) at a clinic where it is not installed,
+    // or outside the actor's own clinics. Not location_not_assigned's sentence:
+    // a therapist assigned to both clinics is told the MACHINE is not there.
+    else if (r.error === "shared_resource_location")
+      setError(s["appointment.sharedResourceLocation"]);
     // RB-02: the pacote has fewer sessions left than this booking needs. The
     // message NAMES both numbers, for the same reason outside_availability names
     // the window: "não há sessões suficientes" on its own sends reception to
@@ -1156,7 +1165,24 @@ export function AppointmentDrawer({
             therapist's default service (see the effect above) and stays
             editable for per-booking exceptions. */}
         <Field label={s["appointment.therapist"]} required>
-          {selfLocked ? (
+          {selfLocked && sharedResourceOptions.length > 0 ? (
+            // SCHED-17: a therapist still books only for themselves - PL-10 is
+            // not relaxed - OR for a shared resource installed at one of their
+            // clinics. The server re-checks the location (shared_resource_location);
+            // this list is what they may choose, not what makes it allowed.
+            <Select
+              value={form.practitionerId}
+              onChange={(e) => {
+                userChangedTherapist.current = true;
+                set("practitionerId", e.target.value);
+              }}
+            >
+              <option value={selfUserId}>{selfTherapistName}</option>
+              {sharedResourceOptions.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </Select>
+          ) : selfLocked ? (
             // PL-10: a therapist self-books. The practitioner is forced to
             // themselves (form.practitionerId = own id, set on open) and the
             // selector is replaced by a static, read-only label of their own

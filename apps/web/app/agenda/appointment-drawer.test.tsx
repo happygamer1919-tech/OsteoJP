@@ -286,6 +286,49 @@ describe("AppointmentDrawer - the appointment id is readable in edit mode", () =
 // effect-driven (getTherapistServices is async in useEffect) and NOT observable
 // in a react-dom/server static render, so that half of the DoD is pinned by
 // self-lock-core.test.ts (the predicate) + the therapist-login e2e spec.
+// SCHED-17 — the one widening of PL-10. A self-locked therapist with a shared
+// resource (NESA) at one of their clinics is offered themselves AND the resource,
+// and still nobody else. The resource label differs from the "NESA" SERVICE name
+// on purpose, so the assertion cannot pass on the service list.
+describe("AppointmentDrawer — a shared resource beside the therapist (SCHED-17)", () => {
+  const WITH_RESOURCE: AgendaOptions = {
+    therapists: [
+      { id: "therapist-self", label: "Dr. Self Terapeuta" },
+      { id: "therapist-other", label: "Dr. Outro Terapeuta" },
+    ],
+    allTherapists: [
+      { id: "therapist-self", label: "Dr. Self Terapeuta" },
+      { id: "therapist-other", label: "Dr. Outro Terapeuta" },
+    ],
+    locations: [{ id: "loc-cb", label: "Castelo Branco" }],
+    bookableLocations: [{ id: "loc-cb", label: "Castelo Branco" }],
+    services: [
+      { id: "svc-primary", label: "Osteopatia", durationMin: 60, contraindicationSensitive: false },
+    ],
+    packs: [],
+    sharedResources: [{ id: "resource-nesa", label: "Equipamento NESA", locationIds: ["loc-cb"] }],
+  };
+  const THERAPIST: Viewer = { role: "therapist", userId: "therapist-self" };
+
+  it("offers the therapist themselves and the shared resource, and nobody else", () => {
+    const html = render({ mode: "create" }, false, THERAPIST, WITH_RESOURCE);
+    expect(html).toContain("Dr. Self Terapeuta");
+    expect(html).toContain("Equipamento NESA");
+    expect(html).not.toContain("Dr. Outro Terapeuta");
+  });
+
+  it("is a choice, not the read-only label, when a resource is on offer", () => {
+    const html = render({ mode: "create" }, false, THERAPIST, WITH_RESOURCE);
+    expect(html).not.toContain('aria-readonly="true"');
+  });
+
+  it("changes nothing for a therapist with no shared resource (every clinic before the migration)", () => {
+    const html = render({ mode: "create" }, false, THERAPIST, { ...WITH_RESOURCE, sharedResources: [] });
+    expect(html).toContain('aria-readonly="true"');
+    expect(html).not.toContain("Equipamento NESA");
+  });
+});
+
 describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
   const SELF_LOCK_OPTIONS: AgendaOptions = {
     therapists: [

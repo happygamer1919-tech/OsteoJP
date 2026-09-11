@@ -35,7 +35,13 @@ import { checkAvailability } from "./availability-enforcement";
 import { checkClinicClosure } from "./clinic-closure-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
 import { isLegalEstadoCorrection } from "./estado-correction";
-import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
+import {
+  bookingLocationScope,
+  isLocationBookable,
+  resolveViewerLocationIds,
+} from "@/lib/auth/viewer-locations";
+import { sharedResourceLocationAllowed, type SharedResource } from "./shared-resource-guard";
+import { listSharedResources, listSharedResourcesTx } from "./shared-resources";
 import {
   emitCancelledNotification,
   emitConfirmedNotification,
@@ -67,6 +73,41 @@ import type {
 import { acquireSlotLocks, acquireSlotLocksForMany } from "./slot-lock";
 
 const AGENDA_PATH = "/agenda";
+
+/**
+ * SCHED-17 - THE APP-LAYER REFUSAL THE NESA RULING SAYS THE DATABASE CANNOT MAKE.
+ *
+ * Creating or moving an appointment on a SHARED RESOURCE (NESA) is refused at a
+ * location where the resource is not installed, or outside the actor's own
+ * assigned locations. The rule is sharedResourceLocationAllowed; this reads the
+ * two facts it needs. RLS cannot hold it alone: 0078's `created_by = auth.uid()`
+ * arm admits any row a therapist stamps with their own id, at any location, and
+ * the create path stamps exactly that. The NESA migration does not touch 0078.
+ *
+ * `resource` is returned so the therapist self-guard can admit a shared resource
+ * the actor may book, which is the other half of the requirement: a CB therapist
+ * CAN book the CB machine. Inert until the NESA migration is applied, because
+ * there are no shared resources before then (see shared-resources.ts).
+ *
+ * Pass `tx` when already inside a transaction, so the read joins it.
+ */
+async function sharedResourceBookingCheck(
+  actor: RequestContext,
+  practitionerId: string,
+  locationId: string,
+  tx?: DbTx,
+): Promise<{ ok: true; resource: SharedResource | null } | { ok: false }> {
+  const resources = tx ? await listSharedResourcesTx(tx) : await listSharedResources(actor);
+  const resource = resources.find((r) => r.id === practitionerId) ?? null;
+  if (!resource) return { ok: true, resource: null };
+  const allowed = sharedResourceLocationAllowed({
+    role: actor.role,
+    actorLocationIds: await resolveViewerLocationIds(actor),
+    resource,
+    targetLocationId: locationId,
+  });
+  return allowed ? { ok: true, resource } : { ok: false };
+}
 
 /**
  * EVERY APPOINTMENT MUTATION INVALIDATES THE AGENDA *AND* THE PATIENT STAT
@@ -558,7 +599,13 @@ export async function createAppointment(
   // request naming a DIFFERENT practitioner did not come from the form — reject
   // it. Gated on role "therapist" ONLY: admin/reception/owner book on behalf of
   // any therapist, unchanged. RLS is untouched; this is an app-layer guard.
-  if (actor.role === "therapist" && input.practitionerId !== actor.userId) {
+  //
+  // SCHED-17: ONE exception, a shared resource (NESA) installed at one of the
+  // therapist's own clinics - and first, for every role, the shared-resource
+  // location rule itself.
+  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
+  if (!shared.ok) return { ok: false, error: "shared_resource_location" };
+  if (actor.role === "therapist" && input.practitionerId !== actor.userId && !shared.resource) {
     return { ok: false, error: "forbidden" };
   }
   const firstStart = new Date(input.startsAt);
@@ -905,7 +952,13 @@ export async function batchScheduleAppointments(
   // PL-10 (defense in depth): the "Agendar lote" path is also a create form —
   // a self-locked therapist may only batch-book their OWN calendar. Same guard,
   // same role gate as createAppointment; admin/reception/owner unaffected.
-  if (actor.role === "therapist" && input.practitionerId !== actor.userId) {
+  //
+  // SCHED-17: the same shared-resource rule and the same one exception as single
+  // booking. Missing either here would leave Agendar lote refusing what Nova
+  // marcação allows, or allowing what it refuses.
+  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
+  if (!shared.ok) return { ok: false, error: "shared_resource_location" };
+  if (actor.role === "therapist" && input.practitionerId !== actor.userId && !shared.resource) {
     return { ok: false, error: "forbidden" };
   }
   try {
@@ -1065,6 +1118,15 @@ export async function cloneAppointment(
         if (!isLocationBookable(await bookingLocationScope(actor), source.locationId)) {
           return { ok: false, error: "location_not_assigned" };
         }
+        // SCHED-17: Marcar novamente creates an appointment too, on the source's
+        // practitioner and location. A NESA copy is held to the create rule.
+        const shared = await sharedResourceBookingCheck(
+          actor,
+          source.practitionerId,
+          source.locationId,
+          tx,
+        );
+        if (!shared.ok) return { ok: false, error: "shared_resource_location" };
 
         const values = buildClonedAppointment(source, newStart, {
           tenantId: actor.tenantId,
@@ -1615,6 +1677,11 @@ export async function rescheduleAppointment(
   if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
     return { ok: false, error: "location_not_assigned" };
   }
+  // SCHED-17: MOVING a shared-resource appointment is held to the same rule as
+  // creating one - the ruling names both. No therapist self-guard is added here:
+  // reschedule has never had one and relies on RLS for whose rows may move.
+  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
+  if (!shared.ok) return { ok: false, error: "shared_resource_location" };
   const inStart = new Date(input.startsAt);
   const inEnd = new Date(input.endsAt);
   if (!isValidInterval(inStart, inEnd)) {
