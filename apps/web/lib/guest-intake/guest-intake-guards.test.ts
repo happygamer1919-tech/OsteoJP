@@ -13,7 +13,7 @@ import { can, ROLES } from "@osteojp/auth";
 const WEB = join(__dirname, "..", "..");
 const REPO = join(WEB, "..", "..");
 const read = (rel: string) => readFileSync(join(WEB, rel), "utf8");
-const DB_READS = "../../packages/db/src/guest-intake-reads.ts";
+const DB_STAFF = "../../packages/db/src/guest-intake-staff.ts";
 
 /** Code with comments removed, so a comment that NAMES a rule does not trip it. */
 function code(src: string): string {
@@ -26,7 +26,7 @@ const INTAKE_FILES = [
   "lib/guest-intake/retention.ts",
   "lib/guest-intake/inngest/retention.ts",
   "components/guest-intake-answers.tsx",
-  DB_READS,
+  DB_STAFF,
 ];
 
 describe("guest_intake:read - the capability", () => {
@@ -74,7 +74,7 @@ describe("no SQL in apps/web/lib/guest-intake (CLAUDE.md: database access only t
   });
 
   it("negative control: both matchers DO fire on the package file where the SQL now lives", () => {
-    const src = code(readFileSync(join(REPO, "packages", "db", "src", "guest-intake-reads.ts"), "utf8"));
+    const src = code(readFileSync(join(REPO, "packages", "db", "src", "guest-intake-staff.ts"), "utf8"));
     expect(src).toMatch(SQL_TEMPLATE);
     expect(src).toMatch(EXECUTE);
     expect("await db.execute(x)").toMatch(EXECUTE);

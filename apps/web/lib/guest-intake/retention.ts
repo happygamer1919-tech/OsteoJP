@@ -19,7 +19,7 @@ import {
  *   3. calls the function ONCE PER TENANT (CLAUDE.md rule 3: a job never runs
  *      globally, and the function refuses a NULL tenant for the same reason).
  * The two statements themselves live in packages/db
- * (`src/guest-intake-reads.ts`); there is no SQL here, and no predicate to get
+ * (`src/guest-intake-staff.ts`); there is no SQL here, and no predicate to get
  * wrong - in particular none on `guest_booking_requests.converted_appointment_id`,
  * which nothing writes and which would read a treated patient as never booked.
  *

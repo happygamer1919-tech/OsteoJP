@@ -57,4 +57,4 @@ export * from "./src/shared-resource";
 // read and the staff views all gate on the same answer, and each keeping its
 // own check is how they would come to disagree about whether the intake exists.
 export * from "./src/guest-intake";
-export * from "./src/guest-intake-reads";
+export * from "./src/guest-intake-staff";

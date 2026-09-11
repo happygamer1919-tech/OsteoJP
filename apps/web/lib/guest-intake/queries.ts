@@ -10,7 +10,7 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 /**
  * INTAKE-01 (staff side) - the two staff reads of a guest clinical intake, as
  * the pages call them. THIN ON PURPOSE: the SQL lives in packages/db
- * (`src/guest-intake-reads.ts`, CLAUDE.md "no raw SQL in app code"), and a guard
+ * (`src/guest-intake-staff.ts`, CLAUDE.md "no raw SQL in app code"), and a guard
  * in this directory asserts no statement is written here.
  *
  * What this layer adds is the two things that belong to the app:
