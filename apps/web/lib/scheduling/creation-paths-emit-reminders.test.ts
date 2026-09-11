@@ -21,17 +21,22 @@
  * ==========================================================================
  * "ACCOUNTED FOR" IS NOT "EMITS"
  * ==========================================================================
- * Three of the seven paths deliberately do not emit, and collapsing that into a
- * pass/fail boolean would either fail the suite forever or force somebody to
- * silence it. Each entry therefore carries WHY, and two different kinds of why
- * live here on purpose:
+ * Four of the seven paths do not emit at their own insert, and collapsing that
+ * into a pass/fail boolean would either fail the suite forever or force somebody
+ * to silence it. Each entry therefore carries WHY:
  *
  *   BY DESIGN   - the importer and the dev seed. Historical rows and fixtures
  *                 must not page real patients about visits in the past.
- *   KNOWN GAP   - the patient portal booking path, which is an OPEN DEFECT with
- *                 a card. It is listed so it stays visible and countable, not so
- *                 it is excused. When that card ships, the entry moves to
- *                 `emitter` and this test starts enforcing it.
+ *   EMITS LATER - the patient portal booking path. A portal booking is a PEDIDO,
+ *                 and the owner ruled 2026-08-31 that its confirmation and
+ *                 reminders start when reception ACCEPTS it, never at request
+ *                 time. So its emitter is confirmAppointmentRequest (Pedidos),
+ *                 and since W14-02 every other door that can accept a pedido
+ *                 emits the same way (pedido-acceptance.test.ts pins them).
+ *   KNOWN GAP   - an OPEN DEFECT with a card, listed so it stays visible and
+ *                 countable, not excused. There are NONE today. The portal path
+ *                 sat here until W14-02 found it mislabelled: its card had
+ *                 shipped on 2026-08-31.
  *
  * The distinction is the whole value of the file: a reader can tell, in one
  * place, which silences were chosen and which are owed.
@@ -165,10 +170,15 @@ const PATHS: Record<string, Verdict> = {
     why: "Agendar lote / Marcação recorrente. The engine commits; its server action emits for result.booked. OBS-05.",
   },
   "apps/api/lib/appointments/store.ts#createBooking": {
-    kind: "known_gap",
-    card: "W14-portal-bookings-emit-no-reminder-events",
+    kind: "emits",
+    // THE EMITTER IS THE ACCEPTANCE, NOT THE INSERT, and that is a ruling rather
+    // than a gap. Emitting at booking would also fire a second
+    // appointment/scheduled at acceptance for the same start, and the second
+    // cancels the first's sleeping reminder runs while its own are dropped by
+    // the 24h idempotency key (lib/reminders/inngest/functions.ts).
+    emitter: { file: "apps/web/lib/scheduling/actions.ts", fn: "confirmAppointmentRequest" },
     why:
-      "The PATIENT PORTAL booking path. It commits an appointment and emits nothing, so a patient who books their own visit gets no reminder. Open defect, not a decision. When its card ships, change this entry to `emits` and the gate will hold the fix in place.",
+      "The PATIENT PORTAL booking path. A portal booking is a pedido, and by the owner's 2026-08-31 ruling its confirmation and reminders start when reception ACCEPTS it, never at request time (W14, #1085). So it emits at acceptance: confirmAppointmentRequest (Pedidos), and since W14-02 also the Estado selector and the SMS review queue. Listed as a known gap until W14-02; that was a mislabel, because the W14 card had shipped.",
   },
   "packages/db/src/migration/upsert.ts#insertChunk": {
     kind: "by_design",
@@ -281,6 +291,6 @@ describe("every appointment creation path is accounted for", () => {
     const gaps = Object.entries(PATHS)
       .filter(([, v]) => v.kind === "known_gap")
       .map(([k]) => k);
-    expect(gaps).toEqual(["apps/api/lib/appointments/store.ts#createBooking"]);
+    expect(gaps).toEqual([]);
   });
 });
