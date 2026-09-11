@@ -184,4 +184,4 @@ The four constraint texts in rows 8-11 were captured from this database, which i
 
 0082 → 0083 (merge #1227) → 0084 (`docs/migration-apply-0084.md`, merge #1240) → **0085 (this document)** → merge #1264.
 
-The NESA migration (`packages/db/migrations-pending/NEXT-AFTER-0085_nesa_shared_resource.sql`) takes the next number only after this one is applied, and it has not been promoted.
+The NESA migration is numbered **0086** (`packages/db/migrations/0086_nesa_shared_resource.sql`, branch `db/0086-nesa-shared-resource`). It is applied **after** this one, from `docs/migration-apply-0086.md`.

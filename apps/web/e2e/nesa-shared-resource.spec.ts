@@ -1,15 +1,14 @@
 /**
  * SCHED-17 - NESA, the shared resource, through the staff UI.
  *
- * RUNS ONLY WHERE THE NESA MIGRATION IS APPLIED, and says so when it skips.
+ * RUNS WHERE THE NESA MIGRATION (0086) IS APPLIED, and says so when it skips.
  * `users.is_shared_resource` arrives with
- * packages/db/migrations-pending/NEXT-AFTER-0085_nesa_shared_resource.sql, which is
- * held un-numbered until 0085 is on production. CI builds its database from
- * supabase/migrations, so the column is not there and this file skips with that
- * reason. It was run on a lane with the pending migration applied.
+ * packages/db/migrations/0086_nesa_shared_resource.sql. CI builds its database from
+ * supabase/migrations, which carries 0086 since the promotion, so this file RUNS in
+ * CI. It skips only on a database without the column.
  *
  * FIXTURES, built here and removed afterwards (never by the shared seed, which
- * runs in CI where the column does not exist):
+ * also runs on databases that do not have the column):
  *   LOCATION_B "Consultório B (E2E)" plays CB, where the machine is installed;
  *   LOCATION   "Linda-a-Velha"       plays LV.
  *   NESA (E2E): a login-less bookable users row with is_shared_resource, at CB.

@@ -235,6 +235,10 @@ export const users = pgTable(
     // the attested practitioners (15 therapists + the practising owner JP) to
     // true. Replaces the PL-05 role-or-mapping predicate that dropped JP.
     isBookable: boolean("is_bookable").notNull().default(false),
+    // 0086 (SCHED-17): TRUE for a bookable row that is a clinic RESOURCE (NESA),
+    // not a person. Read by shared_resource_practitioner_ids() and appointments_rls,
+    // and excluded from the patient portal's rosters.
+    isSharedResource: boolean("is_shared_resource").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
