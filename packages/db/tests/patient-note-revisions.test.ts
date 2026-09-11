@@ -6,9 +6,12 @@
  * suite:
  *   - RLS isolation, fail-closed: a tenant cannot SELECT another tenant's
  *     revisions; a cross-tenant INSERT is rejected by WITH CHECK.
- *   - Append-only MECHANISM (not just intent): an authenticated UPDATE and
- *     DELETE of the tenant's OWN row each affect 0 rows — the POLICY pattern
- *     (no UPDATE/DELETE policy), NOT a 42501 grant throw.
+ *   - Append-only MECHANISM (not just intent): an authenticated UPDATE of the
+ *     tenant's OWN row affects 0 rows — the POLICY pattern (no UPDATE policy),
+ *     NOT a 42501 grant throw. DELETE was append-only the same way until 0084,
+ *     which added patient_note_revisions_tenant_delete for the 2026-09-10 clinic
+ *     batch; an own-tenant DELETE now affects 1 row, and the cross-tenant arm
+ *     is asserted in note-delete-policies.db.test.ts.
  *   - Backfill correctness: running the migration's backfill INSERT...SELECT
  *     over seeded patients produces exactly one revision per patient with a
  *     non-empty note, each with content == source patients.notes and
@@ -118,7 +121,7 @@ describe.skipIf(!live)("0030 patient_note_revisions — append-only history (liv
     expect(updated.length).toBe(0);
   });
 
-  it("DELETE of the tenant's OWN revision affects 0 rows — append-only (no DELETE policy)", async () => {
+  it("DELETE of the tenant's OWN revision affects 1 row — 0084 patient_note_revisions_tenant_delete", async () => {
     const deleted = await asRole(p!, "service_role", null, async (tx) => {
       const tA = randomUUID();
       await seedTenant(tx, tA);
@@ -131,7 +134,7 @@ describe.skipIf(!live)("0030 patient_note_revisions — append-only history (liv
       return (await tx`delete from patient_note_revisions
         where id = ${r!.id} returning id`) as { id: string }[];
     });
-    expect(deleted.length).toBe(0);
+    expect(deleted.length).toBe(1);
   });
 
   /* ---- Backfill correctness (the migration's INSERT...SELECT logic) --- */

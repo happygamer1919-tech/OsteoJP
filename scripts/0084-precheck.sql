@@ -23,10 +23,24 @@
 -- `migrations applied successfully` is printed over it - nothing fails, the
 -- pending count does not move, and the policy you asked for is simply not there.
 --
--- 0084 carries when = 1787801200000. 0082 (1787601200000) and 0083 sit ahead of
--- it and are BOTH unapplied at the time of writing, so this row will only pass
--- once they have landed. That is standing rule 8 showing up as a check rather
--- than as a convention: if it FAILS, 0084 is out of order and must wait.
+-- 0084 carries when = 1787801200000. Row 5 passes whenever nothing NEWER than
+-- 0084 is already applied - so it guards 0084 against being skipped, and it
+-- guards nothing else.
+--
+-- ===================================================================
+-- ROWS 8 AND 9 ARE THE QUEUE, AND ROW 5 WAS NEVER IT. Corrected 2026-09-10.
+-- ===================================================================
+-- This header used to say row 5 "will only pass once 0082 and 0083 have
+-- landed". It passes without them. The hazard runs the OTHER way: apply 0084
+-- while 0083 (when 1787701200000) is still pending, and the newest created_at
+-- becomes 0084's, which is ABOVE 0083's when - so drizzle skips 0083 for ever
+-- and prints "migrations applied successfully" every time it is tried. That is
+-- the INC-07 / 0058 failure, and the only thing that prevents it is refusing
+-- 0084 until 0082 and 0083 are in the journal by their file hashes:
+--   0082  b43423ae98ba631501473ca67ebdbabc1f7914340391301f22be7ef9c620a4b9
+--   0083  12a756bd8fe934c01448b9cddd30c0fa02be9b27141b6c6cab7ed1f87a66e96d
+-- If 0083's file changes before it is applied, row 9 FAILS here, which is the
+-- correct outcome: this block was written against those bytes.
 
 \pset pager off
 \timing off
@@ -92,6 +106,24 @@ SELECT '7. DELETE already granted to authenticated on patient_note_revisions',
        CASE WHEN EXISTS (SELECT 1 FROM information_schema.role_table_grants
                          WHERE table_schema='public' AND table_name='patient_note_revisions'
                            AND grantee='authenticated' AND privilege_type='DELETE')
+            THEN 'OK' ELSE 'FAIL' END;
+
+-- THE QUEUE. See the header: without these two rows an out-of-order apply of
+-- 0084 orphans 0083 for ever and nothing in the transcript says so.
+SELECT '8. 0082 IS applied (by file hash)',
+       coalesce((SELECT 'present' FROM drizzle.__drizzle_migrations
+                 WHERE hash = 'b43423ae98ba631501473ca67ebdbabc1f7914340391301f22be7ef9c620a4b9' LIMIT 1), 'ABSENT'),
+       'present',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                         WHERE hash = 'b43423ae98ba631501473ca67ebdbabc1f7914340391301f22be7ef9c620a4b9')
+            THEN 'OK' ELSE 'FAIL' END;
+
+SELECT '9. 0083 IS applied (by file hash)',
+       coalesce((SELECT 'present' FROM drizzle.__drizzle_migrations
+                 WHERE hash = '12a756bd8fe934c01448b9cddd30c0fa02be9b27141b6c6cab7ed1f87a66e96d' LIMIT 1), 'ABSENT'),
+       'present',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                         WHERE hash = '12a756bd8fe934c01448b9cddd30c0fa02be9b27141b6c6cab7ed1f87a66e96d')
             THEN 'OK' ELSE 'FAIL' END;
 
 \echo ''
