@@ -1196,7 +1196,21 @@ definitions of the working day, no clinic-level fact for any of them to agree on
 
 ## Q-W14-02-1 — portal bookings and reminders: emit at booking (as dispatched) or keep acceptance (BLUE, 2026-09-10)
 
-**OPEN. Card `W14-02-portal-booking-emit-halted`, blocked on the owner.**
+~~**OPEN. Card `W14-02-portal-booking-emit-halted`, blocked on the owner.**~~
+
+**CLOSED 2026-09-10. RULED A by the owner, and built in PR #1273.**
+
+> "M2 ruled Option A. The drawer Estado selector path and the SMS review queue path
+> emit on confirmation the same way confirmAppointmentRequest does; the creation-path
+> gate entry for the portal flips to acceptance-as-emitter and the mislabel is
+> corrected."
+
+#1273 reproduces both silent paths first (red, "got 0 times"), then makes each of them
+emit post-commit, once, only for an unaccepted pedido, read with
+`public.is_unconfirmed_pedido` before the write. It flips the gate entry to `emits`
+with `confirmAppointmentRequest` as the emitter. A third door found while fixing, the SMS
+"SIM" reply (`applyInboundReply`), got the same fix. Option B is not pursued. The one
+question this leaves is Q-W14-02-2 below.
 
 The 2026-09-10 dispatch (M2) asked for `apps/api` `store.createBooking` to emit the
 reminder event at booking time. It was **not built**, for three reasons measured or read
@@ -1232,7 +1246,20 @@ these set status `confirmed` and enqueue nothing (read from source):
 
 ## Q-SCHED-17-2 — NESA: where "a CB therapist cannot book NESA at LV" is enforced (BLUE, 2026-09-10)
 
-**OPEN. Card `SCHED-17-nesa-shared-agenda-at-cb`.**
+~~**OPEN. Card `SCHED-17-nesa-shared-agenda-at-cb`.**~~
+
+**CLOSED 2026-09-10. RULED app-layer refusal by the owner, and built in PR #1276.**
+
+> "NESA residual ruled: app-layer refusal. The NESA app-layer change now includes
+> refusing creation or move of a shared-resource appointment to a location outside the
+> actor's assigned locations, with an e2e test proving a CB therapist cannot create a
+> NESA appointment at LV through the staff UI. 0078 is not touched."
+
+0078 is unchanged, and the pending migration stays un-numbered and unapplied. #1276
+refuses on create, batch, reschedule and clone. It also refuses a location where the
+resource is not installed, because the ruled policy would hide such a row from every
+therapist. That condition is recorded on the card. The e2e proves both arms on a lane
+with the pending migration applied, and skips in CI, where the column does not exist.
 
 The ruled location test is in both arms of the pending NESA migration. Measured on the
 real policy, the new disjunct refuses a NESA insert at the other location (42501).
@@ -1245,3 +1272,28 @@ ADMITTED both before and after the migration.
 **Recommended default:** enforce it in the NESA app-layer change (spec section 3), with
 an e2e proving the refusal, and leave 0078's `created_by` arm unchanged. Narrowing that
 arm in WITH CHECK would govern every staff insert in the tenant, not only NESA.
+
+## Q-W14-02-2 - an SMS "SIM" reply accepts a portal pedido with no slot re-check (BLUE, 2026-09-10)
+
+**OPEN. Card `W14-02-portal-booking-emit-halted`. Blocks nothing: #1273 is complete
+without it.**
+
+`applyInboundReply` (`apps/web/lib/reminders/inbound-reply.ts`) confirms the patient's
+next future `scheduled` appointment inside its 24 h window when the patient replies
+"SIM". Nothing excluded an unaccepted portal pedido. #1273 made that door emit like the
+others, so a pedido confirmed this way now gets its confirmation and reminders. But the
+door still ACCEPTS the pedido without the slot re-check that "Aceitar pedido" runs. That
+predates #1273, which did not change it. This was read from source by the lane that built
+#1273, not executed against production.
+
+When it can happen: an unaccepted pedido receives no reminder and no confirmation link
+(`dispatch.ts` refuses both). So a "SIM" reaches a pedido only when the patient replies to
+a message about something else, or unprompted, while the pedido is their next
+appointment inside 24 h.
+
+**Options:**
+- **A (recommended default):** an SMS reply never accepts an unaccepted pedido. The
+  reply goes to the review queue, where reception accepts it through the door that
+  re-checks the slot. This is one exclusion in `applyInboundReply`, plus a test.
+- **B:** keep it. A patient's "SIM" counts as acceptance, and the slot is trusted as
+  booked.
