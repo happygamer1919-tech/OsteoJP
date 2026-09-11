@@ -135,7 +135,25 @@ export type Capability =
   // QUERY (`lib/followup/queries.ts`) and asserted on every mutation
   // (`lib/followup/actions.ts`). It is never a client-side row filter: a row
   // that reaches the browser has already been disclosed.
-  | "followup:read";
+  | "followup:read"
+  // INTAKE-01 (owner ruling 2026-09-11): read a GUEST CLINICAL INTAKE - the
+  // Article 9 health answers a member of the public gives at their first online
+  // booking. "Readable by reception and therapist": owner, admin, reception AND
+  // therapist all hold it.
+  //
+  // THE THERAPIST GRANT IS SAFE ONLY BECAUSE THE DATABASE SCOPES IT, and this is
+  // the ITEM 3 shape again: the capability is target-blind. What bounds it is
+  // migration 0087's SELECT policy on guest_clinical_intakes - a therapist reads
+  // an intake ONLY after its request is converted to a patient AND only when
+  // `clinical_therapist_sees_patient` holds for that patient. Before conversion
+  // there is no patient to scope them by, so they see none. Admin and reception
+  // are location-scoped by the same policy (0047's rule).
+  //
+  // ITS OWN CAPABILITY, NOT `guest_requests:read`. That one is the QUEUE of
+  // strangers' names and phone numbers and a therapist must never hold it
+  // (SEC-01); this one is the answers, which reach a therapist later, on the
+  // ficha. Riding either capability on the other would widen one of them.
+  | "guest_intake:read";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -170,6 +188,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "followup:read",
   "sms_replies:read",
   "sms_replies:resolve",
+  "guest_intake:read",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -222,6 +241,9 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // W14-06 (owner 2026-08-31): the inbound SMS reply queue, read and resolve.
     "sms_replies:read",
     "sms_replies:resolve",
+    // INTAKE-01 (owner 2026-09-11): guest clinical intakes. Location-scoped by
+    // 0087's policy, like the guest queue it sits beside.
+    "guest_intake:read",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -269,12 +291,23 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // `apps/web/lib/followup/actions.ts`. Both shipped in the same commit as
     // this line, for exactly the reason schedule:read's scope did.
     "followup:read",
+    // INTAKE-01 (owner 2026-09-11): guest clinical intakes, READ THE CAPABILITY
+    // COMMENT FIRST. Target-blind like every grant here; 0087's policy is the
+    // scope: nothing before conversion, then only a patient this therapist sees
+    // clinically (clinical_therapist_sees_patient). The guest QUEUE stays out
+    // of reach: this is not guest_requests:read.
+    "guest_intake:read",
   ]),
 
   // Reception: front-desk scheduling + billing-issue. NO clinical_records at
   // all (matches the RLS denial in packages/db). Can delete appointments
   // (cancel/reschedule) and issue invoices, but cannot void them.
   reception: new Set<Capability>([
+    // INTAKE-01 (owner 2026-09-11): the guest's clinical questionnaire, beside
+    // the request reception already works. Location-scoped by 0087's policy.
+    // Reception still holds NO clinical_records:* - an intake is the person's
+    // own declaration, not a clinical record.
+    "guest_intake:read",
     "patients:read",
     "patients:write",
     "appointments:read",
