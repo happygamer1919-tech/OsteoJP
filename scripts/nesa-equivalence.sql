@@ -160,7 +160,8 @@ BEGIN
                     AND ((a.practitioner_id = (SELECT auth.uid()))
                          OR (a.practitioner_2_id = (SELECT auth.uid()))))
                 OR (((SELECT public.jwt_role()) = 'therapist')
-                    AND (a.practitioner_id = ANY (coalesce(res, '{}'::uuid[]))))
+                    AND (a.practitioner_id = ANY (coalesce(res, '{}'::uuid[])))
+                    AND (a.location_id = ANY (coalesce((SELECT public.viewer_location_ids()), '{}'::uuid[]))))
                 OR (((SELECT public.jwt_role()) = ANY (ARRAY['admin','reception']))
                     AND ((NOT (SELECT public.viewer_has_location_assignment()))
                          OR ((a.location_id IS NOT NULL)
@@ -178,14 +179,15 @@ BEGIN
                the APPOINTMENT'S OWN location_id must be one the viewer is
                assigned to.
 
-             The ruled predicate scopes by where the RESOURCE is, not by where
-             the APPOINTMENT is, so the two can disagree: an appointment booked
-             on the CB machine but recorded against Linda-a-Velha satisfies the
-             disjunct and fails this. That is precisely the case worth counting
-             rather than arguing about, and `loosened_outside_expected` is where
-             it shows up. If it is non-zero, the number and the rows are the
-             evidence strategy rules on - the predicate is NOT quietly changed
-             here to make the gate green. */
+             The first ruled predicate scoped only by where the RESOURCE is, so
+             the two disagreed: an appointment on the CB machine recorded against
+             Linda-a-Velha satisfied the disjunct and failed this, and the
+             self-test counted it (outside_expected 1, HALT). Strategy ruled on
+             2026-09-10 that the criterion wins and the disjunct gained the
+             APPOINTMENT's location test, so the two now agree and
+             `loosened_outside_expected` is zero by construction. It is still
+             counted: an edit to either side that reopens the gap is exactly
+             what it exists to catch. */
           (((SELECT public.jwt_role()) = 'therapist')
            AND (a.tenant_id = (SELECT public.jwt_tenant_id()))
            AND (a.practitioner_id = ANY (coalesce(res, '{}'::uuid[])))
