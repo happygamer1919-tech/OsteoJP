@@ -59,6 +59,16 @@ vi.mock("./batch", async (importOriginal) => {
 vi.mock("@/lib/auth/viewer-locations", () => ({
   bookingLocationScope: vi.fn(async () => null),
   isLocationBookable: vi.fn(() => true),
+  resolveViewerLocationIds: vi.fn(async () => []),
+}));
+// SCHED-17: create and batch now ask whether the practitioner is a shared
+// resource before they run. runScoped is mocked above to hand back a COMMITTED
+// action result, so the real lookup would receive that object instead of a list.
+// No shared resources is today's state everywhere, which keeps these tests about
+// what happens after commit and nothing else.
+vi.mock("./shared-resources", () => ({
+  listSharedResources: vi.fn(async () => []),
+  listSharedResourcesTx: vi.fn(async () => []),
 }));
 
 import { revalidatePath } from "next/cache";
