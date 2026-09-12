@@ -40,6 +40,15 @@ export async function submitBooking(
           slotTaken: true,
         }
       }
+      // 0085. Ahead of the blanket 409 for the same reason `no_therapist` is:
+      // the closure is not a race, so `slotTaken` (which forces a refetch and
+      // says "someone got there first") would be two lies in one object. The
+      // list is not stale - that hour is never in it.
+      if (err.code === 'clinic_closed') {
+        return {
+          error: 'A clínica está encerrada a essa hora. Não é uma ausência do terapeuta: escolha outro horário ou ligue para a clínica.',
+        }
+      }
       if (err.status === 409) {
         return {
           error: 'Este horário já não está disponível. Escolha outro horário ou contacte a clínica.',

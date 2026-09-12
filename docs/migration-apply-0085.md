@@ -36,6 +36,8 @@ Like the 0084 block, and unlike 0083's, both stages run with `set -o pipefail` a
 
 Verdicts are matched **in their column** (`| FAIL` / `| OK` at the end of a row) and the OKs are **counted**: 10 for the pre-check, 15 for the post-check. Both files' banners contain the word FAIL, and rehearsing the 0084 block showed that a bare `grep FAIL` stops a sitting in which every row read OK. Stage 1 writes `/tmp/0085-applied.ok` only after `verified-migrate` exits 0, and stage 2 refuses without a fresh one.
 
+**Why `${CHECKS}` has braces (fixed 2026-09-11).** The owner's terminal is zsh. The first version of this block wrote `git show $CHECKS:scripts/0085-precheck.sql`, and in zsh `$NAME:` applies a modifier to the parameter (`:s` substitutes). The line therefore asked git for `<sha>k.sql`, git refused, and both stages stopped on "the pre-check is not on origin/main" at 17:27Z and 17:28Z on 2026-09-11. Nothing was applied: that stop comes before the target guard and before psql. The braced form means the same in zsh and in bash, and `scripts/owner-blocks-survive-zsh.test.mjs` now refuses the unbraced form in every apply document.
+
 ## STAGE 1: pre-flight, pre-check, apply
 
 ```
@@ -66,7 +68,7 @@ test -f scripts/assert-production-target.mjs                        || { echo "S
   || { echo "STOP: 0085 on disk is not the approved file"; exit 1; }
 
 # --- the pre-check comes from main, by path, pinned by content -------------
-git show $CHECKS:scripts/0085-precheck.sql > /tmp/0085-precheck.sql \
+git show ${CHECKS}:scripts/0085-precheck.sql > /tmp/0085-precheck.sql \
   || { echo "STOP: the pre-check is not on origin/main"; exit 1; }
 [ "$(shasum -a 256 /tmp/0085-precheck.sql | cut -d' ' -f1)" = "$SHAPRE" ] \
   || { echo "STOP: the pre-check on main is not the approved file"; exit 1; }
@@ -112,7 +114,7 @@ git checkout -q --detach $PIN
 test -f packages/db/migrations/0085_clinic_hours_and_cb_closure.sql || { echo "STOP: 0085 is not on disk"; exit 1; }
 [ "$(shasum -a 256 packages/db/migrations/0085_clinic_hours_and_cb_closure.sql | cut -d' ' -f1)" = "$SHA0085" ] \
   || { echo "STOP: 0085 on disk is not the approved file"; exit 1; }
-git show $CHECKS:scripts/0085-postcheck.sql > /tmp/0085-postcheck.sql \
+git show ${CHECKS}:scripts/0085-postcheck.sql > /tmp/0085-postcheck.sql \
   || { echo "STOP: the post-check is not on origin/main"; exit 1; }
 [ "$(shasum -a 256 /tmp/0085-postcheck.sql | cut -d' ' -f1)" = "$SHAPOST" ] \
   || { echo "STOP: the post-check on main is not the approved file"; exit 1; }
@@ -184,4 +186,4 @@ The four constraint texts in rows 8-11 were captured from this database, which i
 
 0082 → 0083 (merge #1227) → 0084 (`docs/migration-apply-0084.md`, merge #1240) → **0085 (this document)** → merge #1264.
 
-The NESA migration (`packages/db/migrations-pending/NEXT-AFTER-0085_nesa_shared_resource.sql`) takes the next number only after this one is applied, and it has not been promoted.
+The NESA migration is numbered **0086** (`packages/db/migrations/0086_nesa_shared_resource.sql`, branch `db/0086-nesa-shared-resource`). It is applied **after** this one, from `docs/migration-apply-0086.md`.

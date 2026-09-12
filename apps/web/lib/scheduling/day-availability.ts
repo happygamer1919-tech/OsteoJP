@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, gt, lt, notInArray, sql, type SQL } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
-import { appointments, availabilityTemplates, timeOff, type DbTx } from "@osteojp/db";
+import { appointments, availabilityTemplates, locations, timeOff, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { type AvailabilityTemplate } from "./availability";
 import { addDays, lisbonMidnightUtc } from "./time";
@@ -12,6 +12,7 @@ import {
   type BookedRow,
   type DayAvailability,
 } from "./day-availability-core";
+import type { ClinicHours } from "./clinic-hours";
 
 /**
  * Read-only availability query. Given a therapist and a date range (a single
@@ -69,12 +70,20 @@ export async function getTherapistAvailability(
   const rangeEnd = lisbonMidnightUtc(addDays(to, 1));
 
   return runScoped(ctx, async (tx) => {
-    const [bookedRows, templateRows, blockRows] = await Promise.all([
+    const [bookedRows, templateRows, blockRows, clinicHours] = await Promise.all([
       readBookedRows(tx, { therapistId, rangeStart, rangeEnd, locationId }),
       readTemplateRows(tx, { therapistId, locationId }),
       // time_off is therapist-wide (not per location), so it is NOT filtered by
       // locationId: an absence blocks the therapist everywhere for that span.
       readBlockRows(tx, { therapistId, rangeStart, rangeEnd }),
+      // 0085 - THE CLOSURE IS READ ONLY WHEN ONE CLINIC IS NAMED.
+      //
+      // Under "Todas as localizações" this call is answering about a therapist
+      // across every clinic, and a closure is true of exactly ONE of them.
+      // Subtracting CB's lunch from an answer that also covers LV would make
+      // LV's afternoon vanish from a screen nobody asked a CB question on. The
+      // owner ruled this directly: the union of hours, and no closure band.
+      locationId ? readClinicHours(tx, locationId) : Promise.resolve(null),
     ]);
 
     const templates: AvailabilityTemplate[] = templateRows.map((r) => ({
@@ -88,7 +97,7 @@ export async function getTherapistAvailability(
     }));
 
     return datesInRange(from, to).map((date) =>
-      buildDay(date, templates, bookedRows, blockRows),
+      buildDay(date, templates, bookedRows, blockRows, clinicHours),
     );
   });
 }
@@ -190,6 +199,27 @@ export async function listTherapistBlocks(
   args: { therapistId: string; rangeStart: Date; rangeEnd: Date },
 ): Promise<BlockRow[]> {
   return runScoped(ctx, (tx) => readBlockRows(tx, args));
+}
+
+/**
+ * 0085 - one clinic's hours and closure.
+ *
+ * Runs inside the same runScoped transaction as every other read here, so RLS
+ * scopes it to the caller's tenant and this module still never filters
+ * tenant_id by hand.
+ */
+async function readClinicHours(tx: DbTx, locationId: string): Promise<ClinicHours | null> {
+  const [row] = await tx
+    .select({
+      opensAt: locations.opensAt,
+      closesAt: locations.closesAt,
+      middayClosedFrom: locations.middayClosedFrom,
+      middayClosedTo: locations.middayClosedTo,
+    })
+    .from(locations)
+    .where(eq(locations.id, locationId))
+    .limit(1);
+  return row ?? null;
 }
 
 function readTemplateRows(

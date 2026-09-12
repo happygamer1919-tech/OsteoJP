@@ -157,8 +157,16 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [locations, services]
+                required: [locations, services, intakeEnabled]
                 properties:
+                  intakeEnabled:
+                    type: boolean
+                    description: >
+                      INTAKE-01. True once migration 0087's table exists on this
+                      database, and only then does the form ask the clinical
+                      intake and may a booking carry an `intake`. A fact about
+                      the deployment, not about any person or tenant: the same
+                      answer for every tenant id, real or invented.
                   locations:
                     type: array
                     items:
@@ -222,10 +230,12 @@ paths:
         creates the patient and the appointment at that moment.
 
 
-        NOTHING CLINICAL IS TOUCHED. The write goes to `guest_booking_requests`
-        and nowhere else — no patient row, no appointment, no notification.
-        That table has no anon policy in either direction; the insert runs
-        service-role with an explicit `tenant_id`.
+        NO PATIENT, NO APPOINTMENT, NO NOTIFICATION. The write goes to
+        `guest_booking_requests` and, when the body carries an `intake`, to its
+        `guest_clinical_intakes` row in the SAME transaction (INTAKE-01,
+        migration 0087), and nowhere else. Neither table has an anon policy; the
+        insert runs service-role with an explicit `tenant_id`. An intake is
+        never written to `patients.contraindication_*`.
 
 
         IT ANSWERS 202 WHETHER OR NOT THE PHONE MATCHES AN EXISTING PATIENT, and
@@ -278,6 +288,14 @@ paths:
           $ref: "#/components/responses/InvalidInput"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >
+            The write failed and NOTHING was stored (the request and its intake
+            commit together or not at all). Body `{ "error": "service_unavailable" }`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/auth/otp/request:
     post:
@@ -891,6 +909,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/v1/patient/intake:
+    get:
+      operationId: getOwnGuestIntakes
+      tags: [forms]
+      summary: Own clinical intake answers (read only)
+      security:
+        - patientBearer: []
+      description: >
+        INTAKE-01. The clinical intake answers the patient sent with a guest
+        booking request that reception has since CONVERTED to them, newest
+        first. READ ONLY: GET is the only method. Answers from an unconverted
+        request, another patient's and another tenant's are never returned: the
+        read runs under the patient role (migration 0087's patient policy, via
+        `patient_guest_request_ids()`) with an explicit tenant filter.
+
+
+        `enabled: false` means migration 0087 is not applied on this database;
+        `intakes` is then empty and the portal shows nothing for it.
+
+
+        ARTICLE 9 HEALTH DATA. The response is never cached (`Cache-Control:
+        no-store`), and a failed read is a fixed 503 whose log line carries no
+        error text.
+      responses:
+        "200":
+          description: The patient's own intakes, newest first.
+          headers:
+            Cache-Control:
+              description: Always `no-store`.
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnGuestIntakes"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: 'The read failed and nothing was returned. Body `{ "error": "service_unavailable" }`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/v1/appointments:
     get:
       operationId: listOwnAppointments
@@ -1337,8 +1400,9 @@ components:
         [tenantId, fullName, phone, serviceId, locationId, preferredDate, preferredPeriod]
       description: >
         R-GUEST-2: the MINIMUM. A name, a number, the service, the clinic and
-        WHEN THEY WOULD PREFER TO COME. NO NIF (PL-20), no health information,
-        nothing clinical before the first visit.
+        WHEN THEY WOULD PREFER TO COME. NO NIF (PL-20). Nothing clinical, with ONE
+        exception added by INTAKE-01: the optional `intake` object, which the
+        portal sends only once migration 0087 is applied.
 
 
         OPTION A, ratified 2026-08-14. This used to take `startsAt`/`endsAt` and
@@ -1397,6 +1461,130 @@ components:
             `encodeGuestPreferredWindow` in @osteojp/db — the window's
             boundaries, not a slot anybody was offered. Reception resolves the
             real time when they telephone.
+        intake:
+          description: >
+            INTAKE-01. OPTIONAL: absent and null both mean "no intake", and a
+            booking without one is accepted whatever the schema (a stale portal
+            must not break booking). A body that carries one while migration
+            0087 is not applied is refused with `invalid_input`.
+          oneOf:
+            - $ref: "#/components/schemas/GuestIntakeInput"
+            - type: "null"
+
+    GuestIntakeInput:
+      type: object
+      required: [dateOfBirth, reason, pacemaker, pregnancy, consentVersion]
+      description: >
+        INTAKE-01. The guest clinical intake, on the SAME request as the booking
+        and written in the same transaction. Article 9 health data: every
+        refusal is the same `invalid_input` and names no field and no value.
+
+
+        THERE IS NO CONSENT TICK AND NO CONSENT TIME ON THE WIRE. The server sets
+        `consent_ticked = true` and `consent_at = now()` at the insert; a body
+        carrying either key is not refused, and the keys are never read.
+      properties:
+        dateOfBirth:
+          type: string
+          format: date
+          description: YYYY-MM-DD, a real calendar day from 1900-01-01 to today in Europe/Lisbon.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Required. 1 to 2000 characters after trimming.
+        healthConditions:
+          type: [string, "null"]
+          maxLength: 2000
+          description: Optional. Absent, null or blank is stored as null.
+        medication:
+          type: [string, "null"]
+          maxLength: 2000
+          description: Optional. Absent, null or blank is stored as null.
+        fallsAccidents:
+          type: [string, "null"]
+          maxLength: 2000
+          description: Optional. Absent, null or blank is stored as null.
+        surgeries:
+          type: [string, "null"]
+          maxLength: 2000
+          description: Optional. Absent, null or blank is stored as null.
+        pacemaker:
+          type: string
+          enum: [sim, nao]
+          description: Required. ONLY `sim` or `nao` from this door; `nao_perguntado` is refused.
+        pregnancy:
+          type: string
+          enum: [sim, nao]
+          description: Required. ONLY `sim` or `nao` from this door; `nao_perguntado` is refused.
+        consentVersion:
+          type: string
+          description: >
+            The label of the consent text the visitor was shown (WF-19): one of
+            `INTAKE_CONSENT_VERSIONS` in @osteojp/i18n. Any other value is
+            refused. When the consent text changes a NEW label is added and old
+            labels stay valid, so a page rendered before the change still books.
+          examples: ["rgpd-intake-2026-09-11"]
+
+    IntakeAnswer:
+      type: string
+      enum: [sim, nao, nao_perguntado]
+      description: >
+        A yes/no clinical safety answer in THREE states (migration 0087's
+        `intake_answer`). `nao_perguntado` (never asked) is DISTINCT from `nao`
+        and is never a default; the guest form can never produce it. It exists
+        for rows that arrive by any other route.
+
+    PatientGuestIntake:
+      type: object
+      additionalProperties: false
+      required:
+        [id, submittedAt, dateOfBirth, reason, healthConditions, medication, fallsAccidents, surgeries, pacemaker, pregnancy, consentAt]
+      description: >
+        One intake, the patient's own words verbatim. No tenant, no request id
+        and no consent label leave the API.
+      properties:
+        id:
+          type: string
+          format: uuid
+        submittedAt:
+          type: string
+          format: date-time
+          description: When the answers arrived.
+        dateOfBirth:
+          type: string
+          format: date
+        reason:
+          type: string
+        healthConditions:
+          type: [string, "null"]
+        medication:
+          type: [string, "null"]
+        fallsAccidents:
+          type: [string, "null"]
+        surgeries:
+          type: [string, "null"]
+        pacemaker:
+          $ref: "#/components/schemas/IntakeAnswer"
+        pregnancy:
+          $ref: "#/components/schemas/IntakeAnswer"
+        consentAt:
+          type: string
+          format: date-time
+          description: When the consent was ticked, set by the server at the insert.
+
+    OwnGuestIntakes:
+      type: object
+      additionalProperties: false
+      required: [enabled, intakes]
+      properties:
+        enabled:
+          type: boolean
+          description: False while migration 0087 is not applied; `intakes` is then empty.
+        intakes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientGuestIntake"
 
     OtpRequestInput:
       type: object

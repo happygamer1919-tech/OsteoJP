@@ -33,4 +33,10 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0085_nesa_shared_resource.sql` | `0085` (clinic hours) | 2026-09-10 | 0085 being applied (it takes its number on promotion). The location test is ruled in; the gate re-ran 2026-09-10: default INERT 0/0, self-test 5/5, real-policy arm W1/W2/V1 PASS |
+| (none) | | | |
+
+## Promoted
+
+| was | became | on |
+|---|---|---|
+| `NEXT-AFTER-0085_nesa_shared_resource.sql` | `packages/db/migrations/0086_nesa_shared_resource.sql`, bytes unchanged (sha256 `d3eb9e41dff3f7ba6ccd0c250baf76198e60e884733e06043fcd9518bbac8d99`), journal `when 1788001200000` | 2026-09-11, branch `db/0086-nesa-shared-resource`. Applied after 0085, from `docs/migration-apply-0086.md` |

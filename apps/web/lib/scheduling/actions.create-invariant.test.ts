@@ -42,6 +42,11 @@ let captured: Record<string, unknown> | null = null;
 /** Advisory-lock SQL the create path executes before inserting (finding 2.9). */
 let executed: unknown[] = [];
 
+/** An empty result that can be awaited directly or after `.limit(n)`. */
+function noRows() {
+  return Object.assign(Promise.resolve([] as never[]), { limit: async () => [] as never[] });
+}
+
 function fakeTx() {
   return {
     // STAFF-02: the create path now consults the actor's staff_locations
@@ -54,7 +59,12 @@ function fakeTx() {
     // for an unassigned staffer, so this suite keeps testing the creation
     // invariant rather than the location guard. The guard has its own suite in
     // booking-location-scope.test.ts.
-    select: () => ({ from: () => ({ where: async () => [] }) }),
+    //
+    // 0085 added a second read on this path (the clinic's own hours, a
+    // by-id lookup that ends in `.limit(1)`), so `where()` has to answer to
+    // BOTH shapes. Still no rows: a location this fake does not have is not a
+    // closure, and the closure has its own suite in clinic-hours.test.ts.
+    select: () => ({ from: () => ({ where: () => noRows() }) }),
     // createAppointment takes the slot lock via tx.execute before it inserts.
     // Captured rather than ignored so the assertions below can prove the lock
     // is actually acquired, not merely tolerated by the fake.

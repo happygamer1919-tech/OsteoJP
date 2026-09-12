@@ -458,7 +458,18 @@ const fetchAgendaReferenceData = unstable_cache(
             .where(eq(users.isActive, true))
             .orderBy(asc(users.fullName)),
           tx
-            .select({ id: locations.id, label: locations.name })
+            // 0085: the clinic's own hours travel with its name. Selected
+            // here rather than in a second query because every caller that
+            // needs the window already holds this list, and a second read is a
+            // second answer to "when is this clinic open".
+            .select({
+              id: locations.id,
+              label: locations.name,
+              opensAt: locations.opensAt,
+              closesAt: locations.closesAt,
+              middayClosedFrom: locations.middayClosedFrom,
+              middayClosedTo: locations.middayClosedTo,
+            })
             .from(locations)
             .where(eq(locations.isActive, true))
             .orderBy(asc(locations.name)),

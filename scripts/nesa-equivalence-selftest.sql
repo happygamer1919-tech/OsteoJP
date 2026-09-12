@@ -41,7 +41,7 @@
 -- ===================================================================
 -- A-E compare two expressions written out in this file. They prove the
 -- ARITHMETIC of the widening, not that the migration's own text does it. So the
--- last section applies packages/db/migrations-pending/NEXT-AFTER-0085_nesa_shared_resource.sql
+-- last section applies packages/db/migrations/0086_nesa_shared_resource.sql
 -- inside this transaction, flags the fixture resource, and exercises the REAL
 -- appointments_rls through RLS as the therapist: an INSERT with no RETURNING, so
 -- WITH CHECK is the only thing judged (a RETURNING would drag the SELECT policy
@@ -310,8 +310,15 @@ $$;
 RESET ROLE;
 
 \echo ''
-\echo '=== APPLYING THE PENDING MIGRATION INSIDE THIS TRANSACTION (rolled back below) ==='
-\ir ../packages/db/migrations-pending/NEXT-AFTER-0085_nesa_shared_resource.sql
+-- 0086 IS APPLIED HERE EVEN WHERE IT ALREADY IS. Since the promotion (2026-09-11) a
+-- database built from supabase/migrations - CI, and any lane reset after it - already
+-- carries 0086. Every statement in it is idempotent (ADD COLUMN IF NOT EXISTS, CREATE
+-- OR REPLACE, ALTER POLICY, REVOKE/GRANT, COMMENT), so re-applying it inside this
+-- transaction is harmless. But on such a database the R 'before' row above was measured
+-- against the NEW policy, so it is not a before. The before/after comparison means
+-- something only on a pre-0086 database, which is what production is until the apply.
+\echo '=== APPLYING 0086 INSIDE THIS TRANSACTION (rolled back below) ==='
+\ir ../packages/db/migrations/0086_nesa_shared_resource.sql
 UPDATE public.users SET is_shared_resource = true WHERE id = (SELECT resource_id FROM fixture);
 
 SELECT set_config('request.jwt.claims',

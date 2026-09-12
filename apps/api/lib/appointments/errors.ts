@@ -10,6 +10,13 @@ export type AppointmentErrorCode =
   | "slot_in_past" // requested start is not in the future → 422
   | "no_slot" // the chosen slot was taken in the meantime (booking race) → 409
   | "no_therapist" // nobody works this window (schedule gap, not a race) → 409
+  // 0085. The CLINIC is shut at that hour, which is not any of the three above:
+  // not a race, not a schedule gap, not a person. It is its own code because
+  // the patient's next move is different - no therapist is "unavailable", so
+  // waiting or picking another therapist changes nothing; only another hour
+  // does. Sharing `no_slot`'s sentence would have sent them back to refresh a
+  // list that will never contain that hour.
+  | "clinic_closed" // the window runs through the clinic's own closure → 409
   | "cutoff" // inside the 24h cancel/reschedule window → 409
   | "not_reschedulable" // appointment already cancelled/completed → 409
   | "min_notice"; // new slot is inside the 24h minimum notice → 422
@@ -37,6 +44,7 @@ export const HTTP_STATUS: Record<AppointmentErrorCode, number> = {
   slot_in_past: 422,
   no_slot: 409,
   no_therapist: 409,
+  clinic_closed: 409,
   cutoff: 409,
   not_reschedulable: 409,
   min_notice: 422,
@@ -51,6 +59,7 @@ export const MESSAGE_KEY: Record<AppointmentErrorCode, string> = {
   slot_in_past: "patientAppointments.error.slotInPast",
   no_slot: "patientAppointments.error.noSlot",
   no_therapist: "patientAppointments.error.noTherapist",
+  clinic_closed: "patientAppointments.error.clinicClosed",
   cutoff: "patientAppointments.error.cutoff",
   not_reschedulable: "patientAppointments.error.notReschedulable",
   min_notice: "patientAppointments.error.minNotice",

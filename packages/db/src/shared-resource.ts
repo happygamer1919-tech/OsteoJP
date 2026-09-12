@@ -3,8 +3,9 @@ import { sql, type SQL } from "drizzle-orm";
 /**
  * SCHED-17 - IS THE SHARED-RESOURCE SCHEMA ON THIS DATABASE YET?
  *
- * `users.is_shared_resource` arrives with the NESA migration, which is authored
- * and HELD un-numbered in packages/db/migrations-pending until 0085 is applied.
+ * `users.is_shared_resource` arrives with the NESA migration, 0086
+ * (packages/db/migrations/0086_nesa_shared_resource.sql), which production gets
+ * only after 0085.
  * The app-layer half of NESA reads that column. Shipped against a database that
  * does not have it, every query naming it would fail with 42703 - on production,
  * and in CI, whose database is built from supabase/migrations.

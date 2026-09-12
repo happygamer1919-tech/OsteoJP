@@ -164,6 +164,7 @@
     "reschedule_too_late": "Não é possível remarcar com menos de 24 horas de antecedência. Por favor ligue para a clínica.",
     "reschedule_min_notice": "Escolha um horário com pelo menos 24 horas de antecedência.",
     "reschedule_slot_taken": "Esse horário deixou de estar disponível. Escolha outro.",
+    "reschedule_clinic_closed": "A clínica está encerrada a essa hora. Não é uma ausência do terapeuta: escolha outro horário ou ligue para a clínica.",
     "reschedule_error": "Não foi possível remarcar a consulta. Tente novamente ou ligue para a clínica."
   },
   "forms": {
@@ -354,7 +355,21 @@
     "catalog_error_title": "Não foi possível carregar os serviços",
     "catalog_error_body": "Tente novamente ou contacte a clínica.",
     "confirmation_title": "Recebemos a sua solicitação e a mesma encontra-se em análise",
-    "confirmation_body": "O agendamento ainda não foi confirmado; entraremos em contacto assim que estiver na nossa agenda."
+    "confirmation_body": "O agendamento ainda não foi confirmado; entraremos em contacto assim que estiver na nossa agenda.",
+    "step_intake": "Questionário clínico",
+    "intake_intro": "Estas perguntas ajudam a clínica a preparar a sua consulta.",
+    "dob_label": "Data de nascimento",
+    "reason_label": "Motivo da consulta",
+    "health_conditions_label": "Problemas de saúde",
+    "medication_label": "Medicação habitual",
+    "falls_accidents_label": "Quedas e acidentes",
+    "surgeries_label": "Cirurgias",
+    "optional_hint": "Opcional.",
+    "pacemaker_label": "É portador de pacemaker?",
+    "pregnancy_label": "Está grávida?",
+    "answer_sim": "Sim",
+    "answer_nao": "Não",
+    "intake_consent_body": "Autorizo o tratamento das minhas respostas a este questionário, que são dados de saúde, com a finalidade exclusiva de preparar a minha consulta. As respostas podem ser lidas pela receção e pela equipa clínica. Se, sete dias depois do envio, este pedido ainda não tiver dado origem ao meu registo como cliente da clínica, as respostas são apagadas automaticamente. Se tiver, passam a fazer parte do meu processo clínico e são conservadas com ele."
   },
   "errors": {
     "404_title": "Página não encontrada",
@@ -413,5 +428,14 @@
       "underReview": "O seu terapeuta irá rever a ficha antes da consulta.",
       "submitted": "Ficha submetida com sucesso."
     }
+  },
+  "guestIntake": {
+    "title": "Questionário clínico",
+    "intro": "As respostas que enviou com o seu pedido de marcação. São só de leitura: para corrigir alguma coisa, contacte a clínica.",
+    "sent_on": "Enviado a {{date}}",
+    "empty": "Não tem nenhum questionário clínico enviado.",
+    "answer_not_asked": "Não perguntado",
+    "no_answer": "Sem resposta",
+    "open_cta": "Ver o questionário clínico"
   }
 }

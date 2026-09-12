@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { Banner, Button, Field, Input } from '@osteojp/ui'
+import { Banner, Button, Field, Input, Textarea } from '@osteojp/ui'
 import type { PortalLocale, PortalStrings } from '@osteojp/i18n'
 
 import { CLINIC_CONTACTS } from '@/lib/clinics'
@@ -9,8 +9,10 @@ import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
 import {
-  GUEST_TOTAL_STEPS,
+  GUEST_INTAKE_KEYS,
+  GUEST_INTAKE_TEXT_MAX,
   INITIAL_GUEST_STATE,
+  guestTotalSteps,
   servicesForClinic,
   type GuestValues,
 } from './state'
@@ -20,7 +22,13 @@ import {
  *
  * WHAT IT COLLECTS, AND THE LIST IS CLOSED: a clinic, a service, a preferred
  * date, a preferred period, a name and a mobile number. Nothing else. No NIF
- * (PL-20), nothing clinical, nothing about health, no account.
+ * (PL-20), no account.
+ *
+ * INTAKE-01 AMENDS THE CLOSED LIST BY ONE STEP, AND ONLY ONCE 0087 IS APPLIED.
+ * When the catalog reports `intakeEnabled`, a fifth step asks JP's clinical
+ * questions (date of birth, reason, four optional texts, pacemaker, pregnancy)
+ * with the RGPD tick beneath them. Until then nothing clinical is asked. The
+ * step is the same for every visitor, whatever their phone number (ruling 1).
  *
  * WHAT IT DELIBERATELY DOES NOT DO, and this is the ruling rather than a
  * shortcut: it shows NO availability. No therapist list, no slot grid, no
@@ -69,6 +77,14 @@ export type GuestBookingFormProps = {
   rgpdBody: string
   /** null when JP's commitment copy is not written yet. */
   confirmationCopy: { title: string; body: string } | null
+  /**
+   * INTAKE-01: the catalog's `intakeEnabled`. False until migration 0087's table
+   * exists, and while it is false this form is exactly today's four steps.
+   */
+  intakeEnabled: boolean
+  /** YYYY-MM-DD bounds of the date of birth: 0087's floor, and today in Lisbon. */
+  dobMin: string
+  dobMax: string
 }
 
 const CHOICE_ROW =
@@ -92,18 +108,61 @@ export function GuestBookingForm({
   rgpdLabel,
   rgpdBody,
   confirmationCopy,
+  intakeEnabled,
+  dobMin,
+  dobMax,
 }: GuestBookingFormProps) {
-  const [state, formAction, pending] = useActionState(
-    guestBookingAction,
-    INITIAL_GUEST_STATE,
-  )
+  const [state, formAction, pending] = useActionState(guestBookingAction, {
+    ...INITIAL_GUEST_STATE,
+    intake: intakeEnabled,
+  })
 
   const { values, step } = state
+  const total = guestTotalSteps(state.intake)
   const location = catalog.locations.find((l) => l.id === values.locationId) ?? null
   const service = catalog.services.find((sv) => sv.id === values.serviceId) ?? null
   // EMPTY locationIds MEANS EVERY CLINIC; this used to read it as NONE. See
   // servicesForClinic in state.ts, where the rule now lives and is tested.
   const servicesHere = servicesForClinic(catalog.services, values.locationId)
+
+  /* ---- RGPD, VERBATIM ------------------------------------------------
+     THE TEXT IS NOT AUTHORED HERE AND MUST NOT BE. The label and body are
+     the ratified `clinical.consent.rgpd` keys, rendered unchanged - the same
+     wording a patient signs on the ficha. The acknowledgement is REQUIRED and
+     sits immediately above the submit, which is the ratified placement, and
+     the server checks it independently of the `required` attribute: consent
+     has to be provable, and an attribute is a hint to a browser.
+
+     INTAKE-01 adds ONE paragraph on the five-step flow: the intake consent,
+     `guest.intake_consent_body`, which says what happens to the health answers
+     and that they are deleted after seven days if the request never becomes a
+     client record. Its wording is pinned by sha256 to
+     CURRENT_INTAKE_CONSENT_VERSION (intake-consent-pin.test.ts), the label the
+     submit records, so an edit under an unchanged label fails. */
+  const rgpdPanel = (
+    <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+      <p className="text-sm font-medium text-text-primary">{rgpdLabel}</p>
+      <p className="text-xs leading-relaxed text-text-secondary">{rgpdBody}</p>
+      {state.intake && (
+        <p
+          data-testid="guest-intake-consent"
+          className="text-xs leading-relaxed text-text-secondary"
+        >
+          {s.guest.intake_consent_body}
+        </p>
+      )}
+      <label className="flex items-start gap-3 text-sm text-text-primary">
+        <input
+          type="checkbox"
+          name="consent"
+          required
+          defaultChecked={state.consent}
+          className="mt-0.5 size-4 accent-accent-2-700"
+        />
+        <span>{rgpdLabel}</span>
+      </label>
+    </div>
+  )
 
   /* ---------------------------------------------------------------- */
   /* THE CONFIRMATION. Reached only by an accepted submit.             */
@@ -144,7 +203,7 @@ export function GuestBookingForm({
         <p className="text-xs text-text-secondary">
           {s.guest.step_label
             .replace('{{current}}', String(step))
-            .replace('{{total}}', String(GUEST_TOTAL_STEPS))}
+            .replace('{{total}}', String(total))}
         </p>
 
         {/* ==============================================================
@@ -218,6 +277,10 @@ export function GuestBookingForm({
 
       <form action={formAction} className="flex flex-col gap-4">
         <input type="hidden" name="step" value={step} />
+        {/* INTAKE-01: whether this flow has the fifth step, carried like every
+            other value so the server and the screen agree on the step count
+            with and without JavaScript. */}
+        <input type="hidden" name="intake" value={state.intake ? '1' : '0'} />
 
         {/* ---- 1. CLINIC ------------------------------------------------ */}
         {step === 1 && (
@@ -380,38 +443,164 @@ export function GuestBookingForm({
               />
             </Field>
 
-            {/* ---- RGPD, VERBATIM ----------------------------------------
-                THE TEXT IS NOT AUTHORED HERE AND MUST NOT BE. Both strings are
-                the ratified `clinical.consent.rgpd` keys, rendered unchanged -
-                the same wording a patient signs on the ficha. The
-                acknowledgement is REQUIRED and sits immediately above the
-                submit, which is the ratified placement, and the server checks
-                it independently of the `required` attribute: consent has to be
-                provable, and an attribute is a hint to a browser. */}
-            <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-              <p className="text-sm font-medium text-text-primary">{rgpdLabel}</p>
-              <p className="text-xs leading-relaxed text-text-secondary">{rgpdBody}</p>
-              <label className="flex items-start gap-3 text-sm text-text-primary">
-                <input
-                  type="checkbox"
-                  name="consent"
-                  required
-                  defaultChecked={state.consent}
-                  className="mt-0.5 size-4 accent-accent-2-700"
-                />
-                <span>{rgpdLabel}</span>
-              </label>
+            {/* On the five-step flow the RGPD panel moves to step 5: consent
+                that covers the clinical answers cannot come before them. */}
+            {!state.intake && rgpdPanel}
+          </>
+        )}
+
+        {/* ---- 5. CLINICAL INTAKE + RGPD (INTAKE-01) ---------------------
+            Only on the five-step flow. Every control posts from a plain form
+            with no JavaScript: a native date input (like preferredDate, and for
+            the same reason), textareas, and two radio pairs.
+
+            THE TWO SAFETY QUESTIONS ARE RADIOS, REQUIRED, AND NEITHER IS
+            PRE-CHECKED (ruling 2). A default of "Nao" would answer a clinical
+            safety question on the visitor's behalf; a checkbox would read "not
+            ticked" as "no". `defaultChecked` is true only for an answer the
+            visitor already pressed, carried back from a later post. The server
+            re-checks both, so a post without them returns here.
+
+            ARTICLE 9: nothing on this step is ever in the URL. The form posts
+            its body to `action=""`; the step number is a hidden field. */}
+        {step === 5 && (
+          <>
+            {hidden(values, [...GUEST_INTAKE_KEYS])}
+
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium text-text-primary">{s.guest.step_intake}</p>
+              <p className="text-xs text-text-secondary">{s.guest.intake_intro}</p>
             </div>
+
+            <Field label={s.guest.dob_label} required>
+              <Input
+                type="date"
+                name="dateOfBirth"
+                min={dobMin}
+                max={dobMax}
+                required
+                autoComplete="bday"
+                defaultValue={values.dateOfBirth}
+              />
+            </Field>
+
+            <Field label={s.guest.reason_label} required>
+              <Textarea
+                name="reason"
+                rows={3}
+                maxLength={GUEST_INTAKE_TEXT_MAX}
+                required
+                defaultValue={values.reason}
+              />
+            </Field>
+
+            <Field label={s.guest.health_conditions_label} helperText={s.guest.optional_hint}>
+              <Textarea
+                name="healthConditions"
+                rows={2}
+                maxLength={GUEST_INTAKE_TEXT_MAX}
+                defaultValue={values.healthConditions}
+              />
+            </Field>
+
+            <Field label={s.guest.medication_label} helperText={s.guest.optional_hint}>
+              <Textarea
+                name="medication"
+                rows={2}
+                maxLength={GUEST_INTAKE_TEXT_MAX}
+                defaultValue={values.medication}
+              />
+            </Field>
+
+            <Field label={s.guest.falls_accidents_label} helperText={s.guest.optional_hint}>
+              <Textarea
+                name="fallsAccidents"
+                rows={2}
+                maxLength={GUEST_INTAKE_TEXT_MAX}
+                defaultValue={values.fallsAccidents}
+              />
+            </Field>
+
+            <Field label={s.guest.surgeries_label} helperText={s.guest.optional_hint}>
+              <Textarea
+                name="surgeries"
+                rows={2}
+                maxLength={GUEST_INTAKE_TEXT_MAX}
+                defaultValue={values.surgeries}
+              />
+            </Field>
+
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-2 text-sm font-medium text-text-primary">
+                {s.guest.pacemaker_label}
+              </legend>
+              <label className={values.pacemaker === 'sim' ? CHOICE_ROW_SELECTED : CHOICE_ROW}>
+                <input
+                  type="radio"
+                  name="pacemaker"
+                  value="sim"
+                  required
+                  defaultChecked={values.pacemaker === 'sim'}
+                  className="size-4 accent-accent-2-700"
+                />
+                <span>{s.guest.answer_sim}</span>
+              </label>
+              <label className={values.pacemaker === 'nao' ? CHOICE_ROW_SELECTED : CHOICE_ROW}>
+                <input
+                  type="radio"
+                  name="pacemaker"
+                  value="nao"
+                  required
+                  defaultChecked={values.pacemaker === 'nao'}
+                  className="size-4 accent-accent-2-700"
+                />
+                <span>{s.guest.answer_nao}</span>
+              </label>
+            </fieldset>
+
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-2 text-sm font-medium text-text-primary">
+                {s.guest.pregnancy_label}
+              </legend>
+              <label className={values.pregnancy === 'sim' ? CHOICE_ROW_SELECTED : CHOICE_ROW}>
+                <input
+                  type="radio"
+                  name="pregnancy"
+                  value="sim"
+                  required
+                  defaultChecked={values.pregnancy === 'sim'}
+                  className="size-4 accent-accent-2-700"
+                />
+                <span>{s.guest.answer_sim}</span>
+              </label>
+              <label className={values.pregnancy === 'nao' ? CHOICE_ROW_SELECTED : CHOICE_ROW}>
+                <input
+                  type="radio"
+                  name="pregnancy"
+                  value="nao"
+                  required
+                  defaultChecked={values.pregnancy === 'nao'}
+                  className="size-4 accent-accent-2-700"
+                />
+                <span>{s.guest.answer_nao}</span>
+              </label>
+            </fieldset>
+
+            {rgpdPanel}
           </>
         )}
 
         <div className="mt-2 flex items-center gap-3">
           {step > 1 && (
-            <Button type="submit" name="intent" value="back" variant="secondary">
+            /* formNoValidate: GOING BACK NEVER VALIDATES, in the browser as on
+               the server. Without it a native `required` on this step (the
+               consent box, a radio pair) blocks the Back press itself when
+               JavaScript is off, and the visitor is stuck on the step. */
+            <Button type="submit" name="intent" value="back" variant="secondary" formNoValidate>
               {s.common.back}
             </Button>
           )}
-          {step < GUEST_TOTAL_STEPS ? (
+          {step < total ? (
             <Button type="submit" name="intent" value="next" disabled={pending}>
               {s.common.continue}
             </Button>

@@ -69,7 +69,11 @@ export const EXPECTED_OWNER = "postgres";
  * only shape that writes it without a GRANT that would let any authenticated
  * session write any row.
  *
- * 21 -> 23 with migration 0087 (INTAKE-01, the guest clinical intake):
+ * 21 -> 22 with migration 0086 (SCHED-17, NESA): `public.shared_resource_practitioner_ids()`,
+ * the nullary set appointments_rls evaluates once per statement. It carries its
+ * own `ALTER FUNCTION ... OWNER TO postgres` in 0086.
+ *
+ * 22 -> 24 with migration 0087 (INTAKE-01, the guest clinical intake):
  * `public.patient_guest_request_ids()`, the nullary set the PATIENT arm of the
  * guest_clinical_intakes policy evaluates once per statement (the patient role
  * has no grant on guest_booking_requests, so it cannot resolve its own request
@@ -77,13 +81,13 @@ export const EXPECTED_OWNER = "postgres";
  * retention job's body, which deletes rows no application role may delete. Both
  * carry their own `ALTER FUNCTION ... OWNER TO postgres` in 0087.
  *
- * 0086 adds one more (`shared_resource_practitioner_ids`) on its own branch. The
- * two numbers are summed by whichever of the two PRs merges second.
- * UNTIL 0087 IS APPLIED, PRODUCTION REPORTS A COUNT MISMATCH HERE: that is the
- * queue, not a defect. docs/migration-apply-0087.md reads the count by delta
- * (before + 2) rather than through this constant for exactly that reason.
+ * This branch carries the SUM of the two, which is what the merge of #1282 made
+ * resolvable: 22 + 2. Both migrations were applied to production on 2026-09-11,
+ * and the 0087 post-check measured 24 there (row 16, `before + 2` from a carry
+ * of 22). docs/migration-apply-0087.md reads the count by delta rather than
+ * through this constant, so an apply never depends on this number being current.
  */
-export const EXPECTED_COUNT = 23;
+export const EXPECTED_COUNT = 24;
 
 /**
  * The verdict, as a pure function of the catalog rows.
