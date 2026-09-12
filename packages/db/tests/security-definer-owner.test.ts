@@ -59,6 +59,11 @@ const EXPECTED_FUNCTIONS = [
   // 0086 (SCHED-17, NESA): the nullary set of shared-resource practitioners at
   // the viewer's clinics, evaluated once per statement by appointments_rls.
   "shared_resource_practitioner_ids",
+  // 0087 (INTAKE-01): the patient arm's nullary set of its own converted guest
+  // request ids (the patient role cannot read guest_booking_requests), and the
+  // retention job's body, which deletes what no application role may delete.
+  "patient_guest_request_ids",
+  "purge_expired_guest_intakes",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {

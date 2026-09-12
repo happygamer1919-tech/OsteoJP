@@ -61,7 +61,14 @@ const d = live ? describe : describe.skip;
  * that call them are the portal's own, and a patient with no EXECUTE sees an
  * empty page rather than an error.
  */
-const PORTAL_FUNCTIONS = ["jwt_tenant_id", "jwt_patient_id", "is_unconfirmed_pedido"];
+const PORTAL_FUNCTIONS = [
+  "jwt_tenant_id",
+  "jwt_patient_id",
+  "is_unconfirmed_pedido",
+  // 0087: the patient arm of guest_clinical_intakes resolves the patient's own
+  // converted request ids through it (the patient role cannot read the requests).
+  "patient_guest_request_ids",
+];
 
 d("0079: no untrusted role can execute a SECURITY DEFINER function", () => {
   let sql: Sql;
@@ -139,15 +146,24 @@ d("0079: no untrusted role can execute a SECURITY DEFINER function", () => {
      * All three are revoked from `authenticated` by 0079 rather than left to
      * whatever the CREATE-time default privilege happened to do, so this list is
      * the same on CI, on a lane and on production.
+     *
+     * 0087 adds two, each revoked by name in its own migration:
+     *   patient_guest_request_ids    a PORTAL helper, like jwt_patient_id: the
+     *                                only policy that calls it is TO patient.
+     *   purge_expired_guest_intakes  the retention job's body. It runs as its
+     *                                owner from the scheduler and NO application
+     *                                role may execute it, service_role included.
      */
     expect(denied).toEqual([
       "assign_patient_number",
       "custom_access_token_hook",
       "jwt_patient_id",
+      "patient_guest_request_ids",
+      "purge_expired_guest_intakes",
     ]);
   });
 
-  it("patient keeps the three the portal runs on", async () => {
+  it("patient keeps the four the portal runs on", async () => {
     const rows = await canExecute("patient");
     const allowed = rows.filter((r) => r.allowed).map((r) => r.name).sort();
     expect(allowed).toEqual([...PORTAL_FUNCTIONS].sort());
