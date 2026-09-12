@@ -24,8 +24,10 @@ import { NotesList } from "@/app/patients/[id]/notes-list";
  * just rendered the latest one in a textarea, which read as a single
  * overwritable note. This renders the whole thread, newest first, each note
  * carrying its author + timestamp, with the PL-13 pen edit and "Editada por"
- * stamp. Nothing is ever overwritten and notes cannot be deleted (no DELETE
- * policy) — that is the point of a shared channel.
+ * stamp. That sentence used to end "notes cannot be deleted (no DELETE policy)".
+ * It stopped being true when 0084 added the policy, and NOTES-04 added the
+ * control: a note is deleted from its row in `NotesList`, behind a confirm step,
+ * with a `patient.note_delete` audit row.
  *
  * Client-side because it lives inside the drawer/popup, which is client-rendered
  * and opens without a navigation: the thread is fetched through a server action
