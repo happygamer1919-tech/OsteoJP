@@ -38,21 +38,31 @@ const PROXY = code(join(HERE, '..', '..', 'proxy.ts'))
 
 describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', () => {
   const named = [...FORM.matchAll(/name="([a-zA-Z]+)"/g)].map((m) => m[1])
+  // `intent`, `step` and `intake` are the wizard's own controls, not answers.
   const fields = [...new Set(named)].filter(
-    (n) => !['intent', 'step'].includes(n as string),
+    (n) => !['intent', 'step', 'intake'].includes(n as string),
   )
 
-  it('exactly six inputs, plus the consent box', () => {
+  it('exactly six inputs, the consent box, and INTAKE-01\'s eight step-5 answers', () => {
     // The closed list from the ruling: name, mobile, service, clinic, preferred
-    // date, preferred period. A seventh field has to be argued for here.
+    // date, preferred period. INTAKE-01 adds JP's intake list (SPEC section 3),
+    // rendered only on the five-step flow. Anything else has to be argued for here.
     expect(fields.sort()).toEqual([
       'consent',
+      'dateOfBirth',
+      'fallsAccidents',
       'fullName',
+      'healthConditions',
       'locationId',
+      'medication',
+      'pacemaker',
       'phone',
       'preferredDate',
       'preferredPeriod',
+      'pregnancy',
+      'reason',
       'serviceId',
+      'surgeries',
     ])
   })
 
@@ -186,6 +196,67 @@ describe('§6 — the route is public, deliberately', () => {
   })
 })
 
+describe('§8 INTAKE-01: the fifth step', () => {
+  const stepFive = FORM.slice(FORM.indexOf('{step === 5 && ('), FORM.indexOf('{rgpdPanel}\n          </>'))
+
+  it('the slice really is step 5 (guards a vacuous pass)', () => {
+    expect(FORM.indexOf('{step === 5 && (')).toBeGreaterThan(-1)
+    expect(stepFive).toContain('name="pacemaker"')
+    expect(stepFive.length).toBeLessThan(FORM.length / 2)
+  })
+
+  it('renders only when the catalog said the intake is enabled', () => {
+    expect(PAGE).toContain('intakeEnabled={catalog.intakeEnabled === true}')
+    expect(FORM).toContain('intake: intakeEnabled')
+    expect(FORM).toContain('guestTotalSteps(state.intake)')
+  })
+
+  it('the date of birth is a NATIVE date input, with bounds from the server', () => {
+    expect(stepFive).toMatch(/type="date"\s+name="dateOfBirth"\s+min=\{dobMin\}\s+max=\{dobMax\}/)
+  })
+
+  it.each(['pacemaker', 'pregnancy'])('%s: two required radios, sim and nao, NEITHER pre-checked', (q) => {
+    // Ruling 2. A default of "nao" would answer a safety question for the visitor.
+    for (const v of ['sim', 'nao']) {
+      const re = new RegExp(
+        `name="${q}"\\s+value="${v}"\\s+required\\s+defaultChecked=\\{values\\.${q} === '${v}'\\}`,
+      )
+      expect(stepFive).toMatch(re)
+    }
+    expect(stepFive).not.toMatch(new RegExp(`name="${q}"[^>]*\\schecked`))
+  })
+
+  it('the form can never produce the third state', () => {
+    // `nao_perguntado` exists in storage for rows from other routes; this door
+    // has no control, value or default that could send it.
+    expect(FORM).not.toContain('nao_perguntado')
+    expect(ACTIONS).not.toContain('nao_perguntado')
+  })
+
+  it('both answers are required ON THE SERVER, not only by the browser', () => {
+    expect(ACTIONS).toContain(
+      'isGuestIntakeAnswer(values.pacemaker) && isGuestIntakeAnswer(values.pregnancy)',
+    )
+  })
+
+  it('the RGPD panel sits on step 5 on the five-step flow, and carries the intake consent', () => {
+    expect(FORM).toContain('{!state.intake && rgpdPanel}')
+    expect(FORM).toContain('s.guest.intake_consent_body')
+    expect(stepFive.length).toBeGreaterThan(0)
+  })
+
+  it('Back never validates in the browser either (formNoValidate)', () => {
+    // With JavaScript off, a required consent box or radio pair on the current
+    // step would otherwise block the Back press itself.
+    expect(FORM).toMatch(/name="intent" value="back" variant="secondary" formNoValidate/)
+  })
+
+  it('the submit records the CURRENT consent label and never a client timestamp', () => {
+    expect(ACTIONS).toContain('consentVersion: CURRENT_INTAKE_CONSENT_VERSION')
+    expect(ACTIONS).not.toMatch(/consentAt|consentTicked|consent_at/)
+  })
+})
+
 describe('§7 — NEGATIVE ARMS: every matcher above can fail', () => {
   it('the forbidden-word matcher would catch a therapist step', () => {
     expect('const therapist = 1'.toLowerCase()).toContain('therapist')
@@ -198,5 +269,9 @@ describe('§7 — NEGATIVE ARMS: every matcher above can fail', () => {
 
   it('the field-set matcher would catch a NIF input', () => {
     expect('<input name="nif" />'.toLowerCase()).toContain('name="nif')
+  })
+
+  it('the pre-checked matcher would catch a defaulted "nao"', () => {
+    expect('name="pacemaker" value="nao" checked').toMatch(/name="pacemaker"[^>]*\schecked/)
   })
 })

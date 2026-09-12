@@ -355,7 +355,21 @@
     "catalog_error_title": "The services could not be loaded",
     "catalog_error_body": "Please try again or contact the clinic.",
     "confirmation_title": "We have received your request and it is being reviewed",
-    "confirmation_body": "The appointment is not yet confirmed; we will be in touch as soon as it is in our diary."
+    "confirmation_body": "The appointment is not yet confirmed; we will be in touch as soon as it is in our diary.",
+    "step_intake": "Clinical questionnaire",
+    "intake_intro": "These questions help the clinic prepare for your appointment.",
+    "dob_label": "Date of birth",
+    "reason_label": "Reason for the appointment",
+    "health_conditions_label": "Health conditions",
+    "medication_label": "Regular medication",
+    "falls_accidents_label": "Falls and accidents",
+    "surgeries_label": "Surgeries",
+    "optional_hint": "Optional.",
+    "pacemaker_label": "Do you have a pacemaker?",
+    "pregnancy_label": "Are you pregnant?",
+    "answer_sim": "Yes",
+    "answer_nao": "No",
+    "intake_consent_body": "I authorise the processing of my answers to this questionnaire, which are health data, for the sole purpose of preparing my appointment. The answers may be read by reception and by the clinical team. If, seven days after they are sent, this request has not led to my being registered as a client of the clinic, the answers are deleted automatically. If it has, they become part of my clinical file and are kept with it."
   },
   "errors": {
     "404_title": "Page not found",
@@ -414,5 +428,14 @@
       "underReview": "Your therapist will review the form before your appointment.",
       "submitted": "Form submitted successfully."
     }
+  },
+  "guestIntake": {
+    "title": "Clinical questionnaire",
+    "intro": "The answers you sent with your booking request. They are read only: to correct anything, please contact the clinic.",
+    "sent_on": "Sent on {{date}}",
+    "empty": "You have not sent a clinical questionnaire.",
+    "answer_not_asked": "Not asked",
+    "no_answer": "No answer",
+    "open_cta": "View the clinical questionnaire"
   }
 }

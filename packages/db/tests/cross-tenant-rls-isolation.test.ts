@@ -684,12 +684,13 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
     });
   });
 
-  /* ---- appointment_notes — per-visit notes: editable in place (0050), no delete ---- */
+  /* ---- appointment_notes — per-visit notes: editable (0050) and deletable (0084), in-tenant ---- */
   // PL-13 (migration 0050): notes are EDITABLE in place with a last-edited stamp, so an
-  // in-tenant UPDATE is now allowed (appointment_notes_tenant_update), while DELETE stays
-  // denied (no DELETE policy) — history is preserved, never removed. Both SELECT/INSERT and
-  // the new UPDATE remain strictly tenant-isolated.
-  describe("appointment_notes — editable in place (0050 UPDATE policy), tenant-isolated, no delete", () => {
+  // in-tenant UPDATE is allowed (appointment_notes_tenant_update). 0084 then reversed
+  // 0050's "DELETE stays denied" for the 2026-09-10 clinic batch: an in-tenant DELETE is
+  // allowed (appointment_notes_tenant_delete). SELECT, INSERT, UPDATE and DELETE all
+  // remain strictly tenant-isolated, and the DELETE arms below assert both halves.
+  describe("appointment_notes — editable (0050) and deletable (0084) in-tenant, tenant-isolated", () => {
     it("SELECT under tenant-A returns only A's rows; tenant-B row invisible", async () => {
       const rows = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
         (await tx`select id::text as id, tenant_id::text as scope from appointment_notes`) as {
@@ -740,9 +741,18 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
       expect(updated.length).toBe(0);
     });
 
-    it("DELETE of the tenant's OWN row affects 0 rows — no DELETE policy (history preserved)", async () => {
+    it("DELETE of the tenant's OWN row is ALLOWED (0084 appointment_notes_tenant_delete)", async () => {
       const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
         (await tx`delete from appointment_notes where id = ${A.appointmentNote} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(deleted.length).toBe(1);
+    });
+
+    it("DELETE of a tenant-B row under tenant-A JWT affects 0 rows (isolation on the DELETE policy)", async () => {
+      const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`delete from appointment_notes where id = ${B.appointmentNote} returning id`) as {
           id: string;
         }[],
       );

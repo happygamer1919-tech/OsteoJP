@@ -20,6 +20,9 @@ const H = vi.hoisted(() => ({
   /** Result queue: locations, then services, then the offering rows (GUEST-08). */
   results: [] as unknown[][],
   selects: 0,
+  /** INTAKE-01: what information_schema "says" about 0087's table. */
+  intakeTable: false,
+  executes: 0,
 }));
 
 function chainable() {
@@ -35,7 +38,15 @@ function chainable() {
 
 vi.mock("@osteojp/db", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getDbAdmin: () => ({ select: () => chainable() }),
+  // `execute` answers the REAL detector's information_schema query: the detector
+  // itself is spread in from the real module, so its caching is exercised here.
+  getDbAdmin: () => ({
+    select: () => chainable(),
+    execute: async () => {
+      H.executes += 1;
+      return [{ present: H.intakeTable }];
+    },
+  }),
 }));
 
 vi.mock("@/lib/rate-limit/durable-store", () => ({
@@ -48,6 +59,7 @@ vi.mock("@/lib/rate-limit/durable-store", () => ({
 }));
 
 import { GET as guestCatalog } from "./route";
+import { resetGuestIntakeSchemaCache } from "@osteojp/db";
 
 const T = "11111111-1111-1111-1111-111111111111";
 const LV = "aaaaaaaa-0000-0000-0000-000000000001";
@@ -85,6 +97,9 @@ beforeEach(() => {
   H.keys = [];
   H.verdicts = new Map();
   H.selects = 0;
+  H.intakeTable = false;
+  H.executes = 0;
+  resetGuestIntakeSchemaCache();
   seed();
 });
 
@@ -103,6 +118,7 @@ describe("§1 — it answers the guest form, and only the guest form", () => {
         { id: "s1", name: "Osteopatia", locationIds: [LV, CB] },
         { id: "s2", name: "Pilates Terapêutico", locationIds: [CB] },
       ],
+      intakeEnabled: false,
     });
   });
 
@@ -128,7 +144,7 @@ describe("§1 — it answers the guest form, and only the guest form", () => {
     seed([], []);
     const res = await guestCatalog(get("?tenantId=99999999-9999-9999-9999-999999999999"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ locations: [], services: [] });
+    expect(await res.json()).toEqual({ locations: [], services: [], intakeEnabled: false });
   });
 });
 
@@ -209,6 +225,8 @@ describe("§3 — the limits", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("60");
     expect(H.selects).toBe(0);
+    // INTAKE-01: the presence check is a read too, and it is refused with the rest.
+    expect(H.executes).toBe(0);
   });
 
   it("NEGATIVE ARM: an allowed request really does read", async () => {
@@ -326,5 +344,77 @@ describe("§5 — offered-here comes from the active price rows", () => {
     const body = await bodyOf();
     expect(Object.keys(body.services[0]!).sort()).toEqual(["id", "locationIds", "name"]);
     expect(JSON.stringify(body)).not.toMatch(/price|cents|priceCents/i);
+  });
+});
+
+/**
+ * §6 - INTAKE-01. `intakeEnabled` IS THE PORTAL'S ONLY SIGNAL FOR THE FIFTH STEP.
+ *
+ * The portal renders the clinical intake step ONLY when this is true, and the
+ * guest route refuses an intake while it would be false. Both arms are
+ * asserted, because a route that always answered one value passes the other
+ * arm's test.
+ */
+describe("§6 - intakeEnabled follows whether 0087's table exists", () => {
+  it("false while 0087 is not applied - the portal keeps today's four steps", async () => {
+    H.intakeTable = false;
+    const body = (await (await guestCatalog(get())).json()) as { intakeEnabled: unknown };
+    expect(body.intakeEnabled).toBe(false);
+  });
+
+  it("true once it is applied", async () => {
+    H.intakeTable = true;
+    const body = (await (await guestCatalog(get())).json()) as { intakeEnabled: unknown };
+    expect(body.intakeEnabled).toBe(true);
+  });
+
+  it("the top-level keys are EXACTLY locations, services, intakeEnabled", async () => {
+    // The same pin §2 puts on each row, one level up: a public response that
+    // grows a key is a disclosure until somebody proves otherwise.
+    const body = (await (await guestCatalog(get())).json()) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(["intakeEnabled", "locations", "services"]);
+  });
+
+  it("an invented tenant gets the SAME answer as a real one - it is not an oracle", async () => {
+    H.intakeTable = true;
+    const real = (await (await guestCatalog(get())).json()) as { intakeEnabled: unknown };
+    seed([], []);
+    const invented = (await (
+      await guestCatalog(get("?tenantId=99999999-9999-9999-9999-999999999999"))
+    ).json()) as { intakeEnabled: unknown };
+    expect(invented.intakeEnabled).toBe(real.intakeEnabled);
+  });
+
+  it("PRESENT is cached for the process: one information_schema read, not one per page load", async () => {
+    H.intakeTable = true;
+    await guestCatalog(get());
+    await guestCatalog(get());
+    await guestCatalog(get());
+    expect(H.executes).toBe(1);
+  });
+
+  it("ABSENT is re-asked no more than once a minute, so an apply is picked up without a redeploy", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-11T10:00:00Z"));
+      H.intakeTable = false;
+      await guestCatalog(get());
+      await guestCatalog(get());
+      expect(H.executes).toBe(1);
+
+      // The owner applies 0087. Within the minute the old answer stands...
+      H.intakeTable = true;
+      vi.setSystemTime(new Date("2026-09-11T10:00:59Z"));
+      const stale = (await (await guestCatalog(get())).json()) as { intakeEnabled: unknown };
+      expect(stale.intakeEnabled).toBe(false);
+
+      // ...and after it, the new one is read.
+      vi.setSystemTime(new Date("2026-09-11T10:01:01Z"));
+      const fresh = (await (await guestCatalog(get())).json()) as { intakeEnabled: unknown };
+      expect(fresh.intakeEnabled).toBe(true);
+      expect(H.executes).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
