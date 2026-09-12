@@ -206,6 +206,10 @@ export default async function StaffPage({
     : m === "err:email_taken" ? s["admin.staff.emailTakenBlocked"]
     : m === "err:password" ? s["admin.staff.deleteWrongPassword"]
     : m === "err:has_activity" ? s["admin.staff.deleteHasActivity"]
+    // SCHED-25: the block was refused for a missing note. Without this line it
+    // falls to the generic `admin.staff.error`, which says something went wrong
+    // and not which box to fill - and the operator's own dates were fine.
+    : m === "err:note_required" ? s["agenda.block.noteRequired"]
     : m && m.startsWith("err") ? s["admin.staff.error"]
     : null;
   const warnCount = m && m.startsWith("warn:") ? Number.parseInt(m.slice(5), 10) : 0;

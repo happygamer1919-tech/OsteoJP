@@ -1308,6 +1308,7 @@
   "invoicing.emptyTitle": "Sem faturas no período selecionado",
   "invoicing.emptyHelp": "Ajuste o período selecionado.",
   "agenda.blockedTime": "Tempo bloqueado",
+  "agenda.blockedNoNote": "sem nota",
   "agenda.clinicClosed": "Clínica encerrada",
   "agenda.legend": "Legenda de serviços",
   "agenda.serviceMassagemTerapeutica": "Massagem Terapêutica",
