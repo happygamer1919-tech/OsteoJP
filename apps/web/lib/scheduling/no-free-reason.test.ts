@@ -26,6 +26,7 @@ function day(over: Partial<DayAvailability> = {}): DayAvailability {
     working: [{ start: iso("08"), end: iso("19") }],
     booked: [],
     blocks: [],
+    closures: [],
     free: [{ start: iso("08"), end: iso("19") }],
     sources: [],
     ...over,
@@ -83,6 +84,31 @@ describe("SCHED-20 - noFreeReason", () => {
     const d = day({
       booked: [{ start: iso("08"), end: iso("19"), appointmentId: "a1", status: "scheduled" }],
       blocks: [{ start: iso("21"), end: iso("22"), blockId: "b1", reason: "other", note: null }],
+      free: [],
+    });
+    expect(noFreeReason(d)).toBe("booked");
+  });
+
+  it("0085: a CLOSURE beats both blocked and booked - it is the only one nobody can act on", () => {
+    // Removing a block frees nothing on a day the building is shut, and neither
+    // does moving an appointment. The sentence has to send the reader to the
+    // clinic's hours, not to the block list or the appointment list.
+    const d = day({
+      booked: [{ start: iso("08"), end: iso("19"), appointmentId: "a1", status: "scheduled" }],
+      blocks: [{ start: iso("08"), end: iso("19"), blockId: "b1", reason: "other", note: null }],
+      closures: [{ start: iso("13"), end: iso("14") }],
+      free: [],
+    });
+    expect(noFreeReason(d)).toBe("closed");
+  });
+
+  it("0085: a closure OUTSIDE working hours does not get the blame either", () => {
+    // Same guard as the block case, in the same direction: a closure the
+    // working window never reaches has taken nothing.
+    const d = day({
+      working: [{ start: iso("08"), end: iso("12") }],
+      booked: [{ start: iso("08"), end: iso("12"), appointmentId: "a1", status: "scheduled" }],
+      closures: [{ start: iso("13"), end: iso("14") }],
       free: [],
     });
     expect(noFreeReason(d)).toBe("booked");

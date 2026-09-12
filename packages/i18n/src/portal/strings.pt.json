@@ -164,6 +164,7 @@
     "reschedule_too_late": "Não é possível remarcar com menos de 24 horas de antecedência. Por favor ligue para a clínica.",
     "reschedule_min_notice": "Escolha um horário com pelo menos 24 horas de antecedência.",
     "reschedule_slot_taken": "Esse horário deixou de estar disponível. Escolha outro.",
+    "reschedule_clinic_closed": "A clínica está encerrada a essa hora. Não é uma ausência do terapeuta: escolha outro horário ou ligue para a clínica.",
     "reschedule_error": "Não foi possível remarcar a consulta. Tente novamente ou ligue para a clínica."
   },
   "forms": {

@@ -103,3 +103,55 @@ describe("buildDay time_off deduction (W5-12)", () => {
     expect(day.blocks).toHaveLength(1); // still reported (overlaps the day)
   });
 });
+
+/**
+ * 0085 — the clinic closure is subtracted like a block, and reported separately.
+ *
+ * THE SEPARATION IS THE POINT. It takes the same minutes out of `free` as a
+ * time_off block does, so folding the two together would be tempting and would
+ * lose the only thing that matters about the difference: a block belongs to one
+ * therapist and reception can remove it; a closure belongs to the building and
+ * nobody on the agenda can.
+ */
+describe("0085 - the clinic's own closure", () => {
+  // `working` and the helpers live inside the describe above; the fixture is
+  // restated here rather than hoisted so that block stays exactly as it was.
+  const working = [tpl("09:00", "17:00")];
+  const CB = {
+    opensAt: "08:00:00",
+    closesAt: "20:00:00",
+    middayClosedFrom: "13:00:00",
+    middayClosedTo: "14:00:00",
+  };
+
+  it("is cut out of free, exactly like a block", () => {
+    const day = buildDay(DATE, working, [], [], CB);
+    // 09:00-17:00 minus the 13:00-14:00 closure -> two gaps.
+    expect(freeHours(day)).toEqual(["09:00-13:00", "14:00-17:00"]);
+  });
+
+  it("is reported in its own field, NOT folded into blocks", () => {
+    const day = buildDay(DATE, working, [], [], CB);
+    expect(day.closures).toHaveLength(1);
+    expect(
+      day.blocks,
+      "the closure was reported as a therapist absence - the two are different facts and " +
+        "reception can only act on one of them",
+    ).toEqual([]);
+  });
+
+  it("changes nothing when the caller is not scoped to a clinic", () => {
+    // "Todas as localizações". A closure is true of ONE clinic; subtracting it
+    // from an answer covering several would delete an hour the other is open.
+    const day = buildDay(DATE, working, [], [], null);
+    expect(day.closures).toEqual([]);
+    expect(freeHours(day)).toEqual(["09:00-17:00"]);
+  });
+
+  it("stacks with a block rather than replacing it", () => {
+    const day = buildDay(DATE, working, [], [block("10:00", "11:00")], CB);
+    expect(freeHours(day)).toEqual(["09:00-10:00", "11:00-13:00", "14:00-17:00"]);
+    expect(day.blocks).toHaveLength(1);
+    expect(day.closures).toHaveLength(1);
+  });
+});

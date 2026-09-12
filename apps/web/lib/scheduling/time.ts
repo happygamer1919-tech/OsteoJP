@@ -15,8 +15,20 @@ import type { Locale } from "@osteojp/i18n";
 
 export const LISBON_TZ = "Europe/Lisbon";
 export const SLOT_MINUTES = 30;
-export const DAY_START_HOUR = 8; // first visible row
-export const DAY_END_HOUR = 20; // last visible row (exclusive end label)
+/**
+ * 0085 - THESE ARE NOW THE FALLBACK, NOT THE ANSWER.
+ *
+ * They were the agenda grid's working day, compiled in, identical for both
+ * clinics and read by nothing else. `locations.opens_at` / `closes_at` carry
+ * the real hours and default to exactly these two values, so a database that
+ * has not been migrated, a caller with no clinic in scope, and a tenant with no
+ * locations all render the day they always did.
+ *
+ * KEPT RATHER THAN DELETED, deliberately: gridWindow() needs a defined answer
+ * for an empty list, and a blank grid is a worse failure than a wide one.
+ */
+export const DAY_START_HOUR = 8; // fallback first visible row
+export const DAY_END_HOUR = 20; // fallback last visible row (exclusive end label)
 export const WEEK_DAYS = 6; // Mon–Sat (W3-08, DECISIONS 2026-07-05 real clinic schedule)
 
 const BCP47: Record<Locale, string> = { pt: "pt-PT", en: "en-GB" };
@@ -222,12 +234,22 @@ export function todayInLisbon(now: Date = new Date()): string {
   return lisbonParts(now).date;
 }
 
-/** Ordered list of slot start-minutes for the visible day window. */
-export function daySlots(): number[] {
+/**
+ * Ordered list of slot start-minutes for the visible day window.
+ *
+ * 0085: the window is an ARGUMENT now. It defaults to the old constants so
+ * every existing caller and test is unchanged, and the agenda passes the
+ * clinic's real hours. The last slot still STARTS before `endMin` rather than
+ * at it - a 19:30 slot on a day that closes at 20:00 is a booking that ends
+ * exactly at closing, which is right; a 20:00 slot would be one that starts
+ * after it.
+ */
+export function daySlots(
+  startMin: number = DAY_START_HOUR * 60,
+  endMin: number = DAY_END_HOUR * 60,
+): number[] {
   const slots: number[] = [];
-  for (let m = DAY_START_HOUR * 60; m < DAY_END_HOUR * 60; m += SLOT_MINUTES) {
-    slots.push(m);
-  }
+  for (let m = startMin; m < endMin; m += SLOT_MINUTES) slots.push(m);
   return slots;
 }
 

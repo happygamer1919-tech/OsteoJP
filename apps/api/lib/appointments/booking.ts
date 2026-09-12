@@ -129,6 +129,14 @@ export type ServiceForBooking = {
 
 /* ------------------------------- store seam ----------------------------- */
 
+/**
+ * What the reschedule window guard found. `conflict` is the collapsed answer
+ * the caller refuses on; `clinicClosed` narrows WHY when the clinic's own
+ * closure is the cause, so the sentence can name the building instead of a
+ * person (0085). `clinicClosed: true` always implies `conflict: true`.
+ */
+export type WindowConflict = { conflict: boolean; clinicClosed: boolean };
+
 export interface AppointmentsStore {
   /** The patient's OWN appointments (self-scoped). */
   listOwn(principal: PatientPrincipal): Promise<AppointmentView[]>;
@@ -229,7 +237,16 @@ export interface AppointmentsStore {
     id: string,
     args: { startsAt: Date; endsAt: Date },
   ): Promise<void>;
-  /** True if the therapist/room has a conflict for the window (reschedule). */
+  /**
+   * The reschedule guard's verdict for a window.
+   *
+   * 0085 SPLIT THIS OFF A BARE BOOLEAN. The guard has always been four
+   * independent terms collapsed with `or` - overlap, time off, the therapist's
+   * hours, and now the clinic's closure - and a single boolean can only ever
+   * produce one sentence for all four. `clinicClosed` is carried out separately
+   * so the refusal can say the building is shut, which is the one of the four
+   * the patient cannot solve by choosing a different therapist.
+   */
   hasWindowConflict(
     principal: PatientPrincipal,
     args: {
@@ -239,7 +256,7 @@ export interface AppointmentsStore {
       endsAt: Date;
       excludeIds?: string[];
     },
-  ): Promise<boolean>;
+  ): Promise<WindowConflict>;
 }
 
 /* ----------------------------- input parsing ---------------------------- */
@@ -705,14 +722,19 @@ export async function rescheduleAppointment(
   const durationMs = appt.endsAt.getTime() - appt.startsAt.getTime();
   const newEndsAt = new Date(input.startsAt.getTime() + durationMs);
 
-  const conflict = await store.hasWindowConflict(principal, {
+  const verdict = await store.hasWindowConflict(principal, {
     practitionerId: appt.practitionerId,
     locationId: appt.locationId,
     startsAt: input.startsAt,
     endsAt: newEndsAt,
     excludeIds: [id],
   });
-  if (conflict) throw new AppointmentError("no_slot");
+  // 0085 FIRST, and the order is the point: when the clinic is shut the other
+  // three terms are all true as well (nobody's hours cover a closed building),
+  // so testing `conflict` first would bury the only cause worth telling the
+  // patient about under "the slot was taken".
+  if (verdict.clinicClosed) throw new AppointmentError("clinic_closed");
+  if (verdict.conflict) throw new AppointmentError("no_slot");
 
   await store.rescheduleOwn(principal, id, { startsAt: input.startsAt, endsAt: newEndsAt });
 

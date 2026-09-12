@@ -66,6 +66,8 @@ type FakeOpts = {
   available?: TherapistCandidate[];
   prior?: string | null;
   conflict?: boolean;
+  /** 0085: refuse specifically because the CLINIC is shut, not the slot taken. */
+  clinicClosed?: boolean;
   openSlots?: string[];
 };
 
@@ -160,7 +162,10 @@ function makeStore(opts: FakeOpts = {}) {
       }
     },
     async hasWindowConflict() {
-      return opts.conflict ?? false;
+      // 0085 split the verdict in two. `opts.conflict` keeps meaning what it
+      // always meant here (any refusal); the closure arm is opted into
+      // separately by the one suite that tests it.
+      return { conflict: opts.conflict ?? false, clinicClosed: opts.clinicClosed ?? false };
     },
   };
 
@@ -491,7 +496,10 @@ describe("book", () => {
 
 describe("reschedule re-runs conflict detection", () => {
   it("rejects with no_slot when the new window conflicts", async () => {
-    const spy = vi.fn<AppointmentsStore["hasWindowConflict"]>(async () => true);
+    const spy = vi.fn<AppointmentsStore["hasWindowConflict"]>(async () => ({
+      conflict: true,
+      clinicClosed: false,
+    }));
     const base = makeStore({ rows: [ownRow({ startsAt: inHours(48), endsAt: inHours(49) })] });
     const store: AppointmentsStore = { ...base.store, hasWindowConflict: spy };
     const out = await code(() =>
@@ -537,7 +545,7 @@ describe("W3: a no_show freed in the PAST is still not bookable", () => {
     // This is exactly the post-0052 state: the old no_show no longer blocks, so
     // the conflict check says the slot is free. The past guard must still win.
     const { store } = makeStore();
-    store.hasWindowConflict = async () => false;
+    store.hasWindowConflict = async () => ({ conflict: false, clinicClosed: false });
 
     const out = await code(() =>
       bookAppointment(
@@ -559,7 +567,7 @@ describe("W3: a no_show freed in the PAST is still not bookable", () => {
     // only thing that can refuse the move is the past-date guard.
     const seeded = ownRow({ startsAt: inHours(48), endsAt: inHours(49) });
     const { store } = makeStore({ rows: [seeded] });
-    store.hasWindowConflict = async () => false;
+    store.hasWindowConflict = async () => ({ conflict: false, clinicClosed: false });
 
     const out = await code(() =>
       rescheduleAppointment(
@@ -577,7 +585,7 @@ describe("W3: a no_show freed in the PAST is still not bookable", () => {
     // Positive control. Without it, a verifier that rejected every booking
     // would pass both assertions above while the portal was unusable.
     const { store } = makeStore();
-    store.hasWindowConflict = async () => false;
+    store.hasWindowConflict = async () => ({ conflict: false, clinicClosed: false });
 
     const out = await code(() =>
       bookAppointment(
@@ -595,3 +603,41 @@ describe("W3: a no_show freed in the PAST is still not bookable", () => {
   });
 });
 
+
+// 0085 — THE CLINIC'S OWN CLOSURE GETS ITS OWN REFUSAL, NOT `no_slot`.
+//
+// The window guard collapses four independent terms with `or`, so before this
+// card every one of them reached the patient as "that time is no longer
+// available" — a sentence that is FALSE for a closure and, worse, actionable in
+// the wrong direction: it tells them to refresh and pick again from a list that
+// will never contain 13:00-14:00 at CB. The code is separate so the sentence
+// can be.
+describe("0085: a reschedule into the clinic's closure names the closure", () => {
+  it("refuses with clinic_closed, not no_slot, when the closure is the cause", async () => {
+    const seeded = ownRow({ startsAt: inHours(48), endsAt: inHours(49) });
+    const { store } = makeStore({ rows: [seeded] });
+    // What the real store returns for a window inside CB's midday hour: BOTH
+    // flags true, because a closed building also fails the therapist's-hours
+    // term. The narrower cause has to win, which is what this pins.
+    store.hasWindowConflict = async () => ({ conflict: true, clinicClosed: true });
+
+    const out = await code(() =>
+      rescheduleAppointment(ALICE, seeded.id, { startsAt: inHours(72) }, store, NOW),
+    );
+    expect(out).toBe("clinic_closed");
+  });
+
+  it("still says no_slot for an ordinary race, so the new code is not swallowing everything", async () => {
+    // Positive control on the other arm. Without it, a verdict object that
+    // reported clinicClosed for every refusal would pass the test above while
+    // telling every raced patient the clinic was shut.
+    const seeded = ownRow({ startsAt: inHours(48), endsAt: inHours(49) });
+    const { store } = makeStore({ rows: [seeded] });
+    store.hasWindowConflict = async () => ({ conflict: true, clinicClosed: false });
+
+    const out = await code(() =>
+      rescheduleAppointment(ALICE, seeded.id, { startsAt: inHours(72) }, store, NOW),
+    );
+    expect(out).toBe("no_slot");
+  });
+});

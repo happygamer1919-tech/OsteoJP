@@ -32,6 +32,7 @@ import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { checkAvailability } from "./availability-enforcement";
+import { checkClinicClosure } from "./clinic-closure-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
 import { isLegalEstadoCorrection } from "./estado-correction";
 import {
@@ -705,6 +706,28 @@ export async function createAppointment(
               availabilityWindows: av.windows,
             };
           }
+
+          // 0085 - THE CLINIC BEING SHUT, CHECKED IN THE SAME PLACE AND FOR
+          // THE SAME REASON. Beside checkAvailability and OUTSIDE the
+          // allowConflict gate below: the owner ruled the closure "not
+          // blockable-around", and everything inside that gate is by
+          // definition something "Guardar mesmo assim" can reach.
+          //
+          // Every occurrence, like the check above it: a recurring series whose
+          // third week lands in the lunch hour is the same refusal with a later
+          // date on it.
+          const cl = await checkClinicClosure(tx, {
+            locationId: input.locationId,
+            startsAt: w.startsAt,
+            endsAt: w.endsAt,
+          });
+          if (!cl.ok) {
+            return {
+              ok: false,
+              error: "clinic_closed",
+              clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+            };
+          }
         }
 
         if (!input.allowConflict) {
@@ -1116,8 +1139,8 @@ export async function cloneAppointment(
         }
 
         // ============================================================= //
-        // SCHED-15 — THE SAME TWO CHECKS `createAppointment` PAYS, IN THE
-        // SAME ORDER, ON THE SAME HELPERS.
+        // SCHED-15 — THE SAME CHECKS `createAppointment` PAYS, IN THE SAME
+        // ORDER, ON THE SAME HELPERS.
         // ============================================================= //
         // Deliberately AFTER buildClonedAppointment: the practitioner, the
         // location and the derived window are the CLONE's, read from the
@@ -1136,6 +1159,30 @@ export async function cloneAppointment(
             ok: false,
             error: "outside_availability",
             availabilityWindows: av.windows,
+          };
+        }
+
+        // 0085 - THE CLINIC BEING SHUT, and this was the one create path
+        // without it. createAppointment and rescheduleAppointment refused the
+        // closed hour; a Marcar novamente into CB 13:00-14:00 was simply
+        // written (reproduced on the purple lane with 0085 applied, recorded
+        // on the MIG-0085 card). Same helper, same place: beside availability
+        // and OUTSIDE the `allowConflict` gate below, because the closure is
+        // "not blockable-around" and "Marcar mesmo assim" is exactly the
+        // override that must not reach it.
+        //
+        // On the CLONE's location and window. The source's own window is in
+        // the past and says nothing about whether the new one is open.
+        const cl = await checkClinicClosure(tx, {
+          locationId: values.locationId,
+          startsAt: values.startsAt,
+          endsAt: values.endsAt,
+        });
+        if (!cl.ok) {
+          return {
+            ok: false,
+            error: "clinic_closed",
+            clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
           };
         }
 
@@ -1698,6 +1745,27 @@ export async function rescheduleAppointment(
               ok: false,
               error: "outside_availability",
               availabilityWindows: av.windows,
+            };
+          }
+
+          // 0085 - THE CLINIC BEING SHUT, CHECKED IN THE SAME PLACE AND FOR
+          // THE SAME REASON. Beside checkAvailability and OUTSIDE the
+          // allowConflict gate below: the owner ruled the closure "not
+          // blockable-around", and everything inside that gate is by
+          // definition something "Guardar mesmo assim" can reach.
+          //
+          // Every TARGET, not just the first: rescheduling a series moves every
+          // occurrence, and one landing in the lunch hour is the same refusal.
+          const cl = await checkClinicClosure(tx, {
+            locationId: input.locationId,
+            startsAt: t.startsAt,
+            endsAt: t.endsAt,
+          });
+          if (!cl.ok) {
+            return {
+              ok: false,
+              error: "clinic_closed",
+              clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
             };
           }
         }

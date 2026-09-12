@@ -91,6 +91,24 @@ export type AgendaAppointment = {
 };
 
 export type Option = { id: string; label: string };
+
+/**
+ * 0085 - a clinic option, which is an Option that also knows when it is open.
+ *
+ * A SEPARATE TYPE RATHER THAN FOUR OPTIONAL FIELDS ON `Option`. Option is the
+ * shape of every dropdown entry on the agenda - therapists, services, packs -
+ * and none of those has opening hours. Optional fields there would compile
+ * everywhere and be undefined almost everywhere, which is how a grid ends up
+ * silently falling back to 08:00-20:00 on a clinic that closes at 21:00.
+ */
+export type LocationOption = Option & {
+  /** Lisbon wall-clock "HH:MM:SS" as the `time` column returns it. */
+  opensAt: string;
+  closesAt: string;
+  /** Both or neither; `locations_midday_pair` enforces it. */
+  middayClosedFrom: string | null;
+  middayClosedTo: string | null;
+};
 export type ServiceOption = Option & {
   durationMin: number;
   // NESA contraindication sensitivity (0031) — drives the soft booking warning.
@@ -118,7 +136,7 @@ export type AgendaOptions = {
   // (derived from availability_templates, or staff_locations after W12-15). Drives
   // the booking dropdown's per-location scoping. Optional (see above).
   therapistLocationIds?: Record<string, string[]>;
-  locations: Option[];
+  locations: LocationOption[];
   /**
    * STAFF-02 — the locations the CALLER may book into, a subset of `locations`.
    *
@@ -242,6 +260,16 @@ export type ActionErrorCode =
   // ("Guardar mesmo assim"); this is not, because an override that reinstates
   // the exact defect is a bypass rather than an override.
   | "outside_availability"
+  // 0085: the CLINIC is closed for that window - the midday closure, not a
+  // therapist's absence.
+  //
+  // ITS OWN CODE, AND THAT IS THE POINT OF THE CARD RATHER THAN TIDINESS. Every
+  // other unavailability reaches the caller as `conflict`, which is overridable
+  // with "Guardar mesmo assim". The owner ruled this one not blockable-around,
+  // so it must NOT be a conflict - and the reader's next action is different
+  // too: an absence sends them to that therapist's blocks, a closure sends them
+  // nowhere, because there is nothing to remove.
+  | "clinic_closed"
   // RB-02: the pacote has fewer sessions left than this booking needs.
   //
   // ITS OWN CODE AND NOT `validation`, because the two need different copy and
@@ -311,4 +339,11 @@ export type ActionResult<T> =
        * the two differently and the type does not collapse them.
        */
       availabilityWindows?: { startTime: string; endTime: string }[];
+      /**
+       * 0085. Set only with `error: "clinic_closed"`. It carries the CLINIC's
+       * name and the hour it is shut so the refusal can say which building and
+       * when, rather than "closed" - the same refusal-names-the-facts rule the
+       * availability windows above follow.
+       */
+      clinicClosure?: { locationName: string; from: string; to: string };
     };

@@ -25,6 +25,7 @@ import type {
   BookableTherapist,
   MutableAppointment,
   ServiceForBooking,
+  WindowConflict,
 } from "./booking";
 import type { TherapistCandidate } from "./therapist";
 import { acquireSlotLocks } from "./slot-lock";
@@ -206,6 +207,42 @@ function timeOffOverlapExists(
       and t.user_id = ${pref(practitioner)}
       and t.starts_at < ${iref(endsAt)}
       and t.ends_at   > ${iref(startsAt)}
+  )`;
+}
+
+/**
+ * 0085 — THE CLINIC ITSELF IS SHUT.
+ *
+ * A THIRD PREDICATE BESIDE apptOverlapExists AND timeOffOverlapExists, and it
+ * is separate from both on purpose. `time_off` is per THERAPIST and is
+ * overridable by staff; a closure belongs to the BUILDING and the owner ruled
+ * it not blockable-around. The portal has no override at all, so on this path
+ * the difference is not enforcement but the ANSWER: a patient refused here is
+ * refused because the clinic is closed, and nothing about their therapist.
+ *
+ * ALL WALL-CLOCK MATH IN Europe/Lisbon INSIDE POSTGRES, exactly as
+ * availabilityCoversExists does it: the closure is a `time` column against an
+ * instant, and converting in JS would put a second timezone opinion on a path
+ * that already has one and is correct.
+ *
+ * A LOCATION WITH NO CLOSURE MATCHES NOTHING - `midday_closed_from is not null`
+ * is the first term, so every clinic but CB pays one index-free boolean and
+ * behaves exactly as before.
+ */
+function closureOverlapExists(tenantId: string, locationId: SQL | string, startsAt: Instant, endsAt: Instant): SQL {
+  return sql`exists (
+    select 1 from locations l
+    where l.tenant_id = ${tenantId}
+      and l.id = ${locationId}
+      and l.midday_closed_from is not null
+      and (
+        ((${iref(startsAt)}) at time zone 'Europe/Lisbon')::date
+          + l.midday_closed_from
+      ) at time zone 'Europe/Lisbon' < ${iref(endsAt)}
+      and (
+        ((${iref(startsAt)}) at time zone 'Europe/Lisbon')::date
+          + l.midday_closed_to
+      ) at time zone 'Europe/Lisbon' > ${iref(startsAt)}
   )`;
 }
 
@@ -497,6 +534,12 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startExpr, endExpr)}
             and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr, [])}
             and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr)}
+            -- 0085: a slot inside the clinic's own closure is never advertised.
+            -- It sits with the other two predicates BY DESIGN: this query's
+            -- contract is that a slot it returns can only be rejected at
+            -- confirm by a genuine race, never by disagreement, so every
+            -- predicate the confirm guard runs has to run here too.
+            and not ${closureOverlapExists(principal.tenantId, locationId, startExpr, endExpr)}
         )
       order by s.starts_at
     `)) as unknown as ReadonlyArray<{ starts_at: Date | string }>;
@@ -555,6 +598,9 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startsAt, endsAt)}
         and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt, [])}
         and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt)}
+        -- 0085: nobody is available at a clinic that is shut, whatever their
+        -- own hours say.
+        and not ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)}
       order by u.full_name
     `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;
 
@@ -711,13 +757,20 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         ),
       );
 
+      // The closure comes back as its OWN column, not folded into `conflict`.
+      // One boolean over four terms can only produce one sentence, and this is
+      // the term whose sentence differs: a shut building is not a taken slot,
+      // and the patient's next move is another hour, not another refresh.
       const guard = (await tx.execute(sql`
         select (
           ${apptOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt, [])}
           or ${timeOffOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt)}
+          or ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt)}
           or not ${availabilityCoversExists(principal.tenantId, args.practitionerId, args.locationId, args.startsAt, args.endsAt)}
-        ) as conflict
-      `)) as unknown as ReadonlyArray<{ conflict: boolean }>;
+        ) as conflict,
+        ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt)} as clinic_closed
+      `)) as unknown as ReadonlyArray<{ conflict: boolean; clinic_closed: boolean }>;
+      if (guard[0]?.clinic_closed) throw new AppointmentError("clinic_closed");
       if (guard[0]?.conflict) throw new AppointmentError("no_slot");
 
       const inserted = await tx
@@ -840,14 +893,22 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     });
   },
 
-  async hasWindowConflict(principal, { practitionerId, locationId, startsAt, endsAt, excludeIds }): Promise<boolean> {
+  async hasWindowConflict(
+    principal,
+    { practitionerId, locationId, startsAt, endsAt, excludeIds },
+  ): Promise<WindowConflict> {
     const rows = (await getDbAdmin().execute(sql`
       select (
         ${apptOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt, excludeIds ?? [])}
         or ${timeOffOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt)}
+        or ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)}
         or not ${availabilityCoversExists(principal.tenantId, practitionerId, locationId, startsAt, endsAt)}
-      ) as conflict
-    `)) as unknown as ReadonlyArray<{ conflict: boolean }>;
-    return Boolean(rows[0]?.conflict);
+      ) as conflict,
+      ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)} as clinic_closed
+    `)) as unknown as ReadonlyArray<{ conflict: boolean; clinic_closed: boolean }>;
+    return {
+      conflict: Boolean(rows[0]?.conflict),
+      clinicClosed: Boolean(rows[0]?.clinic_closed),
+    };
   },
 };

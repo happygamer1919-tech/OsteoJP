@@ -300,7 +300,7 @@ describe("AppointmentDrawer — a shared resource beside the therapist (SCHED-17
       { id: "therapist-self", label: "Dr. Self Terapeuta" },
       { id: "therapist-other", label: "Dr. Outro Terapeuta" },
     ],
-    locations: [{ id: "loc-cb", label: "Castelo Branco" }],
+    locations: [{ id: "loc-cb", label: "Castelo Branco" , opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null}],
     bookableLocations: [{ id: "loc-cb", label: "Castelo Branco" }],
     services: [
       { id: "svc-primary", label: "Osteopatia", durationMin: 60, contraindicationSensitive: false },
@@ -340,7 +340,7 @@ describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
       { id: "therapist-self", label: "Dr. Self Terapeuta" },
       { id: "therapist-other", label: "Dr. Outro Terapeuta" },
     ],
-    locations: [{ id: "loc-1", label: "Linda-a-Velha" }],
+    locations: [{ id: "loc-1", label: "Linda-a-Velha" , opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null}],
     bookableLocations: [{ id: "loc-1", label: "Linda-a-Velha" }],
     services: [
       { id: "svc-primary", label: "Osteopatia", durationMin: 60, contraindicationSensitive: false },
@@ -417,14 +417,14 @@ describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
 /* ------------------------------------------------------------------ */
 const ONE_LOCATION: AgendaOptions = {
   ...options,
-  locations: [{ id: "loc-lv", label: "OsteoJP (LV)" }],
+  locations: [{ id: "loc-lv", label: "OsteoJP (LV)" , opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null}],
   bookableLocations: [{ id: "loc-lv", label: "OsteoJP (LV)" }],
 };
 const TWO_LOCATIONS: AgendaOptions = {
   ...options,
   locations: [
-    { id: "loc-lv", label: "OsteoJP (LV)" },
-    { id: "loc-cb", label: "OsteoJP (CB)" },
+    { id: "loc-lv", label: "OsteoJP (LV)" , opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null},
+    { id: "loc-cb", label: "OsteoJP (CB)" , opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null},
   ],
   // STAFF-02: the drawer now reads `bookableLocations`, not `locations`.
   // `locations` is the agenda TOOLBAR's list, a READ concern under PL-09; this

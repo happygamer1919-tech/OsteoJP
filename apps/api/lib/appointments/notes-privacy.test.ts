@@ -145,7 +145,7 @@ function makeNotesLeakStore(): AppointmentsStore {
     async cancelOwn() {},
     async rescheduleOwn() {},
     async hasWindowConflict() {
-      return false;
+      return { conflict: false, clinicClosed: false };
     },
   };
 }

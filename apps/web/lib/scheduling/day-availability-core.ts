@@ -18,6 +18,7 @@ import {
   type ScheduleRule,
 } from "./availability";
 import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc } from "./time";
+import { closureFor, type ClinicHours } from "./clinic-hours";
 import type { AppointmentStatusValue } from "./types";
 
 /** A time span crossing the wire as ISO-8601 UTC strings (see types.ts). */
@@ -54,6 +55,18 @@ export type WorkingSource = IsoInterval & {
   rule: ScheduleRule;
 };
 
+/**
+ * 0085 - the CLINIC being shut, which is not a therapist being away.
+ *
+ * CARRIED SEPARATELY FROM `blocks`, deliberately. They subtract the same
+ * minutes from `free`, so folding them together would be tempting and would
+ * lose the only thing that matters about the difference: a block belongs to one
+ * therapist and can be removed by reception, and a closure belongs to the
+ * building and cannot. Every surface that renders them has to say which it is,
+ * and it can only do that if the resolver kept them apart.
+ */
+export type ClosureInterval = IsoInterval;
+
 /** Availability for one Lisbon calendar day. */
 export type DayAvailability = {
   /** Lisbon calendar date, "yyyy-mm-dd". */
@@ -64,7 +77,11 @@ export type DayAvailability = {
   booked: BookedInterval[];
   /** time_off blocks overlapping the day (W5-12). */
   blocks: BlockInterval[];
-  /** Working minus booked minus blocks - the bookable gaps (merged, sorted). */
+  /** 0085: the clinic's own closure on this day, or empty. At most one, but an
+   *  array because every consumer already loops over the other two and a lone
+   *  nullable would be the one shape somebody forgets to handle. */
+  closures: ClosureInterval[];
+  /** Working minus booked minus blocks MINUS CLOSURES - the bookable gaps. */
   free: IsoInterval[];
   /** SCHED-09: the UNMERGED windows with their rule. Additive; `working` is
    *  unchanged and remains what the agenda and the batch engine read. */
@@ -93,7 +110,7 @@ export type DayAvailability = {
  * fully booked AND blocked; the block is the one that has to go first, because
  * moving every appointment off a blocked day frees nothing.
  */
-export type NoFreeReason = "no_working_hours" | "blocked" | "booked";
+export type NoFreeReason = "no_working_hours" | "closed" | "blocked" | "booked";
 
 /**
  * The reason a day has no bookable time, or null when it has some.
@@ -105,6 +122,15 @@ export type NoFreeReason = "no_working_hours" | "blocked" | "booked";
 export function noFreeReason(day: DayAvailability): NoFreeReason | null {
   if (day.working.length === 0) return "no_working_hours";
   if (day.free.length > 0) return null;
+  // 0085 - THE CLINIC WINS OVER BOTH OF THE OTHERS when it is what took the
+  // day, and the ordering is the same argument as blocked-over-booked: removing
+  // a block frees nothing on a day the building is shut, and neither does
+  // moving an appointment. It is also the only one of the three that reception
+  // cannot act on at all, which is precisely what the sentence has to say.
+  const closedOverWork = day.closures.some((c) =>
+    day.working.some((w) => c.start < w.end && w.start < c.end),
+  );
+  if (closedOverWork) return "closed";
   // A block only explains the emptiness if it actually overlaps working time.
   // A block at 21:00 on a day that ends at 19:00 has taken nothing, and naming
   // it would be the same class of wrong answer in the other direction.
@@ -143,6 +169,10 @@ export function buildDay(
   templates: AvailabilityTemplate[],
   bookedRows: BookedRow[],
   blockRows: BlockRow[] = [],
+  /** 0085. Null when the caller is not scoped to one clinic - under "Todas as
+   *  localizações" a closure is only true of ONE of them, so drawing or
+   *  subtracting it would be a claim about the wrong clinic (owner ruling). */
+  clinicHours: ClinicHours | null = null,
 ): DayAvailability {
   const dayStart = lisbonMidnightUtc(date).getTime();
   const dayEnd = lisbonMidnightUtc(addDays(date, 1)).getTime();
@@ -184,8 +214,20 @@ export function buildDay(
     end: r.endsAt,
   }));
 
-  // free = working minus (booked ∪ blocks). Both are cut out of the free time.
-  const free = subtractIntervals(working, [...bookedIntervals, ...blockIntervals]);
+  // 0085: the clinic's closure on this day, if this call is scoped to a clinic
+  // that has one.
+  const closure = closureFor(date, clinicHours);
+  const closureIntervals: TimeInterval[] = closure ? [closure] : [];
+
+  // free = working minus (booked ∪ blocks ∪ closures). The closure is cut out
+  // exactly like the other two - it is the SUBTRACTION that makes a slot
+  // unbookable, and the refusal on the write path is a separate guard that
+  // exists because a read path is never enforcement.
+  const free = subtractIntervals(working, [
+    ...bookedIntervals,
+    ...blockIntervals,
+    ...closureIntervals,
+  ]);
 
   return {
     date,
@@ -203,6 +245,7 @@ export function buildDay(
       start: r.startsAt.toISOString(),
       end: r.endsAt.toISOString(),
     })),
+    closures: closureIntervals.map(iso),
     free: free.map(iso),
     sources,
   };

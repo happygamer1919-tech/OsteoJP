@@ -269,13 +269,71 @@ export const locations = pgTable(
     // agenda-view wiring + the admin toggle are owner/CYAN-gated (R13 + portal-
     // safety) — see docs/design/QUESTIONS.md Q-W12-29-1.
     slotGranularityMin: smallint("slot_granularity_min").notNull().default(30),
+    /* ================================================================== */
+    /* 0085 — WHEN THE CLINIC ITSELF IS OPEN, which nothing recorded.     */
+    /* ================================================================== */
+    /* Before this, the working day was `DAY_START_HOUR = 8` and          */
+    /* `DAY_END_HOUR = 20` in apps/web/lib/scheduling/time.ts — two       */
+    /* module constants read by the agenda grid and by NOTHING ELSE.      */
+    /* Nova marcação bounded itself by the therapist's                    */
+    /* availability_templates, and the portal bounded itself by the same  */
+    /* templates expanded in SQL. Three definitions of the working day,   */
+    /* none of them a clinic, so there was no single fact for the three   */
+    /* to agree on — which is also why they could disagree.               */
+    /*                                                                    */
+    /* DEFAULTS ARE TODAY'S CONSTANTS EXACTLY, so the migration alone     */
+    /* changes no behaviour anywhere.                                     */
+    opensAt: time("opens_at").notNull().default("08:00"),
+    closesAt: time("closes_at").notNull().default("20:00"),
+    /* ================================================================== */
+    /* The midday closure. NULL on every location that does not have one, */
+    /* which at launch is every location except CB.                       */
+    /* ================================================================== */
+    /* OPTION A, RULED BY THE OWNER 2026-09-10. The alternative was a     */
+    /* `location_closures` table, and it existed ONLY to express a        */
+    /* closure that varies by weekday. The owner ruled that CB's 13:00-   */
+    /* 14:00 applies every day CB is open, INCLUDING SATURDAY — which is  */
+    /* exactly the degenerate case this pair carries, so the table, its   */
+    /* RLS policy, its isolation test and three read-path joins would buy */
+    /* nothing that is wanted.                                            */
+    /*                                                                    */
+    /* IT IS NOT time_off, AND THAT IS NOT TIDINESS. A time_off row is    */
+    /* per THERAPIST and carries no location: a clinic closure written    */
+    /* that way is one row per therapist per day forever, each one        */
+    /* individually deletable by reception, each rendering as if that     */
+    /* person were personally away. It is also OVERRIDABLE — staff push   */
+    /* past it with "Guardar mesmo assim" — and the closure is ruled      */
+    /* NOT blockable-around.                                              */
+    middayClosedFrom: time("midday_closed_from"),
+    middayClosedTo: time("midday_closed_to"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (t) => [index("locations_tenant_idx").on(t.tenantId)],
+  (t) => [
+    index("locations_tenant_idx").on(t.tenantId),
+    check("locations_open_before_close", sql`${t.opensAt} < ${t.closesAt}`),
+    // BOTH OR NEITHER. A half-set pair is a closure nobody can render and
+    // nobody can book around, and it would read as "no closure" on every
+    // surface while sitting in the row looking deliberate.
+    check(
+      "locations_midday_pair",
+      sql`(${t.middayClosedFrom} is null) = (${t.middayClosedTo} is null)`,
+    ),
+    check(
+      "locations_midday_order",
+      sql`${t.middayClosedFrom} is null or ${t.middayClosedFrom} < ${t.middayClosedTo}`,
+    ),
+    // A closure outside opening hours takes nothing and would be a band drawn
+    // over a part of the day the grid does not show.
+    check(
+      "locations_midday_inside_hours",
+      sql`${t.middayClosedFrom} is null
+          or (${t.middayClosedFrom} >= ${t.opensAt} and ${t.middayClosedTo} <= ${t.closesAt})`,
+    ),
+  ],
 );
 
 export const services = pgTable(
