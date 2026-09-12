@@ -3,7 +3,7 @@
 -- policy change. Changes nothing: no DDL, no DML, no transaction that
 -- needs rolling back. Safe on production.
 -- ===================================================================
--- Migration: packages/db/migrations-pending/NEXT-AFTER-0085_nesa_shared_resource.sql
+-- Migration: packages/db/migrations/0086_nesa_shared_resource.sql (promoted 2026-09-11, bytes unchanged)
 -- Card:      SCHED-17-nesa-shared-agenda-at-cb
 -- Spec:      docs/design/SPEC-nesa-shared-agenda.md
 --

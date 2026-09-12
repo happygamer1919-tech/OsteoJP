@@ -68,8 +68,15 @@ export const EXPECTED_OWNER = "postgres";
  * the table from every application role, so a narrow function per verb is the
  * only shape that writes it without a GRANT that would let any authenticated
  * session write any row.
+ *
+ * 21 -> 22 with migration 0086 (SCHED-17, NESA): `public.shared_resource_practitioner_ids()`,
+ * the nullary set appointments_rls evaluates once per statement. It carries its
+ * own `ALTER FUNCTION ... OWNER TO postgres` in 0086. UNTIL 0086 IS APPLIED,
+ * PRODUCTION HAS 21 AND THIS CHECKER REPORTS A COUNT MISMATCH THERE: that is the
+ * queue, not a defect. Run it against production only after the 0086 apply, which
+ * is where docs/migration-apply-0086.md runs it.
  */
-export const EXPECTED_COUNT = 21;
+export const EXPECTED_COUNT = 22;
 
 /**
  * The verdict, as a pure function of the catalog rows.

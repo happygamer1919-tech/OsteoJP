@@ -56,6 +56,9 @@ const EXPECTED_FUNCTIONS = [
   // answers - the same problem `resolve_confirm_code` solves for the confirm
   // page, bounded the same way: one argument, one column, no table grant.
   "reminder_dispatch_tenant",
+  // 0086 (SCHED-17, NESA): the nullary set of shared-resource practitioners at
+  // the viewer's clinics, evaluated once per statement by appointments_rls.
+  "shared_resource_practitioner_ids",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {
