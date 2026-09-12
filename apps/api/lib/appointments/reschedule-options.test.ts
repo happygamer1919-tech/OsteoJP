@@ -45,7 +45,7 @@ function makeStore(slots: string[], over: Record<string, unknown> = {}) {
   const store = {
     getOwnMutable: vi.fn(async () => APPT),
     listOpenSlots: vi.fn(async () => slots),
-    hasWindowConflict: vi.fn(async () => false),
+    hasWindowConflict: vi.fn(async () => ({ conflict: false, clinicClosed: false })),
     rescheduleOwn: vi.fn(async () => {}),
     getOwn: vi.fn(async () => ({ ...APPT, id: "a1" })),
     ...over,

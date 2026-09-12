@@ -105,16 +105,25 @@ let inserted: Record<string, unknown> | null = null;
 
 /**
  * Discriminates by REQUESTED COLUMNS, never by call order — the reasoning
- * actions.availability-enforced.test.ts states in full. Three readers reach this
- * stub: the viewer's staff_locations, the availability templates, and the
- * clone's own source read. `patientTwoId` is unique to the third.
+ * actions.availability-enforced.test.ts states in full. Four readers reach this
+ * stub: the viewer's staff_locations, the availability templates, the clone's
+ * own source read, and (0085) the clinic's hours. `patientTwoId` is unique to
+ * the third and `middayClosedFrom` to the fourth. The clinic defaults to NONE,
+ * which is what every suite before 0085 was written against.
  */
-function fakeTx(templates: unknown[], source: unknown[] = [SOURCE_ROW]) {
+function fakeTx(templates: unknown[], source: unknown[] = [SOURCE_ROW], clinic: unknown[] = []) {
   return {
     select: (cols?: Record<string, unknown>) => ({
       from: () => ({
         where: () => {
-          const rows = cols && "weekday" in cols ? templates : cols && "patientTwoId" in cols ? source : [];
+          const rows =
+            cols && "weekday" in cols
+              ? templates
+              : cols && "patientTwoId" in cols
+                ? source
+                : cols && "middayClosedFrom" in cols
+                  ? clinic
+                  : [];
           const p = Promise.resolve(rows);
           return Object.assign(p, { limit: async () => rows });
         },
@@ -130,7 +139,11 @@ function fakeTx(templates: unknown[], source: unknown[] = [SOURCE_ROW]) {
   };
 }
 
-function arrange(templates: unknown[] = [MONDAY_08_13], source: unknown[] = [SOURCE_ROW]) {
+function arrange(
+  templates: unknown[] = [MONDAY_08_13],
+  source: unknown[] = [SOURCE_ROW],
+  clinic: unknown[] = [],
+) {
   inserted = null;
   mockCtx.mockReset();
   mockRunScoped.mockReset();
@@ -138,7 +151,9 @@ function arrange(templates: unknown[] = [MONDAY_08_13], source: unknown[] = [SOU
   mockEnqueue.mockReset();
   mockFindConflicts.mockResolvedValue([]);
   mockCtx.mockResolvedValue(actor);
-  mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(fakeTx(templates, source) as never)));
+  mockRunScoped.mockImplementation((_a, cb) =>
+    Promise.resolve(cb(fakeTx(templates, source, clinic) as never)),
+  );
 }
 
 const busy = (): ConflictInfo => ({
@@ -290,5 +305,93 @@ describe("SCHED-15 rule 2 — the clone carries NO pacote link", () => {
     });
     // Status is NEVER inherited: the source is `completed`.
     expect(inserted!.status).not.toBe(SOURCE_ROW.status);
+  });
+});
+
+/* ======================================================================== */
+/* 0085 - THE CLONE PAYS THE CLINIC CLOSURE                                  */
+/* ======================================================================== */
+/* create and reschedule refused CB's 13:00-14:00; the clone did not, and a  */
+/* Marcar novamente into the hour was written (reproduced on the purple lane */
+/* with 0085 applied). The e2e in agenda-clinic-closure.spec.ts asserts the  */
+/* SCREEN; this pins the DECISION and the payload the screen is built from.  */
+
+/** CB as 0085 seeds it: open 08:00-20:00, shut 13:00-14:00 every open day. */
+const CB_CLOSED_13_14 = {
+  name: "OsteoJP (CB)",
+  opensAt: "08:00:00",
+  closesAt: "20:00:00",
+  middayClosedFrom: "13:00:00",
+  middayClosedTo: "14:00:00",
+};
+
+/** The same clinic with no closure - LV's shape. */
+const NO_CLOSURE = { ...CB_CLOSED_13_14, name: "OsteoJP (LV)", middayClosedFrom: null, middayClosedTo: null };
+
+/**
+ * A Thursday template covering the whole day, so AVAILABILITY never refuses in
+ * this suite: every refusal below has to come from the closure or nowhere.
+ */
+const THURSDAY_ALL_DAY = { ...MONDAY_08_13, weekday: 4, endTime: "20:00:00" };
+
+/** 13:30 Lisbon on Thursday 2026-09-10 (summer time, +01:00) is 12:30Z. */
+const IN_CLOSURE = "2026-09-10T12:30:00.000Z";
+/** 12:30 Lisbon for the source's 55 minutes ends 13:25 - it OVERLAPS the hour. */
+const OVERLAPS_CLOSURE = "2026-09-10T11:30:00.000Z";
+
+describe("0085 — the clone pays the clinic closure", () => {
+  it("REFUSES a clone into the closed hour, DESPITE allowConflict, and writes nothing", async () => {
+    // allowConflict: true on purpose, the way rule 1 drives availability: if
+    // "Marcar mesmo assim" reached this check, it would be one click away.
+    arrange([THURSDAY_ALL_DAY], [SOURCE_ROW], [CB_CLOSED_13_14]);
+    const r = await cloneAppointment("src-1", IN_CLOSURE, true);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error).toBe("clinic_closed");
+    expect(inserted).toBeNull();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("NAMES the clinic and the hour it is shut - the payload the drawer's sentence is built from", async () => {
+    arrange([THURSDAY_ALL_DAY], [SOURCE_ROW], [CB_CLOSED_13_14]);
+    const r = await cloneAppointment("src-1", IN_CLOSURE);
+    expect(r.ok === false && r.clinicClosure).toEqual({
+      locationName: "OsteoJP (CB)",
+      from: "13:00",
+      to: "14:00",
+    });
+  });
+
+  it("refuses a window that only OVERLAPS the closure, not just one inside it", async () => {
+    // A clinic that is shut at 13:00 cannot see somebody from 12:30 to 13:25.
+    arrange([THURSDAY_ALL_DAY], [SOURCE_ROW], [CB_CLOSED_13_14]);
+    const r = await cloneAppointment("src-1", OVERLAPS_CLOSURE);
+    expect(r.ok === false && r.error).toBe("clinic_closed");
+    expect(inserted).toBeNull();
+  });
+
+  it("is decided BEFORE conflicts, so a busy slot does not bury the closure", async () => {
+    // The order createAppointment uses. A conflict verdict here would put
+    // "Marcar mesmo assim" on the button for an hour the server will refuse.
+    arrange([THURSDAY_ALL_DAY], [SOURCE_ROW], [CB_CLOSED_13_14]);
+    mockFindConflicts.mockResolvedValue([busy()]);
+    const r = await cloneAppointment("src-1", IN_CLOSURE);
+    expect(r.ok === false && r.error).toBe("clinic_closed");
+    expect(mockFindConflicts).not.toHaveBeenCalled();
+  });
+
+  it("ALLOWS 10:00 at the same clinic — the negative arm", async () => {
+    // Without this, a check that refused every clone at CB would pass the
+    // four assertions above.
+    arrange([THURSDAY_ALL_DAY], [SOURCE_ROW], [CB_CLOSED_13_14]);
+    const r = await cloneAppointment("src-1", INSIDE);
+    expect(r.ok).toBe(true);
+    expect(inserted).not.toBeNull();
+  });
+
+  it("ALLOWS 13:30 at a clinic with no closure — the closure is the clinic's, not the hour's", async () => {
+    arrange([THURSDAY_ALL_DAY], [SOURCE_ROW], [NO_CLOSURE]);
+    const r = await cloneAppointment("src-1", IN_CLOSURE);
+    expect(r.ok).toBe(true);
+    expect(inserted).not.toBeNull();
   });
 });

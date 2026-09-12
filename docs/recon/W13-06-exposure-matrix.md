@@ -22,7 +22,7 @@ grep -rl "^'use server'" apps/portal/app | sort           #  5 server-action fil
 find apps/web/app/r -type f                               #  1 token page
 ```
 
-### 1.1 API routes — 21
+### 1.1 API routes — 22
 
 > **The heading read "19" while the table listed 20** — `booking/guest` was
 > appended with ITEM 6 and the count above it was not moved. Corrected
@@ -51,6 +51,7 @@ find apps/web/app/r -type f                               #  1 token page
 | 19 | `auth/otp/revoke` | POST | **pre-auth**, device cookie + rate limited |
 | 20 | `booking/guest` | POST | **pre-auth**, rate limited (per IP, per phone, two tenant-wide ceilings). ITEM 6. The caller is by definition NOT a patient, so there is no principal to present. Safety comes from what it may WRITE: `guest_booking_requests` only, never a clinical table, always as a request a human confirms (R-GUEST-1). |
 | 21 | `booking/guest/catalog` | GET | **pre-auth**, rate limited per IP (two windows, durable store; **no global ceiling — see `RULES.guestCatalogIp`**). GUEST-04 Option A, 2026-08-14. The ONE unauthenticated READ the guest form gets: service id + name and location id + name, already published on osteojp.pt and on the portal's public Clínicas page. Same four predicates as `booking/catalog` (tenant, active, not `internal_only`, `patient_bookable`). No person, no schedule, no price. `booking/therapists` and `booking/slots` stay authenticated — **MN-27, MN-28**. |
+| 22 | `patient/intake` | GET | `getPatientPrincipal`. INTAKE-01, 2026-09-11. READ ONLY: the patient's OWN guest clinical intake answers, only from a request reception CONVERTED to them, under the patient role and 0087's patient policy (`patient_guest_request_ids()`) plus an explicit tenant filter. `enabled: false` and no statement naming the table while 0087 is not applied. Never cached; a failed read is a fixed 503 that logs no error text (Article 9). |
 
 ### 1.2 Portal server actions — 6 files
 

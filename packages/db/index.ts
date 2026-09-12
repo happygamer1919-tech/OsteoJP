@@ -50,3 +50,11 @@ export * from "./src/pack-balance";
 // roster in apps/api), and each keeping its own check is how they would come to
 // disagree about whether NESA exists.
 export * from "./src/shared-resource";
+
+// INTAKE-01 - whether 0087's guest_clinical_intakes table exists yet, and the
+// one write of an intake row. Exported from the package for the reason
+// `shared-resource` above is: the guest route and catalog (apps/api), the portal
+// read and the staff views all gate on the same answer, and each keeping its
+// own check is how they would come to disagree about whether the intake exists.
+export * from "./src/guest-intake";
+export * from "./src/guest-intake-staff";

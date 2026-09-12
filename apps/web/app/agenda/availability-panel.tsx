@@ -136,6 +136,18 @@ function AvailabilityBody({
             an hour that was never the problem. The block is the third thing
             that consumes a day and it now says so, with the note, because the
             note is what tells reception whether the block is a mistake. */}
+        {/* 0085 - THE CLINIC, NAMED SEPARATELY FROM THE THERAPIST.
+            It sits above Bloqueado because it is the bigger fact: a block
+            inside a closed hour is irrelevant, and the reader's action for this
+            line is "pick another time", not "go and remove something". */}
+        {day.closures.length > 0 && (
+          <div className="flex items-baseline gap-2" data-testid="availability-closed">
+            <dt className="text-xs font-medium text-text-secondary">
+              {s["appointment.availabilityClosed"]}
+            </dt>
+            <dd className="text-xs text-text-primary">{joinIntervals(day.closures)}</dd>
+          </div>
+        )}
         {day.blocks.length > 0 && (
           <div className="flex items-baseline gap-2" data-testid="availability-blocked">
             <dt className="text-xs font-medium text-text-secondary">
@@ -167,11 +179,19 @@ function AvailabilityBody({
         // which is a different action from moving an appointment.
         <p
           className="text-sm text-text-secondary"
-          data-testid={reason === "blocked" ? "availability-blocked-reason" : "availability-no-slots"}
+          data-testid={
+            reason === "closed"
+              ? "availability-closed-reason"
+              : reason === "blocked"
+                ? "availability-blocked-reason"
+                : "availability-no-slots"
+          }
         >
-          {reason === "blocked"
-            ? s["appointment.availabilityBlockedNoSlots"]
-            : s["appointment.availabilityFullyBooked"]}
+          {reason === "closed"
+            ? s["appointment.availabilityClosedNoSlots"]
+            : reason === "blocked"
+              ? s["appointment.availabilityBlockedNoSlots"]
+              : s["appointment.availabilityFullyBooked"]}
         </p>
       )}
     </>

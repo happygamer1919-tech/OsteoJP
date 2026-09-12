@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { s } from "@/lib/i18n";
 import { cloneAppointment } from "@/lib/scheduling/actions";
+import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { formatTimeOfDay, lisbonDateTimeToUtc } from "@/lib/scheduling/time";
 import type { AgendaAppointment, ConflictInfo } from "@/lib/scheduling/types";
 
@@ -115,11 +116,11 @@ export function ScheduleAgainDrawer({
       onClose();
       return;
     }
-    // SCHED-15. Three refusals get their own sentence and everything else takes
+    // SCHED-15. Four refusals get their own sentence and everything else takes
     // the generic one. `conflict` is the only one the override may reach: the
-    // other two are facts about the slot or the actor that pressing again
-    // cannot change, and offering "mesmo assim" for them would be the §1.3
-    // shape — a refusal wearing the face of one you can press past.
+    // other three are facts about the slot, the clinic or the actor that
+    // pressing again cannot change, and offering "mesmo assim" for them would be
+    // the §1.3 shape — a refusal wearing the face of one you can press past.
     if (result.error === "conflict") {
       setConflicts(result.conflicts ?? []);
     } else if (result.error === "outside_availability") {
@@ -130,6 +131,13 @@ export function ScheduleAgainDrawer({
           : `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityWindows"]} ` +
             w.map((x) => `${x.startTime}-${x.endTime}`).join(", "),
       );
+    } else if (result.error === "clinic_closed") {
+      // 0085. The clinic is shut at that hour. A plain message, NOT the
+      // conflict banner: that banner turns the button into "Marcar mesmo
+      // assim", and the server raises this outside the override. Before this
+      // branch the refusal fell through to the generic sentence below - and
+      // before the server check existed, the clone was simply written.
+      setError(clinicClosedMessage(result.clinicClosure));
     } else if (result.error === "location_not_assigned") {
       setError(s["errors.forbidden"]);
     } else {

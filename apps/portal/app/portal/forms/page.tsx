@@ -1,6 +1,7 @@
+import Link from 'next/link'
 import { ClipboardList } from 'lucide-react'
 import { EmptyState, StatusChip, type StatusTone } from '@osteojp/ui'
-import { getMyForms } from '@/lib/api/client'
+import { getMyForms, getMyGuestIntakes } from '@/lib/api/client'
 import { s } from '@/lib/i18n'
 
 const THERAPY_LABELS: Record<string, string> = {
@@ -37,7 +38,11 @@ function formatDate(iso: string): string {
 
 export default async function FormsPage() {
   // A hard fetch failure surfaces error.tsx; an empty list is the empty state.
-  const submissions = await getMyForms()
+  // INTAKE-01: the guest intake read rides in the same Promise.all, so either
+  // failure is the error screen and never a list silently missing an entry.
+  const [submissions, guestIntakes] = await Promise.all([getMyForms(), getMyGuestIntakes()])
+  // Only once 0087 is applied AND this patient has answers: before that, no link.
+  const hasGuestIntake = guestIntakes.enabled && guestIntakes.intakes.length > 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,6 +73,16 @@ export default async function FormsPage() {
             )
           })}
         </div>
+      )}
+
+      {hasGuestIntake && (
+        <Link
+          href="/portal/forms/intake"
+          data-testid="patient-guest-intake-link"
+          className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4 text-sm font-medium text-accent-2-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          {s.guestIntake.open_cta}
+        </Link>
       )}
 
       <p className="text-xs text-text-secondary">

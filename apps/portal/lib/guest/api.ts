@@ -24,7 +24,16 @@ function logUnavailable(where: string, e: unknown): void {
 
 export type PublicService = { id: string; name: string; locationIds: string[] }
 export type PublicLocation = { id: string; name: string }
-export type PublicCatalog = { locations: PublicLocation[]; services: PublicService[] }
+export type PublicCatalog = {
+  locations: PublicLocation[]
+  services: PublicService[]
+  /**
+   * INTAKE-01: true once migration 0087's table exists, and only then does the
+   * form render its fifth step. OPTIONAL on purpose: an API deployed before
+   * INTAKE-01 omits it, and absent must read as false, never as true.
+   */
+  intakeEnabled?: boolean
+}
 
 /**
  * What can be booked, and where. The ONE unauthenticated read Option A allows.
@@ -79,6 +88,31 @@ export type GuestRequestInput = {
   preferredDate: string
   /** 'manha' | 'tarde'. Validated by the API against its own union. */
   preferredPeriod: string
+  /**
+   * INTAKE-01: the clinical intake, ONE nested object on the same POST, so the
+   * request and its answers are one write in one transaction (SPEC section 6.2).
+   * Sent only on the five-step flow; absent on the four-step one.
+   */
+  intake?: GuestIntakeInput
+}
+
+/**
+ * The wire contract's `intake` object, exactly. No consent tick and no consent
+ * time: the API sets both at the insert. The label names the consent text the
+ * page showed (WF-19). Article 9 health data: it travels in the POST BODY only,
+ * never in a URL, and nothing in this file logs it.
+ */
+export type GuestIntakeInput = {
+  /** YYYY-MM-DD. */
+  dateOfBirth: string
+  reason: string
+  healthConditions: string | null
+  medication: string | null
+  fallsAccidents: string | null
+  surgeries: string | null
+  pacemaker: 'sim' | 'nao'
+  pregnancy: 'sim' | 'nao'
+  consentVersion: string
 }
 
 export type GuestSubmitOutcome = 'received' | 'invalid' | 'rate_limited' | 'unavailable'

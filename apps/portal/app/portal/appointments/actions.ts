@@ -57,6 +57,11 @@ export async function rescheduleAppointmentAction(
       // The slot went while the patient was choosing. Common and not an error on
       // their part, so it gets its own copy telling them to pick another.
       if (err.code === 'no_slot') return { error: s.appointments.reschedule_slot_taken }
+      // 0085. BEFORE the generic 409 fallbacks, and its own sentence: the
+      // building is shut at that hour, every day. "Esse horário deixou de estar
+      // disponível" would send the patient back to refresh a list that will
+      // never offer it, and any wording naming the therapist would be false.
+      if (err.code === 'clinic_closed') return { error: s.appointments.reschedule_clinic_closed }
       if (err.isCutoffError()) return { error: s.appointments.reschedule_too_late }
       if (err.code === 'min_notice') return { error: s.appointments.reschedule_min_notice }
       return { error: s.appointments.reschedule_error }

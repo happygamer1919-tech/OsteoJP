@@ -33,6 +33,17 @@ const H = vi.hoisted(() => ({
   sellable: true,
   /** Every {serviceId, locationId} pair the route asked about. */
   sellabilityAsks: [] as Array<{ serviceId: string; locationId: string }>,
+  /** INTAKE-01. Whether 0087's table "exists". Defaults to ABSENT, which is
+   *  production until the owner applies 0087, so every pre-existing assertion
+   *  in this file runs against the inert state. */
+  intakeTable: false,
+  presenceAsks: 0,
+  /** One entry per COMMITTED intake row. */
+  intakes: [] as Record<string, unknown>[],
+  /** When set, the intake insert throws this, inside the transaction. */
+  intakeFailure: null as unknown,
+  /** The id the request insert "returns". */
+  requestId: "77777777-7777-7777-7777-777777777777",
 }));
 
 // THE REAL MODULE IS SPREAD IN, and only the database seam is replaced. The
@@ -43,17 +54,43 @@ const H = vi.hoisted(() => ({
 // encoder, which would leave the encoding itself untested in the one suite that
 // watches this endpoint. `@osteojp/db` connects lazily (src/client.ts: "no
 // connection is opened until the first query"), so importing it here is free.
+//
+// INTAKE-01: THE MOCK IS A TRANSACTION. Rows written inside the callback are
+// held as pending and reach `inserted` / `intakes` only if the callback
+// returns, which is what a rollback means. So "nothing was stored" below is an
+// assertion about the transaction boundary, not about the order of two pushes.
 vi.mock("@osteojp/db", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getDbAdmin: () => ({
-    insert: () => ({
-      values: async (v: Record<string, unknown>) => {
-        H.inserted.push(v);
-      },
-    }),
     execute: async () => [{ n: 0 }],
+    transaction: async (cb: (tx: unknown) => Promise<void>) => {
+      const pending = { requests: [] as Record<string, unknown>[], intakes: [] as Record<string, unknown>[] };
+      const tx = {
+        pending,
+        insert: () => ({
+          values: (v: Record<string, unknown>) => {
+            pending.requests.push(v);
+            return { returning: async () => [{ id: H.requestId }] };
+          },
+        }),
+      };
+      await cb(tx);
+      H.inserted.push(...pending.requests);
+      H.intakes.push(...pending.intakes);
+    },
   }),
   guestBookingRequests: {},
+  guestIntakeSchemaPresent: async () => {
+    H.presenceAsks += 1;
+    return H.intakeTable;
+  },
+  insertGuestClinicalIntake: async (
+    tx: { pending: { intakes: Record<string, unknown>[] } },
+    row: Record<string, unknown>,
+  ) => {
+    if (H.intakeFailure) throw H.intakeFailure;
+    tx.pending.intakes.push(row);
+  },
 }));
 
 // THE DATABASE SEAM FOR GUEST-08, MOCKED AT THE MODULE AND NOT AT THE DRIVER.
@@ -137,6 +174,10 @@ beforeEach(() => {
   H.verdicts = new Map();
   H.sellable = true;
   H.sellabilityAsks = [];
+  H.intakeTable = false;
+  H.presenceAsks = 0;
+  H.intakes = [];
+  H.intakeFailure = null;
 });
 
 describe("(a) no patient-list oracle", () => {
@@ -465,5 +506,218 @@ describe("(d) GUEST-08: a service the clinic cannot sell there is refused", () =
     const res = await guestBooking(post(validBody()));
     expect(res.status).toBe(429);
     expect(H.sellabilityAsks).toHaveLength(0);
+  });
+});
+
+/**
+ * (e) INTAKE-01 - THE CLINICAL INTAKE ON THE SAME REQUEST.
+ *
+ * FOUR PROPERTIES, from BLUE's wire contract and the inert-until-applied rule:
+ *   1. with 0087 applied, the request and its intake are written in ONE
+ *      transaction, or neither is;
+ *   2. while 0087 is NOT applied, a body carrying an intake is refused, and a
+ *      body without one books exactly as it did before;
+ *   3. with 0087 applied, a body WITHOUT an intake still books (a stale portal
+ *      must not break booking);
+ *   4. nothing about the answers reaches the response or the log, on any path.
+ *
+ * Every test counts BOTH `inserted` and `intakes`, for this file's own reason: a
+ * right status with the wrong rows is a passing test and a live defect.
+ */
+describe("(e) INTAKE-01: the clinical intake rides on the same request", () => {
+  const REASON = "Dor lombar desde marco, pior de manha";
+  const validIntake = (over: Record<string, unknown> = {}) => ({
+    dateOfBirth: "1985-03-02",
+    reason: REASON,
+    healthConditions: "Hipertensao",
+    medication: null,
+    fallsAccidents: "   ",
+    surgeries: "Apendicectomia 2010",
+    pacemaker: "nao",
+    pregnancy: "nao",
+    consentVersion: "rgpd-intake-2026-09-11",
+    ...over,
+  });
+
+  it("0087 APPLIED: writes the request AND its intake, keyed on the request's id", async () => {
+    H.intakeTable = true;
+    const res = await guestBooking(post(validBody({ intake: validIntake() })));
+    expect(res.status).toBe(202);
+    expect(H.inserted).toHaveLength(1);
+    expect(H.intakes).toHaveLength(1);
+    expect(H.intakes[0]).toEqual({
+      // Rule 3: the tenant is explicit and it is the REQUEST's tenant.
+      tenantId: T,
+      guestBookingRequestId: H.requestId,
+      dateOfBirth: "1985-03-02",
+      reason: REASON,
+      healthConditions: "Hipertensao",
+      medication: null,
+      // Blank is "nothing said", stored as NULL, never as whitespace.
+      fallsAccidents: null,
+      surgeries: "Apendicectomia 2010",
+      pacemaker: "nao",
+      pregnancy: "nao",
+      consentVersion: "rgpd-intake-2026-09-11",
+    });
+  });
+
+  it("the response is IDENTICAL with and without an intake - it carries nothing back", async () => {
+    H.intakeTable = true;
+    const withIntake = await guestBooking(post(validBody({ intake: validIntake() })));
+    const without = await guestBooking(post(validBody()));
+    expect(withIntake.status).toBe(without.status);
+    expect(await withIntake.json()).toEqual(await without.json());
+  });
+
+  it("a smuggled consentAt / consentTicked cannot change what is stored", async () => {
+    // The API sets the tick and the timestamp at the insert. A client that
+    // thinks it is supplying either is not refused, and is not listened to.
+    H.intakeTable = true;
+    await guestBooking(
+      post(
+        validBody({
+          intake: validIntake({ consentAt: "2020-01-01T00:00:00Z", consentTicked: false }),
+        }),
+      ),
+    );
+    expect(H.intakes).toHaveLength(1);
+    expect(Object.keys(H.intakes[0]!)).not.toContain("consentAt");
+    expect(Object.keys(H.intakes[0]!)).not.toContain("consentTicked");
+  });
+
+  it("0087 NOT APPLIED: a body carrying an intake is REFUSED and writes nothing", async () => {
+    H.intakeTable = false;
+    const res = await guestBooking(post(validBody({ intake: validIntake() })));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_input" });
+    expect(H.inserted).toHaveLength(0);
+    expect(H.intakes).toHaveLength(0);
+    // Refused BEFORE the tenant-wide ceiling, like every other refusal.
+    expect(H.keys).not.toContain(GUEST_BOOKING_GLOBAL_HOUR_KEY);
+  });
+
+  it("THE CONTROL: the same body books once 0087 is applied - the refusal above is the table, nothing else", async () => {
+    H.intakeTable = true;
+    const res = await guestBooking(post(validBody({ intake: validIntake() })));
+    expect(res.status).toBe(202);
+    expect(H.inserted).toHaveLength(1);
+  });
+
+  it.each([
+    ["0087 applied", true],
+    ["0087 not applied", false],
+  ])("%s: a body WITHOUT an intake books exactly as before, and writes no intake", async (_l, table) => {
+    H.intakeTable = table;
+    const res = await guestBooking(post(validBody()));
+    expect(res.status).toBe(202);
+    expect(H.inserted).toHaveLength(1);
+    expect(H.intakes).toHaveLength(0);
+  });
+
+  it("`intake: null` is no intake, not a malformed one", async () => {
+    H.intakeTable = false;
+    const res = await guestBooking(post(validBody({ intake: null })));
+    expect(res.status).toBe(202);
+    expect(H.intakes).toHaveLength(0);
+  });
+
+  it("the presence check is only asked when there IS an intake", async () => {
+    // A booking without one must not pay a round trip for a table it never
+    // touches.
+    await guestBooking(post(validBody()));
+    expect(H.presenceAsks).toBe(0);
+  });
+
+  it.each([
+    ["never-asked pacemaker (the form cannot produce it)", { pacemaker: "nao_perguntado" }],
+    ["never-asked pregnancy", { pregnancy: "nao_perguntado" }],
+    ["a missing pacemaker answer", { pacemaker: undefined }],
+    ["a missing pregnancy answer", { pregnancy: undefined }],
+    ["an unknown consent version", { consentVersion: "rgpd-intake-1999-01-01" }],
+    ["a missing consent version", { consentVersion: undefined }],
+    ["a date of birth in the future", { dateOfBirth: "2999-01-01" }],
+    ["a blank reason", { reason: "   " }],
+  ])("REFUSES %s, before any per-phone budget is spent, and writes nothing", async (_l, over) => {
+    H.intakeTable = true;
+    const res = await guestBooking(post(validBody({ intake: validIntake(over) })));
+    expect(res.status).toBe(400);
+    expect(H.inserted).toHaveLength(0);
+    expect(H.intakes).toHaveLength(0);
+    expect(H.keys.some((k) => k.startsWith("guest-booking:phone:"))).toBe(false);
+  });
+
+  it("a refusal ECHOES NOTHING: same body as every other invalid_input, no answer in it", async () => {
+    H.intakeTable = true;
+    const refused = await guestBooking(
+      post(validBody({ intake: validIntake({ pacemaker: "talvez" }) })),
+    );
+    const raw = await refused.text();
+    const malformed = await guestBooking(post(validBody({ preferredPeriod: "noite" })));
+    expect(JSON.parse(raw)).toEqual(await malformed.json());
+    for (const value of [REASON, "Hipertensao", "talvez", "1985-03-02", "pacemaker"]) {
+      expect(raw, value).not.toContain(value);
+    }
+  });
+
+  it("ONE TRANSACTION: an intake insert that fails leaves NO request row behind", async () => {
+    H.intakeTable = true;
+    H.intakeFailure = Object.assign(new Error("check violation"), { code: "23514" });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await guestBooking(post(validBody({ intake: validIntake() })));
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: "service_unavailable" });
+      expect(H.inserted).toHaveLength(0);
+      expect(H.intakes).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("THE FAILURE LOG CARRIES A SQLSTATE AND NOTHING ELSE, whatever the error held", async () => {
+    // The realistic shape: Drizzle's query error puts the statement's PARAMETERS
+    // in its message, and Postgres puts the failing row in `detail`. Both are
+    // built here out of the visitor's own answers.
+    H.intakeTable = true;
+    const leaky = Object.assign(
+      new Error(`Failed query: insert ... params: Maria Convidada,+351912345678,${REASON},sim`),
+      {
+        cause: Object.assign(new Error("new row violates check constraint"), {
+          code: "23514",
+          detail: `Failing row contains (${REASON}, Hipertensao, sim).`,
+        }),
+      },
+    );
+    H.intakeFailure = leaky;
+    // NEGATIVE CONTROL: the error really does carry the values, so a clean log
+    // below is the route's doing and not an empty error's.
+    expect(leaky.message).toContain(REASON);
+
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    });
+    try {
+      await guestBooking(post(validBody({ intake: validIntake() })));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines).toEqual(["[guest-booking] write failed (sqlstate 23514); nothing was stored."]);
+  });
+
+  it("an error with no SQLSTATE logs `unknown`, never its message", async () => {
+    H.intakeTable = true;
+    H.intakeFailure = new Error(`boom ${REASON}`);
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    });
+    try {
+      await guestBooking(post(validBody({ intake: validIntake() })));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines).toEqual(["[guest-booking] write failed (sqlstate unknown); nothing was stored."]);
   });
 });

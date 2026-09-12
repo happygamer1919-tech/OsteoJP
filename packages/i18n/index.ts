@@ -13,3 +13,13 @@ export {
   type PortalLocale,
   type PortalStrings,
 } from "./portal-strings";
+
+// INTAKE-01 / WF-19 - the version label of the guest intake consent text. The
+// API validates against the list, the portal sends the current label, and the
+// portal's consent copy pins its hash to it.
+export {
+  INTAKE_CONSENT_VERSIONS,
+  CURRENT_INTAKE_CONSENT_VERSION,
+  isIntakeConsentVersion,
+  type IntakeConsentVersion,
+} from "./src/intake-consent";

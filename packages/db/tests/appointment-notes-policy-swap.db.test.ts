@@ -25,19 +25,23 @@
  * it is invisible until you remove a layer.
  *
  * ==========================================================================
- * THE ONE THAT IS NOT A CONFIRMATION: THE MISSING DELETE POLICY
+ * THE ONE THAT IS NOT A CONFIRMATION: THE DELETE POLICY, AND 0084
  * ==========================================================================
- * `appointment_notes` has SELECT (0026), INSERT (0026) and UPDATE (0050)
- * policies and NO DELETE POLICY. That absence IS the append-only design, and
- * 0026's comment says so in as many words: "append-only is enforced by the
- * missing UPDATE/DELETE policies, NOT by grant carve-outs - keep the full DML
- * grant so UPDATE/DELETE deny as 0 rows via RLS in every environment."
+ * Until 0084, `appointment_notes` had SELECT (0026), INSERT (0026) and UPDATE
+ * (0050) policies and NO DELETE POLICY, and that absence WAS the append-only
+ * design - 0026: "append-only is enforced by the missing UPDATE/DELETE
+ * policies, NOT by grant carve-outs - keep the full DML grant so UPDATE/DELETE
+ * deny as 0 rows via RLS in every environment."
  *
- * So the table carries `GRANT ... DELETE ... TO authenticated` on purpose, and a
- * delete is refused by RLS as ZERO ROWS rather than by a permission error. Every
- * other swap below confirms a protection; ADDING a permissive DELETE policy asks
- * what the missing one is currently preventing, which is the only question the
- * existing suites structurally cannot ask.
+ * 0084 reverses that for the 2026-09-10 clinic batch: a tenant-scoped DELETE
+ * policy, `appointment_notes_tenant_delete`. The grant is unchanged, so every
+ * refusal that remains is still ZERO ROWS rather than a permission error. What
+ * changes is the question. Before 0084 it was "what is the missing policy
+ * preventing" (everything, and one line would undo it). Now the tenant
+ * predicate in 0084's USING is the ONLY thing between a principal and another
+ * clinic's notes, and the DELETE swaps below remove each layer in turn to show
+ * exactly that, which is the only question the existing suites structurally
+ * cannot ask.
  *
  * ==========================================================================
  * WHAT THIS FILE IS NOT
@@ -263,18 +267,25 @@ describe.skipIf(!live)("appointment_notes — which layer is holding (policy swa
   /* THE ONE WORTH BUILDING THE HARNESS FOR.                             */
   /* ================================================================== */
 
-  it("DELETE denies as ZERO ROWS, not as an error — the grant is deliberately full", async () => {
-    // 0026's own design: "keep the full DML grant so UPDATE/DELETE deny as 0
-    // rows via RLS in every environment". So the refusal must be SILENT and
-    // ROW-SHAPED. A permission error here would mean somebody carved the grant,
-    // and the append-only guarantee would then depend on the grant rather than
-    // on the policy set - a different mechanism with different failure modes.
-    const deleted = await swapped(sql, [], claimsA, async (tx) => {
+  it("DELETE lands in-tenant (0084) and denies CROSS-TENANT as ZERO ROWS, not as an error — the grant is deliberately full", async () => {
+    // 0084 lets a principal delete its OWN tenant's note. The refusal of
+    // ANOTHER tenant's note must still be SILENT and ROW-SHAPED, 0026's design.
+    // A permission error here would mean somebody carved the grant, and the
+    // isolation would then depend on the grant rather than on the policy set - a
+    // different mechanism with different failure modes.
+    const own = await swapped(sql, [], claimsA, async (tx) => {
       const rows = await tx<{ id: string }[]>`
         delete from appointment_notes where id = ${A.note} returning id`;
       return rows.length;
     });
-    expect(deleted).toBe(0);
+    expect(own, "0084: a principal deletes its own tenant's note").toBe(1);
+
+    const cross = await swapped(sql, [], claimsA, async (tx) => {
+      const rows = await tx<{ id: string }[]>`
+        delete from appointment_notes where id = ${B.note} returning id`;
+      return rows.length;
+    });
+    expect(cross, "another tenant's note is refused as zero rows").toBe(0);
 
     // And the grant really is full, read rather than inferred.
     const grant = await sql<{ has: boolean }[]>`
@@ -284,30 +295,76 @@ describe.skipIf(!live)("appointment_notes — which layer is holding (policy swa
     );
   });
 
-  it("ADDING a permissive DELETE policy makes the delete land — the ABSENCE is the only guard", async () => {
+  it("DROPPING 0084's delete policy restores the refusal — that policy is the only thing permitting a delete", async () => {
+    // The grant is full on purpose, so if anything other than 0084's policy
+    // were admitting deletes, removing the policy would change nothing. It must
+    // change everything: with the policy gone, the own-tenant delete is back to
+    // zero rows, exactly the pre-0084 state.
+    const deleted = await swapped(
+      sql,
+      [`drop policy "appointment_notes_tenant_delete" on public.appointment_notes`],
+      claimsA,
+      async (tx) => {
+        const rows = await tx<{ id: string }[]>`
+          delete from appointment_notes where id = ${A.note} returning id`;
+        return rows.length;
+      },
+    );
+    expect(deleted).toBe(0);
+  });
+
+  it("REPLACING 0084's tenant predicate with `using (true)` STILL deletes nothing cross-tenant — the SELECT policy hides the row first", async () => {
     // ==================================================================
     // THE QUESTION THE EXISTING SUITES CANNOT ASK
     // ==================================================================
-    // Every other swap here confirms a protection. This one asks what the
-    // MISSING policy is currently preventing, and the answer is: everything. A
-    // single `create policy ... for delete using (true)` - one line, in any
-    // future migration, written by somebody who reads "keep the full DML grant"
-    // and concludes the grant is the guard - turns an append-only clinical
-    // history into a deletable one, with no error anywhere and no test failing.
+    // Before 0084 this swap asked what the MISSING policy was preventing. Now a
+    // DELETE policy exists and the question moves one layer in: what is its
+    // tenant predicate preventing?
     //
-    // THAT IS WHY THIS ASSERTION IS WRITTEN THE WAY IT IS. It does not assert
-    // that deletion is impossible; it asserts that ONE STATEMENT enables it, so
-    // the next reader knows exactly how thin the guarantee is.
+    // MEASURED, AND NOT WHAT THE FIRST DRAFT OF THIS TEST ASSUMED: on its own,
+    // nothing. A DELETE whose WHERE reads a column needs SELECT on the row, so
+    // Postgres applies the SELECT policy's USING as well as the DELETE policy's,
+    // and appointment_notes_tenant_select already hides another tenant's note.
+    // The first draft asserted 1 here and the lane returned 0. The two tenant
+    // predicates are REDUNDANT for a cross-tenant delete, which is the
+    // defence-in-depth shape the header describes, not a hole.
     const deleted = await swapped(
       sql,
       [
+        `drop policy "appointment_notes_tenant_delete" on public.appointment_notes`,
         `create policy "swap_probe_delete" on public.appointment_notes
            for delete to authenticated using (true)`,
       ],
       claimsA,
       async (tx) => {
         const rows = await tx<{ id: string }[]>`
-          delete from appointment_notes where id = ${A.note} returning id`;
+          delete from appointment_notes where id = ${B.note} returning id`;
+        return rows.length;
+      },
+    );
+    expect(deleted).toBe(0);
+  });
+
+  it("…and only removing BOTH tenant predicates makes another tenant's note deletable — two layers hold, each alone is enough", async () => {
+    // THAT IS WHY THIS ASSERTION IS WRITTEN THE WAY IT IS. It asserts exactly
+    // how thin the guarantee is: two statements, one per policy, and one clinic
+    // can erase another's notes with no error anywhere. Either predicate alone
+    // restores the refusal, so a future migration that loosens one of them is
+    // survivable and one that loosens both is not.
+    const deleted = await swapped(
+      sql,
+      [
+        `drop policy "appointment_notes_tenant_delete" on public.appointment_notes`,
+        `create policy "swap_probe_delete" on public.appointment_notes
+           for delete to authenticated using (true)`,
+        `drop policy "appointment_notes_tenant_select" on public.appointment_notes`,
+        `create policy "swap_probe_select" on public.appointment_notes
+           for select to authenticated using (true)`,
+      ],
+      claimsA,
+      async (tx) => {
+        const rows = await tx<{ id: string }[]>`
+          delete from appointment_notes where id = ${B.note} returning id`;
         return rows.length;
       },
     );
@@ -316,12 +373,13 @@ describe.skipIf(!live)("appointment_notes — which layer is holding (policy swa
 
   it("the note survived every swap — nothing above committed", async () => {
     // The last word, and it is on the REAL table rather than inside a
-    // transaction: the previous test deleted this row and the rollback put it
-    // back. If DDL-in-a-transaction ever stopped behaving this way, this is
-    // where the suite says so instead of leaving a hole in the fixture.
+    // transaction: the tests above deleted BOTH notes and dropped 0084's policy,
+    // and the rollbacks put all of it back. If DDL-in-a-transaction ever stopped
+    // behaving this way, this is where the suite says so instead of leaving a
+    // hole in the fixture.
     const rows = await sql<{ id: string }[]>`
-      select id from appointment_notes where id = ${A.note}`;
-    expect(rows.length).toBe(1);
+      select id from appointment_notes where id in (${A.note}, ${B.note})`;
+    expect(rows.length).toBe(2);
 
     const policies = await sql<{ policyname: string }[]>`
       select policyname from pg_policies
@@ -329,12 +387,16 @@ describe.skipIf(!live)("appointment_notes — which layer is holding (policy swa
        order by policyname`;
     const names = policies.map((p) => p.policyname);
     expect(names).toEqual([
+      "appointment_notes_tenant_delete",
       "appointment_notes_tenant_insert",
       "appointment_notes_tenant_select",
       "appointment_notes_tenant_update",
     ]);
     expect(names, "the probe DELETE policy leaked out of its transaction").not.toContain(
       "swap_probe_delete",
+    );
+    expect(names, "the probe SELECT policy leaked out of its transaction").not.toContain(
+      "swap_probe_select",
     );
   });
 });

@@ -200,7 +200,12 @@ test("Agenda: the weekday row stays visible while the grid scrolls (AGENDA-01)",
   const step = limit - from;
   expect(step, "not enough scroll range left to observe the gutter travelling").toBeGreaterThan(100);
 
-  const label = page.getByText("14:00", { exact: true }).first();
+  // SCOPED TO THE GUTTER, because "14:00" is not unique on this page. The
+  // toolbar's "Atualizar" button prints the render time as a bare HH:MM, and
+  // the toolbar is sticky. A page-wide `.first()` resolved to that stamp on a
+  // run that loaded at 14:00:50 Lisbon (2026-09-11, #1276's shard 1): the stamp
+  // is pinned, so it moved 0px, and this assertion blamed the gutter 3/3.
+  const label = page.getByTestId("agenda-time-gutter").getByText("14:00", { exact: true });
   await scrollTo(page, from);
   const before = { header: (await box(header)).y, label: (await box(label)).y };
   await scrollTo(page, limit);

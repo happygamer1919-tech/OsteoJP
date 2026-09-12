@@ -273,13 +273,71 @@ export const locations = pgTable(
     // agenda-view wiring + the admin toggle are owner/CYAN-gated (R13 + portal-
     // safety) — see docs/design/QUESTIONS.md Q-W12-29-1.
     slotGranularityMin: smallint("slot_granularity_min").notNull().default(30),
+    /* ================================================================== */
+    /* 0085 — WHEN THE CLINIC ITSELF IS OPEN, which nothing recorded.     */
+    /* ================================================================== */
+    /* Before this, the working day was `DAY_START_HOUR = 8` and          */
+    /* `DAY_END_HOUR = 20` in apps/web/lib/scheduling/time.ts — two       */
+    /* module constants read by the agenda grid and by NOTHING ELSE.      */
+    /* Nova marcação bounded itself by the therapist's                    */
+    /* availability_templates, and the portal bounded itself by the same  */
+    /* templates expanded in SQL. Three definitions of the working day,   */
+    /* none of them a clinic, so there was no single fact for the three   */
+    /* to agree on — which is also why they could disagree.               */
+    /*                                                                    */
+    /* DEFAULTS ARE TODAY'S CONSTANTS EXACTLY, so the migration alone     */
+    /* changes no behaviour anywhere.                                     */
+    opensAt: time("opens_at").notNull().default("08:00"),
+    closesAt: time("closes_at").notNull().default("20:00"),
+    /* ================================================================== */
+    /* The midday closure. NULL on every location that does not have one, */
+    /* which at launch is every location except CB.                       */
+    /* ================================================================== */
+    /* OPTION A, RULED BY THE OWNER 2026-09-10. The alternative was a     */
+    /* `location_closures` table, and it existed ONLY to express a        */
+    /* closure that varies by weekday. The owner ruled that CB's 13:00-   */
+    /* 14:00 applies every day CB is open, INCLUDING SATURDAY — which is  */
+    /* exactly the degenerate case this pair carries, so the table, its   */
+    /* RLS policy, its isolation test and three read-path joins would buy */
+    /* nothing that is wanted.                                            */
+    /*                                                                    */
+    /* IT IS NOT time_off, AND THAT IS NOT TIDINESS. A time_off row is    */
+    /* per THERAPIST and carries no location: a clinic closure written    */
+    /* that way is one row per therapist per day forever, each one        */
+    /* individually deletable by reception, each rendering as if that     */
+    /* person were personally away. It is also OVERRIDABLE — staff push   */
+    /* past it with "Guardar mesmo assim" — and the closure is ruled      */
+    /* NOT blockable-around.                                              */
+    middayClosedFrom: time("midday_closed_from"),
+    middayClosedTo: time("midday_closed_to"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (t) => [index("locations_tenant_idx").on(t.tenantId)],
+  (t) => [
+    index("locations_tenant_idx").on(t.tenantId),
+    check("locations_open_before_close", sql`${t.opensAt} < ${t.closesAt}`),
+    // BOTH OR NEITHER. A half-set pair is a closure nobody can render and
+    // nobody can book around, and it would read as "no closure" on every
+    // surface while sitting in the row looking deliberate.
+    check(
+      "locations_midday_pair",
+      sql`(${t.middayClosedFrom} is null) = (${t.middayClosedTo} is null)`,
+    ),
+    check(
+      "locations_midday_order",
+      sql`${t.middayClosedFrom} is null or ${t.middayClosedFrom} < ${t.middayClosedTo}`,
+    ),
+    // A closure outside opening hours takes nothing and would be a band drawn
+    // over a part of the day the grid does not show.
+    check(
+      "locations_midday_inside_hours",
+      sql`${t.middayClosedFrom} is null
+          or (${t.middayClosedFrom} >= ${t.opensAt} and ${t.middayClosedTo} <= ${t.closesAt})`,
+    ),
+  ],
 );
 
 export const services = pgTable(
@@ -490,6 +548,36 @@ export const patientPackInstances = pgTable(
      */
     legacyConsumed: integer("legacy_consumed").notNull().default(0),
     status: text("status").notNull().default("active"),
+    /**
+     * 0083 (PACK-06) — WHAT RECEPTION SAID WAS CHARGED WHEN THIS INSTANCE WAS
+     * SWITCHED TO A DIFFERENT PACOTE, in minor units (cents), never float.
+     *
+     * NOTHING IN THE DATABASE CAN COMPUTE THIS. There is no price on an
+     * instance and invoices are per-appointment with no pack reference, so a
+     * number typed by the person who took the payment is the only honest
+     * record. Strategy's ruling is that a computed catalogue difference would
+     * be "a fact the system invented" while a typed number is "a fact somebody
+     * took responsibility for".
+     *
+     * NULL MEANS NEVER SWITCHED, AND IT IS NOT ZERO. Zero is a real value: a
+     * goodwill upgrade is a commercial act, and collapsing "nothing was
+     * charged" into "nobody said" would lose exactly the distinction the
+     * ruling is about. NO DEFAULT, and the absence IS the constraint — a
+     * pre-filled amount could not afterwards be told apart from an amount
+     * somebody looked at and accepted.
+     */
+    switchAmountCents: integer("switch_amount_cents"), // minor units (cents), never float
+    /**
+     * 0083 (PACK-06) — why that amount was what it was, in reception's own
+     * words. REQUIRED whenever the amount is set and refused when it is not
+     * (`..._switch_amount_and_reason_together`): an amount with no reason is a
+     * number nobody can audit. Blank and whitespace-only are refused too.
+     *
+     * IT LIVES HERE AND NOT IN `audit_log.metadata`, which was the cheap route
+     * and collides with that helper's PII-free contract — see 0083's header
+     * and the guard in apps/web/lib/scheduling/audit.ts.
+     */
+    switchReason: text("switch_reason"),
     purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -509,6 +597,19 @@ export const patientPackInstances = pgTable(
     check(
       "patient_pack_instances_legacy_consumed_range",
       sql`${t.legacyConsumed} >= 0 AND ${t.legacyConsumed} <= ${t.sessionsTotal}`,
+    ),
+    // 0083 — the three stamped constraints. Zero is accepted, negative is not.
+    check(
+      "patient_pack_instances_switch_amount_nonneg",
+      sql`${t.switchAmountCents} IS NULL OR ${t.switchAmountCents} >= 0`,
+    ),
+    check(
+      "patient_pack_instances_switch_reason_nonblank",
+      sql`${t.switchReason} IS NULL OR btrim(${t.switchReason}) <> ''`,
+    ),
+    check(
+      "patient_pack_instances_switch_amount_and_reason_together",
+      sql`(${t.switchAmountCents} IS NULL) = (${t.switchReason} IS NULL)`,
     ),
   ],
 );

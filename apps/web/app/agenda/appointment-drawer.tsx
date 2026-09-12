@@ -36,6 +36,7 @@ import {
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
+import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
 import {
@@ -752,6 +753,9 @@ export function AppointmentDrawer({
     error?: string;
     conflicts?: ConflictInfo[];
     availabilityWindows?: { startTime: string; endTime: string }[];
+    // 0085. Set only with error "clinic_closed"; carries the clinic's own name
+    // and shut hour so the sentence below can name the building, not a person.
+    clinicClosure?: { locationName: string; from: string; to: string };
   }): boolean {
     if (r.ok) return true;
     if (r.error === "conflict") setConflicts(r.conflicts ?? []);
@@ -791,6 +795,22 @@ export function AppointmentDrawer({
             `${s["appointment.outsideAvailabilityHint"]}`,
       );
     }
+    // 0085 - THE CLINIC IS SHUT, AND THE MESSAGE SAYS SO WITHOUT NAMING THE
+    // THERAPIST.
+    //
+    // That distinction is the whole card. "O terapeuta está ausente" sends
+    // reception to that person's blocks; there is nothing there, because the
+    // building is what is closed. The sentence names the CLINIC and the hour,
+    // and says explicitly that there is no block to remove - which is the step
+    // somebody would otherwise spend ten minutes looking for.
+    //
+    // AND THERE IS NO "Guardar mesmo assim" FOR IT. This refusal is raised
+    // outside the allowConflict gate on the server, so the override that clears
+    // a double-booking or an absence cannot reach it (owner: "not
+    // blockable-around").
+    // The sentence itself lives in clinic-closed-message.ts, shared with the
+    // Marcar novamente drawer so the two doors onto one diary say one thing.
+    else if (r.error === "clinic_closed") setError(clinicClosedMessage(r.clinicClosure));
     // STAFF-02. The form now offers only assigned locations, so reaching this is
     // either a stale tab or a request that did not come from the form - and in
     // both cases the honest message names the location, not a permission.
