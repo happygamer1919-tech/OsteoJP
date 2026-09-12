@@ -1327,3 +1327,45 @@ appointment inside 24 h.
   re-checks the slot. This is one exclusion in `applyInboundReply`, plus a test.
 - **B:** keep it. A patient's "SIM" counts as acceptance, and the slot is trusted as
   booked.
+
+## Q-SCHED-27-1 - Cancelada to any other estado: the transition table, and three calls only the owner can make (BLUE, 2026-09-12)
+
+**OPEN. Card `SCHED-27-estado-from-cancelada`, blocked on the owner. Nothing is built
+until this is answered.**
+
+Owner request: an appointment at Cancelada cannot be moved to any other state. Cancelada
+should be able to go to any other state.
+
+- **Reproduced.** The rules live in `estado-transitions.ts` (the Estado control, enforced
+  on the server in `updateAppointment`) and `estado-correction.ts` (the "Corrigir estado"
+  door). No database constraint governs transitions. Today Cancelada goes to Concluída or
+  Falta only through Corrigir estado, and that door exists only in the patient profile's
+  Marcações list. Cancelada to Agendada or Confirmada exists nowhere: the agenda panel
+  refuses it with "Mudança de estado não permitida".
+- **Un-cancelling can double-book. Measured** on a lane database, synthetic rows, one
+  transaction, rolled back. A Cancelada row moved to Agendada, or to Confirmada, over an
+  Agendada booking made after the cancel is ACCEPTED by the database; 0061 refuses only
+  Confirmada over Confirmada. Moving the Cancelada row to Concluída, which the live
+  Corrigir estado door already allows, is also accepted, and that door runs no conflict
+  check.
+- **The app would miss it as well.** `updateAppointment` checks conflicts on a status
+  change only when some row in the patch is currently Agendada, so a Cancelada row skips
+  the check. The guard is extended by every option below, never removed.
+
+**Options:**
+- **A (recommended default):** Cancelada to Agendada or Confirmada through the ordinary
+  Estado control, for owner, admin and reception. The conflict check (with the clinic
+  closure and NESA checks) runs for any row leaving Cancelada or Falta. Concluída and
+  Falta stay on Corrigir estado, which gains the same check into Concluída. Un-cancelling
+  resets a patient's "declined" confirmation to pending, and uses its pacote session
+  again (refused when the pacote has none left).
+- **B:** all four targets in the ordinary Estado control. It reverses the 2026-09-10
+  ruling that a correction never goes through the normal control, and the audit log could
+  no longer tell a correction from a real outcome.
+- **C:** A without the conflict check. Not viable: it double-books.
+
+**Also needed with A:**
+1. Can therapists un-cancel? Recommended: no, the same people who can cancel.
+2. Does an un-cancelled future marcação send its reminders again? Recommended: yes.
+3. Add the conflict check to Corrigir estado into Concluída even if this request is
+   declined? Recommended: yes. It is live today.
