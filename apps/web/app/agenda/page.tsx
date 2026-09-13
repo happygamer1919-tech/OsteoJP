@@ -105,7 +105,7 @@ export default async function AgendaPage({
   // null and the agenda opens normally (no lock).
   const novaMarcacaoPacienteId = firstParam(sp.novaMarcacaoPaciente);
 
-  const [options, appointments, lockedPatientRow, blocks] = await Promise.all([
+  const [options, appointments, lockedPatientRow, blocks, frontDeskResources] = await Promise.all([
     // W9-02: the selected location narrows the therapist dropdown to that
     // location's assigned therapists (owner ruling 2026-07-17). Null here means
     // "Todas as localizações" and restores the full roster.
@@ -132,6 +132,13 @@ export default async function AgendaPage({
           rangeEnd: endUtc,
         })
       : Promise.resolve([]),
+    // SCHED-29.4 (Q-SCHED-29-4-1 = A): owner, admin and reception are offered the
+    // shared resources beside the is_bookable roster. READ PER REQUEST, not through
+    // fetchAgendaReferenceData's 60-second unstable_cache: that cache is
+    // stale-while-revalidate, so the first load after expiry served the old roster
+    // (measured 2026-09-13), and a machine flagged by SQL would have appeared or
+    // vanished a load late. A therapist already has theirs, read the same way above.
+    lockTherapist ? Promise.resolve([]) : listSharedResources(actor),
   ]);
 
   /* ==================================================================== */
@@ -225,6 +232,17 @@ export default async function AgendaPage({
     note: b.note,
   }));
 
+  // SCHED-29.4: the machines offered to owner, admin and reception MIRROR THE
+  // BOOKING PERMISSION. sharedResourceLocationAllowed exempts only the owner from
+  // the actor condition, so admin and reception are offered the machines at their
+  // own assigned clinics. Not viewerLocationScope: it falls back to every clinic
+  // for an unassigned staffer, and the offer would then be a booking the server
+  // refuses.
+  const offeredToFrontDesk =
+    actor.role === "owner"
+      ? frontDeskResources
+      : sharedResourcesForViewer(frontDeskResources, await resolveViewerLocationIds(actor));
+
   return (
     <AgendaViewClient
       view={view}
@@ -235,7 +253,7 @@ export default async function AgendaPage({
       // self-lock (practitioner forced to self, Terapeuta selector hidden for
       // role "therapist"). Read-scope isolation stays on `lockTherapist` above.
       viewer={{ role: actor.role, userId: actor.userId }}
-      options={{ ...options, sharedResources }}
+      options={{ ...options, sharedResources: lockTherapist ? sharedResources : offeredToFrontDesk }}
       appointments={appointments}
       blocks={blockSpans}
       dayWindow={dayWindow}
