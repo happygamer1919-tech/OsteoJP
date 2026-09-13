@@ -309,6 +309,8 @@ type SeriesMember = {
   startsAt: Date;
   endsAt: Date;
   practitionerId: string;
+  /** SCHED-29.2: read so a row re-entering a slot checks NESA in either role. */
+  practitionerTwoId: string | null;
   locationId: string;
   room: string | null;
   // Pre-mutation lifecycle status — the `from_status` a status-change event
@@ -418,6 +420,7 @@ async function resolveSeries(
       startsAt: appointments.startsAt,
       endsAt: appointments.endsAt,
       practitionerId: appointments.practitionerId,
+      practitionerTwoId: appointments.practitionerTwoId,
       locationId: appointments.locationId,
       room: appointments.room,
       status: appointments.status,
@@ -433,6 +436,7 @@ async function resolveSeries(
     startsAt: target.startsAt,
     endsAt: target.endsAt,
     practitionerId: target.practitionerId,
+    practitionerTwoId: target.practitionerTwoId,
     locationId: target.locationId,
     room: target.room,
     status: target.status,
@@ -446,6 +450,7 @@ async function resolveSeries(
       startsAt: appointments.startsAt,
       endsAt: appointments.endsAt,
       practitionerId: appointments.practitionerId,
+      practitionerTwoId: appointments.practitionerTwoId,
       locationId: appointments.locationId,
       room: appointments.room,
       status: appointments.status,
@@ -465,13 +470,20 @@ async function resolveSeries(
 async function collectConflicts(
   tx: DbTx,
   windows: { startsAt: Date; endsAt: Date }[],
-  fixed: { practitionerId: string; locationId: string; room: string | null },
+  fixed: {
+    practitionerId: string;
+    /** SCHED-29.2: read by findConflicts only when it is a shared resource. */
+    practitionerTwoId?: string | null;
+    locationId: string;
+    room: string | null;
+  },
   excludeIds?: string[],
 ): Promise<ConflictInfo[]> {
   const conflicts: ConflictInfo[] = [];
   for (const w of windows) {
     const c = await findConflictsForWindow(tx, {
       practitionerId: fixed.practitionerId,
+      practitionerTwoId: fixed.practitionerTwoId,
       locationId: fixed.locationId,
       room: fixed.room,
       startsAt: w.startsAt,
@@ -745,6 +757,7 @@ export async function createAppointment(
         if (!input.allowConflict) {
           const conflicts = await collectConflicts(tx, occ, {
             practitionerId: input.practitionerId,
+            practitionerTwoId: input.practitionerTwoId ?? null,
             locationId: input.locationId,
             room: input.room ?? null,
           });
@@ -814,13 +827,16 @@ export async function createAppointment(
         // one acquisition, sorted, so two overlapping batches cannot deadlock.
         // This ORDERS writes only: the conflict decision above, including the
         // deliberate "Save anyway" override, is untouched.
+        // SCHED-29.2: Terapeuta 2 is locked too, so a booking naming NESA as
+        // Terapeuta 2 serialises against one naming NESA as Terapeuta. For a
+        // person it only orders writes, which changes no decision.
         const slotLocks = acquireSlotLocksForMany(
           actor.tenantId,
-          occ.map((o) => ({
-            practitionerId: input.practitionerId,
-            startsAt: o.startsAt,
-            endsAt: o.endsAt,
-          })),
+          occ.flatMap((o) =>
+            [input.practitionerId, input.practitionerTwoId]
+              .filter((p): p is string => !!p)
+              .map((p) => ({ practitionerId: p, startsAt: o.startsAt, endsAt: o.endsAt })),
+          ),
         );
         if (slotLocks) await tx.execute(slotLocks);
 
@@ -1221,6 +1237,9 @@ export async function cloneAppointment(
             [{ startsAt: values.startsAt, endsAt: values.endsAt }],
             {
               practitionerId: values.practitionerId,
+              // SCHED-29.2: the clone copies Terapeuta 2, so NESA there holds
+              // the new hour exactly as on a fresh booking.
+              practitionerTwoId: values.practitionerTwoId,
               locationId: values.locationId,
               room: values.room,
             },
@@ -1232,14 +1251,14 @@ export async function cloneAppointment(
 
         // 2.9 — same slot lock as the create path. A clone lands a real
         // appointment in a real slot and races exactly like a fresh booking.
-        await tx.execute(
-          acquireSlotLocks(
-            actor.tenantId,
-            values.practitionerId,
-            values.startsAt,
-            values.endsAt,
-          ),
+        // SCHED-29.2: and Terapeuta 2's slot, which the clone copies.
+        const cloneLocks = acquireSlotLocksForMany(
+          actor.tenantId,
+          [values.practitionerId, values.practitionerTwoId]
+            .filter((p): p is string => !!p)
+            .map((p) => ({ practitionerId: p, startsAt: values.startsAt, endsAt: values.endsAt })),
         );
+        if (cloneLocks) await tx.execute(cloneLocks);
 
         const [created] = await tx
           .insert(appointments)
@@ -1570,13 +1589,14 @@ export async function updateAppointment(
             // advisory lock orders them for this therapist and window, and the
             // check below runs inside it.
             if (entering.length > 0) {
+              // SCHED-29.2: Terapeuta 2's slot too, so NESA in either role serialises.
               const locks = acquireSlotLocksForMany(
                 actor.tenantId,
-                entering.map((a) => ({
-                  practitionerId: a.practitionerId,
-                  startsAt: a.startsAt,
-                  endsAt: a.endsAt,
-                })),
+                entering.flatMap((a) =>
+                  [a.practitionerId, a.practitionerTwoId]
+                    .filter((p): p is string => !!p)
+                    .map((p) => ({ practitionerId: p, startsAt: a.startsAt, endsAt: a.endsAt })),
+                ),
               );
               if (locks) await tx.execute(locks);
             }
@@ -1585,6 +1605,7 @@ export async function updateAppointment(
             for (const a of entering) {
               const c = await findConflictsForWindow(tx, {
                 practitionerId: a.practitionerId,
+                practitionerTwoId: a.practitionerTwoId,
                 locationId: a.locationId,
                 room: a.room,
                 startsAt: a.startsAt,
@@ -1877,11 +1898,17 @@ export async function rescheduleAppointment(
           }
         }
 
+        // SCHED-29.2: a reschedule moves the row with its Terapeuta 2 unchanged,
+        // so NESA there moves into the new hour and is checked and locked for it.
+        const practitionerTwoOf = (targetId: string) =>
+          affected.find((a) => a.id === targetId)?.practitionerTwoId ?? null;
+
         if (!input.allowConflict) {
           const conflicts: ConflictInfo[] = [];
           for (const t of targets) {
             const c = await findConflictsForWindow(tx, {
               practitionerId: input.practitionerId,
+              practitionerTwoId: practitionerTwoOf(t.id),
               locationId: input.locationId,
               room: t.room,
               startsAt: t.startsAt,
@@ -1915,11 +1942,11 @@ export async function rescheduleAppointment(
         // holds cannot deadlock against itself.
         const slotLocks = acquireSlotLocksForMany(
           actor.tenantId,
-          targets.map((t) => ({
-            practitionerId: input.practitionerId,
-            startsAt: t.startsAt,
-            endsAt: t.endsAt,
-          })),
+          targets.flatMap((t) =>
+            [input.practitionerId, practitionerTwoOf(t.id)]
+              .filter((p): p is string => !!p)
+              .map((p) => ({ practitionerId: p, startsAt: t.startsAt, endsAt: t.endsAt })),
+          ),
         );
         if (slotLocks) await tx.execute(slotLocks);
 
@@ -2279,6 +2306,7 @@ export async function correctAppointmentEstadoAction(
           id: appointments.id,
           status: appointments.status,
           practitionerId: appointments.practitionerId,
+          practitionerTwoId: appointments.practitionerTwoId,
           locationId: appointments.locationId,
           room: appointments.room,
           startsAt: appointments.startsAt,
@@ -2323,13 +2351,19 @@ export async function correctAppointmentEstadoAction(
       // defined later would be refused for nothing it did.
       // ==============================================================
       if (correctionEntersBlockingSet(row.status, to)) {
-        const locks = acquireSlotLocksForMany(actor.tenantId, [
-          { practitionerId: row.practitionerId, startsAt: row.startsAt, endsAt: row.endsAt },
-        ]);
+        // SCHED-29.2: Terapeuta 2 is locked and checked too, so NESA coming back
+        // in either role meets NESA already there in either role.
+        const locks = acquireSlotLocksForMany(
+          actor.tenantId,
+          [row.practitionerId, row.practitionerTwoId]
+            .filter((p): p is string => !!p)
+            .map((p) => ({ practitionerId: p, startsAt: row.startsAt, endsAt: row.endsAt })),
+        );
         if (locks) await tx.execute(locks);
         if (!allowConflict) {
           const c = await findConflictsForWindow(tx, {
             practitionerId: row.practitionerId,
+            practitionerTwoId: row.practitionerTwoId,
             locationId: row.locationId,
             room: row.room,
             startsAt: row.startsAt,
