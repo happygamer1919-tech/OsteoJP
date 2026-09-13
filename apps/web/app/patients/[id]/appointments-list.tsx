@@ -408,17 +408,30 @@ function CorrigirEstadoInline({ appt }: { appt: AgendaAppointment }) {
   const targets = correctionTargets(appt.status);
   const [next, setNext] = useState<AppointmentStatusValue>(targets[0]!);
   const [submitting, setSubmitting] = useState(false);
+  // SCHED-28: a correction into Concluída can collide with a booking made since
+  // the cancel. Shown and overridable exactly as RescheduleDrawer does it, and
+  // reset whenever the chosen target changes, so "Guardar mesmo assim" can never
+  // apply to a target that was not the one checked.
+  const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
+  const [checkedTarget, setCheckedTarget] = useState(next);
+  if (next !== checkedTarget) {
+    setCheckedTarget(next);
+    setConflicts(null);
+  }
 
-  async function apply() {
+  async function apply(allowConflict: boolean) {
     // Re-guarded client-side for the same reason EstadoInline is: to refuse
     // before touching the server. The server re-asserts it regardless.
     if (!isLegalEstadoCorrection(appt.status, next)) return;
     setSubmitting(true);
-    const r = await correctAppointmentEstadoAction(appt.id, next);
+    const r = await correctAppointmentEstadoAction(appt.id, next, { allowConflict });
     setSubmitting(false);
     if (r.ok) {
+      setConflicts(null);
       toast({ tone: "success", message: s["appointment.correctEstadoDone"] });
       router.refresh();
+    } else if (r.error === "conflict") {
+      setConflicts(r.conflicts ?? []);
     } else {
       toast({
         tone: "error",
@@ -445,15 +458,29 @@ function CorrigirEstadoInline({ appt }: { appt: AgendaAppointment }) {
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant={conflicts ? "destructive" : "ghost"}
             loading={submitting}
             disabled={submitting}
-            onClick={() => void apply()}
+            onClick={() => void apply(!!conflicts)}
           >
-            {s["appointment.correctEstadoApply"]}
+            {conflicts ? s["appointment.saveAnyway"] : s["appointment.correctEstadoApply"]}
           </Button>
         </div>
       </Field>
+      {conflicts && (
+        <Banner tone="warning">
+          <span className="flex flex-col gap-1">
+            <span className="font-medium">{s["agenda.conflict"]}</span>
+            {conflicts.map((c) => (
+              <span key={c.id} className="block text-sm">
+                {[c.patientName, c.room].filter(Boolean).join(" · ")}
+                {c.patientName || c.room ? ": " : ""}
+                {formatTimeOfDay(new Date(c.startsAt))}-{formatTimeOfDay(new Date(c.endsAt))}
+              </span>
+            ))}
+          </span>
+        </Banner>
+      )}
       <p className="text-xs text-text-secondary">{s["appointment.correctEstadoHelp"]}</p>
     </div>
   );
