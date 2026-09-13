@@ -63,6 +63,19 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
 
 async function cleanUp(): Promise<void> {
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("practitioner_id", NESA_ID);
+  // SCHED-29: rows where NESA is the SECOND participant. Left behind, they hold a
+  // FK to both the NESA row and the patients, so the next run could delete
+  // neither and would fail inserting the patients again.
+  await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("practitioner_2_id", NESA_ID);
+  if (cbOnlyId) {
+    await db
+      .from("availability_templates")
+      .delete()
+      .eq("tenant_id", TENANT_A)
+      .eq("user_id", cbOnlyId)
+      .eq("location_id", LOCATION_B.id)
+      .eq("weekday", 3);
+  }
   await db.from("availability_templates").delete().eq("tenant_id", TENANT_A).eq("user_id", NESA_ID);
   await db.from("staff_locations").delete().eq("tenant_id", TENANT_A).eq("user_id", NESA_ID);
   if (addedStaffLocationIds.length > 0) {
@@ -149,6 +162,22 @@ test.beforeAll(async () => {
       "NESA hours at CB",
     );
   }
+  // SCHED-29: the CB-only therapist books UNDER THEIR OWN NAME at CB with NESA as
+  // "Terapeuta 2", so they need hours at CB on this spec's Wednesday. The seed
+  // gives them Monday at LV only, and availability is enforced (RB-03). Weekday
+  // 3 is not a seeded row for this therapist, so cleanUp can remove exactly it.
+  must(
+    await db.from("availability_templates").insert({
+      tenant_id: TENANT_A,
+      user_id: cbOnlyId,
+      location_id: LOCATION_B.id,
+      weekday: 3,
+      start_time: "09:00",
+      end_time: "19:00",
+      is_active: true,
+    }),
+    "CB-only therapist hours at CB on Wednesday",
+  );
   // One patient per therapist, created by them, so each can find theirs in the
   // Paciente search under their own RLS.
   must(
@@ -241,4 +270,66 @@ test("a therapist at BOTH clinics is refused NESA at LV, and nothing is written"
     "NESA rows at LV",
   ) as { id: string }[];
   expect(atLv).toHaveLength(0);
+});
+
+/**
+ * SCHED-29 — NESA as a therapist's SECOND participant.
+ *
+ * The owner's requirement: a therapist booking at CB selects themselves as
+ * primary and NESA as "Terapeuta 2". Nobody else, and no NESA option at LV.
+ * Before this card the field listed every bookable user in the tenant for a
+ * therapist, at either clinic, and the server accepted any of them.
+ */
+test("SCHED-29: a CB therapist's Terapeuta 2 is NESA and nobody else, and the booking keeps it", async ({ page }) => {
+  test.skip(skipReason !== null, skipReason ?? "");
+  await login(page, CB_ONLY_EMAIL);
+  const dialog = await openNewAppointment(page, DAY);
+
+  // Patient FIRST. Opening "Participantes secundários" mounts a second combobox,
+  // "Paciente 2", and pickPatient's /Paciente/i then matches both (strict mode):
+  // the first run of this test failed on exactly that, before reaching NESA.
+  await pickPatient(dialog, PATIENT_CB_ONLY.name);
+
+  await dialog.getByText("Participantes secundários (opcional)").click();
+  const two = dialog.getByLabel("Terapeuta 2", { exact: true });
+  await expect(two).toBeVisible();
+  // The placeholder and NESA. Not the colleague at CB, not anyone at LV.
+  await expect(two.locator("option")).toHaveText(["Selecionar terapeuta", NESA_NAME]);
+  await two.selectOption({ label: NESA_NAME });
+
+  await fillDate(dateField(dialog), DAY);
+  await fillTime(dialog, "16:00");
+  await save(dialog);
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+  const rows = must(
+    await db
+      .from("appointments")
+      .select("id, practitioner_id, location_id")
+      .eq("tenant_id", TENANT_A)
+      .eq("practitioner_2_id", NESA_ID),
+    "the booking with NESA as second participant",
+  ) as { id: string; practitioner_id: string; location_id: string }[];
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.practitioner_id).toBe(cbOnlyId);
+  expect(rows[0]!.location_id).toBe(LOCATION_B.id);
+});
+
+test("SCHED-29: at LV a therapist is offered no Terapeuta 2, and at CB only NESA", async ({ page }) => {
+  test.skip(skipReason !== null, skipReason ?? "");
+  await login(page, BOTH_EMAIL);
+  const dialog = await openNewAppointment(page, DAY);
+  const location = dialog.getByLabel(/Localização/i);
+
+  await location.selectOption({ label: LOCATION.name });
+  await dialog.getByText("Participantes secundários (opcional)").click();
+  // Not an empty dropdown: the field is not there at all.
+  await expect(dialog.getByLabel("Terapeuta 2", { exact: true })).toHaveCount(0);
+
+  // The same therapist, the same drawer, at CB: NESA appears, and only NESA.
+  await location.selectOption({ label: LOCATION_B.name });
+  await expect(dialog.getByLabel("Terapeuta 2", { exact: true }).locator("option")).toHaveText([
+    "Selecionar terapeuta",
+    NESA_NAME,
+  ]);
 });
