@@ -4282,3 +4282,24 @@ green lane against a fixture under the production ids: preview, a mid-transactio
 race that must fail two post-checks and roll back, a wrong count, the apply, a
 second apply, the rollback preview, the rollback (restoring the exact starting
 fingerprint), and a rollback with nothing to reverse.
+
+## 2026-09-13 - PURPLE, P-C / STAFF-11: the JP one-clinic check
+
+W2 item 3: nothing checked, after STAFF-10 runs, that each JP row holds hours at exactly
+one clinic. `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` checks it, read only.
+
+- **It does not assume the split ran.** It enforces only once either signal says the
+  split happened: an un-reversed `staff.jp_split.reassign` audit row, or JP(lv) holding
+  any active availability row (a split done by hand). Before that it prints NOT
+  APPLICABLE and exits 0, because before the split JP(cb) holds hours at both clinics by
+  design.
+- **The predicate is the portal's, not a stricter one.** Active at the clinic, no date
+  window, because `listBookableTherapists` reads none; an expired but still active
+  day-defined row puts a therapist on the portal list, so it counts. A test fails if the
+  portal's predicate changes, and another if STAFF-10's ids or audit actions drift.
+- **"Its own clinic", not just "one clinic".** Swapped rows (each at one clinic, the
+  wrong one) fail.
+- **First production run (2026-09-13): FAIL, correctly.** JP(lv) already holds 39 active
+  LV rows written through Horarios on 2026-09-12 and JP(cb) still holds 16, so the portal
+  roster lists both JP rows at Linda-a-Velha. 8 rows are identical on both, which is
+  STAFF-10's clash precondition: STAFF-10 halts before writing. Reported, not acted on.
