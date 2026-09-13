@@ -40,6 +40,7 @@ import {
   legalEstadoTransitions,
 } from "@/lib/scheduling/estado-transitions";
 import { correctionTargets, isLegalEstadoCorrection } from "@/lib/scheduling/estado-correction";
+import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { formatCreatedAt, formatTimeOfDay, lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import type {
   AgendaAppointment,
@@ -206,7 +207,13 @@ function AppointmentRow({
   // is open AND has at least one legal onward transition.
   const editable = isEditable(a);
   const showReschedule = canEdit && editable;
-  const showEstado = canEdit && editable && hasLegalEstadoTransition(a.status);
+  // SCHED-27 (owner, 2026-09-13): a Cancelada row also gets the Estado control,
+  // to go back to Agendada or Confirmada - but only for a viewer who can CANCEL
+  // (owner, admin, reception), because bringing one back is the inverse of
+  // cancelling it. The server enforces the same rule.
+  const showEstado =
+    (canEdit && editable && hasLegalEstadoTransition(a.status)) ||
+    (canCancel && a.status === "cancelled" && hasLegalEstadoTransition(a.status));
   const showCancel = canCancel && editable;
   // B6: a FINAL state can be CORRECTED to another final state. Deliberately not
   // folded into `showEstado`: `editable` is false for every final state, which
@@ -330,8 +337,18 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
   const [next, setNext] = useState<AppointmentStatusValue>(targets[0]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // SCHED-27: bringing a Cancelada back puts it into its slot again, and the slot
+  // may have been booked since. The clash is shown and overridable exactly as
+  // Reagendar and Corrigir estado do, and reset whenever the chosen target
+  // changes, so "Guardar mesmo assim" never applies to an unchecked target.
+  const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
+  const [checkedTarget, setCheckedTarget] = useState(next);
+  if (next !== checkedTarget) {
+    setCheckedTarget(next);
+    setConflicts(null);
+  }
 
-  async function apply() {
+  async function apply(allowConflict: boolean) {
     setError(null);
     // Guard the transition client-side before touching the server. The estado
     // control can only ever set a lifecycle value, and only a LEGAL onward one.
@@ -340,17 +357,19 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
       return;
     }
     setSubmitting(true);
-    const r = await updateAppointment(appt.id, { status: next });
+    const r = await updateAppointment(appt.id, { status: next }, { allowConflict });
     setSubmitting(false);
     if (r.ok) {
+      setConflicts(null);
       toast({ tone: "success", message: s["appointment.saved"] });
       router.refresh();
-    } else {
-      toast({
-        tone: "error",
-        message: r.error === "forbidden" ? s["errors.forbidden"] : s["errors.generic"],
-      });
+      return;
     }
+    if (r.error === "conflict") {
+      setConflicts(r.conflicts ?? []);
+      return;
+    }
+    toast({ tone: "error", message: estadoRefusalMessage(r) });
   }
 
   return (
@@ -371,15 +390,29 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant={conflicts ? "destructive" : "ghost"}
             loading={submitting}
             disabled={submitting}
-            onClick={() => void apply()}
+            onClick={() => void apply(!!conflicts)}
           >
-            {s["common.apply"]}
+            {conflicts ? s["appointment.saveAnyway"] : s["common.apply"]}
           </Button>
         </div>
       </Field>
+      {conflicts && (
+        <Banner tone="warning">
+          <span className="flex flex-col gap-1">
+            <span className="font-medium">{s["agenda.conflict"]}</span>
+            {conflicts.map((c) => (
+              <span key={c.id} className="block text-sm">
+                {[c.patientName, c.room].filter(Boolean).join(" · ")}
+                {c.patientName || c.room ? ": " : ""}
+                {formatTimeOfDay(new Date(c.startsAt))}-{formatTimeOfDay(new Date(c.endsAt))}
+              </span>
+            ))}
+          </span>
+        </Banner>
+      )}
       {error && (
         <p role="alert" className="text-sm text-error">
           {error}
@@ -387,6 +420,35 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
       )}
     </div>
   );
+}
+
+/**
+ * The sentence for a refused Estado change, reusing the agenda drawer's own
+ * strings so the two doors onto one appointment say the same thing. SCHED-27
+ * made most of these reachable from this control: an un-cancel can meet the
+ * clinic closure, NESA's location, an empty pacote or a second confirmed booking
+ * (0061), none of which the old scheduled/confirmed moves could.
+ */
+function estadoRefusalMessage(r: {
+  error?: string;
+  clinicClosure?: { locationName: string; from: string; to: string };
+}): string {
+  switch (r.error) {
+    case "forbidden":
+      return s["errors.forbidden"];
+    case "illegal_transition":
+      return s["appointment.illegalTransition"];
+    case "double_booked":
+      return s["appointment.doubleBooked"];
+    case "clinic_closed":
+      return clinicClosedMessage(r.clinicClosure);
+    case "shared_resource_location":
+      return s["appointment.sharedResourceLocation"];
+    case "pack_insufficient":
+      return s["appointment.packInsufficient"];
+    default:
+      return s["errors.generic"];
+  }
 }
 
 /**

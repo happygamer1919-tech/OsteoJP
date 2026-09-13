@@ -1,27 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { correctionTargets } from "./estado-correction";
-import { hasLegalEstadoTransition } from "./estado-transitions";
+import { hasLegalEstadoTransition, legalEstadoTransitions } from "./estado-transitions";
 import type { AppointmentStatusValue } from "./types";
 
 const ALL: AppointmentStatusValue[] = ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
 
-/** The row's own predicate, mirrored from appointments-list.tsx. */
+/** The row's own predicates, mirrored from appointments-list.tsx. */
 const isEditable = (s: AppointmentStatusValue) => s === "scheduled" || s === "confirmed";
+/** SCHED-27: the Estado control on a row, for a viewer who can cancel. */
+const showsEstado = (s: AppointmentStatusValue) =>
+  (isEditable(s) && hasLegalEstadoTransition(s)) || s === "cancelled";
 
 /**
  * THE RULING'S "NEVER THROUGH THE NORMAL ESTADO CONTROL", AS A PROPERTY.
  *
- * The two controls must never both appear on one row. In the component that
- * holds because `EstadoInline` needs `isEditable` and `CorrigirEstadoInline`
- * needs a final state, and nothing is both — but "nothing is both" is exactly
- * the kind of fact that stops being true when somebody adds a status. This
- * asserts it over the whole enum instead of trusting the reading.
+ * Until SCHED-27 this asserted the two controls never appeared on the same row.
+ * The owner then ruled (2026-09-13) that a Cancelada appointment returns to
+ * Agendada or Confirmada through the ORDINARY control, while Concluída and Falta
+ * stay on "Corrigir estado". So a Cancelada row now carries both doors, and the
+ * property the ruling protects is stated directly instead: no move is offered by
+ * both. It is asserted over the whole enum rather than trusted from the reading.
  */
-describe("the Estado control and Corrigir estado are mutually exclusive, per status", () => {
-  it.each(ALL)("%s offers exactly one of the two doors (or neither)", (status) => {
-    const estado = isEditable(status) && hasLegalEstadoTransition(status);
-    const correct = correctionTargets(status).length > 0;
-    expect(estado && correct, `${status} offers BOTH doors`).toBe(false);
+describe("the Estado control and Corrigir estado never offer the same move", () => {
+  it.each(ALL)("%s: the two doors' targets are disjoint", (status) => {
+    const ordinary = showsEstado(status) ? legalEstadoTransitions(status) : [];
+    const correction = correctionTargets(status);
+    for (const t of correction) expect(ordinary, `${status} -> ${t} offered by both doors`).not.toContain(t);
   });
 
   it("every final state offers the correction door", () => {
@@ -34,6 +38,17 @@ describe("the Estado control and Corrigir estado are mutually exclusive, per sta
     for (const s of ["scheduled", "confirmed"] as const) {
       expect(hasLegalEstadoTransition(s), s).toBe(true);
       expect(correctionTargets(s), s).toEqual([]);
+    }
+  });
+
+  it("Cancelada is the one state with both doors, and they split its targets exactly", () => {
+    expect(new Set(legalEstadoTransitions("cancelled"))).toEqual(new Set(["scheduled", "confirmed"]));
+    expect(new Set(correctionTargets("cancelled"))).toEqual(new Set(["completed", "no_show"]));
+  });
+
+  it("Concluída and Falta keep only the correction door", () => {
+    for (const s of ["completed", "no_show"] as const) {
+      expect(showsEstado(s), s).toBe(false);
     }
   });
 });

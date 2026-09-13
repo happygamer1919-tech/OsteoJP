@@ -318,6 +318,45 @@ test("Corrigir estado: Cancelada to Concluída over a slot booked since is a con
   await expect(withChip("Agendada")).toHaveCount(1);
 });
 
+/**
+ * SCHED-27 — a Cancelada appointment can be brought back (owner, 2026-09-13).
+ *
+ * The row's Estado control appears on a Cancelada row for a viewer who can
+ * cancel, offers exactly Agendada and Confirmada (Concluída and Falta stay on
+ * Corrigir estado), and applying one moves the row. The refusals - a slot booked
+ * since, a therapist, the pacote, the closure - are proven against a real
+ * database in estado-uncancel.db.test.ts. Day 59 is used by no other spec.
+ */
+test("Estado on a Cancelada row brings it back to Agendada (SCHED-27)", async ({ page }, testInfo) => {
+  const date = bandDay(59, testInfo.retry);
+  const chip = (label: string) =>
+    row(page, date, "12:00").filter({
+      has: page.locator("span.rounded-full", { hasText: new RegExp(`^${label}$`) }),
+    });
+
+  await book(page, PATIENTS.maria.name, date, "12:00");
+  await openConsultas(page);
+  const r = row(page, date, "12:00");
+  await r.getByText("Gerir marcação").click();
+  await r.getByRole("button", { name: /Cancelar marcação/i }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /Cancelar marcação/i }).click();
+  await expect(chip("Cancelada")).toHaveCount(1, { timeout: 8_000 });
+
+  await openConsultas(page);
+  const cancelled = chip("Cancelada");
+  await cancelled.getByText("Gerir marcação").click();
+  const estado = cancelled.getByLabel(/^Estado/i);
+  await expect(estado).toBeVisible();
+  // Exactly the two ordinary targets. Not Concluída or Falta: those are the
+  // correction door's, and the two doors never offer the same move.
+  await expect(estado.locator("option")).toHaveText(["Agendada", "Confirmada"]);
+
+  await estado.selectOption({ label: "Agendada" });
+  await cancelled.getByRole("button", { name: /^Aplicar$/ }).click();
+  await expect(chip("Agendada")).toHaveCount(1, { timeout: 8_000 });
+  await expect(chip("Cancelada")).toHaveCount(0);
+});
+
 test("PL-02 (b): the Marcações row shows who created the appointment and when", async ({
   page,
 }, testInfo) => {
