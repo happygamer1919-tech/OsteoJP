@@ -1372,7 +1372,9 @@ should be able to go to any other state.
 
 ## Q-SCHED-29-4-1 - with GREEN's NESA flags on, reception can neither book NESA nor filter the agenda by it (BLUE, 2026-09-13)
 
-**Status: OPEN, blocks card SCHED-29-4-reception-nesa-book-or-filter.** The owner did not accept SCHED-29.4 as reported ("owner, admin and reception see no NESA") and asked for booking and filtering to be measured separately. They were.
+**Status: ANSWERED 2026-09-13, option A (owner).** Built in #1325 (card SCHED-29-4-reception-nesa-book-or-filter): owner, admin and reception are offered NESA in the Terapeuta select, the Terapeuta 2 select and the Terapeutas filter, keyed on the shared-machine flag and not on `is_bookable`; the machine is read per request, not from the 60-second roster cache. One refinement recorded in DECISIONS.md: admin and reception are offered machines at their own assigned clinics, because the server refuses them a machine anywhere else.
+
+**Original status: OPEN, blocked card SCHED-29-4-reception-nesa-book-or-filter.** The owner did not accept SCHED-29.4 as reported ("owner, admin and reception see no NESA") and asked for booking and filtering to be measured separately. They were.
 
 **Measured** on the BLUE lane as reception (e2e storage state `reception.json`), with a machine row shaped like GREEN's v3 flags (`is_shared_resource` true, `is_active` true, `staff_locations` at the CB stand-in only), first with `is_bookable` TRUE as a positive control, then FALSE:
 
