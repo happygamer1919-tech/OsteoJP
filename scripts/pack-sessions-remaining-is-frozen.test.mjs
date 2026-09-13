@@ -103,6 +103,17 @@ const ALLOWED = new Set([
   // `switch_amount_cents` and `switch_reason` - columns that did not exist when
   // this guard was written, on the same row, and unrelated to the balance.
   "packages/db/tests/pack-switch-amount.db.test.ts",
+  // ======================================================================
+  // SCHED-27. The fixture for "bringing a Cancelada back uses its pacote session".
+  // ======================================================================
+  // Same case as the entries above, admitted on the same terms and no wider:
+  // estado-uncancel.db.test.ts INSERTS one brand-new, pre-0067-shaped instance
+  // (sessions_total 1, legacy_consumed 1, so nothing is left), because the column
+  // is NOT NULL with no default. It never UPDATEs and never READS it. What that
+  // suite asserts is the DERIVED balance - an un-cancel is refused as
+  // pack_insufficient - computed with pack-balance.ts's own linked count. This
+  // guard caught the file on its first test:scripts run.
+  "apps/web/lib/scheduling/estado-uncancel.db.test.ts",
 ]);
 
 function sources() {

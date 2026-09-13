@@ -25,7 +25,7 @@
  * record is still read-only.
  */
 import { test, expect } from "@playwright/test";
-import { IMPORTED_RECORD, STORAGE } from "./fixtures";
+import { IMPORTED_DOCUMENTS, IMPORTED_RECORD, STORAGE } from "./fixtures";
 
 test.describe("B1 — an imported registo clínico (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
@@ -72,5 +72,38 @@ test.describe("B1 — an imported registo clínico (therapist)", () => {
     const main = page.getByRole("main").first();
     await expect(main.locator("input, textarea, select")).toHaveCount(0);
     await expect(main.getByRole("button", { name: /Guardar/i })).toHaveCount(0);
+  });
+
+  /**
+   * G-D (2026-09-13). Every Fisiozero original landed at PATIENT level, so an
+   * imported ficha read "Sem anexos" and could not open its source. The ficha now
+   * lists the patient's imported documents, read-only; a file linked to THIS
+   * registo stays under Anexos and is not listed twice on the same page; an
+   * ordinary patient document is not an import and is not listed.
+   */
+  test("G-D: the ficha lists the patient's imported documents, read-only", async ({ page }) => {
+    await page.goto(`/clinical/${IMPORTED_RECORD.id}`);
+    const section = page.getByTestId("imported-patient-documents");
+    await expect(section).toBeVisible();
+    await expect(section.getByText(IMPORTED_DOCUMENTS.patientLevel.fileName, { exact: true })).toBeVisible();
+    await expect(section.getByText(IMPORTED_DOCUMENTS.linked.fileName, { exact: true })).toHaveCount(0);
+    await expect(section.getByText(IMPORTED_DOCUMENTS.ordinary.fileName, { exact: true })).toHaveCount(0);
+    await expect(section.locator("input, textarea, select, form")).toHaveCount(0);
+    await expect(
+      section.locator(`[data-document-id="${IMPORTED_DOCUMENTS.patientLevel.id}"]`).getByRole("button", { name: "Abrir" }),
+    ).toBeVisible();
+    // The linked original is on the SAME page, under Anexos.
+    await expect(page.getByText(IMPORTED_DOCUMENTS.linked.fileName, { exact: true })).toHaveCount(1);
+  });
+
+  test("G-D: the Documentos tab lists imported originals, linked or not, beside ordinary documents", async ({
+    page,
+  }) => {
+    await page.goto(`/patients/${IMPORTED_RECORD.patientId}?tab=documentos`);
+    const panel = page.locator("#tabpanel-documentos");
+    await expect(panel).toBeVisible();
+    for (const d of [IMPORTED_DOCUMENTS.patientLevel, IMPORTED_DOCUMENTS.linked, IMPORTED_DOCUMENTS.ordinary]) {
+      await expect(panel.getByText(d.fileName, { exact: true }), `${d.fileName} is not on the Documentos tab`).toBeVisible();
+    }
   });
 });

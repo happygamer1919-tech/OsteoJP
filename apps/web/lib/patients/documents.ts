@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, like, ne, or } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import { attachments, patients } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
@@ -9,6 +9,7 @@ import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 import { writeClinicalAudit, clientIp } from "@/lib/clinical/audit";
 import { ClinicalError } from "@/lib/clinical/errors";
 import { validateDocumentUpload } from "./document-validation";
+import { importedDocumentPrefix } from "./imported-documents-path";
 
 // Staff-side PATIENT DOCUMENTS (administrative documents & declarations attached
 // to a patient, e.g. consent forms, identity docs, referrals). Migration-free:
@@ -143,9 +144,13 @@ export async function confirmPatientDocument(
 }
 
 /**
- * List a patient's administrative documents, newest first. Strictly the
- * patient-level rows (clinical_record_id IS NULL) — clinical-record attachments
- * live in the Registos tab, not here. Tenant-scoped (RLS + explicit filter).
+ * List a patient's documents for the Documentos tab, newest first. The
+ * patient-level rows (clinical_record_id IS NULL), PLUS every document the
+ * Fisiozero import brought in for this patient even when it is linked to a
+ * registo: owner ruling 2026-09-13, a linked imported original shows in BOTH
+ * places, on the ficha's Anexos and here. Attachments a therapist uploaded onto
+ * a registo still live only on that registo. Tenant-scoped (RLS + explicit
+ * filter).
  */
 export async function listPatientDocuments(
   ctx: RequestContext,
@@ -166,11 +171,60 @@ export async function listPatientDocuments(
       .where(
         and(
           eq(attachments.patientId, patientId),
-          isNull(attachments.clinicalRecordId),
+          or(
+            isNull(attachments.clinicalRecordId),
+            like(attachments.storagePath, `${importedDocumentPrefix(ctx.tenantId)}%`),
+          ),
           eq(attachments.tenantId, ctx.tenantId),
         ),
       )
       .orderBy(desc(attachments.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      fileName: r.fileName,
+      mimeType: r.mimeType,
+      sizeBytes: r.sizeBytes,
+      storagePath: r.storagePath,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  });
+}
+
+/**
+ * G-D (2026-09-13): the documents the Fisiozero import brought in for a
+ * patient, for the read-only list under an imported registo. Every Fisiozero
+ * original landed at PATIENT level (documentos.csv names a patient, never a
+ * registo), so an imported ficha could not show its source document; this lists
+ * them beside it. A file already linked to `excludeRecordId` is left out because
+ * that registo's Anexos block shows it. Ordered by name, because an import has
+ * no meaningful upload date.
+ */
+export async function listImportedPatientDocuments(
+  ctx: RequestContext,
+  patientId: string,
+  excludeRecordId: string,
+): Promise<PatientDocumentItem[]> {
+  assertCan(ctx.role, "patients:read");
+  return runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({
+        id: attachments.id,
+        fileName: attachments.fileName,
+        mimeType: attachments.mimeType,
+        sizeBytes: attachments.sizeBytes,
+        storagePath: attachments.storagePath,
+        createdAt: attachments.createdAt,
+      })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.patientId, patientId),
+          eq(attachments.tenantId, ctx.tenantId),
+          like(attachments.storagePath, `${importedDocumentPrefix(ctx.tenantId)}%`),
+          or(isNull(attachments.clinicalRecordId), ne(attachments.clinicalRecordId, excludeRecordId)),
+        ),
+      )
+      .orderBy(asc(attachments.fileName));
     return rows.map((r) => ({
       id: r.id,
       fileName: r.fileName,

@@ -1109,6 +1109,56 @@ async function ensureImportedRecord() {
 }
 
 // ---------------------------------------------------------------------------
+// G-D (2026-09-13) — THE PATIENT'S IMPORTED ORIGINALS, IN THE SHAPE THE IMPORT
+// WRITES. The importer stores each Fisiozero document at
+// `${tenant}/migration/fisiozero/<file>` (attachmentStoragePath); documentos.csv
+// names a patient only, so the row carries patient_id and no registo. One row is
+// linked to the imported registo, as the owner-run backfill would leave it, and
+// one is an ordinary staff upload that must NOT be taken for an import.
+// Rows only: no Storage object is created. Ids mirror IMPORTED_DOCUMENTS in
+// ../fixtures.ts. Upsert on id, so a re-run leaves the same three rows.
+// ---------------------------------------------------------------------------
+async function ensureImportedDocuments(recordId) {
+  const imported = (file) => `${TENANT_A}/migration/fisiozero/${file}`;
+  const { error } = await db.from("attachments").upsert(
+    [
+      {
+        id: "00000000-0000-0000-0000-00000000fe11",
+        tenant_id: TENANT_A,
+        patient_id: IMPORTED_RECORD_PATIENT,
+        clinical_record_id: null,
+        storage_path: imported("e2e-import-patient-level.pdf"),
+        file_name: "e2e-import-patient-level.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 4096,
+      },
+      {
+        id: "00000000-0000-0000-0000-00000000fe12",
+        tenant_id: TENANT_A,
+        patient_id: IMPORTED_RECORD_PATIENT,
+        clinical_record_id: recordId,
+        storage_path: imported("e2e-import-linked.pdf"),
+        file_name: "e2e-import-linked.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 8192,
+      },
+      {
+        id: "00000000-0000-0000-0000-00000000fe13",
+        tenant_id: TENANT_A,
+        patient_id: IMPORTED_RECORD_PATIENT,
+        clinical_record_id: null,
+        storage_path: `${TENANT_A}/patient-documents/${IMPORTED_RECORD_PATIENT}/e2e__e2e-patient-document.pdf`,
+        file_name: "e2e-patient-document.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 2048,
+      },
+    ],
+    { onConflict: "id" },
+  );
+  must(error, "imported documents");
+}
+
+// ---------------------------------------------------------------------------
 // W6-01a: an AI-ingested draft that carries an ai_ingestion_requests
 // back-pointer (clinical_record_id → this record). This is the shape that made
 // the ficha hard-delete fail on the owner's test patients (paol / paul): the
@@ -1249,7 +1299,9 @@ async function main() {
   // W6-01a: an AI-ingested draft with an ai_ingestion_requests back-pointer.
   await ensureAiDeleteDraft();
   // B1: an imported Fisiozero registo clinico (locked, form_template_id NULL).
-  await ensureImportedRecord();
+  const importedRecordId = await ensureImportedRecord();
+  // G-D: the patient's imported originals (one patient-level, one linked) + one ordinary document.
+  await ensureImportedDocuments(importedRecordId);
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);

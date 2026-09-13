@@ -31,9 +31,18 @@ describe("estado correction — the second door, and only for final states", () 
     }
   });
 
-  it("THE ORDINARY ESTADO MAP IS UNCHANGED — this is a separate door, not a wider one", () => {
+  it("THE TWO DOORS NEVER OFFER THE SAME MOVE — a correction is never reachable through the ordinary control", () => {
     // The whole point of the ruling: a correction must never be reachable
-    // through the control that records real lifecycle events.
-    for (const s of FINAL_STATES) expect(legalEstadoTransitions(s)).toEqual([]);
+    // through the control that records real lifecycle events. SCHED-27 (owner,
+    // 2026-09-13) gave `cancelled` an ordinary door to scheduled/confirmed, so
+    // "the ordinary map is empty for every final state" stopped being the
+    // property. What still holds, and is what the ruling meant, is that no
+    // target is offered by both doors.
+    for (const s of FINAL_STATES) {
+      const ordinary = legalEstadoTransitions(s);
+      for (const t of correctionTargets(s)) expect(ordinary, `${s} -> ${t}`).not.toContain(t);
+    }
+    expect(legalEstadoTransitions("completed")).toEqual([]);
+    expect(legalEstadoTransitions("no_show")).toEqual([]);
   });
 });

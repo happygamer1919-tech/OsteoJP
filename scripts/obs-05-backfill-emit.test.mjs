@@ -176,6 +176,25 @@ test("the classification is byte-identical in the read (both copies) and the scr
   assert.equal(script[0], read[0], "the script's copy has drifted from the read's");
 });
 
+test("the outside_app diagnosis read (OBS-07) diagnoses exactly the set the script would emit for", () => {
+  const diagnosis = readFileSync(join(ROOT, "scripts/reminder-outside-app-read-2026-09-13.sql"), "utf8");
+  const copies = classifications(diagnosis);
+  assert.equal(copies.length, 1, "the diagnosis read should carry the classification once");
+  assert.equal(copies[0], classifications(SRC)[0], "the diagnosis read's copy has drifted from the script's");
+  // The script's own row filter, restated by the read for one class. A drift here
+  // would diagnose a set the backfill does not select.
+  for (const needle of ["e.exposed", "not e.any_reminder_row", "interval '24 hours'"]) {
+    assert.ok(SRC.includes(needle), `the script no longer filters on ${needle}`);
+    assert.ok(diagnosis.includes(needle), `the diagnosis read does not filter on ${needle}`);
+  }
+  assert.match(diagnosis, /e\.path = 'outside_app'/);
+  // Read only, and it says so to the server, not just in a comment.
+  const sql = diagnosis.replace(/--.*$/gm, "");
+  assert.match(sql, /begin transaction read only;/);
+  assert.match(sql, /\nrollback;\s*$/);
+  assert.doesNotMatch(sql, /\b(insert\s+into|update\s+\w+\s+set|delete\s+from|truncate|commit)\b/i);
+});
+
 test("every class the script accepts is one the classification marks EXPOSED, and no other", () => {
   const block = classifications(SRC)[0];
   const exposedList = block.match(/s\.path in \(([^)]+)\)/)?.[1];

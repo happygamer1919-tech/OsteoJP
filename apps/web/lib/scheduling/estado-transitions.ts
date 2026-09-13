@@ -14,9 +14,17 @@ import type { AppointmentStatusValue } from "./types";
  *     action and routes through cancelAppointment; updateAppointment even
  *     refuses `patch.status === "cancelled"` server-side. So the Estado control
  *     changes only the non-cancel lifecycle states; Cancel is its own control.
- *   - Terminal states (`completed`, `cancelled`, `no_show`) have NO onward
- *     lifecycle transition from this control — once a visit is concluded, a
- *     no-show, or cancelled, its lifecycle is closed here.
+ *   - `completed` and `no_show` have NO onward lifecycle transition from this
+ *     control — once a visit is concluded or a no-show, its lifecycle is closed
+ *     here (a typo is fixed through "Corrigir estado", estado-correction.ts).
+ *   - `cancelled` → `scheduled` | `confirmed`. SCHED-27, owner 2026-09-13: a
+ *     cancelled appointment can be brought back. This line used to read that
+ *     all three terminal states were closed; the owner reversed it for
+ *     `cancelled` only. The server gates the move to the people who can cancel
+ *     (appointments:delete) and re-checks the slot, the clinic closure, NESA's
+ *     location and the pacote balance (actions.ts, updateAppointment). Concluída
+ *     and Falta from `cancelled` stay on the correction door, so the two doors
+ *     never offer the same move.
  *   - `scheduled` → `confirmed` | `completed` | `no_show`.
  *   - `confirmed`  → `completed` | `no_show` (already confirmed; cannot go back
  *     to `scheduled`).
@@ -30,7 +38,7 @@ const LEGAL: Record<AppointmentStatusValue, AppointmentStatusValue[]> = {
   scheduled: ["confirmed", "completed", "no_show"],
   confirmed: ["completed", "no_show"],
   completed: [],
-  cancelled: [],
+  cancelled: ["scheduled", "confirmed"],
   no_show: [],
 };
 
