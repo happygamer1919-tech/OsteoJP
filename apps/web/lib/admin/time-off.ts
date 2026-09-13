@@ -318,6 +318,37 @@ function validateInput(input: TimeOffBlockInput): void {
 }
 
 /**
+ * SCHED-25 - THE NOTE RULE, MOVED TO THE WRITE LAYER, WHERE EVERY DOOR PASSES.
+ *
+ * SCHED-18 put this rule in `apps/web/app/agenda/block-actions.ts`, which is
+ * the AGENDA dialog and only the agenda dialog. The Bloquear horário modal on
+ * Equipa writes through `createTimeOffBlockAction` in
+ * `apps/web/app/admin/working-hours/actions.ts`, never touches that file, and
+ * accepted a note-less block for two more days - and `updateTimeOffBlock` let
+ * an existing note be CLEARED, which is the same hole facing backwards.
+ *
+ * IT IS THE ORIGINAL CARD'S OWN WORDING THAT DECIDES THIS. The owner asked that
+ * "a schedule block should ALWAYS carry a note". A rule enforced at one of three
+ * doors is not "always", and the reason it read as done is that the door with
+ * the rule is the one the e2e suite drives. `agenda-blocked-time.spec.ts` has
+ * been creating note-less blocks through the OTHER door, green, the whole time.
+ *
+ * SO IT LIVES BESIDE THE INSERT. Both creates and the update call it, and a
+ * fourth writer added later cannot reach `timeOff` without going past it.
+ *
+ * `time_off.note` STAYS NULLABLE, unchanged from SCHED-18's reasoning: a NOT
+ * NULL column is a claim about every row ever written, and 19 of one therapist's
+ * 35 blocks are already in the past with none. Required at the door, optional in
+ * the archive.
+ */
+function requireNote(note: string | undefined): string {
+  const trimmed = (note ?? "").trim();
+  // TRIMMED, so a space bar is not a reason.
+  if (trimmed === "") throw new AdminError("note_required", "a block must say why");
+  return trimmed;
+}
+
+/**
  * Create a block. Returns the appointments it overlaps so the caller can surface
  * them as a warning. The block IS created regardless (warn, never block/cancel).
  */
@@ -328,7 +359,7 @@ export async function createTimeOffBlock(
   assertCan(actor.role, "schedule:manage");
   validateInput(input);
   const { startsAt, endsAt } = resolveWindow(input);
-  const note = input.note?.trim() || null;
+  const note = requireNote(input.note);
   const scope = await resolveScheduleScope(actor);
 
   return runScoped(actor, async (tx) => {
@@ -392,7 +423,7 @@ export async function createTimeOffBlockBatch(
   // looks like it worked (e.g. an end date before the start date).
   if (dates.length === 0) throw new AdminError("invalid", "recurrence produced no dates");
 
-  const note = input.note?.trim() || null;
+  const note = requireNote(input.note);
   const scope = await resolveScheduleScope(actor);
 
   return runScoped(actor, async (tx) => {
@@ -437,7 +468,7 @@ export async function updateTimeOffBlock(
   validateInput(input);
   if (!id) throw new AdminError("invalid", "id required");
   const { startsAt, endsAt } = resolveWindow(input);
-  const note = input.note?.trim() || null;
+  const note = requireNote(input.note);
   const scope = await resolveScheduleScope(actor);
 
   return runScoped(actor, async (tx) => {

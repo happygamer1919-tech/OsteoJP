@@ -275,6 +275,8 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // SCHED-07: the block dates are the shared picker now (dd/mm/aaaa).
   await fillDate(modal.getByLabel("De"), futureDate(RUN_DAY_BASE + 40));
   await fillDate(modal.getByLabel("Até"), futureDate(RUN_DAY_BASE + 42));
+  // SCHED-25: the note is required on this modal too, in every mode.
+  await modal.getByTestId("block-modal-note").fill("Ferias do E2E Therapist");
 
   // ---- SCHED-23: THE WARNING IS A STEP, AND GUARDAR NO LONGER SAVES -------
   // Pressing Guardar on a prolongada shows the consequence first. Asserted
@@ -319,6 +321,8 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "13:00");
+  // SCHED-25: the note is required on this modal too, in every mode.
+  await modal.getByTestId("block-modal-note").fill("Formacao NESA");
   // SCHED-23 NEGATIVE ARM: a `pontual` block is an hour range on one day and
   // does NOT get the warning. Warning about it would teach reception to click
   // through the warning that matters.

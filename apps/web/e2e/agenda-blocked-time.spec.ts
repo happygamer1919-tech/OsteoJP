@@ -21,6 +21,9 @@ import { fillDate, fillTime } from "./helpers";
 
 const SAVE = "Guardar";
 const BLOCK_DATE = futureDate(RUN_DAY_BASE + 26); // no other spec books this day
+// SCHED-25: every block carries a reason now, so this spec writes one and the
+// band below is asserted to CARRY it.
+const BLOCK_NOTE = "Ausência do E2E Therapist";
 
 function blocksModal(page: Page) {
   return page.getByRole("dialog", { name: new RegExp(`Bloqueios de ${THERAPIST_NAME}`) });
@@ -76,6 +79,21 @@ async function createBlock(page: Page) {
   // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "11:00");
+
+  // ---- SCHED-25: THE NOTE IS REQUIRED ON THIS MODAL TOO ------------------
+  // ASSERTED BEFORE IT IS SUPPLIED, because this helper is the reason the gap
+  // survived. SCHED-18 required a note on the AGENDA dialog, and this spec went
+  // on creating note-less blocks through the EQUIPA modal on every run, green,
+  // for two days - so the suite was demonstrating the hole rather than catching
+  // it. The refusal is native form validation here (the input is `required`),
+  // so the modal simply does not submit.
+  await modal.getByRole("button", { name: SAVE }).click();
+  await expect(
+    modal,
+    "the Equipa modal saved a block with no note - SCHED-25 rule is not on this form",
+  ).toBeVisible();
+
+  await modal.getByTestId("block-modal-note").fill(BLOCK_NOTE);
   await modal.getByRole("button", { name: SAVE }).click();
   await page.waitForURL(/admin\/staff/);
   await expect(modal).toBeHidden();
@@ -106,6 +124,10 @@ test.describe("W9-04: blocked time on the agenda", () => {
     const band = page.getByTestId("agenda-blocked-band");
     await expect(band.first()).toBeVisible();
     await expect(band.first()).toContainText("Tempo bloqueado");
+    // SCHED-19 + SCHED-25: the reason reaches the band from THIS door as well.
+    // The agenda dialog journey is proven in agenda-block-slot.spec.ts; this is
+    // the Equipa modal, which writes through a different action entirely.
+    await expect(band.first().getByTestId("agenda-blocked-note")).toHaveText(BLOCK_NOTE);
 
     // NON-BOOKABLE: the 09:00 and 10:30 slots sit inside the 09:00-11:00 block,
     // so their buttons must be DISABLED - unreachable by mouse AND keyboard.
