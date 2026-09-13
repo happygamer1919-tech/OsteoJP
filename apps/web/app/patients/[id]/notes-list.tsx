@@ -2,11 +2,22 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Pencil } from "lucide-react";
+import { CalendarClock, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
-import { editAppointmentNoteAction } from "@/lib/patients/actions";
+import { deleteNoteAction, editAppointmentNoteAction } from "@/lib/patients/actions";
+import type { NoteRelation } from "@/lib/patients/note-delete";
 import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
+
+/**
+ * NOTES-04: which table a rendered note lives in. `editable` is documented as
+ * true ONLY for unified `appointment_notes` rows and false for every legacy
+ * revision, so it already is the relation; the server re-reads the note in the
+ * relation named, and a wrong name finds no row and deletes nothing.
+ */
+function relationOf(note: PatientNoteRevision): NoteRelation {
+  return note.editable ? "appointment_notes" : "patient_note_revisions";
+}
 
 /**
  * PL-13 (owner ruling 2026-07-30): the patient Notas thread is EDITABLE in place
@@ -110,6 +121,7 @@ function NoteItem({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.content);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function onSave(e: React.FormEvent) {
@@ -136,6 +148,23 @@ function NoteItem({
     setText(note.content);
     setError(null);
     setEditing(false);
+  }
+
+  // NOTES-04: the confirm step is INLINE in the row, not a dialog. This list is
+  // rendered inside the agenda drawer and the Marcações popup, which are already
+  // modal, and a second modal on top of one is where focus and clicks go wrong.
+  function onConfirmDelete() {
+    setError(null);
+    startTransition(async () => {
+      const r = await deleteNoteAction(note.id, relationOf(note));
+      if (!r.ok) {
+        setError(s["errors.generic"]);
+        return;
+      }
+      setConfirmingDelete(false);
+      if (onChanged) await onChanged();
+      else router.refresh();
+    });
   }
 
   return (
@@ -169,20 +198,73 @@ function NoteItem({
         <>
           <div className="flex items-start justify-between gap-2">
             <p className="whitespace-pre-wrap text-sm text-text-primary">{note.content}</p>
-            {note.editable && (
+            <div className="flex shrink-0 items-center gap-1">
+              {note.editable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setText(note.content);
+                    setConfirmingDelete(false);
+                    setEditing(true);
+                  }}
+                  aria-label={s["patients.noteEdit"]}
+                  className="shrink-0 rounded-md p-1 text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                >
+                  <Pencil className="size-4" aria-hidden="true" />
+                </button>
+              )}
+              {/* NOTES-04: every row, legacy revisions included - 0084 covers both relations. */}
               <button
                 type="button"
                 onClick={() => {
-                  setText(note.content);
-                  setEditing(true);
+                  setError(null);
+                  setConfirmingDelete(true);
                 }}
-                aria-label={s["patients.noteEdit"]}
-                className="shrink-0 rounded-md p-1 text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                aria-label={s["patients.noteDelete"]}
+                data-testid="note-delete"
+                className="shrink-0 rounded-md p-1 text-text-secondary hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
               >
-                <Pencil className="size-4" aria-hidden="true" />
+                <Trash2 className="size-4" aria-hidden="true" />
               </button>
-            )}
+            </div>
           </div>
+          {confirmingDelete && (
+            <div
+              role="group"
+              aria-label={s["patients.noteDelete"]}
+              data-testid="note-delete-confirm"
+              className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border-strong p-2"
+            >
+              <p className="text-sm text-text-primary">{s["patients.noteDeleteConfirm"]}</p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setError(null);
+                    setConfirmingDelete(false);
+                  }}
+                >
+                  {s["common.cancel"]}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  loading={pending}
+                  onClick={onConfirmDelete}
+                >
+                  {s["patients.noteDeleteConfirmAction"]}
+                </Button>
+              </div>
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="mt-1 text-sm text-error">
+              {error}
+            </p>
+          )}
           <p className="mt-1 text-xs text-text-secondary">
             {note.authorName ?? s["patients.noteSystemAuthor"]} ·{" "}
             {stamp(note.createdAt)}

@@ -57,6 +57,22 @@ export type AgendaBlockInput = {
  * somebody reading the agenda in three weeks can tell what the block was for -
  * "Atende em LV" is what the September outage's note said, and it was the only
  * thing on the row that recorded anybody's intent.
+ *
+ * === SCHED-25: "ONE PLACE" WAS TWO CALLERS, NOT EVERY CALLER. ===
+ *
+ * The sentence above said ONE PLACE and meant "one place in this file", and
+ * this file is the AGENDA dialog. The Equipa modal writes through
+ * `app/admin/working-hours/actions.ts` -> `createTimeOffBlock`, never reaches
+ * here, and accepted anonymous blocks until SCHED-25 moved the rule beside the
+ * insert (`lib/admin/time-off.ts`, `requireNote`).
+ *
+ * THIS CHECK STAYS, AND IT IS NOT A RESTATEMENT OF THE RULE. It is a
+ * fast-refusal so the dialog gets `note_required` without a round trip through
+ * the permission check and the scope resolution. The two agree BY CONSTRUCTION
+ * rather than by care: `requireNote` throws `AdminError("note_required")`, the
+ * catch below maps an AdminError to its own code, so both arms of this function
+ * return the same string whichever one fires. Deleting this block changes the
+ * latency and nothing else.
  */
 function blockNote(note: string | undefined): string | null {
   const trimmed = (note ?? "").trim();

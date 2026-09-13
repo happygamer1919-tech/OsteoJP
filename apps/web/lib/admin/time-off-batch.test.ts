@@ -66,6 +66,11 @@ const base = {
   end: { kind: "count", count: 4 } as const,
   startTime: "09:00",
   endTime: "10:00",
+  // SCHED-25: a note is now required at the write layer, on every door and in
+  // every mode. It is on `base` rather than added per test so the cases below
+  // stay about the recurrence, which is what they were written to prove; the
+  // rule itself has its own case at the bottom of this file.
+  note: "Formação NESA",
 };
 
 beforeEach(() => vi.clearAllMocks());

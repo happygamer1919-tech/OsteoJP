@@ -11,7 +11,10 @@ import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
  */
 vi.mock("server-only", () => ({}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
-vi.mock("@/lib/patients/actions", () => ({ editAppointmentNoteAction: vi.fn() }));
+vi.mock("@/lib/patients/actions", () => ({
+  editAppointmentNoteAction: vi.fn(),
+  deleteNoteAction: vi.fn(),
+}));
 vi.mock("@osteojp/ui", () => ({
   Button: ({ children }: { children?: ReactNode }) =>
     createElement("button", null, children as ReactNode),
@@ -62,6 +65,16 @@ describe("NotesList — note to marcação link (PL-17)", () => {
     const html = renderToStaticMarkup(createElement(NotesList, { notes: [linked] }));
     expect(html).toContain('data-testid="note-appointment-line"');
     expect(html).not.toContain('data-testid="note-open-appointment"');
+  });
+
+  it("NOTES-04: every note row offers delete, a legacy revision included, and no confirm until asked", () => {
+    const legacy: PatientNoteRevision = { ...base, id: "legacy-1", editable: false };
+    const html = renderToStaticMarkup(createElement(NotesList, { notes: [base, legacy] }));
+    // Two rows, two delete controls: the legacy row has no pencil but is deletable.
+    expect(html.match(/data-testid="note-delete"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Editar nota"/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Eliminar nota"');
+    expect(html).not.toContain('data-testid="note-delete-confirm"');
   });
 
   it("shows no marcação line at all for a patient-level note", () => {

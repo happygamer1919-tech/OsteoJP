@@ -439,13 +439,29 @@ export function TherapistBlocks({
               </div>
             )}
 
+            {/* SCHED-25 - REQUIRED, LIKE EVERY OTHER FIELD ON THIS FORM.
+                `startDate`, `startTime`, `endTime` and `until` have carried
+                `required` all along; the note did not, which is how the Equipa
+                modal kept writing anonymous blocks for two days after SCHED-18
+                closed the same hole on the agenda dialog.
+
+                THE SERVER IS THE ENFORCEMENT (createTimeOffBlock ->
+                requireNote). This attribute is the COURTESY: it says so before
+                a round trip and a redirect, and it cannot be the rule, because
+                a form post that never renders this component would sail past
+                it. Both, deliberately - the same shape as `required` on the
+                dates. */}
             <label className="flex flex-col gap-1">
-              <span className={adminLabel}>{labels.note}</span>
+              <span className={adminLabel}>
+                {labels.note} <span aria-hidden="true">*</span>
+              </span>
               <input
                 type="text"
                 name="note"
+                required
                 defaultValue={f?.note ?? ""}
                 aria-label={labels.note}
+                data-testid="block-modal-note"
                 className={adminInputInline}
               />
             </label>

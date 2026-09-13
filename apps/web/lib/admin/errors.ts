@@ -43,6 +43,13 @@ export type AdminErrorCode =
   // be able to say so. Distinct from `invalid`, which stays the answer for a
   // malformed or self-overlapping day.
   | "dated_conflict"
+  // SCHED-25: a schedule block was written with no note. Deliberately NOT
+  // `invalid`, which is where a missing date or a backwards hour range lands:
+  // the two point at different boxes on the same form, and an operator told
+  // "invalid" when the dates are fine goes and re-checks the dates. The agenda
+  // dialog has had its own distinct `note_required` since SCHED-18 for exactly
+  // this reason; this is the same refusal reaching the Equipa modal.
+  | "note_required"
   | "invalid";
 
 export class AdminError extends Error {

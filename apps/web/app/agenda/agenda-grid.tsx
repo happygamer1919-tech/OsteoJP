@@ -744,8 +744,26 @@ function BlockedBand({
               </span>
             </>
           ) : (
+            /**
+             * SCHED-25 - THE EMPTY STATE SAYS THE NOTE IS MISSING, NOT NOTHING.
+             *
+             * From SCHED-25 every door that writes a block requires a note, so a
+             * band with none is necessarily a row written BEFORE that rule - 19
+             * of one therapist's 35 blocks are already in that state. "Tempo
+             * bloqueado" alone cannot tell the reader whether the block had no
+             * reason or whether the reason failed to reach the screen, and those
+             * are the two readings that matter when somebody is deciding if a
+             * block is a mistake to undo.
+             *
+             * IT IS SECONDARY AND UNEMPHASISED, deliberately. The note chip on
+             * the filled arm is the headline; this is a footnote on a hatch, and
+             * making it loud would turn every legacy block into an alarm.
+             */
             <span className="block truncate text-xs font-medium text-v2-text-secondary">
-              {s["agenda.blockedTime"]}
+              {s["agenda.blockedTime"]}{" "}
+              <span data-testid="agenda-blocked-no-note" className="font-normal">
+                · {s["agenda.blockedNoNote"]}
+              </span>
             </span>
           )}
         </span>

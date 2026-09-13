@@ -228,9 +228,35 @@ export function PatientForm({
     refuse({ field: "nif", message: nifMessage(problem) }, false);
   }
 
+  /**
+   * UX-03 - `max-w-3xl`, AND THE FORM WIDTH IS THE THING UX-02 COULD NOT REACH.
+   *
+   * UX-02 (#1253) moved the insurance block out of half a form column and took
+   * Seguradora from 94px to 220px. The clinic reported the fields as too small
+   * AGAIN on 2026-09-12, and the re-measurement says why: at 1280, 1440 AND
+   * 1728 viewport widths the row is 576px. Every one of them. `max-w-xl` is
+   * 576px, so the row was already taking ALL of the form, and no rebalance
+   * inside it can add a pixel - it can only move width from one field to the
+   * other.
+   *
+   * MEASURED, three viewports, three rows each (perf harness, 2026-09-12):
+   *   Seguradora 220px / Número 264px / row 576px, IDENTICAL at 1280, 1440,
+   *   1728. "Multicare Seguros de Saúde" needs 218px of the 218px available -
+   *   it fits with ZERO slack, and one more character clips.
+   *
+   * THE PAGE ALREADY ALLOWS IT. Both callers wrap this form in
+   * `mx-auto w-full max-w-4xl px-6` (patients/new/page.tsx:37 and
+   * patients/[id]/edit/page.tsx:44), a 848px content box. The form was taking
+   * 576 of it and leaving 272 empty, plus 1152px of empty window at 1728.
+   * 768px stays inside that box, so nothing reflows outside the page.
+   *
+   * IT WIDENS EVERY FIELD ON THIS FORM, not only the insurance row, and that
+   * is stated rather than hidden: the constraint was never the insurance
+   * block's own classes.
+   */
   return (
     <FieldErrorContext.Provider value={error}>
-    <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-xl">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-3xl">
       <Field label={s["patients.fieldFullName"]} required errorFor="fullName">
         <input
           required
@@ -607,9 +633,14 @@ function HealthInsuranceFields({
         // wholesale, exactly like the lote rows in the booking drawer.
         // UX-02 - A GRID, NOT A WRAPPING FLEX ROW.
         //
-        // The number column is wider than the insurer's (1.2fr against 1fr):
-        // an insurer name is a word or two and a policy number is fifteen
-        // digits that must be readable end to end to be checked against a card.
+        // UX-03 FLIPPED THE RATIO, AND IT WAS BACKWARDS ON A MEASUREMENT RATHER
+        // THAN ON TASTE. It read 1fr/1.2fr, giving the WIDER column to the
+        // number "because a policy number is fifteen digits that must be
+        // readable end to end". Measured in a browser at 14px: those fifteen
+        // digits render ~110px, and "Multicare Seguros de Saude" renders 218px.
+        // The long value was in the narrow box - Seguradora fitted its longest
+        // realistic name with ZERO pixels of slack while Número had ~150px
+        // spare. 1.2fr/1fr puts the space where the characters are.
         //
         // `auto` FOR REMOVER, so it takes what it needs and gives the rest
         // away - and the row no longer WRAPS, which is the other half. Under
@@ -619,7 +650,7 @@ function HealthInsuranceFields({
         // single column is the only honest layout.
         <div
           key={i}
-          className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] sm:items-end"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] sm:items-end"
           data-testid="insurance-row"
         >
           <label className="flex min-w-0 flex-col gap-1 text-sm">

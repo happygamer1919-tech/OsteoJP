@@ -54,6 +54,12 @@ import {
   listPatientNotes,
   type PatientNoteRevision,
 } from "./note-revisions";
+import {
+  deleteNoteInTx,
+  isNoteRelation,
+  readNotePatientId,
+  type NoteRelation,
+} from "./note-delete";
 import type { Patient } from "./types";
 
 /**
@@ -794,6 +800,57 @@ export async function editAppointmentNoteAction(
   revalidatePatient(patientId);
   revalidatePath("/agenda");
   revalidatePath("/marcacoes");
+  return { ok: true };
+}
+
+/**
+ * NOTES-04 — delete one note, from any surface that renders `NotesList`.
+ *
+ * THE DATABASE ALREADY PERMITS IT: 0084 added a tenant-scoped DELETE policy to
+ * both note relations and left the finer rule HERE, beside the edit rule above.
+ * So the gate is the edit gate, unchanged: `patients:write` (owner, admin,
+ * reception, therapist), and a therapist only for a note of one of their OWN
+ * patients - the note's patient is read server-side, then `getPatient` applies
+ * `therapistPatientScope`. The relation is named by the caller because a legacy
+ * revision and a unified note are different tables; naming the wrong one finds
+ * no row and deletes nothing.
+ *
+ * AUDITED IN THE SAME TRANSACTION AS THE DELETE (hard rule 6). The row carries
+ * ids, the relation and a count - never the note's text, which the metadata
+ * contract refuses and which is exactly what a deletion must not copy into an
+ * append-only log.
+ */
+export async function deleteNoteAction(
+  noteId: string,
+  relation: NoteRelation,
+): Promise<{ ok: boolean }> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:write");
+  if (!noteId || !isNoteRelation(relation)) return { ok: false };
+  const patientId = await runScoped(ctx, (tx) => readNotePatientId(tx, relation, noteId));
+  if (!patientId) return { ok: false }; // not found / cross-tenant / wrong relation
+  const patient = await getPatient(patientId, { includeDeleted: true });
+  if (!patient) return { ok: false };
+  const deleted = await runScoped(ctx, async (tx) => {
+    const gone = await deleteNoteInTx(tx, relation, noteId);
+    if (!gone) return null;
+    await writeAudit(tx, ctx, {
+      action: "patient.note_delete",
+      entityId: gone.patientId,
+      metadata: {
+        noteId,
+        relation,
+        appointmentId: gone.appointmentId,
+        legacyTwinsDeleted: gone.legacyTwinsDeleted,
+      },
+    });
+    return gone;
+  });
+  if (!deleted) return { ok: false };
+  revalidatePatient(deleted.patientId);
+  revalidatePath("/agenda");
+  revalidatePath("/marcacoes");
+  revalidatePath("/recuperacao");
   return { ok: true };
 }
 
