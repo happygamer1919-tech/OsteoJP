@@ -4282,3 +4282,22 @@ green lane against a fixture under the production ids: preview, a mid-transactio
 race that must fail two post-checks and roll back, a wrong count, the apply, a
 second apply, the rollback preview, the rollback (restoring the exact starting
 fingerprint), and a rollback with nothing to reverse.
+
+## 2026-09-13 - PURPLE, P-A / OBS-07: outside_app is import residue, not an un-emitted path
+
+The reminder backfill's `outside_app` class is only "a staff-origin appointment with
+no appointment.create audit row", a negative test. The diagnosis was dispatched on
+2026-09-12, never came back, and was reassigned to PURPLE.
+
+- **Read rather than reasoned.** `scripts/reminder-outside-app-read-2026-09-13.sql`
+  carries the backfill's classification byte for byte (a test holds the copies equal)
+  and restates its row filters, so it diagnoses exactly the set
+  `obs-05-backfill-emit.mjs --classes outside_app` would emit for. Run read-only against
+  production on 2026-09-13 by the lane: 476 rows, all 476 appointments and their patients
+  in the import ledger, zero audit rows.
+- **Why the importer lands there by construction.** `upsert.ts` writes no audit row, no
+  created_by and no batch_id, and leaves origin at 'staff'. It is registered BY DESIGN in
+  `creation-paths-emit-reminders.test.ts`, so this is not a defect to fix.
+- **Not decided here:** whether bookings migrated from Fisiozero get reminders. That is the
+  owner's, carded as OBS-07, with the recommendation to leave out the 23 rows that overlap a
+  live twin booking. The backfill has no filter for twins today.
