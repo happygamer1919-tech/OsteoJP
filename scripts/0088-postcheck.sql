@@ -69,10 +69,10 @@ SELECT patient, tenant_id, '0088 post-check patient (rolled back)' FROM pc_fixtu
 INSERT INTO public.appointments
   (id, tenant_id, patient_id, practitioner_id, practitioner_2_id, location_id, starts_at, ends_at, status, room)
 SELECT a_machine, tenant_id, patient, booker, machine, loc_cb,
-       now() + interval '400 days', now() + interval '400 days 45 minutes', 'scheduled', NULL FROM pc_fixture
+       now() + interval '400 days', now() + interval '400 days 45 minutes', 'scheduled'::public.appointment_status, NULL FROM pc_fixture
 UNION ALL
 SELECT a_person, tenant_id, patient, booker, person, loc_cb,
-       now() + interval '400 days 2 hours', now() + interval '400 days 2 hours 45 minutes', 'scheduled', NULL FROM pc_fixture;
+       now() + interval '400 days 2 hours', now() + interval '400 days 2 hours 45 minutes', 'scheduled'::public.appointment_status, NULL FROM pc_fixture;
 
 CREATE TEMP TABLE pc_arm (probe text, outcome text) ON COMMIT DROP;
 GRANT SELECT ON pc_fixture TO authenticated;

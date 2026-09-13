@@ -8,7 +8,7 @@ substitute. Any `STOP:` line, any `FAIL` verdict, or any `ERROR` halts the sitti
 | Branch | `db/0088-nesa-second-participant-visible` (held, never armed, merges only after this apply) |
 | Migration | `packages/db/migrations/0088_nesa_second_participant_visible.sql`, sha256 `e9217cc59ddfffced403d876c473908639b9a2df5726173f18ba1ced5dc2ea56` |
 | Pre-check | `scripts/0088-precheck.sql`, sha256 `dc7b63c40bc7c504253c4093d77b8d9986fbd611a0bd17bfaa668f0564b025c3` |
-| Post-check | `scripts/0088-postcheck.sql`, sha256 `069603454b5188d4637a3b892149313e0f67be96cc71cc6bbcc038c0f7224c4a` |
+| Post-check | `scripts/0088-postcheck.sql`, sha256 `530bd9e5f7890e01a114eaf62f90937d4c90cbdaff861fbc9a27ded6b558f5bf` |
 | Journal | tag `0088_nesa_second_participant_visible`, idx 85, `when 1788201200000`, above every `when` on main |
 | Depends on | 0086 (`d3eb9e41…`) and 0087 (`ec6556aa…`) applied, by file hash (pre-check rows 3 and 4) |
 | What it does | One PERMISSIVE FOR SELECT policy on `public.appointments`, TO `authenticated`: a therapist may READ a booking whose Terapeuta 2 is a shared resource at a clinic they share with it, recorded at one of their clinics. No new function, no column, no data. `appointments_rls` is not touched |
@@ -88,7 +88,7 @@ touch /tmp/0088-applied.ok
 (
 set -eo pipefail
 SHA0088=e9217cc59ddfffced403d876c473908639b9a2df5726173f18ba1ced5dc2ea56
-SHAPOST=069603454b5188d4637a3b892149313e0f67be96cc71cc6bbcc038c0f7224c4a
+SHAPOST=530bd9e5f7890e01a114eaf62f90937d4c90cbdaff861fbc9a27ded6b558f5bf
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/0088-postcheck.out
