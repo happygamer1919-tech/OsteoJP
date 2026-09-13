@@ -101,7 +101,9 @@ describe("therapist-blocks asserts on identity, not on a shared badge label", ()
     // No dotall flag: the tsconfig target predates it, and the pontualRow
     // declaration is a single line anyway.
     expect(BODY).toMatch(/const pontualRow = .*filter\(\{ hasText: ptDate\(date\) \}\)/);
-    expect(BODY).toMatch(/const prolongadaRow = [\s\S]*?ptDate\(futureDate\(RUN_DAY_BASE \+ 40\)\)/);
+    // + 37 since 2026-09-13: the absence moved off days 40-42, which other specs
+    // book for the same therapist (scripts/e2e-spec-days-do-not-collide.test.mjs).
+    expect(BODY).toMatch(/const prolongadaRow = [\s\S]*?ptDate\(futureDate\(RUN_DAY_BASE \+ 37\)\)/);
     // And the badge is still checked — INSIDE the identified row, where it
     // describes that block rather than counting the population.
     expect(BODY).toMatch(/expect\(pontualRow\)\.toContainText\("Bloqueio pontual"\)/);
