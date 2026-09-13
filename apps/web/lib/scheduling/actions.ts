@@ -42,6 +42,7 @@ import {
 } from "@/lib/auth/viewer-locations";
 import { sharedResourceLocationAllowed, type SharedResource } from "./shared-resource-guard";
 import { listSharedResources, listSharedResourcesTx } from "./shared-resources";
+import { secondParticipantCheck } from "./second-participant";
 import {
   emitCancelledNotification,
   emitConfirmedNotification,
@@ -608,6 +609,15 @@ export async function createAppointment(
   if (actor.role === "therapist" && input.practitionerId !== actor.userId && !shared.resource) {
     return { ok: false, error: "forbidden" };
   }
+  // SCHED-29: a therapist's "Terapeuta 2" is a shared resource (NESA) installed
+  // at this clinic, never a person. Owner, admin and reception are unchanged.
+  // Refused at the door, before any read of availability or conflicts.
+  const second = await secondParticipantCheck(actor, {
+    practitionerTwoId: input.practitionerTwoId,
+    primaryId: input.practitionerId,
+    locationId: input.locationId,
+  });
+  if (!second.ok) return { ok: false, error: second.error };
   const firstStart = new Date(input.startsAt);
   const firstEnd = new Date(input.endsAt);
   if (!isValidInterval(firstStart, firstEnd)) {
@@ -1127,6 +1137,19 @@ export async function cloneAppointment(
           tx,
         );
         if (!shared.ok) return { ok: false, error: "shared_resource_location" };
+        // SCHED-29: a clone COPIES the source's second participant, so a
+        // therapist's "Marcar novamente" is held to the same rule as their
+        // create - otherwise it would be the door that still writes a person.
+        const second = await secondParticipantCheck(
+          actor,
+          {
+            practitionerTwoId: source.practitionerTwoId,
+            primaryId: source.practitionerId,
+            locationId: source.locationId,
+          },
+          tx,
+        );
+        if (!second.ok) return { ok: false, error: second.error };
 
         const values = buildClonedAppointment(source, newStart, {
           tenantId: actor.tenantId,
