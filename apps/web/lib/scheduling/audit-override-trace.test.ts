@@ -28,7 +28,11 @@ import { join } from "node:path";
  */
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// updateTag joined the mock with SCHED-28: correctAppointmentEstadoAction calls
+// revalidateAppointmentSurfaces() directly (not through afterCommit), and that
+// helper drops the stat-strip tag. Without it the action threw after its audit
+// write, which is how the first run of the FALSE arm below failed.
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn() }));
 vi.mock("@/lib/auth/context", () => ({
   requireRequestContext: vi.fn(),
   runScoped: vi.fn(),
@@ -55,7 +59,12 @@ vi.mock("@/lib/notifications/centre", () => ({
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { writeAppointmentAudit } from "./audit";
-import { updateAppointment, cancelAppointment, rescheduleAppointment } from "./actions";
+import {
+  updateAppointment,
+  cancelAppointment,
+  rescheduleAppointment,
+  correctAppointmentEstadoAction,
+} from "./actions";
 import type { RequestContext } from "@osteojp/auth";
 import type { AppointmentStatusValue } from "./types";
 
@@ -210,15 +219,36 @@ describe("every path that reads allowConflict also records it", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("the readers it found are the three expected ones, so the scan is real", () => {
+  it("the readers it found are the four expected ones, so the scan is real", () => {
     // If the READS pattern silently stopped matching, the assertion above would
     // pass over an empty set. Pin the population it is actually checking.
+    //
+    // SCHED-28 added the fourth, deliberately: "Corrigir estado" into Concluída
+    // now runs a conflict check and honours "Guardar mesmo assim", so it reads
+    // the override and must record it like the other three.
     const READS = /\b(?:input|opts\?\.|opts\.)\s*\.?allowConflict\b/;
     const readers = chunks.filter((c) => READS.test(c.src)).map((c) => c.name).sort();
     expect(readers).toEqual([
+      "correctAppointmentEstadoAction",
       "createAppointment",
       "rescheduleAppointment",
       "updateAppointment",
     ]);
+  });
+});
+
+describe("SCHED-28: Corrigir estado records the override too", () => {
+  it("records allowConflict = FALSE on a correction that did not use it", async () => {
+    seriesRow = { ...seriesRow, status: "cancelled" };
+    const r = await correctAppointmentEstadoAction("appt-1", "completed");
+    expect(r.ok).toBe(true);
+    expect(meta()).toHaveProperty("allowConflict", false);
+    expect(meta()).toMatchObject({ fromStatus: "cancelled", toStatus: "completed", correction: true });
+  });
+
+  it("records allowConflict = TRUE when Guardar mesmo assim was pressed", async () => {
+    seriesRow = { ...seriesRow, status: "cancelled" };
+    await correctAppointmentEstadoAction("appt-1", "completed", { allowConflict: true });
+    expect(meta()).toMatchObject({ allowConflict: true });
   });
 });
