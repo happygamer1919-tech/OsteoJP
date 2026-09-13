@@ -39,6 +39,7 @@ import {
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
+import { secondParticipantOptionsForTherapist } from "@/lib/scheduling/shared-resource-guard";
 import {
   getPatientPackBalanceAction,
   linkAppointmentToPackAction,
@@ -732,6 +733,13 @@ export function AppointmentDrawer({
   // locations. With none - every clinic until the NESA migration is applied -
   // the drawer renders exactly as before.
   const sharedResourceOptions = selfLocked ? options.sharedResources ?? [] : [];
+  // SCHED-29: a self-locked therapist's "Terapeuta 2" is NESA at the chosen
+  // clinic and nobody else, so at LV it is empty and the field is not shown.
+  // Everyone else keeps the full list they had. The server re-checks it
+  // (secondParticipantCheck); this list is the offer, not the permission.
+  const practitionerTwoOptions = selfLocked
+    ? secondParticipantOptionsForTherapist(sharedResourceOptions, form.locationId || null, form.practitionerId)
+    : options.therapists;
   // Scope ONLY after the user actively picks a location (userChangedLocation).
   // On open, the default location keeps the FULL list, so a therapist-first
   // booking is unaffected and an unassigned therapist stays bookable until the
@@ -925,7 +933,13 @@ export function AppointmentDrawer({
           room: form.room || null,
           // Optional secondary participants (W4-19) — display-only linkage.
           patientTwoId: form.patientTwoId || null,
-          practitionerTwoId: form.practitionerTwoId || null,
+          // SCHED-29: only a value the CURRENT options still offer. NESA picked at
+          // CB and then a switch to LV must not submit a choice the form no longer
+          // shows; the server would refuse it, but the form should not send it.
+          practitionerTwoId:
+            form.practitionerTwoId && practitionerTwoOptions.some((o) => o.id === form.practitionerTwoId)
+              ? form.practitionerTwoId
+              : null,
           startsAt: startISO,
           endsAt: endISO,
           notes: form.notes || null,
@@ -1408,17 +1422,21 @@ export function AppointmentDrawer({
                   emptyLabel={s["appointment.patientSearchEmpty"]}
                 />
               </div>
-              <Field label={s["appointment.therapistTwo"]}>
-                <Select
-                  value={form.practitionerTwoId}
-                  onChange={(e) => set("practitionerTwoId", e.target.value)}
-                >
-                  <option value="">{s["appointment.selectTherapist"]}</option>
-                  {options.therapists.map((o) => (
-                    <option key={o.id} value={o.id}>{o.label}</option>
-                  ))}
-                </Select>
-              </Field>
+              {/* SCHED-29: empty for a therapist at a clinic without NESA, and
+                  then not rendered at all rather than shown with nothing in it. */}
+              {practitionerTwoOptions.length > 0 && (
+                <Field label={s["appointment.therapistTwo"]}>
+                  <Select
+                    value={form.practitionerTwoId}
+                    onChange={(e) => set("practitionerTwoId", e.target.value)}
+                  >
+                    <option value="">{s["appointment.selectTherapist"]}</option>
+                    {practitionerTwoOptions.map((o) => (
+                      <option key={o.id} value={o.id}>{o.label}</option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
             </div>
             )}
           </details>

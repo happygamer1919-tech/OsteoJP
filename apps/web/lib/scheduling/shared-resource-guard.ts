@@ -54,3 +54,57 @@ export function sharedResourcesForViewer(
 ): SharedResource[] {
   return resources.filter((r) => r.locationIds.some((l) => viewerLocationIds.includes(l)));
 }
+
+/**
+ * SCHED-29 - WHO A THERAPIST MAY NAME AS "TERAPEUTA 2".
+ *
+ * THE REQUIREMENT (owner, 2026-09-13): a therapist booking at Castelo Branco
+ * selects themselves as primary and NESA as the second participant. Nobody else,
+ * and no NESA option at Linda-a-Velha. So for a THERAPIST the second participant
+ * is a shared resource installed at the booking's clinic, and never a person.
+ * Owner, admin and reception keep the full list they had.
+ *
+ * NOT A DATABASE RULE, AND NOTHING THERE NEEDS WIDENING. users_tenant_isolation
+ * (0001) already lets a therapist read NESA's row, and a therapist-primary +
+ * NESA-second appointment passes 0086's plain therapist arm
+ * (practitioner_id = auth.uid()) in USING and WITH CHECK. What was missing is
+ * that the app offered, and accepted, anyone at all.
+ *
+ * The options a therapist's "Terapeuta 2" shows: resources installed at the
+ * chosen clinic, never the primary itself. `resources` is what the agenda page
+ * already hands the drawer - the resources the therapist shares a clinic with -
+ * so an empty list here is exactly "no NESA at this clinic".
+ */
+export function secondParticipantOptionsForTherapist(
+  resources: readonly SharedResource[],
+  targetLocationId: string | null,
+  primaryId: string,
+): SharedResource[] {
+  if (!targetLocationId) return [];
+  return resources.filter((r) => r.id !== primaryId && r.locationIds.includes(targetLocationId));
+}
+
+/**
+ * The same rule on the server, where it is enforced. Three answers, because the
+ * two refusals mean different things to the person reading them:
+ *
+ *   - "not_a_resource": a person, an unknown id, or the primary named twice.
+ *     No form a therapist is shown can produce it, so it is a forged or stale
+ *     request, answered as forbidden.
+ *   - "resource_location": NESA at a clinic where it is not installed, or where
+ *     the therapist does not work. The SCHED-17 sentence already says that.
+ */
+export function therapistSecondParticipantVerdict(args: {
+  practitionerTwoId: string | null;
+  primaryId: string;
+  targetLocationId: string;
+  actorLocationIds: readonly string[];
+  resources: readonly SharedResource[];
+}): "ok" | "not_a_resource" | "resource_location" {
+  if (!args.practitionerTwoId) return "ok";
+  const resource = args.resources.find((r) => r.id === args.practitionerTwoId);
+  if (!resource || resource.id === args.primaryId) return "not_a_resource";
+  if (!resource.locationIds.includes(args.targetLocationId)) return "resource_location";
+  if (!args.actorLocationIds.includes(args.targetLocationId)) return "resource_location";
+  return "ok";
+}
