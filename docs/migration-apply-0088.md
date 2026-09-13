@@ -162,7 +162,27 @@ echo "0088 APPLIED. 14/14 pre-check OK, arms V1 to V6 OK, 9/9 post-check OK."
 
 ## Rehearsed
 
-PENDING: filled in by the rehearsal before this PR is marked ready.
+Both stages were extracted from this document by a script and run **under `zsh -f`** (no rc files, the shell the owner pastes into) on 2026-09-13, against the BLUE lane database (Supabase local, Postgres 17), whose schema is main's `supabase/migrations` through 0087. The lane was given the drizzle journal production has after 0087: 85 rows, one per journal entry through `0087_guest_clinical_intake`, each carrying its real file sha256 and its `when`. The apply ran from a clean detached worktree of this branch.
+
+Only four things were replaced, mechanically, with the count of each asserted:
+- `/tmp/` became a scratch directory (7 occurrences in stage 1, 9 in stage 2);
+- the `cd` line became the rehearsal worktree;
+- the env-source line became `export DATABASE_URL_DIRECT=<the lane>`;
+- the target guard became an echo.
+
+| Run | Result |
+|---|---|
+| A: stage 2 first | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
+| B: stage 1 | `applying from d522877f`, SR-58 assertions pass, pre-check **14 OK / 0 FAIL**, `verified-migrate` pending 1 `[0088_nesa_second_participant_visible]`, journal **85 → 86, delta 1**, sha256 present, exit 0 |
+| C: stage 2 | carries parsed as `journal_before=85 policies_before=2 secdef_before=24`, `ARMS V1 V2 V3 V4 V5 V6 OK`, post-check **9 OK / 0 FAIL**, `0088 APPLIED`, exit 0 |
+| D: stage 2, pre-check transcript backdated 61 minutes | exit 1, `STOP: stage 1's transcript is over an hour old; it is not this sitting's` |
+| E: stage 2, marker removed | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
+
+**Negative control on the pre-check:** run against the lane with 0088 applied it reads **10 OK / 4 FAIL**, on rows 2 (hash present), 5 (the `when` guard), 6 (the policy exists) and 11 (three policies).
+
+**Found by rehearsing, fixed before this was marked ready:** the first post-check inserted the arms' two bookings through a `UNION ALL` whose bare `'scheduled'` literal resolved to `text`, and `appointments.status` is the `appointment_status` enum. Stage 2 halted on it with psql exit 3 and printed no verdict, which is the refusal working; the literal is cast now, the post-check's sha256 above is the fixed file's, and runs B to E are the second rehearsal on a lane reset to the pre-apply state.
+
+**The isolation suite, separately:** `packages/db/tests/appointments-shared-resource-second-participant.db.test.ts` 11/11 and `apps/web/lib/scheduling/nesa-agenda-second-participant.db.test.ts` 5/5 on the lane with 0088 applied; the whole packages/db DB-gated suite 91 files, 1286/1286.
 
 ## Order of the sitting
 
