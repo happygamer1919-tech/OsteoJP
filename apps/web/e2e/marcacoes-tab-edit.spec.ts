@@ -243,6 +243,81 @@ test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
   await expect(cancelled.getByTestId("corrigir-estado")).toHaveCount(1);
 });
 
+/**
+ * SCHED-28 — Corrigir estado into Concluída re-checks the slot.
+ *
+ * Measured before this test existed (BLUE, 2026-09-12, lane database, rolled
+ * back): a Cancelada appointment moved to Concluída over a booking made AFTER
+ * the cancel was accepted, leaving two blocking rows in one hour for one
+ * therapist. The cancel released the slot (0052), the second booking took it
+ * lawfully, and the correction door put the first one back with no check.
+ *
+ * Day 58 is this test's own: 51-55 belong to this file, and 58 is used by no
+ * other spec. The two rows share date and time on purpose, so each is picked by
+ * its estado text rather than by the time alone.
+ */
+test("Corrigir estado: Cancelada to Concluída over a slot booked since is a conflict, then overridable (SCHED-28)", async ({
+  page,
+}, testInfo) => {
+  const date = bandDay(58, testInfo.retry);
+  /**
+   * The row whose STATUS CHIP reads `label`. Not `filter({ hasText })` on the
+   * card: a row keeps its Corrigir/Estado select in the DOM (inside the closed
+   * disclosure), and those <option>s carry every estado's name, so a corrected
+   * Concluída row still "has text" Cancelada. The first fixed-code run failed
+   * on exactly that, with the correction written correctly. StatusChip renders
+   * a span.rounded-full holding only the label; no <option> is one.
+   */
+  const withChip = (label: string) =>
+    row(page, date, "10:00").filter({
+      has: page.locator("span.rounded-full", { hasText: new RegExp(`^${label}$`) }),
+    });
+
+  /* ---- A: booked, then cancelled, which releases the slot ---- */
+  await book(page, PATIENTS.maria.name, date, "10:00");
+  await openConsultas(page);
+  const a = row(page, date, "10:00");
+  await a.getByText("Gerir marcação").click();
+  await a.getByRole("button", { name: /Cancelar marcação/i }).click();
+  const cancelDrawer = page.getByRole("dialog");
+  await cancelDrawer.getByRole("button", { name: /Cancelar marcação/i }).click();
+  await expect(withChip("Cancelada")).toHaveCount(1, { timeout: 8_000 });
+
+  /* ---- B: the same therapist and hour, booked after the cancel ---- */
+  await book(page, PATIENTS.maria.name, date, "10:00");
+
+  /* ---- Correct A to Concluída: the slot is taken, so it must be refused ---- */
+  await openConsultas(page);
+  const cancelled = withChip("Cancelada");
+  await expect(cancelled).toHaveCount(1, { timeout: 8_000 });
+  await expect(withChip("Agendada")).toHaveCount(1);
+  await cancelled.getByText("Gerir marcação").click();
+  const corrigir = cancelled.getByTestId("corrigir-estado");
+  await corrigir.getByLabel("Corrigir estado").selectOption({ label: "Concluída" });
+  await corrigir.getByRole("button", { name: /^Corrigir$/ }).click();
+
+  await expect(corrigir.getByText(/Conflito/)).toBeVisible({ timeout: 8_000 });
+  const saveAnyway = corrigir.getByRole("button", { name: /Guardar mesmo assim/i });
+  await expect(saveAnyway).toBeVisible();
+
+  // Refused means NOTHING was written: a fresh read still says Cancelada.
+  await openConsultas(page);
+  await expect(withChip("Cancelada")).toHaveCount(1, { timeout: 8_000 });
+  await expect(withChip("Concluída")).toHaveCount(0);
+
+  /* ---- The explicit override still works, exactly as on a reschedule ---- */
+  const again = withChip("Cancelada");
+  await again.getByText("Gerir marcação").click();
+  const corrigir2 = again.getByTestId("corrigir-estado");
+  await corrigir2.getByLabel("Corrigir estado").selectOption({ label: "Concluída" });
+  await corrigir2.getByRole("button", { name: /^Corrigir$/ }).click();
+  await corrigir2.getByRole("button", { name: /Guardar mesmo assim/i }).click();
+  await expect(withChip("Cancelada")).toHaveCount(0, { timeout: 8_000 });
+  await expect(withChip("Concluída")).toHaveCount(1);
+  // B was never touched: the override moved A, not the booking that held the slot.
+  await expect(withChip("Agendada")).toHaveCount(1);
+});
+
 test("PL-02 (b): the Marcações row shows who created the appointment and when", async ({
   page,
 }, testInfo) => {

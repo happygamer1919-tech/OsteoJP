@@ -774,3 +774,14 @@ Six loops authored under `docs/loops/wave-11/`, five rulings/closures recorded, 
 - **Audit:** `patient.note_delete`, entity the patient, in the delete's own transaction; metadata is ids, the relation and a count, never the note text (the metadata contract is asserted in the unit test).
 - **Confirm step inline in the row**, not a dialog: the list already lives inside the agenda drawer and the Marcações popup, both modal.
 - **Found, not changed:** editing a note writes no audit row (pre-existing; deletion now does).
+
+## 2026-09-13 - SCHED-28 Corrigir estado into Concluída re-checks the slot (BLUE; live defect, its own PR)
+
+- **The defect, measured then reproduced.** `correctAppointmentEstadoAction` ran no conflict check. On 2026-09-12 a lane database accepted a Cancelada row moved to Concluída over a booking made after the cancel (0061 refuses only two CONFIRMED rows). The new e2e (marcacoes-tab-edit.spec.ts, SCHED-28) failed on the unchanged code at the conflict assertion, and its snapshot showed one hour holding a Concluída row and an Agendada row for one therapist.
+- **Which corrections are checked, derived.** Only the two that put a row back into its slot: `cancelled` or `no_show` into `completed` (`correctionEntersBlockingSet`). The other four legal corrections leave the slot released or move between two non-blocking states.
+- **Same order as every other booking door:** slot lock, then `findConflictsForWindow` + `blockingConflicts` excluding the row itself, then the write. "Guardar mesmo assim" overrides it, as on a reschedule (owner, 2026-09-13, Option A as recommended). The audit row records `allowConflict` on every correction.
+- **Not added, on purpose:** therapist hours and the clinic closure. They guard a new booking; a correction records what happened at a time already held, and a past visit could be refused by hours defined later.
+- **UI reuses existing strings only** ("Conflito", "Guardar mesmo assim"), rendered like RescheduleDrawer, and the conflict resets when the chosen target changes.
+- **Every appointment status writer enumerated** (a rule at one caller guards one caller): seven. The only other unchecked door into the blocking set is `updateAppointment` on a Cancelada row, which SCHED-27 closes.
+- **A test defect found and fixed on the way:** `filter({ hasText: "Cancelada" })` matched a CORRECTED row, because the row keeps its Corrigir select and those options name every estado. The spec now matches rows by their StatusChip.
+- **The override-audit guard caught the new reader, as designed.** `audit-override-trace.test.ts` pins every action that reads `allowConflict` and requires each to write `allowConflict: !!...` to the audit row. The correction action became the fourth reader; its audit field now uses that exact shape, and the pinned list names it deliberately.
