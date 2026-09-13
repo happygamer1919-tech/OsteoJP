@@ -1,8 +1,9 @@
 import "server-only";
-import { and, asc, eq, gt, lt, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
 import { appointments, availabilityTemplates, locations, timeOff, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { listSharedResourcesTx } from "./shared-resources";
 import { type AvailabilityTemplate } from "./availability";
 import { addDays, lisbonMidnightUtc } from "./time";
 import type { AppointmentStatusValue } from "./types";
@@ -102,12 +103,23 @@ export async function getTherapistAvailability(
   });
 }
 
-function readBookedRows(
+async function readBookedRows(
   tx: DbTx,
   args: { therapistId: string; rangeStart: Date; rangeEnd: Date; locationId?: string | null },
 ): Promise<BookedRow[]> {
+  // SCHED-29.2: a SHARED RESOURCE (NESA) is booked in both roles, so its busy
+  // time includes the rows where it is Terapeuta 2. This is the read the batch
+  // engine classifies slots with, and the drawer's availability panel draws
+  // from, so it has to agree with findConflicts. A person's second-slot rows
+  // stay out (W4-19).
+  const isSharedResource = (await listSharedResourcesTx(tx)).some((r) => r.id === args.therapistId);
   const conds: SQL[] = [
-    eq(appointments.practitionerId, args.therapistId),
+    isSharedResource
+      ? or(
+          eq(appointments.practitionerId, args.therapistId),
+          eq(appointments.practitionerTwoId, args.therapistId),
+        )!
+      : eq(appointments.practitionerId, args.therapistId),
     notInArray(appointments.status, NON_BLOCKING),
     // W13-04a (JP option B): an UNCONFIRMED PEDIDO does not occupy the slot, so
     // the staff agenda shows a requested time as FREE until reception confirms.
