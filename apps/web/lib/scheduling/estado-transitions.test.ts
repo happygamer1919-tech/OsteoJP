@@ -56,14 +56,26 @@ describe("estado-transitions — lifecycle axis only", () => {
     expect(isLegalEstadoTransition("confirmed", "no_show")).toBe(true);
   });
 
-  it("terminal states have no onward Estado transition", () => {
-    for (const terminal of ["completed", "cancelled", "no_show"] as const) {
+  it("completed and no_show have no onward Estado transition", () => {
+    for (const terminal of ["completed", "no_show"] as const) {
       expect(legalEstadoTransitions(terminal)).toEqual([]);
       expect(hasLegalEstadoTransition(terminal)).toBe(false);
       // An illegal jump out of a terminal state is rejected.
       expect(isLegalEstadoTransition(terminal, "scheduled")).toBe(false);
       expect(isLegalEstadoTransition(terminal, "completed")).toBe(false);
     }
+  });
+
+  // SCHED-27, owner 2026-09-13: this arm used to assert cancelled was closed
+  // like the other two. The owner reversed it for cancelled only.
+  it("cancelled can be brought back to scheduled or confirmed, and to nothing else here", () => {
+    expect(new Set(legalEstadoTransitions("cancelled"))).toEqual(
+      new Set<AppointmentStatusValue>(["scheduled", "confirmed"]),
+    );
+    expect(hasLegalEstadoTransition("cancelled")).toBe(true);
+    // Concluída and Falta stay on the correction door, never this one.
+    expect(isLegalEstadoTransition("cancelled", "completed")).toBe(false);
+    expect(isLegalEstadoTransition("cancelled", "no_show")).toBe(false);
   });
 
   it("no self-transition (changing Estado to the same value is not a transition)", () => {

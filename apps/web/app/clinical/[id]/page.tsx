@@ -8,8 +8,10 @@ import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-templat
 import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
 import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
+import { listImportedPatientDocuments } from "@/lib/patients/documents";
 
 import { Attachments } from "./Attachments";
+import { ImportedPatientDocuments } from "./ImportedPatientDocuments";
 import { ImportedRecordPreview } from "./imported-record-preview";
 import { DownloadReportButton } from "./DownloadReportButton";
 import { fieldAnchorId } from "./anchors";
@@ -50,6 +52,13 @@ export default async function RecordDetailPage({
   const existingTermsAcceptance = await getLatestTermsAcceptance(ctx, record.patientId);
 
   const schema = record.template ? parseTemplateSchema(record.template.schema) : null;
+  // G-D: only the no-template branch (imported registos) lists the patient's
+  // imported originals. Read under the same patients:read gate the Documentos
+  // tab and its download action use.
+  const importedDocuments =
+    !schema && can(ctx.role, "patients:read")
+      ? await listImportedPatientDocuments(ctx, record.patientId, id)
+      : [];
   const readOnly = record.status !== "draft" || !can(ctx.role, "clinical_records:author");
   const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign");
   const canVersion = readOnly && can(ctx.role, "clinical_records:author");
@@ -173,8 +182,15 @@ export default async function RecordDetailPage({
                NOT SCOPED TO `locked`. `MigrationClinicalRecord.status` is
                'draft' | 'locked', so an imported record can be a draft, and a
                status-gated preview would leave those blank - the same defect
-               with a smaller population. */
-            <ImportedRecordPreview data={record.data} />
+               with a smaller population.
+
+               G-D (2026-09-13): below the content, the patient's imported
+               originals, read-only. Every Fisiozero document landed at patient
+               level, so without this the ficha could not open its source. */
+            <>
+              <ImportedRecordPreview data={record.data} />
+              <ImportedPatientDocuments items={importedDocuments} />
+            </>
           )}
 
           <div className="mt-6">

@@ -163,6 +163,20 @@ export const IMPORTED_RECORD = {
   },
 } as const;
 
+/**
+ * G-D (2026-09-13): three documents on IMPORTED_RECORD's patient, seeded by
+ * seed-e2e.mjs with these ids. Storage objects are NOT created (the lane bucket
+ * holds no bytes), so specs assert the lists and the Abrir button, never a download.
+ *   patientLevel - an imported original with no registo (clinical_record_id NULL)
+ *   linked       - an imported original linked to IMPORTED_RECORD (Anexos AND Documentos)
+ *   ordinary     - a staff-uploaded patient document, not imported
+ */
+export const IMPORTED_DOCUMENTS = {
+  patientLevel: { id: "00000000-0000-0000-0000-00000000fe11", fileName: "e2e-import-patient-level.pdf" },
+  linked: { id: "00000000-0000-0000-0000-00000000fe12", fileName: "e2e-import-linked.pdf" },
+  ordinary: { id: "00000000-0000-0000-0000-00000000fe13", fileName: "e2e-patient-document.pdf" },
+} as const;
+
 /** W6-04: a dedicated soft-deleted patient for the Pacientes eliminados restore
  *  e2e (digit-free name, no associated data, re-soft-deleted each seed run). */
 export const RECOVER_PATIENT = {
