@@ -34,7 +34,7 @@ import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conf
 import { checkAvailability } from "./availability-enforcement";
 import { checkClinicClosure } from "./clinic-closure-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
-import { isLegalEstadoCorrection } from "./estado-correction";
+import { correctionEntersBlockingSet, isLegalEstadoCorrection } from "./estado-correction";
 import {
   bookingLocationScope,
   isLocationBookable,
@@ -2155,6 +2155,7 @@ export async function confirmAppointmentRequest(
 export async function correctAppointmentEstadoAction(
   id: string,
   to: AppointmentStatusValue,
+  opts?: { allowConflict?: boolean },
 ): Promise<ActionResult<{ id: string }>> {
   const auth = await authorize("appointments:delete");
   if (isDenied(auth)) return auth;
@@ -2162,11 +2163,20 @@ export async function correctAppointmentEstadoAction(
 
   if (!id || !to) return { ok: false, error: "validation" };
 
+  const allowConflict = !!opts?.allowConflict;
   const ip = await clientIp();
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(actor, async (tx) => {
       const [row] = await tx
-        .select({ id: appointments.id, status: appointments.status })
+        .select({
+          id: appointments.id,
+          status: appointments.status,
+          practitionerId: appointments.practitionerId,
+          locationId: appointments.locationId,
+          room: appointments.room,
+          startsAt: appointments.startsAt,
+          endsAt: appointments.endsAt,
+        })
         .from(appointments)
         .where(eq(appointments.id, id))
         .limit(1); // RLS scopes the tenant
@@ -2177,6 +2187,53 @@ export async function correctAppointmentEstadoAction(
       // or naming the state the row is already in, is refused on the server.
       if (!isLegalEstadoCorrection(row.status, to)) {
         return { ok: false, error: "illegal_transition" };
+      }
+
+      // ==============================================================
+      // SCHED-28 — A CORRECTION INTO `completed` RE-CHECKS THE SLOT.
+      //
+      // This door shipped with no conflict check, and it double-booked on
+      // production: a Cancelada row released its slot (0052), another booking
+      // took the slot lawfully, and "Corrigir estado" put the first row back as
+      // Concluída on top of it. Measured on a lane database before this fix and
+      // reproduced in the UI by marcacoes-tab-edit.spec.ts (SCHED-28), which was
+      // red on the unchanged code at the conflict assertion.
+      //
+      // WHICH CORRECTIONS, derived: only the two INTO `completed` from a state
+      // that had released the slot. See correctionEntersBlockingSet.
+      //
+      // SERIALISE, THEN READ, then write - the order create, reschedule and
+      // INC-08 (b) use, so two writers cannot both see the slot empty.
+      //
+      // "Guardar mesmo assim" is HONOURED, exactly as on a reschedule: the
+      // owner ruled it overrides this check as it does a new booking's. What it
+      // cannot reach is two CONFIRMED rows, which 0061 refuses in the database;
+      // a correction never produces `confirmed`, so that is not in play here.
+      //
+      // NOT ADDED, DELIBERATELY: therapist hours and the clinic closure. Both
+      // guard a NEW time being booked. A correction records what happened at a
+      // time that was already held, and a past visit outside hours a clinic
+      // defined later would be refused for nothing it did.
+      // ==============================================================
+      if (correctionEntersBlockingSet(row.status, to)) {
+        const locks = acquireSlotLocksForMany(actor.tenantId, [
+          { practitionerId: row.practitionerId, startsAt: row.startsAt, endsAt: row.endsAt },
+        ]);
+        if (locks) await tx.execute(locks);
+        if (!allowConflict) {
+          const c = await findConflictsForWindow(tx, {
+            practitionerId: row.practitionerId,
+            locationId: row.locationId,
+            room: row.room,
+            startsAt: row.startsAt,
+            endsAt: row.endsAt,
+            excludeIds: [row.id],
+          });
+          const conflicts = blockingConflicts(c);
+          if (conflicts.length > 0) {
+            return { ok: false, error: "conflict", conflicts: conflicts.slice(0, CONFLICT_CAP) };
+          }
+        }
       }
 
       await tx.update(appointments).set({ status: to }).where(eq(appointments.id, id));
@@ -2197,6 +2254,12 @@ export async function correctAppointmentEstadoAction(
           // So a reader filtering this log can tell a correction from a
           // lifecycle event without knowing that the ACTION name encodes it.
           correction: true,
+          // SCHED-28: whether "Guardar mesmo assim" was pressed. Recorded on
+          // every correction, not only the checked ones, so its absence can
+          // never be read as "no override" on a row written before this field.
+          // Spelled out rather than shorthand: audit-override-trace.test.ts
+          // recognises a recorded override by this exact shape.
+          allowConflict: !!opts?.allowConflict,
         },
         ip,
       });

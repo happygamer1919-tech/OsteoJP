@@ -72,3 +72,22 @@ export function isLegalEstadoCorrection(
 ): boolean {
   return isFinalStatus(from) && isFinalStatus(to) && from !== to;
 }
+
+/**
+ * SCHED-28 — does this correction put the row BACK into the slot?
+ *
+ * `cancelled` and `no_show` release the slot (0052) and `completed` holds it, so
+ * the only corrections that can double-book are the two into `completed`. The
+ * other four either leave the blocking set or move between two states that are
+ * both outside it, and checking them would refuse nothing a clinic could act on.
+ *
+ * Measured, not argued: on 2026-09-12 a Cancelada row moved to Concluída over a
+ * booking made after the cancel was ACCEPTED by the database, and this door ran
+ * no check at all. The caller runs the conflict check exactly when this is true.
+ */
+export function correctionEntersBlockingSet(
+  from: AppointmentStatusValue,
+  to: AppointmentStatusValue,
+): boolean {
+  return (from === "cancelled" || from === "no_show") && to === "completed";
+}
