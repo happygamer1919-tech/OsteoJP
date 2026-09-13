@@ -25,7 +25,12 @@ import { join } from "node:path";
  */
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// updateTag joined with SCHED-27: updateAppointment's post-commit block calls
+// revalidateAppointmentSurfaces() before it enqueues reminders, and that helper
+// drops the stat-strip tag. Without it the helper threw inside afterCommit, the
+// failure was swallowed as best-effort, and the reminder enqueue after it never
+// ran - which is how the first run of the reminders arm below read 0 calls.
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn() }));
 
 vi.mock("@/lib/auth/context", () => ({
   requireRequestContext: vi.fn(),
@@ -46,6 +51,16 @@ vi.mock("./conflict", () => ({
   findConflicts: vi.fn(async () => []),
   findConflictsForWindow: vi.fn(async () => []),
   blockingConflicts: (c: unknown[]) => c,
+}));
+// SCHED-27: the un-cancel checks. Mocked to PASS here so this file keeps testing
+// the map, the role gate and the conflict gate; the closure, NESA and pacote
+// refusals themselves are asserted against a real database in
+// estado-uncancel.db.test.ts.
+vi.mock("./clinic-closure-enforcement", () => ({ checkClinicClosure: vi.fn(async () => ({ ok: true })) }));
+vi.mock("./uncancel-db", () => ({ uncancelOverdrawsPack: vi.fn(async () => false) }));
+vi.mock("./shared-resources", () => ({
+  listSharedResources: vi.fn(async () => []),
+  listSharedResourcesTx: vi.fn(async () => []),
 }));
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
@@ -154,8 +169,10 @@ describe("INC-08 (a) — the server refuses an illegal Estado transition", () =>
     expect(trace).not.toContain("update");
   });
 
+  // SCHED-27 (owner, 2026-09-13) opened cancelled -> scheduled|confirmed, so
+  // cancelled left this arm; its own arms are in the SCHED-27 block below.
   it("REFUSES onward moves out of the terminal states", async () => {
-    for (const from of ["completed", "no_show", "cancelled"] as AppointmentStatusValue[]) {
+    for (const from of ["completed", "no_show"] as AppointmentStatusValue[]) {
       seriesRow = row(from);
       updated = false;
       const r = await updateAppointment("appt-1", { status: "confirmed" });
@@ -250,6 +267,73 @@ describe("INC-08 (b) — a status patch that starts blocking is conflict-checked
     mockConflicts.mockResolvedValue([CONFLICT]);
     const r = await updateAppointment("appt-1", { status: "confirmed" }, { allowConflict: true });
     expect(r.ok).toBe(true);
+  });
+});
+
+// ====================================================================
+// SCHED-27 — BRINGING A CANCELADA BACK (owner, 2026-09-13)
+// ====================================================================
+describe("SCHED-27 — Cancelada back to Agendada or Confirmada", () => {
+  beforeEach(async () => {
+    const auth = await import("@osteojp/auth");
+    vi.mocked(auth.assertCan).mockReset();
+    const reminders = await import("./reminders");
+    vi.mocked(reminders.enqueueRemindersAfterCommit).mockClear();
+  });
+
+  it("reception brings a Cancelada back to scheduled, and to confirmed", async () => {
+    for (const to of ["scheduled", "confirmed"] as AppointmentStatusValue[]) {
+      seriesRow = row("cancelled");
+      updated = false;
+      const r = await updateAppointment("appt-1", { status: to });
+      expect(r.ok).toBe(true);
+      expect(updated).toBe(true);
+    }
+  });
+
+  it("a THERAPIST cannot: bringing one back is the inverse of cancelling (appointments:delete)", async () => {
+    const auth = await import("@osteojp/auth");
+    vi.mocked(auth.assertCan).mockImplementation((role: unknown, cap: unknown) => {
+      if (role === "therapist" && cap === "appointments:delete") {
+        throw new auth.ForbiddenError("therapist", "appointments:delete");
+      }
+    });
+    mockCtx.mockResolvedValue({ ...actor, role: "therapist" });
+    seriesRow = row("cancelled");
+    const r = await updateAppointment("appt-1", { status: "scheduled" });
+    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(updated).toBe(false);
+  });
+
+  // THE MEASURED DEFECT. Before SCHED-27 the conflict gate ran only when a row
+  // was `scheduled`, so a Cancelada row would have skipped it.
+  it("RUNS the conflict check for a row leaving Cancelada, and refuses a slot booked since", async () => {
+    seriesRow = row("cancelled");
+    mockConflicts.mockResolvedValue([CONFLICT]);
+    const r = await updateAppointment("appt-1", { status: "scheduled" });
+    expect(r).toMatchObject({ ok: false, error: "conflict" });
+    expect(updated).toBe(false);
+    expect(trace).toContain("lock");
+  });
+
+  it("honours Guardar mesmo assim on it, as on any booking", async () => {
+    seriesRow = row("cancelled");
+    mockConflicts.mockResolvedValue([CONFLICT]);
+    const r = await updateAppointment("appt-1", { status: "confirmed" }, { allowConflict: true });
+    expect(r.ok).toBe(true);
+  });
+
+  it("re-emits reminders for a FUTURE appointment brought back, and not for a past one", async () => {
+    const reminders = await import("./reminders");
+    const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    seriesRow = { ...row("cancelled"), startsAt: future, endsAt: new Date(future.getTime() + 60 * 60 * 1000) };
+    await updateAppointment("appt-1", { status: "scheduled" });
+    expect(vi.mocked(reminders.enqueueRemindersAfterCommit)).toHaveBeenCalledTimes(1);
+
+    vi.mocked(reminders.enqueueRemindersAfterCommit).mockClear();
+    seriesRow = row("cancelled"); // 2026-09-01: its reminder offsets have passed
+    await updateAppointment("appt-1", { status: "scheduled" });
+    expect(vi.mocked(reminders.enqueueRemindersAfterCommit)).not.toHaveBeenCalled();
   });
 });
 

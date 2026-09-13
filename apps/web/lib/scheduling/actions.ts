@@ -35,6 +35,8 @@ import { checkAvailability } from "./availability-enforcement";
 import { checkClinicClosure } from "./clinic-closure-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
 import { correctionEntersBlockingSet, isLegalEstadoCorrection } from "./estado-correction";
+import { isUncancel } from "./uncancel";
+import { uncancelOverdrawsPack } from "./uncancel-db";
 import {
   bookingLocationScope,
   isLocationBookable,
@@ -1362,6 +1364,55 @@ export async function updateAppointment(
         }
 
         // ==============================================================
+        // SCHED-27 — BRINGING A CANCELADA BACK. Owner approval 2026-09-13:
+        // Cancelada -> Agendada | Confirmada through this control, for the
+        // people who can cancel, and a future one gets its reminders again.
+        //
+        // WHY EACH CHECK IS HERE, and none is decoration:
+        //   - ROLE. The Estado control is appointments:write, which a therapist
+        //     holds; un-cancelling is the inverse of cancelling, which is
+        //     appointments:delete. Without this a therapist could undo reception.
+        //   - CLINIC CLOSURE (0085) and NESA LOCATION (SCHED-17). The row goes
+        //     back into a slot; both rules guard slots and neither is
+        //     blockable-around, so they sit OUTSIDE the allowConflict gate, as on
+        //     create and reschedule.
+        //   - PACOTE. A cancelled row stopped using its session; bringing it back
+        //     uses it again and must fit in what the instance has left.
+        // The CONFLICT check for these rows is INC-08 (b) below, which now runs
+        // for a row leaving Cancelada as well as for an unconfirmed pedido.
+        // ==============================================================
+        const uncancelling = patch.status
+          ? affected.filter((a) => isUncancel(a.status, patch.status!))
+          : [];
+        if (uncancelling.length > 0) {
+          try {
+            assertCan(actor.role, "appointments:delete");
+          } catch (e) {
+            if (e instanceof ForbiddenError) return { ok: false, error: "forbidden" };
+            throw e;
+          }
+          for (const a of uncancelling) {
+            const cl = await checkClinicClosure(tx, {
+              locationId: a.locationId,
+              startsAt: a.startsAt,
+              endsAt: a.endsAt,
+            });
+            if (!cl.ok) {
+              return {
+                ok: false,
+                error: "clinic_closed",
+                clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+              };
+            }
+            const shared = await sharedResourceBookingCheck(actor, a.practitionerId, a.locationId, tx);
+            if (!shared.ok) return { ok: false, error: "shared_resource_location" };
+          }
+          if (await uncancelOverdrawsPack(tx, uncancelling.map((a) => a.id))) {
+            return { ok: false, error: "pack_insufficient" };
+          }
+        }
+
+        // ==============================================================
         // PACK-03 — A PACOTE BINDS TO ONE SERVICE, AND THIS IS THE HALF
         // THAT WAS MISSING. Owner ruling: ten NESA sessions are spendable
         // on NESA only, no cross-service mixing.
@@ -1472,8 +1523,15 @@ export async function updateAppointment(
           // matters: `confirmed -> completed` is what reception does to every
           // appointment of every day, and it can never enter the blocking set.
           const anyScheduled = affected.some((a) => a.status === "scheduled");
-          if (willBlock && anyScheduled) {
-            const pedidoIds = await unconfirmedPedidoIds();
+          // SCHED-27: a row leaving Cancelada re-enters the blocking set too.
+          // The `entering` filter below has always counted such a row; this
+          // gate never let it get there, because no legal move left Cancelada
+          // when the shortcut was written. Measured 2026-09-12: without it an
+          // un-cancel onto a slot booked since was accepted.
+          const anyReleased = affected.some((a) => NON_BLOCKING_STATUS.has(a.status));
+          if (willBlock && (anyScheduled || anyReleased)) {
+            // The pedido probe is only meaningful for `scheduled` rows (0059:145).
+            const pedidoIds = anyScheduled ? await unconfirmedPedidoIds() : new Set<string>();
 
             // Rows already blocking are skipped: this patch changes nothing
             // about their occupancy, and re-checking a row against itself
@@ -1555,6 +1613,24 @@ export async function updateAppointment(
             .where(inArray(appointments.id, ids)); // RLS scopes tenant
         }
 
+        // SCHED-27: a patient's "declined" confirmation would keep a row that
+        // was brought back reading Cancelada, because deriveEstado lets the
+        // decline win over a non-terminal status (estado.ts). Reset to pending
+        // on exactly the rows being brought back. Nothing writes "declined"
+        // today (only the schema and 0024/0063 name it), so this is defensive,
+        // and it is scoped so it can never touch a row this patch did not move.
+        if (uncancelling.length > 0) {
+          await tx
+            .update(appointments)
+            .set({ confirmationState: "pending" })
+            .where(
+              and(
+                inArray(appointments.id, uncancelling.map((a) => a.id)),
+                eq(appointments.confirmationState, "declined"),
+              ),
+            );
+        }
+
         // W12-13: append the note to the UNIFIED store for the TARGET appointment
         // (patient derived server-side). Before the completion event below so a
         // "concluída + nota" save captures note_present = true.
@@ -1632,10 +1708,18 @@ export async function updateAppointment(
           statusTargets = affected.map((a) => ({ appointmentId: a.id, endsAt: a.endsAt }));
         }
 
-        reminderTargets = acceptedPedidos.map((a) => ({
-          appointmentId: a.id,
-          startsAt: a.startsAt,
-        }));
+        // W14-02's accepted pedidos, plus SCHED-27: a FUTURE appointment brought
+        // back from Cancelada emits appointment/scheduled so its reminders exist
+        // again (owner, 2026-09-13). A past one is left out on purpose: its
+        // offsets have passed and it would fire nothing, which the owner ruled
+        // is expected, not a defect.
+        const nowMs = Date.now();
+        reminderTargets = [
+          ...acceptedPedidos.map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
+          ...uncancelling
+            .filter((a) => a.startsAt.getTime() > nowMs)
+            .map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
+        ];
         return { ok: true, data: { id } };
       },
     );
