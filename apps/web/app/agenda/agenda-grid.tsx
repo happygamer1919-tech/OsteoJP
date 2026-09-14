@@ -409,8 +409,13 @@ export function AgendaGrid({
         ))}
       </div>
 
-      {/* Body */}
-      <div className="grid" style={gridCols}>
+      {/* Body. SR-62 PU-2: pb-6 is room INSIDE the card below the closing time.
+          The card clips (overflow-clip, 24px corners) and the body used to end
+          exactly on its edge, so the closing label, which hangs 8px below the
+          last line, was cut at every width, and a late start whose band takes
+          the 24px floor (groupBandPx) ran past the edge too.
+          agenda-last-row-visible.spec.ts measures it. */}
+      <div className="grid pb-6" style={gridCols}>
         {/* Time gutter. The test id scopes agenda-sticky-header.spec.ts's hour
             label to the gutter: the toolbar's "Atualizar" button renders the
             refresh time as a bare HH:MM, and a page-wide match for "14:00"
