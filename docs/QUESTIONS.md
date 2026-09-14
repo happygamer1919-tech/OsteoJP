@@ -1566,3 +1566,91 @@ remarcar." **Not written to the page until ruled.**
 
 **The button labels are NOT in question** — the dispatch gives them verbatim:
 **Confirmar consulta** and **Pedir remarcação**.
+
+## 2026-09-14 — Q-PHONE-01-1: should reminders send SMS to foreign numbers?
+
+**OWNER. Nothing is blocked on it; the built default is "no".**
+
+PHONE-01 now accepts and stores a foreign number in E.164 (for example
+`+447700900123`). The reminder send path is unchanged: it sends only to numbers
+`normalizePhonePT` accepts, so a foreign number is skipped as `invalid_phone`,
+exactly as before. The difference is that the patient record and the booking
+drawer now say "os lembretes por SMS só são enviados para números portugueses",
+instead of the skip living only in a log.
+
+**Options:**
+
+1. **Keep no (built).** Foreign patients get no SMS reminder; the marker tells
+   reception to arrange another contact.
+2. **Send to foreign numbers.** Needs a change to the send path's normaliser, a
+   check of Twilio's international pricing per destination, and whether the
+   alphanumeric sender (Q-W14-04) is permitted in each destination country.
+
+**Recommended: 1, keep no,** until the Twilio international pricing and sender
+rules are checked. Sending blind risks paid messages that never arrive, which is
+the landline problem again in another country.
+## 2026-09-14 - Q-SCHED-30-1: lift the NESA un-cancel refusal for therapists once 0088 is applied?
+
+**OWNER. Nothing is blocked on it.**
+
+SCHED-30 refuses a therapist bringing back a Cancelada that names NESA in either
+slot (`uncancel_shared_resource`). Until 0088 is applied, a therapist's conflict
+check cannot see a colleague's booking holding NESA as Terapeuta 2, and an
+un-cancel the check cannot see is the double booking the dispatch named.
+Reception can bring such a row back, with the full check.
+
+**Options:**
+
+1. **Lift it after the 0088 apply,** in the PR that follows, with the DB arm that
+   measures the visibility flipped to its post-0088 expectation.
+2. **Keep NESA un-cancel with reception permanently.**
+
+**Recommended: 1.** The refusal exists only because of the missing read, and 0088
+grants exactly that read.
+
+## 2026-09-14 - Q-SCHED-30-2: a NESA appointment a therapist booked with NESA as Terapeuta
+
+**OWNER. Nothing is blocked on it.**
+
+The rule is "only where they are Terapeuta or Terapeuta 2". A therapist who booked
+NESA itself as the Terapeuta (SCHED-17, still offered to a self-locked therapist)
+is neither on that row: they are its creator. SCHED-30 refuses them cancelling
+it; reception can.
+
+**Options:**
+
+1. **Keep the strict reading (built).**
+2. **Also allow the creator** of a NESA row at one of their clinics.
+
+**Recommended: 1,** while GREEN's slot-2 contract (NESA as Terapeuta 2 only) is the
+direction; revisit together with the open SCHED-29 question on NESA in the
+therapist's primary select.
+
+## 2026-09-14 - Q-SCHED-30-3: a therapist with no clinic assignment
+
+**OWNER. Nothing is blocked on it.**
+
+"Only within their assigned clinics" uses STAFF-02's `bookingLocationScope`, whose
+documented fallback treats a staff member with no `staff_locations` row as
+unrestricted, so booking and cancelling apply the same rule. Whether any therapist
+on production has no assignment was not read (no production access this
+dispatch).
+
+**Options:**
+
+1. **Keep the STAFF-02 fallback (built).**
+2. **Refuse cancel and un-cancel to an unassigned therapist,** which would then
+   differ from booking.
+
+**Recommended: 1.** One rule for "which clinics may this person write into".
+## 2026-09-14 — Q-COMMS-01-1: Lembretes SMS needs one migration for its missing half (BLUE, not authored)
+
+**Context.** The owner's BL-2 asks for a per-reminder log showing patient, appointment, channel, scheduled time, sent time, status, provider error code and the destination number, with a therapist seeing only reminders for appointments where they are Terapeuta or Terapeuta 2. COMMS-01 shipped the part the database already holds: `reminder_dispatches` (0075), read under RLS for owner, admin and reception. Three things cannot be built without a migration, and none was authored (0088 is unapplied and one migration is in flight at a time):
+
+1. **A schedule-time record.** Nothing records `appointment/scheduled`; only the Inngest dashboard does. A reminder scheduled but not yet due, or a run that never reached dispatch, is invisible. Needed: a table (tenant_id, appointment_id, offset or kind, channel, send_at, scheduled_at, superseded_at) written by `scheduleAppointmentReminders` at fan-out, and a nullable link from `reminder_dispatches` to it, so "scheduled, never sent" is a query. RLS in the same migration.
+2. **The destination number.** 0075 ruled the recipient out ("a hash nobody needs is a pseudonymous identifier nobody can justify"). Showing the number a message actually went to REVERSES that ruling and stores a phone number per attempt. Today the page shows the patient's CURRENT number, labelled as such.
+3. **The therapist's view.** A therapist reads zero rows under 0075's SELECT policy (measured). Needed: a PERMISSIVE FOR SELECT policy on `reminder_dispatches` and on the new table for `therapist`, `EXISTS (appointment with practitioner_id = auth.uid() OR practitioner_2_id = auth.uid())`. It must NOT reuse 0086's shared-resource disjunct: NESA's bookings opened to every CB therapist would expose other therapists' patients' numbers, which is the RGPD scoping the dispatch put above parity. Then grant `reminders:log_read` to the therapist.
+
+**Questions for the owner.** (a) Approve the destination column, reversing 0075's no-recipient ruling for SMS rows? (b) Approve one migration carrying 1 to 3, authored after 0088 applies?
+
+**Recommended default.** (a) Yes, E.164 only, SMS rows only, because the log's purpose is proof of where a reminder went and the current-number column cannot give it. (b) Yes, one migration after 0088, with an isolation test in the same PR and GREEN as applier.
