@@ -39,7 +39,10 @@ import {
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
-import { secondParticipantOptionsForTherapist } from "@/lib/scheduling/shared-resource-guard";
+import {
+  secondParticipantOptionsForTherapist,
+  withSharedResourceOptions,
+} from "@/lib/scheduling/shared-resource-guard";
 import {
   getPatientPackBalanceAction,
   linkAppointmentToPackAction,
@@ -737,22 +740,33 @@ export function AppointmentDrawer({
   // clinic and nobody else, so at LV it is empty and the field is not shown.
   // Everyone else keeps the full list they had. The server re-checks it
   // (secondParticipantCheck); this list is the offer, not the permission.
+  // SCHED-29.4 (Q-SCHED-29-4-1 = A): owner, admin and reception are offered the
+  // shared resources installed at the CHOSEN clinic in both selects, beside the
+  // is_bookable roster, whatever the machine's is_bookable says. The page hands
+  // these over from a per-request read, not from the 60-second reference cache,
+  // so a flag change shows on the next load. A therapist is not in this branch:
+  // their offer is the SCHED-17/SCHED-29 rule above and stays exactly as it was.
+  const frontDeskResources = viewer.role === "therapist" ? [] : options.sharedResources ?? [];
   const practitionerTwoOptions = selfLocked
     ? secondParticipantOptionsForTherapist(sharedResourceOptions, form.locationId || null, form.practitionerId)
-    : options.therapists;
+    : withSharedResourceOptions(options.therapists, frontDeskResources, form.locationId || null);
   // Scope ONLY after the user actively picks a location (userChangedLocation).
   // On open, the default location keeps the FULL list, so a therapist-first
   // booking is unaffected and an unassigned therapist stays bookable until the
   // Equipa data assigns them (the loop's "default-location behaviour applies"
   // clause). keepId retains the already-selected therapist across the change.
-  const therapistOptions = userChangedLocation.current
-    ? therapistOptionsForBooking(
-        therapistPool,
-        therapistAssignments,
-        form.locationId || null,
-        form.practitionerId || null,
-      )
-    : therapistPool;
+  const therapistOptions = withSharedResourceOptions(
+    userChangedLocation.current
+      ? therapistOptionsForBooking(
+          therapistPool,
+          therapistAssignments,
+          form.locationId || null,
+          form.practitionerId || null,
+        )
+      : therapistPool,
+    frontDeskResources,
+    form.locationId || null,
+  );
   const noTherapistsAtLocation =
     userChangedLocation.current && !!form.locationId && therapistOptions.length === 0;
 

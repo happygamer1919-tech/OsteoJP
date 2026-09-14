@@ -11,7 +11,10 @@
  * also runs on databases that do not have the column):
  *   LOCATION_B "Consultório B (E2E)" plays CB, where the machine is installed;
  *   LOCATION   "Linda-a-Velha"       plays LV.
- *   NESA (E2E): a login-less bookable users row with is_shared_resource, at CB.
+ *   NESA (E2E): a login-less users row with is_shared_resource, at CB, and
+ *   is_bookable FALSE: GREEN's v3 production flags. Until SCHED-29.4 this row was
+ *   bookable, which hid that owner, admin and reception lose the machine the moment
+ *   is_bookable is false. The therapist tests never read is_bookable.
  *   The CB-only therapist: "E2E Terapeuta Clinica Unica", assigned CB only.
  *   The two-clinic therapist: "E2E Terapeuta Varias Clinicas", assigned CB and LV.
  *
@@ -123,7 +126,7 @@ test.beforeAll(async () => {
       role_id: role.id,
       email: "e2e-nesa@osteojp.test",
       full_name: NESA_NAME,
-      is_bookable: true,
+      is_bookable: false,
       is_active: true,
       is_shared_resource: true,
     }),
@@ -179,11 +182,14 @@ test.beforeAll(async () => {
     "CB-only therapist hours at CB on Wednesday",
   );
   // One patient per therapist, created by them, so each can find theirs in the
-  // Paciente search under their own RLS.
+  // Paciente search under their own RLS. SCHED-29.4: both belong to CB by
+  // primary_location_id, because the reception tests assign reception to clinics,
+  // and an assigned receptionist's search is scoped to patients at those clinics
+  // (patientLocationScope). Without it the search reads "Sem resultados".
   must(
     await db.from("patients").insert([
-      { id: PATIENT_CB_ONLY.id, tenant_id: TENANT_A, full_name: PATIENT_CB_ONLY.name, created_by: cbOnlyId },
-      { id: PATIENT_BOTH.id, tenant_id: TENANT_A, full_name: PATIENT_BOTH.name, created_by: bothId },
+      { id: PATIENT_CB_ONLY.id, tenant_id: TENANT_A, full_name: PATIENT_CB_ONLY.name, created_by: cbOnlyId, primary_location_id: LOCATION_B.id },
+      { id: PATIENT_BOTH.id, tenant_id: TENANT_A, full_name: PATIENT_BOTH.name, created_by: bothId, primary_location_id: LOCATION_B.id },
     ]),
     "patients",
   );
@@ -332,4 +338,154 @@ test("SCHED-29: at LV a therapist is offered no Terapeuta 2, and at CB only NESA
     "Selecionar terapeuta",
     NESA_NAME,
   ]);
+});
+
+/**
+ * SCHED-29.4 — OWNER, ADMIN AND RECEPTION ARE OFFERED NESA (Q-SCHED-29-4-1 = A).
+ *
+ * Walked as RECEPTION, with the machine carrying GREEN's v3 flags (shared, NOT
+ * bookable). Before this card reception could neither filter by the machine nor
+ * book it in either select, because all three controls read is_bookable.
+ *
+ * Reception is assigned to BOTH clinics for these tests: the server refuses a
+ * machine to an admin or reception at a clinic they are not assigned to, and the
+ * offer mirrors that, so an unassigned receptionist is offered no machine at all.
+ */
+const RECEPTION_EMAIL = "e2e-reception@osteojp.test";
+
+async function receptionAtBothClinics(): Promise<string> {
+  const reception = must(
+    await db.from("users").select("id").eq("email", RECEPTION_EMAIL).single(),
+    "the reception fixture",
+  ) as { id: string };
+  const added = must(
+    await db
+      .from("staff_locations")
+      .upsert(
+        [
+          { tenant_id: TENANT_A, user_id: reception.id, location_id: LOCATION.id },
+          { tenant_id: TENANT_A, user_id: reception.id, location_id: LOCATION_B.id },
+        ],
+        { onConflict: "tenant_id,user_id,location_id" },
+      )
+      .select("id"),
+    "reception at both clinics",
+  ) as { id: string }[];
+  addedStaffLocationIds.push(...added.map((r) => r.id));
+  return reception.id;
+}
+
+test("SCHED-29.4: reception's Terapeutas filter lists NESA by the machine flag, on the very next load", async ({ page }) => {
+  test.skip(skipReason !== null, skipReason ?? "");
+  await receptionAtBothClinics();
+  await login(page, RECEPTION_EMAIL);
+  const filter = page.getByLabel("Terapeutas", { exact: true });
+  const nesaOption = filter.locator("option", { hasText: NESA_NAME });
+
+  try {
+    // NEGATIVE ARM FIRST. Unflagged and not bookable, the machine is in no list.
+    must(await db.from("users").update({ is_shared_resource: false }).eq("id", NESA_ID), "unflag the machine");
+    await page.goto(`/agenda?view=day&date=${DAY}`);
+    await expect(filter).toBeVisible();
+    await expect(nesaOption).toHaveCount(0);
+
+    // Flagged, and read on the VERY NEXT load. No 60-second wait: the machine
+    // does not come from the cached roster, and is_bookable is still false, so
+    // this option can only have come from the per-request read.
+    must(await db.from("users").update({ is_shared_resource: true }).eq("id", NESA_ID), "flag the machine");
+    await page.goto(`/agenda?view=day&date=${DAY}`);
+    await expect(filter).toBeVisible();
+    await expect(nesaOption).toHaveCount(1);
+
+    // The toolbar's clinic narrows it: not at LV, listed at CB.
+    await page.goto(`/agenda?view=day&date=${DAY}&location=${LOCATION.id}`);
+    await expect(filter).toBeVisible();
+    await expect(nesaOption).toHaveCount(0);
+    await page.goto(`/agenda?view=day&date=${DAY}&location=${LOCATION_B.id}`);
+    await expect(nesaOption).toHaveCount(1);
+
+    // And choosing it filters the agenda to the machine.
+    await filter.selectOption({ label: NESA_NAME });
+    await expect(page).toHaveURL(new RegExp(`therapist=${NESA_ID}`));
+  } finally {
+    await db.from("users").update({ is_shared_resource: true }).eq("id", NESA_ID);
+  }
+});
+
+test("SCHED-29.4: reception's Terapeuta select offers NESA at CB and not at LV, and books it", async ({ page }) => {
+  test.skip(skipReason !== null, skipReason ?? "");
+  const receptionId = await receptionAtBothClinics();
+  await login(page, RECEPTION_EMAIL);
+  const dialog = await openNewAppointment(page, DAY);
+  const location = dialog.getByLabel(/Localização/i);
+  const therapist = dialog.getByLabel(/Terapeuta/i).first();
+
+  await location.selectOption({ label: LOCATION.name });
+  await expect(therapist.locator("option", { hasText: NESA_NAME })).toHaveCount(0);
+  await location.selectOption({ label: LOCATION_B.name });
+  await expect(therapist.locator("option", { hasText: NESA_NAME })).toHaveCount(1);
+  await therapist.selectOption({ label: NESA_NAME });
+
+  await pickPatient(dialog, PATIENT_BOTH.name);
+  await fillDate(dateField(dialog), DAY);
+  await fillTime(dialog, "13:00");
+  await save(dialog);
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+  const rows = must(
+    await db
+      .from("appointments")
+      .select("id, location_id")
+      .eq("tenant_id", TENANT_A)
+      .eq("practitioner_id", NESA_ID)
+      .eq("created_by", receptionId),
+    "reception's NESA booking",
+  ) as { id: string; location_id: string }[];
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.location_id).toBe(LOCATION_B.id);
+});
+
+test("SCHED-29.4: reception's Terapeuta 2 offers NESA at CB and not at LV, and the booking keeps it", async ({ page }) => {
+  test.skip(skipReason !== null, skipReason ?? "");
+  const receptionId = await receptionAtBothClinics();
+  const person = must(
+    await db.from("users").select("full_name").eq("id", cbOnlyId).single(),
+    "the CB therapist's name",
+  ) as { full_name: string };
+  await login(page, RECEPTION_EMAIL);
+  const dialog = await openNewAppointment(page, DAY);
+
+  // Patient FIRST: opening the secondary panel mounts "Paciente 2" (see SCHED-29 above).
+  await pickPatient(dialog, PATIENT_CB_ONLY.name);
+  // The person before the clinic, so the clinic chosen last is the one that stands.
+  await dialog.getByLabel(/Terapeuta/i).first().selectOption({ label: person.full_name });
+  const location = dialog.getByLabel(/Localização/i);
+  await location.selectOption({ label: LOCATION.name });
+
+  await dialog.getByText("Participantes secundários (opcional)").click();
+  const two = dialog.getByLabel("Terapeuta 2", { exact: true });
+  await expect(two).toBeVisible();
+  await expect(two.locator("option", { hasText: NESA_NAME })).toHaveCount(0);
+
+  await location.selectOption({ label: LOCATION_B.name });
+  await expect(two.locator("option", { hasText: NESA_NAME })).toHaveCount(1);
+  await two.selectOption({ label: NESA_NAME });
+
+  await fillDate(dateField(dialog), DAY);
+  await fillTime(dialog, "09:00");
+  await save(dialog);
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+  const rows = must(
+    await db
+      .from("appointments")
+      .select("id, practitioner_id, location_id")
+      .eq("tenant_id", TENANT_A)
+      .eq("practitioner_2_id", NESA_ID)
+      .eq("created_by", receptionId),
+    "reception's booking with NESA as Terapeuta 2",
+  ) as { id: string; practitioner_id: string; location_id: string }[];
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.practitioner_id).toBe(cbOnlyId);
+  expect(rows[0]!.location_id).toBe(LOCATION_B.id);
 });
