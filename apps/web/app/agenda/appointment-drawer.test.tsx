@@ -34,6 +34,7 @@ vi.mock("@/lib/scheduling/actions", () => ({
 vi.mock("@/lib/patients/actions", () => ({
   searchPatientsAction: vi.fn(),
   getPatientContraindications: vi.fn(),
+  getPatientNoSmsReason: vi.fn(),
 }));
 vi.mock("./availability-panel", () => ({ AvailabilityPanel: () => null }));
 vi.mock("./confirmation-indicator", () => ({ ConfirmationIndicator: () => null }));

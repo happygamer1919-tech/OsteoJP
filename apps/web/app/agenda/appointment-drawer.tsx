@@ -24,7 +24,9 @@ import type { Role } from "@osteojp/auth";
 import { s } from "@/lib/i18n";
 import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
 import { patientLabel } from "@/lib/scheduling/patient-label";
-import { getPatientContraindications, searchPatientsAction } from "@/lib/patients/actions";
+import { getPatientContraindications, getPatientNoSmsReason, searchPatientsAction } from "@/lib/patients/actions";
+import { NO_SMS_MESSAGE_KEY } from "@/lib/patients/phone-preview";
+import type { NoSmsReason } from "@osteojp/notify";
 import { matchedContraindications, type PatientContraindications } from "@/lib/scheduling/nesa";
 import {
   batchScheduleAppointments,
@@ -421,6 +423,28 @@ export function AppointmentDrawer({
   }, [form.patientId]);
   const patientCI =
     ciResult && ciResult.patientId === form.patientId ? ciResult.flags : null;
+
+  // PHONE-01: whether an SMS reaches the selected patient's stored phone. Same
+  // shape as the contraindication fetch above: stored with the patient id it
+  // belongs to, so the marker disappears the instant the selection changes. The
+  // action returns only the reason, never the number.
+  const [noSmsResult, setNoSmsResult] = useState<{
+    patientId: string;
+    reason: NoSmsReason | null;
+  } | null>(null);
+  useEffect(() => {
+    const pid = form.patientId;
+    if (!pid) return;
+    let cancelled = false;
+    getPatientNoSmsReason(pid).then((reason) => {
+      if (!cancelled) setNoSmsResult({ patientId: pid, reason });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.patientId]);
+  const patientNoSms =
+    noSmsResult && noSmsResult.patientId === form.patientId ? noSmsResult.reason : null;
 
   // W8-01c — the selected patient's active balance for the selected pack,
   // fetched reactively. Stored WITH the (patientId, packId) it belongs to so the
@@ -1195,6 +1219,18 @@ export function AppointmentDrawer({
               placeholder={s["appointment.patientTypeToSearch"]}
               emptyLabel={s["appointment.patientSearchEmpty"]}
             />
+          )}
+          {/* PHONE-01: the patient's stored phone cannot receive SMS, so no
+              reminder will arrive. Shown on create and edit, for every role. */}
+          {patientNoSms && (
+            <p
+              role="status"
+              data-testid="drawer-patient-no-sms-marker"
+              data-reason={patientNoSms}
+              className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900"
+            >
+              {s[NO_SMS_MESSAGE_KEY[patientNoSms]]}
+            </p>
           )}
         </div>
 
