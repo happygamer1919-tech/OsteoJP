@@ -207,4 +207,21 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("therapist", "settings:manage")).toBe(false);
     expect(can("therapist", "users:manage")).toBe(false);
   });
+
+  it("SCHED-30: a therapist cancels only through appointments:cancel_own; appointments:delete stays with the front desk", () => {
+    // Owner dispatch 2026-09-14 (BL-3). Like every grant here the capability is
+    // TARGET-BLIND. The rule that it is the therapist's OWN row at their OWN
+    // clinic is ownCancelRefusal, proven in lib/scheduling/cancel-authority.test.ts
+    // and against a real database in lib/scheduling/therapist-cancel.db.test.ts.
+    // appointments:delete would also have opened Corrigir estado and NESA's rows,
+    // which nobody ruled for a therapist; the line below is what keeps that shut.
+    expect(can("therapist", "appointments:cancel_own")).toBe(true);
+    expect(can("therapist", "appointments:delete")).toBe(false);
+    for (const role of ["owner", "admin", "reception"] as const) {
+      expect(can(role, "appointments:delete")).toBe(true);
+    }
+    // Admin and reception need nothing new: delete already covers every row they write.
+    expect(can("admin", "appointments:cancel_own")).toBe(false);
+    expect(can("reception", "appointments:cancel_own")).toBe(false);
+  });
 });

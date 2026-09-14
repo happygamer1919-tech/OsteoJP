@@ -36,10 +36,21 @@ vi.mock("@/lib/auth/context", () => ({
   requireRequestContext: vi.fn(),
   runScoped: vi.fn(),
 }));
-vi.mock("@osteojp/auth", () => ({
-  assertCan: vi.fn(),
-  ForbiddenError: class ForbiddenError extends Error {},
-}));
+vi.mock("@osteojp/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@osteojp/auth")>();
+  return {
+    assertCan: vi.fn(),
+    ForbiddenError: class ForbiddenError extends Error {},
+    // SCHED-30: who may bring a Cancelada back is read from the REAL matrix.
+    can: actual.can,
+  };
+});
+// SCHED-30: a therapist's clinics. Unassigned here (null, STAFF-02's fallback);
+// the clinic arm runs against a real database in therapist-cancel.db.test.ts.
+vi.mock("@/lib/auth/viewer-locations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth/viewer-locations")>();
+  return { ...actual, bookingLocationScope: vi.fn(async () => null) };
+});
 vi.mock("./actor", () => ({ clientIp: vi.fn(async () => null) }));
 vi.mock("./audit", () => ({ writeAppointmentAudit: vi.fn(async () => {}) }));
 vi.mock("./analytics", () => ({ writeAppointmentStatusChangedEvent: vi.fn(async () => {}) }));
@@ -291,18 +302,34 @@ describe("SCHED-27 — Cancelada back to Agendada or Confirmada", () => {
     }
   });
 
-  it("a THERAPIST cannot: bringing one back is the inverse of cancelling (appointments:delete)", async () => {
-    const auth = await import("@osteojp/auth");
-    vi.mocked(auth.assertCan).mockImplementation((role: unknown, cap: unknown) => {
-      if (role === "therapist" && cap === "appointments:delete") {
-        throw new auth.ForbiddenError("therapist", "appointments:delete");
-      }
-    });
-    mockCtx.mockResolvedValue({ ...actor, role: "therapist" });
+  // SCHED-30 (owner dispatch 2026-09-14) REPLACED the arm that stood here, "a
+  // THERAPIST cannot: bringing one back is the inverse of cancelling
+  // (appointments:delete)". The owner now lets a therapist bring back a row they
+  // are on; what stays refused is a row they are not on, and any override.
+  it("SCHED-30: a THERAPIST on the row brings it back", async () => {
+    mockCtx.mockResolvedValue({ ...actor, role: "therapist", userId: "therapist-1" });
+    seriesRow = row("cancelled");
+    const r = await updateAppointment("appt-1", { status: "scheduled" });
+    expect(r.ok).toBe(true);
+    expect(updated).toBe(true);
+  });
+
+  it("SCHED-30: a therapist NOT on the row cannot bring it back", async () => {
+    mockCtx.mockResolvedValue({ ...actor, role: "therapist", userId: "therapist-2" });
     seriesRow = row("cancelled");
     const r = await updateAppointment("appt-1", { status: "scheduled" });
     expect(r).toEqual({ ok: false, error: "forbidden" });
     expect(updated).toBe(false);
+  });
+
+  it("SCHED-30: a therapist's un-cancel into a slot taken since is refused EVEN with Guardar mesmo assim", async () => {
+    mockCtx.mockResolvedValue({ ...actor, role: "therapist", userId: "therapist-1" });
+    seriesRow = row("cancelled");
+    mockConflicts.mockResolvedValue([CONFLICT]);
+    const r = await updateAppointment("appt-1", { status: "scheduled" }, { allowConflict: true });
+    expect(r).toMatchObject({ ok: false, error: "conflict", conflictOverridable: false });
+    expect(updated).toBe(false);
+    expect(trace).toContain("lock");
   });
 
   // THE MEASURED DEFECT. Before SCHED-27 the conflict gate ran only when a row
