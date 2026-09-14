@@ -4322,3 +4322,81 @@ one clinic. `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` checks it, re
   LV rows written through Horarios on 2026-09-12 and JP(cb) still holds 16, so the portal
   roster lists both JP rows at Linda-a-Velha. 8 rows are identical on both, which is
   STAFF-10's clash precondition: STAFF-10 halts before writing. Reported, not acted on.
+
+## 2026-09-14 - PURPLE, SR-62 PU dispatch: the install block, classifyAllShell, the agenda's last hour, annulment carded, reset and psql measured
+
+**PU-0, the P-S3 install block (#1331).** The block printed in the P-S report was byte-identical to the file #1328 merged (sha256 f5c87355) and did call the installer. The defects the owner was shown were a lost stretch in transit. Two things were real and are fixed:
+- the P-S rehearsal rewrote the two `origin/main` refs to the branch name and did not say so;
+- the settings file's sha256 was checked only inside the installer.
+
+The reprint gates both fetched files itself, calls the installer and re-checks the installed file. It is self-verifying: a pin heredoc, a body heredoc, and the body's first act is `shasum -a 256 -c`. It runs under `zsh -f -e -u`, and every line is 80 characters or fewer.
+
+Decisions:
+- **Rehearse the committed bytes, with zero substitutions.** A negative arm that needs a different origin reaches it through `GIT_DIR` and a fixture repo, never by editing a line.
+- **Sweep deletions:** every lost line, every lost pair, every truncation, and a lost stretch across every line join, and all of them must stop.
+- **The `( ... )` subshell with `exit` inside is rejected.** In this session a damaged line closed it early, the self-check printed STOP, and the rest ran at top level and printed "P-S3 COMPLETE" with blank values. Nothing was installed.
+- **Deliver the exact file to the owner, not retyped text.**
+
+**PU-1, classifyAllShell in the user settings (#1332, not installed).** Chosen over removing the four rules from the clone's local settings. Evidence is Claude Code's own `--debug-file`:
+- sessions started in `/Users/ivan` carry 11 shell rules from `/Users/ivan/.claude/settings.local.json`, including `git push *` and `gh pr *`;
+- the clone and its worktrees carry 30.
+
+A classifier-allowed command costs about 1.8 s against 75 ms for a rule-allowed one; read-only commands are unaffected. The block changes only that key, keeps a backup, and warns that reset deletes it.
+
+**PU-2, the agenda's last hour (#1335).** `pb-6` on the grid body in `agenda-grid.tsx`. Reproduced on main 6/6 (the 20:00 label cut at 1024, 1280 and 1440, Dia and Semana), fixed 6/6, and failed 6/6 with the fix removed. The spec asserts the complaint, not a threshold: inside the clipping card including its corner arcs, the element under the point, and a real click.
+
+**PU-5, registo annulment.** Carded and deferred by the owner. W5-30 already has append-only `record_annulments`. The gaps are:
+- the reason is optional;
+- signed-only, so the 902 imported LOCKED registos cannot be annulled;
+- annulled registos are hidden by default.
+
+Questions filed as Q-SR62-PU5-1. `clinical_records_enforce_immutability` is untouched by every option.
+
+**PU-7, `claude auto-mode reset`.** Measured on scratch HOMEs. It removes the whole user `autoMode` section, allow and classifyAllShell included. It regenerates nothing, gives the same result from any cwd, and a `--settings` file survives it. Order: reset before PU-1, never after.
+
+**PU-8, psql friction.** No psql allow rule is proposed. A command that begins with a lane URI still reaches anything: `\c` reconnects, `\!` runs a shell, and a URI host parameter overrides the host, proven against two lane databases. The removal changed the path of at most 43 bare-psql calls in 12 days; most lane psql already went through the classifier.
+
+**Board.** Artifact 279ea20f v70 published as the union of this branch and BLUE's unmerged SCHED-30, PHONE-01, COMMS-01, COMMS-02, the INC-lv-sms update and ruling SR-63. Their cards are not committed here.
+
+**PU-3, Eliminar on a Dia definido (#1337, auto-merge armed).** Deleting the dated row alone would leave the trim a Dia definido save makes in the weekly Base row, so the day would read "Não trabalha" even where a Base exists. `apps/web/lib/admin/day-defined-remove.ts` archives the row and moves the bounds of the rows the trim left behind. It inserts nothing and hard-deletes nothing.
+
+It refuses, writing nothing, in two cases:
+- a day in the middle of a multi-day period, because Base could return only as a one-day row that would read as Dia definido (Q-SR62-PU3-1, recommended B: archive and leave "Não trabalha");
+- a restore that would double-cover.
+
+Evidence on the purple lane, on the rebased code:
+- both specs passed, and the portal's own slot request agreed with the row after reload;
+- the same spec on main failed at the missing Eliminar button.
+
+**PU-4, Documentos soft delete (#1338, NOT armed).** The migration is parked as `NEXT-AFTER-0088_attachments_soft_delete.sql`, because 0088 is held and one migration may be in flight at a time. The order is: 0088, then promote this one to 0089, then the owner applies it, then merge.
+
+Evidence, on the lane database only:
+- the parked SQL applied cleanly;
+- the DB-gated test passed 14/14;
+- the e2e passed: the reason is required; the document is gone from the tab after reload; the file stays in storage; the row keeps who, when and why; one audit row whose metadata is exactly `{ hadReason, patientId }`, with its timestamp equal to `deleted_at`;
+- a mutation arm that removed the Documentos `deleted_at` filter failed at "gone from the tab".
+
+The lane database was reset afterwards (journal 0087, columns absent). Moving a document to the correct patient is carded separately (SR62-PU4b).
+
+## 2026-09-14 - PURPLE, SR-62 overnight: the Q-PU4 text located, #1338 rebased and proven, specs 0090 and 0091
+
+**Two owner rulings, recorded here and built into the specs:**
+- **COMMS-02 (Q-COMMS-01-1).** The reminder recipient number is stored MASKED as `+3519xxxxx699`, and the full number is NEVER persisted. The log therefore answers which number pattern a reminder went to, not whether it was the right number at full precision. That was chosen deliberately.
+- **Registo annulment (Q-SR62-PU5-1, option a).** The reason is required; annulled registos are struck through and stay visible; the 902 imported LOCKED registos become annullable.
+
+**P-1, the Q-PU4 questions.** They were recorded, verbatim, but only on #1338's unmerged branch: `docs/QUESTIONS.md` lines 1582-1632 at `5b37e887`. Main carries only the board card's one-line summary and the PR body's paraphrase. The file stays unmerged until #1338 merges.
+
+**P-2, #1338 rebased onto `1dde3111`, LOCALLY ONLY, and not pushed.**
+- Pushing a rebase over the PR head needs a force push, which `osteojp-conventions` forbids ("never force-push, never rewrite history"). #1338 is held and not armed, so it also gets no CI-burning branch update.
+- Conflict: `docs/DECISIONS.md` only, resolved as a union built from git: main whole, plus the branch's appended entry. `docs/QUESTIONS.md` auto-merged with no line lost from either side.
+- The code patch is identical: patch-id `96dd091e` before and after.
+- The DB-gated red has exactly one cause, `attachments.deleted_at` absent. Measured on the PURPLE lane:
+  - branch red: 2 files fail, `attachments-soft-delete` (PostgresError) and `migration-upsert-idempotency` ("expected 7 to be 8"). Postgres logs the importer's INSERT naming `"deleted_at"`.
+  - main control on the same database: 90/90 green.
+  - branch with the parked SQL applied: 91/91 green (1289 tests).
+  - The lane was reset afterwards.
+
+**P-3 and P-4: specs only, no migration file.** `docs/design/SPEC-0090-comms-02-reminder-log.md` and `docs/design/SPEC-0091-registo-annulment.md`.
+- **Annulment stays a row in the separate append-only `record_annulments`.** The trigger is bound `BEFORE UPDATE OR DELETE ON clinical_records`, so it is never invoked by an INSERT elsewhere.
+- **A column on `clinical_records` is impossible without a bypass.** The 0005 function rejects every update of a locked or signed row except a merge re-parent.
+- **Questions opened:** Q-SR62-P3-1, Q-SR62-P4-1, Q-SR62-P4-2 (the existing DRAFT Eliminar against "never a delete button") and Q-SR62-P4-3.

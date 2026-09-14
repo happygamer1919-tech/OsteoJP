@@ -1,0 +1,23 @@
+{
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Organization: OsteoJP, an osteopathy clinic group with two clinics in Portugal (Linda-a-Velha and Castelo Branco). Primary use of Claude Code in a session started with this settings file: the GREEN apply lane, which runs the production reads, migrations and scripts that the owner's dispatch names and that another lane authored",
+      "Trusted repo: happygamer1919-tech/OsteoJP on GitHub, checked out for this lane at the worktree /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply, whose main checkout is /Users/ivan/Documents/Projects/GitHub/OsteoJP. It is the only trusted repository",
+      "Repository visibility: PUBLIC (happygamer1919-tech/OsteoJP). No credential, no patient data and nothing confidential may be committed, pushed, or written into a pull request, issue or comment there",
+      "Source control: github.com/happygamer1919-tech/OsteoJP only; no other GitHub organisation or repository is trusted",
+      "Cloud provider(s): Supabase, EU region (Frankfurt), and Vercel (fra1)",
+      "Sensitive remote targets: the production Supabase project ref dfotoodqvmjhbdcxyaxf, reached through aws-0-eu-central-1.pooler.supabase.com on ports 5432 and 6543; every connection to it is a production connection. The retired project ref jaxmkwoxjcgzkwxgbayx is production-classed too and is never written. The lane databases on 127.0.0.1 hold synthetic data only and are not production",
+      "Sensitive data locations & audiences: the production database above holds patient personal and health data, special-category data under the GDPR. Patient names, phone numbers, email addresses and clinical content never leave it into the transcript, a log, a file, git or any external service; only counts, ids and dates may be shown, and only to the owner",
+      "Secrets management: production credentials live in /Users/ivan/osteojp-secrets/ (for example new-prod.env), a credential path outside the repository's scope, and in the Supabase and Vercel dashboards. Their values are never printed, echoed, copied, committed or sent anywhere; a file there may only be loaded into a process environment by its path",
+      "CI/CD deploy targets: the Vercel projects osteojp-platform, osteojp-api and osteojp-portal deploy production from the main branch, so a merge to main is a production deploy",
+      "Protected deployment namespaces / environments: production is the Supabase project dfotoodqvmjhbdcxyaxf and the Vercel production deployments serving app.osteojp.pt and portal.osteojp.pt"
+    ],
+    "allow": [
+      "$defaults",
+      "OsteoJP production database reads (Supabase project ref dfotoodqvmjhbdcxyaxf, named by the owner as the prod target): the agent may run READ ONLY queries against it from /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply, connecting with the env file /Users/ivan/osteojp-secrets/new-prod.env loaded by node --env-file or set -o allexport, inside a READ ONLY transaction, after the ref guard runs. The credential values must never be printed, echoed, logged or quoted. Results may carry counts, ids and dates, but never patient names, phones or emails.",
+      "OsteoJP production applies delegated to the GREEN lane by the owner (ruling 2026-09-13, Supabase project ref dfotoodqvmjhbdcxyaxf): the agent may run a production migration or write script only when ALL of these hold. The owner's dispatch names that exact migration or script. The file is checked out from origin/main in /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply and its sha256 is asserted on disk earlier in the same transcript. Its pre-check output from this run is visible earlier in the transcript. Every --expect value comes from that pre-check. The agent did not author the artifact. Any failed assertion stops the chain with no retry and no changed expectation. Credential values are never printed. Even when all of these hold, the agent never disables, drops, alters or works around any trigger, and clinical_records_enforce_immutability specifically; never runs a migration or script the owner's dispatch did not name by filename; never prints, logs or writes patient names, phone numbers or email addresses; never re-runs a block whose audit row already exists; and never runs DELETE, DROP or TRUNCATE outside a named migration file."
+    ],
+    "classifyAllShell": true
+  }
+}

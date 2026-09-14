@@ -1,0 +1,29 @@
+#!/bin/sh
+# PRE-PUSH: THE SECRET SCAN, AND GIT ITSELF REFUSES THE PUSH WHEN IT DOES NOT PASS.
+# Why this is a hook and not a habit: scripts/secret-scan.mjs, header.
+#
+# Any non-zero exit blocks the push: 1 a finding, 2 a scan that could not run,
+# 127 no node on PATH. Git runs hooks from the working tree root and hands the
+# refs being pushed on stdin, which the scanner reads.
+#
+# A branch cut before the scanner existed has no scripts/secret-scan.mjs. It is
+# scanned with origin/main's copy rather than waved through, and when that cannot
+# be read either the push is blocked.
+#
+# Activate once per clone: git config core.hooksPath scripts/git-hooks
+set -u
+
+if [ -f scripts/secret-scan.mjs ]; then
+  exec node scripts/secret-scan.mjs --pre-push "$@"
+fi
+
+dir=$(mktemp -d) || exit 2
+if ! git show origin/main:scripts/secret-scan.mjs > "$dir/secret-scan.mjs" 2>/dev/null; then
+  echo "pre-push: no scripts/secret-scan.mjs in this tree or on origin/main. THE PUSH IS BLOCKED." >&2
+  rm -rf "$dir"
+  exit 2
+fi
+node "$dir/secret-scan.mjs" --pre-push "$@"
+status=$?
+rm -rf "$dir"
+exit $status

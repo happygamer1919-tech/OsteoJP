@@ -1369,3 +1369,74 @@ should be able to go to any other state.
 2. Does an un-cancelled future marcação send its reminders again? Recommended: yes.
 3. Add the conflict check to Corrigir estado into Concluída even if this request is
    declined? Recommended: yes. It is live today.
+
+## Q-SCHED-29-4-1 - with GREEN's NESA flags on, reception can neither book NESA nor filter the agenda by it (BLUE, 2026-09-13)
+
+**Status: ANSWERED 2026-09-13, option A (owner).** Built in #1325 (card SCHED-29-4-reception-nesa-book-or-filter): owner, admin and reception are offered NESA in the Terapeuta select, the Terapeuta 2 select and the Terapeutas filter, keyed on the shared-machine flag and not on `is_bookable`; the machine is read per request, not from the 60-second roster cache. One refinement recorded in DECISIONS.md: admin and reception are offered machines at their own assigned clinics, because the server refuses them a machine anywhere else.
+
+**Original status: OPEN, blocked card SCHED-29-4-reception-nesa-book-or-filter.** The owner did not accept SCHED-29.4 as reported ("owner, admin and reception see no NESA") and asked for booking and filtering to be measured separately. They were.
+
+**Measured** on the BLUE lane as reception (e2e storage state `reception.json`), with a machine row shaped like GREEN's v3 flags (`is_shared_resource` true, `is_active` true, `staff_locations` at the CB stand-in only), first with `is_bookable` TRUE as a positive control, then FALSE:
+
+| Control | Component and selector | bookable true | bookable false (v3) |
+|---|---|---|---|
+| Book, primary | `app/agenda/appointment-drawer.tsx`, `<Field label="Terapeuta" required>` `<Select>` over `therapistOptions`, clinic chosen in `Localização` | NESA offered (3 options) | **NESA absent (2 options)** |
+| Book, second | same file, `<details>` "Participantes secundários (opcional)" > `<Field label="Terapeuta 2">` `<Select>` over `practitionerTwoOptions` (= `options.therapists` for a non-therapist) | NESA offered (11) | **NESA absent (10)** |
+| Filter | `app/agenda/agenda-view.tsx`, toolbar `<Select aria-label="Terapeutas">` over `options.therapists` | NESA offered on a fresh render | NESA listed only on the first load after the 60-second reference cache expired, which serves the previous list; the code reads the same `is_bookable` list as Terapeuta 2, which measured absent |
+
+**Answer: reception cannot BOOK NESA and cannot FILTER by it.** Every list reception picks from is built by `filterBookableTherapists` (`lib/scheduling/data.ts`), which reads `is_bookable` alone, and GREEN's v3 block sets it false to keep NESA out of those lists. The server would still accept NESA as Terapeuta from reception (`createAppointment` has no bookable check; `nesa-both-roles-conflict.db.test.ts` books it), so the gap is the drawer's offer, not a permission. With the flag on, reception loses the machine's diary and its booking. **This is a defect**, not "fine as is": 4,196 historical CB appointments carry NESA as Terapeuta, which is how the clinic has booked it.
+
+**Options:**
+- **A (recommended default):** for owner, admin and reception, offer shared resources installed at the chosen clinic in BOTH booking selects, and in the toolbar filter, keyed on `is_shared_resource` plus `staff_locations` (the SCHED-17/29 control) and not on `is_bookable`. GREEN's v3 values stay as they are. A therapist's offer is unchanged.
+- **B:** as A, but NESA only in Terapeuta 2 for reception, mirroring the therapist rule. It breaks the historical pattern (NESA as Terapeuta) and reception's direct NESA sessions.
+- **C:** set `is_bookable` true on NESA instead. It reverses GREEN's v3 value and puts NESA in every clinic's roster for the owner, including Linda-a-Velha, where the machine is not installed.
+
+**Not built in this dispatch.** B3 was a measurement; a fix follows the ruling.
+
+## Q-SR62-PU5-1 - registo annulment: may a LOCKED (imported) registo be annulled, and does an annulled registo stay in the history struck through by default? (PURPLE, 2026-09-14)
+
+**Status: OPEN, card SR62-PU5-registo-annulment-reason-required-and-visible (deferred by the owner: not built in SR-62).**
+
+**ANSWERED 2026-09-14 (owner, overnight dispatch, option a):** the reason is REQUIRED; annulled registos are STRUCK THROUGH and REMAIN VISIBLE; the 902 imported LOCKED registos BECOME ANNULLABLE. The immutability trigger stays untouched. Spec: `docs/design/SPEC-0091-registo-annulment.md`. The build waits for its migration slot, after 0090.
+
+**The shape the owner set:** registos clinicos get ANNULMENT, never deletion. An anulado state with a reason and an audit row; the record stays readable, stays in history, and renders struck through. `clinical_records_enforce_immutability` is never disabled, bypassed or worked around.
+
+**What exists on main (W5-30, read 2026-09-14 on 59074ded):** `record_annulments` (migration 0035), append-only by policy set; `annulRecord` in `apps/web/lib/clinical/records.ts` inserts one row and never touches the record; audit `clinical_record.annul` with `{ hadReason }`; an ANULADO badge on the patient's Registos tab.
+
+**The three gaps, and which need a ruling:**
+
+1. **The reason is optional** (`record_annulments.reason` nullable; the writer stores null for a blank reason). The owner's shape says "with a reason". Making it required needs a migration (a CHECK on new rows, `NOT VALID` so existing rows are not rewritten) and the dialog. No ruling needed; migration apply-before-merge.
+2. **Only SIGNED registos can be annulled** (`annulRecord` refuses anything else with `not_signed`). STAFF-11 measured all 902 imported registos as LOCKED, not signed, so none of the imported history can be annulled today. **Ruling needed:** may a LOCKED registo be annulled?
+3. **Annulled registos are HIDDEN by default** behind "Mostrar anulados", with a badge and no strike-through. The owner's shape says they stay in history, struck through. **Ruling needed:** visible by default, struck through, with the toggle removed or kept?
+
+**Options for 2:**
+- **A (recommended default):** LOCKED and SIGNED registos may both be annulled. The append-only row is the same, and the immutability trigger is untouched either way; a draft keeps its existing hard delete.
+- **B:** SIGNED only, as today; imported registos stay un-annullable.
+
+**Options for 3:**
+- **A (recommended default):** annulled registos render in place in the history, struck through with the ANULADO badge and the reason shown on open; no hide toggle.
+- **B:** struck through, but still hidden by default behind "Mostrar anulados".
+
+## Q-SR62-P4-1 - registo annulment: may a therapist annul a registo authored by a DIFFERENT practitioner? (PURPLE, 2026-09-14)
+
+**Status: OPEN. Does not block the spec; blocks nothing until 0091 is built.**
+
+Spec 0091 (`docs/design/SPEC-0091-registo-annulment.md` section 3.3) makes the annulment INSERT policy mirror the existing `clinical_records_insert` matrix: the owner, or a therapist who authored the record or treats the patient. That lets a therapist annul, for example, an imported LOCKED registo authored by JP when the patient is also theirs. The app allows the same today for SIGNED registos.
+
+**Recommended default:** yes, mirror the existing write matrix. **Alternative:** only the owner, or the record's own practitioner, may annul.
+
+## Q-SR62-P4-2 - does "registos clinicos NEVER get a delete button" cover DRAFT registos? (PURPLE, 2026-09-14)
+
+**Status: OPEN. Flagged, nothing changed.**
+
+On main, a DRAFT registo shows a password-gated "Eliminar" that hard-deletes it (`apps/web/app/patients/[id]/record-lifecycle-actions.tsx:75-86`, `hardDeleteClinicalRecord` in `apps/web/lib/clinical/records.ts`, W5-30). The rule restated on 2026-09-14 says registos never get a delete button, annulment only. Drafts are not finalized history, and the immutability trigger does not protect them.
+
+**Recommended default:** no change until ruled. Spec 0091 neither removes nor widens that button. **Alternative:** remove it, so a draft is either finished or annulled once locked.
+
+## Q-SR62-P4-3 - what does an OLD annulment with no reason show? (PURPLE, 2026-09-14)
+
+**Status: OPEN. Copy only.**
+
+Annulments made before 0091 may have a NULL reason (0035 made it optional). They stay as history, unrewritten.
+
+**Recommended default:** "Anulado sem motivo registado" (en: "Annulled, no reason recorded").

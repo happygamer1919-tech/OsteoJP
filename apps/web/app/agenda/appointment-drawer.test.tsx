@@ -34,6 +34,7 @@ vi.mock("@/lib/scheduling/actions", () => ({
 vi.mock("@/lib/patients/actions", () => ({
   searchPatientsAction: vi.fn(),
   getPatientContraindications: vi.fn(),
+  getPatientNoSmsReason: vi.fn(),
 }));
 vi.mock("./availability-panel", () => ({ AvailabilityPanel: () => null }));
 vi.mock("./confirmation-indicator", () => ({ ConfirmationIndicator: () => null }));
@@ -325,6 +326,44 @@ describe("AppointmentDrawer — a shared resource beside the therapist (SCHED-17
   it("changes nothing for a therapist with no shared resource (every clinic before the migration)", () => {
     const html = render({ mode: "create" }, false, THERAPIST, { ...WITH_RESOURCE, sharedResources: [] });
     expect(html).toContain('aria-readonly="true"');
+    expect(html).not.toContain("Equipamento NESA");
+  });
+});
+
+// SCHED-29.4 (Q-SCHED-29-4-1 = A). Reception, admin and the owner are offered the
+// machine beside the people, at the clinic where it is installed, although it is
+// not in the is_bookable roster at all (GREEN's v3 flags). The Terapeuta 2 select
+// mounts only when its panel is opened, so this static render pins the Terapeuta
+// select; the shared rule is unit-tested in shared-resource-guard.test.ts and both
+// selects are walked as reception in e2e/nesa-shared-resource.spec.ts.
+describe("AppointmentDrawer — owner, admin and reception are offered NESA (SCHED-29.4)", () => {
+  const PEOPLE = [{ id: "therapist-cb", label: "Dr. Pessoa Terapeuta" }];
+  const AT_CB: AgendaOptions = {
+    therapists: PEOPLE,
+    allTherapists: PEOPLE,
+    locations: [{ id: "loc-cb", label: "Castelo Branco", opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null }],
+    bookableLocations: [{ id: "loc-cb", label: "Castelo Branco" }],
+    services: [{ id: "svc-primary", label: "Osteopatia", durationMin: 60, contraindicationSensitive: false }],
+    packs: [],
+    sharedResources: [{ id: "resource-nesa", label: "Equipamento NESA", locationIds: ["loc-cb"] }],
+  };
+  const AT_LV: AgendaOptions = {
+    ...AT_CB,
+    locations: [{ id: "loc-lv", label: "Linda-a-Velha", opensAt: "08:00:00", closesAt: "20:00:00", middayClosedFrom: null, middayClosedTo: null }],
+    bookableLocations: [{ id: "loc-lv", label: "Linda-a-Velha" }],
+  };
+
+  for (const role of ["reception", "admin", "owner"] as const) {
+    it(`offers ${role} the people AND the machine at the clinic where it is installed`, () => {
+      const html = render({ mode: "create" }, false, { role, userId: `${role}-1` }, AT_CB);
+      expect(html).toContain("Dr. Pessoa Terapeuta");
+      expect(html).toContain("Equipamento NESA");
+    });
+  }
+
+  it("does not offer the machine at a clinic where it is not installed", () => {
+    const html = render({ mode: "create" }, false, DEFAULT_VIEWER, AT_LV);
+    expect(html).toContain("Dr. Pessoa Terapeuta");
     expect(html).not.toContain("Equipamento NESA");
   });
 });

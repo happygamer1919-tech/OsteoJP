@@ -17,6 +17,7 @@ import {
   type AgendaView as View,
 } from "@/lib/scheduling/time";
 import type { BlockSpan } from "@/lib/scheduling/blocked-time-core";
+import { withSharedResourceOptions } from "@/lib/scheduling/shared-resource-guard";
 import type {
   AgendaAppointment,
   AgendaFilters,
@@ -311,7 +312,14 @@ export function AgendaView({
                   onChange={(e) => navigate({ therapist: e.target.value || null })}
                 >
                   <option value="">{s["agenda.allTherapists"]}</option>
-                  {options.therapists.map((o) => (
+                  {/* SCHED-29.4: the shared resources at the toolbar's clinic (every
+                      clinic under Todas as localizações) follow the people, keyed
+                      on is_shared_resource, not is_bookable. */}
+                  {withSharedResourceOptions(
+                    options.therapists,
+                    options.sharedResources ?? [],
+                    filters.locationId,
+                  ).map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.label}
                     </option>

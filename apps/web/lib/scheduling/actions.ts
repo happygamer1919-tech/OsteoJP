@@ -37,6 +37,7 @@ import { isLegalEstadoTransition } from "./estado-transitions";
 import { correctionEntersBlockingSet, isLegalEstadoCorrection } from "./estado-correction";
 import { isUncancel } from "./uncancel";
 import { uncancelOverdrawsPack } from "./uncancel-db";
+import { cancelAuthority, namesSharedResource, ownCancelRefusal } from "./cancel-authority";
 import {
   bookingLocationScope,
   isLocationBookable,
@@ -1332,6 +1333,12 @@ export async function updateAppointment(
 
   const scope: SeriesScope = opts?.scope ?? "one";
   const newRoom = typeof set.room === "string" ? set.room.trim() : "";
+  // SCHED-30: a therapist's clinics, read before the transaction as STAFF-02
+  // reads them. Only a status patch can bring a row back, so only then.
+  const ownCancelScope =
+    patch.status && cancelAuthority(actor.role) === "own"
+      ? { locations: await bookingLocationScope(actor) }
+      : null;
 
   const ip = await clientIp();
   // Captured inside the tx, emitted AFTER commit (network out of the tx).
@@ -1427,11 +1434,31 @@ export async function updateAppointment(
           ? affected.filter((a) => isUncancel(a.status, patch.status!))
           : [];
         if (uncancelling.length > 0) {
-          try {
-            assertCan(actor.role, "appointments:delete");
-          } catch (e) {
-            if (e instanceof ForbiddenError) return { ok: false, error: "forbidden" };
-            throw e;
+          // SCHED-30 (owner dispatch 2026-09-14) replaced the appointments:delete
+          // assertion. Owner, admin and reception are unchanged. A therapist may
+          // bring a row back where they are Terapeuta or Terapeuta 2, at one of
+          // their clinics (cancel-authority.ts), and every check below still
+          // runs for them.
+          if (cancelAuthority(actor.role) === "none") return { ok: false, error: "forbidden" };
+          if (cancelAuthority(actor.role) === "own") {
+            // Read before the transaction. `locations: null` is STAFF-02's
+            // unassigned fallback and means unrestricted; a missing read (which a
+            // status patch cannot produce) refuses every clinic instead.
+            const refusal = ownCancelRefusal(
+              actor.userId,
+              ownCancelScope ? ownCancelScope.locations : [],
+              uncancelling,
+            );
+            if (refusal) return { ok: false, error: refusal };
+            // THE NESA HOLE, closed by refusal rather than accepted. The conflict
+            // check reads a shared resource's Terapeuta 2 rows under the caller's
+            // RLS, and a therapist sees a colleague's such row only once 0088 is
+            // applied. An un-cancel the check cannot fully see is the double
+            // booking the owner named, so it is refused and left to reception.
+            const sharedIds = new Set((await listSharedResourcesTx(tx)).map((r) => r.id));
+            if (namesSharedResource(uncancelling, sharedIds)) {
+              return { ok: false, error: "uncancel_shared_resource" };
+            }
           }
           for (const a of uncancelling) {
             const cl = await checkClinicClosure(tx, {
@@ -1556,7 +1583,12 @@ export async function updateAppointment(
         // on one therapist — that is refused by the database itself (0061), so
         // it cannot be reached by any path, overridden, or forgotten.
         // ==============================================================
-        if (patch.status && !opts?.allowConflict) {
+        // SCHED-30: a THERAPIST bringing a row back is checked whatever
+        // allowConflict says. The owner's rule is that an un-cancel into a slot
+        // taken since is refused; "Guardar mesmo assim" stays with owner, admin
+        // and reception, who keep the rule stated above.
+        const overrideAllowed = !(uncancelling.length > 0 && cancelAuthority(actor.role) === "own");
+        if (patch.status && (!opts?.allowConflict || !overrideAllowed)) {
           const NON_BLOCKING_STATUS = new Set(["cancelled", "no_show"]);
           const willBlock = !NON_BLOCKING_STATUS.has(patch.status);
           // Only a row at `scheduled` can be an unconfirmed pedido — 0059:145
@@ -1620,6 +1652,7 @@ export async function updateAppointment(
                 ok: false,
                 error: "conflict",
                 conflicts: conflicts.slice(0, CONFLICT_CAP),
+                ...(overrideAllowed ? {} : { conflictOverridable: false as const }),
               };
             }
           }
@@ -1712,7 +1745,9 @@ export async function updateAppointment(
             metadata: {
               changed,
               scope,
-              allowConflict: !!opts?.allowConflict,
+              // SCHED-30: an override the server did not honour is not recorded
+              // as one.
+              allowConflict: !!opts?.allowConflict && overrideAllowed,
               // Only on a status patch, and BOTH ends or neither. A `to` with
               // no `from` is the shape that made the INC-08 timeline an
               // inference rather than a reading.
@@ -2419,12 +2454,22 @@ export async function cancelAppointment(
   reason?: string,
   opts?: SeriesOptions,
 ): Promise<ActionResult<{ id: string }>> {
-  const auth = await authorize("appointments:delete");
+  // SCHED-30 (owner dispatch 2026-09-14): owner, admin and reception cancel any
+  // row they can write, as before (appointments:delete). A therapist cancels
+  // where they are Terapeuta or Terapeuta 2, at one of their clinics
+  // (appointments:cancel_own). The capability decides WHO; the row test inside
+  // the transaction decides WHICH, because RLS alone would also admit NESA's
+  // rows at their clinic (0086).
+  const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
+  const authority = cancelAuthority(actor.role);
+  if (authority === "none") return { ok: false, error: "forbidden" };
 
   if (!id) return { ok: false, error: "validation" };
   const scope: SeriesScope = opts?.scope ?? "one";
+  // STAFF-02's write scope, read before the transaction as every door reads it.
+  const ownScope = authority === "own" ? await bookingLocationScope(actor) : null;
 
   // WHETHER a reason was given — the only thing about it that reaches the audit
   // row. See the metadata block below for why the text does not, and
@@ -2447,6 +2492,13 @@ export async function cancelAppointment(
           return { ok: false, error: "not_found" };
         }
         const ids = affected.map((a) => a.id);
+
+        // SCHED-30: every row this call cancels is the therapist's own and at one
+        // of their clinics, or nothing is cancelled.
+        if (authority === "own") {
+          const refusal = ownCancelRefusal(actor.userId, ownScope, affected);
+          if (refusal) return { ok: false, error: refusal };
+        }
 
         // The fan-out needs the patient and BOTH practitioners, which
         // resolveSeries does not select. Read BEFORE the update: after it the

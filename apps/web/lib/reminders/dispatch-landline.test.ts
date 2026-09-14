@@ -85,10 +85,14 @@ describe("the reminder path skips a landline", () => {
   it("the landline skip RETURNS, so nothing downstream can send anyway", () => {
     // The ordering assertion above is positional, and position alone would not
     // catch a capability check that logged and fell through. This is the arm
-    // that makes the skip a skip: the landline branch ends in `return null`.
+    // that makes the skip a skip: the landline branch RETURNS.
+    //
+    // COMMS-01 (2026-09-14): it returns `{ skipped: "landline" }` rather than
+    // `null`, so the ledger row can name the reason. The property is unchanged:
+    // the branch returns before any send.
     const cap = src.indexOf("isSmsCapablePT(");
     const after = src.slice(cap, cap + 900);
-    expect(after).toContain("return null;");
+    expect(after).toContain('return { skipped: "landline" };');
   });
 
   it("gives the landline skip its OWN reason, not invalid_phone", () => {

@@ -153,10 +153,17 @@ export type AgendaOptions = {
   services: ServiceOption[];
   packs: PackOption[];
   /**
-   * SCHED-17 - the shared resources (NESA) at the VIEWER's own locations, set for
-   * a therapist only. A self-locked therapist's drawer offers these besides
-   * themselves; everyone else already sees a bookable resource in the ordinary
-   * Terapeuta list. Absent or empty until the NESA migration is applied.
+   * The shared resources (NESA) the viewer may be offered, with where each is
+   * installed. Read per request, never from the 60-second reference cache.
+   *
+   *   - therapist (SCHED-17): the resources at the viewer's own locations. A
+   *     self-locked therapist's drawer offers these besides themselves.
+   *   - owner, admin, reception (SCHED-29.4, Q-SCHED-29-4-1 = A): the resources
+   *     at the viewer's location scope, every one for an unscoped viewer. The
+   *     Terapeuta and Terapeuta 2 selects and the Terapeutas filter list them
+   *     beside the is_bookable roster, whatever the machine's is_bookable says.
+   *
+   * Absent or empty until the NESA migration is applied.
    */
   sharedResources?: { id: string; label: string; locationIds: string[] }[];
 };
@@ -321,6 +328,12 @@ export type ActionErrorCode =
   // tell a therapist assigned to both clinics that LV is not theirs, when the
   // truth is that the machine is not there.
   | "shared_resource_location"
+  // SCHED-30: a THERAPIST bringing back a Cancelada that names a shared resource
+  // (NESA) in either slot. Refused because their conflict check cannot see a
+  // colleague's booking holding NESA as Terapeuta 2 until 0088 is applied, so it
+  // cannot prove the slot is free. Its own code because the next action differs:
+  // reception, who sees every row at the clinic, can bring it back.
+  | "uncancel_shared_resource"
   | "error";
 
 export type ActionResult<T> =
@@ -346,4 +359,12 @@ export type ActionResult<T> =
        * availability windows above follow.
        */
       clinicClosure?: { locationName: string; from: string; to: string };
+      /**
+       * SCHED-30. Set to `false` only with `error: "conflict"` when the server
+       * will NOT honour allowConflict for this call: a therapist bringing a
+       * Cancelada back into a slot taken since. Absent means the ordinary rule,
+       * where "Guardar mesmo assim" is offered. A caller that offered the
+       * override here would show a button that cannot succeed.
+       */
+      conflictOverridable?: false;
     };

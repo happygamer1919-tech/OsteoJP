@@ -185,7 +185,13 @@ test("0085: the band belongs to the clinic, not to the agenda", async ({ page })
 /* (seed-e2e upserts and never deletes), and a row a previous run left at     */
 /* 13:30 must not make this one fail or pass for the wrong reason.            */
 /*                                                                           */
-/* DAY 46, PRIVATE TO THIS TEST. Retries move 100 days out.                   */
+/* DAY 47, PRIVATE TO THIS TEST, AND A GUARD HOLDS IT PRIVATE. It was 46 until */
+/* 2026-09-13, which marcacao-patient-link.spec.ts:51 also books with the same */
+/* therapist at the same 10:00: its save was refused as a double booking      */
+/* (appointment_conflicts is clinic-blind, by ruling) whenever the two ran    */
+/* against one database. scripts/e2e-spec-days-do-not-collide.test.mjs now    */
+/* fails the required CI job if any other spec file derives day 47.           */
+/* Retries move 100 days out.                                                */
 
 async function e2eTherapistId(db: ReturnType<typeof serviceClient>): Promise<string> {
   const { data, error } = await db
@@ -237,7 +243,7 @@ test("0085: Marcar novamente into the closed hour is refused, and the refusal na
   });
   if (src.error) throw new Error(`source appointment insert failed: ${src.error.message}`);
 
-  const day = futureDate(RUN_DAY_BASE + 46 + testInfo.retry * 100);
+  const day = futureDate(RUN_DAY_BASE + 47 + testInfo.retry * 100);
   const closedAt = lisbonDateTimeToUtc(day, "13:30");
   const openAt = lisbonDateTimeToUtc(day, "10:00");
   const closedBefore = await rowsAt(db, closedAt);
