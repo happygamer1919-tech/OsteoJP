@@ -1566,3 +1566,15 @@ remarcar." **Not written to the page until ruled.**
 
 **The button labels are NOT in question** — the dispatch gives them verbatim:
 **Confirmar consulta** and **Pedir remarcação**.
+
+## 2026-09-14 — Q-COMMS-01-1: Lembretes SMS needs one migration for its missing half (BLUE, not authored)
+
+**Context.** The owner's BL-2 asks for a per-reminder log showing patient, appointment, channel, scheduled time, sent time, status, provider error code and the destination number, with a therapist seeing only reminders for appointments where they are Terapeuta or Terapeuta 2. COMMS-01 shipped the part the database already holds: `reminder_dispatches` (0075), read under RLS for owner, admin and reception. Three things cannot be built without a migration, and none was authored (0088 is unapplied and one migration is in flight at a time):
+
+1. **A schedule-time record.** Nothing records `appointment/scheduled`; only the Inngest dashboard does. A reminder scheduled but not yet due, or a run that never reached dispatch, is invisible. Needed: a table (tenant_id, appointment_id, offset or kind, channel, send_at, scheduled_at, superseded_at) written by `scheduleAppointmentReminders` at fan-out, and a nullable link from `reminder_dispatches` to it, so "scheduled, never sent" is a query. RLS in the same migration.
+2. **The destination number.** 0075 ruled the recipient out ("a hash nobody needs is a pseudonymous identifier nobody can justify"). Showing the number a message actually went to REVERSES that ruling and stores a phone number per attempt. Today the page shows the patient's CURRENT number, labelled as such.
+3. **The therapist's view.** A therapist reads zero rows under 0075's SELECT policy (measured). Needed: a PERMISSIVE FOR SELECT policy on `reminder_dispatches` and on the new table for `therapist`, `EXISTS (appointment with practitioner_id = auth.uid() OR practitioner_2_id = auth.uid())`. It must NOT reuse 0086's shared-resource disjunct: NESA's bookings opened to every CB therapist would expose other therapists' patients' numbers, which is the RGPD scoping the dispatch put above parity. Then grant `reminders:log_read` to the therapist.
+
+**Questions for the owner.** (a) Approve the destination column, reversing 0075's no-recipient ruling for SMS rows? (b) Approve one migration carrying 1 to 3, authored after 0088 applies?
+
+**Recommended default.** (a) Yes, E.164 only, SMS rows only, because the log's purpose is proof of where a reminder went and the current-number column cannot give it. (b) Yes, one migration after 0088, with an isolation test in the same PR and GREEN as applier.

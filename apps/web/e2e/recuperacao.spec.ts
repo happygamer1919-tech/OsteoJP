@@ -277,10 +277,15 @@ test.describe("owner ruling 2026-08-27 - the therapist's scoped list", () => {
     // The nav half of the ruling. It needed no nav change - the entry has always
     // been gated on `followup:read` - so this asserts the consequence rather
     // than a line of code.
+    //
+    // COMMS-01 (owner dispatch 2026-09-14): the sidebar entry is now the
+    // Comunicações group, and following it lands a therapist on Recuperação.
     await page.goto("/dashboard");
-    await expect(
-      page.getByRole("navigation").getByRole("link", { name: "Recuperação" }),
-    ).toBeVisible();
+    const entry = page.getByRole("navigation").getByRole("link", { name: "Comunicações" });
+    await expect(entry).toBeVisible();
+    await entry.click();
+    await expect(page).toHaveURL(/\/recuperacao/);
+    await expect(page.getByRole("heading", { name: "Recuperação de utentes" })).toBeVisible();
   });
 });
 
