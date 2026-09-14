@@ -116,7 +116,8 @@ describe("parseCreatePatient", () => {
 describe("parseUpdatePatient", () => {
   it("only includes keys that were provided", () => {
     const v = parseUpdatePatient({ phone: "912345678" });
-    expect(v).toEqual({ phone: "912345678" });
+    // PHONE-01: a phone is stored as E.164.
+    expect(v).toEqual({ phone: "+351912345678" });
     expect("fullName" in v).toBe(false);
   });
 

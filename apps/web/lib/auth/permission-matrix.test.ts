@@ -53,6 +53,9 @@ const DENIED: Record<Role, Capability[]> = {
     "settings:read",
     "settings:manage",
     "audit_log:read",
+    // COMMS-01: 0075's SELECT policy gives a therapist no rows, so the page
+    // would read as an empty log. Granted only with the scoped migration.
+    "reminders:log_read",
   ],
   reception: [
     // NO clinical access at all
@@ -186,6 +189,22 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("reception", "clinical_records:read")).toBe(false);
   });
 
+  it("COMMS-01: the SMS send log is owner, admin and reception - NOT the therapist until a scoped policy exists", () => {
+    // Owner dispatch 2026-09-14 (BL-2). The dispatch gives a therapist the rows
+    // for their own appointments. 0075's SELECT policy admits owner, admin and
+    // reception only, so a therapist holding this capability would open a page
+    // that is EMPTY by construction and reads as "nothing failed". The grant
+    // lands with the migration named in docs/QUESTIONS.md > Q-COMMS-01-1.
+    for (const role of ["owner", "admin", "reception"] as const) {
+      expect(can(role, "reminders:log_read")).toBe(true);
+    }
+    expect(can("therapist", "reminders:log_read")).toBe(false);
+
+    // It rides nothing a therapist already holds.
+    expect(can("therapist", "followup:read")).toBe(true);
+    expect(can("therapist", "sms_replies:read")).toBe(false);
+  });
+
   it("PL-09 Phase 5: reception manages schedules but holds NO tenant settings", () => {
     // Reception OWNS scheduling for their location (schedule:*), decoupled from
     // settings:* — it must never gain tenant settings by that grant.
@@ -206,5 +225,22 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("therapist", "settings:read")).toBe(false);
     expect(can("therapist", "settings:manage")).toBe(false);
     expect(can("therapist", "users:manage")).toBe(false);
+  });
+
+  it("SCHED-30: a therapist cancels only through appointments:cancel_own; appointments:delete stays with the front desk", () => {
+    // Owner dispatch 2026-09-14 (BL-3). Like every grant here the capability is
+    // TARGET-BLIND. The rule that it is the therapist's OWN row at their OWN
+    // clinic is ownCancelRefusal, proven in lib/scheduling/cancel-authority.test.ts
+    // and against a real database in lib/scheduling/therapist-cancel.db.test.ts.
+    // appointments:delete would also have opened Corrigir estado and NESA's rows,
+    // which nobody ruled for a therapist; the line below is what keeps that shut.
+    expect(can("therapist", "appointments:cancel_own")).toBe(true);
+    expect(can("therapist", "appointments:delete")).toBe(false);
+    for (const role of ["owner", "admin", "reception"] as const) {
+      expect(can(role, "appointments:delete")).toBe(true);
+    }
+    // Admin and reception need nothing new: delete already covers every row they write.
+    expect(can("admin", "appointments:cancel_own")).toBe(false);
+    expect(can("reception", "appointments:cancel_own")).toBe(false);
   });
 });

@@ -142,6 +142,12 @@ const SUITES = [
   // spec was named after the visible outcome. This suite is the write path, and
   // a silent skip would put it straight back where it was.
   { file: "record-contact.db.test.ts", hard: true },
+  // COMMS-01, added 2026-09-14. The SMS send log against real Postgres. Hard-
+  // required because both load-bearing arms are DATABASE facts: a provider
+  // rejection is written by the dispatch path through the reminder job context
+  // and read back by reception through RLS, and a therapist's own principal
+  // reads zero rows under 0075's SELECT policy. A mock has no policy to refuse.
+  { file: "reminder-log.db.test.ts", hard: true },
   // LE-staff-delete-leaves-auth-user, added 2026-08-28. Hard-required because
   // the property it proves is a REFUSAL: that a portal patient's auth identity
   // is never reclaimable as a staff login. A silent skip would leave the safe

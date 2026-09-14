@@ -39,6 +39,8 @@ vi.mock("@/lib/auth/context", () => ({
 }));
 vi.mock("@osteojp/auth", () => ({
   assertCan: vi.fn(),
+  // SCHED-30: cancelAuthority reads can(). Granted, like assertCan above.
+  can: vi.fn(() => true),
   ForbiddenError: class ForbiddenError extends Error {},
 }));
 vi.mock("./actor", () => ({ clientIp: vi.fn(async () => null) }));

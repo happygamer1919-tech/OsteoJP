@@ -16,10 +16,14 @@ import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
 import { listActiveLocations, listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { isFichaIncomplete } from "../../../lib/patients/nif";
+import { NO_SMS_MESSAGE_KEY } from "../../../lib/patients/phone-preview";
+import { noSmsReason } from "@osteojp/notify";
 import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
+import { bookingLocationScope } from "../../../lib/auth/viewer-locations";
+import { ownCancelRefusal } from "../../../lib/scheduling/cancel-authority";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
 import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
@@ -121,6 +125,10 @@ export default async function PatientProfilePage({
   // each Agenda server action re-asserts its own capability server-side.
   const canEditAppointments = can(ctx.role, "appointments:write");
   const canCancelAppointments = can(ctx.role, "appointments:delete");
+  // SCHED-30 (owner dispatch 2026-09-14): a therapist cancels, and brings back,
+  // the rows they are Terapeuta or Terapeuta 2 on, at their own clinics. Only the
+  // affordance; cancelAppointment and updateAppointment re-check it.
+  const canCancelOwnAppointments = !canCancelAppointments && can(ctx.role, "appointments:cancel_own");
   const canDelete = can(ctx.role, "patients:delete");
   const canStartEpisode = can(ctx.role, "clinical_records:author");
   // Hard delete is Tenant-settings tier (W5-08), like appointment/staff delete.
@@ -151,6 +159,8 @@ export default async function PatientProfilePage({
   // consultation quick-create, and true of every patient registered before the
   // rule existed.
   const nifIncomplete = isFichaIncomplete(patient);
+  // PHONE-01 — null for a mobile or no phone; otherwise why SMS will not arrive.
+  const noSms = noSmsReason(patient.phone);
 
   const personalRows: [string, string][] = [
     [s["patients.fieldDateOfBirth"], patient.dateOfBirth ? dateFmt.format(new Date(patient.dateOfBirth)) : "—"],
@@ -223,6 +233,13 @@ export default async function PatientProfilePage({
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
   const patientAppointments = tab === "consultas" ? await listPatientAppointments(ctx, id) : [];
+  const ownCancelScope =
+    canCancelOwnAppointments && patientAppointments.length > 0 ? await bookingLocationScope(ctx) : null;
+  const ownCancelIds = canCancelOwnAppointments
+    ? patientAppointments
+        .filter((a) => ownCancelRefusal(ctx.userId, ownCancelScope, [a]) === null)
+        .map((a) => a.id)
+    : [];
   // Consultas tab: this patient's pack instances + remaining sessions (W8-01c).
   const patientPackInstances =
     tab === "consultas" ? await listPatientPackInstances(ctx, id) : [];
@@ -315,6 +332,22 @@ export default async function PatientProfilePage({
         </div>
       )}
 
+      {/* PHONE-01 — an SMS will not reach the stored phone (a landline, a
+          foreign number, or a value that is not a number at all). Derived from
+          the stored value on every render, so it is right for imported free-text
+          phones too. Beside the NIF notice for the same reason: it is about what
+          the clinic can do with this record, not about one field's display. */}
+      {noSms && (
+        <div
+          role="status"
+          className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          data-testid="patient-no-sms-marker"
+          data-reason={noSms}
+        >
+          <p className="font-medium">{s[NO_SMS_MESSAGE_KEY[noSms]]}</p>
+        </div>
+      )}
+
       <div className="mb-6">
         <ProfileTabs patientId={id} current={tab} items={tabItems} label={s["patients.tabSummary"]} />
       </div>
@@ -370,6 +403,7 @@ export default async function PatientProfilePage({
             appointments={patientAppointments}
             canEdit={canEditAppointments}
             canCancel={canCancelAppointments}
+            ownCancelIds={ownCancelIds}
           />
         </div>
       )}

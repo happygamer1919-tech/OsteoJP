@@ -14,6 +14,7 @@
 import { revalidatePath, updateTag } from "next/cache";
 import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { assertCan, can } from "@osteojp/auth";
+import { noSmsReason, type NoSmsReason } from "@osteojp/notify";
 import {
   analyticsEvents,
   appointmentNotes,
@@ -258,7 +259,11 @@ async function updatePatientImpl(
 ): Promise<Patient> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:write");
-  const input = parseUpdatePatient(raw);
+  // PHONE-01: an unchanged stored phone is not re-validated (see parseUpdatePatient),
+  // so a legacy free-text number never blocks an unrelated edit. Read only when
+  // the payload carries a phone at all.
+  const storedPhone = "phone" in (raw as Record<string, unknown>) ? await readStoredPhone(id) : undefined;
+  const input = parseUpdatePatient(raw, { storedPhone });
 
   // Only set columns the caller actually provided; an omitted key is untouched,
   // an explicit empty value clears the column (→ null) via the zod transforms.
@@ -590,6 +595,50 @@ export async function searchPatientsAction(
  * drawer's soft warning (W2-08). Tenant-scoped via RLS; a missing/cross-tenant
  * id resolves to all-false (no warning). No mutation, no audit.
  */
+/**
+ * PHONE-01 — the stored phone for the unchanged-phone comparison in
+ * updatePatientImpl. Under the caller's RLS. `undefined` when the row is not
+ * visible, which makes the parser validate as for any new value; the UPDATE that
+ * follows then refuses the missing row on its own.
+ *
+ * NOT EXPORTED: in a "use server" module an export is a browser-callable action,
+ * and this returns a patient's phone number.
+ */
+async function readStoredPhone(id: string): Promise<string | null | undefined> {
+  const ctx = await requireRequestContext();
+  return runScoped(ctx, async (tx) => {
+    const [row] = await tx
+      .select({ phone: patients.phone })
+      .from(patients)
+      .where(and(eq(patients.id, id), isNull(patients.deletedAt)))
+      .limit(1);
+    return row ? row.phone : undefined;
+  });
+}
+
+/**
+ * PHONE-01 — why an SMS will not reach the selected patient's stored phone, for
+ * the booking drawer's marker. Returns ONLY the reason ("landline", "foreign",
+ * "unparseable") or null: never the number, because the drawer needs to say that
+ * SMS will not arrive, not to show a phone.
+ *
+ * patients:read and RLS-scoped, like the patient record that shows the same
+ * marker: a patient the viewer cannot see answers null.
+ */
+export async function getPatientNoSmsReason(patientId: string): Promise<NoSmsReason | null> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:read");
+  if (!patientId) return null;
+  return runScoped(ctx, async (tx) => {
+    const [row] = await tx
+      .select({ phone: patients.phone })
+      .from(patients)
+      .where(eq(patients.id, patientId))
+      .limit(1);
+    return row ? noSmsReason(row.phone) : null;
+  });
+}
+
 export async function getPatientContraindications(
   patientId: string,
 ): Promise<{ epilepsy: boolean; pregnancy: boolean; pacemaker: boolean }> {

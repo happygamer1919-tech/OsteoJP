@@ -2,6 +2,8 @@
 // framework) so it is unit-testable in isolation. Manual validation to match
 // the codebase convention (no schema library).
 
+import { parsePatientPhone } from "@osteojp/notify";
+
 import { checkNif, type NifProblem } from "./nif";
 
 /**
@@ -323,6 +325,41 @@ function optionalUuid(v: unknown, field: PatientField): string | null {
 }
 
 /**
+ * PHONE-01 — the phone is stored as E.164, or refused with the reason.
+ *
+ * `parsePatientPhone` (packages/notify) accepts +351, 00351, the bare 9-digit
+ * national number and a foreign number in international form, each with spaces,
+ * dots, hyphens or parentheses, and returns exactly `+` and digits. A number that
+ * cannot be normalised is refused here, at the field, with its sentence - never
+ * stored as typed for the reminder path to skip later in a log nobody reads.
+ *
+ * A landline is ACCEPTED: it is a real number reception can call. Whether an SMS
+ * reaches it is a separate question, answered on the record and in the drawer.
+ *
+ * The length cap stays (32, as before) so a pasted paragraph is refused as too
+ * long rather than as "invalid characters".
+ */
+function optionalPhone(v: unknown): string | null {
+  const t = optionalText(v, "phone", 32);
+  if (t === null) return null;
+  const parsed = parsePatientPhone(t);
+  if (!parsed.ok) throw new ValidationError(parsed.message, "phone");
+  return parsed.e164;
+}
+
+/**
+ * True when the submitted phone is the stored one (both trimmed; empty and null
+ * are the same "no phone"). `stored === undefined` means the caller did not read
+ * it, which is never "unchanged".
+ */
+function phoneUnchanged(submitted: unknown, stored: string | null | undefined): boolean {
+  if (stored === undefined) return false;
+  const a = typeof submitted === "string" ? submitted.trim() : submitted == null ? "" : null;
+  if (a === null) return false;
+  return a === (stored ?? "").trim();
+}
+
+/**
  * PL-31 — `requireNif` exists for exactly ONE caller: the consultation
  * quick-create (createStubPatient), which the owner deliberately left at name +
  * phone so a therapist is not blocked mid-walk-in by a tax number nobody has
@@ -349,7 +386,7 @@ export function parseCreatePatient(
     nifExemptReason: nif.nifExemptReason,
     healthInsuranceNumbers: optionalInsuranceList(r.healthInsuranceNumbers) ?? [],
     email: optionalEmail(r.email),
-    phone: optionalText(r.phone, "phone", 32),
+    phone: optionalPhone(r.phone),
     address: optionalText(r.address, "address", 500),
     postalCode: optionalText(r.postalCode, "postalCode", 16),
     city: optionalText(r.city, "city", 200),
@@ -366,7 +403,18 @@ export function parseCreatePatient(
 
 // Only validates keys actually present: an omitted key is left untouched by the
 // caller; a present empty value clears the column (→ null).
-export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues {
+//
+// PHONE-01 — `storedPhone` is the patient's phone AS IT IS IN THE DATABASE, read
+// by the caller. When the submitted phone is that same value (trimmed), the key
+// is DROPPED from the result, so the column is not written and the number is not
+// validated. The form submits every field on every save, and ~8,400 imported
+// patients hold free-text phones the parser would refuse: without this, fixing a
+// patient's postcode would be refused over a phone nobody touched. A CHANGED
+// phone is validated in full. Omit `storedPhone` (undefined) to validate always.
+export function parseUpdatePatient(
+  raw: UpdatePatientInput,
+  opts: { storedPhone?: string | null } = {},
+): UpdatePatientValues {
   const r = raw as Record<string, unknown>;
   const out: UpdatePatientValues = {};
   if ("fullName" in r) out.fullName = requiredName(r.fullName);
@@ -388,7 +436,7 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
     out.healthInsuranceNumbers = optionalInsuranceList(r.healthInsuranceNumbers) ?? [];
   }
   if ("email" in r) out.email = optionalEmail(r.email);
-  if ("phone" in r) out.phone = optionalText(r.phone, "phone", 32);
+  if ("phone" in r && !phoneUnchanged(r.phone, opts.storedPhone)) out.phone = optionalPhone(r.phone);
   if ("address" in r) out.address = optionalText(r.address, "address", 500);
   if ("postalCode" in r) out.postalCode = optionalText(r.postalCode, "postalCode", 16);
   if ("city" in r) out.city = optionalText(r.city, "city", 200);

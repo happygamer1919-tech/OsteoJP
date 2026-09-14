@@ -245,12 +245,28 @@ function firstName(fullName: string): string {
 }
 
 /**
+ * COMMS-01: why an SMS never reached the provider at all, as its own value.
+ *
+ * THIS WAS `null`, AND `null` COLLAPSED TWO FACTS INTO ONE LEDGER REASON. Both
+ * skips below returned null, so the reminder's ledger row could only say
+ * `send_refused`, and Lembretes SMS could not tell reception "the number is a
+ * typo" from "the number is a landline" - the exact distinction the landline
+ * branch exists to keep (PORTAL-REHYDRATE 1.3, the `string | null` instance).
+ */
+export type SmsSkip = { skipped: "invalid_phone" | "landline" };
+
+function isSmsSkip(r: SendResult | SmsSkip): r is SmsSkip {
+  return "skipped" in r;
+}
+
+/**
  * Normalize the stored patient phone to E.164 PT and send, or skip with a
  * structured warning when it cannot normalize (docs/QUESTIONS.md 2026-07-06:
  * un-normalized numbers reach Twilio and fail with 21211 once live). The log
- * carries ids only — never the raw number (PII rule #7). Returns null on skip
- * so callers simply don't push a channel result; the appointment still counts
- * as dispatched (email, when planned, goes out independently).
+ * carries ids only — never the raw number (PII rule #7). Returns an `SmsSkip`
+ * naming the reason on skip, so callers push no channel result and the ledger
+ * records the specific reason; the appointment still counts as dispatched
+ * (email, when planned, goes out independently).
  */
 async function sendPatientSms(args: {
   tenantId: string;
@@ -259,13 +275,13 @@ async function sendPatientSms(args: {
   phone: string;
   body: string;
   templateId: string;
-}): Promise<SendResult | null> {
+}): Promise<SendResult | SmsSkip> {
   const to = normalizePhonePT(args.phone);
   if (!to) {
     console.warn(
       `[reminders] sms skipped: invalid_phone tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}`,
     );
-    return null;
+    return { skipped: "invalid_phone" };
   }
 
   // ================================================================= //
@@ -296,7 +312,7 @@ async function sendPatientSms(args: {
         `The stored number is a Portuguese geographic line and cannot receive SMS. ` +
         `This is a DATA problem, not a delivery failure: reception sees the patient on /notificacoes and asks for a mobile.`,
     );
-    return null;
+    return { skipped: "landline" };
   }
   // A Twilio rejection leaves a `provider_error` row before it propagates, for
   // the reason in sendRecordingProviderError: the ledger write in the caller
@@ -765,12 +781,13 @@ async function dispatchReminderInner(
       body: sms,
       templateId: smsTemplateIdFor(offsetId, feeNotice),
     });
+    const handedOver = isSmsSkip(sent) ? null : sent;
     // A CODE THAT WAS NEVER SENT IS WITHDRAWN, and this is not tidiness. The
     // partial unique index means a stranded live code BLOCKS the retry from
     // minting a fresh one, so the patient's second reminder would arrive
     // without a link and nothing would say why. Withdrawing by the exact hash
     // this call minted means it can never remove a code somebody is holding.
-    if (issued && !sent) {
+    if (issued && !handedOver) {
       const withdrawn = await withdrawConfirmCode({ tenantId, codeHash: issued.codeHash });
       if (!withdrawn) {
         // Loud, and it names the consequence rather than the operation: the
@@ -798,13 +815,22 @@ async function dispatchReminderInner(
       appointmentId,
       channel: "sms",
       templateId: smsTemplateIdFor(offsetId, feeNotice),
-      outcome: sent && !sent.sandbox ? "sent" : "suppressed",
-      suppressionReason: sent && !sent.sandbox ? null : sent ? "sandbox" : "send_refused",
+      outcome: handedOver && !handedOver.sandbox ? "sent" : "suppressed",
+      // COMMS-01: the SPECIFIC skip reason (`invalid_phone` or `landline`), never
+      // the old catch-all `send_refused`. Rows written before this change still
+      // carry `send_refused`, and Lembretes SMS labels it as either of the two.
+      suppressionReason: handedOver
+        ? handedOver.sandbox
+          ? "sandbox"
+          : null
+        : isSmsSkip(sent)
+          ? sent.skipped
+          : null,
       bodyLength: rendered.length,
       segments: null,
-      providerMessageId: sent && !sent.sandbox ? sent.id : null,
+      providerMessageId: handedOver && !handedOver.sandbox ? handedOver.id : null,
     });
-    if (sent) channels.push(sent);
+    if (handedOver) channels.push(handedOver);
   }
 
   return { dispatched: true, channels };
@@ -924,7 +950,7 @@ export async function dispatchConfirmation(
       body: renderConfirmationSms(locale, ctx),
       templateId: "confirmation.sms",
     });
-    if (sent) channels.push(sent);
+    if (!isSmsSkip(sent)) channels.push(sent);
   }
   return { dispatched: true, channels };
 }
@@ -992,7 +1018,7 @@ export async function dispatchFollowUp(
       body: renderFollowUpSms(locale, ctx),
       templateId: "follow_up.sms",
     });
-    if (sent) channels.push(sent);
+    if (!isSmsSkip(sent)) channels.push(sent);
   }
   return { dispatched: true, channels };
 }
@@ -1068,7 +1094,7 @@ export async function dispatchNoShow(
       body: renderNoShowSms(locale, ctx),
       templateId: "no_show.sms",
     });
-    if (sent) channels.push(sent);
+    if (!isSmsSkip(sent)) channels.push(sent);
   }
   return { dispatched: true, channels };
 }
