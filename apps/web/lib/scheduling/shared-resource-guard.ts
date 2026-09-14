@@ -56,6 +56,37 @@ export function sharedResourcesForViewer(
 }
 
 /**
+ * SCHED-29.4 - WHAT OWNER, ADMIN AND RECEPTION ARE OFFERED. Q-SCHED-29-4-1 = A,
+ * ruled by the owner 2026-09-13.
+ *
+ * The Terapeuta select, the Terapeuta 2 select and the agenda Terapeutas filter
+ * list `people` (the is_bookable roster) PLUS the shared resources installed at
+ * `locationId`, keyed on `is_shared_resource` and `staff_locations`. NOT on
+ * is_bookable: is_bookable means "takes patients", and NESA is not a person, so
+ * production flags it false and the three controls dropped it. Measured as
+ * reception on 2026-09-13 (card SCHED-29-4-reception-nesa-book-or-filter).
+ *
+ * `locationId` null means "no clinic chosen" (the toolbar's Todas as
+ * localizações), and then every resource is offered. A resource the people list
+ * already carries (flagged bookable as well) is not offered twice. Resources go
+ * AFTER people, in the order given, so no existing option moves.
+ *
+ * The offer is not the permission: sharedResourceLocationAllowed refuses a
+ * booking at a clinic where the machine is not installed, for the owner too.
+ */
+export function withSharedResourceOptions(
+  people: readonly { id: string; label: string }[],
+  resources: readonly SharedResource[],
+  locationId: string | null,
+): { id: string; label: string }[] {
+  const listed = new Set(people.map((p) => p.id));
+  const offered = resources
+    .filter((r) => !listed.has(r.id) && (!locationId || r.locationIds.includes(locationId)))
+    .map((r) => ({ id: r.id, label: r.label }));
+  return [...people, ...offered];
+}
+
+/**
  * SCHED-29 - WHO A THERAPIST MAY NAME AS "TERAPEUTA 2".
  *
  * THE REQUIREMENT (owner, 2026-09-13): a therapist booking at Castelo Branco
