@@ -89,14 +89,26 @@ export function AppointmentsList({
   appointments,
   canEdit,
   canCancel,
+  ownCancelIds = [],
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
+  /** appointments:delete - owner, admin, reception: every row. */
   canCancel: boolean;
+  /**
+   * SCHED-30: the rows a THERAPIST may cancel and bring back, decided on the
+   * server by ownCancelRefusal. Only the affordance; both actions re-check it.
+   */
+  ownCancelIds?: readonly string[];
 }) {
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
-      <AppointmentsListInner appointments={appointments} canEdit={canEdit} canCancel={canCancel} />
+      <AppointmentsListInner
+        appointments={appointments}
+        canEdit={canEdit}
+        canCancel={canCancel}
+        ownCancelIds={ownCancelIds}
+      />
     </ToastProvider>
   );
 }
@@ -110,10 +122,12 @@ function AppointmentsListInner({
   appointments,
   canEdit,
   canCancel,
+  ownCancelIds,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
   canCancel: boolean;
+  ownCancelIds: readonly string[];
 }) {
   const router = useRouter();
   const [action, setAction] = useState<RowAction | null>(null);
@@ -141,6 +155,7 @@ function AppointmentsListInner({
           appt={a}
           canEdit={canEdit}
           canCancel={canCancel}
+          canCancelRow={canCancel || ownCancelIds.includes(a.id)}
           onOpenNotes={() => setNotesFor(a)}
           onScheduleAgain={() => setAction({ kind: "scheduleAgain", appt: a })}
           onReschedule={() => setAction({ kind: "reschedule", appt: a })}
@@ -189,6 +204,7 @@ function AppointmentRow({
   appt: a,
   canEdit,
   canCancel,
+  canCancelRow,
   onOpenNotes,
   onScheduleAgain,
   onReschedule,
@@ -197,6 +213,8 @@ function AppointmentRow({
   appt: AgendaAppointment;
   canEdit: boolean;
   canCancel: boolean;
+  /** SCHED-30: this viewer may cancel THIS row and bring it back. */
+  canCancelRow: boolean;
   onOpenNotes: () => void;
   onScheduleAgain: () => void;
   onReschedule: () => void;
@@ -210,11 +228,12 @@ function AppointmentRow({
   // SCHED-27 (owner, 2026-09-13): a Cancelada row also gets the Estado control,
   // to go back to Agendada or Confirmada - but only for a viewer who can CANCEL
   // (owner, admin, reception), because bringing one back is the inverse of
-  // cancelling it. The server enforces the same rule.
+  // cancelling it. The server enforces the same rule. SCHED-30 (owner dispatch
+  // 2026-09-14) adds a therapist on their own rows, which is `canCancelRow`.
   const showEstado =
     (canEdit && editable && hasLegalEstadoTransition(a.status)) ||
-    (canCancel && a.status === "cancelled" && hasLegalEstadoTransition(a.status));
-  const showCancel = canCancel && editable;
+    (canCancelRow && a.status === "cancelled" && hasLegalEstadoTransition(a.status));
+  const showCancel = canCancelRow && editable;
   // B6: a FINAL state can be CORRECTED to another final state. Deliberately not
   // folded into `showEstado`: `editable` is false for every final state, which
   // is what keeps the correction out of the ordinary Estado control entirely.
@@ -365,6 +384,12 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
       router.refresh();
       return;
     }
+    // SCHED-30: a therapist's un-cancel into a slot taken since has no override,
+    // so it is a refusal sentence and never the "Guardar mesmo assim" banner.
+    if (r.error === "conflict" && r.conflictOverridable === false) {
+      toast({ tone: "error", message: s["appointment.uncancelSlotTaken"] });
+      return;
+    }
     if (r.error === "conflict") {
       setConflicts(r.conflicts ?? []);
       return;
@@ -444,6 +469,12 @@ function estadoRefusalMessage(r: {
       return clinicClosedMessage(r.clinicClosure);
     case "shared_resource_location":
       return s["appointment.sharedResourceLocation"];
+    // SCHED-30: a therapist's own row at a clinic they are not assigned to, and a
+    // Cancelada holding NESA, which only reception can bring back before 0088.
+    case "location_not_assigned":
+      return s["appointment.locationNotAssigned"];
+    case "uncancel_shared_resource":
+      return s["appointment.uncancelSharedResource"];
     case "pack_insufficient":
       return s["appointment.packInsufficient"];
     default:
@@ -697,7 +728,14 @@ function CancelDrawer({
       router.refresh();
       return;
     }
-    setError(r.error === "forbidden" ? s["errors.forbidden"] : s["errors.generic"]);
+    setError(
+      r.error === "forbidden"
+        ? s["errors.forbidden"]
+        : // SCHED-30: a therapist's own row at a clinic not assigned to them.
+          r.error === "location_not_assigned"
+          ? s["appointment.locationNotAssigned"]
+          : s["errors.generic"],
+    );
   }
 
   return (

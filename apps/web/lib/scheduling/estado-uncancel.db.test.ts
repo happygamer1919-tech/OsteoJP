@@ -175,8 +175,14 @@ d("SCHED-27: bringing a Cancelada back", () => {
     expect(await field(a, "status")).toBe("scheduled");
   });
 
-  it("a THERAPIST cannot bring one back, by the real permission matrix", async () => {
-    h.requireRequestContext.mockResolvedValue({ tenantId, role: "therapist", userId: practitionerId });
+  // SCHED-30 (owner dispatch 2026-09-14) lets a therapist bring back a row they
+  // are ON, so this arm used to read "a THERAPIST cannot bring one back" with the
+  // row's own practitioner as the actor, and that is now allowed
+  // (therapist-cancel.db.test.ts). What stays refused is a therapist who is not
+  // on the row. The actor here is the row's CREATOR, so RLS's created_by arm lets
+  // them see it, and the refusal is the app's own "not on this row" check.
+  it("a THERAPIST who is not on the row cannot bring it back, by the real permission matrix", async () => {
+    h.requireRequestContext.mockResolvedValue({ tenantId, role: "therapist", userId: receptionId });
     const a = await seed({ patientId: patientA, status: "cancelled" });
     const r = await update(a, { status: "scheduled" });
     expect(r).toEqual({ ok: false, error: "forbidden" });

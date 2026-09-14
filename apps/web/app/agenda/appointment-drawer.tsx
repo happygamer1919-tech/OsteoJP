@@ -778,9 +778,15 @@ export function AppointmentDrawer({
     // 0085. Set only with error "clinic_closed"; carries the clinic's own name
     // and shut hour so the sentence below can name the building, not a person.
     clinicClosure?: { locationName: string; from: string; to: string };
+    conflictOverridable?: false;
   }): boolean {
     if (r.ok) return true;
-    if (r.error === "conflict") setConflicts(r.conflicts ?? []);
+    // SCHED-30: a therapist bringing a Cancelada back into a slot taken since.
+    // A plain refusal and NOT setConflicts, for the reason double_booked below
+    // gives: that path offers "Guardar mesmo assim", and the server does not
+    // honour it for this call.
+    if (r.error === "conflict" && r.conflictOverridable === false) setError(s["appointment.uncancelSlotTaken"]);
+    else if (r.error === "conflict") setConflicts(r.conflicts ?? []);
     else if (r.error === "forbidden") setError(s["errors.forbidden"]);
     // INC-08: its own message, not the generic one. This Estado <Select> offers
     // all five statuses with no client-side guard, so an illegal move is one
@@ -843,6 +849,10 @@ export function AppointmentDrawer({
     // a therapist assigned to both clinics is told the MACHINE is not there.
     else if (r.error === "shared_resource_location")
       setError(s["appointment.sharedResourceLocation"]);
+    // SCHED-30: a therapist cannot bring back a Cancelada that holds NESA until
+    // 0088; the sentence sends them to reception, who can.
+    else if (r.error === "uncancel_shared_resource")
+      setError(s["appointment.uncancelSharedResource"]);
     // RB-02: the pacote has fewer sessions left than this booking needs. The
     // message NAMES both numbers, for the same reason outside_availability names
     // the window: "não há sessões suficientes" on its own sends reception to
