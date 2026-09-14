@@ -1,3 +1,7 @@
+-- AUTO-GENERATED — DO NOT EDIT.
+-- Mirror of packages/db/migrations/0088_nesa_second_participant_visible.sql for Supabase branching.
+-- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
+
 /* ==================================================================== */
 /* 0088 - A BOOKING WITH NESA AS TERAPEUTA 2 IS VISIBLE TO THE THERAPISTS */
 /* WHO SHARE THE MACHINE'S CLINIC                                         */
