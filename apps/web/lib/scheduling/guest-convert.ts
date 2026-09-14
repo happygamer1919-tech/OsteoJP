@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { guestBookingRequests, patients } from "@osteojp/db";
 import { can, type Role } from "@osteojp/auth";
+import { parsePatientPhone } from "@osteojp/notify";
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
@@ -340,9 +341,15 @@ export async function convertGuestRequest(
       // honest value. It needs no separate tenant check — it was read back out
       // of a row this transaction's RLS already confined to the caller's tenant,
       // and 0063 holds a FK on it.
+      // PHONE-01: the patient's phone is stored as E.164 like every staff write.
+      // The public form already refused what it could not normalise, so the
+      // fallback to the typed value is for a request row written before that
+      // rule, where refusing the convert over a phone format would strand the
+      // request at the desk.
+      const parsedPhone = parsePatientPhone(request.phone);
       const created = await insertPatientTx(tx, ctx, {
         fullName: request.fullName,
-        phone: request.phone,
+        phone: parsedPhone.ok ? parsedPhone.e164 : request.phone,
         primaryLocationId: request.locationId,
       });
       patientId = created.id;

@@ -16,6 +16,8 @@ import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
 import { listActiveLocations, listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { isFichaIncomplete } from "../../../lib/patients/nif";
+import { NO_SMS_MESSAGE_KEY } from "../../../lib/patients/phone-preview";
+import { noSmsReason } from "@osteojp/notify";
 import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
@@ -157,6 +159,8 @@ export default async function PatientProfilePage({
   // consultation quick-create, and true of every patient registered before the
   // rule existed.
   const nifIncomplete = isFichaIncomplete(patient);
+  // PHONE-01 — null for a mobile or no phone; otherwise why SMS will not arrive.
+  const noSms = noSmsReason(patient.phone);
 
   const personalRows: [string, string][] = [
     [s["patients.fieldDateOfBirth"], patient.dateOfBirth ? dateFmt.format(new Date(patient.dateOfBirth)) : "—"],
@@ -325,6 +329,22 @@ export default async function PatientProfilePage({
         >
           <p className="font-medium">{s["patients.nifIncompleteWarning"]}</p>
           <p className="mt-1">{s["patients.nifIncompleteHelp"]}</p>
+        </div>
+      )}
+
+      {/* PHONE-01 — an SMS will not reach the stored phone (a landline, a
+          foreign number, or a value that is not a number at all). Derived from
+          the stored value on every render, so it is right for imported free-text
+          phones too. Beside the NIF notice for the same reason: it is about what
+          the clinic can do with this record, not about one field's display. */}
+      {noSms && (
+        <div
+          role="status"
+          className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          data-testid="patient-no-sms-marker"
+          data-reason={noSms}
+        >
+          <p className="font-medium">{s[NO_SMS_MESSAGE_KEY[noSms]]}</p>
         </div>
       )}
 
