@@ -1392,3 +1392,25 @@ should be able to go to any other state.
 - **C:** set `is_bookable` true on NESA instead. It reverses GREEN's v3 value and puts NESA in every clinic's roster for the owner, including Linda-a-Velha, where the machine is not installed.
 
 **Not built in this dispatch.** B3 was a measurement; a fix follows the ruling.
+
+## Q-SR62-PU5-1 - registo annulment: may a LOCKED (imported) registo be annulled, and does an annulled registo stay in the history struck through by default? (PURPLE, 2026-09-14)
+
+**Status: OPEN, card SR62-PU5-registo-annulment-reason-required-and-visible (deferred by the owner: not built in SR-62).**
+
+**The shape the owner set:** registos clinicos get ANNULMENT, never deletion. An anulado state with a reason and an audit row; the record stays readable, stays in history, and renders struck through. `clinical_records_enforce_immutability` is never disabled, bypassed or worked around.
+
+**What exists on main (W5-30, read 2026-09-14 on 59074ded):** `record_annulments` (migration 0035), append-only by policy set; `annulRecord` in `apps/web/lib/clinical/records.ts` inserts one row and never touches the record; audit `clinical_record.annul` with `{ hadReason }`; an ANULADO badge on the patient's Registos tab.
+
+**The three gaps, and which need a ruling:**
+
+1. **The reason is optional** (`record_annulments.reason` nullable; the writer stores null for a blank reason). The owner's shape says "with a reason". Making it required needs a migration (a CHECK on new rows, `NOT VALID` so existing rows are not rewritten) and the dialog. No ruling needed; migration apply-before-merge.
+2. **Only SIGNED registos can be annulled** (`annulRecord` refuses anything else with `not_signed`). STAFF-11 measured all 902 imported registos as LOCKED, not signed, so none of the imported history can be annulled today. **Ruling needed:** may a LOCKED registo be annulled?
+3. **Annulled registos are HIDDEN by default** behind "Mostrar anulados", with a badge and no strike-through. The owner's shape says they stay in history, struck through. **Ruling needed:** visible by default, struck through, with the toggle removed or kept?
+
+**Options for 2:**
+- **A (recommended default):** LOCKED and SIGNED registos may both be annulled. The append-only row is the same, and the immutability trigger is untouched either way; a draft keeps its existing hard delete.
+- **B:** SIGNED only, as today; imported registos stay un-annullable.
+
+**Options for 3:**
+- **A (recommended default):** annulled registos render in place in the history, struck through with the ANULADO badge and the reason shown on open; no hide toggle.
+- **B:** struck through, but still hidden by default behind "Mostrar anulados".
