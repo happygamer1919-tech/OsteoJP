@@ -161,7 +161,24 @@ export type Capability =
   // strangers' names and phone numbers and a therapist must never hold it
   // (SEC-01); this one is the answers, which reach a therapist later, on the
   // ficha. Riding either capability on the other would widen one of them.
-  | "guest_intake:read";
+  | "guest_intake:read"
+  // COMMS-01 (owner dispatch 2026-09-14, BL-2): read the SMS send log, Lembretes
+  // SMS under Comunicações - one row per attempt to hand a patient SMS to the
+  // provider, with the patient, the appointment, the outcome, the provider's
+  // error code and the patient's telephone number. Owner, admin and reception.
+  //
+  // NOT THE THERAPIST, AND THAT IS NOT THE OWNER'S FINAL SHAPE. The dispatch
+  // gives a therapist the rows for appointments where they are Terapeuta or
+  // Terapeuta 2. The table's SELECT policy (0075) admits owner, admin and
+  // reception only, so a therapist holding this capability would be shown an
+  // EMPTY log, which reads as "no reminders failed" - PORTAL-REHYDRATE 1.3. The
+  // grant waits for the migration that adds a scoped therapist policy
+  // (docs/QUESTIONS.md > Q-COMMS-01-1).
+  //
+  // ITS OWN CAPABILITY, NOT `followup:read` or `sms_replies:read`. A therapist
+  // holds `followup:read`, and the reply queue is inbound messages, not outbound
+  // attempts. Riding either would widen one of them.
+  | "reminders:log_read";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -198,6 +215,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "sms_replies:read",
   "sms_replies:resolve",
   "guest_intake:read",
+  "reminders:log_read",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -253,6 +271,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // INTAKE-01 (owner 2026-09-11): guest clinical intakes. Location-scoped by
     // 0087's policy, like the guest queue it sits beside.
     "guest_intake:read",
+    // COMMS-01 (owner dispatch 2026-09-14): the SMS send log. Location-blind
+    // grant; 0075's SELECT policy plus the INNER join to appointments scope the
+    // rows to what this admin may already read.
+    "reminders:log_read",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -352,6 +374,9 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // rings back, which is the same shape as the guest queue above.
     "sms_replies:read",
     "sms_replies:resolve",
+    // COMMS-01 (owner dispatch 2026-09-14): the SMS send log. Reception is who
+    // rings the patient whose reminder did not arrive.
+    "reminders:log_read",
   ]),
 };
 

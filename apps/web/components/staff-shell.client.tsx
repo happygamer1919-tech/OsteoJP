@@ -8,7 +8,7 @@ import {
   ClipboardCheck,
   FileText,
   Home,
-  PhoneCall,
+  MessagesSquare,
   Receipt,
   Settings,
   Users,
@@ -80,9 +80,13 @@ const NAV_ICON: Record<string, { icon: LucideIcon; className: string }> = {
   // A booking is an appointment with a clock on it; violet keeps it clearly
   // distinct from the two blues either side of it in the list.
   "/marcacoes": { icon: CalendarClock, className: "text-v2-violet-700" },
-  // Recuperação is a CALL LIST. The glyph is the action, not the noun - a
-  // document icon on this page said nothing about what reception does with it.
-  "/recuperacao": { icon: PhoneCall, className: "text-v2-orange-700" },
+  // Comunicações (COMMS-01, owner dispatch 2026-09-14) is the GROUP that holds
+  // Recuperação and Lembretes SMS. It inherits Recuperação's hue, because that
+  // call list is what the entry used to be, and takes a messages glyph because
+  // the group is about talking to patients rather than about one call list.
+  // /recuperacao keeps its own URL and lights this entry through
+  // `activePrefixes` below, so it needs no row of its own here.
+  "/comunicacoes": { icon: MessagesSquare, className: "text-v2-orange-700" },
   "/invoicing": { icon: Receipt, className: "text-v2-mustard-700" },
   // Soft Lavender is the spec's clinical-records hue (§3.2), so the review
   // queue and the ficha list share the family and differ in the glyph.
@@ -116,9 +120,15 @@ export function StaffShellClient({
 
   // Active = the longest matching href, so /clinical/review does not also light
   // up /clinical, and /clinical/<id> (the editor) still highlights /clinical.
-  const matchLen = (href: string): number =>
+  //
+  // COMMS-01: a GROUP entry also matches its sections' own URLs
+  // (`activePrefixes`), so /recuperacao lights Comunicações without moving the
+  // route every link, revalidatePath and e2e spec already names.
+  const prefixLen = (href: string): number =>
     pathname === href || pathname.startsWith(`${href}/`) ? href.length : -1;
-  const best = Math.max(-1, ...items.map((i) => matchLen(i.href)));
+  const itemMatchLen = (item: NavItem): number =>
+    Math.max(prefixLen(item.href), ...(item.activePrefixes ?? []).map(prefixLen));
+  const best = Math.max(-1, ...items.map(itemMatchLen));
 
   const nav: AppShellNavItem[] = items.map((item) => {
     /**
@@ -135,7 +145,7 @@ export function StaffShellClient({
       label: item.label,
       icon: mapped?.icon ?? FileText,
       iconClassName: mapped?.className,
-      active: best >= 0 && matchLen(item.href) === best,
+      active: best >= 0 && itemMatchLen(item) === best,
     };
   });
 

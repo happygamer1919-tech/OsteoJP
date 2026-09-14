@@ -5,6 +5,8 @@ import { isSmsCapablePT } from "@osteojp/notify";
 import { getRequestContext } from "@/lib/auth/context";
 import { normalizePhonePT } from "@osteojp/notify";
 import { listFollowupCandidates, listActivePostponements } from "@/lib/followup/queries";
+import { commsSectionsForRole } from "@/lib/nav/comms-sections";
+import { CommsNav } from "@/app/comunicacoes/comms-nav.client";
 import { FollowupPager } from "./pager";
 import { s } from "@/lib/i18n";
 
@@ -188,8 +190,22 @@ export default async function RecuperacaoPage({
     byName: p.createdByName,
   }));
 
+  /**
+   * COMMS-01 (owner dispatch 2026-09-14): Recuperação is a section of the
+   * Comunicações group, so it carries the group's tab bar - but only when there
+   * is a second section to switch to. A therapist opens Recuperação alone and
+   * sees this page exactly as before.
+   */
+  const commsSections = commsSectionsForRole(ctx.role);
+
   return (
     <div className="flex flex-col gap-8 p-6">
+      {commsSections.length > 1 && (
+        <CommsNav
+          items={commsSections.map(({ href, label }) => ({ href, label }))}
+          label={s["comms.sectionsLabel"]}
+        />
+      )}
       <section className="flex flex-col gap-3">
         <div>
           <h1 className="text-xl font-semibold text-v2-text-primary">{s["followup.title"]}</h1>
