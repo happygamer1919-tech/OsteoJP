@@ -273,8 +273,13 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await modal.getByLabel("Tipo").selectOption("prolongada");
   await expect(modal.getByLabel("De")).toBeVisible();
   // SCHED-07: the block dates are the shared picker now (dd/mm/aaaa).
-  await fillDate(modal.getByLabel("De"), futureDate(RUN_DAY_BASE + 40));
-  await fillDate(modal.getByLabel("Até"), futureDate(RUN_DAY_BASE + 42));
+  // DAYS 37-39, NOT 40-42, SINCE 2026-09-13. This absence is written for E2E
+  // Therapist and never removed, and booking-packs.spec.ts and
+  // notes-unification.spec.ts book that same therapist on RUN_DAY_BASE + 41 and
+  // + 42. Only alphabetical file order kept them apart. No other spec derives
+  // 37, 38 or 39, and scripts/e2e-spec-days-do-not-collide.test.mjs holds it so.
+  await fillDate(modal.getByLabel("De"), futureDate(RUN_DAY_BASE + 37));
+  await fillDate(modal.getByLabel("Até"), futureDate(RUN_DAY_BASE + 39));
   // SCHED-25: the note is required on this modal too, in every mode.
   await modal.getByTestId("block-modal-note").fill("Ferias do E2E Therapist");
 
@@ -306,7 +311,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await openBlocks(page);
   modal = blocksModal(page);
   await expect(
-    modal.getByTestId("blocks-list").locator("li").filter({ hasText: ptDate(futureDate(RUN_DAY_BASE + 40)) }),
+    modal.getByTestId("blocks-list").locator("li").filter({ hasText: ptDate(futureDate(RUN_DAY_BASE + 37)) }),
     "the confirmed absence was written more than once - the warning step is double-submitting",
   ).toHaveCount(1);
   await page.keyboard.press("Escape");
@@ -370,7 +375,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
 
   const prolongadaRow = list
     .locator("li")
-    .filter({ hasText: ptDate(futureDate(RUN_DAY_BASE + 40)) });
+    .filter({ hasText: ptDate(futureDate(RUN_DAY_BASE + 37)) });
   await expect(prolongadaRow).toHaveCount(1);
   await expect(prolongadaRow).toContainText("Ausência prolongada");
   await page.keyboard.press("Escape");

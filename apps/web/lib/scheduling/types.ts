@@ -153,10 +153,17 @@ export type AgendaOptions = {
   services: ServiceOption[];
   packs: PackOption[];
   /**
-   * SCHED-17 - the shared resources (NESA) at the VIEWER's own locations, set for
-   * a therapist only. A self-locked therapist's drawer offers these besides
-   * themselves; everyone else already sees a bookable resource in the ordinary
-   * Terapeuta list. Absent or empty until the NESA migration is applied.
+   * The shared resources (NESA) the viewer may be offered, with where each is
+   * installed. Read per request, never from the 60-second reference cache.
+   *
+   *   - therapist (SCHED-17): the resources at the viewer's own locations. A
+   *     self-locked therapist's drawer offers these besides themselves.
+   *   - owner, admin, reception (SCHED-29.4, Q-SCHED-29-4-1 = A): the resources
+   *     at the viewer's location scope, every one for an unscoped viewer. The
+   *     Terapeuta and Terapeuta 2 selects and the Terapeutas filter list them
+   *     beside the is_bookable roster, whatever the machine's is_bookable says.
+   *
+   * Absent or empty until the NESA migration is applied.
    */
   sharedResources?: { id: string; label: string; locationIds: string[] }[];
 };
