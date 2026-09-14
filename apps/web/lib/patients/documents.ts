@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNull, like, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import { attachments, patients } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
@@ -8,15 +8,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 import { writeClinicalAudit, clientIp } from "@/lib/clinical/audit";
 import { ClinicalError } from "@/lib/clinical/errors";
-import { validateDocumentUpload } from "./document-validation";
+import { normalizeDeleteReason, validateDocumentUpload } from "./document-validation";
 import { importedDocumentPrefix } from "./imported-documents-path";
+import { therapistPatientScope } from "./scope";
 
 // Staff-side PATIENT DOCUMENTS (administrative documents & declarations attached
-// to a patient, e.g. consent forms, identity docs, referrals). Migration-free:
-// reuses the existing `attachments` table via its nullable `patient_id` column
-// (schema.ts) — the same rows the patient portal already reads
+// to a patient, e.g. consent forms, identity docs, referrals). Reuses the
+// existing `attachments` table via its nullable `patient_id` column (schema.ts)
+// — the same rows the patient portal already reads
 // (apps/api/lib/patient/documents.ts, attachments_patient_selfscope RLS). No
-// separate storage backend, no schema change.
+// separate storage backend. SR-62 PU-4 added three soft-delete columns
+// (migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql).
 //
 // Isolation: `attachments_tenant_isolation` (migration 0001_rls) confines every
 // authenticated read/write to the JWT tenant. Every helper here runs inside
@@ -24,15 +26,26 @@ import { importedDocumentPrefix } from "./imported-documents-path";
 // path — defense in depth against a forged path.
 //
 // Permission: patient documents are an administrative surface, not clinical
-// records, so they gate on `patients:write` (upload) / `patients:read`
-// (list + download) — matching the Documentos tab's visibility to every staff
-// role — NOT `clinical_records:*`.
+// records, so they gate on `patients:write` (upload, soft delete) /
+// `patients:read` (list + download) — matching the Documentos tab's visibility
+// to every staff role — NOT `clinical_records:*`.
+//
+// SOFT DELETE (SR-62 PU-4, owner ruling): a removed document keeps its row and
+// its Storage object. Every reader below filters `deleted_at IS NULL`, so a
+// removed document is gone from every staff surface and from download. Nothing
+// here ever deletes a row or a Storage object.
 //
 // Signed URLs only (CLAUDE.md rule 8): upload is a direct signed PUT to Storage,
 // download is a 60s signed GET. Bytes are NEVER proxied through Next.
 
 function safeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_RE.test(value);
 }
 
 /** A patient document as shown in the staff Documentos tab. */
@@ -44,6 +57,31 @@ export type PatientDocumentItem = {
   storagePath: string;
   createdAt: string;
 };
+
+/**
+ * WHICH ATTACHMENT ROWS ARE DOCUMENTOS ROWS. A patient-level row (no registo),
+ * or an imported original even when it is linked to a registo (owner ruling
+ * 2026-09-13). An attachment a therapist uploaded onto a registo is NOT one: it
+ * lives only on that registo, under clinical_records:* gates.
+ *
+ * Two forms of ONE rule: the SQL predicate for the list and download reads, the
+ * row predicate for the writer, which has already loaded the row. The unit tests
+ * pin both.
+ */
+function documentosRowSql(tenantId: string) {
+  return or(
+    isNull(attachments.clinicalRecordId),
+    like(attachments.storagePath, `${importedDocumentPrefix(tenantId)}%`),
+  );
+}
+
+export function isDocumentosRow(
+  tenantId: string,
+  row: { patientId: string | null; clinicalRecordId: string | null; storagePath: string },
+): boolean {
+  if (!row.patientId) return false;
+  return row.clinicalRecordId === null || row.storagePath.startsWith(importedDocumentPrefix(tenantId));
+}
 
 /** Assert the patient exists inside this tenant (RLS-scoped). Throws not_found. */
 async function assertPatientInTenant(ctx: RequestContext, patientId: string): Promise<void> {
@@ -149,8 +187,8 @@ export async function confirmPatientDocument(
  * Fisiozero import brought in for this patient even when it is linked to a
  * registo: owner ruling 2026-09-13, a linked imported original shows in BOTH
  * places, on the ficha's Anexos and here. Attachments a therapist uploaded onto
- * a registo still live only on that registo. Tenant-scoped (RLS + explicit
- * filter).
+ * a registo still live only on that registo. Soft-deleted rows are left out
+ * (SR-62 PU-4). Tenant-scoped (RLS + explicit filter).
  */
 export async function listPatientDocuments(
   ctx: RequestContext,
@@ -171,11 +209,9 @@ export async function listPatientDocuments(
       .where(
         and(
           eq(attachments.patientId, patientId),
-          or(
-            isNull(attachments.clinicalRecordId),
-            like(attachments.storagePath, `${importedDocumentPrefix(ctx.tenantId)}%`),
-          ),
+          documentosRowSql(ctx.tenantId),
           eq(attachments.tenantId, ctx.tenantId),
+          isNull(attachments.deletedAt),
         ),
       )
       .orderBy(desc(attachments.createdAt));
@@ -197,7 +233,8 @@ export async function listPatientDocuments(
  * registo), so an imported ficha could not show its source document; this lists
  * them beside it. A file already linked to `excludeRecordId` is left out because
  * that registo's Anexos block shows it. Ordered by name, because an import has
- * no meaningful upload date.
+ * no meaningful upload date. Soft-deleted rows are left out (SR-62 PU-4): the
+ * list mirrors the Documentos tab, where the delete happens.
  */
 export async function listImportedPatientDocuments(
   ctx: RequestContext,
@@ -222,6 +259,7 @@ export async function listImportedPatientDocuments(
           eq(attachments.tenantId, ctx.tenantId),
           like(attachments.storagePath, `${importedDocumentPrefix(ctx.tenantId)}%`),
           or(isNull(attachments.clinicalRecordId), ne(attachments.clinicalRecordId, excludeRecordId)),
+          isNull(attachments.deletedAt),
         ),
       )
       .orderBy(asc(attachments.fileName));
@@ -236,17 +274,143 @@ export async function listImportedPatientDocuments(
   });
 }
 
-/** Short-lived (60s) signed download URL. Verifies the path is in-tenant first. */
+/**
+ * Short-lived (60s) signed download URL for ONE LIVE Documentos row, by id.
+ *
+ * SR-62 PU-4: this took a raw Storage PATH and checked only the tenant prefix,
+ * so a soft-deleted file stayed openable by anyone holding its path, and a
+ * patients:read caller (reception) could sign ANY in-tenant path, including a
+ * therapist's registo attachment. It now resolves the row first: in this
+ * tenant, on a patient, a Documentos row, and not soft-deleted. The path that is
+ * signed is the one stored on that row, never one the client sent.
+ */
 export async function createPatientDocumentDownloadUrl(
   ctx: RequestContext,
-  path: string,
+  documentId: string,
 ): Promise<string> {
   assertCan(ctx.role, "patients:read");
-  if (!path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  if (!isUuid(documentId)) throw new ClinicalError("invalid");
+  const storagePath = await runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({ storagePath: attachments.storagePath })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.id, documentId),
+          eq(attachments.tenantId, ctx.tenantId),
+          isNotNull(attachments.patientId),
+          documentosRowSql(ctx.tenantId),
+          isNull(attachments.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.storagePath ?? null;
+  });
+  if (!storagePath) throw new ClinicalError("not_found");
+  // Defense in depth: a stored path outside this tenant's prefix is refused.
+  if (!storagePath.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
   const admin = createSupabaseAdminClient();
-  const { data, error } = await admin.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(path, 60);
+  const { data, error } = await admin.storage
+    .from(ATTACHMENTS_BUCKET)
+    .createSignedUrl(storagePath, 60);
   if (error || !data) {
     throw new Error(`createPatientDocumentDownloadUrl: ${error?.message ?? "unknown storage error"}`);
   }
   return data.signedUrl;
+}
+
+/**
+ * SR-62 PU-4 — SOFT delete a patient document. Owner ruling, final: never a hard
+ * delete; a reason is REQUIRED; who, when and why must be answerable later.
+ *
+ * WHAT IT WRITES, IN ONE TRANSACTION:
+ *   attachments  deleted_at = now(), deleted_by_user_id = actor, delete_reason
+ *   audit_log    ONE row: patient_document.soft_delete, entity attachment/<id>,
+ *                metadata { hadReason: true, patientId } and nothing else.
+ * `now()` is the transaction's start time, which is also audit_log.created_at's
+ * default, so the two timestamps are identical by construction.
+ *
+ * WHAT IT NEVER TOUCHES: the Storage object, and any other row.
+ *
+ * REFUSALS, in order, each before anything is written:
+ *   ForbiddenError    no patients:write (the upload capability; Q-PU4-1)
+ *   invalid           documentId is not a uuid
+ *   reason_required   reason missing, not a string, or blank after trimming
+ *   reason_too_long   reason over DOCUMENT_DELETE_REASON_MAX after trimming
+ *   not_found         no such row in this tenant, or not a Documentos row (a
+ *                     registo attachment, or no patient), or a therapist's
+ *                     patient that is not theirs (the same answer either way,
+ *                     so a forged id learns nothing)
+ *   already_deleted   already soft-deleted, including by a concurrent request
+ *                     that won the race (the UPDATE is guarded on deleted_at)
+ */
+export async function softDeletePatientDocument(
+  ctx: RequestContext,
+  input: { documentId: unknown; reason: unknown },
+): Promise<{ id: string; patientId: string }> {
+  assertCan(ctx.role, "patients:write");
+  if (!isUuid(input.documentId)) throw new ClinicalError("invalid");
+  const documentId = input.documentId;
+  const normalized = normalizeDeleteReason(input.reason);
+  if (!normalized.ok) throw new ClinicalError(normalized.error);
+  const ip = await clientIp();
+
+  return runScoped(ctx, async (tx) => {
+    const [row] = await tx
+      .select({
+        id: attachments.id,
+        patientId: attachments.patientId,
+        clinicalRecordId: attachments.clinicalRecordId,
+        storagePath: attachments.storagePath,
+        deletedAt: attachments.deletedAt,
+      })
+      .from(attachments)
+      .where(and(eq(attachments.id, documentId), eq(attachments.tenantId, ctx.tenantId)))
+      .limit(1);
+    if (!row || !row.patientId || !isDocumentosRow(ctx.tenantId, row)) {
+      throw new ClinicalError("not_found");
+    }
+    if (row.deletedAt) throw new ClinicalError("already_deleted");
+    const patientId = row.patientId;
+
+    // W10-04: a therapist holds patients:write, but only for their own patients.
+    const scope = therapistPatientScope(ctx, patients.id);
+    if (scope) {
+      const [visible] = await tx
+        .select({ id: patients.id })
+        .from(patients)
+        .where(and(eq(patients.id, patientId), scope))
+        .limit(1);
+      if (!visible) throw new ClinicalError("not_found");
+    }
+
+    const updated = await tx
+      .update(attachments)
+      .set({
+        deletedAt: sql`now()`,
+        deletedByUserId: ctx.userId,
+        deleteReason: normalized.reason,
+      })
+      .where(
+        and(
+          eq(attachments.id, row.id),
+          eq(attachments.tenantId, ctx.tenantId),
+          isNull(attachments.deletedAt),
+        ),
+      )
+      .returning({ id: attachments.id });
+    if (updated.length === 0) throw new ClinicalError("already_deleted");
+
+    await writeClinicalAudit(tx, {
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.userId,
+      action: "patient_document.soft_delete",
+      entityType: "attachment",
+      entityId: row.id,
+      // The reason is prose and lives in attachments.delete_reason. Rule 7.
+      metadata: { hadReason: true, patientId },
+      ip,
+    });
+    return { id: row.id, patientId };
+  });
 }

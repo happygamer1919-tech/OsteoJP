@@ -1578,3 +1578,55 @@ remarcar." **Not written to the page until ruled.**
 **Questions for the owner.** (a) Approve the destination column, reversing 0075's no-recipient ruling for SMS rows? (b) Approve one migration carrying 1 to 3, authored after 0088 applies?
 
 **Recommended default.** (a) Yes, E.164 only, SMS rows only, because the log's purpose is proof of where a reminder went and the current-number column cannot give it. (b) Yes, one migration after 0088, with an isolation test in the same PR and GREEN as applier.
+
+## 2026-09-14 - Q-PU4-1: who may Eliminar a patient document?
+
+**OWNER. Does not block: built with the recommended default.**
+
+SR-62 PU-4 adds a soft delete (required reason, audit row, file kept) to the
+Documentos tab. It is gated on **`patients:write`**, the same capability that
+uploads a document: owner, admin, reception, and a therapist for their own
+patients only. Reception is who reported the wrong-patient upload, so the
+people who put a document on a patient can take it off.
+
+**Alternative:** `patients:delete`, which only owner and admin hold. Reception
+would then have to ask an admin every time a document lands on the wrong
+patient.
+
+**Recommended default (built):** `patients:write`. Nothing is erased (the row
+and the file stay, with who, when and why), so the action is reversible by an
+admin with database access, and the reason is required.
+
+## 2026-09-14 - Q-PU4-2: does a soft-deleted document still block a patient hard delete?
+
+**OWNER. Does not block: built with the recommended default.**
+
+`hardDeletePatient` refuses while any `attachments` row points at the patient,
+and the danger-zone preflight lists them. A soft-deleted document is still a
+row, and its file is still in Storage.
+
+**Recommended default (built):** yes, it still blocks. Deleting the patient
+would orphan a file that holds personal data, and the soft-delete trail (who,
+when, why) would have to go with the patient row. If the owner wants deleted
+documents to stop blocking, the hard delete must first decide what happens to
+the Storage object and the trail.
+
+## 2026-09-14 - Q-PU4-3: what happens to a soft-deleted file afterwards?
+
+**OWNER (retention beyond defaults is owner-confirmable). Does not block.**
+
+A soft-deleted document disappears from the staff Documentos tab, the imported
+registo list, the registo Anexos, and the patient portal, and it can no longer
+be opened through the app. The row and the Storage object are kept
+**indefinitely**. There is no screen that lists deleted documents and no
+restore.
+
+That is the right default for the reported case (a document uploaded to the
+wrong patient: it must not be lost before it reaches the right one). But a
+wrongly-filed document holds a different person's data, and keeping it forever
+under the wrong patient is itself an RGPD question.
+
+**Recommended default (built):** keep indefinitely, no UI, until the separate
+move-to-correct-patient ticket ships. Then decide: (a) a restore for admins,
+(b) a purge after N days that removes the Storage object and keeps the audit
+row, or (c) both.

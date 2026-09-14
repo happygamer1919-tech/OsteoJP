@@ -4322,3 +4322,40 @@ one clinic. `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` checks it, re
   LV rows written through Horarios on 2026-09-12 and JP(cb) still holds 16, so the portal
   roster lists both JP rows at Linda-a-Velha. 8 rows are identical on both, which is
   STAFF-10's clash precondition: STAFF-10 halts before writing. Reported, not acted on.
+
+## 2026-09-14 - PURPLE, SR-62 PU-4: Documentos delete is a soft delete
+
+Owner ruling, final: a document removed from a patient's Documentos tab is SOFT deleted,
+with a required reason and an audit row. Never a hard delete.
+
+- **Storage.** No `documents` table exists; Documentos rows are `attachments` rows.
+  Three nullable columns (`deleted_at`, `deleted_by_user_id`, `delete_reason`) and a CHECK
+  (all three or none; reason not blank) in
+  `packages/db/migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql`. PARKED,
+  because 0088 is claimed by BLUE and unapplied. The branch names the new columns, so it
+  cannot merge before that file is promoted and applied.
+- **Who / when / why.** Actor: `deleted_by_user_id` and `audit_log.actor_user_id`. Time:
+  `deleted_at` = `now()` in the same transaction as the audit insert, so it equals
+  `audit_log.created_at`. Reason: `attachments.delete_reason` ONLY. The audit row carries
+  `{ hadReason: true, patientId }`, because the metadata contract refuses prose (rule 7).
+- **Readers.** Documentos tab, imported-originals list, registo Anexos, portal list,
+  portal download: all filter `deleted_at IS NULL`. The portal RLS policy gains the same
+  conjunct. Staff RLS is unchanged, so the trail stays readable.
+- **Anexos: a deleted document is gone there too.** An imported original linked to a
+  registo is the same row the Documentos tab shows; hiding it in one place and not the
+  other would contradict the 2026-09-13 "both places" ruling.
+- **Downloads resolve a live row.** The Documentos download now takes a document id and
+  signs the path stored on a live Documentos row; it took a raw path and checked only the
+  tenant prefix, which also let a `patients:read` caller sign a registo attachment. The
+  Anexos download keeps its path argument but requires a live attachment row at that path.
+- **Permission.** `patients:write` (the upload capability), a therapist for own patients
+  only. Q-PU4-1 offers `patients:delete` (owner/admin) as the alternative.
+- **Hard delete still counts soft-deleted documents** (Q-PU4-2). **Deleted files are kept
+  indefinitely, with no restore UI** (Q-PU4-3).
+- **Re-import cannot resurrect.** The importer's attachment value type omits the three
+  columns, so its UPDATE path cannot write them.
+- **Not built:** move-to-correct-patient. Carded separately (storage path embeds the
+  patient id; the re-import update path can overwrite `patient_id`; audit needs from/to).
+- **Known edge, not changed (clinical scope):** `hardDeleteClinicalRecord` deletes the
+  attachment rows of a DRAFT registo, soft-deleted ones included. Only an imported original
+  linked to a draft registo could be both; the audit row survives.

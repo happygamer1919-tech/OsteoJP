@@ -517,6 +517,9 @@ export async function hardDeletePatient(
           .from(patientNoteRevisions)
           .where(eq(patientNoteRevisions.patientId, id)),
         tx.select({ n: count() }).from(invoices).where(eq(invoices.patientId, id)),
+        // SR-62 PU-4: SOFT-DELETED documents still count, deliberately (no
+        // deleted_at filter). The row and the Storage object both still exist,
+        // so the patient still has documents. Default pending Q-PU4-2.
         tx.select({ n: count() }).from(attachments).where(eq(attachments.patientId, id)),
         tx
           .select({ n: count() })

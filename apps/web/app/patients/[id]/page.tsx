@@ -518,6 +518,9 @@ export default async function PatientProfilePage({
             patientId={patient.id}
             items={patientDocuments}
             canUpload={canUploadDocuments}
+            // SR-62 PU-4: Eliminar (soft delete) shares upload's capability,
+            // patients:write. softDeletePatientDocument re-asserts it (Q-PU4-1).
+            canDelete={canUploadDocuments}
           />
         </div>
       )}
