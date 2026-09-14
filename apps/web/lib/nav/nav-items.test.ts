@@ -21,7 +21,9 @@ describe("navItemsForRole — role-aware nav gating", () => {
       // RB-01 (2026-08-20): Recuperação, beside Marcações rather than in the
       // Estatísticas → Horários → Administração run, because NAV-01 ruled that
       // run and the test below asserts it BY INDEX.
-      "/recuperacao",
+      // COMMS-01 (owner dispatch 2026-09-14, BL-2): the slot now holds the
+      // Comunicações GROUP (Recuperação + Lembretes SMS). Same position.
+      "/comunicacoes",
       "/invoicing",
       "/clinical/review",
       "/estatisticas",
@@ -47,8 +49,8 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/patients",
       "/marcacoes",
       // RB-01 (2026-08-20): Recuperação, beside Marcações. Admin holds
-      // `followup:read`.
-      "/recuperacao",
+      // `followup:read`. COMMS-01 (2026-09-14): now the Comunicações group.
+      "/comunicacoes",
       "/invoicing",
       "/estatisticas",
       "/horarios",
@@ -77,7 +79,9 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/patients",
       "/marcacoes",
       // OWNER RULING 2026-08-27: Recuperação joins the therapist sidebar.
-      "/recuperacao",
+      // COMMS-01 (2026-09-14): it is reached through the Comunicações group,
+      // which a therapist keeps for that one section.
+      "/comunicacoes",
       "/clinical/review",
       "/horarios",
     ]);
@@ -100,7 +104,10 @@ describe("navItemsForRole — role-aware nav gating", () => {
     // property NAV-01 was written to protect - one entry per destination, gated
     // by whether the role may USE the page - and it is why this file records the
     // change rather than implementing it.
-    expect(hrefs("therapist")).toContain("/recuperacao");
+    //
+    // COMMS-01 (owner dispatch 2026-09-14): the entry became the Comunicações
+    // group; the therapist reaches Recuperação through it.
+    expect(hrefs("therapist")).toContain("/comunicacoes");
   });
 
   it("reception sees Marcações, Horários and Invoicing but NEITHER Clinical NOR Review NOR Admin", () => {
@@ -116,7 +123,8 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/marcacoes",
       // RB-01 (2026-08-20): Recuperação. It is RECEPTION'S queue above all -
       // ringing a patient who has not rebooked is front-desk work.
-      "/recuperacao",
+      // COMMS-01 (2026-09-14): now the Comunicações group.
+      "/comunicacoes",
       "/invoicing",
       "/horarios",
     ]);
