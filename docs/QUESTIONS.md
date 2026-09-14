@@ -1567,6 +1567,28 @@ remarcar." **Not written to the page until ruled.**
 **The button labels are NOT in question** — the dispatch gives them verbatim:
 **Confirmar consulta** and **Pedir remarcação**.
 
+## 2026-09-14 — Q-PHONE-01-1: should reminders send SMS to foreign numbers?
+
+**OWNER. Nothing is blocked on it; the built default is "no".**
+
+PHONE-01 now accepts and stores a foreign number in E.164 (for example
+`+447700900123`). The reminder send path is unchanged: it sends only to numbers
+`normalizePhonePT` accepts, so a foreign number is skipped as `invalid_phone`,
+exactly as before. The difference is that the patient record and the booking
+drawer now say "os lembretes por SMS só são enviados para números portugueses",
+instead of the skip living only in a log.
+
+**Options:**
+
+1. **Keep no (built).** Foreign patients get no SMS reminder; the marker tells
+   reception to arrange another contact.
+2. **Send to foreign numbers.** Needs a change to the send path's normaliser, a
+   check of Twilio's international pricing per destination, and whether the
+   alphanumeric sender (Q-W14-04) is permitted in each destination country.
+
+**Recommended: 1, keep no,** until the Twilio international pricing and sender
+rules are checked. Sending blind risks paid messages that never arrive, which is
+the landline problem again in another country.
 ## 2026-09-14 - Q-SCHED-30-1: lift the NESA un-cancel refusal for therapists once 0088 is applied?
 
 **OWNER. Nothing is blocked on it.**

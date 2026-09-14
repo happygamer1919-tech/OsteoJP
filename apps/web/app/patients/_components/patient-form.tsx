@@ -9,6 +9,7 @@ import type { PatientWriteError } from "../../../lib/patients/actions";
 import type { Patient } from "../../../lib/patients/types";
 import { errorSlot } from "../../../lib/patients/form-error";
 import { checkNif } from "../../../lib/patients/nif";
+import { phonePreview } from "../../../lib/patients/phone-preview";
 import {
   MAX_HEALTH_INSURANCE_ENTRIES,
   nifMessage,
@@ -362,7 +363,17 @@ export function PatientForm({
           <input
             value={fields.phone}
             onChange={(e) => set("phone", e.target.value)}
+            inputMode="tel"
+            autoComplete="off"
             className={inputCls}
+          />
+          {/* PHONE-01 — what will be stored, shown BEFORE saving, from the same
+              parser the server saves with. Updated on CHANGE, never on blur, and
+              the line's height is reserved whether or not it has text: a message
+              that appears on blur moves Guardar under the pointer between
+              mousedown and click, and the click is lost. */}
+          <PhonePreviewLine
+            preview={phonePreview(fields.phone, isEdit ? (patient?.phone ?? null) : undefined, s)}
           />
         </Field>
         <Field label={s["patients.fieldEmail"]} errorFor="email">
@@ -527,6 +538,31 @@ export function PatientForm({
 
 const inputCls =
   "w-full rounded border border-border-strong px-3 py-2 text-sm focus:border-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+
+/**
+ * PHONE-01 — the preview line under the phone box. `min-h-10` holds two lines of
+ * `text-xs` (the landline and foreign texts wrap to two in a half-width column) so
+ * typing into the box never moves anything below it. `aria-live="polite"` so a
+ * screen reader hears the normalised number without losing focus.
+ */
+function PhonePreviewLine({ preview }: { preview: ReturnType<typeof phonePreview> }) {
+  const tone =
+    preview?.tone === "error"
+      ? "text-error"
+      : preview?.tone === "warning"
+        ? "text-amber-900"
+        : "text-text-secondary";
+  return (
+    <span
+      data-testid="patient-phone-preview"
+      data-tone={preview?.tone ?? "none"}
+      aria-live="polite"
+      className={`min-h-10 text-xs ${tone}`}
+    >
+      {preview?.text ?? ""}
+    </span>
+  );
+}
 
 /**
  * INC-nif-validationerror-at-the-desk — a field that can carry its own refusal.

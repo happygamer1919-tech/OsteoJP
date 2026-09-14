@@ -8432,7 +8432,7 @@
       "evidence": {
         "kind": "pr",
         "at": "2026-09-14",
-        "ref": "PR #1330 (sched/SCHED-30-therapist-cancel-uncancel), auto-merge armed. Reproduced on main 59074ded first: e2e \"Isaac's case\" red with \"Não tem permissão para esta ação.\" Negative controls on main: e2e BL-3b red (received the permission sentence); therapist-cancel.db.test.ts 8 failed / 6 passed. Branch, BLUE lane: DB-gated 22/22; e2e 16/16 with marcacoes-tab-edit and agenda-cards; BL-3 spec 7/7 twice consecutively at retries 0; web vitest 3421 passed; typecheck 11/11; lint 0 errors; test:scripts 701/701; web build 0."
+        "ref": "PR #1330 (sched/SCHED-30-therapist-cancel-uncancel) MERGED 2026-09-14T19:23:07Z as 74ab5035 by auto-merge, every required check green in CI (e2e attempt 1 shard 2 hit the CI-only route 404 seen the same day on #1333; attempt 2 green, main control green, local CI-order shard replay 103/103). Reproduced on main 59074ded first: e2e \"Isaac's case\" red with \"Não tem permissão para esta ação.\" Negative controls on main: e2e BL-3b red (received the permission sentence); therapist-cancel.db.test.ts 8 failed / 6 passed. Branch, BLUE lane: DB-gated 22/22; e2e 16/16 with marcacoes-tab-edit and agenda-cards; BL-3 spec 7/7 twice consecutively at retries 0; web vitest 3421 passed; typecheck 11/11; lint 0 errors; test:scripts 701/701; web build 0."
       },
       "blocked_on": null,
       "last_checkpoint": "2026-09-14",
@@ -8451,7 +8451,7 @@
       "evidence": {
         "kind": "pr",
         "at": "2026-09-14",
-        "ref": "PR #1333 (patients/PHONE-01-phone-e164-no-sms-marker), auto-merge armed. Re-run by BLUE, not taken from the builder: GATE BL-1a case table (35 accepted, 23 refused) asserted byte for byte through the parser and both parse functions; e2e patient-phone-no-sms + patients.spec 26/26, then the phone spec 7/7 twice consecutively at retries 0 (three earlier runs reached no phone test: a stale .next/dev cache stalled staff login twice, then the portal OTP limiter answered 429; control and lane reset recorded in the PR); typecheck 11/11; lint 0 errors; test:scripts 701/701; web vitest 3533 passed; notify 212/212; web build 0."
+        "ref": "PR #1333 (patients/PHONE-01-phone-e164-no-sms-marker) MERGED 2026-09-14T19:34:59Z as e1bdefba by auto-merge, every required check green in CI (attempt 1 shard 2 hit the same CI-only route 404 as #1330; green on the rebuilt head 7e479732). Re-run by BLUE, not taken from the builder: GATE BL-1a case table (35 accepted, 23 refused) asserted byte for byte through the parser and both parse functions; e2e patient-phone-no-sms + patients.spec 26/26, then the phone spec 7/7 twice consecutively at retries 0 (three earlier runs reached no phone test: a stale .next/dev cache stalled staff login twice, then the portal OTP limiter answered 429; control and lane reset recorded in the PR); typecheck 11/11; lint 0 errors; test:scripts 701/701; web vitest 3533 passed; notify 212/212; web build 0."
       },
       "blocked_on": null,
       "last_checkpoint": "2026-09-14",
