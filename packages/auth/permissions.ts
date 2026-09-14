@@ -35,6 +35,14 @@ export type Capability =
   | "appointments:read"
   | "appointments:write"
   | "appointments:delete"
+  // SCHED-30 (owner dispatch 2026-09-14): cancel an appointment, and bring one
+  // back out of Cancelada, where the actor is the Terapeuta or the Terapeuta 2
+  // and at one of their clinics. TARGET-BLIND like every grant here: the target
+  // rule is ownCancelRefusal in apps/web/lib/scheduling/cancel-authority.ts.
+  // Its own capability and not appointments:delete, because delete also opens
+  // Corrigir estado and every row at the clinic, which nobody ruled for a
+  // therapist.
+  | "appointments:cancel_own"
   | "services:read"
   | "services:write"
   | "locations:read"
@@ -180,6 +188,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "appointments:read",
   "appointments:write",
   "appointments:delete",
+  "appointments:cancel_own",
   "services:read",
   "services:write",
   "locations:read",
@@ -278,6 +287,13 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     "patients:write",
     "appointments:read",
     "appointments:write",
+    // SCHED-30 (owner dispatch 2026-09-14): Cancelada, and back out of it, on
+    // an appointment where this therapist is Terapeuta or Terapeuta 2, at one
+    // of their clinics. NOT appointments:delete: that would also open Corrigir
+    // estado and every row RLS lets them write, including NESA's (0086). The
+    // scope is ownCancelRefusal, asserted in cancelAppointment and in
+    // updateAppointment's un-cancel.
+    "appointments:cancel_own",
     "clinical_records:read",
     "clinical_records:author",
     "clinical_records:review",

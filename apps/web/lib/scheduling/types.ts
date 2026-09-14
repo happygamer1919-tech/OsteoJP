@@ -328,6 +328,12 @@ export type ActionErrorCode =
   // tell a therapist assigned to both clinics that LV is not theirs, when the
   // truth is that the machine is not there.
   | "shared_resource_location"
+  // SCHED-30: a THERAPIST bringing back a Cancelada that names a shared resource
+  // (NESA) in either slot. Refused because their conflict check cannot see a
+  // colleague's booking holding NESA as Terapeuta 2 until 0088 is applied, so it
+  // cannot prove the slot is free. Its own code because the next action differs:
+  // reception, who sees every row at the clinic, can bring it back.
+  | "uncancel_shared_resource"
   | "error";
 
 export type ActionResult<T> =
@@ -353,4 +359,12 @@ export type ActionResult<T> =
        * availability windows above follow.
        */
       clinicClosure?: { locationName: string; from: string; to: string };
+      /**
+       * SCHED-30. Set to `false` only with `error: "conflict"` when the server
+       * will NOT honour allowConflict for this call: a therapist bringing a
+       * Cancelada back into a slot taken since. Absent means the ordinary rule,
+       * where "Guardar mesmo assim" is offered. A caller that offered the
+       * override here would show a button that cannot succeed.
+       */
+      conflictOverridable?: false;
     };
