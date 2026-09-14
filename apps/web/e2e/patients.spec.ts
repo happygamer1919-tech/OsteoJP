@@ -116,7 +116,8 @@ test("create patient with all fields persists and displays them", async ({ page 
   await page.goto(`/patients/${id}`);
 
   // Contactos folded into Dados pessoais (W2-02 item 4): phone shows on the profile.
-  await expect(page.getByText(phone).first()).toBeVisible();
+  // PHONE-01: stored, and so shown, as E.164 - not as typed.
+  await expect(page.getByText("+351912000111").first()).toBeVisible();
   // Profession is surfaced (W2-02 item 5).
   await expect(page.getByText(profession).first()).toBeVisible();
   // Street address is not surfaced anywhere on the profile (W2-02 item 3).
@@ -200,7 +201,8 @@ test("edit patient phone and see the updated value on the profile", async ({ pag
   await page.getByRole("button", { name: "Guardar" }).click();
 
   await expect(page).toHaveURL(new RegExp(`/patients/${id}$`), { timeout: 12_000 });
-  await expect(page.getByText("+351 910 000 999").first()).toBeVisible();
+  // PHONE-01: stored, and so shown, as E.164.
+  await expect(page.getByText("+351910000999").first()).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
