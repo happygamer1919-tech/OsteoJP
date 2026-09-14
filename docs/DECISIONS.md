@@ -4377,3 +4377,26 @@ Evidence, on the lane database only:
 - a mutation arm that removed the Documentos `deleted_at` filter failed at "gone from the tab".
 
 The lane database was reset afterwards (journal 0087, columns absent). Moving a document to the correct patient is carded separately (SR62-PU4b).
+
+## 2026-09-14 - PURPLE, SR-62 overnight: the Q-PU4 text located, #1338 rebased and proven, specs 0090 and 0091
+
+**Two owner rulings, recorded here and built into the specs:**
+- **COMMS-02 (Q-COMMS-01-1).** The reminder recipient number is stored MASKED as `+3519xxxxx699`, and the full number is NEVER persisted. The log therefore answers which number pattern a reminder went to, not whether it was the right number at full precision. That was chosen deliberately.
+- **Registo annulment (Q-SR62-PU5-1, option a).** The reason is required; annulled registos are struck through and stay visible; the 902 imported LOCKED registos become annullable.
+
+**P-1, the Q-PU4 questions.** They were recorded, verbatim, but only on #1338's unmerged branch: `docs/QUESTIONS.md` lines 1582-1632 at `5b37e887`. Main carries only the board card's one-line summary and the PR body's paraphrase. The file stays unmerged until #1338 merges.
+
+**P-2, #1338 rebased onto `1dde3111`, LOCALLY ONLY, and not pushed.**
+- Pushing a rebase over the PR head needs a force push, which `osteojp-conventions` forbids ("never force-push, never rewrite history"). #1338 is held and not armed, so it also gets no CI-burning branch update.
+- Conflict: `docs/DECISIONS.md` only, resolved as a union built from git: main whole, plus the branch's appended entry. `docs/QUESTIONS.md` auto-merged with no line lost from either side.
+- The code patch is identical: patch-id `96dd091e` before and after.
+- The DB-gated red has exactly one cause, `attachments.deleted_at` absent. Measured on the PURPLE lane:
+  - branch red: 2 files fail, `attachments-soft-delete` (PostgresError) and `migration-upsert-idempotency` ("expected 7 to be 8"). Postgres logs the importer's INSERT naming `"deleted_at"`.
+  - main control on the same database: 90/90 green.
+  - branch with the parked SQL applied: 91/91 green (1289 tests).
+  - The lane was reset afterwards.
+
+**P-3 and P-4: specs only, no migration file.** `docs/design/SPEC-0090-comms-02-reminder-log.md` and `docs/design/SPEC-0091-registo-annulment.md`.
+- **Annulment stays a row in the separate append-only `record_annulments`.** The trigger is bound `BEFORE UPDATE OR DELETE ON clinical_records`, so it is never invoked by an INSERT elsewhere.
+- **A column on `clinical_records` is impossible without a bypass.** The 0005 function rejects every update of a locked or signed row except a merge re-parent.
+- **Questions opened:** Q-SR62-P3-1, Q-SR62-P4-1, Q-SR62-P4-2 (the existing DRAFT Eliminar against "never a delete button") and Q-SR62-P4-3.

@@ -1397,6 +1397,8 @@ should be able to go to any other state.
 
 **Status: OPEN, card SR62-PU5-registo-annulment-reason-required-and-visible (deferred by the owner: not built in SR-62).**
 
+**ANSWERED 2026-09-14 (owner, overnight dispatch, option a):** the reason is REQUIRED; annulled registos are STRUCK THROUGH and REMAIN VISIBLE; the 902 imported LOCKED registos BECOME ANNULLABLE. The immutability trigger stays untouched. Spec: `docs/design/SPEC-0091-registo-annulment.md`. The build waits for its migration slot, after 0090.
+
 **The shape the owner set:** registos clinicos get ANNULMENT, never deletion. An anulado state with a reason and an audit row; the record stays readable, stays in history, and renders struck through. `clinical_records_enforce_immutability` is never disabled, bypassed or worked around.
 
 **What exists on main (W5-30, read 2026-09-14 on 59074ded):** `record_annulments` (migration 0035), append-only by policy set; `annulRecord` in `apps/web/lib/clinical/records.ts` inserts one row and never touches the record; audit `clinical_record.annul` with `{ hadReason }`; an ANULADO badge on the patient's Registos tab.
@@ -1414,3 +1416,27 @@ should be able to go to any other state.
 **Options for 3:**
 - **A (recommended default):** annulled registos render in place in the history, struck through with the ANULADO badge and the reason shown on open; no hide toggle.
 - **B:** struck through, but still hidden by default behind "Mostrar anulados".
+
+## Q-SR62-P4-1 - registo annulment: may a therapist annul a registo authored by a DIFFERENT practitioner? (PURPLE, 2026-09-14)
+
+**Status: OPEN. Does not block the spec; blocks nothing until 0091 is built.**
+
+Spec 0091 (`docs/design/SPEC-0091-registo-annulment.md` section 3.3) makes the annulment INSERT policy mirror the existing `clinical_records_insert` matrix: the owner, or a therapist who authored the record or treats the patient. That lets a therapist annul, for example, an imported LOCKED registo authored by JP when the patient is also theirs. The app allows the same today for SIGNED registos.
+
+**Recommended default:** yes, mirror the existing write matrix. **Alternative:** only the owner, or the record's own practitioner, may annul.
+
+## Q-SR62-P4-2 - does "registos clinicos NEVER get a delete button" cover DRAFT registos? (PURPLE, 2026-09-14)
+
+**Status: OPEN. Flagged, nothing changed.**
+
+On main, a DRAFT registo shows a password-gated "Eliminar" that hard-deletes it (`apps/web/app/patients/[id]/record-lifecycle-actions.tsx:75-86`, `hardDeleteClinicalRecord` in `apps/web/lib/clinical/records.ts`, W5-30). The rule restated on 2026-09-14 says registos never get a delete button, annulment only. Drafts are not finalized history, and the immutability trigger does not protect them.
+
+**Recommended default:** no change until ruled. Spec 0091 neither removes nor widens that button. **Alternative:** remove it, so a draft is either finished or annulled once locked.
+
+## Q-SR62-P4-3 - what does an OLD annulment with no reason show? (PURPLE, 2026-09-14)
+
+**Status: OPEN. Copy only.**
+
+Annulments made before 0091 may have a NULL reason (0035 made it optional). They stay as history, unrewritten.
+
+**Recommended default:** "Anulado sem motivo registado" (en: "Annulled, no reason recorded").
