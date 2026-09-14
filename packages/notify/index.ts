@@ -51,3 +51,13 @@ export { isSmsCapablePT } from "./src/sms-capability";
 // The one definition of a well-formed PT phone number. See src/phone.ts for why
 // it lives here rather than in an app.
 export { normalizePhonePT, PT_SUBSCRIBER } from "./src/phone";
+
+// PHONE-01: what the staff patient form accepts, stores (E.164) and whether an SMS
+// reaches it. Calls normalizePhonePT for every Portuguese answer; see the file.
+export { noSmsReason, parsePatientPhone, refusalMessage } from "./src/patient-phone";
+export type {
+  NoSmsReason,
+  PatientPhoneKind,
+  PatientPhoneRefusal,
+  PatientPhoneResult,
+} from "./src/patient-phone";
