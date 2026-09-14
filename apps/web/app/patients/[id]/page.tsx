@@ -22,6 +22,8 @@ import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
+import { bookingLocationScope } from "../../../lib/auth/viewer-locations";
+import { ownCancelRefusal } from "../../../lib/scheduling/cancel-authority";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
 import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
@@ -123,6 +125,10 @@ export default async function PatientProfilePage({
   // each Agenda server action re-asserts its own capability server-side.
   const canEditAppointments = can(ctx.role, "appointments:write");
   const canCancelAppointments = can(ctx.role, "appointments:delete");
+  // SCHED-30 (owner dispatch 2026-09-14): a therapist cancels, and brings back,
+  // the rows they are Terapeuta or Terapeuta 2 on, at their own clinics. Only the
+  // affordance; cancelAppointment and updateAppointment re-check it.
+  const canCancelOwnAppointments = !canCancelAppointments && can(ctx.role, "appointments:cancel_own");
   const canDelete = can(ctx.role, "patients:delete");
   const canStartEpisode = can(ctx.role, "clinical_records:author");
   // Hard delete is Tenant-settings tier (W5-08), like appointment/staff delete.
@@ -227,6 +233,13 @@ export default async function PatientProfilePage({
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
   const patientAppointments = tab === "consultas" ? await listPatientAppointments(ctx, id) : [];
+  const ownCancelScope =
+    canCancelOwnAppointments && patientAppointments.length > 0 ? await bookingLocationScope(ctx) : null;
+  const ownCancelIds = canCancelOwnAppointments
+    ? patientAppointments
+        .filter((a) => ownCancelRefusal(ctx.userId, ownCancelScope, [a]) === null)
+        .map((a) => a.id)
+    : [];
   // Consultas tab: this patient's pack instances + remaining sessions (W8-01c).
   const patientPackInstances =
     tab === "consultas" ? await listPatientPackInstances(ctx, id) : [];
@@ -390,6 +403,7 @@ export default async function PatientProfilePage({
             appointments={patientAppointments}
             canEdit={canEditAppointments}
             canCancel={canCancelAppointments}
+            ownCancelIds={ownCancelIds}
           />
         </div>
       )}
