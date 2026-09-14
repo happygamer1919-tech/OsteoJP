@@ -1,7 +1,19 @@
 import { can, type Role, type Capability } from "@osteojp/auth";
 import { s } from "../i18n";
 
-export type NavItem = { href: string; label: string };
+import { COMMS_SECTIONS } from "./comms-sections";
+
+export type NavItem = {
+  href: string;
+  label: string;
+  /**
+   * COMMS-01: other URL prefixes that light this entry as active. Used by a
+   * GROUP entry whose sections keep their own routes (Comunicações holds
+   * /recuperacao, which predates the group and is named by links, revalidatePath
+   * and e2e specs). Absent for every ordinary entry.
+   */
+  activePrefixes?: string[];
+};
 
 // Single source of truth for the primary nav, with the capability that gates
 // each link. Dashboard / Agenda / Patients are open to every authenticated
@@ -22,7 +34,13 @@ export type NavItem = { href: string; label: string };
  * right move is to say so in a commit that adds the mechanism back WITH its
  * caller, not to find it lying here.
  */
-const ALL: (NavItem & { capability?: Capability })[] = [
+/**
+ * `capability` is one capability, or a LIST meaning "any of these". The list
+ * form has exactly one caller, the Comunicações group (COMMS-01): a group entry
+ * is usable when the role may open any of its sections. Every ordinary entry
+ * still names one capability.
+ */
+const ALL: (NavItem & { capability?: Capability | readonly Capability[] })[] = [
   { href: "/dashboard", label: s["nav.dashboard"] },
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
@@ -54,7 +72,21 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   // redirects a role without the capability, and listFollowupCandidates throws
   // for one. Hiding the link is what stops a therapist WONDERING about a page
   // they may not open; it is not what stops them opening it.
-  { href: "/recuperacao", label: s["nav.followup"], capability: "followup:read" },
+  //
+  // COMMS-01 (owner dispatch 2026-09-14, BL-2): THE ENTRY IS NOW THE GROUP.
+  // "Comunicações" holds two sections, Recuperação and Lembretes SMS, and sits in
+  // Recuperação's old slot for the NAV-01 reason above. The sidebar shell has no
+  // nested items, so the group is ONE entry whose sections share a tab bar
+  // (app/comunicacoes/comms-nav.client.tsx); /comunicacoes redirects to the first
+  // section the role may open. The entry shows when the role may open ANY
+  // section, which is the NAV-01 rule "gated by whether the role may USE the
+  // page" applied to a group: a therapist keeps it for Recuperação.
+  {
+    href: "/comunicacoes",
+    label: s["nav.comms"],
+    capability: COMMS_SECTIONS.map((c) => c.capability),
+    activePrefixes: COMMS_SECTIONS.map((c) => c.href),
+  },
   { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:issue" },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
   // Estatisticas (W6-05; PL-09 Phase 3): KPI dashboard for owner + admin. Gated on
@@ -96,8 +128,14 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },
 ];
 
+function roleMayUse(role: Role, capability: Capability | readonly Capability[] | undefined): boolean {
+  if (!capability) return true;
+  if (typeof capability === "string") return can(role, capability);
+  return capability.some((c) => can(role, c));
+}
+
 export function navItemsForRole(role: Role): NavItem[] {
-  return ALL.filter((i) => !i.capability || can(role, i.capability)).map(
-    ({ href, label }) => ({ href, label }),
+  return ALL.filter((i) => roleMayUse(role, i.capability)).map(({ href, label, activePrefixes }) =>
+    activePrefixes ? { href, label, activePrefixes: [...activePrefixes] } : { href, label },
   );
 }
