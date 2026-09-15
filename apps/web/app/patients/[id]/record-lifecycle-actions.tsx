@@ -73,6 +73,10 @@ export function RecordLifecycleActions({
   }
 
   // A draft can be hard-deleted; a signed (not-yet-annulled) ficha can be annulled.
+  // Q-SR62-P4-2 (ruled 2026-09-14): the draft Eliminar stays, and a locked or
+  // signed registo never gets it. The server refuses them too (not_draft), and
+  // SR-62 D2 pins both sides: records.hard-delete.test.ts and the locked-registo
+  // e2e in imported-record-preview.spec.ts.
   const canDelete = status === "draft";
   const canAnnul = status === "signed" && !annulled;
   if (!canDelete && !canAnnul) return null;
