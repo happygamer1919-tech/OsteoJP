@@ -169,3 +169,45 @@ describe("absencesOverlapping (time off)", () => {
     expect(absencesOverlapping(appt.startsAt, appt.endsAt, blocks)).toHaveLength(0);
   });
 });
+
+/**
+ * INC-dst-sunday-times-shift-an-hour. A Sunday saved 08:00-13:00 must cover its
+ * first and last hour and refuse the half hour outside each end, on the two
+ * clock-change Sundays as on any other. The booking instants are literal UTC,
+ * NOT built with lisbonDateTimeToUtc: a window built with the same midnight
+ * arithmetic this measures against would cancel the error and pass on the bug.
+ */
+describe("INC-dst: saved Sunday hours hold on the clock-change Sundays", () => {
+  const sunday = tpl({ weekday: 0, startTime: "08:00:00", endTime: "13:00:00" });
+  const at = (iso: string, durationMin = 60) => {
+    const startsAt = new Date(iso);
+    return { startsAt, endsAt: new Date(startsAt.getTime() + durationMin * 60_000) };
+  };
+  // [date, label, Lisbon offset in hours that Sunday from 01:00 UTC on]
+  const days = [
+    ["2026-10-25", "October change", 0],
+    ["2027-03-28", "March change", 1],
+    ["2026-11-01", "non-transition Sunday", 0],
+  ] as const;
+  const utcOf = (date: string, hh: number, mm: number, offset: number) => {
+    const [y, mo, d] = date.split("-").map(Number);
+    return new Date(Date.UTC(y, mo - 1, d, hh - offset, mm)).toISOString();
+  };
+  for (const [date, label, offset] of days) {
+    it(`${date} ${label}: 08:00 and 12:00 are covered, 07:30 and 12:30 are not`, () => {
+      const cases: [number, number, boolean][] = [
+        [8, 0, true], // first hour, 08:00-09:00
+        [12, 0, true], // last hour, 12:00-13:00
+        [7, 30, false], // starts before the day opens
+        [12, 30, false], // runs past 13:00
+      ];
+      for (const [hh, mm, covered] of cases) {
+        const w = at(utcOf(date, hh, mm, offset));
+        expect(
+          evaluateAvailability(w.startsAt, w.endsAt, [sunday]).covered,
+          `${date} ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
+        ).toBe(covered);
+      }
+    });
+  }
+});
