@@ -95,6 +95,7 @@ export async function getTherapistAvailability(
       validUntil: r.validUntil,
       isActive: true, // query already filters is_active = true
       locationId: r.locationId,
+      id: r.id,
     }));
 
     return datesInRange(from, to).map((date) =>
@@ -245,6 +246,10 @@ function readTemplateRows(
   if (args.locationId) conds.push(eq(availabilityTemplates.locationId, args.locationId));
   return tx
     .select({
+      // SR-62 PU-3: the row id, so the inspector's Eliminar on a Dia definido
+      // names the row it removes. Selected always, for the reason given for
+      // locationId below.
+      id: availabilityTemplates.id,
       weekday: availabilityTemplates.weekday,
       startTime: availabilityTemplates.startTime,
       endTime: availabilityTemplates.endTime,

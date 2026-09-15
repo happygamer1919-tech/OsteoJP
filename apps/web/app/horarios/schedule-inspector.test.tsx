@@ -270,6 +270,66 @@ describe("SCHED-10 - the edit affordance", () => {
 });
 
 /**
+ * SR-62 PU-3 - Eliminar on a Dia definido row. The Exceção row already had one;
+ * this is the gap. Gated exactly like the Exceção control: rendered only where
+ * the inspector is editable AND the page supplied the handler, and only on a
+ * window whose row can be named.
+ */
+describe("SR-62 PU-3 - Eliminar on a Dia definido", () => {
+  const dd = { start: "10:00", end: "14:00", locationId: "loc-1", locationName: "LV", rule: "dia_definido" as const };
+  const withRemove = (days: InspectedDay[], over: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      createElement(ScheduleInspector, {
+        days,
+        therapists: THERAPISTS,
+        therapistId: "t1",
+        period: "week",
+        locations: [{ id: "loc-1", name: "Linda-a-Velha" }],
+        onTherapistChange: vi.fn(),
+        onPeriodChange: vi.fn(),
+        onSaveDay: vi.fn(async () => ({ ok: true })),
+        onRemoveDayDefined: vi.fn(async () => ({ ok: true })),
+        ...over,
+      }),
+    );
+
+  it("renders Eliminar on a Dia definido window, keyed by its row", () => {
+    const html = withRemove([day({ windows: [{ ...dd, templateId: "tpl-1" }] })]);
+    expect(html).toContain('data-testid="inspector-daydefined-remove-tpl-1"');
+    expect(html).toContain(s["admin.workingHours.blockRemove"]);
+  });
+
+  it("renders one per dated window, because each window is one row", () => {
+    const html = withRemove([
+      day({ windows: [{ ...dd, templateId: "tpl-am" }, { ...dd, start: "15:00", end: "19:00", templateId: "tpl-pm" }] }),
+    ]);
+    expect(html).toContain("inspector-daydefined-remove-tpl-am");
+    expect(html).toContain("inspector-daydefined-remove-tpl-pm");
+  });
+
+  it("NEVER on a Base window: Base has its own editor", () => {
+    const html = withRemove([day({ windows: [{ ...dd, rule: "base", templateId: "tpl-base" }] })]);
+    expect(html).not.toContain("inspector-daydefined-remove-");
+  });
+
+  it("not on a window whose row cannot be named", () => {
+    expect(withRemove([day({ windows: [dd] })])).not.toContain("inspector-daydefined-remove-");
+  });
+
+  it("not without the handler, and not on a read-only inspector", () => {
+    const days = [day({ windows: [{ ...dd, templateId: "tpl-1" }] })];
+    expect(withRemove(days, { onRemoveDayDefined: undefined })).not.toContain("inspector-daydefined-remove-");
+    expect(withRemove(days, { onSaveDay: undefined })).not.toContain("inspector-daydefined-remove-");
+    expect(withRemove(days, { locations: [] })).not.toContain("inspector-daydefined-remove-");
+  });
+
+  it("shows no refusal before anybody has pressed anything", () => {
+    const html = withRemove([day({ windows: [{ ...dd, templateId: "tpl-1" }] })]);
+    expect(html).not.toContain("inspector-daydefined-remove-status");
+  });
+});
+
+/**
  * LE-inspector-and-editor-select-different-therapists — THE PANEL NEVER SHOWS A
  * WEEK NOBODY ASKED FOR, AND ALWAYS SAYS WHOSE WEEK IT IS SHOWING.
  *

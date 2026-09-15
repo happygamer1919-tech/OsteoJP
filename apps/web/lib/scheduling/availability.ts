@@ -24,6 +24,10 @@ export type AvailabilityTemplate = {
   /** SCHED-09. OPTIONAL so every existing caller compiles unchanged; only the
    *  schedule inspector needs to know WHERE a window is worked. */
   locationId?: string | null;
+  /** SR-62 PU-3. OPTIONAL for the same reason as `locationId`: only the
+   *  inspector needs to name the ROW behind a window, so Eliminar on a Dia
+   *  definido can say which row it removes. */
+  id?: string;
 };
 
 /**

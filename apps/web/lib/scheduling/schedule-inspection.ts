@@ -30,6 +30,13 @@ export type InspectedWindow = {
   locationId: string | null;
   locationName: string | null;
   rule: ScheduleRule;
+  /**
+   * SR-62 PU-3: the row that produced this window. Eliminar is offered on a
+   * Dia definido only when it is present, so a window whose row cannot be named
+   * never shows a button that could not say what it removes. Optional so a
+   * hand-built day in a render test still type-checks.
+   */
+  templateId?: string | null;
 };
 
 /**
@@ -136,6 +143,7 @@ export async function inspectSchedule(
         locationId: w.locationId,
         locationName: w.locationId ? (locationNames.get(w.locationId) ?? null) : null,
         rule: w.rule,
+        templateId: w.templateId,
       })),
       blocks: day.blocks.map((b) => {
         const rawStart = new Date(b.start).getTime();
