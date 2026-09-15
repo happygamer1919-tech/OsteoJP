@@ -15,6 +15,7 @@ import {
 } from "@/lib/reminders/reminder-log-core";
 
 import { CommsNav } from "../comms-nav.client";
+import { ReminderLogSearch } from "./reminder-log-search.client";
 import { ReminderLogTable, type ReminderLogRowView } from "./reminder-log-table";
 
 export const metadata = { title: s["remindersLog.title"] };
@@ -45,8 +46,12 @@ function firstParam(v: string | string[] | undefined): string | null {
   return v ?? null;
 }
 
-function href(next: { page?: number; onlyFailures: boolean }): string {
+/** Longer than any name; a bound on how many tokens one request can AND together. */
+const MAX_SEARCH_LENGTH = 100;
+
+function href(next: { page?: number; onlyFailures: boolean; q: string }): string {
   const p = new URLSearchParams();
+  if (next.q) p.set("q", next.q);
   if (next.onlyFailures) p.set("falhas", "1");
   if (next.page && next.page > 1) p.set("page", String(next.page));
   const q = p.toString();
@@ -82,10 +87,13 @@ export default async function LembretesSmsPage({
 
   const sp = await searchParams;
   const onlyFailures = firstParam(sp.falhas) === "1";
+  // COMMS-03: the name search. Kept on every filter and page link below, so
+  // Todos / Só falhas and the pages narrow WITHIN a search instead of dropping it.
+  const q = (firstParam(sp.q) ?? "").trim().slice(0, MAX_SEARCH_LENGTH);
   const pageRaw = Number(firstParam(sp.page) ?? "1");
   const requestedPage = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
 
-  const log = await listReminderLog(ctx, { page: requestedPage, onlyFailures });
+  const log = await listReminderLog(ctx, { page: requestedPage, onlyFailures, search: q });
 
   const rows: ReminderLogRowView[] = log.rows.map((r) => {
     const kind = kindOf(r.templateId);
@@ -127,32 +135,35 @@ export default async function LembretesSmsPage({
           <p className="mt-1 max-w-3xl text-xs text-v2-text-secondary">{s["remindersLog.gapNote"]}</p>
         </div>
 
-        <nav aria-label={s["remindersLog.filterLabel"]} className="flex flex-wrap items-center gap-2">
-          <Link
-            href={href({ onlyFailures: false })}
-            aria-current={!onlyFailures ? "page" : undefined}
-            className={filterLinkCls(!onlyFailures)}
-          >
-            {s["remindersLog.filterAll"]}
-          </Link>
-          <Link
-            href={href({ onlyFailures: true })}
-            aria-current={onlyFailures ? "page" : undefined}
-            className={filterLinkCls(onlyFailures)}
-          >
-            {s["remindersLog.filterFailures"]}
-          </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <ReminderLogSearch initialQuery={q} />
+          <nav aria-label={s["remindersLog.filterLabel"]} className="flex flex-wrap items-center gap-2">
+            <Link
+              href={href({ onlyFailures: false, q })}
+              aria-current={!onlyFailures ? "page" : undefined}
+              className={filterLinkCls(!onlyFailures)}
+            >
+              {s["remindersLog.filterAll"]}
+            </Link>
+            <Link
+              href={href({ onlyFailures: true, q })}
+              aria-current={onlyFailures ? "page" : undefined}
+              className={filterLinkCls(onlyFailures)}
+            >
+              {s["remindersLog.filterFailures"]}
+            </Link>
+          </nav>
           <span className="ml-auto text-sm tabular-nums text-v2-text-secondary">
             {s["remindersLog.count"].replace("{shown}", String(rows.length)).replace("{total}", String(log.total))}
           </span>
-        </nav>
+        </div>
 
-        <ReminderLogTable rows={rows} onlyFailures={onlyFailures} />
+        <ReminderLogTable rows={rows} onlyFailures={onlyFailures} searching={q !== ""} />
 
         {log.pageCount > 1 && (
           <div className="flex items-center gap-3 text-sm">
             {log.page > 1 ? (
-              <Link href={href({ page: log.page - 1, onlyFailures })} className={filterLinkCls(false)}>
+              <Link href={href({ page: log.page - 1, onlyFailures, q })} className={filterLinkCls(false)}>
                 {s["remindersLog.prev"]}
               </Link>
             ) : null}
@@ -160,7 +171,7 @@ export default async function LembretesSmsPage({
               {s["remindersLog.pageOf"].replace("{page}", String(log.page)).replace("{pages}", String(log.pageCount))}
             </span>
             {log.page < log.pageCount ? (
-              <Link href={href({ page: log.page + 1, onlyFailures })} className={filterLinkCls(false)}>
+              <Link href={href({ page: log.page + 1, onlyFailures, q })} className={filterLinkCls(false)}>
                 {s["remindersLog.next"]}
               </Link>
             ) : null}
