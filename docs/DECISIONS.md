@@ -4408,3 +4408,9 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Q-SR62-P4-3, ruled: "Anulado sem motivo registado".** Only the Portuguese copy was ruled; the English string is the translation the question carried.
 - **Q-SR62-P4-1 stays OPEN**, pending the owner.
 - **No migration file.** One migration is in flight (0088). Gate: `ls -1 supabase/migrations | grep -c "^009"` returned 0, and `ls -1 packages/db/migrations | grep -c "^009"` returned 0.
+
+## 2026-09-14 - PURPLE, SR-62 PU-4 ruling dispatch: Q-SR62-P4-1 answered
+
+- **Q-SR62-P4-1, ruled (a).** A therapist may annul a registo authored by a DIFFERENT practitioner when the patient is theirs.
+- **SPEC-0091 section 3.3 already encodes it, verified against the section rather than taken from the dispatch.** The `record_annulments_insert` WITH CHECK admits a therapist when `r.practitioner_id = (select auth.uid())` OR `public.clinical_therapist_sees_patient(r.patient_id)`. No SQL in the spec changed; section 8 and `docs/design/QUESTIONS.md` now read ANSWERED.
+- **No migration file.**

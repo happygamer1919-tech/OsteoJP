@@ -367,10 +367,11 @@ registo.
 
 ## 8. Questions logged (`docs/design/QUESTIONS.md`)
 
-- **Q-SR62-P4-1, who may annul. OPEN, pending the owner.** May a therapist annul a registo
-  authored by a DIFFERENT practitioner (for example, an imported record authored by JP) when
-  the patient is theirs? Recommended default: yes, mirroring the existing write matrix in
-  section 3.3, which is also what the app allows today for signed records.
+- **Q-SR62-P4-1, who may annul. RULED 2026-09-14: (a) yes.** A therapist may annul a
+  registo authored by a DIFFERENT practitioner (for example, an imported record authored by
+  JP) when the patient is theirs. Section 3.3 already encodes it: the INSERT policy admits a
+  therapist who authored the record OR treats the patient
+  (`public.clinical_therapist_sees_patient`). No SQL in this spec changed.
 - **Q-SR62-P4-2, the draft Eliminar. RULED 2026-09-14: it STAYS.** The rule covers
   finalized clinical history, and a draft is not history. See section 5 for the condition
   that it is unreachable for locked and signed records.

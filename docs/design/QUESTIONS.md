@@ -1419,7 +1419,7 @@ should be able to go to any other state.
 
 ## Q-SR62-P4-1 - registo annulment: may a therapist annul a registo authored by a DIFFERENT practitioner? (PURPLE, 2026-09-14)
 
-**Status: OPEN. Does not block the spec; blocks nothing until 0091 is built.**
+**Status: ANSWERED 2026-09-14 (owner): (a) yes, mirror the existing write matrix.** A therapist may annul a registo authored by a different practitioner when the patient is theirs. SPEC-0091 section 3.3 already encodes it (the INSERT policy admits `r.practitioner_id = auth.uid()` OR `clinical_therapist_sees_patient(r.patient_id)`); no spec SQL changed.
 
 Spec 0091 (`docs/design/SPEC-0091-registo-annulment.md` section 3.3) makes the annulment INSERT policy mirror the existing `clinical_records_insert` matrix: the owner, or a therapist who authored the record or treats the patient. That lets a therapist annul, for example, an imported LOCKED registo authored by JP when the patient is also theirs. The app allows the same today for SIGNED registos.
 
