@@ -124,3 +124,29 @@ describe("formatCreatedAt (PL-02 provenance, 24h Europe/Lisbon)", () => {
     expect(formatCreatedAt("2026-01-12T08:30:00Z")).toContain("08:30");
   });
 });
+
+/**
+ * INC-dst-sunday-times-shift-an-hour. Lisbon changes clock at 01:00 UTC on the
+ * last Sunday of October (WEST to WET) and of March (WET to WEST). A wall-clock
+ * time typed for those Sundays must be stored at the instant it names and read
+ * back as the same wall-clock time. Expected instants are written as UTC here,
+ * never derived from the function under test.
+ */
+describe("INC-dst: a wall-clock time survives the clock-change Sundays", () => {
+  const cases = [
+    ["2026-10-25", "October change", "08:00", "2026-10-25T08:00:00.000Z"],
+    ["2026-10-25", "October change", "19:30", "2026-10-25T19:30:00.000Z"],
+    ["2027-03-28", "March change", "08:00", "2027-03-28T07:00:00.000Z"],
+    ["2027-03-28", "March change", "19:30", "2027-03-28T18:30:00.000Z"],
+    ["2026-11-01", "non-transition Sunday", "08:00", "2026-11-01T08:00:00.000Z"],
+    ["2026-11-01", "non-transition Sunday", "19:30", "2026-11-01T19:30:00.000Z"],
+  ] as const;
+  for (const [date, label, hhmm, utc] of cases) {
+    it(`${date} ${label}: ${hhmm} is stored at ${utc} and reads back ${hhmm}`, () => {
+      const at = lisbonDateTimeToUtc(date, hhmm);
+      expect(at.toISOString()).toBe(utc);
+      const [h, m] = hhmm.split(":").map(Number);
+      expect(lisbonParts(at)).toEqual({ date, hour: h, minute: m });
+    });
+  }
+});
