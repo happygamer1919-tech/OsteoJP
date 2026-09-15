@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
-import { and, asc, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, or, sql, type SQL } from "drizzle-orm";
+import { listSharedResourcesTx } from "./shared-resources";
 import { alias } from "drizzle-orm/pg-core";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
@@ -292,10 +293,28 @@ export async function listAppointments(
       gte(appointments.startsAt, args.startUtc),
       lt(appointments.startsAt, args.endUtc),
     ];
-    if (args.practitionerIds && args.practitionerIds.length > 0) {
-      conds.push(inArray(appointments.practitionerId, [...args.practitionerIds]));
-    } else if (args.practitionerId) {
-      conds.push(eq(appointments.practitionerId, args.practitionerId));
+    // SCHED-29.3: a SHARED RESOURCE's agenda is its bookings in BOTH roles. A
+    // booking with NESA as Terapeuta 2 holds NESA's hour (SCHED-29.2), so NESA's
+    // diary must draw it; for a therapist, 0088 is what lets RLS return a
+    // colleague's. A person's Terapeuta 2 rows stay off that person's agenda
+    // (W4-19): only ids that are shared resources widen the filter.
+    const asked =
+      args.practitionerIds && args.practitionerIds.length > 0
+        ? [...args.practitionerIds]
+        : args.practitionerId
+          ? [args.practitionerId]
+          : [];
+    if (asked.length > 0) {
+      const resources = new Set((await listSharedResourcesTx(tx)).map((r) => r.id));
+      const resourceIds = asked.filter((id) => resources.has(id));
+      conds.push(
+        resourceIds.length > 0
+          ? or(
+              inArray(appointments.practitionerId, asked),
+              inArray(appointments.practitionerTwoId, resourceIds),
+            )!
+          : inArray(appointments.practitionerId, asked),
+      );
     }
     if (args.locationId) {
       conds.push(eq(appointments.locationId, args.locationId));

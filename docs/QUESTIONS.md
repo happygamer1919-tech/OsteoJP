@@ -1645,6 +1645,8 @@ dispatch).
 **Recommended: 1.** One rule for "which clinics may this person write into".
 ## 2026-09-14 — Q-COMMS-01-1: Lembretes SMS needs one migration for its missing half (BLUE, not authored)
 
+**ANSWERED 2026-09-14 (owner, overnight dispatch).** (a) YES, but MASKED, not the recommended E.164: the recipient is stored as `+3519xxxxx699`, and the full number is NEVER persisted. By choice, the log answers which number PATTERN a reminder went to, not whether it was the right number at full precision. (b) One migration, numbered 0090, authored only after 0089 (#1338's parked file) is applied and merged. Spec: `docs/design/SPEC-0090-comms-02-reminder-log.md`.
+
 **Context.** The owner's BL-2 asks for a per-reminder log showing patient, appointment, channel, scheduled time, sent time, status, provider error code and the destination number, with a therapist seeing only reminders for appointments where they are Terapeuta or Terapeuta 2. COMMS-01 shipped the part the database already holds: `reminder_dispatches` (0075), read under RLS for owner, admin and reception. Three things cannot be built without a migration, and none was authored (0088 is unapplied and one migration is in flight at a time):
 
 1. **A schedule-time record.** Nothing records `appointment/scheduled`; only the Inngest dashboard does. A reminder scheduled but not yet due, or a run that never reached dispatch, is invisible. Needed: a table (tenant_id, appointment_id, offset or kind, channel, send_at, scheduled_at, superseded_at) written by `scheduleAppointmentReminders` at fan-out, and a nullable link from `reminder_dispatches` to it, so "scheduled, never sent" is a query. RLS in the same migration.
@@ -1654,3 +1656,56 @@ dispatch).
 **Questions for the owner.** (a) Approve the destination column, reversing 0075's no-recipient ruling for SMS rows? (b) Approve one migration carrying 1 to 3, authored after 0088 applies?
 
 **Recommended default.** (a) Yes, E.164 only, SMS rows only, because the log's purpose is proof of where a reminder went and the current-number column cannot give it. (b) Yes, one migration after 0088, with an isolation test in the same PR and GREEN as applier.
+
+## 2026-09-14 — Q-SR62-PU3-1: Eliminar on a Dia definido in the MIDDLE of a multi-day period, on a weekday that had a Base
+
+**OWNER. Blocks that one shape only. Every other Eliminar on a Dia definido
+ships (SR-62 PU-3, branch `sched/SR62-PU3-eliminar-dia-definido`).**
+
+**The ruling being applied (final):** Eliminar removes the day's override, so the
+day falls back to Base; with no Base it reads "Não trabalha". No fourth state.
+
+**The shape the ruling cannot reach as written.** Saving a period through
+*Definir dia a dia* or *Semanas alternadas* trims the weekly (Base) row around
+the WHOLE period, not around each day. Example: Base LV every Monday; one period
+saves Mondays 7, 14 and 21 at CB. The Base now stops on the 6th and resumes on
+the 28th. Removing Monday **14** would need Base to come back for the 14th
+alone, with CB still on the 7th and the 21st. The only row that can say "this
+Monday and no other" is a row bounded to that one day, and the inspector labels
+exactly that row **Dia definido**. So the day would come back labelled as the
+thing that was just deleted: the fourth state, in disguise.
+
+**What the code does until this is ruled:** refuses, writes nothing, and shows
+*"Não é possível eliminar este dia definido: foi guardado num período de vários
+dias, e o horário Base só voltaria como um dia isolado. Use Editar para mudar as
+horas deste dia."* The FIRST and LAST dated Monday of such a period are
+removable (Base comes back by extending the trimmed weekly row), and once they
+are gone the middle one becomes removable too.
+
+**Options:**
+
+| | what Eliminar on the 14th does | cost |
+|---|---|---|
+| A | refuse (current) | reception removes from the ends inwards, or uses Editar |
+| B | archive the Dia definido; the 14th reads **Não trabalha**; Base on that weekday returns only as the period's end days are removed | the day does not fall back to Base, but it matches how a period already treats a day left unset inside it ("not working") |
+| C | write a Base row covering only the 14th | shows as Dia definido; contradicts the ruling |
+
+**Recommended default: B.** It is the owner's own description of JP's case
+("undefined without being reassigned to either clinic"), it needs no new row
+shape, and it is the meaning *Definir dia a dia* already gives an unset day
+inside its period. **Not built until ruled; A ships.**
+
+**Also recorded, not a question unless you disagree:** where nothing in the data
+shows the Base once covered the day (for example a Base that ends some days
+before it with nothing after), Base is treated as empty for that day and it reads
+"Não trabalha". Stretching a Base over a day it may never have covered would be
+a guess presented as a restore.
+## 2026-09-14 - Q-SR62-P3-1: does an EMAIL reminder row record a masked destination too? (PURPLE)
+
+**ANSWERED 2026-09-14 (owner, night dispatch): NO.** Email reminder rows keep a NULL recipient. Spec 0090 records it as ruled in section 8.
+
+**OWNER. Does not block spec 0090.**
+
+The 2026-09-14 ruling masks the recipient NUMBER on SMS rows. `reminder_dispatches` also records email attempts (48h reminder, confirmation, follow-up), and the ruling says nothing about the address. Spec 0090's CHECK admits `recipient_masked` only on `channel = 'sms'`.
+
+**Recommended default:** email rows keep NULL until ruled. If the owner wants a pattern for email too, it needs its own shape (for example the first letter and the domain) and its own CHECK.

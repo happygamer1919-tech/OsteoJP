@@ -225,26 +225,77 @@ test("the CLI refuses a bad invocation and a Claude Code settings path, and runs
   assert.match(ok.stdout, /^INSTALLED: /);
 });
 
-test("install-apply-settings.zsh pins the sha256 of both files it fetches", () => {
+// SR-62 PU-0: the install block as first printed was intact, but a paste path lost a
+// stretch of its 262- and 597-character lines. The block is now built so that a lost
+// line or stretch STOPs it instead of changing what it does:
+//   - it writes its body, and "<sha256>  .osteojp-ps3.z", through two quoted heredocs;
+//   - the body's first act, from ~, is `shasum -a 256 -c`, so a damaged body never runs
+//     past its first line;
+//   - the run line is `zsh -f -e -u`, so a damaged body whose subshell closes early
+//     cannot fall through to top-level lines (a first design did exactly that);
+//   - the check sets V, which the repo path needs under -u, so losing the check line
+//     itself also stops the run.
+// These tests hold that shape; the deletion sweeps that prove it are a recorded zsh
+// rehearsal (zsh is not on the CI runner).
+function installBlockParts() {
   const block = readFileSync(INSTALL_ZSH, "utf8");
-  const pinnedInstaller = block.match(/\| cut -d ' ' -f 1\)" = "([0-9a-f]{64})"/)?.[1];
-  const pinnedSettings = block.match(/--expect-sha256 ([0-9a-f]{64})/)?.[1];
-  assert.equal(pinnedInstaller, shaOf(readFileSync(INSTALLER)), "the installer's pinned sha256 is stale");
-  assert.equal(pinnedSettings, shaOf(readFileSync(CANONICAL)), "the settings file's pinned sha256 is stale");
-  assert.match(block, /show origin\/main:scripts\/apply-lane\/install-apply-settings\.mjs/);
-  assert.match(block, /show origin\/main:scripts\/apply-lane\/osteojp-apply-settings\.json/);
+  const m = block.match(
+    /^cat > "\$\{HOME\}\/\.osteojp-ps3\.s" <<'P_S3_PIN_END'\n([0-9a-f]{64})  \.osteojp-ps3\.z\nP_S3_PIN_END\ncat > "\$\{HOME\}\/\.osteojp-ps3\.z" <<'P_S3_END'\n([\s\S]*?\n)P_S3_END\nzsh -f -e -u "\$\{HOME\}\/\.osteojp-ps3\.z"\n$/,
+  );
+  assert.ok(m, "install-apply-settings.zsh is not in the pin + body + run shape");
+  return { block, pin: m[1], body: m[2] };
+}
+
+test("install-apply-settings.zsh: the pinned sha256 is the body's, and checking it is the body's first act", () => {
+  const { pin, body } = installBlockParts();
+  assert.equal(pin, shaOf(body), `the body pin is stale: the body's sha256 is ${shaOf(body)}`);
+  const lines = body.split("\n");
+  assert.deepEqual(lines.slice(0, 3), ["(", "cd ~", "shasum -a 256 -c .osteojp-ps3.s && V= || exit 9"]);
+  assert.equal(lines.filter((l) => /(^|[^{])\bV=/.test(l)).length, 1, "V may be set only by the check line");
+  assert.ok(lines.some((l) => /^R=\/Users\/ivan\/Documents\/Projects\/GitHub\/OsteoJP\$\{V\}$/.test(l)), "the repo path must need V");
+  const firstWork = lines.findIndex((l) => /\b(git|node|claude)\b/.test(l));
+  const needsV = lines.findIndex((l) => l.includes("${V}"));
+  assert.ok(needsV > 2 && needsV < firstWork, "V must be needed before the first git, node or claude call");
+});
+
+test("install-apply-settings.zsh: its own sha256 gate on BOTH fetched files, the installer called, the result re-checked", () => {
+  const { body } = installBlockParts();
+  const SJ = body.match(/^SJ=([0-9a-f]{64})$/m)?.[1];
+  const SI = body.match(/^SI=([0-9a-f]{64})$/m)?.[1];
+  assert.equal(SJ, shaOf(readFileSync(CANONICAL)), "the settings file's pinned sha256 is stale");
+  assert.equal(SI, shaOf(readFileSync(INSTALLER)), "the installer's pinned sha256 is stale");
+  assert.match(body, /^git -C "\$\{R\}" show "origin\/main:scripts\/apply-lane\/\$\{J\}" > "\$\{T\}\/\$\{J\}"$/m);
+  assert.match(body, /^git -C "\$\{R\}" show "origin\/main:scripts\/apply-lane\/\$\{I\}" > "\$\{T\}\/\$\{I\}"$/m);
+  assert.match(body, /^J=osteojp-apply-settings\.json$/m);
+  assert.match(body, /^I=install-apply-settings\.mjs$/m);
+  assert.match(body, /^test "\$\{HJ\}" = "\$\{SJ\}" \|\| stop /m, "no block-level sha256 gate on the settings file");
+  assert.match(body, /^test "\$\{HI\}" = "\$\{SI\}" \|\| stop /m, "no block-level sha256 gate on the installer");
+  const lines = body.split("\n");
+  const gates = Math.max(lines.findIndex((l) => l.startsWith('test "${HJ}"')), lines.findIndex((l) => l.startsWith('test "${HI}"')));
+  const call = lines.findIndex((l) => l.startsWith('node "${T}/${I}" --canonical "${T}/${J}" --target "${G}" --expect-sha256 "${SJ}"'));
+  assert.ok(call > gates, "the installer must be called, after both gates");
+  const recheck = lines.findIndex((l) => l.startsWith('test "${HG}" = "${SJ}" || stop'));
+  assert.ok(recheck > call, "the installed file's sha256 must be re-checked after the installer runs");
+  assert.ok(lines.findIndex((l) => l.startsWith("echo \"P-S3 COMPLETE")) > recheck);
 });
 
 test("both blocks survive a paste into interactive zsh: no comment lines, no exclamation marks, no unbraced $NAME:", () => {
   for (const file of [INSTALL_ZSH, REMOVE_ZSH]) {
     const block = readFileSync(file, "utf8");
     const lines = block.split("\n");
-    assert.equal(lines[0], "(", file);
-    assert.equal(block.trimEnd().endsWith(")"), true, file);
     assert.deepEqual(lines.filter((l) => /^\s*#/.test(l)), [], `${file}: comment line`);
     assert.equal(block.includes("!"), false, `${file}: exclamation mark`);
     assert.deepEqual(lines.filter((l) => /\$[A-Za-z_][A-Za-z0-9_]*:/.test(l)), [], `${file}: unbraced $NAME:`);
   }
+  const removal = readFileSync(REMOVE_ZSH, "utf8");
+  assert.equal(removal.split("\n")[0], "(");
+  assert.equal(removal.trimEnd().endsWith(")"), true);
+});
+
+test("the install block keeps every line to 80 characters, with no tab, trailing space or backslash continuation", () => {
+  const lines = readFileSync(INSTALL_ZSH, "utf8").replace(/\n$/, "").split("\n");
+  assert.deepEqual(lines.filter((l) => l.length > 80), [], "a line over 80 characters");
+  assert.deepEqual(lines.filter((l) => /\t|\s$|\\$/.test(l)), [], "a tab, trailing whitespace or backslash continuation");
 });
 
 // ---------------------------------------------------------------------------
