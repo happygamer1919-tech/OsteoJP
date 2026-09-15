@@ -4430,3 +4430,10 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **A search that finds nobody says so in its own words** ("Nenhum envio de SMS para um paciente com esse nome.", or the Só falhas variant), never the unfiltered list and never "Nenhum envio de SMS registado", which would read as an empty log.
 - **Red first.** `reminder-log.db.test.ts` with only the test changed: 4 failed, 4 passed. After the change: 8 passed. `lembretes-sms.spec.ts` on the BLUE lane: 7 passed, twice, retries 0.
 - **A test bug found on the way, not a product bug.** The first e2e run typed the next search before the Todos navigation landed, so the box built its URL from the params it still saw and carried `falhas=1`. The spec now waits for the URL.
+## 2026-09-15 - BLUE R3 B-T4: the confirm loop, established from code and production, documented
+
+- **The owner's question has two answers, and the doc says both.** Confirming with the link in the 24h SMS sets the appointment to Confirmada and the agenda shows it (31 on production, `appointment.confirm.sms_code`). Replying to the SMS does nothing, because the sender `OsteoJP` is one-way and `sms_inbound_events` has 0 rows. The dispatch's "it is not" held only for the reply.
+- **Where it lives:** `docs/comms-confirm-loop-current-wiring.md`, card `COMMS-04-confirm-loop-current-wiring`. No code changed.
+- **How the facts were read.** One read-only production transaction at 17:26 UTC (target asserted first), and the owner-only Teste de envio page for the sender, read without pressing anything. `TWILIO_SMS_FROM` was NOT pulled from Vercel: its value is encrypted there, and `vercel env pull` would write every production secret to disk. `REMINDERS_INBOUND`'s value is therefore recorded as not known; it does not change the answer, because the sender condition already fails.
+- **Minted confirm codes are not countable exactly.** Withdrawal deletes the row (0074), so 168 is a floor.
+- **Blocked on the owner:** the sender becoming a phone number, and the link or the reply instruction in the 24h SMS (both do not fit in 160 characters).
