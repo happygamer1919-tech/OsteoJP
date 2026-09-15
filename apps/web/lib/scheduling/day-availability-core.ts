@@ -53,6 +53,9 @@ export type WorkingSource = IsoInterval & {
   /** Where the window is worked, or null when the caller did not ask. */
   locationId: string | null;
   rule: ScheduleRule;
+  /** SR-62 PU-3: the availability_templates row behind the window, or null when
+   *  the caller's templates carry no id. Eliminar on a Dia definido needs it. */
+  templateId: string | null;
 };
 
 /**
@@ -194,6 +197,7 @@ export function buildDay(
     end: lisbonDateTimeToUtc(date, t.endTime).toISOString(),
     locationId: t.locationId ?? null,
     rule: scheduleRuleFor(t),
+    templateId: t.id ?? null,
   }));
 
   // Bookings overlapping this specific day (rows are pre-filtered to the range).
