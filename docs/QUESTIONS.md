@@ -1702,6 +1702,8 @@ before it with nothing after), Base is treated as empty for that day and it read
 a guess presented as a restore.
 ## 2026-09-14 - Q-SR62-P3-1: does an EMAIL reminder row record a masked destination too? (PURPLE)
 
+**ANSWERED 2026-09-14 (owner, night dispatch): NO.** Email reminder rows keep a NULL recipient. Spec 0090 records it as ruled in section 8.
+
 **OWNER. Does not block spec 0090.**
 
 The 2026-09-14 ruling masks the recipient NUMBER on SMS rows. `reminder_dispatches` also records email attempts (48h reminder, confirmation, follow-up), and the ruling says nothing about the address. Spec 0090's CHECK admits `recipient_masked` only on `channel = 'sms'`.
