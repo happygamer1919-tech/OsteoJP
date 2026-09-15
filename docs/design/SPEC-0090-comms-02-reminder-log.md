@@ -267,7 +267,7 @@ GREEN, never by this lane.
 
 ## 7. Not in 0090
 
-- **Email recipients.** The ruling covers the number. Email rows keep NULL (Q-SR62-P3-1).
+- **Email recipients.** Email rows keep a NULL recipient. Ruled 2026-09-14 (Q-SR62-P3-1: no).
 - **Retention.** 0075 ruling 3 carded it separately. These tables grow the same way and
   inherit that card.
 - **Recording the EMIT.** A leg records that the scheduler handled an event. An event that
@@ -276,7 +276,10 @@ GREEN, never by this lane.
 
 ---
 
-## 8. Open questions logged
+## 8. Questions logged
 
 - **Q-SR62-P3-1** (`docs/QUESTIONS.md`): does an email reminder row record a masked
-  destination too? Recommended default: no, NULL, until ruled.
+  destination too? **RULED 2026-09-14 (owner): NO.** Email reminder rows keep a NULL
+  recipient. The CHECK that admits `recipient_masked` only on `channel = 'sms'` is the final
+  shape, not a placeholder awaiting a ruling.
+- No question on this spec remains open.
