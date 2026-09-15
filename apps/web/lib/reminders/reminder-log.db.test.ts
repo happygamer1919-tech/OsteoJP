@@ -175,3 +175,142 @@ d("COMMS-01: a provider refusal reaches Lembretes SMS, scoped", () => {
     await expect(listReminderLog(therapistCtx)).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
+
+/**
+ * COMMS-03 (owner request, BLUE R3 B-T3): the patient name search on Lembretes SMS.
+ *
+ * THE TWO DEFECTS IT MUST NOT REINTRODUCE, both measured on this platform before:
+ * a whole-string substring search (12,322 of 16,429 patients unfindable) and an
+ * ILIKE that is not accent-insensitive (another 5,937). So every arm below is
+ * built to go RED under either one, not only under "no search at all":
+ *
+ *   - "Rui Tavares" must find "Rui Manuel Tavares", which `%rui tavares%` cannot.
+ *   - "ines conceicao" must find "Inês Conceição Brandão", which ILIKE cannot.
+ *   - a name nobody has returns ZERO rows, never the unfiltered page.
+ *
+ * The reader is an ASSIGNED receptionist, the principal the clinic actually has,
+ * reading through `listReminderLog` under RLS. Every expectation is an exact set
+ * of patients, so an unfiltered answer fails it as surely as a wrong one.
+ */
+d("COMMS-03: Lembretes SMS finds a patient by name, with the existing filters", () => {
+  let sql: Awaited<ReturnType<typeof import("@osteojp/db").getDbAdmin>>;
+  const tenantId = randomUUID();
+  const locationId = randomUUID();
+  const receptionId = randomUUID();
+  const therapistId = randomUUID();
+
+  /** A middle name between the two tokens a person types. Its SMS failed. */
+  const pRui = { id: randomUUID(), name: "Rui Manuel Tavares" };
+  /** Shares both typed tokens, has no "Manuel". Its SMS was delivered. */
+  const pRuiCosta = { id: randomUUID(), name: "Rui Tavares Costa" };
+  /** Stored ACCENTED. Its SMS was delivered. */
+  const pInes = { id: randomUUID(), name: "Inês Conceição Brandão" };
+  /** Stored accented, shares the first name only. Its SMS failed. */
+  const pInesRocha = { id: randomUUID(), name: "Inês Rocha" };
+  const all = [pRui, pRuiCosta, pInes, pInesRocha];
+
+  const ctx = () => ({ tenantId, role: "reception" as const, userId: receptionId });
+
+  async function names(opts: { search?: string; onlyFailures?: boolean }) {
+    const { listReminderLog } = await import("./reminder-log");
+    // The option is passed through a widened type ON PURPOSE: before COMMS-03 the
+    // function took no search, and the red run must reach the database rather
+    // than stop at the type checker.
+    const page = await listReminderLog(ctx(), opts as Parameters<typeof listReminderLog>[1]);
+    return { total: page.total, names: page.rows.map((r) => r.patientName).sort() };
+  }
+
+  beforeAll(async () => {
+    const { getDbAdmin } = await import("@osteojp/db");
+    sql = getDbAdmin();
+
+    await sql.execute(raw`insert into tenants (id, name, slug)
+      values (${tenantId}, 'Reminder Search Co', ${"rsearch-" + tenantId.slice(0, 8)})`);
+    await sql.execute(raw`insert into locations (id, tenant_id, name) values (${locationId}, ${tenantId}, 'Castelo')`);
+    await sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active)
+      values (${receptionId}, ${tenantId}, ${"r-" + receptionId.slice(0, 8) + "@t.test"}, 'Rececao Castelo', true)`);
+    await sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active, is_bookable)
+      values (${therapistId}, ${tenantId}, ${"t-" + therapistId.slice(0, 8) + "@t.test"}, 'Dra Busca', true, true)`);
+    // ASSIGNED: the location arm of appointments_rls and patients_select, not the
+    // tenant-wide fallback an unassigned receptionist would take.
+    await sql.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
+      values (${tenantId}, ${receptionId}, ${locationId})`);
+
+    let day = 0;
+    for (const p of all) {
+      day += 1;
+      await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone, primary_location_id)
+        values (${p.id}, ${tenantId}, ${p.name}, '912345678', ${locationId})`);
+      const appointmentId = randomUUID();
+      const startsAt = new Date(Date.now() + (10 + day) * 24 * 60 * 60 * 1000);
+      const endsAt = new Date(startsAt.getTime() + 45 * 60 * 1000);
+      await sql.execute(raw`insert into appointments
+        (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status)
+        values (${appointmentId}, ${tenantId}, ${p.id}, ${therapistId}, ${locationId},
+                ${startsAt.toISOString()}, ${endsAt.toISOString()}, 'scheduled')`);
+      const failed = p === pRui || p === pInesRocha;
+      if (failed) {
+        await sql.execute(raw`insert into reminder_dispatches
+          (tenant_id, appointment_id, channel, template_id, outcome, provider_error_code)
+          values (${tenantId}, ${appointmentId}, 'sms', 'reminder.24h.sms', 'provider_error', '21211')`);
+      } else {
+        await sql.execute(raw`insert into reminder_dispatches
+          (tenant_id, appointment_id, channel, template_id, outcome, provider_status)
+          values (${tenantId}, ${appointmentId}, 'sms', 'reminder.24h.sms', 'sent', 'delivered')`);
+      }
+    }
+  });
+
+  afterAll(async () => {
+    if (!sql) return;
+    await sql.execute(raw`delete from reminder_dispatches where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from staff_locations where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from locations where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from users where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from tenants where id = ${tenantId}`);
+  });
+
+  it("NEGATIVE CONTROL: with no search the receptionist reads all four rows", async () => {
+    expect(await names({})).toEqual({ total: 4, names: all.map((p) => p.name).sort() });
+  });
+
+  it("CASE 1, a middle name token matches, and first + last matches across it", async () => {
+    // The middle token alone.
+    expect(await names({ search: "Manuel" })).toEqual({ total: 1, names: [pRui.name] });
+    // First and last with the middle one skipped: `%rui tavares%` finds only Costa.
+    expect(await names({ search: "Rui Tavares" })).toEqual({
+      total: 2,
+      names: [pRui.name, pRuiCosta.name].sort(),
+    });
+    // Tokens in any order, and AND rather than OR: "Tavares Manuel" is one patient.
+    expect(await names({ search: "tavares manuel" })).toEqual({ total: 1, names: [pRui.name] });
+  });
+
+  it("CASE 2, an unaccented query matches an accented stored name", async () => {
+    expect(await names({ search: "ines conceicao" })).toEqual({ total: 1, names: [pInes.name] });
+    expect(await names({ search: "BRANDAO" })).toEqual({ total: 1, names: [pInes.name] });
+    expect(await names({ search: "ines" })).toEqual({
+      total: 2,
+      names: [pInes.name, pInesRocha.name].sort(),
+    });
+  });
+
+  it("CASE 3, a query with no match returns nothing, not the unfiltered list", async () => {
+    expect(await names({ search: "Xavier" })).toEqual({ total: 0, names: [] });
+    // A real first name plus a surname nobody here carries is also nothing: AND.
+    expect(await names({ search: "Rui Xavier" })).toEqual({ total: 0, names: [] });
+    expect(await names({ search: "Xavier", onlyFailures: true })).toEqual({ total: 0, names: [] });
+  });
+
+  it("the search narrows Só falhas and Só falhas narrows the search", async () => {
+    expect(await names({ search: "Rui", onlyFailures: true })).toEqual({ total: 1, names: [pRui.name] });
+    expect(await names({ search: "ines", onlyFailures: true })).toEqual({
+      total: 1,
+      names: [pInesRocha.name],
+    });
+    // A patient whose only SMS was delivered is absent under Só falhas.
+    expect(await names({ search: "conceicao", onlyFailures: true })).toEqual({ total: 0, names: [] });
+  });
+});
