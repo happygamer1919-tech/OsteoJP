@@ -4437,6 +4437,7 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **A column on `clinical_records` is impossible without a bypass.** The 0005 function rejects every update of a locked or signed row except a merge re-parent.
 - **Questions opened:** Q-SR62-P3-1, Q-SR62-P4-1, Q-SR62-P4-2 (the existing DRAFT Eliminar against "never a delete button") and Q-SR62-P4-3.
 
+ patients/SR62-PU4-documentos-soft-delete
 ## 2026-09-14 - PURPLE, SR-62 PU-4 rulings: Q-PU4-1..3 answered, the purge ruling, and why Q-PU4-2 reverts to blocking
 
 - **Q-PU4-1, ruled (a):** `patients:write`, built as is. **Q-PU4-3, ruled (a):** keep indefinitely, no UI, no restore, built as is.
@@ -4449,3 +4450,26 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
   - A second obstacle, independent of atomicity: each soft-delete audit row carries the patient id in its metadata (`apps/web/lib/patients/documents.ts:411`), and `audit_log` is append-only by policy set, SELECT and INSERT only (`packages/db/migrations/0001_rls.sql:151-166`). Removing the identifier is an UPDATE the app's role cannot make without a policy migration or a service-role bypass of append-only.
 - **Consequence.** Q-PU4-2 reverts to blocking, which is what this branch already does. The only code touched is the two comments at `actions.ts:525-531` and `queries.ts:233-235`, which now name the ruling and forbid a best-effort purge. The danger-zone preflight text is unchanged, because nothing will be purged.
 - **What would make the ruled outcome reachable, for a later owner decision:** (1) a purge outbox table and job, with an explicit ruling that "the patient row is gone and the purge is guaranteed to complete" counts as together; (2) a separate ruling on rewriting append-only audit metadata.
+
+## 2026-09-15 - PURPLE, SR-62 night D2: the DRAFT Eliminar stays, pinned draft-only by tests
+
+- **Ruling applied (Q-SR62-P4-2, 2026-09-14).** The DRAFT Eliminar stays. It must be provably unreachable for a LOCKED or SIGNED registo, server side and in the UI.
+- **No production behaviour changed, because both refusals already existed.** `hardDeleteClinicalRecord` (`apps/web/lib/clinical/records.ts`) refuses any status other than `draft` with `ClinicalError("not_draft")` before any write, and its DELETE also carries `AND status = 'draft'`. `RecordLifecycleActions` renders Eliminar only when `status === 'draft'`. The dispatch asked for a change to both; a second, redundant check would prove nothing the tests below do not. What was missing was proof that fails if either refusal is removed. The only source edit is a comment at `canDelete` naming the ruling and the tests.
+- **Tests.** Unit (`records.hard-delete.test.ts`): LOCKED and SIGNED are each refused with `not_draft`, with no write and no audit row; a DRAFT is still deleted, with one `clinical_record.hard_delete` audit row. E2E (`imported-record-preview.spec.ts`): on the seeded LOCKED imported registo, "Nova versão (adenda)" is visible (the same author gate renders the lifecycle controls), and "Eliminar" has count 0.
+- **Arms.** Deleting the `not_draft` line turned 3 of 6 unit tests red (locked, signed, and the existing W6-01a signed case). `canDelete = status !== "signed"` turned the e2e red at `toHaveCount(0)`, received 1. Both restored before the gates.
+- **The trigger.** `clinical_records_enforce_immutability` is not touched, disabled, bypassed or worked around. The app-layer refusal sits in front of it, and the trigger still refuses a locked or signed delete on its own.
+- **Lane traps.** After ten D3 invocations the portal-patient setup got 429 from `/api/v1/auth/otp/trusted`. `-g` does not filter dependency-project setups. `lane-stack e2e` re-seeds, which invalidates stored sessions, so `--no-deps` after it lands on the login screen. The e2e therefore ran as one seed, the three staff setups, then `--no-deps`.
+## 2026-09-14 - PURPLE, SR-62 night D4: three owner rulings applied to specs 0090 and 0091
+
+- **Q-SR62-P3-1, ruled NO.** Email reminder rows keep a NULL recipient. Spec 0090 sections 7 and 8 record it as ruled. The CHECK that admits `recipient_masked` only on `channel = 'sms'` is the final shape, not a placeholder.
+- **Q-SR62-P4-2, ruled: the DRAFT Eliminar STAYS.** The never-a-delete-button rule was ruled about finalized clinical history, and a draft is not history. Spec 0091 section 5 records the condition that comes with it: the control is unreachable for a LOCKED or SIGNED record, server side (`hardDeleteClinicalRecord` refuses with `not_draft` before any write, and its DELETE carries `AND status = 'draft'`) and in the UI (rendered only when `status === 'draft'`). SR-62 D2 pins both with tests. `clinical_records_enforce_immutability` stays the untouched backstop behind the app-layer refusal.
+- **Q-SR62-P4-3, ruled: "Anulado sem motivo registado".** Only the Portuguese copy was ruled; the English string is the translation the question carried.
+- **Q-SR62-P4-1 stays OPEN**, pending the owner.
+- **No migration file.** One migration is in flight (0088). Gate: `ls -1 supabase/migrations | grep -c "^009"` returned 0, and `ls -1 packages/db/migrations | grep -c "^009"` returned 0.
+
+## 2026-09-14 - PURPLE, SR-62 PU-4 ruling dispatch: Q-SR62-P4-1 answered
+
+- **Q-SR62-P4-1, ruled (a).** A therapist may annul a registo authored by a DIFFERENT practitioner when the patient is theirs.
+- **SPEC-0091 section 3.3 already encodes it, verified against the section rather than taken from the dispatch.** The `record_annulments_insert` WITH CHECK admits a therapist when `r.practitioner_id = (select auth.uid())` OR `public.clinical_therapist_sees_patient(r.patient_id)`. No SQL in the spec changed; section 8 and `docs/design/QUESTIONS.md` now read ANSWERED.
+- **No migration file.**
+ main

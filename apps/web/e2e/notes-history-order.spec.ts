@@ -82,8 +82,37 @@ test("NOTES-03: the Notas history orders by the marcação date, and a note adde
     await expect(composer).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await composer.fill("MARCO-HOJE segunda nota");
+
+  // THE WAIT MUST PROVE THE SAVE, NOT THE TYPING. The previous wait was
+  // getByText("MARCO-HOJE segunda nota"), and React mirrors a controlled
+  // textarea's value into its defaultValue - its text content - so that locator
+  // resolved to the composer's OWN textarea while the append was still in
+  // flight. The test then read the Notas history before the note existed: red 2
+  // of 3 runs on main at retries 0, green under the PR gate's two retries
+  // (LE-e2e-notes-history-order-33-red-on-main-at-retries-0). The product was
+  // right throughout. A note is saved when the board has closed its composer and
+  // re-read the thread, so wait for both, on the thread's own list item.
+  //
+  // THE SAVE IS HELD 2.5 s ON PURPOSE. It turns the race into a certainty: under
+  // the old wait this test fails every run, under this one it passes every run.
+  // Without the hold it fails only when CI happens to be slow.
+  const notesRoute = `**/patients/${patientId}**`;
+  let heldTheSave = false;
+  await page.route(notesRoute, async (route) => {
+    const request = route.request();
+    if (!heldTheSave && request.method() === "POST" && request.headers()["next-action"]) {
+      heldTheSave = true;
+      await new Promise((resolve) => setTimeout(resolve, 2_500));
+    }
+    await route.continue().catch(() => {});
+  });
   await addButton.last().click();
-  await expect(page.getByText("MARCO-HOJE segunda nota").first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("appointment-note-composer")).toHaveCount(0, { timeout: 15_000 });
+  await expect(
+    page.getByTestId("appointment-notes-board").locator("li", { hasText: "MARCO-HOJE segunda nota" }),
+  ).toBeVisible({ timeout: 15_000 });
+  await page.unroute(notesRoute);
+  expect(heldTheSave, "the save was never held, so this run did not exercise the race").toBe(true);
 
   // Before NOTES-03 this read MARCO-HOJE, JUNHO, ABRIL, MARCO.
   expect(await historyOrder(page, patientId)).toEqual(["JUNHO", "ABRIL", "MARCO-HOJE", "MARCO"]);

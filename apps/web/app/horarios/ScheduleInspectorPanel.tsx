@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 
 import { ScheduleInspector } from "./ScheduleInspector";
-import { applyDayByDayScheduleAction, deleteTimeOffBlockAction } from "./actions";
+import {
+  applyDayByDayScheduleAction,
+  deleteTimeOffBlockAction,
+  removeDayDefinedAction,
+} from "./actions";
 import { dayEditPlan, isSingleDayWindow, type DayEditDraft } from "@/lib/scheduling/inspector-edit";
 import type { InspectedDay } from "@/lib/scheduling/schedule-inspection";
 
@@ -94,6 +98,20 @@ export function ScheduleInspectorPanel({
   };
 
   /**
+   * SR-62 PU-3 - ELIMINAR ON A DIA DEFINIDO ROW.
+   *
+   * The writer behind the action gives the day back to Base (or to "Não
+   * trabalha" where there is none) by undoing the carve for that date. On
+   * success the inspector re-renders from the resolver, like every other write
+   * here; on a refusal nothing was written and the row shows why.
+   */
+  const onRemoveDayDefined = async (templateId: string) => {
+    const res = await removeDayDefinedAction({ id: templateId });
+    if (res.ok) router.refresh();
+    return res;
+  };
+
+  /**
    * SCHED-21 - EDITING GOES TO THE FORM THAT ALREADY EDITS BLOCKS.
    *
    * A second editor for one row would be a second opinion about what a block
@@ -122,6 +140,7 @@ export function ScheduleInspectorPanel({
       onSaveDay={onSaveDay}
       onRemoveBlock={onRemoveBlock}
       onEditBlock={onEditBlock}
+      onRemoveDayDefined={onRemoveDayDefined}
     />
   );
 }
