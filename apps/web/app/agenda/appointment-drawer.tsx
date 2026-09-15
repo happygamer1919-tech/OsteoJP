@@ -24,7 +24,9 @@ import type { Role } from "@osteojp/auth";
 import { s } from "@/lib/i18n";
 import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
 import { patientLabel } from "@/lib/scheduling/patient-label";
-import { getPatientContraindications, searchPatientsAction } from "@/lib/patients/actions";
+import { getPatientContraindications, getPatientNoSmsReason, searchPatientsAction } from "@/lib/patients/actions";
+import { NO_SMS_MESSAGE_KEY } from "@/lib/patients/phone-preview";
+import type { NoSmsReason } from "@osteojp/notify";
 import { matchedContraindications, type PatientContraindications } from "@/lib/scheduling/nesa";
 import {
   batchScheduleAppointments,
@@ -422,6 +424,28 @@ export function AppointmentDrawer({
   const patientCI =
     ciResult && ciResult.patientId === form.patientId ? ciResult.flags : null;
 
+  // PHONE-01: whether an SMS reaches the selected patient's stored phone. Same
+  // shape as the contraindication fetch above: stored with the patient id it
+  // belongs to, so the marker disappears the instant the selection changes. The
+  // action returns only the reason, never the number.
+  const [noSmsResult, setNoSmsResult] = useState<{
+    patientId: string;
+    reason: NoSmsReason | null;
+  } | null>(null);
+  useEffect(() => {
+    const pid = form.patientId;
+    if (!pid) return;
+    let cancelled = false;
+    getPatientNoSmsReason(pid).then((reason) => {
+      if (!cancelled) setNoSmsResult({ patientId: pid, reason });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.patientId]);
+  const patientNoSms =
+    noSmsResult && noSmsResult.patientId === form.patientId ? noSmsResult.reason : null;
+
   // W8-01c — the selected patient's active balance for the selected pack,
   // fetched reactively. Stored WITH the (patientId, packId) it belongs to so the
   // derived value reads null the instant either selection changes (same pattern
@@ -778,9 +802,15 @@ export function AppointmentDrawer({
     // 0085. Set only with error "clinic_closed"; carries the clinic's own name
     // and shut hour so the sentence below can name the building, not a person.
     clinicClosure?: { locationName: string; from: string; to: string };
+    conflictOverridable?: false;
   }): boolean {
     if (r.ok) return true;
-    if (r.error === "conflict") setConflicts(r.conflicts ?? []);
+    // SCHED-30: a therapist bringing a Cancelada back into a slot taken since.
+    // A plain refusal and NOT setConflicts, for the reason double_booked below
+    // gives: that path offers "Guardar mesmo assim", and the server does not
+    // honour it for this call.
+    if (r.error === "conflict" && r.conflictOverridable === false) setError(s["appointment.uncancelSlotTaken"]);
+    else if (r.error === "conflict") setConflicts(r.conflicts ?? []);
     else if (r.error === "forbidden") setError(s["errors.forbidden"]);
     // INC-08: its own message, not the generic one. This Estado <Select> offers
     // all five statuses with no client-side guard, so an illegal move is one
@@ -843,6 +873,10 @@ export function AppointmentDrawer({
     // a therapist assigned to both clinics is told the MACHINE is not there.
     else if (r.error === "shared_resource_location")
       setError(s["appointment.sharedResourceLocation"]);
+    // SCHED-30: a therapist cannot bring back a Cancelada that holds NESA until
+    // 0088; the sentence sends them to reception, who can.
+    else if (r.error === "uncancel_shared_resource")
+      setError(s["appointment.uncancelSharedResource"]);
     // RB-02: the pacote has fewer sessions left than this booking needs. The
     // message NAMES both numbers, for the same reason outside_availability names
     // the window: "não há sessões suficientes" on its own sends reception to
@@ -1185,6 +1219,18 @@ export function AppointmentDrawer({
               placeholder={s["appointment.patientTypeToSearch"]}
               emptyLabel={s["appointment.patientSearchEmpty"]}
             />
+          )}
+          {/* PHONE-01: the patient's stored phone cannot receive SMS, so no
+              reminder will arrive. Shown on create and edit, for every role. */}
+          {patientNoSms && (
+            <p
+              role="status"
+              data-testid="drawer-patient-no-sms-marker"
+              data-reason={patientNoSms}
+              className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900"
+            >
+              {s[NO_SMS_MESSAGE_KEY[patientNoSms]]}
+            </p>
           )}
         </div>
 

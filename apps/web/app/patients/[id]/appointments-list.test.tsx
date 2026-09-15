@@ -61,13 +61,14 @@ const base: AgendaAppointment = {
 
 function render(
   appt: AgendaAppointment,
-  caps: { canEdit?: boolean; canCancel?: boolean } = {},
+  caps: { canEdit?: boolean; canCancel?: boolean; ownCancelIds?: string[] } = {},
 ): string {
   return renderToStaticMarkup(
     createElement(AppointmentsList, {
       appointments: [appt],
       canEdit: caps.canEdit ?? true,
       canCancel: caps.canCancel ?? true,
+      ownCancelIds: caps.ownCancelIds,
     }),
   );
 }
@@ -153,6 +154,37 @@ describe("AppointmentsList — per-row edit actions (W5-09)", () => {
   it("hides every edit action when the viewer lacks appointments:write and :delete", () => {
     const html = render({ ...base, status: "scheduled" }, { canEdit: false, canCancel: false });
     expect(count(html, "Gerir marcação")).toBe(0);
+  });
+});
+
+describe("AppointmentsList — a therapist on their own row (SCHED-30)", () => {
+  // The therapist's shape: appointments:write, no appointments:delete, and the
+  // server-decided ids of the rows they are on at their own clinics.
+  const therapist = (id: string) => ({ canEdit: true, canCancel: false, ownCancelIds: [id] });
+
+  it("offers Cancelar on their own open row", () => {
+    const html = render({ ...base, status: "scheduled" }, therapist(base.id));
+    expect(count(html, "Cancelar marcação")).toBe(1);
+  });
+
+  it("offers the Estado control on their own Cancelada row, with only the two ordinary targets", () => {
+    const html = render({ ...base, status: "cancelled" }, therapist(base.id));
+    expect(count(html, "Gerir marcação")).toBe(1);
+    expect(html).toContain(">Agendada<");
+    expect(html).toContain(">Confirmada<");
+    expect(html).not.toContain(">Concluída<");
+  });
+
+  it("does NOT open Corrigir estado to them: that door stays appointments:delete", () => {
+    const html = render({ ...base, status: "cancelled" }, therapist(base.id));
+    expect(count(html, 'data-testid="corrigir-estado"')).toBe(0);
+  });
+
+  it("offers nothing new on a row that is not theirs", () => {
+    const html = render({ ...base, status: "cancelled" }, therapist("some-other-appointment"));
+    expect(count(html, "Gerir marcação")).toBe(0);
+    const open = render({ ...base, status: "scheduled" }, therapist("some-other-appointment"));
+    expect(count(open, "Cancelar marcação")).toBe(0);
   });
 });
 
