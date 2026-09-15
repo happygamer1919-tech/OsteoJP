@@ -524,7 +524,11 @@ export async function hardDeletePatient(
         tx.select({ n: count() }).from(invoices).where(eq(invoices.patientId, id)),
         // SR-62 PU-4: SOFT-DELETED documents still count, deliberately (no
         // deleted_at filter). The row and the Storage object both still exist,
-        // so the patient still has documents. Default pending Q-PU4-2.
+        // so the patient still has documents. Q-PU4-2 was ruled NO (2026-09-14)
+        // only if their Storage objects could be purged ATOMICALLY with this
+        // delete; SR-62 E1 found that impossible (storage-api deletes in its own
+        // transaction), so the ruling reverts to blocking. Never add a
+        // best-effort purge here: a partial purge is ruled unacceptable.
         tx.select({ n: count() }).from(attachments).where(eq(attachments.patientId, id)),
         tx
           .select({ n: count() })

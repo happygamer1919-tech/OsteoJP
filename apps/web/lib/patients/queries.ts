@@ -231,7 +231,8 @@ export async function getPatientHardDeleteBlockers(
         .where(eq(patientNoteRevisions.patientId, id)),
       tx.select({ n: count() }).from(invoices).where(eq(invoices.patientId, id)),
       // SR-62 PU-4: counts soft-deleted documents too, the same as
-      // hardDeletePatient's refusal (actions.ts). Default pending Q-PU4-2.
+      // hardDeletePatient's refusal (actions.ts). Q-PU4-2 reverted to blocking:
+      // no atomic Storage purge is possible (SR-62 E1).
       tx.select({ n: count() }).from(attachments).where(eq(attachments.patientId, id)),
       tx
         .select({ n: count() })

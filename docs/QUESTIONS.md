@@ -1659,6 +1659,8 @@ dispatch).
 
 ## 2026-09-14 - Q-PU4-1: who may Eliminar a patient document?
 
+**ANSWERED 2026-09-14 (owner): (a) `patients:write`. Built as is, no change.**
+
 **OWNER. Does not block: built with the recommended default.**
 
 SR-62 PU-4 adds a soft delete (required reason, audit row, file kept) to the
@@ -1677,6 +1679,8 @@ admin with database access, and the reason is required.
 
 ## 2026-09-14 - Q-PU4-2: does a soft-deleted document still block a patient hard delete?
 
+**ANSWERED 2026-09-14 (owner): NO, on a condition set by the strategy ruling that came with it.** `hardDeletePatient` must purge the soft-deleted documents' Storage objects atomically with the patient delete and keep their audit rows with the patient identifier removed; if the purge cannot be atomic, the hard delete keeps blocking, and a partial purge is never acceptable. **SR-62 E1 found it ATOMIC-IMPOSSIBLE:** Storage objects are removed only by storage-api, in its own transaction on its own connection, and a direct delete from `storage.objects` inside the patient-delete transaction is refused by the `protect_objects_delete` trigger. **So the built default stands: soft-deleted documents still block. Nothing in the behaviour changed.** Evidence in `docs/DECISIONS.md`, 2026-09-14 "SR-62 PU-4 rulings".
+
 **OWNER. Does not block: built with the recommended default.**
 
 `hardDeletePatient` refuses while any `attachments` row points at the patient,
@@ -1690,6 +1694,8 @@ documents to stop blocking, the hard delete must first decide what happens to
 the Storage object and the trail.
 
 ## 2026-09-14 - Q-PU4-3: what happens to a soft-deleted file afterwards?
+
+**ANSWERED 2026-09-14 (owner): (a) keep indefinitely, no UI, no restore. Built as is, no change.**
 
 **OWNER (retention beyond defaults is owner-confirmable). Does not block.**
 
