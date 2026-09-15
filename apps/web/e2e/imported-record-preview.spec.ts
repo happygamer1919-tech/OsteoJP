@@ -37,6 +37,18 @@ test.describe("B1 — an imported registo clínico (therapist)", () => {
     await expect(row).toContainText("Bloqueada");
   });
 
+  // SR-62 D2 (Q-SR62-P4-2, ruled 2026-09-14): the DRAFT Eliminar stays, and a
+  // LOCKED registo never offers it. "Nova versão (adenda)" renders under the same
+  // author gate as the lifecycle controls, so its presence proves the absence
+  // below is decided by the record's status, not by a missing permission.
+  test("SR-62 D2: a LOCKED registo offers no Eliminar", async ({ page }) => {
+    await page.goto(`/patients/${IMPORTED_RECORD.patientId}?tab=registos`);
+    const row = page.locator(`[data-record-id="${IMPORTED_RECORD.id}"]`);
+    await expect(row).toContainText("Bloqueada");
+    await expect(row.getByRole("button", { name: "Nova versão (adenda)", exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Eliminar", exact: true })).toHaveCount(0);
+  });
+
   test("opening it shows every stored value, under its source field name", async ({ page }) => {
     await page.goto(`/clinical/${IMPORTED_RECORD.id}`);
     const preview = page.getByTestId("imported-record-preview");

@@ -73,6 +73,28 @@ export function dayEditPlan(date: string, draft: DayEditDraft): DayEditPlan {
   };
 }
 
+/**
+ * SR-62 PU-3 - the sentence a refused or failed Eliminar on a Dia definido
+ * shows, by the action's error code. Kept here, beside the other inspector row
+ * logic, because this module is already the client's: the planner itself
+ * (day-defined-removal.ts) is server-side reasoning and has no reason to ship to
+ * the browser.
+ *
+ * AN UNKNOWN CODE GETS THE GENERIC SENTENCE, NEVER THE REFUSAL ONE. The refusal
+ * tells somebody to use Editar instead; saying that about a permission error or
+ * a network failure would send them to a control that fails the same way.
+ */
+export function dayDefinedRemoveMessageKey(
+  error: string | undefined,
+):
+  | "inspector.dayDefinedRemoveRefused"
+  | "inspector.dayDefinedRemoveConflict"
+  | "inspector.dayDefinedRemoveError" {
+  if (error === "restore_needs_single_day") return "inspector.dayDefinedRemoveRefused";
+  if (error === "would_double_cover") return "inspector.dayDefinedRemoveConflict";
+  return "inspector.dayDefinedRemoveError";
+}
+
 /** True when a plan governs exactly one calendar day. The invariant, testable. */
 export function isSingleDayWindow(plan: DayEditPlan): boolean {
   return plan.startDate === plan.endDate && plan.entries.every((e) => e.date === plan.startDate);
