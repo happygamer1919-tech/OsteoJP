@@ -51,7 +51,7 @@ rm -f /tmp/0088-precheck.out /tmp/0088-postcheck.out /tmp/0088-applied.ok
 STRAY=$(git status --short)
 [ -z "$STRAY" ] || { echo "STOP: the apply worktree is not clean"; echo "$STRAY"; exit 1; }
 git fetch origin --prune
-PIN=$(git rev-parse origin/db/0088-nesa-second-participant-visible)
+PIN=$(git rev-parse origin/main)
 [ "$(git cat-file -t $PIN)" = commit ] || { echo "STOP: $PIN does not resolve to a commit"; exit 1; }
 echo "applying from $PIN"
 
@@ -95,7 +95,7 @@ rm -f /tmp/0088-postcheck.out
 
 # --- SR-58 again. This stage inherits nothing from stage 1 -----------------
 git fetch origin --prune
-PIN=$(git rev-parse origin/db/0088-nesa-second-participant-visible)
+PIN=$(git rev-parse origin/main)
 [ "$(git cat-file -t $PIN)" = commit ] || { echo "STOP: $PIN does not resolve to a commit"; exit 1; }
 git checkout -q --detach $PIN
 test -f packages/db/migrations/0088_nesa_second_participant_visible.sql || { echo "STOP: 0088 is not on disk"; exit 1; }
