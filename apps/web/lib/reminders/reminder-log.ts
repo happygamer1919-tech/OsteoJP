@@ -5,6 +5,7 @@ import { assertCan } from "@osteojp/auth";
 import { appointments, locations, patients, reminderDispatches, users } from "@osteojp/db";
 
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import { fullNameMatcher } from "@/lib/patients/name-search";
 
 import { FAILED_PROVIDER_STATUSES } from "./reminder-log-core";
 
@@ -72,7 +73,7 @@ export type ReminderLogPage = {
 
 export async function listReminderLog(
   ctx: RequestContext,
-  opts: { page?: number; onlyFailures?: boolean } = {},
+  opts: { page?: number; onlyFailures?: boolean; search?: string } = {},
 ): Promise<ReminderLogPage> {
   assertCan(ctx.role, "reminders:log_read");
 
@@ -89,6 +90,14 @@ export async function listReminderLog(
           ),
         );
       }
+      // COMMS-03: THE PATIENT LIST'S OWN NAME RULE, NOT A SECOND ONE. Every typed
+      // token must appear somewhere in the name, in any order, accent-insensitively
+      // (lib/patients/name-search.ts). A whole-string `ilike` here would rebuild the
+      // two defects that rule was written to end. It is ANDed with Só falhas, and
+      // it is a WHERE clause, so the count and the page below carry it too.
+      // `undefined` for a blank query means "no name condition", never "match
+      // nothing"; a query that matches nobody returns zero rows.
+      if (opts.search) conds.push(fullNameMatcher(opts.search));
       const where = and(...conds);
 
       // The count the header states, on the SAME joins and predicate as the page.

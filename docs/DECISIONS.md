@@ -4422,3 +4422,18 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Q-SR62-P4-1, ruled (a).** A therapist may annul a registo authored by a DIFFERENT practitioner when the patient is theirs.
 - **SPEC-0091 section 3.3 already encodes it, verified against the section rather than taken from the dispatch.** The `record_annulments_insert` WITH CHECK admits a therapist when `r.practitioner_id = (select auth.uid())` OR `public.clinical_therapist_sees_patient(r.patient_id)`. No SQL in the spec changed; section 8 and `docs/design/QUESTIONS.md` now read ANSWERED.
 - **No migration file.**
+
+## 2026-09-15 - BLUE R3 B-T3: Lembretes SMS finds a patient by name (COMMS-03)
+
+- **One name rule, not two.** `listReminderLog` takes `search` and ANDs `fullNameMatcher` from `apps/web/lib/patients/name-search.ts` into the same WHERE as Só falhas, so the count and the page carry it. Any token, any order, accents folded on both sides. A local `ilike` would have rebuilt the whole-string and accent defects that rule ended (12,322 and 5,937 patients unfindable).
+- **Server side, paged, debounced like /patients.** The text is the URL parameter `q`, debounced by `search-rule.ts` (500 ms, 3 characters, Enter at once). Todos, Só falhas and paging keep `q`; a new search resets to page 1. No row the viewer is not shown reaches the browser. No table column added.
+- **A search that finds nobody says so in its own words** ("Nenhum envio de SMS para um paciente com esse nome.", or the Só falhas variant), never the unfiltered list and never "Nenhum envio de SMS registado", which would read as an empty log.
+- **Red first.** `reminder-log.db.test.ts` with only the test changed: 4 failed, 4 passed. After the change: 8 passed. `lembretes-sms.spec.ts` on the BLUE lane: 7 passed, twice, retries 0.
+- **A test bug found on the way, not a product bug.** The first e2e run typed the next search before the Todos navigation landed, so the box built its URL from the params it still saw and carried `falhas=1`. The spec now waits for the URL.
+## 2026-09-15 - BLUE R3 B-T4: the confirm loop, established from code and production, documented
+
+- **The owner's question has two answers, and the doc says both.** Confirming with the link in the 24h SMS sets the appointment to Confirmada and the agenda shows it (31 on production, `appointment.confirm.sms_code`). Replying to the SMS does nothing, because the sender `OsteoJP` is one-way and `sms_inbound_events` has 0 rows. The dispatch's "it is not" held only for the reply.
+- **Where it lives:** `docs/comms-confirm-loop-current-wiring.md`, card `COMMS-04-confirm-loop-current-wiring`. No code changed.
+- **How the facts were read.** One read-only production transaction at 17:26 UTC (target asserted first), and the owner-only Teste de envio page for the sender, read without pressing anything. `TWILIO_SMS_FROM` was NOT pulled from Vercel: its value is encrypted there, and `vercel env pull` would write every production secret to disk. `REMINDERS_INBOUND`'s value is therefore recorded as not known; it does not change the answer, because the sender condition already fails.
+- **Minted confirm codes are not countable exactly.** Withdrawal deletes the row (0074), so 168 is a floor.
+- **Blocked on the owner:** the sender becoming a phone number, and the link or the reply instruction in the 24h SMS (both do not fit in 160 characters).
