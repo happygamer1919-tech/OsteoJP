@@ -4400,3 +4400,11 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Annulment stays a row in the separate append-only `record_annulments`.** The trigger is bound `BEFORE UPDATE OR DELETE ON clinical_records`, so it is never invoked by an INSERT elsewhere.
 - **A column on `clinical_records` is impossible without a bypass.** The 0005 function rejects every update of a locked or signed row except a merge re-parent.
 - **Questions opened:** Q-SR62-P3-1, Q-SR62-P4-1, Q-SR62-P4-2 (the existing DRAFT Eliminar against "never a delete button") and Q-SR62-P4-3.
+
+## 2026-09-14 - PURPLE, SR-62 night D4: three owner rulings applied to specs 0090 and 0091
+
+- **Q-SR62-P3-1, ruled NO.** Email reminder rows keep a NULL recipient. Spec 0090 sections 7 and 8 record it as ruled. The CHECK that admits `recipient_masked` only on `channel = 'sms'` is the final shape, not a placeholder.
+- **Q-SR62-P4-2, ruled: the DRAFT Eliminar STAYS.** The never-a-delete-button rule was ruled about finalized clinical history, and a draft is not history. Spec 0091 section 5 records the condition that comes with it: the control is unreachable for a LOCKED or SIGNED record, server side (`hardDeleteClinicalRecord` refuses with `not_draft` before any write, and its DELETE carries `AND status = 'draft'`) and in the UI (rendered only when `status === 'draft'`). SR-62 D2 pins both with tests. `clinical_records_enforce_immutability` stays the untouched backstop behind the app-layer refusal.
+- **Q-SR62-P4-3, ruled: "Anulado sem motivo registado".** Only the Portuguese copy was ruled; the English string is the translation the question carried.
+- **Q-SR62-P4-1 stays OPEN**, pending the owner.
+- **No migration file.** One migration is in flight (0088). Gate: `ls -1 supabase/migrations | grep -c "^009"` returned 0, and `ls -1 packages/db/migrations | grep -c "^009"` returned 0.
