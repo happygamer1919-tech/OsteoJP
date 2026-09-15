@@ -4422,3 +4422,11 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Q-SR62-P4-1, ruled (a).** A therapist may annul a registo authored by a DIFFERENT practitioner when the patient is theirs.
 - **SPEC-0091 section 3.3 already encodes it, verified against the section rather than taken from the dispatch.** The `record_annulments_insert` WITH CHECK admits a therapist when `r.practitioner_id = (select auth.uid())` OR `public.clinical_therapist_sees_patient(r.patient_id)`. No SQL in the spec changed; section 8 and `docs/design/QUESTIONS.md` now read ANSWERED.
 - **No migration file.**
+
+## 2026-09-15 - BLUE R3 B-T4: the confirm loop, established from code and production, documented
+
+- **The owner's question has two answers, and the doc says both.** Confirming with the link in the 24h SMS sets the appointment to Confirmada and the agenda shows it (31 on production, `appointment.confirm.sms_code`). Replying to the SMS does nothing, because the sender `OsteoJP` is one-way and `sms_inbound_events` has 0 rows. The dispatch's "it is not" held only for the reply.
+- **Where it lives:** `docs/comms-confirm-loop-current-wiring.md`, card `COMMS-04-confirm-loop-current-wiring`. No code changed.
+- **How the facts were read.** One read-only production transaction at 17:26 UTC (target asserted first), and the owner-only Teste de envio page for the sender, read without pressing anything. `TWILIO_SMS_FROM` was NOT pulled from Vercel: its value is encrypted there, and `vercel env pull` would write every production secret to disk. `REMINDERS_INBOUND`'s value is therefore recorded as not known; it does not change the answer, because the sender condition already fails.
+- **Minted confirm codes are not countable exactly.** Withdrawal deletes the row (0074), so 168 is a floor.
+- **Blocked on the owner:** the sender becoming a phone number, and the link or the reply instruction in the 24h SMS (both do not fit in 160 characters).
