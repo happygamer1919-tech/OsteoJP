@@ -1419,7 +1419,7 @@ should be able to go to any other state.
 
 ## Q-SR62-P4-1 - registo annulment: may a therapist annul a registo authored by a DIFFERENT practitioner? (PURPLE, 2026-09-14)
 
-**Status: OPEN. Does not block the spec; blocks nothing until 0091 is built.**
+**Status: ANSWERED 2026-09-14 (owner): (a) yes, mirror the existing write matrix.** A therapist may annul a registo authored by a different practitioner when the patient is theirs. SPEC-0091 section 3.3 already encodes it (the INSERT policy admits `r.practitioner_id = auth.uid()` OR `clinical_therapist_sees_patient(r.patient_id)`); no spec SQL changed.
 
 Spec 0091 (`docs/design/SPEC-0091-registo-annulment.md` section 3.3) makes the annulment INSERT policy mirror the existing `clinical_records_insert` matrix: the owner, or a therapist who authored the record or treats the patient. That lets a therapist annul, for example, an imported LOCKED registo authored by JP when the patient is also theirs. The app allows the same today for SIGNED registos.
 
@@ -1427,7 +1427,7 @@ Spec 0091 (`docs/design/SPEC-0091-registo-annulment.md` section 3.3) makes the a
 
 ## Q-SR62-P4-2 - does "registos clinicos NEVER get a delete button" cover DRAFT registos? (PURPLE, 2026-09-14)
 
-**Status: OPEN. Flagged, nothing changed.**
+**Status: ANSWERED 2026-09-14 (owner, night dispatch): the DRAFT Eliminar STAYS.** The never-a-delete-button rule was ruled about finalized clinical history, and a draft is not history. The ruling carries a condition: the button must be provably unreachable for a LOCKED or SIGNED record, server side as well as in the UI. That narrowing is SR-62 D2, and spec 0091 section 5 records it.
 
 On main, a DRAFT registo shows a password-gated "Eliminar" that hard-deletes it (`apps/web/app/patients/[id]/record-lifecycle-actions.tsx:75-86`, `hardDeleteClinicalRecord` in `apps/web/lib/clinical/records.ts`, W5-30). The rule restated on 2026-09-14 says registos never get a delete button, annulment only. Drafts are not finalized history, and the immutability trigger does not protect them.
 
@@ -1435,7 +1435,7 @@ On main, a DRAFT registo shows a password-gated "Eliminar" that hard-deletes it 
 
 ## Q-SR62-P4-3 - what does an OLD annulment with no reason show? (PURPLE, 2026-09-14)
 
-**Status: OPEN. Copy only.**
+**Status: ANSWERED 2026-09-14 (owner, night dispatch): "Anulado sem motivo registado".** Closed. Only the Portuguese copy was ruled; the English string below is the translation this question carried.
 
 Annulments made before 0091 may have a NULL reason (0035 made it optional). They stay as history, unrewritten.
 

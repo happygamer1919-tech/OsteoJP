@@ -282,18 +282,31 @@ CREATE POLICY "record_annulments_insert" ON public.record_annulments
   - The reason field is required, and the confirm button stays disabled until the reason
     contains a non-whitespace character.
   - The password gate stays.
-- **Old annulments with no reason** show a fixed label. The copy is Q-SR62-P4-3.
+- **Old annulments with no reason** show the fixed label "Anulado sem motivo registado".
+  Ruled 2026-09-14 (Q-SR62-P4-3). The English string "Annulled, no reason recorded" is the
+  translation carried in the question; only the Portuguese copy was ruled.
 
 ---
 
 ## 5. What 0091 does not do
 
 - **No delete button.** 0091 adds none, to any registo.
-- **The existing DRAFT "Eliminar" is flagged, not changed.**
-  - On main, a DRAFT registo shows a password-gated "Eliminar" that hard-deletes it
-    (`record-lifecycle-actions.tsx:75-86`, via `hardDeleteClinicalRecord` in `records.ts`).
-  - The restated rule says registos never get a delete button. Whether that covers drafts,
-    which are not yet finalized history, is Q-SR62-P4-2.
+- **The existing DRAFT "Eliminar" STAYS. Ruled 2026-09-14 (Q-SR62-P4-2).**
+  - A DRAFT registo shows a password-gated "Eliminar" that hard-deletes it
+    (`record-lifecycle-actions.tsx`, via `hardDeleteClinicalRecord` in `records.ts`).
+  - The ruling: "registos never get a delete button" was ruled about finalized clinical
+    history. A draft is not history, so the draft Eliminar stays.
+  - The condition that comes with it: the button is provably unreachable for a LOCKED or
+    SIGNED record, server side as well as in the UI.
+    - Server: `hardDeleteClinicalRecord` refuses any status other than `draft` with the
+      named code `not_draft` before any write, and its DELETE statement also carries
+      `AND status = 'draft'`.
+    - UI: the control renders only when `status === 'draft'`.
+    - SR-62 D2 pins both with tests: LOCKED and SIGNED refused with `not_draft`, DRAFT
+      still deleted, and no Eliminar on a seeded LOCKED registo in e2e.
+  - `clinical_records_enforce_immutability` stays the backstop behind that app-layer
+    refusal. It is never disabled, bypassed or worked around, and the refusal neither
+    replaces nor relaxes it.
   - This spec neither removes that button nor widens it.
 - **Authorship does not move.** On an annulled record, `practitioner_id`, `signed_by`,
   `signed_at`, `patient_id` and `created_at` are untouched, and the trigger enforces that
@@ -352,13 +365,15 @@ registo.
 
 ---
 
-## 8. Open questions logged (`docs/design/QUESTIONS.md`)
+## 8. Questions logged (`docs/design/QUESTIONS.md`)
 
-- **Q-SR62-P4-1, who may annul.** May a therapist annul a registo authored by a DIFFERENT
-  practitioner (for example, an imported record authored by JP) when the patient is theirs?
-  Recommended default: yes, mirroring the existing write matrix in section 3.3, which is
-  also what the app allows today for signed records.
-- **Q-SR62-P4-2, the draft Eliminar.** Does "never a delete button" cover DRAFT registos?
-  Recommended default: no change until ruled.
-- **Q-SR62-P4-3, the label for old annulments with no reason.** Recommended default:
+- **Q-SR62-P4-1, who may annul. RULED 2026-09-14: (a) yes.** A therapist may annul a
+  registo authored by a DIFFERENT practitioner (for example, an imported record authored by
+  JP) when the patient is theirs. Section 3.3 already encodes it: the INSERT policy admits a
+  therapist who authored the record OR treats the patient
+  (`public.clinical_therapist_sees_patient`). No SQL in this spec changed.
+- **Q-SR62-P4-2, the draft Eliminar. RULED 2026-09-14: it STAYS.** The rule covers
+  finalized clinical history, and a draft is not history. See section 5 for the condition
+  that it is unreachable for locked and signed records.
+- **Q-SR62-P4-3, the label for old annulments with no reason. RULED 2026-09-14:**
   "Anulado sem motivo registado".

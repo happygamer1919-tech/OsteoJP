@@ -4409,3 +4409,16 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Arms.** Deleting the `not_draft` line turned 3 of 6 unit tests red (locked, signed, and the existing W6-01a signed case). `canDelete = status !== "signed"` turned the e2e red at `toHaveCount(0)`, received 1. Both restored before the gates.
 - **The trigger.** `clinical_records_enforce_immutability` is not touched, disabled, bypassed or worked around. The app-layer refusal sits in front of it, and the trigger still refuses a locked or signed delete on its own.
 - **Lane traps.** After ten D3 invocations the portal-patient setup got 429 from `/api/v1/auth/otp/trusted`. `-g` does not filter dependency-project setups. `lane-stack e2e` re-seeds, which invalidates stored sessions, so `--no-deps` after it lands on the login screen. The e2e therefore ran as one seed, the three staff setups, then `--no-deps`.
+## 2026-09-14 - PURPLE, SR-62 night D4: three owner rulings applied to specs 0090 and 0091
+
+- **Q-SR62-P3-1, ruled NO.** Email reminder rows keep a NULL recipient. Spec 0090 sections 7 and 8 record it as ruled. The CHECK that admits `recipient_masked` only on `channel = 'sms'` is the final shape, not a placeholder.
+- **Q-SR62-P4-2, ruled: the DRAFT Eliminar STAYS.** The never-a-delete-button rule was ruled about finalized clinical history, and a draft is not history. Spec 0091 section 5 records the condition that comes with it: the control is unreachable for a LOCKED or SIGNED record, server side (`hardDeleteClinicalRecord` refuses with `not_draft` before any write, and its DELETE carries `AND status = 'draft'`) and in the UI (rendered only when `status === 'draft'`). SR-62 D2 pins both with tests. `clinical_records_enforce_immutability` stays the untouched backstop behind the app-layer refusal.
+- **Q-SR62-P4-3, ruled: "Anulado sem motivo registado".** Only the Portuguese copy was ruled; the English string is the translation the question carried.
+- **Q-SR62-P4-1 stays OPEN**, pending the owner.
+- **No migration file.** One migration is in flight (0088). Gate: `ls -1 supabase/migrations | grep -c "^009"` returned 0, and `ls -1 packages/db/migrations | grep -c "^009"` returned 0.
+
+## 2026-09-14 - PURPLE, SR-62 PU-4 ruling dispatch: Q-SR62-P4-1 answered
+
+- **Q-SR62-P4-1, ruled (a).** A therapist may annul a registo authored by a DIFFERENT practitioner when the patient is theirs.
+- **SPEC-0091 section 3.3 already encodes it, verified against the section rather than taken from the dispatch.** The `record_annulments_insert` WITH CHECK admits a therapist when `r.practitioner_id = (select auth.uid())` OR `public.clinical_therapist_sees_patient(r.patient_id)`. No SQL in the spec changed; section 8 and `docs/design/QUESTIONS.md` now read ANSWERED.
+- **No migration file.**
