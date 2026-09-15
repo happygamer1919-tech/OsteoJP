@@ -591,6 +591,30 @@ jobs:
         if: always() && (steps.playwright.conclusion == 'success' || steps.playwright.conclusion == 'failure')
         run: node .github/scripts/assert-e2e-executed.mjs apps/web/e2e-results.json .
 
+      # LE-e2e-shard2-404-is-an-unmatched-route-not-a-hidden-row: CAPTURE ONLY.
+      # Next 16's dev server also writes its output to .next/dev/logs, per app.
+      # `.next` is a hidden directory and upload-artifact@v4 skips hidden files by
+      # default, so the logs are COPIED into test-results, which the next step
+      # already uploads. Runs after a pass or a fail alike: a passing run that
+      # carries the log is the proof the capture works. A missing log is SAID,
+      # never silently skipped - an empty capture must not read as a clean one.
+      - name: Collect dev server logs into the report (shard ${{ matrix.shard }})
+        if: steps.changes.outputs.code == 'true' && !cancelled()
+        run: |
+          set -u
+          dest=apps/web/test-results/dev-server-logs
+          mkdir -p "$dest"
+          for app in web api portal; do
+            src="apps/$app/.next/dev/logs"
+            if [ -d "$src" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
+              mkdir -p "$dest/$app"
+              cp -R "$src/." "$dest/$app/"
+              echo "collected $src: $(ls "$dest/$app" | tr '\n' ' ')"
+            else
+              echo "::warning title=No dev server log for $app::$src is absent or empty. The job log's [WebServer] lines are the only capture for $app in this run."
+            fi
+          done
+
       # upload-artifact@v4 rejects a duplicate name outright, so the shard is part
       # of the name rather than a nicety. Three separate reports also mean the
       # failing shard's report is the one you open, named after the job that went

@@ -235,6 +235,15 @@ export default defineConfig({
             // confirm-code.spec.ts before it asserts anything else.
             REMINDERS_CONFIRM_CODE_SECRET: CONFIRM_CODE_SECRET,
           },
+          // LE-e2e-shard2-404-is-an-unmatched-route-not-a-hidden-row: CAPTURE ONLY.
+          // The api and portal servers already pipe their output; this one did
+          // not, so when shard 2 served Next's built-in 404 for routes that exist,
+          // the dev server's own account of it was discarded and the defect could
+          // not be diagnosed. Piped, every line lands in the job log prefixed
+          // [WebServer]. Behaviour is unchanged: this only stops throwing the
+          // output away.
+          stdout: "pipe",
+          stderr: "pipe",
         },
         // apps/api — required by portal server actions (PATCH /api/v1/patient/profile).
         // NEXT_PUBLIC_API_URL must be http://localhost:3002 in the test environment
