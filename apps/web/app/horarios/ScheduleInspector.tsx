@@ -8,6 +8,7 @@ import { TimeFieldInput } from "@/components/time-field-input";
 import type { InspectedDay } from "@/lib/scheduling/schedule-inspection";
 import type { ScheduleRule } from "@/lib/scheduling/availability";
 import {
+  dayDefinedRemoveMessageKey,
   dayEditBlockingReasons,
   draftFromDay,
   type DayEditDraft,
@@ -76,6 +77,7 @@ export function ScheduleInspector({
   onSaveDay,
   onRemoveBlock,
   onEditBlock,
+  onRemoveDayDefined,
 }: {
   days: InspectedDay[];
   therapists: { id: string; label: string }[];
@@ -107,6 +109,15 @@ export function ScheduleInspector({
    */
   onRemoveBlock?: (blockId: string) => void;
   onEditBlock?: (blockId: string) => void;
+  /**
+   * SR-62 PU-3 - Eliminar on a Dia definido row, by the row's template id.
+   *
+   * THE GAP THIS CLOSES. An Exceção row already offered Eliminar; a Dia definido
+   * row offered only Editar, and Editar cannot express "this day is no longer
+   * defined" (it always writes hours). The ruling: the day falls back to Base,
+   * or to "Não trabalha" where there is no Base - never a fourth state.
+   */
+  onRemoveDayDefined?: (templateId: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   // WHICH ROW IS OPEN, by date. One at a time: two open editors on one screen
   // invite a save that reads as applying to both.
@@ -115,7 +126,21 @@ export function ScheduleInspector({
   const [busy, setBusy] = useState(false);
   const [rowStatus, setRowStatus] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [collisions, setCollisions] = useState<string[] | null>(null);
+  /** SR-62 PU-3: why the last Eliminar on a Dia definido did not happen. */
+  const [removeStatus, setRemoveStatus] = useState<string | null>(null);
   const canEdit = onSaveDay != null && (locations?.length ?? 0) > 0;
+
+  const removeDayDefined = async (templateId: string) => {
+    if (!onRemoveDayDefined) return;
+    // It changes somebody's schedule and there is no undo, so it asks first -
+    // the same confirm the Exceção row's Eliminar uses.
+    if (!window.confirm(s["inspector.dayDefinedRemoveConfirm"])) return;
+    setBusy(true);
+    setRemoveStatus(null);
+    const res = await onRemoveDayDefined(templateId);
+    setBusy(false);
+    if (!res.ok) setRemoveStatus(s[dayDefinedRemoveMessageKey(res.error)]);
+  };
   /**
    * THE THERAPIST THIS PANEL IS SHOWING, RESOLVED AGAINST THE ROSTER - or null.
    *
@@ -229,6 +254,15 @@ export function ScheduleInspector({
             {s["inspector.showing"]}{" "}
             <span className="font-medium text-v2-text-primary">{selected.label}</span>
           </p>
+          {removeStatus && (
+            <p
+              role="status"
+              data-testid="inspector-daydefined-remove-status"
+              className="rounded-v2 border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
+              {removeStatus}
+            </p>
+          )}
           <div className="overflow-x-auto">
           <table className="w-full min-w-[34rem] border-collapse text-sm" data-testid="inspector-table">
             <thead>
@@ -290,16 +324,33 @@ export function ScheduleInspector({
                             what the write is bounded to, so offering the action
                             beside a second window would suggest a window-level
                             edit this path cannot express. */}
-                        {i === 0 && (
-                          <button
-                            type="button"
-                            className="text-xs underline decoration-dotted underline-offset-2 text-v2-text-secondary hover:text-v2-text-primary"
-                            data-testid={`inspector-edit-${day.date}`}
-                            onClick={() => (editing === day.date ? closeEditor() : openEditor(day))}
-                          >
-                            {editing === day.date ? s["common.cancel"] : s["common.edit"]}
-                          </button>
-                        )}
+                        <span className="flex gap-2">
+                          {i === 0 && (
+                            <button
+                              type="button"
+                              className="text-xs underline decoration-dotted underline-offset-2 text-v2-text-secondary hover:text-v2-text-primary"
+                              data-testid={`inspector-edit-${day.date}`}
+                              onClick={() => (editing === day.date ? closeEditor() : openEditor(day))}
+                            >
+                              {editing === day.date ? s["common.cancel"] : s["common.edit"]}
+                            </button>
+                          )}
+                          {/* SR-62 PU-3: Eliminar PER DIA DEFINIDO WINDOW, because
+                              each window is one row and the write removes one
+                              row. A split-shift day shows it twice; the day goes
+                              back to Base only when its last dated row goes. */}
+                          {onRemoveDayDefined && w?.rule === "dia_definido" && w.templateId && (
+                            <button
+                              type="button"
+                              className="text-xs underline decoration-dotted underline-offset-2 text-red-700 hover:text-red-900"
+                              data-testid={`inspector-daydefined-remove-${w.templateId}`}
+                              disabled={busy}
+                              onClick={() => void removeDayDefined(w.templateId!)}
+                            >
+                              {s["admin.workingHours.blockRemove"]}
+                            </button>
+                          )}
+                        </span>
                       </td>
                     )}
                   </tr>

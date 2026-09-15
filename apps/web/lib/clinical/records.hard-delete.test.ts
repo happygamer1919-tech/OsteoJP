@@ -139,3 +139,40 @@ describe("hardDeleteClinicalRecord (W6-01a FK detach)", () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 });
+
+// SR-62 D2 (Q-SR62-P4-2, ruled 2026-09-14): the DRAFT Eliminar stays, and the
+// delete path must refuse every status that is not 'draft'. This app-layer
+// refusal sits IN FRONT of clinical_records_enforce_immutability; the trigger is
+// not replaced or relaxed, and still refuses a locked or signed delete on its own.
+describe("hardDeleteClinicalRecord is draft-only (SR-62 D2)", () => {
+  it.each(["locked", "signed"] as const)(
+    "refuses a %s record with the named code not_draft, before any write or audit",
+    async (status) => {
+      const { tx, ops } = makeTx({ status });
+      mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+      const outcome = await hardDeleteClinicalRecord(therapist, "rec-1").then(
+        () => "resolved",
+        (e: unknown) => (isClinicalError(e) ? e.code : "unexpected"),
+      );
+
+      expect(outcome).toBe("not_draft");
+      expect(ops).toEqual([]);
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still deletes a DRAFT record and writes its single audit row", async () => {
+    const { tx, ops } = makeTx({ status: "draft" });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await expect(hardDeleteClinicalRecord(therapist, "rec-1")).resolves.toBeUndefined();
+
+    expect(ops).toContain("delete:record");
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    const entry = mockAudit.mock.calls[0][1];
+    expect(entry.action).toBe("clinical_record.hard_delete");
+    expect(entry.entityId).toBe("rec-1");
+    expect(entry.metadata).toMatchObject({ status: "draft" });
+  });
+});

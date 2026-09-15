@@ -11,6 +11,7 @@ import {
 import { saveWeekSchedule } from "@/lib/admin/week-schedule";
 import { applyAlternatingWeeks } from "@/lib/admin/alternating-schedule";
 import { applyDayByDaySchedule } from "@/lib/admin/day-by-day-schedule";
+import { removeDayDefined } from "@/lib/admin/day-defined-remove";
 // formatCreatedAt is the existing pt-PT Lisbon "dd/mm/yyyy HH:mm" formatter;
 // reused rather than adding a second one that could format differently.
 import { formatCreatedAt } from "@/lib/scheduling/time";
@@ -94,6 +95,33 @@ export async function deleteTimeOffBlockAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const id = String(fd.get("id") ?? "");
   await runBlock(() => deleteTimeOffBlock(actor, id));
+}
+
+/**
+ * SR-62 PU-3 - Eliminar on a Dia definido row.
+ *
+ * RETURNS A RESULT RATHER THAN REDIRECTING, unlike the block removal above,
+ * because the refusal is the one outcome somebody has to read in place: the day
+ * belongs to a multi-day period and Base could only return as an isolated day.
+ * A redirect would turn that into the page banner's generic "could not save".
+ *
+ * The writer re-checks schedule:manage and the row's therapist scope inside, so
+ * this wrapper adds no authority. `/horarios` is revalidated for the inspector
+ * and `/agenda` because the agenda books against the same rows.
+ */
+export async function removeDayDefinedAction(input: {
+  id: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const actor = await requireRequestContext();
+  try {
+    const res = await removeDayDefined(actor, input.id);
+    if (!res.ok) return { ok: false, error: res.reason };
+    revalidatePath("/horarios");
+    revalidatePath("/agenda");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: isAdminError(e) ? e.code : "generic" };
+  }
 }
 
 /**

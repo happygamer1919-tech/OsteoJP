@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  dayDefinedRemoveMessageKey,
   dayEditBlockingReasons,
   dayEditPlan,
   draftFromDay,
@@ -98,6 +99,19 @@ describe("THE INVARIANT THE CARD NAMES: a single-day edit blanks nothing else", 
     const narrow = dayEditPlan("2026-09-10", working);
     expect(planDayByDay(narrow, weekly).carved[0]?.validUntil).toBe("2026-09-09");
     expect(isSingleDayWindow(narrow)).toBe(true);
+  });
+});
+
+describe("SR-62 PU-3 - dayDefinedRemoveMessageKey", () => {
+  it("names the refusal and the double cover by their own sentences", () => {
+    expect(dayDefinedRemoveMessageKey("restore_needs_single_day")).toBe("inspector.dayDefinedRemoveRefused");
+    expect(dayDefinedRemoveMessageKey("would_double_cover")).toBe("inspector.dayDefinedRemoveConflict");
+  });
+
+  it("gives every other code the generic sentence, never the 'use Editar' refusal", () => {
+    for (const code of ["forbidden", "not_found", "invalid", "generic", undefined]) {
+      expect(dayDefinedRemoveMessageKey(code)).toBe("inspector.dayDefinedRemoveError");
+    }
   });
 });
 
