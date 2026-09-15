@@ -8649,6 +8649,97 @@
       },
       "notes": "=== CARDED 2026-09-14 (PURPLE, SR-62 PU-4). ===\n\nRULING (owner): SOFT delete, audit row, required reason, never a hard delete (RGPD: who removed this and why).\n\nWHY BLOCKED. The attachments table had no soft-delete columns, so this needs a migration. BLUE's 0088 is authored and held unapplied and the rule is one migration in flight, so the SQL is PARKED as NEXT-AFTER-0088 (invisible to the applier). ORDER: 0088 applied and merged -> this file promoted to 0089 (rename, journal, supabase mirror) -> the owner applies it with pasted journal evidence -> the PR merges. Until then CI's DB-gated and E2E jobs on the branch fail on the missing columns, by construction.\n\nREADERS THAT NOW HIDE A REMOVED DOCUMENT: the Documentos tab, the imported-documents list on a registo, registo Anexos (same row), the portal list and download (query AND the portal RLS policy), staff downloads (now by live row id, which also closes reception signing any in-tenant path), and the Fisiozero re-import cannot resurrect a removed row. Soft-deleted documents still block a patient hard delete.\n\nQUESTIONS (docs/QUESTIONS.md): Q-PU4-1 who may Eliminar (built: patients:write; alternative owner/admin only); Q-PU4-2 hard-delete blocking (default keeps blocking); Q-PU4-3 retention of removed files (restore screen and/or purge after N days).\n\nMOVE TO THE CORRECT PATIENT is its own card: SR62-PU4b-documentos-move-to-correct-patient.",
       "lane": "blocked_on_people"
+    },
+    {
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "owner_terminal": "blue",
+      "gate": "green_self_merge",
+      "blocked_on": null,
+      "last_checkpoint": "2026-09-14",
+      "id": "LE-e2e-shard2-404-is-an-unmatched-route-not-a-hidden-row",
+      "title": "The shard-2 /patients/[id] 404 is Next's own not-found for a route the dev server did not match, NOT a hidden patient row: both carded row shapes eliminated by the response body; the mechanism is UNDIAGNOSED because CI discards the web dev server's stdout",
+      "status": "todo",
+      "priority": "medium",
+      "evidence": {
+        "kind": "e2e",
+        "at": "2026-09-14",
+        "ref": "B1 reproduction on origin/main 1dde3111, workflow_dispatch e2e.yml retries=0: runs 34903682018, 34903688872, 34903695665 - shard 2 404 fingerprint 0/3. Red evidence read from the two recorded occurrences: #1330 run 34867557502 attempt 1 (job 104055102932, artifact 10357529687) and #1333 run 34869082185 (job 104060211451, artifact 10358597095). Positive control: run 34904850612 shard 1, isolation-therapist.spec.ts:40 with --trace=on."
+      },
+      "notes": "=== BLUE OVERNIGHT 2026-09-14, GATES B1/B2. OBSERVATIONS AND ELIMINATIONS. NOT A FIX. ===\n\nWHY A NEW CARD. LE-e2e-nif-edit-404 carries no owner_terminal; SR-44 lets a lane edit only its own cards, so tonight's evidence lives here and that card is untouched.\n\nB1, 3 RUNS OF THE E2E WORKFLOW ON origin/main 1dde3111 AT retries=0 (the workflow has no shard input, so all three shards ran; shards 1 and 3 are the same-run control):\n  run 34903682018  shard 2 FAILED 1/108: notes-history-order.spec.ts:33 (not a 404; see LE-e2e-notes-history-order-33-red-on-main-at-retries-0)\n  run 34903688872  shard 2 FAILED 1/108: notes-history-order.spec.ts:33 (same)\n  run 34903695665  shard 2 PASSED 108/108; shard 1 FAILED 1/104: booking-service-preselection.spec.ts:35 (not a 404)\n  404 fingerprint on shard 2: 0 of 3. Not reproduced in 3 runs on main. Across the 2026-09-14 e2e runs listed by gh run list (about 37), the fingerprint appears twice (#1330 attempt 1, #1333): roughly 5%.\n\nTHE FINGERPRINT, from both red jobs: shard 2 goes red from test 14 (imported-record-preview.spec.ts:33, the first /patients/[id] visit after setup and horarios) and stays red for the rest of the run, every failure about 6 s. Failing URLs and roles:\n  therapist  GET /patients/00000000-0000-0000-0000-00000000a303?tab=registos -> 404   imported-record-preview.spec.ts:34\n  therapist  GET /clinical/00000000-0000-0000-0000-00000000fe01 -> 404                imported-record-preview.spec.ts:41\n  admin      GET /patients/00000000-0000-0000-0000-00000000a301 -> 404                invoicing.spec.ts:117\n  therapist  GET /patients/00000000-0000-0000-0000-00000000a301 -> 404                invoicing.spec.ts:137\n  admin      GET /patients/00000000-0000-0000-0000-00000000a301?tab=consultas -> 404  marcacoes-tab-edit.spec.ts (trace, #1330 att1)\n  admin      GET /admin/locations -> 404                                              location-delete.spec.ts:44 (#1333)\n  admin      GET /patients/new -> 404                                                 nif-required.spec.ts:42 (both runs; 2.1 min timeouts ran the step into its 16-minute budget)\nDepth-1 routes in the same window answered normally: /patients, /invoicing, /agenda, /marcacoes, /horarios.\n\nTHE DISCRIMINATOR, MEASURED NOT ASSUMED. notFound() thrown by a page leaves Next's NEXT_HTTP_ERROR_FALLBACK digest in the flight data; a route the server never matched does not. 404 bodies from the traces, like for like:\n  RED  #1330 att1  /clinical/fe01               14,990 bytes  sentry-transaction GET /_not-found     NEXT_HTTP_ERROR_FALLBACK 0\n  RED  #1330 att1  /patients/a301?tab=consultas 15,050 bytes  sentry-transaction GET /_not-found     NEXT_HTTP_ERROR_FALLBACK 0\n  RED  #1333       /admin/locations             14,968 bytes  sentry-transaction GET /admin/locations NEXT_HTTP_ERROR_FALLBACK 0\n  CONTROL main     /patients/a304 (app notFound, isolation-therapist :40)  25,583 bytes  sentry-transaction GET /patients/[id]  NEXT_HTTP_ERROR_FALLBACK 5\nFor a static path the transaction name is the URL either way, so it discriminates only on the two dynamic routes. The digest count and the body size discriminate on all three.\n\nELIMINATED, AND HOW:\n  1. A patient row created in one shard's fixtures and read in another. Every 404'd id is a SEED row (a301 Maria Silva, a303 Ana Costa, fe01 her imported record) written by apps/web/e2e/seed/seed-e2e.mjs into each shard's own Supabase before the dev servers start ('[seed-e2e] done.' in both red jobs). And /admin/locations and /patients/new read no patient row and 404'd as well.\n  2. A stub patient with primary_location_id NULL, invisible to a located role. viewerLocationScope (apps/web/lib/auth/viewer-locations.ts:93) returns null for a therapist, so no location filter applies to that role, and the therapist 404'd. The admin 404'd too. And the response body carries no NEXT_HTTP_ERROR_FALLBACK, so getPatient (apps/web/lib/patients/queries.ts:38) never ran for any role.\n  3. A stale restored Next compile cache. Both the red attempt and the green attempt 2 of #1330 logged 'Cache not found' for the nextcache-e2e-Linux-s2 key: both were cold.\n  4. The branch under test. #1330 head a6aa8f9b was red on attempt 1 and green on attempt 2, same shard, same order.\n\nWHAT IS LEFT, AND WHY IT IS NOT NAMED. The dev server answered 404 for routes that exist, without running their pages, for the rest of the run. Why it did is not in any artifact: Playwright's web webServer in apps/web/playwright.config.ts sets no stdout: \"pipe\" (the api and portal servers do), so the web dev server's own compile and routing output is discarded in CI. No Watchpack/EMFILE/ENOSPC line appears in the captured stderr of either red job.\n\nNEXT, WHEN DISPATCHED: CAPTURE, NOT FIX. Add stdout: \"pipe\" to the web webServer so the next occurrence carries the dev server's words; the fingerprint (red from test 14, about 6 s each, 404 body with NEXT_HTTP_ERROR_FALLBACK 0) then identifies it on sight. Do not re-run to make it pass.",
+      "open_on_purpose": "UNDIAGNOSED, BY EVIDENCE. #1330 and #1333 are cited as the two PRs whose CI runs carried the red shard-2 404s that were read tonight; their merging says nothing about this defect, which lives in the CI environment on main. The card stays open until a captured occurrence names the dev server's mechanism."
+    },
+    {
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "owner_terminal": "blue",
+      "gate": "green_self_merge",
+      "blocked_on": null,
+      "last_checkpoint": "2026-09-14",
+      "id": "LE-e2e-ficha-paciente-2-ci-config-reproduction-attempt",
+      "title": "marcacao-patient-link :51 run alone in the CI configuration: 0/10 at retries 0 with traces on every run - PURPLE's LE-e2e-ficha-paciente-2-lands-back-on-agenda stays open",
+      "status": "todo",
+      "priority": "medium",
+      "evidence": {
+        "kind": "e2e",
+        "at": "2026-09-14",
+        "ref": "workflow_dispatch e2e.yml on origin/main 1dde3111, retries=0, grep input \"marcacao-patient-link --trace=on\" (the workflow word-splits that input into --grep and --trace), 10 runs: 34904809919, 34904817219, 34904824878, 34904833223, 34904841829, 34905390953, 34905399315, 34905407034, 34905415087, 34905423047. Both tests land on shard 1; shards 2 and 3 run none, so their skip guard reddens every run's conclusion and says nothing about :51."
+      },
+      "notes": "=== BLUE OVERNIGHT 2026-09-14, GATE B3. A REPRODUCTION ATTEMPT, NOT A DIAGNOSIS. ===\n\nRESULT: 0 of 10 runs red on :51. Not reproduced, 0/10 in CI config.\n\nWHAT A GREEN RUN LOOKS LIKE, from the traces (runs 34904809919, 34904817219, 34904824878): the Nova marcação save's server action answers x-action-revalidated=1 and the drawer's router.refresh() fetches /agenda?_rsc; the edit drawer opens; pressing 'Ficha do paciente 2' (router.push in apps/web/app/agenda/appointment-drawer.tsx:1923) is followed by 10 to 20 server-action POSTs to /agenda over 350 to 700 ms, then GET /patients/00000000-0000-0000-0000-00000000a302?_rsc 200 in 330 to 800 ms, then the frame URL is /patients/...a302. The lane failure in PURPLE's evidence item (2) had the same RSC GET returning 200 and still ended on /agenda, so the failing branch diverges AFTER that response lands.\n\nWHY RUN ALONE DOES NOT SETTLE IT. PURPLE's three sightings were on a lane with a warm dev server; the traced one repeated the file and the third followed agenda-clinic-closure. A cold CI runner running the file alone is a different load and a different history.\n\nNEXT, WHEN DISPATCHED: reproduce with PURPLE's evidence arm (3) on a lane (closure spec, then this file) at --trace=on, and compare the failing timeline with the green one above from the press onward. Candidate to test first, NOT established: a navigation that resolves after the push (the post-save router.refresh() transition, or a server action whose response re-applies the /agenda tree)."
+    },
+    {
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "owner_terminal": "blue",
+      "gate": "green_self_merge",
+      "blocked_on": null,
+      "last_checkpoint": "2026-09-14",
+      "id": "LE-e2e-notes-history-order-33-red-on-main-at-retries-0",
+      "title": "notes-history-order.spec.ts:33 failed 2 of 3 runs on origin/main at retries 0: the history omits MARCO-HOJE - observed during BLUE B1, not diagnosed, masked in the PR gate by retries 2",
+      "status": "todo",
+      "priority": "medium",
+      "evidence": {
+        "kind": "e2e",
+        "at": "2026-09-14",
+        "ref": "origin/main 1dde3111, e2e.yml workflow_dispatch retries=0, shard 2: run 34903682018 (artifact 10372211046) FAILED, run 34903688872 (artifact 10371534201) FAILED, run 34903695665 PASSED. Both failures at notes-history-order.spec.ts:89."
+      },
+      "notes": "=== OBSERVED 2026-09-14 (BLUE overnight, B1). OBSERVATION ONLY. ===\n\nBOTH FAILURES, VERBATIM FROM error-context.md:\n  expect(await historyOrder(page, patientId)).toEqual([\"JUNHO\", \"ABRIL\", \"MARCO-HOJE\", \"MARCO\"]);\n  Received: [\"JUNHO\", \"ABRIL\", \"MARCO\"]  (MARCO-HOJE missing)\nEach failure took about 3 s. Both runs started 22:21Z; the passing run started at the same minute, so this is not a clock-of-day effect on its own evidence.\n\nWHY IT MATTERS: the PR gate runs with retries 2, where a retry would hide it. The spec belongs to NOTES-03 (GREEN); this card records the observation and does not touch NOTES-03's card.\n\nNEXT, WHEN DISPATCHED: read the note that should read MARCO-HOJE in the artifact's trace or snapshot before any theory."
+    },
+    {
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "owner_terminal": "blue",
+      "gate": "green_self_merge",
+      "blocked_on": null,
+      "last_checkpoint": "2026-09-14",
+      "id": "LE-e2e-booking-service-preselection-35-red-on-main-at-retries-0",
+      "title": "booking-service-preselection.spec.ts:35 failed 1 of 3 runs on origin/main at retries 0: Serviço showed Osteopatia where Drenagem Linfática was expected - observed during BLUE B1, not diagnosed",
+      "status": "todo",
+      "priority": "low",
+      "evidence": {
+        "kind": "e2e",
+        "at": "2026-09-14",
+        "ref": "origin/main 1dde3111, e2e.yml workflow_dispatch retries=0, shard 1: run 34903695665 (artifact 10371731881) FAILED; runs 34903682018 and 34903688872 PASSED."
+      },
+      "notes": "=== OBSERVED 2026-09-14 (BLUE overnight, B1). OBSERVATION ONLY. ===\n\nVERBATIM: expect(getByRole('dialog').getByLabel(/Serviço/i).locator('option:checked')).toHaveText(\"Drenagem Linfática\") - received \"Osteopatia\" (option value 00000000-0000-0000-0000-00000000a201) on 14 polls over 5 s; the agenda day was 24 de julho de 2027.\n\nHISTORY: ACC-preselection-spec-flaky (shipped) recorded an earlier flake in the preselection Serviço area; whether this is the same cause is not established.\n\nNEXT, WHEN DISPATCHED: read which therapist and service the drawer resolved at the moment of the assertion before any theory."
+    },
+    {
+      "lane": "blocked_on_people",
+      "home_lane": "in_flight",
+      "owner_terminal": "blue",
+      "gate": "owner_authorizo",
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-09-14",
+      "id": "OPS-pre-push-hook-activation-verified-fails-closed",
+      "title": "The pre-push secret hook FAILS CLOSED, proven in a scratch clone: a planted credential and a malformed pattern are both refused - activation is the owner's command, and the relative hooksPath leaves 56 of 72 local worktrees unscanned",
+      "status": "blocked",
+      "priority": "high",
+      "evidence": {
+        "kind": "sha256",
+        "at": "2026-09-14",
+        "ref": "origin/main 1dde3111: scripts/git-hooks/pre-push sha256 2fc186ae00eef0900ea02430b8b8e3afe194bb05e13f0b01020099a759f30022; scripts/secret-scan.mjs sha256 e21913ea006fecb6bcac037abda465fe051d03e8e40ea8b91fce2486c741f5f4. Proof ran in a scratch clone (git clone --shared) pushing ONLY to a local bare remote; nothing reached GitHub."
+      },
+      "notes": "=== BLUE OVERNIGHT 2026-09-14, GATE B4. VERIFICATION, NO CODE CHANGE. ===\n\nTHE SCANNER HAS NO SEPARATE PATTERN FILE. Its patterns are the PATTERNS array inside scripts/secret-scan.mjs, so 'a malformed pattern in the pattern file' was a malformed PATTERNS entry. Every push below targeted a LOCAL bare remote; 'reached remote' is read back with git ls-remote.\n\ncore.hooksPath = scripts/git-hooks (the owner's command):\n  0   clean commit (negative control)                         push exit 0  reached remote: yes  (secret-scan: clean, 12 patterns)\n  1   planted stripe-shaped credential                         push exit 1  reached remote: no   (1 finding, THE PUSH IS BLOCKED)\n  2a  malformed stripe-key pattern, otherwise clean diff       push exit 1  reached remote: no   (scanner exit 2: pattern does not compile, Unterminated group)\n  2b  malformed pattern plus planted credential                push exit 1  reached remote: no   (scanner exit 2)\n  2c  pattern that compiles but matches nothing, plus planted  push exit 1  reached remote: no   (scanner exit 2: does not match its own positive sample)\n  3   node not on PATH                                         push exit 1  reached remote: no   (pre-push: exec: node: not found)\n  4   branch cut BEFORE d1f333b5 (no hook file in its tree), planted credential   push exit 0  reached remote: YES, unscanned\n\ncore.hooksPath = an ABSOLUTE path to a copy of origin/main's scripts/git-hooks/pre-push:\n  5a  pre-d1f333b5 branch, clean                               push exit 0  reached remote: yes  (scanner taken from origin/main)\n  5b  pre-d1f333b5 branch, planted credential                  push exit 1  reached remote: no   (1 finding)\n\nTHE GAP IN NUMBERS (read-only, 2026-09-14 ~22:33Z): 56 of 72 worktrees of the OsteoJP clone and 4 of 11 origin branches have no scripts/git-hooks/pre-push in their tree. A relative hooksPath resolves inside each worktree, so git finds no hook there and pushes without scanning. Case 4 is that, measured.\n\nOWNER ACTION: enable the hook. The fail-closed property holds for both commands; they differ only in the gap. See the BLUE overnight 2026-09-14 report for the rehearsed commands."
     }
   ]
 }
