@@ -1645,6 +1645,8 @@ dispatch).
 **Recommended: 1.** One rule for "which clinics may this person write into".
 ## 2026-09-14 — Q-COMMS-01-1: Lembretes SMS needs one migration for its missing half (BLUE, not authored)
 
+**ANSWERED 2026-09-14 (owner, overnight dispatch).** (a) YES, but MASKED, not the recommended E.164: the recipient is stored as `+3519xxxxx699`, and the full number is NEVER persisted. By choice, the log answers which number PATTERN a reminder went to, not whether it was the right number at full precision. (b) One migration, numbered 0090, authored only after 0089 (#1338's parked file) is applied and merged. Spec: `docs/design/SPEC-0090-comms-02-reminder-log.md`.
+
 **Context.** The owner's BL-2 asks for a per-reminder log showing patient, appointment, channel, scheduled time, sent time, status, provider error code and the destination number, with a therapist seeing only reminders for appointments where they are Terapeuta or Terapeuta 2. COMMS-01 shipped the part the database already holds: `reminder_dispatches` (0075), read under RLS for owner, admin and reception. Three things cannot be built without a migration, and none was authored (0088 is unapplied and one migration is in flight at a time):
 
 1. **A schedule-time record.** Nothing records `appointment/scheduled`; only the Inngest dashboard does. A reminder scheduled but not yet due, or a run that never reached dispatch, is invisible. Needed: a table (tenant_id, appointment_id, offset or kind, channel, send_at, scheduled_at, superseded_at) written by `scheduleAppointmentReminders` at fan-out, and a nullable link from `reminder_dispatches` to it, so "scheduled, never sent" is a query. RLS in the same migration.
@@ -1654,3 +1656,11 @@ dispatch).
 **Questions for the owner.** (a) Approve the destination column, reversing 0075's no-recipient ruling for SMS rows? (b) Approve one migration carrying 1 to 3, authored after 0088 applies?
 
 **Recommended default.** (a) Yes, E.164 only, SMS rows only, because the log's purpose is proof of where a reminder went and the current-number column cannot give it. (b) Yes, one migration after 0088, with an isolation test in the same PR and GREEN as applier.
+
+## 2026-09-14 - Q-SR62-P3-1: does an EMAIL reminder row record a masked destination too? (PURPLE)
+
+**OWNER. Does not block spec 0090.**
+
+The 2026-09-14 ruling masks the recipient NUMBER on SMS rows. `reminder_dispatches` also records email attempts (48h reminder, confirmation, follow-up), and the ruling says nothing about the address. Spec 0090's CHECK admits `recipient_masked` only on `channel = 'sms'`.
+
+**Recommended default:** email rows keep NULL until ruled. If the owner wants a pattern for email too, it needs its own shape (for example the first letter and the domain) and its own CHECK.
