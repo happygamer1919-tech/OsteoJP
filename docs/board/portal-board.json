@@ -8495,7 +8495,7 @@
       "id": "SR62-PU0-install-block-reprint",
       "title": "SR-62 PU-0: the P-S3 install block reprinted so a damaged paste STOPS - both files gated inside the block, the installer called, the result re-checked; rehearsed on the exact committed bytes against origin/main with zero substitutions",
       "home_lane": "in_flight",
-      "status": "in_flight",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "steward",
       "gate": "owner_merge",
@@ -8507,8 +8507,7 @@
         "ref": "Branch ops/SR62-PU0-install-block-both-gates at 3fceb383, PR #1331, NOT armed (applies-related). Block scripts/apply-lane/install-apply-settings.zsh sha256 e84d8469d9aa1696b1829fdd169c7e5c04a3ef7b107e31b80e2544f3e2936508, body pin 7d43d62f4672ba94f6d3ee859222d50175f2936e74e9edefd868fcf933d9bf40. REHEARSED 2026-09-14T16:16:20Z on the COMMITTED bytes (X0), real origin/main 59074ded, zsh -f -i and zsh -f, scratch HOMEs: A1 clean install exit 0 with `OsteoJP allow entries 2 (need 2)` and `P-S3 COMPLETE`; A2 second run ALREADY INSTALLED, mtime unchanged; A3 malformed target exit 1; A7 different target exit 1; A8 as a script exit 0; A4/A5 installer arms exit 1; A6c control fixture via GIT_DIR installs; A6 tampered installer exit 1 `STOP: install-apply-settings.mjs is not the reviewed file`; A9 tampered settings exit 1 `STOP: osteojp-apply-settings.json is not the reviewed file`. Sweeps, nothing installed in any: S1 every single line deleted 48/48 stopped; S2 every adjacent pair 47/47; S3 every truncation 48/48; S4 a stretch lost across every join 47/47; S5 every character range inside the run line 703 (674 stopped, 29 installed the identical file, 0 other) and inside the check line 1128 (1068 stopped, 60 identical, 0 other). C1 control: a # line breaks under -i. Real ~/.claude/settings.json 29a37f7f unchanged. Gates: pnpm lint 0, typecheck 0, test:scripts 703/703. The exact file was delivered to the owner by file, not retyped."
       },
       "notes": "=== CARDED 2026-09-14 (PURPLE, SR-62 PU-0). ===\n\nWHICH IT WAS. Neither framing in the dispatch. The block in the P-S report (transcript 15:06:17Z) is byte-identical to the file #1328 merged, sha256 f5c87355, and it did call the installer with one sha256 per line; defects (a) and (c) are not in the emitted text, so the loss happened after emission, in rendering or copying, which PURPLE cannot see. Defect (b) was real: the settings file's sha256 was checked only inside the installer. And the rehearsal was NOT of the printed text: it ran a copy with the two origin/main refs rewritten to the branch (a 2-line sed, asserted, never disclosed). Not a fails-and-reports-success instance as printed; a disclosure failure and a fragile block.\n\nA FIRST REDESIGN FAILED ITS OWN SWEEP, IN THIS SESSION, NEVER PUSHED. A lost stretch unbalanced a quote, closed the `( ... )` subshell early, the self-check printed STOP, `exit` left only the subshell and the rest ran at top level, printing `P-S3 COMPLETE` with empty values. Nothing installed. The shipped shape runs the body under `zsh -f -e -u`, checks `shasum -a 256 -c` before the body does anything, and makes losing the check line fatal under -u.\n\nOWNER: paste the block (no merge needed first: it reads the files #1328 put on main). Success is only the `P-S3 COMPLETE` line. Merge #1331 to record the block.",
-      "lane": "in_flight",
-      "open_on_purpose": "PU-0 merged in #1331; the install has not run; closes on the steward lane's T6 settings-file verification"
+      "lane": "shipped"
     },
     {
       "id": "SR62-PU1-classify-all-shell-user-settings",
