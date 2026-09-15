@@ -1306,10 +1306,24 @@ export const attachments = pgTable(
     sizeBytes: integer("size_bytes"),
     uploadedBy: uuid("uploaded_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // SR-62 PU-4 (migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql):
+    // a staff-removed patient document is SOFT deleted. The row and the Storage
+    // object stay; who / when / why live here. All three are set together or
+    // not at all (attachments_soft_delete_complete). The reason is prose, so it
+    // never goes to audit_log.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedByUserId: uuid("deleted_by_user_id").references(() => users.id),
+    deleteReason: text("delete_reason"),
   },
   (t) => [
     index("attachments_tenant_idx").on(t.tenantId),
     index("attachments_record_idx").on(t.clinicalRecordId),
+    check(
+      "attachments_soft_delete_complete",
+      sql`(${t.deletedAt} is null and ${t.deletedByUserId} is null and ${t.deleteReason} is null)
+          or (${t.deletedAt} is not null and ${t.deletedByUserId} is not null
+              and ${t.deleteReason} is not null and ${t.deleteReason} ~ '[^[:space:]]')`,
+    ),
   ],
 );
 

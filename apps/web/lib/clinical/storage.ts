@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import { attachments, clinicalRecords } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
@@ -101,13 +101,36 @@ export async function confirmAttachment(
   });
 }
 
-/** Short-lived signed download URL. Verifies the path is in-tenant first. */
+/**
+ * Short-lived signed download URL. Verifies the path is in-tenant first.
+ *
+ * SR-62 PU-4: the path must also belong to a LIVE attachment row in this tenant.
+ * Anexos lists an imported original that the Documentos tab can soft-delete;
+ * without this read, a deleted file stayed openable by its path. The only caller
+ * (Attachments.tsx) passes paths read from attachment rows, so a live row always
+ * exists for a legitimate click.
+ */
 export async function createAttachmentDownloadUrl(
   ctx: RequestContext,
   path: string,
 ): Promise<string> {
   assertCan(ctx.role, "clinical_records:read");
   if (!path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  const live = await runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.storagePath, path),
+          eq(attachments.tenantId, ctx.tenantId),
+          isNull(attachments.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.id ?? null;
+  });
+  if (!live) throw new ClinicalError("not_found");
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(path, 60);
   if (error || !data) {

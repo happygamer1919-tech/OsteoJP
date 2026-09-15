@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none) | | | |
+| `NEXT-AFTER-0088_attachments_soft_delete.sql` | 0088 (BLUE, `db/0088-nesa-second-participant-visible`, held unapplied) | 2026-09-14, PURPLE, branch `patients/SR62-PU4-documentos-soft-delete` | 0088's number is claimed and unapplied; one migration in flight. The app code on the same branch names the new columns, so the branch cannot merge before this is promoted and applied |
 
 ## Promoted
 

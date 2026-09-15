@@ -53,3 +53,32 @@ export function validateDocumentUpload(input: {
   if (input.sizeBytes <= 0 || input.sizeBytes > MAX_DOCUMENT_BYTES) return "size";
   return null;
 }
+
+/**
+ * SR-62 PU-4: the longest reason a soft delete of a patient document accepts,
+ * counted AFTER trimming. Long enough for "carregado no paciente errado, é do
+ * irmão, Bernardo" several times over; short enough that the field stays a
+ * reason and not a note. The textarea's maxLength mirrors it.
+ */
+export const DOCUMENT_DELETE_REASON_MAX = 500;
+
+export type DeleteReasonError = "reason_required" | "reason_too_long";
+
+/**
+ * Normalise the reason typed into the Eliminar dialog. Pure, so the dialog
+ * (disabled confirm) and the writer (the real gate) apply the same rule.
+ *
+ * Whitespace-only is REQUIRED-missing, not a reason: the owner ruled a reason is
+ * required, and "   " answers nothing. A non-string is treated the same way, so
+ * a forged server-action payload cannot slip a number or null past the gate.
+ * Migration NEXT-AFTER-0088's CHECK refuses a blank reason at the database too.
+ */
+export function normalizeDeleteReason(
+  raw: unknown,
+): { ok: true; reason: string } | { ok: false; error: DeleteReasonError } {
+  if (typeof raw !== "string") return { ok: false, error: "reason_required" };
+  const reason = raw.trim();
+  if (reason.length === 0) return { ok: false, error: "reason_required" };
+  if (reason.length > DOCUMENT_DELETE_REASON_MAX) return { ok: false, error: "reason_too_long" };
+  return { ok: true, reason };
+}

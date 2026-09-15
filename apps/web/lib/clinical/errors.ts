@@ -14,7 +14,11 @@ export type ClinicalErrorCode =
   // --- W5-30 delete / annul ---
   | "not_draft" // hard delete is draft / AI-pending only (locked/signed blocked by trigger)
   | "not_signed" // Anular applies only to a signed record
-  | "already_annulled"; // the signed record already has an annulment
+  | "already_annulled" // the signed record already has an annulment
+  // --- SR-62 PU-4 patient document soft delete ---
+  | "already_deleted" // the document is already soft-deleted
+  | "reason_required" // blank or missing reason
+  | "reason_too_long"; // reason over DOCUMENT_DELETE_REASON_MAX after trimming
 
 export class ClinicalError extends Error {
   override readonly name = "ClinicalError";
