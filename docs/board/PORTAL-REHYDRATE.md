@@ -632,6 +632,11 @@ Before your context is cleared, in this order:
    `board current as of <sha>, next card <id>`
    where `<sha>` is the commit that carries the board update and `<id>` is the
    card the next session should pick up.
+5. **SR-62: a lane reports once per dispatch, only after it has finished or fully halted. No interim report followed by continued work. Ruled 2026-09-10, written 2026-09-16.**
+   The report is the last thing the lane emits. A progress line that is followed
+   by more work is not a report, because the owner reads it as the state the lane
+   finished in and it is already stale when he reads it. If the lane cannot
+   finish, it halts first and then reports the halt.
 
 ---
 

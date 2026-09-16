@@ -1397,7 +1397,7 @@ should be able to go to any other state.
 
 **Status: OPEN, card SR62-PU5-registo-annulment-reason-required-and-visible (deferred by the owner: not built in SR-62).**
 
-**ANSWERED 2026-09-14 (owner, overnight dispatch, option a):** the reason is REQUIRED; annulled registos are STRUCK THROUGH and REMAIN VISIBLE; the 902 imported LOCKED registos BECOME ANNULLABLE. The immutability trigger stays untouched. Spec: `docs/design/SPEC-0091-registo-annulment.md`. The build waits for its migration slot, after 0090.
+**ANSWERED 2026-09-14 (owner, overnight dispatch, option a):** the reason is REQUIRED; annulled registos are STRUCK THROUGH and REMAIN VISIBLE; the imported LOCKED registos BECOME ANNULLABLE: 5,632 imported locked registos in total, of which 902 are the JP-split subset (8 + 894), see card STAFF-11-jp-split-clinical-authorship-locked-rows. The immutability trigger stays untouched. Spec: `docs/design/SPEC-0091-registo-annulment.md`. The build waits for its migration slot, after 0090.
 
 **The shape the owner set:** registos clinicos get ANNULMENT, never deletion. An anulado state with a reason and an audit row; the record stays readable, stays in history, and renders struck through. `clinical_records_enforce_immutability` is never disabled, bypassed or worked around.
 
@@ -1406,7 +1406,7 @@ should be able to go to any other state.
 **The three gaps, and which need a ruling:**
 
 1. **The reason is optional** (`record_annulments.reason` nullable; the writer stores null for a blank reason). The owner's shape says "with a reason". Making it required needs a migration (a CHECK on new rows, `NOT VALID` so existing rows are not rewritten) and the dialog. No ruling needed; migration apply-before-merge.
-2. **Only SIGNED registos can be annulled** (`annulRecord` refuses anything else with `not_signed`). STAFF-11 measured all 902 imported registos as LOCKED, not signed, so none of the imported history can be annulled today. **Ruling needed:** may a LOCKED registo be annulled?
+2. **Only SIGNED registos can be annulled** (`annulRecord` refuses anything else with `not_signed`). STAFF-11 measured its 902 as LOCKED, not signed: 5,632 imported locked registos in total, of which 902 are the JP-split subset (8 + 894), see card STAFF-11-jp-split-clinical-authorship-locked-rows. None of the imported history can be annulled today. **Ruling needed:** may a LOCKED registo be annulled?
 3. **Annulled registos are HIDDEN by default** behind "Mostrar anulados", with a badge and no strike-through. The owner's shape says they stay in history, struck through. **Ruling needed:** visible by default, struck through, with the toggle removed or kept?
 
 **Options for 2:**

@@ -4383,7 +4383,7 @@ A classifier-allowed command costs about 1.8 s against 75 ms for a rule-allowed 
 
 **PU-5, registo annulment.** Carded and deferred by the owner. W5-30 already has append-only `record_annulments`. The gaps are:
 - the reason is optional;
-- signed-only, so the 902 imported LOCKED registos cannot be annulled;
+- signed-only, so the imported LOCKED registos cannot be annulled: 5,632 imported locked registos in total, of which 902 are the JP-split subset (8 + 894), see card STAFF-11-jp-split-clinical-authorship-locked-rows;
 - annulled registos are hidden by default.
 
 Questions filed as Q-SR62-PU5-1. `clinical_records_enforce_immutability` is untouched by every option.
@@ -4418,7 +4418,7 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 
 **Two owner rulings, recorded here and built into the specs:**
 - **COMMS-02 (Q-COMMS-01-1).** The reminder recipient number is stored MASKED as `+3519xxxxx699`, and the full number is NEVER persisted. The log therefore answers which number pattern a reminder went to, not whether it was the right number at full precision. That was chosen deliberately.
-- **Registo annulment (Q-SR62-PU5-1, option a).** The reason is required; annulled registos are struck through and stay visible; the 902 imported LOCKED registos become annullable.
+- **Registo annulment (Q-SR62-PU5-1, option a).** The reason is required; annulled registos are struck through and stay visible; the imported LOCKED registos become annullable (5,632 imported locked registos in total, of which 902 are the JP-split subset (8 + 894), see card STAFF-11-jp-split-clinical-authorship-locked-rows).
 
 **P-1, the Q-PU4 questions.** They were recorded, verbatim, but only on #1338's unmerged branch: `docs/QUESTIONS.md` lines 1582-1632 at `5b37e887`. Main carries only the board card's one-line summary and the PR body's paraphrase. The file stays unmerged until #1338 merges.
 
@@ -4486,3 +4486,15 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **How the facts were read.** One read-only production transaction at 17:26 UTC (target asserted first), and the owner-only Teste de envio page for the sender, read without pressing anything. `TWILIO_SMS_FROM` was NOT pulled from Vercel: its value is encrypted there, and `vercel env pull` would write every production secret to disk. `REMINDERS_INBOUND`'s value is therefore recorded as not known; it does not change the answer, because the sender condition already fails.
 - **Minted confirm codes are not countable exactly.** Withdrawal deletes the row (0074), so 168 is a floor.
 - **Blocked on the owner:** the sender becoming a phone number, and the link or the reply instruction in the 24h SMS (both do not fit in 160 characters).
+
+## 2026-09-16 - STEWARD S1: SR-62 written down, and 902 corrected from a total to a subset
+
+**SR-62 is now committed.** Ruled 2026-09-10, written today into `docs/board/PORTAL-REHYDRATE.md` section 5 as item 5, the section that already governs what a lane emits at the end of a dispatch: a lane reports once per dispatch, only after it has finished or fully halted, and no interim report is followed by continued work.
+
+**There is no central SR register on `origin/main`, and that is worth recording.** The numbered standing rules 1-15 live in `docs/board/PORTAL-REHYDRATE.md` section 1, "Standing rules, in full". The `SR-nn` series is a different series: it is cited by number (SR-36 at section 2 rule 6, SR-39 at 7.0a, SR-46 at 7.0b, SR-58 and SR-59 inside the `docs/migration-apply-00NN.md` blocks) and each ruling is written into the document it governs. SR-36, SR-39 and SR-46 are cited but defined nowhere on main; SR-60 and SR-61 are not on main at all. SR-62 follows the established pattern rather than starting a register, because a register nobody loads is a rule nobody applies.
+
+**902 is a subset, not a total.** Every place in `docs/DECISIONS.md`, `docs/design/QUESTIONS.md` and `docs/design/SPEC-0091-registo-annulment.md` that read 902 as the total of imported locked registos now reads: 5,632 imported locked registos in total, of which 902 are the JP-split subset (8 + 894), see card STAFF-11-jp-split-clinical-authorship-locked-rows. Seven sites. No board card was edited.
+
+**The rule that all imported locked registos stay is unchanged.** SPEC-0091's authorship line is now wider rather than narrower: every imported locked registo stays where it is, same patient, same practitioner, same content, same signature fields, not merely the 902.
+
+**FLAG, and the owner should see it before the number is relied on: 5,632 has no evidence on `origin/main`.** It arrived with this dispatch. A `git grep` over the whole tree finds no 5,632 anywhere, and no 894 outside the STAFF-11 card's own notes, which confirm the subset arithmetic only (`a0 in scope 902 (H4's 8 + 894 confirmed)`). This lane cannot read production, so the total is recorded on the owner's authority alone. If it is wrong, these seven sites are where it is wrong.
