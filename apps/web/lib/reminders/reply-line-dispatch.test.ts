@@ -93,9 +93,15 @@ async function bodySentWith(env: Record<string, string>): Promise<string> {
 }
 
 describe("the 24h SMS adapts to the sender, at the dispatch", () => {
-  it("ALPHANUMERIC SENDER: no reply instruction — production today", () => {
+  it("ALPHANUMERIC SENDER: no reply instruction, and S2 instead — production today", () => {
     // The exact defect: this body must not ask for a reply the sender cannot
-    // receive. It is JP's 2026-08-03 body, byte-identical.
+    // receive. It is JP's 2026-08-03 body, byte-identical, PLUS one line.
+    //
+    // S2 ADDED BY OWNER RULING Q-SMS-S2 (dispatch COMMS-R3, 2026-09-16): when the
+    // sender cannot receive a reply the message now SAYS so, because withholding
+    // the instruction never stopped patients replying to a one-way sender - and
+    // that reply reaches nobody. The literal is pinned here rather than imported
+    // so this asserts the RULED WORDING, not merely agreement with a constant.
     return bodySentWith({ TWILIO_SMS_FROM: "OsteoJP" }).then((body) => {
       expect(body).toBe(
         [
@@ -115,8 +121,11 @@ describe("the 24h SMS adapts to the sender, at the dispatch", () => {
             }).format(row().startsAt),
           "Local: Castelo Branco",
           "Remarcar: 272 328 221",
+          "Nao lemos respostas.",
         ].join("\n"),
       );
+      // Still no reply INSTRUCTION. The regex stays case-sensitive on purpose:
+      // S2's "Nao" is not the keyword "NAO", and the distinction is the point.
       expect(body).not.toMatch(/Responda|SIM|NAO/);
     });
   });
@@ -170,6 +179,15 @@ describe("the 24h SMS adapts to the sender, at the dispatch", () => {
     h.sent.length = 0;
     const on = await bodySentWith({ TWILIO_SMS_FROM: "+351912345678" });
     expect(on).toMatch(/Responda/);
-    expect(on.startsWith(off)).toBe(true);
+    // WAS `on.startsWith(off)`. Owner ruling Q-SMS-S2 (dispatch COMMS-R3,
+    // 2026-09-16) ends that prefix relation by construction: `off` now carries
+    // S2 as its last line, so the two renderings DIVERGE at the end instead of
+    // one extending the other. What the ruling preserves is what this test was
+    // really for - the same approved body underneath, with exactly one line
+    // differing by sender - so that is what is asserted now.
+    const base = off.split("\n").slice(0, 4).join("\n");
+    expect(off).toBe(`${base}\nNao lemos respostas.`);
+    expect(on.startsWith(base)).toBe(true);
+    expect(on).not.toContain("Nao lemos respostas.");
   });
 });
