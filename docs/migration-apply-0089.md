@@ -225,7 +225,52 @@ echo "0089 APPLIED. 16/16 pre-check OK, arms A1 to A8 OK, 12/12 post-check OK."
 
 ## Rehearsed
 
-_Filled in by the rehearsal that runs this document's exact bytes; see the report._
+Both stages were extracted from this document by a script and run **under `zsh -f`**
+on 2026-09-16, against a throwaway Supabase stack (Postgres 17) built in a scratch
+directory from main's `supabase/migrations` through 0088. That database was given the
+drizzle journal production has after 0088: **86 rows**, one per journal entry, each
+carrying its real file sha256 and its `when`. The apply ran from a clean detached
+worktree of this branch.
+
+Five things were replaced, mechanically, with the count of each asserted:
+
+- `/tmp/` became a scratch directory (7 occurrences in stage 1, 9 in stage 2);
+- the `cd` line became the rehearsal worktree (1 each);
+- the env-source line became `export DATABASE_URL_DIRECT=<the throwaway db>` (1 each);
+- the target guard became an `echo` (1 each);
+- **`origin/main` became the branch head** (1 each). This one is called out because it
+  is load-bearing and a previous rehearsal on another branch made the same rewrite
+  **without saying so**: 0089 is not on `origin/main` until this PR merges, so a
+  rehearsal that left the pin would have applied nothing and passed vacuously.
+
+One environment difference, also declared: the throwaway database was given **one
+`tenants` row**. It is built by migrations alone, so it has no data, and the arms
+borrow a tenant the way production has one. The first attempt failed on exactly this
+(`no tenant to borrow`), which is the arms refusing rather than skipping.
+
+| Run | Result |
+|---|---|
+| A: stage 2 first | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
+| B: stage 1 | SR-58 assertions pass, pre-check **16 OK / 0 FAIL**, `verified-migrate` pending 1, journal **86 → 87, delta 1**, sha256 present, exit 0 |
+| C: stage 2 | carries parsed as `journal_before=86 policies_before=2 secdef_before=24`, `ARMS A1 A2 A3 A4 A5 A6 A7 A8 OK`, post-check **12 OK / 0 FAIL**, journal read printed, exit 0 |
+| D: stage 2, pre-check transcript backdated 61 minutes | exit 1, `STOP: stage 1's transcript is over an hour old` |
+| E: stage 2, marker removed | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
+
+**Negative control on the pre-check:** run against the same database with 0089
+already applied it reads **10 OK / 6 FAIL**, on rows 2 (hash present), 5 (the `when`
+guard), 6 (the columns exist), 7 and 8 (the constraints exist) and 9 (the policy
+expression has changed). The pre-check discriminates; it does not pass by default.
+
+**Found by rehearsing, fixed before this was marked ready:** the arms block runs
+eight probes and its notice names eight, but the count guard asserted seven and
+halted with `8 of 7 probes ran`. Every probe had passed; the guard refused rather
+than report a pass it could not account for. The guard now says eight, and the
+post-check sha256 above is the fixed file's. Runs A to E are the second rehearsal,
+from a database restored to the pre-apply state.
+
+**Paste safety, scanned on the document's own bytes:** both stages are free of `#`
+comment lines, of `!`, of backslash continuations, and of any parameter followed by a
+colon without braces.
 
 ## Order of the sitting
 
