@@ -159,8 +159,8 @@ BEGIN
     RAISE EXCEPTION 'POST-CHECK FAILED (arms): %', bad;
   END IF;
   SELECT count(*) INTO ran FROM pc_arm;
-  IF ran <> 7 THEN
-    RAISE EXCEPTION 'POST-CHECK FAILED (arms): % of 7 probes ran', ran;
+  IF ran <> 8 THEN
+    RAISE EXCEPTION 'POST-CHECK FAILED (arms): % of 8 probes ran', ran;
   END IF;
   RAISE NOTICE 'ARMS A1 A2 A3 A4 A5 A6 A7 A8 OK';
 END

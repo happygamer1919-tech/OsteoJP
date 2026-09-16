@@ -8,7 +8,7 @@ substitute. Any `STOP:` line, any `FAIL` verdict, or any `ERROR` halts the sitti
 | Branch | `patients/SR62-PU4-documentos-soft-delete` (PR #1338, held, never armed, merges only after this apply) |
 | Migration | `packages/db/migrations/0089_attachments_soft_delete.sql`, sha256 `ec1b90634b4253e50fe1060b03b22a0b2fe447136baaaa811dba819d7c084ced` |
 | Pre-check | `scripts/0089-precheck.sql`, sha256 `3ebad544a0e4f29e4748f4f2bb8ee527beaaf40d15df81344d59f1434f971b79` |
-| Post-check | `scripts/0089-postcheck.sql`, sha256 `dd26fb2aefa404c1ea96595d22b4644fc7d812e09c7239177e3d6fe892304792` |
+| Post-check | `scripts/0089-postcheck.sql`, sha256 `64f44b085c028e79e9c557e81163ac87b59099023e5735e4bb8bbff717da68dd` |
 | Journal | tag `0089_attachments_soft_delete`, idx 86, `when 1788301200000`, above every `when` on main |
 | Depends on | 0088 (`e9217cc5…`) and 0087 (`ec6556aa…`) applied, by file hash (pre-check rows 3 and 4) |
 | What it does | Three nullable columns on `public.attachments` (`deleted_at`, `deleted_by_user_id`, `delete_reason`), one CHECK (all three or none, and a reason that is not blank), one FK to `users(id)`, one column COMMENT, and ONE conjunct added to the existing patient-portal policy. No new table, no new function, no new policy, no data change |
@@ -135,7 +135,7 @@ holds because after 0088 the pending set is 0089 alone.
 (
 set -eo pipefail
 SHA0089=ec1b90634b4253e50fe1060b03b22a0b2fe447136baaaa811dba819d7c084ced
-SHAPOST=dd26fb2aefa404c1ea96595d22b4644fc7d812e09c7239177e3d6fe892304792
+SHAPOST=64f44b085c028e79e9c557e81163ac87b59099023e5735e4bb8bbff717da68dd
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/0089-postcheck.out
