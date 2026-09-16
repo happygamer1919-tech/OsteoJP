@@ -69,7 +69,6 @@ Context: the team has exactly one Vercel project (osteojp-platform, root
 directory apps/web). apps/portal cannot pull env vars and has no deployment
 target. Portal QA to date appears to have run locally.
 
-docs/brand-tokens
 ## 2026-06-11 — Q6: Brand tokens: vector logo source + Heritage theme sign-off
 
 Context: docs/brand-tokens.md was rewritten as the single source of truth for
@@ -512,7 +511,6 @@ osteojp-availability-seed
   - Owner: JP or Ivan — this is a brand-voice doc decision, not a code decision.
   - Blocked work: none hard-blocked, but every future copy PR touches this ambiguity until resolved.
   - **Tag (2026-07-03):** next-wave-planning batch. Stays OPEN; scheduled for the next-wave planning pass, no ruling this wave.
- main
 
 ## 2026-07-01 — RESOLVED: single-project reality closes the seed-blocker and ref-discrepancy
 - [x] **Ref discrepancy resolved.** Owner-verified (Ivan, via Supabase + Vercel dashboards): the Supabase org has exactly ONE project, ref `jaxmkwoxjcgzkwxgbayx` (Frankfurt, Pro, backups active). It is the dev database AND currently also backs the deployed app. The ref `ufbkzbyghvxtosyrkgjq` DOES NOT EXIST and never did — a phantom from an earlier recon that propagated into the five dev seed scripts and into the entries below. This retroactively corrects the "dev = ufbkzbyghvxtosyrkgjq / prod = jaxmkwoxjcgzkwxgbayx" premise recorded on 2026-06-30 (0022 blocker, L421-425) and 2026-07-01 (availability seed, L485-498): `jaxmkwoxjcgzkwxgbayx` was never prod — it is the single real (dev) project.
@@ -588,7 +586,6 @@ no delete. Each awaits an explicit owner/JP ruling: map to a canonical row or dr
   never delete-recreate) or DROPPED by explicit owner instruction. Until then they remain
   inactive — per W6-01b they show in filter dropdowns and are absent from creation dropdowns.
 
- db/0043-clinical-rls-r16
 ## 2026-07-25 — Q: 0043 R16 clinical_records RLS — four items back to CYAN/owner (recommended defaults applied)
 
 Migration 0043 is BUILT and gated GREEN; these are review points for CYAN's
@@ -657,7 +654,6 @@ consistently.
 
 - [ ] Owner: confirm whether to fold D1/D2/D3 into a follow-up email-voice PR
   (recommended) or leave the reminder emails as-is. Not blocking the W12-30 PDF PR.
- main
 
 ## 2026-07-25 — W12-40-Q1: Horários route kept as a redirect (not a hard 404)
 

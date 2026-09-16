@@ -300,7 +300,6 @@ Design loop Wave 1, first task. Implemented per docs/design/SPEC-foundation.md
 - i18n copy tweaks shipped as PR #158 (two login page strings, PT + EN).
   Awaiting Ivan review and merge.
 
- docs/brand-voice
 ## 2026-06-11 — Brand voice guide extension session
 
 - Task asked to author docs/brand-voice.md, but the guide already exists
@@ -323,7 +322,6 @@ Design loop Wave 1, first task. Implemented per docs/design/SPEC-foundation.md
   of truth.
 - Docs-only diff; no code or packages/i18n strings touched.
 
-docs/brand-tokens
 ## 2026-06-11 — Brand tokens rewrite (docs/brand-tokens.md, PR: docs/brand-tokens)
 
 - docs/brand-tokens.md rewritten as the single source of truth for the UI
@@ -1131,7 +1129,6 @@ sourced from `packages/db/.env` (credential never printed). drizzle journal on p
 `text`, nullable, no default; empty-by-design = 19 users, 0 non-null phone, 0 non-null
 job_title (no backfill). **W8-02 flipped DONE.** 0037 (W8-01a) stays local-only until now;
 its prod apply follows the SAME manual path after owner merge + catalog confirmation.
- main
 
 ## 2026-07-15 — W8-01a cloud catalog seed applied (Option A amended) — W8-01a DONE
 
@@ -1256,7 +1253,6 @@ order; E2E adds the (9b) equal-left-x / strictly-different-y proof in BOTH views
 per-view screenshot). `therapist-color.test.ts` green. Negative control: a `bg-`
 tint on the face fails the chrome guard. Migration-free, no new hex, hover +
 Marcacoes untouched. OWNER VISUAL GATE, not self-merged.
- main
 
 ## 2026-07-22 - W11 rulings: named exclusion set (SPLIT PLAN v2), Q-W11-01-2 fresh audit, board collapse
 
@@ -1526,7 +1522,6 @@ introduced two `"use server"` note actions that bypassed the W10-04 therapist
   destructive, owner-gated action, not run autonomously. This change introduces ZERO E2E regression.
 - **AUTHZ change → OWNER MERGE GATE. No self-merge, no `--admin`, no force-push.**
 
- db/0043-clinical-rls-r16
 ## 2026-07-25 — 0043 clinical_records RLS tighten R16 (strict single-location admin) — branch db/0043-clinical-rls-r16
 
 Highest-risk change in the wave. Built AGAINST CYAN's pre-audit frame
@@ -1610,7 +1605,6 @@ executor does NOT merge — CYAN post-audit + owner apply-before-merge.
   MERGE GATE. CYAN post-audit → owner terminal apply with pasted journal → merge.
   No self-merge, no `--admin`, no force-push.
 
- ficha/W12-30-polish-and-bodychart
 ## 2026-07-25 — W12-30 template polish (top-5, PDF templates) + bodychart order (v5) (branch ficha/W12-30-polish-and-bodychart)
 
 Two related ficha/template changes, one PR (DO NOT MERGE — owner visual gate on
@@ -1738,8 +1732,6 @@ invented — the pack layer is a byte-for-byte analogue of `service_location_pri
   apply would deploy app code querying `service_pack_location_prices` before the column/table
   exists. OWNER-MERGE + OWNER VISUAL GATE on the pricing grid. No self-merge, no `--admin`,
   no force-push.
- main
- main
 
 ## 2026-07-25 — W12-40: Equipa + Horários consolidated into ONE member-management tab
 
@@ -1929,7 +1921,6 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
   a CYAN read-only check (YELLOW has no prod access). Lesson: close-out state must
   be re-derived from a live CYAN read, never carried from a seed script's ID_MAP.
 
- prelaunch/PL-06b-is-bookable
 ## 2026-07-28 - PL-06b: users.is_bookable flag governs the Terapeuta dropdown (migration 0046)
 
 - Owner RULING (2026-07-28): Option 2 - an explicit is_bookable boolean, chosen over
@@ -1964,7 +1955,6 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
 - Rodica's NESA ruling (all therapists perform NESA) is satisfied by PL-06a alone:
   NESA is selectable for every therapist. No roster write. CB-NESA stays closed.
 - Merge policy: OWNER VISUAL GATE, no self-merge.
- main
 
 ## 2026-07-29 - PL-09: role + location access model (planned, post-test)
 
@@ -2550,7 +2540,6 @@ whatever is wrong with it.
 
 **Q-PL-24-1 closed by data:** zero patients store sex = 'other'.
 
- chore/twilio-smoke-no-vercel-pull
 ## 2026-08-02 - Two handoff premises corrected: the Resend domain, and the osteojp.pt root MX (GREEN)
 
 Both corrections are to premises carried in the session handoff, not to shipped code. Every
@@ -2670,7 +2659,6 @@ Also opened `LE-marcacoes-tab-edit-flake`: PL-02 (a) has now failed on three sep
 unrelated branches, with a "dialog does not close after save" signature that looks like the same
 family as the therapist-blocks race. Deliberately NOT diagnosed yet - it gets reproduced at
 `--retries=0` first, per the lesson above.
- main
 
 ## 2026-08-02 - Board clear-out: owner ruled on all 14 open items (GREEN)
 
