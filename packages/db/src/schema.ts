@@ -2551,3 +2551,39 @@ export const consultations = pgTable(
     ),
   ],
 );
+
+/**
+ * CARE-01 - the therapists reception has assigned to a patient.
+ *
+ * Ruling Q-CARE-1 (c), 2026-09-16: a live row here (removed_at IS NULL) lets
+ * that therapist read the patient's whole appointment history. Removal is a SOFT
+ * remove, so "who was on this team in March" stays answerable.
+ *
+ * NO INDEXES DECLARED HERE, DELIBERATELY. The unique live-assignment index is
+ * PARTIAL (WHERE removed_at IS NULL) and lives in the migration, which is the
+ * source of truth for DDL. Restating it here would be a second definition that
+ * can drift, and drizzle is used in this repo to QUERY the schema rather than to
+ * generate it - the migrations are hand-authored (drizzle-kit generate is banned
+ * on this project since 0014).
+ *
+ * THE TABLE DOES NOT EXIST YET in any database CI touches: its migration is in
+ * migrations-pending/ and has no number until 0089 lands. This declaration is a
+ * TYPE, not a promise that the table is there.
+ */
+export const patientCareTeam = pgTable("patient_care_team", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Who assigned. Null once that account is deleted: losing the name must not take the assignment. */
+  assignedBy: uuid("assigned_by").references(() => users.id, { onDelete: "set null" }),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Set to revoke. The access helper filters on it, so this IS the revocation. */
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+});
