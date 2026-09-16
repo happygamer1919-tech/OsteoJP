@@ -1,3 +1,5 @@
+Provisional number. Migration numbers are assigned at promotion in order; care-team takes 0090.
+
 # SPEC 0091, SR62-PU5: registo annulment (reason required, struck through and visible, locked records annullable)
 
 **Status: SPEC ONLY. No migration file exists, and this document authors none.**
