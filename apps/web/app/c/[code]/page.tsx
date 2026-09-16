@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getStrings, DEFAULT_LOCALE, type Locale } from "@osteojp/i18n";
 import { BrandLockup } from "@osteojp/ui";
-import { loadReminderData } from "@/lib/reminders/data";
+import { clinicPhoneOf, loadReminderData } from "@/lib/reminders/data";
 import { resolveLocale, formatDateLong, formatTime } from "@/lib/reminders/locale";
 import { resolveConfirmCode } from "@/lib/reminders/confirm-code-store";
 import { isWellFormedConfirmCode } from "@/lib/reminders/confirm-code";
@@ -41,7 +41,13 @@ export const metadata: Metadata = {
 const VIEWABLE_STATUSES = new Set(["scheduled", "confirmed"]);
 
 /** Outcome flags actions.ts may hand back. Anything else is ignored. */
-const OUTCOMES = new Set(["confirmed", "already_confirmed", "pedido", "generic"]);
+const OUTCOMES = new Set([
+  "confirmed",
+  "already_confirmed",
+  "pedido",
+  "double_booked",
+  "generic",
+]);
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -123,6 +129,31 @@ export default async function ConfirmCodePage({
       return <Message title={s["confirm.alreadyTitle"]} body={s["confirm.alreadyBody"]} />;
     if (r === "pedido")
       return <Message title={s["confirm.pedidoTitle"]} body={s["confirm.pedidoBody"]} />;
+    if (r === "double_booked") {
+      // 0061 refused the confirm: the slot is already held by a confirmed
+      // appointment on the same therapist. The booking is untouched and still
+      // Agendada, so the patient is told the truth and given the one route that
+      // works - the clinic's own number, the SAME one their SMS printed.
+      //
+      // IT NAMES NOTHING ABOUT THE OTHER BOOKING. Counsel section 7 keeps this
+      // page to date, time and location; "this therapist already has a
+      // confirmed appointment at this time" is the staff wording and would leak
+      // another patient's booking to whoever holds this link.
+      const phone = data ? clinicPhoneOf(data) : "";
+      return (
+        <Message
+          title={s["confirm.doubleBookedTitle"]}
+          body={
+            phone
+              ? // A FUNCTION REPLACEMENT, never a string: `$&` and friends in a
+                // replacement string are expanded by String.replace, and a
+                // phone number is data, not a pattern.
+                s["confirm.doubleBookedBody"].replace(/\{phone\}/g, () => phone)
+              : s["confirm.doubleBookedBodyNoPhone"]
+          }
+        />
+      );
+    }
     return <GenericPage locale={locale} />;
   }
 
