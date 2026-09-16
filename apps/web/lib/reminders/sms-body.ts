@@ -38,6 +38,7 @@ import type { Locale } from "@osteojp/i18n";
 import type { EnvSource } from "@osteojp/notify";
 
 import { CONFIRM_LINK_BASE_VAR, confirmLinkLineOrNull } from "./confirm-code";
+import { REMINDER_NO_REPLIES_NOTICE_PT } from "./reminder-copy";
 import { senderCanReceiveReplies } from "./reply-capability";
 import {
   assembleSms,
@@ -114,15 +115,44 @@ export function renderReminderSmsBody(args: ReminderSmsBodyArgs): SmsBodyResult 
     confirmLink = line;
   }
 
+  // ASKED ONCE, USED TWICE. The same answer decides whether the message invites
+  // a reply and whether it says a reply will not be read; two reads of the same
+  // function could not disagree today, but two CALLS are two things a later edit
+  // can arm separately, and the two lines are mutually exclusive by construction.
+  const canReceiveReplies = senderCanReceiveReplies(env);
+
   const message = assembleSms(args.offset, args.locale, args.ctx, {
     feeNotice: args.feeNotice ?? false,
-    replyInstruction: senderCanReceiveReplies(env),
+    replyInstruction: canReceiveReplies,
     confirmLink,
   });
 
-  const verdict = smsCompliance(message);
+  // ==========================================================================
+  // S2: "Nao lemos respostas." - owner ruling Q-SMS-S2 (COMMS-SMS-WORDING-R2).
+  // ==========================================================================
+  // APPENDED HERE RATHER THAN IN `assembleSms`, and that is not a convenience.
+  // templates.ts holds the APPROVED bodies and the additions JP signed off; this
+  // module is where the environment is read and where the reply question is
+  // already answered. Putting S2 in templates.ts would either duplicate the
+  // sender question there or add a fourth `SmsAdditions` boolean that every
+  // caller would have to answer identically - and the ruling gives it exactly
+  // one gate, which is the gate this function already holds.
+  //
+  // IT IS LAST BY CONSTRUCTION, not by hoping. `assembleSms` appends the fee
+  // line last of its three, so appending after it puts S2 at the end of every
+  // combination, which is what the ruling requires.
+  //
+  // IT COUNTS TOWARD THE SEGMENT. The append happens BEFORE the compliance
+  // verdict below, so a body that no longer fits is refused as a value exactly
+  // as an overlong one always was - never silently split into two billed parts.
+  const withNoReplyNotice =
+    !canReceiveReplies && args.locale === "pt"
+      ? `${message}\n${REMINDER_NO_REPLIES_NOTICE_PT}`
+      : message;
+
+  const verdict = smsCompliance(withNoReplyNotice);
   if (!verdict.ok) {
     return { ok: false, kind: verdict.kind, refusal: verdict.message, length: verdict.length };
   }
-  return { ok: true, body: message, length: message.length };
+  return { ok: true, body: withNoReplyNotice, length: withNoReplyNotice.length };
 }
