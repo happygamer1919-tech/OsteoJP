@@ -54,9 +54,23 @@ staff at the database, which is what lets the trail be read.
 
 ## The pin is the CONTENT, not a commit sha
 
-Each stage derives the head from `origin/main` and asserts the sha256 of every file
-it runs. A rebase or a DECISIONS sync that leaves the three files unchanged proceeds;
-one changed byte halts.
+Each stage derives the head from `origin/patients/SR62-PU4-documentos-soft-delete`
+and asserts the sha256 of every file it runs. A rebase or a DECISIONS sync that
+leaves the three files unchanged proceeds; one changed byte halts.
+
+**The branch, not `origin/main`, and that correction is why this revision exists.**
+Both stages pinned `origin/main` when this document was first written, copied from
+0088, whose migration was already on main when it was applied. 0089 is not: this PR
+is held until the apply succeeds, so `origin/main` CANNOT contain 0089 at the moment
+either stage runs. Every sha256 assertion would have halted the sitting on `STOP: 0089
+is not on disk` — the safe direction, but a sitting spent to learn it. Migrations 0083
+to 0087 each pin their own branch; this returns 0089 to that convention.
+
+**A branch ref moves, so the ref alone is not the pin.** ASSERTION 1 in each stage
+prints the head the ref resolves to, and that sha must equal the one written in plain
+text in the dispatch that sends the applier here. Nothing is substituted into the
+blocks to make that comparison: the applier reads the two shas and compares them by
+eye, which is why the HEAD CHECK below is run FIRST, before either stage is pasted.
 
 ## Why two stages, and what each one refuses
 
@@ -81,6 +95,27 @@ interactive zsh has `interactivecomments` off and a comment line runs as a comma
 and no `!` anywhere, because it is history expansion even inside quotes. Narration is
 done with `echo`, which is a command in every shell.
 
+## HEAD CHECK: run this FIRST, and read it with your eyes
+
+Paste this on its own, before stage 1, and again before stage 2. It writes nothing
+and touches no database.
+
+```
+(
+cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+git fetch origin --prune
+echo "head of the branch this document applies from:"
+git rev-parse origin/patients/SR62-PU4-documentos-soft-delete
+)
+```
+
+The sha it prints must be, character for character, the head sha written in plain
+text in the dispatch that sent you here. **If they differ, stop and say so: the
+branch has moved since the document was approved, and neither stage runs.** There is
+nothing to type in and nothing to substitute — the comparison is two shas on your
+screen. Each stage then prints the same sha again as its ASSERTION 1, so the
+transcript records what it ran from.
+
 ## STAGE 1: pre-flight, pre-check, apply
 
 ```
@@ -92,11 +127,14 @@ SHAPRE=3ebad544a0e4f29e4748f4f2bb8ee527beaaf40d15df81344d59f1434f971b79
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/0089-precheck.out /tmp/0089-postcheck.out /tmp/0089-applied.ok
 
+echo "--- ASSERTION 1, THE HEAD. The sha printed next MUST equal the head sha written in plain text in the dispatch that sent you here. The HEAD CHECK above has already shown it to you; this prints it again from inside the stage, so the transcript carries it."
+git fetch origin --prune
+git rev-parse origin/patients/SR62-PU4-documentos-soft-delete
+
 echo "--- pre-flight: the tree holds nothing but the checkout"
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
-git fetch origin --prune
-PIN=$(git rev-parse origin/main)
+PIN=$(git rev-parse origin/patients/SR62-PU4-documentos-soft-delete)
 [ "$(git cat-file -t ${PIN})" = commit ] || { echo "STOP: ${PIN} does not resolve to a commit"; exit 1; }
 echo "applying from ${PIN}"
 
@@ -140,9 +178,12 @@ SHAPOST=64f44b085c028e79e9c557e81163ac87b59099023e5735e4bb8bbff717da68dd
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/0089-postcheck.out
 
-echo "--- SR-58 again. This stage inherits nothing from stage 1"
+echo "--- ASSERTION 1, THE HEAD. The sha printed next MUST equal the head sha written in plain text in the dispatch that sent you here. Compare it by eye, exactly as you did before stage 1."
 git fetch origin --prune
-PIN=$(git rev-parse origin/main)
+git rev-parse origin/patients/SR62-PU4-documentos-soft-delete
+
+echo "--- SR-58 again. This stage inherits nothing from stage 1"
+PIN=$(git rev-parse origin/patients/SR62-PU4-documentos-soft-delete)
 [ "$(git cat-file -t ${PIN})" = commit ] || { echo "STOP: ${PIN} does not resolve to a commit"; exit 1; }
 git checkout -q --detach ${PIN}
 test -f packages/db/migrations/0089_attachments_soft_delete.sql || { echo "STOP: 0089 is not on disk"; exit 1; }
