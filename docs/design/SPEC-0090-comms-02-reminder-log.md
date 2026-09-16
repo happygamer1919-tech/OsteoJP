@@ -5,7 +5,7 @@ Author: PURPLE, 2026-09-14 overnight dispatch (SR-62). Derived from `origin/main
 
 **Number and order.** 0088 (authored by BLUE, applied by GREEN) is in flight, and only one
 migration may be in flight at a time. #1338's parked
-`packages/db/migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql` is promoted to
+`packages/db/migrations/0089_attachments_soft_delete.sql` is promoted to
 0089. This spec's migration takes **0090** only once 0089 is applied and merged. If that
 order changes, the number is taken at authoring time, never before.
 

@@ -96,7 +96,7 @@ describe("getOwnDocumentLocation — self-scope", () => {
 });
 
 // SR-62 PU-4: a document staff soft-deleted must stop reaching the patient. The
-// portal RLS policy carries `deleted_at IS NULL` (NEXT-AFTER-0088, proven in
+// portal RLS policy carries `deleted_at IS NULL` (0089, proven in
 // packages/db/tests/attachments-soft-delete.db.test.ts); these pin the explicit
 // query filter beside it, rendered through Drizzle's real Postgres dialect.
 describe("SR-62 PU-4: soft-deleted documents never reach the portal", () => {

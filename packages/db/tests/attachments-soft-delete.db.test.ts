@@ -1,5 +1,5 @@
 /**
- * attachments-soft-delete.db.test.ts — migrations-pending/NEXT-AFTER-0088.
+ * attachments-soft-delete.db.test.ts — packages/db/migrations/0089_attachments_soft_delete.sql.
  *
  * SR-62 PU-4. A patient document removed from the Documentos tab is SOFT
  * deleted: the row stays, and who / when / why are three columns on it. This
@@ -32,7 +32,7 @@ import { asRole, claimsFor, connect, live, patientClaims } from "./rls-harness";
 const CHECK = "attachments_soft_delete_complete";
 const REASON = "Carregado no paciente errado (teste 0088+1)";
 
-describe.skipIf(!live)("NEXT-AFTER-0088: attachments soft delete", () => {
+describe.skipIf(!live)("0089: attachments soft delete", () => {
   let sql: Sql;
 
   const tenant = randomUUID();

@@ -18,7 +18,7 @@ import { therapistPatientScope } from "./scope";
 // — the same rows the patient portal already reads
 // (apps/api/lib/patient/documents.ts, attachments_patient_selfscope RLS). No
 // separate storage backend. SR-62 PU-4 added three soft-delete columns
-// (migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql).
+// (packages/db/migrations/0089_attachments_soft_delete.sql).
 //
 // Isolation: `attachments_tenant_isolation` (migration 0001_rls) confines every
 // authenticated read/write to the JWT tenant. Every helper here runs inside

@@ -23,7 +23,7 @@
  * e2e seed does not provision the `clinical-attachments` bucket (see
  * camera-to-ficha.spec.ts), so this spec creates it when missing. No day offset.
  *
- * REQUIRES migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql to be
+ * REQUIRES packages/db/migrations/0089_attachments_soft_delete.sql to be
  * APPLIED to the lane database. Before that, the tab's read names a column that
  * does not exist and this spec fails at the first page load.
  */

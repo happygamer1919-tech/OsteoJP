@@ -71,7 +71,7 @@ export type DeleteReasonError = "reason_required" | "reason_too_long";
  * Whitespace-only is REQUIRED-missing, not a reason: the owner ruled a reason is
  * required, and "   " answers nothing. A non-string is treated the same way, so
  * a forged server-action payload cannot slip a number or null past the gate.
- * Migration NEXT-AFTER-0088's CHECK refuses a blank reason at the database too.
+ * Migration 0089's CHECK refuses a blank reason at the database too.
  */
 export function normalizeDeleteReason(
   raw: unknown,

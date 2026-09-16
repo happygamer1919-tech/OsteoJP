@@ -33,10 +33,11 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0088_attachments_soft_delete.sql` | 0088 (BLUE, `db/0088-nesa-second-participant-visible`, held unapplied) | 2026-09-14, PURPLE, branch `patients/SR62-PU4-documentos-soft-delete` | 0088's number is claimed and unapplied; one migration in flight. The app code on the same branch names the new columns, so the branch cannot merge before this is promoted and applied |
+| (none) | | | |
 
 ## Promoted
 
 | was | became | on |
 |---|---|---|
 | `NEXT-AFTER-0085_nesa_shared_resource.sql` | `packages/db/migrations/0086_nesa_shared_resource.sql`, bytes unchanged (sha256 `d3eb9e41dff3f7ba6ccd0c250baf76198e60e884733e06043fcd9518bbac8d99`), journal `when 1788001200000` | 2026-09-11, branch `db/0086-nesa-shared-resource`. Applied after 0085, from `docs/migration-apply-0086.md` |
+| `NEXT-AFTER-0088_attachments_soft_delete.sql` | `packages/db/migrations/0089_attachments_soft_delete.sql`, bytes unchanged (sha256 `ec1b90634b4253e50fe1060b03b22a0b2fe447136baaaa811dba819d7c084ced`), journal `idx 86`, `when 1788301200000` | 2026-09-16, branch `patients/SR62-PU4-documentos-soft-delete`. Applied after 0088, from `docs/migration-apply-0089.md` |

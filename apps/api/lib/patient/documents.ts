@@ -77,7 +77,7 @@ export async function listOwnDocuments(
           eq(attachments.tenantId, principal.tenantId),
           // SR-62 PU-4: a document staff soft-deleted is gone for the patient
           // too. The self-scope RLS policy carries the same conjunct
-          // (NEXT-AFTER-0088); this is the explicit layer beside it.
+          // (0089); this is the explicit layer beside it.
           isNull(attachments.deletedAt),
         ),
       )

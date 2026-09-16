@@ -1306,7 +1306,7 @@ export const attachments = pgTable(
     sizeBytes: integer("size_bytes"),
     uploadedBy: uuid("uploaded_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    // SR-62 PU-4 (migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql):
+    // SR-62 PU-4 (packages/db/migrations/0089_attachments_soft_delete.sql):
     // a staff-removed patient document is SOFT deleted. The row and the Storage
     // object stay; who / when / why live here. All three are set together or
     // not at all (attachments_soft_delete_complete). The reason is prose, so it
