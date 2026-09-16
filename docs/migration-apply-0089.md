@@ -273,16 +273,21 @@ drizzle journal production has after 0088: **86 rows**, one per journal entry, e
 carrying its real file sha256 and its `when`. The apply ran from a clean detached
 worktree of this branch.
 
-Five things were replaced, mechanically, with the count of each asserted:
+**FOUR** things were replaced, mechanically, with the count of each asserted:
 
 - `/tmp/` became a scratch directory (7 occurrences in stage 1, 9 in stage 2);
 - the `cd` line became the rehearsal worktree (1 each);
 - the env-source line became `export DATABASE_URL_DIRECT=<the throwaway db>` (1 each);
-- the target guard became an `echo` (1 each);
-- **`origin/main` became the branch head** (1 each). This one is called out because it
-  is load-bearing and a previous rehearsal on another branch made the same rewrite
-  **without saying so**: 0089 is not on `origin/main` until this PR merges, so a
-  rehearsal that left the pin would have applied nothing and passed vacuously.
+- the target guard became an `echo` (1 each).
+
+**The fifth substitution is GONE, and its absence is the evidence this revision
+works.** The previous rehearsal had to rewrite `origin/main` into the branch head
+(1 occurrence per stage) because the document pinned a ref that cannot contain 0089
+until this PR merges — a rehearsal that left the pin alone would have applied nothing
+and passed vacuously. The document now pins the branch itself, so the extractor
+rewrites nothing there and ASSERTS it: it refuses to emit a stage in which the string
+`origin/main` still appears, and counts the branch ref instead (2 per stage). The
+bytes that were rehearsed are, on that line, the bytes the owner will paste.
 
 One environment difference, also declared: the throwaway database was given **one
 `tenants` row**. It is built by migrations alone, so it has no data, and the arms
@@ -292,8 +297,9 @@ borrow a tenant the way production has one. The first attempt failed on exactly 
 | Run | Result |
 |---|---|
 | A: stage 2 first | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
-| B: stage 1 | SR-58 assertions pass, pre-check **16 OK / 0 FAIL**, `verified-migrate` pending 1, journal **86 → 87, delta 1**, sha256 present, exit 0 |
-| C: stage 2 | carries parsed as `journal_before=86 policies_before=2 secdef_before=24`, `ARMS A1 A2 A3 A4 A5 A6 A7 A8 OK`, post-check **12 OK / 0 FAIL**, journal read printed, exit 0 |
+| B0: stage 1, rehearsal worktree given a SYMLINKED `node_modules` | exit **4**. The pre-check still read **16 OK / 0 FAIL**, then pnpm refused to run without a TTY and drizzle never started. `verified-migrate` reported `journal 86 -> 86 (delta 0)` and `0089 present by sha256: NO` and FAILED. **This is the guard working**: a no-op apply was named as one rather than reported as success. The cause was the rehearsal environment, not the block; the worktree was given a real `pnpm install` and run B is the retry |
+| B: stage 1 | ASSERTION 1 printed `295c6cf1`, pre-check **16 OK / 0 FAIL**, `verified-migrate` pending 1, journal **86 → 87, delta 1**, sha256 present, exit 0 |
+| C: stage 2 | carries parsed as `journal_before=86 policies_before=2 secdef_before=24`, `ARMS A1 A2 A3 A4 A5 A6 A7 A8 OK`, post-check **12 OK / 0 FAIL**, journal read printed (id 87 = 0089), exit 0 |
 | D: stage 2, pre-check transcript backdated 61 minutes | exit 1, `STOP: stage 1's transcript is over an hour old` |
 | E: stage 2, marker removed | exit 1, `STOP: stage 1 did not complete an apply in this sitting` |
 
@@ -306,8 +312,18 @@ expression has changed). The pre-check discriminates; it does not pass by defaul
 eight probes and its notice names eight, but the count guard asserted seven and
 halted with `8 of 7 probes ran`. Every probe had passed; the guard refused rather
 than report a pass it could not account for. The guard now says eight, and the
-post-check sha256 above is the fixed file's. Runs A to E are the second rehearsal,
-from a database restored to the pre-apply state.
+post-check sha256 above is the fixed file's.
+
+**Runs A to E above are the THIRD rehearsal, and the first one run from the pushed
+branch with the branch pin in place.** It ran against a database built fresh for it,
+not one restored: `supabase db reset` at main, then the drizzle journal seeded to
+production's post-0088 shape (86 rows, each carrying its real file sha256 and its
+real `when`, newest `1788201200000`). Both stages resolved
+`origin/patients/SR62-PU4-documentos-soft-delete` themselves and ASSERTION 1 printed
+`295c6cf1aad6fe4003caa92f2977d40e65ac53a6` in each, which is the sha the dispatch
+carries. One environment difference beyond the four substitutions, declared: the
+rehearsal worktree needed its own `pnpm install`, because a symlinked `node_modules`
+makes pnpm try to purge the directory it points at (run B0).
 
 **Paste safety, scanned on the document's own bytes:** both stages are free of `#`
 comment lines, of `!`, of backslash continuations, and of any parameter followed by a
