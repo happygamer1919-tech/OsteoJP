@@ -4437,7 +4437,6 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **A column on `clinical_records` is impossible without a bypass.** The 0005 function rejects every update of a locked or signed row except a merge re-parent.
 - **Questions opened:** Q-SR62-P3-1, Q-SR62-P4-1, Q-SR62-P4-2 (the existing DRAFT Eliminar against "never a delete button") and Q-SR62-P4-3.
 
- patients/SR62-PU4-documentos-soft-delete
 ## 2026-09-14 - PURPLE, SR-62 PU-4 rulings: Q-PU4-1..3 answered, the purge ruling, and why Q-PU4-2 reverts to blocking
 
 - **Q-PU4-1, ruled (a):** `patients:write`, built as is. **Q-PU4-3, ruled (a):** keep indefinitely, no UI, no restore, built as is.
@@ -4472,4 +4471,3 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Q-SR62-P4-1, ruled (a).** A therapist may annul a registo authored by a DIFFERENT practitioner when the patient is theirs.
 - **SPEC-0091 section 3.3 already encodes it, verified against the section rather than taken from the dispatch.** The `record_annulments_insert` WITH CHECK admits a therapist when `r.practitioner_id = (select auth.uid())` OR `public.clinical_therapist_sees_patient(r.patient_id)`. No SQL in the spec changed; section 8 and `docs/design/QUESTIONS.md` now read ANSWERED.
 - **No migration file.**
- main

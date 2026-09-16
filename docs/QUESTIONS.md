@@ -1657,7 +1657,6 @@ dispatch).
 
 **Recommended default.** (a) Yes, E.164 only, SMS rows only, because the log's purpose is proof of where a reminder went and the current-number column cannot give it. (b) Yes, one migration after 0088, with an isolation test in the same PR and GREEN as applier.
 
- patients/SR62-PU4-documentos-soft-delete
 ## 2026-09-14 - Q-PU4-1: who may Eliminar a patient document?
 
 **ANSWERED 2026-09-14 (owner): (a) `patients:write`. Built as is, no change.**
@@ -1759,7 +1758,6 @@ shows the Base once covered the day (for example a Base that ends some days
 before it with nothing after), Base is treated as empty for that day and it reads
 "Não trabalha". Stretching a Base over a day it may never have covered would be
 a guess presented as a restore.
- main
 ## 2026-09-14 - Q-SR62-P3-1: does an EMAIL reminder row record a masked destination too? (PURPLE)
 
 **ANSWERED 2026-09-14 (owner, night dispatch): NO.** Email reminder rows keep a NULL recipient. Spec 0090 records it as ruled in section 8.
