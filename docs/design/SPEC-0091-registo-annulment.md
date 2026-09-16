@@ -17,13 +17,17 @@ Q-SR62-PU5-1 (`docs/design/QUESTIONS.md`).
 
 1. The annulment reason is REQUIRED.
 2. Annulled records are STRUCK THROUGH and REMAIN VISIBLE. They are not hidden.
-3. The 902 imported LOCKED records BECOME ANNULLABLE.
+3. The imported LOCKED records BECOME ANNULLABLE: 5,632 imported locked registos in
+   total, of which 902 are the JP-split subset (8 + 894), see card
+   STAFF-11-jp-split-clinical-authorship-locked-rows.
 
 **Standing rules, restated:**
 
 - **Registos clinicos NEVER get a delete button. Annulment only.**
-- **Clinical authorship NEVER moves.** All 902 locked records stay where they are: same
-  patient, same practitioner, same content, same signature fields.
+- **Clinical authorship NEVER moves.** Every imported locked registo stays where it is:
+  same patient, same practitioner, same content, same signature fields. 5,632 imported
+  locked registos in total, of which 902 are the JP-split subset (8 + 894), see card
+  STAFF-11-jp-split-clinical-authorship-locked-rows.
 - **`clinical_records_enforce_immutability` is NEVER disabled, bypassed or worked around,
   under any framing, in any option, by any lane.**
 
@@ -147,7 +151,9 @@ read tonight (no production contact). The post-check in section 6 reads it.
 
 **Explicit confirmation: no part of 0091 disables, bypasses, relaxes or works around
 `clinical_records_enforce_immutability`. No statement in 0091 references the trigger or its
-function, and none of the 902 locked rows is written.**
+function, and no imported locked row is written: 5,632 imported locked registos in total,
+of which 902 are the JP-split subset (8 + 894), see card
+STAFF-11-jp-split-clinical-authorship-locked-rows.**
 
 ### 2.4 Made machine-checkable (in the same PR)
 
