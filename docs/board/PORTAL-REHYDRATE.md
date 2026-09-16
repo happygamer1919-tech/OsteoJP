@@ -1015,3 +1015,95 @@ that differs between them (people set, labels, brandmark, paths, terminal
 defaults) lives in `docs/board/board-config.mjs`, and nowhere else.
 
 Governing spec: `docs/board/BOARD-SPEC.md`.
+
+---
+
+## 8. SR register
+
+**Every SR ruling is a record in `docs/board/portal-board.json`, inside `rulings[]`, with
+its own `title`, `ruling`, `date`, `ruled_by` and `governs`. This section is an INDEX, not
+a copy.** It cites `path:line` so the text is read from the one place that holds it. When
+this index and the board disagree, the board wins and this index is stale.
+
+Fifty-one numbers have a record. Ten more are cited on `origin/main` with nothing behind
+them, and are listed so the next reader stops searching instead of re-deriving the gap.
+The board states the gaps itself at `portal-board.json:1097`, which records that the
+numbers SR-10, SR-13 and SR-35 through SR-43 do not exist. Neither SR-40 nor SR-42 is
+cited anywhere on main, so both are absent here as well.
+
+SR-01: docs/board/portal-board.json:389
+SR-02: docs/board/portal-board.json:405
+SR-03: docs/board/portal-board.json:422
+SR-04: docs/board/portal-board.json:438
+SR-05: docs/board/portal-board.json:453
+SR-06: docs/board/portal-board.json:469
+SR-07: docs/board/portal-board.json:484
+SR-08: docs/board/portal-board.json:499
+SR-09: docs/board/portal-board.json:514
+SR-10: definition not found, strategy to restate. Cited docs/board/portal-board.json:546 and :555, where SR-12 amends it and the board records that SR-10 is not held here.
+SR-11: docs/board/portal-board.json:529
+SR-12: docs/board/portal-board.json:544
+SR-13: definition not found, strategy to restate. Cited only in the gap list at docs/board/portal-board.json:1097.
+SR-14: docs/board/portal-board.json:575
+SR-15: docs/board/portal-board.json:609
+SR-16: docs/board/portal-board.json:625
+SR-17: docs/board/portal-board.json:638
+SR-18: docs/board/portal-board.json:656
+SR-19: docs/board/portal-board.json:669
+SR-20: docs/board/portal-board.json:684
+SR-21: docs/board/portal-board.json:699
+SR-22: docs/board/portal-board.json:712
+SR-23: docs/board/portal-board.json:726
+SR-24: docs/board/portal-board.json:739
+SR-25: docs/board/portal-board.json:755
+SR-26: docs/board/portal-board.json:769
+SR-27: docs/board/portal-board.json:782
+SR-28: docs/board/portal-board.json:794
+SR-29: docs/board/portal-board.json:807
+SR-30: docs/board/portal-board.json:819
+SR-31: docs/board/portal-board.json:831
+SR-32: docs/board/portal-board.json:844
+SR-33: docs/board/portal-board.json:857
+SR-34: docs/board/portal-board.json:871
+SR-35: definition not found, strategy to restate. Cited apps/web/lib/reminders/confirm-code-store.ts:22 as having released migration 0074.
+SR-36: definition not found, strategy to restate. Cited docs/board/PORTAL-REHYDRATE.md:243 and :260 as having made test:scripts and test:e2e required gates.
+SR-37: definition not found, strategy to restate. Cited apps/web/lib/scheduling/availability.ts:34 as the owner's three schedule-inspector labels.
+SR-38: definition not found, strategy to restate. Cited apps/web/e2e/helpers/booking-picker.ts:124 as having made the date picker a typed text field.
+SR-39: definition not found, strategy to restate. Cited docs/board/PORTAL-REHYDRATE.md:838 as one local Supabase per lane.
+SR-41: definition not found, strategy to restate. Cited docs/board/portal-board.json:6016.
+SR-43: definition not found, strategy to restate. Cited .env.example:176 and apps/web/lib/reminders/clients.ts:137 as the Twilio sender incident.
+SR-44: docs/board/portal-board.json:885
+SR-45: docs/board/portal-board.json:900
+SR-46: docs/board/portal-board.json:916
+SR-47: docs/board/portal-board.json:932
+SR-48: docs/board/portal-board.json:949
+SR-49: docs/board/portal-board.json:964
+SR-50: docs/board/portal-board.json:980
+SR-51: docs/board/portal-board.json:997
+SR-52: docs/board/portal-board.json:1012
+SR-53: docs/board/portal-board.json:1027
+SR-54: docs/board/portal-board.json:1041
+SR-55: docs/board/portal-board.json:1056
+SR-56: docs/board/portal-board.json:1071
+SR-57: UNALLOCATED by instruction, never issued. Recorded at docs/board/portal-board.json:1097. Do not restate it and do not reuse the number.
+SR-58: docs/board/portal-board.json:1085
+SR-59: docs/board/portal-board.json:1100
+SR-60: docs/board/portal-board.json:1115
+SR-61: docs/board/portal-board.json:1130
+SR-62: docs/board/portal-board.json:1173, and section 5 item 5 of this file carries it in prose because it governs what a lane emits.
+SR-63: docs/board/portal-board.json:1187
+
+**Two things a reader should not have to re-derive.** First, the numbered rules 1 to 15 in
+section 1 of this file are a DIFFERENT series from `SR-nn`, and code citing "standing rule
+3" means that list, not SR-03. Second, the register is the board file and not this
+section, so a new ruling is written there first; adding a line here without a board record
+creates exactly the dangling reference SR-12 had to work around at `portal-board.json:555`.
+
+**One divergence, recorded rather than resolved.** The dispatch that asked for this section
+supplied fallback text for SR-44, SR-53, SR-58, SR-59, SR-61 and SR-63 in case they had no
+definition. All six do, so all six are cited above and no text was copied. Five of the
+supplied summaries match their committed ruling. The sixth does not: the supplied SR-63
+text names GREEN as the apply lane and names a specific settings file, while the committed
+ruling at `portal-board.json:1187` says only that applies belong to the designated apply
+lane and that the author and the applier are always different lanes. The committed ruling
+is the authority. If the narrower version is the intent, SR-63 is amended on the board.
