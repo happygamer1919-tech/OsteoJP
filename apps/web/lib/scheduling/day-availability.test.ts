@@ -155,3 +155,29 @@ describe("0085 - the clinic's own closure", () => {
     expect(day.closures).toHaveLength(1);
   });
 });
+
+/**
+ * INC-dst-sunday-times-shift-an-hour. The slot offering the agenda drawer and
+ * Agendar lote read: a Sunday saved 08:00-13:00 must offer 08:00-13:00 free on
+ * the two Lisbon clock-change Sundays exactly as on any other Sunday.
+ * `freeHours` renders through Intl in Europe/Lisbon, independently of time.ts.
+ */
+describe("INC-dst: a saved Sunday offers its own hours on the clock-change Sundays", () => {
+  const sundayMorning: AvailabilityTemplate = {
+    weekday: 0,
+    startTime: "08:00",
+    endTime: "13:00",
+    validFrom: null,
+    validUntil: null,
+    isActive: true,
+  };
+  for (const [date, label] of [
+    ["2026-10-25", "October change"],
+    ["2027-03-28", "March change"],
+    ["2026-11-01", "non-transition Sunday"],
+  ] as const) {
+    it(`${date} ${label}: free is 08:00-13:00`, () => {
+      expect(freeHours(buildDay(date, [sundayMorning], [], []))).toEqual(["08:00-13:00"]);
+    });
+  }
+});

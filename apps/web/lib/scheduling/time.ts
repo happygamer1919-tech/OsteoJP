@@ -165,10 +165,22 @@ export function rangeForView(
   };
 }
 
-/** Combine a Lisbon calendar date + "HH:mm" into a UTC instant. */
+/**
+ * Combine a Lisbon calendar date + "HH:mm" into a UTC instant.
+ *
+ * INC-dst-sunday-times-shift-an-hour: the offset is taken AT THE TARGET
+ * INSTANT, not at midnight. Lisbon changes clock at 01:00 UTC on the last
+ * Sunday of March and of October, so the midnight offset is an hour wrong for
+ * every time after the change on those two days. Two passes: the offset at the
+ * wall clock read as UTC gives a first guess, and the offset at that guess is
+ * the one that holds for the instant.
+ */
 export function lisbonDateTimeToUtc(dateStr: string, hhmm: string): Date {
+  const [y, m, d] = parse(dateStr);
   const [h, min] = hhmm.split(":").map(Number);
-  return new Date(lisbonMidnightUtc(dateStr).getTime() + (h * 60 + min) * 60_000);
+  const wall = Date.UTC(y, m - 1, d, h, min, 0);
+  const guess = wall - lisbonOffsetMs(new Date(wall));
+  return new Date(wall - lisbonOffsetMs(new Date(guess)));
 }
 
 /* ------------------------------------------------------------------ */

@@ -10,7 +10,7 @@
 // Date.getDay()), optionally bounded by a [valid_from, valid_until] date window.
 // time_off blocks are absolute timestamptz, so they overlap in plain UTC.
 
-import { lisbonMidnightUtc, lisbonParts } from "./time";
+import { lisbonMinutesFromMidnight, lisbonParts } from "./time";
 import { intervalsOverlap } from "./overlap";
 
 /** One row of availability_templates (only the fields the rules need). */
@@ -163,13 +163,14 @@ export function evaluateAvailability(
   const configured = templates.some((t) => t.isActive);
   if (!configured) return { configured: false, covered: true };
 
-  // Anchor on the booking's Lisbon calendar day; express the window as minutes
-  // from that day's Lisbon midnight so it lines up with the `time` columns.
+  // Anchor on the booking's Lisbon calendar day; express the window as Lisbon
+  // WALL-CLOCK minutes so it lines up with the `time` columns. Not milliseconds
+  // elapsed since midnight: on the two clock-change Sundays those differ by an
+  // hour (INC-dst-sunday-times-shift-an-hour).
   const dateStr = lisbonParts(startsAt).date;
   const weekday = lisbonWeekday(dateStr);
-  const midnight = lisbonMidnightUtc(dateStr).getTime();
-  const startMin = (startsAt.getTime() - midnight) / 60_000;
-  const endMin = (endsAt.getTime() - midnight) / 60_000;
+  const startMin = lisbonMinutesFromMidnight(startsAt);
+  const endMin = startMin + (endsAt.getTime() - startsAt.getTime()) / 60_000;
 
   const windows = templates
     .filter(

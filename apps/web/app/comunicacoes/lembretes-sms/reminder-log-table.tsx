@@ -31,9 +31,12 @@ export type ReminderLogRowView = {
 export function ReminderLogTable({
   rows,
   onlyFailures,
+  searching,
 }: {
   rows: ReminderLogRowView[];
   onlyFailures: boolean;
+  /** COMMS-03: a name search is applied, so an empty table means "nobody by that name". */
+  searching: boolean;
 }) {
   const columns: Array<TableColumn<ReminderLogRowView>> = [
     {
@@ -97,7 +100,15 @@ export function ReminderLogTable({
       empty={
         <EmptyState
           icon={MessagesSquare}
-          title={onlyFailures ? s["remindersLog.emptyFailures"] : s["remindersLog.empty"]}
+          title={
+            searching
+              ? onlyFailures
+                ? s["remindersLog.emptySearchFailures"]
+                : s["remindersLog.emptySearch"]
+              : onlyFailures
+                ? s["remindersLog.emptyFailures"]
+                : s["remindersLog.empty"]
+          }
         />
       }
     />

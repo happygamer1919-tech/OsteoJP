@@ -21,6 +21,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABAS
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const APPOINTMENT_ID = "00000000-0000-4000-8000-00000000c501";
+const SEARCH_APPOINTMENT_ID = "00000000-0000-4000-8000-00000000c502";
 const ERROR_CODE = "21211";
 
 let db: SupabaseClient;
@@ -66,11 +67,35 @@ test.beforeAll(async () => {
     provider_error_code: ERROR_CODE,
   });
   if (row.error) throw new Error(`reminder_dispatches: ${row.error.message}`);
+
+  // COMMS-03: a DELIVERED reminder for João Pereira, whose name is stored accented,
+  // so the search has a second patient to tell apart and Só falhas has a row to drop.
+  await db.from("appointments").delete().eq("id", SEARCH_APPOINTMENT_ID);
+  const joaoAppt = await db.from("appointments").insert({
+    id: SEARCH_APPOINTMENT_ID,
+    tenant_id: TENANT_A,
+    patient_id: PATIENTS.joao.id,
+    practitioner_id: therapist.data.id,
+    location_id: LOCATION.id,
+    starts_at: "2021-02-11T10:00:00.000Z",
+    ends_at: "2021-02-11T10:45:00.000Z",
+    status: "cancelled",
+  });
+  if (joaoAppt.error) throw new Error(`appointment: ${joaoAppt.error.message}`);
+  const joaoRow = await db.from("reminder_dispatches").insert({
+    tenant_id: TENANT_A,
+    appointment_id: SEARCH_APPOINTMENT_ID,
+    channel: "sms",
+    template_id: "reminder.24h.sms",
+    outcome: "sent",
+    provider_status: "delivered",
+  });
+  if (joaoRow.error) throw new Error(`reminder_dispatches: ${joaoRow.error.message}`);
 });
 
 test.afterAll(async () => {
-  // The ledger row goes with it: reminder_dispatches.appointment_id is ON DELETE CASCADE.
-  if (db) await db.from("appointments").delete().eq("id", APPOINTMENT_ID);
+  // The ledger rows go with them: reminder_dispatches.appointment_id is ON DELETE CASCADE.
+  if (db) await db.from("appointments").delete().in("id", [APPOINTMENT_ID, SEARCH_APPOINTMENT_ID]);
 });
 
 test.describe("reception", () => {
@@ -97,6 +122,44 @@ test.describe("reception", () => {
     await expect(row).toHaveCount(1);
     await expect(row).toContainText("Falhou no fornecedor");
     await expect(row).toContainText("Lembrete 24 h");
+  });
+
+  test("COMMS-03: the name search finds an accented name, keeps Só falhas, and shows an empty state on no match", async ({ page }) => {
+    test.skip(skipReason !== null, skipReason ?? "");
+
+    const rowOf = (name: string) => page.getByRole("row").filter({ hasText: name });
+    const search = page.getByRole("searchbox", { name: "Pesquisar por nome do paciente" });
+
+    await page.goto("/comunicacoes/lembretes-sms");
+    await expect(rowOf(PATIENTS.maria.name)).toHaveCount(1);
+
+    // UNACCENTED, and the stored name is "João Pereira".
+    await search.fill("joao");
+    await search.press("Enter");
+    await expect(page).toHaveURL(/[?&]q=joao/);
+    await expect(rowOf(PATIENTS.joao.name)).toHaveCount(1);
+    await expect(rowOf(PATIENTS.maria.name)).toHaveCount(0);
+
+    // Só falhas narrows WITHIN the search: João's SMS was delivered, so nothing is left,
+    // and the page says so in words that name the search, not "Nenhuma falha registada".
+    await page.getByRole("link", { name: "Só falhas" }).click();
+    await expect(page).toHaveURL(/q=joao/);
+    await expect(page).toHaveURL(/falhas=1/);
+    await expect(page.getByText("Nenhuma falha para um paciente com esse nome.")).toBeVisible();
+    await expect(rowOf(PATIENTS.joao.name)).toHaveCount(0);
+
+    // A name nobody has: the empty state, never the unfiltered list.
+    await page.getByRole("link", { name: "Todos" }).click();
+    // Wait for Todos to LAND before typing: the box builds its URL from the params it
+    // currently sees, so typing mid-navigation would carry falhas=1 into the search.
+    await expect(page).not.toHaveURL(/falhas=1/);
+    await search.fill("Xavier");
+    await search.press("Enter");
+    await expect(page).toHaveURL(/q=Xavier/);
+    await expect(page).not.toHaveURL(/falhas=1/);
+    await expect(page.getByText("Nenhum envio de SMS para um paciente com esse nome.")).toBeVisible();
+    await expect(rowOf(PATIENTS.maria.name)).toHaveCount(0);
+    await expect(rowOf(PATIENTS.joao.name)).toHaveCount(0);
   });
 });
 
