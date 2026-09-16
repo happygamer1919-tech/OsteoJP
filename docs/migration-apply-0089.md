@@ -320,8 +320,13 @@ not one restored: `supabase db reset` at main, then the drizzle journal seeded t
 production's post-0088 shape (86 rows, each carrying its real file sha256 and its
 real `when`, newest `1788201200000`). Both stages resolved
 `origin/patients/SR62-PU4-documentos-soft-delete` themselves and ASSERTION 1 printed
-`295c6cf1aad6fe4003caa92f2977d40e65ac53a6` in each, which is the sha the dispatch
-carries. One environment difference beyond the four substitutions, declared: the
+`295c6cf1aad6fe4003caa92f2977d40e65ac53a6` in each, which is the head the rehearsal
+ran from. **The head you compare against is the one in YOUR dispatch, not that one:**
+the branch has taken further commits to THIS document since, and a document cannot
+carry the sha of the commit that adds it. What has not moved is the thing the stages
+actually assert - the migration, the pre-check and the post-check are byte-identical,
+at the sha256 values in the table at the top of this file, and those are what halt the
+sitting if anything has changed. One environment difference beyond the four substitutions, declared: the
 rehearsal worktree needed its own `pnpm install`, because a symlinked `node_modules`
 makes pnpm try to purge the directory it points at (run B0).
 
