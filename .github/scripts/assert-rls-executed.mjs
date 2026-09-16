@@ -326,6 +326,39 @@ for (const tr of report.testResults) {
  */
 const PERMITTED_SKIPS = new Map([
   // ["some-suite.test.ts", "why this one is allowed to skip, and who decided"],
+  //
+  // THE FIRST ENTRY EVER MADE HERE, and the comment above says this map should
+  // stay empty - so it is written to be read, not to be waved through.
+  //
+  // WHAT IT COVERS: CARE-01's RLS suite proves a policy that ships in a PENDING
+  // migration (packages/db/migrations-pending/NEXT-AFTER-0089_care_team.sql).
+  // That file has no number yet, because 0089 is authored on another branch and
+  // is neither merged nor applied, and `drizzle-kit migrate` cannot see
+  // migrations-pending by construction. So CI's seeded database does not have
+  // the table or the policy, and the suite gates on the SCHEMA - it asks
+  // `to_regclass('public.patient_care_team')` and skips when the answer is null.
+  //
+  // WHY SKIPPING IS THE HONEST ANSWER HERE rather than a hole: the alternative
+  // is a suite that asserts the widened visibility against a database that was
+  // never widened, which is red for a reason that has nothing to do with the
+  // code under review. A skip that SAYS "not measured" is worth more than a
+  // green that means nothing.
+  //
+  // WHEN IT COMES OUT: at promotion. The moment the migration is renamed into
+  // packages/db/migrations/ and applied, this suite runs in CI on its own and
+  // this line must be deleted - if it is not, a genuinely broken care-team
+  // policy could skip unnoticed behind this exemption. Five existing
+  // appointments suites go red at that same moment and are the rest of that
+  // checklist; the card CARE-01-assigned-therapists carries it.
+  //
+  // Decided by BLUE under dispatch CARE-01-BUILD, owner ruling Q-CARE-1, 2026-09-16.
+  [
+    "care-team-appointment-visibility.db.test.ts",
+    "CARE-01: proves a policy that ships in migrations-pending/NEXT-AFTER-0089_care_team.sql, " +
+      "which CI never applies; the suite gates on to_regclass and skips when the table is absent. " +
+      "DELETE THIS ENTRY at promotion, when the migration takes its number and CI applies it. " +
+      "BLUE, dispatch CARE-01-BUILD, ruling Q-CARE-1, 2026-09-16.",
+  ],
 ]);
 
 const derivedFailures = [];
