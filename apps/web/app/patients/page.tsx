@@ -14,6 +14,7 @@ import {
   type PatientSort,
   type SortDirection,
 } from "../../lib/patients/list-queries";
+import { Pager } from "../../components/pager.client";
 import { PatientsFilterBar } from "./_components/patients-filter-bar";
 import { PatientsTable, type PatientRowView } from "./_components/patients-table";
 import { TimingPanel } from "../_components/timing-panel";
@@ -107,9 +108,6 @@ function Stat({ label, value }: { label: string; value: number }) {
 const primaryLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
-const pageLink =
-  "inline-flex h-9 items-center rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring";
-
 export default async function PatientsPage({
   searchParams,
 }: {
@@ -153,15 +151,16 @@ export default async function PatientsPage({
   }));
 
   const filtered = Boolean(filters.q || filters.locationId || filters.upcomingOnly);
-  const qs = (p: number) => {
-    const u = new URLSearchParams();
-    if (filters.q) u.set("q", filters.q);
-    if (filters.locationId) u.set("location", filters.locationId);
-    if (filters.upcomingOnly) u.set("upcoming", "1");
-    if (filters.sort !== "name") u.set("sort", filters.sort);
-    if (filters.dir !== "asc") u.set("dir", filters.dir);
-    if (p > 1) u.set("page", String(p));
-    return u.size ? `/patients?${u}` : "/patients";
+  // U1: the canonical query shape for this route, MINUS `page` — the pager adds
+  // that itself (and omits it on page 1, so the first page has one spelling).
+  // This replaces the old `qs(p)` helper: same params, same omit-when-default
+  // rules, expressed once as data rather than once per link.
+  const pagerParams: Record<string, string> = {
+    ...(filters.q ? { q: filters.q } : {}),
+    ...(filters.locationId ? { location: filters.locationId } : {}),
+    ...(filters.upcomingOnly ? { upcoming: "1" } : {}),
+    ...(filters.sort !== "name" ? { sort: filters.sort } : {}),
+    ...(filters.dir !== "asc" ? { dir: filters.dir } : {}),
   };
 
   return (
@@ -206,28 +205,17 @@ export default async function PatientsPage({
         <PatientsTable rows={rows} sort={filters.sort} dir={filters.dir} filtered={filtered} />
       </GlassPanel>
 
-      <div className="flex items-center justify-between gap-3 text-sm text-v2-text-secondary">
-        <span className="tabular-nums">
-          {new Intl.NumberFormat("pt-PT").format(page.total)} {s["patients.resultsCount"]}
-        </span>
-        {page.pageCount > 1 ? (
-          <div className="flex items-center gap-2">
-            {page.page > 1 ? (
-              <Link href={qs(page.page - 1)} className={pageLink} rel="prev">
-                {s["patients.pagePrev"]}
-              </Link>
-            ) : null}
-            <span className="tabular-nums">
-              {page.page} {s["patients.pageOf"]} {page.pageCount}
-            </span>
-            {page.page < page.pageCount ? (
-              <Link href={qs(page.page + 1)} className={pageLink} rel="next">
-                {s["patients.pageNext"]}
-              </Link>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      {/* U1: the shared pager replaces the two-link Anterior/Seguinte strip that
+          made page 100 ninety-nine clicks away. `pagerParams` is the SAME query
+          shape `qs()` builds, minus `page` — the component adds that itself, so
+          there is still exactly one definition of this route's canonical URL. */}
+      <Pager
+        basePath="/patients"
+        params={pagerParams}
+        page={page.page}
+        pageCount={page.pageCount}
+        total={page.total}
+      />
     </main>
   );
 }
