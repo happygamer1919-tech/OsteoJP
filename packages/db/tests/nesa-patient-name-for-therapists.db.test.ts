@@ -55,7 +55,50 @@ const F = {
   cbNesaAppt: randomUUID(),
 };
 
+/**
+ * NINE OF THESE ARMS NEED A MIGRATION THAT HAS NO NUMBER YET, SO THEY ASK THE
+ * DATABASE RATHER THAN ASSUMING.
+ *
+ * `NEXT-AFTER-0089_nesa_patient_name_for_therapists.sql` lives in
+ * `migrations-pending/`, which `drizzle-kit migrate` cannot see by construction.
+ * CI's DB-gated job therefore runs against a database at main's level (0088)
+ * WITHOUT the function, and arms that asserted its behaviour there were red for
+ * a reason that had nothing to do with the code under review. That is exactly
+ * what happened on the first push of this branch: 9 failed, `function
+ * public.shared_resource_appointment_patient_names() does not exist`.
+ *
+ * So the gate is the SCHEMA, not an env flag - the idiom CARE-01's
+ * `care-team-appointment-visibility.db.test.ts` established for the same
+ * situation. Where somebody has applied the pending SQL (a lane, or production
+ * after promotion) these run and must pass; everywhere else they skip and say
+ * nothing. A `skip` is honest here in a way a passing stub would not be: it
+ * reports "not measured", never "fine".
+ *
+ * IT GATES PER TEST AND NOT THE WHOLE FILE, WHICH IS THE ONE PLACE THIS DIFFERS
+ * FROM CARE-01. Two arms below need no function at all: that the patient row IS
+ * withheld from this therapist today, and that `patients_select` is untouched.
+ * Those are the defect and the ruling's central prohibition, they are provable
+ * at 0088, and they run on every PR.
+ */
+async function nesaNamesApplied(): Promise<boolean> {
+  if (!live) return false;
+  const probe = connect();
+  try {
+    const rows = await probe`select to_regprocedure(
+      'public.shared_resource_appointment_patient_names()') is not null as present`;
+    return Boolean(rows[0]?.present);
+  } catch {
+    return false;
+  } finally {
+    await probe.end({ timeout: 5 });
+  }
+}
+
+const applied = await nesaNamesApplied();
+
 const d = live ? describe : describe.skip;
+/** The nine arms that cannot run until the pending migration is applied. */
+const itApplied = applied ? it : it.skip;
 
 d("NESA-NAMES: a therapist reads the patient name on a shared resource's booking", () => {
   let sql: ReturnType<typeof connect>;
@@ -132,12 +175,12 @@ d("NESA-NAMES: a therapist reads the patient name on a shared resource's booking
 
   /* ------------------------------------------------------------ positive */
 
-  it("an LV therapist reads the patient's name on an LV NESA booking", async () => {
+  itApplied("an LV therapist reads the patient's name on an LV NESA booking", async () => {
     const names = await namesFor("therapist", F.lvTherapist);
     expect(names.get(F.nesaAppt)).toBe("Marta Nunes");
   });
 
-  it("and on the booking where NESA is only Terapeuta 2 (0088's shape)", async () => {
+  itApplied("and on the booking where NESA is only Terapeuta 2 (0088's shape)", async () => {
     const names = await namesFor("therapist", F.lvTherapist);
     expect(names.get(F.nesaSecondAppt)).toBe("Marta Nunes");
   });
@@ -156,23 +199,23 @@ d("NESA-NAMES: a therapist reads the patient name on a shared resource's booking
 
   /* ------------------------------------------------------------ negatives */
 
-  it("a therapist NOT installed at that clinic reads nothing for it", async () => {
+  itApplied("a therapist NOT installed at that clinic reads nothing for it", async () => {
     const names = await namesFor("therapist", F.cbTherapist);
     expect(names.has(F.nesaAppt)).toBe(false);
     expect(names.has(F.nesaSecondAppt)).toBe(false);
   });
 
-  it("and an LV therapist reads nothing for a NESA booking at CB", async () => {
+  itApplied("and an LV therapist reads nothing for a NESA booking at CB", async () => {
     const names = await namesFor("therapist", F.lvTherapist);
     expect(names.has(F.cbNesaAppt)).toBe(false);
   });
 
-  it("RECEPTION gets nothing from this function - their names come from patients_select, unchanged", async () => {
+  itApplied("RECEPTION gets nothing from this function - their names come from patients_select, unchanged", async () => {
     const names = await namesFor("reception", F.reception);
     expect(names.size).toBe(0);
   });
 
-  it("an ordinary appointment of the therapist's own is NOT returned by this function", async () => {
+  itApplied("an ordinary appointment of the therapist's own is NOT returned by this function", async () => {
     // It needs no help: `patients_select` admits a patient they treat. A function
     // that also answered for those rows would be widening something nobody asked
     // about.
@@ -180,7 +223,7 @@ d("NESA-NAMES: a therapist reads the patient name on a shared resource's booking
     expect(names.has(F.ownAppt)).toBe(false);
   });
 
-  it("returns EXACTLY two columns, and neither is a phone, a NIF or anything clinical", async () => {
+  itApplied("returns EXACTLY two columns, and neither is a phone, a NIF or anything clinical", async () => {
     // The ruling is "the name and nothing more". Asserted on the function's own
     // signature, so a later edit that adds a column fails here rather than
     // quietly shipping a phone number to every therapist at the clinic.
@@ -196,7 +239,7 @@ d("NESA-NAMES: a therapist reads the patient name on a shared resource's booking
     }
   });
 
-  it("the PORTAL's patient role cannot execute it at all", async () => {
+  itApplied("the PORTAL's patient role cannot execute it at all", async () => {
     const [row] = await sql`select
         has_function_privilege('patient',      'public.' || ${FN} || '()', 'EXECUTE') as patient_may,
         has_function_privilege('anon',         'public.' || ${FN} || '()', 'EXECUTE') as anon_may,
@@ -208,7 +251,7 @@ d("NESA-NAMES: a therapist reads the patient name on a shared resource's booking
     expect(row!.staff_may).toBe(true);
   });
 
-  it("is SECURITY DEFINER, owned by postgres, with search_path pinned", async () => {
+  itApplied("is SECURITY DEFINER, owned by postgres, with search_path pinned", async () => {
     const [row] = await sql`select p.prosecdef, pg_get_userbyid(p.proowner) as owner,
                                    coalesce(array_to_string(p.proconfig, ','), '') as config
                               from pg_proc p
