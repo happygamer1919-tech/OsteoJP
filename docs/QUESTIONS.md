@@ -1705,3 +1705,34 @@ a guess presented as a restore.
 The 2026-09-14 ruling masks the recipient NUMBER on SMS rows. `reminder_dispatches` also records email attempts (48h reminder, confirmation, follow-up), and the ruling says nothing about the address. Spec 0090's CHECK admits `recipient_masked` only on `channel = 'sms'`.
 
 **Recommended default:** email rows keep NULL until ruled. If the owner wants a pattern for email too, it needs its own shape (for example the first letter and the domain) and its own CHECK.
+
+## 2026-09-17 - Q-U1-1: does Back have to restore the UNFILTERED ficha, or is that my test over-specifying Next? (PURPLE)
+
+**BLOCKS: the last red test on PR #1381.** Everything else on that PR is green.
+
+**What happens.** On the Marcações tab: apply an Estado filter (list narrows 250 to 1),
+reload (the filter survives - correct, that half passes), then press Back. The URL
+returns to the unfiltered ficha, but the list still renders the ONE filtered row.
+Asserted 14 times over 5 seconds; it does not settle. `pager-and-ficha-filters.spec.ts:135`.
+
+**Why it is genuinely ambiguous, and why I did not just fix it.**
+- If the page is served from Next's client Router Cache on a back navigation, the
+  previous RSC payload is what renders, and the fix is a product change (force a
+  refetch on history navigation) with a cost: every Back on a ficha becomes a server
+  round trip.
+- If Next is expected to refetch a `force-dynamic` page on Back, then this is a real
+  defect in what I built and the test is right to fail.
+I could not separate the two from the CI log alone, and raising the test's timeout to
+make it pass would hide whichever one it is. The dispatch says report defects, never
+mask them, so it is left failing and visible.
+
+**Recommended default: treat the filter as URL state and make Back authoritative** -
+that is what the spec asked for ("reload and browser back keep the position"), and a
+Back that shows a filtered list under an unfiltered URL is the shape a user reports as
+"the filter would not come off". If the round-trip cost is unacceptable, the honest
+alternative is to narrow the test to assert the URL only, and say in the spec that the
+CONTENT after Back is served from cache.
+
+**What is already proven and not in question:** the filters narrow in SQL (the Estado
+test finds the one matching row 200 deep, in CI), the filter survives a reload, and
+"Limpar filtros" restores the full 250.
