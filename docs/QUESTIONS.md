@@ -69,7 +69,6 @@ Context: the team has exactly one Vercel project (osteojp-platform, root
 directory apps/web). apps/portal cannot pull env vars and has no deployment
 target. Portal QA to date appears to have run locally.
 
-docs/brand-tokens
 ## 2026-06-11 — Q6: Brand tokens: vector logo source + Heritage theme sign-off
 
 Context: docs/brand-tokens.md was rewritten as the single source of truth for
@@ -467,7 +466,6 @@ documented `--limit 8` command locally; Claude reports the summary back.
   - Owner: JP or Ivan to decide. Block on this before touching those two i18n keys.
   - **Tag (2026-07-03):** next-wave-planning batch. Stays OPEN; scheduled for the next-wave planning pass, no ruling this wave.
 
-osteojp-availability-seed
 ## 2026-07-01 - availability seed: CI does NOT consume it, and live dev run is credential-blocked
 - [ ] **CI's seeded-DB jobs do not run the TS dev seed (loop premise was wrong).**
   The availability-seed loop assumed wiring into the `seed:dev` entrypoint would make
@@ -512,7 +510,6 @@ osteojp-availability-seed
   - Owner: JP or Ivan — this is a brand-voice doc decision, not a code decision.
   - Blocked work: none hard-blocked, but every future copy PR touches this ambiguity until resolved.
   - **Tag (2026-07-03):** next-wave-planning batch. Stays OPEN; scheduled for the next-wave planning pass, no ruling this wave.
- main
 
 ## 2026-07-01 — RESOLVED: single-project reality closes the seed-blocker and ref-discrepancy
 - [x] **Ref discrepancy resolved.** Owner-verified (Ivan, via Supabase + Vercel dashboards): the Supabase org has exactly ONE project, ref `jaxmkwoxjcgzkwxgbayx` (Frankfurt, Pro, backups active). It is the dev database AND currently also backs the deployed app. The ref `ufbkzbyghvxtosyrkgjq` DOES NOT EXIST and never did — a phantom from an earlier recon that propagated into the five dev seed scripts and into the entries below. This retroactively corrects the "dev = ufbkzbyghvxtosyrkgjq / prod = jaxmkwoxjcgzkwxgbayx" premise recorded on 2026-06-30 (0022 blocker, L421-425) and 2026-07-01 (availability seed, L485-498): `jaxmkwoxjcgzkwxgbayx` was never prod — it is the single real (dev) project.
@@ -588,7 +585,6 @@ no delete. Each awaits an explicit owner/JP ruling: map to a canonical row or dr
   never delete-recreate) or DROPPED by explicit owner instruction. Until then they remain
   inactive — per W6-01b they show in filter dropdowns and are absent from creation dropdowns.
 
- db/0043-clinical-rls-r16
 ## 2026-07-25 — Q: 0043 R16 clinical_records RLS — four items back to CYAN/owner (recommended defaults applied)
 
 Migration 0043 is BUILT and gated GREEN; these are review points for CYAN's
@@ -657,7 +653,6 @@ consistently.
 
 - [ ] Owner: confirm whether to fold D1/D2/D3 into a follow-up email-voice PR
   (recommended) or leave the reminder emails as-is. Not blocking the W12-30 PDF PR.
- main
 
 ## 2026-07-25 — W12-40-Q1: Horários route kept as a redirect (not a hard 404)
 
@@ -1767,3 +1762,61 @@ a guess presented as a restore.
 The 2026-09-14 ruling masks the recipient NUMBER on SMS rows. `reminder_dispatches` also records email attempts (48h reminder, confirmation, follow-up), and the ruling says nothing about the address. Spec 0090's CHECK admits `recipient_masked` only on `channel = 'sms'`.
 
 **Recommended default:** email rows keep NULL until ruled. If the owner wants a pattern for email too, it needs its own shape (for example the first letter and the domain) and its own CHECK.
+
+## 2026-09-17 - Q-U1-1: does Back have to restore the UNFILTERED ficha, or is that my test over-specifying Next? (PURPLE) (ANSWERED 2026-09-17)
+
+**ANSWERED (strategy ruling, 2026-09-17): the URL is authoritative.** After Back or
+Forward the rows and every control match the URL, and the extra server round trip is
+accepted.
+
+**NEITHER of the two branches below was the cause, and the measurement is what said
+so.** Pressing Back made **zero** server requests: `popstate` fired at
+`?tab=consultas` and the router then rewrote the URL back to
+`?tab=consultas&estado=cancelled`. With no round trip the server values never change,
+so the optimistic Estado state had nothing to re-sync from - **the stuck tick was a
+symptom of the missing fetch, not its cause**, and that code was left untouched. It is
+not a dev-server artifact either: a production build reproduces it. What decides it is
+CLIENT SPEED - unthrottled, the router has hydrated by the time Back is pressed and
+refetches on its own, which is exactly why it never reproduced locally and failed on
+every CI attempt. Throttled, it reproduces from x2 upward in dev and in a production
+build.
+
+**Fixed on PR #1381:** the server's canonical query string is handed down and compared
+against the address bar; on a disagreement the server is re-asked for whatever the URL
+says. Declared limitation: the correction lands after hydration, so on very slow
+hardware the stale view is briefly visible before it corrects (~4s at x8, ~19s at x20).
+It always corrects.
+
+**Negative control:** with the fix removed, `pager-and-ficha-filters.spec.ts:122` - the
+test CI was failing - goes RED and is green with the fix. The new test added at `:162`
+PASSED without the fix on fast hardware, so it is specification coverage for the
+Forward direction and the checkbox, not proof.
+
+**BLOCKS: the last red test on PR #1381.** Everything else on that PR is green.
+
+**What happens.** On the Marcações tab: apply an Estado filter (list narrows 250 to 1),
+reload (the filter survives - correct, that half passes), then press Back. The URL
+returns to the unfiltered ficha, but the list still renders the ONE filtered row.
+Asserted 14 times over 5 seconds; it does not settle. `pager-and-ficha-filters.spec.ts:135`.
+
+**Why it is genuinely ambiguous, and why I did not just fix it.**
+- If the page is served from Next's client Router Cache on a back navigation, the
+  previous RSC payload is what renders, and the fix is a product change (force a
+  refetch on history navigation) with a cost: every Back on a ficha becomes a server
+  round trip.
+- If Next is expected to refetch a `force-dynamic` page on Back, then this is a real
+  defect in what I built and the test is right to fail.
+I could not separate the two from the CI log alone, and raising the test's timeout to
+make it pass would hide whichever one it is. The dispatch says report defects, never
+mask them, so it is left failing and visible.
+
+**Recommended default: treat the filter as URL state and make Back authoritative** -
+that is what the spec asked for ("reload and browser back keep the position"), and a
+Back that shows a filtered list under an unfiltered URL is the shape a user reports as
+"the filter would not come off". If the round-trip cost is unacceptable, the honest
+alternative is to narrow the test to assert the URL only, and say in the spec that the
+CONTENT after Back is served from cache.
+
+**What is already proven and not in question:** the filters narrow in SQL (the Estado
+test finds the one matching row 200 deep, in CI), the filter survives a reload, and
+"Limpar filtros" restores the full 250.

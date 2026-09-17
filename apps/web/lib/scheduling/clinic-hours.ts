@@ -42,6 +42,49 @@ export function toMinutes(t: string): number {
 }
 
 /**
+ * AGENDA-2100 — HOW LONG BEFORE CLOSING A BOOKING MAY STILL START.
+ *
+ * Strategy ruling 2026-09-17: the latest start is `closes_at` minus 60 minutes,
+ * on every path that creates or moves an appointment. Sixty, flat, and NOT the
+ * service's own duration: the clinic's rule is about the door, not the
+ * treatment, and a duration-derived latest start would give a 90-minute service
+ * a different closing time from a 30-minute one at the same building.
+ *
+ * END-AFTER-CLOSE IS DELIBERATELY NOT A RULE HERE, because it is not one today
+ * (M2: nothing anywhere compares an appointment's END to `closes_at`). A 20:00
+ * start of a 90-minute service ends at 21:30 and is allowed, exactly as it is
+ * allowed today. Adding that rule is a separate ruling with its own refusal
+ * copy; inventing it here would refuse bookings the clinic makes now.
+ */
+export const BOOKING_LEAD_MIN = 60;
+
+/** The last minute-of-day a booking may START at this clinic. */
+export function latestStartMin(hours: ClinicHours): number {
+  return toMinutes(hours.closesAt) - BOOKING_LEAD_MIN;
+}
+
+/** Why a start is outside the clinic's hours, or `ok`. */
+export type StartVerdict = "ok" | "before_open" | "after_latest_start";
+
+/**
+ * Is this start inside the clinic's day?
+ *
+ * TAKES MINUTES, NOT A Date, for the same reason everything else in this file
+ * is pure arithmetic: the caller owns the timezone conversion, and one function
+ * doing both is a function whose test has to construct instants to assert about
+ * wall-clock rules.
+ *
+ * BOTH ENDS ARE INCLUSIVE OF THEIR OWN BOUNDARY. A clinic opening at 09:00
+ * admits an 09:00 start, and one closing at 21:00 admits a 20:00 start. The
+ * boundary minute is the common case, not an edge: it is what reception books.
+ */
+export function classifyStart(startMinOfDay: number, hours: ClinicHours): StartVerdict {
+  if (startMinOfDay < toMinutes(hours.opensAt)) return "before_open";
+  if (startMinOfDay > latestStartMin(hours)) return "after_latest_start";
+  return "ok";
+}
+
+/**
  * The grid's visible window for a set of clinics, in minutes from midnight.
  *
  * THE UNION, NOT THE INTERSECTION, and that is the owner's ruling rather than a

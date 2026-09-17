@@ -151,6 +151,9 @@ d("SCHED-30: a therapist cancels, and brings back, their own appointment", () =>
     patientId?: string;
     location?: string;
     createdBy?: string;
+    /** AGENDA-2100: an hour other than TEN, for the before-opening arm below. */
+    startsAt?: Date;
+    endsAt?: Date;
   }): Promise<string> {
     const id = randomUUID();
     await sql.execute(raw`insert into appointments
@@ -158,7 +161,8 @@ d("SCHED-30: a therapist cancels, and brings back, their own appointment", () =>
          starts_at, ends_at, status, created_by)
       values (${id}, ${tenantId}, ${args.patientId ?? patientA}, ${args.practitionerId},
               ${args.practitionerTwoId ?? null}, ${args.location ?? cb}, ${serviceId},
-              ${TEN.toISOString()}::timestamptz, ${TEN_END.toISOString()}::timestamptz,
+              ${(args.startsAt ?? TEN).toISOString()}::timestamptz,
+              ${(args.endsAt ?? TEN_END).toISOString()}::timestamptz,
               ${args.status}::appointment_status, ${args.createdBy ?? receptionId})`);
     return id;
   }
@@ -191,6 +195,36 @@ d("SCHED-30: a therapist cancels, and brings back, their own appointment", () =>
   it("BL-3a: a therapist cancels an appointment where they are the Terapeuta 2", async () => {
     as("therapist", me);
     const a = await seed({ practitionerId: colleague, practitionerTwoId: me, status: "scheduled" });
+    const r = await cancel(a);
+    expect(r).toEqual({ ok: true, data: { id: a } });
+    expect(await statusOf(a)).toBe("cancelled");
+  });
+
+  /**
+   * AGENDA-2100 (B7): A BOOKING FROM BEFORE THE CLINIC OPENED IS STILL REMOVABLE.
+   *
+   * The owner's ruling is that existing appointments before `opens_at` render
+   * and are NEVER cancelled by the system — which makes it essential that a
+   * PERSON can still cancel them. LV has 15 active schedule rows starting before
+   * 09:00; if the new floor reached the cancel path, every early booking would
+   * be stuck in the diary, un-cancellable by anyone, and the rule meant to tidy
+   * the day would have frozen it instead.
+   *
+   * 07:30 is before the 08:00 `opens_at` every location defaults to (0085), so
+   * this row is outside the clinic's hours by the same arithmetic
+   * `checkClinicWindow` uses — and the cancel must succeed anyway. The companion
+   * source gate in actions.clinic-hours-floor.test.ts asserts the ABSENCE that
+   * makes this true; this arm proves the behaviour against a real database.
+   */
+  it("AGENDA-2100: an appointment starting BEFORE the clinic opens can still be cancelled", async () => {
+    as("therapist", me);
+    const early = new Date("2027-03-10T07:30:00.000Z"); // 07:30 Lisbon (WET in March)
+    const a = await seed({
+      practitionerId: me,
+      status: "scheduled",
+      startsAt: early,
+      endsAt: new Date(early.getTime() + 45 * 60 * 1000),
+    });
     const r = await cancel(a);
     expect(r).toEqual({ ok: true, data: { id: a } });
     expect(await statusOf(a)).toBe("cancelled");

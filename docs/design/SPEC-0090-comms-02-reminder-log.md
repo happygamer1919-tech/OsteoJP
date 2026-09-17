@@ -1,3 +1,5 @@
+Provisional number. Migration numbers are assigned at promotion in order; care-team takes 0090.
+
 # SPEC 0090, COMMS-02: the reminder log's missing half
 
 **Status: SPEC ONLY. No migration file exists, and this document authors none.**

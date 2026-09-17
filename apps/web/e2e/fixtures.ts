@@ -95,6 +95,34 @@ export const PATIENTS = {
 } as const;
 
 /**
+ * U1 — a patient with a LONG history, for the pager and the Marcações filters.
+ *
+ * A DEDICATED PATIENT RATHER THAN 250 MORE ROWS ON MARIA, deliberately: several
+ * specs count Maria's marcações or open "the first row", and burying her under
+ * a quarter of a thousand appointments would break them for a reason that has
+ * nothing to do with what they test.
+ *
+ * The history is parked in 2019 for the same reason `ensureDeclaracaoAppointment`
+ * parks its row in 2022: the agenda and consultas specs band specific future
+ * days, and the dashboard KPIs read "today". A year nothing else names cannot
+ * collide with any of them.
+ *
+ * `needle` is the ONE appointment carrying the off-pattern therapist, clinic,
+ * service and estado — the row a filter has to reach for, sitting far enough
+ * down the list that a client-side filter over a rendered page would miss it.
+ */
+export const PATIENT_LONG_HISTORY = {
+  id: "00000000-0000-0000-0000-00000000a3f0",
+  name: "Paula Histórico Longo",
+  /** How many appointments the seed creates for this patient. */
+  total: 250,
+  /** 0-based position of the single matching row, by ascending date. */
+  needleIndex: 200,
+  /** The needle's estado — unique across this patient's history. */
+  needleStatus: "cancelled",
+} as const;
+
+/**
  * A seeded AI-ingested clinical_record draft awaiting review (W5-17). It sits on
  * João Pereira, source='ai_ingested', status='draft', ai_review_state=
  * 'pending_review', with the TWELVE Ficha Médica AI keys under

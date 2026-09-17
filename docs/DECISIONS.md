@@ -300,7 +300,6 @@ Design loop Wave 1, first task. Implemented per docs/design/SPEC-foundation.md
 - i18n copy tweaks shipped as PR #158 (two login page strings, PT + EN).
   Awaiting Ivan review and merge.
 
- docs/brand-voice
 ## 2026-06-11 — Brand voice guide extension session
 
 - Task asked to author docs/brand-voice.md, but the guide already exists
@@ -323,7 +322,6 @@ Design loop Wave 1, first task. Implemented per docs/design/SPEC-foundation.md
   of truth.
 - Docs-only diff; no code or packages/i18n strings touched.
 
-docs/brand-tokens
 ## 2026-06-11 — Brand tokens rewrite (docs/brand-tokens.md, PR: docs/brand-tokens)
 
 - docs/brand-tokens.md rewritten as the single source of truth for the UI
@@ -1131,7 +1129,6 @@ sourced from `packages/db/.env` (credential never printed). drizzle journal on p
 `text`, nullable, no default; empty-by-design = 19 users, 0 non-null phone, 0 non-null
 job_title (no backfill). **W8-02 flipped DONE.** 0037 (W8-01a) stays local-only until now;
 its prod apply follows the SAME manual path after owner merge + catalog confirmation.
- main
 
 ## 2026-07-15 — W8-01a cloud catalog seed applied (Option A amended) — W8-01a DONE
 
@@ -1256,7 +1253,6 @@ order; E2E adds the (9b) equal-left-x / strictly-different-y proof in BOTH views
 per-view screenshot). `therapist-color.test.ts` green. Negative control: a `bg-`
 tint on the face fails the chrome guard. Migration-free, no new hex, hover +
 Marcacoes untouched. OWNER VISUAL GATE, not self-merged.
- main
 
 ## 2026-07-22 - W11 rulings: named exclusion set (SPLIT PLAN v2), Q-W11-01-2 fresh audit, board collapse
 
@@ -1526,7 +1522,6 @@ introduced two `"use server"` note actions that bypassed the W10-04 therapist
   destructive, owner-gated action, not run autonomously. This change introduces ZERO E2E regression.
 - **AUTHZ change → OWNER MERGE GATE. No self-merge, no `--admin`, no force-push.**
 
- db/0043-clinical-rls-r16
 ## 2026-07-25 — 0043 clinical_records RLS tighten R16 (strict single-location admin) — branch db/0043-clinical-rls-r16
 
 Highest-risk change in the wave. Built AGAINST CYAN's pre-audit frame
@@ -1610,7 +1605,6 @@ executor does NOT merge — CYAN post-audit + owner apply-before-merge.
   MERGE GATE. CYAN post-audit → owner terminal apply with pasted journal → merge.
   No self-merge, no `--admin`, no force-push.
 
- ficha/W12-30-polish-and-bodychart
 ## 2026-07-25 — W12-30 template polish (top-5, PDF templates) + bodychart order (v5) (branch ficha/W12-30-polish-and-bodychart)
 
 Two related ficha/template changes, one PR (DO NOT MERGE — owner visual gate on
@@ -1738,8 +1732,6 @@ invented — the pack layer is a byte-for-byte analogue of `service_location_pri
   apply would deploy app code querying `service_pack_location_prices` before the column/table
   exists. OWNER-MERGE + OWNER VISUAL GATE on the pricing grid. No self-merge, no `--admin`,
   no force-push.
- main
- main
 
 ## 2026-07-25 — W12-40: Equipa + Horários consolidated into ONE member-management tab
 
@@ -1929,7 +1921,6 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
   a CYAN read-only check (YELLOW has no prod access). Lesson: close-out state must
   be re-derived from a live CYAN read, never carried from a seed script's ID_MAP.
 
- prelaunch/PL-06b-is-bookable
 ## 2026-07-28 - PL-06b: users.is_bookable flag governs the Terapeuta dropdown (migration 0046)
 
 - Owner RULING (2026-07-28): Option 2 - an explicit is_bookable boolean, chosen over
@@ -1964,7 +1955,6 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
 - Rodica's NESA ruling (all therapists perform NESA) is satisfied by PL-06a alone:
   NESA is selectable for every therapist. No roster write. CB-NESA stays closed.
 - Merge policy: OWNER VISUAL GATE, no self-merge.
- main
 
 ## 2026-07-29 - PL-09: role + location access model (planned, post-test)
 
@@ -2550,7 +2540,6 @@ whatever is wrong with it.
 
 **Q-PL-24-1 closed by data:** zero patients store sex = 'other'.
 
- chore/twilio-smoke-no-vercel-pull
 ## 2026-08-02 - Two handoff premises corrected: the Resend domain, and the osteojp.pt root MX (GREEN)
 
 Both corrections are to premises carried in the session handoff, not to shipped code. Every
@@ -2670,7 +2659,6 @@ Also opened `LE-marcacoes-tab-edit-flake`: PL-02 (a) has now failed on three sep
 unrelated branches, with a "dialog does not close after save" signature that looks like the same
 family as the therapist-blocks race. Deliberately NOT diagnosed yet - it gets reproduced at
 `--retries=0` first, per the lesson above.
- main
 
 ## 2026-08-02 - Board clear-out: owner ruled on all 14 open items (GREEN)
 
@@ -4512,3 +4500,46 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 **N3. 5,632 is measured and the caveat is retired.** BLUE, CARE-TEAM-M1 N3, read against production 2026-09-16: 5,632 imported clinical records in total, 3,052 authored by the legacy account. The S1 entry above is amended in place.
 
 **A correction to S1, made in the same entry rather than quietly.** S1 reported that no central SR register existed. It does, and it did. S1 searched `*.md` for a `SR-nn:` pattern and never grepped `docs/board/portal-board.json`, then published the absence as a finding. The lesson is narrow and worth keeping: an absence is only as good as the search that looked for it, and a search that excludes the repository's largest structured file has not looked.
+
+## 2026-09-16 - BLUE NESA-SPLIT: the LV bookings move, then both NESA rows are flagged. Authored and rehearsed, NOT run
+
+- **The ruling (owner, 2026-09-16), three parts.** (a) Every FUTURE appointment at Linda-a-Velha held by the CB-labelled NESA row `0c1a0000-0000-4000-8000-000000000002` moves to the LV NESA row `bdc466d7-f81f-4f8c-aa2e-b85194d73e1a` — **any status, cancelled included, so an un-cancel is never locked**; past appointments never move. (b) NESA leaves the patient portal at both clinics, accepted. (c) After the move, `is_shared_resource = true` on **both** rows. Q-NESA-CAP (how many patients NESA may hold in one hour) is a separate dispatch; nothing here touches `appointments_no_double_confirmed`.
+- **The ORDER is the whole design, and it is not a preference.** The flag turns on `sharedResourceLocationAllowed` (`apps/web/lib/scheduling/shared-resource-guard.ts:39`), which refuses any booking of a flagged row at a clinic where that row is not installed — **for the owner too** (GREEN measured this as Q-NESA-FLAG-4). Flagging first would leave the 32 future LV bookings cancellable but impossible to reschedule, clone or restore, by anyone. Moving first puts all 32 on a row installed at Linda-a-Velha, where the same guard admits them. The two stage files enforce the order in both directions: stage 2 refuses without stage 1's audit row, and stage 1 refuses if either row is already flagged.
+- **N = 32, measured on production (read only, 2026-09-16 23:34Z), not carried from a card.** All 32 are `scheduled`, 2026-09-18 to 2026-12-29. Also measured: 5,591 PAST LV rows on the CB row (never move), 4,211 at CB, 0 clinical records/episodes/attachments on the move set, 0 confirmed overlaps after the move, 0 active LV hour rows on the CB row, 0 future CB appointments on the LV row, no triggers on `appointments`.
+- **A premise correction: 0088 IS applied on production.** Its policy `appointments_shared_resource_second_participant_select` exists. Card `NESA-DIAG-shared-resource-flag-never-set` recorded it as not applied on 2026-09-15, which was true then.
+- **What it writes, and nothing else.** Stage 1: `appointments.practitioner_id` on exactly N rows plus one `audit_log` row (`staff.nesa_split.reassign`) carrying every moved id and both before-counts. Stage 2: `users.is_shared_resource` on exactly 2 rows plus one `audit_log` row each (`staff.set_shared_resource`). Clinical authorship, episodes, attachments, availability rows, `is_bookable`, `is_active` and every past appointment are untouched. The audit pattern is B4's (`staff.remove_login`): counts and ids, no patient data, and a re-run refuses on its own audit row.
+- **The post-check types no carry.** Stage 1 records its before-counts and moved ids in its audit row; the post-check reads them back and compares them with what it recomputes. SR-59's hazard cannot arise because no number passes through a human hand.
+- **Rehearsed on a throwaway database whose fixture carries the PRODUCTION ids**, so the stage files ran as the exact bytes that will run on production, against production's shape. Stage 2 before stage 1 refused; stage 1 moved 32; a second run refused; stage 2 flagged 2; a second run refused; post-check 15 OK / 0 FAIL. Then the screens, as owner, with real server actions: a booking left at LV on the CB row was still refused `shared_resource_location` (the control), and reschedule, Marcar novamente and un-cancel on the moved rows all succeeded. Negative controls, each from a clean fixture: a `clinical_record` on the move set stopped at P4 and a confirmed overlap stopped at P5, both writing nothing.
+- **What the rehearsal caught.** P8's trigger listing aborted the transaction with `operator is not unique: text || "char"` — `pg_trigger.tgenabled` is `"char"` — **after every pre-check and before the update**. A line that only prints could stop a production sitting. Every piece of that expression is now cast.
+- **`owner-blocks-survive-zsh.test.mjs` now covers `docs/data-op-*.md`.** Its glob matched `migration-apply-NNNN.md` only, and a data operation has no migration number to be named after, so the document GREEN pastes into zsh was outside the guard that exists for exactly that paste.
+- **`SPEC-care-team.md` §7 item 2 corrected.** It read "storage has no RLS at all", which describes the application layer. PURPLE measured the database layer (`SEC-storage-bucket-scope`): `storage.objects` has RLS enabled with zero policies, so it is deny-by-default; the `patient` role cannot reach schema `storage` at all; only `service_role` holds `BYPASSRLS`. The surviving surface is narrower and still worth flagging: the application guard in front of the service-role client is a tenant-prefix test only, and the URL it mints is a 60-second bearer token.
+## 2026-09-16 - PURPLE APPLY-DOC-FIX: 0089 pins its own branch, and the storage verdict gets a test
+
+**The 0089 apply document pinned `origin/main`, which cannot contain 0089.** GREEN halted APPLY-0089 at W3 on exactly this. PR #1338 is held until the apply succeeds, so at the moment either stage runs, `origin/main` does not carry the migration: every sha256 assertion would have stopped the sitting on `STOP: 0089 is not on disk`. Safe, but a sitting spent to learn it. Option 1 was ruled and the document is fixed: both stages now resolve `origin/patients/SR62-PU4-documentos-soft-delete`. Migrations 0083 to 0087 each pin their own branch; 0088 pinned `origin/main` correctly, because 0088 was already on main when it was applied, and 0089 was copied from 0088. **There is no reusable apply-doc template on `origin/main`** - `docs/runbook-prod-migrations.md` governs apply blocks in prose but carries no block to copy, so the copy was made from the nearest sibling document. That is the mechanism by which this defect propagates.
+
+**A branch ref moves, so the ref alone is not a pin.** Each stage's ASSERTION 1 prints the head it resolved, a HEAD CHECK block prints it before either stage is pasted, and the applier compares both against the head sha the dispatch supplies in plain text. Nothing is substituted into the blocks to make that comparison, because the document's whole doctrine is that there is nothing to type in.
+
+**The fifth rehearsal substitution is gone, and its absence is the proof.** The previous rehearsal had to rewrite `origin/main` into the branch head, one occurrence per stage, or it would have applied nothing and passed vacuously. The extractor now REFUSES to emit a stage in which `origin/main` still appears. Rehearsed end to end from the pushed branch: A refused, B applied (pre-check 16 OK / 0 FAIL, journal 86 to 87), C verified (arms A1-A8, post-check 12 OK / 0 FAIL), D and E refused on the transcript age and the missing marker. The pre-check negative control, run against the same database with 0089 applied, reads 10 OK / 6 FAIL - it discriminates rather than passing by default.
+
+**A silent no-op was caught by the guard, in the rehearsal.** An early run gave the rehearsal worktree a symlinked `node_modules`; pnpm refused without a TTY and drizzle never ran. `verified-migrate.mjs` reported `journal 86 -> 86 (delta 0)` and failed with exit 4 instead of reporting the success drizzle would have printed. That is the failure mode the script exists for, observed rather than argued.
+
+**SEC-storage-bucket-scope now has a DB-gated test, and CI can run it because of a typo.** The storage verdict rests on three facts no migration in this repo creates: role `patient` has no USAGE on schema `storage`, `storage.objects` has RLS enabled, and it carries zero policies. `packages/db/tests/storage-bucket-scope.db.test.ts` asserts all three, and asserts the table exists first so it cannot pass vacuously. **CI's `supabase start -x ...,storage,...` does NOT exclude storage**: the CLI rejects `storage` (and `analytics`, `functions`, `inbucket`, `meta`) as invalid container names, prints a warning, and starts them anyway. So the CI database has `storage.objects` today - by accident, and the test says so in its header. Negative controls, verified by exit code and not by reading a summary: granting `patient` USAGE turns it red, revoking turns it green, adding one policy to `storage.objects` turns it red, dropping it turns it green.
+
+**Signed URLs: audited, one path logs them, no fix in this dispatch.** Seven server-side creation sites. No `console` or logger call anywhere in those modules or their callers receives a URL. The one exposure is the browser: `apps/web` initialises Sentry with default breadcrumbs (`fetch: true`) and no `beforeBreadcrumb`, and `putToPresignedUrl` does `fetch(url, {method:'PUT'})` on the consultation-audio presigned S3 URL, so that URL is captured in a breadcrumb and rides along on any later error event. The six Supabase Storage paths hand the URL to `window.open` or `window.location.assign`, which the history breadcrumb does not instrument. Recorded on the card; no code changed.
+
+**Board and code stayed in separate PRs, as SR-44 and SR-48 require,** even though the dispatch named them as one job. SR-48 ratifies the split explicitly: when a dispatch says "same PR" and a ruling is involved, split it and say so.
+## 2026-09-17 - BLUE AGENDA-2100: the grid follows closes_at, and the last booking starts 60 minutes before it
+
+- **The request (owner).** The agenda must show until 21:00 with 20:00-21:00 as the last row, clinic hours 09:00-21:00, and 20:00 as the last possible booking start. Ruling Q-HOURS = a: **both** clinics, **every open day including Saturday**; open days, CB's 13:00-14:00 closure and LV's closure unchanged.
+- **THERE WAS NO CONSTANT CAPPING THE GRID AT 20:00, and that is the measurement rather than a quibble.** `gridWindow` (`apps/web/lib/scheduling/clinic-hours.ts`) has read `locations.closes_at` since 0085; `DAY_END_HOUR` survives only as the default argument of two helpers whose call sites both pass the real window. The last row is 19:00-20:00 today because production's `closes_at` IS 20:00 - the column's own default. So the grid half of this card is a DATA change, and the code change is the other half.
+- **The latest-start rule did not exist anywhere.** M2 walked every path that creates or moves an appointment: none compared a booking to `opens_at` or `closes_at`. The only clinic-hours rule on any write path was the MIDDAY closure. What kept bookings inside the day was the THERAPIST's `availability_templates` (RB-03), which is a different fact about a different subject - a therapist who works late at a clinic that shuts at 20:00 was bookable at 19:45.
+- **`closes_at` minus 60 minutes, flat, and not the service duration.** The clinic's rule is about the door, not the treatment; a duration-derived latest start would give a 90-minute service a different closing time from a 30-minute one at the same building. **End-after-close stays as it is today, which is unruled:** nothing compares an appointment's END to `closes_at`, so a 20:00 start of a 90-minute service still ends at 21:30 and is still allowed. Inventing that rule here would refuse bookings the clinic makes now.
+- **Enforced beside the closure, OUTSIDE the `allowConflict` gate**, on create, Marcar novamente, the Estado un-cancel, Reagendar and Agendar lote. "Guardar mesmo assim" cannot reach it, for the reason 0085 gives: the clinic's own hours are not a judgement about people the clinic manages.
+- **Agendar lote had no clinic rule at all and now has one**, inside the engine's own transaction (`batch.ts`), throwing a typed `ClinicHoursRefused` the action maps - the shape `PackBatchRefused` already uses. It refuses the whole batch rather than calling an out-of-hours slot "busy".
+- **The portal knew nothing of `opens_at`/`closes_at` either.** Its slot grid was expanded from therapist templates alone, so a therapist whose template ran past closing advertised slots the building was shut for. `withinClinicHoursExists` now bounds the advertised grid AND both write guards, so the grid cannot offer a start the confirm would refuse.
+- **A behaviour change on TODAY's data, named rather than discovered:** with production's 08:00-20:00 hours, 19:15 becomes a refusal the moment this merges, before any hours change. 19:00 remains bookable.
+- **No migration.** M3: `opens_at`/`closes_at` are `time NOT NULL` with defaults 08:00/20:00 and four CHECK constraints, ONE PAIR PER LOCATION - there is no per-weekday hours table - so "every open day including Saturday" is one write per clinic. 13:00-14:00 sits inside 09:00-21:00, so `locations_midday_inside_hours` holds.
+- **There is no hours editor**, so the hours change is SQL: `scripts/data/location-hours-{1-precheck,2-set,3-postcheck}.sql` and `docs/data-op-location-hours.md`, authored, rehearsed and NOT run.
+- **What the rehearsal caught.** `\quit 1` does not set an exit code - psql warns and exits 0 - so a missing carry would have let a `set -e` runner walk into the write. And a fixture keyed on its own tenant is not a reset when the ids are global: the first run silently exercised a previous dispatch's clinics.
+
+

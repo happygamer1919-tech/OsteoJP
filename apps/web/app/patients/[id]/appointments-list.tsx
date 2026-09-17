@@ -41,6 +41,10 @@ import {
 } from "@/lib/scheduling/estado-transitions";
 import { correctionTargets, isLegalEstadoCorrection } from "@/lib/scheduling/estado-correction";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
+import {
+  outsideClinicHoursMessage,
+  type ClinicWindowRefusal,
+} from "@/lib/scheduling/clinic-hours-message";
 import { formatCreatedAt, formatTimeOfDay, lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import type {
   AgendaAppointment,
@@ -90,6 +94,7 @@ export function AppointmentsList({
   canEdit,
   canCancel,
   ownCancelIds = [],
+  filtered = false,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
@@ -100,6 +105,13 @@ export function AppointmentsList({
    * server by ownCancelRefusal. Only the affordance; both actions re-check it.
    */
   ownCancelIds?: readonly string[];
+  /**
+   * U1: a filter is narrowing this list, so ZERO ROWS MEANS "nothing matched",
+   * NOT "this patient has never been seen". Those are different facts and the
+   * empty state said the second one for both, which is the same conflation the
+   * /recuperacao count header exists to prevent.
+   */
+  filtered?: boolean;
 }) {
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
@@ -108,6 +120,7 @@ export function AppointmentsList({
         canEdit={canEdit}
         canCancel={canCancel}
         ownCancelIds={ownCancelIds}
+        filtered={filtered}
       />
     </ToastProvider>
   );
@@ -123,11 +136,13 @@ function AppointmentsListInner({
   canEdit,
   canCancel,
   ownCancelIds,
+  filtered,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
   canCancel: boolean;
   ownCancelIds: readonly string[];
+  filtered: boolean;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<RowAction | null>(null);
@@ -138,11 +153,14 @@ function AppointmentsListInner({
   const [notesFor, setNotesFor] = useState<AgendaAppointment | null>(null);
 
   if (appointments.length === 0) {
+    // U1: two different facts, two different sentences. "Sem consultas" is a
+    // statement about the PATIENT; with a filter applied the true statement is
+    // about the FILTER, and saying the first would be wrong.
     return (
       <EmptyState
         icon={Calendar}
-        title={s["patients.emptyConsultasTitle"]}
-        description={s["patients.emptyConsultasHelp"]}
+        title={filtered ? s["ficha.filters.emptyFiltered"] : s["patients.emptyConsultasTitle"]}
+        description={filtered ? "" : s["patients.emptyConsultasHelp"]}
       />
     );
   }
@@ -457,6 +475,7 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
 function estadoRefusalMessage(r: {
   error?: string;
   clinicClosure?: { locationName: string; from: string; to: string };
+  clinicWindow?: ClinicWindowRefusal;
 }): string {
   switch (r.error) {
     case "forbidden":
@@ -467,6 +486,12 @@ function estadoRefusalMessage(r: {
       return s["appointment.doubleBooked"];
     case "clinic_closed":
       return clinicClosedMessage(r.clinicClosure);
+    // AGENDA-2100: an un-cancel back into an hour the clinic is not open for.
+    // Reachable from this same control for the reason the header gives: SCHED-27
+    // put every create-path refusal behind Estado, and the clinic's own hours
+    // are now one of them.
+    case "outside_clinic_hours":
+      return outsideClinicHoursMessage(r.clinicWindow);
     case "shared_resource_location":
       return s["appointment.sharedResourceLocation"];
     // SCHED-30: a therapist's own row at a clinic they are not assigned to, and a

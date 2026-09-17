@@ -1,5 +1,5 @@
 Artifact render link (human reference only): https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-Tab identity, keep it stable: title "OsteoJP · Portal Board", favicon 🌐.
+Tab identity, keep it stable: title "OsteoJP · Portal Board", favicon 🚦.
 
 # PURPLE rehydrate - OsteoJP Portal Board
 
@@ -1040,10 +1040,10 @@ SR-06: docs/board/portal-board.json:469
 SR-07: docs/board/portal-board.json:484
 SR-08: docs/board/portal-board.json:499
 SR-09: docs/board/portal-board.json:514
-SR-10: definition not found, strategy to restate. Cited docs/board/portal-board.json:546 and :555, where SR-12 amends it and the board records that SR-10 is not held here.
+SR-10: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited docs/board/portal-board.json:546 and :555, where SR-12 amends it and the board records that SR-10 is not held here.
 SR-11: docs/board/portal-board.json:529
 SR-12: docs/board/portal-board.json:544
-SR-13: definition not found, strategy to restate. Cited only in the gap list at docs/board/portal-board.json:1097.
+SR-13: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited only in the gap list at docs/board/portal-board.json:1097.
 SR-14: docs/board/portal-board.json:575
 SR-15: docs/board/portal-board.json:609
 SR-16: docs/board/portal-board.json:625
@@ -1065,13 +1065,13 @@ SR-31: docs/board/portal-board.json:831
 SR-32: docs/board/portal-board.json:844
 SR-33: docs/board/portal-board.json:857
 SR-34: docs/board/portal-board.json:871
-SR-35: definition not found, strategy to restate. Cited apps/web/lib/reminders/confirm-code-store.ts:22 as having released migration 0074.
-SR-36: definition not found, strategy to restate. Cited docs/board/PORTAL-REHYDRATE.md:243 and :260 as having made test:scripts and test:e2e required gates.
-SR-37: definition not found, strategy to restate. Cited apps/web/lib/scheduling/availability.ts:34 as the owner's three schedule-inspector labels.
-SR-38: definition not found, strategy to restate. Cited apps/web/e2e/helpers/booking-picker.ts:124 as having made the date picker a typed text field.
-SR-39: definition not found, strategy to restate. Cited docs/board/PORTAL-REHYDRATE.md:838 as one local Supabase per lane.
-SR-41: definition not found, strategy to restate. Cited docs/board/portal-board.json:6016.
-SR-43: definition not found, strategy to restate. Cited .env.example:176 and apps/web/lib/reminders/clients.ts:137 as the Twilio sender incident.
+SR-35: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited apps/web/lib/reminders/confirm-code-store.ts:22 as having released migration 0074.
+SR-36: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited docs/board/PORTAL-REHYDRATE.md:243 and :260 as having made test:scripts and test:e2e required gates.
+SR-37: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited apps/web/lib/scheduling/availability.ts:34 as the owner's three schedule-inspector labels.
+SR-38: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited apps/web/e2e/helpers/booking-picker.ts:124 as having made the date picker a typed text field.
+SR-39: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited docs/board/PORTAL-REHYDRATE.md:838 as one local Supabase per lane.
+SR-41: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited docs/board/portal-board.json:6016.
+SR-43: retired 2026-09-16, text lost; where cited, the surrounding sentence is the rule. Cited .env.example:176 and apps/web/lib/reminders/clients.ts:137 as the Twilio sender incident.
 SR-44: docs/board/portal-board.json:885
 SR-45: docs/board/portal-board.json:900
 SR-46: docs/board/portal-board.json:916
