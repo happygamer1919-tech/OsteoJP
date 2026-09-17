@@ -415,6 +415,95 @@ async function ensureDeclaracaoAppointment(therapistUserId) {
 }
 
 /**
+ * U1 — a patient with 250 marcações, for the pager and the Marcações filters.
+ *
+ * WHY A SEPARATE PATIENT: several specs count Maria's rows or open "the first
+ * one". Burying her under 250 appointments would break them for a reason
+ * unrelated to what they assert.
+ *
+ * WHY 2019: the agenda and consultas specs band specific future days and the
+ * dashboard KPIs read "today". A year nothing else names cannot collide.
+ *
+ * ONE ROW IS DIFFERENT (index 200 by ascending date): the other therapist, the
+ * other clinic, no service, `cancelled`, and no note. It is the row the filter
+ * e2e reaches for, and it sits far enough down that a filter applied over an
+ * already-rendered page would not find it.
+ *
+ * Ids are derived from a fixed prefix so a re-run upserts the same 250 rows
+ * instead of accumulating a new set each time.
+ */
+async function ensureLongHistoryPatient(therapistUserId, otherTherapistUserId) {
+  const PATIENT_ID = "00000000-0000-0000-0000-00000000a3f0";
+  const TOTAL = 250;
+  const NEEDLE = 200;
+
+  must(
+    (await db.from("patients").upsert(
+      { id: PATIENT_ID, tenant_id: TENANT_A, full_name: "Paula Histórico Longo", deleted_at: null },
+      { onConflict: "id" },
+    )).error,
+    "long-history patient",
+  );
+
+  const rows = [];
+  for (let i = 0; i < TOTAL; i += 1) {
+    const needle = i === NEEDLE;
+    const start = new Date(Date.UTC(2019, 0, 1, 9, 0, 0) + i * 24 * 60 * 60 * 1000);
+    const end = new Date(start.getTime() + 45 * 60 * 1000);
+    rows.push({
+      // Deterministic per-index id: "...a3f0" + a 4-hex counter.
+      id: `00000000-0000-0000-0000-0000a3f${i.toString(16).padStart(5, "0")}`,
+      tenant_id: TENANT_A,
+      patient_id: PATIENT_ID,
+      practitioner_id: needle ? otherTherapistUserId : therapistUserId,
+      location_id: needle ? LOCATION_B : LOCATION_A,
+      service_id: needle ? SERVICE_NESA : SERVICE_A,
+      starts_at: start.toISOString(),
+      ends_at: end.toISOString(),
+      status: needle ? "cancelled" : "completed",
+      notes: needle ? null : "nota de acompanhamento",
+    });
+  }
+
+  // One statement, not 250 round trips.
+  const { error } = await db.from("appointments").upsert(rows, { onConflict: "id" });
+  must(error, "long-history appointments");
+}
+
+/**
+ * U1 — padding patients, so /patients HAS a second page to navigate to.
+ *
+ * WHY THIS IS NEEDED AT ALL: /patients pages at 25 and the seed creates about
+ * eight active patients, so the list is one page and the pager correctly hides
+ * itself. There is literally nothing to click, and "reaching the last page in
+ * one action" cannot be tested against a list with one page.
+ *
+ * WHY THE NAMES START "Zzz": /patients sorts by full_name ASC, and seven specs
+ * depend on the seeded patients being on the first page (patients.spec.ts opens
+ * Maria from the list, isolation-therapist.spec.ts reads the visible set, and so
+ * on). Sorting these AFTER every existing name keeps page 1 exactly as it was
+ * and puts the padding on pages 2+.
+ *
+ * NO SPEC ASSERTS A TOTAL: the only `toHaveCount(0)` assertions on this route
+ * are absence checks (the archived patient, the other tenant's patient, a field
+ * that must not render), none of which more rows can disturb.
+ */
+async function ensurePagerPaddingPatients() {
+  const COUNT = 30;
+  const rows = [];
+  for (let i = 0; i < COUNT; i += 1) {
+    rows.push({
+      id: `00000000-0000-0000-0000-0000a3fd${i.toString(16).padStart(4, "0")}`,
+      tenant_id: TENANT_A,
+      full_name: `Zzz Pager Teste ${String(i + 1).padStart(3, "0")}`,
+      deleted_at: null,
+    });
+  }
+  const { error } = await db.from("patients").upsert(rows, { onConflict: "id" });
+  must(error, "pager padding patients");
+}
+
+/**
  * INC-12 — the /recuperacao fixtures, with the AWKWARD SHAPES.
  *
  * ==========================================================================
@@ -1286,6 +1375,10 @@ async function main() {
   await ensureBaseData(userIds);
   await ensureTherapistServices(userIds.therapist);
   await ensureDeclaracaoAppointment(userIds.therapist);
+  // U1: 250 marcações on one patient (the Marcações filters), and enough padding
+  // patients that /patients actually paginates (the pager). See each function.
+  await ensureLongHistoryPatient(userIds.therapist, userIds.therapist2);
+  await ensurePagerPaddingPatients();
   await ensureRecuperacaoFixtures(userIds.therapist, userIds.therapist2);
   // BEFORE the location fixtures, because it clears the table they write into.
   await resetAvailabilityFixtures(userIds);

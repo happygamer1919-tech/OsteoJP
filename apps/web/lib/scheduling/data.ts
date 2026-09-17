@@ -33,6 +33,7 @@ import type {
   AgendaAppointment,
   AgendaFilters,
   AgendaOptions,
+  AppointmentStatusValue,
 } from "./types";
 
 /**
@@ -406,22 +407,127 @@ export async function getAppointment(
 }
 
 /**
- * A patient's full appointment history (past + upcoming), most recent first —
- * the "Consultas" tab on the patient profile. Row 3 (schedule-again): the
- * caller decides which of these are eligible for re-booking (past or
- * completed); this query just returns the history, unfiltered by status.
+ * U1 — the Marcações-tab filters, applied IN SQL.
+ *
+ * ==========================================================================
+ * EVERY FIELD HERE IS A COLUMN THAT ALREADY EXISTS. NO MIGRATION.
+ * ==========================================================================
+ *   from/to        -> appointments.starts_at   (timestamptz)
+ *   status         -> appointments.status      (enum, multi-select)
+ *   practitionerId -> appointments.practitioner_id OR practitioner_2_id
+ *   locationId     -> appointments.location_id
+ *   serviceId      -> appointments.service_id
+ *   withoutNote    -> the NEGATION of the `hasNote` expression this file
+ *                     already computes, over appointment_notes (index
+ *                     `appointment_notes_appointment_idx`) and the legacy
+ *                     appointments.notes column.
+ * The patient-scoped read rides `appointments_patient_idx`, so none of these
+ * needs a new index either.
+ *
+ * `from`/`to` ARE UTC INSTANTS, not calendar dates, and the caller converts.
+ * The clinic thinks in Lisbon days and the column is an instant; doing that
+ * conversion here would put timezone logic in the data layer and a second copy
+ * of it beside `/marcacoes`, which already computes `startUtc`/`endUtc` in its
+ * page. `to` is EXCLUSIVE for the same reason that one is: a half-open range is
+ * the only shape that includes every instant of the last day without naming
+ * 23:59:59.999.
+ *
+ * TERAPEUTA MATCHES BOTH PRACTITIONER SLOTS. A NESA visit records a second
+ * practitioner (0032), and a therapist filtering their own history would
+ * otherwise lose every appointment where they were the second one. Same
+ * reasoning `listPatientsPage` applies to patient_id / patient_2_id.
+ */
+export type PatientAppointmentFilters = {
+  /** Inclusive lower bound, as a UTC instant. */
+  fromUtc?: Date | null;
+  /** EXCLUSIVE upper bound, as a UTC instant (caller adds the day). */
+  toUtc?: Date | null;
+  /** Multi-select Estado. Empty or absent means every estado. */
+  status?: readonly AppointmentStatusValue[] | null;
+  practitionerId?: string | null;
+  locationId?: string | null;
+  serviceId?: string | null;
+  /** "Sem nota" — only visits carrying no note at all. */
+  withoutNote?: boolean;
+  /** Newest first (default) or oldest first. */
+  order?: "newest" | "oldest";
+};
+
+/**
+ * A patient's appointment history (past + upcoming), most recent first — the
+ * "Consultas" tab on the patient profile. Row 3 (schedule-again): the caller
+ * decides which of these are eligible for re-booking (past or completed); this
+ * query returns the history, unfiltered by status unless asked.
+ *
+ * `filters` is OPTIONAL and omitting it returns exactly what it always did, so
+ * the Declaração de Presença prefill (which wants the whole history) and the
+ * note-selector are unchanged.
  */
 export async function listPatientAppointments(
   ctx: RequestContext,
   patientId: string,
+  filters?: PatientAppointmentFilters,
 ): Promise<AgendaAppointment[]> {
   assertCan(ctx.role, "appointments:read");
   return runScoped(ctx, async (tx) => {
     const rows = await baseAppointmentQuery(tx)
-      .where(eq(appointments.patientId, patientId))
-      .orderBy(desc(appointments.startsAt));
+      .where(and(eq(appointments.patientId, patientId), ...patientAppointmentConditions(filters)))
+      .orderBy(
+        filters?.order === "oldest" ? asc(appointments.startsAt) : desc(appointments.startsAt),
+      );
     return rows.map(mapAppointment);
   });
+}
+
+/**
+ * The filter clauses, built separately so a test can assert the SHAPE of the
+ * narrowing without a database, and so the count query and the row query can
+ * never disagree about what "filtered" means.
+ *
+ * Absent and empty are both "do not narrow": a filter the user has not set must
+ * not remove rows, and an empty multi-select is not "match nothing".
+ */
+export function patientAppointmentConditions(filters?: PatientAppointmentFilters): SQL[] {
+  const out: SQL[] = [];
+  if (!filters) return out;
+
+  if (filters.fromUtc) out.push(gte(appointments.startsAt, filters.fromUtc));
+  // `lt`, not `lte`: the caller passes the start of the day AFTER the range.
+  if (filters.toUtc) out.push(lt(appointments.startsAt, filters.toUtc));
+
+  if (filters.status && filters.status.length > 0) {
+    out.push(inArray(appointments.status, [...filters.status]));
+  }
+
+  if (filters.practitionerId) {
+    const p = filters.practitionerId;
+    const bothSlots = or(
+      eq(appointments.practitionerId, p),
+      eq(appointments.practitionerTwoId, p),
+    );
+    if (bothSlots) out.push(bothSlots);
+  }
+
+  if (filters.locationId) out.push(eq(appointments.locationId, filters.locationId));
+  if (filters.serviceId) out.push(eq(appointments.serviceId, filters.serviceId));
+
+  if (filters.withoutNote) {
+    // The exact negation of the `hasNote` projection above, kept beside it on
+    // purpose: if one changes and the other does not, the chip and the filter
+    // start disagreeing about the same visit.
+    out.push(
+      sql`not (
+        exists (
+          select 1 from ${appointmentNotes}
+          where ${appointmentNotes.appointmentId} = ${appointments.id}
+            and ${appointmentNotes.tenantId} = ${appointments.tenantId}
+        )
+        or nullif(btrim(${appointments.notes}), '') is not null
+      )`,
+    );
+  }
+
+  return out;
 }
 
 // Therapists, locations, services, packs AND the therapist-to-location map:
