@@ -90,6 +90,7 @@ export function AppointmentsList({
   canEdit,
   canCancel,
   ownCancelIds = [],
+  filtered = false,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
@@ -100,6 +101,13 @@ export function AppointmentsList({
    * server by ownCancelRefusal. Only the affordance; both actions re-check it.
    */
   ownCancelIds?: readonly string[];
+  /**
+   * U1: a filter is narrowing this list, so ZERO ROWS MEANS "nothing matched",
+   * NOT "this patient has never been seen". Those are different facts and the
+   * empty state said the second one for both, which is the same conflation the
+   * /recuperacao count header exists to prevent.
+   */
+  filtered?: boolean;
 }) {
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
@@ -108,6 +116,7 @@ export function AppointmentsList({
         canEdit={canEdit}
         canCancel={canCancel}
         ownCancelIds={ownCancelIds}
+        filtered={filtered}
       />
     </ToastProvider>
   );
@@ -123,11 +132,13 @@ function AppointmentsListInner({
   canEdit,
   canCancel,
   ownCancelIds,
+  filtered,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
   canCancel: boolean;
   ownCancelIds: readonly string[];
+  filtered: boolean;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<RowAction | null>(null);
@@ -138,11 +149,14 @@ function AppointmentsListInner({
   const [notesFor, setNotesFor] = useState<AgendaAppointment | null>(null);
 
   if (appointments.length === 0) {
+    // U1: two different facts, two different sentences. "Sem consultas" is a
+    // statement about the PATIENT; with a filter applied the true statement is
+    // about the FILTER, and saying the first would be wrong.
     return (
       <EmptyState
         icon={Calendar}
-        title={s["patients.emptyConsultasTitle"]}
-        description={s["patients.emptyConsultasHelp"]}
+        title={filtered ? s["ficha.filters.emptyFiltered"] : s["patients.emptyConsultasTitle"]}
+        description={filtered ? "" : s["patients.emptyConsultasHelp"]}
       />
     );
   }
