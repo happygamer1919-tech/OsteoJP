@@ -23,6 +23,17 @@
  * there while the sender is an alphanumeric id, which cannot receive a reply.
  * The equality on 136 is written as an equality rather than as `<= 160` on
  * purpose: a bound would have stayed green through the whole defect.
+ *
+ * ==========================================================================
+ * 2026-09-16: THE SHIPPED NUMBER IS NOW 157, AND 136 IS STILL A REAL NUMBER
+ * ==========================================================================
+ * Owner ruling Q-SMS-S2 (dispatch COMMS-SMS-WORDING-R2) appends one final line
+ * when the sender CANNOT receive a reply: "Nao lemos respostas." (20) plus its
+ * LF. 136 + 21 = 157, still one GSM-7 segment with 3 characters to spare.
+ *
+ * 136 DID NOT STOP BEING TRUE - it is the same body without S2, which is what
+ * the E.164 arm below still renders, and it is why the 185 arithmetic there is
+ * unchanged. The two numbers now name the two senders rather than one body.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -79,7 +90,7 @@ vi.mock("./confirm-code", async (importOriginal) => {
 import { dispatchReminder } from "./dispatch";
 import { sendMessagingCheck } from "./messaging-check";
 import { senderCanReceiveReplies } from "./reply-capability";
-import { REMINDER_CONFIRM_INSTRUCTION } from "./reminder-copy";
+import { REMINDER_CONFIRM_INSTRUCTION, REMINDER_NO_REPLIES_NOTICE_PT } from "./reminder-copy";
 import { CONFIRM_CODE_SECRET_VAR, CONFIRM_LINK_FLAG } from "./confirm-code";
 
 const TENANT_ID = "22222222-2222-2222-2222-222222222222";
@@ -185,13 +196,20 @@ describe("the delivery test and the 24h reminder render the same body", () => {
     expect(checkBody).toBe(reminderBody);
   });
 
-  it("IS 136 CHARACTERS - an equality, not a bound", async () => {
+  it("IS 157 CHARACTERS - an equality, not a bound", async () => {
     // 99 (the approved 24h pt body, worst-case clinic name) + 37 (the confirm
-    // link line and its LF). A `<= 160` assertion would have stayed green
-    // through the entire 2026-09-02 defect, which is why this is `toBe`.
+    // link line and its LF) + 21 (S2 and its LF). A `<= 160` assertion would
+    // have stayed green through the entire 2026-09-02 defect, which is why this
+    // is `toBe`.
+    //
+    // 157 IS THE MEASURED N3 VALUE from dispatch COMMS-SMS-WORDING-R2 (owner
+    // ruling Q-SMS-S2, 2026-09-16), rendered through `renderReminderSmsBody`
+    // with the worst case the delivery test describes: Castelo Branco,
+    // +351 210 000 000, and the 36-character production link shape
+    // `Confirmar: app.osteojp.pt/c/<8>`. One GSM-7 segment, 3 characters spare.
     const { reminderBody, checkBody } = await bothPaths();
-    expect(reminderBody).toHaveLength(136);
-    expect(checkBody).toHaveLength(136);
+    expect(reminderBody).toHaveLength(157);
+    expect(checkBody).toHaveLength(157);
   });
 
   it("CARRIES NO REPLY LINE while the sender is alphanumeric, on BOTH paths", async () => {
@@ -206,10 +224,22 @@ describe("the delivery test and the 24h reminder render the same body", () => {
     }
   });
 
-  it("carries the confirm link, so 136 is the body WITH the thing under test", async () => {
+  it("carries the confirm link, so 157 is the body WITH the thing under test", async () => {
     const { reminderBody, checkBody } = await bothPaths();
     expect(reminderBody).toContain(`Confirmar: app.osteojp.pt/c/${FIXED_CODE}`);
     expect(checkBody).toContain(`Confirmar: app.osteojp.pt/c/${FIXED_CODE}`);
+  });
+
+  it("CARRIES S2 ONCE, AND LAST, ON BOTH REAL PATHS", async () => {
+    // The ruling's line, proven where it matters: not on the builder (which
+    // sms-body.test.ts covers) but on the two functions that actually hand a
+    // body to the transport. The sender here is the live alphanumeric one, so
+    // this is the body production sends.
+    const { reminderBody, checkBody } = await bothPaths();
+    for (const body of [reminderBody, checkBody]) {
+      expect(body!.split(REMINDER_NO_REPLIES_NOTICE_PT)).toHaveLength(2); // exactly once
+      expect(body!.split("\n").at(-1)).toBe(REMINDER_NO_REPLIES_NOTICE_PT);
+    }
   });
 });
 
@@ -246,8 +276,25 @@ describe("with a replyable sender the body is 185 and both paths refuse", () => 
   });
 
   it("136 + 49 = 185, and that is the arithmetic the refusal reports", () => {
+    // 136, NOT 157, AND THAT IS THE POINT OF THIS ARM: this sender CAN receive
+    // a reply, so S2 is absent by the same single gate that puts the reply
+    // instruction in. The 2026-09-02 arithmetic is untouched by the S2 ruling.
     expect(REMINDER_CONFIRM_INSTRUCTION.pt).toHaveLength(48);
     expect(136 + 1 + REMINDER_CONFIRM_INSTRUCTION.pt.length).toBe(185);
+  });
+
+  it("and S2 is ABSENT from that refused body, which is why it is 185 not 206", async () => {
+    // Asserted on the REFUSAL's own length rather than on a body, because there
+    // is no body: both paths refuse. If S2 had leaked into a replyable send the
+    // detail would read 206 chars, so this pins the mutual exclusion at the
+    // dispatch rather than only at the builder.
+    const { dispatched } = await bothPaths();
+    expect(dispatched).toEqual({
+      dispatched: false,
+      reason: "body_refused",
+      detail: expect.stringContaining("185 chars"),
+    });
+    expect(JSON.stringify(dispatched)).not.toContain("206");
   });
 
   it("the reminder path returns body_refused instead of throwing", async () => {

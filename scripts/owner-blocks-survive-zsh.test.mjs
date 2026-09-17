@@ -36,10 +36,18 @@ function ownerBlockDocs() {
   const applies = readdirSync(docs)
     .filter((f) => /^migration-apply-\d{4}\.md$/.test(f))
     .map((f) => join("docs", f));
+  // A DATA operation is pasted into the same shell as a migration apply, and
+  // until 2026-09-16 the glob above could not see one: it matches
+  // `migration-apply-NNNN.md` only, and a data op has no migration number to be
+  // named after. `docs/data-op-*.md` closes that hole for every future one
+  // rather than for the first one written.
+  const dataOps = readdirSync(docs)
+    .filter((f) => /^data-op-[a-z0-9-]+\.md$/.test(f))
+    .map((f) => join("docs", f));
   const others = ["docs/runbook-prod-migrations.md", "docs/import/PROD-RUN.md", "docs/import/REHEARSAL.md"].filter(
     (f) => existsSync(join(ROOT, f)),
   );
-  return [...applies, ...others].sort();
+  return [...applies, ...dataOps, ...others].sort();
 }
 
 /** `$NAME:` unbraced. Comment lines are skipped: the shell never expands them. */
