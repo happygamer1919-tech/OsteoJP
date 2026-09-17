@@ -2348,6 +2348,70 @@ export const patientTermsAcceptances = pgTable(
 );
 
 /**
+ * RGPD-01 (migration NEXT-AFTER-0089) — per-patient RGPD consent, captured at
+ * patient creation and NOT required (owner ruling Q-RGPD-NEW = b). A patient
+ * with no row here reads "RGPD em falta" on the ficha; nothing is blocked.
+ *
+ * APPEND-ONLY, ENFORCED BY THE DATABASE, for 0058's reason and on 0058's
+ * ruling: RGPD consent is versioned, withdrawable and re-grantable, so a shape
+ * that overwrites its own history could not answer what a patient consented to
+ * on a given date. There is no UPDATE policy, no DELETE policy, and the
+ * migration REVOKEs UPDATE/DELETE/TRUNCATE at the table. Drizzle describes the
+ * shape; the database owns the rule. Do not add an update or delete helper.
+ *
+ * A SEPARATE TABLE FROM `patient_terms_acceptances`, deliberately. That one
+ * carries no document-kind column and its latest row feeds the per-patient gate
+ * on the no-show fee line (W13-05); an RGPD row written into it would answer
+ * that gate's question with a different document's consent. Two legal
+ * documents, two tables.
+ *
+ * NOT A THIRD KEY IN `_consent` either: that block is per CLINICAL RECORD, and
+ * a patient registered today has no record to carry it. CONSENT_ITEM_KEYS stays
+ * at two, pinned by consent-terms-axis.test.ts.
+ *
+ * IDENTIFIERS, AN INSTANT AND A VERSION STRING. No clinical content, no PII.
+ * `rgpdVersion` is the document's identity, never its text.
+ */
+export const patientRgpdAcceptances = pgTable(
+  "patient_rgpd_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** No cascade, matching 0058: this records THAT someone consented and must
+     *  outlive a patient-row cleanup for the dispute it exists to answer. */
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    /** Supplied by the caller, never defaulted, so a form signed last week and
+     *  typed in today carries the date it was signed. */
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull(),
+    /** The identity of the RGPD text consented to, never the text. Unlike
+     *  0058's first label, this one has real wording from day one
+     *  (`clinical.consent.rgpd.body`). A blank value is refused by a CHECK in
+     *  the migration, not left to the caller. */
+    rgpdVersion: text("rgpd_version").notNull(),
+    /** The staff member who captured it. RLS pins this to auth.uid() on INSERT —
+     *  the one field a caller could lie about, and the one the row's evidential
+     *  value rests on. */
+    recordedBy: uuid("recorded_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** "Has this patient consented" is a LIMIT 1 over the leading columns; the
+     *  history is the same columns newest-first. One index serves both. */
+    index("patient_rgpd_acceptances_patient_idx").on(
+      t.tenantId,
+      t.patientId,
+      t.acceptedAt.desc(),
+    ),
+  ],
+);
+
+/**
  * ITEM 6 (migration 0063) — booking requests from people who are NOT existing
  * patients: no account, no OTP login.
  *

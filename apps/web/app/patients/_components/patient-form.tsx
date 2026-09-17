@@ -68,6 +68,10 @@ type Fields = {
   // sent it, so every patient registered since then was location-less and
   // therefore invisible to everyone but the owner and whoever created them.
   primaryLocationId: string;
+  // RGPD-01 — the RGPD consent tick, offered at CREATION only and never
+  // required. It is not a patients column: ticking it writes a row in
+  // patient_rgpd_acceptances, so the ficha can show "RGPD em falta" until then.
+  rgpdConsent: boolean;
 };
 
 function toFields(p?: Patient | null): Fields {
@@ -98,6 +102,12 @@ function toFields(p?: Patient | null): Fields {
     contraindicationOther: p?.contraindicationOther ?? false,
     contraindicationOtherNote: p?.contraindicationOtherNote ?? "",
     primaryLocationId: p?.primaryLocationId ?? "",
+    // RGPD-01 — ALWAYS false, never seeded from the patient, and that is the
+    // same rule LOOP 5 set for the terms checkbox: a pre-checked consent box is
+    // a staff member attesting to a signature by not noticing a checkbox. The
+    // ficha shows whether consent is on file; this box only ever records a new
+    // one, and it is not rendered at all when editing.
+    rgpdConsent: false,
   };
 }
 
@@ -505,6 +515,25 @@ export function PatientForm({
           />
         )}
       </fieldset>
+      {/* RGPD-01 (owner ruling Q-RGPD-NEW = b) — asked at creation, NOT
+          required. Create only: on edit there is nothing to tick, because this
+          box records a NEW consent rather than describing the patient, and the
+          ficha already shows whether one is on file. Never pre-checked. */}
+      {!isEdit && (
+        <fieldset className="flex flex-col gap-1">
+          <label className="flex items-start gap-2 text-sm text-text-primary">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={fields.rgpdConsent}
+              onChange={(e) => set("rgpdConsent", e.target.checked)}
+              data-testid="rgpd-consent"
+            />
+            <span>{s["patients.rgpdConsentLabel"]}</span>
+          </label>
+          <span className="text-xs text-text-secondary">{s["patients.rgpdConsentHint"]}</span>
+        </fieldset>
+      )}
       {/* Street address input intentionally not surfaced (address-reduction,
           2026-06-30). `fields.address` is preserved from the loaded patient and
           submitted unchanged, so the stored value and historical data are kept. */}

@@ -117,6 +117,13 @@ export type CreatePatientInput = {
   // unassigned (owner-only) until an appointment establishes the location basis.
   // Tenant consistency is verified server-side in createPatient.
   primaryLocationId?: string | null;
+  // RGPD-01 (owner ruling Q-RGPD-NEW = b) — the patient's RGPD consent, asked
+  // at creation and NOT required. Absent or false means "not signed yet", which
+  // is a normal registration, not a refusal: the ficha carries "RGPD em falta"
+  // until it is recorded. There is deliberately no handler for this key in
+  // `parseUpdatePatient` — consent is captured at creation, and the edit form
+  // must not be able to assert retrospectively that a form was signed.
+  rgpdConsent?: boolean;
 };
 export type UpdatePatientInput = Partial<CreatePatientInput>;
 
@@ -143,6 +150,10 @@ export type CreatePatientValues = {
   contraindicationOtherNote: string | null;
   // R16 (0043) — validated (UUID or null); tenant-consistency checked in the action.
   primaryLocationId: string | null;
+  // RGPD-01 — see CreatePatientInput. Normalized to a plain boolean here; the
+  // acceptance ROW (actor, instant, version) is written by the action, not by
+  // this parser, because only the action has the transaction and the context.
+  rgpdConsent: boolean;
 };
 export type UpdatePatientValues = Partial<CreatePatientValues>;
 
@@ -398,6 +409,10 @@ export function parseCreatePatient(
     contraindicationOther: r.contraindicationOther === true,
     contraindicationOtherNote: optionalText(r.contraindicationOtherNote, "contraindicationOtherNote", 500),
     primaryLocationId: optionalUuid(r.primaryLocationId, "primaryLocationId"),
+    // RGPD-01 — `=== true` like every other boolean here, so an absent key, a
+    // string, or anything else a hand-posted payload could carry reads as "not
+    // signed". Consent is the one value that must never be inferred generously.
+    rgpdConsent: r.rgpdConsent === true,
   };
 }
 
