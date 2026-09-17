@@ -32,6 +32,34 @@ export function reminderConfirmInstruction(locale: Locale): string {
   return REMINDER_CONFIRM_INSTRUCTION[locale];
 }
 
+/**
+ * THE OTHER HALF OF THE SAME QUESTION: what the message says when a reply
+ * CANNOT reach us. Owner ruling Q-SMS-S2, dispatch COMMS-SMS-WORDING-R2,
+ * 2026-09-16.
+ *
+ * ==========================================================================
+ * WHY IT IS SAID AT ALL, WHEN THE REPLY INSTRUCTION IS SIMPLY WITHHELD
+ * ==========================================================================
+ * `senderCanReceiveReplies` already stops the message ASKING for a reply it
+ * cannot receive (the 2026-09-02 defect). It does not stop a patient REPLYING
+ * anyway - a reminder naming an appointment is a message people answer - and
+ * that reply reaches nobody: the live sender is the alphanumeric `OsteoJP`,
+ * which is one-way, and `sms_inbound_events` is empty. The patient is then
+ * certain they have answered while the agenda still reads `agendada`, which is
+ * the same silent failure the withheld instruction exists to prevent, arriving
+ * by the patient's own initiative instead of by our invitation.
+ *
+ * So the message states the fact and points at the thing that does work: the
+ * confirm link is on the line above.
+ *
+ * pt-PT ONLY, DELIBERATELY. The dispatch scopes this ruling to the pt locale.
+ * There is no approved EN wording and inventing one here would be new
+ * patient-facing copy nobody has approved, so the EN body is unchanged and the
+ * absence is reported rather than filled in. GSM-7 safe, no accents: an
+ * accented character would force UCS-2 and halve the segment limit to 70.
+ */
+export const REMINDER_NO_REPLIES_NOTICE_PT = "Nao lemos respostas.";
+
 /* ================================================================== */
 /* Reply acknowledgements — NEW WORDING, NOT YET APPROVED              */
 /* ================================================================== */
