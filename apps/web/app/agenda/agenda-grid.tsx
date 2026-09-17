@@ -216,6 +216,7 @@ export function AgendaGrid({
   onSelectSlot,
   onOpenBlock,
   dayWindow,
+  clinicWindow,
   closure,
 }: {
   view: AgendaView;
@@ -236,6 +237,20 @@ export function AgendaGrid({
    * does not pass it changes.
    */
   dayWindow?: { startMin: number; endMin: number };
+  /**
+   * AGENDA-NEVER-HIDES - the clinics' OWN hours, which `dayWindow` may now
+   * exceed.
+   *
+   * `dayWindow` is the union of the clinics' hours and the span of the
+   * appointments loaded for this view, so a booking made before the clinic's
+   * current opening still gets a row instead of being clamped underneath the
+   * first one. This is that union's other half: the hours themselves, so a row
+   * drawn ONLY because an appointment is in it can say so.
+   *
+   * OPTIONAL, and absent means "mark nothing". Every existing caller and every
+   * existing test renders exactly what it rendered before.
+   */
+  clinicWindow?: { startMin: number; endMin: number };
   /**
    * 0085 - the clinic's daily closure, as minutes from midnight, or null.
    *
@@ -267,6 +282,23 @@ export function AgendaGrid({
    */
   const closedAt = (m: number): boolean =>
     closure != null && closure.startMin < m + SLOT_MINUTES && closure.endMin > m;
+  /**
+   * AGENDA-NEVER-HIDES - is this slot OUTSIDE the clinics' own hours?
+   *
+   * True only for the rows `dayWindow` gained from an appointment: the 08:00 row
+   * under a 09:00 opening, or the 21:00 row under a 21:00 close. The booking
+   * that put the row there still draws and is still clickable - it is the empty
+   * SLOTS beside it that are marked and disabled, because `classifyStart`
+   * refuses a `before_open` start on every write path and this screen must not
+   * offer a booking the server will refuse.
+   *
+   * IT IS THE CLINIC'S HOURS, NOT THE LATEST START. A 20:30 slot at a clinic
+   * closing 21:00 is inside its hours and merely past the booking lead; that is
+   * a different rule with its own refusal copy, and conflating them here would
+   * grey out time the clinic actually works.
+   */
+  const outsideHours = (m: number): boolean =>
+    clinicWindow != null && (m < clinicWindow.startMin || m >= clinicWindow.endMin);
   const today = todayInLisbon();
 
   // Current-time line position (refreshed each minute). Rendered only on today.
@@ -468,12 +500,34 @@ export function AgendaGrid({
               face ends rather than the way an hour row begins. It is the only
               label that names a boundary instead of a row, which is why it is
               rendered here and not inside the loop above. */}
-          <span
-            data-testid="agenda-closing-label"
-            className="absolute -bottom-2 right-2 bg-v2-surface px-0.5 text-xs text-v2-text-secondary"
-          >
-            {slotLabel(win.endMin)}
-          </span>
+          {/* AGENDA-NEVER-HIDES: THE CLOSING LABEL NAMES THE CLINIC'S CLOSE,
+              NOT THE LAST ROW DRAWN.
+              `win` may now run past `closes_at` to make room for a booking
+              outside the hours - a 21:30 visit at a clinic closing 21:00 draws
+              rows to 23:00. Labelling that boundary "23:00" would say the
+              clinic works until 23:00, which is precisely the lie 0085 removed
+              from the other end of the day. The extra rows are marked as
+              outside hours instead; this label keeps telling the truth. */}
+          {(() => {
+            const closeMin = (clinicWindow ?? win).endMin;
+            // When nothing widened the grid, the close IS the bottom edge and
+            // this renders exactly as it always did: `-bottom-2`, no inline
+            // offset. Setting both `top` and `bottom` on an auto-height absolute
+            // element STRETCHES it instead of placing it, so the two are
+            // mutually exclusive rather than merely redundant.
+            const atBottom = closeMin >= win.endMin;
+            return (
+              <span
+                data-testid="agenda-closing-label"
+                className={`absolute right-2 bg-v2-surface px-0.5 text-xs text-v2-text-secondary ${
+                  atBottom ? "-bottom-2" : ""
+                }`}
+                style={atBottom ? undefined : { top: minToPx(closeMin) - 8 }}
+              >
+                {slotLabel(closeMin)}
+              </span>
+            );
+          })()}
         </div>
 
         {/* Day columns */}
@@ -537,27 +591,40 @@ export function AgendaGrid({
                   <button
                     key={m}
                     type="button"
-                    disabled={blocked || closedAt(m)}
+                    // AGENDA-NEVER-HIDES: a row that exists only because an
+                    // appointment is in it is marked in the DOM, so the marking
+                    // is assertable rather than a colour somebody has to see.
+                    data-outside-hours={outsideHours(m) ? "true" : undefined}
+                    disabled={blocked || closedAt(m) || outsideHours(m)}
                     // 0085: the two reasons are NAMED SEPARATELY, and a screen
                     // reader gets the same distinction the band gives a sighted
                     // reader. "Tempo bloqueado" sends somebody to a therapist's
                     // blocks; "Clínica encerrada" sends them nowhere, because
                     // there is nothing on this screen to remove.
+                    // AGENDA-NEVER-HIDES: a third reason, NAMED SEPARATELY for
+                    // the same reason 0085 split the first two - "fora do
+                    // horario da clinica" sends the reader to the clinic's
+                    // hours, where "Clinica encerrada" sends them to the midday
+                    // closure and "Tempo bloqueado" to a therapist's blocks.
                     aria-label={
-                      closedAt(m)
-                        ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.clinicClosed"]}`
-                        : blocked
-                          ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.blockedTime"]}`
-                          : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
+                      outsideHours(m)
+                        ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.outsideClinicHours"]}`
+                        : closedAt(m)
+                          ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.clinicClosed"]}`
+                          : blocked
+                            ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.blockedTime"]}`
+                            : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
                     }
                     onClick={
-                      blocked || closedAt(m) ? undefined : () => onSelectSlot(d, slotLabel(m))
+                      blocked || closedAt(m) || outsideHours(m)
+                        ? undefined
+                        : () => onSelectSlot(d, slotLabel(m))
                     }
                     className={`absolute inset-x-0 transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
-                      blocked || closedAt(m)
+                      blocked || closedAt(m) || outsideHours(m)
                         ? "cursor-not-allowed"
                         : "motion-safe:active:scale-[0.97] hover:bg-v2-green-50"
-                    } ${rule}`}
+                    } ${outsideHours(m) ? "bg-surface-muted/60" : ""} ${rule}`}
                     // STAFF-03: positioned by the mapper, so a 30-minute slot is
                     // half of its (possibly taller) hour. Still one focusable
                     // button per 30 minutes - the grid was NOT collapsed to hour

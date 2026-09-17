@@ -44,10 +44,19 @@ function ownerBlockDocs() {
   const dataOps = readdirSync(docs)
     .filter((f) => /^data-op-[a-z0-9-]+\.md$/.test(f))
     .map((f) => join("docs", f));
+  // A POST-CHECK document is pasted into the same shell as an apply, and the
+  // glob above could not see one either: `migration-postcheck-0089.md` is named
+  // for the migration it VERIFIES, not for a migration it applies, so
+  // `migration-apply-NNNN.md` misses it. It carries the same shape of block -
+  // a `${PIN}` checkout, a `shasum` comparison, a `psql` run - and therefore the
+  // same hazard. Added for every future one rather than for the first.
+  const postchecks = readdirSync(docs)
+    .filter((f) => /^migration-postcheck-\d{4}\.md$/.test(f))
+    .map((f) => join("docs", f));
   const others = ["docs/runbook-prod-migrations.md", "docs/import/PROD-RUN.md", "docs/import/REHEARSAL.md"].filter(
     (f) => existsSync(join(ROOT, f)),
   );
-  return [...applies, ...dataOps, ...others].sort();
+  return [...applies, ...dataOps, ...postchecks, ...others].sort();
 }
 
 /** `$NAME:` unbraced. Comment lines are skipped: the shell never expands them. */
@@ -74,6 +83,48 @@ test("the scan covers the apply documents, so an empty glob cannot pass it", () 
     files.filter((f) => f.startsWith("docs/migration-apply-")).length >= 15,
     `expected at least 15 apply documents, found ${files.length}: ${files.join(", ")}`,
   );
+});
+
+test("the scan covers the POST-CHECK documents, so the new class cannot be silently uncovered", () => {
+  const files = ownerBlockDocs();
+  const postchecks = files.filter((f) => f.startsWith("docs/migration-postcheck-"));
+  // AN EMPTY GLOB MUST NOT PASS. `migration-postcheck-0089.md` exists on main
+  // and carries a pasted block; if this list is ever empty the glob has stopped
+  // matching and the guard would be reporting safety it never checked.
+  assert.ok(
+    postchecks.length >= 1,
+    `expected at least one post-check document in the scan, found: ${files.join(", ")}`,
+  );
+  assert.ok(
+    postchecks.includes("docs/migration-postcheck-0089.md"),
+    `the 0089 post-check must be scanned; scanned: ${postchecks.join(", ")}`,
+  );
+});
+
+test("NEGATIVE CONTROL: a violation planted in a post-check document is caught", () => {
+  // The guard is only worth its green if it can go red. This is the exact shape
+  // a post-check block takes - a pinned checkout feeding `git show` - with the
+  // braces removed, which is what zsh reads as a `:s` modifier.
+  const planted = [
+    "# 0089 post-check",
+    "",
+    "```",
+    "(",
+    "set -eo pipefail",
+    "PIN=$(git rev-parse origin/main)",
+    "git show $PIN:scripts/db/postcheck-0089-readonly.sql > /tmp/x.sql",
+    ")",
+    "```",
+    "",
+  ].join("\n");
+  const found = offendingLines(planted);
+  assert.equal(found.length, 1, `expected the planted line to be caught, got ${JSON.stringify(found)}`);
+  assert.match(found[0].text, /\$PIN:scripts/);
+
+  // ...and the braced form of the same line is clean, so the rule discriminates
+  // rather than flagging every post-check block on sight.
+  const fixed = planted.replace("$PIN:scripts", "${PIN}:scripts");
+  assert.deepEqual(offendingLines(fixed), []);
 });
 
 test("the detector catches the exact line that stopped 0085, and passes its braced form", () => {
