@@ -50,12 +50,38 @@ d("SCHED-27: bringing a Cancelada back", () => {
   let patientA: string;
   let patientB: string;
 
-  /** Future, so a reminder is due. */
-  const FUTURE = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
-  const FUTURE_END = new Date(FUTURE.getTime() + 45 * 60 * 1000);
-  /** Past, so its reminder offsets have gone. */
-  const PAST = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
-  const PAST_END = new Date(PAST.getTime() + 45 * 60 * 1000);
+  /**
+   * ==========================================================================
+   * THESE TWO ARE PINNED TO A WALL-CLOCK HOUR, AND THAT IS THE WHOLE POINT
+   * ==========================================================================
+   * They used to be `Date.now() ± 10 * 24 * 60 * 60 * 1000`. A whole-DAY offset
+   * moves the date and INHERITS THE TIME OF DAY, so the seeded appointment
+   * started at whatever hour the suite happened to run. That was harmless until
+   * #1383 (AGENDA-2100, merged 2026-09-17 15:11Z) put the clinic's hours on the
+   * WRITE paths, un-cancel included: from then on every run after 19:00 Lisbon
+   * seeded a row past `closes_at - 60` and `updateAppointment` refused it with
+   * `outside_clinic_hours`. Measured the same day: green on main at 15:20
+   * through 17:56, RED on every run from 18:07 including main at 19:08 — six
+   * failures in this file, on every branch, for the thirteen hours a day the
+   * clinic is shut. Nothing in those branches touched scheduling.
+   *
+   * So the hour is now a FIXTURE like every other, the way LUNCH, EARLY and
+   * INSIDE below already are: 11:00 Lisbon on a January Wednesday (WET = UTC,
+   * so the Z instant IS the wall clock), comfortably inside the 08:00-20:00
+   * default and not on either boundary. What the tests are ABOUT is unchanged —
+   * FUTURE is still after `now` so a reminder is due, PAST is still before it so
+   * the offsets have gone — but neither answer depends on when the suite runs.
+   *
+   * KEEP THEM PINNED. A future/past seed derived from `Date.now()` here is the
+   * same outage again, and it will present as a red main on somebody else's PR.
+   */
+  /** Future, so a reminder is due. 11:00 Lisbon, inside the clinic's hours. */
+  const FUTURE = new Date("2027-01-13T11:00:00.000Z");
+  const FUTURE_END = new Date("2027-01-13T11:45:00.000Z");
+  /** Past, so its reminder offsets have gone. Also 11:00 Lisbon, also in-hours:
+   *  the un-cancel of a PAST row is a write too, and pays the same rule. */
+  const PAST = new Date("2026-01-14T11:00:00.000Z");
+  const PAST_END = new Date("2026-01-14T11:45:00.000Z");
   /** 13:00-13:45 in Lisbon in January (WET = UTC), inside a 13:00-14:00 closure. */
   const LUNCH = new Date("2027-01-13T13:00:00.000Z");
   const LUNCH_END = new Date("2027-01-13T13:45:00.000Z");
