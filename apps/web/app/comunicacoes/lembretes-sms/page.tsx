@@ -14,6 +14,7 @@ import {
   statusOf,
 } from "@/lib/reminders/reminder-log-core";
 
+import { Pager } from "@/components/pager.client";
 import { CommsNav } from "../comms-nav.client";
 import { ReminderLogSearch } from "./reminder-log-search.client";
 import { ReminderLogTable, type ReminderLogRowView } from "./reminder-log-table";
@@ -160,23 +161,16 @@ export default async function LembretesSmsPage({
 
         <ReminderLogTable rows={rows} onlyFailures={onlyFailures} searching={q !== ""} />
 
-        {log.pageCount > 1 && (
-          <div className="flex items-center gap-3 text-sm">
-            {log.page > 1 ? (
-              <Link href={href({ page: log.page - 1, onlyFailures, q })} className={filterLinkCls(false)}>
-                {s["remindersLog.prev"]}
-              </Link>
-            ) : null}
-            <span className="tabular-nums text-v2-text-secondary">
-              {s["remindersLog.pageOf"].replace("{page}", String(log.page)).replace("{pages}", String(log.pageCount))}
-            </span>
-            {log.page < log.pageCount ? (
-              <Link href={href({ page: log.page + 1, onlyFailures, q })} className={filterLinkCls(false)}>
-                {s["remindersLog.next"]}
-              </Link>
-            ) : null}
-          </div>
-        )}
+        {/* U1: the shared pager. Its params are the two filters this route
+            carries, spelled exactly as `href()` spells them, so a page turn
+            preserves the active filter and a filter change still drops `page`. */}
+        <Pager
+          basePath={BASE}
+          params={{ ...(q ? { q } : {}), ...(onlyFailures ? { falhas: "1" } : {}) }}
+          page={log.page}
+          pageCount={log.pageCount}
+          total={log.total}
+        />
       </section>
     </div>
   );

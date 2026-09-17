@@ -187,9 +187,21 @@ twenty audit rows per page view, and the audit table is append-only.
 1. **`attachments` and `clinical_episodes` are readable tenant-wide by every therapist.**
    Not a consequence of this feature; the state today. Narrowing them is a behaviour change
    that could blank existing screens, so it needs its own card and its own ruling.
-2. **Storage has no RLS at all.** Any holder of `clinical_records:read` or `patients:read`
-   can mint a signed URL for any object path under their tenant prefix. The bucket is
-   private and URLs last 60 seconds, but the gate is the tenant, not the patient.
+2. **Storage is deny-by-default in the database; the surface is the 60-second signed URL.**
+   *Corrected 2026-09-16.* This item first read "storage has no RLS at all", which describes
+   the APPLICATION layer and not the DATABASE one. Measured by PURPLE
+   (card `SEC-storage-bucket-scope`, production read-only plus a throwaway stack at
+   `origin/main`): `storage.objects` has RLS **ENABLED with ZERO policies**, which denies
+   every role that does not hold `BYPASSRLS`. A staff session reaches storage-api as
+   `authenticated` and gets `404 not_found` on any object, its own included; the `patient`
+   role holds no grant on `storage.objects` and no `USAGE` on schema `storage`, so a portal
+   session is refused earlier still; only `service_role` carries `BYPASSRLS`, and that is
+   the server's own client. What survives the correction is narrower and still worth
+   flagging: the application guard in front of that client is a tenant-prefix test only
+   (`apps/web/lib/clinical/storage.ts:65` and `:118`,
+   `apps/web/lib/patients/documents.ts:135`) — not patient-scoped and not record-scoped —
+   and the URL it mints is a **bearer token**: for its 60 seconds anyone holding it reads
+   the object with no authentication at all.
 3. **Booking has no patient-side gate**, in either layer (§2). Worth knowing before the
    care team is described to the clinic as "the therapists who can book for this patient".
 

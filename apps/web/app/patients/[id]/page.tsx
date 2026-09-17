@@ -22,6 +22,14 @@ import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
+import { addDays, lisbonMidnightUtc } from "../../../lib/scheduling/time";
+import type { AppointmentStatusValue } from "../../../lib/scheduling/types";
+import { MarcacoesFilters } from "./marcacoes-filters.client";
+import {
+  canonicalMarcacoesSearch,
+  type MarcacoesFilterValues,
+} from "../../../lib/scheduling/marcacoes-search";
+import { POPSTATE_CAPTURE_SCRIPT, UrlIsAuthoritative } from "./url-authoritative.client";
 import { bookingLocationScope } from "../../../lib/auth/viewer-locations";
 import { ownCancelRefusal } from "../../../lib/scheduling/cancel-authority";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
@@ -90,10 +98,37 @@ export default async function PatientProfilePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; m?: string; anulados?: string }>;
+  // U1: the Marcações filters live in the URL, so a filtered ficha is a link,
+  // the back button returns to the previous filter and a reload keeps it. Every
+  // one of them is read by the SERVER and turned into a WHERE clause.
+  searchParams: Promise<{
+    tab?: string;
+    m?: string;
+    anulados?: string;
+    de?: string;
+    ate?: string;
+    estado?: string;
+    terapeuta?: string;
+    clinica?: string;
+    servico?: string;
+    semnota?: string;
+    ordem?: string;
+  }>;
 }) {
   const { id } = await params;
-  const { tab: tabParam, m, anulados } = await searchParams;
+  const {
+    tab: tabParam,
+    m,
+    anulados,
+    de,
+    ate,
+    estado,
+    terapeuta,
+    clinica,
+    servico,
+    semnota,
+    ordem,
+  } = await searchParams;
   // W5-30: the "Mostrar anulados" toggle (default off) surfaces annulled fichas.
   const showAnnulled = anulados === "1";
 
@@ -248,8 +283,74 @@ export default async function PatientProfilePage({
     tab === "resumo" && canManageCareTeam ? (await getAgendaOptions(ctx)).therapists : [];
   // Faturação tab: fetch invoices for this patient when the tab is active.
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
-  // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
-  const patientAppointments = tab === "consultas" ? await listPatientAppointments(ctx, id) : [];
+  // U1 — the Marcações filters, read from the URL and applied IN SQL.
+  //
+  // THE DATE BOUNDS ARE CONVERTED HERE, NOT IN THE QUERY. `starts_at` is a
+  // timestamptz and the clinic thinks in Lisbon calendar days, so the page turns
+  // "de 2026-09-01" into an instant and hands the data layer UTC. That keeps one
+  // copy of the timezone rule, beside the one /marcacoes already uses, instead of
+  // a second copy inside the read layer.
+  //
+  // `ate` IS INCLUSIVE TO THE READER AND EXCLUSIVE TO THE QUERY: the bound sent
+  // is the start of the NEXT day, which is the only shape that includes every
+  // instant of the last day without naming 23:59:59.999.
+  const estadoValues = (estado ?? "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter((e): e is AppointmentStatusValue =>
+      (["scheduled", "confirmed", "completed", "cancelled", "no_show"] as const).includes(
+        e as AppointmentStatusValue,
+      ),
+    );
+  const marcacoesFilters: MarcacoesFilterValues = {
+    from: de ?? "",
+    to: ate ?? "",
+    estado: estadoValues,
+    therapist: terapeuta ?? "",
+    clinic: clinica ?? "",
+    service: servico ?? "",
+    semNota: semnota === "1",
+    order: ordem === "antigas" ? "oldest" : "newest",
+  };
+  // Is a filter NARROWING the list? Drives the empty state's wording, so zero
+  // rows can say "nothing matched these filters" instead of the false "this
+  // patient has no appointments".
+  //
+  // `order` IS DELIBERATELY NOT PART OF THIS. Sorting changes nothing about
+  // which rows come back, so a patient with no history who happens to have
+  // picked "oldest first" must still be told they have no history.
+  const marcacoesFiltered =
+    Boolean(
+      marcacoesFilters.from ||
+        marcacoesFilters.to ||
+        marcacoesFilters.therapist ||
+        marcacoesFilters.clinic ||
+        marcacoesFilters.service,
+    ) ||
+    marcacoesFilters.estado.length > 0 ||
+    marcacoesFilters.semNota;
+  // The three dropdowns. Same 60s-cached reference read the Notas tab already
+  // uses; fetched only when the tab that renders them is the one being shown.
+  const consultasOptions =
+    tab === "consultas"
+      ? await getAgendaOptions(ctx)
+      : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
+  // Consultas tab: this patient's appointment history (Row 3 — schedule-again),
+  // narrowed by whatever the URL asks for. No filter set = the whole history,
+  // exactly as before.
+  const patientAppointments =
+    tab === "consultas"
+      ? await listPatientAppointments(ctx, id, {
+          fromUtc: marcacoesFilters.from ? lisbonMidnightUtc(marcacoesFilters.from) : null,
+          toUtc: marcacoesFilters.to ? lisbonMidnightUtc(addDays(marcacoesFilters.to, 1)) : null,
+          status: marcacoesFilters.estado,
+          practitionerId: marcacoesFilters.therapist || null,
+          locationId: marcacoesFilters.clinic || null,
+          serviceId: marcacoesFilters.service || null,
+          withoutNote: marcacoesFilters.semNota,
+          order: marcacoesFilters.order,
+        })
+      : [];
   const ownCancelScope =
     canCancelOwnAppointments && patientAppointments.length > 0 ? await bookingLocationScope(ctx) : null;
   const ownCancelIds = canCancelOwnAppointments
@@ -431,11 +532,32 @@ export default async function PatientProfilePage({
               controls are gone, so there is nothing here to authorise and
               nothing to revalidate. */}
           <PatientPacks instances={patientPackInstances} />
+          {/* U1: the history filters. Server-side: every control writes a URL
+              param that becomes a WHERE clause, so a match is found whether or
+              not it was already on screen. */}
+          {/* U1 / Q-U1-1 — the URL is authoritative after Back and Forward.
+              The inline script runs while the document is still parsing, which
+              is the window the defect lives in: before hydration the client
+              router answers a popstate by rewriting the URL to the payload it
+              already holds, making zero server requests. The component below
+              drains what the script recorded and re-asks the server for
+              whatever the address bar actually says. */}
+          <script dangerouslySetInnerHTML={{ __html: POPSTATE_CAPTURE_SCRIPT }} />
+          <UrlIsAuthoritative search={canonicalMarcacoesSearch(marcacoesFilters)} />
+          <MarcacoesFilters
+            patientId={id}
+            values={marcacoesFilters}
+            therapists={consultasOptions.therapists}
+            locations={consultasOptions.locations}
+            services={consultasOptions.services}
+            count={patientAppointments.length}
+          />
           <AppointmentsList
             appointments={patientAppointments}
             canEdit={canEditAppointments}
             canCancel={canCancelAppointments}
             ownCancelIds={ownCancelIds}
+            filtered={marcacoesFiltered}
           />
         </div>
       )}

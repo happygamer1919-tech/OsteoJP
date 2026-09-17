@@ -6,6 +6,7 @@ import { Input } from "@osteojp/ui";
 import { Search } from "lucide-react";
 
 import { s } from "@/lib/i18n";
+import { Pager } from "@/components/pager.client";
 
 const DEBOUNCE_MS = 300;
 
@@ -79,7 +80,6 @@ export function FollowupPager({
   }
 
   const fmt = new Intl.NumberFormat("pt-PT");
-  const go = (p: number) => href({ page: p > 1 ? String(p) : null });
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -107,26 +107,19 @@ export function FollowupPager({
         {fmt.format(shown)} {s["patients.pageOf"]} {fmt.format(total)}
       </span>
 
-      {pageCount > 1 ? (
-        <div className="ml-auto flex items-center gap-2 text-sm">
-          {page > 1 ? (
-            <a href={go(page - 1)} rel="prev" className={pageLink}>
-              {s["patients.pagePrev"]}
-            </a>
-          ) : null}
-          <span className="tabular-nums text-v2-text-secondary">
-            {page} {s["patients.pageOf"]} {pageCount}
-          </span>
-          {page < pageCount ? (
-            <a href={go(page + 1)} rel="next" className={pageLink}>
-              {s["patients.pageNext"]}
-            </a>
-          ) : null}
-        </div>
-      ) : null}
+      {/* U1: the two-link strip is now the shared pager. The queue keeps its own
+          count line above (it says "50 of 1,320", which is a different statement
+          from "page 3 of 27"), and the pager owns the navigation. `q` is carried
+          across page turns; the debounced filter still resets to page 1 above. */}
+      <div className="ml-auto">
+        <Pager
+          basePath="/recuperacao"
+          params={q.trim() ? { q: q.trim() } : {}}
+          page={page}
+          pageCount={pageCount}
+          total={total}
+        />
+      </div>
     </div>
   );
 }
-
-const pageLink =
-  "inline-flex h-9 items-center rounded-v2 border border-v2-border px-3 font-medium text-v2-text-primary hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring";
