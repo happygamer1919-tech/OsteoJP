@@ -149,6 +149,45 @@ test("a page turn survives reload and Back on /patients", async ({ page }) => {
   await expect(page.getByTestId("pager")).toHaveAttribute("data-page", "1");
 });
 
+/**
+ * Q-U1-1 — Back AND Forward, with the controls checked as well as the rows.
+ *
+ * The test above asserts the row count after a Back. This one adds the half that
+ * was actually broken and the half nobody was asserting: that Forward comes back
+ * to the filtered view, and that the Estado checkbox agrees with the URL at every
+ * stop rather than only the list. The defect showed both symptoms together - the
+ * filtered rows stayed on screen under the unfiltered URL with the box still
+ * ticked - because no server round trip happened at all, so nothing re-rendered.
+ */
+test("Back and Forward both land on the view their URL describes, controls included", async ({ page }) => {
+  const needle = page.getByTestId(`filter-estado-${PATIENT_LONG_HISTORY.needleStatus}`);
+
+  await page.goto(FICHA);
+  const all = await rowCount(page);
+  expect(all).toBe(PATIENT_LONG_HISTORY.total);
+  await expect(needle).not.toBeChecked();
+
+  await needle.check();
+  await expect(page.getByTestId("consulta-row")).toHaveCount(1);
+  const filteredUrl = page.url();
+  await expect(needle).toBeChecked();
+
+  // A reload, so the history entry behind us belongs to a document that no
+  // longer exists - which is the state the client router mishandles.
+  await page.reload();
+  await expect(page.getByTestId("consulta-row")).toHaveCount(1);
+
+  await page.goBack();
+  await expect(page.getByTestId("consulta-row")).toHaveCount(all);
+  await expect(needle, "the tick must come OFF with the filter").not.toBeChecked();
+  expect(page.url()).not.toContain("estado=");
+
+  await page.goForward();
+  await expect(page.getByTestId("consulta-row")).toHaveCount(1);
+  await expect(needle, "and go back ON when Forward restores the filter").toBeChecked();
+  expect(page.url()).toBe(filteredUrl);
+});
+
 // ---------------------------------------------------------------------------
 // B5 — the therapist role: filters narrow, they never widen
 // ---------------------------------------------------------------------------

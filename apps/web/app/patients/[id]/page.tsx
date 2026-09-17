@@ -24,10 +24,12 @@ import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
 import { addDays, lisbonMidnightUtc } from "../../../lib/scheduling/time";
 import type { AppointmentStatusValue } from "../../../lib/scheduling/types";
+import { MarcacoesFilters } from "./marcacoes-filters.client";
 import {
-  MarcacoesFilters,
+  canonicalMarcacoesSearch,
   type MarcacoesFilterValues,
-} from "./marcacoes-filters.client";
+} from "../../../lib/scheduling/marcacoes-search";
+import { POPSTATE_CAPTURE_SCRIPT, UrlIsAuthoritative } from "./url-authoritative.client";
 import { bookingLocationScope } from "../../../lib/auth/viewer-locations";
 import { ownCancelRefusal } from "../../../lib/scheduling/cancel-authority";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
@@ -501,6 +503,15 @@ export default async function PatientProfilePage({
           {/* U1: the history filters. Server-side: every control writes a URL
               param that becomes a WHERE clause, so a match is found whether or
               not it was already on screen. */}
+          {/* U1 / Q-U1-1 — the URL is authoritative after Back and Forward.
+              The inline script runs while the document is still parsing, which
+              is the window the defect lives in: before hydration the client
+              router answers a popstate by rewriting the URL to the payload it
+              already holds, making zero server requests. The component below
+              drains what the script recorded and re-asks the server for
+              whatever the address bar actually says. */}
+          <script dangerouslySetInnerHTML={{ __html: POPSTATE_CAPTURE_SCRIPT }} />
+          <UrlIsAuthoritative search={canonicalMarcacoesSearch(marcacoesFilters)} />
           <MarcacoesFilters
             patientId={id}
             values={marcacoesFilters}

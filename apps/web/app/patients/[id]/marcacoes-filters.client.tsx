@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { s } from "@/lib/i18n";
+import {
+  canonicalMarcacoesSearch,
+  type MarcacoesFilterValues,
+} from "@/lib/scheduling/marcacoes-search";
 import type { AppointmentStatusValue } from "@/lib/scheduling/types";
+
+export type { MarcacoesFilterValues };
 
 /**
  * U1 — the Marcações history filters, on the patient profile.
@@ -48,17 +54,6 @@ const ESTADO_KEY = {
   cancelled: "appointment.status.cancelled",
   no_show: "appointment.status.no_show",
 } as const;
-
-export type MarcacoesFilterValues = {
-  from: string;
-  to: string;
-  estado: readonly AppointmentStatusValue[];
-  therapist: string;
-  clinic: string;
-  service: string;
-  semNota: boolean;
-  order: "newest" | "oldest";
-};
 
 export function MarcacoesFilters({
   patientId,
@@ -128,19 +123,11 @@ export function MarcacoesFilters({
    * rule; it is the same one.
    */
   function apply(next: Partial<MarcacoesFilterValues>): void {
-    const v = { ...values, ...next };
-    const p = new URLSearchParams();
-    p.set("tab", "consultas");
-    if (v.from) p.set("de", v.from);
-    if (v.to) p.set("ate", v.to);
-    if (v.estado.length > 0) p.set("estado", v.estado.join(","));
-    if (v.therapist) p.set("terapeuta", v.therapist);
-    if (v.clinic) p.set("clinica", v.clinic);
-    if (v.service) p.set("servico", v.service);
-    if (v.semNota) p.set("semnota", "1");
-    if (v.order === "oldest") p.set("ordem", "antigas");
+    // ONE builder, shared with the server page, so the string this writes and
+    // the string the page compares the address bar against cannot drift.
+    const search = canonicalMarcacoesSearch({ ...values, ...next });
     setPending(true);
-    router.push(`/patients/${patientId}?${p.toString()}`);
+    router.push(`/patients/${patientId}${search}`);
   }
 
   /**
