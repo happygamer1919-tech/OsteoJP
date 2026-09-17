@@ -326,6 +326,43 @@ for (const tr of report.testResults) {
  */
 const PERMITTED_SKIPS = new Map([
   // ["some-suite.test.ts", "why this one is allowed to skip, and who decided"],
+  //
+  // The comment above says this map should stay empty, so this entry is written
+  // to be READ rather than waved through.
+  //
+  // WHAT IT COVERS: RGPD-01's suite proves the grants and policies of a table
+  // that ships in a PENDING migration
+  // (packages/db/migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql).
+  // That file has no number yet - 0089 is authored on another branch and is
+  // neither merged nor applied, and CARE-01 and B8 each hold a NEXT-AFTER-0089
+  // of their own - and `drizzle-kit migrate` cannot see migrations-pending by
+  // construction. So CI's seeded database has no such table, and the suite gates
+  // on the SCHEMA: it asks `to_regclass('public.patient_rgpd_acceptances')` and
+  // skips when the answer is null.
+  //
+  // WHY SKIPPING IS THE HONEST ANSWER rather than a hole: the alternative is a
+  // suite asserting append-only grants against a table that does not exist,
+  // which is red for a reason that has nothing to do with the code under review.
+  // A skip that SAYS "not measured" is worth more than a green that means
+  // nothing. The properties themselves are not unproven meanwhile - the
+  // migration TEXT is asserted by apps/web/lib/patients/rgpd-axis.test.ts, which
+  // runs on every PR and has a negative control.
+  //
+  // WHEN IT COMES OUT: at promotion. The moment the migration is renamed into
+  // packages/db/migrations/ and applied, this suite runs in CI on its own and
+  // THIS LINE MUST BE DELETED - if it is not, a genuinely broken grant or policy
+  // could skip unnoticed behind the exemption. The card RGPD-01 carries that
+  // checklist item.
+  //
+  // PURPLE, dispatch P7, owner ruling Q-RGPD-NEW = b, 2026-09-17.
+  [
+    "patient-rgpd-acceptances.db.test.ts",
+    "RGPD-01: proves the grants and policies of a table that ships in " +
+      "migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql, which CI never applies; " +
+      "the suite gates on to_regclass and skips when the table is absent. " +
+      "DELETE THIS ENTRY at promotion, when the migration takes its number and CI applies it. " +
+      "PURPLE, dispatch P7, ruling Q-RGPD-NEW = b, 2026-09-17.",
+  ],
 ]);
 
 const derivedFailures = [];
