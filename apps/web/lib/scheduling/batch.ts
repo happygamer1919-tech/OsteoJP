@@ -5,6 +5,7 @@ import { appointments, packBatchIsOverbooked } from "@osteojp/db";
 import { bookPackSessionTx } from "@/lib/packs/instances";
 import { runScoped } from "@/lib/auth/context";
 import { writeAppointmentAudit } from "./audit";
+import { checkClinicWindow } from "./clinic-closure-enforcement";
 import { getTherapistAvailability } from "./day-availability";
 import { toRRule, type RecurrenceSpec } from "./recurrence";
 import type { TimeInterval } from "./intervals";
@@ -94,6 +95,29 @@ export class PackBatchRefused extends Error {
   }
 }
 
+/**
+ * AGENDA-2100 - the batch asked for an hour the clinic is not open for.
+ *
+ * A TYPED THROW, mirroring PackBatchRefused above, because the refusal has to
+ * cross the engine/action boundary carrying its payload: the sentence reception
+ * reads names the clinic and the last start it accepts, and a boolean cannot.
+ * The action maps it by INSTANCE, never by message.
+ */
+export class ClinicHoursRefused extends Error {
+  constructor(
+    readonly window: {
+      reason: "before_open" | "after_latest_start";
+      locationName: string;
+      opensAt: string;
+      closesAt: string;
+      latestStart: string;
+    },
+  ) {
+    super(`clinic hours refused: ${window.reason}`);
+    this.name = "ClinicHoursRefused";
+  }
+}
+
 /** Orchestrator: expand → check availability → book free → report failures. */
 export async function batchSchedule(
   ctx: RequestContext,
@@ -180,6 +204,41 @@ export async function batchSchedule(
       }
 
       if (toBook.length === 0) return [];
+
+      /**
+       * AGENDA-2100 - THE CLINIC'S OWN DAY, AND THIS PATH HAD NO CLINIC RULE AT
+       * ALL.
+       *
+       * M2: this engine checks the THERAPIST's free intervals and nothing else,
+       * so before this an Agendar lote could write 21:30 at a clinic that shuts
+       * at 20:00. The single-create path has refused that class since 0085; this
+       * was the obvious way around it.
+       *
+       * IT REFUSES THE WHOLE BATCH rather than dropping the offending slots into
+       * `failures`. A busy slot is a fact about one hour and is reported as one;
+       * the clinic being shut at 21:30 is a fact about the REQUEST, and booking
+       * four of five while calling the fifth "busy" would say something untrue
+       * about why.
+       *
+       * ON `toBook`, INSIDE THE TRANSACTION, because those are the rows about to
+       * be written and this is the transaction that writes them - a check in the
+       * action would be a second read of the same fact, outside the lock.
+       */
+      for (const s of toBook) {
+        const cw = await checkClinicWindow(tx, {
+          locationId: input.locationId,
+          startsAt: s.startsAt,
+        });
+        if (!cw.ok) {
+          throw new ClinicHoursRefused({
+            reason: cw.reason,
+            locationName: cw.locationName,
+            opensAt: cw.opensAt,
+            closesAt: cw.closesAt,
+            latestStart: cw.latestStart,
+          });
+        }
+      }
 
       // 2.9 — one sorted acquisition covering every slot this batch books, so
       // two concurrent batches touching overlapping slots serialize instead of
