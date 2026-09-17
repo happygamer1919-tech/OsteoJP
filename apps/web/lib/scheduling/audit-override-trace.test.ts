@@ -93,7 +93,25 @@ function fakeTx() {
     // STAFF-02: the reschedule path now consults staff_locations before writing.
     // No rows -> unrestricted, so this suite keeps testing the audit trace.
     // The location guard has its own suite in booking-location-scope.test.ts.
-    select: () => {
+    select: (cols?: Record<string, unknown>) => {
+      // AGENDA-2100: the clinic read (checkClinicClosure / checkClinicWindow)
+      // asks for `middayClosedFrom`, and NO OTHER read here does. It resolves to
+      // NO ROWS, which both checks treat as "a location this tenant does not
+      // have" and therefore refuse nothing - so this suite keeps testing its own
+      // subject. Returning the appointment row instead, as this stub used to,
+      // handed the hours check a row with no `opens_at` and it threw.
+      //
+      // EMPTY RATHER THAN A WIDE-OPEN CLINIC, deliberately: a clinic row would
+      // have to span every hour a test might derive from `Date.now()`, and a
+      // suite that goes red at 23:10 is worse than one that models no clinic.
+      if (cols && "middayClosedFrom" in cols) {
+        const clinic: Record<string, unknown> = {
+          from: () => clinic,
+          where: () => clinic,
+          limit: async () => [],
+        };
+        return clinic;
+      }
       const chain: Record<string, unknown> = {
         from: () => chain,
         innerJoin: () => chain,
