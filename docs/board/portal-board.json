@@ -1447,6 +1447,20 @@
       "notes": "OPEN QUESTION, NO MOVE MADE.\n\n#1384 merged as da3620c0 and placed its read-only post-check at scripts/db/postcheck-0089-readonly.sql, with its doc at docs/migration-postcheck-0089.md. Every other post-check in this repo sits directly under the scripts directory and is named for its migration number: scripts/0080-postcheck.sql and scripts/0083-postcheck.sql, with their pre-check siblings beside them. 0089 is the first to live one level down.\n\nNOTHING WAS MOVED, AND THAT IS DELIBERATE. A script the owner is asked to run is addressed by its full path from the repository root plus its sha256 (SR-61). Moving this file after it has been carded would invalidate any command already printed for it, and the failure reads exactly like a file that was never merged.\n\nTHE DECISION BELONGS TO THE OWNER, and it is one of two: adopt the subfolder as the home for database post-checks and record that convention, or move 0089 beside the other post-checks, named for its migration number, and reprint its ref-addressed command with the new path and hash. Either is cheap now and grows expensive once more scripts follow the new shape.\n\nNOTE FOR THE NEXT EDITOR: this card deliberately names no path that does not exist. The SR-61 guard scans every script path a card mentions and refuses one that does not resolve, because the owner pastes these straight off the rendered board.\n\nSTEWARD opened this card and did not touch the file."
     },
     {
+      "id": "PORTAL-ROSTER-expired-template-still-listed",
+      "title": "The portal therapist list ignores template validity dates, so an expired template still lists the therapist at that clinic",
+      "lane": "incidents",
+      "home_lane": "incidents",
+      "status": "todo",
+      "priority": "high",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-09-17",
+      "notes": "GREEN G8 T1, carded by STEWARD. VERIFIED AGAINST THE CODE, AND THE REPORTED SYMPTOM IS NARROWED.\n\nTHE QUERY: listBookableTherapists, apps/api/lib/appointments/store.ts lines 648 to 663. It selects users where is_active and is_bookable, excludes shared resources, and requires EXISTS a row in availability_templates for that user with av.location_id = the requested clinic and av.is_active = true.\n\nTHE GAP, CONFIRMED: that EXISTS applies NO validity-date predicate. There is no av.valid_from and no av.valid_until in it. A template whose validity has expired but whose is_active flag is still true keeps the therapist in the portal list for that clinic.\n\nIT IS INCONSISTENT WITH ITS OWN NEIGHBOURS, which is what makes it look like an oversight rather than a decision. The same file filters validity in two other places: lines 270 and 271 (the assignment and conflict read) and lines 517 and 518 (slot generation), both comparing valid_from and valid_until against the day being booked.\n\nSO THE PATIENT-VISIBLE EFFECT IS A LIST THAT OFFERS SOMEBODY THE SLOT QUERY WILL NOT: the therapist is listed for the clinic, and slot generation then filters them out on the same validity dates the roster ignored.\n\nstaff_locations IS NOT THE MECHANISM HERE. It appears nowhere in apps/api. Location membership in the portal is derived from availability_templates.location_id, and the code states that at lines 643 to 646.\n\nWHAT THE REPORT SAID THAT THE CODE DOES NOT SUPPORT: the finding was described as a therapist with expired CB templates and no LV membership being listed at BOTH clinics. The EXISTS is scoped by av.location_id, so a therapist with NO template at Linda-a-Velha cannot be listed there by this predicate. The verified defect is the expired-template case at a clinic where a template does exist. If a both-clinics listing was actually observed on a screen, its cause is elsewhere and needs its own read before it is carded.\n\nNO CODE WAS CHANGED. This card records the finding only."
+    },
+    {
       "id": "END-legal-sweep",
       "title": "End-of-project legal, RGPD and credential sweep - external counsel plus cybersecurity engagement",
       "lane": "loose_ends",
