@@ -84,6 +84,41 @@ export function MarcacoesFilters({
   const [pending, setPending] = useState(false);
 
   /**
+   * THE TICK HAS TO APPEAR ON THE CLICK, NOT ON THE ROUND TRIP.
+   *
+   * These checkboxes are controlled by SERVER state: `checked` came straight
+   * from `values`, and `onChange` only pushes a new URL. So between the click
+   * and the server's answer the box stayed visibly unticked — on a slow
+   * connection the user clicks again, and the second click UNDOES the first.
+   * Playwright caught it as `locator.check: Clicking the checkbox did not
+   * change its state`, which is exactly what a person would have experienced.
+   *
+   * So the displayed state is local and optimistic, and it is RE-SYNCED from
+   * the server's values whenever they change — the render-time adjustment this
+   * codebase already uses for the conflict banners in appointments-list.tsx,
+   * rather than an effect. Compared by a serialized key because the array is
+   * rebuilt on every render and would never be reference-equal.
+   *
+   * It is display only: the URL the server reads is still the single source of
+   * truth, and a navigation that fails or is cancelled re-syncs the box back.
+   */
+  const serverEstadoKey = values.estado.join(",");
+  const [shownEstado, setShownEstado] = useState<readonly AppointmentStatusValue[]>(values.estado);
+  const [syncedEstadoKey, setSyncedEstadoKey] = useState(serverEstadoKey);
+  if (serverEstadoKey !== syncedEstadoKey) {
+    setSyncedEstadoKey(serverEstadoKey);
+    setShownEstado(values.estado);
+    setPending(false);
+  }
+
+  const [shownSemNota, setShownSemNota] = useState(values.semNota);
+  const [syncedSemNota, setSyncedSemNota] = useState(values.semNota);
+  if (values.semNota !== syncedSemNota) {
+    setSyncedSemNota(values.semNota);
+    setShownSemNota(values.semNota);
+  }
+
+  /**
    * Write the next filter state into the URL.
    *
    * ALWAYS DROPS `page`. A filter change that kept the page number would leave
@@ -108,9 +143,16 @@ export function MarcacoesFilters({
     router.push(`/patients/${patientId}?${p.toString()}`);
   }
 
+  /**
+   * Driven by the DISPLAYED set, not by the server's, so two quick clicks
+   * compose (tick A, tick B) instead of the second one racing the first and
+   * reverting it.
+   */
   function toggleEstado(value: AppointmentStatusValue): void {
-    const on = values.estado.includes(value);
-    apply({ estado: on ? values.estado.filter((e) => e !== value) : [...values.estado, value] });
+    const on = shownEstado.includes(value);
+    const next = on ? shownEstado.filter((e) => e !== value) : [...shownEstado, value];
+    setShownEstado(next);
+    apply({ estado: next });
   }
 
   const active =
