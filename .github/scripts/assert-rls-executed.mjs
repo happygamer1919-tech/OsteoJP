@@ -326,6 +326,43 @@ for (const tr of report.testResults) {
  */
 const PERMITTED_SKIPS = new Map([
   // ["some-suite.test.ts", "why this one is allowed to skip, and who decided"],
+  //
+  // The comment above says this map should stay empty, so this entry is written
+  // to be READ rather than waved through.
+  //
+  // WHAT IT COVERS: NESA-NAMES' suite proves a SECURITY DEFINER function that
+  // ships in packages/db/migrations-pending/NEXT-AFTER-0089_nesa_patient_name_for_therapists.sql.
+  // That file has no number yet and `drizzle-kit migrate` cannot see
+  // migrations-pending by construction, so CI's seeded database is built at
+  // main's level WITHOUT the function. The suite asks
+  // `to_regprocedure('public.shared_resource_appointment_patient_names()')` and
+  // skips the arms that need it when the answer is null.
+  //
+  // IT GATES PER TEST, NOT PER FILE, which is why this reads 9 and not 11. Two
+  // arms need no function at all - that the patient row IS withheld from this
+  // therapist today, and that `patients_select` is untouched - and those are the
+  // defect and the ruling's central prohibition. They run on every PR at 0088.
+  //
+  // WHY SKIPPING IS THE HONEST ANSWER: the alternative is nine arms asserting the
+  // behaviour of a function the database does not have, which is not a hole but a
+  // 42883. It already happened - the first push of this branch was 9 failed with
+  // `function public.shared_resource_appointment_patient_names() does not exist`.
+  // A skip that says "not measured" is worth more than a green that means nothing.
+  //
+  // WHEN IT COMES OUT: at promotion. The moment the migration takes its number,
+  // moves into packages/db/migrations/ and CI applies it, all eleven arms run on
+  // their own and THIS LINE MUST BE DELETED - otherwise a genuinely broken
+  // NESA-names function could skip unnoticed behind this exemption.
+  //
+  // Decided by BLUE under dispatch B10, 2026-09-17.
+  [
+    "nesa-patient-name-for-therapists.db.test.ts",
+    "NESA-NAMES: nine of eleven arms prove a function that ships in " +
+      "migrations-pending/NEXT-AFTER-0089_nesa_patient_name_for_therapists.sql, which CI never " +
+      "applies; the suite gates on to_regprocedure and skips those arms when the function is " +
+      "absent. The other two run at 0088 on every PR. DELETE THIS ENTRY at promotion, when the " +
+      "migration takes its number and CI applies it. BLUE, dispatch B10, 2026-09-17.",
+  ],
 ]);
 
 const derivedFailures = [];
