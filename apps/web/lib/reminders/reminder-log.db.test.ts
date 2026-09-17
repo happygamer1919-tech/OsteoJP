@@ -25,6 +25,7 @@
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { addDays, lisbonDateTimeToUtc, todayInLisbon } from "../scheduling/time";
 
 vi.mock("server-only", () => ({}));
 
@@ -53,7 +54,15 @@ d("COMMS-01: a provider refusal reaches Lembretes SMS, scoped", () => {
   let locationId: string;
   let patientId: string;
   let appointmentId: string;
-  const startsAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+  /**
+   * TEN DAYS OUT AT A PINNED HOUR, not `Date.now() + 10d`, which inherits the
+   * time of day the suite ran at. Ten days is far outside both reminder offsets
+   * (24h and 48h), so pinning the hour cannot move this fixture across either
+   * threshold - which is exactly why this seed is safe to pin and the 20-to-30
+   * hour seeds in this directory are NOT. See
+   * seeds-are-clock-independent.test.ts for that boundary.
+   */
+  const startsAt = lisbonDateTimeToUtc(addDays(todayInLisbon(), 10), "11:00");
   const endsAt = new Date(startsAt.getTime() + 45 * 60 * 1000);
 
   type Row = Record<string, unknown>;
@@ -242,7 +251,10 @@ d("COMMS-03: Lembretes SMS finds a patient by name, with the existing filters", 
       await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone, primary_location_id)
         values (${p.id}, ${tenantId}, ${p.name}, '912345678', ${locationId})`);
       const appointmentId = randomUUID();
-      const startsAt = new Date(Date.now() + (10 + day) * 24 * 60 * 60 * 1000);
+      // One patient per day, each pinned to 11:00 Lisbon rather than inheriting
+      // the hour the suite ran at. `day` still walks the appointments apart, so
+      // the ordering these arms read stays exactly as it was.
+      const startsAt = lisbonDateTimeToUtc(addDays(todayInLisbon(), 10 + day), "11:00");
       const endsAt = new Date(startsAt.getTime() + 45 * 60 * 1000);
       await sql.execute(raw`insert into appointments
         (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status)
