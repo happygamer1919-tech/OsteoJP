@@ -33,7 +33,11 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none) | | | |
+| `NEXT-AFTER-0089_revoke_truncate_trigger_references.sql` | 0089 | 2026-09-17 | **last in the queue, deliberately.** It only removes three unused privileges from `authenticated`; CARE-01 (#1374) and NESA-NAMES (#1390) each deliver a feature and go first. Apply doc: `docs/migration-apply-revoke-truncate-trigger-references.md` |
+
+Other branches hold their own pending files that are not listed here, because
+this table is only accurate for the branch you are reading it on. `#1374` and
+`#1390` each carry one.
 
 ## Promoted
 
