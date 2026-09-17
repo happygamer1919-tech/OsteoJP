@@ -77,6 +77,35 @@ export type ReminderAppointmentData = {
 };
 
 /**
+ * The clinic phone the 24h SMS prints on its `Remarcar:` line.
+ *
+ * ==========================================================================
+ * IT IS THE SAME RULE AS THE SEND PATH, DELIBERATELY AND BYTE FOR BYTE.
+ * ==========================================================================
+ * `dispatch.ts` resolves the number as `locationPhone || tenantPhone(settings)`
+ * at three separate call sites, with `tenantPhone` private to that module. The
+ * confirm page must show the SAME number: a page that tells a patient to ring
+ * one number while the message in their hand prints another is worse than
+ * telling them nothing, because they will believe the one that failed them.
+ *
+ * So the rule lives here, beside the two columns it reads, rather than becoming
+ * a fourth copy at the page. It is written without trimming or normalising for
+ * exactly one reason: any tidying here would make this answer DIFFER from the
+ * SMS on some input, which is the single thing it exists to prevent.
+ *
+ * "" means no number is configured. A caller must treat that as "nothing to
+ * show" and not print a dangling label.
+ */
+export function clinicPhoneOf(
+  data: Pick<ReminderAppointmentData, "locationPhone" | "tenantSettings">,
+): string {
+  if (data.locationPhone) return data.locationPhone;
+  const s = data.tenantSettings as { contacts?: { phone?: unknown } } | null | undefined;
+  const phone = s?.contacts?.phone;
+  return typeof phone === "string" ? phone : "";
+}
+
+/**
  * Load everything needed to render + address a reminder for one appointment,
  * scoped to the appointment's tenant. Returns null if the appointment is not
  * visible in this tenant context (RLS) — caller treats that as "nothing to do".

@@ -54,6 +54,20 @@ export type ConfirmOutcome =
   | { outcome: "confirmed" }
   | { outcome: "already_confirmed" }
   | { outcome: "pedido" }
+  /**
+   * 0061's exclusion constraint refused the confirm: the slot is already held
+   * by a CONFIRMED appointment on the same practitioner. Nothing was written
+   * and the booking stays `scheduled`.
+   *
+   * IT IS DISTINGUISHABLE, AND UNDER THE SAME RULE `already_confirmed` IS.
+   * SR-30 requires that REFUSALS not be told apart, so a prober cannot learn
+   * whether a code is real. This state is reachable only from a LIVE, UNSPENT
+   * code on a real appointment, so reaching it tells the holder nothing they
+   * did not already have - and the alternative, folding it into `generic`,
+   * would tell the one person who needs to act ("contact the clinic") that
+   * their link was simply invalid.
+   */
+  | { outcome: "double_booked" }
   | { outcome: "generic" };
 
 /** Frozen, so the three refusals cannot become three objects that merely look alike. */
@@ -68,6 +82,52 @@ const NOWHERE_ID = "00000000-0000-0000-0000-000000000000";
 
 /** Statuses a confirm link may still act on. */
 const ACTIONABLE = new Set(["scheduled", "confirmed"]);
+
+/* ================================================================== */
+/* 0061's REFUSAL                                                      */
+/* ================================================================== */
+
+const EXCLUSION_VIOLATION = "23P01";
+/** Migration 0061. The only exclusion constraint in this schema, today. */
+const DOUBLE_CONFIRMED_CONSTRAINT = "appointments_no_double_confirmed";
+
+/**
+ * Was this thrown by the double-confirmed constraint, and by nothing else?
+ *
+ * MATCHED ON THE SQLSTATE **AND** THE CONSTRAINT NAME. 23P01 belongs to any
+ * exclusion constraint. Today 0061's is the only one in the schema, so the code
+ * alone would be sufficient — and that is exactly the kind of fact that stops
+ * being true silently. Mapping some future constraint's refusal to "your slot
+ * is taken, ring the clinic" would be a confident lie told to a patient, so the
+ * name is checked too. Same reasoning, and same shape, as
+ * `isDoubleConfirmedViolation` in lib/scheduling/actions.ts.
+ *
+ * THE CAUSE CHAIN IS WALKED BECAUSE THE ERROR ARRIVES WRAPPED. Drizzle raises
+ * its own `Failed query: ...` Error and hangs the driver's PostgresError off
+ * `cause`, so the fields are one level down. That is not a guess: the first run
+ * of `confirm-redeem-overlap.db.test.ts` asserted `{ code }` at the top level
+ * and failed, and its negative control now pins the nested shape. Both
+ * `constraint_name` (postgres.js) and `constraint` (node-postgres) are read,
+ * because the driver is a dependency and not a contract.
+ *
+ * The depth cap and the `seen` set are there so a self-referencing `cause`
+ * cannot spin: a classifier that hangs would take the whole request with it.
+ */
+function isDoubleConfirmedViolation(e: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = e;
+  for (let depth = 0; cur && typeof cur === "object" && depth < 4; depth++) {
+    if (seen.has(cur)) break;
+    seen.add(cur);
+    const o = cur as Record<string, unknown>;
+    if (o.code === EXCLUSION_VIOLATION) {
+      const name = String(o.constraint_name ?? o.constraint ?? "");
+      if (name === DOUBLE_CONFIRMED_CONSTRAINT) return true;
+    }
+    cur = o.cause;
+  }
+  return false;
+}
 
 type LoadedAppointment = {
   id: string;
@@ -154,18 +214,44 @@ export async function redeemConfirmCode(args: {
     // unspent code.
     if (appointment.status === "confirmed") return { outcome: "already_confirmed" };
 
-    await withReminderTenantContext(appointment.tenantId, async (tx) => {
-      await tx
-        .update(appointments)
-        .set({ status: "confirmed" })
-        .where(and(eq(appointments.id, appointment.id), eq(appointments.status, "scheduled")));
-      await writeAudit(tx, {
-        tenantId: appointment.tenantId,
-        appointmentId: appointment.id,
-        action: "appointment.confirm.sms_code",
-        ip,
+    try {
+      await withReminderTenantContext(appointment.tenantId, async (tx) => {
+        await tx
+          .update(appointments)
+          .set({ status: "confirmed" })
+          .where(and(eq(appointments.id, appointment.id), eq(appointments.status, "scheduled")));
+        await writeAudit(tx, {
+          tenantId: appointment.tenantId,
+          appointmentId: appointment.id,
+          action: "appointment.confirm.sms_code",
+          ip,
+        });
       });
-    });
+    } catch (err) {
+      // ONLY 0061's refusal is caught. Anything else is a fault this path has
+      // no business swallowing, so it leaves exactly as it does today.
+      if (!isDoubleConfirmedViolation(err)) throw err;
+
+      // THE TRANSACTION TOOK ITS AUDIT ROW WITH IT, which is why this second
+      // one exists rather than being written above. The state change and its
+      // record must succeed or fail together; a refusal has no state change,
+      // so its record is a separate write - the same shape `inbound-reply.ts`
+      // uses for this identical refusal.
+      //
+      // WITHOUT IT, RECEPTION CANNOT TELL THIS APART FROM A PATIENT WHO
+      // IGNORED THE SMS. Both leave a booking sitting at Agendada, and that
+      // silence is most of the harm in this defect.
+      await withReminderTenantContext(appointment.tenantId, (tx) =>
+        writeAudit(tx, {
+          tenantId: appointment.tenantId,
+          appointmentId: appointment.id,
+          action: "appointment.confirm.sms_code",
+          ip,
+          reason: "double_confirmed_refused",
+        }),
+      );
+      return { outcome: "double_booked" };
+    }
     return { outcome: "confirmed" };
   }
 
@@ -254,7 +340,22 @@ export async function redeemConfirmCode(args: {
  */
 async function writeAudit(
   tx: Parameters<Parameters<typeof withReminderTenantContext>[1]>[0],
-  row: { tenantId: string; appointmentId: string; action: string; ip: string | null },
+  row: {
+    tenantId: string;
+    appointmentId: string;
+    action: string;
+    ip: string | null;
+    /**
+     * Why this row exists when it records a REFUSAL rather than a change.
+     *
+     * A SLUG, NEVER A SENTENCE. `apps/web/lib/audit/metadata-contract.ts`
+     * refuses audit metadata strings that carry whitespace or run past 64
+     * characters, on the grounds that prose in an audit field is unqueryable.
+     * This module inserts directly and so bypasses that guard, which is a
+     * reason to honour the contract here rather than to ignore it.
+     */
+    reason?: string;
+  },
 ): Promise<void> {
   await tx.insert(auditLog).values({
     tenantId: row.tenantId,
@@ -265,7 +366,11 @@ async function writeAudit(
     entityId: row.appointmentId,
     // The appointment, never the code: an audit row holding the code would put
     // a live credential in a table staff can read.
-    metadata: { via: "confirm_code" },
+    //
+    // THE REASON IS OMITTED ENTIRELY WHEN THERE IS NONE, rather than written as
+    // null: every successful row keeps the exact metadata shape it has always
+    // had, so this change adds a key to refusals and alters nothing else.
+    metadata: row.reason ? { via: "confirm_code", reason: row.reason } : { via: "confirm_code" },
     ip: row.ip,
   });
 }
