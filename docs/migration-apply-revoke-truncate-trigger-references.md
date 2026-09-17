@@ -46,6 +46,51 @@ tables to `authenticated`, and ALL includes these three.
 has no counterpart for `authenticated`. `0080_reschedule_requests.sql:204-215`
 records the same mechanism biting once already, on DELETE.
 
+### 2a. The measurement this file acts on, and it is not mine
+
+Board card **`SEC-truncate-grant-platform-default`** (PURPLE, #1396, status
+`blocked`, `blocked_on: ivan`) measured it on production on 2026-09-17, alongside
+the 0089 read-only post-check:
+
+| privilege | held by `authenticated` on |
+|---|---|
+| TRUNCATE | **30 of the 46** tables in `public` |
+| TRIGGER, REFERENCES | **38 of the 46** |
+
+Reproduced on a throwaway database built from `supabase/migrations` with that one
+platform default added and nothing else changed, so the figure is not one
+reading. Built without it, the same migrations produce zero of all three. The 30
+equals the DELETE count, because the migrations that revoke revoke DELETE and
+TRUNCATE as a pair.
+
+**THIS FILE IMPLEMENTS THAT CARD'S OPTION 1 AND DOES NOT PRE-EMPT THE RULING.**
+The card puts three options to the owner: revoke across `public` plus the
+matching `ALTER DEFAULT PRIVILEGES`; revoke only on the tables holding patient
+data; or accept the default and record the acceptance. It notes only the first
+survives the next `CREATE TABLE`. This migration is the first, written so the
+decision has something to approve rather than something to specify. It is
+unnumbered and unapplyable precisely because the decision is not mine.
+
+### 2b. ONE CORRECTION TO THAT CARD, and it cuts toward acting
+
+The card says the application "connects as `postgres` over DATABASE_URL and never
+as `authenticated`". The first half is right and the second is not, and the
+difference matters for the card's own "no exposure is demonstrated" paragraph.
+
+The app connects as the owner and then **drops role for the duration of every
+tenant-scoped transaction**: `packages/db/src/client.ts:152` issues
+`set local role authenticated` inside `withTenantContext`, which is what every
+staff read and write reaches through `runScoped`. The portal does the same to
+`patient` at `:196`. So for the whole body of every staff request the session
+IS `authenticated` and holds its privileges, TRUNCATE included, on those 30
+tables.
+
+What the card gets right, and this file does not overstate it: **no exposure is
+demonstrated.** PostgREST issues no TRUNCATE, and no code path in this repository
+issues one. The correction is not "there is an incident"; it is that the distance
+between the over-grant and a statement that would use it is one line of SQL
+inside an already-open transaction, rather than a role switch that never happens.
+
 ## 3. What breaks: nothing, and here is the evidence rather than the claim
 
 - **TRUNCATE is not used anywhere.** The token does not appear as SQL in
@@ -89,12 +134,17 @@ SELECT count(*) AS default_still_grants
 `ALTER DEFAULT PRIVILEGES`, 4a returns 0 today and a non-zero number after the
 next `CREATE TABLE`, and nothing would say so.
 
-## 5. A sanity arm worth running first, on a lane and not on production
+## 5. The premise is already measured, so this arm is a re-check and not a test
 
-The revoke is only meaningful if the privileges are actually there. Before
-promoting, run 4a alone against a database built from `supabase/migrations`. A
-result of 0 before the migration would mean the premise is wrong on that
-database and the file should be re-derived rather than applied.
+The revoke is only meaningful if the privileges are actually there, and
+`SEC-truncate-grant-platform-default` establishes that they are: 30 of 46 on
+production for TRUNCATE, reproduced from `supabase/migrations` locally. So 4a run
+before the migration should return **30**, not 0.
+
+Run it anyway, on a lane, immediately before promoting. Not because the premise
+is in doubt, but because the number is the thing 4a is asserting went to zero,
+and a before-reading of 0 would mean this database is not the one the card
+measured. Read it, then apply, then read it again.
 
 ## 6. Out of scope, and named so it is not forgotten
 
