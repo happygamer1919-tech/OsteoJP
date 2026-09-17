@@ -39,6 +39,10 @@ import {
   updateAppointment,
 } from "@/lib/scheduling/actions";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
+import {
+  outsideClinicHoursMessage,
+  type ClinicWindowRefusal,
+} from "@/lib/scheduling/clinic-hours-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
 import {
@@ -802,6 +806,9 @@ export function AppointmentDrawer({
     // 0085. Set only with error "clinic_closed"; carries the clinic's own name
     // and shut hour so the sentence below can name the building, not a person.
     clinicClosure?: { locationName: string; from: string; to: string };
+    // AGENDA-2100. Set only with error "outside_clinic_hours"; carries the
+    // clinic's hours and the last start it accepts.
+    clinicWindow?: ClinicWindowRefusal;
     conflictOverridable?: false;
   }): boolean {
     if (r.ok) return true;
@@ -863,6 +870,11 @@ export function AppointmentDrawer({
     // The sentence itself lives in clinic-closed-message.ts, shared with the
     // Marcar novamente drawer so the two doors onto one diary say one thing.
     else if (r.error === "clinic_closed") setError(clinicClosedMessage(r.clinicClosure));
+    // AGENDA-2100: the clinic is not OPEN at that hour, which is a different
+    // sentence from the midday closure above - the day has not begun, or the
+    // last start has passed. Also raised outside the allowConflict gate, so
+    // there is no "Guardar mesmo assim" for it either.
+    else if (r.error === "outside_clinic_hours") setError(outsideClinicHoursMessage(r.clinicWindow));
     // STAFF-02. The form now offers only assigned locations, so reaching this is
     // either a stale tab or a request that did not come from the form - and in
     // both cases the honest message names the location, not a permission.

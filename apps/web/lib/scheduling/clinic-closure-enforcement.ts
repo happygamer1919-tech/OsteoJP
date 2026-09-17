@@ -2,8 +2,14 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { locations, type DbTx } from "@osteojp/db";
 
-import { overlapsClosure, type ClinicHours } from "./clinic-hours";
-import { lisbonParts } from "./time";
+import {
+  classifyStart,
+  latestStartMin,
+  overlapsClosure,
+  type ClinicHours,
+  type StartVerdict,
+} from "./clinic-hours";
+import { lisbonMinutesFromMidnight, lisbonParts, slotLabel } from "./time";
 
 /**
  * 0085 — THE CLINIC IS SHUT, AND NOBODY MAY PRESS PAST IT.
@@ -85,5 +91,69 @@ export async function checkClinicClosure(
     locationName: clinic.name,
     from: (clinic.middayClosedFrom ?? "").slice(0, 5),
     to: (clinic.middayClosedTo ?? "").slice(0, 5),
+  };
+}
+
+/**
+ * AGENDA-2100 — THE BOOKING STARTS WHILE THE BUILDING IS OPEN.
+ *
+ * ==========================================================================
+ * THIS RULE DID NOT EXIST BEFORE, AND THAT IS THE MEASUREMENT, NOT A GUESS
+ * ==========================================================================
+ * M2 walked every path that creates or moves an appointment. NOTHING anywhere
+ * compared a booking to `opens_at` or `closes_at`: the only clinic-hours rule
+ * enforced on any write path was the MIDDAY closure above. What kept bookings
+ * inside the day was the THERAPIST's `availability_templates` (RB-03), which is
+ * a different fact about a different subject - a therapist who works late at a
+ * clinic that shuts at 20:00 was, and until this lands still is, bookable at
+ * 19:45.
+ *
+ * ==========================================================================
+ * IT SITS BESIDE THE CLOSURE, OUTSIDE THE allowConflict GATE
+ * ==========================================================================
+ * Same position and the same reason: the clinic's own hours are not a judgement
+ * about people the clinic manages, so "Guardar mesmo assim" must not reach
+ * them. The force path is unchanged BECAUSE it never reached the closure check
+ * either, and this check is its neighbour rather than its exception.
+ *
+ * ==========================================================================
+ * THE START ONLY
+ * ==========================================================================
+ * `classifyStart` explains why the END is not checked: there is no
+ * end-after-close rule today, and this card does not invent one.
+ */
+export type ClinicWindowVerdict =
+  | { ok: true }
+  | {
+      ok: false;
+      /** Which half of the day the start fell outside. */
+      reason: Exclude<StartVerdict, "ok">;
+      locationName: string;
+      /** Lisbon "HH:MM", so the refusal can quote the clinic's own hours. */
+      opensAt: string;
+      closesAt: string;
+      /** `closes_at` minus the booking lead, already formatted. */
+      latestStart: string;
+    };
+
+export async function checkClinicWindow(
+  tx: DbTx,
+  args: { locationId: string; startsAt: Date },
+): Promise<ClinicWindowVerdict> {
+  const clinic = await readClinic(tx, args.locationId);
+  // Same reasoning as the closure check: a location this tenant does not have
+  // is not this check's refusal to invent.
+  if (!clinic) return { ok: true };
+
+  const verdict = classifyStart(lisbonMinutesFromMidnight(args.startsAt), clinic);
+  if (verdict === "ok") return { ok: true };
+
+  return {
+    ok: false,
+    reason: verdict,
+    locationName: clinic.name,
+    opensAt: clinic.opensAt.slice(0, 5),
+    closesAt: clinic.closesAt.slice(0, 5),
+    latestStart: slotLabel(latestStartMin(clinic)),
   };
 }

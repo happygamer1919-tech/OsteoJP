@@ -246,6 +246,35 @@ function closureOverlapExists(tenantId: string, locationId: SQL | string, starts
   )`;
 }
 
+/**
+ * AGENDA-2100 - THE START IS INSIDE THE CLINIC'S OWN DAY.
+ *
+ * `opens_at <= start <= closes_at - 60 min`, in Lisbon wall-clock, mirroring
+ * `classifyStart` in apps/web/lib/scheduling/clinic-hours.ts. The two are the
+ * same rule in two languages because the portal enforces in SQL and the staff
+ * app in TypeScript; `bookable-parity.test.ts` exists for exactly this class of
+ * pair, and the 60 is stated in both places rather than passed between them.
+ *
+ * BEFORE THIS, THE PORTAL KNEW NOTHING OF `opens_at` OR `closes_at` (M2): the
+ * slot grid was expanded from THERAPIST availability alone, so a therapist
+ * whose template ran past closing advertised slots the building was shut for.
+ * The midday closure was the only clinic fact any portal query read.
+ */
+function withinClinicHoursExists(
+  tenantId: string,
+  locationId: SQL | string,
+  startsAt: Instant,
+): SQL {
+  return sql`exists (
+    select 1 from locations l
+    where l.tenant_id = ${tenantId}
+      and l.id = ${locationId}
+      and (((${iref(startsAt)}) at time zone 'Europe/Lisbon')::time) >= l.opens_at
+      and (((${iref(startsAt)}) at time zone 'Europe/Lisbon')::time)
+            <= (l.closes_at - interval '60 minutes')
+  )`;
+}
+
 /** Availability-template coverage for the window, in clinic-local (Lisbon) time.
  *  Reuses Stream B's availability DATA model directly (weekday 0=Sun..6=Sat,
  *  local start/end time, validity window). */
@@ -540,6 +569,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             -- confirm by a genuine race, never by disagreement, so every
             -- predicate the confirm guard runs has to run here too.
             and not ${closureOverlapExists(principal.tenantId, locationId, startExpr, endExpr)}
+            -- AGENDA-2100: and inside the clinic's own opening hours. Same
+            -- contract as the line above - every predicate the confirm guard
+            -- runs has to run here too, or the grid advertises a start the
+            -- guard then refuses.
+            and ${withinClinicHoursExists(principal.tenantId, locationId, startExpr)}
         )
       order by s.starts_at
     `)) as unknown as ReadonlyArray<{ starts_at: Date | string }>;
@@ -767,6 +801,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           or ${timeOffOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt)}
           or ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt)}
           or not ${availabilityCoversExists(principal.tenantId, args.practitionerId, args.locationId, args.startsAt, args.endsAt)}
+          or not ${withinClinicHoursExists(principal.tenantId, args.locationId, args.startsAt)}
         ) as conflict,
         ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt)} as clinic_closed
       `)) as unknown as ReadonlyArray<{ conflict: boolean; clinic_closed: boolean }>;
@@ -903,6 +938,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         or ${timeOffOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt)}
         or ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)}
         or not ${availabilityCoversExists(principal.tenantId, practitionerId, locationId, startsAt, endsAt)}
+        or not ${withinClinicHoursExists(principal.tenantId, locationId, startsAt)}
       ) as conflict,
       ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)} as clinic_closed
     `)) as unknown as ReadonlyArray<{ conflict: boolean; clinic_closed: boolean }>;
