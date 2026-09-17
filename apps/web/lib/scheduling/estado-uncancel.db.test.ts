@@ -59,6 +59,12 @@ d("SCHED-27: bringing a Cancelada back", () => {
   /** 13:00-13:45 in Lisbon in January (WET = UTC), inside a 13:00-14:00 closure. */
   const LUNCH = new Date("2027-01-13T13:00:00.000Z");
   const LUNCH_END = new Date("2027-01-13T13:45:00.000Z");
+  /** AGENDA-2100: 07:30 Lisbon, BEFORE the 08:00 `opens_at` every location defaults to. */
+  const EARLY = new Date("2027-01-13T07:30:00.000Z");
+  const EARLY_END = new Date("2027-01-13T08:15:00.000Z");
+  /** The same January day at 10:00, comfortably inside 08:00-20:00. */
+  const INSIDE = new Date("2027-01-13T10:00:00.000Z");
+  const INSIDE_END = new Date("2027-01-13T10:45:00.000Z");
 
   const asReception = () => h.requireRequestContext.mockResolvedValue({ tenantId, role: "reception", userId: receptionId });
 
@@ -226,6 +232,54 @@ d("SCHED-27: bringing a Cancelada back", () => {
     if (r.ok) return;
     expect(r.error).toBe("clinic_closed");
     expect(await field(a, "status")).toBe("cancelled");
+  });
+
+  /**
+   * AGENDA-2100 (B7): THE OTHER CLINIC RULE, ON THE SAME DOOR.
+   *
+   * The un-cancel is the one write path where the row's hour was chosen long
+   * ago and the CLINIC may have changed underneath it — which is exactly LV's
+   * situation: 15 active schedule rows start before 09:00, and the hours move to
+   * 09:00-21:00. Bringing one of those back is a write, at an hour the building
+   * is now shut for, and it must be refused like any other.
+   *
+   * THE DEFAULT LOCATION IS ENOUGH TO TEST IT: `locations.opens_at` defaults to
+   * '08:00' (migration 0085), so 07:30 is before opening without a second
+   * fixture. No availability template exists for this practitioner, so
+   * `checkAvailability` reports UNCONFIGURED and refuses nothing — the clinic's
+   * own hours are the only rule that can produce this refusal, which is what
+   * makes the assertion mean what it says.
+   */
+  it("REFUSES bringing one back to an hour BEFORE the clinic opens, override included", async () => {
+    asReception();
+    const a = await seed({
+      patientId: patientA,
+      status: "cancelled",
+      startsAt: EARLY,
+      endsAt: EARLY_END,
+    });
+    const r = await update(a, { status: "scheduled" }, { allowConflict: true });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe("outside_clinic_hours");
+    expect(r.clinicWindow?.reason).toBe("before_open");
+    expect(r.clinicWindow?.opensAt).toBe("08:00");
+    expect(await field(a, "status")).toBe("cancelled");
+  });
+
+  it("brings the SAME row back once it is inside the opening hours - the negative arm", async () => {
+    // Without this, a refusal that fired on every un-cancel at this location
+    // would satisfy the arm above. The only difference is the hour.
+    asReception();
+    const a = await seed({
+      patientId: patientA,
+      status: "cancelled",
+      startsAt: INSIDE,
+      endsAt: INSIDE_END,
+    });
+    const r = await update(a, { status: "scheduled" });
+    expect(r.ok).toBe(true);
+    expect(await field(a, "status")).toBe("scheduled");
   });
 
   it("re-emits reminders for a FUTURE appointment brought back, and not for a past one", async () => {
