@@ -120,11 +120,11 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**439 cards on the board. 292 shipped, 147 open. Launch readiness 9/9, every launch gate passes.**
-Plus **64 recorded rulings**, which are decisions and not work: they carry no
+**440 cards on the board. 292 shipped, 148 open. Launch readiness 9/9, every launch gate passes.**
+Plus **68 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
-66 and two are on the external agenda. Nothing mechanical checks this number - the
+70 and two are on the external agenda. Nothing mechanical checks this number - the
 guard next door pins the CARD headline only - and it has now been wrong four times
 (51 against a rendered 58, then 58 against 60, then 63 against 64 on 2026-09-09),
 each time found and corrected by hand-count. A number nothing checks is a number
