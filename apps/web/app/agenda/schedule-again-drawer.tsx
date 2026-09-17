@@ -7,6 +7,7 @@ import { useState } from "react";
 import { s } from "@/lib/i18n";
 import { cloneAppointment } from "@/lib/scheduling/actions";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
+import { outsideClinicHoursMessage } from "@/lib/scheduling/clinic-hours-message";
 import { formatTimeOfDay, lisbonDateTimeToUtc } from "@/lib/scheduling/time";
 import type { AgendaAppointment, ConflictInfo } from "@/lib/scheduling/types";
 
@@ -138,6 +139,13 @@ export function ScheduleAgainDrawer({
       // branch the refusal fell through to the generic sentence below - and
       // before the server check existed, the clone was simply written.
       setError(clinicClosedMessage(result.clinicClosure));
+    } else if (result.error === "outside_clinic_hours") {
+      // AGENDA-2100. The clone's new hour is outside the clinic's day - before
+      // it opens, or later than the last start it accepts. A plain message for
+      // the same reason as the closure above: the server raises it outside the
+      // override, so "Marcar mesmo assim" cannot reach it and must not be
+      // offered.
+      setError(outsideClinicHoursMessage(result.clinicWindow));
     } else if (result.error === "location_not_assigned") {
       setError(s["errors.forbidden"]);
     } else {

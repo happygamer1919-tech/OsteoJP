@@ -41,6 +41,10 @@ import {
 } from "@/lib/scheduling/estado-transitions";
 import { correctionTargets, isLegalEstadoCorrection } from "@/lib/scheduling/estado-correction";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
+import {
+  outsideClinicHoursMessage,
+  type ClinicWindowRefusal,
+} from "@/lib/scheduling/clinic-hours-message";
 import { formatCreatedAt, formatTimeOfDay, lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import type {
   AgendaAppointment,
@@ -457,6 +461,7 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
 function estadoRefusalMessage(r: {
   error?: string;
   clinicClosure?: { locationName: string; from: string; to: string };
+  clinicWindow?: ClinicWindowRefusal;
 }): string {
   switch (r.error) {
     case "forbidden":
@@ -467,6 +472,12 @@ function estadoRefusalMessage(r: {
       return s["appointment.doubleBooked"];
     case "clinic_closed":
       return clinicClosedMessage(r.clinicClosure);
+    // AGENDA-2100: an un-cancel back into an hour the clinic is not open for.
+    // Reachable from this same control for the reason the header gives: SCHED-27
+    // put every create-path refusal behind Estado, and the clinic's own hours
+    // are now one of them.
+    case "outside_clinic_hours":
+      return outsideClinicHoursMessage(r.clinicWindow);
     case "shared_resource_location":
       return s["appointment.sharedResourceLocation"];
     // SCHED-30: a therapist's own row at a clinic they are not assigned to, and a
