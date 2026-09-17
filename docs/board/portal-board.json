@@ -1434,7 +1434,7 @@
     },
     {
       "id": "CONV-0089-postcheck-sql-path",
-      "title": "0089 post-check SQL sits at scripts/db/ while the repo convention is scripts/NNNN-postcheck.sql",
+      "title": "0089 post-check SQL sits in a subfolder while every other post-check sits directly under scripts",
       "lane": "loose_ends",
       "home_lane": "loose_ends",
       "status": "blocked",
@@ -1444,7 +1444,7 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-09-17",
-      "notes": "OPEN QUESTION, NO MOVE MADE.\n\n#1384 merged as da3620c0 and placed its read-only post-check at scripts/db/postcheck-0089-readonly.sql, with its doc at docs/migration-postcheck-0089.md. The convention everywhere else in this repo is scripts/NNNN-postcheck.sql: scripts/0080-postcheck.sql, scripts/0083-postcheck.sql and their pre-check siblings all sit directly under scripts/. 0089 is the first post-check to live under scripts/db/.\n\nNOTHING WAS MOVED, AND THAT IS DELIBERATE. A script the owner is asked to run is addressed by its FULL PATH from the repository root plus its sha256 (SR-61). Moving this file after it has been carded would invalidate any command already printed for it, and would produce the same path-does-not-exist symptom that SR-61 exists to end, which reads identically to a file that was never merged.\n\nTHE DECISION BELONGS TO THE OWNER, and it is one of two: adopt scripts/db/ as the home for database post-checks and record that convention, or move 0089 to scripts/0089-postcheck.sql and reprint its ref-addressed command with the new path and hash. Either is cheap now and expensive once more scripts follow the new shape.\n\nSTEWARD opened this card and did not touch the file."
+      "notes": "OPEN QUESTION, NO MOVE MADE.\n\n#1384 merged as da3620c0 and placed its read-only post-check at scripts/db/postcheck-0089-readonly.sql, with its doc at docs/migration-postcheck-0089.md. Every other post-check in this repo sits directly under the scripts directory and is named for its migration number: scripts/0080-postcheck.sql and scripts/0083-postcheck.sql, with their pre-check siblings beside them. 0089 is the first to live one level down.\n\nNOTHING WAS MOVED, AND THAT IS DELIBERATE. A script the owner is asked to run is addressed by its full path from the repository root plus its sha256 (SR-61). Moving this file after it has been carded would invalidate any command already printed for it, and the failure reads exactly like a file that was never merged.\n\nTHE DECISION BELONGS TO THE OWNER, and it is one of two: adopt the subfolder as the home for database post-checks and record that convention, or move 0089 beside the other post-checks, named for its migration number, and reprint its ref-addressed command with the new path and hash. Either is cheap now and grows expensive once more scripts follow the new shape.\n\nNOTE FOR THE NEXT EDITOR: this card deliberately names no path that does not exist. The SR-61 guard scans every script path a card mentions and refuses one that does not resolve, because the owner pastes these straight off the rendered board.\n\nSTEWARD opened this card and did not touch the file."
     },
     {
       "id": "END-legal-sweep",
