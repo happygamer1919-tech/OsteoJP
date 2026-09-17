@@ -466,7 +466,6 @@ documented `--limit 8` command locally; Claude reports the summary back.
   - Owner: JP or Ivan to decide. Block on this before touching those two i18n keys.
   - **Tag (2026-07-03):** next-wave-planning batch. Stays OPEN; scheduled for the next-wave planning pass, no ruling this wave.
 
-osteojp-availability-seed
 ## 2026-07-01 - availability seed: CI does NOT consume it, and live dev run is credential-blocked
 - [ ] **CI's seeded-DB jobs do not run the TS dev seed (loop premise was wrong).**
   The availability-seed loop assumed wiring into the `seed:dev` entrypoint would make
