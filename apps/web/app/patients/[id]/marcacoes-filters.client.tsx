@@ -269,7 +269,7 @@ export function MarcacoesFilters({
             <input
               type="checkbox"
               data-testid={`filter-estado-${e}`}
-              checked={values.estado.includes(e)}
+              checked={shownEstado.includes(e)}
               onChange={() => toggleEstado(e)}
             />
             {s[ESTADO_KEY[e]]}
@@ -280,8 +280,11 @@ export function MarcacoesFilters({
           <input
             type="checkbox"
             data-testid="filter-sem-nota"
-            checked={values.semNota}
-            onChange={(e) => apply({ semNota: e.target.checked })}
+            checked={shownSemNota}
+            onChange={(e) => {
+              setShownSemNota(e.target.checked);
+              apply({ semNota: e.target.checked });
+            }}
           />
           {s["ficha.filters.withoutNote"]}
         </label>
