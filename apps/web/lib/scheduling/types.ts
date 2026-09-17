@@ -277,6 +277,20 @@ export type ActionErrorCode =
   // too: an absence sends them to that therapist's blocks, a closure sends them
   // nowhere, because there is nothing to remove.
   | "clinic_closed"
+  // AGENDA-2100: the booking STARTS outside the clinic's own opening hours -
+  // before `opens_at`, or later than `closes_at` minus the 60-minute booking
+  // lead.
+  //
+  // ITS OWN CODE AND NOT `clinic_closed`, although both are the building. The
+  // closure is a hole in the middle of an open day and the reader picks another
+  // hour inside it; this one says the day itself has ended (or not begun), and
+  // the sentence names the hour to move TO. Folding them would give one message
+  // two meanings, which is the thing `clinic_closed` was split out of
+  // `conflict` to avoid in the first place.
+  //
+  // NOT OVERRIDABLE, for the same reason as its neighbour: it is checked beside
+  // the closure and outside the `allowConflict` gate.
+  | "outside_clinic_hours"
   // RB-02: the pacote has fewer sessions left than this booking needs.
   //
   // ITS OWN CODE AND NOT `validation`, because the two need different copy and
@@ -359,6 +373,21 @@ export type ActionResult<T> =
        * availability windows above follow.
        */
       clinicClosure?: { locationName: string; from: string; to: string };
+      /**
+       * AGENDA-2100. Set only with `error: "outside_clinic_hours"`. It carries
+       * the clinic, its hours, and the LAST START it will accept, because the
+       * reader's next action is to pick a different hour and the refusal should
+       * say which - the same rule `clinicClosure` and `availabilityWindows`
+       * follow. `reason` decides which of the two sentences is shown: too early
+       * sends them forward to opening, too late back to the last start.
+       */
+      clinicWindow?: {
+        reason: "before_open" | "after_latest_start";
+        locationName: string;
+        opensAt: string;
+        closesAt: string;
+        latestStart: string;
+      };
       /**
        * SCHED-30. Set to `false` only with `error: "conflict"` when the server
        * will NOT honour allowConflict for this call: a therapist bringing a

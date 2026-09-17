@@ -26,13 +26,19 @@ import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { PATIENT_STATS_TAG } from "@/lib/patients/cache-tags";
 import { clientIp } from "./actor";
-import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult, PackBatchRefused } from "./batch";
+import {
+  batchSchedule,
+  ClinicHoursRefused,
+  PackBatchRefused,
+  type BatchScheduleInput,
+  type BatchScheduleResult,
+} from "./batch";
 import { writeAppointmentStatusChangedEvent } from "./analytics";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { checkAvailability } from "./availability-enforcement";
-import { checkClinicClosure } from "./clinic-closure-enforcement";
+import { checkClinicClosure, checkClinicWindow } from "./clinic-closure-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
 import { correctionEntersBlockingSet, isLegalEstadoCorrection } from "./estado-correction";
 import { isUncancel } from "./uncancel";
@@ -753,6 +759,28 @@ export async function createAppointment(
               clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
             };
           }
+
+          // AGENDA-2100 - AND THE CLINIC'S OWN DAY, beside the closure and for the
+          // same reason. `closes_at` minus 60 minutes is the last start; before
+          // `opens_at` is the other half of the same rule. Outside the allowConflict
+          // gate, so "Guardar mesmo assim" cannot reach it.
+          const cw = await checkClinicWindow(tx, {
+            locationId: input.locationId,
+            startsAt: w.startsAt,
+          });
+          if (!cw.ok) {
+            return {
+              ok: false,
+              error: "outside_clinic_hours",
+              clinicWindow: {
+                reason: cw.reason,
+                locationName: cw.locationName,
+                opensAt: cw.opensAt,
+                closesAt: cw.closesAt,
+                latestStart: cw.latestStart,
+              },
+            };
+          }
         }
 
         if (!input.allowConflict) {
@@ -1042,6 +1070,12 @@ export async function batchScheduleAppointments(
      * rather than by message so a reworded message cannot silently downgrade a
      * named refusal into a generic one.
      */
+    // AGENDA-2100: the batch asked for an hour the clinic is not open for.
+    // Mapped by INSTANCE like the refusal below it, and it carries the payload
+    // so Agendar lote can name the clinic and the last start it accepts.
+    if (e instanceof ClinicHoursRefused) {
+      return { ok: false, error: "outside_clinic_hours", clinicWindow: e.window };
+    }
     if (e instanceof PackBatchRefused) return { ok: false, error: e.kind };
     return fail("batchSchedule", e);
   }
@@ -1225,6 +1259,28 @@ export async function cloneAppointment(
             ok: false,
             error: "clinic_closed",
             clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+          };
+        }
+
+        // AGENDA-2100 - AND THE CLINIC'S OWN DAY, beside the closure and for the
+        // same reason. `closes_at` minus 60 minutes is the last start; before
+        // `opens_at` is the other half of the same rule. Outside the allowConflict
+        // gate, so "Guardar mesmo assim" cannot reach it.
+        const cw = await checkClinicWindow(tx, {
+          locationId: values.locationId,
+          startsAt: values.startsAt,
+        });
+        if (!cw.ok) {
+          return {
+            ok: false,
+            error: "outside_clinic_hours",
+            clinicWindow: {
+              reason: cw.reason,
+              locationName: cw.locationName,
+              opensAt: cw.opensAt,
+              closesAt: cw.closesAt,
+              latestStart: cw.latestStart,
+            },
           };
         }
 
@@ -1471,6 +1527,28 @@ export async function updateAppointment(
                 ok: false,
                 error: "clinic_closed",
                 clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+              };
+            }
+
+            // AGENDA-2100 - AND THE CLINIC'S OWN DAY, beside the closure and for the
+            // same reason. `closes_at` minus 60 minutes is the last start; before
+            // `opens_at` is the other half of the same rule. Outside the allowConflict
+            // gate, so "Guardar mesmo assim" cannot reach it.
+            const cw = await checkClinicWindow(tx, {
+              locationId: a.locationId,
+              startsAt: a.startsAt,
+            });
+            if (!cw.ok) {
+              return {
+                ok: false,
+                error: "outside_clinic_hours",
+                clinicWindow: {
+                  reason: cw.reason,
+                  locationName: cw.locationName,
+                  opensAt: cw.opensAt,
+                  closesAt: cw.closesAt,
+                  latestStart: cw.latestStart,
+                },
               };
             }
             const shared = await sharedResourceBookingCheck(actor, a.practitionerId, a.locationId, tx);
@@ -1929,6 +2007,28 @@ export async function rescheduleAppointment(
               ok: false,
               error: "clinic_closed",
               clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+            };
+          }
+
+          // AGENDA-2100 - AND THE CLINIC'S OWN DAY, beside the closure and for the
+          // same reason. `closes_at` minus 60 minutes is the last start; before
+          // `opens_at` is the other half of the same rule. Outside the allowConflict
+          // gate, so "Guardar mesmo assim" cannot reach it.
+          const cw = await checkClinicWindow(tx, {
+            locationId: input.locationId,
+            startsAt: t.startsAt,
+          });
+          if (!cw.ok) {
+            return {
+              ok: false,
+              error: "outside_clinic_hours",
+              clinicWindow: {
+                reason: cw.reason,
+                locationName: cw.locationName,
+                opensAt: cw.opensAt,
+                closesAt: cw.closesAt,
+                latestStart: cw.latestStart,
+              },
             };
           }
         }

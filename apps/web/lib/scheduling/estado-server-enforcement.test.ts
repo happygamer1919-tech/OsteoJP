@@ -67,7 +67,20 @@ vi.mock("./conflict", () => ({
 // the map, the role gate and the conflict gate; the closure, NESA and pacote
 // refusals themselves are asserted against a real database in
 // estado-uncancel.db.test.ts.
-vi.mock("./clinic-closure-enforcement", () => ({ checkClinicClosure: vi.fn(async () => ({ ok: true })) }));
+vi.mock("./clinic-closure-enforcement", () => ({
+  checkClinicClosure: vi.fn(async () => ({ ok: true })),
+  // AGENDA-2100: the un-cancel path now also asks whether the clinic is OPEN at
+  // that hour. Mocked to PASS for exactly the reason the closure above it is:
+  // this file tests the estado map, the role gate and the conflict gate, and the
+  // clinic-hours rule has its own suites (clinic-hours-window.test.ts,
+  // actions.clinic-hours-enforced.test.ts, write-paths-check-clinic-hours.test.ts).
+  //
+  // A FACTORY REPLACES THE WHOLE MODULE, so an export it omits is `undefined`
+  // rather than the real function - and calling it throws an error the action
+  // catches and reports as the generic `error`. That is what six arms here did
+  // the moment the new check landed.
+  checkClinicWindow: vi.fn(async () => ({ ok: true })),
+}));
 vi.mock("./uncancel-db", () => ({ uncancelOverdrawsPack: vi.fn(async () => false) }));
 vi.mock("./shared-resources", () => ({
   listSharedResources: vi.fn(async () => []),
