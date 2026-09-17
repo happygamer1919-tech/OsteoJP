@@ -33,7 +33,13 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none) | | | |
+| `NEXT-AFTER-0089_nesa_patient_name_for_therapists.sql` | `0089_attachments_soft_delete` — applied to production 2026-09-16, journal `idx 86`, and still unmerged (PR #1338) | 2026-09-17, BLUE (B8), owner request + strategy ruling of the same day | branch `sched/B8-nesa-names-to-therapists`. **Promotes AHEAD of `NEXT-AFTER-0089_care_team.sql`** by the B8 dispatch's ordering, so at promotion this becomes `0090_` and care-team becomes `0091_`. Neither may take a number before the other is promoted |
+
+**Two files now claim `NEXT-AFTER-0089`, and that is the situation this directory
+exists for.** `NEXT-AFTER-0089_care_team.sql` lives on `care/CARE-01-assigned-therapists`
+(PR #1374, held). Whichever is promoted first takes `0090`; the second must be
+re-based onto the new head and promoted as `0091`. The dispatch ruled the order:
+NESA-NAMES first.
 
 ## Promoted
 
