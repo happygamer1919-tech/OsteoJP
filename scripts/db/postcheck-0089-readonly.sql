@@ -41,8 +41,20 @@
 --     journal_rows_before        = 86    -> this file expects 87 after 0089
 --     attachments_policies_before = 2    -> this file expects 2 (ALTER, not CREATE)
 --     secdef_functions_before     = 24   -> this file expects 24 (none added)
---     attachments                 = 1181
---     attachments patient-level   = 1181
+--     attachments                 = 1181 -> this file expects AT LEAST 1181
+--     attachments patient-level   = 1181 -> this file expects AT LEAST 1181
+--
+-- THE TWO ROW COUNTS ARE FLOORS AND NOT EQUALITIES, AND THAT IS A CORRECTION.
+-- They were pinned as `= 1181` and both read FAIL on the first production run,
+-- at 1185: four documents were uploaded after G3's 12:00 UTC read, the newest at
+-- 16:42 UTC. A clinic that keeps working is not a regression. What 0089 has to
+-- answer is whether anything was LOST - it writes no data - so the assertion is
+-- that nothing was deleted and nothing moved off patient level. A floor passes a
+-- table that grew and fails one that shrank.
+--
+-- WHAT A FLOOR CANNOT SEE, said rather than papered over: a delete followed by
+-- an equal number of inserts. G3 recorded counts and no row identities, so there
+-- is no id-level assertion available to make here.
 --
 -- A pinned literal is weaker evidence than a carry measured in the same sitting,
 -- and that is stated plainly rather than hidden: if production's policy count
@@ -287,22 +299,64 @@ SELECT '20. every public SECURITY DEFINER function pins its search_path',
 -- the patient portal may READ the new columns and may not write them, and anon
 -- reaches none of it. See [[table-revoke-drops-column-grants]] for why the whole
 -- list is restated rather than spot-checked.
-SELECT '21. table grants on attachments are the hardened set',
-       coalesce((SELECT string_agg(grantee || '=' || privs, ' ' ORDER BY grantee)
-                   FROM (SELECT grantee, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs
-                           FROM information_schema.role_table_grants
-                          WHERE table_schema = 'public' AND table_name = 'attachments'
-                            AND grantee IN ('authenticated', 'patient', 'anon')
-                          GROUP BY grantee) g), 'NONE'),
-       'authenticated=DELETE,INSERT,SELECT,UPDATE patient=SELECT (anon absent)',
-       CASE WHEN (SELECT string_agg(grantee || '=' || privs, ' ' ORDER BY grantee)
-                    FROM (SELECT grantee, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs
-                            FROM information_schema.role_table_grants
-                           WHERE table_schema = 'public' AND table_name = 'attachments'
-                             AND grantee IN ('authenticated', 'patient', 'anon')
-                           GROUP BY grantee) g)
-                 = 'authenticated=DELETE,INSERT,SELECT,UPDATE patient=SELECT'
-            THEN 'OK' ELSE 'FAIL' END;
+--
+-- THIS ROW NO LONGER PINS A LITERAL, AND THE REASON IS A REAL FAILURE. It
+-- expected `authenticated=DELETE,INSERT,SELECT,UPDATE`, and production read
+-- `DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE`. Nothing had gone
+-- wrong. The extra three are SUPABASE PLATFORM DEFAULTS: a Supabase project
+-- carries `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO
+-- authenticated`, so every table arrives with all seven and a migration's
+-- explicit GRANT is invisible against them. The rehearsal database was built by
+-- a plain CREATE DATABASE, which inherits no default privileges, so it showed
+-- only the four this repository grants - and the literal recorded the rehearsal,
+-- not production. Measured 2026-09-17: rebuilding the same throwaway with that
+-- one ALTER DEFAULT PRIVILEGES reproduces production's string exactly, on
+-- attachments and on patients alike.
+--
+-- SO THE ROW ASSERTS WHAT 0089 GOVERNS AND NOTHING ELSE: `patient` reads and
+-- only reads, `anon` is absent, and `authenticated` holds the four privileges
+-- this repository actually grants it - `GRANT SELECT, INSERT, UPDATE, DELETE ON
+-- ALL TABLES IN SCHEMA public TO authenticated`, in 0003_grants.sql, which is
+-- the only place any of the four is granted on this table. No migration in this
+-- repository ever grants TRUNCATE, TRIGGER or REFERENCES to anyone; every
+-- mention of those three is a REVOKE on some other table. The platform's own
+-- additions are therefore not judged against a
+-- number that would go stale the next time Supabase changes a default - they are
+-- compared against `patients`, read IN THE SAME QUERY, which is governed by the
+-- same defaults and by no part of 0089. A drift that hits attachments alone is
+-- what this catches; a platform-wide change moves both and is not 0089's to
+-- report.
+--
+-- IT CANNOT PASS VACUOUSLY. The `patients` baseline must be non-empty, so a
+-- query returning nothing cannot make the comparison trivially true; and the
+-- four-privilege floor is asserted on attachments directly, so two tables
+-- stripped to the same empty set fail rather than matching each other.
+WITH g AS (
+  SELECT table_name, grantee, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs
+    FROM information_schema.role_table_grants
+   WHERE table_schema = 'public'
+     AND table_name IN ('attachments', 'patients')
+     AND grantee IN ('authenticated', 'patient', 'anon')
+   GROUP BY table_name, grantee
+), m AS (
+  SELECT (SELECT privs FROM g WHERE table_name = 'attachments' AND grantee = 'authenticated') AS att_auth,
+         (SELECT privs FROM g WHERE table_name = 'attachments' AND grantee = 'patient')       AS att_patient,
+         (SELECT privs FROM g WHERE table_name = 'attachments' AND grantee = 'anon')          AS att_anon,
+         (SELECT privs FROM g WHERE table_name = 'patients'    AND grantee = 'authenticated') AS pat_auth
+)
+SELECT '21. attachments grants: patient reads only, anon absent, authenticated as on patients',
+       'attachments patient=' || coalesce(att_patient, 'NONE') ||
+       ' anon=' || coalesce(att_anon, 'absent') ||
+       ' authenticated=' || coalesce(att_auth, 'NONE') ||
+       ' | patients authenticated=' || coalesce(pat_auth, 'NONE'),
+       'patient=SELECT, anon absent, authenticated >= DELETE,INSERT,SELECT,UPDATE and equal to patients',
+       CASE WHEN att_patient = 'SELECT'
+                 AND att_anon IS NULL
+                 AND pat_auth IS NOT NULL
+                 AND att_auth = pat_auth
+                 AND string_to_array(att_auth, ',') @> ARRAY['DELETE', 'INSERT', 'SELECT', 'UPDATE']
+            THEN 'OK' ELSE 'FAIL' END
+  FROM m;
 
 SELECT '22. the patient role may READ the three new columns and may not WRITE them',
        coalesce((SELECT string_agg(DISTINCT privilege_type, ',' ORDER BY privilege_type)
@@ -335,16 +389,26 @@ SELECT '23. the delete_reason column comment is present, by md5',
 /* ------------------------------------------------------------------ shape -- */
 
 -- G3 measured these on production before the apply. 0089 writes no data, so
--- both must be UNCHANGED. A move here means something other than 0089 ran.
-SELECT '24. attachments row count is unchanged (G3: 1181)',
+-- nothing may have been LOST. These are floors, not equalities: the clinic keeps
+-- uploading documents, and a table that grew is not a regression. See the header
+-- for the run that made this a correction rather than a preference.
+SELECT '24. no attachment row was deleted since G3 (floor 1181, not a pinned total)',
        (SELECT count(*)::text FROM public.attachments),
-       '= 1181',
-       CASE WHEN (SELECT count(*) FROM public.attachments) = 1181 THEN 'OK' ELSE 'FAIL' END;
+       '>= 1181',
+       CASE WHEN (SELECT count(*) FROM public.attachments) >= 1181 THEN 'OK' ELSE 'FAIL' END;
 
-SELECT '25. patient-level attachments unchanged (G3: 1181)',
-       (SELECT count(*)::text FROM public.attachments WHERE patient_id IS NOT NULL),
-       '= 1181',
-       CASE WHEN (SELECT count(*) FROM public.attachments WHERE patient_id IS NOT NULL) = 1181
+-- THE SECOND FLOOR IS NOT THE FIRST ONE RESTATED. A row whose patient_id was
+-- cleared still counts in 24 and vanishes from 25, which is exactly the move
+-- 0089 must not have made. The count of rows carrying no patient is printed
+-- beside it as context and is NOT asserted: a record-level attachment is
+-- representable in this schema, and forbidding one would fail the day staff
+-- attach a document to a consultation instead of a patient.
+SELECT '25. no attachment moved off patient level since G3 (floor 1181)',
+       (SELECT count(*)::text FROM public.attachments WHERE patient_id IS NOT NULL)
+         || ' patient-level (' || (SELECT count(*)::text FROM public.attachments WHERE patient_id IS NULL)
+         || ' carry no patient, not asserted)',
+       '>= 1181 patient-level',
+       CASE WHEN (SELECT count(*) FROM public.attachments WHERE patient_id IS NOT NULL) >= 1181
             THEN 'OK' ELSE 'FAIL' END;
 
 -- THE COLUMNS ARRIVED EMPTY. Nothing has been soft-deleted yet, so any non-null

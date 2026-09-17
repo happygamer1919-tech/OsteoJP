@@ -62,6 +62,23 @@ export function offendingLines(markdown) {
       inFence = !inFence;
       return;
     }
+    // THE `#` SKIP IS MEASURED, NOT ASSUMED, so that no later lane re-proposes
+    // removing it. The tempting stricter rule is "an owner-run block carries no
+    // `#` comment lines at all", on the theory that an interactive zsh would try
+    // to RUN one. IT WOULD NOT, IN THIS OWNER'S SHELL: `interactive_comments` is
+    // set by ~/.oh-my-zsh/lib/misc.zsh line 20, so a `#` line is a comment and
+    // never a command. Measured 2026-09-17 by piping `echo MARKER_A`, a `#`
+    // line, and `echo MARKER_B` into `zsh -i`: both markers printed and nothing
+    // reported a command not found.
+    //
+    // AND THE RULE WOULD NOT BE CHEAP. It would redden 59 lines across seven
+    // MERGED apply documents - 0079 (2), 0083 (9), 0084 (10), 0085 (10), 0086
+    // (11), 0087 (9), 0088 (8) - every one a section header inside a block the
+    // owner has already pasted and run. A guard that goes red on fifty-nine
+    // lines of working history is one people learn to skip.
+    //
+    // What the 0085 sitting actually cost was a PARAMETER EXPANSION, which is
+    // what the line below skips comments in order to keep looking for.
     if (!inFence || /^\s*#/.test(line)) return;
     if (UNBRACED_BEFORE_COLON.test(line)) out.push({ line: i + 1, text: line.trim() });
   });
