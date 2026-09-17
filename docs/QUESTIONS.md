@@ -1705,7 +1705,34 @@ The 2026-09-14 ruling masks the recipient NUMBER on SMS rows. `reminder_dispatch
 
 **Recommended default:** email rows keep NULL until ruled. If the owner wants a pattern for email too, it needs its own shape (for example the first letter and the domain) and its own CHECK.
 
-## 2026-09-17 - Q-U1-1: does Back have to restore the UNFILTERED ficha, or is that my test over-specifying Next? (PURPLE)
+## 2026-09-17 - Q-U1-1: does Back have to restore the UNFILTERED ficha, or is that my test over-specifying Next? (PURPLE) (ANSWERED 2026-09-17)
+
+**ANSWERED (strategy ruling, 2026-09-17): the URL is authoritative.** After Back or
+Forward the rows and every control match the URL, and the extra server round trip is
+accepted.
+
+**NEITHER of the two branches below was the cause, and the measurement is what said
+so.** Pressing Back made **zero** server requests: `popstate` fired at
+`?tab=consultas` and the router then rewrote the URL back to
+`?tab=consultas&estado=cancelled`. With no round trip the server values never change,
+so the optimistic Estado state had nothing to re-sync from - **the stuck tick was a
+symptom of the missing fetch, not its cause**, and that code was left untouched. It is
+not a dev-server artifact either: a production build reproduces it. What decides it is
+CLIENT SPEED - unthrottled, the router has hydrated by the time Back is pressed and
+refetches on its own, which is exactly why it never reproduced locally and failed on
+every CI attempt. Throttled, it reproduces from x2 upward in dev and in a production
+build.
+
+**Fixed on PR #1381:** the server's canonical query string is handed down and compared
+against the address bar; on a disagreement the server is re-asked for whatever the URL
+says. Declared limitation: the correction lands after hydration, so on very slow
+hardware the stale view is briefly visible before it corrects (~4s at x8, ~19s at x20).
+It always corrects.
+
+**Negative control:** with the fix removed, `pager-and-ficha-filters.spec.ts:122` - the
+test CI was failing - goes RED and is green with the fix. The new test added at `:162`
+PASSED without the fix on fast hardware, so it is specification coverage for the
+Forward direction and the checkbox, not proof.
 
 **BLOCKS: the last red test on PR #1381.** Everything else on that PR is green.
 
