@@ -139,9 +139,14 @@ export type PatientLocationOption = { id: string; name: string };
 export function PatientForm({
   patient,
   locations = [],
+  rgpdEnabled = false,
 }: {
   patient?: Patient | null;
   locations?: PatientLocationOption[];
+  /** RGPD-01 — whether the consent table exists on this database yet. Defaults
+   *  to false so the tick is absent unless a server component says otherwise;
+   *  before the apply the box would be refused on submit. */
+  rgpdEnabled?: boolean;
 }) {
   const router = useRouter();
   const [fields, setFields] = useState<Fields>(() => {
@@ -519,7 +524,7 @@ export function PatientForm({
           required. Create only: on edit there is nothing to tick, because this
           box records a NEW consent rather than describing the patient, and the
           ficha already shows whether one is on file. Never pre-checked. */}
-      {!isEdit && (
+      {!isEdit && rgpdEnabled && (
         <fieldset className="flex flex-col gap-1">
           <label className="flex items-start gap-2 text-sm text-text-primary">
             <input

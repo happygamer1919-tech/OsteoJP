@@ -15,15 +15,29 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
 vi.mock("./audit", () => ({ writeAudit: vi.fn(async () => {}) }));
+// SPREAD THE REAL MODULE, never a bare factory: `@osteojp/db` also supplies the
+// drizzle table this module selects from, and a factory returning only the probe
+// would leave that undefined in every test here (the vi.mock-replaces-the-whole-
+// module trap). Only the schema probe is stubbed.
+vi.mock("@osteojp/db", async (orig) => {
+  const actual = await orig<typeof import("@osteojp/db")>();
+  return { ...actual, rgpdAcceptancesSchemaPresent: vi.fn(async () => true) };
+});
 
 import { runScoped } from "@/lib/auth/context";
+import { rgpdAcceptancesSchemaPresent } from "@osteojp/db";
 import { writeAudit } from "./audit";
-import { RGPD_VERSION, getLatestRgpdAcceptance, insertRgpdAcceptanceTx } from "./rgpd-acceptance";
+import {
+  RGPD_VERSION,
+  getLatestRgpdAcceptance,
+  insertRgpdAcceptanceTx,
+} from "./rgpd-acceptance";
 import { parseCreatePatient } from "./validation";
 import type { RequestContext } from "@osteojp/auth";
 
 const mockRunScoped = vi.mocked(runScoped);
 const mockAudit = vi.mocked(writeAudit);
+const mockProbe = vi.mocked(rgpdAcceptancesSchemaPresent);
 
 /** The ACTING STAFF MEMBER. Deliberately not the patient id below. */
 const ctx: RequestContext = { tenantId: "tenant-1", role: "reception", userId: "staff-1" };
@@ -173,6 +187,51 @@ describe("the module offers no way to rewrite history", () => {
     const mod = await import("./rgpd-acceptance");
     const names = Object.keys(mod);
     expect(names.some((n) => /update|delete|revoke|withdraw/i.test(n))).toBe(false);
-    expect(names.sort()).toEqual(["RGPD_VERSION", "getLatestRgpdAcceptance", "insertRgpdAcceptanceTx"]);
+    expect(names.sort()).toEqual([
+      "RGPD_VERSION",
+      "getLatestRgpdAcceptance",
+      "insertRgpdAcceptanceTx",
+      "rgpdConsentCaptureAvailable",
+    ]);
+  });
+});
+
+/**
+ * INERT UNTIL THE TABLE EXISTS.
+ *
+ * The migration is unnumbered and held, so every pre-merge environment runs
+ * without `patient_rgpd_acceptances`. The first cut of RGPD-01 assumed the table
+ * because the PR is held until the apply; that is true of production and false
+ * of CI, whose e2e database is built by `supabase db reset` from
+ * supabase/migrations. The ficha threw 42P01 on every patient page and took all
+ * three Playwright shards red. These two arms are the regression.
+ */
+describe("before the migration is applied", () => {
+  beforeEach(() => {
+    mockRunScoped.mockReset();
+    mockProbe.mockReset();
+  });
+
+  it("the ficha read returns null rather than throwing 42P01", async () => {
+    mockProbe.mockResolvedValue(false);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(fakeSelectTx([]) as never));
+
+    await expect(getLatestRgpdAcceptance(ctx, PATIENT)).resolves.toBeNull();
+    // It must not have reached the table at all.
+    expect(mockProbe).toHaveBeenCalledTimes(1);
+  });
+
+  it("the WRITE refuses instead of silently discarding the consent", async () => {
+    // The asymmetry with the read is the point. "Nothing on file" is a true
+    // answer; a write that reports success while storing nothing would tell the
+    // clinic a signature was captured that nothing recorded.
+    mockProbe.mockResolvedValue(false);
+    const { tx, inserted } = fakeInsertTx();
+
+    await expect(
+      insertRgpdAcceptanceTx(tx as never, ctx, { patientId: PATIENT, acceptedAt: new Date() }),
+    ).rejects.toThrow(/does not exist on this database/);
+    expect(inserted).toHaveLength(0);
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });

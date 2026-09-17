@@ -1,7 +1,7 @@
 import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
-import { patientRgpdAcceptances, type DbTx } from "@osteojp/db";
+import { patientRgpdAcceptances, rgpdAcceptancesSchemaPresent, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 
@@ -66,6 +66,17 @@ export async function getLatestRgpdAcceptance(
 ): Promise<RgpdAcceptance | null> {
   assertCan(ctx.role, "patients:read");
   return runScoped(ctx, async (tx) => {
+    // INERT UNTIL THE TABLE EXISTS, and this guard is not belt-and-braces: the
+    // migration is unnumbered and held, so EVERY pre-merge environment runs
+    // without the table. CI's e2e database is built by `supabase db reset` from
+    // supabase/migrations, and without this line the ficha threw 42P01 on every
+    // patient page and took all three Playwright shards red.
+    //
+    // NULL IS THE HONEST ANSWER HERE. No table means no consent on file, which
+    // is exactly what "RGPD em falta" says. It is not a silent failure dressed
+    // as data: the mark it produces is the same mark an unconsented patient
+    // gets, which is the true state of every patient before the apply.
+    if (!(await rgpdAcceptancesSchemaPresent(tx))) return null;
     const rows = await tx
       .select({
         acceptedAt: patientRgpdAcceptances.acceptedAt,
@@ -108,6 +119,23 @@ export async function insertRgpdAcceptanceTx(
   ctx: RequestContext,
   input: { patientId: string; acceptedAt: Date; rgpdVersion?: string },
 ): Promise<void> {
+  // IT REFUSES RATHER THAN DROPPING THE CONSENT, and that asymmetry with the
+  // read above is deliberate. A read with no table means "nothing on file",
+  // which is true. A WRITE with no table would mean a staff member ticked the
+  // box, the patient was created, and the consent was silently discarded - the
+  // clinic would believe a signature was captured that nothing recorded. That
+  // is the one outcome worse than an error.
+  //
+  // UNREACHABLE THROUGH THE UI: the form only offers the tick when
+  // `rgpdConsentCaptureAvailable` says the table exists, so this fires only for
+  // a hand-posted payload or a bundle older than the apply.
+  if (!(await rgpdAcceptancesSchemaPresent(tx))) {
+    throw new Error(
+      "RGPD-01: refusing to record an RGPD consent before the migration is applied - " +
+        "public.patient_rgpd_acceptances does not exist on this database. " +
+        "Recording nothing while reporting success would claim a signature nobody stored.",
+    );
+  }
   const rgpdVersion = input.rgpdVersion ?? RGPD_VERSION;
   await tx.insert(patientRgpdAcceptances).values({
     tenantId: ctx.tenantId,
@@ -124,4 +152,17 @@ export async function insertRgpdAcceptanceTx(
     entityId: input.patientId,
     metadata: { rgpdVersion },
   });
+}
+
+/**
+ * May the creation form OFFER the RGPD tick on this database?
+ *
+ * Mirrors INTAKE-01's `intakeEnabled: false`: a control that cannot be honoured
+ * is not shown. Before the apply the box would look like a way to record a
+ * consent and would be refused on submit, so it is simply absent - the patient
+ * registers exactly as today and reads "RGPD em falta", which is the ruling's
+ * own fallback rather than a degraded one.
+ */
+export async function rgpdConsentCaptureAvailable(ctx: RequestContext): Promise<boolean> {
+  return runScoped(ctx, (tx) => rgpdAcceptancesSchemaPresent(tx));
 }
