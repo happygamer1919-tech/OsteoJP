@@ -11,6 +11,7 @@ import {
   patients,
   servicePacks,
   services,
+  sharedResourceNamesFnPresent,
   staffLocations,
   users,
   type DbTx,
@@ -352,10 +353,30 @@ export async function listAppointments(
  * IT ONLY EVER FILLS A NULL
  * ==========================================================================
  * A row whose name RLS already returned is left exactly as it was. So this can
- * only ever turn a withheld label into a name, never change a name, and if the
- * migration is absent the query returns nothing and every row passes through
- * untouched — which is what makes the app half of this deployable before the
- * function exists.
+ * only ever turn a withheld label into a name, and never change a name.
+ *
+ * ==========================================================================
+ * AND IT ASKS BEFORE IT NAMES THE FUNCTION — 42883 IS NOT "NO ROWS"
+ * ==========================================================================
+ * THE CLAIM THAT STOOD HERE WAS WRONG, and it was wrong in the direction that
+ * matters. It said that with the migration absent "the query returns nothing and
+ * every row passes through untouched". It does not: selecting FROM a function
+ * that does not exist raises 42883, which aborts the statement and, inside
+ * `runScoped`, the entire read. Unguarded, this overlay does not degrade to "no
+ * names" — it takes `listAppointments` down, and with it the agenda, Marcações
+ * and the dashboard, on every database that has not had the pending SQL applied.
+ *
+ * That is measured, not feared. On a database at 0088, four arms of two suites
+ * that pass on main failed with
+ * `PostgresError: function public.shared_resource_appointment_patient_names() does not exist`
+ * — appointment-scope's dashboard and count arms, and both of
+ * nesa-agenda-second-participant's merged-agenda arms. None of them is about
+ * NESA names; they simply read the agenda.
+ *
+ * So the schema is asked first, the SCHED-17 way (`sharedResourceNamesFnPresent`,
+ * beside the column probe it copies), and until the function exists this returns
+ * the rows it was handed. THAT is what makes the app half deployable before the
+ * apply — the ask, not the hope.
  *
  * ==========================================================================
  * SCOPED TO THIS READ, DELIBERATELY
@@ -371,6 +392,12 @@ async function withSharedResourceNames<T extends { id: string; patientName: stri
 ): Promise<T[]> {
   const withheld = rows.filter((r) => r.patientName === null).map((r) => r.id);
   if (withheld.length === 0) return rows;
+
+  // THE SCHEMA GATE, ASKED ONLY WHEN THERE IS SOMETHING TO FILL. A page with no
+  // withheld name has already returned above, so no read pays for this probe
+  // unnecessarily; this page has at least one, which makes the answer worth a
+  // single round trip that is then cached for the life of the process.
+  if (!(await sharedResourceNamesFnPresent(tx))) return rows;
 
   // BOUNDED BY THE ROWS ON SCREEN. The function is nullary and would otherwise
   // answer for every shared-resource booking the viewer's clinics have ever
