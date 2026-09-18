@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { addDays, lisbonDateTimeToUtc, todayInLisbon } from "./time";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn(), revalidateTag: vi.fn() }));
@@ -43,7 +44,21 @@ d("SCHED-28: Corrigir estado into Concluída re-checks the slot", () => {
   let patientA: string;
   let patientB: string;
 
-  const START = new Date(Date.now() + 120 * 60 * 60 * 1000);
+  /**
+   * FIVE DAYS OUT, AT A PINNED WALL-CLOCK HOUR.
+   *
+   * It was `Date.now() + 120h`. A whole-day offset moves the date and INHERITS
+   * THE TIME OF DAY, so the seeded appointment started at whatever hour the
+   * suite happened to run. That is the shape that took `estado-uncancel` down
+   * for thirteen hours a day once the clinic's hours reached the write paths
+   * (#1394): nothing was wrong with the test, only with when it ran.
+   *
+   * The offset STAYS RELATIVE - five days from today, not a fixed calendar date
+   * that silently stops being in the future next year - and only the hour is
+   * pinned. 11:00 Lisbon is inside the 08:00-20:00 default and on neither
+   * boundary.
+   */
+  const START = lisbonDateTimeToUtc(addDays(todayInLisbon(), 5), "11:00");
   const END = new Date(START.getTime() + 45 * 60 * 1000);
 
   beforeAll(async () => {
