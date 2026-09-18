@@ -34,7 +34,7 @@ const h = (user_id, location_id, active, extra = {}) => ({
   user_id,
   location_id,
   active,
-  active_not_expired: active,
+  active_in_window: active,
   total: active,
   ...extra,
 });
@@ -60,7 +60,12 @@ test("ids, ref and audit actions are STAFF-10's, byte for byte", () => {
   }
 });
 
-test("the deciding predicate is the portal's: active at the clinic, no date window", () => {
+test("the deciding predicate is the portal's: active at the clinic, inside the date window", () => {
+  // THIS ARM USED TO ASSERT THE OPPOSITE - that the portal read NO date window - and it
+  // is what caught PORTAL-ROSTER (2026-09-18) the moment the window landed, with the
+  // message "the portal now reads a date window; the check's deciding count must follow
+  // it". It did follow it. The arm is kept pointing the same way round: it fails if the
+  // two ever disagree again, in either direction.
   const start = STORE.indexOf("async listBookableTherapists");
   assert.ok(start >= 0, "listBookableTherapists not found in apps/api/lib/appointments/store.ts");
   const end = STORE.indexOf("order by u.full_name", start);
@@ -70,12 +75,22 @@ test("the deciding predicate is the portal's: active at the clinic, no date wind
   assert.match(exists, /from availability_templates av/);
   assert.match(exists, /av\.location_id = \$\{locationId\}/);
   assert.match(exists, /av\.is_active = true/);
-  assert.doesNotMatch(
+  assert.match(
     exists,
-    /valid_from|valid_until/,
-    "the portal now reads a date window; the check's deciding count must follow it",
+    /av\.valid_from\s+is null or av\.valid_from\s+<=/,
+    "the portal bounds the template by valid_from; the check's deciding count must too",
   );
-  assert.match(SRC, /count\(\*\) filter \(where is_active\)::int as active,/);
+  assert.match(
+    exists,
+    /av\.valid_until is null or av\.valid_until >=/,
+    "the portal bounds the template by valid_until; the check's deciding count must too",
+  );
+  assert.match(SRC, /as active_in_window,/);
+  assert.match(
+    SRC,
+    /h\.user_id === id && h\.active_in_window > 0/,
+    "the check must DECIDE on the windowed count, not merely print it beside the raw one",
+  );
 });
 
 test("read only by construction: one READ ONLY transaction and no write statement", () => {
@@ -120,15 +135,19 @@ test("the two rows swapped (each at one clinic, the wrong one) is a FAIL", () =>
 });
 
 test("an INACTIVE row at the other clinic does not count, because the portal ignores it", () => {
-  const inactive = h(JP_LV, CB, 0, { active_not_expired: 0, total: 3 });
+  const inactive = h(JP_LV, CB, 0, { active_in_window: 0, total: 3 });
   const r = evaluate({ users, hours: [h(JP_CB, CB, 13), inactive, h(JP_LV, LV, 15)], audit: APPLIED });
   assert.equal(r.exitCode, 0, r.verdict);
 });
 
-test("an EXPIRED row that is still active DOES count, because the portal reads no date window", () => {
-  const expired = h(JP_LV, CB, 1, { active_not_expired: 0 });
+test("an EXPIRED row that is still active does NOT count, because the portal now reads the date window", () => {
+  // FLIPPED BY PORTAL-ROSTER, 2026-09-18, and the flip is the point rather than a
+  // loosening. The invariant this check guards is "a patient is offered the same person
+  // twice at one clinic". An expired row can no longer put anyone on that list, so a
+  // FAIL here would now be reporting a collision the portal cannot produce.
+  const expired = h(JP_LV, CB, 1, { active_in_window: 0 });
   const r = evaluate({ users, hours: [h(JP_CB, CB, 13), expired, h(JP_LV, LV, 15)], audit: APPLIED });
-  assert.equal(r.exitCode, 1, r.verdict);
+  assert.equal(r.exitCode, 0, r.verdict);
 });
 
 test("rolled back and JP(lv) empty again: NOT APPLICABLE", () => {

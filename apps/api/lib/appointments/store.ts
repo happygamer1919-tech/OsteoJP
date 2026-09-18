@@ -678,6 +678,35 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // going. A therapist with no active availability template at this clinic
     // cannot see them there, so they are excluded by the EXISTS below - which is
     // roster membership at the location, not free/busy.
+    //
+    // AND THE TEMPLATE'S VALIDITY MUST COVER TODAY, which is the half this query
+    // was missing (PORTAL-ROSTER, GREEN G8 T1). `availability_templates` carries
+    // an optional [valid_from, valid_until] window for seasonal and temporary
+    // schedules, and this EXISTS ignored it: a template whose window had CLOSED
+    // but whose `is_active` flag was still true kept its therapist on the roster
+    // for that clinic. The patient picked them, and `listOpenSlots` - which DOES
+    // read the window, through `availabilityCoversExists` above - then offered
+    // nothing. The roster advertised somebody the next step refuses.
+    //
+    // IT WAS INCONSISTENT WITH ITS OWN NEIGHBOURS, which is what makes it an
+    // oversight rather than a decision: `availabilityCoversExists` and slot
+    // generation both compare these two columns against the day being booked.
+    //
+    // WHY TODAY AND NOT THE DAY BEING BOOKED. There IS no day here - this step
+    // runs before the patient picks one, which is the whole reason this method is
+    // not `listAvailableTherapists`. Owner ruling Q-ROSTER (2026-09-17) settles
+    // which instant to use: NOW. So the window is tested against the clinic's own
+    // today, in Lisbon, matching every other date comparison in this file.
+    //
+    // THE TWO BOUNDS ARE NOT SYMMETRIC IN RISK, and that is worth knowing before
+    // anyone "tidies" one of them away. `valid_until` is the DEFECT: an expired
+    // row can never be offered at any date, so excluding it is strictly correct.
+    // `valid_from` is the RULING: a template that starts next month is excluded
+    // from today's roster even though the slot query would honour it for a date
+    // inside its window. That is Q-ROSTER's answer, and the test named "a
+    // template that has not STARTED yet" in
+    // packages/db/tests/portal-roster-template-validity.db.test.ts is the single
+    // place a change of that ruling has to land.
     const notShared = await sharedResourceExclusion();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
@@ -692,6 +721,8 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             and av.user_id = u.id
             and av.location_id = ${locationId}
             and av.is_active = true
+            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
+            and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
         )
       order by u.full_name
     `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;

@@ -4543,3 +4543,68 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **What the rehearsal caught.** `\quit 1` does not set an exit code - psql warns and exits 0 - so a missing carry would have let a `set -e` runner walk into the write. And a fixture keyed on its own tenant is not a reset when the ids are global: the first run silently exercised a previous dispatch's clinics.
 
 
+
+## 2026-09-18 - BLUE PORTAL-ROSTER: the portal's therapist list stops offering a therapist whose template has expired
+
+- **The defect, as GREEN found it and STEWARD verified.** `listBookableTherapists`
+  (`apps/api/lib/appointments/store.ts`) required an `availability_templates` row
+  that was `is_active = true` at the requested clinic, and applied **no validity
+  window**. A template whose `[valid_from, valid_until]` had closed but whose
+  flag was never cleared kept its therapist on the portal roster. The patient
+  chose them, and `listOpenSlots` - which DOES read the window - then offered
+  nothing. The roster advertised somebody the next step refuses.
+- **It was inconsistent with its own neighbours, which is what makes it an
+  oversight rather than a decision.** `availabilityCoversExists` and slot
+  generation, in the same file, both compare `valid_from` and `valid_until`
+  against the day being booked. This one query did not.
+- **Compared against TODAY in Lisbon, per owner ruling Q-ROSTER = now.** There is
+  no date at this step - it runs before the patient picks one, which is the whole
+  reason this method is not `listAvailableTherapists` - so "the requested date"
+  resolves to the instant of the request.
+- **The two bounds are not symmetric in risk, and that is recorded in the code.**
+  `valid_until` is the defect: an expired row can never be offered at any date, so
+  excluding it is strictly correct. `valid_from` is the RULING: a template
+  starting next month is excluded from today's roster even though the slot query
+  would honour it for a date inside its window. One test is named for that case so
+  a change of ruling has exactly one place to land.
+- **TWO INSTRUMENTS, EACH WITH ITS OWN CONTROL, because neither can do the other's
+  job.** The predicate is raw SQL. `packages/db/tests/portal-roster-template-validity.db.test.ts`
+  proves what Postgres does with the bounds against rows where each one matters,
+  and carries its own both-ways control: the pre-change shape, run against the
+  same fixture, brings the expired and the future therapist straight back (so the
+  "not listed" arms cannot pass on a fixture that never inserted). But it MIRRORS
+  the SQL rather than importing it, so it would stay green on a revert - the
+  source arms in `apps/api/lib/appointments/therapist-choice.test.ts` are what go
+  red, and that is measured, not argued: reverting `store.ts` to `origin/main`
+  fails those arms and restoring it passes them.
+- **The `staff_locations` half of the dispatch was NOT built.** It is an AND on a
+  patient-facing roster, so it can only remove therapists; STEWARD's card records
+  that membership "is not the mechanism here" and that the reported both-clinics
+  symptom is not supported by the code; and this repo already records that
+  membership is incompletely populated (`apps/web/app/admin/staff/page.tsx:111-113`,
+  "with 5 of 11 members holding hours", the two sources deliberately treated as a
+  UNION). Registered as Q-ROSTER-2 with three options and a recommendation, and
+  nothing was guessed.
+- **No migration.** `valid_from`/`valid_until` have existed since 0006, so the new
+  DB-gated suite runs on every PR and belongs on no skip list.
+- **e2e is unaffected, checked rather than assumed:** `ensureAvailability` in
+  `apps/web/e2e/seed/seed-e2e.mjs` writes no validity dates, so every seeded
+  template is open-ended and passes both new bounds.
+- **A PARITY GUARD FIRED, AND STAFF-11 FOLLOWED THE PORTAL, which is what that
+  guard is for.** `scripts/staff-11-jp-one-clinic-check.test.mjs` went red with
+  "the portal now reads a date window; the check's deciding count must follow it".
+  `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` is the READ-ONLY,
+  owner-run check that each JP row holds hours at exactly one clinic after the
+  split, and its whole premise is that it decides on the PORTAL's predicate rather
+  than a stricter one of its own. It already read both numbers; what moved is
+  which one DECIDES - from `active` to `active_in_window` (renamed from
+  `active_not_expired`, which had bounded only `valid_until` and now bounds
+  `valid_from` too, so the mirror is exact).
+- **That changes what STAFF-11 REPORTS on production, and the change is the
+  correct direction.** An expired-but-still-active row at the other clinic used to
+  make the check FAIL; it no longer does. The invariant STAFF-11 guards is "a
+  patient is offered the same person twice at one clinic", and an expired row can
+  no longer put anyone on that list - so a FAIL would now be reporting a collision
+  the portal cannot produce. Its test arm was flipped deliberately and says so, and
+  the script's header paragraph that claimed "is_active = true and NO date window"
+  is retracted in place rather than quietly edited.

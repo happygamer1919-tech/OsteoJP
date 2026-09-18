@@ -1820,3 +1820,64 @@ CONTENT after Back is served from cache.
 **What is already proven and not in question:** the filters narrow in SQL (the Estado
 test finds the one matching row 200 deep, in CI), the filter survives a reload, and
 "Limpar filtros" restores the full 250.
+
+## 2026-09-18 - Q-ROSTER-2: should the portal roster ALSO require a `staff_locations` row? (BLUE) (BLOCKED, nothing built)
+
+**The validity half of the B11 dispatch is built, on branch
+`sched/PORTAL-ROSTER-template-validity`. This is the half I did NOT build, and it
+is held rather than guessed because it can only ever REMOVE therapists from the
+patient-facing booking list.**
+
+**What was asked.** Dispatch B11 B2: list a staff row at a clinic only when it is
+active, bookable, not a shared resource, **a member of that clinic's
+`staff_locations`**, and holds an active template there whose validity covers the
+date. Everything except the membership clause is now in
+`listBookableTherapists`.
+
+**Why the membership clause is not a safe default.**
+
+1. **STEWARD's own card says the symptom behind it is not reproducible from the
+   code.** `PORTAL-ROSTER-expired-template-still-listed` (board branch
+   `board/2026-09-17-steward-portal-roster-validity`) records: "staff_locations IS
+   NOT THE MECHANISM HERE. It appears nowhere in apps/api", and the reported
+   "listed at BOTH clinics" finding "the code does not support", because the
+   EXISTS is already scoped by `av.location_id` - a therapist with no template at
+   Linda-a-Velha cannot be listed there by this predicate at all.
+2. **It is an AND on a patient-facing roster, so its only possible effect is to
+   shorten the list.** The failure mode is a therapist who genuinely works at a
+   clinic silently disappearing from online booking. Nobody gets an error; the
+   clinic just stops receiving bookings for that person.
+3. **`staff_locations` is known to be incompletely populated, in this repo's own
+   words.** `apps/web/app/admin/staff/page.tsx:111-113` records that PL-14 had to
+   widen the staff surface "from working hours alone to hours UNION
+   staff_locations membership - with 5 of 11 members holding hours, the hours-only
+   set filtered out most of a real team". The two sources are treated as a UNION
+   precisely because neither alone is complete. `:369-374` adds that a staffer may
+   hold **no** `staff_locations` row at all, and that the platform deliberately
+   falls back rather than locking them out.
+4. **The dispatch's own expected test says GREEN measured 3 rows with no
+   membership at a clinic.** If those three hold real working hours there, this
+   clause removes three therapists from online booking on the day it merges.
+
+**So the question is which source is authoritative for "works at this clinic" on
+the PATIENT-FACING roster**, and that is a product decision, not a code detail:
+
+- **(a) Templates only (what shipped).** Hours are the thing the slot query
+  already honours, so the roster and the next step agree by construction. A
+  therapist with a membership row but no hours is not offered - correctly, since
+  there is nothing to book.
+- **(b) Templates AND membership (what the dispatch asked for).** Strictest.
+  Requires confirming first that every bookable therapist has a membership row at
+  every clinic they work at, or it removes people.
+- **(c) Templates OR membership**, mirroring the staff surface's UNION. Widest;
+  would list someone with a membership row and no hours, whom the slot query then
+  offers nothing - the same advertise-then-refuse shape this card just fixed, in a
+  new place.
+
+**Recommended default: (a), which is what is built.** It closes the measured
+defect, keeps the roster consistent with the slot query, and removes nobody. If
+the owner wants (b), it should land only after a production read confirms that
+every `is_bookable` user has a `staff_locations` row at each clinic where they
+hold active hours - BLUE has no production access and cannot run that read.
+
+**Blocked on:** owner ruling. Nothing is built for (b) or (c).
