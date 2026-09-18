@@ -6,7 +6,7 @@ line, any `FAIL` verdict, or any `ERROR` halts the sitting.
 
 | Fact | Value |
 |---|---|
-| Script | `scripts/db/postcheck-0089-readonly.sql`, sha256 `06dcd4b1bba637b2cc16876243560bf1f1d905715212d80d76eb627886a6c6cf` |
+| Script | `scripts/db/postcheck-0089-readonly.sql`, sha256 `c2d08efd96953d9147ea9cb4ae0a51b60906efbdd9ea5d1e0577dea865d9a103` |
 | Pin | `origin/main` — this document and the script merge to main BEFORE either is run |
 | Migration it verifies | `0089_attachments_soft_delete`, sha256 `ec1b90634b4253e50fe1060b03b22a0b2fe447136baaaa811dba819d7c084ced`, journal idx 86 |
 | Verdicts | exactly **27**, every one must read `OK` |
@@ -41,13 +41,22 @@ disk` — the safe direction, and the reason the assertion is there.
 
 ## The command
 
-Pasted into an interactive zsh, which is stricter than a script: no `#` comment
-lines, no `!` anywhere, no backslash continuations, and every parameter braced.
+Pasted into an interactive zsh, which is stricter than a script: no `!` anywhere,
+no backslash continuations, and every parameter braced — `${NAME}:`, never
+`$NAME:`, which zsh reads as a modifier. That last rule is the one that stopped
+the 0085 sitting, and `scripts/owner-blocks-survive-zsh.test.mjs` enforces it on
+this document.
+
+A `#` comment line is **not** on that list, and the measurement is recorded in
+that guard so it does not get re-proposed: `interactive_comments` is set in this
+owner's shell by `~/.oh-my-zsh/lib/misc.zsh`, so a `#` line is a comment and never
+a command. Banning them would redden 59 lines across seven merged apply documents,
+every one inside a block that has already been pasted and run.
 
 ```
 (
 set -eo pipefail
-SHARO=06dcd4b1bba637b2cc16876243560bf1f1d905715212d80d76eb627886a6c6cf
+SHARO=c2d08efd96953d9147ea9cb4ae0a51b60906efbdd9ea5d1e0577dea865d9a103
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/0089-readonly.out
@@ -91,8 +100,8 @@ measured on production 2026-09-16 before the apply:
 | `journal_rows_before` | 86 | journal is **87** |
 | `attachments_policies_before` | 2 | still **2** — 0089 is an ALTER, not a CREATE |
 | `secdef_functions_before` | 24 | still **24** — none added |
-| attachments | 1181 | unchanged, **1181** |
-| attachments patient-level | 1181 | unchanged, **1181** |
+| attachments | 1181 | **at least 1181** — a floor, not an equality |
+| attachments patient-level | 1181 | **at least 1181** — a floor, not an equality |
 
 **A pinned literal is weaker than a carry measured in the same sitting, and that is
 stated rather than hidden.** What makes the policy-count pin safe is that
@@ -100,6 +109,52 @@ stated rather than hidden.** What makes the policy-count pin safe is that
 apply. The journal pin is the one that would matter if G3 were wrong, and verdicts
 2 and 3 hold it up independently — they identify 0089 by its own sha256 and `when`,
 not by a count.
+
+## What the first production run found, and what it changed
+
+The check ran on production on 2026-09-17 and came back **24 OK / 3 FAIL**, with
+the transaction confirmed read-only and `ROLLBACK` reached, and zero psql errors.
+**All three failures were defects in this file, not in the database.** Nothing was
+wrong with 0089, and nothing was wrong with production.
+
+| Verdict | Production read | It had expected |
+|---|---|---|
+| 21 table grants | `authenticated=DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE patient=SELECT` | `authenticated=DELETE,INSERT,SELECT,UPDATE patient=SELECT` |
+| 24 attachments | 1185 | `= 1181` |
+| 25 patient-level | 1185 | `= 1181` |
+
+**Verdict 21 was measuring the rehearsal, not the migration.** A Supabase project
+carries `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES`, so every
+table arrives holding all seven privileges and an explicit `GRANT` is invisible
+against them. The rehearsal databases were built with a plain `CREATE DATABASE`,
+which inherits no default privileges at all, so they showed only the four
+`0003_grants.sql` grants — and the literal recorded that. The tell was that
+`patients` carries the identical string, and that across the 46 public tables
+`authenticated` holds TRUNCATE on 30 and TRIGGER/REFERENCES on 38: a per-table
+grant decision does not distribute like that, a platform default does.
+
+This was confirmed rather than reasoned about. Rebuilding the same throwaway with
+that one `ALTER DEFAULT PRIVILEGES` added, and nothing else changed, reproduces
+production's string exactly on `attachments` and on `patients`, and reproduces the
+spread — TRUNCATE on 30 tables, TRIGGER and REFERENCES on 38 of 46. So verdict 21
+now asserts only what 0089 governs: `patient` reads and only reads, `anon` is
+absent, `authenticated` holds at least the four this repository grants, and its
+full set is compared against `patients` **read in the same query** rather than
+against a literal that encodes which platform built the database.
+
+**Verdicts 24 and 25 were asking the wrong question.** Four documents were
+uploaded after G3's 12:00 UTC read, the newest at 16:42 UTC. A clinic that keeps
+working is not a regression. 0089 writes no data, so what has to be true is that
+nothing was **lost** — so both are now floors. A floor fails on a deletion and on
+a row moved off patient level, and passes on growth. What a floor cannot see is a
+delete followed by an equal number of inserts; G3 recorded counts and no row
+identities, so there is no id-level assertion available to make, and that limit is
+stated here rather than papered over.
+
+**The TRUNCATE spread is a separate finding and is not fixed here.** `authenticated`
+holding TRUNCATE on 30 tables is a platform default nobody chose, and TRUNCATE
+ignores RLS. It is carded on the portal board and left to the owner; this file
+only stopped asserting a number that hid it.
 
 ## V1 — every stage 2 assertion, and whether a catalogue read settles it
 
@@ -164,17 +219,41 @@ is what closes them**, and PR #1338 is what ships that tab.
 
 ## Rehearsed
 
-Against two throwaway databases built for this, on a Supabase Postgres 17.6 image,
-from `supabase/migrations` — one at **0089**, one at **0088** with 0089 held out.
-Both were given production's shape: the drizzle journal seeded to 86 rows (87 at
+Against throwaway databases built for this, on a Supabase Postgres 17.6 image,
+from `supabase/migrations` — at **0089**, and at **0088** with 0089 held out. Each
+was given production's row shape: the drizzle journal seeded to 86 rows (87 at
 0089), each row carrying its real file sha256 and its real `when`; and 1181
 attachments, all patient-level, matching G3.
 
+**The repin added a fourth database, and it is the one that matters.** `pc0089d` is
+built by the same script from the same migrations with exactly one line added —
+`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon,
+authenticated, service_role`, which is what a Supabase project carries and a bare
+`CREATE DATABASE` does not. That one line is the whole difference between the
+first rehearsal and production, and it is why verdict 21 passed a rehearsal it
+should have failed.
+
 | Run | Result |
 |---|---|
-| Read-only check at **0089** | **27 OK / 0 FAIL**, zero psql errors |
-| The original stage 2 block, byte for byte, at **0089** | **12 OK / 0 FAIL**, `ARMS A1 A2 A3 A4 A5 A6 A7 A8 OK` |
-| Read-only check at **0088** (negative control) | **14 OK / 13 FAIL**, zero psql errors |
+| Repinned check at **0089, with platform default privileges** (`pc0089d`) | **27 OK / 0 FAIL**, psql exit 0 |
+| Repinned check at **0089, without them** (`pc0089`) | **27 OK / 0 FAIL**, psql exit 0 |
+| Repinned check at **0088** (negative control) | **14 OK / 13 FAIL**, zero psql errors |
+| CONTROL: one attachment moved off patient level (`patient_id → NULL`) | **26 OK / 1 FAIL** — verdict **25** fails at 1180, verdict 24 still OK |
+| CONTROL: additionally one row deleted | **25 OK / 2 FAIL** — verdicts **24 and 25** both fail |
+| The original stage 2 block, byte for byte, at **0089** | **12 OK / 0 FAIL**, `ARMS A1 A2 A3 A4 A5 A6 A7 A8 OK` (first sitting) |
+
+**That the repinned verdict 21 reads OK on both database shapes is the point**, and
+it is not a weaker assertion for it: on `pc0089d` it compares the full seven-privilege
+production string against `patients`, on `pc0089` it compares the four-privilege one,
+and on 0088 the row still fails where it should. The assertion no longer encodes
+which platform built the database, while the four-privilege floor keeps it from
+passing on a table stripped bare.
+
+**The two controls are what stop the floors from being vacuous.** A floor that only
+ever grows would be indistinguishable from an assertion nobody can fail; moving a
+single row off patient level turns verdict 25 red while leaving 24 green, which is
+the discrimination the pinned totals could not make — at `= 1181` both rows failed
+together on growth and neither could say whether anything had been lost.
 
 The negative control names each missing item rather than failing once: the journal
 rows and 0089's hash and `when` (1, 2, 3), the three columns and their types

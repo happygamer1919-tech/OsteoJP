@@ -93,13 +93,62 @@ export function classifyStart(startMinOfDay: number, hours: ClinicHours): StartV
  * that opens earlier. An empty list falls back to the widest sensible day so a
  * misconfigured tenant gets a usable grid rather than a blank one.
  */
-export function gridWindow(hours: readonly ClinicHours[]): { startMin: number; endMin: number } {
-  if (hours.length === 0) return { startMin: 8 * 60, endMin: 20 * 60 };
+export function gridWindow(
+  hours: readonly ClinicHours[],
+  /**
+   * AGENDA-NEVER-HIDES — the spans of the appointments LOADED FOR THIS VIEW, in
+   * minutes from midnight. Optional and empty by default, so every existing
+   * caller and every existing test gets exactly the window it got before.
+   */
+  appointmentSpans: readonly { startMin: number; endMin: number }[] = [],
+): { startMin: number; endMin: number } {
   let startMin = Infinity;
   let endMin = -Infinity;
   for (const h of hours) {
     startMin = Math.min(startMin, toMinutes(h.opensAt));
     endMin = Math.max(endMin, toMinutes(h.closesAt));
+  }
+  if (hours.length === 0) {
+    startMin = 8 * 60;
+    endMin = 20 * 60;
+  }
+  /**
+   * AND THE APPOINTMENTS, WHICH IS THE WHOLE OF THIS FIX.
+   *
+   * Production, 2026-09-16: opening moved to 09:00 and an 08:00 booking at
+   * Linda-a-Velha became unreachable. It was never deleted and never dropped
+   * from the DOM - `makeMinToPx` CLAMPS a minute below the window to the first
+   * rendered hour, so the 08:00 row was drawn at the same `top` as the 09:00
+   * row and sat underneath it, and `startCountsByDay` skipped it (`idx < 0`) so
+   * the hour never grew to make room. Hidden, and unclickable.
+   *
+   * Hours change; the appointments already booked under the old ones do not.
+   * So the window is the union of what the clinics work AND what is actually on
+   * the day, and an hour that only an appointment asks for is still drawn - it
+   * is simply MARKED as outside the clinic's hours (see `clinicWindow` in
+   * agenda-grid.tsx). The alternative, clamping, is what hid a real booking from
+   * the people responsible for it.
+   *
+   * Rounded OUTWARD to whole hours because the grid's rows are whole hours: a
+   * booking at 08:30 needs the 08:00 row drawn, and one ending at 21:30 needs
+   * the 21:00 row. An end landing exactly on the hour adds nothing, which is
+   * why this is `ceil` on the end rather than "floor plus one".
+   */
+  for (const span of appointmentSpans) {
+    if (!Number.isFinite(span.startMin) || !Number.isFinite(span.endMin)) continue;
+    const startHour = Math.floor(span.startMin / 60) * 60;
+    startMin = Math.min(startMin, startHour);
+    /**
+     * THE START ALWAYS GETS ITS OWN ROW, and `startHour + 60` is what guarantees
+     * it. Rows are `[startMin, endMin)` by whole hour, so an end that rounds back
+     * to the start's own hour would leave the booking with no row to sit in -
+     * the clamp this fix exists to remove, reappearing one level up.
+     *
+     * An end BEFORE its start is a midnight roll-over: `lisbonMinutesFromMidnight`
+     * of 00:30 is 30, not 1470. Taking the end alone would drag the window's end
+     * backwards, below the clinic's own close.
+     */
+    endMin = Math.max(endMin, Math.ceil(span.endMin / 60) * 60, startHour + 60);
   }
   return { startMin, endMin };
 }
