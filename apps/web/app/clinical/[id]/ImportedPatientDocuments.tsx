@@ -42,8 +42,10 @@ function formatSize(bytes: number | null): string {
  * through Next.
  */
 export function ImportedPatientDocuments({ items }: { items: ImportedPatientDocument[] }) {
-  async function download(path: string) {
-    const { url } = await documentDownloadUrlAction(path);
+  // SR-62 PU-4: the action takes the document ID and signs the path stored on a
+  // live row, so a document soft-deleted on the Documentos tab cannot be opened.
+  async function download(documentId: string) {
+    const { url } = await documentDownloadUrlAction(documentId);
     if (url) window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -92,7 +94,7 @@ export function ImportedPatientDocuments({ items }: { items: ImportedPatientDocu
                     type="button"
                     size="sm"
                     variant="ghost"
-                    onClick={() => download(d.storagePath)}
+                    onClick={() => download(d.id)}
                   >
                     {s["patients.documentOpen"]}
                   </Button>

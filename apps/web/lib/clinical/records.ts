@@ -216,7 +216,11 @@ export async function getRecordDetail(
         createdAt: attachments.createdAt,
       })
       .from(attachments)
-      .where(eq(attachments.clinicalRecordId, id))
+      // SR-62 PU-4: a soft-deleted document is gone EVERYWHERE staff browse. An
+      // imported original linked to this registo is the SAME row the
+      // Documentos tab shows (owner ruling 2026-09-13), so removing it there
+      // removes it from Anexos too. The record row itself is untouched.
+      .where(and(eq(attachments.clinicalRecordId, id), isNull(attachments.deletedAt)))
       .orderBy(asc(attachments.createdAt));
 
     return {
