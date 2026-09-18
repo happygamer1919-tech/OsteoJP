@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
 const { runAsPatient } = vi.hoisted(() => ({ runAsPatient: vi.fn() }));
@@ -90,5 +92,43 @@ describe("getOwnDocumentLocation — self-scope", () => {
   it("returns null when the document does not exist", async () => {
     withRows([]);
     await expect(getOwnDocumentLocation(PRINCIPAL, "nope")).resolves.toBeNull();
+  });
+});
+
+// SR-62 PU-4: a document staff soft-deleted must stop reaching the patient. The
+// portal RLS policy carries `deleted_at IS NULL` (0089, proven in
+// packages/db/tests/attachments-soft-delete.db.test.ts); these pin the explicit
+// query filter beside it, rendered through Drizzle's real Postgres dialect.
+describe("SR-62 PU-4: soft-deleted documents never reach the portal", () => {
+  const dialect = new PgDialect();
+
+  function capturing(rows: unknown[]) {
+    const wheres: SQL[] = [];
+    const b: Record<string, unknown> = {};
+    for (const m of ["select", "from", "orderBy", "limit"]) b[m] = () => b;
+    b.where = (w: SQL) => {
+      wheres.push(w);
+      return b;
+    };
+    b.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+      Promise.resolve(rows).then(resolve, reject);
+    runAsPatient.mockImplementation(async (_p: unknown, fn: (tx: unknown) => unknown) => fn(b));
+    return wheres;
+  }
+
+  it("listOwnDocuments filters deleted_at IS NULL alongside the principal's ids", async () => {
+    const wheres = capturing([ownDocRow("d1")]);
+    await listOwnDocuments(PRINCIPAL);
+    const q = dialect.sqlToQuery(wheres[0]!);
+    expect(q.sql).toContain('"attachments"."deleted_at" is null');
+    expect(q.params).toEqual(expect.arrayContaining([PRINCIPAL.patientId, PRINCIPAL.tenantId]));
+  });
+
+  it("getOwnDocumentLocation (the download's lookup) filters deleted_at IS NULL", async () => {
+    const wheres = capturing([]);
+    await expect(getOwnDocumentLocation(PRINCIPAL, "d1")).resolves.toBeNull();
+    const q = dialect.sqlToQuery(wheres[0]!);
+    expect(q.sql).toContain('"attachments"."deleted_at" is null');
+    expect(q.params).toEqual(expect.arrayContaining(["d1", PRINCIPAL.patientId, PRINCIPAL.tenantId]));
   });
 });

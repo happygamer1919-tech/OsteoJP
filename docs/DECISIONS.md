@@ -4311,6 +4311,42 @@ one clinic. `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` checks it, re
   roster lists both JP rows at Linda-a-Velha. 8 rows are identical on both, which is
   STAFF-10's clash precondition: STAFF-10 halts before writing. Reported, not acted on.
 
+## 2026-09-14 - PURPLE, SR-62 PU-4: Documentos delete is a soft delete
+
+Owner ruling, final: a document removed from a patient's Documentos tab is SOFT deleted,
+with a required reason and an audit row. Never a hard delete.
+
+- **Storage.** No `documents` table exists; Documentos rows are `attachments` rows.
+  Three nullable columns (`deleted_at`, `deleted_by_user_id`, `delete_reason`) and a CHECK
+  (all three or none; reason not blank) in
+  `packages/db/migrations-pending/NEXT-AFTER-0088_attachments_soft_delete.sql`. PARKED,
+  because 0088 is claimed by BLUE and unapplied. The branch names the new columns, so it
+  cannot merge before that file is promoted and applied.
+- **Who / when / why.** Actor: `deleted_by_user_id` and `audit_log.actor_user_id`. Time:
+  `deleted_at` = `now()` in the same transaction as the audit insert, so it equals
+  `audit_log.created_at`. Reason: `attachments.delete_reason` ONLY. The audit row carries
+  `{ hadReason: true, patientId }`, because the metadata contract refuses prose (rule 7).
+- **Readers.** Documentos tab, imported-originals list, registo Anexos, portal list,
+  portal download: all filter `deleted_at IS NULL`. The portal RLS policy gains the same
+  conjunct. Staff RLS is unchanged, so the trail stays readable.
+- **Anexos: a deleted document is gone there too.** An imported original linked to a
+  registo is the same row the Documentos tab shows; hiding it in one place and not the
+  other would contradict the 2026-09-13 "both places" ruling.
+- **Downloads resolve a live row.** The Documentos download now takes a document id and
+  signs the path stored on a live Documentos row; it took a raw path and checked only the
+  tenant prefix, which also let a `patients:read` caller sign a registo attachment. The
+  Anexos download keeps its path argument but requires a live attachment row at that path.
+- **Permission.** `patients:write` (the upload capability), a therapist for own patients
+  only. Q-PU4-1 offers `patients:delete` (owner/admin) as the alternative.
+- **Hard delete still counts soft-deleted documents** (Q-PU4-2). **Deleted files are kept
+  indefinitely, with no restore UI** (Q-PU4-3).
+- **Re-import cannot resurrect.** The importer's attachment value type omits the three
+  columns, so its UPDATE path cannot write them.
+- **Not built:** move-to-correct-patient. Carded separately (storage path embeds the
+  patient id; the re-import update path can overwrite `patient_id`; audit needs from/to).
+- **Known edge, not changed (clinical scope):** `hardDeleteClinicalRecord` deletes the
+  attachment rows of a DRAFT registo, soft-deleted ones included. Only an imported original
+  linked to a draft registo could be both; the audit row survives.
 ## 2026-09-14 - PURPLE, SR-62 PU dispatch: the install block, classifyAllShell, the agenda's last hour, annulment carded, reset and psql measured
 
 **PU-0, the P-S3 install block (#1331).** The block printed in the P-S report was byte-identical to the file #1328 merged (sha256 f5c87355) and did call the installer. The defects the owner was shown were a lost stretch in transit. Two things were real and are fixed:
@@ -4388,6 +4424,19 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Annulment stays a row in the separate append-only `record_annulments`.** The trigger is bound `BEFORE UPDATE OR DELETE ON clinical_records`, so it is never invoked by an INSERT elsewhere.
 - **A column on `clinical_records` is impossible without a bypass.** The 0005 function rejects every update of a locked or signed row except a merge re-parent.
 - **Questions opened:** Q-SR62-P3-1, Q-SR62-P4-1, Q-SR62-P4-2 (the existing DRAFT Eliminar against "never a delete button") and Q-SR62-P4-3.
+
+## 2026-09-14 - PURPLE, SR-62 PU-4 rulings: Q-PU4-1..3 answered, the purge ruling, and why Q-PU4-2 reverts to blocking
+
+- **Q-PU4-1, ruled (a):** `patients:write`, built as is. **Q-PU4-3, ruled (a):** keep indefinitely, no UI, no restore, built as is.
+- **Q-PU4-2, ruled NO, with a strategy ruling that is not optional.** A NO plus Q-PU4-3 (a) would orphan a Storage object holding a person's clinical document, with no row pointing at it and no UI that can find it. So `hardDeletePatient` PURGES the Storage objects of the patient's soft-deleted documents on the same path as the patient delete, and RETAINS their audit rows with the patient identifier removed. If the purge cannot be made atomic with the patient delete, the hard delete BLOCKS on soft-deleted documents after all, the original built default. A partial purge is not acceptable under any framing.
+- **SR-62 E1 verdict: ATOMIC-IMPOSSIBLE. Nothing built.**
+  - The patient delete is one Postgres transaction on the app's connection: `apps/web/lib/patients/actions.ts:489` (`runScoped`) through the audit row at `:560`. The attachments refusal is the count at `:532`, and the preflight mirrors it at `apps/web/lib/patients/queries.ts:236`.
+  - Storage bytes are deleted only by storage-api. Its `deleteObjects` (`/app/dist/storage/object.js:118-153` in storage-api v1.54.1, the local lane's image) opens its OWN transaction per batch of prefixes (`db.withTransaction`), deletes the `storage.objects` rows, then deletes the backend objects. That transaction runs on storage-api's connection and cannot join the app's; there is no two-phase commit between them.
+  - The metadata cannot be deleted inside the app's transaction instead. `protect_objects_delete`, a BEFORE DELETE trigger on `storage.objects`, runs `storage.protect_delete()`, which raises 42501 "Direct deletion from storage tables is not allowed. Use the Storage API instead." unless `storage.allow_delete_query` is set. Even with that set, only the row goes and the bytes stay, which is exactly the orphan this ruling exists to prevent.
+  - Every ordering leaves a window. Purge first: if the patient transaction then fails, the patient survives with document rows whose objects are gone. Patient first: if the purge then fails, the objects are orphaned. A durable purge (an outbox row written in the same transaction, drained by a retrying job) is eventual rather than atomic, and it needs a new table, i.e. a migration, which is not authored while 0088 is in flight.
+  - A second obstacle, independent of atomicity: each soft-delete audit row carries the patient id in its metadata (`apps/web/lib/patients/documents.ts:411`), and `audit_log` is append-only by policy set, SELECT and INSERT only (`packages/db/migrations/0001_rls.sql:151-166`). Removing the identifier is an UPDATE the app's role cannot make without a policy migration or a service-role bypass of append-only.
+- **Consequence.** Q-PU4-2 reverts to blocking, which is what this branch already does. The only code touched is the two comments at `actions.ts:525-531` and `queries.ts:233-235`, which now name the ruling and forbid a best-effort purge. The danger-zone preflight text is unchanged, because nothing will be purged.
+- **What would make the ruled outcome reachable, for a later owner decision:** (1) a purge outbox table and job, with an explicit ruling that "the patient row is gone and the purge is guaranteed to complete" counts as together; (2) a separate ruling on rewriting append-only audit metadata.
 
 ## 2026-09-15 - PURPLE, SR-62 night D2: the DRAFT Eliminar stays, pinned draft-only by tests
 
