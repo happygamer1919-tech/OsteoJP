@@ -108,3 +108,37 @@ describe("the per-record consent block is untouched", () => {
     expect([...CONSENT_ITEM_KEYS]).toEqual(["treatment", "rgpd"]);
   });
 });
+
+/**
+ * THE FICHA'S CHIP, PINNED TO ITS SOURCE.
+ *
+ * The badge is rendered by an async server component, so there is no seam a
+ * unit test can render. What a test CAN pin is which value the chip hangs on.
+ *
+ * THIS IS THE GUARD ON THE TWO SURFACES STAYING SEPARATE. The owner ruled this
+ * per-patient table authoritative for the badge and left the per-record
+ * `_consent.rgpd` tick independent. If someone later makes the ficha consult
+ * that tick to decide the chip, a per-RECORD decision starts answering a
+ * per-PATIENT legal question, and a patient with no record at all has nowhere
+ * for the fact to live. These arms go red if that happens.
+ *
+ * The behavioural half lives in `rgpd-acceptance.test.ts`, which proves the read
+ * touches this table and no other.
+ */
+describe("the ficha badge hangs on the per-patient acceptance", () => {
+  const page = readFileSync(join(REPO_ROOT, "apps/web/app/patients/[id]/page.tsx"), "utf-8");
+
+  it("takes its value from getLatestRgpdAcceptance", () => {
+    expect(page).toMatch(/const rgpdAcceptance = await getLatestRgpdAcceptance\(ctx, patient\.id\)/);
+  });
+
+  it("renders the chip on the ABSENCE of that value", () => {
+    // `!rgpdAcceptance` — the absence of a row IS the badge, which is why no
+    // existing patient needed a backfill.
+    expect(page).toMatch(/!rgpdAcceptance[\s\S]{0,300}patients\.rgpdMissingBadge/);
+  });
+
+  it("never reads the per-record consent block to decide it", () => {
+    expect(page).not.toMatch(/readConsentState|CONSENT_DATA_KEY|_consent/);
+  });
+});

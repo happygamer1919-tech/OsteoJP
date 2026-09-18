@@ -25,7 +25,8 @@ vi.mock("@osteojp/db", async (orig) => {
 });
 
 import { runScoped } from "@/lib/auth/context";
-import { rgpdAcceptancesSchemaPresent } from "@osteojp/db";
+import { patientRgpdAcceptances, rgpdAcceptancesSchemaPresent } from "@osteojp/db";
+import { CONSENT_DATA_KEY, readConsentState } from "../clinical/consent";
 import { writeAudit } from "./audit";
 import {
   RGPD_VERSION,
@@ -65,6 +66,27 @@ function fakeSelectTx(rows: unknown[]) {
     limit: async () => rows,
   };
   return { select: () => chain };
+}
+
+/**
+ * The same chain, but it REMEMBERS WHICH TABLE WAS READ.
+ *
+ * Asserting the table by IDENTITY (the drizzle object handed to `.from()`) is
+ * the difference between proving where the badge's answer comes from and
+ * grepping the source for a string somebody could rename.
+ */
+function fakeSelectTxCapturing(rows: unknown[]) {
+  const tablesRead: unknown[] = [];
+  const chain = {
+    from: (table: unknown) => {
+      tablesRead.push(table);
+      return chain;
+    },
+    where: () => chain,
+    orderBy: () => chain,
+    limit: async () => rows,
+  };
+  return { tx: { select: () => chain }, tablesRead };
 }
 
 describe("the tick is OPTIONAL, and anything but a true boolean means not signed", () => {
@@ -233,5 +255,68 @@ describe("before the migration is applied", () => {
     ).rejects.toThrow(/does not exist on this database/);
     expect(inserted).toHaveLength(0);
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE BADGE HAS ONE SOURCE, AND THE FICHA'S PER-RECORD TICK IS NOT IT.
+ *
+ * There are two RGPD consent surfaces in this product and they are independent:
+ * this per-patient table, and the `_consent.rgpd` item inside a clinical record
+ * (`lib/clinical/consent.ts`), which is PER RECORD and lives in
+ * `clinical_records.data`. The owner has ruled that THIS table is the
+ * authoritative consent record and the one the badge reads; the per-record tick
+ * is untouched and stays independent. Nothing reconciles them yet.
+ *
+ * So the badge must answer from exactly one of them, and these arms pin which.
+ * The per-record tick cannot clear the badge for a STRUCTURAL reason rather than
+ * a policy one: this read never reaches `clinical_records` at all.
+ */
+describe("the badge reads the per-patient table, and only that", () => {
+  beforeEach(() => {
+    mockRunScoped.mockReset();
+    mockProbe.mockReset();
+    // The table exists throughout this block. The inert-before-apply arms are
+    // above, and `mockReset` above would otherwise leave the probe undefined.
+    mockProbe.mockResolvedValue(true);
+  });
+
+  it("selects from patient_rgpd_acceptances and from no other table", async () => {
+    const { tx, tablesRead } = fakeSelectTxCapturing([]);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(tx as never));
+
+    await getLatestRgpdAcceptance(ctx, PATIENT);
+
+    // Identity, not a name: one table, and it is this one.
+    expect(tablesRead).toEqual([patientRgpdAcceptances]);
+  });
+
+  it("A GRANTED PER-RECORD TICK DOES NOT CLEAR THE BADGE", async () => {
+    // The strongest form of the per-record tick a clinician can record today,
+    // read back by the real parser so this is the actual granted state.
+    const recordData = { [CONSENT_DATA_KEY]: { treatment: "granted", rgpd: "granted" } };
+    expect(readConsentState(recordData).rgpd).toBe("granted");
+
+    // ...while the per-patient table holds nothing for this patient.
+    const { tx, tablesRead } = fakeSelectTxCapturing([]);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(tx as never));
+
+    // The ficha therefore still reads "RGPD em falta". Null is the badge.
+    expect(await getLatestRgpdAcceptance(ctx, PATIENT)).toBeNull();
+    // And the granted tick was never consulted: no clinical table was read.
+    expect(tablesRead).toEqual([patientRgpdAcceptances]);
+  });
+
+  it("THE PER-PATIENT ROW DOES CLEAR IT", async () => {
+    const acceptedAt = new Date("2026-09-18T09:00:00.000Z");
+    const { tx } = fakeSelectTxCapturing([{ acceptedAt, rgpdVersion: RGPD_VERSION }]);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(tx as never));
+
+    // Non-null is the entire condition the chip hangs on (`!rgpdAcceptance`),
+    // so a row here is what takes "RGPD em falta" off the ficha.
+    await expect(getLatestRgpdAcceptance(ctx, PATIENT)).resolves.toEqual({
+      acceptedAt: acceptedAt.toISOString(),
+      rgpdVersion: RGPD_VERSION,
+    });
   });
 });
