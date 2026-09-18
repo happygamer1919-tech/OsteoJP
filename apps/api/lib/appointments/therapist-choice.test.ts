@@ -269,6 +269,47 @@ describe("source-level: no fourth predicate, no role filter (PL-06b, D2)", () =>
     expect(STORE).toMatch(/listBookableTherapists[\s\S]{0,2000}?is_bookable\s*=\s*true/);
   });
 
+  /**
+   * PORTAL-ROSTER - THE NEGATIVE CONTROL FOR THE VALIDITY FIX LIVES HERE.
+   *
+   * The predicate is raw SQL, so the DB-gated suite
+   * (packages/db/tests/portal-roster-template-validity.db.test.ts) proves what
+   * POSTGRES does with those two bounds, against rows where each one matters -
+   * but it mirrors the SQL rather than importing it, so reverting store.ts would
+   * leave it green. THESE arms are what go red on a revert, which is what makes
+   * the pair a control rather than two descriptions of the same hope.
+   */
+  /**
+   * BOUNDED TO THE METHOD, the way bookable-parity.test.ts bounds its own arms.
+   * A fixed character window would be wrong here: `priorCompletedServiceId`
+   * follows immediately and orders by `appointments.startsAt`, so a loose slice
+   * would drag its text in and the "no window was invented" arm below would be
+   * asserting against the wrong function.
+   */
+  const ROSTER_FN = (() => {
+    const fn = STORE.slice(STORE.indexOf("async listBookableTherapists"));
+    return fn.slice(0, fn.indexOf("},"));
+  })();
+
+  it("the roster query bounds the template by valid_from", () => {
+    expect(ROSTER_FN).toMatch(/av\.valid_from\s+is null or av\.valid_from\s+<=/);
+  });
+
+  it("the roster query bounds the template by valid_until", () => {
+    // The defect itself: an expired window kept its therapist on the list while
+    // the slot query, which does read it, offered them nothing.
+    expect(ROSTER_FN).toMatch(/av\.valid_until is null or av\.valid_until >=/);
+  });
+
+  it("it compares against TODAY in Lisbon, not a window it invented", () => {
+    // The roster step has no date (that is why this is not listAvailableTherapists),
+    // and owner ruling Q-ROSTER settles the instant as now. A startsAt/endsAt
+    // appearing inside THIS method would mean somebody turned the roster back
+    // into an availability query.
+    expect(ROSTER_FN).toMatch(/now\(\) at time zone/);
+    expect(ROSTER_FN).not.toMatch(/startsAt|endsAt/);
+  });
+
   it("no role or title predicate was introduced anywhere in the store", () => {
     expect(STORE).not.toMatch(/role_slug|roles\.slug|\bu\.title\b/);
   });
