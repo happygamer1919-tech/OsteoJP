@@ -2,7 +2,7 @@ import { FileText } from 'lucide-react'
 import { EmptyState } from '@osteojp/ui'
 import { getMyDocuments } from '@/lib/api/client'
 import type { PatientDocument } from '@/lib/api/client'
-import { DownloadButton } from './DownloadButton'
+import { DocumentRow } from './DocumentRow'
 import { s } from '@/lib/i18n'
 
 function formatDate(iso: string): string {
@@ -49,16 +49,15 @@ export default async function DocumentsPage() {
           {multiYear && <h3 className="text-xs font-medium text-text-secondary">{year}</h3>}
           <div className="divide-y divide-border rounded-lg border border-border bg-surface">
             {byYear.get(year)!.map((doc) => (
-              <div key={doc.id} className="flex items-center gap-3 px-4 py-3">
-                <FileText size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-text-primary">{doc.fileName}</p>
-                  <p className="text-xs text-text-secondary">
-                    {formatDate(doc.createdAt)} · {formatType(doc.mimeType)}
-                  </p>
-                </div>
-                <DownloadButton id={doc.id} fileName={doc.fileName} />
-              </div>
+              // The row is a client component so a preview can open under it;
+              // the date and type line is still formatted here, on the server.
+              <DocumentRow
+                key={doc.id}
+                id={doc.id}
+                fileName={doc.fileName}
+                meta={`${formatDate(doc.createdAt)} · ${formatType(doc.mimeType)}`}
+                mimeType={doc.mimeType}
+              />
             ))}
           </div>
         </section>

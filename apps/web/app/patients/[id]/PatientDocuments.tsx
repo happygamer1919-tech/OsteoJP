@@ -10,9 +10,14 @@ import {
   validateDocumentUpload,
 } from "@/lib/patients/document-validation";
 import {
+  isDocumentPreviewable,
+  type DocumentPreviewKind,
+} from "@/lib/patients/document-preview";
+import {
   confirmDocumentAction,
   createDocumentUploadUrlAction,
   documentDownloadUrlAction,
+  documentPreviewUrlAction,
 } from "./document-actions";
 
 // Must match storage.ts ATTACHMENTS_BUCKET (that module is server-only).
@@ -112,6 +117,39 @@ export function PatientDocuments({
     if (url) window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  /**
+   * The open preview, if any. One at a time, keyed by document id.
+   *
+   * THE URL IS HELD IN STATE AND DELIBERATELY NOT REFRESHED. It is a
+   * 60-second signed token: it is minted when the panel opens and it is allowed
+   * to expire where it sits. Closing and reopening mints a new one. Nothing
+   * here retries, caches it anywhere, or hands it to another component - the
+   * preview is not a longer-lived handle on the bytes than "Abrir" already is.
+   */
+  const [preview, setPreview] = useState<
+    { id: string; url: string; kind: DocumentPreviewKind; fileName: string } | null
+  >(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  async function togglePreview(documentId: string) {
+    setPreviewError(null);
+    // Second click on the open one closes it, which is what the button says.
+    if (preview?.id === documentId) {
+      setPreview(null);
+      return;
+    }
+    setPreview(null);
+    const res = await documentPreviewUrlAction(patientId, documentId);
+    if (!res.ok) {
+      // One message for every refusal, matching the server: not this patient's,
+      // not previewable, not there. The fallback is the affordance that already
+      // worked.
+      setPreviewError(s["patients.documentPreviewError"]);
+      return;
+    }
+    setPreview({ id: documentId, url: res.url, kind: res.kind, fileName: res.fileName });
+  }
+
   return (
     <div className="space-y-4">
       {/* W7-03: section header - a purple (accent-1-700) left rule + a count, so
@@ -141,6 +179,12 @@ export function PatientDocuments({
       {error && (
         <p role="alert" className="text-sm text-error">
           {error}
+        </p>
+      )}
+
+      {previewError && (
+        <p role="alert" className="text-sm text-error">
+          {previewError}
         </p>
       )}
 
@@ -175,15 +219,60 @@ export function PatientDocuments({
                     </span>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => download(d.storagePath)}
-                >
-                  {s["patients.documentOpen"]}
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {/* Only for the types a browser really renders. Everything
+                      else keeps Abrir alone rather than offering a panel that
+                      would come up empty. */}
+                  {isDocumentPreviewable(d.mimeType) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={preview?.id === d.id}
+                      onClick={() => togglePreview(d.id)}
+                    >
+                      {preview?.id === d.id
+                        ? s["patients.documentPreviewClose"]
+                        : s["patients.documentPreview"]}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => download(d.storagePath)}
+                  >
+                    {s["patients.documentOpen"]}
+                  </Button>
+                </div>
               </div>
+
+              {preview?.id === d.id && (
+                <div className="mt-3 border-t border-v2-border pt-3">
+                  {preview.kind === "image" ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- a 60s
+                    // signed Storage URL, not a build-time asset: next/image would
+                    // route a private, expiring object through the optimizer.
+                    <img
+                      src={preview.url}
+                      alt={preview.fileName}
+                      className="max-h-[70vh] w-full object-contain"
+                    />
+                  ) : (
+                    <object
+                      data={preview.url}
+                      type="application/pdf"
+                      aria-label={preview.fileName}
+                      className="h-[70vh] w-full"
+                    >
+                      {/* Shown when the browser has no PDF viewer at all. */}
+                      <p className="text-sm text-text-secondary">
+                        {s["patients.documentPreviewError"]}
+                      </p>
+                    </object>
+                  )}
+                </div>
+              )}
             </Card>
           ))}
         </div>

@@ -9,6 +9,7 @@ import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 import { writeClinicalAudit, clientIp } from "@/lib/clinical/audit";
 import { ClinicalError } from "@/lib/clinical/errors";
 import { validateDocumentUpload } from "./document-validation";
+import { documentPreviewKind, type DocumentPreviewKind } from "./document-preview";
 import { importedDocumentPrefix } from "./imported-documents-path";
 
 // Staff-side PATIENT DOCUMENTS (administrative documents & declarations attached
@@ -234,6 +235,92 @@ export async function listImportedPatientDocuments(
       createdAt: r.createdAt.toISOString(),
     }));
   });
+}
+
+/**
+ * Short-lived (60s) signed INLINE url for previewing ONE patient document.
+ *
+ * ===========================================================================
+ * IT TAKES A DOCUMENT ID, NOT A STORAGE PATH, AND THAT NARROWS THE SCOPE
+ * ===========================================================================
+ * `createPatientDocumentDownloadUrl` below signs whatever path the client sends
+ * so long as it starts with the tenant prefix, so any member of staff holding
+ * `patients:read` can sign any object in the tenant whose path they can name -
+ * including another patient's document. This helper never accepts a path. It
+ * resolves the row by id THROUGH THE SAME PREDICATE THE DOCUMENTOS TAB LISTS BY,
+ * and signs only what that predicate returned: a document the tab would not show
+ * you is a document you cannot preview. Adding a preview therefore makes the
+ * narrower of the two paths, not a second wide one.
+ *
+ * THAT SHARED PREDICATE IS ALSO WHERE A SOFT DELETE WILL LAND. `attachments`
+ * carries no `deleted_at` column today - there is no soft-deleted document to
+ * exclude yet - so the guarantee this can offer is structural rather than a
+ * filter it writes itself: the list and the preview select by the same
+ * conditions, so whatever excludes a row from the tab excludes it from the
+ * preview in the same commit, instead of relying on two people remembering.
+ *
+ * ===========================================================================
+ * THE SAME 60 SECONDS AS THE DOWNLOAD, AND NOT ONE SECOND MORE
+ * ===========================================================================
+ * The preview is not a new way to reach the bytes - it renders the same signed
+ * URL the "Abrir" button already mints, in place instead of in a new tab - so it
+ * gets no longer-lived token, no second bucket and no new storage policy. The
+ * one deliberate difference is the ABSENT `download` option: without it Supabase
+ * serves the object `Content-Disposition: inline`, which is what lets a browser
+ * render it rather than save it (the declaração path relies on the same thing).
+ *
+ * It REFUSES a type no browser renders, so a Word document is never handed to an
+ * <object> that would quietly download it while the panel sat empty.
+ */
+export async function createPatientDocumentPreviewUrl(
+  ctx: RequestContext,
+  patientId: string,
+  documentId: string,
+): Promise<{ url: string; kind: DocumentPreviewKind; fileName: string }> {
+  assertCan(ctx.role, "patients:read");
+  const row = await runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({
+        fileName: attachments.fileName,
+        mimeType: attachments.mimeType,
+        storagePath: attachments.storagePath,
+      })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.id, documentId),
+          // The three conditions below are listPatientDocuments' predicate,
+          // verbatim. Anything it hides, this hides.
+          eq(attachments.patientId, patientId),
+          or(
+            isNull(attachments.clinicalRecordId),
+            like(attachments.storagePath, `${importedDocumentPrefix(ctx.tenantId)}%`),
+          ),
+          eq(attachments.tenantId, ctx.tenantId),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  });
+  // Not this patient's, not in this tenant, on a registo rather than the tab, or
+  // simply absent: one refusal for all of them, so the reply never says which.
+  if (!row) throw new ClinicalError("not_found");
+
+  const kind = documentPreviewKind(row.mimeType);
+  if (!kind) throw new ClinicalError("invalid");
+  // Defense in depth, as everywhere else here: a row that somehow carried a
+  // foreign path is refused rather than signed.
+  if (!row.storagePath.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+
+  const admin = createSupabaseAdminClient();
+  // No `download` option: inline, so it renders in the panel. 60s, as above.
+  const { data, error } = await admin.storage
+    .from(ATTACHMENTS_BUCKET)
+    .createSignedUrl(row.storagePath, 60);
+  if (error || !data) {
+    throw new Error(`createPatientDocumentPreviewUrl: ${error?.message ?? "unknown storage error"}`);
+  }
+  return { url: data.signedUrl, kind, fileName: row.fileName };
 }
 
 /** Short-lived (60s) signed download URL. Verifies the path is in-tenant first. */

@@ -74,6 +74,10 @@ describe("getOwnDocumentLocation — self-scope", () => {
     await expect(getOwnDocumentLocation(PRINCIPAL, "d1")).resolves.toEqual({
       storagePath: `${PRINCIPAL.tenantId}/${PRINCIPAL.patientId}/x.pdf`,
       fileName: "declaracao.pdf",
+      // The stored type rides along for the PREVIEW endpoint, which refuses a
+      // type no browser renders before it signs anything. It stays internal,
+      // like the path: the list DTO has its own copy for display.
+      mimeType: "application/pdf",
     });
   });
 

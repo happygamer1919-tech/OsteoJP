@@ -4,8 +4,10 @@ import { requireRequestContext } from "@/lib/auth/context";
 import {
   confirmPatientDocument,
   createPatientDocumentDownloadUrl,
+  createPatientDocumentPreviewUrl,
   createPatientDocumentUploadUrl,
 } from "@/lib/patients/documents";
+import type { DocumentPreviewKind } from "@/lib/patients/document-preview";
 
 // Server actions for the patient Documentos tab. Each re-derives the request
 // context (never trusts the client for identity) and gates inside the lib
@@ -51,5 +53,28 @@ export async function documentDownloadUrlAction(
     return { url: await createPatientDocumentDownloadUrl(ctx, path) };
   } catch {
     return { url: null };
+  }
+}
+
+/**
+ * A 60s signed INLINE url for the in-page preview panel.
+ *
+ * It passes an ID rather than a path, unlike the download action above, so the
+ * server resolves the row itself under the Documentos tab's own predicate. A
+ * failure of any kind - not this patient's, not previewable, not there - comes
+ * back as the same `ok: false`, so the client cannot tell them apart either.
+ */
+export async function documentPreviewUrlAction(
+  patientId: string,
+  documentId: string,
+): Promise<
+  { ok: true; url: string; kind: DocumentPreviewKind; fileName: string } | { ok: false }
+> {
+  const ctx = await requireRequestContext();
+  try {
+    const preview = await createPatientDocumentPreviewUrl(ctx, patientId, documentId);
+    return { ok: true, ...preview };
+  } catch {
+    return { ok: false };
   }
 }
