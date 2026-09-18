@@ -35,6 +35,7 @@
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { addDays, lisbonDateTimeToUtc, todayInLisbon } from "../scheduling/time";
 
 vi.mock("server-only", () => ({}));
 
@@ -110,7 +111,10 @@ d("recordFollowupContactFor against a real database", () => {
     // therapist's. That is the predicate `followupOwnPatientClause` reads, and it
     // is what makes the scope arm below a real refusal rather than a missing row.
     const appt = async (patient: string, practitioner: string) => {
-      const startsAt = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      // FOURTEEN DAYS BACK AT A PINNED HOUR, not `Date.now() - 14d`, which
+      // inherits the time of day the suite ran at. It stays relative so the
+      // consultation is always genuinely past; only the hour is fixed.
+      const startsAt = lisbonDateTimeToUtc(addDays(todayInLisbon(), -14), "11:00");
       /**
        * ISO STRING + AN EXPLICIT ::timestamptz, NEVER A BARE Date. INC-12's
        * third defect, and this suite reproduced it on its first CI run:
