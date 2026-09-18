@@ -22,12 +22,18 @@
  *            other door, such as Horarios, with no script run at all)
  * Neither: it prints what each row holds and VERDICT: NOT APPLICABLE, exit 0.
  *
- * THE PREDICATE IS THE PORTAL'S, NOT A STRICTER ONE: is_active = true and NO date
- * window, because listBookableTherapists reads no valid_from / valid_until. An expired
- * day-defined row that is still active therefore counts: it is enough to put a
- * therapist on the portal list. The not-expired reading is printed beside it and
- * decides nothing. scripts/staff-11-jp-one-clinic-check.test.mjs fails if the portal's
- * predicate changes.
+ * THE PREDICATE IS THE PORTAL'S, NOT A STRICTER ONE, AND THE PORTAL'S CHANGED. It is
+ * now is_active = true AND the row's [valid_from, valid_until] window covering today in
+ * Lisbon, because listBookableTherapists reads that window (PORTAL-ROSTER, 2026-09-18,
+ * owner ruling Q-ROSTER = now). An expired day-defined row that is still active
+ * therefore NO LONGER counts: it cannot put a therapist on the portal list, so it
+ * cannot produce the double-listing this check exists to catch.
+ *
+ * THIS PARAGRAPH USED TO SAY THE OPPOSITE - "is_active = true and NO date window" - and
+ * the raw `active` count decided. Both readings are still printed side by side; what
+ * moved is which one DECIDES. scripts/staff-11-jp-one-clinic-check.test.mjs is what
+ * forced the change: it fails the moment the portal's predicate and this one disagree,
+ * which is exactly what it did when the window landed.
  *
  * OUT OF SCOPE: is_bookable (the ruling on the row not taking patients is still open;
  * it is printed, it decides nothing) and names (ruled: they already differ).
@@ -91,8 +97,11 @@ async function read(sql) {
     const hours = await tx`
       select user_id::text, location_id::text,
              count(*) filter (where is_active)::int as active,
-             count(*) filter (where is_active and (valid_until is null
-                              or valid_until >= (now() at time zone 'Europe/Lisbon')::date))::int as active_not_expired,
+             count(*) filter (where is_active
+                              and (valid_from  is null
+                                   or valid_from  <= (now() at time zone 'Europe/Lisbon')::date)
+                              and (valid_until is null
+                                   or valid_until >= (now() at time zone 'Europe/Lisbon')::date))::int as active_in_window,
              count(*)::int as total
         from availability_templates
        where tenant_id = ${TENANT} and user_id = any(${[JP_CB, JP_LV]})
@@ -112,8 +121,9 @@ async function read(sql) {
 
 /**
  * THE DECISION, as a pure function of what was read, so the tests drive every state
- * without a database. `hours` rows carry `active` (the portal's predicate) per row and
- * clinic; `audit.live` counts un-reversed reassign rows.
+ * without a database. `hours` rows carry `active_in_window` (the portal's predicate:
+ * active AND inside the template's date window) per row and clinic, and `active` beside
+ * it for the reader; `audit.live` counts un-reversed reassign rows.
  */
 export function evaluate({ users, hours, audit }) {
   const byId = new Map(users.map((u) => [u.id, u]));
@@ -127,7 +137,7 @@ export function evaluate({ users, hours, audit }) {
     };
   }
   const activeAt = (id) =>
-    [...new Set(hours.filter((h) => h.user_id === id && h.active > 0).map((h) => h.location_id))].sort();
+    [...new Set(hours.filter((h) => h.user_id === id && h.active_in_window > 0).map((h) => h.location_id))].sort();
   const byScript = audit.live > 0;
   const byData = activeAt(JP_LV).length > 0;
   if (!byScript && !byData) {
@@ -195,17 +205,19 @@ async function main() {
     const u = data.users.find((x) => x.id === r.id);
     console.log(`  ${r.label.padEnd(7)} ${r.id}  ${u ? `active ${u.is_active ? "yes" : "no"}  bookable ${u.is_bookable ? "yes" : "no"}` : "NOT FOUND"}`);
   }
-  console.log("\nAVAILABILITY ROWS, per JP row and clinic (active = the portal's predicate and the one that decides)");
+  console.log("\nAVAILABILITY ROWS, per JP row and clinic (active and in window = the portal's predicate and the one that decides)");
   for (const h of data.hours) {
     const label = ROWS.find((r) => r.id === h.user_id)?.label ?? h.user_id;
     console.log(
-      `  ${label.padEnd(7)} ${clinic(h.location_id).padEnd(24)} active ${String(h.active).padStart(3)}  active and not expired ${String(h.active_not_expired).padStart(3)}  all rows ${String(h.total).padStart(3)}`,
+      `  ${label.padEnd(7)} ${clinic(h.location_id).padEnd(24)} active ${String(h.active).padStart(3)}  active and in window ${String(h.active_in_window).padStart(3)}  all rows ${String(h.total).padStart(3)}`,
     );
   }
   if (data.hours.length === 0) console.log("  (none)");
   console.log("\nSPLIT SIGNALS");
   console.log(`  script  un-reversed ${ACTION} rows: ${data.audit.live} (runs recorded: ${data.audit.runs})`);
-  const lvClinics = new Set(data.hours.filter((h) => h.user_id === JP_LV && h.active > 0).map((h) => h.location_id));
+  // The same count the decision uses, deliberately: a signal line that disagreed with
+  // the verdict printed below it would read as a bug in the check.
+  const lvClinics = new Set(data.hours.filter((h) => h.user_id === JP_LV && h.active_in_window > 0).map((h) => h.location_id));
   console.log(`  data    JP(lv) holds active hours at ${lvClinics.size} clinic(s)`);
 
   const result = evaluate(data);
