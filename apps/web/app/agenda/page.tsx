@@ -9,6 +9,7 @@ import { listSharedResources } from "@/lib/scheduling/shared-resources";
 import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
 import {
   formatTimeOfDay,
+  lisbonMinutesFromMidnight,
   rangeForView,
   todayInLisbon,
   type AgendaView,
@@ -149,11 +150,28 @@ export default async function AgendaPage({
   /* earlier or closes later, and the agenda would be lying about a day it */
   /* is showing. `gridWindow` falls back to 08:00-20:00 for an empty list, */
   /* which is what every surface assumed before this migration.            */
-  const dayWindow = gridWindow(
-    locationId
-      ? options.locations.filter((l) => l.id === locationId)
-      : options.locations,
-  );
+  const visibleClinics = locationId
+    ? options.locations.filter((l) => l.id === locationId)
+    : options.locations;
+
+  /* ==================================================================== */
+  /* AGENDA-NEVER-HIDES - AND THE APPOINTMENTS ALREADY ON THE DAY.         */
+  /* ==================================================================== */
+  /* Production, 2026-09-16: opening moved to 09:00 and an 08:00 booking   */
+  /* at Linda-a-Velha could not be opened. It was never deleted - the grid */
+  /* clamped it to the first drawn row, where it sat underneath the 09:00  */
+  /* row. Hours change; the bookings made under the old ones do not.       */
+  /*                                                                       */
+  /* So the drawn window is the clinics' hours UNION the span of what is   */
+  /* actually loaded for this view, and `clinicWindow` is kept separately  */
+  /* so the grid can MARK the rows that only an appointment asks for.      */
+  /* Passing the same object for both would silently lose the distinction. */
+  const appointmentSpans = appointments.map((a) => ({
+    startMin: lisbonMinutesFromMidnight(new Date(a.startsAt)),
+    endMin: lisbonMinutesFromMidnight(new Date(a.endsAt)),
+  }));
+  const clinicWindow = gridWindow(visibleClinics);
+  const dayWindow = gridWindow(visibleClinics, appointmentSpans);
 
   /* THE CLOSURE BAND IS DRAWN ONLY WHEN ONE CLINIC IS SELECTED, and that  */
   /* is the same ruling from the other direction. CB's lunch hour is not   */
@@ -257,6 +275,7 @@ export default async function AgendaPage({
       appointments={appointments}
       blocks={blockSpans}
       dayWindow={dayWindow}
+      clinicWindow={clinicWindow}
       closure={closure}
       lockedPatient={lockedPatient}
       prefill={prefill}
