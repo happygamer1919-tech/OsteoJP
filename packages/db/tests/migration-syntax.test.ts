@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Guard against a migration that cannot PARSE.
@@ -17,13 +17,27 @@ import { join } from "node:path";
 // This is deliberately a cheap STATIC check, not a parser. It catches the
 // specific, silent, high-cost mistake - unbalanced delimiters - in
 // milliseconds, without a database.
+//
+// PARKED MIGRATIONS ARE CHECKED TOO (SR-62 PU-4). A file in
+// `migrations-pending/` is promoted by a RENAME ONLY, so its body is final the
+// day it is authored. Checking it only after promotion would find an unclosed
+// comment on the promotion branch, which is the late moment this guard exists
+// to avoid.
 
-const MIGRATIONS = join(__dirname, "..", "migrations");
+const DB = join(__dirname, "..");
+const MIGRATIONS = join(DB, "migrations");
+const PENDING = join(DB, "migrations-pending");
 
+/** Paths relative to packages/db: every numbered migration, then every parked one. */
 function migrationFiles(): string[] {
-  return readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
+  const sqlIn = (dir: string, rel: string): string[] =>
+    existsSync(dir)
+      ? readdirSync(dir)
+          .filter((f) => f.endsWith(".sql"))
+          .sort()
+          .map((f) => join(rel, f))
+      : [];
+  return [...sqlIn(MIGRATIONS, "migrations"), ...sqlIn(PENDING, "migrations-pending")];
 }
 
 /**
@@ -51,11 +65,11 @@ describe("migration files parse-guard", () => {
   const files = migrationFiles();
 
   it("guards against a vacuous pass: migrations were actually found", () => {
-    expect(files.length).toBeGreaterThan(40);
+    expect(files.filter((f) => f.startsWith("migrations/")).length).toBeGreaterThan(40);
   });
 
   it.each(files)("%s has balanced block-comment delimiters", (file) => {
-    const sql = readFileSync(join(MIGRATIONS, file), "utf-8");
+    const sql = readFileSync(join(DB, file), "utf-8");
     const { open, close } = countDelimiters(sql);
 
     expect(
@@ -67,7 +81,7 @@ describe("migration files parse-guard", () => {
   });
 
   it.each(files)("%s has balanced dollar-quote delimiters", (file) => {
-    const sql = readFileSync(join(MIGRATIONS, file), "utf-8");
+    const sql = readFileSync(join(DB, file), "utf-8");
     // A function body opened with $$ and never closed fails the same way.
     expect(
       (sql.match(/\$\$/g) ?? []).length % 2,

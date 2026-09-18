@@ -662,7 +662,19 @@ type PatientInsert = Omit<typeof patients.$inferInsert, "id" | "tenantId">;
 type AppointmentInsert = Omit<typeof appointments.$inferInsert, "id" | "tenantId">;
 type EpisodeInsert = Omit<typeof clinicalEpisodes.$inferInsert, "id" | "tenantId">;
 type ClinicalRecordInsert = Omit<typeof clinicalRecords.$inferInsert, "id" | "tenantId">;
-type AttachmentInsert = Omit<typeof attachments.$inferInsert, "id" | "tenantId">;
+/**
+ * SR-62 PU-4: the soft-delete columns are OMITTED FROM THE TYPE, so no builder
+ * can write them. `importAttachment`'s re-import path does `.set(values)` on an
+ * existing row; if `values` could carry `deletedAt: null`, a re-import would
+ * RESURRECT a document staff deliberately removed, and erase who removed it and
+ * why. With the keys absent from the type, UPDATE ... SET names only the source
+ * columns and a soft-deleted row stays soft-deleted. Adding one of these keys to
+ * `attachmentValues` is now a compile error, which is the point.
+ */
+type AttachmentInsert = Omit<
+  typeof attachments.$inferInsert,
+  "id" | "tenantId" | "deletedAt" | "deletedByUserId" | "deleteReason"
+>;
 
 function patientValues(
   p: MigrationPatient,
