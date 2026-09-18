@@ -1,9 +1,40 @@
 import { describe, expect, it } from "vitest";
 import {
   ALLOWED_DOCUMENT_MIME,
+  DOCUMENT_DELETE_REASON_MAX,
   MAX_DOCUMENT_BYTES,
+  normalizeDeleteReason,
   validateDocumentUpload,
 } from "./document-validation";
+
+describe("normalizeDeleteReason (SR-62 PU-4: the reason is REQUIRED)", () => {
+  it("trims and accepts a real reason", () => {
+    expect(normalizeDeleteReason("  paciente errado \n")).toEqual({ ok: true, reason: "paciente errado" });
+  });
+
+  it.each([["", ""], ["spaces", "   "], ["tabs and newlines", "\t\n \r\n"], ["undefined", undefined], ["null", null], ["a number", 7]])(
+    "refuses %s as reason_required",
+    (_label, raw) => {
+      expect(normalizeDeleteReason(raw)).toEqual({ ok: false, error: "reason_required" });
+    },
+  );
+
+  it("counts the cap after trimming: exactly the max passes, one more is reason_too_long", () => {
+    expect(normalizeDeleteReason(` ${"x".repeat(DOCUMENT_DELETE_REASON_MAX)} `).ok).toBe(true);
+    expect(normalizeDeleteReason("x".repeat(DOCUMENT_DELETE_REASON_MAX + 1))).toEqual({
+      ok: false,
+      error: "reason_too_long",
+    });
+  });
+
+  it("the dialog's too-long message names the same cap", async () => {
+    const pt = (await import("../../../../packages/i18n/src/strings.pt.json")).default as Record<string, string>;
+    const en = (await import("../../../../packages/i18n/src/strings.en.json")).default as Record<string, string>;
+    for (const strings of [pt, en]) {
+      expect(strings["patients.documentDeleteReasonTooLong"]).toContain(String(DOCUMENT_DELETE_REASON_MAX));
+    }
+  });
+});
 
 describe("the patient-document size cap (INC-patient-document-over-15mb-refused)", () => {
   // The clinic could not upload a patient's RGPD document: anything over 15 MB was
