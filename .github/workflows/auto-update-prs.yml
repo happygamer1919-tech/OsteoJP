@@ -19,22 +19,44 @@ name: Auto-update PR branches
 #
 # WHAT THE FAILURE LOOKED LIKE, so the next reader recognises it: the
 # `behind main by N commit(s)` line printed correctly on every PR, which means
-# the LIST and COMPARE calls succeeded and only `PUT .../update-branch` 404'd.
+# the LIST and COMPARE calls succeeded and only `PUT .../update-branch` failed.
 #
-# THE THREE CALLS MAP ONE-TO-ONE ONTO THREE PERMISSIONS, which is what turns that
-# symptom into a diagnosis instead of a guess:
+# THE THREE CALLS AND THE PERMISSION EACH ONE NEEDS:
 #     GET  /repos/{owner}/{repo}/pulls                    Pull requests  READ
 #     GET  /repos/{owner}/{repo}/compare/{basehead}       Contents       READ
-#     PUT  /repos/{owner}/{repo}/pulls/{n}/update-branch  Pull requests  WRITE
-# LIST 200 and COMPARE 200 with UPDATE-BRANCH 404 is a read/write asymmetry on
-# ONE permission - Pull requests - and NOT lost repository access, because a token
-# that could not see this repository would have 404'd the LIST as well.
+#     PUT  /repos/{owner}/{repo}/pulls/{n}/update-branch  Contents       WRITE
 #
-# SO THE TOKEN NEEDS Pull requests: read and write, AND Contents: read-only, plus
-# the Metadata: read-only every fine-grained token carries. CONTENTS: WRITE IS NOT
-# NEEDED and must not be granted - nothing here writes a file. The first version
-# of this comment asked for it, which would have handed a branch-merging job write
-# access to the source of a clinical system.
+# THE THIRD LINE USED TO READ "Pull requests WRITE", AND IT WAS WRONG. Corrected
+# 2026-09-18, after the failure changed shape: every run from 2026-09-16 20:24
+# onward fails with HTTP 403 and the body
+#     {"message": "user doesn't have permission to update head repository"}
+# rather than the 404 this comment was originally written against.
+#
+# "UPDATE HEAD REPOSITORY" IS THE TELL, and it is worth spelling out because the
+# endpoint's name invites the wrong guess. `update-branch` does not annotate a
+# pull request. GitHub's REST reference says it "Updates the pull request branch
+# with the latest upstream changes by MERGING HEAD from the base branch into the
+# pull request branch", and the same page adds: "If making a request on behalf of
+# a GitHub App you must also have permissions to write the contents of the head
+# repository." It creates a merge commit on the head branch. That is a CONTENTS
+# write, and no amount of Pull requests: write will authorise it.
+#
+# SO THE TOKEN NEEDS Contents: READ AND WRITE, plus Pull requests: read for the
+# LIST call, plus the Metadata: read-only every fine-grained token carries.
+#
+# THE PREVIOUS REVISION REFUSED Contents: write on the grounds that "nothing here
+# writes a file", and that is the reasoning being retracted: it confused the
+# RUNNER with the API. This job checks nothing out and writes no file on disk,
+# and the commit it asks GitHub to create lands in the repository all the same.
+# Acting on that advice cannot clear the 403, because the permission it withholds
+# is precisely the one the failing call requires.
+#
+# THE GRANT IS NOT FREE, AND SAYING SO IS PART OF THE CORRECTION. Contents: write
+# on this repository is push access to a clinical system's source, carried by a
+# repo secret. It is what GitHub requires for this endpoint and there is no
+# narrower permission that covers it. If that trade is judged unacceptable, the
+# honest alternative is to DELETE this workflow and update branches by hand -
+# not to leave it installed with a token that cannot succeed.
 
 on:
   push:
@@ -142,7 +164,7 @@ jobs:
 
           if [ -e "${failed_marker}" ]; then
             rm -f "${failed_marker}"
-            echo "::error::At least one branch update FAILED (see the HTTP code above). Every open PR behind main now needs a manual Update branch, and main is protected with strict status checks, so each one costs a full CI cycle. If the code is 404 the AUTO_UPDATE_TOKEN has lost its permissions - reissue it with Pull requests: read and write, plus Contents: read-only. Contents WRITE is not needed by anything here."
+            echo "::error::At least one branch update FAILED (see the HTTP code above). Every open PR behind main now needs a manual Update branch, and main is protected with strict status checks, so each one costs a full CI cycle. If the code is 403 or 404 the AUTO_UPDATE_TOKEN cannot make this call - reissue it with Contents: read AND WRITE, plus Pull requests: read. update-branch merges the base branch into the head branch, so it writes a commit and needs Contents: write; a 403 body reading 'user doesn't have permission to update head repository' is that permission missing."
             exit 1
           fi
 
