@@ -39,6 +39,11 @@ export interface DialogProps {
   onConfirm?: () => void;
   confirmVariant?: Extract<ButtonVariant, "primary" | "destructive">;
   confirmLoading?: boolean;
+  /**
+   * Disable the confirm button until the dialog's own input is acceptable (for
+   * example a required reason). The server still re-validates; this is UX.
+   */
+  confirmDisabled?: boolean;
   cancelLabel: ReactNode;
   children?: ReactNode;
 }
@@ -61,6 +66,7 @@ export function Dialog({
   onConfirm,
   confirmVariant = "primary",
   confirmLoading = false,
+  confirmDisabled = false,
   cancelLabel,
   children,
 }: DialogProps) {
@@ -115,6 +121,7 @@ export function Dialog({
             <Button
               variant={confirmVariant}
               loading={confirmLoading}
+              disabled={confirmDisabled}
               onClick={onConfirm}
             >
               {confirmLabel}
