@@ -134,23 +134,46 @@ test("a 404 on update-branch FAILS the pass", () => {
       out,
   );
   assert.match(out, /update failed \(HTTP 404\)/);
-  assert.match(out, /AUTO_UPDATE_TOKEN has lost its permissions/);
+  assert.match(out, /AUTO_UPDATE_TOKEN cannot make this call/);
 });
 
-test("the remedy it prints asks for Pull requests write and NOT Contents write", () => {
-  // The first version of this annotation asked for `contents: write`. No call this
-  // workflow makes needs it - LIST and UPDATE-BRANCH are Pull requests (read, then
-  // write) and COMPARE is Contents READ - so granting it would hand a job that only
-  // merges main into a PR branch write access to the source of a clinical system.
-  // The owner acts on this string, so the string is pinned.
-  const { out } = runPass({ updateCode: 404 });
-  assert.match(out, /Pull requests: read and write/);
-  assert.match(out, /Contents: read-only/);
+test("a 403 on update-branch FAILS the pass too", () => {
+  // THE CODE THE WORKFLOW ACTUALLY FAILS WITH TODAY. Every run from 2026-09-16 20:24
+  // onward returned 403 with {"message":"user doesn't have permission to update head
+  // repository"}, not the 404 this file was written against. 403 reaches the same
+  // `*)` arm, and this pins that rather than leaving it to inspection.
+  const { status, out } = runPass({ updateCode: 403 });
+  assert.notEqual(status, 0, `a 403 must fail the pass:\n${out}`);
+  assert.match(out, /update failed \(HTTP 403\)/);
+});
+
+test("the remedy it prints asks for Contents: read AND WRITE", () => {
+  // THIS ARM USED TO ASSERT THE EXACT OPPOSITE, and it was wrong. It required the
+  // annotation to say "Pull requests: read and write" plus "Contents: read-only", and
+  // it FAILED the pass if the string ever asked for Contents: write - on the reasoning
+  // that "nothing in this workflow writes a file".
+  //
+  // THAT REASONING CONFUSED THE RUNNER WITH THE API. The job checks nothing out and
+  // writes no file on disk. But `PUT /pulls/{n}/update-branch` "Updates the pull
+  // request branch with the latest upstream changes by MERGING HEAD from the base
+  // branch into the pull request branch" (GitHub REST reference), and the same page
+  // adds: "If making a request on behalf of a GitHub App you must also have permissions
+  // to write the contents of the head repository." It creates a commit. That is a
+  // CONTENTS write, and the live 403 body names it exactly: "user doesn't have
+  // permission to update head repository".
+  //
+  // So the previous version of this test PINNED A FALSE REMEDY. The owner acts on this
+  // string; following it could not have cleared the 403, because it withheld the one
+  // permission the failing call needs. The string is still pinned - pointing the right
+  // way now.
+  const { out } = runPass({ updateCode: 403 });
+  assert.match(out, /Contents: read AND WRITE/);
+  assert.match(out, /Pull requests: read/);
   assert.doesNotMatch(
     out,
-    /contents: write/i,
-    "the annotation is asking for Contents: WRITE again. Nothing in this workflow " +
-      "writes a file; PUT .../update-branch needs Pull requests: write.",
+    /Contents: read-only/,
+    "the annotation is telling the owner Contents: read-only is enough. It is not: " +
+      "update-branch merges the base branch into the head branch and needs Contents: write.",
   );
 });
 
