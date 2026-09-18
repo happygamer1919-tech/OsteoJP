@@ -31,6 +31,7 @@
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { addDays, lisbonDateTimeToUtc, todayInLisbon } from "./time";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -126,7 +127,10 @@ d("the guest possible-patient match set, against a real database", () => {
 
   async function seedRequest(phone: string): Promise<string> {
     const id = randomUUID();
-    const start = new Date(Date.now() + 96 * 60 * 60 * 1000);
+    // FOUR DAYS OUT AT A PINNED HOUR, not `Date.now() + 96h`: a whole-day
+    // offset inherits the time of day the suite ran at. The offset stays
+    // relative so the request never ages into the past; only the hour is fixed.
+    const start = lisbonDateTimeToUtc(addDays(todayInLisbon(), 4), "11:00");
     const end = new Date(start.getTime() + 4 * 60 * 60 * 1000);
     await sql.execute(raw`insert into guest_booking_requests
       (id, tenant_id, full_name, phone, service_id, location_id, requested_starts_at, requested_ends_at, status)

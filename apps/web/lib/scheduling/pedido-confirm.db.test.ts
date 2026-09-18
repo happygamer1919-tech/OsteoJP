@@ -38,6 +38,7 @@
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { addDays, lisbonDateTimeToUtc, todayInLisbon } from "./time";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -73,8 +74,15 @@ d("confirmAppointmentRequest against a real database", () => {
   let patientA: string;
   let patientB: string;
 
-  /** Two hours of the same afternoon, well clear of any cutoff. */
-  const START = new Date(Date.now() + 96 * 60 * 60 * 1000);
+  /**
+   * Two hours of the same morning, well clear of any cutoff.
+   *
+   * FOUR DAYS OUT AT A PINNED HOUR. It was `Date.now() + 96h`, which keeps the
+   * time of day the suite ran at; see estado-correction.db.test.ts for the
+   * failure that shape produced. The offset stays relative so the fixture never
+   * ages into the past; only the hour is fixed.
+   */
+  const START = lisbonDateTimeToUtc(addDays(todayInLisbon(), 4), "11:00");
   const END = new Date(START.getTime() + 55 * 60 * 1000);
 
   beforeAll(async () => {
