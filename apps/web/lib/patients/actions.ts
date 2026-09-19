@@ -34,6 +34,7 @@ import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
 import { insertPatientTx } from "./insert";
+import { insertRgpdAcceptanceTx } from "./rgpd-acceptance";
 import {
   InvalidMergeError,
   PatientNotFoundError,
@@ -237,6 +238,24 @@ async function createPatientImpl(
         contraindicationOther: input.contraindicationOther,
         contraindicationOtherNote: input.contraindicationOtherNote,
     });
+
+    // RGPD-01 (owner ruling Q-RGPD-NEW = b) — the consent is OPTIONAL at
+    // creation. Not ticked means no row, which is a normal registration: the
+    // ficha shows "RGPD em falta" until one exists. Nothing here refuses.
+    //
+    // WRITTEN IN THIS TRANSACTION, beside the patient insert, for the reason
+    // `insertPatientTx` exists at all: the patient and the consent that was
+    // ticked for it must commit or roll back together. Split across two
+    // transactions, a crash between them leaves either a patient whose signed
+    // form was never recorded, or a consent row pointing at no patient.
+    //
+    // `new Date()` is the capture instant. The column is supplied rather than
+    // defaulted so a form signed earlier can carry its real date later, but at
+    // creation the two are the same moment and inventing an earlier one here
+    // would be asserting something nobody told us.
+    if (input.rgpdConsent) {
+      await insertRgpdAcceptanceTx(tx, ctx, { patientId: row.id, acceptedAt: new Date() });
+    }
     return row;
   });
 

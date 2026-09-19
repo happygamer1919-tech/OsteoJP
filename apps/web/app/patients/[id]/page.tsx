@@ -19,6 +19,7 @@ import { isFichaIncomplete } from "../../../lib/patients/nif";
 import { NO_SMS_MESSAGE_KEY } from "../../../lib/patients/phone-preview";
 import { noSmsReason } from "@osteojp/notify";
 import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
+import { getLatestRgpdAcceptance } from "../../../lib/patients/rgpd-acceptance";
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
@@ -147,6 +148,11 @@ export default async function PatientProfilePage({
     ? ((await listActiveLocations(ctx)).find((l) => l.id === patient.primaryLocationId)?.name ??
       null)
     : null;
+
+  // RGPD-01 — whether this patient's RGPD consent is on file. THE ABSENCE OF A
+  // ROW IS THE ANSWER: every patient registered before this shipped has none,
+  // so they read "RGPD em falta" without the migration touching a single row.
+  const rgpdAcceptance = await getLatestRgpdAcceptance(ctx, patient.id);
 
   const canReadClinical = can(ctx.role, "clinical_records:read");
   // Documentos tab: every staff role can view/upload administrative patient
@@ -390,6 +396,15 @@ export default async function PatientProfilePage({
                   <StatusChip tone="neutral">{s["patients.mergedBadge"]}</StatusChip>
                 ) : patient.deletedAt ? (
                   <StatusChip tone="error">{s["patients.deletedBadge"]}</StatusChip>
+                ) : null}
+                {/* RGPD-01 — shown ALONGSIDE the merged/deleted chip rather
+                    than inside that ternary: those two are mutually exclusive
+                    states of the record, this is an independent fact about it,
+                    and a merged patient whose consent is missing is still
+                    missing it. Warning, not error: nothing is broken and
+                    nothing is blocked, there is a form still to collect. */}
+                {!rgpdAcceptance ? (
+                  <StatusChip tone="warning">{s["patients.rgpdMissingBadge"]}</StatusChip>
                 ) : null}
               </div>
               <p className="text-sm text-text-secondary">{identityLine(patient, patientLocationName)}</p>
