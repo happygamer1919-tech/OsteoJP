@@ -9,8 +9,15 @@ jobs:
     name: Lint + typecheck + test
     runs-on: ubuntu-latest
     steps:
+      # FULL HISTORY, and the reconcile step at the bottom is why. When GitHub
+      # rate-limits the installation token, that step reads merge state from git
+      # history instead, and the default depth-1 clone holds one commit subject.
+      # The script refuses a shallow clone with exit 2 rather than trusting it, so
+      # without this line the rate limit stays fatal.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -56,6 +63,11 @@ jobs:
       # in the REQUIRED set. The PR rules need the API, so the token is passed;
       # the script exits 2 rather than 0 if it cannot reach it, because a check
       # that cannot ask must never report success.
+      #
+      # ONE RULED EXCEPTION (D2, 2026-09-19): a RATE-LIMIT 403 that survives the
+      # retries falls back to merge state from git history, prints OFFLINE
+      # FALLBACK and a ::warning, and still fails on a stale card. Any other
+      # failure to reach the API, a token 403 included, is still exit 2.
       - name: Reconcile the board against merged PRs
         run: pnpm board:reconcile
         env:

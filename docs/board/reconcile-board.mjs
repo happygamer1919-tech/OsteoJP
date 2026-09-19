@@ -59,6 +59,12 @@
 // Exit 1 = at least one mismatch.
 // Exit 2 = could not verify (unreadable board, or no GitHub access without
 //          --offline). NEVER exits 0 on a check it did not perform.
+//
+// ONE RULED EXCEPTION TO THAT LAST SENTENCE, AND IT IS LOUD. When GitHub answers
+// with a RATE-LIMIT 403 after the retries (owner ruling D2, 2026-09-19), the run
+// falls back to merge truth read from git history, prints OFFLINE FALLBACK and a
+// `::warning`, and lists every PR it could not ask about under UNVERIFIED. The
+// stale-card rule still runs and still fails the run. See `run` below.
 
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -273,8 +279,16 @@ const FINISHED = "shipped";
 /**
  * Every disagreement between the board and the repository.
  *
- * `prState` maps a PR number to "merged" | "open" | "closed" | "missing", or is
- * null when the PR rules were not run.
+ * `prState` maps a PR number to "merged" | "open" | "closed" | "missing" |
+ * "unknown", or is null when the PR rules were not run.
+ *
+ * "unknown" EXISTS ONLY IN THE RATE-LIMIT FALLBACK (see `degradedPrStates`), and
+ * it is never a finding. It means nobody could be asked: not "missing", which is
+ * GitHub's answer that the PR does not exist, and not "open", which is an answer
+ * too. Rule D is not asked about an unknown PR, rule B is withheld from a card
+ * that cites one, and both are returned in `unverified` so the run can print
+ * what it did not check. Rule C needs no such care: it fires only on "merged",
+ * and merged is the one state the fallback can know for certain.
  */
 export function reconcile(board, prState) {
   const gateState = new Map(
@@ -283,6 +297,7 @@ export function reconcile(board, prState) {
   const byId = new Map((board?.cards ?? []).map((c) => [c.id, c]));
   const mismatches = [];
   const acknowledged = [];
+  const unverified = [];
 
   const record = (card, rule, message) => {
     const ack = acknowledgement(card);
@@ -353,6 +368,8 @@ export function reconcile(board, prState) {
     }
 
     const merged = cited.filter((pr) => stateOf(pr) === "merged");
+    const unknown = cited.filter((pr) => stateOf(pr) === "unknown");
+    if (unknown.length > 0) unverified.push({ id: card.id, prs: unknown });
 
     // RULES B AND C ARE CARD-LEVEL, AND THAT IS A CORRECTION MADE ON THE FIRST
     // REAL RUN RATHER THAN A DESIGN CHOICE MADE UP FRONT.
@@ -371,7 +388,10 @@ export function reconcile(board, prState) {
     // because that is where the failure was first seen. Reading a PR number out
     // of a journal-backed card and calling it a shipping claim is the same
     // conflation this whole file exists to stop, just pointed the other way.
-    if (finished && card?.evidence?.kind === "pr" && merged.length === 0) {
+    //
+    // WITHHELD WHEN ANY CITATION IS UNKNOWN. "No cited PR has merged" is a claim
+    // about every citation, and an unknown one is a citation nobody asked about.
+    if (finished && card?.evidence?.kind === "pr" && merged.length === 0 && unknown.length === 0) {
       record(
         card,
         "shipped-unmerged",
@@ -389,7 +409,44 @@ export function reconcile(board, prState) {
     }
   }
 
-  return { mismatches, acknowledged };
+  return { mismatches, acknowledged, unverified };
+}
+
+/**
+ * PR numbers that git history says are MERGED, from commit subjects.
+ *
+ * Main takes squash merges, whose subject GitHub ends with "(#N)", and it may
+ * take a merge commit, whose subject begins "Merge pull request #N from". Both
+ * are written by GitHub at merge time. Nothing else is read: a number in the
+ * middle of a subject is narration, exactly as a number in a card's notes is,
+ * and `Revert "x (#12)" (#900)` is the merge of #900 and says nothing about #12.
+ *
+ * A MERGED PR STAYS MERGED. That is what makes this safe to use when GitHub
+ * cannot be asked: git can be behind, so its silence proves nothing, but it
+ * cannot be wrong about a merge it holds.
+ */
+export function mergedFromSubjects(lines) {
+  const merged = new Set();
+  for (const line of lines) {
+    const m = line.match(/\(#(\d+)\)\s*$/) ?? line.match(/^Merge pull request #(\d+) from /);
+    if (m) merged.add(Number(m[1]));
+  }
+  return merged;
+}
+
+/**
+ * PR states for the rate-limit fallback. An answer the API gave before the quota
+ * ran out is kept. Otherwise git answers "merged", and everything else is
+ * "unknown" - NEVER "missing", "open" or "closed", each of which is an answer
+ * and would be an invented one. Every wanted PR gets a key, so `reconcile`'s
+ * `?? "missing"` default cannot fire on this map.
+ */
+export function degradedPrStates(wanted, partial, mergedSet) {
+  const out = new Map();
+  for (const n of wanted) {
+    out.set(n, partial?.get(n) ?? (mergedSet.has(n) ? "merged" : "unknown"));
+  }
+  return out;
 }
 
 /* --------------------------------------------------------------- effects --- */
@@ -435,6 +492,21 @@ function sleepSeconds(s) {
  * Playwright steps already print `::warning::` when a retry saves them, because
  * a silent retry makes a flake un-measurable - which is how the Supabase one
  * reached three occurrences before anyone counted them.
+ *
+ * AN EXHAUSTED RATE LIMIT IS NAMED, added 2026-09-19 after three occurrences on
+ * #1399 (runs 35349914675, 35442130654, 35442683579). It still THROWS, and the
+ * sentence at the top of this comment still holds for every caller that does not
+ * look: what changes is that the error carries `code: "RATE_LIMITED"`, the PR it
+ * stopped at, and `partial`, the answers GitHub gave before the quota ran out.
+ * `run` is the one caller that looks, and what it does with them is its decision,
+ * not this function's.
+ *
+ * ONLY A RATE LIMIT IS NAMED. "Resource not accessible by integration" is also a
+ * 403, and it means the token can never ask. Falling back on that would retire
+ * the PR rules for good while the step stayed green, so it throws as before.
+ *
+ * IT STOPS AT THE FIRST EXHAUSTED PR. A quota that refused #760 three times will
+ * refuse #761, and walking 246 PRs at six seconds each proves it 245 more times.
  */
 export function fetchPrStates(numbers, readOne = ghReadPr, pause = sleepSeconds) {
   const out = new Map();
@@ -473,15 +545,180 @@ export function fetchPrStates(numbers, readOne = ghReadPr, pause = sleepSeconds)
     }
     if (lastErr) {
       const stderr = String(lastErr?.stderr ?? "");
-      throw new Error(
+      const failure = new Error(
         `gh could not read PR #${n} after ${ATTEMPTS} attempts: ` +
           `${stderr.split("\n")[0] || lastErr.message}`,
       );
+      const status = stderr.match(/HTTP (403|429)/)?.[1];
+      if (status && /rate limit/i.test(stderr)) {
+        failure.code = "RATE_LIMITED";
+        failure.status = Number(status);
+        failure.pr = n;
+        failure.partial = out;
+      }
+      throw failure;
     }
     const [state, merged] = raw.split(" ");
     out.set(n, merged === "true" ? "merged" : state === "open" ? "open" : "closed");
   }
   return out;
+}
+
+/**
+ * Merge truth from git, for the rate-limit fallback: `{ merged, shallow, ref }`.
+ *
+ * READ FROM THE BOARD'S OWN REPOSITORY, which is why it takes the board's
+ * directory: the history that can answer for a board is the one it is committed
+ * in, and that is not always the directory the command was typed in.
+ *
+ * `origin/main` WHEN IT RESOLVES, ELSE `HEAD`, and `--first-parent` either way.
+ * A feature branch that has merged main into itself keeps main's squash commits
+ * on the SECOND parent of those merges, so walking HEAD's first parents from
+ * such a branch would miss them; `origin/main` has them all on its first-parent
+ * line. In CI, HEAD is GitHub's test merge and its first parent IS main.
+ *
+ * SHALLOW IS REPORTED, NEVER WORKED AROUND. `actions/checkout` defaults to depth
+ * 1, whose history holds one subject. Reading that as "no cited PR is merged"
+ * would mark all 246 unknown and pass, so the caller refuses a shallow answer.
+ * ci.yml fetches full history for exactly this reason.
+ */
+function gitMergedPrs(cwd) {
+  const git = (...args) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const shallow = git("rev-parse", "--is-shallow-repository") === "true";
+  let ref = "HEAD";
+  try {
+    git("rev-parse", "--verify", "-q", "origin/main");
+    ref = "origin/main";
+  } catch {
+    // No such ref in this clone. HEAD is the documented second choice.
+  }
+  const merged = mergedFromSubjects(git("log", "--first-parent", "--format=%s", ref).split("\n"));
+  return { merged, shallow, ref };
+}
+
+/**
+ * The whole run as a value: `{ code, out, err }`. `main` only performs it.
+ *
+ * EXTRACTED SO THE FALLBACK CAN BE TESTED THROUGH THE EXIT CODE. The rule that
+ * matters here is about what the PROCESS reports - a rate limit must pass, a
+ * stale card under the same rate limit must not - and `main` called
+ * `process.exit`, which no test could observe without spawning. `fetch` and
+ * `gitMerged` are injected the way `readOne` already is.
+ */
+export function run({ board, boardPath, offline, fetch = fetchPrStates, gitMerged = gitMergedPrs }) {
+  const out = [];
+  const err = [];
+
+  let prState = null;
+  let fallback = null;
+  if (!offline) {
+    const wanted = [...new Set((board.cards ?? []).flatMap(citedPrs))].sort((a, b) => a - b);
+    try {
+      prState = fetch(wanted);
+    } catch (failure) {
+      // NOT a silent skip. The whole point of this file is that an unasked
+      // question must never read as a satisfied one.
+      if (failure?.code !== "RATE_LIMITED") {
+        err.push(`CANNOT VERIFY: ${failure.message}`);
+        err.push(
+          "The PR rules need `gh` authenticated against this repo. Fix that, or run\n" +
+            "with --offline to run the local gate-claim rule alone and say so.",
+        );
+        return { code: 2, out, err };
+      }
+
+      // THE RULED FALLBACK (D2, 2026-09-19). GitHub refused on quota, which says
+      // nothing about the board, so the question is put to git history instead.
+      let git;
+      try {
+        git = gitMerged(dirname(resolve(boardPath)));
+      } catch (gitFailure) {
+        err.push(`CANNOT VERIFY: ${failure.message}`);
+        err.push(`and the git fallback failed too: ${gitFailure.message}`);
+        return { code: 2, out, err };
+      }
+      if (git.shallow) {
+        err.push(`CANNOT VERIFY: ${failure.message}`);
+        err.push(
+          "and the git fallback cannot answer either: this is a SHALLOW clone, whose\n" +
+            "history does not hold the merges the board cites. Fetch full history\n" +
+            "(actions/checkout `fetch-depth: 0`) and the rate limit stops being fatal.",
+        );
+        return { code: 2, out, err };
+      }
+      prState = degradedPrStates(wanted, failure.partial, git.merged);
+      const api = failure.partial?.size ?? 0;
+      const unknown = [...prState.values()].filter((s) => s === "unknown").length;
+      fallback = { api, git: wanted.length - api - unknown, unknown, ref: git.ref };
+      err.push(
+        `::warning title=Reconciler fell back to offline mode::GitHub API rate limit ` +
+          `(HTTP ${failure.status}) held through the retries at PR #${failure.pr}. Merge state ` +
+          `was read from git history (${git.ref}) instead: of ${wanted.length} cited PRs, ` +
+          `${fallback.api} answered by the API, ${fallback.git} answered by git, ` +
+          `${fallback.unknown} could not be asked about at all.`,
+      );
+    }
+  }
+
+  const { mismatches, acknowledged, unverified } = reconcile(board, prState);
+  // RULINGS RECONCILE SEPARATELY and their findings join the same exit code. A
+  // second list with its own quiet exit would be a check nobody reads.
+  const rulingFindings = reconcileRulings(board);
+
+  out.push(`BOARD RECONCILE  ${boardPath}`);
+  out.push(`  cards: ${(board.cards ?? []).length}`);
+  if ((board.rulings ?? []).length > 0) {
+    out.push(
+      `  rulings: ${(board.rulings ?? []).length} (reconciled separately - a ruling has no status, so rules A-F cannot see it)`,
+    );
+  }
+  const prRules = fallback
+    ? `, OFFLINE FALLBACK after a GitHub rate limit - merged state from git history (${fallback.ref}) ` +
+      `over ${prState.size} cited PRs; stale-card fires on every PR git or the API holds as merged; ` +
+      `stale-card, pr-missing and shipped-unmerged are all UNVERIFIED for the ${fallback.unknown} ` +
+      `PR(s) nobody could ask about`
+    : prState
+      ? `, pr-state over ${prState.size} cited PRs`
+      : " ONLY - PR rules skipped (--offline)";
+  out.push(`  rules run: gate-claim (local)${prRules}`);
+
+  if (fallback && unverified.length > 0) {
+    // Printed in full, for the reason ACKNOWLEDGED is: a check that was not run
+    // and is not listed is a check everybody assumes was run.
+    out.push(`\n  UNVERIFIED (${unverified.length}), cited PRs GitHub would not answer for and git does not hold as merged:`);
+    for (const u of unverified) out.push(`    - ${u.id}: ${u.prs.map((p) => `#${p}`).join(", ")}`);
+  }
+
+  if (acknowledged.length > 0) {
+    // Printed in full, every run. An exemption nobody sees is an exemption
+    // nobody revisits, and this list is where a wrong one would hide.
+    out.push(`\n  ACKNOWLEDGED (${acknowledged.length}), open_on_purpose:`);
+    for (const a of acknowledged) {
+      out.push(`    - [${a.rule}] ${a.id}: ${a.message}`);
+      out.push(`      reason: ${a.ack}`);
+    }
+  }
+
+  if (rulingFindings.length > 0) {
+    err.push(`\nRULINGS OUT OF SYNC - ${rulingFindings.length} finding(s):`);
+    for (const f of rulingFindings) err.push(`  - [${f.rule}] ${f.id}: ${f.message}`);
+  }
+
+  if (mismatches.length > 0) {
+    err.push(`\nBOARD OUT OF SYNC - ${mismatches.length} mismatch(es):`);
+    for (const m of mismatches) err.push(`  - [${m.rule}] ${m.id}: ${m.message}`);
+    err.push(
+      "\nEach one is either a card that needs its true status, or a deliberate hold\n" +
+        'that needs an explicit `open_on_purpose: "<reason>"` on the card. Do not\n' +
+        "delete the citation to quiet it.",
+    );
+  }
+
+  if (mismatches.length > 0 || rulingFindings.length > 0) return { code: 1, out, err };
+
+  out.push(`\n  no mismatches.`);
+  return { code: 0, out, err };
 }
 
 function main() {
@@ -498,68 +735,11 @@ function main() {
     process.exit(2);
   }
 
-  let prState = null;
-  if (!offline) {
-    const wanted = [...new Set((board.cards ?? []).flatMap(citedPrs))].sort((a, b) => a - b);
-    try {
-      prState = fetchPrStates(wanted);
-    } catch (err) {
-      // NOT a silent skip. The whole point of this file is that an unasked
-      // question must never read as a satisfied one.
-      console.error(`CANNOT VERIFY: ${err.message}`);
-      console.error(
-        "The PR rules need `gh` authenticated against this repo. Fix that, or run\n" +
-          "with --offline to run the local gate-claim rule alone and say so.",
-      );
-      process.exit(2);
-    }
-  }
-
-  const { mismatches, acknowledged } = reconcile(board, prState);
-  // RULINGS RECONCILE SEPARATELY and their findings join the same exit code. A
-  // second list with its own quiet exit would be a check nobody reads.
-  const rulingFindings = reconcileRulings(board);
-
-  console.log(`BOARD RECONCILE  ${boardPath}`);
-  console.log(`  cards: ${(board.cards ?? []).length}`);
-  if ((board.rulings ?? []).length > 0) {
-    console.log(
-      `  rulings: ${(board.rulings ?? []).length} (reconciled separately - a ruling has no status, so rules A-F cannot see it)`,
-    );
-  }
-  console.log(
-    `  rules run: gate-claim (local)${prState ? `, pr-state over ${prState.size} cited PRs` : " ONLY - PR rules skipped (--offline)"}`,
-  );
-
-  if (acknowledged.length > 0) {
-    // Printed in full, every run. An exemption nobody sees is an exemption
-    // nobody revisits, and this list is where a wrong one would hide.
-    console.log(`\n  ACKNOWLEDGED (${acknowledged.length}), open_on_purpose:`);
-    for (const a of acknowledged) {
-      console.log(`    - [${a.rule}] ${a.id}: ${a.message}`);
-      console.log(`      reason: ${a.ack}`);
-    }
-  }
-
-  if (rulingFindings.length > 0) {
-    console.error(`\nRULINGS OUT OF SYNC - ${rulingFindings.length} finding(s):`);
-    for (const f of rulingFindings) console.error(`  - [${f.rule}] ${f.id}: ${f.message}`);
-  }
-
-  if (mismatches.length > 0) {
-    console.error(`\nBOARD OUT OF SYNC - ${mismatches.length} mismatch(es):`);
-    for (const m of mismatches) console.error(`  - [${m.rule}] ${m.id}: ${m.message}`);
-    console.error(
-      "\nEach one is either a card that needs its true status, or a deliberate hold\n" +
-        'that needs an explicit `open_on_purpose: "<reason>"` on the card. Do not\n' +
-        "delete the citation to quiet it.",
-    );
-  }
-
-  if (mismatches.length > 0 || rulingFindings.length > 0) process.exit(1);
-
-  console.log(`\n  no mismatches.`);
-  process.exit(0);
+  const result = run({ board, boardPath, offline });
+  // The same order the inline prints always had: the stdout block, then stderr.
+  for (const line of result.out) console.log(line);
+  for (const line of result.err) console.error(line);
+  process.exit(result.code);
 }
 
 // Only run when invoked directly, so the test can import the pure functions.
