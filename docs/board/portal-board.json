@@ -9072,6 +9072,25 @@
       "open_on_purpose": null
     },
     {
+      "id": "CI-deploy-evidence-and-recomputed-totals",
+      "title": "A deploy is proven by the deployments API environment_url, never by a green Vercel context or by check-runs; and a handover total is recomputed from the merged board, never carried over from either side",
+      "lane": "shipped",
+      "home_lane": "loose_ends",
+      "status": "shipped",
+      "priority": "medium",
+      "owner_terminal": "steward",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "journal",
+        "at": "2026-09-19T11:43:20Z",
+        "ref": "READ THREE WAYS ON ONE COMMIT, a1c92f9c (the #1338 merge), 2026-09-18. (1) GET /commits/a1c92f9c/check-runs filtered to Vercel returned ONE entry, \"Vercel Preview Comments\", and no deployment of any kind. (2) GET /commits/a1c92f9c/status returned the three contexts Vercel - osteojp-platform, -api and -portal, each state=success with description \"Deployment has completed\", and each target_url a vercel.com/<org>/<project>/<id> DASHBOARD page rather than a hostname. (3) GET /deployments?sha=a1c92f9c returned three Production deployments whose statuses carry environment_url: osteojp-platform-ogupjgpnh-ivan-bong-420-s-projects.vercel.app, osteojp-dbzca8b5y-ivan-bong-420-s-projects.vercel.app and osteojp-portal-fuuao2edr-ivan-bong-420-s-projects.vercel.app. Only the third read yields a URL anyone can open. RECOMPUTED TOTALS verified the same day on ee3d86fa (the #1406 merge): HANDOVER-STATE.md line 123 read 446/293/153, and render-board.mjs over main's own portal-board.json computed 446 cards, 293 shipped, 153 open - agreeing without either figure being carried over."
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-09-19",
+      "notes": "TWO RULES, BOTH RECORDED BECAUSE EACH ONE HAS ALREADY PRODUCED A WRONG ANSWER.\n\n=== RULE 1. A DEPLOY IS PROVEN BY THE DEPLOYMENTS API. ===\nThe evidence for \"is it deployed, and where\" is GET /repos/{owner}/{repo}/deployments?sha=<sha>,\nthen that deployment's /statuses, and the field is environment_url. Nothing else on this\nrepository carries a hostname.\n\nWHY THE OTHER TWO PLACES LOOK LIKE EVIDENCE AND ARE NOT:\n  - CHECK-RUNS carry only \"Vercel Preview Comments\". A reader who asks the checks API whether a\n    deploy happened is told nothing, and that silence reads as \"no deploy\" rather than as\n    \"wrong endpoint\".\n  - COMMIT STATUSES carry the three Vercel - osteojp-* contexts, but their target_url is a\n    vercel.com dashboard page, never a preview or production hostname.\n\nAND GREEN IS NOT DEPLOYED. All three contexts report state=success whether the build ran, was\nskipped as \"Skipped - Not affected\", or was \"Canceled by Ignored Build Step\". Only the\ndescription tells those apart, and only the deployments API says where the thing actually is.\nOn 2026-09-18 every Vercel context on this repo was green while osteojp-platform had produced\nZERO preview deployments in its last 100.\n\n=== RULE 2. A HANDOVER TOTAL IS RECOMPUTED FROM THE MERGED BOARD. ===\nAfter a board card merges, the counts in HANDOVER-STATE.md are checked by rendering the MERGED\nportal-board.json and reading the result. Never by taking the incoming PR's numbers, and never\nby adding one to the previous line. Both sides can be self-consistent and still disagree with\nthe merge.\n\nTHIS IS ALREADY GUARDED, AND THE GUARD HAS FIRED: scripts/handover-counts-match-the-render.test.mjs\ncaught #1400, whose card was added while the headline still quoted the pre-card counts, 443/150\nagainst a rendered 444/151. The rule is written down here so the guard is understood rather than\nmerely obeyed.\n\nTHE THREE-AND-ONE TRAP THAT LIVES NEXT TO IT: portal-board.json holds three more cards than it\nrenders, because the external_agenda cards are excluded by ruling. The handover quotes the\nRENDERED figure. A discrepancy of exactly three means someone quoted the JSON total instead.\n\n=== WHAT THIS CARD DOES NOT CLAIM ===\nNo defect in CI, in Vercel, or in the board tooling. Both rules are about which artefact to read,\nand both were written after reading the wrong one first. The related flake cards\nCI-supabase-cli-setup-flaky and CI-shard-timeout-budget-defeats-flaky-retry carry a separate\nlesson that cost more: a job's verdict is its LATEST attempt, and one failed attempt's log is a\nsymptom, not a cause.",
+      "open_on_purpose": null
+    },
+    {
       "id": "TEST-negative-security-assertions-without-a-positive-control",
       "title": "Four e2e assertions that an actor CANNOT see something would pass just as well if the page were broken for everybody, because nothing in the same run proves it works for anyone",
       "lane": "loose_ends",
