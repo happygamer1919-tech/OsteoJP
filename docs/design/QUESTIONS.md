@@ -1443,7 +1443,7 @@ Annulments made before 0091 may have a NULL reason (0035 made it optional). They
 
 ## Q-STAFF-10-1 - the merged JP split script moves PAST appointments, which the rulings now forbid. Retire it or rewrite it? (PURPLE, 2026-09-18)
 
-**Status: OPEN.**
+**Status: ANSWERED 2026-09-18 (owner, carried in dispatch G13): KEEP IT, the recommended default.** GREEN added the superseded header on 2026-09-19 (dispatch G14, B7): the header names the STAFF-10 data op as the replacement, names the two rulings that forbid the script's appointment move, and says it must not be run. Nothing below the header changed; card `STAFF-10-jp-split-phase-2-reassignment-script` records both sha256s.
 
 `packages/db/scripts/staff-10-jp-split-lv.mjs` is on `origin/main` (sha256
 `3457f24378bab3d6fd94e3a024f9f4a1d7796757b50ca2217c2e952ae662e5ed`, PR #1289) and
