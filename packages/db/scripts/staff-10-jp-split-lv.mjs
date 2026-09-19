@@ -1,5 +1,31 @@
 #!/usr/bin/env node
 /**
+ * ==========================================================================
+ * SUPERSEDED. DO NOT RUN THIS FILE. (owner ruling, Q-STAFF-10-1, 2026-09-18)
+ * ==========================================================================
+ *
+ * This script was replaced by the STAFF-10 data op, docs/data-op-staff-10.md
+ * (scripts/data/staff-10-1-preview.sql, staff-10-2-apply.sql,
+ * staff-10-3-postcheck.sql, PR #1405). It has never been run, and it must not be.
+ *
+ * WHY IT IS DEAD. Its central statement moves EVERY JP(cb) appointment at
+ * Linda-a-Velha to JP(lv), "past and future". The owner's rulings of 2026-09-18
+ * forbid that on two counts: the two JP rows STAY, and PAST APPOINTMENTS NEVER
+ * MOVE. Independently, its own clash precondition halts it before any write,
+ * because JP(lv) already holds rows identical to JP(cb)'s at Linda-a-Velha.
+ *
+ * WHY IT IS KEPT. The owner ruled to keep the file rather than delete it: its
+ * audit-and-rollback design (pinned ids re-derived at run time, preview by
+ * default, --expect on apply, a reversal driven by its own audit row) is
+ * reusable by a future, differently scoped move. Reuse means copying the design
+ * into a NEW file under a NEW ruling, never running this one.
+ *
+ * Everything below this block is the file exactly as merged in PR #1289
+ * (sha256 3457f24378bab3d6fd94e3a024f9f4a1d7796757b50ca2217c2e952ae662e5ed
+ * before this header was added). Card: STAFF-10-jp-split-phase-2-reassignment-script.
+ * ==========================================================================
+ */
+/**
  * STAFF-10 - THE JP SPLIT, PHASE 2. OWNER-RUN. ONE TRANSACTION.
  *
  * Moves the original JP row's Linda-a-Velha rows to the LV row, per the standing
