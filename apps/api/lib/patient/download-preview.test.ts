@@ -131,3 +131,48 @@ describe("everything else, and Storage is never reached", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+/**
+ * SR-62 PU-4 — A DOCUMENT STAFF REMOVED IS NOT PREVIEWABLE BY THE PATIENT.
+ *
+ * THE PORTAL NEEDED NO FILTER OF ITS OWN, AND THAT IS THE POINT. The preview
+ * resolves ownership through `getOwnDocumentLocation` — the download's lookup,
+ * which #1338 taught to filter `deleted_at IS NULL` (pinned on the real query,
+ * rendered through the Postgres dialect, in documents.test.ts). So the soft
+ * delete reached the preview the day it landed, without anybody editing this
+ * file.
+ *
+ * That inheritance is only worth anything while the preview keeps going through
+ * that lookup. The arm below pins exactly that: a preview that resolved a path
+ * some other way — from the request, from a cache, from a second query — would
+ * silently stop honouring the removal, and nothing else here would notice.
+ */
+describe("SR-62 PU-4: the preview inherits the download's soft-delete filter", () => {
+  it("signs ONLY what getOwnDocumentLocation returned, so a removed row is unreachable", async () => {
+    const calls = fakeStorage();
+    // What a soft-deleted document looks like from here: the self-scoped lookup
+    // filters it out, so it is indistinguishable from "not yours" or "gone".
+    getOwnDocumentLocation.mockResolvedValue(null);
+
+    await expect(createOwnDocumentPreviewUrl(PRINCIPAL, DOC)).resolves.toBeNull();
+
+    // Consulted, not bypassed — and consulted BEFORE the service-role client,
+    // which bypasses RLS, was asked for anything.
+    expect(getOwnDocumentLocation).toHaveBeenCalledWith(PRINCIPAL, DOC);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("POSITIVE CONTROL: the same call path previews a live document", async () => {
+    // Otherwise the arm above is satisfied by a preview that is simply broken
+    // for everyone, which is the shape this suite is being audited for.
+    const calls = fakeStorage();
+    getOwnDocumentLocation.mockResolvedValue(ownPdf);
+
+    await expect(createOwnDocumentPreviewUrl(PRINCIPAL, DOC)).resolves.toEqual({
+      url: expect.stringContaining("token=abc"),
+      kind: "pdf",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe(ownPdf.storagePath);
+  });
+});

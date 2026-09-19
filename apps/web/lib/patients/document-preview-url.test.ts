@@ -1,17 +1,19 @@
 /**
  * The preview URL helper: what it will sign, and everything it refuses.
  *
- * THE POINT OF THESE ARMS IS THAT A PREVIEW MUST NOT WIDEN ANYTHING. The
- * download helper next to it signs any client-supplied path under the tenant
- * prefix; this one accepts an ID and signs only the row the Documentos tab's own
- * predicate returned. So the interesting assertions are the refusals, and the
- * fact that the path handed to Storage comes from the ROW rather than from the
- * caller.
+ * THE POINT OF THESE ARMS IS THAT A PREVIEW MUST NOT WIDEN ANYTHING. It accepts
+ * an ID and signs only the row the Documentos tab's own predicate returned, so
+ * the interesting assertions are the refusals, and the fact that the path handed
+ * to Storage comes from the ROW rather than from the caller. (The download
+ * helper next to it took a client-supplied path when this was written; SR-62
+ * PU-4 gave it an id too, so the two now resolve the same way.)
  *
  * The real module runs against a fake transaction and a fake Storage client, so
  * what is asserted is what the app actually hands each of them.
  */
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
@@ -184,5 +186,80 @@ describe("everything it refuses, and it never signs on the way out", () => {
     await createPatientDocumentPreviewUrl(therapist, PATIENT, DOC);
     expect(mockRunScoped).toHaveBeenCalledTimes(1);
     expect(mockRunScoped.mock.calls[0]![0]).toBe(therapist);
+  });
+});
+
+/**
+ * SR-62 PU-4 — A SOFT-DELETED DOCUMENT HAS NO PREVIEW.
+ *
+ * #1338 landed `deleted_at` on `attachments` AFTER this preview was written, and
+ * every staff reader in documents.ts filters it. The preview now resolves
+ * through `documentosRowSql` plus `deleted_at IS NULL` — the list's own
+ * predicate, by calling the same function rather than copying its body.
+ *
+ * THE FILTER IS ASSERTED BY RENDERING THE CAPTURED `WHERE` THROUGH DRIZZLE'S
+ * REAL POSTGRES DIALECT, the technique documents.soft-delete.test.ts uses. That
+ * matters here more than anywhere: the fake transaction answers with whatever
+ * rows the test hands it, REGARDLESS of the WHERE, so "the read came back empty
+ * and the preview refused" would pass just as well against a preview carrying no
+ * filter at all. Reading the SQL Postgres would actually receive is what makes
+ * the arm fail when the filter is removed — and removing it is how this was
+ * checked, not assumed.
+ */
+describe("SR-62 PU-4: a soft-deleted document is never previewed", () => {
+  const dialect = new PgDialect();
+
+  /** fakeTx's sibling: it KEEPS the WHERE so the SQL can be rendered. */
+  function capturingTx(rows: Row[]) {
+    const wheres: SQL[] = [];
+    const chain: Record<string, unknown> = {};
+    chain.from = () => chain;
+    chain.where = (w: SQL) => {
+      wheres.push(w);
+      return chain;
+    };
+    chain.limit = async () => rows;
+    mockRunScoped.mockImplementation(async (_c, fn) => fn({ select: () => chain } as never));
+    const { client, calls } = fakeStorage();
+    mockAdmin.mockReturnValue(client as never);
+    return { wheres, calls };
+  }
+
+  it("sends deleted_at IS NULL, inside the tab's own predicate", async () => {
+    const { wheres } = capturingTx([pdfRow]);
+
+    await createPatientDocumentPreviewUrl(therapist, PATIENT, DOC);
+
+    const q = dialect.sqlToQuery(wheres[0]!);
+    expect(q.sql).toContain('"attachments"."deleted_at" is null');
+    // In the SAME where, beside the id, the patient and the tenant: it is the
+    // list's predicate this sits in, not a second filter bolted on elsewhere.
+    expect(q.params).toEqual(expect.arrayContaining([DOC, PATIENT, TENANT]));
+  });
+
+  it("refuses the removed document Postgres therefore withholds, and signs nothing", async () => {
+    // The filter is in the query, so the soft-deleted row never comes back.
+    const { wheres, calls } = capturingTx([]);
+
+    await expect(createPatientDocumentPreviewUrl(therapist, PATIENT, DOC)).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+    // The refusal above would also pass against a preview with NO filter, since
+    // this fake returns [] either way. This line is what makes it mean
+    // something: the query that came back empty is one that asked Postgres to
+    // exclude removed rows.
+    expect(dialect.sqlToQuery(wheres[0]!).sql).toContain('"attachments"."deleted_at" is null');
+  });
+
+  it("POSITIVE CONTROL: the live sibling on the same patient still previews", async () => {
+    // Without this, every arm above is satisfied by a preview that refuses
+    // everything — which is the failure the refusals exist to catch.
+    const { calls } = capturingTx([pdfRow]);
+
+    const out = await createPatientDocumentPreviewUrl(therapist, PATIENT, "doc-2");
+
+    expect(out.kind).toBe("pdf");
+    expect(out.fileName).toBe("consentimento.pdf");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe(pdfRow.storagePath);
   });
 });
