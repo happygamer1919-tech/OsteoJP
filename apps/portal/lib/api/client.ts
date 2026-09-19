@@ -245,6 +245,29 @@ export async function getDocumentDownloadUrl(id: string): Promise<string> {
   return data.url
 }
 
+/** How a previewable document is rendered in place. */
+export type DocumentPreviewKind = 'pdf' | 'image'
+
+/**
+ * The same short-lived URL, served INLINE so it can be rendered in the page.
+ *
+ * A 404 here is ordinary rather than exceptional: it is what a document the
+ * browser cannot render returns, and the caller falls back to the download
+ * button. Every failure is one ApiError; the endpoint never says which.
+ */
+export async function getDocumentPreviewUrl(
+  id: string,
+): Promise<{ url: string; kind: DocumentPreviewKind }> {
+  const res = await fetch(`${apiBase()}/api/v1/patient/documents/${id}/preview`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, 'PREVIEW_FAILED', 'Document preview failed')
+  }
+  return await res.json() as { url: string; kind: DocumentPreviewKind }
+}
+
 // ─── Guest clinical intake (INTAKE-01), read only ─────────────────────────────
 
 /** Three states, as stored. `nao_perguntado` is rendered in words, never as a
