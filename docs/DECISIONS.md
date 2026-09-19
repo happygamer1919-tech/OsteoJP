@@ -4608,3 +4608,10 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
   the portal cannot produce. Its test arm was flipped deliberately and says so, and
   the script's header paragraph that claimed "is_active = true and NO date window"
   is retracted in place rather than quietly edited.
+
+## 2026-09-19 - GREEN, dispatch G14 B7: the superseded JP split script is marked, not deleted (Q-STAFF-10-1)
+
+- **Ruling applied (Q-STAFF-10-1, owner, 2026-09-18): keep `packages/db/scripts/staff-10-jp-split-lv.mjs`.** It gains a header block saying it is SUPERSEDED by the STAFF-10 data op (`docs/data-op-staff-10.md`, PR #1405) and must not be run. The header names the two 2026-09-18 rulings its central statement breaks (the two JP rows STAY; PAST APPOINTMENTS NEVER MOVE), notes that its own clash precondition would halt it before any write, and says why it is kept: its audit-and-rollback design can be copied into a new file under a new ruling.
+- **Header only.** 26 lines added, 0 removed. The body is byte-identical to PR #1289 (sha256 `3457f243…`, recorded in the header); the file is now `6414257f…`. The four id constants that `scripts/staff-10-data-op.test.mjs` and `scripts/staff-11-jp-one-clinic-check.test.mjs` read from it are untouched.
+- **Not added: a runtime refusal.** The ruling asked for a header, and the clash precondition already stops the script before any write.
+- **Card `STAFF-10-jp-split-phase-2-reassignment-script`** now names the data op as the rewrite and closes on that op's stage 3 transcript, not on the old script's APPLY. The data op has not run.
