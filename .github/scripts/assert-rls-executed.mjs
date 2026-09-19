@@ -326,6 +326,17 @@ for (const tr of report.testResults) {
  */
 const PERMITTED_SKIPS = new Map([
   // ["some-suite.test.ts", "why this one is allowed to skip, and who decided"],
+  //
+  // EMPTY AGAIN, AS OF 2026-09-18, AND THAT IS THE POINT OF THE EXEMPTION HAVING
+  // HAD AN EXPIRY WRITTEN INTO IT. The one entry that ever lived here covered
+  // NESA-NAMES' nine function-dependent arms while its migration sat unnumbered
+  // in migrations-pending, where `drizzle-kit migrate` cannot see it. That entry
+  // said "DELETE THIS ENTRY at promotion, when the migration takes its number and
+  // CI applies it". The migration is now packages/db/migrations/0090_nesa_patient_
+  // name_for_therapists.sql, journal idx 87, so CI's seeded database builds WITH
+  // the function and all eleven arms run on their own. Keeping the exemption a day
+  // longer would let a genuinely broken NESA-names function skip unnoticed.
+  // Removed by BLUE under dispatch B13.
 ]);
 
 const derivedFailures = [];
