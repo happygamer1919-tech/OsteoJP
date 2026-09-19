@@ -450,7 +450,7 @@ each with its count asserted, and the extractor refuses a stage that still names
 
 | Substitution | Stage 1 | Stage 2 |
 |---|---|---|
-| `/tmp/` becomes a scratch directory | 7 | 8 |
+| `/tmp/` becomes a scratch directory | 10 | 8 |
 | the `cd` line | 1 | 1 |
 | the env-source line becomes `export DATABASE_URL_DIRECT=<the throwaway>` | 1 | 1 |
 | `node scripts/assert-production-target.mjs` becomes an `echo` | 1 | 1 |
@@ -459,15 +459,26 @@ each with its count asserted, and the extractor refuses a stage that still names
 |---|---|---|
 | A: stage 2 BEFORE stage 1 | refuses | exit **1**, `STOP: stage 1 did not complete an apply in this sitting`. Journal 87, function absent |
 | B: stage 1 | applies | pre-check **12 OK / 0 FAIL**; `verified-migrate` pending 1, journal **87 -> 88 (delta 1)**, sha256 present; exit **0** |
+| G: stage 1 pasted AGAIN, straight after the apply | refuses and destroys nothing | exit **1**, `STOP: stage 1 ALREADY APPLIED in this sitting`. Marker still present, transcript **byte-identical** (`cmp`) to the one arm B wrote. Arm C then ran from it |
 | C: stage 2 | passes | carries parsed from the transcript (`journal_before=87 policies_before=89 secdef_before=24 patients_md5=30d5b2b6dd3e7154ec2b8475961bf296`, the same three values BLUE's rehearsal recorded); post-check **14 OK / 0 FAIL**; journal before 87 after 88, 0090 present by hash; exit **0** |
 | D: stage 2, transcript backdated 61 minutes | refuses | exit **1**, `STOP: stage 1's transcript is over an hour old` |
 | E: stage 2, marker removed | refuses | exit **1**, `STOP: stage 1 did not complete an apply in this sitting` |
-| F: **negative control:** stage 1 AGAIN, on the applied database | the pre-check FAILs and nothing is applied | **8 OK / 4 FAIL**, exit **1**, `STOP: a pre-check verdict read FAIL`. Journal still 88 |
+| F: **negative control:** stage 1 AGAIN on the applied database, marker gone | the pre-check FAILs, nothing is applied, the old transcript survives | **8 OK / 4 FAIL**, exit **1**, `STOP: a pre-check verdict read FAIL. Nothing was applied and no earlier transcript was touched`. Journal still 88, old transcript **byte-identical** |
+| H: the READ ONLY form the stages use, `-c "begin read only" -c "<a write>"` | the server refuses | `ERROR: cannot execute CREATE TABLE in a read-only transaction`, and the table does not exist |
 | the branch's own DB suite, on the applied database | every arm | **11 passed, 0 failed** |
-| the behaviour check, on the applied database with synthetic fixtures | every verdict | **7 OK / 0 FAIL**: the Linda-a-Velha therapist got the one NESA booking at Linda-a-Velha and not the one at Castelo Branco |
+| the behaviour block, verbatim, on the applied database with synthetic fixtures | every verdict | **7 OK / 0 FAIL**: the Linda-a-Velha therapist got the one NESA booking at Linda-a-Velha and not the one at Castelo Branco |
+| the behaviour block with both fixture therapists made inactive | halts, and says why | exit **3**, `ERROR: STOP: no active therapist is installed at a clinic where a shared resource holds a booking AND has a patient of their own. Nothing was checked.` |
 
-**One defect the rehearsal found, and it was in the rehearsal's extractor, not in
-this document.** Its first run substituted `/tmp/` AFTER inserting the clone's
+**This table is the SECOND rehearsal of this revision, from a database reset to
+0089.** The first found nothing wrong and was wrong to: its arm F re-ran stage 1
+after an apply and recorded only "journal still 88", when that stage 1 had just
+deleted the marker and the only carry transcript. A fresh-context review caught
+it. Stage 1 now refuses while a fresh marker exists and writes its transcript to
+`.new` until the pre-check passes, and arms G and F assert with `cmp` that the
+earlier transcript survives.
+
+**One defect the first rehearsal did find, and it was in the rehearsal's extractor,
+not in this document.** Its first run substituted `/tmp/` AFTER inserting the clone's
 path, and the scratch path itself contains `/tmp/`, so the `cd` target was
 rewritten and stage 1 stopped on `cd: no such file or directory` with nothing
 written. `/tmp/` is now substituted first. Recorded because a rehearsal harness
