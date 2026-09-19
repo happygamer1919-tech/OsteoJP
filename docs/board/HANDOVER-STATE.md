@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**446 cards on the board. 293 shipped, 153 open. Launch readiness 9/9, every launch gate passes.**
+**447 cards on the board. 293 shipped, 154 open. Launch readiness 9/9, every launch gate passes.**
 Plus **68 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
