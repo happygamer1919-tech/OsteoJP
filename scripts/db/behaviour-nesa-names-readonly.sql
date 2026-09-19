@@ -28,19 +28,29 @@
 -- RLS test in this repository, so RLS sees exactly what it sees for a real
 -- therapist token. No credential of any staff member is involved.
 --
--- The whole file is ONE `BEGIN READ ONLY` transaction, so the server refuses any
--- write, and SET LOCAL and set_config(..., true) both end with it.
+-- The whole file is ONE READ ONLY transaction, so the server refuses any write,
+-- and SET LOCAL and set_config(..., true) both end with it. It is REPEATABLE
+-- READ as well: B2 compares two counts taken by two statements, and at READ
+-- COMMITTED a booking made by reception between them would read as a FAIL on a
+-- correct function.
+--
+-- EVERY SELECTOR BELOW RETURNS EXACTLY ONE ROW, by being a scalar subquery. With
+-- ON_ERROR_STOP a `\gset` over ZERO rows is itself a psql error, which would end
+-- the run on "no rows returned for \gset" before the STOP line that explains
+-- why. A scalar subquery that finds nothing yields NULL, `\gset` leaves the
+-- variable unset for a NULL, and the `\if :{?...}` branch is reached.
 
 \pset pager off
 \timing off
 \set ON_ERROR_STOP on
 
-BEGIN READ ONLY;
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 
 \echo ''
 \echo '=== NESA-NAMES BEHAVIOUR CHECK. READ ONLY. Every verdict must read OK (7 expected) ==='
 
-SELECT u.id AS actor_id, u.tenant_id AS actor_tenant
+SELECT (
+SELECT u.id
   FROM public.users u
   JOIN public.roles r ON r.id = u.role_id AND r.slug = 'therapist'
   JOIN public.staff_locations sl ON sl.user_id = u.id AND sl.tenant_id = u.tenant_id
@@ -60,6 +70,7 @@ SELECT u.id AS actor_id, u.tenant_id AS actor_tenant
           WHERE a.tenant_id = u.tenant_id AND a.practitioner_id = u.id AND a.patient_id IS NOT NULL)
  ORDER BY u.id
  LIMIT 1
+) AS actor_id
 \gset
 
 \if :{?actor_id}
@@ -69,14 +80,19 @@ SELECT u.id AS actor_id, u.tenant_id AS actor_tenant
   END $stop$;
 \endif
 
-SELECT a.patient_id AS own_patient
+SELECT u.tenant_id AS actor_tenant FROM public.users u WHERE u.id = :'actor_id' \gset
+
+SELECT (
+SELECT a.patient_id
   FROM public.appointments a
  WHERE a.tenant_id = :'actor_tenant' AND a.practitioner_id = :'actor_id' AND a.patient_id IS NOT NULL
  ORDER BY a.id
  LIMIT 1
+) AS own_patient
 \gset
 
-SELECT p.id AS other_patient
+SELECT (
+SELECT p.id
   FROM public.patients p
  WHERE p.tenant_id = :'actor_tenant'
    AND p.created_by IS DISTINCT FROM :'actor_id'::uuid
@@ -91,6 +107,7 @@ SELECT p.id AS other_patient
                     WHERE a.tenant_id = p.tenant_id AND (a.patient_id = p.id OR a.patient_2_id = p.id))
  ORDER BY p.id
  LIMIT 1
+) AS other_patient
 \gset
 
 \if :{?other_patient}

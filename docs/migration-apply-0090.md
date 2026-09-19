@@ -5,11 +5,12 @@
 below. Any `STOP:` line, any `FAIL` verdict or any `ERROR` halts the sitting.
 
 **The migration, the post-check and stage 0 were authored by BLUE and are
-unchanged.** The pre-check file, the HEAD CHECK and stages 1 and 2 were re-issued
-by SOLO on 2026-09-19 (owner rulings R1 to R5 of that date: one lane), reviewed by
-a fresh-context REVIEWER that saw only the diff and the card acceptance, and
-rehearsed against a throwaway database before anything else. What changed and why
-is the section after stage 0.
+unchanged.** Five pieces were re-issued or added by SOLO on 2026-09-19 (owner
+rulings R1 to R5 of that date: one lane): the pre-check file, the behaviour-check
+file, the HEAD CHECK, stages 1 and 2, and the behaviour block. They were rehearsed
+against a throwaway database before anything else. What changed and why is the
+section after stage 0. The REVIEWER's verdict on these bytes is in PR #1390, not
+here: a document cannot truthfully record a review of itself.
 
 | Fact | Value |
 |---|---|
@@ -24,6 +25,8 @@ is the section after stage 0.
 | This document | `docs/migration-apply-0090.md`, pinned by `docs/migration-apply-0090.sha256` and asserted in STAGE 0 and again in STAGE 1 |
 | Pre-check | `scripts/db/precheck-nesa-names.sql`, READ ONLY, sha256 `d58f514490e9d3045635f2df247cf266632c5122a8d99fbba3285e17cb5af0ee` |
 | Post-check | `scripts/db/postcheck-nesa-names.sql`, sha256 `ebda1b85b3bef488f6ecee73b3749dbba913c5b0f7f0610478105e6a831ca7ea` |
+| Behaviour check | `scripts/db/behaviour-nesa-names-readonly.sql`, READ ONLY, sha256 `9c818cd4e38003547392fbcea9ef8bb93fa63afe696a5b5e873c7c8378d844e6` |
+| The two programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`. Both byte-identical to `origin/main` on 2026-09-19, both pinned in every block that runs them |
 | What it creates | ONE function, `public.shared_resource_appointment_patient_names()`. No table, no column, no policy, no trigger |
 | What it never touches | `patients_select`, `appointments_rls`, 0088's shared-resource policy, and every other policy in the schema |
 
@@ -123,8 +126,9 @@ weakened the apply:
 | 6 | "the journal is deliberately not one of them" | **SR-51** needs the journal count before and after, and the hash | stage 2 asserts the count grew by exactly one, that 0090's sha256 is in it, and prints the last three rows |
 
 **The migration, the post-check and stage 0 are unchanged, byte for byte.** Their
-sha256 values in the table above are the ones BLUE recorded. What is new is one
-read-only SQL file and the two stage blocks.
+sha256 values in the table above are the ones BLUE recorded. What is new is two
+read-only SQL files (the pre-check and the behaviour check), the HEAD CHECK, the
+two stage blocks and the behaviour block.
 
 **The premise of item 6 was stale, not wrong when written.** A journal row's
 `hash` IS the sha256 of the migration file, which is how
@@ -134,7 +138,8 @@ below reads an id as a tag.
 
 **These blocks are pasted into an INTERACTIVE zsh.** So: no backslash
 continuations; every parameter braced, including before a colon; no `#` line
-inside a block; no `!` anywhere. Narration is `echo`.
+inside a block; and no `!` except as the `test !` operator followed by a space,
+which zsh does not history-expand. Narration is `echo`.
 
 ## HEAD CHECK: run this FIRST, and read it with your eyes
 
@@ -151,9 +156,22 @@ git rev-parse origin/sched/B8-nesa-names-to-therapists
 ```
 
 **This branch is auto-updated, so its head moves every time anything merges to
-main.** The sha printed here is compared with the one the applier recorded when
-the sitting began. If it has moved since, the sitting starts again from stage 0:
-the pin is a statement about a moment, and the moment that matters is this one.
+main**: eleven times in the three days before this was written. What a moved
+head means depends on WHEN, and the two cases are opposite:
+
+- **Before stage 1 has applied:** the sitting starts again from stage 0. The pin
+  is a statement about a moment, and the moment that matters is this one.
+- **After stage 1 has applied: NEVER go back to stage 1.** Go on to stage 2 on
+  the new head. Stage 2 asserts the migration, the post-check and the guard by
+  sha256, so a merge of main that left those bytes alone changes nothing it
+  reads, and one that changed them halts it. Both shas, the one stage 1 applied
+  from and the one stage 2 checked from, go on the SR-51 card.
+
+Stage 1 enforces the second case itself: it refuses to start while a fresh
+applied-marker exists, and it never touches the previous transcript until a new
+pre-check has passed. An accidental second paste of stage 1 therefore costs
+nothing, where in the first draft of this revision it deleted the marker and the
+only carry transcript and left production applied with no way to post-check it.
 
 ## STAGE 1: pre-flight, pre-check, apply
 
@@ -164,8 +182,12 @@ SHA0090=cbff20cb90f5bb27b607055a4bf46d4b7ed5992aebe1c894d0fe559868b5c642
 SHAPRE=d58f514490e9d3045635f2df247cf266632c5122a8d99fbba3285e17cb5af0ee
 BRANCH=sched/B8-nesa-names-to-therapists
 
+SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
+SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
+
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-rm -f /tmp/0090-precheck.out /tmp/0090-postcheck.out /tmp/0090-applied.ok
+[ -z "$(find /tmp/0090-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 ALREADY APPLIED in this sitting. Do not run it again. Go to stage 2"; exit 1; }
+rm -f /tmp/0090-precheck.new
 
 echo "--- ASSERTION 1, THE HEAD. The sha printed next MUST equal the one the HEAD CHECK showed."
 git fetch origin --prune
@@ -189,16 +211,22 @@ test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard i
 test ! -f packages/db/migrations/0090_care_team.sql || { echo "STOP: care-team also took 0090"; exit 1; }
 [ "$(shasum -a 256 packages/db/migrations/0090_nesa_patient_name_for_therapists.sql | cut -d' ' -f1)" = "${SHA0090}" ] || { echo "STOP: 0090 on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/db/precheck-nesa-names.sql | cut -d' ' -f1)" = "${SHAPRE}" ] || { echo "STOP: the pre-check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 packages/db/scripts/verified-migrate.mjs | cut -d' ' -f1)" = "${SHAVM}" ] || { echo "STOP: verified-migrate on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
 echo "--- the production target, asserted by the guard, not by the prompt"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
 echo "--- the pre-check. READ ONLY. Its transcript IS the carry, so it is kept"
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -f scripts/db/precheck-nesa-names.sql 2>&1 | tee /tmp/0090-precheck.out
-grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0090-precheck.out && { echo "STOP: a pre-check verdict read FAIL"; exit 1; }
-OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0090-precheck.out || true)
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -f scripts/db/precheck-nesa-names.sql 2>&1 | tee /tmp/0090-precheck.new
+grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0090-precheck.new && { echo "STOP: a pre-check verdict read FAIL. Nothing was applied and no earlier transcript was touched"; exit 1; }
+OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0090-precheck.new || true)
 [ "${OKS}" = 12 ] || { echo "STOP: the pre-check printed ${OKS} OK verdicts, not 12"; exit 1; }
+
+echo "--- only now, with a passing pre-check in hand, does the previous sitting's state go"
+rm -f /tmp/0090-postcheck.out /tmp/0090-applied.ok
+mv /tmp/0090-precheck.new /tmp/0090-precheck.out
 
 echo "--- the apply. It is the only writing command in this document"
 node packages/db/scripts/verified-migrate.mjs --tag 0090_nesa_patient_name_for_therapists --sha256 ${SHA0090} --expect-pending 1
@@ -218,12 +246,13 @@ a pending count that is not 1, and **4** if drizzle itself failed.
 set -eo pipefail
 SHA0090=cbff20cb90f5bb27b607055a4bf46d4b7ed5992aebe1c894d0fe559868b5c642
 SHAPOST=ebda1b85b3bef488f6ecee73b3749dbba913c5b0f7f0610478105e6a831ca7ea
+SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=sched/B8-nesa-names-to-therapists
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/0090-postcheck.out
 
-echo "--- ASSERTION 1, THE HEAD. The sha printed next MUST equal the one stage 1 applied from."
+echo "--- ASSERTION 1, THE HEAD. Record the sha printed next beside the one stage 1 applied from. If it has MOVED, carry on: never go back to stage 1 after an apply. Everything this stage reads is asserted by sha256 below."
 git fetch origin --prune
 git rev-parse origin/${BRANCH}
 
@@ -236,6 +265,7 @@ test -f scripts/db/postcheck-nesa-names.sql || { echo "STOP: the post-check is n
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
 [ "$(shasum -a 256 packages/db/migrations/0090_nesa_patient_name_for_therapists.sql | cut -d' ' -f1)" = "${SHA0090}" ] || { echo "STOP: 0090 on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/db/postcheck-nesa-names.sql | cut -d' ' -f1)" = "${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
 echo "--- stage 1 must have APPLIED, in this sitting, not merely run"
 [ -n "$(find /tmp/0090-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not complete an apply in this sitting"; exit 1; }
@@ -254,23 +284,23 @@ echo "carries from this run: journal_before=${J} policies_before=${P} secdef_bef
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
-echo "--- the post-check. The session is set READ ONLY first, so the server is what refuses a write"
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v policies_before="${P}" -v secdef_before="${S}" -v patients_md5="${M}" -c "set default_transaction_read_only = on" -f scripts/db/postcheck-nesa-names.sql 2>&1 | tee /tmp/0090-postcheck.out
+echo "--- the post-check, inside one READ ONLY transaction, so the server is what refuses a write"
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v policies_before="${P}" -v secdef_before="${S}" -v patients_md5="${M}" -c "begin read only" -f scripts/db/postcheck-nesa-names.sql -c "rollback" 2>&1 | tee /tmp/0090-postcheck.out
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0090-postcheck.out && { echo "STOP: a post-check verdict read FAIL"; exit 1; }
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0090-postcheck.out || true)
 [ "${OKS}" = 14 ] || { echo "STOP: the post-check printed ${OKS} OK verdicts, not 14"; exit 1; }
 
 echo "--- SR-51: the journal grew by exactly one, and the row is 0090 by hash"
-JA=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "set default_transaction_read_only = on" -c "select count(*) from drizzle.__drizzle_migrations")
+JA=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations")
 JA=$(echo "${JA}" | tail -1)
 [ "${JA}" = "$((J + 1))" ] || { echo "STOP: the journal reads ${JA} rows, not ${J} plus one"; exit 1; }
-HN=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "set default_transaction_read_only = on" -c "select count(*) from drizzle.__drizzle_migrations where hash = '${SHA0090}'")
+HN=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations where hash = '${SHA0090}'")
 HN=$(echo "${HN}" | tail -1)
 [ "${HN}" = 1 ] || { echo "STOP: the sha256 of 0090 is in the journal ${HN} times, not once"; exit 1; }
 echo "journal rows before=${J} after=${JA}, 0090 present by hash"
 
 echo "--- the journal read: the last three rows, as applied"
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "set default_transaction_read_only = on" -c "select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 3;"
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -c "select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 3;"
 
 echo "0090 APPLIED. 12/12 pre-check OK, 14/14 post-check OK, journal ${J} to ${JA}."
 )
@@ -318,7 +348,7 @@ echo "0090 APPLIED. 12/12 pre-check OK, 14/14 post-check OK, journal ${J} to ${J
   last three rows are printed. Those three lines, with the pre-check and
   post-check counts, are what the **SR-51** card carries.
 
-## After the apply: what the function DOES, to a real actor. READ ONLY
+## After the apply: what the function DOES, to a real actor, AT THE RLS LAYER. READ ONLY
 
 The post-check proves the function's shape. `scripts/db/behaviour-nesa-names-readonly.sql`
 proves its behaviour on the database it was applied to, inside one
@@ -331,6 +361,8 @@ echoed, so no name, phone, email or patient id reaches the transcript.
 ```
 (
 set -eo pipefail
+SHABEHAVIOUR=9c818cd4e38003547392fbcea9ef8bb93fa63afe696a5b5e873c7c8378d844e6
+SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=sched/B8-nesa-names-to-therapists
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git fetch origin --prune
@@ -340,14 +372,15 @@ echo "checking from ${PIN}"
 git checkout -q --detach ${PIN}
 test -f scripts/db/behaviour-nesa-names-readonly.sql || { echo "STOP: the behaviour check is not on disk"; exit 1; }
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
-[ "$(shasum -a 256 scripts/db/behaviour-nesa-names-readonly.sql | cut -d' ' -f1)" = "d1d0d433b164889930c3aedc5cfd6a18e44b88fbad514c8e788244130521a8bb" ] || { echo "STOP: the behaviour check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/db/behaviour-nesa-names-readonly.sql | cut -d' ' -f1)" = "${SHABEHAVIOUR}" ] || { echo "STOP: the behaviour check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -f scripts/db/behaviour-nesa-names-readonly.sql 2>&1 | tee /tmp/0090-behaviour.out
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0090-behaviour.out && { echo "STOP: a behaviour verdict read FAIL"; exit 1; }
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0090-behaviour.out || true)
 [ "${OKS}" = 7 ] || { echo "STOP: the behaviour check printed ${OKS} OK verdicts, not 7"; exit 1; }
-echo "NESA-NAMES BEHAVES AS RULED. 7/7 OK."
+echo "NESA-NAMES BEHAVES AS RULED AT THE RLS LAYER. 7/7 OK. The route-level half of the acceptance is NOT discharged by this transcript."
 )
 ```
 
@@ -361,15 +394,41 @@ echo "NESA-NAMES BEHAVES AS RULED. 7/7 OK."
 | B5 | the actor reads a non-zero number of patients at all |
 | B6 | the same person holding a reception token gets nothing from the function |
 
-It stops with an exception, having checked nothing, if production holds no
+It stops with a `STOP:` exception, having checked nothing, if production holds no
 therapist installed beside a shared resource with a booking, or no patient who
-fits B3. That is a halt to report, not a pass.
+fits B3. That is a halt to report, not a pass. Every selector is a scalar
+subquery for that reason: a `\gset` over zero rows would otherwise end the run on
+psql's own "no rows returned" before the line that explains it.
 
-**What it does not prove.** It is RLS under impersonated claims, which is the
-layer the ruling is enforced at. It is not a therapist signed in to
-`app.osteojp.pt` looking at the agenda: no terminal holds a staff credential, by
-rule. The route-level half is `apps/web/e2e/isolation-therapist.spec.ts` on the
-seeded database in CI, and on production it is the owner's eyes.
+### Which acceptance check this transcript discharges, and which it does not
+
+The card's acceptance has three checks. Evidence is only evidence at the layer it
+was taken, and the third check was written by the owner at the ROUTE layer.
+
+| Acceptance check | Discharged by | Layer |
+|---|---|---|
+| production journal reads 88, 0090 by hash | stage 2, and `read-applied-migrations.mjs` | the database |
+| a therapist-role read of a NESA booking returns the patient name | B1 and B2 | RLS, under impersonated claims |
+| that therapist opening another therapist's non-NESA patient is refused, with a positive control proving the route answers at all | **B3 and B4 prove the refusal and its control at the RLS layer ONLY. The route is NOT exercised here** | see below |
+
+**The route half is not something a terminal can do.** No terminal holds a staff
+credential, by rule, so no terminal can sign in to `app.osteojp.pt` as a
+therapist. It is covered two ways, and neither is this transcript:
+
+1. **In CI, on the seeded database:** `apps/web/e2e/isolation-therapist.spec.ts`
+   opens `/patients/<id>` as a therapist for another therapist's patient (404),
+   for their own patient (200, by name), and as an admin for the first id (200).
+   Those two positive controls arrived in #1410.
+2. **On production, by the owner or a therapist, three clicks, one login:** sign
+   in as a Linda-a-Velha therapist. (a) Open the agenda on a day NESA has a
+   booking: the card shows the patient's name, not "Marcação reservada". (b) Open
+   the ficha of one of your own patients: it opens. (c) Paste the URL of a
+   patient only another therapist treats: **not found**. (b) is the control
+   that makes (c) mean something. The result goes on the `NESA-NAMES` card.
+
+Whether RLS-layer evidence plus the CI spec is ACCEPTED in place of step 2 is the
+owner's ruling to make, not the author's, and it is asked as a lettered question
+in the dispatch report.
 
 ## Rehearsed on 2026-09-19: the re-issued stages, verbatim
 
