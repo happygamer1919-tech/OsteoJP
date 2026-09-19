@@ -1440,3 +1440,36 @@ On main, a DRAFT registo shows a password-gated "Eliminar" that hard-deletes it 
 Annulments made before 0091 may have a NULL reason (0035 made it optional). They stay as history, unrewritten.
 
 **Recommended default:** "Anulado sem motivo registado" (en: "Annulled, no reason recorded").
+
+## Q-STAFF-10-1 - the merged JP split script moves PAST appointments, which the rulings now forbid. Retire it or rewrite it? (PURPLE, 2026-09-18)
+
+**Status: OPEN.**
+
+`packages/db/scripts/staff-10-jp-split-lv.mjs` is on `origin/main` (sha256
+`3457f24378bab3d6fd94e3a024f9f4a1d7796757b50ca2217c2e952ae662e5ed`, PR #1289) and
+has never been run. Its central action is to move **every** JP(cb) appointment at
+Linda-a-Velha to JP(lv), "past and future" (its own header, and
+`docs/DECISIONS.md` records the same). It also copies profile fields onto JP(lv)
+and moves eight pinned clinical episodes.
+
+The rulings in force on 2026-09-18 say the opposite on two counts: **the two JP
+rows stay**, and **past appointments never move**. So the script's main
+statement is now forbidden, and a second thing is true of it independently: its
+own clash precondition halts it before any write, because JP(lv) already holds
+rows identical to JP(cb)'s at Linda-a-Velha.
+
+It is therefore dead in its present form, and it is dead quietly - nothing in the
+repository says so, and its card still carries it as the phase-2 deliverable. A
+reader who finds it and runs it gets a halt, not a warning.
+
+The STAFF-10 schedule-row data op authored today does **not** supersede it by
+editing it: that card belongs to GREEN, and this lane edits only its own. This
+question exists so the decision is taken rather than inherited.
+
+**Recommended default:** keep the file, and add a header block stating that it is
+superseded, naming the two rulings that forbid its appointment move and this data
+op as what replaced it. Keeping it costs nothing and preserves a well-built
+audit-and-rollback design that a future, differently-scoped move could reuse; the
+header is what stops it being run by somebody who has not read the rulings.
+**Alternative:** delete it, on the ground that a script nobody may run is a
+liability, and let its design be recovered from git history if it is ever wanted.
