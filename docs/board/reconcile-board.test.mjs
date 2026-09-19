@@ -1,6 +1,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   fetchPrStates,
   acknowledgement,
@@ -8,8 +14,11 @@ import {
   claimedGates,
   completionClaims,
   consumedBy,
+  degradedPrStates,
+  mergedFromSubjects,
   reconcile,
   reconcileRulings,
+  run,
 } from "./reconcile-board.mjs";
 
 /**
@@ -537,6 +546,355 @@ describe("fetchPrStates - transient failure is retried, a 404 is not", () => {
       throw ghErr("unexpected end of JSON input");
     };
     assert.throws(() => fetchPrStates([764], readOne, noPause), /could not read PR #764/);
+  });
+});
+
+/**
+ * CI-reconciler-403-offline-fallback. Owner ruling D2, 2026-09-19.
+ *
+ * OPENED FROM THREE LIVE OCCURRENCES ON ONE PR. #1399, runs 35349914675,
+ * 35442130654 and 35442683579: `CANNOT VERIFY: gh could not read PR #760 after 3
+ * attempts: gh: API rate limit exceeded for installation. ... (HTTP 403)`, exit 2,
+ * on a PR whose board was fine. The board cites 246 PRs, the reconciler asks
+ * GitHub about each one in turn, and every auto-update of every open PR runs it
+ * again on the same installation token. A six-second backoff cannot outlast an
+ * hourly quota, so the retry alone was never going to be the answer.
+ *
+ * THE RULING: retry with backoff, then fall back to offline mode AND SAY SO.
+ *
+ * THE TRAP IN THAT RULING, and the reason half of this suite exists: the offline
+ * mode this file already had skips every PR rule, so falling back to IT would
+ * turn a rate limit into a pass for a stale card - the one defect the reconciler
+ * was written to catch. So the fallback brings its own merge truth: the squash
+ * subjects in git history. A merged PR stays merged, which makes "git says
+ * merged" a definite answer, and the stale-card rule keeps its teeth.
+ *
+ * Every arm below is paired. The seeded 403 that must PASS sits next to the
+ * seeded 403 that must still FAIL.
+ */
+const RATE_LIMIT_403 =
+  "gh: API rate limit exceeded for installation. If you reach out to GitHub Support " +
+  "for help, please include the request ID and timestamp. (HTTP 403)";
+const FORBIDDEN_403 = "gh: Resource not accessible by integration (HTTP 403)";
+const alwaysRateLimited = () => {
+  throw ghErr(RATE_LIMIT_403);
+};
+const staleCard = () =>
+  card({ status: "in_flight", evidence: { kind: "pr", ref: "#843 OPEN" } });
+const rateLimitedRun = (cards, merged, extra = {}) =>
+  run({
+    board: board(cards),
+    boardPath: "fixture.json",
+    offline: false,
+    fetch: (wanted) => fetchPrStates(wanted, alwaysRateLimited, noPause),
+    gitMerged: () => merged,
+    ...extra,
+  });
+
+describe("fetchPrStates - a rate-limit 403 is retried, then NAMED rather than thrown blind", () => {
+  test("retried three times with a growing pause, then throws RATE_LIMITED carrying what it learned", () => {
+    const pauses = [];
+    const readOne = (n) => {
+      if (n === 763) return "closed true";
+      throw ghErr(RATE_LIMIT_403);
+    };
+    let caught = null;
+    try {
+      fetchPrStates([763, 764, 765], readOne, (s) => pauses.push(s));
+    } catch (err) {
+      caught = err;
+    }
+    assert.ok(caught, "an exhausted rate limit must still throw out of fetchPrStates");
+    assert.equal(caught.code, "RATE_LIMITED");
+    assert.equal(caught.pr, 764);
+    assert.deepEqual(pauses, [2, 4], "backoff must grow, and must stop at the FIRST exhausted PR");
+    // What the API DID answer before the quota ran out is kept. Run 35442130654
+    // died at #1033 with some 130 good answers in hand and threw them all away.
+    assert.equal(caught.partial.get(763), "merged");
+    assert.equal(caught.partial.has(765), false, "it must not walk the rest at six seconds each");
+  });
+
+  test("a rate limit that lifts on the second attempt returns the real state", () => {
+    let calls = 0;
+    const readOne = () => {
+      calls += 1;
+      if (calls === 1) throw ghErr(RATE_LIMIT_403);
+      return "open false";
+    };
+    assert.equal(fetchPrStates([764], readOne, noPause).get(764), "open");
+  });
+
+  test("THE CLASSIFIER, as a table: every rate-limit wording is named with its status, and nothing else is", () => {
+    const codeOf = (stderr) => {
+      try {
+        fetchPrStates([764], () => { throw ghErr(stderr); }, noPause);
+      } catch (err) {
+        return [err.code, err.status];
+      }
+      return ["did not throw"];
+    };
+    assert.deepEqual(codeOf(RATE_LIMIT_403), ["RATE_LIMITED", 403]);
+    assert.deepEqual(
+      codeOf("gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)"),
+      ["RATE_LIMITED", 403],
+    );
+    assert.deepEqual(codeOf("gh: API rate limit exceeded (HTTP 429)"), ["RATE_LIMITED", 429]);
+    // The negatives. A token that may not ask, a server error that mentions
+    // nothing, and a header name that merely contains the word.
+    assert.deepEqual(codeOf(FORBIDDEN_403), [undefined, undefined]);
+    assert.deepEqual(codeOf("gh: Bad Gateway (HTTP 502)"), [undefined, undefined]);
+    assert.deepEqual(codeOf("X-RateLimit-Remaining: 0 (HTTP 403)"), [undefined, undefined]);
+  });
+
+  test("a 403 that is NOT a rate limit carries no RATE_LIMITED code - a token defect stays red", () => {
+    let caught = null;
+    try {
+      fetchPrStates([764], () => { throw ghErr(FORBIDDEN_403); }, noPause);
+    } catch (err) {
+      caught = err;
+    }
+    assert.ok(caught);
+    assert.equal(caught.code, undefined);
+    assert.match(caught.message, /could not read PR #764 after 3 attempts/);
+  });
+});
+
+describe("mergedFromSubjects - merge truth that needs no network", () => {
+  test("takes the TRAILING squash number and the merge-commit number, and nothing narrated", () => {
+    const merged = mergedFromSubjects([
+      "board: a card (#843)",
+      'Revert "sched: a thing (#12)" (#900)',
+      "Merge pull request #77 from someone/branch",
+      "mentions #55 mid-line and nothing else",
+      "no tag at all",
+      "",
+    ]);
+    assert.deepEqual([...merged].sort((a, b) => a - b), [77, 843, 900]);
+  });
+});
+
+describe("degradedPrStates - an API answer wins, git answers merged, the rest is UNKNOWN", () => {
+  test("never invents 'missing', 'open' or 'closed' for a PR nobody answered for", () => {
+    const out = degradedPrStates([10, 11, 12], new Map([[10, "open"]]), new Set([11]));
+    assert.equal(out.get(10), "open");
+    assert.equal(out.get(11), "merged");
+    assert.equal(out.get(12), "unknown");
+  });
+});
+
+describe("run - the rate-limit fallback, both directions", () => {
+  test("SEEDED 403, board in sync: PASSES, and says it fell back to offline mode", () => {
+    const shipped = card({ status: "shipped", evidence: { kind: "pr", ref: "#843 merged" } });
+    const r = rateLimitedRun([shipped], { merged: new Set([843]), shallow: false, ref: "origin/main" });
+    assert.equal(r.code, 0);
+    assert.match(r.out.join("\n"), /OFFLINE FALLBACK/);
+    assert.match(r.err.join("\n"), /::warning title=Reconciler fell back to offline mode::/);
+    assert.match(r.err.join("\n"), /rate limit/i);
+    // Exit 0 is ALSO what "nothing could be verified" looks like, so this arm
+    // must show git answered: nothing unverified, one PR credited to git.
+    assert.doesNotMatch(r.out.join("\n"), /UNVERIFIED \(/);
+    assert.match(r.err.join("\n"), /0 answered by the API, 1 answered by git, 0 could not be asked/);
+  });
+
+  test("SEEDED 403 AND A SEEDED STALE CARD: STILL FAILS. The fallback is not an amnesty", () => {
+    const r = rateLimitedRun([staleCard()], { merged: new Set([843]), shallow: false, ref: "origin/main" });
+    assert.equal(r.code, 1);
+    assert.match(r.err.join("\n"), /\[stale-card\] CARD-1/);
+    assert.match(r.out.join("\n"), /OFFLINE FALLBACK/);
+  });
+
+  test("NEGATIVE CONTROL: the same card with #843 absent from git is UNVERIFIED, printed, and not a finding", () => {
+    // Proves the arm above fails because git SAID merged, and not because the
+    // fallback flags every cited card it could not ask about.
+    const r = rateLimitedRun([staleCard()], { merged: new Set(), shallow: false, ref: "origin/main" });
+    assert.equal(r.code, 0);
+    assert.doesNotMatch(r.err.join("\n"), /\[stale-card\]/);
+    assert.match(r.out.join("\n"), /UNVERIFIED \(1\)/);
+    assert.match(r.out.join("\n"), /CARD-1: #843/);
+  });
+
+  test("UNKNOWN never becomes a finding: no shipped-unmerged and no pr-missing on a PR nobody could ask about", () => {
+    const shipped = card({ status: "shipped", evidence: { kind: "pr", ref: "#900" } });
+    const r = rateLimitedRun([shipped], { merged: new Set(), shallow: false, ref: "origin/main" });
+    assert.equal(r.code, 0);
+    assert.doesNotMatch(r.err.join("\n"), /shipped-unmerged|pr-missing/);
+    assert.match(r.out.join("\n"), /UNVERIFIED \(1\)/);
+  });
+
+  test("A SHALLOW CLONE CANNOT ANSWER: exit 2, naming the 403 AND the clone", () => {
+    // depth 1 is what actions/checkout gives by default, and its history holds
+    // one subject. Trusting it would call every cited PR unknown and pass.
+    const r = rateLimitedRun([staleCard()], { merged: new Set(), shallow: true, ref: "HEAD" });
+    assert.equal(r.code, 2);
+    assert.match(r.err.join("\n"), /rate limit/i);
+    assert.match(r.err.join("\n"), /shallow/i);
+  });
+
+  test("git itself failing is exit 2, never a pass", () => {
+    const r = rateLimitedRun([staleCard()], null, {
+      gitMerged: () => {
+        throw new Error("git: not a repository");
+      },
+    });
+    assert.equal(r.code, 2);
+    assert.match(r.err.join("\n"), /not a repository/);
+  });
+
+  test("a NON-rate-limit 403 does not fall back at all: exit 2, exactly as before", () => {
+    let askedGit = false;
+    const r = run({
+      board: board([staleCard()]),
+      boardPath: "fixture.json",
+      offline: false,
+      fetch: (wanted) => fetchPrStates(wanted, () => { throw ghErr(FORBIDDEN_403); }, noPause),
+      gitMerged: () => {
+        askedGit = true;
+        return { merged: new Set([843]), shallow: false, ref: "origin/main" };
+      },
+    });
+    assert.equal(r.code, 2);
+    assert.equal(askedGit, false);
+    assert.match(r.err.join("\n"), /CANNOT VERIFY/);
+  });
+
+  test("the ONLINE path is untouched: a stale card fails, a synced board passes, no fallback is mentioned", () => {
+    const online = (cards, states) =>
+      run({ board: board(cards), boardPath: "fixture.json", offline: false, fetch: () => new Map(states), gitMerged: () => { throw new Error("git must not be asked online"); } });
+    const bad = online([staleCard()], [[843, "merged"]]);
+    assert.equal(bad.code, 1);
+    assert.match(bad.err.join("\n"), /\[stale-card\] CARD-1/);
+    const good = online([staleCard()], [[843, "open"]]);
+    assert.equal(good.code, 0);
+    assert.doesNotMatch(good.out.join("\n") + good.err.join("\n"), /OFFLINE FALLBACK|fell back/);
+  });
+
+  test("explicit --offline is unchanged: PR rules skipped, and it says so", () => {
+    const r = run({ board: board([staleCard()]), boardPath: "fixture.json", offline: true, fetch: () => { throw new Error("must not fetch"); }, gitMerged: () => { throw new Error("must not ask git"); } });
+    assert.equal(r.code, 0);
+    assert.match(r.out.join("\n"), /PR rules skipped \(--offline\)/);
+  });
+});
+
+/**
+ * THE SAME TWO ARMS THROUGH THE REAL PROCESS. Everything above injects `fetch`
+ * and `gitMerged`, so it proves run() and nothing about main(), the real `gh`
+ * call, the real `git log`, or the exit code a CI step actually sees. Here a
+ * fake `gh` that answers every call with the observed 403 is put first on PATH,
+ * the board lives in a throwaway git repository of three commits, the middle one
+ * being the squash of #843, and the script is spawned exactly as
+ * `pnpm board:reconcile` spawns it.
+ *
+ * All four processes run at once because each really does wait out the backoff.
+ */
+describe("CLI - a seeded 403 through the real process", () => {
+  const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "reconcile-board.mjs");
+
+  // HERMETIC AGAINST THE CALLER'S GIT. A hook, or `git rebase --exec`, exports
+  // GIT_DIR and its siblings, and with those inherited the `git init`, `add` and
+  // `commit` below would land on the REAL repository. A global commit.gpgsign
+  // would open a pinentry inside spawnSync, and a global hooksPath would run
+  // somebody's hooks in a temp dir. So: no inherited GIT_*, no global or system
+  // config, and a timeout on every synchronous git call.
+  const cleanEnv = (extra = {}) => {
+    const env = { ...process.env };
+    for (const k of Object.keys(env)) if (k.startsWith("GIT_")) delete env[k];
+    return { ...env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", ...extra };
+  };
+
+  /** `originMain`: also publish HEAD as refs/remotes/origin/main, the ref CI reads.
+   *  `shallow`: run from a depth-1 clone of the fixture, what actions/checkout
+   *  gives by default. */
+  const spawnReconcile = (cards, { originMain = false, shallow = false } = {}) => {
+    const root = mkdtempSync(join(tmpdir(), "reconcile-403-"));
+    const bin = join(root, "bin");
+    const src = join(root, "src");
+    mkdirSync(bin);
+    mkdirSync(src);
+    const cleanup = () => rmSync(root, { recursive: true, force: true });
+    const git = (cwd, ...args) => {
+      const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], {
+        cwd,
+        encoding: "utf8",
+        env: cleanEnv(),
+        timeout: 30_000,
+      });
+      assert.equal(r.status, 0, `git ${args.join(" ")} failed: ${r.stderr}`);
+    };
+    // A setup that throws (git missing, git slow) must not leave its root behind.
+    let work = src;
+    try {
+      const fakeGh = join(bin, "gh");
+      writeFileSync(fakeGh, `#!/bin/sh\necho "${RATE_LIMIT_403}" >&2\nexit 1\n`);
+      chmodSync(fakeGh, 0o755);
+      writeFileSync(join(src, "board.json"), JSON.stringify(board(cards)));
+      git(src, "init", "-q");
+      git(src, "add", "board.json");
+      git(src, "commit", "-q", "-m", "an older commit, so that depth 1 really does drop history");
+      git(src, "commit", "-q", "--allow-empty", "-m", "board: the squash of the cited PR (#843)");
+      git(src, "commit", "-q", "--allow-empty", "-m", "a later commit that names no PR");
+      if (originMain) git(src, "update-ref", "refs/remotes/origin/main", "HEAD");
+      if (shallow) {
+        work = join(root, "depth1");
+        git(root, "clone", "-q", "--depth", "1", `file://${src}`, work);
+      }
+    } catch (setupFailure) {
+      cleanup();
+      throw setupFailure;
+    }
+    return new Promise((done, failed) => {
+      const child = spawn(process.execPath, [SCRIPT, join(work, "board.json")], {
+        cwd: work,
+        env: cleanEnv({ PATH: `${bin}${delimiter}${process.env.PATH}` }),
+        timeout: 60_000,
+      });
+      child.on("error", (spawnFailure) => {
+        cleanup();
+        failed(spawnFailure);
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("close", (code) => {
+        cleanup();
+        done({ code, stdout, stderr });
+      });
+    });
+  };
+
+  test("in sync exits 0 with OFFLINE FALLBACK, a stale card exits 1, and a depth-1 clone exits 2 - one run", async () => {
+    const shipped = card({ status: "shipped", evidence: { kind: "pr", ref: "#843 merged" } });
+    const [synced, stale, viaOriginMain, shallow] = await Promise.all([
+      spawnReconcile([shipped]),
+      spawnReconcile([staleCard()]),
+      spawnReconcile([staleCard()], { originMain: true }),
+      spawnReconcile([staleCard()], { shallow: true }),
+    ]);
+    assert.equal(synced.code, 0, synced.stderr);
+    assert.match(synced.stdout, /OFFLINE FALLBACK/);
+    assert.match(synced.stderr, /fell back to offline mode/);
+    // Exit 0 is also what "nothing could be verified" looks like. This is what
+    // says git really did answer for #843.
+    assert.doesNotMatch(synced.stdout, /UNVERIFIED \(/);
+    assert.match(synced.stdout, /git history \(HEAD\)/);
+
+    assert.equal(stale.code, 1, stale.stderr);
+    assert.match(stale.stderr, /\[stale-card\] CARD-1/);
+    assert.match(stale.stdout, /OFFLINE FALLBACK/);
+
+    // THE REF CI ACTUALLY TAKES. With refs/remotes/origin/main present the real
+    // gitMergedPrs must read it, and say so.
+    assert.equal(viaOriginMain.code, 1, viaOriginMain.stderr);
+    assert.match(viaOriginMain.stdout, /git history \(origin\/main\)/);
+
+    // THE GUARD BETWEEN A DEPTH-1 CLONE AND "every PR unknown, exit 0", through
+    // the real `git rev-parse --is-shallow-repository`.
+    assert.equal(shallow.code, 2, shallow.stdout + shallow.stderr);
+    // The message's own words, and both causes. The fixture directory is named
+    // `depth1` so that no path in an unrelated FATAL line can satisfy this.
+    assert.match(shallow.stderr, /SHALLOW clone/);
+    assert.match(shallow.stderr, /rate limit/i);
+    assert.doesNotMatch(shallow.stdout, /no mismatches/);
   });
 });
 
