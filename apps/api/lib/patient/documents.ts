@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { attachments } from "@osteojp/db";
 import { runAsPatient, type PatientPrincipal } from "@/lib/auth/patient";
 
@@ -87,6 +87,10 @@ export async function listOwnDocuments(
         and(
           eq(attachments.patientId, principal.patientId),
           eq(attachments.tenantId, principal.tenantId),
+          // SR-62 PU-4: a document staff soft-deleted is gone for the patient
+          // too. The self-scope RLS policy carries the same conjunct
+          // (0089); this is the explicit layer beside it.
+          isNull(attachments.deletedAt),
         ),
       )
       .orderBy(desc(attachments.createdAt));
@@ -124,6 +128,8 @@ export async function getOwnDocumentLocation(
           eq(attachments.id, documentId),
           eq(attachments.patientId, principal.patientId),
           eq(attachments.tenantId, principal.tenantId),
+          // SR-62 PU-4: a soft-deleted document cannot be downloaded by id.
+          isNull(attachments.deletedAt),
         ),
       )
       .limit(1);

@@ -1,12 +1,14 @@
 "use client";
 import { useState, useTransition, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, EmptyState } from "@osteojp/ui";
+import { Button, Card, Dialog, EmptyState } from "@osteojp/ui";
 import { FileText } from "lucide-react";
 import { s } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   DOCUMENT_ACCEPT,
+  DOCUMENT_DELETE_REASON_MAX,
+  normalizeDeleteReason,
   validateDocumentUpload,
 } from "@/lib/patients/document-validation";
 import {
@@ -16,8 +18,10 @@ import {
 import {
   confirmDocumentAction,
   createDocumentUploadUrlAction,
+  deleteDocumentAction,
   documentDownloadUrlAction,
   documentPreviewUrlAction,
+  type DeleteDocumentActionError,
 } from "./document-actions";
 
 // Must match storage.ts ATTACHMENTS_BUCKET (that module is server-only).
@@ -46,25 +50,46 @@ function formatSize(bytes: number | null): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
+/** SR-62 PU-4: each refusal the dialog can word; anything else is the generic line. */
+export const DELETE_ERROR_TEXT: Record<DeleteDocumentActionError, string> = {
+  reason_required: s["patients.documentDeleteReasonLabel"],
+  reason_too_long: s["patients.documentDeleteReasonTooLong"],
+  already_deleted: s["patients.documentDeleteAlreadyDeleted"],
+  not_found: s["patients.documentDeleteError"],
+  forbidden: s["patients.documentDeleteError"],
+  error: s["patients.documentDeleteError"],
+};
+
 /**
  * Staff Documentos tab: upload administrative documents to a patient and open
  * them via short-lived signed URLs. The 3-step signed-URL flow (mint → direct
  * PUT to Storage → confirm+audit) mirrors the clinical Attachments component
  * (W4-05); bytes never pass through Next. Upload is gated server-side on
  * patients:write; the input is only shown when `canUpload`.
+ *
+ * SR-62 PU-4: each row also carries Eliminar when `canDelete`. It opens a
+ * confirm dialog with a REQUIRED reason; the confirm button stays disabled
+ * until the reason has a non-blank character. The delete is SOFT (row and file
+ * kept, audit row written) and every rule is re-enforced on the server.
  */
 export function PatientDocuments({
   patientId,
   items,
   canUpload,
+  canDelete = false,
 }: {
   patientId: string;
   items: PatientDocument[];
   canUpload: boolean;
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [target, setTarget] = useState<PatientDocument | null>(null);
+  const [reason, setReason] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, startDelete] = useTransition();
 
   async function onSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -112,8 +137,8 @@ export function PatientDocuments({
     start(() => router.refresh());
   }
 
-  async function download(path: string) {
-    const { url } = await documentDownloadUrlAction(path);
+  async function download(documentId: string) {
+    const { url } = await documentDownloadUrlAction(documentId);
     if (url) window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -148,6 +173,38 @@ export function PatientDocuments({
       return;
     }
     setPreview({ id: documentId, url: res.url, kind: res.kind, fileName: res.fileName });
+  }
+
+  function openDelete(d: PatientDocument) {
+    setTarget(d);
+    setReason("");
+    setDeleteError(null);
+  }
+
+  function closeDelete() {
+    if (deleting) return;
+    setTarget(null);
+    setReason("");
+    setDeleteError(null);
+  }
+
+  const reasonCheck = normalizeDeleteReason(reason);
+
+  function confirmDelete() {
+    if (!target || !reasonCheck.ok) return;
+    const documentId = target.id;
+    const reasonText = reasonCheck.reason;
+    setDeleteError(null);
+    startDelete(async () => {
+      const result = await deleteDocumentAction(documentId, reasonText);
+      if (result.ok) {
+        setTarget(null);
+        setReason("");
+        router.refresh();
+        return;
+      }
+      setDeleteError(DELETE_ERROR_TEXT[result.error]);
+    });
   }
 
   return (
@@ -201,81 +258,125 @@ export function PatientDocuments({
       ) : (
         <div className="flex flex-col gap-3">
           {items.map((d) => (
-            <Card key={d.id}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-1-50">
-                    <FileText
-                      size={18}
-                      strokeWidth={1.75}
-                      aria-hidden="true"
-                      className="text-accent-1-700"
-                    />
-                  </span>
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="truncate font-medium text-text-primary">{d.fileName}</span>
-                    <span className="text-sm tabular-nums text-text-secondary">
-                      {formatSize(d.sizeBytes)} · {dateFmt.format(new Date(d.createdAt))}
+            // Card forwards no data-* props, so the row id sits on a wrapper.
+            <div key={d.id} data-document-id={d.id}>
+              <Card>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-1-50">
+                      <FileText
+                        size={18}
+                        strokeWidth={1.75}
+                        aria-hidden="true"
+                        className="text-accent-1-700"
+                      />
                     </span>
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate font-medium text-text-primary">{d.fileName}</span>
+                      <span className="text-sm tabular-nums text-text-secondary">
+                        {formatSize(d.sizeBytes)} · {dateFmt.format(new Date(d.createdAt))}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Only for the types a browser really renders. Everything
+                        else keeps Abrir alone rather than offering a panel that
+                        would come up empty. */}
+                    {isDocumentPreviewable(d.mimeType) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-expanded={preview?.id === d.id}
+                        onClick={() => togglePreview(d.id)}
+                      >
+                        {preview?.id === d.id
+                          ? s["patients.documentPreviewClose"]
+                          : s["patients.documentPreview"]}
+                      </Button>
+                    )}
+                    <Button type="button" size="sm" variant="ghost" onClick={() => download(d.id)}>
+                      {s["patients.documentOpen"]}
+                    </Button>
+                    {canDelete && (
+                      <Button type="button" size="sm" variant="ghost" onClick={() => openDelete(d)}>
+                        {s["patients.documentDelete"]}
+                      </Button>
+                    )}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {/* Only for the types a browser really renders. Everything
-                      else keeps Abrir alone rather than offering a panel that
-                      would come up empty. */}
-                  {isDocumentPreviewable(d.mimeType) && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-expanded={preview?.id === d.id}
-                      onClick={() => togglePreview(d.id)}
-                    >
-                      {preview?.id === d.id
-                        ? s["patients.documentPreviewClose"]
-                        : s["patients.documentPreview"]}
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => download(d.storagePath)}
-                  >
-                    {s["patients.documentOpen"]}
-                  </Button>
-                </div>
-              </div>
 
-              {preview?.id === d.id && (
-                <div className="mt-3 border-t border-v2-border pt-3">
-                  {preview.kind === "image" ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- a 60s
-                    // signed Storage URL, not a build-time asset: next/image would
-                    // route a private, expiring object through the optimizer.
-                    <img
-                      src={preview.url}
-                      alt={preview.fileName}
-                      className="max-h-[70vh] w-full object-contain"
-                    />
-                  ) : (
-                    <object
-                      data={preview.url}
-                      type="application/pdf"
-                      aria-label={preview.fileName}
-                      className="h-[70vh] w-full"
-                    >
-                      {/* Shown when the browser has no PDF viewer at all. */}
-                      <p className="text-sm text-text-secondary">
-                        {s["patients.documentPreviewError"]}
-                      </p>
-                    </object>
-                  )}
-                </div>
-              )}
-            </Card>
+                {preview?.id === d.id && (
+                  <div className="mt-3 border-t border-v2-border pt-3">
+                    {preview.kind === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- a 60s
+                      // signed Storage URL, not a build-time asset: next/image would
+                      // route a private, expiring object through the optimizer.
+                      <img
+                        src={preview.url}
+                        alt={preview.fileName}
+                        className="max-h-[70vh] w-full object-contain"
+                      />
+                    ) : (
+                      <object
+                        data={preview.url}
+                        type="application/pdf"
+                        aria-label={preview.fileName}
+                        className="h-[70vh] w-full"
+                      >
+                        {/* Shown when the browser has no PDF viewer at all. */}
+                        <p className="text-sm text-text-secondary">
+                          {s["patients.documentPreviewError"]}
+                        </p>
+                      </object>
+                    )}
+                  </div>
+                )}
+              </Card>
+            </div>
           ))}
         </div>
+      )}
+
+      {canDelete && (
+        <Dialog
+          open={target !== null}
+          onClose={closeDelete}
+          title={s["patients.documentDeleteTitle"]}
+          message={s["patients.documentDeleteMessage"]}
+          confirmVariant="destructive"
+          confirmLabel={s["patients.documentDeleteConfirm"]}
+          onConfirm={confirmDelete}
+          confirmLoading={deleting}
+          confirmDisabled={!reasonCheck.ok || deleting}
+          cancelLabel={s["common.cancel"]}
+        >
+          <div className="mt-3 flex flex-col gap-2" data-testid="document-delete-form">
+            {target && (
+              <p className="truncate text-sm font-medium text-text-primary">{target.fileName}</p>
+            )}
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium">{s["patients.documentDeleteReasonLabel"]}</span>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                required
+                maxLength={DOCUMENT_DELETE_REASON_MAX}
+                className="rounded border border-border-strong px-3 py-1.5 text-sm focus:border-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                data-testid="document-delete-reason"
+              />
+              <span className="text-xs text-text-secondary">
+                {s["patients.documentDeleteReasonHelp"]}
+              </span>
+            </label>
+            {deleteError && (
+              <p role="alert" className="text-sm text-error">
+                {deleteError}
+              </p>
+            )}
+          </div>
+        </Dialog>
       )}
     </div>
   );

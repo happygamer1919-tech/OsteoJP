@@ -15,6 +15,10 @@ export type ClinicalAuditAction =
   | "clinical_episode.create"
   | "attachment.create"
   | "patient_document.create" // staff uploaded an administrative doc to a patient
+  // SR-62 PU-4: staff SOFT deleted a patient document (row + Storage object kept).
+  // Metadata is { hadReason: true, patientId } only; the reason itself lives in
+  // attachments.delete_reason, never here (rule 7, metadata-contract.ts).
+  | "patient_document.soft_delete"
   // W13-05: staff recorded the patient's acceptance of the clinic's terms on the
   // ficha. Audited because it is the sole legal basis for the fee line, so "who
   // recorded this, and when" has to be answerable independently of the
