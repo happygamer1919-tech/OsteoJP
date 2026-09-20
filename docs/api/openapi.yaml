@@ -909,6 +909,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/v1/patient/documents/{id}/preview:
+    get:
+      operationId: previewOwnDocument
+      tags: [documents]
+      summary: Signed INLINE URL for an own document
+      description: >
+        THE SAME short-lived Supabase SIGNED URL as the download above - same
+        private bucket, same opaque token, the same 60s expiry - served INLINE
+        rather than as an attachment, so the portal can render the document in
+        the page instead of saving it. The absent download disposition is the
+        only difference between the two. Bytes are not proxied.
+
+        Ownership is resolved under self-scope BEFORE the service-role client
+        signs anything, in that order, exactly as the download does. Only the
+        types every browser renders natively are previewable (application/pdf,
+        image/jpeg, image/png, image/webp), decided from the STORED mime type
+        and never from the file name; anything else is refused rather than
+        signed. A document that is not the caller's own, cross-tenant,
+        non-existent, not previewable, or a malformed id all return 404
+        (indistinguishable).
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: A signed, short-lived inline URL, and how to render it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, kind]
+                properties:
+                  url:
+                    type: string
+                    format: uri
+                    description: Short-lived signed URL, served inline (60s).
+                  kind:
+                    type: string
+                    enum: [pdf, image]
+                    description: How the client should render the document.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: >
+            Not the caller's own / not found / not previewable / malformed id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/v1/patient/intake:
     get:
       operationId: getOwnGuestIntakes
