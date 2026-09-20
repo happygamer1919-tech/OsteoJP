@@ -6,9 +6,11 @@ import { isClinicalError } from "@/lib/clinical/errors";
 import {
   confirmPatientDocument,
   createPatientDocumentDownloadUrl,
+  createPatientDocumentPreviewUrl,
   createPatientDocumentUploadUrl,
   softDeletePatientDocument,
 } from "@/lib/patients/documents";
+import type { DocumentPreviewKind } from "@/lib/patients/document-preview";
 
 // Server actions for the patient Documentos tab. Each re-derives the request
 // context (never trusts the client for identity) and gates inside the lib
@@ -59,6 +61,30 @@ export async function documentDownloadUrlAction(
     return { url: await createPatientDocumentDownloadUrl(ctx, documentId) };
   } catch {
     return { url: null };
+  }
+}
+
+/**
+ * A 60s signed INLINE url for the in-page preview panel.
+ *
+ * Like the download action above it passes an ID rather than a path, so the
+ * server resolves the row itself under the Documentos tab's own predicate -
+ * which since SR-62 PU-4 excludes a soft-deleted document. A failure of any
+ * kind - not this patient's, not previewable, removed, not there - comes back
+ * as the same `ok: false`, so the client cannot tell them apart either.
+ */
+export async function documentPreviewUrlAction(
+  patientId: string,
+  documentId: string,
+): Promise<
+  { ok: true; url: string; kind: DocumentPreviewKind; fileName: string } | { ok: false }
+> {
+  const ctx = await requireRequestContext();
+  try {
+    const preview = await createPatientDocumentPreviewUrl(ctx, patientId, documentId);
+    return { ok: true, ...preview };
+  } catch {
+    return { ok: false };
   }
 }
 
