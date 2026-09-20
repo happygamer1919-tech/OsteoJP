@@ -155,6 +155,10 @@ git rev-parse origin/sched/B8-nesa-names-to-therapists
 )
 ```
 
+**Compare the sha it prints with the one STAGE 0 printed as `running from`.** That
+is the comparand: stage 0 is where the promotion, the sidecar and the journal were
+verified, so it is the head those verifications are about.
+
 **This branch is auto-updated, so its head moves every time anything merges to
 main**: eleven times in the three days before this was written. What a moved
 head means depends on WHEN, and the two cases are opposite:
@@ -166,6 +170,14 @@ head means depends on WHEN, and the two cases are opposite:
   sha256, so a merge of main that left those bytes alone changes nothing it
   reads, and one that changed them halts it. Both shas, the one stage 1 applied
   from and the one stage 2 checked from, go on the SR-51 card.
+
+**One halt that case can produce, named so it is not improvised around.** Stage 2
+pins `scripts/assert-production-target.mjs` by sha256, and that file lives on
+main. If a merge of main changes it between stage 1 and stage 2, stage 2 stops on
+`the target guard on disk is not the approved file` with production already
+applied, and the applied-marker is good for **60 minutes**. Do not edit the pin
+and do not re-run stage 1. Report it to the owner with both shas; the post-check
+is READ ONLY and can be re-issued against the new guard.
 
 Stage 1 enforces the second case itself: it refuses to start while a fresh
 applied-marker exists, and it never touches the previous transcript until a new
@@ -239,6 +251,17 @@ not move, **3** on a missing file, a wrong sha256, an already-applied migration 
 a pending count that is not 1, and **4** if drizzle itself failed.
 `--expect-pending 1` holds because after 0089 the pending set is 0090 alone.
 
+**Exit 4 does not always mean nothing was applied.** `verified-migrate.mjs` also
+exits 4 on ANY thrown error, including its own journal read AFTER drizzle has
+committed (a dropped connection is enough). So: **if stage 1 ended non-zero after
+the `drizzle-kit migrate` banner had printed, do not paste stage 1 again.** Run
+`node --env-file=/Users/ivan/osteojp-secrets/new-prod.env packages/db/scripts/read-applied-migrations.mjs`,
+which is READ ONLY. If it lists 0090 as APPLIED, production is applied and no
+marker exists, so stage 2 will refuse: stop and ask the owner to rule. The carry
+transcript in `/tmp/0090-precheck.out` is intact and is what a ruled post-check
+would use. This window exists in every apply document since 0084; it is written
+down here, not closed.
+
 ## STAGE 2: post-check, carries derived from stage 1
 
 ```
@@ -250,7 +273,6 @@ SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=sched/B8-nesa-names-to-therapists
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-rm -f /tmp/0090-postcheck.out
 
 echo "--- ASSERTION 1, THE HEAD. Record the sha printed next beside the one stage 1 applied from. If it has MOVED, carry on: never go back to stage 1 after an apply. Everything this stage reads is asserted by sha256 below."
 git fetch origin --prune
@@ -285,6 +307,7 @@ set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexpo
 node scripts/assert-production-target.mjs
 
 echo "--- the post-check, inside one READ ONLY transaction, so the server is what refuses a write"
+rm -f /tmp/0090-postcheck.out
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v policies_before="${P}" -v secdef_before="${S}" -v patients_md5="${M}" -c "begin read only" -f scripts/db/postcheck-nesa-names.sql -c "rollback" 2>&1 | tee /tmp/0090-postcheck.out
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0090-postcheck.out && { echo "STOP: a post-check verdict read FAIL"; exit 1; }
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0090-postcheck.out || true)
@@ -419,8 +442,11 @@ therapist. It is covered two ways, and neither is this transcript:
    opens `/patients/<id>` as a therapist for another therapist's patient (404),
    for their own patient (200, by name), and as an admin for the first id (200).
    Those two positive controls arrived in #1410.
-2. **On production, by the owner or a therapist, three clicks, one login:** sign
-   in as a Linda-a-Velha therapist. (a) Open the agenda on a day NESA has a
+2. **On production, by the owner or a therapist, three clicks, one login, and
+   only AFTER #1390 has merged and its production deployment reads READY** (the
+   read that asks the function ships in that PR, so before then the card still
+   says "Marcação reservada" on a correct apply): sign in as a Linda-a-Velha
+   therapist. (a) Open the agenda on a day NESA has a
    booking: the card shows the patient's name, not "Marcação reservada". (b) Open
    the ficha of one of your own patients: it opens. (c) Paste the URL of a
    patient only another therapist treats: **not found**. (b) is the control
@@ -451,6 +477,7 @@ each with its count asserted, and the extractor refuses a stage that still names
 | Substitution | Stage 1 | Stage 2 |
 |---|---|---|
 | `/tmp/` becomes a scratch directory | 10 | 8 |
+| (stage 2's `rm -f` of the post-check transcript now sits directly above the post-check, so a refused stage 2 deletes nothing) | | |
 | the `cd` line | 1 | 1 |
 | the env-source line becomes `export DATABASE_URL_DIRECT=<the throwaway>` | 1 | 1 |
 | `node scripts/assert-production-target.mjs` becomes an `echo` | 1 | 1 |
