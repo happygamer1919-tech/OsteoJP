@@ -6,6 +6,7 @@ import { attachments, patients } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
+import { hasTraversalSegment, isSingleObjectUnder } from "@/lib/clinical/storage-path";
 import { writeClinicalAudit, clientIp } from "@/lib/clinical/audit";
 import { ClinicalError } from "@/lib/clinical/errors";
 import { normalizeDeleteReason, validateDocumentUpload } from "./document-validation";
@@ -133,8 +134,24 @@ export async function confirmPatientDocument(
   },
 ): Promise<{ id: string }> {
   assertCan(ctx.role, "patients:write");
-  // The path must live under this tenant's prefix — defense against a forged path.
-  if (!input.path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  // SEC-attachment-download-by-path-skips-the-patient-scope, the confirm half.
+  //
+  // The path must be one THIS patient's own upload could have minted, not
+  // merely one somewhere inside the tenant. `createPatientDocumentUploadUrl`
+  // above builds exactly `${tenantId}/patient-documents/${patientId}/...`;
+  // `attachments.storage_path` carries no unique constraint; and the id-based
+  // download resolves the row and signs whatever path that row holds. A
+  // tenant-only check therefore let a caller file a Documentos row pointing at
+  // somebody else's object — a registo attachment, or an imported original
+  // whose path has no random part — and read it back by the new row's id.
+  //
+  // The trailing slash is load-bearing: without it a patient id that is a
+  // prefix of another patient id would match that patient's folder. And the
+  // check is CONTAINMENT, not a prefix: see isSingleObjectUnder for why a
+  // `startsWith` is defeated by a `..` the URL layer collapses later.
+  if (!isSingleObjectUnder(input.path, `${ctx.tenantId}/patient-documents/${input.patientId}/`)) {
+    throw new ClinicalError("invalid");
+  }
   // Re-validate type/size on the server — the client check is UX only.
   if (validateDocumentUpload({ mimeType: input.mimeType, sizeBytes: input.sizeBytes ?? 0 })) {
     throw new ClinicalError("validation");
@@ -392,8 +409,11 @@ export async function createPatientDocumentPreviewUrl(
   const kind = documentPreviewKind(row.mimeType);
   if (!kind) throw new ClinicalError("invalid");
   // Defense in depth, as everywhere else here: a row that somehow carried a
-  // foreign path is refused rather than signed.
-  if (!row.storagePath.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  // foreign path, or one that would climb out of the tenant once the URL layer
+  // resolved it, is refused rather than signed.
+  if (!row.storagePath.startsWith(`${ctx.tenantId}/`) || hasTraversalSegment(row.storagePath)) {
+    throw new ClinicalError("invalid");
+  }
 
   const admin = createSupabaseAdminClient();
   // No `download` option: inline, so it renders in the panel. 60s, as above.
@@ -441,8 +461,13 @@ export async function createPatientDocumentDownloadUrl(
     return rows[0]?.storagePath ?? null;
   });
   if (!storagePath) throw new ClinicalError("not_found");
-  // Defense in depth: a stored path outside this tenant's prefix is refused.
-  if (!storagePath.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  // Defense in depth: a stored path outside this tenant's prefix is refused,
+  // and so is one that would climb back out of it once the URL layer resolves
+  // the string. Rows written before the confirm-side rule landed are still in
+  // the table, so a stored path is not evidence that it was ever checked.
+  if (!storagePath.startsWith(`${ctx.tenantId}/`) || hasTraversalSegment(storagePath)) {
+    throw new ClinicalError("invalid");
+  }
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin.storage
     .from(ATTACHMENTS_BUCKET)
@@ -488,6 +513,9 @@ export async function softDeletePatientDocument(
   const normalized = normalizeDeleteReason(input.reason);
   if (!normalized.ok) throw new ClinicalError(normalized.error);
   const ip = await clientIp();
+  // The viewer's clinics, resolved before the transaction like every reader
+  // above: it is a read of its own.
+  const locIds = await viewerLocationScope(ctx);
 
   return runScoped(ctx, async (tx) => {
     const [row] = await tx
@@ -504,11 +532,19 @@ export async function softDeletePatientDocument(
     if (!row || !row.patientId || !isDocumentosRow(ctx.tenantId, row)) {
       throw new ClinicalError("not_found");
     }
-    if (row.deletedAt) throw new ClinicalError("already_deleted");
     const patientId = row.patientId;
 
-    // W10-04: a therapist holds patients:write, but only for their own patients.
-    const scope = therapistPatientScope(ctx, patients.id);
+    // WHO MAY SEE THIS PATIENT, the same answer the readers give. W10-04 held a
+    // therapist to their own patients here already; an admin or receptionist
+    // ASSIGNED to a clinic was not held to it, so the write was wider than the
+    // read (SEC-attachment-download-by-path-skips-the-patient-scope, door 2).
+    //
+    // IT RUNS BEFORE THE deleted_at CHECK, deliberately. The other way round,
+    // `already_deleted` against `not_found` told a viewer who may not see the
+    // patient that the id exists.
+    const scope =
+      therapistPatientScope(ctx, patients.id) ??
+      (locIds ? patientLocationScope(patients.id, locIds) : undefined);
     if (scope) {
       const [visible] = await tx
         .select({ id: patients.id })
@@ -517,6 +553,7 @@ export async function softDeletePatientDocument(
         .limit(1);
       if (!visible) throw new ClinicalError("not_found");
     }
+    if (row.deletedAt) throw new ClinicalError("already_deleted");
 
     const updated = await tx
       .update(attachments)
