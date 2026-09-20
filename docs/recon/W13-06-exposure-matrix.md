@@ -22,7 +22,7 @@ grep -rl "^'use server'" apps/portal/app | sort           #  5 server-action fil
 find apps/web/app/r -type f                               #  1 token page
 ```
 
-### 1.1 API routes — 22
+### 1.1 API routes — 23
 
 > **The heading read "19" while the table listed 20** — `booking/guest` was
 > appended with ITEM 6 and the count above it was not moved. Corrected
@@ -52,6 +52,7 @@ find apps/web/app/r -type f                               #  1 token page
 | 20 | `booking/guest` | POST | **pre-auth**, rate limited (per IP, per phone, two tenant-wide ceilings). ITEM 6. The caller is by definition NOT a patient, so there is no principal to present. Safety comes from what it may WRITE: `guest_booking_requests` only, never a clinical table, always as a request a human confirms (R-GUEST-1). |
 | 21 | `booking/guest/catalog` | GET | **pre-auth**, rate limited per IP (two windows, durable store; **no global ceiling — see `RULES.guestCatalogIp`**). GUEST-04 Option A, 2026-08-14. The ONE unauthenticated READ the guest form gets: service id + name and location id + name, already published on osteojp.pt and on the portal's public Clínicas page. Same four predicates as `booking/catalog` (tenant, active, not `internal_only`, `patient_bookable`). No person, no schedule, no price. `booking/therapists` and `booking/slots` stay authenticated — **MN-27, MN-28**. |
 | 22 | `patient/intake` | GET | `getPatientPrincipal`. INTAKE-01, 2026-09-11. READ ONLY: the patient's OWN guest clinical intake answers, only from a request reception CONVERTED to them, under the patient role and 0087's patient policy (`patient_guest_request_ids()`) plus an explicit tenant filter. `enabled: false` and no statement naming the table while 0087 is not applied. Never cached; a failed read is a fixed 503 that logs no error text (Article 9). |
+| 23 | `patient/documents/[id]/preview` | GET | `getPatientPrincipal`. Anexo preview, 2026-09-18. Appended rather than slotted beside row 14 so no existing number moves, exactly as rows 21 and 22 were added. It returns THE SAME 60-second signed URL as row 14, served INLINE (the `download` option is absent) so the page can render it instead of saving it. Ownership is resolved under self-scope BEFORE the service-role client signs, in that order, as the download does; a type no browser renders is refused before anything is signed. Not the caller's, absent, malformed, and not previewable are ONE 404. |
 
 ### 1.2 Portal server actions — 6 files
 
@@ -163,6 +164,7 @@ divergence from the claimed figure and is reported in §5.
 | MH-17 | submit an intake form | `POST me/forms` | `intake/submit.test.ts`, `me/forms/route.test.ts` | PRESENT |
 | MH-18 | list own documents | `patient/documents` | `patient/documents/route.test.ts` | PRESENT |
 | MH-19 | download an own document | `patient/documents/[id]/download` | `download/route.test.ts`, `patient/download.test.ts` | PRESENT |
+| MH-19a | preview an own document in the page | `patient/documents/[id]/preview` | `preview/route.test.ts`, `patient/download-preview.test.ts` | PRESENT |
 | MH-20 | read and update own profile | `patient/profile` | `patient/profile/route.test.ts`, `patient/profile.test.ts` | PRESENT |
 | MH-21 | act on a reminder link without logging in | `apps/web/app/r/[token]` | W13-01; owner deployed-screen check 2026-08-05 (PG3 evidence) | PRESENT |
 
