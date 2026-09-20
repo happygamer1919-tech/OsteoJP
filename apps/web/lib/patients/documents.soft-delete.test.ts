@@ -61,6 +61,7 @@ const PATIENT = "33333333-3333-4333-8333-333333333333";
 const RECORD = "44444444-4444-4444-8444-444444444444";
 const REASON = "Carregado no paciente errado: e do irmao";
 
+const CLINIC = "77777777-7777-4777-8777-777777777777";
 const reception: RequestContext = { tenantId: TENANT, role: "reception", userId: "55555555-5555-4555-8555-555555555555" };
 const therapist: RequestContext = { tenantId: TENANT, role: "therapist", userId: "66666666-6666-4666-8666-666666666666" };
 
@@ -239,6 +240,10 @@ describe("softDeletePatientDocument — every refusal happens before anything is
     const log = writerTx();
     await expectCode(softDeletePatientDocument(reception, { documentId: DOC, reason }), "reason_required");
     expect(mockRunScoped).not.toHaveBeenCalled();
+    // The clinic lookup is a READ of its own (staff_locations), and door 2 added
+    // it ABOVE the transaction. A request refused on its shape must not reach
+    // it; nothing else in this file pins that ordering.
+    expect(viewerLocationScope).not.toHaveBeenCalled();
     nothingWritten(log);
   });
 
@@ -283,6 +288,7 @@ describe("softDeletePatientDocument — every refusal happens before anything is
     const log = writerTx();
     await expectCode(softDeletePatientDocument(reception, { documentId: "../x", reason: REASON }), "invalid");
     expect(mockRunScoped).not.toHaveBeenCalled();
+    expect(viewerLocationScope).not.toHaveBeenCalled();
     nothingWritten(log);
   });
 
@@ -320,10 +326,64 @@ describe("softDeletePatientDocument — every refusal happens before anything is
     ).resolves.toEqual({ id: DOC, patientId: PATIENT });
   });
 
-  it("reception is not put through the therapist scope (no patients read)", async () => {
+  it("reception with NO clinic assignment is not put through any scope (no patients read) - THE CONTROL", async () => {
+    vi.mocked(viewerLocationScope).mockResolvedValueOnce(null);
     const log = writerTx();
     await softDeletePatientDocument(reception, { documentId: DOC, reason: REASON });
     expect(log.some((q) => q.table === patients)).toBe(false);
+  });
+
+  // SEC-attachment-download-by-path-skips-the-patient-scope, door 2. The readers
+  // answer not_found for a document of another clinic's patient; the WRITE did
+  // not, so an assigned receptionist could soft delete what they could not see.
+  it("reception ASSIGNED to a clinic, on a patient of another clinic -> not_found, through the clinic scope", async () => {
+    vi.mocked(viewerLocationScope).mockResolvedValueOnce([CLINIC]);
+    const log = writerTx({ visible: false });
+    await expectCode(softDeletePatientDocument(reception, { documentId: DOC, reason: REASON }), "not_found");
+    const scoped = render(log.find((q) => q.table === patients)!.wheres[0]);
+    expect(scoped.sql).toMatch(/ap\.location_id IN \(/);
+    expect(scoped.sql).toMatch(/pl\.id = "patients"\."id"/);
+    expect(scoped.params).toContain(CLINIC);
+    expect(log.some((q) => q.op === "update")).toBe(false);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("reception ASSIGNED to the patient's clinic deletes", async () => {
+    vi.mocked(viewerLocationScope).mockResolvedValueOnce([CLINIC]);
+    writerTx({ visible: true });
+    await expect(
+      softDeletePatientDocument(reception, { documentId: DOC, reason: REASON }),
+    ).resolves.toEqual({ id: DOC, patientId: PATIENT });
+  });
+
+  it("NO EXISTENCE ORACLE: an ALREADY DELETED document of a patient you may not see is not_found, not already_deleted", async () => {
+    // The visibility check used to run AFTER the deleted_at check, so
+    // `already_deleted` against `not_found` told an out-of-scope viewer that the
+    // id exists. The arm below is the matching control.
+    const log = writerTx({ row: patientLevel({ deletedAt: new Date("2026-09-01T10:00:00Z") }), visible: false });
+    await expectCode(softDeletePatientDocument(therapist, { documentId: DOC, reason: REASON }), "not_found");
+    expect(log.some((q) => q.op === "update")).toBe(false);
+  });
+
+  it("THE CONTROL FOR IT: a SCOPED viewer who MAY see the patient still gets already_deleted", async () => {
+    // Without this arm the one above proves only that a scoped viewer is
+    // refused - it cannot tell "the scope answered not_found" apart from "every
+    // scoped viewer is refused whatever the row says", which is what a scope
+    // predicate accidentally inverted would look like. The existing
+    // already_deleted arm runs as UNSCOPED reception (viewerLocationScope is
+    // null there), so it is not this control.
+    const log = writerTx({
+      row: patientLevel({ deletedAt: new Date("2026-09-01T10:00:00Z") }),
+      visible: true,
+    });
+    await expectCode(
+      softDeletePatientDocument(therapist, { documentId: DOC, reason: REASON }),
+      "already_deleted",
+    );
+    // It genuinely went through the scope: the patients read happened.
+    expect(log.some((q) => q.table === patients)).toBe(true);
+    expect(log.some((q) => q.op === "update")).toBe(false);
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
 
