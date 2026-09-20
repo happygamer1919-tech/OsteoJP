@@ -12,6 +12,9 @@ vi.mock("./audit", () => ({
   writeClinicalAudit: vi.fn(async () => {}),
   clientIp: vi.fn(async () => "127.0.0.1"),
 }));
+// The clinic scope is resolved before the transaction; unassigned here. The scope
+// itself is owned by storage.download-scope.test.ts.
+vi.mock("@/lib/auth/viewer-locations", () => ({ viewerLocationScope: vi.fn(async () => null) }));
 const { createSignedUrl } = vi.hoisted(() => ({ createSignedUrl: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: () => ({ storage: { from: () => ({ createSignedUrl }) } }),
@@ -30,7 +33,7 @@ const PATH = `${TENANT}/migration/fisiozero/RGPD-original.pdf`;
 function liveRows(rows: unknown[]) {
   const wheres: SQL[] = [];
   const b: Record<string, unknown> = {};
-  for (const m of ["select", "from", "limit"]) b[m] = () => b;
+  for (const m of ["select", "from", "leftJoin", "limit"]) b[m] = () => b;
   b.where = (w: SQL) => {
     wheres.push(w);
     return b;

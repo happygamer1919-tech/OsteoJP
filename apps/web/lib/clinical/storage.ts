@@ -1,12 +1,15 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import { attachments, clinicalRecords } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scope";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
+import { hasTraversalSegment, isSingleObjectUnder } from "./storage-path";
 
 // Bucket is provisioned via the Supabase owner dashboard (NOT in this PR) — see
 // the PR description. Files always go to Storage; never into Postgres.
@@ -15,6 +18,7 @@ export const ATTACHMENTS_BUCKET = "clinical-attachments";
 function safeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
 }
+
 
 /**
  * Issue a one-time signed upload URL for a draft record's attachment. The
@@ -61,8 +65,23 @@ export async function confirmAttachment(
   },
 ): Promise<{ id: string }> {
   assertCan(ctx.role, "clinical_records:author");
-  // The path must live under this tenant's prefix — defense against a forged path.
-  if (!input.path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  // SEC-attachment-download-by-path-skips-the-patient-scope, the confirm half.
+  //
+  // The path must be one THIS record's own upload could have minted, not merely
+  // one somewhere inside the tenant. `createAttachmentUploadUrl` above builds
+  // exactly `${tenantId}/${recordId}/...`; `attachments.storage_path` carries
+  // no unique constraint; and the download's registo arm asks only whether the
+  // path hangs off a registo the caller may read. A tenant-only check therefore
+  // let a caller record a foreign object under a registo they legitimately
+  // hold, and read it back through that arm.
+  //
+  // The trailing slash is load-bearing: without it a record id that is a prefix
+  // of another record id would match that other record's folder. And the check
+  // is CONTAINMENT, not a prefix: see isSingleObjectUnder above for why a
+  // `startsWith` is defeated by a `..` the URL layer collapses later.
+  if (!isSingleObjectUnder(input.path, `${ctx.tenantId}/${input.recordId}/`)) {
+    throw new ClinicalError("invalid");
+  }
   const ip = await clientIp();
 
   return runScoped(ctx, async (tx) => {
@@ -115,16 +134,55 @@ export async function createAttachmentDownloadUrl(
   path: string,
 ): Promise<string> {
   assertCan(ctx.role, "clinical_records:read");
-  if (!path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  // In this tenant's folder, and still in it once the URL layer has resolved
+  // the string: a `..` segment walks back out of any prefix, so the prefix test
+  // alone answers a question about the string rather than about the object.
+  // Weaker than the confirm-side rule because an imported original is several
+  // segments deep; see hasTraversalSegment.
+  if (!path.startsWith(`${ctx.tenantId}/`) || hasTraversalSegment(path)) {
+    throw new ClinicalError("invalid");
+  }
+
+  // SEC-attachment-download-by-path-skips-the-patient-scope. A live row in this
+  // tenant used to be enough, for any role that may read clinical records. It
+  // never asked WHOSE PATIENT the file belongs to, `attachments` has a
+  // tenant-only policy for staff, and a path reaches the browser in every
+  // attachment list, so it leaks the way an id does.
+  //
+  // A registo upload carries `clinical_record_id` and no `patient_id`; a
+  // patient-level document is the reverse. So the path must EITHER hang off a
+  // registo the caller can read - the joined row is filtered by
+  // `clinical_records`' OWN RLS (therapist: own patients; admin: own clinics),
+  // and the app-level therapist scope `getRecordDetail` applies is ANDed on top -
+  // OR be a patient-level document under the ficha's rule. The clinic scope is
+  // resolved before the transaction, as queries.ts does, because it is a read of
+  // its own. Every refusal is the same `not_found` as a path nobody holds.
+  const locIds = await viewerLocationScope(ctx);
+  const patientLevelScope =
+    therapistPatientScope(ctx, attachments.patientId) ??
+    (locIds ? patientLocationScope(attachments.patientId, locIds) : undefined);
+
   const live = await runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({ id: attachments.id })
       .from(attachments)
+      .leftJoin(clinicalRecords, eq(clinicalRecords.id, attachments.clinicalRecordId))
       .where(
         and(
           eq(attachments.storagePath, path),
           eq(attachments.tenantId, ctx.tenantId),
           isNull(attachments.deletedAt),
+          or(
+            and(
+              isNotNull(clinicalRecords.id),
+              therapistPatientScope(ctx, clinicalRecords.patientId),
+            ),
+            and(
+              isNull(attachments.clinicalRecordId),
+              isNotNull(attachments.patientId),
+              patientLevelScope,
+            ),
+          ),
         ),
       )
       .limit(1);
