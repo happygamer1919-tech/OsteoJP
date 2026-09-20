@@ -9,6 +9,7 @@ import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scop
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
+import { hasTraversalSegment, isSingleObjectUnder } from "./storage-path";
 
 // Bucket is provisioned via the Supabase owner dashboard (NOT in this PR) — see
 // the PR description. Files always go to Storage; never into Postgres.
@@ -17,6 +18,7 @@ export const ATTACHMENTS_BUCKET = "clinical-attachments";
 function safeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "file";
 }
+
 
 /**
  * Issue a one-time signed upload URL for a draft record's attachment. The
@@ -63,8 +65,23 @@ export async function confirmAttachment(
   },
 ): Promise<{ id: string }> {
   assertCan(ctx.role, "clinical_records:author");
-  // The path must live under this tenant's prefix — defense against a forged path.
-  if (!input.path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  // SEC-attachment-download-by-path-skips-the-patient-scope, the confirm half.
+  //
+  // The path must be one THIS record's own upload could have minted, not merely
+  // one somewhere inside the tenant. `createAttachmentUploadUrl` above builds
+  // exactly `${tenantId}/${recordId}/...`; `attachments.storage_path` carries
+  // no unique constraint; and the download's registo arm asks only whether the
+  // path hangs off a registo the caller may read. A tenant-only check therefore
+  // let a caller record a foreign object under a registo they legitimately
+  // hold, and read it back through that arm.
+  //
+  // The trailing slash is load-bearing: without it a record id that is a prefix
+  // of another record id would match that other record's folder. And the check
+  // is CONTAINMENT, not a prefix: see isSingleObjectUnder above for why a
+  // `startsWith` is defeated by a `..` the URL layer collapses later.
+  if (!isSingleObjectUnder(input.path, `${ctx.tenantId}/${input.recordId}/`)) {
+    throw new ClinicalError("invalid");
+  }
   const ip = await clientIp();
 
   return runScoped(ctx, async (tx) => {
@@ -117,7 +134,14 @@ export async function createAttachmentDownloadUrl(
   path: string,
 ): Promise<string> {
   assertCan(ctx.role, "clinical_records:read");
-  if (!path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+  // In this tenant's folder, and still in it once the URL layer has resolved
+  // the string: a `..` segment walks back out of any prefix, so the prefix test
+  // alone answers a question about the string rather than about the object.
+  // Weaker than the confirm-side rule because an imported original is several
+  // segments deep; see hasTraversalSegment.
+  if (!path.startsWith(`${ctx.tenantId}/`) || hasTraversalSegment(path)) {
+    throw new ClinicalError("invalid");
+  }
 
   // SEC-attachment-download-by-path-skips-the-patient-scope. A live row in this
   // tenant used to be enough, for any role that may read clinical records. It

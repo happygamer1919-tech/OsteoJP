@@ -94,6 +94,50 @@ const LOCATION_SCOPE = /ap\.location_id IN \(/;
 const REGISTO_READABLE = '"clinical_records"."id" is not null';
 const PATIENT_LEVEL = '"attachments"."clinical_record_id" is null';
 
+/**
+ * WHY THE THERAPIST ARM IS PINNED WHOLE AND NOT BY SUBSTRING.
+ *
+ * Every assertion in this file used to be `toContain`, and presence is not
+ * structure: flipping the outer `and(...)` that joins path, tenant, deleted_at
+ * and the two arms into an `or(...)` leaves EVERY substring exactly where it
+ * was, so the suite stayed green while the predicate had become "any live path
+ * in the tenant, OR ...". A REVIEWER mutation on 2026-09-20 demonstrated it.
+ *
+ * So the therapist's WHERE - the widest-privilege composition, and the one the
+ * finding is about - is compared in full, with runs of whitespace collapsed so
+ * only the SHAPE is under test and a reflow of the scope templates does not
+ * fail it. The other three cases keep the readable substring assertions; this
+ * one is the mutation gate they lean on.
+ */
+const squash = (s: string) => s.replace(/\s+/g, " ").trim();
+
+const THERAPIST_WHERE = squash(`
+  ("attachments"."storage_path" = $1
+   and "attachments"."tenant_id" = $2
+   and "attachments"."deleted_at" is null
+   and (("clinical_records"."id" is not null and (
+     EXISTS (
+       SELECT 1 FROM patients po
+       WHERE po.id = "clinical_records"."patient_id" AND po.created_by = $3
+     )
+     OR EXISTS (
+       SELECT 1 FROM appointments ap
+       WHERE (ap.patient_id = "clinical_records"."patient_id" OR ap.patient_2_id = "clinical_records"."patient_id")
+         AND (ap.practitioner_id = $4 OR ap.practitioner_2_id = $5)
+     )
+   )) or ("attachments"."clinical_record_id" is null and "attachments"."patient_id" is not null and (
+     EXISTS (
+       SELECT 1 FROM patients po
+       WHERE po.id = "attachments"."patient_id" AND po.created_by = $6
+     )
+     OR EXISTS (
+       SELECT 1 FROM appointments ap
+       WHERE (ap.patient_id = "attachments"."patient_id" OR ap.patient_2_id = "attachments"."patient_id")
+         AND (ap.practitioner_id = $7 OR ap.practitioner_2_id = $8)
+     )
+   ))))
+`);
+
 beforeEach(() => {
   vi.clearAllMocks();
   createSignedUrl.mockResolvedValue({ data: { signedUrl: "https://signed.example/a" }, error: null });
@@ -120,6 +164,16 @@ describe("createAttachmentDownloadUrl - the path must belong to something the ca
     expect(q.sql).toMatch(/po\.id = "clinical_records"\."patient_id"/);
     expect(q.sql).toMatch(/po\.id = "attachments"\."patient_id"/);
     expect(q.params).toEqual(expect.arrayContaining([THERAPIST_ID, PATH, TENANT]));
+  });
+
+  it("THE MUTATION GATE: the therapist's WHERE is pinned WHOLE, so a flipped and/or is caught", async () => {
+    // Presence is not structure. Substring assertions survive `and(...)` becoming
+    // `or(...)` anywhere in this predicate; this one does not. See the note above
+    // THERAPIST_WHERE.
+    mockLocations.mockResolvedValue(null);
+    const { wheres } = capture([{ id: "a-1" }]);
+    await createAttachmentDownloadUrl(therapist, PATH);
+    expect(squash(render(wheres[0]!).sql)).toBe(THERAPIST_WHERE);
   });
 
   it("an ADMIN assigned to a clinic is held to that clinic's patients on the patient-level arm", async () => {
@@ -152,6 +206,21 @@ describe("createAttachmentDownloadUrl - the path must belong to something the ca
     await expect(createAttachmentDownloadUrl(therapist, PATH)).rejects.toSatisfy(
       (e: unknown) => isClinicalError(e) && e.code === "not_found",
     );
+    expect(createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("a path that CLIMBS is refused before any read, even though its prefix is in-tenant", async () => {
+    // Defence in depth for the download, and weaker than the confirm rule on
+    // purpose: an imported original is several segments deep, so the question
+    // here is only whether a segment climbs. It matters because rows written
+    // before the confirm rule landed are still in the table, and because the
+    // importer is a second writer into the same column.
+    capture([{ id: "a-1" }]);
+    await expect(
+      createAttachmentDownloadUrl(therapist, `${TENANT}/records/../migration/fisiozero/x.pdf`),
+    ).rejects.toSatisfy((e: unknown) => isClinicalError(e) && e.code === "invalid");
+    expect(mockLocations).not.toHaveBeenCalled();
+    expect(mockRunScoped).not.toHaveBeenCalled();
     expect(createSignedUrl).not.toHaveBeenCalled();
   });
 

@@ -68,11 +68,13 @@ function suiteFiles(dir: string, out: string[] = []): string[] {
 const EXPECTED: Record<string, { calls: number; covered: boolean; why: string }> = {
   "lib/clinical/storage.ts": {
     calls: 1,
-    covered: false,
+    covered: true,
     why:
-      "UNCOVERED: no DB fixture. storage.download-scope.test.ts pins the rendered predicate of createAttachmentDownloadUrl " +
-      "(the patient-level arm, keyed on attachments.patient_id); the registo arm relies on clinical_records RLS through a " +
-      "LEFT JOIN, which only a real database can prove. A DIFFERENT COLUMN from every covered site.",
+      "storage.download-scope.db.test.ts - createAttachmentDownloadUrl against a real database under real claims. The " +
+      "registo arm is decided by clinical_records' OWN RLS on the LEFT JOIN, which is exactly what no rendered-SQL test " +
+      "could prove; the patient-level arm is keyed on attachments.patient_id. Ten arms: the treating and the " +
+      "non-treating therapist, the owner, an assigned admin, an unassigned admin, and the both-columns-set row an " +
+      "import produces.",
   },
   "lib/patients/list-queries.ts": {
     calls: 2,
@@ -80,10 +82,12 @@ const EXPECTED: Record<string, { calls: number; covered: boolean; why: string }>
     why: "location-scope-classes.db.test.ts - the data table and the stat strip, through scopeConditions",
   },
   "lib/patients/documents.ts": {
-    calls: 1,
+    calls: 2,
     covered: false,
     why:
-      "UNCOVERED: no DB fixture. documents.visibility-scope.test.ts pins the rendered predicate for all four " +
+      "UNCOVERED: no DB fixture. TWO sites: the four readers share one (documentVisibilityScope, keyed on " +
+      "attachments.patient_id) and softDeletePatientDocument has the other (keyed on patients.id, pinned by " +
+      "documents.soft-delete.test.ts). documents.visibility-scope.test.ts pins the rendered predicate for all four " +
       "Documentos readers (therapist, located receptionist, and an unassigned admin as the control), but it is " +
       "a rendered-SQL test, not a class fixture. A DIFFERENT COLUMN from every covered site: attachments.patient_id.",
   },
@@ -158,8 +162,8 @@ describe("patientLocationScope - the call sites are enumerated, not remembered",
         .filter((v) => v.covered === covered)
         .reduce((n, v) => n + v.calls, 0);
     expect({ covered: calls(true), uncovered: calls(false) }).toEqual({
-      covered: 7,
-      uncovered: 5,
+      covered: 8,
+      uncovered: 6,
     });
   });
 
