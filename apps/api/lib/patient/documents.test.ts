@@ -76,6 +76,10 @@ describe("getOwnDocumentLocation — self-scope", () => {
     await expect(getOwnDocumentLocation(PRINCIPAL, "d1")).resolves.toEqual({
       storagePath: `${PRINCIPAL.tenantId}/${PRINCIPAL.patientId}/x.pdf`,
       fileName: "declaracao.pdf",
+      // The stored type rides along for the PREVIEW endpoint, which refuses a
+      // type no browser renders before it signs anything. It stays internal,
+      // like the path: the list DTO has its own copy for display.
+      mimeType: "application/pdf",
     });
   });
 
@@ -124,7 +128,11 @@ describe("SR-62 PU-4: soft-deleted documents never reach the portal", () => {
     expect(q.params).toEqual(expect.arrayContaining([PRINCIPAL.patientId, PRINCIPAL.tenantId]));
   });
 
-  it("getOwnDocumentLocation (the download's lookup) filters deleted_at IS NULL", async () => {
+  // ANEXO-PREVIEW: this one lookup is now the download's AND the preview's, so
+  // this arm is what keeps a removed document out of BOTH. download.ts calls it
+  // from createOwnDocumentDownloadUrl and createOwnDocumentPreviewUrl alike;
+  // download-preview.test.ts pins that the preview really does go through it.
+  it("getOwnDocumentLocation (the download's and the preview's lookup) filters deleted_at IS NULL", async () => {
     const wheres = capturing([]);
     await expect(getOwnDocumentLocation(PRINCIPAL, "d1")).resolves.toBeNull();
     const q = dialect.sqlToQuery(wheres[0]!);

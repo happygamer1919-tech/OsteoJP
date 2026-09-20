@@ -5,6 +5,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { readPortalSession } from '@/lib/auth/session'
 import { apiBase } from '@/lib/api/base'
+import { isDocumentId, narrowPreviewResponse } from '@/lib/document-preview'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,6 +244,40 @@ export async function getDocumentDownloadUrl(id: string): Promise<string> {
   }
   const data = await res.json() as { url: string }
   return data.url
+}
+
+/** How a previewable document is rendered in place. */
+export type DocumentPreviewKind = 'pdf' | 'image'
+
+/**
+ * The same short-lived URL, served INLINE so it can be rendered in the page.
+ *
+ * A 404 here is ordinary rather than exceptional: it is what a document the
+ * browser cannot render returns, and the caller falls back to the download
+ * button. Every failure is one ApiError; the endpoint never says which.
+ */
+export async function getDocumentPreviewUrl(
+  id: string,
+): Promise<{ url: string; kind: DocumentPreviewKind }> {
+  // The id is client-controlled (this is reached from a server action), so it is
+  // refused unless it is a uuid BEFORE it becomes a path segment, and encoded
+  // anyway. Same single error as every other refusal.
+  if (!isDocumentId(id)) {
+    throw new ApiError(404, 'PREVIEW_FAILED', 'Document preview failed')
+  }
+  const res = await fetch(
+    `${apiBase()}/api/v1/patient/documents/${encodeURIComponent(id)}/preview`,
+    { headers: await apiHeaders(), cache: 'no-store' },
+  )
+  if (!res.ok) {
+    throw new ApiError(res.status, 'PREVIEW_FAILED', 'Document preview failed')
+  }
+  // url and kind, copied out. The body is never forwarded whole.
+  const preview = narrowPreviewResponse(await res.json())
+  if (!preview) {
+    throw new ApiError(502, 'PREVIEW_FAILED', 'Document preview failed')
+  }
+  return preview
 }
 
 // ─── Guest clinical intake (INTAKE-01), read only ─────────────────────────────
