@@ -66,6 +66,14 @@ function suiteFiles(dir: string, out: string[] = []): string[] {
  * the predicate into a query, it is the predicate.
  */
 const EXPECTED: Record<string, { calls: number; covered: boolean; why: string }> = {
+  "lib/clinical/storage.ts": {
+    calls: 1,
+    covered: false,
+    why:
+      "UNCOVERED: no DB fixture. storage.download-scope.test.ts pins the rendered predicate of createAttachmentDownloadUrl " +
+      "(the patient-level arm, keyed on attachments.patient_id); the registo arm relies on clinical_records RLS through a " +
+      "LEFT JOIN, which only a real database can prove. A DIFFERENT COLUMN from every covered site.",
+  },
   "lib/patients/list-queries.ts": {
     calls: 2,
     covered: true,
@@ -143,7 +151,7 @@ describe("patientLocationScope - the call sites are enumerated, not remembered",
         .reduce((n, v) => n + v.calls, 0);
     expect({ covered: calls(true), uncovered: calls(false) }).toEqual({
       covered: 7,
-      uncovered: 4,
+      uncovered: 5,
     });
   });
 

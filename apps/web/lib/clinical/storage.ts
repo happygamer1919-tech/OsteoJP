@@ -1,9 +1,11 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import { attachments, clinicalRecords } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scope";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
@@ -116,15 +118,47 @@ export async function createAttachmentDownloadUrl(
 ): Promise<string> {
   assertCan(ctx.role, "clinical_records:read");
   if (!path.startsWith(`${ctx.tenantId}/`)) throw new ClinicalError("invalid");
+
+  // SEC-attachment-download-by-path-skips-the-patient-scope. A live row in this
+  // tenant used to be enough, for any role that may read clinical records. It
+  // never asked WHOSE PATIENT the file belongs to, `attachments` has a
+  // tenant-only policy for staff, and a path reaches the browser in every
+  // attachment list, so it leaks the way an id does.
+  //
+  // A registo upload carries `clinical_record_id` and no `patient_id`; a
+  // patient-level document is the reverse. So the path must EITHER hang off a
+  // registo the caller can read - the joined row is filtered by
+  // `clinical_records`' OWN RLS (therapist: own patients; admin: own clinics),
+  // and the app-level therapist scope `getRecordDetail` applies is ANDed on top -
+  // OR be a patient-level document under the ficha's rule. The clinic scope is
+  // resolved before the transaction, as queries.ts does, because it is a read of
+  // its own. Every refusal is the same `not_found` as a path nobody holds.
+  const locIds = await viewerLocationScope(ctx);
+  const patientLevelScope =
+    therapistPatientScope(ctx, attachments.patientId) ??
+    (locIds ? patientLocationScope(attachments.patientId, locIds) : undefined);
+
   const live = await runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({ id: attachments.id })
       .from(attachments)
+      .leftJoin(clinicalRecords, eq(clinicalRecords.id, attachments.clinicalRecordId))
       .where(
         and(
           eq(attachments.storagePath, path),
           eq(attachments.tenantId, ctx.tenantId),
           isNull(attachments.deletedAt),
+          or(
+            and(
+              isNotNull(clinicalRecords.id),
+              therapistPatientScope(ctx, clinicalRecords.patientId),
+            ),
+            and(
+              isNull(attachments.clinicalRecordId),
+              isNotNull(attachments.patientId),
+              patientLevelScope,
+            ),
+          ),
         ),
       )
       .limit(1);
