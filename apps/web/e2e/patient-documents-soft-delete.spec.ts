@@ -97,6 +97,35 @@ test("Documentos Eliminar: a reason is required, the document leaves the tab, th
   const row = page.locator(`[data-document-id="${documentId}"]`);
   await expect(row).toContainText(fileName, { timeout: 12_000 });
 
+  /* ---- ANEXO-PREVIEW, THE POSITIVE CONTROL: a LIVE document previews ----
+   * A SECOND TAB, opened now and deliberately left STALE. It is the same actor,
+   * the same patient, the same document and the same button as the refusal arm
+   * further down: the only thing that changes between them is `deleted_at`. It is
+   * also the real case, two people at reception with the same ficha open.
+   *
+   * THE ASSERTION IS THE SIGNED URL AND WHAT IT SERVES, NOT WHAT THE <object>
+   * PAINTS. Headless Chromium has no PDF viewer, so the <object> falls back to
+   * its child, which is the SAME sentence the refusal shows. So the control reads
+   * the `data` attribute, fetches it, and requires the bytes that were uploaded;
+   * and "refused" below means role="alert", which the fallback does not carry. */
+  const PREVIEW_REFUSED = "Não foi possível pré-visualizar este documento. Utilize Abrir.";
+  const stale = await page.context().newPage();
+  await stale.goto(`/patients/${patientId}?tab=documentos`);
+  const staleRow = stale.locator(`[data-document-id="${documentId}"]`);
+  await expect(staleRow).toContainText(fileName, { timeout: 12_000 });
+  await staleRow.getByRole("button", { name: "Pré-visualizar", exact: true }).click();
+  const panel = staleRow.locator('object[type="application/pdf"]');
+  await expect(panel).toHaveCount(1, { timeout: 12_000 });
+  await expect(panel).toHaveAttribute("aria-label", fileName);
+  const signedUrl = await panel.getAttribute("data");
+  expect(signedUrl, "the preview panel carries no signed URL").toMatch(/\/object\/sign\/.+token=/);
+  const served = await stale.request.get(signedUrl!);
+  expect(served.status(), "the signed preview URL does not serve the live document").toBe(200);
+  expect((await served.body()).length).toBe(bytes.length);
+  await expect(stale.getByRole("alert").filter({ hasText: PREVIEW_REFUSED })).toHaveCount(0);
+  await staleRow.getByRole("button", { name: "Fechar", exact: true }).click();
+  await expect(panel).toHaveCount(0);
+
   /* ---- the dialog: no reason, no confirm ---- */
   await row.getByRole("button", { name: "Eliminar", exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Eliminar documento" });
@@ -110,6 +139,19 @@ test("Documentos Eliminar: a reason is required, the document leaves the tab, th
   await expect(confirm).toBeEnabled();
   await confirm.click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
+
+  /* ---- ANEXO-PREVIEW, THE REFUSAL: the STALE tab asks for the same preview ----
+   * Its row is still on screen, because nothing told that tab the document is
+   * gone. The click goes through the real server action, which must find no live
+   * row: no panel, no signed URL, and the refusal as an alert. Proven against the
+   * control above, same run: that button DID open this document a moment ago. */
+  await staleRow.getByRole("button", { name: "Pré-visualizar", exact: true }).click();
+  await expect(stale.getByRole("alert").filter({ hasText: PREVIEW_REFUSED })).toBeVisible({
+    timeout: 12_000,
+  });
+  await expect(stale.locator('object[type="application/pdf"]')).toHaveCount(0);
+  await expect(stale.locator(`img[alt="${fileName}"]`)).toHaveCount(0);
+  await stale.close();
 
   /* ---- GATE: gone from the tab, on a fresh read from the server ---- */
   await page.goto(`/patients/${patientId}?tab=documentos`);
