@@ -34,3 +34,29 @@ export function isDocumentPreviewable(mimeType: string | null | undefined): bool
   const mime = (mimeType ?? '').trim().toLowerCase()
   return mime !== '' && PREVIEWABLE_DOCUMENT_MIME.includes(mime)
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * A document id is a uuid and nothing else. The preview action is a server
+ * action, so its argument is whatever a session holder chooses to send, and it
+ * is about to become a path segment of a request made with their bearer token.
+ */
+export function isDocumentId(id: unknown): id is string {
+  return typeof id === 'string' && UUID_RE.test(id)
+}
+
+/**
+ * What goes back to the browser: `url` and `kind`, copied out one by one. The
+ * body is never forwarded whole, so a response that is not a preview (or is more
+ * than one) cannot ride along.
+ */
+export function narrowPreviewResponse(
+  body: unknown,
+): { url: string; kind: 'pdf' | 'image' } | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return null
+  const { url, kind } = body as { url?: unknown; kind?: unknown }
+  if (typeof url !== 'string' || url === '') return null
+  if (kind !== 'pdf' && kind !== 'image') return null
+  return { url, kind }
+}

@@ -35,8 +35,8 @@ const mockRunScoped = vi.mocked(runScoped);
 const mockAdmin = vi.mocked(createSupabaseAdminClient);
 
 const TENANT = "tenant-1";
-const PATIENT = "patient-9";
-const DOC = "doc-1";
+const PATIENT = "99999999-9999-4999-8999-999999999999";
+const DOC = "11111111-1111-4111-8111-111111111111";
 
 /** A therapist: holds patients:read, which is what the Documentos tab gates on. */
 const therapist: RequestContext = { tenantId: TENANT, role: "therapist", userId: "u-1" };
@@ -250,12 +250,28 @@ describe("SR-62 PU-4: a soft-deleted document is never previewed", () => {
     expect(dialect.sqlToQuery(wheres[0]!).sql).toContain('"attachments"."deleted_at" is null');
   });
 
+  it("refuses a malformed id BEFORE any query, like the download below it", async () => {
+    // Without the guard this reached Postgres, failed there with 22P02 and rolled
+    // a transaction back. The arm above is its control: a well-formed id DOES
+    // reach the query.
+    const { wheres, calls } = capturingTx([pdfRow]);
+
+    await expect(createPatientDocumentPreviewUrl(therapist, PATIENT, "../x")).rejects.toThrow();
+    await expect(createPatientDocumentPreviewUrl(therapist, "patient-9", DOC)).rejects.toThrow();
+    expect(wheres).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+  });
+
   it("POSITIVE CONTROL: the live sibling on the same patient still previews", async () => {
     // Without this, every arm above is satisfied by a preview that refuses
     // everything — which is the failure the refusals exist to catch.
     const { calls } = capturingTx([pdfRow]);
 
-    const out = await createPatientDocumentPreviewUrl(therapist, PATIENT, "doc-2");
+    const out = await createPatientDocumentPreviewUrl(
+      therapist,
+      PATIENT,
+      "22222222-2222-4222-8222-222222222222",
+    );
 
     expect(out.kind).toBe("pdf");
     expect(out.fileName).toBe("consentimento.pdf");

@@ -93,9 +93,10 @@ export function DocumentRow({
       {preview && (
         <div className="mt-3 border-t border-border pt-3">
           {preview.kind === 'image' ? (
-            // eslint-disable-next-line @next/next/no-img-element -- a 60s signed
-            // Storage URL, not a build-time asset: next/image would route a
-            // private, expiring object through the optimizer.
+            // A 60s signed Storage URL, not a build-time asset: next/image would
+            // route a private, expiring object through the optimizer. The directive
+            // is LAST so that it is the line directly above the element.
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={preview.url}
               alt={fileName}

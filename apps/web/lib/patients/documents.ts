@@ -318,6 +318,9 @@ export async function createPatientDocumentPreviewUrl(
   documentId: string,
 ): Promise<{ url: string; kind: DocumentPreviewKind; fileName: string }> {
   assertCan(ctx.role, "patients:read");
+  // Same guard as the download below: a malformed id is refused here, not by a
+  // Postgres 22P02 inside a transaction that then has to be rolled back.
+  if (!isUuid(documentId) || !isUuid(patientId)) throw new ClinicalError("invalid");
   const row = await runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
