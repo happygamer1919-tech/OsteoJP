@@ -87,12 +87,12 @@ test.describe("the timing panel is granted, not hidden", () => {
     test("every marker the negative arm looks for is present in an admin's payload", async ({
       page,
     }) => {
-      const payload = await payloadOf(page, "/patients");
+      const payload = await payloadOf(page, "/patients?medicao=1");
 
       for (const marker of PANEL_MARKERS) {
         expect(
           payload,
-          `"${marker}" is absent from an ADMIN's /patients payload. The negative arm below ` +
+          `"${marker}" is absent from an ADMIN's /patients?medicao=1 payload. The negative arm below ` +
             "asserts the ABSENCE of this same string, so with the control failing that arm " +
             "would pass while proving nothing. Either the panel stopped rendering for an " +
             "admin, or this label was renamed and this list was not.",
@@ -102,15 +102,33 @@ test.describe("the timing panel is granted, not hidden", () => {
       // And it is a real, reachable panel rather than four strings in a script.
       await expect(page.getByRole("region", { name: "Medição de desempenho" })).toHaveCount(1);
     });
+
+    // ON REQUEST, NEVER BY DEFAULT (owner ruling, 2026-09-19). The same admin,
+    // the same page, without the parameter: no panel, and no span in the payload,
+    // because `collectFor` was given `false` and opened no store. The arm above is
+    // its positive control: those markers DO appear once the admin asks.
+    test("an admin who did NOT ask gets no panel and no span", async ({ page }) => {
+      const payload = await payloadOf(page, "/patients");
+      await expect(page.getByRole("heading", { name: "Pacientes", exact: true })).toBeVisible();
+      for (const marker of PANEL_MARKERS) {
+        expect(payload, `"${marker}" reached an admin who did not ask for the panel`).not.toContain(
+          marker,
+        );
+      }
+      await expect(page.getByRole("region", { name: "Medição de desempenho" })).toHaveCount(0);
+    });
   });
 
   test.describe("as RECEPTION - the negative arm", () => {
     test.use({ storageState: STORAGE.reception });
 
-    test("a receptionist's /patients payload contains no panel and no span, at all", async ({
+    // THEY ASK, AND ARE STILL REFUSED. Since 2026-09-19 the panel needs
+    // `?medicao=1`, which anybody can type, so both negative arms type it: the
+    // parameter asks and grants nothing.
+    test("a receptionist's /patients?medicao=1 payload contains no panel and no span, at all", async ({
       page,
     }) => {
-      const payload = await payloadOf(page, "/patients");
+      const payload = await payloadOf(page, "/patients?medicao=1");
 
       // THE PREMISE, BEFORE ANY ABSENCE IS BELIEVED. A redirect to /login, or a
       // 403 body, contains none of the markers either - and would make every
@@ -143,7 +161,7 @@ test.describe("the timing panel is granted, not hidden", () => {
       // that exist today; this one fires on a span nobody has written yet. A
       // future query labelled `db:something-new` would be invisible to a
       // hard-coded list and is caught here on the day it is added.
-      const payload = await payloadOf(page, "/patients");
+      const payload = await payloadOf(page, "/patients?medicao=1");
       const leaked = [...payload.matchAll(/db:[a-z0-9-]+/gi)].map((m) => m[0]);
       expect(
         [...new Set(leaked)],
