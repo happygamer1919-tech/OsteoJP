@@ -19,7 +19,7 @@ import { PatientsFilterBar } from "./_components/patients-filter-bar";
 import { PatientsTable, type PatientRowView } from "./_components/patients-table";
 import { TimingPanel } from "../_components/timing-panel";
 import { collectFor } from "../../lib/perf/request-timing";
-import { mayReadTimings } from "../../lib/perf/audience";
+import { shouldMeasure } from "../../lib/perf/audience";
 
 export const dynamic = "force-dynamic";
 
@@ -129,7 +129,9 @@ export default async function PatientsPage({
   // and ONLY for a principal who may read the result - for anybody else it is
   // `await fn()` and no store exists, so `timed` awaits and returns and this is
   // the same code it was. The measurement must not become the thing measured.
-  const measured = await collectFor(mayReadTimings(ctx), async () =>
+  // ON REQUEST ONLY since 2026-09-19 (owner ruling): `shouldMeasure` is the role
+  // AND `?medicao=1`. Without the parameter this is `await fn()` for everybody.
+  const measured = await collectFor(shouldMeasure(ctx, sp), async () =>
     Promise.all([
       listPatientsPage(filters, ctx),
       getCachedPatientListStats(filters.locationId, ctx),
@@ -181,8 +183,9 @@ export default async function PatientsPage({
           8,413 rows of table, and on 2026-09-05 the owner went looking for it
           and did not find it. An instrument nobody can reach is the defect
           AI-02 moved the drift banner onto the reviewer's screen for. It is one
-          collapsed line, admin and owner only, and it carries id="medicao" so
-          the URL /patients#medicao reaches it directly.
+          collapsed line, admin and owner only AND ONLY ON REQUEST since 2026-09-19
+          (`?medicao=1`), and it carries id="medicao" so the URL
+          /patients?medicao=1#medicao reaches it directly.
 
           The audience check is already inside `measured`: `spans` exists only
           on the measured arm, so this element cannot be created for a principal

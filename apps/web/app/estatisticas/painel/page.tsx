@@ -11,7 +11,7 @@ import { s } from "@/lib/i18n";
 import { EstatisticasView } from "../estatisticas-view";
 import { TimingPanel } from "@/app/_components/timing-panel";
 import { collectFor } from "@/lib/perf/request-timing";
-import { mayReadTimings } from "@/lib/perf/audience";
+import { shouldMeasure } from "@/lib/perf/audience";
 
 export const metadata = { title: s["statistics.title"] };
 
@@ -51,7 +51,9 @@ export default async function EstatisticasPainelPage({ searchParams }: { searchP
   // and returns. The panel element is created only on the measured arm, so the
   // numbers are never serialised for anybody else. Measurement only: no compute
   // change, no migration.
-  const measured = await collectFor(mayReadTimings(actor), async () =>
+  // ON REQUEST ONLY since 2026-09-19 (owner ruling): `shouldMeasure` is the role
+  // AND `?medicao=1`. Without the parameter this is `await fn()` for everybody.
+  const measured = await collectFor(shouldMeasure(actor, sp), async () =>
     Promise.all([getStatistics(actor, filters), getAgendaOptions(actor)]),
   );
   const [stats, options] = measured.value;
@@ -63,8 +65,9 @@ export default async function EstatisticasPainelPage({ searchParams }: { searchP
           8,413 rows of table, and on 2026-09-05 the owner went looking for it
           and did not find it. An instrument nobody can reach is the defect
           AI-02 moved the drift banner onto the reviewer's screen for. It is one
-          collapsed line, admin and owner only, and it carries id="medicao" so
-          the URL /patients#medicao reaches it directly.
+          collapsed line, admin and owner only AND ONLY ON REQUEST since 2026-09-19
+          (`?medicao=1`), and it carries id="medicao" so the URL
+          /patients?medicao=1#medicao reaches it directly.
 
           The audience check is already inside `measured`: `spans` exists only
           on the measured arm, so this element cannot be created for a principal

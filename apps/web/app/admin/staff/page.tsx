@@ -22,7 +22,7 @@ import { StaffManageModal, type ScheduleDay } from "./StaffManageModal";
 import type { BlockView } from "../working-hours/TherapistBlocks";
 import { TimingPanel } from "@/app/_components/timing-panel";
 import { collectFor } from "@/lib/perf/request-timing";
-import { mayReadTimings } from "@/lib/perf/audience";
+import { shouldMeasure } from "@/lib/perf/audience";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -50,7 +50,7 @@ const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 export default async function StaffPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; q?: string; location?: string; t?: string }>;
+  searchParams: Promise<{ m?: string; q?: string; location?: string; t?: string; medicao?: string }>;
 }) {
   const actor = await requireRequestContext();
   // ==========================================================================
@@ -70,7 +70,10 @@ export default async function StaffPage({
   // `Promise.all` would be a FIX. This card is explicitly not allowed to ship
   // one, and doing it here would also destroy the measurement that justifies
   // it.
-  const measured = await collectFor(mayReadTimings(actor), async () => {
+  // ON REQUEST ONLY since 2026-09-19 (owner ruling): `shouldMeasure` is the role
+  // AND `?medicao=1`. Without the parameter this is `await fn()` for everybody.
+  const sp = await searchParams;
+  const measured = await collectFor(shouldMeasure(actor, sp), async () => {
     const staff = await listStaff(actor);
     const primaries = await listTherapistPrimaries(actor);
     // ALL tenant services — the primary dropdown lists the active ones (so a
@@ -102,7 +105,7 @@ export default async function StaffPage({
     locationScope,
     locations.map((l) => ({ id: l.id, label: l.name })),
   );
-  const { m, q, location, t: focusId } = await searchParams;
+  const { m, q, location, t: focusId } = sp;
   const query = (q ?? "").trim();
   // PL-14: a fixed viewer's clinic is applied whatever the URL says; a picker
   // viewer keeps only a request that names one of their own clinics.
@@ -232,8 +235,9 @@ export default async function StaffPage({
           8,413 rows of table, and on 2026-09-05 the owner went looking for it
           and did not find it. An instrument nobody can reach is the defect
           AI-02 moved the drift banner onto the reviewer's screen for. It is one
-          collapsed line, admin and owner only, and it carries id="medicao" so
-          the URL /patients#medicao reaches it directly.
+          collapsed line, admin and owner only AND ONLY ON REQUEST since 2026-09-19
+          (`?medicao=1`), and it carries id="medicao" so the URL
+          /patients?medicao=1#medicao reaches it directly.
 
           The audience check is already inside `measured`: `spans` exists only
           on the measured arm, so this element cannot be created for a principal
