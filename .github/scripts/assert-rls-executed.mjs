@@ -148,6 +148,18 @@ const SUITES = [
   // and read back by reception through RLS, and a therapist's own principal
   // reads zero rows under 0075's SELECT policy. A mock has no policy to refuse.
   { file: "reminder-log.db.test.ts", hard: true },
+  // SEC-attachment-download-by-path-skips-the-patient-scope, added 2026-09-20.
+  // Hard-required because the property it proves belongs to the DATABASE and to
+  // nothing the application can assert about itself: the registo arm of the
+  // attachment download is defended by `clinical_records`' OWN RLS deciding
+  // whether the LEFT JOINed row survives for the calling principal. The sibling
+  // storage.download-scope.test.ts renders the WHERE and can prove the
+  // predicate's SHAPE; it cannot prove that Postgres refuses the other
+  // therapist. Its negative control was RUN, not assumed: with the two scope
+  // arms removed from the predicate, 4 of its 10 cases go red against a real
+  // database. A silent skip would return the registo arm to being proven by a
+  // terminal transcript that ran once.
+  { file: "storage.download-scope.db.test.ts", hard: true },
   // LE-staff-delete-leaves-auth-user, added 2026-08-28. Hard-required because
   // the property it proves is a REFUSAL: that a portal patient's auth identity
   // is never reclaimable as a staff login. A silent skip would leave the safe
