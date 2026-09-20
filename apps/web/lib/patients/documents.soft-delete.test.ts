@@ -24,6 +24,10 @@ const { createSignedUrl } = vi.hoisted(() => ({ createSignedUrl: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: () => ({ storage: { from: () => ({ createSignedUrl }) } }),
 }));
+// The readers resolve the viewer's clinic scope before the transaction
+// (SEC-document-urls-skip-the-therapist-scope). Unassigned here: these arms are
+// about deleted_at, and documents.visibility-scope.test.ts owns the scope.
+vi.mock("@/lib/auth/viewer-locations", () => ({ viewerLocationScope: vi.fn(async () => null) }));
 vi.mock("@osteojp/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@osteojp/auth")>();
   // The REAL matrix runs; the spy only lets a test assert which capability was asked.
@@ -33,6 +37,7 @@ vi.mock("@osteojp/auth", async (importOriginal) => {
 import { attachments, patients } from "@osteojp/db";
 import { assertCan, can, ForbiddenError, type RequestContext } from "@osteojp/auth";
 import { runScoped } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { writeClinicalAudit } from "@/lib/clinical/audit";
 import { isClinicalError } from "@/lib/clinical/errors";
 import { assertPiiFreeAuditMetadata } from "@/lib/audit/metadata-contract";
@@ -384,6 +389,20 @@ describe("createPatientDocumentDownloadUrl — a live Documentos row, by id", ()
   it("a soft-deleted (or missing, or non-Documentos) id -> not_found, and nothing is signed", async () => {
     fakeTx(() => []);
     await expectCode(createPatientDocumentDownloadUrl(reception, DOC), "not_found");
+    expect(createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("a document id that is not a uuid -> invalid, BEFORE any read, the clinic-scope read included", async () => {
+    // The readers now resolve the viewer's clinic scope with a read of its own,
+    // ahead of the transaction. That read is mocked in this file, so
+    // `mockRunScoped` cannot see it: it is asserted by name. `reception` is the
+    // role it would actually run for. The arm above is the control: a well-formed
+    // id DOES reach the database.
+    vi.mocked(viewerLocationScope).mockClear();
+    mockRunScoped.mockClear();
+    await expectCode(createPatientDocumentDownloadUrl(reception, "../x"), "invalid");
+    expect(vi.mocked(viewerLocationScope)).not.toHaveBeenCalled();
+    expect(mockRunScoped).not.toHaveBeenCalled();
     expect(createSignedUrl).not.toHaveBeenCalled();
   });
 
