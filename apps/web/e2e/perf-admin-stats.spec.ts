@@ -190,7 +190,7 @@ test.describe.configure({ mode: "serial" });
 test("/patients as ADMIN: the seeded shape is the owner's, and the first click is measured", async ({
   page,
 }) => {
-  await page.goto("/patients");
+  await page.goto("/patients?medicao=1");
 
   // THE PREMISE, ASSERTED BEFORE ANY NUMBER IS BELIEVED. A database with the
   // right row count and the wrong distribution runs different filters over a
@@ -276,7 +276,7 @@ test("/patients repeated: a stat-strip MISS against a HIT, same page, same princ
    * yet is a guaranteed miss, and repeating it is a guaranteed hit. Both arms
    * are now deterministic instead of depending on a clock.
    */
-  await page.goto("/patients");
+  await page.goto("/patients?medicao=1");
   const locationId = await page
     .locator("select option[value]:not([value=''])")
     .first()
@@ -290,7 +290,7 @@ test("/patients repeated: a stat-strip MISS against a HIT, same page, same princ
 
   const readings: Reading[] = [];
   for (let i = 0; i < 4; i++) {
-    await page.goto(`/patients?location=${locationId}`);
+    await page.goto(`/patients?medicao=1&location=${locationId}`);
     readings.push(await readPanel(page, `/patients?location=… load ${i + 1}`));
   }
   report("HYPOTHESIS 2: stat-strip cache miss vs hit", readings);
@@ -316,9 +316,9 @@ test("/patients repeated: a stat-strip MISS against a HIT, same page, same princ
 
 test("/patients paged and filtered: the list query away from page one", async ({ page }) => {
   const readings: Reading[] = [];
-  await page.goto("/patients?page=40");
+  await page.goto("/patients?medicao=1&page=40");
   readings.push(await readPanel(page, "/patients?page=40"));
-  await page.goto("/patients?q=Silva");
+  await page.goto("/patients?medicao=1&q=Silva");
   readings.push(await readPanel(page, "/patients?q=Silva"));
   report("The list query under paging and search", readings);
 });
@@ -340,7 +340,7 @@ test("/patients paged and filtered: the list query away from page one", async ({
 test("/patients reloaded on the DEFAULT key: the shape the owner's reading has", async ({ page }) => {
   const readings: Reading[] = [];
   for (let i = 0; i < 4; i++) {
-    await page.goto("/patients");
+    await page.goto("/patients?medicao=1");
     readings.push(await readPanel(page, `/patients reload ${i + 1}`));
   }
   report("The owner's comparison: /patients, no query string, four loads", readings);
@@ -349,11 +349,11 @@ test("/patients reloaded on the DEFAULT key: the shape the owner's reading has",
 
 test("/admin/staff and /estatisticas: the other two surfaces the owner named", async ({ page }) => {
   const readings: Reading[] = [];
-  await page.goto("/admin/staff");
+  await page.goto("/admin/staff?medicao=1");
   readings.push(await readPanel(page, "/admin/staff"));
-  await page.goto("/estatisticas/painel");
+  await page.goto("/estatisticas/painel?medicao=1");
   readings.push(await readPanel(page, "/estatisticas/painel"));
-  await page.goto("/estatisticas/indicadores");
+  await page.goto("/estatisticas/indicadores?medicao=1");
   readings.push(await readPanel(page, "/estatisticas/indicadores"));
   report("Administracao and Estatisticas", readings);
 });
