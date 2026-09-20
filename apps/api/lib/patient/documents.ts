@@ -50,8 +50,20 @@ export function toDocumentDTO(row: DocumentRow): PatientDocument {
   };
 }
 
-/** Internal location of an own document, resolved for the download endpoint. */
-export type OwnDocumentLocation = { storagePath: string; fileName: string };
+/**
+ * Internal location of an own document, resolved for the download endpoint.
+ *
+ * `mimeType` rides along for the PREVIEW endpoint, which must refuse a type no
+ * browser renders before it signs anything. It is the stored column, never
+ * sniffed from the file name, and it stays internal like the path: the list DTO
+ * above already carries a mime type for display, and this is the copy the
+ * server makes its own decision on.
+ */
+export type OwnDocumentLocation = {
+  storagePath: string;
+  fileName: string;
+  mimeType: string | null;
+};
 
 /**
  * List the authenticated patient's own documents, newest first. Strictly
@@ -108,6 +120,7 @@ export async function getOwnDocumentLocation(
         tenantId: attachments.tenantId,
         storagePath: attachments.storagePath,
         fileName: attachments.fileName,
+        mimeType: attachments.mimeType,
       })
       .from(attachments)
       .where(
@@ -130,6 +143,6 @@ export async function getOwnDocumentLocation(
     ) {
       return null;
     }
-    return { storagePath: row.storagePath, fileName: row.fileName };
+    return { storagePath: row.storagePath, fileName: row.fileName, mimeType: row.mimeType };
   });
 }
