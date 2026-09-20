@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, like, ne, or, sql, type SQL } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import { attachments, patients } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
@@ -11,7 +11,8 @@ import { ClinicalError } from "@/lib/clinical/errors";
 import { normalizeDeleteReason, validateDocumentUpload } from "./document-validation";
 import { documentPreviewKind, type DocumentPreviewKind } from "./document-preview";
 import { importedDocumentPrefix } from "./imported-documents-path";
-import { therapistPatientScope } from "./scope";
+import { viewerLocationScope } from "../auth/viewer-locations";
+import { patientLocationScope, therapistPatientScope } from "./scope";
 
 // Staff-side PATIENT DOCUMENTS (administrative documents & declarations attached
 // to a patient, e.g. consent forms, identity docs, referrals). Reuses the
@@ -183,6 +184,38 @@ export async function confirmPatientDocument(
 }
 
 /**
+ * WHO MAY SEE THIS PATIENT'S FILES: the same answer `getPatient` gives.
+ *
+ * ===========================================================================
+ * WHY EVERY READER BELOW CARRIES IT (SEC-document-urls-skip-the-therapist-scope)
+ * ===========================================================================
+ * The permission matrix holds a therapist to their OWN patients and a located
+ * receptionist or admin to their clinics' patients. `getPatient` enforces it, so
+ * the ficha of a patient who is not yours answers 404. These readers used to
+ * gate on `patients:read`, the tenant and the row predicate, and on nothing
+ * about WHO the patient is, and `attachments` has a tenant-only policy for
+ * staff, so RLS did not catch it. `createPatientDocumentDownloadUrl` is reached
+ * from a server action with a document id alone: a therapist holding the uuid of
+ * another therapist's patient's document was handed a signed URL for it.
+ *
+ * It is resolved BEFORE the scoped transaction, exactly as queries.ts does,
+ * because `viewerLocationScope` runs a read of its own. The predicate keys on
+ * `attachments.patient_id`, so it sits inside the one WHERE each reader already
+ * has: a document you may not see is a row the query does not return, and every
+ * refusal stays the same `not_found`.
+ *
+ * `undefined` means unrestricted (owner, or an admin or receptionist with no
+ * clinic assignment), and `and()` drops it.
+ */
+async function documentVisibilityScope(ctx: RequestContext): Promise<SQL | undefined> {
+  const locIds = await viewerLocationScope(ctx);
+  return (
+    therapistPatientScope(ctx, attachments.patientId) ??
+    (locIds ? patientLocationScope(attachments.patientId, locIds) : undefined)
+  );
+}
+
+/**
  * List a patient's documents for the Documentos tab, newest first. The
  * patient-level rows (clinical_record_id IS NULL), PLUS every document the
  * Fisiozero import brought in for this patient even when it is linked to a
@@ -196,6 +229,7 @@ export async function listPatientDocuments(
   patientId: string,
 ): Promise<PatientDocumentItem[]> {
   assertCan(ctx.role, "patients:read");
+  const visible = await documentVisibilityScope(ctx);
   return runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
@@ -213,6 +247,7 @@ export async function listPatientDocuments(
           documentosRowSql(ctx.tenantId),
           eq(attachments.tenantId, ctx.tenantId),
           isNull(attachments.deletedAt),
+          visible,
         ),
       )
       .orderBy(desc(attachments.createdAt));
@@ -243,6 +278,7 @@ export async function listImportedPatientDocuments(
   excludeRecordId: string,
 ): Promise<PatientDocumentItem[]> {
   assertCan(ctx.role, "patients:read");
+  const visible = await documentVisibilityScope(ctx);
   return runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
@@ -261,6 +297,7 @@ export async function listImportedPatientDocuments(
           like(attachments.storagePath, `${importedDocumentPrefix(ctx.tenantId)}%`),
           or(isNull(attachments.clinicalRecordId), ne(attachments.clinicalRecordId, excludeRecordId)),
           isNull(attachments.deletedAt),
+          visible,
         ),
       )
       .orderBy(asc(attachments.fileName));
@@ -321,6 +358,7 @@ export async function createPatientDocumentPreviewUrl(
   // Same guard as the download below: a malformed id is refused here, not by a
   // Postgres 22P02 inside a transaction that then has to be rolled back.
   if (!isUuid(documentId) || !isUuid(patientId)) throw new ClinicalError("invalid");
+  const visible = await documentVisibilityScope(ctx);
   const row = await runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
@@ -340,6 +378,7 @@ export async function createPatientDocumentPreviewUrl(
           documentosRowSql(ctx.tenantId),
           eq(attachments.tenantId, ctx.tenantId),
           isNull(attachments.deletedAt),
+          visible,
         ),
       )
       .limit(1);
@@ -383,6 +422,7 @@ export async function createPatientDocumentDownloadUrl(
 ): Promise<string> {
   assertCan(ctx.role, "patients:read");
   if (!isUuid(documentId)) throw new ClinicalError("invalid");
+  const visible = await documentVisibilityScope(ctx);
   const storagePath = await runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({ storagePath: attachments.storagePath })
@@ -394,6 +434,7 @@ export async function createPatientDocumentDownloadUrl(
           isNotNull(attachments.patientId),
           documentosRowSql(ctx.tenantId),
           isNull(attachments.deletedAt),
+          visible,
         ),
       )
       .limit(1);
