@@ -18,7 +18,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * byte separated from client hydration.
  *
  * ==========================================================================
- * IT IS OFF FOR EVERYBODY EXCEPT AN ADMIN, AND "OFF" MEANS NO STORE AT ALL
+ * IT IS OFF FOR EVERYBODY EXCEPT AN ADMIN WHO ASKS, AND "OFF" MEANS NO STORE AT ALL
  * ==========================================================================
  * `collectFor()` is the ONLY thing that opens a store and it takes the audience
  * decision as its FIRST ARGUMENT, so a caller cannot forget to make one. With
