@@ -36,6 +36,34 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 - Import tooling exit codes are fixed: `0` OK, `1` FAILED, `2` BAD_INVOCATION. Every import script conforms.
 - Ratified 2026-08-24. Before this, both were carried between dispatches in prose and a stateless terminal could not derive either — the failure PORTAL-REHYDRATE §4.11 exists to end.
 
+## Owner rulings, 2026-09-19: ONE LANE (SOLO)
+
+Recorded on the board as **SR-64 to SR-69** (`docs/board/portal-board.json`, `rulings[]`), which is the register. They **supersede the lane rules where they conflict** (the owner's words): SR-63's separation of author and applier is superseded by SR-64, and SR-63 is marked, not deleted. BLUE, PURPLE, GREEN and STEWARD are replaced by one lane, SOLO.
+
+**R1 to R5, the tiers and the standing nevers below are the owner's sentences, character for character, from his dispatch of that date.** None of those lines is a paraphrase. The paragraph above and the last subsection are SOLO's record and say so.
+
+- R1 Single lane. "Author, merger, applier are three lanes" is replaced by R2 to R5.
+- R2 Every PR arms `gh pr merge --auto --squash` at open. GitHub is the watcher. Never poll in a loop. Held migration PRs arm only after their apply is proven.
+- R3 WIP cap: at most ONE PR in checks plus ONE being built. Never open a third. When a merge lands, run update-branch on the other (merge main in, no rebase, no force push), and recompute any file carrying a computed total.
+- R4 REVIEWER: before arming any Tier B or Tier C PR, spawn a fresh-context subagent given ONLY the diff and the card acceptance. It returns PASS or a defect list. It never sees your reasoning. Defects are fixed and re-reviewed. Its verdict is pasted in the PR body.
+- R5 If the harness classifier refuses a merge, an arm or an apply: do not retry, do not rephrase, do not route around it. Log it, continue with other work, list it under OWNER CLICKS in the report.
+
+TIERS (your self-merge filter):
+
+- A - UI, tests, docs, board, bug fixes touching no schema, RLS, grants, auth path, send path or money. Self-merge on green.
+- B - server actions, data access, reminder logic, auth-adjacent app code, anything under .github/workflows or any required-check script. REVIEWER PASS plus green. A gate change must show, in the same run, that a seeded real failure still fails.
+- C - migrations, RLS policies, grants, production data ops. Ruled items only (0090, 0091, 0092, 0093, NESA capacity, STAFF-10): full apply protocol below. Anything NEW in this tier: author, rehearse on the throwaway DB, hold unarmed with a question block (blocked_what, options, recommendation), move on.
+- D - never autonomous: patient-facing copy, clinical, fiscal, legal or vendor decisions, env vars and flags (REMINDERS_*), secrets, deleting or rewriting production rows outside STAFF-10, branch protection, removing or loosening a required check. Card it with a question block.
+
+Standing nevers: clinical authorship never moves; clinical_records_enforce_immutability never bypassed; registos never get a delete button; no psql allow rule; no rebase; no force push; no credential value printed, echoed or logged.
+
+### SOLO's record, not the owner's text
+
+- **The ruled Tier C list is CLOSED.** It is those six items and nothing else. The Fisiozero production import is not on it and stays owner-executed under "Patient data isolation" and "Import execution rules" above, which these rulings do not touch. "It has a ruling somewhere" does not put an item on the list.
+- **Which content each number means** (the bindings are the owner's, from the same dispatch: its items D3, D6, D7 and D8 name each number with its PR), recorded because the numbers are the authorisation and older specs used them differently: `0090` is `0090_nesa_patient_name_for_therapists` (PR #1390), `0091` is CARE-01's care-team migration (PR #1374), `0092` is RGPD-01's consent table (PR #1399), `0093` is the TRUNCATE, TRIGGER, REFERENCES revoke (PR #1397). `docs/design/SPEC-0090-comms-02-reminder-log.md` and `SPEC-0091-registo-annulment.md` carry those numbers in their file names from before this order was ruled; they are NOT the ruled items.
+- **"Full apply protocol below"** points at the dispatch, which is not reproduced here. The protocol as committed lives in SR-50, SR-51, SR-58 and SR-59 on the board, in `docs/runbook-prod-migrations.md` (`verified-migrate.mjs` is compulsory), and in each `docs/migration-apply-NNNN.md`.
+- **What R1 did not change, measured on 2026-09-19.** The first production apply attempted under R1 (0090, stage 1, after a 12 of 12 production pre-check with pending exactly 1) was refused by the harness classifier, reason "Production Deploy", and under R5 was not retried. Until the owner rules otherwise, one lane authors, reviews and merges, and the owner applies.
+
 ## Stack
 - Next.js 16 App Router, TypeScript strict
 - shadcn/ui + Tailwind v4
