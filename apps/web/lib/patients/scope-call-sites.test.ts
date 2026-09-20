@@ -71,6 +71,14 @@ const EXPECTED: Record<string, { calls: number; covered: boolean; why: string }>
     covered: true,
     why: "location-scope-classes.db.test.ts - the data table and the stat strip, through scopeConditions",
   },
+  "lib/patients/documents.ts": {
+    calls: 1,
+    covered: false,
+    why:
+      "UNCOVERED: no DB fixture. documents.visibility-scope.test.ts pins the rendered predicate for all four " +
+      "Documentos readers (therapist, located receptionist, and an unassigned admin as the control), but it is " +
+      "a rendered-SQL test, not a class fixture. A DIFFERENT COLUMN from every covered site: attachments.patient_id.",
+  },
   "lib/patients/queries.ts": {
     calls: 3,
     covered: true,
@@ -143,7 +151,7 @@ describe("patientLocationScope - the call sites are enumerated, not remembered",
         .reduce((n, v) => n + v.calls, 0);
     expect({ covered: calls(true), uncovered: calls(false) }).toEqual({
       covered: 7,
-      uncovered: 4,
+      uncovered: 5,
     });
   });
 

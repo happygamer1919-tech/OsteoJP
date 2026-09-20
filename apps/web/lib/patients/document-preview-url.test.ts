@@ -24,9 +24,11 @@ vi.mock("@/lib/clinical/audit", () => ({
   clientIp: vi.fn(async () => null),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn() }));
+vi.mock("@/lib/auth/viewer-locations", () => ({ viewerLocationScope: vi.fn(async () => null) }));
 
 import { runScoped } from "@/lib/auth/context";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { attachments } from "@osteojp/db";
 import { createPatientDocumentPreviewUrl } from "./documents";
 import type { RequestContext } from "@osteojp/auth";
@@ -255,11 +257,16 @@ describe("SR-62 PU-4: a soft-deleted document is never previewed", () => {
     // a transaction back. The arm above is its control: a well-formed id DOES
     // reach the query.
     const { wheres, calls } = capturingTx([pdfRow]);
+    vi.mocked(viewerLocationScope).mockClear();
 
     await expect(createPatientDocumentPreviewUrl(therapist, PATIENT, "../x")).rejects.toThrow();
     await expect(createPatientDocumentPreviewUrl(therapist, "patient-9", DOC)).rejects.toThrow();
     expect(wheres).toHaveLength(0);
     expect(calls).toHaveLength(0);
+    // The clinic scope is resolved by a read of its own, BEFORE the transaction.
+    // It is mocked in this file, so `wheres` cannot see it: asserted by name, or a
+    // later edit could move it above the uuid guard and this arm would stay green.
+    expect(vi.mocked(viewerLocationScope)).not.toHaveBeenCalled();
   });
 
   it("POSITIVE CONTROL: the live sibling on the same patient still previews", async () => {
