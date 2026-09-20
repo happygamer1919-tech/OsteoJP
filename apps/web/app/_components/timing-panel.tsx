@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Span } from "@/lib/perf/request-timing";
 
 /**
@@ -115,6 +115,37 @@ export function classifyNavigation(entryUrl: string | null, currentUrl: string):
   return a === b ? "document" : "soft-nav";
 }
 
+/**
+ * ONE DOCUMENT, ONE DOCUMENT LOAD, AND THE FIRST PANEL INSTANCE IS THE ONLY ONE
+ * THAT CAN HAVE SEEN IT. Module scope lives exactly as long as the document
+ * does, so this is "has any panel in this document already read the navigation
+ * entry". Without it a panel that UNMOUNTED and mounted again on the same URL
+ * (page two drops `?medicao=1`, then Back) finds the entry's URL equal to the
+ * current one and reports "carregamento completo" with `performance.now()`, the
+ * age of the tab, as the total. The URL rule alone cannot tell those apart.
+ */
+let documentLoadClaimed = false;
+
+/**
+ * Never a document load: either a payload that reached an already-mounted panel,
+ * or a panel instance that is not the first in this document (a re-mount). In
+ * the second case, and after a search is typed and cleared, `documentUrl` can
+ * EQUAL `currentUrl`; the refusal then names the URL once (see `sameUrl`).
+ */
+function readAfterMount(): ClientReading {
+  const nav = performance.getEntriesByType("navigation")[0] as
+    | PerformanceNavigationTiming
+    | undefined;
+  if (!nav) return { kind: "no-entry" };
+  return { kind: "soft-nav", documentUrl: nav.name, currentUrl: window.location.href };
+}
+
+/** Equal ignoring the hash: "X, não a X" would read as a contradiction. */
+function sameUrl(a: string, b: string): boolean {
+  const strip = (u: string) => u.split("#")[0];
+  return strip(a) === strip(b);
+}
+
 function readClientTiming(): ClientReading {
   const nav = performance.getEntriesByType("navigation")[0] as
     | PerformanceNavigationTiming
@@ -167,10 +198,31 @@ export function TimingPanel({
   // lint rule refuses - correctly. Deferring the READ instead would have been
   // the easy fix and the wrong one: it would move the measurement by a frame
   // and quietly report a different quantity under the same label.
+  // ONLY THE SPANS THIS INSTANCE MOUNTED WITH CAN BELONG TO A DOCUMENT LOAD.
+  // This effect used to run once, at mount. A navigation that keeps the route
+  // (the patients search box `router.replace`s the same page with a new query)
+  // keeps this component instance too, so the mount-time reading stayed on screen
+  // saying "carregamento completo" above server spans from a request it never
+  // measured: LE-timing-panel-client-numbers-lie-on-a-soft-navigation, one door
+  // over. A new `spans` array is a new server payload, and a payload that arrives
+  // after mount arrived without a document, whatever the URL now says.
+  // THAT IS NECESSARY AND NOT SUFFICIENT: the instance must also be the FIRST in
+  // this document (`documentLoadClaimed`). The answer is kept per instance, so
+  // Strict Mode's second effect run reuses it instead of finding the claim taken
+  // by its own first run.
+  const mountedWith = useRef(spans);
+  const isFirstInDocument = useRef<boolean | null>(null);
   useEffect(() => {
-    const reading = readClientTiming();
+    if (isFirstInDocument.current === null) {
+      isFirstInDocument.current = !documentLoadClaimed;
+      documentLoadClaimed = true;
+    }
+    const reading =
+      spans === mountedWith.current && isFirstInDocument.current
+        ? readClientTiming()
+        : readAfterMount();
     queueMicrotask(() => setClient(reading));
-  }, []);
+  }, [spans]);
 
   const miss = spans.some((s) => s.name === "stat-strip:MISS");
   const dbTotal = round(
@@ -282,8 +334,15 @@ export function TimingPanel({
                       Sem medição do cliente: chegou aqui por navegação interna.
                     </strong>{" "}
                     Os tempos do browser pertencem ao documento carregado em{" "}
-                    <code>{client.documentUrl}</code>, não a <code>{client.currentUrl}</code>, e seriam
-                    lidos como se fossem desta página.{" "}
+                    <code>{client.documentUrl}</code>
+                    {sameUrl(client.documentUrl, client.currentUrl) ? (
+                      ", numa navegação anterior a esta"
+                    ) : (
+                      <>
+                        , não a <code>{client.currentUrl}</code>
+                      </>
+                    )}
+                    , e seriam lidos como se fossem desta página.{" "}
                     <strong>
                       Recarregue esta página (ou escreva o endereço) para obter uma medição válida.
                     </strong>{" "}
