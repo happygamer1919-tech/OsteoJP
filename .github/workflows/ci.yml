@@ -53,6 +53,34 @@ jobs:
       - name: Test scripts
         run: pnpm test:scripts
 
+      # THE SECRET SCANNER, AND WHY IT IS HERE RATHER THAN ONLY IN A HOOK.
+      #
+      # scripts/secret-scan.mjs has run since 2026-09-14 from
+      # scripts/git-hooks/pre-push. A hook is not a control this repository
+      # owns: git runs it only when `core.hooksPath` points at it, which is a
+      # per-machine setting made by hand, per clone, and nothing verifies that
+      # anyone has made it. A push from a machine that has not configured it is
+      # scanned by nothing. Measured 2026-09-20: `grep -rn secret-scan .github/`
+      # returned nothing, so CI had no view of this at all.
+      #
+      # INSIDE THIS JOB ON PURPOSE, for the same reason `Test scripts` above is:
+      # a separate job is a separate check NAME, and a name that is not in the
+      # REQUIRED set cannot block a merge until somebody adds it in the GitHub
+      # UI. A step in a job that is already required blocks the moment it is red
+      # and needs no owner click.
+      #
+      # THE base..head RANGE, not the default `origin/main...HEAD`: on a
+      # pull_request event the checked-out ref is a merge commit, and these two
+      # SHAs are the range GitHub itself says the PR covers. The checkout at the
+      # top of this job sets `fetch-depth: 0`, which is what makes both
+      # reachable - a shallow clone would diff nothing and pass having read
+      # nothing, which is the vacuous-green shape this repo keeps rediscovering.
+      #
+      # Not piped and not `||`-guarded: the exit code IS the gate. A finding
+      # names the file, the line, the pattern and the length, never the value.
+      - name: Secret scan (added lines on this PR)
+        run: node scripts/secret-scan.mjs --range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+
       # Does the BOARD still agree with the repository? The validator next door
       # only asks whether it is well-formed. Four cards have now gone stale in the
       # same direction - work shipped, card still saying todo - and the fourth set
