@@ -4615,3 +4615,43 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Header only.** 26 lines added, 0 removed. The body is byte-identical to PR #1289 (sha256 `3457f243…`, recorded in the header); the file is now `6414257f…`. The four id constants that `scripts/staff-10-data-op.test.mjs` and `scripts/staff-11-jp-one-clinic-check.test.mjs` read from it are untouched.
 - **Not added: a runtime refusal.** The ruling asked for a header, and the clash precondition already stops the script before any write.
 - **Card `STAFF-10-jp-split-phase-2-reassignment-script`** now names the data op as the rewrite and closes on that op's stage 3 transcript, not on the old script's APPLY. The data op has not run.
+
+## 2026-09-20 - the patient-level Notas composer applies the same patient visibility rule its appointment twin does
+
+- **What changed.** `appendPatientNoteAction` (`apps/web/lib/patients/actions.ts`) now prechecks
+  `getPatient(patientId, { includeDeleted: true })` between its length guard and its insert, and
+  returns `{ ok: false }` when that answers `null`. One call, no signature change, no call-site edit.
+- **Supersedes the last bullet of the 2026-07-24 W12-13 entry above**, which recorded in writing
+  that `appendPatientNoteAction`'s gating was left untouched because it was not that PR's
+  regression. It is now the same gate its appointment-level twin has carried since that entry.
+- **Why the app layer is where this lives.** `patientId` arrives FROM THE CLIENT here (the profile
+  Notas composer and the dashboard Notas Rápidas patient-mode card post it; it is not derived
+  server-side the way `appendAppointmentNoteAction` derives it from the appointment), and the
+  INSERT is tenant-RLS only: `0026_appointment_notes.sql` `appointment_notes_tenant_insert` checks
+  `tenant_id` and nothing else, and `0050`/`0084` are tenant-only for UPDATE and DELETE too. The
+  capability gate is not a second line either: `patients:write` is held by owner, admin, therapist
+  and reception alike (`packages/auth/permissions.ts`), so `assertCan` passes for every staff role.
+  `getPatient` (`apps/web/lib/patients/queries.ts`) is the one place `therapistPatientScope` and the
+  PL-09 `patientLocationScope` are composed, so a single call applies both narrowings.
+- **`includeDeleted: true`, deliberately**, matching all five sibling note paths: it keeps the check
+  to the scope narrowing ALONE, so an unscoped role stays tenant-wide and a soft-deleted patient's
+  notes stay writable to whoever could already see them.
+- **Authorship rules untouched.** The insert block is byte-identical: `authorUserId: ctx.userId`,
+  `appointmentId: null`, body still trimmed. The PL-13 ruling that any `patients:write` holder may
+  edit or delete a visible patient's note is not revisited here.
+- **No audit_log change, on purpose.** Note create and note edit still write no audit row while
+  `deleteNoteAction` does. `0050_appointment_notes_editable.sql` frames notes as internal staff
+  communication rather than clinical records, so whether hard rule 6 extends to them is an owner
+  call and is logged as a question, not decided here.
+- **App-layer, matching its sibling.** This brings the patient-level composer into line with
+  `appendAppointmentNoteAction`, which has carried the same precheck since W10-04: the same rule,
+  in the same place, applied one axis over. Whether the narrowing should also exist at the
+  database layer is the open follow-up Q-W10-04-1 (`apps/web/lib/patients/scope.ts`).
+- **Measured.** `apps/web/lib/patients/actions.append-patient-note.test.ts` is new, 6 arms, and was
+  run RED before the change: 3 failed, 3 passed, the 3 that passed being the positive controls
+  (own patient written in the same run, reception unaffected, blank content still short-circuits).
+  Green after: 6/6. Whole `lib/patients` directory 435 pass / 75 skipped, unchanged.
+- **One behavioural edge, stated rather than discovered later.** `getPatient` asserts
+  `patients:read` internally, so a role holding `patients:write` WITHOUT `patients:read` would throw
+  here instead of returning `{ ok: false }`. No such role exists today (all four grant both), and
+  every sibling note action already has this same property.

@@ -676,6 +676,13 @@ export async function getPatientContraindications(
  * tenant from JWT. Used by the profile Notas composer and the dashboard Notas
  * Rápidas patient-mode quick-note. The legacy `patient_note_revisions` writer is
  * retired here; its historical rows stay readable (merged in `listPatientNotes`).
+ *
+ * SCOPE: `patientId` arrives FROM THE CLIENT here (the composer posts it), and
+ * the INSERT is tenant-RLS only (0026 `appointment_notes_tenant_insert` checks
+ * `tenant_id` and nothing else), so patient visibility is prechecked in this
+ * action with `getPatient` — the same gate `appendAppointmentNoteAction`,
+ * `editAppointmentNoteAction` and `deleteNoteAction` carry. Authorship is
+ * unchanged: the author is still the current user.
  */
 export async function appendPatientNoteAction(
   patientId: string,
@@ -685,6 +692,22 @@ export async function appendPatientNoteAction(
   assertCan(ctx.role, "patients:write");
   const text = content.trim();
   if (!patientId || text.length === 0 || text.length > 5000) return { ok: false };
+  // W10-04 + PL-09 scope, the gate every note sibling in this file already
+  // carries (append-on-appointment, edit, delete). `patientId` is the CLIENT's
+  // here — it is not derived server-side — and the INSERT below is tenant-RLS
+  // only, so visibility is prechecked with `getPatient`, which applies
+  // `therapistPatientScope` AND the PL-09 `patientLocationScope` exactly as the
+  // profile page gate does: a patient the caller may not see returns null →
+  // deny, nothing written. `includeDeleted` keeps the check to the scope
+  // narrowing ALONE, matching the sibling paths, so owner (and an unassigned
+  // admin/reception) stay tenant-wide and a soft-deleted patient's notes stay
+  // writable to whoever could already see them.
+  //
+  // Order is deliberate: capability → input validation → visibility → write, the
+  // same order `appendAppointmentNoteAction` uses. The refusal is a silent
+  // `{ ok: false }` carrying no patient identifier and no note text.
+  const patient = await getPatient(patientId, { includeDeleted: true });
+  if (!patient) return { ok: false };
   await runScoped(ctx, async (tx) => {
     await tx.insert(appointmentNotes).values({
       tenantId: ctx.tenantId, // NOT NULL + RLS WITH CHECK
