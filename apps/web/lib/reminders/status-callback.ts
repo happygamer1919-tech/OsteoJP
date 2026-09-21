@@ -56,6 +56,14 @@ export const STATUS_CALLBACK_PATH = "/api/webhooks/twilio/status" as const;
  * Trailing slashes are stripped so a variable set as `https://app.example/` and
  * one set as `https://app.example` produce the same URL rather than one with a
  * doubled slash that Twilio would sign differently.
+ *
+ * ORIGIN AND PATH, AND NOTHING ELSE. Twilio's webhook connection overrides are
+ * carried as a URL FRAGMENT, so this is where one would go - and that is
+ * exactly why none is here. This URL rides on EVERY `messages.create` in the
+ * app (`clients.ts`), so a parameter the Messages API turned out to reject
+ * would fail the send itself and take the MESSAGE down with the status, which
+ * inverts this file's own rule. `docs/QUESTIONS.md` carries the open question
+ * and what it would need before it could be answered.
  */
 export function statusCallbackUrl(env: EnvSource = process.env): string | null {
   const base = env[STATUS_CALLBACK_BASE_VAR]?.trim();

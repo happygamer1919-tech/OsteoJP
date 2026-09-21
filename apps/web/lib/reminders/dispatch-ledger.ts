@@ -30,18 +30,26 @@ import { withReminderTenantContext } from "./context";
  * the provider said afterwards about one specific handover.
  *
  * ==========================================================================
- * IT NEVER THROWS INTO THE SEND PATH
+ * `recordDispatch` NEVER THROWS INTO THE SEND PATH. `recordProviderStatus` DOES
  * ==========================================================================
- * Recording that we sent something must not be able to stop us sending it. Both
- * writers swallow their own failure and log it, and the log carries IDS ONLY
- * (rule 7) — no recipient, no body, no provider payload.
+ * Recording that we sent something must not be able to stop us sending it, so
+ * `recordDispatch` swallows its own failure and logs it, IDS ONLY (rule 7) — no
+ * recipient, no body, no provider payload.
  *
  * This is the one place in the reminder path where a bare catch is correct, and
  * it is worth saying why, because PORTAL-REHYDRATE 1.3 forbids exactly this
  * shape on a VERDICT path. This is not a verdict path: the verdict is the
  * DispatchOutcome the caller already has, and it is returned whether or not the
  * row lands. A ledger that could veto the thing it observes would be a worse
- * instrument than no ledger.
+ * instrument than no ledger. `dispatch.ts:365` points at this paragraph for
+ * exactly that rule, and it still says it.
+ *
+ * NONE OF THAT COVERS `recordProviderStatus`. It has one caller, the status
+ * webhook, and that write is the entire reason the webhook exists: there is no
+ * send there for a swallow to protect, only a delivery report to lose. It
+ * throws, and the route decides, logs and refuses, so a write that did not
+ * happen is reported as a failure instead of as a success. The route's header
+ * says what that refusal does and does not buy.
  *
  * ==========================================================================
  * NO RECIPIENT COLUMN, NOT EVEN A HASH
@@ -119,6 +127,10 @@ export async function recordDispatch(row: DispatchLedgerRow): Promise<void> {
  * resolves the tenant through 0075's SECURITY DEFINER function from a value WE
  * wrote, and re-stating it in the WHERE means a wrong resolution updates
  * nothing instead of updating somebody else's row.
+ *
+ * IT THROWS, unlike `recordDispatch` above it. See the header: its one caller
+ * is a webhook whose whole job is this write, so the failure is the caller's to
+ * answer for and not this function's to hide.
  */
 export async function recordProviderStatus(args: {
   tenantId: string;
@@ -126,28 +138,21 @@ export async function recordProviderStatus(args: {
   providerStatus: string;
   providerErrorCode?: string | null;
 }): Promise<void> {
-  try {
-    await withReminderTenantContext(args.tenantId, async (tx) => {
-      await tx
-        .update(reminderDispatches)
-        .set({
-          providerStatus: args.providerStatus,
-          // Only ever WIDENS what is known: a callback with no code must not
-          // erase a code an earlier callback carried.
-          ...(args.providerErrorCode ? { providerErrorCode: args.providerErrorCode } : {}),
-          statusAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(reminderDispatches.tenantId, args.tenantId),
-            eq(reminderDispatches.providerMessageId, args.providerMessageId),
-          ),
-        );
-    });
-  } catch (e) {
-    console.error(
-      `[reminders] dispatch status update FAILED tenantId=${args.tenantId} ` +
-        `status=${args.providerStatus}: ${e instanceof Error ? e.name : "unknown"}`,
-    );
-  }
+  await withReminderTenantContext(args.tenantId, async (tx) => {
+    await tx
+      .update(reminderDispatches)
+      .set({
+        providerStatus: args.providerStatus,
+        // Only ever WIDENS what is known: a callback with no code must not
+        // erase a code an earlier callback carried.
+        ...(args.providerErrorCode ? { providerErrorCode: args.providerErrorCode } : {}),
+        statusAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(reminderDispatches.tenantId, args.tenantId),
+          eq(reminderDispatches.providerMessageId, args.providerMessageId),
+        ),
+      );
+  });
 }
