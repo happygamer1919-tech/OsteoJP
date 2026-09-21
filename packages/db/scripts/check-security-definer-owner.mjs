@@ -86,8 +86,24 @@ export const EXPECTED_OWNER = "postgres";
  * and the 0087 post-check measured 24 there (row 16, `before + 2` from a carry
  * of 22). docs/migration-apply-0087.md reads the count by delta rather than
  * through this constant, so an apply never depends on this number being current.
+ *
+ * 24 -> 25 with migration 0090 (NESA-NAMES):
+ * `public.shared_resource_appointment_patient_names()`, the narrow read that
+ * returns an appointment id and a display name for bookings held by a SHARED
+ * RESOURCE, so a therapist reads the patient's name on a NESA card without
+ * `patients_select` being widened. It carries its own
+ * `ALTER FUNCTION ... OWNER TO postgres` in 0090, and EXECUTE is granted to
+ * `authenticated` only - `anon`, `patient` and `service_role` are revoked in the
+ * same migration.
+ *
+ * MEASURED, NOT INCREMENTED, because this constant is a SUM and a branch that
+ * writes it as though it were the only contributor gets it wrong - which is
+ * exactly what the 22-vs-23 conflict above cost. Scanning every
+ * `ALTER FUNCTION public.<name>(...) OWNER TO` across packages/db/migrations found
+ * 25 pins with NO duplicates against 24 declared names, and the single set
+ * difference was this function. 0089 contributes none, so the sum is 24 + 0 + 1.
  */
-export const EXPECTED_COUNT = 24;
+export const EXPECTED_COUNT = 25;
 
 /**
  * The verdict, as a pure function of the catalog rows.
