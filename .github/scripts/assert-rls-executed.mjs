@@ -339,40 +339,52 @@ for (const tr of report.testResults) {
 const PERMITTED_SKIPS = new Map([
   // ["some-suite.test.ts", "why this one is allowed to skip, and who decided"],
   //
-  // The comment above says this map should stay empty, so this entry is written
-  // to be READ rather than waved through.
+  // ONE ENTRY, AND THE MAP HAS CARRIED EXACTLY ONE BEFORE. The comment above says
+  // this map should stay empty, so an entry is written to be READ, not waved through.
   //
-  // WHAT IT COVERS: RGPD-01's suite proves the grants and policies of a table
-  // that ships in a PENDING migration
-  // (packages/db/migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql).
-  // That file has no number yet - 0089 is authored on another branch and is
-  // neither merged nor applied, and CARE-01 and B8 each hold a NEXT-AFTER-0089
-  // of their own - and `drizzle-kit migrate` cannot see migrations-pending by
-  // construction. So CI's seeded database has no such table, and the suite gates
-  // on the SCHEMA: it asks `to_regclass('public.patient_rgpd_acceptances')` and
-  // skips when the answer is null.
+  // THE PRECEDENT, and it is why an entry here is tolerable at all: NESA-NAMES held the
+  // only previous entry while its migration sat unnumbered in migrations-pending, where
+  // `drizzle-kit migrate` cannot see it. That entry carried an expiry - "DELETE THIS
+  // ENTRY at promotion" - and the expiry was honoured: the migration became
+  // packages/db/migrations/0090_nesa_patient_name_for_therapists.sql, CI's seeded
+  // database now builds with the function, its arms run on their own, and the entry was
+  // removed by BLUE under dispatch B13 on 2026-09-18. An exemption with an expiry
+  // somebody acts on is a decision; one without is a hole.
   //
-  // WHY SKIPPING IS THE HONEST ANSWER rather than a hole: the alternative is a
-  // suite asserting append-only grants against a table that does not exist,
-  // which is red for a reason that has nothing to do with the code under review.
-  // A skip that SAYS "not measured" is worth more than a green that means
-  // nothing. The properties themselves are not unproven meanwhile - the
-  // migration TEXT is asserted by apps/web/lib/patients/rgpd-axis.test.ts, which
-  // runs on every PR and has a negative control.
+  // WHAT THIS ONE COVERS: RGPD-01's suite proves the grants and policies of a table
+  // that ships in a PENDING migration,
+  // `packages/db/migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql`. The
+  // file name is historical - it was authored when 0089 was the head - and 0089 and
+  // 0090 are now both merged AND applied. The number this migration will TAKE at
+  // promotion is **0093**, under the owner's renumbering of 2026-09-20 (0090 NESA
+  // names, 0091 the users/tenants/roles policy split, 0092 CARE-01, 0093 RGPD-01, 0094
+  // the grants revoke). `drizzle-kit migrate` cannot see migrations-pending by
+  // construction, so CI's seeded database has no such table, and the suite gates on the
+  // SCHEMA: it asks `to_regclass('public.patient_rgpd_acceptances')` and skips when the
+  // answer is null.
   //
-  // WHEN IT COMES OUT: at promotion. The moment the migration is renamed into
-  // packages/db/migrations/ and applied, this suite runs in CI on its own and
-  // THIS LINE MUST BE DELETED - if it is not, a genuinely broken grant or policy
-  // could skip unnoticed behind the exemption. The card RGPD-01 carries that
-  // checklist item.
+  // WHY SKIPPING IS THE HONEST ANSWER rather than a hole: the alternative is a suite
+  // asserting append-only grants against a table that does not exist, which is red for
+  // a reason that has nothing to do with the code under review. A skip that SAYS "not
+  // measured" is worth more than a green that means nothing. The properties themselves
+  // are not unproven meanwhile - the migration TEXT is asserted by
+  // apps/web/lib/patients/rgpd-axis.test.ts, which runs on every PR and has a negative
+  // control.
+  //
+  // WHEN IT COMES OUT: at promotion, exactly as NESA's did. The moment the migration is
+  // renamed to 0093 and applied, this suite runs in CI on its own and THIS LINE MUST BE
+  // DELETED - if it is not, a genuinely broken grant or policy could skip unnoticed
+  // behind the exemption. The card RGPD-01 carries that checklist item.
   //
   // PURPLE, dispatch P7, owner ruling Q-RGPD-NEW = b, 2026-09-17.
+  // Comment corrected 2026-09-21: 0089 is no longer unmerged, and the promotion number
+  // is 0093, not "its number" left unsaid.
   [
     "patient-rgpd-acceptances.db.test.ts",
     "RGPD-01: proves the grants and policies of a table that ships in " +
       "migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql, which CI never applies; " +
       "the suite gates on to_regclass and skips when the table is absent. " +
-      "DELETE THIS ENTRY at promotion, when the migration takes its number and CI applies it. " +
+      "DELETE THIS ENTRY at promotion, when the migration takes the number 0093 and CI applies it. " +
       "PURPLE, dispatch P7, ruling Q-RGPD-NEW = b, 2026-09-17.",
   ],
 ]);
