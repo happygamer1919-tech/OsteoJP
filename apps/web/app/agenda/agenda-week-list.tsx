@@ -39,9 +39,28 @@ import { EstadoMarker } from "./estado-marker";
  * `--project=chromium` alone) while the clinic is on iPhones, so every claim
  * worth making has to be a claim about a value.
  *
- * `data-list-day`, NEVER `data-day`. agenda-cards.spec.ts scopes by
- * `[data-day="…"]` and asserts `toHaveCount(1)`; a second tree answering to the
- * same attribute would break it while looking like a naming choice.
+ * EVERY HANDLE HERE IS PREFIXED `data-list-`, AND THAT IS A RULE, NOT A STYLE.
+ * This component puts a SECOND element in the DOM for every appointment the
+ * grid already renders, at every viewport - the swap is CSS, so both trees are
+ * always present. Any CSS-attribute locator that the grid answers to and this
+ * tree also answers to therefore returns TWO elements instead of one.
+ *
+ * THAT IS NOT HYPOTHETICAL. The first push of this card used `data-appointment-id`
+ * on the row, and `therapist-cancel-uncancel.spec.ts` failed in the required E2E
+ * gate with `expect(locator).toHaveCount(1) ... Received: 2` on
+ * `[data-appointment-id="74cbdbbc-..."]`. Eleven e2e files select on that
+ * attribute and `e2e/helpers/index.ts:451` does an UNSCOPED
+ * `page.locator("[data-appointment-id]").evaluateAll(...)`.
+ *
+ * So: `data-list-day` not `data-day`, `data-list-appointment-id` not
+ * `data-appointment-id`, `data-list-block-id` not `data-block-id`. The render
+ * test asserts the absence of all three grid forms, which is the only part of
+ * this a reviewer can check cheaply.
+ *
+ * ROLE AND TEXT LOCATORS ARE A DIFFERENT CASE and are NOT a problem: `md:hidden`
+ * is `display: none`, and Playwright's role locators do not match elements
+ * outside the accessibility tree. `e2e/agenda-mobile-week.spec.ts` measures that
+ * on the real page rather than taking it on trust.
  *
  * NO `overflow`, NO `transform`, NO `filter` ON ANY WRAPPER HERE OR AROUND THE
  * GRID. Each of the three makes an element a containing block or a scroll
@@ -195,7 +214,7 @@ function Row({
           ? { type: "button" as const, onClick: () => onOpenBlock!(row.id) }
           : {})}
         data-testid="agenda-week-list-block"
-        data-block-id={row.id}
+        data-list-block-id={row.id}
         className={`${ROW} bg-v2-text-primary/[0.04] text-sm text-v2-text-secondary ${
           openable
             ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset"
@@ -217,10 +236,12 @@ function Row({
     <button
       type="button"
       onClick={onSelectAppointment}
-      /* The row's own identity in the DOM, same rule as the grid's card: the
-         patient name is shared vocabulary on a seeded database and the time is
-         positional, so only the id proves a test opened the RIGHT row. */
-      data-appointment-id={row.id}
+      /* The row's own identity, same reasoning as the grid's card - a patient
+         name is shared vocabulary on a seeded database and the time is
+         positional, so only the id proves a test opened the RIGHT row - but
+         under a DIFFERENT attribute name. See the header: the grid's
+         `data-appointment-id` must resolve to exactly one element. */
+      data-list-appointment-id={row.id}
       className={`${ROW} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset`}
     >
       <When startMin={row.startMin} endMin={row.endMin} />

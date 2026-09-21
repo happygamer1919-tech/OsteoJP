@@ -14,11 +14,13 @@ import type { AgendaAppointment } from "@/lib/scheduling/types";
  * WHAT THIS FILE IS FOR, AND WHAT IT IS EXPLICITLY NOT EVIDENCE OF
  * ==========================================================================
  * `agenda-week-list-core.test.ts` decides the values. This file asserts the
- * three properties that only exist once the values are rendered, and which a
- * reader of the core cannot check: the therapist name reaches the DOM on every
- * row (W9-05 — colour is never the only cue), the withheld case renders the
- * withheld LABEL rather than an empty element, and the day sections answer to
- * `data-list-day` and NEVER to `data-day`.
+ * properties that only exist once the values are rendered, and which a reader
+ * of the core cannot check: the therapist name reaches the DOM on every row
+ * (W9-05 — colour is never the only cue), the withheld case renders the
+ * withheld LABEL rather than an empty element, and — the arm that matters most
+ * — that NOTHING here answers to a selector the grid answers to. Both trees sit
+ * in the DOM at every viewport, so a shared `data-*` attribute doubles every
+ * count in eleven other e2e files. That is not hypothetical; it happened.
  *
  * IT IS NOT EVIDENCE ABOUT A PHONE. This is `renderToStaticMarkup` in a node
  * environment: no layout, no CSS, no viewport. Whether the week is READABLE at
@@ -81,15 +83,32 @@ function render(over: Partial<Parameters<typeof AgendaWeekList>[0]> = {}) {
 }
 
 describe("AgendaWeekList markup", () => {
-  it("marks its day sections with data-list-day and NEVER with data-day", () => {
-    const html = render();
-    // Not vacuous: there are six sections to be marked.
-    expect(html.match(/data-list-day="/g) ?? []).toHaveLength(6);
-    // agenda-cards.spec.ts scopes by `[data-day="…"]` and asserts
-    // toHaveCount(1). A second tree answering to that attribute would break it
-    // while reading as a naming choice, which is why this is pinned rather than
-    // left to the reviewer's eye.
+  it("answers to NO handle the grid answers to - every one is prefixed data-list-", () => {
+    // THE ARM THAT WOULD HAVE SAVED A CI RUN. The first push of this card used
+    // `data-appointment-id` on the row, and therapist-cancel-uncancel.spec.ts
+    // failed in the required E2E gate with
+    // `expect(locator).toHaveCount(1) ... Received: 2`. Eleven e2e files select
+    // on that attribute; e2e/helpers/index.ts does so UNSCOPED. Both trees are
+    // in the DOM at every viewport - the swap is CSS - so a shared attribute
+    // doubles every count.
+    const html = render({
+      appointments: [appt({ id: "a1" })],
+      blocks: [
+        { id: "b-1", startsAt: iso(WED, "11:00"), endsAt: iso(WED, "12:30"), reason: "x", note: null },
+      ],
+    });
+
+    // The grid's three forms, none of which may appear here.
     expect(html).not.toContain("data-day=");
+    expect(html).not.toContain("data-appointment-id=");
+    expect(html).not.toContain("data-block-id=");
+
+    // CONTROLS, SAME RENDER: the `data-list-` forms ARE there, so the three
+    // assertions above measured the PREFIX and are not passing because the
+    // attributes were dropped altogether or the render came back empty.
+    expect(html.match(/data-list-day="/g) ?? []).toHaveLength(6);
+    expect(html).toContain("data-list-appointment-id=");
+    expect(html).toContain("data-list-block-id=");
   });
 
   it("names the therapist in TEXT on every appointment row (W9-05)", () => {

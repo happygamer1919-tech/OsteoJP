@@ -144,8 +144,8 @@ test.describe("the agenda week on a phone (AGMOB-01)", () => {
     // ARM 5 - a row opens the RIGHT appointment. By id, never by name: a patient
     // name is shared vocabulary on a seeded database and would be satisfied by
     // somebody else's row.
-    const row = page.locator("[data-list-day] [data-appointment-id]").first();
-    const id = await row.getAttribute("data-appointment-id");
+    const row = page.locator("[data-list-day] [data-list-appointment-id]").first();
+    const id = await row.getAttribute("data-list-appointment-id");
     expect(id, "the row carries its own id").toBeTruthy();
     await row.tap();
     const opened = page.getByRole("dialog");
@@ -159,7 +159,7 @@ test.describe("the agenda week on a phone (AGMOB-01)", () => {
 
     // ARM 6 - tap targets, MEASURED rather than asserted through a class name.
     const boxes = await page
-      .locator("[data-list-day] [data-appointment-id]")
+      .locator("[data-list-day] [data-list-appointment-id]")
       .evaluateAll((els) =>
         els.map((e) => {
           const r = e.getBoundingClientRect();
@@ -192,6 +192,32 @@ test.describe("the agenda week on a phone (AGMOB-01)", () => {
     // And the grid, which agenda-grid.tsx marks with `data-day`, is visible.
     await expect(page.locator("[data-day]")).toHaveCount(6);
     await expect(page.locator("[data-day]").first()).toBeVisible();
+
+    // ======================================================================
+    // THE SECOND TREE MUST NOT ANSWER TO THE FIRST TREE'S SELECTORS.
+    // Measured here rather than reasoned about, because the first push of this
+    // card got it wrong: the list row carried `data-appointment-id`, and
+    // therapist-cancel-uncancel.spec.ts failed in this very gate with
+    // `toHaveCount(1) ... Received: 2`. Eleven e2e files select on that
+    // attribute and e2e/helpers/index.ts does so UNSCOPED, so this arm is the
+    // one standing between the rename and a repeat.
+    // ======================================================================
+    const gridRows = page.locator("[data-day] [data-appointment-id]");
+    const listRows = page.locator("[data-list-day] [data-list-appointment-id]");
+    // Non-vacuity FIRST: there is something on this week to double.
+    expect(await listRows.count(), "the fixture put a row in the list").toBeGreaterThan(0);
+    // The grid's attribute is answered ONLY by the grid, at page scope.
+    expect(await page.locator("[data-appointment-id]").count()).toBe(await gridRows.count());
+    // And an id that exists resolves to exactly one element page-wide, which is
+    // the exact shape the broken version failed.
+    const anId = await listRows.first().getAttribute("data-list-appointment-id");
+    await expect(page.locator(`[data-appointment-id="${anId}"]`)).toHaveCount(1);
+
+    // ROLE LOCATORS: `md:hidden` is display:none, so the list's buttons are out
+    // of the accessibility tree and getByRole does not see them. Asserted, not
+    // assumed - a dozen agenda specs locate a card by its patient's name.
+    const named = page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) });
+    await expect(named, "a patient name still names exactly one button").toHaveCount(1);
   });
 
   test("CONTROL - 767 gets the list, 768 gets the grid. The threshold is a DECISION, so it is pinned both ways", async ({
