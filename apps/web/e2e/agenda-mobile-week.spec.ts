@@ -72,6 +72,15 @@ function disjoint(
 const MONDAY = mondayOf(DAY);
 
 test.describe("the agenda week on a phone (AGMOB-01)", () => {
+  // `.tap()` REQUIRES the context's hasTouch option; without it Playwright
+  // throws "The page does not support tap". It is set at describe level rather
+  // than per test because the desktop CONTROLS below are unaffected by it - a
+  // touch-capable context still clicks - and because a phone assertion that
+  // reached the element with a mouse would not be measuring what it claims.
+  // The viewport is NOT set here: the first test needs a desktop width for its
+  // fixture and then resizes, and the controls set their own.
+  test.use({ hasTouch: true });
+
   test("Semana is reachable at 390px and renders six Mon-Sat day sections", async ({ page }) => {
     // ---- fixture: one appointment in this week, so the arms below have a
     // subject. Booked at desktop width, which is where the grid's slot buttons
@@ -105,7 +114,14 @@ test.describe("the agenda week on a phone (AGMOB-01)", () => {
     await expect(semana).toBeVisible();
 
     const semanaBox = await semana.boundingBox();
-    const pickerBox = await page.getByRole("button", { name: /Escolher data/i }).boundingBox();
+    // The picker is a TEXTBOX, not a button - the accessibility snapshot from
+    // the failing run reads `textbox "Escolher data"` with an adjacent
+    // `button "Abrir calendário"`. Asking for the wrong role does not fail
+    // fast: the locator simply never resolves and the test burns its full
+    // 120-second timeout, which is how this cost a whole shard.
+    const pickerBox = await page
+      .getByRole("textbox", { name: /Escolher data/i })
+      .boundingBox();
     expect(semanaBox, "Semana has a box at all").not.toBeNull();
     expect(pickerBox, "the date picker has a box at all").not.toBeNull();
     expect(
@@ -216,8 +232,18 @@ test.describe("the agenda week on a phone (AGMOB-01)", () => {
     // ROLE LOCATORS: `md:hidden` is display:none, so the list's buttons are out
     // of the accessibility tree and getByRole does not see them. Asserted, not
     // assumed - a dozen agenda specs locate a card by its patient's name.
-    const named = page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) });
-    await expect(named, "a patient name still names exactly one button").toHaveCount(1);
+    //
+    // PHRASED AS AN EQUALITY, NOT AS toHaveCount(1), AND THAT IS DELIBERATE.
+    // The suite runs `retries: 2` in CI and this spec's first test BOOKS; a
+    // retry books again, so the same patient can legitimately have two cards on
+    // the day. Pinning the literal 1 would then fail for a reason that has
+    // nothing to do with the claim. What the claim actually is: the page-wide
+    // count equals the GRID's count, i.e. the list contributes none.
+    const nameRe = new RegExp(PATIENTS.joao.name);
+    const pageWide = await page.getByRole("button", { name: nameRe }).count();
+    const inGrid = await page.locator("[data-day]").getByRole("button", { name: nameRe }).count();
+    expect(inGrid, "the fixture put a named card in the grid").toBeGreaterThan(0);
+    expect(pageWide, "a patient name names only grid cards, never list rows").toBe(inGrid);
   });
 
   test("CONTROL - 767 gets the list, 768 gets the grid. The threshold is a DECISION, so it is pinned both ways", async ({
