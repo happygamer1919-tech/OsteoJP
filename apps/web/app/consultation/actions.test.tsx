@@ -22,11 +22,16 @@ vi.mock("@/lib/patients/audit", () => ({ writeAudit: vi.fn() }));
 vi.mock("@osteojp/db", () => ({ patients: { id: "patients.id" } }));
 // actions.ts imports the W4-08 signer + W4-09 webhook; stub them so this test
 // stays unit-scoped.
-vi.mock("@/lib/consultation/audio-storage", () => ({
-  AUDIO_FILENAME: "consultation.webm",
+// importOriginal keeps AUDIO_FILENAME and the REAL AudioStorageConfigError.
+// AUDIO_FILENAME reaches the payload assertion below through the UNMOCKED
+// fire-attempt.ts, and fire-attempt.ts:137 does `e instanceof
+// AudioStorageConfigError` — a look-alike stub would answer that wrongly. Only
+// the two network functions are stubbed. Same shape the m1-webhook mock below
+// already uses.
+vi.mock("@/lib/consultation/audio-storage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/consultation/audio-storage")>()),
   signAudioUpload: vi.fn(),
   signAudioDownload: vi.fn(),
-  AudioStorageConfigError: class extends Error {},
 }));
 // buildM1Payload is the REAL one — a stub that spread its input would not have
 // caught the two fields 0064 adds, nor a frozen field going missing.
@@ -49,7 +54,7 @@ import { can } from "@osteojp/auth";
 import { createStubPatient } from "@/lib/patients/actions";
 import { bookingLocationScope } from "@/lib/auth/viewer-locations";
 import { writeAudit } from "@/lib/patients/audit";
-import { signAudioDownload } from "@/lib/consultation/audio-storage";
+import { signAudioDownload, signAudioUpload } from "@/lib/consultation/audio-storage";
 import { fireM1Webhook } from "@/lib/consultation/m1-webhook";
 import {
   markDelivered,
@@ -59,6 +64,7 @@ import {
 import {
   createStubPatientAction,
   fireConsultationWebhookAction,
+  signAudioUploadAction,
   startConsultationAction,
 } from "./actions";
 
@@ -213,6 +219,11 @@ describe("fireConsultationWebhookAction (W4-09, + 0064 persist-before-fire)", ()
     mockSignDownload.mockResolvedValue("https://s3/get?sig");
     mockFire.mockResolvedValue({ ok: true, status: 200 });
     mockPersist.mockResolvedValue({ id: "c-1", attemptCount: 0, fireStatus: "pending" });
+    // The scoped patient read answers with the id OK_INPUT's object key is built
+    // from. Without this the suite inherits the outer default ("pat-1") while
+    // OK_INPUT's key is "t1/p1/...", so every tenant+patient key assertion below
+    // would be comparing against a folder no test here means.
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(txReturning([{ id: "p1" }]) as never));
   });
 
   it("forbids a non-authoring role, and writes nothing", async () => {
@@ -315,5 +326,157 @@ describe("fireConsultationWebhookAction (W4-09, + 0064 persist-before-fire)", ()
       consultation_id: "c-1",
       attempt: 1,
     });
+  });
+
+  // ---- THE PATIENT IS THE SERVER'S ANSWER ---------------------------------
+  //
+  // Everything past the checks above runs on the service-role handle and sends
+  // the id to a third party, so these tests pin that the read happens first and
+  // that its answer is the value used from there down.
+
+  it("refuses a patient the scoped read does not return — nothing persisted, nothing fired, nothing signed", async () => {
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(txReturning([]) as never));
+
+    await expect(
+      fireConsultationWebhookAction({ ...OK_INPUT, patientId: "not-my-patient" }),
+    ).resolves.toEqual({ ok: false, error: "forbidden" });
+
+    expect(mockPersist).not.toHaveBeenCalled();
+    expect(mockFire).not.toHaveBeenCalled();
+    expect(mockSignDownload).not.toHaveBeenCalled();
+  });
+
+  it("the forged patient id is refused and a legitimate consultation in the SAME run still fires", async () => {
+    // Both arms in one body: the refusal has to be a decision about THIS
+    // patient, not a blanket failure that would also stop real recordings.
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(txReturning([]) as never));
+    await expect(
+      fireConsultationWebhookAction({ ...OK_INPUT, patientId: "not-my-patient" }),
+    ).resolves.toEqual({ ok: false, error: "forbidden" });
+    expect(mockPersist).not.toHaveBeenCalled();
+
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(txReturning([{ id: "p1" }]) as never));
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: true });
+    expect(mockPersist).toHaveBeenCalledTimes(1);
+    expect(mockPersist).toHaveBeenCalledWith(expect.objectContaining({ patientId: "p1" }));
+  });
+
+  it("A FAULT IN THE SCOPED READ RESOLVES AS not_persisted, IT NEVER REJECTS", async () => {
+    // The client awaits this action directly, so a rejection has no UI: the
+    // recorder stays on "firing" with the audio already uploaded and no row
+    // behind it. Every exit has to be a member of the result union, and
+    // `not_persisted` is the true one - nothing written, nothing to re-fire.
+    mockRunScoped.mockRejectedValue(new Error("connection terminated"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({
+      ok: false,
+      error: "not_persisted",
+    });
+
+    expect(mockPersist).not.toHaveBeenCalled();
+    expect(mockFire).not.toHaveBeenCalled();
+    expect(mockSignDownload).not.toHaveBeenCalled();
+    // and the outage is not silent server-side
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("rejects an object key that is not under the caller's tenant AND patient", async () => {
+    // The key names the folder `audioObjectKey` builds, which is per patient
+    // and not per tenant, so the check is made against the whole prefix.
+    await expect(
+      fireConsultationWebhookAction({
+        ...OK_INPUT,
+        objectKey: "t1/OTHER-PATIENT/ts/consultation.webm",
+      }),
+    ).resolves.toEqual({ ok: false, error: "forbidden" });
+    expect(mockPersist).not.toHaveBeenCalled();
+    expect(mockFire).not.toHaveBeenCalled();
+  });
+
+  it("reads the patient through runScoped BEFORE it persists", async () => {
+    // The ordering is the property: a check made after the insert is not a check.
+    await fireConsultationWebhookAction(OK_INPUT);
+    expect(mockRunScoped).toHaveBeenCalled();
+    expect(mockRunScoped.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockPersist.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("writes the id the DATABASE returned, not the id the payload carried", async () => {
+    // The payload says "forged"; the read answers "p1". Every downstream write
+    // must follow the read, and the key check must be made against that answer.
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(txReturning([{ id: "p1" }]) as never));
+
+    await expect(
+      fireConsultationWebhookAction({ ...OK_INPUT, patientId: "forged" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(mockPersist).toHaveBeenCalledWith(expect.objectContaining({ patientId: "p1" }));
+    expect(mockFire).toHaveBeenCalledWith(expect.objectContaining({ patient_id: "p1" }));
+  });
+});
+
+describe("signAudioUploadAction — a presigned PUT is a write capability", () => {
+  const mockSignUpload = vi.mocked(signAudioUpload);
+  // The payload says "p1" while the outer beforeEach answers the scoped read
+  // with "pat-1": the folder the browser is handed must follow the DATABASE.
+  const OK_INPUT = { patientId: "p1", consultationStartedAt: "2026-07-07T01:00:00.000Z" };
+
+  beforeEach(() => {
+    // Derived from the arguments rather than hardcoded, so the assertion below
+    // is about the id the action passed and not about this mock's constant.
+    mockSignUpload.mockImplementation(async (tenantId, patientId, startedAt) => ({
+      url: "https://s3/put?sig",
+      objectKey: `${tenantId}/${patientId}/${startedAt.replace(/[:.]/g, "-")}/consultation.webm`,
+    }));
+  });
+
+  it("refuses to sign for a patient the scoped read does not return", async () => {
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(txReturning([]) as never));
+    await expect(signAudioUploadAction(OK_INPUT)).resolves.toEqual({
+      ok: false,
+      error: "forbidden",
+    });
+    expect(mockSignUpload).not.toHaveBeenCalled();
+  });
+
+  it("signs for the id the scoped read RETURNED, never the id the payload carried", async () => {
+    await expect(signAudioUploadAction(OK_INPUT)).resolves.toEqual({
+      ok: true,
+      url: "https://s3/put?sig",
+      objectKey: "t1/pat-1/2026-07-07T01-00-00-000Z/consultation.webm",
+    });
+    expect(mockSignUpload).toHaveBeenCalledWith("t1", "pat-1", "2026-07-07T01:00:00.000Z");
+  });
+
+  it("forbids a non-authoring role before the read, and never signs", async () => {
+    mockCan.mockReturnValue(false);
+    await expect(signAudioUploadAction(OK_INPUT)).resolves.toEqual({
+      ok: false,
+      error: "forbidden",
+    });
+    expect(mockRunScoped).not.toHaveBeenCalled();
+    expect(mockSignUpload).not.toHaveBeenCalled();
+  });
+
+  it("A FAULT IN THE SCOPED READ RESOLVES AS config, IT NEVER REJECTS", async () => {
+    // This action gained a database dependency, and therefore a fault mode it
+    // did not have before. The recorder awaits it directly and maps every
+    // non-ok arm to `upload_error`; a rejection would instead leave it pinned
+    // at "uploading" with no error surface at all.
+    mockRunScoped.mockRejectedValue(new Error("connection terminated"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(signAudioUploadAction(OK_INPUT)).resolves.toEqual({
+      ok: false,
+      error: "config",
+    });
+    expect(mockSignUpload).not.toHaveBeenCalled();
+    // `config` reads as a storage problem to the user, so the real cause has to
+    // be somewhere an operator can find it
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
   });
 });
