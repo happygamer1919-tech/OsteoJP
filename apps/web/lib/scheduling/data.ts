@@ -11,6 +11,7 @@ import {
   patients,
   servicePacks,
   services,
+  sharedResourceNamesFnPresent,
   staffLocations,
   users,
   type DbTx,
@@ -326,8 +327,98 @@ export async function listAppointments(
     const rows = await baseAppointmentQuery(tx)
       .where(and(...conds))
       .orderBy(asc(appointments.startsAt));
-    return rows.map(mapAppointment);
+    return (await withSharedResourceNames(tx, rows)).map(mapAppointment);
   });
+}
+
+/**
+ * NESA-NAMES (owner request 2026-09-17) — the patient's name on a shared
+ * resource's booking, for the therapists at that clinic.
+ *
+ * ==========================================================================
+ * WHY AN OVERLAY AND NOT A COLUMN ON `appointmentSelection`
+ * ==========================================================================
+ * `patients` is LEFT JOINed and `patients_select` (0074) admits a therapist only
+ * to patients they have treated, so a NESA booking's patient row is not returned
+ * to them and `patients.full_name` arrives NULL. That NULL is what
+ * `patientLabel` turns into "Marcação reservada".
+ *
+ * The fix cannot be a wider join or a wider policy: `patients_select` is the one
+ * gate in front of the ficha, the phone and the NIF, and the ruling forbids
+ * touching it. So the name comes from a narrow SECURITY DEFINER function that
+ * returns an appointment id and a display name and nothing else, and this
+ * function overlays it.
+ *
+ * ==========================================================================
+ * IT ONLY EVER FILLS A NULL
+ * ==========================================================================
+ * A row whose name RLS already returned is left exactly as it was. So this can
+ * only ever turn a withheld label into a name, and never change a name.
+ *
+ * ==========================================================================
+ * AND IT ASKS BEFORE IT NAMES THE FUNCTION — 42883 IS NOT "NO ROWS"
+ * ==========================================================================
+ * THE CLAIM THAT STOOD HERE WAS WRONG, and it was wrong in the direction that
+ * matters. It said that with the migration absent "the query returns nothing and
+ * every row passes through untouched". It does not: selecting FROM a function
+ * that does not exist raises 42883, which aborts the statement and, inside
+ * `runScoped`, the entire read. Unguarded, this overlay does not degrade to "no
+ * names" — it takes `listAppointments` down, and with it the agenda, Marcações
+ * and the dashboard, on every database that has not had the pending SQL applied.
+ *
+ * That is measured, not feared. On a database at 0088, four arms of two suites
+ * that pass on main failed with
+ * `PostgresError: function public.shared_resource_appointment_patient_names() does not exist`
+ * — appointment-scope's dashboard and count arms, and both of
+ * nesa-agenda-second-participant's merged-agenda arms. None of them is about
+ * NESA names; they simply read the agenda.
+ *
+ * So the schema is asked first, the SCHED-17 way (`sharedResourceNamesFnPresent`,
+ * beside the column probe it copies), and until the function exists this returns
+ * the rows it was handed. THAT is what makes the app half deployable before the
+ * apply — the ask, not the hope.
+ *
+ * ==========================================================================
+ * SCOPED TO THIS READ, DELIBERATELY
+ * ==========================================================================
+ * `listAppointments` is the agenda, Marcações and the dashboard — the CARD
+ * surfaces the ruling names. `getAppointment` (the drawer) is NOT overlaid: it
+ * carries note previews and the edit form, which is more than "the same card
+ * fields", and widening it is a separate ruling.
+ */
+async function withSharedResourceNames<T extends { id: string; patientName: string | null }>(
+  tx: DbTx,
+  rows: T[],
+): Promise<T[]> {
+  const withheld = rows.filter((r) => r.patientName === null).map((r) => r.id);
+  if (withheld.length === 0) return rows;
+
+  // THE SCHEMA GATE, ASKED ONLY WHEN THERE IS SOMETHING TO FILL. A page with no
+  // withheld name has already returned above, so no read pays for this probe
+  // unnecessarily; this page has at least one, which makes the answer worth a
+  // single round trip that is then cached for the life of the process.
+  if (!(await sharedResourceNamesFnPresent(tx))) return rows;
+
+  // BOUNDED BY THE ROWS ON SCREEN. The function is nullary and would otherwise
+  // answer for every shared-resource booking the viewer's clinics have ever
+  // held; the ids here are the ones this page is about to render.
+  const ids = sql.join(
+    withheld.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const named = (await tx.execute(sql`
+    select appointment_id, patient_name
+      from public.shared_resource_appointment_patient_names()
+     where appointment_id in (${ids})
+  `)) as unknown as ReadonlyArray<{ appointment_id: string; patient_name: string | null }>;
+  if (named.length === 0) return rows;
+
+  const byId = new Map(
+    named.filter((n) => n.patient_name !== null).map((n) => [n.appointment_id, n.patient_name!]),
+  );
+  return rows.map((r) =>
+    r.patientName === null && byId.has(r.id) ? { ...r, patientName: byId.get(r.id)! } : r,
+  );
 }
 
 /**

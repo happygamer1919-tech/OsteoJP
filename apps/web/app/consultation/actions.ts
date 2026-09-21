@@ -11,15 +11,16 @@
 //     (`patient.recording_consent`) before returning ok (DECISIONS 2026-07-06
 //     "AI recording consent", JP).
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { can } from "@osteojp/auth";
 import { patients } from "@osteojp/db";
-import { requireRequestContext, runScoped } from "@/lib/auth/context";
+import { requireRequestContext, runScoped, type RequestContext } from "@/lib/auth/context";
 import { scopedLocationId } from "@/lib/auth/location-choice";
 import { bookingLocationScope } from "@/lib/auth/viewer-locations";
 import { createStubPatient } from "@/lib/patients/actions";
+import { therapistPatientScope } from "@/lib/patients/scope";
 import { writeAudit } from "@/lib/patients/audit";
-import { AudioStorageConfigError, signAudioUpload } from "@/lib/consultation/audio-storage";
+import { signAudioUpload } from "@/lib/consultation/audio-storage";
 import { attemptFire, recordOutcome } from "@/lib/consultation/fire-attempt";
 import { persistConsultation } from "@/lib/consultation/consultation-store";
 
@@ -138,24 +139,90 @@ export async function startConsultationAction(input: {
   if (input.consent !== true) return { ok: false, error: "consent_required" };
   if (!input.patientId) return { ok: false, error: "not_found" };
 
+  // The SAME read the two actions below make, so a patient this screen accepts
+  // is a patient the recording chain accepts and no more. The narrowing is here
+  // so that one rule reads the same in all three.
+  const scope = therapistPatientScope(ctx, patients.id);
+  const byId = eq(patients.id, input.patientId);
   const found = await runScoped(ctx, async (tx) => {
     const [p] = await tx
       .select({ id: patients.id })
       .from(patients)
-      .where(eq(patients.id, input.patientId))
+      .where(scope ? and(byId, scope) : byId)
       .limit(1);
     if (!p) return false;
     // Minimum-viable consent record: actor (ctx.userId) + timestamp
     // (created_at default), tied to the patient. No PII in metadata (rule 7).
     await writeAudit(tx, ctx, {
       action: "patient.recording_consent",
-      entityId: input.patientId,
+      entityId: p.id,
       metadata: { consultation: true },
     });
     return true;
   });
   if (!found) return { ok: false, error: "not_found" };
   return { ok: true };
+}
+
+/**
+ * THE PATIENT IS THE SERVER'S ANSWER.
+ *
+ * ==========================================================================
+ * WHY THE ID IS SETTLED HERE, ONCE, FOR ALL THREE ACTIONS
+ * ==========================================================================
+ * The recording flow crosses boundaries a per-request scope does not follow:
+ * `persistConsultation` writes on the service-role handle (`getDbAdmin`, whose
+ * own doc comment says never to use it for tenant-scoped request handling), the
+ * M1 fire hands the id and a one-hour signed audio URL to a third-party
+ * processor, and `signAudioUploadAction` mints a write capability into one
+ * patient's audio folder. `consultations.patient_id` is a single-column FK to
+ * `patients(id)`, and the partner files its reply back by that same id.
+ *
+ * So the patient's identity is settled BEFORE any of that, by a read the
+ * database answers rather than by a shape check on the request, and it is
+ * settled in ONE place so all three actions agree. CLAUDE.md asks for the
+ * server-side check IN the action with RLS as defense-in-depth: this helper is
+ * the server-side half, and 0074's `patients_select` is the other.
+ *
+ * ==========================================================================
+ * WHY `therapistPatientScope` ALONE IS THE WHOLE RULE HERE
+ * ==========================================================================
+ * `lib/patients/queries.ts` (getPatient) and `lib/patients/documents.ts`
+ * (documentVisibilityScope) fall back to `patientLocationScope` for a located
+ * receptionist or admin. These actions need no such arm, and the omission is a
+ * decision rather than an oversight: every caller below first requires
+ * `clinical_records:author`, which `packages/auth/permissions.ts` grants to
+ * owner and therapist and DENIES to admin and reception —
+ * `lib/auth/permission-matrix.test.ts` pins that denial independently of
+ * PERMISSIONS, so a future grant cannot quietly widen this. Owner is
+ * unrestricted within the tenant; therapist is the only narrowed role that
+ * reaches here. Adding `patientLocationScope` would also be a new call site
+ * `lib/patients/scope-call-sites.test.ts` would have to carry for a role that
+ * never arrives.
+ *
+ * Returns the id AS THE DATABASE ANSWERED IT — the value every write downstream
+ * must then use — or `null`. Callers refuse with `forbidden` rather than with a
+ * not-found arm: whether a uuid names a real patient is not a fact this action
+ * owes a caller who may not see them.
+ */
+async function recordablePatientId(
+  ctx: RequestContext,
+  requestedId: string,
+): Promise<string | null> {
+  const scope = therapistPatientScope(ctx, patients.id);
+  const byId = eq(patients.id, requestedId);
+  return runScoped(
+    ctx,
+    async (tx) => {
+      const [p] = await tx
+        .select({ id: patients.id })
+        .from(patients)
+        .where(scope ? and(byId, scope) : byId)
+        .limit(1);
+      return p?.id ?? null;
+    },
+    "consultation:patient-scope",
+  );
 }
 
 export type SignUploadResult =
@@ -167,7 +234,7 @@ export type SignUploadResult =
  * to S3 (never through Vercel). Recording is a clinician action. The object key
  * is derived server-side from the JWT tenant (never the payload). The scoped AWS
  * key never leaves the server — only the presigned URL + object key cross to the
- * client. If the env is not configured this returns `config` (never a stub key).
+ * client. If the slot cannot be minted this returns `config` (never a stub key).
  */
 export async function signAudioUploadAction(input: {
   patientId: string;
@@ -177,15 +244,42 @@ export async function signAudioUploadAction(input: {
   if (!can(ctx.role, "clinical_records:author")) return { ok: false, error: "forbidden" };
   if (!input.patientId || !input.consultationStartedAt) return { ok: false, error: "validation" };
   try {
-    // tenantId from JWT context, NEVER from the payload (hard rule 3).
+    // A presigned PUT is a WRITE CAPABILITY into this patient's folder, handed
+    // to a browser. It is minted only for a patient this clinician may record.
+    //
+    // INSIDE THE TRY ON PURPOSE. This action now makes a database read, so it
+    // has a fault mode it did not have when its only dependency was the signer.
+    // An action that REJECTS rather than returning a member of its result union
+    // leaves the recorder pinned mid-phase with no error surface, because the
+    // client awaits it directly. Every exit from here is a value.
+    const patientId = await recordablePatientId(ctx, input.patientId);
+    if (!patientId) return { ok: false, error: "forbidden" };
+    // tenantId from JWT context, NEVER from the payload (hard rule 3); patientId
+    // from the scoped read above, for the same reason.
     const { url, objectKey } = await signAudioUpload(
       ctx.tenantId,
-      input.patientId,
+      patientId,
       input.consultationStartedAt,
     );
     return { ok: true, url, objectKey };
   } catch (e) {
-    if (e instanceof AudioStorageConfigError) return { ok: false, error: "config" };
+    // ONE ARM, TWO CAUSES, AND THAT IS DELIBERATE. `AudioStorageConfigError`
+    // (the env is not configured) and a fault in the scope read both land here,
+    // and both used to be written out as two branches returning the same value.
+    // The caller's only question is "was an upload URL minted", so `config` is
+    // the whole answer; the recorder maps it to `upload_error` either way. What
+    // must never happen is a rejection, which is why the read is inside.
+    //
+    // LOGGED, because the two causes need different people. The user-facing
+    // copy for this arm talks about storage authorisation, so a database fault
+    // would send the clinician and support to S3 for something that is not
+    // there. The TENANT comes from the JWT and the class name from the error;
+    // the requested patient id is deliberately NOT here, because at this point
+    // it is unvalidated client input and a log line is not the place for it.
+    console.error(
+      `[consultation] UPLOAD SLOT NOT MINTED ` +
+        `tenant=${ctx.tenantId} error=${e instanceof Error ? e.name : "unknown"}`,
+    );
     return { ok: false, error: "config" };
   }
 }
@@ -245,13 +339,48 @@ export async function fireConsultationWebhookAction(input: {
   }
   if (!input.objectKey.startsWith(`${ctx.tenantId}/`)) return { ok: false, error: "forbidden" };
 
+  // STEP 0, BEFORE ANY WRITE AND BEFORE ANY SEND: the id used from here down is
+  // this read's answer, for the reason the helper's header gives.
+  //
+  // A FAULT HERE IS `not_persisted`, NOT A REFUSAL AND NOT A RETRY. If the read
+  // throws, nothing has been written and nothing will re-fire, which is exactly
+  // what `not_persisted` says and what the recorder shows as `fire_unsaved`.
+  // Letting it reject instead would pin the recorder at "firing" with the audio
+  // already in S3 and no row behind it - the silent loss 0064 exists to end.
+  let patientId: string | null;
+  try {
+    patientId = await recordablePatientId(ctx, input.patientId);
+  } catch (e) {
+    // Logged for the same reason the signer's catch is, and on the higher-value
+    // path: the outcome here is `fire_unsaved`, the audio is already in S3, and
+    // a lifecycle rule deletes the object days later. Without this line a pool
+    // outage that loses a consultation leaves no server-side trace at all.
+    // Tenant from the JWT, error class only - the requested patient id is still
+    // unvalidated client input at this point and stays out of the log.
+    console.error(
+      `[consultation] SCOPED READ FAULTED, consultation not persisted ` +
+        `tenant=${ctx.tenantId} error=${e instanceof Error ? e.name : "unknown"}`,
+    );
+    return { ok: false, error: "not_persisted" };
+  }
+  if (!patientId) return { ok: false, error: "forbidden" };
+
+  // The key must name this patient's folder as well as this tenant's: the audio
+  // attached to a consultation is audio signed for that consultation's patient,
+  // in the folder `audioObjectKey` builds. The tenant-prefix check above runs
+  // first on purpose, so a key outside the caller's tenant is refused before any
+  // query runs, and it is subsumed by this one.
+  if (!input.objectKey.startsWith(`${ctx.tenantId}/${patientId}/`)) {
+    return { ok: false, error: "forbidden" };
+  }
+
   // STEP 1, BEFORE ANY FIRE. If this throws, nothing is recoverable and the
   // caller must not be told a retry is coming.
   let row: { id: string; attemptCount: number; fireStatus: string };
   try {
     row = await persistConsultation({
       tenantId: ctx.tenantId, // JWT, never the payload (rule 3)
-      patientId: input.patientId,
+      patientId, // the scoped read's answer, never the payload
       doctorId: ctx.userId,
       audioObjectKey: input.objectKey,
       consultationStartedAt: input.consultationStartedAt,
@@ -263,7 +392,7 @@ export async function fireConsultationWebhookAction(input: {
     // thing that would have made it recoverable and it is now lost with it.
     console.error(
       `[consultation] PERSIST FAILED, consultation is unrecoverable ` +
-        `patient=${input.patientId} error=${e instanceof Error ? e.name : "unknown"}`,
+        `patient=${patientId} error=${e instanceof Error ? e.name : "unknown"}`,
     );
     return { ok: false, error: "not_persisted" };
   }
@@ -277,7 +406,7 @@ export async function fireConsultationWebhookAction(input: {
   const outcome = await attemptFire(
     {
       id: row.id,
-      patientId: input.patientId,
+      patientId,
       doctorId: ctx.userId,
       audioObjectKey: input.objectKey,
       consultationStartedAt: input.consultationStartedAt,
@@ -285,7 +414,7 @@ export async function fireConsultationWebhookAction(input: {
     },
     attempt,
   );
-  await recordOutcome({ id: row.id, patientId: input.patientId }, outcome, new Date());
+  await recordOutcome({ id: row.id, patientId }, outcome, new Date());
 
   if (outcome.verdict === "delivered") return { ok: true };
   return { ok: false, error: "pending", consultationId: row.id };

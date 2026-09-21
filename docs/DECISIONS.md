@@ -4616,6 +4616,122 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Not added: a runtime refusal.** The ruling asked for a header, and the clash precondition already stops the script before any write.
 - **Card `STAFF-10-jp-split-phase-2-reassignment-script`** now names the data op as the rewrite and closes on that op's stage 3 transcript, not on the old script's APPLY. The data op has not run.
 
+## 2026-09-20 - the patient-level Notas composer applies the same patient visibility rule its appointment twin does
+
+- **What changed.** `appendPatientNoteAction` (`apps/web/lib/patients/actions.ts`) now prechecks
+  `getPatient(patientId, { includeDeleted: true })` between its length guard and its insert, and
+  returns `{ ok: false }` when that answers `null`. One call, no signature change, no call-site edit.
+- **Supersedes the last bullet of the 2026-07-24 W12-13 entry above**, which recorded in writing
+  that `appendPatientNoteAction`'s gating was left untouched because it was not that PR's
+  regression. It is now the same gate its appointment-level twin has carried since that entry.
+- **Why the app layer is where this lives.** `patientId` arrives FROM THE CLIENT here (the profile
+  Notas composer and the dashboard Notas Rápidas patient-mode card post it; it is not derived
+  server-side the way `appendAppointmentNoteAction` derives it from the appointment), and the
+  INSERT is tenant-RLS only: `0026_appointment_notes.sql` `appointment_notes_tenant_insert` checks
+  `tenant_id` and nothing else, and `0050`/`0084` are tenant-only for UPDATE and DELETE too. The
+  capability gate is not a second line either: `patients:write` is held by owner, admin, therapist
+  and reception alike (`packages/auth/permissions.ts`), so `assertCan` passes for every staff role.
+  `getPatient` (`apps/web/lib/patients/queries.ts`) is the one place `therapistPatientScope` and the
+  PL-09 `patientLocationScope` are composed, so a single call applies both narrowings.
+- **`includeDeleted: true`, deliberately**, matching all five sibling note paths: it keeps the check
+  to the scope narrowing ALONE, so an unscoped role stays tenant-wide and a soft-deleted patient's
+  notes stay writable to whoever could already see them.
+- **Authorship rules untouched.** The insert block is byte-identical: `authorUserId: ctx.userId`,
+  `appointmentId: null`, body still trimmed. The PL-13 ruling that any `patients:write` holder may
+  edit or delete a visible patient's note is not revisited here.
+- **No audit_log change, on purpose.** Note create and note edit still write no audit row while
+  `deleteNoteAction` does. `0050_appointment_notes_editable.sql` frames notes as internal staff
+  communication rather than clinical records, so whether hard rule 6 extends to them is an owner
+  call and is logged as a question, not decided here.
+- **App-layer, matching its sibling.** This brings the patient-level composer into line with
+  `appendAppointmentNoteAction`, which has carried the same precheck since W10-04: the same rule,
+  in the same place, applied one axis over. Whether the narrowing should also exist at the
+  database layer is the open follow-up Q-W10-04-1 (`apps/web/lib/patients/scope.ts`).
+- **Measured.** `apps/web/lib/patients/actions.append-patient-note.test.ts` is new, 6 arms, and was
+  run RED before the change: 3 failed, 3 passed, the 3 that passed being the positive controls
+  (own patient written in the same run, reception unaffected, blank content still short-circuits).
+  Green after: 6/6. Whole `lib/patients` directory 435 pass / 75 skipped, unchanged.
+- **One behavioural edge, stated rather than discovered later.** `getPatient` asserts
+  `patients:read` internally, so a role holding `patients:write` WITHOUT `patients:read` would throw
+  here instead of returning `{ ok: false }`. No such role exists today (all four grant both), and
+  every sibling note action already has this same property.
+
+
+## 2026-09-21 - SOLO: the three consultation recording actions resolve the patient through one scoped read
+
+- **One helper, three call sites, one file.** `recordablePatientId(ctx, requestedId)`
+  in `apps/web/app/consultation/actions.ts` performs a `runScoped` read of
+  `patients` with `therapistPatientScope` ANDed in and returns the id the
+  database answered with. `signAudioUploadAction` and
+  `fireConsultationWebhookAction` call it; `startConsultationAction` applies the
+  same predicate inline and keeps its existing `not_found` arm, so the rule
+  reads identically in all three.
+- **The returned id is what flows.** The signer, `persistConsultation`, the
+  unrecoverable-persist log line, the M1 payload and the outcome write all take
+  the read's answer. The object-key check requires the `${tenantId}/${patientId}/`
+  prefix, the folder `audioObjectKey` builds, with the tenant-prefix check kept
+  ahead of it so a key outside the caller's tenant is refused before any query
+  runs.
+- **Why the action and not only the policy.** CLAUDE.md asks for the
+  server-side check IN the action with RLS as defense-in-depth. The recording
+  flow crosses boundaries a per-request scope does not follow -
+  `persistConsultation` writes on the service-role handle and the fire hands the
+  id and a signed audio URL to a third-party processor - so the identity is
+  settled once, before any of that, by a read the database answers. 0074's
+  `patients_select` is the other half and is unchanged.
+- **`patientLocationScope` is deliberately absent.** All three actions first
+  require `clinical_records:author`, which `packages/auth/permissions.ts` grants
+  to owner and therapist and denies to admin and reception, and
+  `lib/auth/permission-matrix.test.ts` pins that denial independently of
+  `PERMISSIONS`. Owner is unrestricted within the tenant, so therapist is the
+  only narrowed role that arrives. Adding the arm would also make this a new
+  call site `lib/patients/scope-call-sites.test.ts` must carry for a role that
+  never reaches it.
+- **A NEW DEPENDENCY MEANS A NEW FAULT MODE, AND THE REVIEWER CAUGHT IT.** Both
+  actions gained a database read, and on the first round the read sat outside
+  every `try`. The client awaits these actions directly, so a fault would have
+  rejected instead of returning a member of the result union, leaving the
+  recorder pinned at "uploading" or "firing" with the audio already in S3 and no
+  row behind it - which is worse than the failure states 0064 exists to make
+  visible. The read is now inside the `try` in the signer (answering `config`,
+  which the recorder maps to `upload_error`) and wrapped in the fire (answering
+  `not_persisted`, which is the true statement: nothing written, nothing to
+  re-fire). Two arms, one per action, are red without it.
+- **Both new catches LOG, PII-free.** Tenant from the JWT and the error class
+  name only; the requested patient id is unvalidated client input at that point
+  and stays out of the line. Without them a pool outage would be invisible: the
+  signer arm reads to the user as a storage-authorisation problem, and the fire
+  arm loses a consultation whose audio a lifecycle rule deletes days later.
+  `startConsultationAction`s read is deliberately NOT wrapped to match, because
+  `StartResult` carries no arm that would be true of a fault - `not_found` would
+  be a lie. That asymmetry is recorded here rather than papered over.
+- **Neither read excludes soft-deleted patients.** That is parity with
+  `startConsultationAction`s existing behaviour, kept deliberately rather than
+  tightening a second thing in the same PR. Whether a soft-deleted patient
+  should be recordable at all is a separate question.
+- **One dead branch removed while the file was open.** The signer's catch read
+  `if (e instanceof AudioStorageConfigError) return config; return config;` -
+  two branches returning the same value. It is now one return covering both
+  causes, and the `AudioStorageConfigError` import went with it. Behaviour is
+  identical by inspection: no test could tell the two apart.
+- **Two instruments, because one cannot do this job.** `actions.test.tsx` stubs
+  `@osteojp/db` down to `{ patients: { id } }` and its fake transaction answers
+  with whatever rows it was handed, whatever the `WHERE` says, so it proves the
+  CALL but never the PREDICATE - a read of `WHERE true` would pass every
+  assertion in it. `actions.patient-scope.test.ts` imports the REAL schema and
+  renders the captured `WHERE` through drizzle's Postgres dialect, the technique
+  `lib/patients/documents.visibility-scope.test.ts` established.
+- **No migration, no schema change, no new error arm, no i18n key.** Every
+  refusal uses an arm the result unions already carried.
+- **Two questions logged, not guessed:** Q-CONSULT-1 (should consent be a
+  server-held precondition of the later recording steps, and with what window)
+  and Q-CONSULT-2 (whether a refusal should write an audit row, and on which
+  paths). Both carry a recommended default and nothing is built for either.
+- **The board card follows in a board-only PR**, per SR-44 and SR-48 (a board
+  change never rides inside a code PR), after this fix is merged and deployed.
+  Two follow-ups go up with it: the consent-row requirement (blocked on
+  Q-CONSULT-1) and tightening the object-key check.
+
 ## 2026-09-20 - H5: the upload rule is applied before the upload URL is signed, and audit_log refuses a media type by shape
 
 - **RULING: `audit_log.metadata` carries no media type, and the rule is written

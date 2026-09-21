@@ -64,6 +64,12 @@ const EXPECTED_FUNCTIONS = [
   // retention job's body, which deletes what no application role may delete.
   "patient_guest_request_ids",
   "purge_expired_guest_intakes",
+  // 0090 (NESA-NAMES): the narrow read returning an appointment id and a display
+  // name for bookings held by a SHARED RESOURCE, so a therapist sees the patient's
+  // name on a NESA card without `patients_select` being widened. EXECUTE is
+  // granted to `authenticated` only; anon, patient and service_role are revoked
+  // in the same migration, which is why this one never reaches the portal.
+  "shared_resource_appointment_patient_names",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {

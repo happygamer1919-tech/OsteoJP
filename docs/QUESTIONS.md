@@ -1882,6 +1882,59 @@ hold active hours - BLUE has no production access and cannot run that read.
 
 **Blocked on:** owner ruling. Nothing is built for (b) or (c).
 
+## 2026-09-21 - Q-CONSULT-1: should consent be a server-held precondition of the later recording steps? (SOLO) (BLOCKED, nothing built)
+
+**Where this comes from.** `apps/web/app/consultation/actions.ts` now resolves
+the patient through one scoped read in all three recording actions, so the
+IDENTITY question is settled. The CONSENT question is a different one and this
+dispatch does not answer it.
+
+`startConsultationAction` is the consent gate: it refuses `consent_required`
+and, on consent, writes a PII-free `patient.recording_consent` audit row.
+
+**Whether that consent should ALSO be a precondition the server re-establishes
+on the later recording steps, and with what validity window, is the ruling asked
+for here.**
+
+- **(a) Yes.** Each later action reads the consent audit for this actor and
+  patient and refuses without it. Strongest. Costs one extra read per action and
+  needs a ruling on the window: is a consent row from last month still good for
+  today's recording?
+- **(b) No, leave it.** The consent gate stays a step, and the later actions
+  stay as they are. Consent remains provable after the fact from the audit row
+  the gate writes.
+- **(c) Yes, but only on the last, irreversible step.** Cheaper than (a).
+
+**Recommended default: (a), with a ruled window.** Consent for a recording is
+exactly the kind of clinical fact that belongs on the server, and this is
+clinical data leaving the tenant. It is ruled rather than built because the
+window is a clinical and legal judgement (owner-confirmable: clinical data
+retention and patient consent), not a code detail.
+
+**Blocked on:** owner ruling. Nothing is built for (a), (b) or (c).
+
+## 2026-09-21 - Q-CONSULT-2: should a refusal write an audit row, and on which paths? (SOLO) (BLOCKED, nothing built)
+
+Hard rule 6 in CLAUDE.md says an audit row is written on "every clinical record
+mutation and every permission-sensitive action. No exceptions." A refusal is a
+permission-sensitive event.
+
+These actions' refusal arms write no audit row today. Whether they should, and
+whether the same rule should apply more widely, is the ruling asked for here.
+
+- **(a) Leave it**, reading hard rule 6 as covering successful actions. What is
+  built today.
+- **(b) Audit refusals repo-wide.** One helper, applied at every deny site, and
+  a rule that says so. This is a sweep, not a card.
+- **(c) Audit refusals only on the highest-value paths**, to be named in the
+  ruling.
+
+**Recommended default: (c) as a carded follow-up.** (b) is a repo-wide
+behaviour change that deserves its own dispatch, and (a) leaves the one class of
+event here that is worth a trace without one.
+
+**Blocked on:** owner ruling. Nothing is built.
+
 ## 2026-09-20 - Q-H5-1: the ficha Anexos picker narrows to the Documentos allowlist and the 50 MiB ceiling
 
 **OWNER. Does not block: built with the recommended default.**

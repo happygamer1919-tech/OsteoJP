@@ -1,7 +1,9 @@
 # OsteoJP Pre-Launch Board - specification
 
-Governs the OsteoJP Pre-Launch Board. Authored by YELLOW (docs and governance).
-Owner-merge; YELLOW never merges its own PR.
+Governs the OsteoJP Pre-Launch Board. Authored by YELLOW (docs and governance), a
+lane retired by SR-64; board PRs are now authored and merged by SOLO under the tier
+rules, armed for auto-merge at open. The "Owner-merge; YELLOW never merges its own
+PR" line that stood here is superseded (SR-64, SR-65; actors corrected 2026-09-21).
 
 A second board, the **Portal Board**, uses this same schema, the same lane ids
 and the same rules. Everything below applies to both unless a line says
