@@ -145,13 +145,20 @@ type GuestBody = {
  * failing row in its detail: on this route either one is a visitor's name, phone
  * and health answers written to the server log. A five-character code is enough
  * for an operator to find the class of failure, and it cannot hold a value.
+ *
+ * IT MAY NOT BEGIN WITH `E`. A Node errno is five characters of `[0-9A-Z]` too
+ * (EPIPE, EPERM, EBUSY, ...), so the shape alone does not separate the two
+ * sets. The test is the leading `E` and NOT a leading digit, because
+ * PostgreSQL's classes `F0`, `HV`, `P0` and `XX` are real and a leading-digit
+ * test would report `P0001` as `unknown`. Kept byte-identical with the copy in
+ * apps/web/lib/observability/sql-state.ts, which carries the longer note.
  */
 function sqlStateOf(e: unknown): string {
   const code = (x: unknown): unknown =>
     typeof x === "object" && x !== null && "code" in x ? (x as { code: unknown }).code : undefined;
   const cause = typeof e === "object" && e !== null && "cause" in e ? (e as { cause: unknown }).cause : undefined;
   const found = code(e) ?? code(cause);
-  return typeof found === "string" && /^[0-9A-Z]{5}$/.test(found) ? found : "unknown";
+  return typeof found === "string" && /^(?!E)[0-9A-Z]{5}$/.test(found) ? found : "unknown";
 }
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";

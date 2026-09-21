@@ -1934,3 +1934,46 @@ behaviour change that deserves its own dispatch, and (a) leaves the one class of
 event here that is worth a trace without one.
 
 **Blocked on:** owner ruling. Nothing is built.
+
+## 2026-09-21 - Q-COMMS-02-1: should the delivery-status callback ask Twilio to retry a 5xx? (SOLO) (BLOCKED, nothing built)
+
+**What is built.** `app/api/webhooks/twilio/status/route.ts` answers 500 when the
+tenant lookup or the write fails. Its header now says what that status is for,
+citing Twilio's default retry policy of `ct` (a TCP connect or TLS handshake
+failure and nothing else); the URL this branch ships is origin and path only.
+The 500 is kept because it costs nothing and reports what happened, not because
+it fetches the callback again.
+
+**The question.** Twilio's webhook connection overrides
+(https://www.twilio.com/docs/usage/webhooks/webhooks-connection-overrides) are
+carried as a FRAGMENT on the webhook URL. The inbound webhook's URL is not built
+in this repository, so an override there would be the unauditable click this
+codebase's 2026-09-04 ruling rejected. For THIS webhook the URL is built in code
+(`lib/reminders/status-callback.ts`), so an override would be a normal diff,
+asserted by a test, and it would make the 500 buy a real second attempt within
+the 15000 ms total-time cap.
+
+**Why it is not simply done.** The same URL is spread into EVERY
+`messages.create` in the web app (`lib/reminders/clients.ts`), reminders
+included. If the Messages API rejects a `statusCallback` carrying a fragment, the
+create throws and no message goes out at all - the cost lands on the MESSAGE
+rather than on the status, which is the exact inversion
+`lib/reminders/status-callback.ts` is written to avoid. Twilio documents
+overrides on its product webhooks generally, and the `statusCallback`
+parameter's own page requires a valid URL without mentioning fragments either
+way; that is not the same as a confirmation.
+
+**The value, if it is taken.** `rp=all`, not `rp=5xx`. The `rp` parameter
+REPLACES the default rather than adding to it, so `rp=5xx` would trade away the
+connect-failure retries already in force; `all` covers connect and TLS failures,
+4xx, 5xx and read timeouts together. `rc` maxes out at 5 and every attempt still
+has to land inside the 15000 ms total-time cap, which is the honest limit of the
+whole arrangement: it covers a connection-pool blip and nothing longer.
+
+**Recommended default: leave it off, and not to be adopted until one live send
+against a test number, with the fragment present, has been observed to
+succeed.** That is a send, so it is an owner action and not a lane one. If it
+succeeds, the change is one string constant plus a test arm.
+
+**Blocked on:** owner ruling plus that one live send. Nothing is built for it;
+the URL this branch ships is origin and path only.
