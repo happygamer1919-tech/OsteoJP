@@ -261,10 +261,13 @@ rather than being counted.
 
    Check the EXIT CODE, never the summary line: a teardown error prints
    "Tests N passed" and still exits non-zero.
-7. **Migrations: you author, Ivan applies, apply happens BEFORE merge.** You
-   write the migration and open the PR. Ivan applies it from the
-   `osteojp-prod-apply` worktree and pastes the journal output back. Only then
-   does the PR merge. Two things that have gone wrong before and will again:
+7. **Migrations: you author, GREEN applies, apply happens BEFORE merge.** You
+   write the migration and open the PR. GREEN - a fresh session launched with
+   `scripts/apply-lane/osteojp-apply-settings.json`, which authors nothing, edits
+   nothing and merges nothing - applies it from the `osteojp-prod-apply` worktree
+   and pastes the journal output back. You never apply your own migration: the
+   settings refuse it ("The agent did not author the artifact"). Only then
+   does the PR merge. SR-70, 2026-09-21; this rule named the owner until then. Two things that have gone wrong before and will again:
    the apply worktree must be checked out with `git checkout origin/<branch>`
    **detached** - a plain `git checkout <branch>` is rejected and `db:migrate`
    then silently no-ops on main; and a migration number is taken at BUILD time
@@ -450,16 +453,26 @@ and Ivan needs to know which.
 9. **EVERY APPLY BLOCK YOU DRAFT STARTS `NOT VALIDATED`.** Binding,
    2026-08-07. The first line of any apply block you write is, verbatim:
    `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`.
-   **Strategy replaces it with `VALIDATED`. You never remove your own.**
-   **You never send an apply block to Ivan directly, in any form, in any turn** -
-   not as a quoted excerpt, not shortened, not as "an example of what it will
-   look like". The path is draft -> strategy -> Ivan, always.
+   **The REVIEWER replaces it with `VALIDATED`. You never remove your own.**
+   **You never send an apply block to the apply lane directly, in any form, in
+   any turn** - not as a quoted excerpt, not shortened, not as "an example of
+   what it will look like". The path is draft -> REVIEWER -> GREEN, always.
+
+   *ACTORS CORRECTED 2026-09-21, SR-70. This rule said "strategy" and "Ivan".
+   A separate strategy lane is not among the lanes SR-64 names and has no session
+   under the one-lane rulings; its review duty is discharged by R4's fresh-context
+   REVIEWER. The runner is GREEN, a fresh apply-only session that authored none of
+   it. The rule itself is unchanged and is the whole point: a block is reviewed
+   before it is run, and never by the hand that wrote it. The literal marker line
+   stays `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`, because it is a
+   token already sitting in committed apply documents and rewording it would
+   silently un-mark them.*
 
    **THE EXCEPTION, RULED BY STRATEGY 2026-08-20, AND IT IS WRITTEN HERE RATHER
-   THAN CROSS-REFERENCED.** A DRAFT **may** transit Ivan's screen inside a report
-   body, provided the `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`
-   line comes first. **Ivan runs only blocks ISSUED BY STRATEGY and marked
-   `VALIDATED`.**
+   THAN CROSS-REFERENCED.** A DRAFT **may** transit the owner's screen inside a
+   report body, provided the `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT
+   RUN` line comes first. **GREEN runs only blocks that have been REVIEWED, are
+   marked `VALIDATED`, and that GREEN did not author.**
 
    THIS SHARPENS THE RULE, IT DOES NOT LOOSEN IT. The rule was never about which
    screens a draft crosses; it is about **which artefact is executable**, and only
@@ -491,10 +504,15 @@ and Ivan needs to know which.
 
 10. **Gate vocabulary**, so the values do not read as a defect: the enum comes
    from the platform board and is deliberately not extended.
-   `green_self_merge` means **executor-terminal self-merge**, and PURPLE is the
-   executor on this board - read it as `purple_self_merge`. `owner_merge` means
-   Ivan merges, and on any card carrying a migration it also means
-   apply-before-merge. `owner_authorizo` is an explicit owner authorisation.
+   `green_self_merge` means **build-lane self-merge**. The lane names inside these
+   enum values are historical: BLUE, PURPLE, GREEN and STEWARD were folded into one
+   build lane, SOLO, by SR-64, so read `green_self_merge` as `solo_self_merge`,
+   armed for auto-merge at open under SR-65. `owner_merge` means the card does not
+   close on a merge alone; on any card carrying a migration it also means
+   apply-before-merge, and **since SR-70 (2026-09-21) that apply is run by GREEN** -
+   a fresh apply-only session that authored none of it - never by the lane that
+   wrote the migration. The enum VALUES are deliberately not renamed: they are keys
+   on every card on this board. `owner_authorizo` is an explicit owner authorisation.
    `stakeholder` is an external party (counsel, the clinic).
 
 ---
@@ -1107,3 +1125,7 @@ text names GREEN as the apply lane and names a specific settings file, while the
 ruling at `portal-board.json:1187` says only that applies belong to the designated apply
 lane and that the author and the applier are always different lanes. The committed ruling
 is the authority. If the narrower version is the intent, SR-63 is amended on the board.
+**RESOLVED 2026-09-21: the narrower version was the intent.** SR-70 records it - GREEN is the
+apply lane, a fresh session launched with the apply settings, which authors nothing, edits
+nothing and merges nothing. SR-63 keeps its `superseded_by: SR-64` and is not reopened; SR-70
+is where the narrow text now lives. The divergence above is history, not an open question.
