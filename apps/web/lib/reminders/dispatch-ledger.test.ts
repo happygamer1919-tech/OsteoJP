@@ -85,10 +85,19 @@ describe("the dispatch ledger", () => {
     expect(updated[1]).toMatchObject({ providerStatus: "failed", providerErrorCode: "30006" });
   });
 
-  it("a failing status update does not throw either", async () => {
+  /**
+   * NOT THE SEND PATH, AND THAT IS THE WHOLE DISTINCTION. `recordDispatch`
+   * swallows because recording a send must not be able to stop one, and the
+   * test above pins it. `recordProviderStatus` has ONE caller, the status
+   * webhook, and that write is the entire reason the webhook exists: there is
+   * no send for a swallow to protect there, only a delivery report to lose. It
+   * throws, and the route decides what to answer.
+   */
+  it("a failing status update THROWS, so the callback can refuse it", async () => {
     failNext = true;
     await expect(
       recordProviderStatus({ tenantId: "t1", providerMessageId: "SM1", providerStatus: "sent" }),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("db down");
+    expect(updated).toHaveLength(0);
   });
 });
