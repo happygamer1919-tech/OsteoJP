@@ -89,7 +89,31 @@ A restyled glass drawer reusing the existing appointment data and behavior. It r
 | Week/day grid | grid skeleton (gutter + faint column placeholders) | the empty grid is its own affordance; NO redundant empty-period banner (carry the v1 W4-07 fix: the grid speaks for itself) | ErrorState replacing the grid body, toolbar intact |
 | Drawer | field skeletons / disabled submit | n/a | inline field errors + single error banner |
 
-Mobile: a single-day view inferred from the current behavior (one therapist column, vertical scroll, day navigation). ASSUMPTION: mobile collapses to Dia view; flag to Ivan if v1 mobile differs.
+**Mobile — the ASSUMPTION is retired. AGMOB-01, 2026-09-21.**
+
+This section used to read: *"Mobile: a single-day view inferred from the current
+behavior (one therapist column, vertical scroll, day navigation). ASSUMPTION:
+mobile collapses to Dia view; flag to Ivan if v1 mobile differs."* It was never
+ruled. It shipped as a client-side `matchMedia("(max-width: 1023px)")` override
+that forced the Dia view and hid the Dia/Semana toggle, and a therapist reported
+the consequence in plain words: the weekly view is not possible on the phone.
+
+**What is true now.** Under **768px** the agenda renders the week as a VERTICAL
+LIST OF DAYS (Mon–Sat), not as the grid, and the Dia/Semana toggle is visible at
+every width. At 768px and above the grid is unchanged. The swap is CSS, so
+`view` is only ever the URL's — there is no client-side viewport state and no
+second breakpoint to keep in step.
+
+**Why the grid is not simply made narrower.** It is one CSS Grid of
+`64px repeat(days, minmax(0, 1fr))`. At 390px the content box is 342px, so six
+columns are 46px, and after the column border and the name button's `px-2` a
+patient name has 11px — one to two characters a line. A six-column week at phone
+width renders; it does not read.
+
+**Why 768 and not 1023.** A six-column grid needs roughly 101px a column to stay
+readable, which is what reception reads at 1024 every day. At 768 a column is
+109px. So tablets and landscape phones GAIN the real grid, which 1023 denied
+them, and 768 is the number `SPEC-staff-screens.md` had already named.
 
 ---
 

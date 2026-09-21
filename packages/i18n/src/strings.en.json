@@ -152,6 +152,8 @@
   "agenda.apptCountOne": "appointment",
   "agenda.apptCountMany": "appointments",
   "agenda.noAppointments": "No appointments in this period",
+  "agenda.dayNoAppointments": "No appointments for this date",
+  "agenda.weekList": "Week list",
   "agenda.conflictTherapist": "Therapist conflict",
   "agenda.conflictRoom": "Room conflict",
   "agenda.conflictAvailability": "Outside hours",
