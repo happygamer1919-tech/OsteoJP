@@ -34,8 +34,10 @@ export type AudioUploadOutcome =
   | { ok: false; step: "sign" | "put"; error?: string };
 
 /**
- * Sign → PUT-direct-to-S3. `config` from the signer means the AUDIO_S3_* env is
- * not set (surfaced to the user, never a stub key).
+ * Sign → PUT-direct-to-S3. `config` from the signer means the upload slot could
+ * not be minted — the AUDIO_S3_* env is unset, or the patient read faulted.
+ * `forbidden` means the caller may not record this patient. Both are surfaced
+ * to the user; never a stub key.
  */
 export async function uploadRecording(
   result: RecordingResult & { patientId: string },
