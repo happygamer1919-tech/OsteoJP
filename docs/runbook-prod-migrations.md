@@ -10,7 +10,7 @@
 
 > **BINDING AMENDMENT, 2026-08-07: every apply block runs the pre-check before
 > `migrate`.** Not "should", not "when convenient". A block without it is not a
-> valid block and must not be handed to the owner. The rule, the command and the
+> valid block and must not be handed to the apply lane. The rule, the command and the
 > two incidents that produced it are in **"The pre-check is mandatory"** below.
 > Read that section before writing any apply block.
 
@@ -30,13 +30,25 @@ Every apply block an executor drafts carries, as its **first line**:
 NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
 ```
 
-**Strategy replaces that line with `VALIDATED` before it reaches Ivan.** Nobody
-else edits it, and an executor never removes its own.
+**The REVIEWER replaces that line with `VALIDATED` before the block reaches the
+apply lane.** Nobody else edits it, and an author never removes its own.
 
-**An executor NEVER sends an apply block to Ivan directly, in any form, in any
-turn — including as a quoted excerpt, a shortened version, or "an example of what
-it will look like".** The path is always: draft → strategy → Ivan. A block that
-reaches him without passing through strategy has skipped its only review.
+**An author NEVER sends an apply block to the apply lane directly, in any form, in
+any turn — including as a quoted excerpt, a shortened version, or "an example of
+what it will look like".** The path is always: draft → REVIEWER → GREEN. A block
+that reaches the apply lane without passing through review has skipped its only
+review.
+
+*Actors updated 2026-09-21 (SR-70), in the PROSE of this section. Two things are
+deliberately NOT changed and that sentence does not claim them: the heading above,
+which PORTAL-REHYDRATE cites by name, and the literal marker line `NOT VALIDATED -
+STRATEGY REVIEW REQUIRED - DO NOT RUN`, which is a token already sitting in
+committed apply documents - rewording it would silently un-mark them. A separate
+strategy lane is not among the lanes SR-64 names and has no session under the
+one-lane rulings; its review duty is discharged by R4's fresh-context REVIEWER. The
+runner is GREEN, a fresh apply-only session that authored none of it, not the owner
+at a keyboard. The rule itself - a block is reviewed before it is run, and never by
+the hand that wrote it - is unchanged and is the whole point.*
 
 ### Why the line, and why it is the FIRST line
 
@@ -203,7 +215,7 @@ git cat-file -t PINNED_SHA
 check is worthless against a sha this clone has never seen, and it is the fetch
 that makes "resolves" mean "resolves to the thing the PR actually carries".
 
-### Strategy re-verifies the pin as the LAST action before the owner runs anything
+### The pin is re-verified as the LAST action before the apply lane runs anything
 
 **Not when the block is drafted. Not during the review. Last.**
 
@@ -213,7 +225,7 @@ sha in the paste silently stops being the branch head. `cat-file` still prints
 `commit`, the pre-flight still passes, and what gets applied is an *older* tree
 than the one that was reviewed. The error case is loud; this one is not.
 
-So the last thing strategy does before handing a block to the owner is re-read
+So the last thing the authoring lane does before handing a block to GREEN is re-read
 the branch head and confirm the pinned sha is still it. If the branch has moved,
 the pin is updated and the block is re-read — a pin is a statement about a moment,
 and the moment that matters is the one immediately before the apply.
