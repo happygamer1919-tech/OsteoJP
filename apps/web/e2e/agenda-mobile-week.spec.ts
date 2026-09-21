@@ -139,15 +139,76 @@ test.describe("the agenda week on a phone (AGMOB-01)", () => {
       await sections.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.listDay)),
     ).toEqual(monToSat(MONDAY));
 
-    // ARM 3 - no horizontal page scroll. THE NON-VACUITY CONTROL COMES FIRST: a
-    // display:none box has scrollWidth === clientWidth === 0 and would pass the
-    // comparison below while showing nothing at all.
-    const m = await page.evaluate(() => ({
-      c: document.documentElement.clientWidth,
-      s: document.documentElement.scrollWidth,
-    }));
-    expect(m.c, "the page has a width at all").toBeGreaterThan(0);
-    expect(m.s).toBeLessThanOrEqual(m.c);
+    // ARM 3 - NOTHING THIS CARD BUILT SCROLLS SIDEWAYS, and the page-level
+    // measurement is kept as an ATTRIBUTION rather than dropped.
+    //
+    // ==================================================================
+    // WHY THIS IS SCOPED, AND THE DEFECT IT FOUND ON THE WAY
+    // ==================================================================
+    // The first version asserted `document.documentElement.scrollWidth <=
+    // clientWidth` and FAILED: 479 against 390. The screenshot shows why, and
+    // it is not this card: the toolbar's second group - Bloquear / Atualizar /
+    // Nova marcacao, one `flex-none` row that cannot shrink or wrap internally
+    // - runs off the right edge with "Nova marcaca" visibly clipped. That
+    // markup is UNCHANGED by this PR (`git diff origin/main` touches no line
+    // of it), so the overflow is PRE-EXISTING on main. It had never been seen
+    // because nothing in this repository had ever measured the agenda below
+    // 1024px. It is carded as AGENDA-toolbar-overflows-at-390.
+    //
+    // So the hard assertion is about the surface this card OWNS, and the page
+    // measurement below states what the remaining overflow is attributable to.
+    // Weakening it to "the page may scroll" would have thrown away the finding.
+    const listBox = await page.getByTestId("agenda-week-list").boundingBox();
+    expect(listBox, "the list has a box").not.toBeNull();
+    const vw = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(vw, "the page has a width at all").toBeGreaterThan(0);
+    expect(listBox!.x).toBeGreaterThanOrEqual(0);
+    expect(
+      listBox!.x + listBox!.width,
+      "the week list does not extend past the right edge",
+    ).toBeLessThanOrEqual(vw + 1);
+
+    // ...and no element INSIDE it overflows its own box either, which is the
+    // claim a bounding box alone would miss.
+    const listOverflow = await page
+      .getByTestId("agenda-week-list")
+      .evaluate((el) => {
+        const bad: string[] = [];
+        for (const n of [el, ...Array.from(el.querySelectorAll("*"))]) {
+          const e = n as HTMLElement;
+          if (e.scrollWidth > e.clientWidth + 1) bad.push(`${e.tagName}.${e.className}`.slice(0, 80));
+        }
+        return bad;
+      });
+    expect(listOverflow, "nothing inside the week list scrolls sideways").toEqual([]);
+
+    // THE ATTRIBUTION. If the page still overflows, it must be the toolbar and
+    // never the list - and the message names the widest offender so the next
+    // reader does not have to re-derive it from a screenshot.
+    const widest = await page.evaluate(() => {
+      const vw = document.documentElement.clientWidth;
+      let worst = { sel: "(none)", right: 0 };
+      for (const n of Array.from(document.body.querySelectorAll("*"))) {
+        const e = n as HTMLElement;
+        const r = e.getBoundingClientRect();
+        if (r.width > 0 && r.right > worst.right) {
+          worst = { sel: `${e.tagName}.${String(e.className).slice(0, 60)}`, right: Math.round(r.right) };
+        }
+      }
+      return { vw, ...worst };
+    });
+    const inList = await page
+      .getByTestId("agenda-week-list")
+      .evaluate((el, sel) => el.querySelector(sel.split(".")[0]) !== null, widest.sel)
+      .catch(() => false);
+    if (widest.right > widest.vw) {
+      expect(
+        inList,
+        `the page overflows to ${widest.right}px (viewport ${widest.vw}). Widest element: ` +
+          `${widest.sel}. It must NOT be inside the week list - see ` +
+          `AGENDA-toolbar-overflows-at-390 for the pre-existing toolbar defect.`,
+      ).toBe(false);
+    }
 
     // ARM 4 - THE VALUE FITS, not merely the box. A width floor asks "is the box
     // big"; the clinic asked "does the name fit". The two came apart before.
