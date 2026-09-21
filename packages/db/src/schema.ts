@@ -2580,9 +2580,11 @@ export const consultations = pgTable(
  * generate it - the migrations are hand-authored (drizzle-kit generate is banned
  * on this project since 0014).
  *
- * THE TABLE DOES NOT EXIST YET in any database CI touches: its migration is in
- * migrations-pending/ and has no number until 0089 lands. This declaration is a
- * TYPE, not a promise that the table is there.
+ * ITS MIGRATION IS `packages/db/migrations/0091_care_team.sql`, promoted on
+ * 2026-09-21, so CI's seeded database HAS the table. Production does not until
+ * 0091 is applied, and this declaration is a TYPE rather than a promise that the
+ * table is there, so a query against a database below 0091 still fails loudly
+ * instead of silently.
  */
 export const patientCareTeam = pgTable("patient_care_team", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -66,6 +66,26 @@ const F = {
   pSecondaryA: randomUUID(),
   pFallbackB: randomUUID(),
   pNowhere: randomUUID(),
+  /**
+   * ADDED AT THE 0091 PROMOTION (CARE-01), AND IT KEEPS THIS FILE'S A/B HONEST.
+   *
+   * The third seeded appointment - otherT's, at LocA, carrying a SECOND patient
+   * - used to name `pA` as its primary patient, and therapistT treats `pA`.
+   * 0091 adds a SEPARATE permissive FOR SELECT policy on `appointments` letting
+   * a therapist read every appointment of a patient they have treated, so that
+   * row started appearing on the AFTER side while BEFORE - a transcription of
+   * the pre-0071 `appointments_rls` predicate - could not contain it. The two
+   * sides then differed for a reason that has NOTHING to do with 0071's wrap,
+   * which is the one thing this file exists to measure.
+   *
+   * The fix is the fixture, not the transcription. Writing 0091's disjunct into
+   * BEFORE would make BEFORE stop being the pre-0071 predicate, and the A/B
+   * would quietly become an identity. Giving that row its own patient puts it
+   * back outside 0091's scope, exactly as the 0086 and 0088 widenings are
+   * already outside it (this fixture seeds no shared resource). 0091's own
+   * behaviour is proven in care-team-appointment-visibility.db.test.ts.
+   */
+  pThirdPrimary: randomUUID(),
 };
 
 const T0 = "2026-05-06T09:00:00Z";
@@ -91,17 +111,21 @@ async function seed(p: Sql): Promise<void> {
     (${F.tenant}, ${F.adminA},     ${F.locA}),
     (${F.tenant}, ${F.receptionA}, ${F.locA})`;
   await p`insert into patients (id, tenant_id, full_name) values
-    (${F.pA},          ${F.tenant}, 'P A'),
-    (${F.pB},          ${F.tenant}, 'P B'),
-    (${F.pSecondaryA}, ${F.tenant}, 'P Secondary A'),
-    (${F.pNowhere},    ${F.tenant}, 'P Nowhere')`;
+    (${F.pA},             ${F.tenant}, 'P A'),
+    (${F.pB},             ${F.tenant}, 'P B'),
+    (${F.pSecondaryA},    ${F.tenant}, 'P Secondary A'),
+    (${F.pThirdPrimary},  ${F.tenant}, 'P Third Primary'),
+    (${F.pNowhere},       ${F.tenant}, 'P Nowhere')`;
   await p`insert into patients (id, tenant_id, full_name, primary_location_id)
           values (${F.pFallbackB}, ${F.tenant}, 'P Fallback B', ${F.locB})`;
   await p`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at) values
     (${F.tenant}, ${F.pA}, ${F.therapistT}, ${F.locA}, ${T0}, ${T1}),
     (${F.tenant}, ${F.pB}, ${F.otherT},     ${F.locB}, ${T0}, ${T1})`;
+  // Primary patient is pThirdPrimary, NOT pA: see the note on F.pThirdPrimary.
+  // What this row is here for - a SECOND patient on somebody else's booking at
+  // LocA - is unchanged.
   await p`insert into appointments (tenant_id, patient_id, patient_2_id, practitioner_id, location_id, starts_at, ends_at)
-          values (${F.tenant}, ${F.pA}, ${F.pSecondaryA}, ${F.otherT}, ${F.locA}, ${T2}, ${T3})`;
+          values (${F.tenant}, ${F.pThirdPrimary}, ${F.pSecondaryA}, ${F.otherT}, ${F.locA}, ${T2}, ${T3})`;
 }
 
 const md5 = (ids: string[]) => createHash("md5").update(ids.join(",")).digest("hex");
@@ -353,7 +377,7 @@ describe.skipIf(!live)("0071 wraps the nullary helper and changes no row's visib
     // is the one 0071 rewrites. If the wrap had changed its meaning, this is
     // where it would show.
     const unassigned = await afterPatients(sql, claimsFor(F.tenant, "admin", F.adminUnassigned));
-    for (const id of [F.pA, F.pB, F.pSecondaryA, F.pFallbackB, F.pNowhere]) {
+    for (const id of [F.pA, F.pB, F.pSecondaryA, F.pThirdPrimary, F.pFallbackB, F.pNowhere]) {
       expect(unassigned).toContain(id);
     }
   });

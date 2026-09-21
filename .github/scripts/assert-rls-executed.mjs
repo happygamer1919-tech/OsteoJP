@@ -339,51 +339,30 @@ for (const tr of report.testResults) {
 const PERMITTED_SKIPS = new Map([
   // ["some-suite.test.ts", "why this one is allowed to skip, and who decided"],
   //
-  // ONE ENTRY, AND THE MAP HAS CARRIED EXACTLY ONE BEFORE. The comment above says
-  // this map should stay empty, so an entry is written to be read, not waved through.
+  // EMPTY AGAIN, AS OF 2026-09-21, AND THAT IS TWICE THAT AN EXPIRY WRITTEN INTO
+  // AN ENTRY WAS ACTUALLY HONOURED. Two entries have ever lived here, one at a
+  // time, and both came out at their migration's promotion.
   //
-  // THE PRECEDENT, and it is the reason an entry here is tolerable at all: NESA-NAMES
-  // held the only previous entry while its migration sat unnumbered in
-  // migrations-pending, where `drizzle-kit migrate` cannot see it. That entry carried
-  // an expiry - "DELETE THIS ENTRY at promotion" - and the expiry was honoured: the
-  // migration became packages/db/migrations/0090_nesa_patient_name_for_therapists.sql,
-  // CI's seeded database now builds with the function, all its arms run on their own,
-  // and the entry was removed by BLUE under dispatch B13 on 2026-09-18. An exemption
-  // with an expiry that somebody actually acts on is a decision; one without is a hole.
+  // THE FIRST covered NESA-NAMES' function-dependent arms while its migration sat
+  // unnumbered in migrations-pending, where `drizzle-kit migrate` cannot see it.
+  // It became packages/db/migrations/0090_nesa_patient_name_for_therapists.sql,
+  // journal idx 87, and the entry was removed by BLUE under dispatch B13 on
+  // 2026-09-18.
   //
-  // WHAT THIS ONE COVERS: CARE-01's RLS suite proves a policy that ships in a PENDING
-  // migration, `packages/db/migrations-pending/NEXT-AFTER-0089_care_team.sql`. The file
-  // name is historical - it was authored when 0089 was the head - and the number it
-  // will TAKE at promotion is **0092**, under the owner's renumbering of 2026-09-20
-  // (0090 NESA names, 0091 the users/tenants/roles policy split, 0092 CARE-01, 0093
-  // RGPD-01, 0094 the grants revoke). Until it is renamed into
-  // packages/db/migrations/, CI's seeded database has neither the table nor the policy,
-  // so the suite gates on the SCHEMA: it asks `to_regclass('public.patient_care_team')`
-  // and skips when the answer is null.
+  // THE SECOND covered CARE-01's care-team-appointment-visibility.db.test.ts for
+  // the same reason, and said "DELETE THIS ENTRY at promotion". The promotion is
+  // now: the migration is packages/db/migrations/0091_care_team.sql, journal
+  // idx 88, tag 0091_care_team, so CI's seeded database builds WITH the
+  // patient_care_team table and the widened policy, and the suite runs on its
+  // own. Keeping the exemption a day longer would let a genuinely broken
+  // care-team policy skip unnoticed inside a green required check.
+  // Removed by SOLO at the CARE-01 promotion, 2026-09-21.
   //
-  // WHY SKIPPING IS THE HONEST ANSWER HERE rather than a hole: the alternative is a
-  // suite that asserts the widened visibility against a database that was never
-  // widened, which is red for a reason that has nothing to do with the code under
-  // review. A skip that SAYS "not measured" is worth more than a green that means
-  // nothing.
-  //
-  // WHEN IT COMES OUT: at promotion, exactly as NESA's did. The moment the migration
-  // is renamed to 0092 and applied, this suite runs in CI on its own and this line
-  // must be deleted - if it is not, a genuinely broken care-team policy could skip
-  // unnoticed behind this exemption. Five existing appointments suites go red at that
-  // same moment and are the rest of that checklist; the card
-  // CARE-01-assigned-therapists carries it.
-  //
-  // Decided by BLUE under dispatch CARE-01-BUILD, owner ruling Q-CARE-1, 2026-09-16.
-  // Comment corrected 2026-09-21: it claimed to be the first entry ever made here,
-  // which NESA's disproves, and it named the wrong promotion number.
-  [
-    "care-team-appointment-visibility.db.test.ts",
-    "CARE-01: proves a policy that ships in migrations-pending/NEXT-AFTER-0089_care_team.sql, " +
-      "which CI never applies; the suite gates on to_regclass and skips when the table is absent. " +
-      "DELETE THIS ENTRY at promotion, when the migration takes the number 0092 and CI applies it. " +
-      "BLUE, dispatch CARE-01-BUILD, ruling Q-CARE-1, 2026-09-16.",
-  ],
+  // THE NUMBER THE DELETED ENTRY NAMED WAS 0092, AND THAT WAS THE ORDER RULED ON
+  // 2026-09-20. The owner re-ruled the queue on 2026-09-21 - the second
+  // renumbering, not a typo correction - and CARE-01 now takes 0091, RGPD-01
+  // 0092, the users/tenants role fix 0093 and the grants revoke 0094. The
+  // 2026-09-20 order was real while it stood; it is superseded.
 ]);
 
 const derivedFailures = [];

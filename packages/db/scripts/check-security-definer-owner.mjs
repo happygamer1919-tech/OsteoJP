@@ -96,14 +96,25 @@ export const EXPECTED_OWNER = "postgres";
  * `authenticated` only - `anon`, `patient` and `service_role` are revoked in the
  * same migration.
  *
+ * 25 -> 26 with migration 0091 (CARE-01, promoted 2026-09-21):
+ * `public.viewer_care_team_patient_ids()`, the nullary set of patients the
+ * calling therapist is CURRENTLY assigned to by reception (`removed_at IS
+ * NULL`), evaluated once per statement by the care-team read policy on
+ * `appointments`. It carries its own `ALTER FUNCTION ... OWNER TO postgres` in
+ * 0091, and EXECUTE is granted to `authenticated` only - PUBLIC, `anon` and
+ * `service_role` are revoked in the same migration.
+ *
  * MEASURED, NOT INCREMENTED, because this constant is a SUM and a branch that
  * writes it as though it were the only contributor gets it wrong - which is
  * exactly what the 22-vs-23 conflict above cost. Scanning every
  * `ALTER FUNCTION public.<name>(...) OWNER TO` across packages/db/migrations found
- * 25 pins with NO duplicates against 24 declared names, and the single set
- * difference was this function. 0089 contributes none, so the sum is 24 + 0 + 1.
+ * 26 pins with NO duplicates against 25 declared names, and the single set
+ * difference was `viewer_care_team_patient_ids`. A throwaway database with the
+ * whole mirror applied through 0091 reports 26 `prosecdef` functions in
+ * `public`, which is the same number arrived at from the other end. 0091
+ * contributes exactly one, so the sum is 24 + 1 + 1.
  */
-export const EXPECTED_COUNT = 25;
+export const EXPECTED_COUNT = 26;
 
 /**
  * The verdict, as a pure function of the catalog rows.

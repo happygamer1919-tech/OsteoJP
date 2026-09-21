@@ -38,19 +38,24 @@ import type { Sql } from "postgres";
 import { asRole, claimsFor, connect, live } from "./rls-harness";
 
 /**
- * THESE TESTS NEED A MIGRATION THAT HAS NO NUMBER YET, SO THEY ASK THE DATABASE
- * RATHER THAN ASSUMING.
+ * THE MIGRATION IS NUMBERED NOW, AND THESE TESTS STILL ASK THE DATABASE RATHER
+ * THAN ASSUMING.
  *
- * `NEXT-AFTER-0089_care_team.sql` lives in `migrations-pending/`, which
- * `drizzle-kit migrate` cannot see by construction. CI's DB-gated job therefore
- * runs against a database WITHOUT the care-team table or policy, and a suite
- * that asserted the widened behaviour there would be red for a reason that has
- * nothing to do with the code under review.
+ * It was promoted on 2026-09-21, bytes unchanged, from
+ * `migrations-pending/NEXT-AFTER-0089_care_team.sql` to
+ * `packages/db/migrations/0091_care_team.sql` (journal idx 88, tag
+ * `0091_care_team`), so CI's seeded database now BUILDS with the table and the
+ * policy and every arm below runs. The `PERMITTED_SKIPS` entry that covered this
+ * file in `.github/scripts/assert-rls-executed.mjs` was deleted in the same
+ * change, at the expiry it carried. A skip here is now a RED, as it should be.
  *
- * So the gate is the SCHEMA, not an env flag: where somebody has applied the
- * pending SQL (a lane, or production after promotion) these run and must pass;
- * everywhere else they skip and say nothing. A `describe.skip` is honest here in
- * a way a passing stub would not be - it reports "not measured", not "fine".
+ * WHY THE SCHEMA GATE STAYS ANYWAY. A lane database, a developer's local stack
+ * or an older throwaway can sit below 0091, and a suite that asserted the
+ * widened behaviour there would be red for a reason that has nothing to do with
+ * the code under review. So the gate is the SCHEMA, not an env flag: where the
+ * migration is applied these run and must pass; below it they skip and say
+ * nothing, which reports "not measured" rather than "fine". CI is above it, and
+ * the RLS-executed guard is what proves CI actually ran them.
  */
 async function careTeamApplied(): Promise<boolean> {
   if (!live) return false;

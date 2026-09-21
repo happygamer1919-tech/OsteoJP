@@ -19,6 +19,8 @@ import { asRole, claimsFor, connect, live, patientClaims } from "./rls-harness";
 const d = live ? describe : describe.skip;
 
 const POLICY = "appointments_shared_resource_second_participant_select";
+/** 0091 (CARE-01), the fourth policy on `appointments`. See the closed-list arm. */
+const CARE_TEAM_POLICY = "appointments_care_team_patient_history_select";
 
 d("0088: NESA as Terapeuta 2 is visible to the clinic's therapists, read only", () => {
   let sql: Sql;
@@ -31,6 +33,17 @@ d("0088: NESA as Terapeuta 2 is visible to the clinic's therapists, read only", 
   const otherLoc = randomUUID();
   const patient = randomUUID();
   const otherPatient = randomUUID();
+  /**
+   * ADDED AT THE 0091 PROMOTION (CARE-01), AND IT IS A FIXTURE FIX, NOT A
+   * BEHAVIOUR CHANGE. The LV row used to name the SAME `patient` as the CB row.
+   * 0091 lets a therapist read every appointment of a patient they have
+   * treated, so `lvOnly` - who is the practitioner on the LV row - began
+   * reading the CB row through the CARE-TEAM policy, and the arm below stopped
+   * measuring 0088 at all. Giving the LV row its own patient restores the
+   * isolation that arm depends on. 0091's own behaviour is proven in
+   * care-team-appointment-visibility.db.test.ts, which is where it belongs.
+   */
+  const lvPatient = randomUUID();
 
   const nesa = randomUUID(); // the machine, at CB
   const booker = randomUUID(); // CB therapist who booked with NESA as Terapeuta 2
@@ -81,7 +94,8 @@ d("0088: NESA as Terapeuta 2 is visible to the clinic's therapists, read only", 
     await link(lvOnly, tenant, lv);
     await link(otherTherapist, otherTenant, otherLoc);
     await sql`insert into patients (id, tenant_id, full_name) values
-      (${patient}, ${tenant}, 'Paciente 0088'), (${otherPatient}, ${otherTenant}, 'Paciente outro')`;
+      (${patient}, ${tenant}, 'Paciente 0088'), (${lvPatient}, ${tenant}, 'Paciente 0088 LV'),
+      (${otherPatient}, ${otherTenant}, 'Paciente outro')`;
     const appt = (id: string, t: string, p: string, prac: string, prac2: string | null, loc: string) =>
       sql`insert into appointments (id, tenant_id, patient_id, practitioner_id, practitioner_2_id, location_id,
                                     starts_at, ends_at, status, created_by)
@@ -89,7 +103,9 @@ d("0088: NESA as Terapeuta 2 is visible to the clinic's therapists, read only", 
                   'scheduled', ${prac})`;
     await appt(nesaSecondAtCb, tenant, patient, booker, nesa, cb);
     // A row recorded at LV naming NESA: the location test must keep it from CB therapists.
-    await appt(nesaSecondAtLv, tenant, patient, lvOnly, nesa, lv);
+    // Its patient is `lvPatient`, not `patient`, so this fixture exercises 0088
+    // alone - see the note on lvPatient above.
+    await appt(nesaSecondAtLv, tenant, lvPatient, lvOnly, nesa, lv);
     await appt(personSecondAtCb, tenant, patient, booker, person, cb);
     await appt(otherTenantRow, otherTenant, otherPatient, otherTherapist, null, otherLoc);
   });
@@ -106,14 +122,33 @@ d("0088: NESA as Terapeuta 2 is visible to the clinic's therapists, read only", 
     await sql.end();
   });
 
+  /**
+   * THE CLOSED LIST GREW BY ONE AT 0091 (CARE-01), BY AN OWNER RULING.
+   *
+   * `appointments_care_team_patient_history_select` is the care-team read
+   * policy. It is listed here BY NAME rather than the assertion being relaxed
+   * to a count or a subset, because the whole value of this arm is that a
+   * fourth policy on `appointments` cannot appear without somebody writing its
+   * name down next to a ruling. 0091 has one: Q-CARE-1 (c), 2026-09-16.
+   *
+   * ITS SHAPE IS ASSERTED TOO, for the reason 0088's own is: it must be FOR
+   * SELECT. `appointments_rls` is FOR ALL, so a care-team policy written FOR
+   * ALL would hand every therapist UPDATE and DELETE on a colleague's booking.
+   * That is the grant nobody ruled, and this is where it would show.
+   */
   it("the policy exists as PERMISSIVE, FOR SELECT, TO authenticated, and nothing else on appointments changed role", async () => {
     const rows = await sql`select policyname, permissive, cmd, roles::text as roles
       from pg_policies where schemaname = 'public' and tablename = 'appointments' order by policyname`;
     const byName = Object.fromEntries(rows.map((r) => [r.policyname, r]));
     expect(byName[POLICY]).toMatchObject({ permissive: "PERMISSIVE", cmd: "SELECT", roles: "{authenticated}" });
     expect(byName.appointments_rls).toMatchObject({ cmd: "ALL", roles: "{authenticated}" });
+    expect(byName[CARE_TEAM_POLICY]).toMatchObject({
+      permissive: "PERMISSIVE",
+      cmd: "SELECT",
+      roles: "{authenticated}",
+    });
     expect(Object.keys(byName).sort()).toEqual(
-      ["appointments_patient_selfscope", "appointments_rls", POLICY].sort(),
+      ["appointments_patient_selfscope", "appointments_rls", POLICY, CARE_TEAM_POLICY].sort(),
     );
   });
 
@@ -138,6 +173,18 @@ d("0088: NESA as Terapeuta 2 is visible to the clinic's therapists, read only", 
 
   it("an LV-only therapist reads nothing through it", async () => {
     expect(await asTherapist(lvOnly, (tx) => count(tx, nesaSecondAtCb))).toBe(0);
+  });
+
+  /**
+   * THE 0091 CROSS-CHECK, so the isolation above is a measured fact rather than
+   * a fixture detail nobody re-reads. `lvOnly` reads nothing of the CB row
+   * because they have never treated its patient - not because 0091 is absent.
+   * `booker` HAS treated that patient, and reads their LV-recorded history.
+   */
+  it("0091 is present and keys on the PATIENT: the CB booker reads that patient's history, the LV-only therapist does not", async () => {
+    expect(await asTherapist(booker, (tx) => count(tx, nesaSecondAtCb))).toBe(1);
+    expect(await asTherapist(lvOnly, (tx) => count(tx, nesaSecondAtLv))).toBe(1);
+    expect(await asTherapist(lvOnly, (tx) => count(tx, personSecondAtCb))).toBe(0);
   });
 
   it("the location test holds: a CB therapist does not read a NESA-as-Terapeuta-2 row recorded at LV", async () => {
