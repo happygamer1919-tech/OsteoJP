@@ -120,3 +120,44 @@ describe("validateDocumentUpload", () => {
     ).toBe("size");
   });
 });
+
+/**
+ * A SIZE THAT IS NOT A NUMBER IS A REFUSAL, NOT A ZERO (H5).
+ *
+ * `sizeBytes` is typed `number`, and a server action deserialises whatever the
+ * client sends, so the type is a statement about callers and not about the
+ * payload. `validateDocumentUpload` now requires a finite number, and both
+ * confirms now take the same non-nullable `sizeBytes` the mint always took, so
+ * the two gates read the same values the same way.
+ *
+ * The casts are the point of the arm: they are the shape a forged payload has,
+ * and TypeScript is not in the request path.
+ */
+describe("validateDocumentUpload — a size that is not a finite number", () => {
+  const forged = (sizeBytes: unknown) =>
+    validateDocumentUpload({
+      mimeType: "application/pdf",
+      sizeBytes: sizeBytes as number,
+    });
+
+  it.each([
+    ["NaN", Number.NaN],
+    // REDUNDANT, NOT WRONG, AND MEASURED: `null` and `Infinity` are the two
+    // rows that already pass against the previous commit, because the existing
+    // numeric comparisons reach them first (`null <= 0` is true, `Infinity` is
+    // over the ceiling). They stay because the arm is about the SHAPE of the
+    // value, and a list that covered only the four shapes that changed would
+    // read as if the other two were acceptable.
+    ["null", null],
+    ["undefined", undefined],
+    ["a numeric string", "12345"],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["an object", {}],
+  ])("refuses %s as a size failure", (_label, value) => {
+    expect(forged(value)).toBe("size");
+  });
+
+  it("still accepts an ordinary size, so the rule refuses a shape and not a file", () => {
+    expect(forged(1024)).toBeNull();
+  });
+});

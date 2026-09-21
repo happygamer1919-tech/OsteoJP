@@ -26,6 +26,7 @@ import {
   confirmPatientDocument,
   createPatientDocumentUploadUrl,
 } from "@/lib/patients/documents";
+import type { UploadCandidate } from "@/lib/patients/document-validation";
 import { isClinicalError } from "@/lib/clinical/errors";
 import type { SaveState } from "./RecordForm";
 
@@ -206,10 +207,11 @@ export async function generateRgpdFormUrlAction(
 export async function createSignatureUploadUrlAction(
   patientId: string,
   fileName: string,
+  file: UploadCandidate,
 ): Promise<{ ok: true; path: string; token: string } | { ok: false }> {
   const ctx = await requireRequestContext();
   try {
-    const { path, token } = await createPatientDocumentUploadUrl(ctx, patientId, fileName);
+    const { path, token } = await createPatientDocumentUploadUrl(ctx, patientId, fileName, file);
     return { ok: true, path, token };
   } catch {
     return { ok: false };
@@ -224,8 +226,10 @@ export async function confirmSignatureAction(input: {
   patientId: string;
   path: string;
   fileName: string;
+  // As on the other two confirms: the shape the mint takes, so one rule reads
+  // one pair of values at both ends.
   mimeType: string | null;
-  sizeBytes: number | null;
+  sizeBytes: number;
 }): Promise<{ ok: boolean }> {
   const ctx = await requireRequestContext();
   try {
@@ -249,10 +253,11 @@ export async function versionRecordAction(id: string): Promise<void> {
 export async function createUploadUrlAction(
   recordId: string,
   fileName: string,
+  file: UploadCandidate,
 ): Promise<{ ok: true; path: string; token: string } | { ok: false }> {
   const ctx = await requireRequestContext();
   try {
-    const { path, token } = await createAttachmentUploadUrl(ctx, recordId, fileName);
+    const { path, token } = await createAttachmentUploadUrl(ctx, recordId, fileName, file);
     return { ok: true, path, token };
   } catch {
     return { ok: false };
@@ -263,8 +268,10 @@ export async function confirmAttachmentAction(input: {
   recordId: string;
   path: string;
   fileName: string;
+  // The same two values the mint was given, so both ends apply one rule to one
+  // shape. `confirmAttachment` re-checks them whatever a client sends.
   mimeType: string | null;
-  sizeBytes: number | null;
+  sizeBytes: number;
 }): Promise<{ ok: boolean }> {
   const ctx = await requireRequestContext();
   try {
