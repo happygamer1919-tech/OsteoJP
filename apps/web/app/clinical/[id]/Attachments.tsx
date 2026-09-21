@@ -9,6 +9,7 @@ import {
   type AttachmentUploadDeps,
 } from "@/lib/clinical/attachment-upload";
 import { CAPTURE_MIME, captureFileName } from "@/lib/clinical/camera-capture";
+import { DOCUMENT_ACCEPT, validateDocumentUpload } from "@/lib/patients/document-validation";
 import { CameraCapture } from "./CameraCapture";
 import {
   confirmAttachmentAction,
@@ -40,6 +41,17 @@ export function Attachments({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState(false);
+  /**
+   * A REFUSED TYPE OR SIZE SAYS WHICH ONE IT WAS, like the Documentos tab
+   * (PatientDocuments.tsx). `error` alone renders `clinical.error`, a generic
+   * failure, which is the right message for a network or server fault and the
+   * wrong one for a file this tab does not take.
+   *
+   * The two strings are the Documentos ones on purpose: Anexos now applies the
+   * Documentos rule, so it owes the reader the Documentos wording rather than a
+   * second sentence that could drift from it.
+   */
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
 
   // The 3-step signed-URL flow, wired to the real server actions + browser
@@ -59,6 +71,7 @@ export function Attachments({
     mimeType: string | null,
   ): Promise<boolean> {
     setError(false);
+    setRefusal(null);
     const outcome = await uploadAttachmentBlob(recordId, blob, fileName, mimeType, uploadDeps);
     if (!outcome.ok) {
       setError(true);
@@ -72,6 +85,15 @@ export function Attachments({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    setError(false);
+    // Pre-flight with the rule the server applies, so a refusal names the
+    // reason and costs no round trip. UX only: `createAttachmentUploadUrl` is
+    // the gate, and it runs the same function.
+    const bad = validateDocumentUpload({ mimeType: file.type || null, sizeBytes: file.size });
+    if (bad) {
+      setRefusal(s[bad === "type" ? "patients.documentInvalidType" : "patients.documentTooLarge"]);
+      return;
+    }
     await runUpload(file, file.name, file.type || null);
   }
 
@@ -88,7 +110,16 @@ export function Attachments({
         <div className="flex flex-wrap items-center gap-2">
           <label className="inline-block cursor-pointer rounded border px-3 py-1.5 text-sm has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-focus-ring has-[:focus-visible]:ring-offset-2">
             {pending ? s["clinical.attachmentUploading"] : s["clinical.attachmentAdd"]}
-            <input type="file" className="hidden" onChange={onSelect} disabled={pending} />
+            {/* H5: the picker advertises the types the server accepts, and the
+                handler checks them before it asks for an upload URL. A UX hint,
+                not the gate — createAttachmentUploadUrl is the gate. */}
+            <input
+              type="file"
+              accept={DOCUMENT_ACCEPT}
+              className="hidden"
+              onChange={onSelect}
+              disabled={pending}
+            />
           </label>
           <Button
             type="button"
@@ -109,6 +140,7 @@ export function Attachments({
         />
       )}
 
+      {refusal && <p role="alert" className="text-xs text-error">{refusal}</p>}
       {error && <p role="alert" className="text-xs text-error">{s["clinical.error"]}</p>}
 
       <ul className="space-y-1 text-sm">

@@ -5,10 +5,18 @@
 // flow in Attachments.tsx: sign -> upload-direct-to-Storage -> confirm+audit.
 
 export interface AttachmentUploadDeps {
-  /** Server action: issue a one-time signed upload URL (path is tenant-prefixed). */
+  /**
+   * Server action: issue a one-time signed upload URL (path is tenant-prefixed).
+   *
+   * It takes the type and size because the server now decides whether this file
+   * may be uploaded AT ALL before it hands back a token (H5). A refused type
+   * comes back `{ ok: false }` and the flow stops at step "sign", with nothing
+   * in Storage.
+   */
   createUploadUrl: (
     recordId: string,
     fileName: string,
+    file: { mimeType: string | null; sizeBytes: number },
   ) => Promise<{ ok: true; path: string; token: string } | { ok: false }>;
   /** Upload bytes DIRECTLY to Supabase Storage — never proxied through Next. */
   uploadToStorage: (
@@ -21,8 +29,10 @@ export interface AttachmentUploadDeps {
     recordId: string;
     path: string;
     fileName: string;
+    // The same shape the mint above takes: the confirm applies the same rule to
+    // the same two values, so a size the mint would refuse cannot be a zero here.
     mimeType: string | null;
-    sizeBytes: number | null;
+    sizeBytes: number;
   }) => Promise<{ ok: boolean }>;
 }
 
@@ -41,7 +51,7 @@ export async function uploadAttachmentBlob(
   mimeType: string | null,
   deps: AttachmentUploadDeps,
 ): Promise<AttachmentUploadOutcome> {
-  const slot = await deps.createUploadUrl(recordId, fileName);
+  const slot = await deps.createUploadUrl(recordId, fileName, { mimeType, sizeBytes: blob.size });
   if (!slot.ok) return { ok: false, step: "sign" };
 
   const up = await deps.uploadToStorage(slot.path, slot.token, blob);

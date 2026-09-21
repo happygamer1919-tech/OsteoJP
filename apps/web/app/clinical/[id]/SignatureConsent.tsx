@@ -181,7 +181,12 @@ export function SignatureConsent({
       return;
     }
     const fileName = signatureFileName();
-    const slot = await createSignatureUploadUrlAction(patientId, fileName);
+    // image/png, 9 characters, on the Documentos allowlist: the gate the mint
+    // now applies (H5) passes a signature unchanged. The blob exists by here.
+    const slot = await createSignatureUploadUrlAction(patientId, fileName, {
+      mimeType: SIGNATURE_MIME,
+      sizeBytes: blob.size,
+    });
     if (!slot.ok) {
       setUploadState("error");
       return;
