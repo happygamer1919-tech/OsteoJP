@@ -4655,3 +4655,79 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
   `patients:read` internally, so a role holding `patients:write` WITHOUT `patients:read` would throw
   here instead of returning `{ ok: false }`. No such role exists today (all four grant both), and
   every sibling note action already has this same property.
+
+
+## 2026-09-21 - SOLO: the three consultation recording actions resolve the patient through one scoped read
+
+- **One helper, three call sites, one file.** `recordablePatientId(ctx, requestedId)`
+  in `apps/web/app/consultation/actions.ts` performs a `runScoped` read of
+  `patients` with `therapistPatientScope` ANDed in and returns the id the
+  database answered with. `signAudioUploadAction` and
+  `fireConsultationWebhookAction` call it; `startConsultationAction` applies the
+  same predicate inline and keeps its existing `not_found` arm, so the rule
+  reads identically in all three.
+- **The returned id is what flows.** The signer, `persistConsultation`, the
+  unrecoverable-persist log line, the M1 payload and the outcome write all take
+  the read's answer. The object-key check requires the `${tenantId}/${patientId}/`
+  prefix, the folder `audioObjectKey` builds, with the tenant-prefix check kept
+  ahead of it so a key outside the caller's tenant is refused before any query
+  runs.
+- **Why the action and not only the policy.** CLAUDE.md asks for the
+  server-side check IN the action with RLS as defense-in-depth. The recording
+  flow crosses boundaries a per-request scope does not follow -
+  `persistConsultation` writes on the service-role handle and the fire hands the
+  id and a signed audio URL to a third-party processor - so the identity is
+  settled once, before any of that, by a read the database answers. 0074's
+  `patients_select` is the other half and is unchanged.
+- **`patientLocationScope` is deliberately absent.** All three actions first
+  require `clinical_records:author`, which `packages/auth/permissions.ts` grants
+  to owner and therapist and denies to admin and reception, and
+  `lib/auth/permission-matrix.test.ts` pins that denial independently of
+  `PERMISSIONS`. Owner is unrestricted within the tenant, so therapist is the
+  only narrowed role that arrives. Adding the arm would also make this a new
+  call site `lib/patients/scope-call-sites.test.ts` must carry for a role that
+  never reaches it.
+- **A NEW DEPENDENCY MEANS A NEW FAULT MODE, AND THE REVIEWER CAUGHT IT.** Both
+  actions gained a database read, and on the first round the read sat outside
+  every `try`. The client awaits these actions directly, so a fault would have
+  rejected instead of returning a member of the result union, leaving the
+  recorder pinned at "uploading" or "firing" with the audio already in S3 and no
+  row behind it - which is worse than the failure states 0064 exists to make
+  visible. The read is now inside the `try` in the signer (answering `config`,
+  which the recorder maps to `upload_error`) and wrapped in the fire (answering
+  `not_persisted`, which is the true statement: nothing written, nothing to
+  re-fire). Two arms, one per action, are red without it.
+- **Both new catches LOG, PII-free.** Tenant from the JWT and the error class
+  name only; the requested patient id is unvalidated client input at that point
+  and stays out of the line. Without them a pool outage would be invisible: the
+  signer arm reads to the user as a storage-authorisation problem, and the fire
+  arm loses a consultation whose audio a lifecycle rule deletes days later.
+  `startConsultationAction`s read is deliberately NOT wrapped to match, because
+  `StartResult` carries no arm that would be true of a fault - `not_found` would
+  be a lie. That asymmetry is recorded here rather than papered over.
+- **Neither read excludes soft-deleted patients.** That is parity with
+  `startConsultationAction`s existing behaviour, kept deliberately rather than
+  tightening a second thing in the same PR. Whether a soft-deleted patient
+  should be recordable at all is a separate question.
+- **One dead branch removed while the file was open.** The signer's catch read
+  `if (e instanceof AudioStorageConfigError) return config; return config;` -
+  two branches returning the same value. It is now one return covering both
+  causes, and the `AudioStorageConfigError` import went with it. Behaviour is
+  identical by inspection: no test could tell the two apart.
+- **Two instruments, because one cannot do this job.** `actions.test.tsx` stubs
+  `@osteojp/db` down to `{ patients: { id } }` and its fake transaction answers
+  with whatever rows it was handed, whatever the `WHERE` says, so it proves the
+  CALL but never the PREDICATE - a read of `WHERE true` would pass every
+  assertion in it. `actions.patient-scope.test.ts` imports the REAL schema and
+  renders the captured `WHERE` through drizzle's Postgres dialect, the technique
+  `lib/patients/documents.visibility-scope.test.ts` established.
+- **No migration, no schema change, no new error arm, no i18n key.** Every
+  refusal uses an arm the result unions already carried.
+- **Two questions logged, not guessed:** Q-CONSULT-1 (should consent be a
+  server-held precondition of the later recording steps, and with what window)
+  and Q-CONSULT-2 (whether a refusal should write an audit row, and on which
+  paths). Both carry a recommended default and nothing is built for either.
+- **The board card follows in a board-only PR**, per SR-44 and SR-48 (a board
+  change never rides inside a code PR), after this fix is merged and deployed.
+  Two follow-ups go up with it: the consent-row requirement (blocked on
+  Q-CONSULT-1) and tightening the object-key check.
