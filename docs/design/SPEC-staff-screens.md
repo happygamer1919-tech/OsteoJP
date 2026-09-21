@@ -83,7 +83,18 @@ Purpose: the operational center. Day grid first, week view second.
 
 **States**: loading = grid chrome renders immediately, appointment layer shows 4 skeleton blocks per visible column. Empty day = grid still renders (slots are the affordance) with a slim neutral Banner "Sem marcações para esta data". Error = ErrorState replacing the grid body, retry refetches.
 
-**Mobile (under 768px)**: day view only (week switcher hidden), single therapist at a time with a therapist Select in the toolbar, gutter 48px, horizontal swipe not required.
+**Mobile (under 768px)** — AMENDED 2026-09-21, AGMOB-01. It read *"day view only
+(week switcher hidden)"*; both halves are now false on purpose. **The week
+switcher is VISIBLE at every width**, because hiding it is what made a therapist
+report that the weekly view was impossible on a phone, and **Semana under 768px
+renders a vertical list of the six Mon–Sat days** rather than the grid (a
+six-column grid at 390px leaves a patient name 11px). Unchanged: a single
+therapist at a time with the therapist Select in the toolbar, and horizontal
+swipe is still not required — the list scrolls vertically and the page never
+scrolls sideways, which `e2e/agenda-mobile-week.spec.ts` asserts.
+
+The empty-day string on this page, "Sem marcações para esta data", is the one the
+list uses; it was specified here and had never been built.
 
 ## 5. Component: Appointment Drawer (W2-04)
 

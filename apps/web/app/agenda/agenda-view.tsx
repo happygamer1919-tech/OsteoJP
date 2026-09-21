@@ -25,6 +25,7 @@ import type {
 } from "@/lib/scheduling/types";
 
 import { AgendaGrid } from "./agenda-grid";
+import { AgendaWeekList } from "./agenda-week-list";
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 import { BlockTimeDialog } from "./block-time-dialog";
 
@@ -144,20 +145,33 @@ export function AgendaView({
     window.history.replaceState(null, "", url.pathname + url.search);
   }, [lockedPatient, prefill]);
 
-  // SPEC-v2-agenda §4: mobile collapses to the Dia view. This is a presentation
-  // override — the URL `view` (and the server fetch range) are untouched; below
-  // the lg breakpoint the grid, the range label, and the date step all render as
-  // a single day. Starts false so the SSR/first-client render match (no
-  // hydration mismatch); the effect corrects it on mount.
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1023px)"); // below Tailwind `lg`
-    const update = () => setIsMobile(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
-  const effectiveView: View = isMobile ? "day" : view;
+  /* AGMOB-01 - THE MOBILE DAY-COLLAPSE IS GONE, AND WITH IT THE ONLY
+   * matchMedia IN THIS REPOSITORY.
+   *
+   * What stood here: `useState(false)` plus a `matchMedia("(max-width: 1023px)")`
+   * effect producing `effectiveView = isMobile ? "day" : view`, which forced the
+   * Dia view on every phone and tablet while the Dia/Semana toggle beside it was
+   * `hidden … lg:block`. A therapist reported the result exactly as it was -
+   * "the weekly view is not possible on the phone" - and they were right: no
+   * press could reach it. The server was fetching the week the whole time
+   * (page.tsx defaults `view` to "week"), so the phone paid for a week and was
+   * shown a day.
+   *
+   * WHY IT IS A DELETION AND NOT A SECOND BREAKPOINT. `view` is the URL's, which
+   * is the one the user chose and the one the server fetched for. The swap
+   * between the grid and the phone list is now pure CSS (`hidden md:block` /
+   * `md:hidden`), so there is no client-side viewport state to hydrate, no
+   * SSR/client divergence to keep in step, and nothing to drift from the classes
+   * that actually position the page. That also REMOVES a hydration branch from a
+   * surface that still carries INC-U1's unfixed mismatch.
+   *
+   * 768, and it is a real number rather than an inherited one. A six-column grid
+   * needs about 101px a column to stay readable - that is what reception reads at
+   * 1024 every day (1024 - 304 sidebar - 48 gutters - 2 border - 64 hour gutter,
+   * over six). At 768 a column is 109px, above the floor, so tablets and
+   * landscape phones GAIN the real grid, which the old 1023 denied them.
+   * SPEC-staff-screens.md:86 already said 768; 1023 was never ruled anywhere.
+   */
 
   /* ==================================================================== */
   /* AGENDA-01 - WHERE THE GRID'S WEEKDAY HEADER IS ALLOWED TO PIN.       */
@@ -223,14 +237,15 @@ export function AgendaView({
     startTransition(() => router.push(`/agenda?${params.toString()}`));
   }
 
-  const step = effectiveView === "week" ? 7 : 1;
+  const step = view === "week" ? 7 : 1;
 
   // W4-17 — live appointment count for the VISIBLE range. Computed exactly as the
   // grid decides visibility (an appointment whose Lisbon calendar day falls in
-  // viewDates(effectiveView, anchor)), so it matches the grid on every viewport
-  // (incl. the mobile day-collapse) and updates live with navigation + filters
+  // viewDates(view, anchor)), so it matches the grid AND the phone list on every
+  // viewport - both are now projections of the same `view` - and updates live
+  // with navigation + filters
   // (the `appointments` prop is refetched server-side for the range + filters).
-  const visibleDates = new Set(viewDates(effectiveView, anchor));
+  const visibleDates = new Set(viewDates(view, anchor));
   const visibleCount = appointments.filter((a) =>
     visibleDates.has(lisbonParts(new Date(a.startsAt)).date),
   ).length;
@@ -300,7 +315,7 @@ export function AgendaView({
             className="hidden min-w-0 flex-none items-center gap-2 rounded-full border border-v2-border bg-v2-surface px-3 py-0.5 sm:inline-flex"
           >
             <span className="hidden truncate text-sm font-medium text-v2-text-primary xl:inline">
-              {formatAnchorLabel(effectiveView, anchor)}
+              {formatAnchorLabel(view, anchor)}
             </span>
             <span aria-hidden="true" className="hidden text-v2-text-secondary xl:inline">·</span>
             <span className="whitespace-nowrap text-sm text-v2-text-secondary">
@@ -405,10 +420,23 @@ export function AgendaView({
           className="flex flex-wrap items-center gap-2"
         >
           {/* Group 1: WHEN you are looking at. The toggle and the date belong
-              together and are never split across a wrap. */}
-          <div className="flex flex-none items-center gap-2">
-          {/* Day/week toggle is desktop-only: mobile is always the Dia view (§4). */}
-          <div className="hidden flex-none lg:block">
+              together and are never split across a wrap - ABOVE `md`.
+              AGMOB-01: below it they must be, and `max-md:contents` is the
+              mechanical reason the toggle can be unhidden at all. This wrapper
+              is `flex-none`, so it cannot wrap INTERNALLY: its contents are
+              about 305px (40 chevron + 160 `w-40` picker + ~53 Hoje + 40
+              chevron + gaps) inside a 342px bar at 390px, and adding a ~120px
+              SegmentedControl would overflow the row rather than move to the
+              next one. `display: contents` promotes both children to direct
+              children of the `flex-wrap` bar, so the toggle takes its own row.
+              The variant does not apply at or above `md`, so desktop is
+              byte-for-byte the layout it was. */}
+          <div className="flex flex-none items-center gap-2 max-md:contents">
+          {/* AGMOB-01: the toggle is no longer desktop-only. It is how a phone
+              reaches the week at all, and it is also the recovery control for
+              arriving with ?view=day - which the dashboard tile does
+              (dashboard/page.tsx). */}
+          <div className="flex-none">
             <SegmentedControl
               aria-label={s["agenda.title"]}
               value={view}
@@ -569,8 +597,18 @@ export function AgendaView({
 
       {/* No empty-period banner: the agenda grid (empty time columns) is its
           own empty affordance, so a separate banner is redundant (W4-07). */}
+
+      {/* AGMOB-01 - THE SWAP IS CSS, NOT STATE, AND THIS DIV IS A PLAIN ONE.
+          No `overflow`, no `transform`, no `filter`: any of the three makes
+          this element a containing block or a scroll container, and AGENDA-01's
+          sticky weekday header inside the grid would then pin to a box that
+          never moves - present in the DOM, stuck off-screen, and every test
+          asserting "it is still there" still passing. agenda-grid.tsx's own
+          comment records that this is why the card is `overflow-clip` and not
+          `overflow-hidden`. */}
+      <div className="hidden md:block">
       <AgendaGrid
-        view={effectiveView}
+        view={view}
         anchor={anchor}
         appointments={appointments}
         blocks={blocks}
@@ -590,6 +628,32 @@ export function AgendaView({
            renders at all when the agenda is scoped to one therapist - the grid
            has no therapist axis, so a band under "Todos" would be a claim about
            the whole clinic (W9-04). No filter, no band, nothing to click. */
+        onOpenBlock={
+          filters.practitionerId && canBlockTime
+            ? (blockId) =>
+                router.push(
+                  `/horarios?t=${filters.practitionerId}&editBlock=${blockId}`,
+                )
+            : undefined
+        }
+      />
+      </div>
+
+      {/* AGMOB-01 - the phone's week. Same `view`, same `anchor`, same
+          `appointments`, same `blocks` and the same `closure` the grid gets:
+          it is a second PROJECTION of one set of props, never a second fetch
+          and never a second opinion about what is on a day. It renders in the
+          DOM at every width and is hidden by CSS above `md`, which is what lets
+          the 767/768 threshold be asserted both ways in one e2e run. */}
+      <AgendaWeekList
+        className="md:hidden"
+        view={view}
+        anchor={anchor}
+        appointments={appointments}
+        blocks={blocks}
+        closure={closure}
+        dayWindow={dayWindow}
+        onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
         onOpenBlock={
           filters.practitionerId && canBlockTime
             ? (blockId) =>

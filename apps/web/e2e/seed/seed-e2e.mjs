@@ -110,9 +110,11 @@ const USERS = [
     fullName: "E2E Terapeuta Inspetor",
   },
   // Per-project DISPOSABLE therapists for the destructive password-gated delete
-  // test (equipa-primary-service.spec W4-01). The cross-browser CI job runs
-  // firefox + webkit against ONE shared, non-reset seed DB, so a delete of a
-  // shared therapist would wipe it for whichever engine runs second. Each browser
+  // test (equipa-primary-service.spec W4-01). A firefox + webkit run shares ONE
+  // non-reset seed DB, so a delete of a shared therapist would wipe it for
+  // whichever engine runs second. (AGMOB-01, 2026-09-21: there is NO scheduled
+  // cross-browser job - e2e.yml runs `--project=chromium` alone - so in CI only
+  // the chromium row is consumed. The others exist for a manual run.) Each browser
   // project deletes the disposable whose name carries its Playwright project name
   // (`E2E Terapeuta Descartavel <project>`). Like `therapist2`, these get ZERO
   // therapist_services and ZERO activity, so each renders as a "Sem serviços",
