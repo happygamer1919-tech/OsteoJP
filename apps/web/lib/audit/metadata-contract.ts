@@ -41,10 +41,44 @@ import "server-only";
  * crude guard here is one that is confident and wrong.
  *
  * It fits every value the shared helpers write today: uuids (36), ISO instants
- * (24), status enums, column names, role slugs, hex colours, mime types and
- * slugs such as `portal_request_confirm`. None has a space; none is near 64.
- * Numbers, booleans, nulls, and arrays or objects of those pass untouched, so
- * counts and field-name lists keep working.
+ * (24), status enums, column names, role slugs, hex colours and slugs such as
+ * `portal_request_confirm`. None has a space; none is near 64. Numbers,
+ * booleans, nulls, and arrays or objects of those pass untouched, so counts and
+ * field-name lists keep working.
+ *
+ * THIS LIST USED TO SAY "mime types", AND THAT WAS WRONG (H5). A media type is
+ * not a short slug: the office ones run to 73 characters, the .docx type the
+ * patient Documentos picker advertises is 71, and one carrying a parameter
+ * contains a space. So the claim that they sit "nowhere near 64" was false, and
+ * it is retracted here rather than quietly edited.
+ *
+ * The conclusion is NOT to widen the contract. A media type has a domain column
+ * of its own — `attachments.mime_type`, reachable from the audit row by
+ * `entity_id` — so raising the limit or exempting a key would loosen a crude PII
+ * guard to carry a value that is already stored somewhere better, which is the
+ * exact thing the refusal message tells callers not to do. It is now refused BY
+ * SHAPE, in the section below.
+ *
+ * ==========================================================================
+ * A MEDIA TYPE IS REFUSED BY SHAPE, NOT BY KEY NAME (H5)
+ * ==========================================================================
+ * `mimeType` is one spelling. `mime`, `contentType`, `type`, and a `...input`
+ * spread that carries any of them are the others, and a rule written against one
+ * identifier is a rule about that identifier rather than about the value. So the
+ * refusal reads the VALUE: a string shaped `<registered top-level type>/<subtype>`
+ * is refused whatever key it arrives under and whatever its length.
+ *
+ * THE TOP-LEVEL SET IS CLOSED ON PURPOSE: these ten tokens, which is what keeps
+ * this from refusing ordinary slugs. A value is only a media type if it is
+ * `application/…`, `audio/…`, `example/…`, `font/…`, `image/…`, `message/…`,
+ * `model/…`, `multipart/…`, `text/…` or `video/…`. No enum, id, column name,
+ * role slug or hex colour this codebase writes has that shape. The list is
+ * maintained here and is not a mirror of any external registry; a test arm
+ * asserts that this count and the regex's own alternatives cannot drift apart.
+ *
+ * IT RUNS AT THE WRITE, ON THE VALUE, which is why it holds where a source scan
+ * cannot: a caller that builds its metadata in a helper function, a ternary or a
+ * spread is checked exactly like a caller that inlines an object literal.
  *
  * ==========================================================================
  * WHAT IT DOES NOT COVER, STATED SO THE GAP IS KNOWN RATHER THAN ASSUMED
@@ -74,6 +108,20 @@ import "server-only";
 
 const AUDIT_STRING_MAX = 64;
 
+/**
+ * A media type, by shape: one of the top-level types listed below, a slash, and
+ * a subtype. An optional parameter tail (`; charset=utf-8`) is matched too, so
+ * the refusal names the right reason rather than falling through to the
+ * whitespace rule.
+ *
+ * The top-level set is closed on purpose. `^[a-z]+\/[a-z]+$` would refuse any
+ * value that happens to contain a slash; these ten tokens are the whole set, and
+ * no enum, id, column name, role slug or path fragment written to audit_log
+ * begins with one of them followed by a slash.
+ */
+const MEDIA_TYPE =
+  /^(application|audio|example|font|image|message|model|multipart|text|video)\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*(\s*;.*)?$/i;
+
 export class AuditMetadataError extends Error {
   constructor(message: string) {
     super(message);
@@ -94,6 +142,17 @@ function assertAuditValue(where: string, path: string, value: unknown): void {
   if (value === null || value === undefined) return;
   if (typeof value === "boolean" || typeof value === "number") return;
   if (typeof value === "string") {
+    // BEFORE the length rule, so the message names the real reason: a short
+    // media type such as `image/png` passes both other rules and still does not
+    // belong here.
+    if (MEDIA_TYPE.test(value)) {
+      refuse(
+        where,
+        path,
+        "is shaped like a media type, which belongs on the domain column that " +
+          "holds it (attachments.mime_type) and not in an audit row",
+      );
+    }
     if (value.length > AUDIT_STRING_MAX) {
       refuse(where, path, `is ${value.length} characters, over the ${AUDIT_STRING_MAX} allowed`);
     }

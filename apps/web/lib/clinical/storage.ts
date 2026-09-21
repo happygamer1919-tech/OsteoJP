@@ -7,6 +7,12 @@ import { runScoped } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scope";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+// The gate itself, not the module that owns the Documentos writers: importing
+// `@/lib/patients/documents` would close a cycle, since that module already
+// imports ATTACHMENTS_BUCKET from here. document-validation.ts is pure, has no
+// `server-only` and imports nothing. A clinical -> patients import in this
+// direction is the existing shape (records.ts, review.ts both use patients/scope).
+import { validateDocumentUpload, type UploadCandidate } from "@/lib/patients/document-validation";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
 import { hasTraversalSegment, isSingleObjectUnder } from "./storage-path";
@@ -24,13 +30,21 @@ function safeName(name: string): string {
  * Issue a one-time signed upload URL for a draft record's attachment. The
  * client uploads the bytes DIRECTLY to Supabase Storage (never proxied through
  * Next). The object path is derived server-side and tenant-prefixed.
+ *
+ * ANEXOS NOW HAS A TYPE AND SIZE GATE, AND IT RUNS BEFORE THE TOKEN EXISTS (H5).
+ * One bucket, one rule: both surfaces write to `clinical-attachments`, so both
+ * apply the Documentos allowlist and the same 50 MiB ceiling, checked before
+ * anything is signed. The narrowing this brings to Anexos is Q-H5-1.
  */
 export async function createAttachmentUploadUrl(
   ctx: RequestContext,
   recordId: string,
   fileName: string,
+  file: UploadCandidate,
 ): Promise<{ path: string; token: string }> {
   assertCan(ctx.role, "clinical_records:author");
+  // Ahead of the record-status read as well: a refused type costs no query.
+  if (validateDocumentUpload(file)) throw new ClinicalError("validation");
 
   // Confirm the record is visible to this tenant and still editable.
   const status = await runScoped(ctx, async (tx) => {
@@ -60,8 +74,12 @@ export async function confirmAttachment(
     recordId: string;
     path: string;
     fileName: string;
+    // THE SAME SHAPE THE MINT TAKES (UploadCandidate). It was `number | null`,
+    // and the gate below read it as `?? 0`, so a file the mint could not have
+    // signed at all had a second, different rule waiting for it at the confirm.
+    // One shape, one rule, both ends.
     mimeType: string | null;
-    sizeBytes: number | null;
+    sizeBytes: number;
   },
 ): Promise<{ id: string }> {
   assertCan(ctx.role, "clinical_records:author");
@@ -81,6 +99,12 @@ export async function confirmAttachment(
   // `startsWith` is defeated by a `..` the URL layer collapses later.
   if (!isSingleObjectUnder(input.path, `${ctx.tenantId}/${input.recordId}/`)) {
     throw new ClinicalError("invalid");
+  }
+  // Re-validate type and size here as well, mirroring confirmPatientDocument:
+  // the mint is where a refusal costs nothing, and this is where a caller that
+  // never minted anything is answered by the same rule.
+  if (validateDocumentUpload({ mimeType: input.mimeType, sizeBytes: input.sizeBytes })) {
+    throw new ClinicalError("validation");
   }
   const ip = await clientIp();
 
@@ -113,7 +137,11 @@ export async function confirmAttachment(
       action: "attachment.create",
       entityType: "attachment",
       entityId: id,
-      metadata: { recordId: input.recordId, mimeType: input.mimeType, sizeBytes: input.sizeBytes },
+      // No MIME string here, for the reason spelled out in
+      // lib/patients/documents.ts: a media type is refused by the audit contract
+      // by shape, and it already lives on attachments.mime_type — the row
+      // entityId above points at.
+      metadata: { recordId: input.recordId, sizeBytes: input.sizeBytes },
       ip,
     });
     return { id };

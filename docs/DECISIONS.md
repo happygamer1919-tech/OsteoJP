@@ -4831,3 +4831,87 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
   `docs/design/DECISIONS.md`, which is not the live file; that file is restored
   byte-for-byte to its state on main, including the stripped conflict marker at
   its line 872, which is a separate fix and was not touched here.
+
+## 2026-09-20 - H5: the upload rule is applied before the upload URL is signed, and audit_log refuses a media type by shape
+
+- **RULING: `audit_log.metadata` carries no media type, and the rule is written
+  against the VALUE.** `apps/web/lib/audit/metadata-contract.ts` now refuses any
+  string shaped `<registered top-level type>/<subtype>` — `application/…`,
+  `audio/…`, `example/…`, `font/…`, `image/…`, `message/…`, `model/…`,
+  `multipart/…`, `text/…`, `video/…` — under any key, at any depth, whatever its
+  length. The refusal names the key and the writer and never quotes the value.
+- **Why by shape and not by key name.** `mimeType` is one spelling; `mime`,
+  `contentType`, `type: file.type` and a `...input` spread are others. A rule
+  written against one identifier is a rule about that identifier. The value rule
+  runs inside `assertPiiFreeAuditMetadata`, so it holds for all four helpers and
+  for callers that build their metadata in a helper function, a ternary or a
+  spread — three such callers exist, and the source scan below reads two of
+  them: one (`lib/admin/day-defined-remove.ts`) cannot be read at all, and the
+  other two (`lib/admin/staff.ts`, `lib/reminders/confirm-redeem.ts`) are read
+  only because their ternary branches happen to be literals.
+- **The contract is NOT widened, and that is the decision.** The audit string
+  rule stays "64 characters, no whitespace". A media type does not fit it: the
+  office types run to 73 characters, the `.docx` type the Documentos picker
+  advertises is 71, and one carrying a parameter contains a space. Raising the
+  limit or exempting a key would loosen a deliberately crude PII guard to carry a
+  value that already has a domain column — `attachments.mime_type`, in the same
+  transaction, with `audit_log.entity_id` pointing at that row. The guard's own
+  comment claiming media types sit "nowhere near 64" was wrong and is retracted
+  in place rather than quietly edited. If the type ever has to be answerable from
+  the audit row alone, record a short slug derived from the allowlist index.
+- **The type and size decision moved ahead of the signing.**
+  `createPatientDocumentUploadUrl` and `createAttachmentUploadUrl` take the
+  candidate's type and size and call `validateDocumentUpload` before they sign
+  anything and before their database read. A refusal is answered with no token.
+  Both confirms keep their own check, because a server action can be invoked
+  without minting anything first.
+- **One gate for both surfaces.** `lib/clinical/storage.ts` imports
+  `validateDocumentUpload` from `@/lib/patients/document-validation` — the pure
+  module, never from `@/lib/patients/documents`, which would close a cycle since
+  that module already imports `ATTACHMENTS_BUCKET` from storage.ts. This narrows
+  the ficha Anexos surface to the Documentos allowlist and the 50 MiB ceiling:
+  **Q-H5-1**, built with the recommended default rather than decided quietly.
+- **The two ends agree on one shape.** Both confirms took `sizeBytes: number |
+  null` and mapped an absent size onto `0` before checking it, while the mint's
+  own argument was non-nullable. Both now take `sizeBytes: number`, and
+  `validateDocumentUpload` now requires a finite number, because a server action
+  deserialises whatever the client sends and the TypeScript type is a statement
+  about callers, not about the payload.
+- **What the gate does NOT claim.** It reads the type and size the client
+  reports. It is a policy check on a declared candidate, not an inspection of
+  bytes, and the header of `document-validation.ts` now says so instead of
+  promising more. Content-level verification and a bucket-level ceiling are
+  **Q-H5-4**.
+- **The source guard was replaced, not extended.** The old arm matched
+  `metadata:\s*\{[^{}]*\}`: `[^{}]` cannot cross a brace, so a literal containing
+  a nested object did not match short, it did not match at all, and a regex
+  cannot count its own misses. `metadata-contract.test.ts` now blanks comments
+  and strings, then classifies EVERY `metadata:` site by parsing balanced braces.
+  It reads `apps/web/app` as well as `apps/web/lib` — three literals live there —
+  and it reports its own arithmetic: **apps/web/lib, 56 raw `metadata: {` starts,
+  of which one is prose quoted inside a comment, 55 real code literals, 55
+  analysed; across lib and app, 60 value sites analysed, 5 opaque and named with
+  reasons, 12 declarations, 0 unparsed.** A site the parser cannot resolve fails
+  the arm by name until somebody records why it may stay.
+- **Rejected: refactoring the three non-literal call sites** so the object is
+  inline at the write. It would make today's three readable and would do nothing
+  about the fourth, written next month — which is the only writer the arm exists
+  for. The runtime rule covers all four without being told about them.
+- **The ficha Anexos picker now advertises the allowlist and pre-validates**,
+  as the Documentos tab already did, so a refused file names the reason rather
+  than rendering the generic `clinical.error`. The strings are the Documentos
+  ones deliberately: one rule, one wording.
+- **Checked and unaffected, rather than silently absent.**
+  `confirmSignatureAction` is a second entry point into `confirmPatientDocument`:
+  `SIGNATURE_MIME` is `image/png`, on the allowlist, so it needed only the type
+  and size passed to the mint. The Fisiozero importer writes
+  `attachments.mime_type` at scale through `packages/db/src/migration/upsert.ts`,
+  but `grep -rn "auditLog\|audit_log" packages/db/src/migration/` returns
+  nothing: it writes no audit row and is not on this path.
+- **A related item, deliberately NOT folded in.** `lib/clinical/records.ts` and
+  `lib/clinical/review.ts` put JSON-Schema field NAMES into audit metadata, where
+  a long or spaced template key meets the same contract. Different defect, its
+  own item.
+- **Storage objects with no `attachments` row: Q-H5-3**, carded rather than
+  handled here. A delete against a private bucket holding patient data is
+  owner-confirmable and does not ride along inside a fix.
