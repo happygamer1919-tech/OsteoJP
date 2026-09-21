@@ -293,7 +293,8 @@ a reservation.
    session launched with `scripts/apply-lane/osteojp-apply-settings.json`, which authors
    nothing, edits nothing and merges nothing. SR-70 (2026-09-21). This line said "Ivan
    applies it" until then, and was two generations stale: it was never updated for SR-50
-   (2026-09-04) or SR-63 (2026-09-13) either. The owner's part is to launch that session.
+   (2026-09-04) or SR-63 (2026-09-13) either. The owner's part is two things, both required:
+   his dispatch NAMES the exact migration or script, and he launches the session.
 3. **Applied counts only with pasted journal output.** A claim of "applied" with
    no pasted evidence is not an apply. Migrations have been shown "applied" in
    this project when they were not; see the 0038-0041 incident in

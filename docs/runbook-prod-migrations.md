@@ -39,11 +39,16 @@ what it will look like".** The path is always: draft → REVIEWER → GREEN. A b
 that reaches the apply lane without passing through review has skipped its only
 review.
 
-*Actors updated 2026-09-21 (SR-70). This section said "strategy" and "Ivan". The
-strategy lane was abolished by SR-64 and its review duty is now R4's fresh-context
-REVIEWER; the runner is GREEN, a fresh apply-only session that authored none of it,
-not the owner at a keyboard. The rule itself - a block is reviewed before it is
-run, and never by the hand that wrote it - is unchanged and is the whole point.*
+*Actors updated 2026-09-21 (SR-70), in the PROSE of this section. Two things are
+deliberately NOT changed and that sentence does not claim them: the heading above,
+which PORTAL-REHYDRATE cites by name, and the literal marker line `NOT VALIDATED -
+STRATEGY REVIEW REQUIRED - DO NOT RUN`, which is a token already sitting in
+committed apply documents - rewording it would silently un-mark them. A separate
+strategy lane is not among the lanes SR-64 names and has no session under the
+one-lane rulings; its review duty is discharged by R4's fresh-context REVIEWER. The
+runner is GREEN, a fresh apply-only session that authored none of it, not the owner
+at a keyboard. The rule itself - a block is reviewed before it is run, and never by
+the hand that wrote it - is unchanged and is the whole point.*
 
 ### Why the line, and why it is the FIRST line
 

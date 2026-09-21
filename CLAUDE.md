@@ -38,12 +38,18 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 
 ## Who applies migrations (read this before anything else about applies)
 
-**GREEN applies. The build lane never applies.** A production migration or write script is run by
-**GREEN: a fresh session launched with the apply settings, which authors nothing, edits nothing and
-merges nothing.** The lane that wrote a migration or its apply document is disqualified from running
+**GREEN applies. The build lane never applies.** A production migration, or a write script the owner's
+dispatch names by filename, is run by **GREEN: a fresh session launched with the apply settings, which
+authors nothing, edits nothing and merges nothing.** Not everything that touches production is in that
+set: a block only a human can paste into the Supabase SQL Editor stays the owner's, as does the
+Fisiozero import fenced off above. GREEN runs what its settings let it run and no more. The lane that wrote a migration or its apply document is disqualified from running
 it, always, by the settings themselves: `allow[2]` of `scripts/apply-lane/osteojp-apply-settings.json`
 permits a production apply only when **"The agent did not author the artifact"**, among its other
 conditions. That clause stays, and no lane ever edits that file.
+
+The owner's part is two things and **both** are required by the settings: his dispatch **names that
+exact migration or script**, and he launches the GREEN session. A session that is launched but handed no
+filename applies nothing.
 
 Owner ruling of 2026-09-21, recorded on the board as **SR-70**. It restores the configuration that
 applied `0089`: the settings file on `main` is byte-identical to the installed copy, sha256
@@ -86,7 +92,7 @@ Standing nevers: clinical authorship never moves; clinical_records_enforce_immut
 
 ### SOLO's record, not the owner's text
 
-- **The ruled Tier C list is SEVEN items, and only an owner ruling puts anything on it.** The TIERS block above names six, because that is the owner's sentence of 2026-09-19 and six is what the list held that day: `0090`, `0091`, `0092`, `0093`, NESA capacity, STAFF-10. **On 2026-09-20 he ruled a seventh in** - A1-02's users/tenants/roles policy split - gave it `0091`, and pushed the other three migrations down a slot each, which is where `0094` came from. The list as it stands: **`0090` NESA names, `0091` the policy split, `0092` CARE-01, `0093` RGPD-01, `0094` the grants revoke, NESA capacity, STAFF-10**, and nothing else. Read this bullet, not the TIERS line, for what is on the list today; the TIERS line is a quotation with a date on it. The Fisiozero production import is not on it and stays owner-executed under "Patient data isolation" and "Import execution rules" above, which these rulings do not touch. "It has a ruling somewhere" does not put an item on the list.
+- **The ruled Tier C list is SEVEN items, and only an owner ruling puts anything on it.** The TIERS block above names six, because that is the owner's sentence of 2026-09-19 and six is what the list held that day: `0090`, `0091`, `0092`, `0093`, NESA capacity, STAFF-10. **On 2026-09-20 he ruled a seventh in** - a Tier C migration splitting the tenant-only `FOR ALL` policies on `users`, `tenants` and `roles`, so a role or tenant-settings write is not open to every staff JWT - gave it `0091`, and pushed the other three migrations down a slot each, which is where `0094` came from. It has no card and no PR yet, and is authored after `0090` merges. The list as it stands: **`0090` NESA names, `0091` the policy split, `0092` CARE-01, `0093` RGPD-01, `0094` the grants revoke, NESA capacity, STAFF-10**, and nothing else. Read this bullet, not the TIERS line, for what is on the list today; the TIERS line is a quotation with a date on it. The Fisiozero production import is not on it and stays owner-executed under "Patient data isolation" and "Import execution rules" above, which these rulings do not touch. "It has a ruling somewhere" does not put an item on the list.
 - **Which content each number means, RENUMBERED BY THE OWNER ON 2026-09-20.** The numbers are the authorisation, older specs used them differently, and the queue has moved once - so read this table and not a number remembered from a branch name.
 
   | number | content | PR |
