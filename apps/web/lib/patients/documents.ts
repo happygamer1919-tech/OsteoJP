@@ -9,7 +9,11 @@ import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 import { hasTraversalSegment, isSingleObjectUnder } from "@/lib/clinical/storage-path";
 import { writeClinicalAudit, clientIp } from "@/lib/clinical/audit";
 import { ClinicalError } from "@/lib/clinical/errors";
-import { normalizeDeleteReason, validateDocumentUpload } from "./document-validation";
+import {
+  normalizeDeleteReason,
+  validateDocumentUpload,
+  type UploadCandidate,
+} from "./document-validation";
 import { documentPreviewKind, type DocumentPreviewKind } from "./document-preview";
 import { importedDocumentPrefix } from "./imported-documents-path";
 import { viewerLocationScope } from "../auth/viewer-locations";
@@ -104,13 +108,23 @@ async function assertPatientInTenant(ctx: RequestContext, patientId: string): Pr
  * the bytes DIRECTLY to Supabase Storage (never proxied through Next). The
  * object path is derived server-side and tenant-prefixed:
  *   `${tenantId}/patient-documents/${patientId}/${uuid}__${safeName}`
+ *
+ * THE TYPE AND SIZE GATE RUNS HERE, BEFORE THE TOKEN EXISTS (H5). The rule used
+ * to be applied in `confirmPatientDocument` alone, which is the step AFTER the
+ * browser uploads. Deciding first and signing second is the order that makes a
+ * refusal cost nothing: no token, nowhere to PUT. `confirmPatientDocument` keeps
+ * its own check for a caller that never minted anything.
  */
 export async function createPatientDocumentUploadUrl(
   ctx: RequestContext,
   patientId: string,
   fileName: string,
+  file: UploadCandidate,
 ): Promise<{ path: string; token: string }> {
   assertCan(ctx.role, "patients:write");
+  // Ahead of the patient read as well as ahead of the signing: a type this
+  // clinic does not accept costs no query either.
+  if (validateDocumentUpload(file)) throw new ClinicalError("validation");
   await assertPatientInTenant(ctx, patientId);
 
   const path = `${ctx.tenantId}/patient-documents/${patientId}/${randomUUID()}__${safeName(fileName)}`;
@@ -129,8 +143,10 @@ export async function confirmPatientDocument(
     patientId: string;
     path: string;
     fileName: string;
+    // The same shape the mint takes (UploadCandidate): an unknown size is a
+    // refusal, not a zero, at both ends of the flow.
     mimeType: string | null;
-    sizeBytes: number | null;
+    sizeBytes: number;
   },
 ): Promise<{ id: string }> {
   assertCan(ctx.role, "patients:write");
@@ -152,8 +168,8 @@ export async function confirmPatientDocument(
   if (!isSingleObjectUnder(input.path, `${ctx.tenantId}/patient-documents/${input.patientId}/`)) {
     throw new ClinicalError("invalid");
   }
-  // Re-validate type/size on the server — the client check is UX only.
-  if (validateDocumentUpload({ mimeType: input.mimeType, sizeBytes: input.sizeBytes ?? 0 })) {
+  // Re-validate type and size on the server — the client check is UX only.
+  if (validateDocumentUpload({ mimeType: input.mimeType, sizeBytes: input.sizeBytes })) {
     throw new ClinicalError("validation");
   }
   const ip = await clientIp();
@@ -189,9 +205,14 @@ export async function confirmPatientDocument(
       entityType: "attachment",
       entityId: id,
       // ids + metadata only, never PII / file content (CLAUDE.md rule 7).
+      //
+      // THE MIME TYPE IS DELIBERATELY NOT HERE (H5). It is a client-supplied
+      // string, and a media type is not a value audit_log carries: the contract
+      // in lib/audit/metadata-contract.ts refuses one by shape, under any key.
+      // Nothing is lost — the value is on attachments.mime_type, written above
+      // in this same transaction, and entityId below is that row.
       metadata: {
         patientId: input.patientId,
-        mimeType: input.mimeType,
         sizeBytes: input.sizeBytes,
       },
       ip,
