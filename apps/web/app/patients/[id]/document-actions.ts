@@ -11,6 +11,7 @@ import {
   softDeletePatientDocument,
 } from "@/lib/patients/documents";
 import type { DocumentPreviewKind } from "@/lib/patients/document-preview";
+import type { UploadCandidate } from "@/lib/patients/document-validation";
 
 // Server actions for the patient Documentos tab. Each re-derives the request
 // context (never trusts the client for identity) and gates inside the lib
@@ -21,12 +22,17 @@ import type { DocumentPreviewKind } from "@/lib/patients/document-preview";
 export async function createDocumentUploadUrlAction(
   patientId: string,
   fileName: string,
+  file: UploadCandidate,
 ): Promise<{ ok: true; path: string; token: string } | { ok: false }> {
   const ctx = await requireRequestContext();
   try {
-    const { path, token } = await createPatientDocumentUploadUrl(ctx, patientId, fileName);
+    const { path, token } = await createPatientDocumentUploadUrl(ctx, patientId, fileName, file);
     return { ok: true, path, token };
   } catch {
+    // H5: the type and size decision is taken here, at the mint, so a refusal
+    // reaches the caller before any byte moves. The picker pre-validates with
+    // the same rule and shows patients.documentInvalidType, so this catch-all is
+    // not a new silent failure.
     return { ok: false };
   }
 }
@@ -35,8 +41,10 @@ export async function confirmDocumentAction(input: {
   patientId: string;
   path: string;
   fileName: string;
+  // The same two values the mint was given, so both ends apply one rule to one
+  // shape. `confirmPatientDocument` re-checks them whatever a client sends.
   mimeType: string | null;
-  sizeBytes: number | null;
+  sizeBytes: number;
 }): Promise<{ ok: boolean }> {
   const ctx = await requireRequestContext();
   try {

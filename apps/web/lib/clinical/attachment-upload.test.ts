@@ -35,7 +35,13 @@ describe("uploadAttachmentBlob — happy path (a camera-captured still lands in 
     const out = await uploadAttachmentBlob("rec-1", blob, "foto-123.jpg", "image/jpeg", deps);
 
     expect(out).toEqual({ ok: true });
-    expect(createUploadUrl).toHaveBeenCalledWith("rec-1", "foto-123.jpg");
+    // The mint is told the type and the size, because it is the gate now (H5):
+    // a type this clinic does not accept never receives a token, so the bytes
+    // are never PUT at all.
+    expect(createUploadUrl).toHaveBeenCalledWith("rec-1", "foto-123.jpg", {
+      mimeType: "image/jpeg",
+      sizeBytes: blob.size, // 4
+    });
     expect(uploadToStorage).toHaveBeenCalledWith(OK_SLOT.path, OK_SLOT.token, blob);
     expect(confirmAttachment).toHaveBeenCalledWith({
       recordId: "rec-1",

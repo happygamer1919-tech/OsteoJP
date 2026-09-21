@@ -111,7 +111,13 @@ export function PatientDocuments({
       return;
     }
 
-    const slot = await createDocumentUploadUrlAction(patientId, file.name);
+    // The same two values the confirm sends below. The server re-checks them
+    // BEFORE it signs anything, so a file the pre-flight above somehow let
+    // through is refused while it is still only on this machine (H5).
+    const slot = await createDocumentUploadUrlAction(patientId, file.name, {
+      mimeType: file.type || null,
+      sizeBytes: file.size,
+    });
     if (!slot.ok) {
       setError(s["patients.documentUploadError"]);
       return;

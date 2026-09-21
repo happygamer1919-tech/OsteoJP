@@ -1977,3 +1977,96 @@ succeeds, the change is one string constant plus a test arm.
 
 **Blocked on:** owner ruling plus that one live send. Nothing is built for it;
 the URL this branch ships is origin and path only.
+
+## 2026-09-20 - Q-H5-1: the ficha Anexos picker narrows to the Documentos allowlist and the 50 MiB ceiling
+
+**OWNER. Does not block: built with the recommended default.**
+
+H5 applies one upload rule at both surfaces, before the upload URL is signed.
+The patient Documentos path already had that allowlist and that ceiling; the
+ficha **Anexos** path carried no explicit type or size rule of its own. Putting
+one rule in front of both therefore NARROWS Anexos, and three things change
+there. After this PR:
+
+1. A type outside `ALLOWED_DOCUMENT_MIME` is refused at the mint. The allowlist
+   is PDF, JPEG, PNG, WebP, HEIC, HEIF, `.doc` and `.docx`, so a video, a
+   spreadsheet, an archive, a GIF, a TIFF or a CSV is not attachable to a ficha.
+2. A file over 50 MiB is refused.
+3. A zero-byte file is refused (`validateDocumentUpload` treats `sizeBytes <= 0`
+   as a size failure), as it already was on Documentos.
+
+A file whose reported type is empty is refused as well. That is existing
+Documentos behaviour, new on Anexos, and it is the first thing to look at if the
+report is "the phone cannot attach a photo".
+
+**Recommended default (built): adopt the narrowing. One bucket, one rule.**
+Both surfaces write to `clinical-attachments`, and a rule that two surfaces
+disagree about is a rule nobody can state. If the owner refuses it, the fallback
+is to keep the size ceiling plus a clinical superset of the allowlist for Anexos;
+the audit-metadata half of the change stands either way.
+
+## 2026-09-20 - Q-H5-2: .xlsx and .pptx stay off the allowlist
+
+**OWNER. Does not block.**
+
+`ALLOWED_DOCUMENT_MIME` carries Word but not Excel or PowerPoint, so after H5 a
+spreadsheet sent to a ficha is refused at the mint, cleanly and with a reason.
+It is still a refusal, and staff who need to attach a spreadsheet to a ficha stay
+blocked.
+
+Nothing technical stands in the way now that no media type reaches audit
+metadata: adding the two strings to the allowlist is a one-line change.
+
+**Recommended default: leave them off in this PR.** The allowlist's own comment
+says this is "a document store, not a file drop", which is a product position
+rather than a technical one. Card it separately if the owner wants them.
+
+## 2026-09-20 - Q-H5-3: a reaper for Storage objects with no `attachments` row
+
+**OWNER (destructive: a Storage write against a tenant-prefixed private bucket).
+Does not block: this PR removes nothing.**
+
+The upload flow is three steps — sign, PUT to Storage, confirm — and only the
+third writes the row. Any failure between step two and step three therefore
+leaves an object with no `attachments` row: the ficha leaves draft between mint
+and confirm, the patient is not resolvable, the tab is closed, the network drops.
+Nothing reconciles the bucket against the table today, and that reconciliation is
+what this card asks for.
+
+H5 removes the largest source of that gap by deciding before the signing rather
+than after the upload, but it cannot remove the gap itself: the two steps are not
+one transaction and cannot be made one.
+
+**Recommended default: a separate carded item**, covering both a listing
+(bucket objects with no row, per tenant prefix) and a scheduled reaper with a
+minimum age. It is a delete against a bucket holding patient data, so it is
+owner-confirmable and must not ride along inside a fix.
+
+## 2026-09-20 - Q-H5-4: the upload rule reads a declared type and size, not the bytes
+
+**OWNER. Does not block: the claim in the code has been narrowed to match.**
+
+`validateDocumentUpload` reads `File.type` and `Blob.size`: the check reads the
+values the client reports. Adding a bucket-level ceiling and an allowed-type list
+underneath it is a production configuration change; server-side content
+verification is the larger option.
+
+The header of `lib/patients/document-validation.ts` said the gate meant a
+refused type "can never reach Storage". That is more than the mechanism does,
+and it is now stated as what it is: the decision happens before the token is
+issued, on the values the client reports.
+
+Tightening the check below the declared values is a piece of work, not a wording
+fix. The options, in increasing order of cost:
+
+1. **A bucket-level `file_size_limit`** and an allowed-MIME list on the bucket,
+   so the ceiling is enforced where the bytes arrive. Cheapest, and it is a
+   production configuration change rather than code.
+2. **Server-side verification after the confirm** — read the object's reported
+   size and sniff its leading bytes, refuse and record a mismatch.
+3. **Proxying uploads** so the server sees the bytes. Rejected up front: it
+   contradicts "file uploads always go through signed URLs; never proxy through
+   the Next.js server" (CLAUDE.md) and the 4.5 MB function body limit.
+
+**Recommended default: (1) now, (2) carded.** (1) is one dashboard setting;
+(2) is a separate item with its own tests.
