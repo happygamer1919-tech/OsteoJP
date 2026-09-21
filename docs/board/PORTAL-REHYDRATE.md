@@ -261,10 +261,13 @@ rather than being counted.
 
    Check the EXIT CODE, never the summary line: a teardown error prints
    "Tests N passed" and still exits non-zero.
-7. **Migrations: you author, Ivan applies, apply happens BEFORE merge.** You
-   write the migration and open the PR. Ivan applies it from the
-   `osteojp-prod-apply` worktree and pastes the journal output back. Only then
-   does the PR merge. Two things that have gone wrong before and will again:
+7. **Migrations: you author, GREEN applies, apply happens BEFORE merge.** You
+   write the migration and open the PR. GREEN - a fresh session launched with
+   `scripts/apply-lane/osteojp-apply-settings.json`, which authors nothing, edits
+   nothing and merges nothing - applies it from the `osteojp-prod-apply` worktree
+   and pastes the journal output back. You never apply your own migration: the
+   settings refuse it ("The agent did not author the artifact"). Only then
+   does the PR merge. SR-70, 2026-09-21; this rule named the owner until then. Two things that have gone wrong before and will again:
    the apply worktree must be checked out with `git checkout origin/<branch>`
    **detached** - a plain `git checkout <branch>` is rejected and `db:migrate`
    then silently no-ops on main; and a migration number is taken at BUILD time
@@ -1107,3 +1110,7 @@ text names GREEN as the apply lane and names a specific settings file, while the
 ruling at `portal-board.json:1187` says only that applies belong to the designated apply
 lane and that the author and the applier are always different lanes. The committed ruling
 is the authority. If the narrower version is the intent, SR-63 is amended on the board.
+**RESOLVED 2026-09-21: the narrower version was the intent.** SR-70 records it - GREEN is the
+apply lane, a fresh session launched with the apply settings, which authors nothing, edits
+nothing and merges nothing. SR-63 keeps its `superseded_by: SR-64` and is not reopened; SR-70
+is where the narrow text now lives. The divergence above is history, not an open question.

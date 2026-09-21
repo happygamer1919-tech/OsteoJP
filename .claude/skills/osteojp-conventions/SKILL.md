@@ -31,11 +31,19 @@ If this file drifts from them, they win.
   osteojp-portal) are green. **Never `--admin`, never the bypass box.** A refused
   merge is a HALT, not a workaround. A flaky unrelated check is re-run, not merged
   around; never present a red required check as done.
-- **Merge classes:** (a) GREEN self-merge - the default for a migration-free loop;
-  (b) OWNER VISUAL GATE - visual-heavy loops: all checks green is necessary but NOT
-  sufficient; push, paste the platform PREVIEW URL + the surfaces to inspect, and
-  HALT for the owner to merge; (c) OWNER-MERGE - migrations, and standing
-  agent-governing files (`.github/workflows/`, `.claude/skills/`): push and HALT.
+- **Merge classes** (rewritten 2026-09-21 for SR-64/SR-65/SR-70; the lane names below were
+  BLUE/PURPLE/GREEN/STEWARD and are now one build lane, SOLO): (a) self-merge on green -
+  the default for a migration-free loop; (b) OWNER VISUAL GATE - visual-heavy loops: all
+  checks green is necessary but NOT sufficient; push, paste the platform PREVIEW URL + the
+  surfaces to inspect, and HALT for the owner to look; (c) HELD - **migrations and production
+  data ops only**: open the PR UNARMED and HALT. A held migration PR is armed only after
+  **GREEN** - a separate, fresh apply-only session that authored none of it - has applied it
+  and pasted the journal. The build lane never applies, and nobody merges with `--admin`.
+  Standing agent-governing files (`.github/workflows/`, `.claude/skills/`, a required-check
+  script) are **Tier B**, not held: REVIEWER PASS plus green, and a gate change must show in
+  the same run that a seeded real failure still fails. They were class (c) here until
+  2026-09-21; SR-69 sets the tiers and does not put them there, and a rule that held its own
+  file hostage would make this correction unmergeable by its own text.
 - **`db-tests.yml` / `e2e.yml` are an automatic owner hold, never self-merged.**
   Workflow files are never touched by a wave loop.
 
@@ -64,7 +72,8 @@ and data questions always go to the mailbox, never self-authorized.
   mailbox escalation, not an action.
 - Every domain table ships `tenant_id` + an RLS policy + an isolation test in the
   SAME PR. **One migration in flight at a time**, sequential numbering; a migration
-  is applied by the deliberate manual step, never automated around.
+  is applied by a deliberate GREEN apply sitting - a fresh apply-only session, never the
+  session that wrote it, and never automated around.
 - **The cloud DB is READ-ONLY** absent an explicit, per-write owner authorization
   (a single Wave 08 authorized write is spent). DB access only through
   `packages/db`; no raw SQL in app code. Money is integer cents. **PII is never

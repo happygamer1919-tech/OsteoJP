@@ -286,8 +286,14 @@ a reservation.
 
 **Migration protocol, restated in full for every loop that authors one:**
 
-1. The **executor authors** the migration. The executor **never applies** it.
-2. **Ivan applies it from his prod-apply worktree, BEFORE the PR merges.**
+1. The **author never applies.** Whoever wrote the migration is disqualified from running
+   it - not by convention, but by `allow[2]` of the apply settings, which permits a
+   production apply only when "The agent did not author the artifact".
+2. **GREEN applies it from the prod-apply worktree, BEFORE the PR merges.** GREEN is a fresh
+   session launched with `scripts/apply-lane/osteojp-apply-settings.json`, which authors
+   nothing, edits nothing and merges nothing. SR-70 (2026-09-21). This line said "Ivan
+   applies it" until then, and was two generations stale: it was never updated for SR-50
+   (2026-09-04) or SR-63 (2026-09-13) either. The owner's part is to launch that session.
 3. **Applied counts only with pasted journal output.** A claim of "applied" with
    no pasted evidence is not an apply. Migrations have been shown "applied" in
    this project when they were not; see the 0038-0041 incident in

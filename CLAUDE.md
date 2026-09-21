@@ -36,13 +36,33 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 - Import tooling exit codes are fixed: `0` OK, `1` FAILED, `2` BAD_INVOCATION. Every import script conforms.
 - Ratified 2026-08-24. Before this, both were carried between dispatches in prose and a stateless terminal could not derive either — the failure PORTAL-REHYDRATE §4.11 exists to end.
 
-## Owner rulings, 2026-09-19: ONE LANE (SOLO)
+## Who applies migrations (read this before anything else about applies)
 
-Recorded on the board as **SR-64 to SR-69** (`docs/board/portal-board.json`, `rulings[]`), which is the register. They **supersede the lane rules where they conflict** (the owner's words): SR-63's separation of author and applier is superseded by SR-64, and SR-63 is marked, not deleted. BLUE, PURPLE, GREEN and STEWARD are replaced by one lane, SOLO.
+**GREEN applies. The build lane never applies.** A production migration or write script is run by
+**GREEN: a fresh session launched with the apply settings, which authors nothing, edits nothing and
+merges nothing.** The lane that wrote a migration or its apply document is disqualified from running
+it, always, by the settings themselves: `allow[2]` of `scripts/apply-lane/osteojp-apply-settings.json`
+permits a production apply only when **"The agent did not author the artifact"**, among its other
+conditions. That clause stays, and no lane ever edits that file.
 
-**R1 to R5, the tiers and the standing nevers below are the owner's sentences, character for character, from his dispatch of that date.** None of those lines is a paraphrase. The paragraph above and the last subsection are SOLO's record and say so.
+Owner ruling of 2026-09-21, recorded on the board as **SR-70**. It restores the configuration that
+applied `0089`: the settings file on `main` is byte-identical to the installed copy, sha256
+`ea1a9630f2a1ee6c418dad3ecd2e64a56ef25cc194b988989c4058ed8a06f195`. Nothing else about the one-lane
+rulings below changes: SOLO still authors, reviews, arms and merges everything, and still prepares
+every apply document with its sha256 sidecar and rehearses it on the throwaway DB. SOLO just never
+runs the apply.
+
+## Owner rulings, 2026-09-19: ONE LANE (SOLO), narrowed 2026-09-21 to one BUILD lane
+
+Recorded on the board as **SR-64 to SR-69** (`docs/board/portal-board.json`, `rulings[]`), which is the register. They **supersede the lane rules where they conflict** (the owner's words): SR-63's separation of author and applier is superseded by SR-64, and SR-63 is marked, not deleted. BLUE, PURPLE and STEWARD are replaced by one lane, SOLO, which does all the authoring, reviewing and merging. **GREEN was folded in here on 2026-09-19 and taken back out on 2026-09-21: SR-70 RESTORES it as the apply lane, and with it the clause of SR-63 that SR-64 had set aside** - the author and the applier are never the same session. This sentence read "GREEN is not replaced" for two days; it was.
+
+**R1 to R5, the tiers and the standing nevers below are the owner's sentences, character for character, from his dispatch of that date.** None of those lines is a paraphrase. SOLO's record is: the paragraph above, the last subsection, and the two indented *italic notes* sitting under R1 and under the TIERS C bullet. Those two were added on 2026-09-21, they label themselves, and they exist because the owner's sentences above them are quoted unchanged and can no longer be read alone - one on who applies, one on the migration numbers. An indented italic note under an owner line is a lane note, every time.
 
 - R1 Single lane. "Author, merger, applier are three lanes" is replaced by R2 to R5.
+  - *SOLO's note, 2026-09-21, not the owner's text: R1 is quoted above unchanged, and its APPLIER
+    clause is superseded by SR-70. The applier is a lane again, and it is GREEN; the author and the
+    applier are never the same session. R1 stands in every other respect - author and merger are
+    still one lane, SOLO.*
 - R2 Every PR arms `gh pr merge --auto --squash` at open. GitHub is the watcher. Never poll in a loop. Held migration PRs arm only after their apply is proven.
 - R3 WIP cap: at most ONE PR in checks plus ONE being built. Never open a third. When a merge lands, run update-branch on the other (merge main in, no rebase, no force push), and recompute any file carrying a computed total.
 - R4 REVIEWER: before arming any Tier B or Tier C PR, spawn a fresh-context subagent given ONLY the diff and the card acceptance. It returns PASS or a defect list. It never sees your reasoning. Defects are fixed and re-reviewed. Its verdict is pasted in the PR body.
@@ -53,16 +73,34 @@ TIERS (your self-merge filter):
 - A - UI, tests, docs, board, bug fixes touching no schema, RLS, grants, auth path, send path or money. Self-merge on green.
 - B - server actions, data access, reminder logic, auth-adjacent app code, anything under .github/workflows or any required-check script. REVIEWER PASS plus green. A gate change must show, in the same run, that a seeded real failure still fails.
 - C - migrations, RLS policies, grants, production data ops. Ruled items only (0090, 0091, 0092, 0093, NESA capacity, STAFF-10): full apply protocol below. Anything NEW in this tier: author, rehearse on the throwaway DB, hold unarmed with a question block (blocked_what, options, recommendation), move on.
+  - *SOLO's note, 2026-09-21, not the owner's text: the four numbers above are the owner's sentence of
+    2026-09-19 and are quoted unchanged. On 2026-09-20 he ruled a fifth migration into this tier - the
+    users/tenants/roles policy split - gave it 0091 and pushed the other three down one slot, so the
+    ruled list is now 0090, 0091, 0092, 0093 AND 0094. That is one item MORE than the sentence above
+    names, added by the owner and not by this lane. The binding table is under
+    "SOLO's record" below, and it is the one to read. "Full apply protocol below" means the protocol in
+    that subsection; the apply itself is run by GREEN, never by the lane that authored it.*
 - D - never autonomous: patient-facing copy, clinical, fiscal, legal or vendor decisions, env vars and flags (REMINDERS_*), secrets, deleting or rewriting production rows outside STAFF-10, branch protection, removing or loosening a required check. Card it with a question block.
 
 Standing nevers: clinical authorship never moves; clinical_records_enforce_immutability never bypassed; registos never get a delete button; no psql allow rule; no rebase; no force push; no credential value printed, echoed or logged.
 
 ### SOLO's record, not the owner's text
 
-- **The ruled Tier C list is CLOSED.** It is those six items and nothing else. The Fisiozero production import is not on it and stays owner-executed under "Patient data isolation" and "Import execution rules" above, which these rulings do not touch. "It has a ruling somewhere" does not put an item on the list.
-- **Which content each number means** (the bindings are the owner's, from the same dispatch: its items D3, D6, D7 and D8 name each number with its PR), recorded because the numbers are the authorisation and older specs used them differently: `0090` is `0090_nesa_patient_name_for_therapists` (PR #1390), `0091` is CARE-01's care-team migration (PR #1374), `0092` is RGPD-01's consent table (PR #1399), `0093` is the TRUNCATE, TRIGGER, REFERENCES revoke (PR #1397). `docs/design/SPEC-0090-comms-02-reminder-log.md` and `SPEC-0091-registo-annulment.md` carry those numbers in their file names from before this order was ruled; they are NOT the ruled items.
-- **"Full apply protocol below"** points at the dispatch, which is not reproduced here. The protocol as committed lives in SR-50, SR-51, SR-58 and SR-59 on the board, in `docs/runbook-prod-migrations.md` (`verified-migrate.mjs` is compulsory), and in each `docs/migration-apply-NNNN.md`.
-- **What R1 did not change, measured on 2026-09-19.** The first production apply attempted under R1 (0090, stage 1, after a 12 of 12 production pre-check with pending exactly 1) was refused by the harness classifier, reason "Production Deploy", and under R5 was not retried. Until the owner rules otherwise, one lane authors, reviews and merges, and the owner applies.
+- **The ruled Tier C list is SEVEN items, and only an owner ruling puts anything on it.** The TIERS block above names six, because that is the owner's sentence of 2026-09-19 and six is what the list held that day: `0090`, `0091`, `0092`, `0093`, NESA capacity, STAFF-10. **On 2026-09-20 he ruled a seventh in** - A1-02's users/tenants/roles policy split - gave it `0091`, and pushed the other three migrations down a slot each, which is where `0094` came from. The list as it stands: **`0090` NESA names, `0091` the policy split, `0092` CARE-01, `0093` RGPD-01, `0094` the grants revoke, NESA capacity, STAFF-10**, and nothing else. Read this bullet, not the TIERS line, for what is on the list today; the TIERS line is a quotation with a date on it. The Fisiozero production import is not on it and stays owner-executed under "Patient data isolation" and "Import execution rules" above, which these rulings do not touch. "It has a ruling somewhere" does not put an item on the list.
+- **Which content each number means, RENUMBERED BY THE OWNER ON 2026-09-20.** The numbers are the authorisation, older specs used them differently, and the queue has moved once - so read this table and not a number remembered from a branch name.
+
+  | number | content | PR |
+  |---|---|---|
+  | `0090` | `0090_nesa_patient_name_for_therapists` | #1390 |
+  | `0091` | the users/tenants/roles policy split (Tier C, authored after 0090 merges) | not yet opened |
+  | `0092` | CARE-01's care-team migration | #1374 |
+  | `0093` | RGPD-01's consent table | #1399 |
+  | `0094` | the TRUNCATE, TRIGGER, REFERENCES revoke | #1397 |
+
+  The 2026-09-19 dispatch bound four numbers (its items D3, D6, D7 and D8) with `0091` on CARE-01. The 2026-09-20 dispatch inserted the policy migration at `0091` and pushed the other three down one slot; the three held PR descriptions were updated to this table the same day, and this paragraph is the record catching up. The TIERS block above names `0090, 0091, 0092, 0093` because that is the owner's sentence of 2026-09-19, quoted unchanged, and on that date those four numbers were four pieces of work. They are **five** now: the 2026-09-20 dispatch ruled a FIFTH migration into Tier C - the policy split - gave it `0091`, and moved the other three down one slot each, so `0094` appeared at the end. The list did grow by one, by the owner's own ruling; see the closed-list bullet above, which says so plainly rather than letting a renumbering hide a new item.
+  `docs/design/SPEC-0090-comms-02-reminder-log.md` and `SPEC-0091-registo-annulment.md` carry those numbers in their file names from before any of this was ruled; they are NOT the ruled items.
+- **"Full apply protocol below"** points at the dispatch, which is not reproduced here. The protocol as committed lives in SR-50, SR-51, SR-58 and SR-59 on the board, in `docs/runbook-prod-migrations.md` (`verified-migrate.mjs` is compulsory), and in each `docs/migration-apply-NNNN.md`. Its operative parts, which those four rulings assume rather than state: the apply runs in a **fresh GREEN session launched with `scripts/apply-lane/osteojp-apply-settings.json`**, in the checkout `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply`, detached on the held branch; that session authors nothing, edits nothing and merges nothing, and it did not write the artifact it is running.
+- **What R1 did not change, measured on 2026-09-19 and corrected on 2026-09-21.** The first production apply attempted under R1 (0090, stage 1, after a 12 of 12 production pre-check with pending exactly 1) was refused by the harness classifier, reason "Production Deploy", and under R5 was not retried. That refusal was recorded here, until 2026-09-21, as "one lane authors, reviews and merges, and the owner applies". **That sentence is withdrawn.** What was MEASURED is only that the harness classifier refused it, reason "Production Deploy"; the classifier does not say which condition it read, and the earlier record was careful to say so. What is certain is separate and enough: the session that made the attempt had AUTHORED the artifact it was applying, so `allow[2]` would not have permitted it either, whatever the classifier was looking at. The attempt could not have been permitted, and it was never evidence that an apply must be done by hand. The answer is SR-70: **GREEN applies** - a fresh apply-only session, launched with the apply settings, that authored none of it. See the section "Who applies migrations" above, which is the governing text.
 
 ## Stack
 - Next.js 16 App Router, TypeScript strict
