@@ -70,22 +70,29 @@
 -- part of the delete order: appointments must go BEFORE pack instances. A graph
 -- built without form 5 puts them at the same level and the transaction fails.
 --
--- 18 TABLES HAVE AN FK PATH TO `patients`, in this order (deepest first):
+-- 19 TABLES HAVE AN FK PATH TO `patients`, in this order (deepest first):
 --
 --   depth 4  ai_ingestion_requests, attachments, patient_form_submissions,
 --            record_annulments                         (via clinical_records)
 --   depth 3  appointment_notes, clinical_records, invoices   (via appointments)
 --   depth 2  appointments                        (via patient_pack_instances)
 --   depth 1  analytics_events, clinical_episodes, consultations,
---            patient_followup_contacts, patient_followup_postponements,
---            patient_locations, patient_note_revisions, patient_pack_instances,
+--            patient_care_team, patient_followup_contacts,
+--            patient_followup_postponements, patient_locations,
+--            patient_note_revisions, patient_pack_instances,
 --            patient_terms_acceptances, patient_trusted_devices
 --
--- ONLY ONE EDGE CASCADES: patient_trusted_devices.patient_id -> patients
--- ON DELETE CASCADE. Every other edge is ON DELETE NO ACTION, so an unhandled
--- child ABORTS the transaction rather than silently orphaning - which is the
--- safe direction. THE CASCADING TABLE IS STILL DELETED EXPLICITLY, so its count
--- appears in STEP 1 instead of vanishing into a cascade nobody can see.
+-- WAS 18 UNTIL MIGRATION 0091 (CARE-01) WAS PROMOTED ON 2026-09-21, which added
+-- `patient_care_team` - reception's assignment of a therapist to a patient, one
+-- row per assignment, soft-removed via `removed_at`. It is a direct child of
+-- `patients`, so it belongs at depth 1 and is deleted with the rest of them.
+--
+-- TWO EDGES CASCADE: patient_trusted_devices.patient_id -> patients and
+-- patient_care_team.patient_id -> patients, both ON DELETE CASCADE. Every other
+-- edge is ON DELETE NO ACTION, so an unhandled child ABORTS the transaction
+-- rather than silently orphaning - which is the safe direction. THE CASCADING
+-- TABLES ARE STILL DELETED EXPLICITLY, so their counts appear in STEP 1 instead
+-- of vanishing into a cascade nobody can see.
 --
 -- ---------------------------------------------------------------------------
 -- THREE TABLES CARRY A PATIENT ID WITH **NO** FOREIGN KEY
@@ -227,6 +234,7 @@ select
   (select count(*) from analytics_events               where patient_id in (select id from p))   as analytics_events,
   (select count(*) from clinical_episodes              where patient_id in (select id from p))   as clinical_episodes,
   (select count(*) from consultations                  where patient_id in (select id from p))   as consultations,
+  (select count(*) from patient_care_team              where patient_id in (select id from p))   as patient_care_team,
   (select count(*) from patient_followup_contacts      where patient_id in (select id from p))   as patient_followup_contacts,
   (select count(*) from patient_followup_postponements where patient_id in (select id from p))   as patient_followup_postponements,
   (select count(*) from patient_locations              where patient_id in (select id from p))   as patient_locations,
@@ -449,6 +457,13 @@ delete from clinical_episodes
  where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
 
 delete from consultations
+ where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
+
+-- 0091 (CARE-01). Reception's therapist assignments for the patient. The FK
+-- CASCADES, so leaving it out would not abort the transaction - it would delete
+-- these rows invisibly and keep them out of STEP 1's count. Deleted explicitly
+-- for that reason, exactly as patient_trusted_devices is.
+delete from patient_care_team
  where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
 
 delete from patient_followup_contacts
