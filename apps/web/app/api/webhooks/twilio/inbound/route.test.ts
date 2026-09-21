@@ -31,6 +31,22 @@ vi.mock("@/lib/reminders/inbound-reply", () => ({ applyInboundReply: h.applyInbo
 vi.mock("@/lib/reminders/clients", () => ({ sendSms: h.sendSms }));
 vi.mock("@/lib/reminders/inbound-store", () => ({ recordInboundReply: h.recordForReview }));
 
+/**
+ * The Sentry seam, shaped as app/api/followup/contact/route.test.ts:24-29 shapes
+ * it: a `vi.fn()` CLOSED OVER by the factory, never named directly inside it.
+ * `./route` is imported statically below, so its module body - and every
+ * `vi.mock` factory it pulls - runs before the consts at this scope are
+ * initialised. A factory that referenced `captureMessage` directly would read it
+ * in the temporal dead zone and throw, which is the trap
+ * lib/reminders/inbound-config.test.ts:18-19 does not hit only because it
+ * imports its subject with a dynamic `await import`.
+ */
+const captureMessage = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureMessage: (...a: unknown[]) => captureMessage(...a),
+  captureException: vi.fn(),
+}));
+
 import { computeTwilioSignature } from "@/lib/reminders/inbound-signature";
 import { POST } from "./route";
 
@@ -84,18 +100,43 @@ function twilioPost(params: Record<string, string>, opts: { signature?: string |
 
 const REPLY = { From: "+351912345678", To: "+351210000000", Body: "Sim" };
 
+/** The review verdict, which transitions NOTHING. Used by the refusal tests. */
+const REVIEW = {
+  outcome: "review" as const,
+  reason: "no_patient_match" as const,
+  intent: "review" as const,
+  patientId: null,
+  appointmentId: null,
+};
+
+/**
+ * Every argument console.error was called with, so a test can assert what the
+ * failure line DOES and DOES NOT carry (rule 7). Same shape as
+ * lib/reminders/inbound-config.test.ts:38-42.
+ */
+let errors: unknown[][] = [];
+
 beforeEach(() => {
   for (const k of ENV) saved[k] = process.env[k];
   h.applyInboundReply.mockReset();
   h.sendSms.mockClear();
-  h.recordForReview.mockClear();
+  // mockReset, not mockClear: `mockRejectedValueOnce` queues a one-shot
+  // implementation that mockClear does NOT discard, so a rejection armed by a
+  // test that short-circuits before the filing call (404, 503, 403) would leak
+  // into whichever test ran next.
+  h.recordForReview.mockReset();
+  h.recordForReview.mockResolvedValue(undefined);
+  captureMessage.mockClear();
   h.applyInboundReply.mockResolvedValue({
     outcome: "confirmed",
     appointmentId: "a1",
     patientId: "p1",
   });
+  errors = [];
   vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+    errors.push(args);
+  });
   arm();
 });
 
@@ -328,10 +369,11 @@ describe("what it does once the signature passes", () => {
     );
   });
 
-  it("a failure to FILE the reply never turns a handled reply into a retry", async () => {
-    // The appointment has already moved and the audit row is already written.
-    // A non-2xx here would make Twilio redeliver and take the same decision
-    // again, so the filing is best-effort and the reply is still acknowledged.
+  it("a failure to FILE an ACTED-ON reply still acknowledges it and still 200s", async () => {
+    // The appointment has already moved and the audit row is already written,
+    // so the filed row is a working copy. A non-2xx would not bring it back
+    // (see the route header), and it would cost the acknowledgement, which is
+    // true whether or not the working copy landed.
     h.recordForReview.mockRejectedValueOnce(new Error("store down"));
     h.applyInboundReply.mockResolvedValue({
       outcome: "confirmed",
@@ -340,11 +382,63 @@ describe("what it does once the signature passes", () => {
     });
     const res = await POST(twilioPost(REPLY) as never);
     expect(res.status).toBe(200);
+    expect(h.sendSms).toHaveBeenCalledWith(
+      expect.objectContaining({ templateId: "reply_ack.confirmed.sms" }),
+    );
+  });
+
+  it("a REVIEW reply that could not be filed is REPORTED, and still acknowledged", async () => {
+    // THE REFUSAL THIS ARM ASSERTED IN THE FIRST DRAFT IS WITHDRAWN. It was
+    // built on "a non-2xx makes Twilio redeliver"; this route does not rely on
+    // re-delivery, and the route header says why.
+    // So the 500 did not fetch the reply again; it only suppressed the
+    // acknowledgement on the way past, leaving the patient with silence. The
+    // text stays retrievable from Twilio by sid, so "a recepcao vai confirmar
+    // consigo" is still a promise the clinic can keep, and the loss is
+    // reported through the capture instead.
+    h.recordForReview.mockRejectedValueOnce(new Error("store down"));
+    h.applyInboundReply.mockResolvedValue(REVIEW);
+    const res = await POST(
+      twilioPost({ ...REPLY, MessageSid: "SM-review-unfiled" }) as never,
+    );
+    expect(res.status).toBe(200);
+    expect(h.sendSms).toHaveBeenCalledWith(
+      expect.objectContaining({ templateId: "reply_ack.review.sms" }),
+    );
+    // The console is not a report: nothing in this app forwards console lines
+    // to Sentry, so without this the loss is visible to nobody.
+    expect(captureMessage).toHaveBeenCalled();
+  });
+
+  it("the filing failure names the MessageSid and never the body or the sender", async () => {
+    // The sid is Twilio's own id for the message and the key to retrieving the
+    // text from their console, so the line is worth nothing without it. The
+    // body and the sender's number are the two things rule 7 keeps out of it.
+    h.recordForReview.mockRejectedValueOnce(new Error("store down"));
+    h.applyInboundReply.mockResolvedValue(REVIEW);
+    await POST(
+      twilioPost({
+        ...REPLY,
+        MessageSid: "SM-review-unfiled",
+        Body: "preciso de remarcar XYZZYMARKER",
+      }) as never,
+    );
+    const logged = errors.map((a) => a.join(" ")).join("\n");
+    expect(logged).toContain("SM-review-unfiled");
+    expect(logged).not.toContain("XYZZYMARKER");
+    expect(logged).not.toContain("912345678");
+    const tags =
+      (captureMessage.mock.calls[0]?.[1] as { tags?: Record<string, string> } | undefined)?.tags ??
+      {};
+    const tagText = Object.values(tags).join(" ");
+    expect(tagText).toContain("SM-review-unfiled");
+    expect(tagText).not.toContain("XYZZYMARKER");
+    expect(tagText).not.toContain("912345678");
   });
 
   it("200s even when the reply changed nothing — a handled reply is not a failure", async () => {
-    // A non-2xx makes Twilio redeliver, and the redelivery would take the same
-    // decision again. "Nothing to do" is a successful outcome for a webhook.
+    // "Nothing to do" is a successful outcome for a webhook: the reply was
+    // decided, and there is nothing a different status would put right.
     h.applyInboundReply.mockResolvedValue({
       outcome: "review",
       reason: "outside_window",
@@ -371,6 +465,190 @@ describe("what it does once the signature passes", () => {
     );
     // No normalizable sender, so no acknowledgement is attempted.
     expect(h.sendSms).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * ==========================================================================
+ * THE THROW PATHS
+ * ==========================================================================
+ * Both awaits guarded on this route are MOCKED by this file, so the arms below
+ * are what make either mock reject and measure what the route then answers and
+ * logs. The fixture number is invented for these arms specifically: it is the
+ * value the thrown errors carry, so "the log does not contain it" is a
+ * measurement rather than a coincidence of which strings happen to be short.
+ */
+const SYNTHETIC_REPLIER = "+351900000042";
+const SYNTHETIC_SUBSCRIBER = "900000042";
+const SYNTHETIC_REPLY = { From: SYNTHETIC_REPLIER, To: CLINIC_NUMBER, Body: "Sim" };
+
+describe("a database fault in the classifier", () => {
+  /**
+   * The fixture carries the number, so the assertion that the log does not is a
+   * measurement rather than a coincidence.
+   */
+  function queryErrorFixture() {
+    return Object.assign(
+      new Error(
+        "select \"patients\".\"id\" from \"patients\" where regexp_replace(...) in ($1, $2, $3) " +
+          `-- params: ["${SYNTHETIC_SUBSCRIBER}", "351${SYNTHETIC_SUBSCRIBER}", ` +
+          `"00351${SYNTHETIC_SUBSCRIBER}"]`,
+      ),
+      { code: "42P01" },
+    );
+  }
+
+  it("answers 200, reports the SQLSTATE, and never repeats the value the fixture carries", async () => {
+    const leaky = queryErrorFixture();
+    // NEGATIVE CONTROL: the error really does carry the number.
+    expect(leaky.message).toContain(SYNTHETIC_SUBSCRIBER);
+    h.applyInboundReply.mockRejectedValueOnce(leaky);
+
+    const res = await POST(
+      twilioPost({ ...SYNTHETIC_REPLY, MessageSid: "SM-classifier-fault" }) as never,
+    );
+
+    // 200: a refusal would preserve nothing, and there is no verdict, so there
+    // is no acknowledgement that could be true.
+    expect(res.status).toBe(200);
+    const logged = errors.map((a) => a.join(" ")).join("\n");
+    expect(logged).toContain("sqlstate=42P01");
+    expect(logged).toContain("SM-classifier-fault");
+    expect(logged).not.toContain(SYNTHETIC_SUBSCRIBER);
+    expect(logged).not.toContain("params");
+    // NOTHING IS SENT. The reply may have been a STOP, and answering one with
+    // an SMS is the single message that contradicts its own instruction.
+    expect(h.sendSms).not.toHaveBeenCalled();
+    // Nothing was filed either: there is no outcome to file.
+    expect(h.recordForReview).not.toHaveBeenCalled();
+    expect(captureMessage).toHaveBeenCalled();
+    const tags =
+      (captureMessage.mock.calls[0]?.[1] as { tags?: Record<string, string> } | undefined)?.tags ??
+      {};
+    const tagText = Object.values(tags).join(" ");
+    expect(tagText).toContain("42P01");
+    expect(tagText).not.toContain(SYNTHETIC_SUBSCRIBER);
+  });
+
+  /**
+   * `SmsSid` IS READ, AND THIS IS THE ARM THAT SAYS SO. Twilio posts it on
+   * every inbound SMS beside `MessageSid`, and the delivery-status route one
+   * directory over already reads both. The whole mitigation on this path is
+   * that the reply stays retrievable from the provider BY SID, so a line
+   * reading `sid=absent` for a delivery that carried one is the mitigation
+   * failing quietly.
+   */
+  it("names the SmsSid when the delivery carried no MessageSid", async () => {
+    h.applyInboundReply.mockRejectedValueOnce(queryErrorFixture());
+    const res = await POST(twilioPost({ ...SYNTHETIC_REPLY, SmsSid: "SM-sms-sid-only" }) as never);
+    expect(res.status).toBe(200);
+    const logged = errors.map((a) => a.join(" ")).join("\n");
+    expect(logged).toContain("sid=SM-sms-sid-only");
+    expect(logged).not.toContain("sid=absent");
+    const tags =
+      (captureMessage.mock.calls[0]?.[1] as { tags?: Record<string, string> } | undefined)?.tags ??
+      {};
+    expect(tags.sid).toBe("SM-sms-sid-only");
+  });
+
+  it("does not let the driver error escape the route", async () => {
+    // An unguarded await REJECTS rather than refusing, which is the same defect
+    // wearing a different coat - so the assertion is on the settled value and
+    // not on a `.status` read after it.
+    h.applyInboundReply.mockRejectedValueOnce(queryErrorFixture());
+    const settled = await POST(twilioPost(SYNTHETIC_REPLY) as never).catch((e: unknown) => e);
+    expect(settled, "the route rejected instead of answering").toBeInstanceOf(Response);
+  });
+});
+
+describe("a failure to SEND the acknowledgement", () => {
+  /**
+   * The fixture carries the number, so the assertion that the log does not is a
+   * measurement rather than a coincidence. `assertNotificationEnv` throwing
+   * inside dispatch is the other way this await can fail.
+   */
+  function providerRejection() {
+    return Object.assign(
+      new Error(`The 'To' number ${SYNTHETIC_REPLIER} is not a valid phone number.`),
+      { code: 21211, status: 400 },
+    );
+  }
+
+  for (const [label, result] of [
+    ["confirmed", { outcome: "confirmed", appointmentId: "a1", patientId: "p1" }],
+    ["review", REVIEW],
+  ] as const) {
+    it(`is SWALLOWED on a ${label} verdict: 200, nothing escapes, no value on the line`, async () => {
+      const rejection = providerRejection();
+      // NEGATIVE CONTROL: the rejection really does carry the number.
+      expect(rejection.message).toContain(SYNTHETIC_SUBSCRIBER);
+      h.applyInboundReply.mockResolvedValue(result);
+      h.sendSms.mockRejectedValueOnce(rejection);
+
+      const settled = await POST(
+        twilioPost({ ...SYNTHETIC_REPLY, MessageSid: `SM-send-fault-${label}` }) as never,
+      ).catch((e: unknown) => e);
+
+      expect(settled, "the route rejected instead of answering").toBeInstanceOf(Response);
+      // SWALLOWED, NOT REFUSED: the reply was already decided and filed, so a
+      // refusal would report a delivery as failed although both succeeded.
+      expect((settled as Response).status).toBe(200);
+      expect(h.recordForReview).toHaveBeenCalledOnce();
+      const logged = errors.map((a) => a.join(" ")).join("\n");
+      expect(logged).toContain(`SM-send-fault-${label}`);
+      expect(logged).not.toContain(SYNTHETIC_SUBSCRIBER);
+      expect(logged).not.toContain("not a valid phone number");
+      const tags =
+        (captureMessage.mock.calls[0]?.[1] as { tags?: Record<string, string> } | undefined)
+          ?.tags ?? {};
+      expect(Object.values(tags).join(" ")).not.toContain(SYNTHETIC_SUBSCRIBER);
+    });
+  }
+});
+
+describe("a reply carrying neither MessageSid nor SmsSid", () => {
+  /**
+   * WHAT THE MINTED FALLBACK ID ACTUALLY IS, measured rather than asserted in a
+   * comment: `no-sid:<uuid>`, fresh per delivery. That and the review-reason
+   * timing are unchanged here and tracked separately; this arm exists so the
+   * property is written down in a form that goes red if it changes.
+   */
+  it("is never refused, and each delivery files under a DIFFERENT minted id", async () => {
+    h.applyInboundReply.mockResolvedValue(REVIEW);
+    h.recordForReview.mockRejectedValueOnce(new Error("store down"));
+
+    const first = await POST(twilioPost(SYNTHETIC_REPLY) as never);
+    const second = await POST(twilioPost(SYNTHETIC_REPLY) as never);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+
+    // The hoisted mock is declared with no parameters, so its recorded calls
+    // are typed as the empty tuple; the cast is about the STUB'S TYPE and not
+    // about the value, which the assertions below check on their own.
+    const calls = h.recordForReview.mock.calls as unknown as [{ providerMessageSid: string }][];
+    const sids = calls.map((c) => c[0].providerMessageSid);
+    expect(sids).toHaveLength(2);
+    for (const sid of sids) expect(sid).toMatch(/^no-sid:/);
+    expect(sids[0], "the minted id is stable across deliveries, so the insert DOES dedupe").not.toBe(
+      sids[1],
+    );
+    // And the line that reports the first failure says the sid is absent
+    // rather than inventing one.
+    expect(errors.map((a) => a.join(" ")).join("\n")).toContain("sid=absent");
+  });
+
+  /**
+   * THE CONTROL: a delivery that carries `SmsSid` alone is NOT in the minted
+   * path at all. It files under the provider's own id, which is the narrowing
+   * the shared read buys.
+   */
+  it("files under SmsSid when that is the only id the delivery carries", async () => {
+    h.applyInboundReply.mockResolvedValue(REVIEW);
+    await POST(twilioPost({ ...SYNTHETIC_REPLY, SmsSid: "SM-sms-sid-only" }) as never);
+    const calls = h.recordForReview.mock.calls as unknown as [{ providerMessageSid: string }][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].providerMessageSid).toBe("SM-sms-sid-only");
   });
 });
 
