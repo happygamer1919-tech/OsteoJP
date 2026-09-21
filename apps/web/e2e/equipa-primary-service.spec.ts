@@ -131,9 +131,15 @@ test("Equipa: password-gated therapist delete — wrong password refused, correc
   page,
 }, testInfo) => {
   await page.goto("/admin/staff");
-  // This delete is DESTRUCTIVE and the cross-browser CI job runs firefox + webkit
-  // against ONE shared, non-reset seed DB. So each project deletes its OWN seeded
-  // zero-service, activity-free disposable therapist (see e2e/seed/seed-e2e.mjs).
+  // This delete is DESTRUCTIVE, and a firefox + webkit run would share ONE
+  // non-reset seed DB. So each project deletes its OWN seeded zero-service,
+  // activity-free disposable therapist (see e2e/seed/seed-e2e.mjs).
+  //
+  // AGMOB-01, 2026-09-21: THERE IS NO CROSS-BROWSER CI JOB. e2e.yml runs
+  // `--project=chromium` alone, so in CI only the chromium disposable is ever
+  // deleted. The per-project naming is kept because it is what makes a MANUAL
+  // multi-project run safe, and because removing it would make that run
+  // destructive again.
   const disposable = `E2E Terapeuta Descartavel ${testInfo.project.name}`;
   const target = () => card(page, disposable);
   await expect(target()).toHaveCount(1);
