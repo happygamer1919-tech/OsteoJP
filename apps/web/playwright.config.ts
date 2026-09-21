@@ -23,10 +23,19 @@ import { CONFIRM_CODE_SECRET } from "./e2e/fixtures";
  *   E2E_RECEPTION_EMAIL / E2E_RECEPTION_PASSWORD
  *   E2E_PORTAL_PATIENT_EMAIL / E2E_PORTAL_PATIENT_PASSWORD (portal patient)
  *
- * Three browser projects (Chromium, Firefox, WebKit) share one setup run.
- * Auth storage state files (e2e/.auth/<role>.json) are cookie-based and
- * browser-agnostic — a single Chromium setup pass suffices for all three.
+ * Three browser projects (Chromium, Firefox, WebKit) are DECLARED and share one
+ * setup run. Auth storage state files (e2e/.auth/<role>.json) are cookie-based
+ * and browser-agnostic — a single Chromium setup pass suffices for all three.
  * Reminders is excluded from all projects (in flux).
+ *
+ * AGMOB-01, 2026-09-21: ONLY CHROMIUM IS EVER RUN BY CI. `.github/workflows/
+ * e2e.yml` invokes `--project=chromium` alone; `git grep -ic webkit -- .github/`
+ * exits 1, and the control, `chromium`, matches that workflow. The firefox and
+ * webkit projects below are runnable by hand and nothing schedules them. Several
+ * `testIgnore` comments in this file, and one in e2e/seed/seed-e2e.mjs, were
+ * written when "the cross-browser job" existed as a plan and read as though it
+ * runs today; they now say what is true. This matters because a comment claiming
+ * WebKit coverage is read as WebKit coverage, and the clinic is on iPhones.
  *
  * New-feature specs (quick-notes, invoicing, portal-reminders) run in
  * Chromium only — they are listed in testIgnore for Firefox and WebKit.
@@ -158,8 +167,10 @@ export default defineConfig({
         // three browsers never race on the same account's password.
         "**/profile-reachability.spec.ts",
         // LE-confirm-page-no-browser-coverage: confirm-code WRITES appointments
-        // and confirm codes, and the cross-browser job runs against ONE shared,
-        // non-reset database. Chromium-only, like the write-heavy specs above.
+        // and confirm codes, and a cross-browser run would share ONE non-reset
+        // database. Chromium-only, like the write-heavy specs above. (There is
+        // no scheduled cross-browser job - see the header. The exclusion stays,
+        // because it is about what a MANUAL firefox/webkit run would do.)
         "**/confirm-code.spec.ts",
       ],
     },
@@ -193,8 +204,10 @@ export default defineConfig({
         // three browsers never race on the same account's password.
         "**/profile-reachability.spec.ts",
         // LE-confirm-page-no-browser-coverage: confirm-code WRITES appointments
-        // and confirm codes, and the cross-browser job runs against ONE shared,
-        // non-reset database. Chromium-only, like the write-heavy specs above.
+        // and confirm codes, and a cross-browser run would share ONE non-reset
+        // database. Chromium-only, like the write-heavy specs above. (There is
+        // no scheduled cross-browser job - see the header. The exclusion stays,
+        // because it is about what a MANUAL firefox/webkit run would do.)
         "**/confirm-code.spec.ts",
       ],
     },
