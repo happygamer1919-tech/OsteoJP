@@ -720,4 +720,49 @@ describe("(e) INTAKE-01: the clinical intake rides on the same request", () => {
     }
     expect(lines).toEqual(["[guest-booking] write failed (sqlstate unknown); nothing was stored."]);
   });
+
+  /**
+   * A NODE ERRNO IS NOT A SQLSTATE, and `EPIPE` is exactly five characters of
+   * `[0-9A-Z]` - so the shape alone does not keep it out, and what that costs
+   * is a broken socket reported as a PostgreSQL class that does not exist.
+   * Every Node errno begins with `E` and no PostgreSQL class does. Kept in step
+   * with the copy this function names, apps/web/lib/observability/sql-state.ts,
+   * which carries the same arm.
+   */
+  it("a five-character Node errno logs `unknown`, not a SQLSTATE that never existed", async () => {
+    H.intakeTable = true;
+    H.intakeFailure = Object.assign(new Error(`boom ${REASON}`), { code: "EPIPE" });
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    });
+    try {
+      await guestBooking(post(validBody({ intake: validIntake() })));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines).toEqual(["[guest-booking] write failed (sqlstate unknown); nothing was stored."]);
+  });
+
+  /**
+   * THE CONTROL FOR THE ARM ABOVE. A rule aimed at Node can be tightened into
+   * one that also rejects real codes, and "it must begin with a digit" is the
+   * obvious such rule - it would report `P0001`, which every `RAISE EXCEPTION`
+   * with no ERRCODE carries, as `unknown`. This arm is the same control the web
+   * copy's suite carries, so a tightening on either side goes red.
+   */
+  it("still reports a letter-class SQLSTATE, which a leading-digit rule would drop", async () => {
+    H.intakeTable = true;
+    H.intakeFailure = Object.assign(new Error(`boom ${REASON}`), { code: "P0001" });
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    });
+    try {
+      await guestBooking(post(validBody({ intake: validIntake() })));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines).toEqual(["[guest-booking] write failed (sqlstate P0001); nothing was stored."]);
+  });
 });

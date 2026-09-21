@@ -4732,6 +4732,106 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
   Two follow-ups go up with it: the consent-row requirement (blocked on
   Q-CONSULT-1) and tightening the object-key check.
 
+## 2026-09-21 - SOLO, COMMS-02: what each Twilio webhook's status is for, and every call on the reply path guarded
+
+- **What a non-2xx from either webhook does, from Twilio's documentation, because
+  both routes' answers follow from it.** Webhook connection overrides
+  (https://www.twilio.com/docs/usage/webhooks/webhooks-connection-overrides)
+  default `rp` (retry policy) to `ct`, which retries on a TCP connect or TLS
+  handshake failure and nothing else; `rc` (retry count) defaults to 1, maximum
+  5; `tt` (total time) defaults to 15000 ms and is capped there, covering every
+  attempt including retries. A 5xx is opted into by an override carried as a URL
+  fragment. Both routes now choose their status codes without assuming the
+  caller re-delivers, and both headers carry the citation and say so.
+- **The inbound route answers 200 on every path past the signature check**, and
+  the `review`-outcome 500 of the first draft is withdrawn. It did not preserve
+  the reply, and it suppressed the acknowledgement on the way past: the patient
+  who texted in got silence instead of "a recepção vai confirmar consigo". The
+  text stays retrievable from Twilio by sid, so that sentence is a promise the
+  clinic can still keep and a filing failure is reported rather than announced
+  to the patient. What survives from the draft is the loud half, which is the
+  valuable part: sid, tenant, outcome and SQLSTATE on the line, and a Sentry
+  capture on every failure.
+- **The status route keeps its 500, with a different reason written out.** It
+  claims no redelivery. It costs nothing to return - nobody is waiting on that
+  request, the write has already failed by the time the status is chosen - and
+  it puts the failure on the provider's side of the wire instead of reporting a
+  success that did not happen. A 200 there would spend the single signal a
+  failed status write leaves: the row's `provider_status` stays NULL and the
+  reminder log renders it as the neutral "handed over" for ever.
+- **Not the IfThenPay precedent.** `app/api/webhooks/ifthenpay/route.ts:140-142`
+  answers 500 "so IfThenPay re-delivers the callback", which is a statement
+  about a different vendor's retry behaviour. It does not transfer, and the
+  status route's header now says so in place of citing it.
+- **Asking Twilio to retry a 5xx is an OPEN QUESTION, not a decision taken
+  here.** `docs/QUESTIONS.md` Q-COMMS-02-1 carries it. The status callback's URL
+  is built in code (`lib/reminders/status-callback.ts`), so the override would
+  be a diff rather than a console click; the value it would need is `rp=all` and
+  NOT `rp=5xx`, because `rp` replaces the default rather than adding to it and
+  `5xx` alone would trade away the connect-failure retries already in force. It
+  is not taken now because the same URL is spread into every `messages.create`
+  in the web app: if the Messages API rejects a `statusCallback` carrying a
+  fragment, the create throws and the cost lands on the MESSAGE rather than on
+  the status, which inverts that file's own rule. One live send against a test
+  number settles it, and a send is an owner action. The URL this branch ships is
+  origin and path only.
+- **Every call on the inbound path is inside a guard, and only ids leave one.**
+  Both calls on the reply path are now inside a guard, and only ids leave one: a
+  database failure is reported as a SQLSTATE
+  (`lib/observability/sql-state.ts`), a send failure as the thrown value's
+  class, bounded to an identifier shape by a local `classOf` so that field
+  cannot carry a value either. The classifier's failure answers 200 and sends
+  NOTHING, because with no verdict there is no acknowledgement that could be
+  true and a reply that was in fact a STOP must never be answered. The send's
+  failure is swallowed: the reply has already been decided and filed, and a
+  refusal would report the whole delivery as failed although both succeeded.
+- **The sid is read from `MessageSid` ?? `SmsSid`, once, and used everywhere on
+  the route.** Twilio posts `SmsSid` on every inbound SMS, and the
+  delivery-status route already read both. The whole mitigation on the
+  classifier-fault path is that the reply stays retrievable from the provider by
+  sid, so the two fields have to be read wherever that mitigation is claimed.
+  The shared read also narrows the minted `no-sid:` fallback id to the
+  deliveries that carry neither. That fallback and the review-reason timing are
+  unchanged and tracked separately.
+- **`sqlStateOf` rejects a leading `E`, and NOT anything but a leading digit.**
+  A Node errno is five characters of `[0-9A-Z]` too - EPIPE, EPERM, EBUSY,
+  EINTR, EBADF, ELOOP, ENXIO, EROFS, EXDEV, ETIME, EIDRM, E2BIG - so the shape
+  alone does not separate the two sets. The separator is the leading `E`:
+  PostgreSQL's Appendix A defines the classes `F0`, `HV`, `P0` and `XX` as well
+  as the numeric ones, so a leading-digit test would report real codes as
+  `unknown` - `P0001`, which every `RAISE EXCEPTION` with no ERRCODE carries,
+  and `P0002`, which `0005_patient_merge_multilocation.sql` raises by its
+  condition name and `lib/patients/actions.ts` branches on. `/^(?!E)[0-9A-Z]{5}$/`
+  separates the two sets exactly and loses nothing. The deliberate second copy
+  in `apps/api/app/api/v1/booking/guest/route.ts` was changed in the same pass,
+  because the comment calling them copies is only true while they are. Both
+  suites carry the control arm, so a future tightening on a leading digit goes
+  red on either side.
+- **The throw paths are covered.** The route suite mocks both calls; eight arms
+  now make them reject and measure what the route answers and logs: the
+  classifier's rejection (200, `sqlstate=` on the line, no value from the
+  payload, no send), the same with `SmsSid` as the only id the delivery carries,
+  the send's rejection on a `confirmed` and on a `review` verdict (200 both,
+  nothing escaping, no value on the line), a delivery carrying neither id
+  delivered twice, and a delivery carrying `SmsSid` alone filing under it. The
+  status-callback URL gets its own file, which its header had claimed since
+  OBS-04 existed: null when the origin is unset or blank, origin and path from
+  the configured origin only, trailing slashes idempotent, and no fragment on
+  either constant.
+- **`recordProviderStatus` stops swallowing**, which is what let the status
+  route report a write that did not happen. The "never throws into the send
+  path" rationale covers `recordDispatch` alone: recording a send must not be
+  able to stop one, and there is no send on the status path for a swallow to
+  protect, only a delivery report to lose. `recordDispatch` is unchanged and its
+  test still pins the swallow.
+- **Not changed:** the arming gates. The sid-less fallback id and the
+  review-reason timing are unchanged and tracked separately. No migration, no
+  schema, no RLS policy, no copy change, no new env var, no new dependency.
+- **The decision record moved.** The first draft appended to
+  `docs/design/DECISIONS.md`, which is not the live file; that file is restored
+  byte-for-byte to its state on main, including the stripped conflict marker at
+  its line 872, which is a separate fix and was not touched here.
+
 ## 2026-09-20 - H5: the upload rule is applied before the upload URL is signed, and audit_log refuses a media type by shape
 
 - **RULING: `audit_log.metadata` carries no media type, and the rule is written
