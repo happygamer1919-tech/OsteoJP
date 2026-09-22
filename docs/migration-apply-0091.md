@@ -24,7 +24,7 @@ rehearsal section near the end.
 | This document | `docs/migration-apply-0091.md`, pinned by `docs/migration-apply-0091.sha256` and asserted in STAGE 0 and again in STAGE 1 |
 | Pre-check | `scripts/db/precheck-care-team.sql`, READ ONLY, sha256 `1fe31122ac6b371aa43fd82271472c5952e6297fc91a9aa7d947b10e9351864b` |
 | Post-check | `scripts/db/postcheck-care-team.sql`, READ ONLY, sha256 `7ba44f65dba515f8e63716eb06425204e889b524d1fa899f3b1a541f899b8b2a` |
-| Behaviour check | `scripts/db/behaviour-care-team-readonly.sql`, READ ONLY, sha256 `7e5ebbaedf57a946e79e4eebb7b7e0cf6a673e4ceec5a074f660b56991fb0c0f` |
+| Behaviour check | `scripts/db/behaviour-care-team-readonly.sql`, READ ONLY, sha256 `c89aefcdb6400b84999ee47fc9c4253750d0e1df8186d4f5491904829152b6c4` |
 | The two programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`. Both byte-identical to `origin/main` at `60105a36` on 2026-09-21, both pinned in every block that runs them |
 | What it creates | ONE table (`public.patient_care_team`, with three indexes), ONE function (`public.viewer_care_team_patient_ids()`), FOUR policies: three on the new table and **one** on `appointments` |
 | What it never touches | `appointments_rls` — the FOR ALL policy whose USING governs SELECT, the rows an UPDATE may target AND the rows a DELETE may remove — and every clinical policy: `clinical_records`, `clinical_episodes`, `attachments`, storage |
@@ -452,7 +452,7 @@ appointment id reaches the transcript.
 ```
 (
 set -eo pipefail
-SHABEHAVIOUR=7e5ebbaedf57a946e79e4eebb7b7e0cf6a673e4ceec5a074f660b56991fb0c0f
+SHABEHAVIOUR=c89aefcdb6400b84999ee47fc9c4253750d0e1df8186d4f5491904829152b6c4
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=care/CARE-01-assigned-therapists
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
