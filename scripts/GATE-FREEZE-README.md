@@ -3,8 +3,8 @@
 `.github/gate-manifest.json` pins the sha256 of every file that can change a
 **required check's verdict**. `scripts/assert-gates-unchanged.mjs` runs inside
 the required `Lint + typecheck + test` job and fails when one of them moves.
-It exists because SR-71 — *"a lane never edits a gate to pass its own PR"* —
-was written and then breached twice on the same day.
+It exists because SR-71, *"a lane never edits a gate to pass its own PR"*, was
+written and then breached twice on the same day.
 
 ## The criterion for membership
 
@@ -19,7 +19,7 @@ run at all; `package.json`'s **scripts block only**, because pointing
 running nothing).
 
 And it is why `.claude/skills/**/*.md` came **out** on 2026-09-22: no required
-check reads those files. They are still merge-class controlled — they are simply
+check reads those files. They are still merge-class controlled, they are simply
 not sha256-frozen. That is a real cost, because the first SR-71 breach happened
 in exactly that file. If it needs freezing, the honest route is a check that
 *reads* it; then it decides a verdict and belongs here on the stated criterion.
@@ -29,7 +29,7 @@ in exactly that file. If it needs freezing, the honest route is a check that
 > **A manifest may pin bytes that are already on `main`. It may never pin a byte
 > the pull request itself changes.**
 
-Both look identical in a diff — `.github/gate-manifest.json` changed — and they
+Both look identical in a diff (`.github/gate-manifest.json` changed) and they
 are opposites.
 
 **The legitimate case.** A branch is cut, then something merges to `main` that
@@ -67,5 +67,5 @@ node scripts/gate-manifest.mjs --write
 ```
 
 Rule C refuses a GATE-CHANGE PR that carries anything but gate files and the
-manifest — including its own board card, which rides a separate board PR. That
+manifest, including its own board card, which rides a separate board PR. That
 is the rule working on its author first.
