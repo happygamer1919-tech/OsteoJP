@@ -13,6 +13,7 @@ import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listLocations } from "@/lib/admin/locations";
 import { listStaffLocations } from "@/lib/admin/staff-locations";
 import { seesEveryLocation } from "@/lib/admin/location-scope-warning";
+import { buildAssignedLocations } from "@/lib/admin/assigned-locations";
 import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
 import { buildScheduleDays, datedAheadByKey, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
@@ -111,20 +112,6 @@ export default async function StaffPage({
   // viewer keeps only a request that names one of their own clinics.
   const locationId = effectiveLocationId(locationControl, (location ?? "").trim()) ?? "";
 
-  // W5-32: each member's assigned location set. PL-14 widens it from working
-  // hours alone to hours UNION staff_locations membership - with 5 of 11 members
-  // holding hours, the hours-only set filtered out most of a real team.
-  const assignedLocations = new Map<string, Set<string>>();
-  const addAssignment = (userId: string, locId: string) => {
-    const set = assignedLocations.get(userId) ?? new Set<string>();
-    set.add(locId);
-    assignedLocations.set(userId, set);
-  };
-  for (const a of availability) addAssignment(a.userId, a.locationId);
-  for (const [userId, memberships] of staffLocationsByUser) {
-    for (const membership of memberships) addAssignment(userId, membership.locationId);
-  }
-
   // W12-40, widened by W13-A: up to TWO active templates per (member, weekday),
   // so a split shift (08:00-13:00 + 14:00-19:00) survives a reload. It was one,
   // and a loader that kept one while the editor saved two would archive the
@@ -137,6 +124,18 @@ export default async function StaffPage({
   const aheadByKey = datedAheadByKey(availability, today);
   const buildDays = (memberId: string): ScheduleDay[] =>
     buildScheduleDays(templateIndex, memberId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]], aheadByKey);
+
+  // W5-32: each member's assigned location set. PL-14 widens it from working
+  // hours alone to hours UNION staff_locations membership - with 5 of 11 members
+  // holding hours, the hours-only set filtered out most of a real team.
+  // STAFF-12 adds the missing third of the rule: an hours row only counts while
+  // it is IN FORCE. `listAvailabilityTemplates` filters is_active and nothing
+  // else, so a day-defined row whose valid_until passed still put a chip on the
+  // card - which is how JP(cb), a member of Castelo Branco and of nothing else,
+  // read "OsteoJP (LV), OsteoJP (CB)" while Gerir showed Castelo Branco alone.
+  // `today` is the same Lisbon date the schedule editor above is built from, on
+  // purpose: one page must not hold two ideas of what is in force.
+  const assignedLocations = buildAssignedLocations(availability, staffLocationsByUser, today);
 
   // W12-40: time-off blocks per NON-reception member (they alone hold a schedule
   // + blocks). One query each, scoped to the shown set; reception is skipped.
