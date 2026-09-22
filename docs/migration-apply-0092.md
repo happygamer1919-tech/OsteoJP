@@ -39,12 +39,11 @@ elsewhere in this document is either a structural count (journal rows, policies,
 functions), a verdict profile, or a measurement on synthetic rehearsal data.
 
 **The ruling was broken once on this branch, and this document says so rather than
-claiming otherwise.** A test comment added in commit `9cff3b65` (2026-09-22, 07:37)
-stated the size of the gap to an order of magnitude, and the CARE-01 behaviour
-script's header carried production counts from the same day. The Tier C REVIEWER
-caught both; both are removed at the tip. The commit is in the branch's pushed
-history on a public repository, and removing it from there needs a force push, which
-this repository forbids without the owner. The owner has been told.
+claiming otherwise.** Earlier commits on this branch carried production figures in a
+test comment and in a script header. The Tier C REVIEWER caught both; both are removed
+at the tip. They remain in the branch's pushed history on a public repository, and
+removing them from there needs a force push, which this repository forbids without the
+owner. Which commits, and what they said, is in the owner's report, not here.
 
 The same ruling shapes the behaviour transcripts: they are written to `/tmp` on the
 applier's machine and print counts, never ids or names, and they are reported to the
@@ -340,6 +339,9 @@ exists, so stage 2 will refuse: stop and ask the owner to rule. The carry transc
 `/tmp/0092-precheck.out` is intact and is what a ruled post-check would use. **If it
 lists 0092 as NOT APPLIED, nothing changed** (see the next paragraph): stop and report
 the exit code and the drizzle output to the owner. Do not re-run stage 1 on your own.
+Run that read from the apply worktree: every block `cd`s inside its own subshell, so
+after a failed block your shell is wherever you started, and the command is
+`cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply && node --env-file=/Users/ivan/osteojp-secrets/new-prod.env packages/db/scripts/read-applied-migrations.mjs`.
 
 **0092 is two statements**, separated by `--> statement-breakpoint`: the ALTER and the
 COMMENT. **drizzle applies both, and the journal row, in ONE transaction,** so a failure
@@ -555,7 +557,7 @@ Evidence is only evidence at the layer it was taken.
 |---|---|---|
 | production journal reads 90, 0092 by hash | stage 2, and `read-applied-migrations.mjs` | the database |
 | J4: the helper answers CB alone for JP(cb) and LV alone for JP(lv), in the same run | pre-check J4a and J4b | RLS helper, under impersonated claims |
-| a therapist no longer reads a followed patient's appointment at a clinic they do not belong to, **through the policies on `appointments`** | L3 and L4, FAIL before and OK after, same actor, same sitting | RLS, under impersonated claims. Not the whole database surface: `public.appointment_conflicts(...)` is SECURITY DEFINER, callable by `authenticated`, and clinic-blind by an earlier ruling, so it still answers for any clinic. That predates 0092, is not the patient-following view, and is carded separately |
+| a therapist no longer reads a followed patient's appointment at a clinic they do not belong to, **through the policies on `appointments`** | L3 and L4, FAIL before and OK after, same actor, same sitting | RLS, under impersonated claims. This is a statement about the policies, not about every read path in the database: a read path that is not a policy predates 0092, is not the patient-following view, and was reported to the owner separately by this document's REVIEWER |
 | they still read it at their own clinic | L5, OK both times | RLS |
 | nothing else changed | post-check 5 to 9 | the catalogue |
 | the agenda, the ficha and the Marcacoes screens show the narrowed set to a signed-in therapist | **NOT DISCHARGED BY THIS DOCUMENT.** No terminal holds a staff credential, by rule. CI's DB-gated suites on #1426 (`care-team-appointment-visibility.db.test.ts`, `appointments-location-rls.test.ts`) run the policy against the seeded database; the screen check is the owner's, after #1426 merges | the route |
@@ -668,10 +670,11 @@ any fenced block was touched after arm B.
 
 ### The pushed tree is the rehearsed tree
 
-The arms ran from `7226a16d`. The commit pushed differs from it in exactly two files:
-this document, whose only change is this rehearsal record, outside every fenced block,
-and its sidecar. The five fenced blocks were re-extracted from the pushed document and
-compared to the ones the arms ran: identical.
+The arms ran from `7226a16d`. What was pushed after it changed prose only, outside
+every fenced block: this document (this rehearsal record and three paragraphs the
+second REVIEWER round asked for), `docs/migration-apply-0091.md` (one sentence), and
+both sidecars. No pinned file moved. The five fenced blocks were re-extracted from the
+pushed document and compared to the ones the arms ran: identical.
 
 ## What this does NOT do
 

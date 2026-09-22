@@ -40,8 +40,9 @@ verdict contract (OK / VACUOUS / FAIL plus a printed profile) on the owner's
 ruling (#1430, digest `b8d6550c…`), and in the same day, in #1426, a
 `MATERIALIZED` helper CTE and a 90-day bound, without which the file could not
 finish on production: run as a real therapist it hit the 300-second statement
-timeout. The file in the table carries both, digest `578bcbdb…` (its header no longer
-carries production counts, which a reviewer found there), and was measured
+timeout. The file in the table carries both, digest `578bcbdb…`. It differs from the
+first merged form, `e021c192…`, in comments only (production counts a reviewer found
+in its header were removed), and BOTH digests were run, and measured
 READ ONLY on production on 2026-09-22 standing at 0091: **one second, `6 OK / 2
 VACUOUS / 0 FAIL`**, the two VACUOUS arms being B6 (the actor it chose holds no
 live care-team assignment) and B7 (production holds one tenant). The transcript
