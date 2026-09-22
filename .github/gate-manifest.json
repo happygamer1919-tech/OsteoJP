@@ -41,7 +41,7 @@
     "scripts/agent-commands-carry-no-credentials.test.mjs": "042c8eaf0d5d25dcde8c197b04f3e0f25289a257f38b270f0078641289a4a749",
     "scripts/apply-lane/apply-lane-settings.test.mjs": "10678466dff7d0f1ccb6003098d3ba444995e140920dc465b8664a706157933d",
     "scripts/apply-lane/set-user-classify-all-shell.test.mjs": "b62320b3c580780a9cfa742ab3acb5ad2b2c45e9af694719145c8d38ace665df",
-    "scripts/assert-gates-unchanged.mjs": "57a9120f6b7f60558e96c45e70e3e952f15563254adcf7fb0ddf592e6d8d1b95",
+    "scripts/assert-gates-unchanged.mjs": "19f4a95fab33e264459364852bea9ac44ddf1f3d994ac67e29e255e3ea082d8a",
     "scripts/assert-production-target.test.mjs": "1dc9f29115c12275c03d9d38220e9c6ccf410d9addc76b369e5d42136f4a605c",
     "scripts/audit-free-text-count.test.mjs": "452d47aa208f17f7b87dddfadd5022f7502ebf4614621c4ac13559de8bb88b6b",
     "scripts/auth-user-id-is-dead.test.mjs": "16e273cb5db0cd737c01fa382fc49766005820299f5fbd851ae5f8a002a9201d",
