@@ -39,12 +39,17 @@
 --       harness, not a measurement: nothing wraps this file, so no database
 --       state makes it print FAIL. It is counted, and that is stated rather
 --       than hidden.
---   L1  THE INSTRUMENT. viewer_location_ids() agrees with the actor's
---       staff_locations rows, and is NOT EMPTY. A zero here prints FAIL and
---       never VACUOUS, deliberately: an empty array makes the location
---       conjunct false everywhere, which makes L3 and L4 green for the worst
---       possible reason. The 0092 arm of a therapist with no clinic is not a
---       narrower view, it is no view, and this file refuses to certify it.
+--   L1  THE INSTRUMENT, and the half of it that matters is auth.uid(). The
+--       clinic count CANNOT differ - the actor query already requires a
+--       staff_locations row and the helper reads those same rows under a
+--       UNIQUE constraint - so an arm asserting only that is a tautology, and
+--       it is kept only as a reading. What CAN differ is WHO the session is:
+--       auth.uid() prefers the `request.jwt.claim.sub` GUC over the
+--       `request.jwt.claims` blob this file sets, so a pooler leftover makes
+--       every comparand here belong to one user and every subject to another.
+--       A zero or a mismatch prints FAIL and never VACUOUS: an empty array
+--       makes the location conjunct false everywhere, which turns L3 and L4
+--       green for the worst possible reason.
 --   L2  THE WORKHORSE. The actor reads EXACTLY old_arm OR (ruled AND own
 --       clinic): no row more and no row fewer. The comparand is computed
 --       outside RLS in the same snapshot from the same helper arrays. It is
@@ -120,7 +125,18 @@ BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 /* THE ACTOR. An active therapist who holds at least one clinic AND at least
  * one appointment that the pre-0092 view admitted at a clinic they do NOT
  * belong to - i.e. a row this migration actually closes. Without one the file
- * has nothing to measure and says so rather than certifying a vacuous run. */
+ * has nothing to measure and says so rather than certifying a vacuous run.
+ *
+ * THIS PREDICATE GUARANTEES L4's SUBJECT AND NO OTHER, and the three STOPs
+ * below say so where they fire. It cannot guarantee the rest: the other three
+ * subjects are defined by the helper arrays, which do not resolve until the
+ * claims are set, which is after the actor is chosen. So a halt below is a
+ * statement about THIS actor, not about the database, and the remedy is to
+ * name another one:
+ *     psql ... -v actor_id=<uuid> -f scripts/db/behaviour-care-loc-readonly.sql
+ * An actor passed that way is used as given and this query is skipped. */
+\if :{?actor_id}
+\else
 SELECT (
 SELECT u.id
   FROM public.users u
@@ -148,6 +164,7 @@ SELECT u.id
  LIMIT 1
 ) AS actor_id
 \gset
+\endif
 
 \if :{?actor_id}
 \else
@@ -162,6 +179,26 @@ SELECT tenant_id AS actor_tenant FROM public.users WHERE id = :'actor_id' \gset
 SELECT set_config('request.jwt.claims',
        json_build_object('tenant_id', :'actor_tenant', 'user_role', 'therapist', 'sub', :'actor_id')::text,
        true) AS claims_set \gset
+
+/* AND THE IDENTITY CHECK COMES FIRST, BEFORE ANYTHING IS CLASSIFIED. auth.uid()
+ * prefers the `request.jwt.claim.sub` GUC over the `request.jwt.claims` blob
+ * set above, so a session-level leftover from a pooler makes every helper below
+ * answer for a DIFFERENT user while jwt_tenant_id() and jwt_role() still answer
+ * for ours. That poisons the CLASSIFICATION, not just the reads, so it has to
+ * halt here rather than be reported as a verdict at the end - MEASURED: with a
+ * leftover sub set, the file otherwise halts three STOPs later on a missing
+ * subject and blames the actor. L1 reports the same fact for the transcript. */
+/* THE COMPARISON IS DONE IN SQL AND BRANCHED WITH \if, NOT INSIDE THE DO BODY:
+ * psql does not interpolate `:'var'` inside a dollar-quoted block, and a DO
+ * body that tried would die on a syntax error at the colon. */
+SELECT coalesce((SELECT auth.uid())::text, '') AS pre_uid \gset
+SELECT (:'pre_uid' = :'actor_id')::text AS uid_matches \gset
+\if :uid_matches
+\else
+  DO $stop$ BEGIN
+    RAISE EXCEPTION 'STOP: auth.uid() is not the actor this file chose. Something has set request.jwt.claim.sub on this session, which auth.uid() prefers over the claims blob, so every helper below would answer for another user. Nothing was checked. Reconnect, or RESET request.jwt.claim.sub.';
+  END $stop$;
+\endif
 
 /* THE INSTRUMENT'S COMPARAND, outside RLS: how many distinct clinics the actor
  * is installed at. L1 compares the helper against this. */
@@ -248,35 +285,48 @@ SELECT (SELECT id FROM closed) AS closed_appt,
 \if :{?closed_appt}
 \else
   DO $stop$ BEGIN
-    RAISE EXCEPTION 'STOP: the chosen actor has no appointment the pre-0092 view admitted at a clinic they do not belong to, so L4 has no subject. Nothing was checked.';
+    RAISE EXCEPTION 'STOP: the chosen actor has no appointment the pre-0092 view admitted at a clinic they do not belong to, so L4 has no subject. Nothing was checked. This can only happen for an actor passed with -v actor_id; the default selector guarantees this one.';
   END $stop$;
 \endif
 \if :{?kept_appt}
 \else
   DO $stop$ BEGIN
-    RAISE EXCEPTION 'STOP: the chosen actor follows no patient whose appointment sits at their OWN clinic, so L5 has no subject and every negative below would be unguarded. Nothing was checked.';
+    RAISE EXCEPTION 'STOP: the chosen actor follows no patient whose appointment sits at their OWN clinic, so L5 has no subject and every negative below would be unguarded. Nothing was checked. THIS IS ABOUT THIS ACTOR, NOT THE DATABASE: the selector cannot test this condition, because it needs the helper arrays and those need the claims. Re-run with -v actor_id=<another therapist>.';
   END $stop$;
 \endif
 \if :{?neg_own_appt}
 \else
   DO $stop$ BEGIN
-    RAISE EXCEPTION 'STOP: the chosen actor has no appointment at their own clinic for a patient they neither follow nor have treated, so L6 has no subject. Nothing was checked.';
+    RAISE EXCEPTION 'STOP: the chosen actor has no appointment at their own clinic for a patient they neither follow nor have treated, so L6 has no subject. Nothing was checked. THIS IS ABOUT THIS ACTOR, NOT THE DATABASE. Re-run with -v actor_id=<another therapist>.';
   END $stop$;
 \endif
 \if :{?own_foreign_appt}
 \else
   DO $stop$ BEGIN
-    RAISE EXCEPTION 'STOP: the chosen actor holds no work of their own at a clinic they do not belong to, so L7 has no subject. Nothing was checked.';
+    RAISE EXCEPTION 'STOP: the chosen actor holds no work of their own at a clinic they do not belong to, so L7 has no subject. Nothing was checked. THIS IS ABOUT THIS ACTOR, NOT THE DATABASE. Re-run with -v actor_id=<another therapist>.';
   END $stop$;
 \endif
 
 /* BECOME THE ACTOR. */
 SET LOCAL ROLE authenticated;
 
-/* L1's own reading, as the actor: the helper, and how many of its ids are NOT
- * in the actor's own rows. Calling it here is also what proves `authenticated`
- * holds EXECUTE - a denial aborts the file before any verdict prints. */
+/* L1's own reading, as the actor. Calling the helper here is also what proves
+ * `authenticated` holds EXECUTE: a denial aborts the file under ON_ERROR_STOP
+ * before any verdict prints.
+ *
+ * AND auth.uid(), WHICH IS THE HALF THAT CAN ACTUALLY DIFFER. The clinic count
+ * cannot: the actor query already requires a staff_locations row, and
+ * viewer_location_ids() (0073) reads those same rows under a UNIQUE
+ * (tenant_id, user_id, location_id), so cardinality equals the count by
+ * construction and an arm asserting only that is a tautology. What is NOT
+ * guaranteed is that auth.uid() is the user this file chose: auth.uid() prefers
+ * the `request.jwt.claim.sub` GUC over the `request.jwt.claims` blob this file
+ * sets, so a session-level leftover from a pooler makes the helpers answer for
+ * a DIFFERENT user while jwt_tenant_id() and jwt_role() still answer for ours.
+ * Every comparand in this file would then be computed for one user and every
+ * subject read as another. That is what L1 is for. */
 SELECT coalesce(cardinality(public.viewer_location_ids()), 0)::int AS fn_locs \gset
+SELECT coalesce((SELECT auth.uid())::text, '') AS seen_uid \gset
 
 /* THE SAME WINDOW AS THE COMPARAND, and no tenant filter: RLS must supply it. */
 SELECT count(*)::int AS readable FROM public.appointments
@@ -304,18 +354,21 @@ WITH r(n, "check", observed, expected, verdict) AS (VALUES
       'on / repeatable read',
       CASE WHEN current_setting('transaction_read_only') = 'on'
             AND current_setting('transaction_isolation') = 'repeatable read' THEN 'OK' ELSE 'FAIL' END),
-  (1, 'L1. INSTRUMENT: viewer_location_ids() is the actor''s clinics, and is not empty',
-      :'fn_locs' || ' clinic(s) from the helper', :'sl_locs' || ' in staff_locations, > 0',
-      CASE WHEN :sl_locs = 0 OR :fn_locs = 0 THEN 'FAIL'
-           WHEN :fn_locs = :sl_locs THEN 'OK' ELSE 'FAIL' END),
+  (1, 'L1. INSTRUMENT: the session IS the chosen actor, and holds the clinics we counted',
+      CASE WHEN :'seen_uid' = :'actor_id' THEN 'auth.uid() is the chosen actor' ELSE 'auth.uid() is SOMEBODY ELSE' END
+        || ', ' || :'fn_locs' || ' clinic(s) from the helper',
+      'the chosen actor, ' || :'sl_locs' || ' in staff_locations, > 0',
+      CASE WHEN :'seen_uid' <> :'actor_id' THEN 'FAIL'
+           WHEN :sl_locs = 0 OR :fn_locs = 0 THEN 'FAIL'
+           WHEN :fn_locs <> :sl_locs THEN 'FAIL' ELSE 'OK' END),
   (2, 'L2. EXACTLY the narrowed set: no row more and no row fewer',
       :'readable', :'admitted_0092',
-      CASE WHEN :admitted_0092 = 0 THEN 'VACUOUS'
-           WHEN :readable = :admitted_0092 THEN 'OK' ELSE 'FAIL' END),
+      CASE WHEN :readable <> :admitted_0092 THEN 'FAIL'
+           WHEN :admitted_0092 = 0 THEN 'VACUOUS' ELSE 'OK' END),
   (3, 'L3. SWEEP: all that is still readable at a foreign clinic is the actor''s own work',
       :'foreign_not_own' || ' of ' || :'closed_total' || ' that crossed the wall before 0092', '0',
-      CASE WHEN :closed_total = 0 THEN 'VACUOUS'
-           WHEN :foreign_not_own = 0 THEN 'OK' ELSE 'FAIL' END),
+      CASE WHEN :foreign_not_own <> 0 THEN 'FAIL'
+           WHEN :closed_total = 0 THEN 'VACUOUS' ELSE 'OK' END),
   (4, 'L4. NEGATIVE: one row the PRE-0092 view admitted, at a foreign clinic, is refused',
       :'sees_closed' || ' read of 1 subject, of ' || :'closed_total' || ' such rows', '0 read',
       CASE WHEN :sees_closed = 0 THEN 'OK' ELSE 'FAIL' END),
@@ -335,7 +388,7 @@ SELECT 99, 'SUMMARY. the verdict profile this run printed',
        (SELECT count(*) FROM r WHERE verdict = 'OK')      || ' OK / ' ||
        (SELECT count(*) FROM r WHERE verdict = 'VACUOUS') || ' VACUOUS / ' ||
        (SELECT count(*) FROM r WHERE verdict = 'FAIL')    || ' FAIL',
-       '8 arms', 'SUMMARY'
+       (SELECT count(*) FROM r) || ' arms', 'SUMMARY'
 ORDER BY 1;
 
 ROLLBACK;

@@ -16,6 +16,17 @@
 --   B6  when the actor holds no live care-team assignment
 --   B7  when no other tenant exists
 --
+-- VACUOUS NEVER SWALLOWS A FAIL, AND THE ORDER OF THE CASE IS THE RULE. Every
+-- arm tests FAIL first, then VACUOUS, then OK. A zero comparand next to a
+-- NON-zero observation is a FAIL, not a vacuous pass: the arm ran and it
+-- disagreed. Getting this backwards is not hypothetical - the first revision
+-- of this retrofit keyed VACUOUS on the comparand alone, and a REVIEWER
+-- reproduced the consequence on one database state: with the actor's only
+-- care-team row carrying `removed_at` and the helper having lost its
+-- `removed_at IS NULL` clause, B6 observed the leak (1 against 0) and reported
+-- VACUOUS where main's file reported FAIL. The contract is "a zero comparand
+-- may not print OK", never "a zero comparand may hide a failure".
+--
 -- THE CALLER ASSERTS A PROFILE, NOT AN ABSENCE. "no VACUOUS" is the wrong
 -- assertion and this file would have halted a correct sitting under it:
 -- docs/migration-apply-0091.md:500 predicted, correctly, that B5 and B6 would
@@ -109,7 +120,7 @@
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 
 \echo ''
-\echo '=== CARE-01 BEHAVIOUR CHECK. READ ONLY. Every verdict must read OK (8 expected) ==='
+\echo '=== CARE-01 BEHAVIOUR CHECK. READ ONLY. 8 arms. Assert the PROFILE on the last row, not "all OK" ==='
 
 /* An active therapist who has treated a patient that somebody ELSE also has an
  * appointment with. That second appointment is the one 0091 is about. */
@@ -281,8 +292,8 @@ WITH r(n, "check", observed, expected, verdict) AS (VALUES
       CASE WHEN :new_only > 0 THEN 'OK' ELSE 'FAIL' END),
   (2, 'B2. exactly the ruled set: no row more and no row fewer',
       :'readable', :'admitted',
-      CASE WHEN :admitted = 0 THEN 'VACUOUS'
-           WHEN :readable = :admitted THEN 'OK' ELSE 'FAIL' END),
+      CASE WHEN :readable <> :admitted THEN 'FAIL'
+           WHEN :admitted = 0 THEN 'VACUOUS' ELSE 'OK' END),
   (3, 'B3. NEGATIVE: an appointment neither arm admits is refused',
       :'sees_negative' || ' read of 1 subject', '0 read',
       CASE WHEN :sees_negative = 0 THEN 'OK' ELSE 'FAIL' END),
@@ -291,16 +302,16 @@ WITH r(n, "check", observed, expected, verdict) AS (VALUES
       CASE WHEN :sees_own = 1 THEN 'OK' ELSE 'FAIL' END),
   (5, 'B5. the care-team table itself shows a therapist nothing',
       :'sees_team' || ' read of ' || :'ct_total' || ' rows', '0 read',
-      CASE WHEN :ct_total = 0 THEN 'VACUOUS'
-           WHEN :sees_team = 0 THEN 'OK' ELSE 'FAIL' END),
+      CASE WHEN :sees_team <> 0 THEN 'FAIL'
+           WHEN :ct_total = 0 THEN 'VACUOUS' ELSE 'OK' END),
   (6, 'B6. the helper agrees with the table (and authenticated can call it)',
       :'fn_ids', :'ct_live_actor',
-      CASE WHEN :ct_live_actor = 0 THEN 'VACUOUS'
-           WHEN :fn_ids = :ct_live_actor THEN 'OK' ELSE 'FAIL' END),
+      CASE WHEN :fn_ids <> :ct_live_actor THEN 'FAIL'
+           WHEN :ct_live_actor = 0 THEN 'VACUOUS' ELSE 'OK' END),
   (7, 'B7. tenant isolation: no appointment of any other tenant is readable',
       :'sees_other_tenant' || ' read of ' || :'other_tenant_appts' || ' that exist', '0 read',
-      CASE WHEN :other_tenant_appts = 0 THEN 'VACUOUS'
-           WHEN :sees_other_tenant = 0 THEN 'OK' ELSE 'FAIL' END)
+      CASE WHEN :sees_other_tenant <> 0 THEN 'FAIL'
+           WHEN :other_tenant_appts = 0 THEN 'VACUOUS' ELSE 'OK' END)
 )
 SELECT n, "check", observed, expected, verdict FROM r
 UNION ALL
@@ -308,7 +319,7 @@ SELECT 99, 'SUMMARY. the verdict profile this run printed',
        (SELECT count(*) FROM r WHERE verdict = 'OK')      || ' OK / ' ||
        (SELECT count(*) FROM r WHERE verdict = 'VACUOUS') || ' VACUOUS / ' ||
        (SELECT count(*) FROM r WHERE verdict = 'FAIL')    || ' FAIL',
-       '8 arms', 'SUMMARY'
+       (SELECT count(*) FROM r) || ' arms', 'SUMMARY'
 ORDER BY 1;
 
 ROLLBACK;
