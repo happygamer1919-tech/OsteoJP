@@ -21,7 +21,7 @@ the end.
 | Branch | `care/CARE-LOC-0092-per-clinic`, PR #1426 |
 | This document | `docs/migration-apply-0092.md`, pinned by `docs/migration-apply-0092.sha256` and asserted in STAGE 0 and again in STAGE 1 |
 | Pre-check | `scripts/db/precheck-care-loc.sql`, READ ONLY, **18 verdicts, J4a and J4b among them**, sha256 `77528e87d78f9c6740b39af4bdb1028da64596b408c22de4bf753b2bc9281064` |
-| Post-check | `scripts/db/postcheck-care-loc.sql`, READ ONLY, 11 verdicts, sha256 `ab1569ef554b670d852fa99a1f9bd1b9dcbe85c215102f35ab85cac785eb771a` |
+| Post-check | `scripts/db/postcheck-care-loc.sql`, READ ONLY, 11 verdicts, sha256 `3cced312d6a996b2e28325ff31b74ff1bef681a2558c81b650264ed25a0a2f6a` |
 | Behaviour check | `scripts/db/behaviour-care-loc-readonly.sql`, READ ONLY, sha256 `3992a562f4e0afdca3ffc72933104cf3e7483c7d64ef41e76cbaf347a39282fb`. Run TWICE in this sitting, before the apply and after it, with the same actor |
 | Behaviour actor | `a821521d-b67d-4a99-ac35-319c9e95fe6a`, passed as `-v actor_id`. Why this therapist and not the file's default selector: see "The behaviour actor is named, and why" |
 | The two programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`. Both byte-identical to `origin/main` at `4310f72e` on 2026-09-22, both pinned in every block that runs them |
@@ -34,9 +34,17 @@ The owner ruled on 2026-09-21 that the cross-clinic figures which produced optio
 stay out of every PR body, card and committed document until 0092 is applied: this
 repository is public and the disclosure is unfixed until then. The migration's own
 header points at "the apply document's owner-only section" for them. **This is that
-section, and it holds no numbers.** The figures are in the owner's report and nowhere
-in git. Every count elsewhere in this document is either a structural count (journal
-rows, policies, functions) or a measurement on synthetic rehearsal data.
+section, and it holds no numbers.** The figures are in the owner's report. Every count
+elsewhere in this document is either a structural count (journal rows, policies,
+functions), a verdict profile, or a measurement on synthetic rehearsal data.
+
+**The ruling was broken once on this branch, and this document says so rather than
+claiming otherwise.** A test comment added in commit `9cff3b65` (2026-09-22, 07:37)
+stated the size of the gap to an order of magnitude, and the CARE-01 behaviour
+script's header carried production counts from the same day. The Tier C REVIEWER
+caught both; both are removed at the tip. The commit is in the branch's pushed
+history on a public repository, and removing it from there needs a force push, which
+this repository forbids without the owner. The owner has been told.
 
 The same ruling shapes the behaviour transcripts: they are written to `/tmp` on the
 applier's machine and print counts, never ids or names, and they are reported to the
@@ -111,9 +119,10 @@ echo "NUMBER AND FILE VERIFIED"
 **EXPECT: `NUMBER AND FILE VERIFIED`, and nothing else is expected of this stage.** It
 reads no database and prints no count. `pnpm db:check-journal` must print that the
 `.sql` files and the journal reconcile in order with `when` strictly increasing and the
-supabase mirror matching by CONTENT (90 files, 90 entries), and the journal's newest
-entry must be `idx 89`, `when 1788501300000`, tag `0092_care_team_location`. If it is
-not, **STOP**.
+supabase mirror matching by CONTENT: **90 `.sql` files against 90 journal entries**. The
+check does not print the newest entry; it is `idx 89`, `when 1788501300000`, tag
+`0092_care_team_location`, and stage 1 re-proves it by sha256 through
+`verified-migrate.mjs`. If the count is not 90, **STOP**.
 
 **The mirror's own sha256 differs from the migration's, and that is expected.**
 `scripts/sync-supabase-migrations.mjs` writes an AUTO-GENERATED header into
@@ -208,13 +217,15 @@ opposite:
   changed them halts it. Both shas, the one stage 1 applied from and the one stage 2
   checked from, go on the SR-51 card.
 
-**One halt that case can produce, named so it is not improvised around.** Stage 2 pins
-`scripts/assert-production-target.mjs` by sha256, and that file lives on main. If a
-merge of main changes it between stage 1 and stage 2, stage 2 stops on `the target guard
-on disk is not the approved file` with production already applied, and the
-applied-marker is good for **60 minutes**. Do not edit the pin and do not re-run stage
-1. Report it to the owner with both shas; the post-check is READ ONLY and can be
-re-issued against the new guard.
+**Two halts that case can produce, named so they are not improvised around.** Two
+pinned files live on main, not only on this branch: `scripts/assert-production-target.mjs`
+(pinned by stages 1, 2 and 3) and `scripts/db/behaviour-care-loc-readonly.sql` (pinned
+by stages 1 and 3). If a merge of main changes either one after stage 1 has applied,
+stage 2 stops on `the target guard on disk is not the approved file`, or stage 3 stops
+on `the behaviour check on disk is not the approved file`, with production already
+applied. The applied-marker is good for **60 minutes**. Do not edit a pin and do not
+re-run stage 1. Report it to the owner with both shas; the post-check and the behaviour
+check are READ ONLY and can be re-issued against the new files.
 
 Stage 1 enforces the second case itself: it refuses to start while a fresh
 applied-marker exists, and it never touches the previous transcripts until a new
@@ -326,12 +337,16 @@ dropped connection is enough). So: **if stage 1 ended non-zero after the
 `node --env-file=/Users/ivan/osteojp-secrets/new-prod.env packages/db/scripts/read-applied-migrations.mjs`,
 which is READ ONLY. If it lists 0092 as APPLIED, production is applied and no marker
 exists, so stage 2 will refuse: stop and ask the owner to rule. The carry transcript in
-`/tmp/0092-precheck.out` is intact and is what a ruled post-check would use.
+`/tmp/0092-precheck.out` is intact and is what a ruled post-check would use. **If it
+lists 0092 as NOT APPLIED, nothing changed** (see the next paragraph): stop and report
+the exit code and the drizzle output to the owner. Do not re-run stage 1 on your own.
 
 **0092 is two statements**, separated by `--> statement-breakpoint`: the ALTER and the
-COMMENT. A failure between them leaves the new expression with the old comment.
-Post-check verdict 10 reads the comment for exactly that case, and a re-run of stage 1
-would halt on pre-check verdict 2, because the expression would no longer be 0091's.
+COMMENT. **drizzle applies both, and the journal row, in ONE transaction,** so a failure
+leaves none of the three: measured on a throwaway by refusing the COMMENT with an event
+trigger, `verified-migrate.mjs` exited 4 with `journal 89 -> 89`, the expression still
+0091's and the comment unchanged. Post-check verdict 10 still reads the comment, as a
+check on the file rather than on the transaction.
 
 ## STAGE 2: post-check, carries derived from stage 1
 
@@ -339,7 +354,7 @@ would halt on pre-check verdict 2, because the expression would no longer be 009
 (
 set -eo pipefail
 SHA0092=23964a4b26609126bda3166ef37ac4f4abe28bb1dd72a6f67ec82bb4ca85abfa
-SHAPOST=ab1569ef554b670d852fa99a1f9bd1b9dcbe85c215102f35ab85cac785eb771a
+SHAPOST=3cced312d6a996b2e28325ff31b74ff1bef681a2558c81b650264ed25a0a2f6a
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=care/CARE-LOC-0092-per-clinic
 
@@ -471,7 +486,11 @@ copy it.
   - 1: the policy `appointments_care_team_patient_history_select` exists on
     `appointments`, exactly once. `ALTER POLICY` on a missing policy is an ERROR;
   - 2: its expression is 0091's by md5, `2f3548c5576a1b731d19d2cfc8f8c767`, read off
-    production on 2026-09-22;
+    production on 2026-09-22. The md5 is of the SERVER's deparse, which qualifies names
+    by the session's `search_path`: with `public` on it (production's default, and
+    measured) the value is the one above; a session without `public` reads another
+    value and the pre-check halts before anything is applied, which is the safe way to
+    be wrong;
   - 3: PERMISSIVE, `FOR SELECT`, `TO authenticated` alone, no WITH CHECK;
   - 4: 0092 is absent from the journal by hash;
   - 5: 0091 is present by hash;
@@ -536,7 +555,7 @@ Evidence is only evidence at the layer it was taken.
 |---|---|---|
 | production journal reads 90, 0092 by hash | stage 2, and `read-applied-migrations.mjs` | the database |
 | J4: the helper answers CB alone for JP(cb) and LV alone for JP(lv), in the same run | pre-check J4a and J4b | RLS helper, under impersonated claims |
-| a therapist no longer reads a followed patient's appointment at a clinic they do not belong to | L3 and L4, FAIL before and OK after, same actor, same sitting | RLS, under impersonated claims |
+| a therapist no longer reads a followed patient's appointment at a clinic they do not belong to, **through the policies on `appointments`** | L3 and L4, FAIL before and OK after, same actor, same sitting | RLS, under impersonated claims. Not the whole database surface: `public.appointment_conflicts(...)` is SECURITY DEFINER, callable by `authenticated`, and clinic-blind by an earlier ruling, so it still answers for any clinic. That predates 0092, is not the patient-following view, and is carded separately |
 | they still read it at their own clinic | L5, OK both times | RLS |
 | nothing else changed | post-check 5 to 9 | the catalogue |
 | the agenda, the ficha and the Marcacoes screens show the narrowed set to a signed-in therapist | **NOT DISCHARGED BY THIS DOCUMENT.** No terminal holds a staff credential, by rule. CI's DB-gated suites on #1426 (`care-team-appointment-visibility.db.test.ts`, `appointments-location-rls.test.ts`) run the policy against the seeded database; the screen check is the owner's, after #1426 merges | the route |
@@ -579,10 +598,12 @@ invocation:
 | the env-source line becomes `export DATABASE_URL_DIRECT=<the throwaway>` | 0 | 0 | 1 | 1 | 1 |
 | `node scripts/assert-production-target.mjs` becomes an `echo` | 0 | 0 | 1 | 1 | 1 |
 
-**The rehearsed commit was built locally**, merging #1430's head `3b98e607` into this
-branch before #1430 had merged, so the rehearsal did not wait on it. What was pushed was
-rebuilt from `origin/main` after #1430 merged, and compared to the rehearsed tree file by
-file; see "The pushed tree is the rehearsed tree" below.
+**Run twice, and the second run is the one recorded.** First from a local commit that
+merged #1430's head before #1430 had merged; then, after the Tier C REVIEWER's fix (a
+production figure removed from a test comment, production counts removed from the
+CARE-01 script's header, post-check verdict 4 tightened, prose corrected), from
+`7226a16d`, a local commit of exactly this branch's tree: main merged in as `e753dbf1`,
+plus that fix. Every arm read the same both times.
 
 ### The arms. Each one was RUN, not reasoned about
 
@@ -647,15 +668,10 @@ any fenced block was touched after arm B.
 
 ### The pushed tree is the rehearsed tree
 
-The arms ran from a local commit, `537c7fd4`, whose parent merged #1430's head
-`3b98e607` into this branch before #1430 had merged. After #1430 merged to main as
-`4310f72e`, this branch took main by an ordinary merge, and the three conflicts were
-resolved by taking the rehearsed commit's files. **The resulting tree was compared
-to `537c7fd4` with `git diff`: empty.** The only bytes that differ in what was pushed
-are this document's own prose outside every fenced block (this section, the
-rehearsal table and the `origin/main` sha in the fact table) and its sidecar. The five
-fenced blocks were re-extracted from the pushed document and compared to the ones the
-arms ran: identical.
+The arms ran from `7226a16d`. The commit pushed differs from it in exactly two files:
+this document, whose only change is this rehearsal record, outside every fenced block,
+and its sidecar. The five fenced blocks were re-extracted from the pushed document and
+compared to the ones the arms ran: identical.
 
 ## What this does NOT do
 

@@ -24,7 +24,7 @@ rehearsal section near the end.
 | This document | `docs/migration-apply-0091.md`, pinned by `docs/migration-apply-0091.sha256` and asserted in STAGE 0 and again in STAGE 1 |
 | Pre-check | `scripts/db/precheck-care-team.sql`, READ ONLY, sha256 `1fe31122ac6b371aa43fd82271472c5952e6297fc91a9aa7d947b10e9351864b` |
 | Post-check | `scripts/db/postcheck-care-team.sql`, READ ONLY, sha256 `7ba44f65dba515f8e63716eb06425204e889b524d1fa899f3b1a541f899b8b2a` |
-| Behaviour check | `scripts/db/behaviour-care-team-readonly.sql`, READ ONLY, sha256 `e021c19275092c23ffabbe3003c79c56c57cd7fd90a62bd97b35aafb68fe3c02` |
+| Behaviour check | `scripts/db/behaviour-care-team-readonly.sql`, READ ONLY, sha256 `578bcbdb9a4e7432f00458f5b322213481dfc586cb0a317c610b03a368405007` |
 | Behaviour check AS IT RAN on 2026-09-21 | sha256 `7e5ebbaedf57a946e79e4eebb7b7e0cf6a673e4ceec5a074f660b56991fb0c0f`. The row above is the CURRENT file, not the one this sitting ran; see "The behaviour check has moved" below |
 | The two programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`. Both byte-identical to `origin/main` at `60105a36` on 2026-09-21, both pinned in every block that runs them |
 | What it creates | ONE table (`public.patient_care_team`, with three indexes), ONE function (`public.viewer_care_team_patient_ids()`), FOUR policies: three on the new table and **one** on `appointments` |
@@ -40,7 +40,8 @@ verdict contract (OK / VACUOUS / FAIL plus a printed profile) on the owner's
 ruling (#1430, digest `b8d6550c…`), and in the same day, in #1426, a
 `MATERIALIZED` helper CTE and a 90-day bound, without which the file could not
 finish on production: run as a real therapist it hit the 300-second statement
-timeout. The file in the table carries both, digest `e021c192…`, and was measured
+timeout. The file in the table carries both, digest `578bcbdb…` (its header no longer
+carries production counts, which a reviewer found there), and was measured
 READ ONLY on production on 2026-09-22 standing at 0091: **one second, `6 OK / 2
 VACUOUS / 0 FAIL`**, the two VACUOUS arms being B6 (the actor it chose holds no
 live care-team assignment) and B7 (production holds one tenant). The transcript
@@ -495,7 +496,7 @@ appointment id reaches the transcript.
 ```
 (
 set -eo pipefail
-SHABEHAVIOUR=e021c19275092c23ffabbe3003c79c56c57cd7fd90a62bd97b35aafb68fe3c02
+SHABEHAVIOUR=578bcbdb9a4e7432f00458f5b322213481dfc586cb0a317c610b03a368405007
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=care/CARE-01-assigned-therapists
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply

@@ -66,9 +66,9 @@
 -- The first revision classified EVERY appointment in the tenant and could not
 -- finish: measured on production as a real therapist, it hit a 300-SECOND
 -- STATEMENT TIMEOUT. That is not a slow predicate and not a slow helper.
--- `viewer_treated_patient_ids()` called on its own returns 4,359 ids in 71 ms.
+-- `viewer_treated_patient_ids()` called on its own returns in about 71 ms.
 -- The `v` CTE was being INLINED and re-evaluated PER ROW, so a 71 ms function
--- ran once for each of 89,000 appointments.
+-- ran once for each appointment in the tenant.
 --
 -- TWO CHANGES, BOTH SCAFFOLDING. No predicate is altered.
 --   * `WITH v AS MATERIALIZED (...)` forces one evaluation. On its own this
@@ -77,8 +77,8 @@
 --
 -- MEASURED, same actor, same database, the SAME THREE NUMBERS:
 --     unbounded, as written ........ TIMEOUT at 300 s
---     90-day bound only ............ 188 s   -> 2177 / 2879 / 702
---     90-day bound + MATERIALIZED .. 306 ms  -> 2177 / 2879 / 702
+--     90-day bound only ............ 188 s
+--     90-day bound + MATERIALIZED .. 306 ms, and the same three verdict numbers
 --   615x faster, byte-identical results.
 --
 -- WHAT THE BOUND COSTS, said plainly rather than implied: B1, B2, B3 and B4
@@ -316,7 +316,8 @@ SET LOCAL ROLE authenticated;
 
 /* THE SAME WINDOW AS THE CLASSIFICATION, and B2 is why this line is not a
  * bare count. The comparand above is bounded to :window_days; an unbounded
- * read here compares 7104 against 741 and B2 fails - which is exactly what
+ * read here compares the whole history against a 90-day comparand and B2 fails,
+ * which is exactly what
  * it did on the first bounded run. A bound applied to one side of an
  * equality is not a narrower measurement, it is a broken one. */
 SELECT count(*)::int AS readable FROM public.appointments

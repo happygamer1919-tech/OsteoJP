@@ -153,14 +153,16 @@ UNION ALL SELECT '3. its expression is the one 0092 writes (md5, measured on the
 -- nothing 0091 put there was lost on the way.
 UNION ALL SELECT '4. it keys on the clinic AND keeps role therapist, both helpers and both patient columns',
        CASE WHEN pol_qual IS NULL THEN 'absent' ELSE
-         CASE WHEN pol_qual LIKE '%viewer_location_ids%' AND pol_qual LIKE '%location_id%' THEN 'clinic ' ELSE 'NO-clinic ' END
+         CASE WHEN pol_qual LIKE '%viewer_location_ids%' AND pol_qual LIKE '%(location_id = ANY%' THEN 'clinic ' ELSE 'NO-clinic ' END
          || CASE WHEN pol_qual LIKE '%therapist%' THEN 'therapist ' ELSE 'NO-role ' END
          || CASE WHEN pol_qual LIKE '%viewer_care_team_patient_ids%' THEN 'care_team ' ELSE 'NO-care_team ' END
          || CASE WHEN pol_qual LIKE '%viewer_treated_patient_ids%' THEN 'treated ' ELSE 'NO-treated ' END
          || CASE WHEN pol_qual LIKE '%patient_2_id%' THEN 'patient_2_id' ELSE 'NO-patient_2_id' END END,
        'clinic therapist care_team treated patient_2_id',
        CASE WHEN pol_qual LIKE '%viewer_location_ids%'
-             AND pol_qual LIKE '%location_id%'
+             -- '(location_id = ANY' and not a bare 'location_id': the helper's own
+             -- name contains that substring, so a bare match could never fail.
+             AND pol_qual LIKE '%(location_id = ANY%'
              AND pol_qual LIKE '%therapist%'
              AND pol_qual LIKE '%viewer_care_team_patient_ids%'
              AND pol_qual LIKE '%viewer_treated_patient_ids%'

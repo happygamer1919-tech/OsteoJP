@@ -211,9 +211,10 @@ d("CARE-01: the appointment history of a patient a therapist treats", () => {
 
   it("T does NOT see the same patient's appointment at a clinic T does not work at", async () => {
     // Owner, 2026-09-21, option (b). Before 0092 this row WAS visible: the
-    // care-team arm carried no location predicate, and one single-clinic
-    // therapist on production could read tens of thousands of appointments at
-    // the clinic they do not belong to.
+    // care-team arm carried no location predicate, so a single-clinic
+    // therapist could read a followed patient's appointments at the clinic they
+    // do not belong to. The production size of that gap is the owner's, in his
+    // report, and stays out of the repository by his ruling.
     //
     // apptOtherClinic is the SAME patient P and the SAME colleague T2 as the
     // arm above - only the location differs. That is what makes this a
