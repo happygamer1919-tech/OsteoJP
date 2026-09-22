@@ -53,6 +53,62 @@ jobs:
       - name: Test scripts
         run: pnpm test:scripts
 
+      # ========================================================================
+      # GATE FREEZE. A gate file may not move inside an ordinary pull request.
+      # ========================================================================
+      # SR-71 says a lane never edits a gate to pass its own PR, and it was
+      # BREACHED TWICE on 2026-09-21 - once moving `.claude/skills/` out of a
+      # HELD class, once widening an exemption inside a guard that runs in this
+      # very job. A rule that lives only in prose is enforced by whoever
+      # remembers it at the moment they are blocked. This is the mechanical
+      # version.
+      #
+      # FIRST IN THE JOB WOULD BE WRONG. It sits after the tests on purpose: a
+      # red here is about AUTHORITY, not correctness, and a contributor should
+      # see whether their change WORKS before they are told they may not land it
+      # this way.
+      #
+      # IN THIS JOB, not a new one, for the same reason `Test scripts` and the
+      # secret scanner are: a separate job is a separate check NAME, and a name
+      # nobody has added to the required set in the GitHub UI cannot block a
+      # merge. A step in an already-required job blocks the moment it is red.
+      #
+      # THE TITLE AND BASE REF ARE PASSED IN rather than read from the git
+      # checkout, because on a pull_request event HEAD is a merge commit and the
+      # PR's own title is not in the repository at all. `fetch-depth: 0` at the
+      # top of this job is what makes the three-dot diff work; the script FAILS
+      # CLOSED if it cannot compute that diff rather than reporting a pass it
+      # did not perform.
+      - name: Gate freeze
+        env:
+          GATE_PR_TITLE: ${{ github.event.pull_request.title }}
+          GATE_BASE_REF: ${{ github.base_ref }}
+        run: node scripts/assert-gates-unchanged.mjs
+
+      # A GATE-CHANGE pull request is merged BY THE OWNER, BY HAND. Auto-merge
+      # on one would hand the decision back to CI, which is the thing the freeze
+      # exists to take away from it.
+      #
+      # `|| true` ON THE READ AND NOT ON THE VERDICT: if `gh` cannot answer, the
+      # step says so and PASSES, because a missing API answer is not evidence of
+      # an armed PR - and the human merge is a second control on this same
+      # thing. The verdict itself has no escape.
+      - name: A GATE-CHANGE pull request is never armed
+        if: startsWith(github.event.pull_request.title, 'GATE-CHANGE')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          ARMED=$(gh pr view "$PR" --json autoMergeRequest --jq 'if .autoMergeRequest == null then "no" else "yes" end' 2>/dev/null || echo "unknown")
+          echo "auto-merge on #$PR: $ARMED"
+          if [ "$ARMED" = "yes" ]; then
+            echo "::error::This is a GATE-CHANGE pull request and auto-merge is ENABLED. Disable it. The owner merges gate changes by hand, which is the whole point of the freeze."
+            exit 1
+          fi
+          if [ "$ARMED" = "unknown" ]; then
+            echo "::warning::Could not read the auto-merge state, so it was NOT verified. The hand-merge rule still stands."
+          fi
+
       # THE SECRET SCANNER, AND WHY IT IS HERE RATHER THAN ONLY IN A HOOK.
       #
       # scripts/secret-scan.mjs has run since 2026-09-14 from
