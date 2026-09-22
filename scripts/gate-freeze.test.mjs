@@ -41,7 +41,6 @@ describe("the gate set", () => {
       "scripts/import/legacy-staff-accounts.test.mjs", // nested, needs `**`
       "docs/board/validate-board.test.mjs",
       "docs/board/reconcile-board.mjs",
-      ".claude/skills/osteojp-conventions/SKILL.md", // the first breach
       "turbo.json",
       "scripts/gate-manifest.mjs",
       "scripts/assert-gates-unchanged.mjs",
@@ -58,6 +57,10 @@ describe("the gate set", () => {
       "docs/design/SPEC-v2-agenda.md",
       "packages/db/migrations/0091_care_team.sql",
       "package.json", // frozen by its SCRIPTS BLOCK only, not as a whole file
+      // Removed from the set 2026-09-22: no required check reads it, so on the
+      // owner's criterion it decides no verdict. It is still merge-class
+      // controlled; it is simply not sha256-frozen.
+      ".claude/skills/osteojp-conventions/SKILL.md",
       ".github/PULL_REQUEST_TEMPLATE.md",
     ];
     for (const o of ordinary) assert.ok(!isGateFile(o), `${o} must NOT be frozen`);
