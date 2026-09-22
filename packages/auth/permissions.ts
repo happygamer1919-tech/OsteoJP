@@ -178,7 +178,24 @@ export type Capability =
   // ITS OWN CAPABILITY, NOT `followup:read` or `sms_replies:read`. A therapist
   // holds `followup:read`, and the reply queue is inbound messages, not outbound
   // attempts. Riding either would widen one of them.
-  | "reminders:log_read";
+  | "reminders:log_read"
+  // CARE-01 (owner ruling Q-CARE-1, 2026-09-16): assign therapists to a patient,
+  // which is what opens that patient's whole appointment history to them.
+  //
+  // RECEPTION AND OWNER ONLY, AND THAT IS A DELIBERATE NARROWING OF THE SPEC.
+  // docs/design/SPEC-care-team.md proposes reception, admin AND owner; the
+  // dispatch that ruled it names reception and owner, and the dispatch wins.
+  // Admin is left out rather than forgotten: an admin who needs to assign can
+  // be given it later, and widening a grant is a smaller decision than
+  // discovering one was made silently.
+  //
+  // ITS OWN CAPABILITY, NOT `patients:write` OR `users:manage`. Riding
+  // `patients:write` would hand every therapist the power to assign themselves
+  // to any patient, which is the whole thing this gate exists to prevent; riding
+  // `users:manage` would put it behind an admin-shaped permission reception does
+  // not hold. The care team is a relation between a patient and a therapist and
+  // neither existing capability describes it.
+  | "care_team:manage";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -216,6 +233,11 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "sms_replies:resolve",
   "guest_intake:read",
   "reminders:log_read",
+  // Registered here as well as in the union, or the OWNER silently does not hold
+  // it: `owner` is built from this array, and the escalation guard in
+  // permission-matrix.test.ts would then fail with reception holding a
+  // capability owner lacks.
+  "care_team:manage",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -377,6 +399,12 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // COMMS-01 (owner dispatch 2026-09-14): the SMS send log. Reception is who
     // rings the patient whose reminder did not arrive.
     "reminders:log_read",
+    // CARE-01 (owner ruling Q-CARE-1, 2026-09-16): reception decides which
+    // therapists follow a patient. It is front-desk work in the same sense the
+    // guest queue and the reply queue are: the desk knows who is taking the
+    // patient over. The therapist does NOT hold it - a therapist who could
+    // assign themselves would be granting themselves the history.
+    "care_team:manage",
   ]),
 };
 

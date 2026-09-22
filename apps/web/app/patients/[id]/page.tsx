@@ -49,6 +49,9 @@ import { DeclaracaoDialog, type DeclaracaoAppointment } from "./DeclaracaoDialog
 import { listGuestIntakesForPatient } from "../../../lib/guest-intake/queries";
 import { toGuestIntakeDisplay } from "../../../lib/guest-intake/view";
 import { GuestIntakeAnswers } from "../../../components/guest-intake-answers";
+// CARE-01: the therapists reception has assigned to this patient.
+import { listCareTeam } from "../../../lib/admin/care-team";
+import { CareTeamCard } from "./care-team-card";
 
 export const dynamic = "force-dynamic";
 
@@ -270,6 +273,20 @@ export default async function PatientProfilePage({
     tab === "resumo" && can(ctx.role, "guest_intake:read")
       ? await listGuestIntakesForPatient(ctx, patient.id)
       : [];
+  // CARE-01 (ruling Q-CARE-1, 2026-09-16): the assigned therapists, and the
+  // people reception can pick from. Gated on the capability BEFORE the call,
+  // because `listCareTeam` asserts it and would throw rather than return empty -
+  // the same shape the guest-intake fetch above uses.
+  //
+  // RECEPTION AND OWNER ONLY. A therapist never sees this card: they would be
+  // reading who else follows their patient, which is not what the ruling grants
+  // them. What it grants them is the appointment history, and that arrives
+  // through RLS without any screen.
+  const canManageCareTeam = can(ctx.role, "care_team:manage");
+  const careTeam =
+    tab === "resumo" && canManageCareTeam ? await listCareTeam(ctx, patient.id) : [];
+  const careTeamCandidates =
+    tab === "resumo" && canManageCareTeam ? (await getAgendaOptions(ctx)).therapists : [];
   // Faturação tab: fetch invoices for this patient when the tab is active.
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // U1 — the Marcações filters, read from the URL and applied IN SQL.
@@ -498,6 +515,21 @@ export default async function PatientProfilePage({
                     <GuestIntakeAnswers display={toGuestIntakeDisplay(intake)} />
                   </Card>
                 ))}
+              </section>
+            )}
+            {/* CARE-01: reception decides which therapists follow this patient.
+                An assigned therapist reads the patient's whole appointment
+                history, including the appointments with colleagues - which is
+                the thing the clinic asked for. */}
+            {canManageCareTeam && (
+              <section className="mt-6" data-testid="ficha-care-team">
+                <CareTeamCard
+                  patientId={id}
+                  locale={DEFAULT_LOCALE}
+                  members={careTeam.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
+                  candidates={careTeamCandidates}
+                  error={typeof m === "string" && m.startsWith("err")}
+                />
               </section>
             )}
           </div>

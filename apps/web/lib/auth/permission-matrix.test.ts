@@ -36,6 +36,12 @@ const DENIED: Record<Role, Capability[]> = {
     "patients:recover",
     // PL-09 Phase 3: admin NOW has statistics:read (location-scoped in-query),
     // so it is no longer a denied capability for admin.
+    // CARE-01 (ruling Q-CARE-1, 2026-09-16): assigning therapists to a patient is
+    // RECEPTION AND OWNER ONLY. Pinned here as a denial because the merged spec
+    // (docs/design/SPEC-care-team.md) proposes admin as well and the dispatch
+    // that ruled it does not - so the narrower grant has to be the one that
+    // fails loudly if somebody widens it from the spec later.
+    "care_team:manage",
   ],
   therapist: [
     "patients:delete",
@@ -56,6 +62,11 @@ const DENIED: Record<Role, Capability[]> = {
     // COMMS-01: 0075's SELECT policy gives a therapist no rows, so the page
     // would read as an empty log. Granted only with the scoped migration.
     "reminders:log_read",
+    // CARE-01 (ruling Q-CARE-1, 2026-09-16). THIS IS THE LOAD-BEARING DENIAL of
+    // the whole feature: a therapist who could assign themselves to a patient
+    // would be granting themselves that patient's entire appointment history,
+    // which is precisely what reception is in the loop to decide.
+    "care_team:manage",
   ],
   reception: [
     // NO clinical access at all
