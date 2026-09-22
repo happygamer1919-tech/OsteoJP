@@ -12,7 +12,7 @@ sitting.
 | JP(lv) | `0c1a0000-0000-4000-8000-000000000001` (the Linda-a-Velha row) |
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001` |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002` |
-| Stage 1 | `scripts/data/staff-10-1-preview.sql`, sha256 `e641882c585884059d272b65b0287e130a023326f3bf5c86e77f0f182cd52eef` |
+| Stage 1 | `scripts/data/staff-10-1-preview.sql`, sha256 `485c1eefe8ec18ea77fc8b1506a7b339c981ae3be47fdaed504b7132e7d06c24` |
 | Stage 2 | `scripts/data/staff-10-2-apply.sql`, sha256 `5d01cda4e743a8edb92b4f9ea1f79e66e9827322309b5ce6d3e9415edf41e899` |
 | Post-check | `scripts/data/staff-10-3-postcheck.sql`, sha256 `adf6a25132b717e83f5704e61ad4992f988ceaa15381ef1a10050b7d17266550` |
 | Pin | `origin/main`. All three files merge first, by their own PR |
@@ -72,7 +72,7 @@ sitting starts.
 ```
 (
 set -eo pipefail
-SHA1=e641882c585884059d272b65b0287e130a023326f3bf5c86e77f0f182cd52eef
+SHA1=485c1eefe8ec18ea77fc8b1506a7b339c981ae3be47fdaed504b7132e7d06c24
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/staff10-stage1.out /tmp/staff10-stage1.ok
@@ -103,7 +103,8 @@ touch /tmp/staff10-stage1.ok
 clinic: it counts future Linda-a-Velha rows that neither side of this operation
 accounts for, and if it is not 0 the operation is out of scope and must be
 re-scoped rather than run. Section 3 shows each target row and what stage 2 will
-do to it; section 4 is the reception list.
+do to it; sections 4, 4b and 4c are the reception lists (4c, one NESA session imported
+twice, was added on 2026-09-22 by the owner's ruling).
 
 ## STAGE 2: the write, then the post-check
 
@@ -172,6 +173,13 @@ the 30 September block is gone (11) and was recorded whole so it can be restored
 (14).
 
 ## Rehearsed, in full, on a throwaway database
+
+**Stage 1 was re-issued on 2026-09-22** to add section 4c, reception list C (one NESA
+session held on a resource row and a person row), on the owner's ruling. Sections 0 to
+5 are otherwise unchanged, and stages 2 and 3 are unchanged, so the arms below were run
+on the earlier stage 1 bytes and are not repeated. The new bytes ran end to end twice:
+on a throwaway, and READ ONLY on production on 2026-09-22, exit 0, every section
+printed. Counts from that production read belong to the owner's report, not here.
 
 A throwaway built on the purple lane's Postgres 17.6 at `127.0.0.1:54522`, its
 schema taken from the lane database (46 public tables), seeded with a fixture at

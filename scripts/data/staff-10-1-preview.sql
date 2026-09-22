@@ -14,6 +14,10 @@
 -- episode, in any stage. The duplicate bookings the dispatch measured are NOT
 -- cancelled here: a cancellation is reception's to make, one at a time, from
 -- docs/staff-10-reception-list.md, and stage 1 prints the list they work from.
+-- Section 4c, added 2026-09-22, lists a second kind of twin that is NOT a JP
+-- row: one NESA session imported twice, once on a NESA resource row and once
+-- on the person. It is on this list because the owner ruled it onto the
+-- STAFF-10 twin list; like lists A and B it is read only and names ids only.
 --
 -- WHY NOT CANCEL THEM HERE, stated because it was checked rather than assumed:
 -- a cancel is already silent to the patient (no SMS, no email, no template
@@ -302,7 +306,7 @@ SELECT t.id::text,
 
 -- ---------------------------------------------------------------------------
 -- 4. THE RECEPTION LIST. Stage 2 does not touch a single appointment; this
---    section is the evidence reception works from, and it is the whole content
+--    section, with 4b and 4c, is the evidence reception works from, and it is the whole content
 --    of docs/staff-10-reception-list.md. Ids only, never a name.
 -- ---------------------------------------------------------------------------
 \echo ''
@@ -367,6 +371,73 @@ SELECT l.name AS clinic,
 \echo ''
 \echo '    The live-appointment predicate is the repository"s own:'
 \echo '    NOT IN (cancelled, no_show), apps/web/lib/scheduling/conflict.ts.'
+
+-- ---------------------------------------------------------------------------
+-- 4c. RECEPTION LIST C: ONE NESA SESSION IMPORTED TWICE. Added 2026-09-22 on the
+--     owner's ruling "add (c) to the STAFF-10 twin list", after a therapist's
+--     Concluida NESA booking did not render on her own week view.
+--
+--     THE SHAPE. The Fisiozero importer keys an appointment on
+--     (patient, start, terapeuta) and writes practitioner_id only, never
+--     practitioner_2_id. So one NESA session the old system held in BOTH the NESA
+--     column and the therapist's column arrives as TWO rows at the same start for
+--     the same patient: one on a shared-resource user (NESA), one on the person,
+--     both carrying the same NESA service. Staff can also make the same shape by
+--     hand, two rows for one session; this list does not tell the two origins
+--     apart. A THERAPIST's own agenda draws a resource's rows only when
+--     the resource is installed at one of that therapist's clinics
+--     (apps/web/app/agenda/page.tsx, data.ts), so a session held on the Castelo
+--     Branco NESA row never reaches a Linda-a-Velha therapist's own diary.
+--     Reception, admin and owner still see it.
+--
+--     THE VERDICT FOLLOWS THIS LIST'S OWN RULE: a past appointment is never
+--     touched, by anyone, in any stage. A past pair is listed so reception can
+--     ANSWER a therapist who asks where a session went, not so it is changed.
+--     A FUTURE pair with both rows live is NOT reception's to resolve yet: the
+--     two rows hold two different things (the machine's hour and the
+--     therapist's), so cancelling either frees one of them. Which row stands is
+--     an owner question, and the reception list says so.
+--
+--     lines_for_this_session counts the 4c lines that share the same patient and
+--     start. More than 1 means the session sits on three or more rows, and those
+--     lines must be read together.
+--
+--     Ids only, never a name, like lists A and B. The resource's clinic and the
+--     booking's clinic are printed because together they say whether any diary
+--     at the booking's clinic can draw the resource row.
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '=== 4c. RECEPTION LIST C: one NESA session held on BOTH a resource row and a person row, same patient, same start ==='
+
+SELECT n.patient_id::text,
+       (n.starts_at AT TIME ZONE 'Europe/Lisbon')::text           AS starts_lisbon,
+       n.id::text                                                 AS resource_row_appointment,
+       n.status::text                                             AS resource_row_status,
+       p.id::text                                                 AS person_row_appointment,
+       p.status::text                                             AS person_row_status,
+       ln.name                                                    AS booking_clinic,
+       coalesce((SELECT string_agg(l2.name, ', ' ORDER BY l2.name)
+                   FROM public.staff_locations sl
+                   JOIN public.locations l2 ON l2.id = sl.location_id
+                  WHERE sl.user_id = n.practitioner_id), 'none') AS resource_installed_at,
+       count(*) OVER (PARTITION BY n.patient_id, n.starts_at)::int AS lines_for_this_session,
+       CASE WHEN n.starts_at < now()
+            THEN 'PAST - listed so a question can be answered; never touched'
+            WHEN n.status NOT IN ('cancelled','no_show') AND p.status NOT IN ('cancelled','no_show')
+            THEN 'FUTURE, BOTH STILL LIVE - held for the owner, cancel neither'
+            ELSE 'FUTURE, one side already cancelled or no-show - nothing to do'
+       END                                                        AS verdict
+  FROM public.appointments n
+  JOIN public.users un ON un.id = n.practitioner_id AND un.is_shared_resource
+  JOIN public.appointments p
+    ON p.tenant_id  = n.tenant_id
+   AND p.patient_id = n.patient_id
+   AND p.starts_at  = n.starts_at
+   AND p.id <> n.id
+   AND p.service_id IS NOT DISTINCT FROM n.service_id
+  JOIN public.users up ON up.id = p.practitioner_id AND NOT up.is_shared_resource
+  JOIN public.locations ln ON ln.id = n.location_id
+ ORDER BY verdict, n.starts_at, n.patient_id, n.id, p.id;
 
 -- ---------------------------------------------------------------------------
 -- 5. HAS STAGE 2 ALREADY RUN? Its own audit row is the only answer.

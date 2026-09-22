@@ -1,4 +1,4 @@
-# JP duplicate bookings: the list reception works from
+# Duplicate bookings: the list reception works from
 
 **This is a worklist for a person, not a script.** No stage of the STAFF-10 data
 operation cancels, moves or edits a single appointment. The schedule rows are
@@ -11,7 +11,8 @@ email; no cancellation template exists), and a reminder already scheduled is
 suppressed when it wakes, because the dispatcher re-reads the appointment's
 status before sending. So silence was never the obstacle. The obstacle is that
 each row below is a real person's visit, and deciding which of two bookings
-stands is a diary decision. Nine or so rows is work a human can do properly.
+stands is a diary decision, which is work a human does one row at a time. List C
+is different in kind: most of it is PAST and needs nothing.
 
 **Ids only. No patient names appear in this file, ever.** Reception looks each
 id up on the screen.
@@ -28,12 +29,13 @@ reads them live:
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f scripts/data/staff-10-1-preview.sql
 ```
 
-Stage 1 writes nothing. Two of its sections are this list:
+Stage 1 writes nothing. Three of its sections are this list:
 
 | Section | What it lists |
 |---|---|
 | `4. RECEPTION LIST A` | the same patient booked on **both** JP rows at the **same start time** |
 | `4b. RECEPTION LIST B` | two **different** patients booked over each other on **one** JP row |
+| `4c. RECEPTION LIST C` | **one NESA session imported twice**: the same patient at the same start on a NESA resource row AND on a person, same service. Not a JP row; added 2026-09-22 on the owner's ruling |
 
 The columns to copy off the screen, and nothing else:
 
@@ -44,7 +46,10 @@ The columns to copy off the screen, and nothing else:
 | `appointment_one` / `appointment_two` | the two overlapping bookings of list B |
 | `cb_row_clinic` / `lv_row_clinic` | which clinic each booking is at. This is what decides which one stands |
 | `starts_lisbon` | the date and time, already in Lisbon time |
-| `verdict` | list A only: whether both sides are still live |
+| `resource_row_appointment` / `person_row_appointment` | list C: the NESA resource's row and the person's row of the same session |
+| `booking_clinic` / `resource_installed_at` | list C: where the session is booked, and where the NESA row it sits on is installed. When they differ, a THERAPIST's own agenda at the booking's clinic does not draw the resource row; reception, admin and owner still see it |
+| `lines_for_this_session` | list C: how many list C lines share this patient and start. More than 1 means three or more rows, read together |
+| `verdict` | lists A and C: whether both sides are still live, and for list C whether the session is in the past. A FUTURE list C pair with both rows live is held for the owner |
 
 Section 4's last column, `verdict`, already separates the rows that need a
 decision (`BOTH STILL SCHEDULED`) from the ones where one side is already
@@ -77,6 +82,30 @@ pessoa. Uma delas tem de mudar de hora.
 3. **Remarca** a outra para uma hora livre, e avisa o paciente pelo meio
    habitual. Remarcar não envia nada ao paciente automaticamente.
 
+**Lista C: a mesma sessão de NESA em duas marcações.**
+
+Uma sessão de NESA ficou em duas marcações à mesma hora, para o mesmo paciente: uma
+na NESA (`resource_row_appointment`) e outra num terapeuta (`person_row_appointment`).
+Pode vir da importação do sistema antigo, ou de duas marcações feitas à mão para a
+mesma sessão. Quando o terapeuta entra com o seu login, a marcação da NESA
+pode não aparecer na agenda dele; a marcação do terapeuta aparece. Na receção vês as
+duas.
+
+Se `lines_for_this_session` for maior que 1, a mesma sessão está em três ou mais
+marcações: lê essas linhas juntas (estão seguidas na lista). Se uma marcação de
+terapeuta (`person_row_appointment`) também estiver na Lista A, resolve primeiro a
+Lista A e depois volta a ler a Lista C.
+
+1. Se o `verdict` diz **PAST**, não mexas em nada. A sessão está nas duas
+   marcações; o estado de cada uma está em `resource_row_status` e
+   `person_row_status`. Serve para responder a quem pergunte onde está a sessão.
+2. Se diz **FUTURE, BOTH STILL LIVE**, **não canceles nenhuma**. As duas marcações
+   ocupam coisas diferentes: uma ocupa a hora da máquina NESA, a outra a hora do
+   terapeuta. Cancelar qualquer uma liberta essa hora, e a sessão continua a
+   acontecer. Qual fica é uma decisão do dono, que ainda não foi tomada. Até lá,
+   deixa as duas como estão.
+3. Se diz **FUTURE, one side already cancelled or no-show**, não há nada a fazer.
+
 **Regra que não muda:** nunca apagues uma marcação. Cancelar e remarcar deixam
 histórico; apagar não.
 
@@ -85,6 +114,7 @@ histórico; apagar não.
 ## What this list does not cover
 
 - **Appointments in the past.** They are never touched, by anyone, in any stage.
+  List C prints past pairs so a question can be answered; it changes none of them.
   A duplicate that already happened stays exactly as it is.
 - **The schedule rows themselves.** Those are the data op's job
   (`docs/data-op-staff-10.md`). Reception changes no working hours.
