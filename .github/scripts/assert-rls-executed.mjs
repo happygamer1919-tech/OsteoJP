@@ -363,6 +363,48 @@ const PERMITTED_SKIPS = new Map([
   // renumbering, not a typo correction - and CARE-01 now takes 0091, RGPD-01
   // 0092, the users/tenants role fix 0093 and the grants revoke 0094. The
   // 2026-09-20 order was real while it stood; it is superseded.
+  //
+  // AND IT CARRIES ONE AGAIN, FOR THE THIRD TIME AND ON THE SAME TERMS. The
+  // paragraph above is main's, written at the CARE-01 promotion, and it is kept
+  // whole because it is the record of the two entries that came out on time.
+  //
+  // WHAT THIS THIRD ONE COVERS: RGPD-01's suite proves the grants and policies of a
+  // table that ships in a PENDING migration,
+  // `packages/db/migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql`.
+  // The file name is historical, from when 0089 was the head. `drizzle-kit migrate`
+  // cannot see migrations-pending by construction, so CI's seeded database has no
+  // such table, and the suite gates on the SCHEMA: it asks
+  // `to_regclass('public.patient_rgpd_acceptances')` and skips when that is null.
+  //
+  // WHY A SKIP IS THE HONEST ANSWER rather than a hole: the alternative is a suite
+  // asserting append-only grants against a table that does not exist, which is red
+  // for a reason that has nothing to do with the code under review. A skip that SAYS
+  // "not measured" is worth more than a green that means nothing. The properties are
+  // not unproven meanwhile: the migration TEXT is asserted by
+  // apps/web/lib/patients/rgpd-axis.test.ts, which runs on every PR and has a
+  // negative control.
+  //
+  // WHEN IT COMES OUT: at promotion, exactly as the other two did. The moment the
+  // migration is renamed and applied, this suite runs in CI on its own and THIS LINE
+  // MUST BE DELETED. The card RGPD-01 carries that checklist item.
+  //
+  // THE NUMBER IS 0092, AND THIS LINE IS THE CORRECTION. This branch said 0093,
+  // which was the 2026-09-20 order. The paragraph above - main's own text, written
+  // by the lane that promoted CARE-01 - states the 2026-09-21 re-ruling that
+  // supersedes it: CARE-01 0091, RGPD-01 0092, the users/tenants role fix 0093, the
+  // grants revoke 0094. The same table is in CLAUDE.md. Taking main's history and
+  // leaving this branch's number would have merged two contradictory sentences into
+  // one comment block.
+  //
+  // PURPLE, dispatch P7, owner ruling Q-RGPD-NEW = b, 2026-09-17.
+  [
+    "patient-rgpd-acceptances.db.test.ts",
+    "RGPD-01: proves the grants and policies of a table that ships in " +
+      "migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql, which CI never applies; " +
+      "the suite gates on to_regclass and skips when the table is absent. " +
+      "DELETE THIS ENTRY at promotion, when the migration takes the number 0092 and CI applies it. " +
+      "PURPLE, dispatch P7, ruling Q-RGPD-NEW = b, 2026-09-17.",
+  ],
 ]);
 
 const derivedFailures = [];
