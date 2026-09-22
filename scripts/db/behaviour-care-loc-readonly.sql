@@ -47,16 +47,17 @@
 --       auth.uid() prefers the `request.jwt.claim.sub` GUC over the
 --       `request.jwt.claims` blob this file sets, so a pooler leftover makes
 --       every comparand here belong to one user and every subject to another.
---       A zero or a mismatch prints FAIL and never VACUOUS: an empty array
---       makes the location conjunct false everywhere, which turns L3 and L4
---       green for the worst possible reason.
+--       A zero or a mismatch prints FAIL and never VACUOUS. A zero is not
+--       reachable past the STOPs below (a therapist with no clinic leaves L5
+--       without a subject, so the file halts first); the FAIL is kept so that
+--       a later edit to the STOPs cannot turn an empty clinic set into a pass.
 --   L2  THE WORKHORSE. The actor reads EXACTLY old_arm OR (ruled AND own
 --       clinic): no row more and no row fewer. The comparand is computed
 --       outside RLS in the same snapshot from the same helper arrays. It is
 --       the only arm that goes red when the policy is absent, or when the
---       conjunct is an OR, or when the ALTER landed on another policy. Its
---       subject carries NO tenant filter and its comparand does, so a lost
---       tenant conjunct shows up here as a surplus.
+--       conjunct is an OR, or when the ALTER landed on another policy. It
+--       compares COUNTS, not sets: a policy wrong in both directions by the
+--       same number would pass it, and L3 to L6 are the arms that name rows.
 --   L3  INDEPENDENT SWEEP. Everything still readable at a clinic the actor
 --       does NOT belong to is their own work. It reuses neither patient
 --       helper, so it is the one arm that survives a comparand and a subject
@@ -84,6 +85,22 @@
 --       clinic they do not belong to. 0092's own header says it does not
 --       narrow that and carries it to the owner as a question. If somebody
 --       later narrows it, this arm is what goes red and says so.
+--
+-- WHAT NO ARM HERE MEASURES, stated so nobody reads a green run as covering it.
+-- Each was MEASURED by a REVIEWER on a throwaway: the policy was broken in that
+-- one way and this file still printed 8 OK / 0 VACUOUS / 0 FAIL.
+--   * THE TENANT CONJUNCT. The helper arrays are tenant-scoped, so on data
+--     whose rows reference their own tenant the conjunct's loss admits no
+--     extra row, and no count can see it; production holds one tenant, so an
+--     isolation arm would print VACUOUS there anyway. An earlier revision of
+--     this header claimed L2 caught it. It does not.
+--   * THE CARE-TEAM HALF ON ITS OWN. When the actor's assigned patients are
+--     also patients they treated, a policy that lost its care-team disjuncts
+--     reads exactly like the correct one, here and in the CARE-01 file.
+-- Both are proven by the SHAPE, not by behaviour: the 0092 post-check pins the
+-- whole USING expression by md5, so a rewrite that lost either one reads FAIL
+-- there. That is the division of labour, and this paragraph is what keeps it
+-- honest.
 --
 -- IT PRINTS COUNTS AND VERDICTS AND NOTHING ELSE. No name, no phone, no email,
 -- no patient id and no appointment id reaches the transcript: every subject is
@@ -173,30 +190,57 @@ SELECT u.id
   END $stop$;
 \endif
 
+/* AN ACTOR PASSED WITH -v actor_id IS VERIFIED AND NORMALISED, NOT TRUSTED.
+ * It must be an active, non-resource therapist holding a clinic, because the
+ * claims below always say therapist; and its id is re-read from the table, so
+ * an upper-case uuid cannot trip the identity STOP and an unknown one reaches a
+ * STOP that says so instead of psql's own "no rows returned for \gset". */
+SELECT (SELECT u.id::text
+          FROM public.users u
+          JOIN public.roles r ON r.id = u.role_id AND r.slug = 'therapist'
+         WHERE u.id = :'actor_id'::uuid
+           AND u.is_active
+           AND NOT u.is_shared_resource
+           AND EXISTS (SELECT 1 FROM public.staff_locations sl
+                        WHERE sl.user_id = u.id AND sl.tenant_id = u.tenant_id)) AS actor_checked \gset
+\if :{?actor_checked}
+\else
+  DO $stop$ BEGIN
+    RAISE EXCEPTION 'STOP: the actor is not an active, non-resource therapist holding a clinic. Nothing was checked. Pass another with -v actor_id.';
+  END $stop$;
+\endif
+\set actor_id :actor_checked
+
 SELECT tenant_id AS actor_tenant FROM public.users WHERE id = :'actor_id' \gset
 
 /* THE CLAIMS, SET BEFORE THE ROLE CHANGE. */
 SELECT set_config('request.jwt.claims',
        json_build_object('tenant_id', :'actor_tenant', 'user_role', 'therapist', 'sub', :'actor_id')::text,
-       true) AS claims_set \gset
+       true) IS NOT NULL AS claims_set \gset
 
-/* AND THE IDENTITY CHECK COMES FIRST, BEFORE ANYTHING IS CLASSIFIED. auth.uid()
- * prefers the `request.jwt.claim.sub` GUC over the `request.jwt.claims` blob
- * set above, so a session-level leftover from a pooler makes every helper below
- * answer for a DIFFERENT user while jwt_tenant_id() and jwt_role() still answer
- * for ours. That poisons the CLASSIFICATION, not just the reads, so it has to
- * halt here rather than be reported as a verdict at the end - MEASURED: with a
- * leftover sub set, the file otherwise halts three STOPs later on a missing
- * subject and blames the actor. L1 reports the same fact for the transcript. */
+/* AND THE IDENTITY CHECK COMES FIRST, BEFORE ANYTHING IS CLASSIFIED, AND IT
+ * CHECKS ALL THREE THINGS THE HELPERS READ. auth.uid() prefers the
+ * `request.jwt.claim.sub` GUC over the `request.jwt.claims` blob set above, and
+ * auth.jwt(), which jwt_tenant_id() and jwt_role() read, prefers the
+ * `request.jwt.claim` GUC over it in the same way. So a session-level leftover
+ * from a pooler can make the helpers answer for a DIFFERENT user, tenant or
+ * role than the claims this file set. That poisons the CLASSIFICATION, not
+ * just the reads, so it halts here rather than being reported as a verdict at
+ * the end - MEASURED by a REVIEWER: a leftover `request.jwt.claim` carrying
+ * role owner made four arms FAIL on a correct policy while the uid-only check
+ * passed, and one carrying another tenant halted on the L4 STOP blaming the
+ * actor. L1 reports the uid half for the transcript. */
 /* THE COMPARISON IS DONE IN SQL AND BRANCHED WITH \if, NOT INSIDE THE DO BODY:
  * psql does not interpolate `:'var'` inside a dollar-quoted block, and a DO
  * body that tried would die on a syntax error at the colon. */
 SELECT coalesce((SELECT auth.uid())::text, '') AS pre_uid \gset
-SELECT (:'pre_uid' = :'actor_id')::text AS uid_matches \gset
-\if :uid_matches
+SELECT (coalesce((SELECT auth.uid()) = :'actor_id'::uuid, false)
+        AND coalesce((SELECT public.jwt_tenant_id())::text = :'actor_tenant', false)
+        AND coalesce((SELECT public.jwt_role()) = 'therapist', false))::text AS identity_matches \gset
+\if :identity_matches
 \else
   DO $stop$ BEGIN
-    RAISE EXCEPTION 'STOP: auth.uid() is not the actor this file chose. Something has set request.jwt.claim.sub on this session, which auth.uid() prefers over the claims blob, so every helper below would answer for another user. Nothing was checked. Reconnect, or RESET request.jwt.claim.sub.';
+    RAISE EXCEPTION 'STOP: the session is not the identity this file set: auth.uid(), jwt_tenant_id() or jwt_role() answers for someone else. Something has set request.jwt.claim.sub or request.jwt.claim on this session, which the helpers prefer over the claims blob. Nothing was checked. Reconnect, or RESET both.';
   END $stop$;
 \endif
 
