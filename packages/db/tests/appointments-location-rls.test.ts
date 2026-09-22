@@ -121,13 +121,34 @@ describe.skipIf(!live)("PL-09 appointments location RLS matrix", () => {
     expect(seen.has(Z.appt)).toBe(false);
   });
 
-  it("therapist sees OWN appointments (primary + secondary practitioner), across locations, not others'", async () => {
+  /**
+   * AMENDED BY 0091 (CARE-01), AND THE AMENDMENT IS THE RULING, NOT A REPAIR.
+   *
+   * `apB` is otherT's appointment, and this arm used to require it INVISIBLE to
+   * therapistT. It is visible now, and the reason is in the fixture: `apB` is
+   * `pX`'s, and therapistT treats `pX` (that is `apA`). Ruling Q-CARE-1 (c) says
+   * a therapist may read EVERY appointment of a patient they have treated,
+   * including the ones with colleagues, and `appointments_care_team_patient_
+   * history_select` is where that lives. So the old expectation was a statement
+   * about what 0048 did, and it is now a statement about what the clinic asked
+   * for and did not get.
+   *
+   * THE ARM KEEPS A REAL NEGATIVE, which is why it is amended rather than
+   * deleted: `apRoom` is `pOther`'s, a patient therapistT has never treated and
+   * did not create, and it must still be invisible. If 0091 had widened by
+   * LOCATION or by tenant instead of by patient, `apRoom` would go green here
+   * and this arm would catch it.
+   *
+   * The FOR ALL policy is untouched: 0091 is a separate FOR SELECT policy, so
+   * the write matrix below still refuses therapistT on apB.
+   */
+  it("therapist sees OWN appointments (primary + secondary practitioner), across locations, plus every appointment of a patient they treat - and nothing for a patient they do not", async () => {
     const seen = await visible(sql, claimsFor(A.tenant, "therapist", A.therapistT));
     expect(seen.has(A.apA)).toBe(true); // primary @ LocA
     expect(seen.has(A.apTlocB)).toBe(true); // primary @ LocB (own, cross-location)
     expect(seen.has(A.apSecondary)).toBe(true); // secondary practitioner
-    expect(seen.has(A.apB)).toBe(false); // otherT's
-    expect(seen.has(A.apRoom)).toBe(false); // otherT's
+    expect(seen.has(A.apB)).toBe(true); // otherT's, but pX's - 0091, ruling Q-CARE-1 (c)
+    expect(seen.has(A.apRoom)).toBe(false); // otherT's AND pOther's: never treated, still hidden
   });
 
   it("adminA (LocA) sees LocA appointments only; adminB (LocB) sees LocB only", async () => {

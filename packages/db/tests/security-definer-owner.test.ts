@@ -70,6 +70,12 @@ const EXPECTED_FUNCTIONS = [
   // granted to `authenticated` only; anon, patient and service_role are revoked
   // in the same migration, which is why this one never reaches the portal.
   "shared_resource_appointment_patient_names",
+  // 0091 (CARE-01): the nullary set of patients the calling therapist is
+  // CURRENTLY assigned to by reception (removed_at IS NULL), evaluated once per
+  // statement by `appointments_care_team_patient_history_select`. Nullary for
+  // the reason 0073/0074/0078 are: a per-row call on `appointments` is the
+  // 4,691 ms defect 0078 removed. EXECUTE is granted to `authenticated` only.
+  "viewer_care_team_patient_ids",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {
