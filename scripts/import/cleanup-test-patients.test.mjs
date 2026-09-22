@@ -41,6 +41,9 @@ const DELETE_ORDER = [
   "analytics_events",
   "clinical_episodes",
   "consultations",
+  // 0091 (CARE-01), promoted 2026-09-21: reception's therapist assignments.
+  // A direct child of patients, so depth 1 with the rest of them.
+  "patient_care_team",
   "patient_followup_contacts",
   "patient_followup_postponements",
   "patient_locations",
@@ -236,7 +239,8 @@ test("every table with an FK path to patients is covered", () => {
   };
   walk("patients");
 
-  assert.ok(reached.size >= 18, `expected at least 18 patient-rooted tables, found ${reached.size}`);
+  // 18 until 0091 (CARE-01) added patient_care_team on 2026-09-21.
+  assert.ok(reached.size >= 19, `expected at least 19 patient-rooted tables, found ${reached.size}`);
   const covered = new Set(DELETE_ORDER);
   for (const t of reached) {
     assert.ok(covered.has(t), `${t} has an FK path to patients but the script never deletes from it`);

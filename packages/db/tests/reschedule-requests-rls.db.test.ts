@@ -55,13 +55,21 @@ const A = {
   locA: randomUUID(),
   locB: randomUUID(),
   pX: randomUUID(),
+  // ADDED AT THE 0091 PROMOTION (CARE-01): a patient therapistT has NEVER
+  // treated, so the therapist arm below keeps a real negative. Every other
+  // appointment in this fixture is pX's, and 0091 lets a therapist read every
+  // appointment of a patient they have treated - so without pY the therapist
+  // arm would have had nothing left it was allowed NOT to see.
+  pY: randomUUID(),
   apA: randomUUID(), // LocA, practitioner therapistT
   apB: randomUUID(), // LocB, practitioner otherT
   apSecondary: randomUUID(), // LocA, practitioner otherT, practitioner_2 therapistT
   apFresh: randomUUID(), // LocA, no request yet — the writer case needs one
+  apOther: randomUUID(), // LocB, practitioner otherT, patient pY — not therapistT's in any sense
   reqA: randomUUID(),
   reqB: randomUUID(),
   reqSecondary: randomUUID(),
+  reqOther: randomUUID(),
 };
 
 const Z = {
@@ -93,7 +101,8 @@ async function seed(p: Sql): Promise<void> {
   await p`insert into staff_locations (tenant_id, user_id, location_id) values
     (${A.tenant}, ${A.receptionA}, ${A.locA})`;
   await p`insert into patients (id, tenant_id, full_name, created_by) values
-    (${A.pX}, ${A.tenant}, 'Patient X', ${A.otherT})`;
+    (${A.pX}, ${A.tenant}, 'Patient X', ${A.otherT}),
+    (${A.pY}, ${A.tenant}, 'Patient Y', ${A.otherT})`;
   await p`insert into appointments (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at) values
     (${A.apA}, ${A.tenant}, ${A.pX}, ${A.therapistT}, ${A.locA}, ${W0}, ${W1}),
     (${A.apB}, ${A.tenant}, ${A.pX}, ${A.otherT},     ${A.locB}, ${W0}, ${W1})`;
@@ -103,10 +112,15 @@ async function seed(p: Sql): Promise<void> {
   // one-open-request index, which is a DIFFERENT assertion further down.
   await p`insert into appointments (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at)
           values (${A.apFresh}, ${A.tenant}, ${A.pX}, ${A.therapistT}, ${A.locA}, ${W0}, ${W1})`;
+  // pY's appointment, otherT's, at LocB: outside therapistT under every arm of
+  // appointments_rls AND outside 0091, because therapistT has never treated pY.
+  await p`insert into appointments (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at)
+          values (${A.apOther}, ${A.tenant}, ${A.pY}, ${A.otherT}, ${A.locB}, ${W0}, ${W1})`;
   await p`insert into appointment_reschedule_requests (id, tenant_id, appointment_id, patient_id, requested_at, via) values
     (${A.reqA},         ${A.tenant}, ${A.apA},         ${A.pX}, ${R0}, 'sms_code'),
     (${A.reqB},         ${A.tenant}, ${A.apB},         ${A.pX}, ${R0}, 'sms_code'),
-    (${A.reqSecondary}, ${A.tenant}, ${A.apSecondary}, ${A.pX}, ${R0}, 'sms_code')`;
+    (${A.reqSecondary}, ${A.tenant}, ${A.apSecondary}, ${A.pX}, ${R0}, 'sms_code'),
+    (${A.reqOther},     ${A.tenant}, ${A.apOther},     ${A.pY}, ${R0}, 'sms_code')`;
 
   await p`insert into tenants (id, name, slug) values (${Z.tenant}, '0080 Z', ${`m80-z-${Z.tenant}`})`;
   await p`insert into users (id, tenant_id, email, full_name) values (${Z.admin}, ${Z.tenant}, ${`z-${Z.admin}@x.pt`}, 'Z Admin')`;
@@ -140,8 +154,8 @@ describe.skipIf(!live)("0080 appointment_reschedule_requests RLS", () => {
   it("NEGATIVE CONTROL: the owning connection sees every seeded row, so absence below is RLS and not a bad fixture", async () => {
     const all = await sql<{ id: string }[]>`
       select id::text as id from appointment_reschedule_requests
-       where id in (${A.reqA}, ${A.reqB}, ${A.reqSecondary}, ${Z.req})`;
-    expect(all.length).toBe(4);
+       where id in (${A.reqA}, ${A.reqB}, ${A.reqSecondary}, ${A.reqOther}, ${Z.req})`;
+    expect(all.length).toBe(5);
   });
 
   it("CROSS-TENANT: tenant Z's request is invisible to every tenant A principal", async () => {
@@ -156,17 +170,39 @@ describe.skipIf(!live)("0080 appointment_reschedule_requests RLS", () => {
 
   it("owner sees every in-tenant request", async () => {
     const seen = await visible(sql, claimsFor(A.tenant, "owner", A.ownerU));
-    for (const id of [A.reqA, A.reqB, A.reqSecondary]) expect(seen.has(id)).toBe(true);
+    for (const id of [A.reqA, A.reqB, A.reqSecondary, A.reqOther]) expect(seen.has(id)).toBe(true);
   });
 
+  /**
+   * AMENDED AT THE 0091 PROMOTION (CARE-01), AND THE DELEGATION IS WHY.
+   *
+   * `reqB` used to be the negative here: otherT's appointment at LocB, so not
+   * therapistT's. It is VISIBLE now, and that is this file's own thesis working
+   * rather than failing. 0080's policy is `EXISTS (SELECT 1 FROM appointments a
+   * WHERE a.id = appointment_id)`, evaluated under whatever policies
+   * `appointments` carries; 0091 adds a PERMISSIVE FOR SELECT policy letting a
+   * therapist read every appointment of a patient they have treated. `apB` is
+   * pX's and therapistT treats pX, so the appointment became visible and the
+   * request followed it - WITHOUT a line changing in 0080. A denormalised copy
+   * of practitioner_id on the request row, the design 0080's header rejects,
+   * would have left `reqB` hidden and the two surfaces disagreeing.
+   *
+   * THE NEGATIVE MOVES TO `reqOther` RATHER THAN DISAPPEARING: pY's
+   * appointment, otherT's, at LocB, and therapistT has never treated pY. If
+   * 0091 had widened by tenant or by location instead of by patient, that is
+   * where it would show.
+   */
   it("THE OWNER RULING: the SECOND practitioner sees the request, through the same expression as the first", async () => {
     const seen = await visible(sql, claimsFor(A.tenant, "therapist", A.therapistT));
     // primary practitioner on apA
     expect(seen.has(A.reqA)).toBe(true);
     // practitioner_2 on apSecondary — this is "both practitioners are notified"
     expect(seen.has(A.reqSecondary)).toBe(true);
-    // otherT's appointment at LocB: not theirs
-    expect(seen.has(A.reqB)).toBe(false);
+    // otherT's appointment at LocB, but pX's, and therapistT treats pX: 0091
+    // made the APPOINTMENT visible and the request inherited it.
+    expect(seen.has(A.reqB)).toBe(true);
+    // pY's: never treated by therapistT, so still invisible under every arm.
+    expect(seen.has(A.reqOther)).toBe(false);
   });
 
   it("reception is LOCATION-SCOPED, and the request follows the appointment's location", async () => {
