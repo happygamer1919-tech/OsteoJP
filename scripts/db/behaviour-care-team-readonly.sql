@@ -1,5 +1,54 @@
 -- CARE-01 BEHAVIOUR CHECK. READ ONLY. Run AFTER 0091 is applied.
 --
+-- ===========================================================================
+-- THE VERDICT CONTRACT, ADDED 2026-09-22 ON THE OWNER'S RULING. THREE VALUES.
+-- ===========================================================================
+-- Every arm prints OK, VACUOUS or FAIL, and the last row prints the profile:
+--
+--     N OK / M VACUOUS / K FAIL
+--
+-- A 0 COMPARAND OR A 0 SUBJECT PRINTS VACUOUS, NEVER OK. An arm whose
+-- comparand is zero did not pass, it did not run: "0 read of 0 rows" is the
+-- same sentence on a correct policy and on a policy that was never applied.
+-- Three arms can reach that state and now say so instead of reading OK:
+--   B2  when `admitted` is 0        (see the note below: unreachable in practice)
+--   B5  when `patient_care_team` is empty
+--   B6  when the actor holds no live care-team assignment
+--   B7  when no other tenant exists
+--
+-- THE CALLER ASSERTS A PROFILE, NOT AN ABSENCE. "no VACUOUS" is the wrong
+-- assertion and this file would have halted a correct sitting under it:
+-- docs/migration-apply-0091.md:500 predicted, correctly, that B5 and B6 would
+-- BOTH be vacuous on apply day because the care-team table ships empty. What
+-- the caller must assert is the three numbers it expects, measured from the
+-- database on the day, exactly as it already asserts an OK count.
+--
+-- AND THE PROFILE MOVES WITH THE DATA, WHICH IS THE WHOLE POINT. Measured on
+-- production 2026-09-22, READ ONLY: `patient_care_team` now holds 37 rows, so
+-- B5 is no longer vacuous, and `tenants` holds exactly 1, so B7 IS. The
+-- document's apply-day prediction was true when written and is stale now. A
+-- number that moves is why this is reported rather than asserted away.
+--
+-- WHAT THIS RETROFIT DELIBERATELY DID NOT CHANGE, each recorded rather than
+-- fixed quietly, because each changes the arm COUNT and the count is a caller's
+-- assertion:
+--   * verdict 0 is a CONSTANT under the documented invocation. The file opens
+--     its own READ ONLY transaction and nothing wraps it, so no database state
+--     makes it print FAIL. It inflates N by one. It earns its place only
+--     against a caller that wraps this file in an outer transaction.
+--   * B6 IS TWO CLAIMS IN ONE ARM. That `authenticated` may call the helper is
+--     proved by the call at all - an EXECUTE denial aborts the file under
+--     ON_ERROR_STOP before any verdict prints - and that proof HOLDS when the
+--     counts are both 0. Only the count agreement is vacuous. Splitting it into
+--     B6a (has_function_privilege, never vacuous) and B6b (the agreement) is
+--     the right shape and it is a ninth arm.
+--   * B6 compares CARDINALITIES, not sets. It passes on the wrong ids whenever
+--     the two counts happen to match.
+--   * B2's VACUOUS state is unreachable in an otherwise-clean transcript:
+--     `new_only <= admitted` by construction, so `admitted = 0` forces B1 to
+--     FAIL and the sitting halts before B2 is read. It is declared anyway, so
+--     the rule is stated uniformly rather than argued per arm.
+--
 -- The post-check proves the SHAPE: the table exists, the function is SECURITY
 -- DEFINER, who may execute it, that appointments_rls did not move. This proves
 -- what the new policy DOES, to a real actor, on the database it was applied to:
@@ -223,30 +272,43 @@ SELECT count(*)::int AS sees_other_tenant FROM public.appointments
 
 RESET ROLE;
 
-SELECT '0. this transaction is READ ONLY (the server refuses writes)' AS check,
-       current_setting('transaction_read_only')                      AS observed,
-       'on'                                                          AS expected,
-       CASE WHEN current_setting('transaction_read_only') = 'on' THEN 'OK' ELSE 'FAIL' END AS verdict
-UNION ALL SELECT 'B1. the RULED set contains appointments the old predicate did NOT admit',
-       :'new_only' || ' new-only of ' || :'admitted' || ' admitted', '> 0',
-       CASE WHEN :new_only > 0 THEN 'OK' ELSE 'FAIL' END
-UNION ALL SELECT 'B2. exactly the ruled set: no row more and no row fewer',
-       :'readable', :'admitted',
-       CASE WHEN :readable = :admitted THEN 'OK' ELSE 'FAIL' END
-UNION ALL SELECT 'B3. NEGATIVE: an appointment neither arm admits is refused',
-       :'sees_negative', '0',
-       CASE WHEN :sees_negative = 0 THEN 'OK' ELSE 'FAIL' END
-UNION ALL SELECT 'B4. CONTROL for B3: the same actor DOES read one of their own',
-       :'sees_own', '1',
-       CASE WHEN :sees_own = 1 THEN 'OK' ELSE 'FAIL' END
-UNION ALL SELECT 'B5. the care-team table itself shows a therapist nothing',
-       :'sees_team' || ' read of ' || :'ct_total' || ' rows', '0 read',
-       CASE WHEN :sees_team = 0 THEN 'OK' ELSE 'FAIL' END
-UNION ALL SELECT 'B6. the helper agrees with the table (and authenticated can call it)',
-       :'fn_ids', :'ct_live_actor',
-       CASE WHEN :fn_ids = :ct_live_actor THEN 'OK' ELSE 'FAIL' END
-UNION ALL SELECT 'B7. tenant isolation: no appointment of any other tenant is readable',
-       :'sees_other_tenant' || ' read of ' || :'other_tenant_appts' || ' that exist', '0 read',
-       CASE WHEN :sees_other_tenant = 0 THEN 'OK' ELSE 'FAIL' END;
+WITH r(n, "check", observed, expected, verdict) AS (VALUES
+  (0, '0. this transaction is READ ONLY (the server refuses writes)',
+      current_setting('transaction_read_only'), 'on',
+      CASE WHEN current_setting('transaction_read_only') = 'on' THEN 'OK' ELSE 'FAIL' END),
+  (1, 'B1. the RULED set contains appointments the old predicate did NOT admit',
+      :'new_only' || ' new-only of ' || :'admitted' || ' admitted', '> 0',
+      CASE WHEN :new_only > 0 THEN 'OK' ELSE 'FAIL' END),
+  (2, 'B2. exactly the ruled set: no row more and no row fewer',
+      :'readable', :'admitted',
+      CASE WHEN :admitted = 0 THEN 'VACUOUS'
+           WHEN :readable = :admitted THEN 'OK' ELSE 'FAIL' END),
+  (3, 'B3. NEGATIVE: an appointment neither arm admits is refused',
+      :'sees_negative' || ' read of 1 subject', '0 read',
+      CASE WHEN :sees_negative = 0 THEN 'OK' ELSE 'FAIL' END),
+  (4, 'B4. CONTROL for B3: the same actor DOES read one of their own',
+      :'sees_own' || ' read of 1 subject', '1 read',
+      CASE WHEN :sees_own = 1 THEN 'OK' ELSE 'FAIL' END),
+  (5, 'B5. the care-team table itself shows a therapist nothing',
+      :'sees_team' || ' read of ' || :'ct_total' || ' rows', '0 read',
+      CASE WHEN :ct_total = 0 THEN 'VACUOUS'
+           WHEN :sees_team = 0 THEN 'OK' ELSE 'FAIL' END),
+  (6, 'B6. the helper agrees with the table (and authenticated can call it)',
+      :'fn_ids', :'ct_live_actor',
+      CASE WHEN :ct_live_actor = 0 THEN 'VACUOUS'
+           WHEN :fn_ids = :ct_live_actor THEN 'OK' ELSE 'FAIL' END),
+  (7, 'B7. tenant isolation: no appointment of any other tenant is readable',
+      :'sees_other_tenant' || ' read of ' || :'other_tenant_appts' || ' that exist', '0 read',
+      CASE WHEN :other_tenant_appts = 0 THEN 'VACUOUS'
+           WHEN :sees_other_tenant = 0 THEN 'OK' ELSE 'FAIL' END)
+)
+SELECT n, "check", observed, expected, verdict FROM r
+UNION ALL
+SELECT 99, 'SUMMARY. the verdict profile this run printed',
+       (SELECT count(*) FROM r WHERE verdict = 'OK')      || ' OK / ' ||
+       (SELECT count(*) FROM r WHERE verdict = 'VACUOUS') || ' VACUOUS / ' ||
+       (SELECT count(*) FROM r WHERE verdict = 'FAIL')    || ' FAIL',
+       '8 arms', 'SUMMARY'
+ORDER BY 1;
 
 ROLLBACK;
