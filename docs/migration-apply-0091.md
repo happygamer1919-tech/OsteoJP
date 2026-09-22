@@ -24,10 +24,47 @@ rehearsal section near the end.
 | This document | `docs/migration-apply-0091.md`, pinned by `docs/migration-apply-0091.sha256` and asserted in STAGE 0 and again in STAGE 1 |
 | Pre-check | `scripts/db/precheck-care-team.sql`, READ ONLY, sha256 `1fe31122ac6b371aa43fd82271472c5952e6297fc91a9aa7d947b10e9351864b` |
 | Post-check | `scripts/db/postcheck-care-team.sql`, READ ONLY, sha256 `7ba44f65dba515f8e63716eb06425204e889b524d1fa899f3b1a541f899b8b2a` |
-| Behaviour check | `scripts/db/behaviour-care-team-readonly.sql`, READ ONLY, sha256 `7e5ebbaedf57a946e79e4eebb7b7e0cf6a673e4ceec5a074f660b56991fb0c0f` |
+| Behaviour check | `scripts/db/behaviour-care-team-readonly.sql`, READ ONLY, sha256 `b8d6550cd23337f57b5e12d5329b230a7449ecb66e559e1114f25dde89d304ef` |
+| Behaviour check AS IT RAN on 2026-09-21 | sha256 `7e5ebbaedf57a946e79e4eebb7b7e0cf6a673e4ceec5a074f660b56991fb0c0f`. The row above is the CURRENT file, not the one this sitting ran; see "The behaviour check has moved" below |
 | The two programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`. Both byte-identical to `origin/main` at `60105a36` on 2026-09-21, both pinned in every block that runs them |
 | What it creates | ONE table (`public.patient_care_team`, with three indexes), ONE function (`public.viewer_care_team_patient_ids()`), FOUR policies: three on the new table and **one** on `appointments` |
 | What it never touches | `appointments_rls` — the FOR ALL policy whose USING governs SELECT, the rows an UPDATE may target AND the rows a DELETE may remove — and every clinical policy: `clinical_records`, `clinical_episodes`, `attachments`, storage |
+
+## The behaviour check has moved since this sitting
+
+**The pin in the table is the CURRENT file. This sitting ran a different one**, and
+its digest is in the table too, in its own row, so it survives as a field a machine
+can read rather than as prose. The 0091 apply ran
+`7e5ebbae…`; on 2026-09-22 the file gained the three-value
+verdict contract (OK / VACUOUS / FAIL plus a printed profile) on the owner's
+ruling, and its digest moved to `b8d6550c…`. The transcript recorded further down
+is the one that ran, unchanged.
+
+**The pin is re-cut, and the honest reason is NOT "otherwise a re-run would halt".**
+It would halt either way, and earlier: `BRANCH=care/CARE-01-assigned-therapists`
+at line 470 names a branch that no longer exists on the remote (PR #1374 merged as
+`23494a11` and the branch was deleted), so `git rev-parse origin/$BRANCH` exits 128
+before the sha check is reached. That is pre-existing and is not this change. The
+pin is re-cut so the table states what is true of the file on `origin/main` today.
+
+**THE OK COUNT IS NO LONGER THE ASSERTION, and could not be.** The block below used
+to demand exactly 8 OK. Under the verdict contract that is the same claim as "no
+VACUOUS", which this project's own measurement refutes: production holds exactly 1
+tenant, so B7's comparand is 0 and B7 reads VACUOUS on a correct database. Measured
+on a throwaway standing where production stands: `7 OK / 1 VACUOUS / 0 FAIL`, and
+the old assertion printed `STOP: the behaviour check printed 7 OK verdicts, not 8`
+on a sitting where nothing had failed. What the block asserts now is that there is
+no FAIL, that the SUMMARY row is present, and that **every VACUOUS arm is one of
+B5, B6 or B7** - the three whose comparands can legitimately be zero. An
+unexpected arm going vacuous is still a halt.
+
+**AFTER 0092 IS APPLIED THIS FILE IS NO LONGER THE LIVE INSTRUMENT.** Its B2
+compares against the pre-0092 predicate, so it reads FAIL by design; measured,
+`6 OK / 1 VACUOUS / 1 FAIL`. Its successor is
+`scripts/db/behaviour-care-loc-readonly.sql`. **Do not run that file from this
+document**: nothing here pins it, greps its transcript or states its expected
+profile, and psql exits 0 even when a verdict reads FAIL. It gets its pin and its
+runner block in the CARE-LOC apply document, and not before.
 
 **THIS DOCUMENT PINS ITSELF, and the sidecar is why.** A document cannot contain
 its own sha256: writing the value changes the value. So the digest lives beside
@@ -452,7 +489,7 @@ appointment id reaches the transcript.
 ```
 (
 set -eo pipefail
-SHABEHAVIOUR=7e5ebbaedf57a946e79e4eebb7b7e0cf6a673e4ceec5a074f660b56991fb0c0f
+SHABEHAVIOUR=b8d6550cd23337f57b5e12d5329b230a7449ecb66e559e1114f25dde89d304ef
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=care/CARE-01-assigned-therapists
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -469,13 +506,15 @@ set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexpo
 node scripts/assert-production-target.mjs
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -f scripts/db/behaviour-care-team-readonly.sql 2>&1 | tee /tmp/0091-behaviour.out
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0091-behaviour.out && { echo "STOP: a behaviour verdict read FAIL"; exit 1; }
-OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0091-behaviour.out || true)
-[ "${OKS}" = 8 ] || { echo "STOP: the behaviour check printed ${OKS} OK verdicts, not 8"; exit 1; }
-echo "CARE-01 BEHAVES AS RULED AT THE RLS LAYER. 8/8 OK. The route-level half of the acceptance is NOT discharged by this transcript."
+grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/0091-behaviour.out || { echo "STOP: the behaviour check printed no SUMMARY row, so the transcript is truncated or the file is a pre-contract revision"; exit 1; }
+BADVAC=$(grep -E '\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/0091-behaviour.out | grep -cvE '\|[[:space:]]*(B5|B6|B7)\.' || true)
+[ "${BADVAC}" = 0 ] || { echo "STOP: ${BADVAC} arm(s) OTHER than B5, B6 or B7 read VACUOUS. Only those three have a comparand that may legitimately be zero"; exit 1; }
+PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0091-behaviour.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/')
+echo "CARE-01 BEHAVES AS RULED AT THE RLS LAYER. ${PROFILE}. The route-level half of the acceptance is NOT discharged by this transcript."
 )
 ```
 
-**EXPECT: `8` OK verdicts and no FAIL**, which is this block's own count and not
+**EXPECT: no FAIL, a SUMMARY row, and every VACUOUS arm one of B5/B6/B7**, which is this block's own rule and not
 the pre-check's or the post-check's.
 
 | Verdict | What it proves |
