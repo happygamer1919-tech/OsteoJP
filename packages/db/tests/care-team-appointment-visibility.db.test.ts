@@ -95,6 +95,10 @@ const F = {
   apptWithT2: randomUUID(),
   /** The stranger's own booking with the OTHER patient. */
   apptStranger: randomUUID(),
+  /** CARE-LOC: a second clinic nobody in this fixture belongs to. */
+  otherLocation: randomUUID(),
+  /** The same patient, a colleague, AT THAT OTHER CLINIC. 0092's subject. */
+  apptOtherClinic: randomUUID(),
 };
 
 d("CARE-01: the appointment history of a patient a therapist treats", () => {
@@ -112,8 +116,19 @@ d("CARE-01: the appointment history of a patient a therapist treats", () => {
             (${F.t2},        ${F.tenant}, ${`t2-${F.t2.slice(0, 8)}@x.pt`}, 'Therapist T2'),
             (${F.stranger},  ${F.tenant}, ${`st-${F.stranger.slice(0, 8)}@x.pt`}, 'Stranger'),
             (${F.reception}, ${F.tenant}, ${`r-${F.reception.slice(0, 8)}@x.pt`}, 'Reception')`;
-    await p`insert into locations (id, tenant_id, name)
-            values (${F.location}, ${F.tenant}, 'Linda-a-Velha')`;
+    await p`insert into locations (id, tenant_id, name) values
+            (${F.location},      ${F.tenant}, 'Linda-a-Velha'),
+            (${F.otherLocation}, ${F.tenant}, 'Castelo Branco')`;
+    // CARE-LOC (0092): the care-team arms are now scoped to the viewer's OWN
+    // clinics, so a fixture with no `staff_locations` row gives every actor an
+    // EMPTY viewer_location_ids() and the policy admits nothing. Before 0092
+    // this table was irrelevant here and the fixture simply never wrote to it.
+    // T, T2 and the stranger all work at Linda-a-Velha; nobody is at Castelo
+    // Branco, which is what makes the cross-clinic arm below a real negative.
+    await p`insert into staff_locations (tenant_id, user_id, location_id) values
+            (${F.tenant}, ${F.t},        ${F.location}),
+            (${F.tenant}, ${F.t2},       ${F.location}),
+            (${F.tenant}, ${F.stranger}, ${F.location})`;
     await p`insert into patients (id, tenant_id, full_name) values
             (${F.patient},      ${F.tenant}, 'Paciente P'),
             (${F.otherPatient}, ${F.tenant}, 'Paciente Outro')`;
@@ -137,6 +152,15 @@ d("CARE-01: the appointment history of a patient a therapist treats", () => {
     await p`insert into appointments
               (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_by)
             values (${F.apptStranger}, ${F.tenant}, ${F.otherPatient}, ${F.stranger}, ${F.location},
+                    ${future.toISOString()}, ${new Date(future.getTime() + H).toISOString()},
+                    'scheduled', ${F.reception})`;
+
+    // CARE-LOC (0092): the SAME patient P, a colleague, at a clinic T does not
+    // work at. Before 0092 this was visible to T - that was the defect. It is
+    // the subject of the cross-clinic arm below.
+    await p`insert into appointments
+              (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_by)
+            values (${F.apptOtherClinic}, ${F.tenant}, ${F.patient}, ${F.t2}, ${F.otherLocation},
                     ${future.toISOString()}, ${new Date(future.getTime() + H).toISOString()},
                     'scheduled', ${F.reception})`;
   });
@@ -175,9 +199,50 @@ d("CARE-01: the appointment history of a patient a therapist treats", () => {
   it("T sees the COLLEAGUE's appointment with the same patient", async () => {
     // Ruling Q-CARE-1 (c), second arm: T has an appointment with P, so P's
     // whole appointment history is visible to T - including this row, whose
-    // practitioner is somebody else.
+    // practitioner is somebody else. AT T'S OWN CLINIC: see the CARE-LOC arm
+    // immediately below, which is the half 0092 took away.
     const seen = await patientHistorySeenBy(F.t);
     expect(seen).toContain(F.apptWithT2);
+  });
+
+  /* ================================================================== */
+  /* CARE-LOC (0092): the same rule STOPS AT THE VIEWER'S OWN CLINIC.    */
+  /* ================================================================== */
+
+  it("T does NOT see the same patient's appointment at a clinic T does not work at", async () => {
+    // Owner, 2026-09-21, option (b). Before 0092 this row WAS visible: the
+    // care-team arm carried no location predicate, and one single-clinic
+    // therapist on production could read tens of thousands of appointments at
+    // the clinic they do not belong to.
+    //
+    // apptOtherClinic is the SAME patient P and the SAME colleague T2 as the
+    // arm above - only the location differs. That is what makes this a
+    // measurement of the LOCATION predicate and not of anything else.
+    const seen = await patientHistorySeenBy(F.t);
+    expect(seen).not.toContain(F.apptOtherClinic);
+
+    // POSITIVE CONTROL, SAME READ: the same-clinic row IS there. Without it
+    // this arm would pass just as well on a principal that can read nothing,
+    // which is exactly how the first version of the production behaviour check
+    // reported a clean result on a database that had no subject in it.
+    expect(seen).toContain(F.apptWithT2);
+  });
+
+  it("and it comes back the moment T is given that clinic", async () => {
+    // The discriminator. If the row above were hidden for any reason OTHER
+    // than the location - a broken fixture, a patient scope, a tenant mismatch
+    // - granting the clinic would not bring it back, and this would fail.
+    await p`insert into staff_locations (tenant_id, user_id, location_id)
+            values (${F.tenant}, ${F.t}, ${F.otherLocation})`;
+    try {
+      expect(await patientHistorySeenBy(F.t)).toContain(F.apptOtherClinic);
+    } finally {
+      await p`delete from staff_locations
+               where tenant_id = ${F.tenant} and user_id = ${F.t}
+                 and location_id = ${F.otherLocation}`;
+    }
+    // ...and taking it away hides it again, in the same test.
+    expect(await patientHistorySeenBy(F.t)).not.toContain(F.apptOtherClinic);
   });
 
   it("T sees the patient's FULL history, both rows, in one read", async () => {
