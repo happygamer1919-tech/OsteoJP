@@ -192,7 +192,7 @@ export default async function StaffPage({
   const visibleStaff = staff.filter(
     (u) =>
       cardTitles.has(u.id) &&
-      matchesSearch(query, u.fullName, u.roleSlug ? ROLE_LABEL[u.roleSlug] : null) &&
+      matchesSearch(query, u.fullName, cardTitles.get(u.id), u.roleSlug ? ROLE_LABEL[u.roleSlug] : null) &&
       atLocation(u.id),
   );
 
@@ -475,6 +475,7 @@ export default async function StaffPage({
                     <StaffManageModal
                       userId={u.id}
                       fullName={u.fullName}
+                      displayName={cardTitles.get(u.id)}
                       email={u.email}
                       phone={u.phone ?? ""}
                       jobTitle={u.jobTitle ?? ""}

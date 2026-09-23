@@ -173,10 +173,11 @@ async function agendaOptions(
   bookable: boolean,
   toolbarLocationId: string | null = null,
   keepStaffId?: string,
+  assignments: [string, string[]][] = ASSIGNMENTS,
 ): Promise<AgendaOptions> {
   viewerLocationScope.mockResolvedValue(viewer.readScope);
   bookingLocationScope.mockResolvedValue(viewer.bookingScope);
-  readAssignments.mockResolvedValue(new Map(ASSIGNMENTS.map(([id, l]) => [id, [...l]])));
+  readAssignments.mockResolvedValue(new Map(assignments.map(([id, l]) => [id, [...l]])));
   const rows = new Map<unknown, unknown[]>([
     [users, userRows(bookable)],
     [locations, LOCATION_ROWS],
@@ -595,6 +596,14 @@ for (const bookable of [true, false]) {
         });
         expect(nesa(built.practitionerTwoOptions)).toEqual([TWO[1]]);
       });
+    });
+
+    it("a therapist never vanishes from their own list when the cached assignments are stale", async () => {
+      // Round 6 review: the 60 s cached map still says CB after a move to LV,
+      // while the booking scope (per request) already says LV.
+      const stale = ASSIGNMENTS.map(([id, l]): [string, string[]] => (id === LV_THERAPIST.userId ? [id, [CB]] : [id, l]));
+      const options = await agendaOptions(LV_THERAPIST, bookable, null, undefined, stale);
+      expect((options.allTherapists ?? options.therapists).map((o) => o.id)).toContain(LV_THERAPIST.userId);
     });
 
     // ======================================================================

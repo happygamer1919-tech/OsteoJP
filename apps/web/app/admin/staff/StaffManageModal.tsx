@@ -59,6 +59,7 @@ type Section = "contact" | "role" | "locations" | "service" | "hours";
 export function StaffManageModal({
   userId,
   fullName,
+  displayName,
   email,
   phone,
   jobTitle,
@@ -80,6 +81,12 @@ export function StaffManageModal({
 }: {
   userId: string;
   fullName: string;
+  /**
+   * NESA-SCOPE: the card's title (a same-named member suffixed by clinic), for
+   * the dialog header and its accessible name only. Never saved: the rename
+   * field keeps `fullName`.
+   */
+  displayName?: string;
   email: string;
   /** W8-02: optional staff contact phone; empty string when unset. */
   phone: string;
@@ -199,7 +206,7 @@ export function StaffManageModal({
 
       <dialog
         ref={ref}
-        aria-label={`${s["admin.staff.manage"]} — ${fullName}`}
+        aria-label={`${s["admin.staff.manage"]} — ${displayName ?? fullName}`}
         onCancel={(e) => {
           e.preventDefault();
           close();
@@ -220,7 +227,7 @@ export function StaffManageModal({
                 <h3 className="text-lg font-semibold text-v2-text-primary">
                   {s["admin.staff.manage"]}
                 </h3>
-                <p className="text-sm text-v2-text-secondary">{fullName}</p>
+                <p className="text-sm text-v2-text-secondary">{displayName ?? fullName}</p>
               </div>
               <Button
                 type="button"

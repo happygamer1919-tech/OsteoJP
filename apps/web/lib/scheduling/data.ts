@@ -790,7 +790,10 @@ export async function getAgendaOptions(
   // NESA-SCOPE: a THERAPIST's read scope is null (their reads are bounded by
   // own-data rules), so PL-14 lists every colleague for them. The staff they
   // are offered is narrowed here to their own clinics, on the same predicate,
-  // keeping unassigned colleagues and the caller's current value. Where a
+  // keeping unassigned colleagues, the caller's current value and ALWAYS the
+  // therapist themselves: the assignment map is cached for 60 seconds and the
+  // booking scope is read per request, so for a minute after a clinic move the
+  // two can disagree, and a therapist must never vanish from their own list. Where a
   // therapist sees this list at all: the edit drawer's Terapeuta and the ficha's
   // Consultas filter (the toolbar and Marcacoes filters are hidden for them,
   // Horarios lists only themselves, block time shows only their own name).
@@ -799,7 +802,7 @@ export async function getAgendaOptions(
       ? new Set(filterRosterByViewerScope(pl14Rows, assignmentMap, bookingScope).map((t) => t.id))
       : null;
   const scopedRows = therapistScoped
-    ? pl14Rows.filter((t) => therapistScoped.has(t.id) || t.id === opts?.keepStaffId)
+    ? pl14Rows.filter((t) => therapistScoped.has(t.id) || t.id === ctx.userId || t.id === opts?.keepStaffId)
     : pl14Rows;
 
   // PL-09 Phase 1: reception + admin only pick from their assigned location(s).
