@@ -44,11 +44,11 @@ import {
   type ClinicWindowRefusal,
 } from "@/lib/scheduling/clinic-hours-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
-import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
 import {
-  secondParticipantOptionsForTherapist,
-  withSharedResourceOptions,
-} from "@/lib/scheduling/shared-resource-guard";
+  bookingStaffOptions,
+  practitionerAfterLocationChange,
+} from "@/lib/scheduling/booking-staff-options";
+import { staffLabelContext } from "@/lib/scheduling/staff-options";
 import {
   getPatientPackBalanceAction,
   linkAppointmentToPackAction,
@@ -753,48 +753,44 @@ export function AppointmentDrawer({
     [options.therapistLocationIds],
   );
   const therapistPool = options.allTherapists ?? options.therapists;
-  // PL-10: a self-locked therapist's own display name, looked up from the same
-  // tenant-wide roster the dropdown draws from (the name is DATA, not a string
-  // key). The therapist is a bookable staff member, so this always resolves;
-  // the empty fallback is defensive only.
-  const selfTherapistName = selfLocked
-    ? therapistPool.find((t) => t.id === selfUserId)?.label ?? ""
-    : "";
-  // SCHED-17: the shared resources (NESA) at a self-locked therapist's own
-  // locations. With none - every clinic until the NESA migration is applied -
-  // the drawer renders exactly as before.
-  const sharedResourceOptions = selfLocked ? options.sharedResources ?? [] : [];
-  // SCHED-29: a self-locked therapist's "Terapeuta 2" is NESA at the chosen
-  // clinic and nobody else, so at LV it is empty and the field is not shown.
-  // Everyone else keeps the full list they had. The server re-checks it
-  // (secondParticipantCheck); this list is the offer, not the permission.
-  // SCHED-29.4 (Q-SCHED-29-4-1 = A): owner, admin and reception are offered the
-  // shared resources installed at the CHOSEN clinic in both selects, beside the
-  // is_bookable roster, whatever the machine's is_bookable says. The page hands
-  // these over from a per-request read, not from the 60-second reference cache,
-  // so a flag change shows on the next load. A therapist is not in this branch:
-  // their offer is the SCHED-17/SCHED-29 rule above and stays exactly as it was.
-  const frontDeskResources = viewer.role === "therapist" ? [] : options.sharedResources ?? [];
-  const practitionerTwoOptions = selfLocked
-    ? secondParticipantOptionsForTherapist(sharedResourceOptions, form.locationId || null, form.practitionerId)
-    : withSharedResourceOptions(options.therapists, frontDeskResources, form.locationId || null);
-  // Scope ONLY after the user actively picks a location (userChangedLocation).
-  // On open, the default location keeps the FULL list, so a therapist-first
-  // booking is unaffected and an unassigned therapist stays bookable until the
-  // Equipa data assigns them (the loop's "default-location behaviour applies"
-  // clause). keepId retains the already-selected therapist across the change.
-  const therapistOptions = withSharedResourceOptions(
-    userChangedLocation.current
-      ? therapistOptionsForBooking(
-          therapistPool,
-          therapistAssignments,
-          form.locationId || null,
-          form.practitionerId || null,
-        )
-      : therapistPool,
-    frontDeskResources,
-    form.locationId || null,
-  );
+  // NESA-SCOPE: every staff list below comes from ONE pure builder, so the role
+  // x mode matrix is tested there (booking-staff-options.test.ts) rather than
+  // through selects that mount only on a click.
+  //   - PL-10: a self-locked therapist's own name, from the same roster.
+  //   - SCHED-17: the machines a self-locked therapist may pick besides
+  //     themselves, now only those installed at the form's Localizacao.
+  //   - SCHED-29: a self-locked therapist's "Terapeuta 2" is a machine at the
+  //     chosen clinic and nobody else, so at a clinic without one it is empty
+  //     and the field is not shown. The server re-checks it.
+  //   - SCHED-29.4 (Q-SCHED-29-4-1 = A): owner, admin and reception are offered
+  //     the machines installed at the CHOSEN clinic in both selects, beside the
+  //     bookable roster, from the page's per-request read. A therapist adds none.
+  //   - W12-23: on CREATE the people are scoped only after the user picks a
+  //     location, so a therapist-first booking (W4-12) is unaffected; on EDIT
+  //     they are scoped to the booking's location from open. The current value
+  //     is always kept, synthesised from the appointment row when this viewer's
+  //     lists do not carry it (STAFF-01).
+  const staffLabels = useMemo(() => staffLabelContext(options), [options]);
+  const staffOptions = bookingStaffOptions({
+    isTherapist: viewer.role === "therapist",
+    selfLocked,
+    selfUserId,
+    pool: therapistPool,
+    assignments: therapistAssignments,
+    resources: options.sharedResources ?? [],
+    locationId: form.locationId || null,
+    practitionerId: form.practitionerId || null,
+    practitionerTwoId: form.practitionerTwoId || null,
+    locationTouched: userChangedLocation.current,
+    editing: editing
+      ? { practitionerId: editing.practitionerId, practitionerName: editing.practitionerName }
+      : null,
+    labels: staffLabels,
+  });
+  const selfTherapistName = staffOptions.selfName;
+  const sharedResourceOptions = staffOptions.selfResources;
+  const practitionerTwoOptions = staffOptions.practitionerTwoOptions;
+  const therapistOptions = staffOptions.therapistOptions;
   const noTherapistsAtLocation =
     userChangedLocation.current && !!form.locationId && therapistOptions.length === 0;
 
@@ -1254,8 +1250,11 @@ export function AppointmentDrawer({
           {selfLocked && sharedResourceOptions.length > 0 ? (
             // SCHED-17: a therapist still books only for themselves - PL-10 is
             // not relaxed - OR for a shared resource installed at one of their
-            // clinics. The server re-checks the location (shared_resource_location);
-            // this list is what they may choose, not what makes it allowed.
+            // clinics. NESA-SCOPE: only the one installed at the form's
+            // Localizacao, so a two-clinic therapist is never offered the other
+            // clinic's machine. The server re-checks the location
+            // (shared_resource_location); this list is what they may choose, not
+            // what makes it allowed.
             <Select
               value={form.practitionerId}
               onChange={(e) => {
@@ -1557,10 +1556,24 @@ export function AppointmentDrawer({
               const newLoc = e.target.value;
               // W8-01c — a selected pack that isn't offered at the new location is
               // cleared (packs are location-scoped; null = all locations).
+              // NESA-SCOPE: a self-locked therapist's machine not installed at the
+              // new clinic goes back to the therapist, because that select has no
+              // placeholder and would otherwise paint them while submitting it.
               setForm((f) => {
                 const pack = options.packs.find((p) => p.id === f.packId);
                 const packOk = !pack || pack.locationId === null || pack.locationId === newLoc;
-                return { ...f, locationId: newLoc, packId: packOk ? f.packId : "" };
+                return {
+                  ...f,
+                  locationId: newLoc,
+                  packId: packOk ? f.packId : "",
+                  practitionerId: practitionerAfterLocationChange({
+                    selfLocked,
+                    selfUserId,
+                    practitionerId: f.practitionerId,
+                    resources: options.sharedResources ?? [],
+                    locationId: newLoc,
+                  }),
+                };
               });
             }}
           >

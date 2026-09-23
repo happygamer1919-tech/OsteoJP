@@ -337,9 +337,12 @@ export default async function PatientProfilePage({
     marcacoesFilters.semNota;
   // The three dropdowns. Same 60s-cached reference read the Notas tab already
   // uses; fetched only when the tab that renders them is the one being shown.
+  // NESA-SCOPE: a therapist's Terapeuta list is narrowed to their own clinics,
+  // so the id the URL is filtering by is kept in it, or the select would paint
+  // its "all" option over a filtered list.
   const consultasOptions =
     tab === "consultas"
-      ? await getAgendaOptions(ctx)
+      ? await getAgendaOptions(ctx, null, { keepStaffId: marcacoesFilters.therapist || null })
       : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again),
   // narrowed by whatever the URL asks for. No filter set = the whole history,

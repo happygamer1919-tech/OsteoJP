@@ -30,6 +30,7 @@ import {
   filterTherapistsByLocation,
 } from "./therapist-location-filter";
 import { readTherapistLocationAssignments } from "./therapist-locations";
+import { clinicCodeMap, resolveStaffCollisions } from "./staff-options";
 import type {
   AgendaAppointment,
   AgendaFilters,
@@ -745,21 +746,36 @@ const fetchAgendaReferenceData = unstable_cache(
  * an unassigned therapist appears. See ./therapist-location-filter.ts for the
  * ruling and the predicate.
  *
+ * `keepStaffId` (NESA-SCOPE) is the id a caller's control currently holds (the
+ * ficha's ?terapeuta=). It survives the therapist clinic scoping and the name
+ * collision rule below, so a filter never paints its "all" option while the
+ * page is filtered by an id the list no longer carries.
+ * It does NOT reopen PL-14: a row that scope hides stays hidden.
+ *
  * Callers that pass no locationId keep their pre-W9-02 behaviour exactly.
  */
 export async function getAgendaOptions(
   ctx: RequestContext,
   locationId?: string | null,
+  opts?: { keepStaffId?: string | null },
 ): Promise<AgendaOptions> {
   // W12-23: the assignment map is now ALWAYS fetched (it is cached 60s), so the
   // booking drawer can scope its therapist dropdown to the form-selected location
   // regardless of the W9-02 toolbar location. The `therapists` field keeps its
   // W9-02 page/toolbar scoping unchanged.
-  // TWO awaits, not three. `viewerLocationScope` is React-cache()d per request
-  // and is already resolved by app/agenda/page.tsx:70 before this runs, so it
-  // costs no transaction here; the reference read is the only one that can.
-  const [{ therapistRows, locationRows, serviceRows, packRows, assignmentEntries }, locationScope] =
-    await Promise.all([fetchAgendaReferenceData(ctx), viewerLocationScope(ctx)]);
+  // Still ONE transaction. `viewerLocationScope` and `bookingLocationScope` both
+  // go through the React-cache()d `resolveViewerLocationIds`, already resolved by
+  // app/agenda/page.tsx before this runs, so neither costs a transaction here;
+  // the reference read is the only one that can.
+  const [
+    { therapistRows, locationRows, serviceRows, packRows, assignmentEntries },
+    locationScope,
+    bookingScope,
+  ] = await Promise.all([
+    fetchAgendaReferenceData(ctx),
+    viewerLocationScope(ctx),
+    bookingLocationScope(ctx),
+  ]);
 
   const assignmentMap = new Map(assignmentEntries);
 
@@ -769,13 +785,22 @@ export async function getAgendaOptions(
   // CR of 2026-07-30 closes it. A therapist with NO assignment at all is kept -
   // they belong to no clinic, so hiding them would be a data-entry gap silently
   // removing a real person, not isolation. The owner (scope null) is unaffected.
-  const rosterRows = filterRosterByViewerScope(therapistRows, assignmentMap, locationScope);
+  const pl14Rows = filterRosterByViewerScope(therapistRows, assignmentMap, locationScope);
 
-  const therapists = locationId
-    ? filterTherapistsByLocation(rosterRows, assignmentMap, locationId)
-    : rosterRows;
-  const therapistLocationIds: Record<string, string[]> = {};
-  for (const [id, locs] of assignmentMap) therapistLocationIds[id] = [...locs];
+  // NESA-SCOPE: a THERAPIST's read scope is null (their reads are bounded by
+  // own-data rules), so PL-14 lists every colleague for them. The staff they
+  // are offered is narrowed here to their own clinics, on the same predicate,
+  // keeping unassigned colleagues and the caller's current value. Where a
+  // therapist sees this list at all: the edit drawer's Terapeuta and the ficha's
+  // Consultas filter (the toolbar and Marcacoes filters are hidden for them,
+  // Horarios lists only themselves, block time shows only their own name).
+  const therapistScoped =
+    ctx.role === "therapist" && bookingScope
+      ? new Set(filterRosterByViewerScope(pl14Rows, assignmentMap, bookingScope).map((t) => t.id))
+      : null;
+  const scopedRows = therapistScoped
+    ? pl14Rows.filter((t) => therapistScoped.has(t.id) || t.id === opts?.keepStaffId)
+    : pl14Rows;
 
   // PL-09 Phase 1: reception + admin only pick from their assigned location(s).
   // The appointment DATA is already location-scoped in listAppointments; this
@@ -801,10 +826,30 @@ export async function getAgendaOptions(
   // sources of location truth drift silently, and the drift would be invisible
   // until somebody booked into a clinic they cannot see - which is precisely how
   // this defect was found.
-  const bookingScope = await bookingLocationScope(ctx);
   const bookableLocations = bookingScope
     ? locationRows.filter((l) => bookingScope.includes(l.id))
     : locationRows;
+
+  // NESA-SCOPE: two staff rows with one name (one machine per clinic). The
+  // viewer's clinics are the booking scope's: every active clinic for the owner
+  // and for an unassigned staffer, their staff_locations otherwise. Computed
+  // HERE, after the 60-second shared cache and never inside it, because the
+  // labels depend on who is looking. The toolbar narrowing below runs on the
+  // labelled roster, so a label never changes with the toolbar's clinic.
+  const viewerClinicIds = bookableLocations.map((l) => l.id);
+  const clinicCodeById = clinicCodeMap(locationRows);
+  const rosterRows = resolveStaffCollisions(scopedRows, {
+    viewerClinicIds,
+    assignments: assignmentMap,
+    clinicCodeById,
+    keepId: opts?.keepStaffId ?? null,
+  });
+
+  const therapists = locationId
+    ? filterTherapistsByLocation(rosterRows, assignmentMap, locationId)
+    : rosterRows;
+  const therapistLocationIds: Record<string, string[]> = {};
+  for (const [id, locs] of assignmentMap) therapistLocationIds[id] = [...locs];
 
   return {
     therapists,
@@ -814,5 +859,7 @@ export async function getAgendaOptions(
     bookableLocations,
     services: serviceRows,
     packs: packRows,
+    viewerClinicIds,
+    clinicCodes: Object.fromEntries(clinicCodeById),
   };
 }
