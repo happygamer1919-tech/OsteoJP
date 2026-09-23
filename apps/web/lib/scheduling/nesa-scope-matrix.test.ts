@@ -509,7 +509,10 @@ for (const bookable of [true, false]) {
           staffLabelContext(options)!,
           options.allTherapists ?? options.therapists,
         );
-        expect(rows.map((r) => r.name)).toEqual(["NESA (CB)", "NESA (LV)"]);
+        // Round 7 review: a row the filter lists reads as the filter reads it
+        // (LV's machine is "NESA" in this admin's filter when it is in the
+        // roster); the unlisted twin is the one told apart.
+        expect(rows.map((r) => r.name)).toEqual(bookable ? ["NESA (CB)", "NESA"] : ["NESA (CB)", "NESA (LV)"]);
       });
 
       it("Estatisticas breakdown holding only LV's machine: the plain name the filter shows", async () => {

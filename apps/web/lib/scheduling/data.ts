@@ -846,6 +846,7 @@ export async function getAgendaOptions(
     assignments: assignmentMap,
     clinicCodeById,
     keepId: opts?.keepStaffId ?? null,
+    selfId: ctx.userId,
   });
 
   const therapists = locationId

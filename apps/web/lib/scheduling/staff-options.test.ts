@@ -184,6 +184,23 @@ describe("resolveStaffCollisions - who is shown and how they are named", () => {
   });
 });
 
+describe("selfId - the viewer is never dropped from their own list", () => {
+  it("keeps the viewer's row even when the cached assignments put it outside their clinics", () => {
+    // Round 7 review: a same-named colleague at the viewer's clinic, and the
+    // viewer's own (stale) assignment at the other clinic.
+    const self = { id: "self", label: "Ana Silva" };
+    const colleague = { id: "other", label: "Ana Silva" };
+    const assignments = new Map([
+      [self.id, [CB]],
+      [colleague.id, [LV]],
+    ]);
+    const base = { viewerClinicIds: [LV], assignments, clinicCodeById: CODES };
+    expect(resolveStaffCollisions([self, colleague], { ...base, selfId: self.id }).map((o) => o.id)).toContain(self.id);
+    // Control: without selfId the same input drops the viewer's row.
+    expect(resolveStaffCollisions([self, colleague], base).map((o) => o.id)).not.toContain(self.id);
+  });
+});
+
 describe("labelStaffCollisions - labels only, nothing dropped", () => {
   it("keeps the row a single-clinic viewer would not be offered, and labels both apart", () => {
     const out = labelStaffCollisions([NESA_CB, NESA_LV], {
@@ -368,8 +385,10 @@ describe("labelCareTeamCard - members and picker named as one list", () => {
     const ctxCb = { viewerClinicIds: [CB], assignments: ASSIGNMENTS, clinicCodeById: CODES };
     const candidates = resolveStaffCollisions([BRUNO, NESA_CB, NESA_LV], ctxCb);
     const out = labelCareTeamCard(candidates, [{ userId: NESA_LV.id, fullName: "NESA" }], ctxCb, candidates);
+    // The viewer's own machine reads as it does everywhere for them ("NESA");
+    // the other clinic's member is the one told apart.
     expect(out.members).toEqual([{ userId: NESA_LV.id, fullName: "NESA (LV)" }]);
-    expect(out.candidates.map((c) => c.label)).toEqual([BRUNO.label, "NESA (CB)"]);
+    expect(out.candidates.map((c) => c.label)).toEqual([BRUNO.label, "NESA"]);
   });
 
   it("no collision on the card: plain names, candidates returned as the same objects", () => {

@@ -546,7 +546,7 @@ export function StaffManageModal({
                       opened as a stacked top-layer dialog above this modal. */}
                   <TherapistBlocks
                     therapistId={userId}
-                    therapistName={fullName}
+                    therapistName={displayName ?? fullName}
                     blocks={blocks}
                     labels={blockLabels}
                   />

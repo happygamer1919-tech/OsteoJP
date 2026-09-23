@@ -44,6 +44,8 @@ export type StaffLabelContext = {
   clinicCodeById: ReadonlyMap<string, string>;
   /** The current value of the control, always kept. */
   keepId?: string | null;
+  /** The viewer's own row, always kept: nobody vanishes from their own list. */
+  selfId?: string | null;
 };
 
 const TRAILING_PARENTHETICAL = /\(([^()]*)\)\s*$/;
@@ -133,7 +135,11 @@ export function resolveStaffCollisions<T extends StaffOption>(
   options: readonly T[],
   ctx: StaffLabelContext,
 ): T[] {
-  return resolve(options, ctx, (id) => !!ctx.keepId && id === ctx.keepId);
+  return resolve(
+    options,
+    ctx,
+    (id) => (!!ctx.keepId && id === ctx.keepId) || (!!ctx.selfId && id === ctx.selfId),
+  );
 }
 
 /**
@@ -188,6 +194,8 @@ export function reconcileAgendaStaff(args: {
   >;
   tenantResources: readonly SharedResource[];
   offered: readonly SharedResource[];
+  /** The viewer's own id, kept through the collision rule. */
+  selfId?: string | null;
 }): Required<
   Pick<AgendaOptions, "therapists" | "allTherapists" | "therapistLocationIds" | "sharedResources">
 > {
@@ -229,7 +237,9 @@ export function reconcileAgendaStaff(args: {
     listed.add(o.id);
     union.push({ id: o.id, label: o.label });
   }
-  const labelById = new Map(resolveStaffCollisions(union, labels).map((o) => [o.id, o.label]));
+  const labelById = new Map(
+    resolveStaffCollisions(union, { ...labels, selfId: args.selfId ?? null }).map((o) => [o.id, o.label]),
+  );
 
   const relabel = <T extends StaffOption>(list: readonly T[]): T[] =>
     list
@@ -247,12 +257,11 @@ export function reconcileAgendaStaff(args: {
  * A breakdown row (Estatisticas) relabelled by id, never dropped. Rows without
  * a practitioner id pass through untouched.
  *
- * Rows that collide with each other are labelled apart by the collision rule.
- * A row with nothing to collide with takes its label from `known`, the
- * viewer-wide option list the same page's filter shows (already resolved by
- * getAgendaOptions over the whole roster), so a breakdown holding only one of
- * two same-named machines still reads "NESA (CB)" beside a filter that says
- * "NESA (CB)".
+ * A row listed in `known` (the viewer-wide option list the same page's filter
+ * shows, already resolved by getAgendaOptions) takes that label, so the same id
+ * reads the same in the filter and the breakdown. A row the filter does not list
+ * takes the collision rule over the rows, which tells it apart from a listed
+ * twin.
  */
 export function relabelStaffRows<R extends { id: string | null; name: string }>(
   rows: readonly R[],
@@ -264,11 +273,11 @@ export function relabelStaffRows<R extends { id: string | null; name: string }>(
   const labelById = new Map(labelStaffCollisions(named, ctx).map((o) => [o.id, o.label]));
   return rows.map((r) => {
     if (!r.id) return r;
-    // Two rows colliding in THIS list are told apart here, whatever the filter
-    // shows (a single-clinic admin's breakdown can hold both machines' rows);
-    // a row with nothing to collide with takes the filter's label.
-    const fromRows = labelById.get(r.id);
-    const label = fromRows !== undefined && fromRows !== r.name ? fromRows : (knownById.get(r.id) ?? fromRows);
+    // A row the page's filter lists reads exactly as the filter reads it. Only a
+    // row the filter does not list takes the collision rule over the rows, so
+    // a single-clinic admin's breakdown holding both machines reads "NESA"
+    // (theirs, as in the filter) beside "NESA (CB)": distinct, and in agreement.
+    const label = knownById.get(r.id) ?? labelById.get(r.id);
     return label === undefined || label === r.name ? r : { ...r, name: label };
   });
 }

@@ -269,6 +269,7 @@ export default async function AgendaPage({
     options,
     tenantResources: lockTherapist ? therapistTenantResources : frontDeskResources,
     offered: lockTherapist ? sharedResources : offeredToFrontDesk,
+    selfId: actor.userId,
   });
 
   return (
