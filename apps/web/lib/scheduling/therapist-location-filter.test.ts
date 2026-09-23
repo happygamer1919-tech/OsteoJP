@@ -148,6 +148,26 @@ describe("therapistOptionsForBooking - W12-23 booking dropdown scoping", () => {
   it("keepId is ignored under Todas (full list already includes it)", () => {
     expect(optsAt(null, TIAGO.id)).toEqual(ROSTER.map((t) => t.id));
   });
+
+  it("NESA-SCOPE: keepId returns the kept row WITH the label the collision rule gave it", () => {
+    // Two machines with one name, one per clinic, labelled for a viewer who sees
+    // both. Editing an LV booking that names the CB row keeps that row, and the
+    // select shows it as "(CB)" beside LV's own, never as a second bare "NESA".
+    const lv = "loc-lv-2";
+    const cb = "loc-cb-2";
+    const machines = [
+      { id: "nesa-cb", label: "NESA (CB)" },
+      { id: "nesa-lv", label: "NESA (LV)" },
+    ];
+    const assignments = new Map<string, string[]>([
+      ["nesa-cb", [cb]],
+      ["nesa-lv", [lv]],
+    ]);
+    expect(therapistOptionsForBooking(machines, assignments, lv, "nesa-cb")).toEqual([
+      { id: "nesa-lv", label: "NESA (LV)" },
+      { id: "nesa-cb", label: "NESA (CB)" },
+    ]);
+  });
 });
 
 /* ------------------------------------------------------------------ */

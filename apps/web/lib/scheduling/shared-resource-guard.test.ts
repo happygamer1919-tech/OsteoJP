@@ -95,6 +95,21 @@ describe("withSharedResourceOptions - SCHED-29.4, what owner, admin and receptio
     expect(withSharedResourceOptions(roster, [NESA], CB)).toEqual(roster);
   });
 
+  it("NESA-SCOPE: dedupes by id, so a roster row labelled with its clinic is not joined by a plain twin", () => {
+    // A two-clinic viewer's roster carries the machine as "NESA (CB)"; the
+    // resource list may still say "NESA". One option, the roster's label.
+    const roster = [...PEOPLE, { id: "nesa", label: "NESA (CB)" }];
+    const out = withSharedResourceOptions(roster, [NESA], CB);
+    expect(out.filter((o) => o.id === "nesa")).toEqual([{ id: "nesa", label: "NESA (CB)" }]);
+  });
+
+  it("NESA-SCOPE: two same-named machines, one per clinic, are two options only where no clinic is chosen", () => {
+    const lv: SharedResource = { id: "nesa-lv", label: "NESA", locationIds: [LV] };
+    expect(withSharedResourceOptions([], [NESA, lv], CB).map((o) => o.id)).toEqual(["nesa"]);
+    expect(withSharedResourceOptions([], [NESA, lv], LV).map((o) => o.id)).toEqual(["nesa-lv"]);
+    expect(withSharedResourceOptions([], [NESA, lv], null).map((o) => o.id)).toEqual(["nesa", "nesa-lv"]);
+  });
+
   it("is keyed on the resource list alone: no resource, no extra option, whatever is_bookable says", () => {
     expect(withSharedResourceOptions(PEOPLE, [], CB)).toEqual(PEOPLE);
   });
