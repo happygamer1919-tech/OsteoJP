@@ -336,6 +336,19 @@ describe("relabelStaffRows - a breakdown row is labelled, never dropped", () => 
   });
 });
 
+describe("relabelStaffRows - an unlisted row against a twin only the filter lists", () => {
+  it("a single-clinic admin's breakdown holding only the OTHER clinic's machine reads it apart", () => {
+    // Round 8 review: the row read "NESA", the text the filter uses for a
+    // different id.
+    const ctxLv = { viewerClinicIds: [LV], assignments: ASSIGNMENTS, clinicCodeById: CODES };
+    const filter = resolveStaffCollisions([ANA, NESA_CB, NESA_LV], ctxLv);
+    const rows = [{ id: NESA_CB.id, name: "NESA", valueCents: 1, count: 1 }];
+    expect(relabelStaffRows(rows, ctxLv, filter).map((r) => r.name)).toEqual(["NESA (CB)"]);
+    // Control: without the filter's options there is nothing to collide with.
+    expect(relabelStaffRows(rows, ctxLv).map((r) => r.name)).toEqual(["NESA"]);
+  });
+});
+
 describe("staffCardTitles - Equipa card titles", () => {
   const staff = [
     { id: ANA.id, fullName: ANA.label },

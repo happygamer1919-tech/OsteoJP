@@ -260,8 +260,8 @@ export function reconcileAgendaStaff(args: {
  * A row listed in `known` (the viewer-wide option list the same page's filter
  * shows, already resolved by getAgendaOptions) takes that label, so the same id
  * reads the same in the filter and the breakdown. A row the filter does not list
- * takes the collision rule over the rows, which tells it apart from a listed
- * twin.
+ * takes the collision rule over the rows and the filter's options together, which
+ * tells it apart from a listed twin whether or not that twin has a row.
  */
 export function relabelStaffRows<R extends { id: string | null; name: string }>(
   rows: readonly R[],
@@ -270,7 +270,11 @@ export function relabelStaffRows<R extends { id: string | null; name: string }>(
 ): R[] {
   const knownById = new Map(known.map((o) => [o.id, o.label]));
   const named = rows.flatMap((r) => (r.id ? [{ id: r.id, label: r.name }] : []));
-  const labelById = new Map(labelStaffCollisions(named, ctx).map((o) => [o.id, o.label]));
+  // The collision set is the rows PLUS the filter's options, so an unlisted row
+  // is told apart from a listed twin even when the twin has no row of its own.
+  const inRows = new Set(named.map((o) => o.id));
+  const union = [...named, ...known.filter((o) => !inRows.has(o.id)).map((o) => ({ id: o.id, label: o.label }))];
+  const labelById = new Map(labelStaffCollisions(union, ctx).map((o) => [o.id, o.label]));
   return rows.map((r) => {
     if (!r.id) return r;
     // A row the page's filter lists reads exactly as the filter reads it. Only a
