@@ -145,3 +145,22 @@ describe("StaffManageModal — W12-40 consolidated member management", () => {
     expect(html).not.toContain("Horários");
   });
 });
+
+describe("StaffManageModal - NESA-SCOPE display name", () => {
+  it("the header and the dialog's name use the card title; the rename field keeps the raw name", () => {
+    const html = renderToStaticMarkup(
+      createElement(StaffManageModal, { ...baseProps, isTherapist: false, showHours: false, fullName: "NESA", displayName: "NESA (LV)" }),
+    );
+    expect(html).toContain(">NESA (LV)</p>");
+    expect(html).toMatch(/aria-label="[^"]*NESA \(LV\)"/);
+    expect(html).toContain('name="fullName"');
+    expect(html).toMatch(/name="fullName"[^>]*value="NESA"|value="NESA"[^>]*name="fullName"/);
+    expect(html).not.toMatch(/value="NESA \(LV\)"/);
+  });
+
+  it("control: without displayName the header shows the raw name, as before", () => {
+    const html = renderToStaticMarkup(createElement(StaffManageModal, { ...baseProps, isTherapist: false, showHours: false, fullName: "NESA" }));
+    expect(html).toContain(">NESA</p>");
+    expect(html).not.toContain("NESA (LV)");
+  });
+});

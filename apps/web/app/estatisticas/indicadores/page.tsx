@@ -3,6 +3,8 @@ import { can } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { defaultKpiFrom, getKpiReports, type KpiFilters } from "@/lib/statistics/kpi-queries";
+import { getAgendaOptions } from "@/lib/scheduling/data";
+import { relabelStaffRows, staffLabelContext } from "@/lib/scheduling/staff-options";
 import { s } from "@/lib/i18n";
 
 import { IndicadoresView } from "./indicadores-view";
@@ -50,8 +52,18 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   // change, no migration.
   // ON REQUEST ONLY since 2026-09-19 (owner ruling): `shouldMeasure` is the role
   // AND `?medicao=1`. Without the parameter this is `await fn()` for everybody.
-  const measured = await collectFor(shouldMeasure(actor, sp), async () => getKpiReports(actor, filters));
-  const reports = measured.value;
+  const measured = await collectFor(shouldMeasure(actor, sp), async () =>
+    Promise.all([getKpiReports(actor, filters), getAgendaOptions(actor)]),
+  );
+  const [rawReports, options] = measured.value;
+  // NESA-SCOPE: Top terapeutas groups by staff id, so two machines with one name
+  // are two bars. They take the same labels as the Painel breakdown and are
+  // never dropped. The two per-therapist pivots are unchanged: SQL sums them by
+  // name, so there is no id left to label.
+  const staffLabels = staffLabelContext(options);
+  const reports = staffLabels
+    ? { ...rawReports, topTherapists: relabelStaffRows(rawReports.topTherapists, staffLabels, options.allTherapists ?? options.therapists) }
+    : rawReports;
 
   return (
     <>
