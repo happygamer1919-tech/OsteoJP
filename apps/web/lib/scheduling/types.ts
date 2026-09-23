@@ -166,6 +166,22 @@ export type AgendaOptions = {
    * Absent or empty until the NESA migration is applied.
    */
   sharedResources?: { id: string; label: string; locationIds: string[] }[];
+  /**
+   * NESA-SCOPE - what a client surface needs to label a staff option it adds
+   * itself (the booking drawer's kept current value) with the same collision
+   * rule the server applied to the lists above (lib/scheduling/staff-options.ts).
+   *
+   *   - viewerClinicIds: the viewer's clinics. Every active clinic for the owner
+   *     and for an unassigned staffer (bookingLocationScope's fallback), their
+   *     staff_locations otherwise. Equal to the ids of `bookableLocations`.
+   *   - clinicCodes: active clinic id -> its short code, for EVERY active clinic,
+   *     because a kept option can belong to a clinic the viewer is not in.
+   *
+   * Optional so existing option mocks keep type-checking; absent means labels
+   * are left exactly as they came.
+   */
+  viewerClinicIds?: string[];
+  clinicCodes?: Record<string, string>;
 };
 
 export type AgendaFilters = {

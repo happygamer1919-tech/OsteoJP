@@ -179,6 +179,51 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
   });
 });
 
+// NESA-SCOPE: the Terapeutas filter renders the roster getAgendaOptions built,
+// which labels two same-named machines with their clinics for a viewer who sees
+// both. The filter carries ids, so the URL value selects the right row.
+describe("MarcacoesView Terapeutas filter - one machine per clinic under one name (NESA-SCOPE)", () => {
+  const TWINS: AgendaOptions = {
+    ...OPTIONS,
+    therapists: [
+      { id: "nesa-cb", label: "NESA (CB)" },
+      { id: "nesa-lv", label: "NESA (LV)" },
+    ],
+  };
+
+  it("lists both rows apart, and the filtered id is the option shown", () => {
+    const html = render(
+      <MarcacoesView
+        filters={{ ...baseFilters, practitionerId: "nesa-lv" }}
+        lockTherapist={false}
+        viewer={VIEWER}
+        options={TWINS}
+        serviceFilterOptions={SERVICES}
+        canHardDelete={false}
+        appointments={[]}
+      />,
+    );
+    expect(html).toContain('<option value="nesa-cb">NESA (CB)</option>');
+    expect(html).toContain('<option value="nesa-lv" selected="">NESA (LV)</option>');
+  });
+
+  it("a therapist has no Terapeutas filter here at all, so no staff name is listed", () => {
+    const html = render(
+      <MarcacoesView
+        filters={baseFilters}
+        lockTherapist
+        viewer={{ role: "therapist", userId: "t-1" }}
+        options={TWINS}
+        serviceFilterOptions={SERVICES}
+        canHardDelete={false}
+        appointments={[]}
+      />,
+    );
+    expect(html).not.toContain('value="nesa-cb"');
+    expect(html).not.toContain('value="nesa-lv"');
+  });
+});
+
 describe("W9-06 items 9 + 10 - created-by provenance + note hover on marcacoes rows", () => {
   function renderRow(over: Partial<AgendaAppointment>) {
     return render(
