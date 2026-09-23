@@ -58,3 +58,9 @@ export * from "./src/shared-resource";
 // own check is how they would come to disagree about whether the intake exists.
 export * from "./src/guest-intake";
 export * from "./src/guest-intake-staff";
+
+// RGPD-01 - whether the pending patient_rgpd_acceptances table exists yet.
+// Exported from the package for the reason `guest-intake` above is: the ficha
+// read and the creation form both gate on the same answer, and each keeping its
+// own check is how they would come to disagree about whether the table exists.
+export * from "./src/rgpd-acceptance-schema";
