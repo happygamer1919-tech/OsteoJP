@@ -23,25 +23,30 @@ import { CONSENT_ITEM_KEYS } from "../clinical/consent";
  *      its latest row feeds the no-show fee gate (W13-05), so an RGPD row there
  *      would answer that gate's question with a different document's consent.
  *
- * The migration is asserted from its FILE rather than from a live database,
- * because it is deliberately unnumbered and unapplied: it cannot be read out of
- * a schema yet, and the properties below are the ones that must be true before
- * it ever is.
+ * The migration is asserted from its FILE rather than from a live database, so
+ * the properties below hold on any checkout whether or not 0093 is applied to
+ * the database the suite happens to reach. It was parked unnumbered in
+ * migrations-pending until 2026-09-23, when it was promoted to 0093 with its
+ * bytes unchanged.
  */
 
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
 const MIGRATION_PATH = join(
   REPO_ROOT,
-  "packages/db/migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql",
+  "packages/db/migrations/0093_patient_rgpd_acceptances.sql",
 );
 
-describe("the RGPD consent migration is parked, unnumbered, and additive", () => {
-  it("lives in migrations-pending and takes no number of its own", () => {
-    expect(existsSync(MIGRATION_PATH), "the pending migration is missing").toBe(true);
-    // The applier reads packages/db/migrations and its journal. A numbered copy
-    // sitting there would be applied out from under the held PR.
-    const applied = readdirSync(join(REPO_ROOT, "packages/db/migrations"));
-    expect(applied.some((f) => f.includes("patient_rgpd_acceptances"))).toBe(false);
+describe("the RGPD consent migration is promoted once, as 0093, and additive", () => {
+  it("is numbered exactly once, and the pending copy is gone", () => {
+    expect(existsSync(MIGRATION_PATH), "0093_patient_rgpd_acceptances.sql is missing").toBe(true);
+    // Two numbered copies would be two journal entries for one table; a pending
+    // copy left behind is a second source of truth for the same bytes.
+    const numbered = readdirSync(join(REPO_ROOT, "packages/db/migrations")).filter((f) =>
+      f.includes("patient_rgpd_acceptances"),
+    );
+    expect(numbered).toEqual(["0093_patient_rgpd_acceptances.sql"]);
+    const pending = readdirSync(join(REPO_ROOT, "packages/db/migrations-pending"));
+    expect(pending.some((f) => f.includes("patient_rgpd_acceptances"))).toBe(false);
   });
 
   it("touches no existing table", () => {

@@ -19,11 +19,20 @@
 -- 5 reads the privileges themselves, because a table with no UPDATE policy but
 -- an UPDATE grant is one policy away from being writable.
 --
+-- EXACT, NOT "LOOKS LIKE". The index, the CHECK, the three foreign keys and
+-- both policy expressions are compared to the exact text Postgres 17 renders
+-- for them (the policy expressions by md5, as 0092's post-check does). A LIKE
+-- would pass `tenant_id = jwt_tenant_id() OR true`; this does not. The
+-- expected values were read on the rehearsal database after the apply.
+--
+-- THIS FILE DOES NOT OPEN ITS OWN TRANSACTION. Stage 2 wraps it in
+-- `-c "begin read only" ... -c "rollback"`, so the server refuses any write.
+--
 -- Run:
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
 --        -v policies_before=<stage 1> -v secdef_before=<stage 1>
 --        -v public_tables_before=<stage 1> -v other_policies_md5=<stage 1>
---        -f scripts/db/postcheck-rgpd.sql
+--        -c "begin read only" -f scripts/db/postcheck-rgpd.sql -c "rollback"
 -- ============================================================================
 
 \if :{?policies_before}
@@ -65,25 +74,32 @@ WITH t AS (
       WHERE n.nspname = 'public' AND c.relname = 'patient_rgpd_acceptances')                     AS rls_on,
     (SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class ic ON ic.oid = i.indexrelid
       WHERE ic.relname = 'patient_rgpd_acceptances_patient_idx')                                 AS idx_def,
-    (SELECT count(*)::int FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
-      WHERE c.relname = 'patient_rgpd_acceptances'
-        AND con.conname = 'patient_rgpd_acceptances_version_not_blank' AND con.contype = 'c')    AS chk_count,
-    (SELECT count(*)::int FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
-      WHERE c.relname = 'patient_rgpd_acceptances' AND con.contype = 'f')                        AS fk_count,
+    (SELECT count(*)::int FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid
+      WHERE c.relname = 'patient_rgpd_acceptances')                                              AS idx_total,
+    (SELECT string_agg(pg_get_constraintdef(con.oid), ' ; ') FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
+      WHERE c.relname = 'patient_rgpd_acceptances' AND con.contype = 'c')                        AS chk_defs,
+    (SELECT string_agg(a.attname || '->' || n2.nspname || '.' || c2.relname
+                       || '/' || con.confdeltype::text || con.confupdtype::text, ',' ORDER BY a.attname)
+       FROM pg_constraint con
+       JOIN pg_class c ON c.oid = con.conrelid
+       JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
+       JOIN pg_class c2 ON c2.oid = con.confrelid
+       JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
+      WHERE c.relname = 'patient_rgpd_acceptances' AND con.contype = 'f')                        AS fk_sig,
     (SELECT count(*)::int FROM pg_policy pol JOIN pg_class c ON c.oid = pol.polrelid
       WHERE c.relname = 'patient_rgpd_acceptances')                                              AS tbl_policies,
     (SELECT pol.polcmd::text || '/' || pol.polpermissive::text || '/'
             || coalesce(array_to_string(array(SELECT pg_get_userbyid(r) FROM unnest(pol.polroles) r ORDER BY 1), ','), '')
             || '/' || CASE WHEN pol.polwithcheck IS NULL THEN 'no-check' ELSE 'CHECK' END
        FROM pg_policy pol WHERE pol.polname = 'patient_rgpd_acceptances_tenant_select')          AS sel_shape,
-    (SELECT pg_get_expr(pol.polqual, pol.polrelid) FROM pg_policy pol
-      WHERE pol.polname = 'patient_rgpd_acceptances_tenant_select')                              AS sel_qual,
+    (SELECT md5(pg_get_expr(pol.polqual, pol.polrelid)) FROM pg_policy pol
+      WHERE pol.polname = 'patient_rgpd_acceptances_tenant_select')                              AS sel_qual_md5,
     (SELECT pol.polcmd::text || '/' || pol.polpermissive::text || '/'
             || coalesce(array_to_string(array(SELECT pg_get_userbyid(r) FROM unnest(pol.polroles) r ORDER BY 1), ','), '')
             || '/' || CASE WHEN pol.polqual IS NULL THEN 'no-using' ELSE 'USING' END
        FROM pg_policy pol WHERE pol.polname = 'patient_rgpd_acceptances_tenant_insert')          AS ins_shape,
-    (SELECT pg_get_expr(pol.polwithcheck, pol.polrelid) FROM pg_policy pol
-      WHERE pol.polname = 'patient_rgpd_acceptances_tenant_insert')                              AS ins_check,
+    (SELECT md5(pg_get_expr(pol.polwithcheck, pol.polrelid)) FROM pg_policy pol
+      WHERE pol.polname = 'patient_rgpd_acceptances_tenant_insert')                              AS ins_check_md5,
     (SELECT count(*)::int FROM pg_policy pol JOIN pg_class c ON c.oid = pol.polrelid
       WHERE c.relname = 'patient_rgpd_acceptances' AND pol.polcmd IN ('w', 'd', '*'))            AS write_policies,
     (SELECT count(*)::int FROM pg_policy)                                                        AS policies_now,
@@ -103,18 +119,25 @@ WITH t AS (
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE pol.polname NOT IN ('patient_rgpd_acceptances_tenant_select',
                                 'patient_rgpd_acceptances_tenant_insert'))                      AS other_md5_now
+), o AS (
+  SELECT to_regclass('public.patient_rgpd_acceptances')::oid AS rel
 ), g AS (
-  SELECT *,
-    has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'SELECT')   AS a_sel,
-    has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'INSERT')   AS a_ins,
-    has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'UPDATE')   AS a_upd,
-    has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'DELETE')   AS a_del,
-    has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'TRUNCATE') AS a_trunc,
-    (has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'SELECT')
-     OR has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'INSERT')
-     OR has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'UPDATE')
-     OR has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'DELETE'))    AS patient_any
-  FROM t
+  /* Privileges are read through the table's oid, so a missing table gives NULL
+   * and a FAIL row below rather than an ERROR. */
+  SELECT t.*,
+    coalesce(has_table_privilege('authenticated', o.rel, 'SELECT'), false)   AS a_sel,
+    coalesce(has_table_privilege('authenticated', o.rel, 'INSERT'), false)   AS a_ins,
+    coalesce(has_table_privilege('authenticated', o.rel, 'UPDATE'), true)    AS a_upd,
+    coalesce(has_table_privilege('authenticated', o.rel, 'DELETE'), true)    AS a_del,
+    coalesce(has_table_privilege('authenticated', o.rel, 'TRUNCATE'), true)  AS a_trunc,
+    /* The portal patient role and anon hold NOTHING, all seven privileges.
+     * TRUNCATE ignores row level security, so it is checked like the rest. */
+    coalesce((SELECT string_agg(r || ':' || p, ',' ORDER BY r, p)
+                FROM unnest(array['anon', 'patient']) r
+               CROSS JOIN unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) p
+               WHERE has_table_privilege(r, o.rel, p)), 'none')
+      || CASE WHEN o.rel IS NULL THEN ' (table absent)' ELSE '' END           AS outsiders_hold
+  FROM t CROSS JOIN o
 )
 SELECT '1. the consent table exists, exactly once'                    AS check,
        tbl_count::text                                                AS observed,
@@ -122,41 +145,47 @@ SELECT '1. the consent table exists, exactly once'                    AS check,
        CASE WHEN tbl_count = 1 THEN 'OK' ELSE 'FAIL' END              AS verdict FROM g
 UNION ALL SELECT '2. row level security is ENABLED on it', coalesce(rls_on::text, 'absent'), 'true',
        CASE WHEN rls_on THEN 'OK' ELSE 'FAIL' END FROM g
-UNION ALL SELECT '3. its index leads (tenant_id, patient_id, accepted_at DESC)',
+UNION ALL SELECT '3. exactly two indexes: the key, and a plain (not UNIQUE, not partial) index on (tenant_id, patient_id, accepted_at DESC)',
        CASE WHEN idx_def IS NULL THEN 'absent'
-            WHEN idx_def LIKE '%(tenant_id, patient_id, accepted_at DESC)%' THEN 'present, those columns'
-            ELSE 'present, OTHER columns' END,
-       'present, those columns',
-       CASE WHEN idx_def LIKE '%(tenant_id, patient_id, accepted_at DESC)%' THEN 'OK' ELSE 'FAIL' END FROM g
-UNION ALL SELECT '4. the not-blank version CHECK and the three foreign keys exist',
-       chk_count::text || ' check, ' || fk_count::text || ' foreign keys', '1 check, 3 foreign keys',
-       CASE WHEN chk_count = 1 AND fk_count = 3 THEN 'OK' ELSE 'FAIL' END FROM g
+            WHEN idx_def = 'CREATE INDEX patient_rgpd_acceptances_patient_idx ON public.patient_rgpd_acceptances USING btree (tenant_id, patient_id, accepted_at DESC)'
+            THEN 'exact' ELSE 'DIFFERENT' END || ', ' || coalesce(idx_total, 0)::text || ' indexes',
+       'exact, 2 indexes',
+       CASE WHEN idx_def = 'CREATE INDEX patient_rgpd_acceptances_patient_idx ON public.patient_rgpd_acceptances USING btree (tenant_id, patient_id, accepted_at DESC)'
+             AND idx_total = 2 THEN 'OK' ELSE 'FAIL' END FROM g
+-- NO ACTION ('a') on every foreign key, patient_id included: a consent record
+-- must never vanish in a cascade.
+UNION ALL SELECT '4. the not-blank CHECK, and exactly three NO ACTION foreign keys to the right tables',
+       coalesce(chk_defs, 'no check') || ' | ' || coalesce(fk_sig, 'no foreign keys'),
+       'CHECK ((btrim(rgpd_version) <> ''''::text)) | patient_id->public.patients/aa,recorded_by->public.users/aa,tenant_id->public.tenants/aa',
+       CASE WHEN chk_defs = 'CHECK ((btrim(rgpd_version) <> ''''::text))'
+             AND fk_sig = 'patient_id->public.patients/aa,recorded_by->public.users/aa,tenant_id->public.tenants/aa'
+            THEN 'OK' ELSE 'FAIL' END FROM g
 -- APPEND-ONLY, READ OFF THE PRIVILEGES. The two positives are the control for
 -- the three negatives: a table nobody can touch would pass the negatives too.
 UNION ALL SELECT '5. authenticated may SELECT and INSERT, and may NOT UPDATE, DELETE or TRUNCATE',
        'S=' || a_sel::text || ' I=' || a_ins::text || ' U=' || a_upd::text || ' D=' || a_del::text || ' T=' || a_trunc::text,
        'S=true I=true U=false D=false T=false',
        CASE WHEN a_sel AND a_ins AND NOT a_upd AND NOT a_del AND NOT a_trunc THEN 'OK' ELSE 'FAIL' END FROM g
-UNION ALL SELECT '6. the portal patient role holds no privilege on it', patient_any::text, 'false',
-       CASE WHEN NOT patient_any THEN 'OK' ELSE 'FAIL' END FROM g
+UNION ALL SELECT '6. the portal patient role and anon hold no privilege on it, of all seven', outsiders_hold, 'none',
+       CASE WHEN outsiders_hold = 'none' THEN 'OK' ELSE 'FAIL' END FROM g
 UNION ALL SELECT '7. exactly two policies on the table, and none for UPDATE, DELETE or ALL',
        tbl_policies::text || ' policies, ' || write_policies::text || ' write', '2 policies, 0 write',
        CASE WHEN tbl_policies = 2 AND write_policies = 0 THEN 'OK' ELSE 'FAIL' END FROM g
-UNION ALL SELECT '8. the SELECT policy is PERMISSIVE, FOR SELECT, TO authenticated, tenant-scoped',
-       coalesce(sel_shape, 'absent') || CASE WHEN sel_qual LIKE '%jwt_tenant_id()%' THEN ' tenant' ELSE ' NO-tenant' END,
-       'r/true/authenticated/no-check tenant',
-       CASE WHEN sel_shape = 'r/true/authenticated/no-check' AND sel_qual LIKE '%tenant_id = %jwt_tenant_id()%'
+-- The expression is pinned by md5: (tenant_id = jwt_tenant_id()) renders to
+-- 5b37a2d7c011bd469945c04a0c99f85c on Postgres 17.
+UNION ALL SELECT '8. the SELECT policy is PERMISSIVE, FOR SELECT, TO authenticated, USING exactly (tenant_id = jwt_tenant_id())',
+       coalesce(sel_shape, 'absent') || ' ' || coalesce(sel_qual_md5, 'no-using'),
+       'r/true/authenticated/no-check 5b37a2d7c011bd469945c04a0c99f85c',
+       CASE WHEN sel_shape = 'r/true/authenticated/no-check' AND sel_qual_md5 = '5b37a2d7c011bd469945c04a0c99f85c'
             THEN 'OK' ELSE 'FAIL' END FROM g
 -- recorded_by IS THE FIELD THE ROW'S EVIDENTIAL VALUE RESTS ON, so the database
 -- pins it to the acting user rather than trusting the server action.
-UNION ALL SELECT '9. the INSERT policy is FOR INSERT, TO authenticated, and pins tenant and recorded_by = auth.uid()',
-       coalesce(ins_shape, 'absent')
-         || CASE WHEN ins_check LIKE '%jwt_tenant_id()%' THEN ' tenant' ELSE ' NO-tenant' END
-         || CASE WHEN ins_check LIKE '%recorded_by = %auth.uid()%' THEN ' recorded_by' ELSE ' NO-recorded_by' END,
-       'a/true/authenticated/no-using tenant recorded_by',
-       CASE WHEN ins_shape = 'a/true/authenticated/no-using'
-             AND ins_check LIKE '%tenant_id = %jwt_tenant_id()%'
-             AND ins_check LIKE '%recorded_by = %auth.uid()%'
+-- ((tenant_id = jwt_tenant_id()) AND (recorded_by = auth.uid())) renders to
+-- 6d13847414c740c8540fbcef55bb6c68. An OR anywhere in it would not.
+UNION ALL SELECT '9. the INSERT policy is FOR INSERT, TO authenticated, WITH CHECK exactly ((tenant_id = jwt_tenant_id()) AND (recorded_by = auth.uid()))',
+       coalesce(ins_shape, 'absent') || ' ' || coalesce(ins_check_md5, 'no-check'),
+       'a/true/authenticated/no-using 6d13847414c740c8540fbcef55bb6c68',
+       CASE WHEN ins_shape = 'a/true/authenticated/no-using' AND ins_check_md5 = '6d13847414c740c8540fbcef55bb6c68'
             THEN 'OK' ELSE 'FAIL' END FROM g
 UNION ALL SELECT '10. the POLICY COUNT grew by exactly two', policies_now::text,
        (:'policies_before'::int + 2)::text,

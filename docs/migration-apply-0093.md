@@ -19,11 +19,11 @@ the end.
 | Journal | `idx 90`, `when 1788501400000`, tag `0093_patient_rgpd_acceptances` |
 | Must follow | `0092_care_team_location`: applied to production (journal row id 90, sha256 `23964a4b…abfa`), merged to main 2026-09-23 in #1426 |
 | Branch | `patients/RGPD-01-consent-at-creation`, PR #1399, labelled `held-for-apply` |
-| Before the sitting | PR #1399 reads **all required checks green on the head being applied**. It cannot until the GATE-CHANGE that teaches the frozen `scripts/import/cleanup-test-patients.test.mjs` the new table has merged and main has been merged into this branch: the table is a child of `patients`, so that test goes red the moment 0093 is a numbered migration |
+| Before the sitting | PR #1399 reads **all required checks green on the head being applied**. It cannot until the GATE-CHANGE **#1436**, which teaches the frozen `scripts/import/cleanup-test-patients.test.mjs` the new table, has merged and main has been merged into this branch: the table is a child of `patients`, so that test goes red the moment 0093 is a numbered migration. This is checked by the operator before stage 0, not by a block |
 | This document | `docs/migration-apply-0093.md`, pinned by `docs/migration-apply-0093.sha256` and asserted in STAGE 0 and again in STAGE 1 |
 | Pre-check | `scripts/db/precheck-rgpd.sql`, READ ONLY, 15 verdicts, sha256 `7741655847f34fe8dd04c6709e194d68e55113352895a01be9f08ee607005883` |
-| Post-check | `scripts/db/postcheck-rgpd.sql`, READ ONLY, 14 verdicts, sha256 `b8b2c682231de74e9805b7963c73af27784cd005e551c2c502e8056253a25e59` |
-| Behaviour check | `scripts/db/behaviour-rgpd-readonly.sql`, READ ONLY, 7 arms, sha256 `1a17ac23bc54e6de469ef68f5a037b5e2c698f50cff5bf6a7fbdb511a7bb3bd9`. Run TWICE in this sitting, before the apply and after it, with the same actor |
+| Post-check | `scripts/db/postcheck-rgpd.sql`, READ ONLY, 14 verdicts, sha256 `7c2067b9de12d3b0cbdc75b8c97c83b6726f0b92afacd8ef554bd407ac6a9a35` |
+| Behaviour check | `scripts/db/behaviour-rgpd-readonly.sql`, READ ONLY, 7 arms, sha256 `0acff2e2c31a1fb6cb81c48ad6fb3f156f6a0de7e7d9d69947c956de86005469`. Run TWICE in this sitting, before the apply and after it, with the same actor |
 | Behaviour actor | `4750c272-8559-466d-8d8a-b6898be93e06`, an active reception user, passed as `-v actor_id` |
 | The two programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`. Both byte-identical to `origin/main` at `a1f51b44`, both pinned in every block that runs them |
 | What it creates | ONE table (`public.patient_rgpd_acceptances`) with ONE index, row level security ENABLED, SELECT and INSERT granted to `authenticated`, UPDATE, DELETE and TRUNCATE revoked from it, everything revoked from the portal `patient` role, and TWO policies: a tenant SELECT, and an INSERT that pins `recorded_by` to the acting user |
@@ -34,7 +34,7 @@ own sha256: writing the value changes the value. So the digest lives beside it i
 `docs/migration-apply-0093.sha256` and STAGE 0 checks it with `shasum -a 256 -c`.
 
 **There is no `#` comment inside any block in this document, deliberately,** and every
-parameter is braced, including before a colon, because the blocks are pasted into an
+parameter that a colon follows is braced, because the blocks are pasted into an
 interactive zsh (`scripts/owner-blocks-survive-zsh.test.mjs` enforces the braces, and
 now reads this document by its number). No backslash continuations, and no `!` except
 as the `test !` operator followed by a space. Narration is `echo`.
@@ -122,13 +122,14 @@ name is a substring of another's or of any other row's `check` column, because s
 **The behaviour check runs TWICE, as an A/B on production itself.** Before the apply
 the table does not exist, and the check must say so: every table arm FAILS,
 `2 OK / 0 VACUOUS / 5 FAIL`, failing on exactly R2, R3, R4, R5 and R6. After the apply
-the table exists and ships EMPTY, and production holds one tenant, so R2 and R3 have
-zero comparands: `5 OK / 2 VACUOUS / 0 FAIL`, exactly. The two VACUOUS arms are
+the table exists and ships EMPTY, so R2 and R3 have zero comparands:
+`5 OK / 2 VACUOUS / 0 FAIL`, exactly. The two VACUOUS arms are
 expected and named; any other profile halts.
 
 **What a READ ONLY check cannot measure** is an INSERT, and so the `recorded_by` pin
 in action. No production write is allowed, not even a rolled-back one. The pin is
-proven as a SHAPE on production (R5 and post-check 9 read the INSERT policy) and in
+proven as an EXACT EXPRESSION on production (R5 and post-check 9 compare the INSERT
+policy's WITH CHECK to its md5, so an added OR fails them) and as a shape in
 CI (`packages/db/tests/patient-rgpd-acceptances.db.test.ts`, which RUNS now that 0093
 is a numbered migration CI applies, reads the same policy and refuses a real UPDATE
 and DELETE). It is proven IN ACTION only by the rehearsal below, which inserts as the
@@ -191,7 +192,7 @@ previous transcripts until a new pre-check AND a new before-run have passed.
 set -eo pipefail
 SHA0093=7a769298c43f982cdc27dc71cbec403a53861dbfc2c24b72c62c2203d370c454
 SHAPRE=7741655847f34fe8dd04c6709e194d68e55113352895a01be9f08ee607005883
-SHABEHAVIOUR=1a17ac23bc54e6de469ef68f5a037b5e2c698f50cff5bf6a7fbdb511a7bb3bd9
+SHABEHAVIOUR=0acff2e2c31a1fb6cb81c48ad6fb3f156f6a0de7e7d9d69947c956de86005469
 ACTOR=4750c272-8559-466d-8d8a-b6898be93e06
 BRANCH=patients/RGPD-01-consent-at-creation
 
@@ -273,9 +274,13 @@ It then prints `journal    90 -> 91  (delta 1)` and
 `0093_patient_rgpd_acceptances present by sha256: yes`. Stage 2 re-reads both from the
 database rather than trusting this line.
 
-`verified-migrate.mjs` exits **5** if drizzle reports success and the journal did not
-move, **3** on a missing file, a wrong sha256, an already-applied migration or a
-pending count that is not 1, and **4** if drizzle itself failed.
+`verified-migrate.mjs` exits **2** on a bad invocation or a missing environment
+variable; **3** BEFORE drizzle runs on a missing file, a wrong sha256, a tag missing
+from `_journal.json`, an already-applied migration or a pending count that is not 1,
+and AFTER drizzle has run on a journal that moved by the wrong amount or moved without
+the approved sha256; **4** if drizzle itself failed or on any thrown error; **5** if
+drizzle reports success and the journal did not move. Exit 3 can therefore follow a
+committed apply too: the rule below covers every non-zero exit after the banner.
 
 **Exit 4 does not always mean nothing was applied.** `verified-migrate.mjs` also exits
 4 on ANY thrown error, including its own journal read AFTER drizzle has committed. So:
@@ -294,7 +299,7 @@ exit code and the drizzle output. Do not re-run stage 1 on your own.
 (
 set -eo pipefail
 SHA0093=7a769298c43f982cdc27dc71cbec403a53861dbfc2c24b72c62c2203d370c454
-SHAPOST=b8b2c682231de74e9805b7963c73af27784cd005e551c2c502e8056253a25e59
+SHAPOST=7c2067b9de12d3b0cbdc75b8c97c83b6726f0b92afacd8ef554bd407ac6a9a35
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=patients/RGPD-01-consent-at-creation
 
@@ -369,7 +374,7 @@ the database itself.
 ```
 (
 set -eo pipefail
-SHABEHAVIOUR=1a17ac23bc54e6de469ef68f5a037b5e2c698f50cff5bf6a7fbdb511a7bb3bd9
+SHABEHAVIOUR=0acff2e2c31a1fb6cb81c48ad6fb3f156f6a0de7e7d9d69947c956de86005469
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 ACTOR=4750c272-8559-466d-8d8a-b6898be93e06
 BRANCH=patients/RGPD-01-consent-at-creation
@@ -392,7 +397,7 @@ grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0093-behaviour-after.out && { ec
 grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/0093-behaviour-after.out || { echo "STOP: the behaviour check printed no SUMMARY row, so the transcript is truncated"; exit 1; }
 BEFORE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0093-behaviour-before.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
 AFTER=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0093-behaviour-after.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
-[ "${AFTER}" = "5 OK / 2 VACUOUS / 0 FAIL" ] || { echo "STOP: after the apply the profile must read 5 OK / 2 VACUOUS / 0 FAIL: the table empty, one tenant. It read ${AFTER}"; exit 1; }
+[ "${AFTER}" = "5 OK / 2 VACUOUS / 0 FAIL" ] || { echo "STOP: after the apply the profile must read 5 OK / 2 VACUOUS / 0 FAIL: the table empty. It read ${AFTER}"; exit 1; }
 VACSET=$(grep -E '\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/0093-behaviour-after.out | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*([A-Z0-9]+)\..*/\1/' | sort | tr '\n' ' ' || true)
 [ "${VACSET}" = "R2 R3 " ] || { echo "STOP: the two VACUOUS arms must be R2 and R3, the two with a zero comparand on an empty table. They were [${VACSET}]"; exit 1; }
 echo "RGPD-01 BEHAVES AS RULED AT THE RLS LAYER. before ${BEFORE}, after ${AFTER}. The INSERT pin in action is proven by the rehearsal, not by this READ ONLY transcript."
@@ -401,8 +406,7 @@ echo "RGPD-01 BEHAVES AS RULED AT THE RLS LAYER. before ${BEFORE}, after ${AFTER
 
 **EXPECT: no FAIL, a SUMMARY row, the profile EXACTLY `5 OK / 2 VACUOUS / 0 FAIL`, and
 the two VACUOUS arms exactly R2 and R3**, which the block asserts. R2 and R3 are
-VACUOUS because the table ships empty and production holds one tenant: their
-comparands are zero. That is expected today and says nothing wrong; it is also why this
+VACUOUS because the table ships empty: their comparands are zero. That is expected today and says nothing wrong; it is also why this
 transcript is not the proof that the policies admit and refuse the right rows. That
 proof is the rehearsal below, which loads rows. CI's DB-gated suite proves the
 privileges and the policy shapes, on an empty table. **Re-run
@@ -423,15 +427,23 @@ that is the data moving, not a regression.
 
 1. the table exists, exactly once;
 2. row level security is ENABLED on it;
-3. its index leads `(tenant_id, patient_id, accepted_at DESC)`;
-4. the not-blank version CHECK and the three foreign keys exist;
+3. exactly two indexes: the primary key, and the plain (not UNIQUE, not partial)
+   index whose definition is EXACTLY `... USING btree (tenant_id, patient_id, accepted_at DESC)`;
+4. the not-blank CHECK is exactly `CHECK ((btrim(rgpd_version) <> ''::text))`, and the
+   three foreign keys go to `public.patients`, `public.users` and `public.tenants`, each
+   NO ACTION on delete and update: a consent record never vanishes in a cascade;
 5. `authenticated` may SELECT and INSERT, and may NOT UPDATE, DELETE or TRUNCATE. The
    two positives are the control for the three negatives;
-6. the portal `patient` role holds no privilege on it;
+6. the portal `patient` role and `anon` hold none of the seven table privileges,
+   TRUNCATE included, because TRUNCATE ignores row level security;
 7. exactly two policies on the table, and none for UPDATE, DELETE or ALL;
-8. the SELECT policy is PERMISSIVE, `FOR SELECT`, `TO authenticated`, tenant-scoped;
-9. the INSERT policy is `FOR INSERT`, `TO authenticated`, and its WITH CHECK pins the
-   tenant and `recorded_by = auth.uid()`;
+8. the SELECT policy is PERMISSIVE, `FOR SELECT`, `TO authenticated`, and its USING
+   is EXACTLY `(tenant_id = jwt_tenant_id())`, compared by md5
+   (`5b37a2d7c011bd469945c04a0c99f85c`);
+9. the INSERT policy is PERMISSIVE, `FOR INSERT`, `TO authenticated`, and its WITH
+   CHECK is EXACTLY `((tenant_id = jwt_tenant_id()) AND (recorded_by = auth.uid()))`,
+   compared by md5 (`6d13847414c740c8540fbcef55bb6c68`). A LIKE would pass the same
+   text with `OR true` added; the md5 does not, and the rehearsal proves it;
 10. the POLICY COUNT is `policies_before` **+ 2**;
 11. the SECURITY DEFINER count equals `secdef_before`;
 12. the public table count is `public_tables_before` **+ 1**;
@@ -447,10 +459,10 @@ alone. It is an assertion about the apply, not an invariant.
 | 0 | the transaction is READ ONLY and REPEATABLE READ | OK | OK |
 | R1 | the session IS the named actor | OK | OK |
 | R2 | the actor reads exactly their tenant's consent rows | **FAIL** (no table) | VACUOUS (none yet) |
-| R3 | the actor reads no row of another tenant | **FAIL** (no table) | VACUOUS (one tenant, none yet) |
+| R3 | the actor reads no row of another tenant | **FAIL** (no table) | VACUOUS (no rows yet) |
 | R4 | append-only: no UPDATE, DELETE or TRUNCATE for `authenticated` | **FAIL** (no table) | OK |
-| R5 | the control: SELECT and INSERT, and the INSERT pins `recorded_by` | **FAIL** (no table) | OK |
-| R6 | the portal `patient` role holds nothing | **FAIL** (no table) | OK |
+| R5 | the control: SELECT and INSERT, and the INSERT check is exactly tenant AND `recorded_by = auth.uid()` (md5) | **FAIL** (no table) | OK |
+| R6 | the portal `patient` role and `anon` hold nothing, of all seven privileges | **FAIL** (no table) | OK |
 
 ### Which acceptance check this sitting discharges, and which it does not
 
@@ -572,9 +584,13 @@ consent rows both 0.
   default privileges give `service_role` full rights on every new table in `public`,
   as they do for every other table, and it bypasses RLS. Not a regression and not
   something this file could fix; the privileges this document asserts are
-  `authenticated`'s and `patient`'s.
-- **One test-infrastructure line goes stale, harmlessly.** `.github/scripts/assert-rls-executed.mjs`
+  `authenticated`'s, `patient`'s and `anon`'s.
+- **One test-infrastructure entry goes stale, and it is NOT harmless.** `.github/scripts/assert-rls-executed.mjs`
   lists this table's DB suite in `PERMITTED_SKIPS`, because until now CI could not
-  apply the migration. Now that it can, the suite runs and the entry is never
-  consulted (the script only reads it for a suite that skipped). Deleting it is a
-  GATE-CHANGE of its own, because that file is frozen.
+  apply the migration. Now that it can, the suite runs. But the entry is read exactly
+  when the suite skips, and the suite skips on any probe error, so while the entry
+  stands a future skip would print PERMITTED inside a green required check. It cannot
+  be deleted before this PR merges (main still skips until then), and the file is
+  frozen, so it goes in a GATE-CHANGE **immediately after this PR merges**, together
+  with the now-inert `AHEAD_OF_MIGRATION` entry #1436 adds and the cleanup test's
+  floor raised from 19 to 20.

@@ -4,11 +4,9 @@ import { sql, type SQL } from "drizzle-orm";
  * RGPD-01 - IS THE PATIENT RGPD CONSENT TABLE ON THIS DATABASE YET?
  *
  * `public.patient_rgpd_acceptances` arrives with
- * `packages/db/migrations-pending/NEXT-AFTER-0089_patient_rgpd_acceptances.sql`,
- * which is UNNUMBERED and HELD: 0089's own file is still on another branch, and
- * CARE-01 and B8 each hold a NEXT-AFTER-0089 of their own, so a number taken now
- * would be a number taken twice. `drizzle-kit migrate` cannot see
- * migrations-pending by construction.
+ * `packages/db/migrations/0093_patient_rgpd_acceptances.sql`, promoted on
+ * 2026-09-23 and applied to production before this code merges. A database that
+ * stands before 0093 (a lane, a preview, a rehearsal) still has no table.
  *
  * SO EVERY PATH THAT READS OR WRITES THE TABLE MUST BE INERT UNTIL IT EXISTS.
  * The ficha's "RGPD em falta" mark reads as it does today (no consent on file),

@@ -16,8 +16,8 @@
 -- exact profile it expects, and says why:
 --   BEFORE the apply the table does not exist, so every table arm FAILS:
 --       2 OK / 0 VACUOUS / 5 FAIL, failing on R2 R3 R4 R5 R6.
---   AFTER the apply on production the table ships EMPTY and production holds
---   one tenant, so R2 and R3 have zero comparands and read VACUOUS:
+--   AFTER the apply the table ships EMPTY, so R2 and R3 have zero comparands
+--   and read VACUOUS:
 --       5 OK / 2 VACUOUS / 0 FAIL.
 --   With rows present (the rehearsal loads them) all seven read OK.
 --
@@ -43,8 +43,12 @@
 --       DELETE or TRUNCATE on the table (Supabase's default privileges would
 --       grant all three; the migration's REVOKE takes them back).
 --   R5  the positive control for R4: authenticated holds SELECT and INSERT, and
---       the INSERT policy's WITH CHECK pins recorded_by to auth.uid().
---   R6  the portal patient role holds no privilege on the table.
+--       the INSERT policy's WITH CHECK is EXACTLY
+--       ((tenant_id = jwt_tenant_id()) AND (recorded_by = auth.uid())), pinned
+--       by md5 (6d13847414c740c8540fbcef55bb6c68 on Postgres 17). A LIKE would
+--       pass the same text with an OR added; this does not.
+--   R6  the portal patient role and anon hold no privilege on the table, of all
+--       seven (TRUNCATE ignores row level security, so it is checked too).
 --
 -- IT PRINTS COUNTS AND VERDICTS AND NOTHING ELSE. No name, no patient id.
 --
@@ -95,11 +99,10 @@ SELECT has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', '
        has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'TRUNCATE')::text AS a_trunc,
        has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'SELECT')::text   AS a_sel,
        has_table_privilege('authenticated', 'public.patient_rgpd_acceptances', 'INSERT')::text   AS a_ins,
-       (has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'SELECT')
-        OR has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'INSERT')
-        OR has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'UPDATE')
-        OR has_table_privilege('patient', 'public.patient_rgpd_acceptances', 'DELETE'))::text   AS patient_any,
-       coalesce((SELECT pg_get_expr(pol.polwithcheck, pol.polrelid) LIKE '%recorded_by = %auth.uid()%'
+       EXISTS (SELECT 1 FROM unnest(array['anon', 'patient']) r
+                CROSS JOIN unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) p
+                WHERE has_table_privilege(r, 'public.patient_rgpd_acceptances', p))::text  AS patient_any,
+       coalesce((SELECT md5(pg_get_expr(pol.polwithcheck, pol.polrelid)) = '6d13847414c740c8540fbcef55bb6c68'
                    FROM pg_policy pol WHERE pol.polname = 'patient_rgpd_acceptances_tenant_insert'), false)::text AS pin_present \gset
 \else
 \set own_total -1
@@ -169,11 +172,11 @@ WITH r(n, "check", observed, expected, verdict) AS (VALUES
       'U=' || :'a_upd' || ' D=' || :'a_del' || ' T=' || :'a_trunc',
       'U=false D=false T=false',
       CASE WHEN :'a_upd' = 'false' AND :'a_del' = 'false' AND :'a_trunc' = 'false' THEN 'OK' ELSE 'FAIL' END),
-  (5, 'R5. CONTROL for R4: authenticated holds SELECT and INSERT, and the INSERT pins recorded_by = auth.uid()',
+  (5, 'R5. CONTROL for R4: authenticated holds SELECT and INSERT, and the INSERT check is exactly tenant AND recorded_by = auth.uid()',
       'S=' || :'a_sel' || ' I=' || :'a_ins' || ' pin=' || :'pin_present',
       'S=true I=true pin=true',
       CASE WHEN :'a_sel' = 'true' AND :'a_ins' = 'true' AND :'pin_present' = 'true' THEN 'OK' ELSE 'FAIL' END),
-  (6, 'R6. the portal patient role holds no privilege on the table',
+  (6, 'R6. the portal patient role and anon hold no privilege on the table',
       :'patient_any', 'false',
       CASE WHEN :'patient_any' = 'false' THEN 'OK' ELSE 'FAIL' END)
 )
