@@ -15,6 +15,9 @@
  * the form, the section rail, the report button) are stubbed. Nothing they
  * render is asserted here.
  */
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStrings } from "@osteojp/i18n";
@@ -28,12 +31,16 @@ const h = vi.hoisted(() => ({
     userId: string;
   },
   getRecordDetail: vi.fn(),
+  getFichaMedicaTemplate: vi.fn(),
   isImporterSourcedRecord: vi.fn(),
   listImportedPatientDocuments: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/context", () => ({ requireRequestContext: async () => h.ctx }));
-vi.mock("@/lib/clinical/records", () => ({ getRecordDetail: h.getRecordDetail }));
+vi.mock("@/lib/clinical/records", () => ({
+  getRecordDetail: h.getRecordDetail,
+  getFichaMedicaTemplate: h.getFichaMedicaTemplate,
+}));
 vi.mock("@/lib/clinical/terms-acceptance", () => ({ getLatestTermsAcceptance: async () => null }));
 vi.mock("@/lib/patients/documents", () => ({
   listImportedPatientDocuments: h.listImportedPatientDocuments,
@@ -93,6 +100,33 @@ const EMPTY_AI_DATA = {
 
 const IMPORTED_DATA = { queixas: "Lombalgia sintetica", especialidade: "Osteopatia" };
 
+type SeedField = { "x-label"?: { pt?: string }; properties?: Record<string, SeedField> };
+type SeedTemplate = { key: string; version: number; schema: { properties: Record<string, SeedField> } };
+
+/**
+ * The CURRENT Ficha Medica seed: the highest osteopathy version on disk, which
+ * is what `getFichaMedicaTemplate` resolves (highest active version of the key).
+ * Chosen by version, not by file name, so a new version is picked up unedited.
+ */
+function currentFichaSeed(): SeedTemplate {
+  const dir = path.join(__dirname, "../../../../../packages/db/seed/form-templates");
+  const seeds = readdirSync(dir)
+    .filter((f) => /^osteopathy-v\d+\.json$/.test(f))
+    .map((f) => JSON.parse(readFileSync(path.join(dir, f), "utf8")) as SeedTemplate)
+    .filter((t) => t.key === "osteopathy");
+  expect(seeds.length).toBeGreaterThan(0);
+  return seeds.reduce((a, b) => (b.version > a.version ? b : a));
+}
+const FICHA = currentFichaSeed();
+const FICHA_TEMPLATE = { id: "66666666-6666-4666-8666-666666666666", title: null, schema: FICHA.schema };
+const ptLabel = (...segments: string[]) => {
+  let field: SeedField | undefined = { properties: FICHA.schema.properties };
+  for (const seg of segments) field = field?.properties?.[seg];
+  const label = field?.["x-label"]?.pt;
+  expect(label, `the seed has a pt label at ${segments.join(".")}`).toBeTruthy();
+  return label!;
+};
+
 function record(over: Record<string, unknown> = {}) {
   return {
     id: REC,
@@ -137,6 +171,8 @@ const textOf = (html: string) => html.replace(/<[^>]+>/g, " ");
 beforeEach(() => {
   h.ctx = { tenantId: "tenant-1", role: "therapist", userId: "user-1" };
   h.getRecordDetail.mockReset();
+  h.getFichaMedicaTemplate.mockReset();
+  h.getFichaMedicaTemplate.mockResolvedValue(FICHA_TEMPLATE);
   h.isImporterSourcedRecord.mockReset();
   h.listImportedPatientDocuments.mockReset();
   h.listImportedPatientDocuments.mockResolvedValue([IMPORTED_DOC]);
@@ -158,6 +194,8 @@ describe("the record page draws the imported preview ONLY for importer-sourced r
     expect(textOf(html)).not.toMatch(/importad/i);
     // The originals list is not even read for a record that is not imported.
     expect(h.listImportedPatientDocuments).not.toHaveBeenCalled();
+    // Nothing was filled, so there is no field to label and no template read.
+    expect(h.getFichaMedicaTemplate).not.toHaveBeenCalled();
   });
 
   it("asks the importer-origin question once, for this record, in this request's context", async () => {
@@ -265,10 +303,118 @@ describe("the AI draft panel's way to the review screen", () => {
       }),
     );
     expect(html).toContain('data-testid="ai-recording-draft-fields"');
-    expect(html).toContain("consultation_reason");
     expect(html).toContain("Dor cervical sintetica");
     expect(html).not.toContain('data-testid="ai-recording-draft-empty"');
     expect(html).not.toContain("<input");
     expect(html).not.toContain("<textarea");
+  });
+});
+
+/**
+ * ROUND 1 (reviewer, behaviour lens): the panel labelled each filled field with
+ * its raw English contract key, so a pt-PT screen read "consultation_reason" and
+ * "systems_review.neurological". The labels are now the Ficha Medica
+ * template's own, the ones the form draws for the same fields.
+ */
+describe("the AI draft panel names each filled field in the ficha's own words", () => {
+  const FILLED = {
+    _aiIngestionRaw: {
+      template: "osteopathy",
+      consultation_reason: "Dor cervical sintetica",
+      systems_review: { neurological: "Parestesias sinteticas" },
+    },
+  };
+
+  it("labels come from the current Ficha Medica template, and no contract key is on the screen", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const html = await renderPage(
+      record({ source: "ai_ingested", aiReviewState: "pending_review", data: FILLED }),
+    );
+    const text = textOf(html);
+    expect(text).toContain(ptLabel("consultation_reason"));
+    expect(text).toContain(`${ptLabel("systems_review")} · ${ptLabel("systems_review", "neurological")}`);
+    expect(text).toContain("Dor cervical sintetica");
+    expect(text).toContain("Parestesias sinteticas");
+    // The English machine keys are gone from what a clinician reads.
+    expect(text).not.toContain("consultation_reason");
+    expect(text).not.toContain("systems_review");
+    expect(text).not.toContain("neurological");
+    // One template read, in this request's context.
+    expect(h.getFichaMedicaTemplate).toHaveBeenCalledTimes(1);
+    expect(h.getFichaMedicaTemplate).toHaveBeenCalledWith(h.ctx);
+  });
+
+  it("with no Ficha Medica template (a deploy fault) the values still show, under their key paths", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    h.getFichaMedicaTemplate.mockResolvedValue(null);
+    const html = await renderPage(
+      record({ source: "ai_ingested", aiReviewState: "pending_review", data: FILLED }),
+    );
+    const text = textOf(html);
+    expect(text).toContain("consultation_reason");
+    expect(text).toContain("systems_review.neurological");
+    expect(text).toContain("Dor cervical sintetica");
+  });
+
+  it("no other view reads the Ficha Medica template", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    await renderPage(record({ source: "manual", data: { nota: "Registo sem modelo" } }));
+    h.isImporterSourcedRecord.mockResolvedValue(true);
+    await renderPage(record({ status: "locked", data: IMPORTED_DATA }));
+    expect(h.getFichaMedicaTemplate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * ROUND 1 (reviewer, behaviour lens): for a role that reads records but cannot
+ * author them (admin), `readOnly` is true on a DRAFT, and the page drew
+ * "Ficha finalizada e imutavel" right above a panel saying the draft waits for
+ * review. The banner states a fact about the RECORD, so it now follows the
+ * record's status; `readOnly` still decides whether the viewer may edit.
+ */
+describe("the immutability banner is shown for finalized records only", () => {
+  const LOCKED = pt["clinical.lockedNotice"];
+
+  it("an admin on a pending AI draft sees 'awaiting review' and NOT 'finalized and immutable'", async () => {
+    h.ctx = { tenantId: "tenant-1", role: "admin", userId: "user-2" };
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const html = await renderPage(
+      record({ source: "ai_ingested", aiReviewState: "pending_review", data: EMPTY_AI_DATA }),
+    );
+    expect(html).toContain(pt["clinical.aiDraftPending"]);
+    expect(html).not.toContain(LOCKED);
+  });
+
+  it("an admin on a draft ficha with a template sees no banner either: the draft is not finalized", async () => {
+    h.ctx = { tenantId: "tenant-1", role: "admin", userId: "user-2" };
+    const html = await renderPage(
+      record({
+        formTemplateId: "55555555-5555-4555-8555-555555555555",
+        template: { title: { pt: "Ficha Medica" }, schema: { type: "object", properties: {} } },
+      }),
+    );
+    expect(html).toContain('data-testid="record-form"');
+    expect(html).not.toContain(LOCKED);
+  });
+
+  it.each([
+    ["an admin", "admin"],
+    ["a therapist", "therapist"],
+  ])("CONTROL: %s on a LOCKED record still gets the banner", async (_label, role) => {
+    h.ctx = { tenantId: "tenant-1", role, userId: "user-3" };
+    h.isImporterSourcedRecord.mockResolvedValue(true);
+    const html = await renderPage(record({ status: "locked", data: IMPORTED_DATA }));
+    expect(html).toContain(LOCKED);
+  });
+
+  it("CONTROL: a SIGNED ficha with a template still gets the banner", async () => {
+    const html = await renderPage(
+      record({
+        status: "signed",
+        formTemplateId: "55555555-5555-4555-8555-555555555555",
+        template: { title: { pt: "Ficha Medica" }, schema: { type: "object", properties: {} } },
+      }),
+    );
+    expect(html).toContain(LOCKED);
   });
 });

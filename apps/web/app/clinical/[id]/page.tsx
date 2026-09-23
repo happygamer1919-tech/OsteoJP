@@ -4,8 +4,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireRequestContext } from "@/lib/auth/context";
+import { summariseAiRecordingDraft } from "@/lib/clinical/ai-recording-draft";
 import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
-import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import { getFichaMedicaTemplate, getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
 import { isImporterSourcedRecord } from "@/lib/clinical/record-origin";
 import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
@@ -70,7 +71,22 @@ export default async function RecordDetailPage({
     view === "imported" && can(ctx.role, "patients:read")
       ? await listImportedPatientDocuments(ctx, record.patientId, id)
       : [];
-  const readOnly = record.status !== "draft" || !can(ctx.role, "clinical_records:author");
+  // FICHA-IMPORTED-VIEW: an AI recording draft lists what the recording filled
+  // under the Ficha Medica template's own field labels. The draft has no
+  // template of its own until it is claimed, so the CURRENT Ficha Medica (the
+  // one the claim binds, review.ts) is read, and only when there is a filled
+  // field to label: an empty extraction spends no read.
+  const aiSummary = view === "ai_recording" ? summariseAiRecordingDraft(record.data) : null;
+  const aiFichaTemplate =
+    aiSummary && aiSummary.filled.length > 0 ? await getFichaMedicaTemplate(ctx) : null;
+  const aiFichaSchema = aiFichaTemplate ? parseTemplateSchema(aiFichaTemplate.schema) : null;
+  // Two different facts, kept apart. `readOnly` is whether THIS viewer may edit
+  // (a draft is read-only to a role that cannot author, such as admin);
+  // `finalized` is whether the RECORD is closed. The immutability banner states
+  // the second, so it follows `finalized`: a draft is never announced as
+  // "finalizada e imutavel", whoever is looking at it.
+  const finalized = record.status !== "draft";
+  const readOnly = finalized || !can(ctx.role, "clinical_records:author");
   const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign");
   const canVersion = readOnly && can(ctx.role, "clinical_records:author");
 
@@ -148,7 +164,9 @@ export default async function RecordDetailPage({
 
           {/* Finalized records: a single info Banner stating immutability (the
               ai_review_state review banner is deferred — not in the query). */}
-          {readOnly && (
+          {/* Gated on the record's status, not on `readOnly`: an admin reading
+              a draft cannot edit it, but it is not finalized. */}
+          {finalized && (
             <Banner tone="info" className="mb-6 rounded-md">
               <span className="flex flex-col gap-1">
                 <span>{s["clinical.lockedNotice"]}</span>
@@ -202,7 +220,7 @@ export default async function RecordDetailPage({
               <ImportedRecordPreview data={record.data} />
               <ImportedPatientDocuments items={importedDocuments} />
             </>
-          ) : view === "ai_recording" ? (
+          ) : view === "ai_recording" && aiSummary ? (
             /* FICHA-IMPORTED-VIEW: an AI ingestion draft that has not been
                claimed for review. It has no template because store.ts keeps
                only the raw payload, and until this card it was drawn above as
@@ -212,7 +230,8 @@ export default async function RecordDetailPage({
                form, no sign action, read-only. */
             <AiRecordingDraft
               recordId={id}
-              data={record.data}
+              summary={aiSummary}
+              fichaSchema={aiFichaSchema}
               status={record.status}
               aiReviewState={record.aiReviewState}
               canReview={can(ctx.role, "clinical_records:review")}

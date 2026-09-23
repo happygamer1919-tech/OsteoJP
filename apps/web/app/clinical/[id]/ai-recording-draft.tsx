@@ -1,10 +1,46 @@
+import type { Locale } from "@osteojp/i18n";
 import Link from "next/link";
 
-import { summariseAiRecordingDraft } from "@/lib/clinical/ai-recording-draft";
+import type { AiRecordingDraftSummary } from "@/lib/clinical/ai-recording-draft";
+import { labelOf, type FieldSchema, type TemplateSchema } from "@/lib/clinical/form-template";
 import type { AiReviewState, RecordStatus } from "@/lib/clinical/records";
-import { s } from "@/lib/i18n";
+import { locale, s } from "@/lib/i18n";
 
+import { sectionLabel } from "./field-display";
 import { renderStoredValue } from "./stored-record-content";
+
+/**
+ * The label a filled AI key is shown under: the Ficha Medica template's OWN
+ * field label, the one the form draws for that field, never the English
+ * contract key. A nested path reads as its section then its field, joined by
+ * " · " ("Anamnese por Sistemas · Neurologico").
+ *
+ * The top segment goes through `sectionLabel`, the nested ones through
+ * `labelOf`, exactly as RecordForm labels them, so the two screens agree.
+ *
+ * FALLS BACK TO THE KEY PATH when there is no template schema or the template
+ * has no field at that path. Both are deploy faults (the compatibility test pins
+ * every one of the twelve keys to a field of the current template); the value
+ * is still shown, under the one name that is certainly right.
+ */
+export function aiDraftFieldLabel(
+  schema: TemplateSchema | null,
+  path: string,
+  loc: Locale,
+): string {
+  if (!schema) return path;
+  const [head, ...rest] = path.split(".");
+  const top = schema.properties[head!];
+  if (!top) return path;
+  const labels = [sectionLabel(top, loc, head!)];
+  let field: FieldSchema | undefined = top;
+  for (const segment of rest) {
+    field = field?.properties?.[segment];
+    if (!field) return path;
+    labels.push(labelOf(field, loc, segment));
+  }
+  return labels.join(" · ");
+}
 
 /**
  * Where "Abrir em Revisao Consulta" goes, or null for no link.
@@ -54,18 +90,21 @@ export function aiDraftReviewHref({
  */
 export function AiRecordingDraft({
   recordId,
-  data,
+  summary,
+  fichaSchema,
   status,
   aiReviewState,
   canReview,
 }: {
   recordId: string;
-  data: Record<string, unknown>;
+  /** `summariseAiRecordingDraft(record.data)`, computed once by the page. */
+  summary: AiRecordingDraftSummary;
+  /** The current Ficha Medica schema, for the field labels; null falls back to key paths. */
+  fichaSchema: TemplateSchema | null;
   status: RecordStatus;
   aiReviewState: AiReviewState | null;
   canReview: boolean;
 }) {
-  const summary = summariseAiRecordingDraft(data);
   const reviewHref = aiDraftReviewHref({ recordId, status, aiReviewState, canReview });
   const awaitingReview =
     status === "draft" && (aiReviewState === "pending_review" || aiReviewState === "in_review");
@@ -92,7 +131,9 @@ export function AiRecordingDraft({
             <dl className="flex flex-col gap-4" data-testid="ai-recording-draft-fields">
               {summary.filled.map(({ path, value }) => (
                 <div key={path} className="flex flex-col gap-1">
-                  <dt className="text-sm font-medium text-text-secondary">{path}</dt>
+                  <dt className="text-sm font-medium text-text-secondary">
+                    {aiDraftFieldLabel(fichaSchema, path, locale)}
+                  </dt>
                   <dd className="whitespace-pre-wrap text-sm text-text-primary">
                     {renderStoredValue(value)}
                   </dd>
