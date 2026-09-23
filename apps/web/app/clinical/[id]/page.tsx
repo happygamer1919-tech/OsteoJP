@@ -6,13 +6,17 @@ import { notFound } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
 import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import { isImporterSourcedRecord } from "@/lib/clinical/record-origin";
 import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
 import { listImportedPatientDocuments } from "@/lib/patients/documents";
 
+import { AiRecordingDraft } from "./ai-recording-draft";
 import { Attachments } from "./Attachments";
 import { ImportedPatientDocuments } from "./ImportedPatientDocuments";
 import { ImportedRecordPreview } from "./imported-record-preview";
+import { chooseRecordView } from "./record-view";
+import { StoredRecordContent } from "./stored-record-content";
 import { DownloadReportButton } from "./DownloadReportButton";
 import { fieldAnchorId } from "./anchors";
 import { HIDDEN_FIELD_KEYS, sectionLabel } from "./field-display";
@@ -52,11 +56,18 @@ export default async function RecordDetailPage({
   const existingTermsAcceptance = await getLatestTermsAcceptance(ctx, record.patientId);
 
   const schema = record.template ? parseTemplateSchema(record.template.schema) : null;
-  // G-D: only the no-template branch (imported registos) lists the patient's
-  // imported originals. Read under the same patients:read gate the Documentos
-  // tab and its download action use.
+  // FICHA-IMPORTED-VIEW: a missing template is NOT evidence of an import. An AI
+  // ingestion draft and a patient submission have none either. So a record with
+  // no schema asks the importer's ledger (one read, in this request's context)
+  // and the body is chosen from that answer and the record's source. A record
+  // with a schema never spends the read.
+  const importerSourced = schema ? false : await isImporterSourcedRecord(ctx, id);
+  const view = chooseRecordView({ hasSchema: schema !== null, importerSourced, source: record.source });
+  // G-D: only an imported registo lists the patient's imported originals. Read
+  // under the same patients:read gate the Documentos tab and its download
+  // action use.
   const importedDocuments =
-    !schema && can(ctx.role, "patients:read")
+    view === "imported" && can(ctx.role, "patients:read")
       ? await listImportedPatientDocuments(ctx, record.patientId, id)
       : [];
   const readOnly = record.status !== "draft" || !can(ctx.role, "clinical_records:author");
@@ -151,7 +162,7 @@ export default async function RecordDetailPage({
             </Banner>
           )}
 
-          {schema ? (
+          {view === "form" && schema ? (
             <RecordForm
               schema={schema}
               initialData={record.data}
@@ -164,7 +175,7 @@ export default async function RecordDetailPage({
               recordId={id}
               existingTermsAcceptance={existingTermsAcceptance}
             />
-          ) : (
+          ) : view === "imported" ? (
             /* B1 — NO TEMPLATE, SO NO FORM. Until now this branch drew a single
                em-dash, and every IMPORTED Fisiozero registo clínico lands in it:
                `clinicalRecordValues` never sets `form_template_id`, so
@@ -191,6 +202,34 @@ export default async function RecordDetailPage({
               <ImportedRecordPreview data={record.data} />
               <ImportedPatientDocuments items={importedDocuments} />
             </>
+          ) : view === "ai_recording" ? (
+            /* FICHA-IMPORTED-VIEW: an AI ingestion draft that has not been
+               claimed for review. It has no template because store.ts keeps
+               only the raw payload, and until this card it was drawn above as
+               imported content. It is a draft from a consultation recording,
+               waiting for review, and it says so; the way on is the review
+               screen, where AI drafts are edited and finalized (rule 4). No
+               form, no sign action, read-only. */
+            <AiRecordingDraft
+              recordId={id}
+              data={record.data}
+              status={record.status}
+              aiReviewState={record.aiReviewState}
+              canReview={can(ctx.role, "clinical_records:review")}
+            />
+          ) : (
+            /* FICHA-IMPORTED-VIEW: any other record without a template that
+               the importer did not write (a patient submission draft, a manual
+               record). The stored content, under the same rules as the
+               imported preview, with a heading that claims no origin. */
+            <StoredRecordContent
+              data={record.data}
+              title={s["clinical.recordContentTitle"]}
+              help={s["clinical.recordContentHelp"]}
+              emptyText={s["clinical.recordNoContent"]}
+              testId="record-content"
+              emptyTestId="record-content-empty"
+            />
           )}
 
           <div className="mt-6">
