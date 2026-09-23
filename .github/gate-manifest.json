@@ -63,7 +63,7 @@
     "scripts/import/cb-reconciliation.test.mjs": "c6f2c73f1e779e14bb778602ca79206b67a649db2ea1049380b0f73357210357",
     "scripts/import/cb-recovery-diagnostics.test.mjs": "ecaa8f7f4ce1d37b70bdfd79546d838fd2b45ea7e1ff32e6510852fcc2a1084a",
     "scripts/import/check-delivery.test.mjs": "2f0e3170822f3accbcebe5b1497febf6b3d3c916d7f194adef2bcd1c1be1d6ab",
-    "scripts/import/cleanup-test-patients.test.mjs": "f64db370aa9b97cd2f07be8da76df10b0b4144471841137bccf90f8967966565",
+    "scripts/import/cleanup-test-patients.test.mjs": "da044c3d84eb03fc0895dea883545f3dd004b356e148560aa66fb17e583d70e1",
     "scripts/import/copy-attachments-gate.test.mjs": "fb756b6902fd61908d1de0b27138c9c7ccd60d188540fbc425f10f8d18d63b80",
     "scripts/import/copy-attachments.test.mjs": "b4107d009d6b7eb2cf34751239b11036168f311888621f86e2342a919de56e53",
     "scripts/import/cross-delivery.test.mjs": "d54f9ba3dde5f41933bcdde380ba37fe85d53b69d8d1c4850d6fa63fcc4aa244",
