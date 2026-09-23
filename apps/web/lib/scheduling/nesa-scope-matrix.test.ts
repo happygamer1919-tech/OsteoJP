@@ -586,7 +586,10 @@ for (const bookable of [true, false]) {
           practitionerId: NESA_CB,
           practitionerName: "NESA",
         });
-        expect(nesa(built.therapistOptions)).toEqual([TWO[1], TWO[0]]);
+        // Order follows the pool when the machines are in it, and the offer then
+        // the kept value when they are not; the set is what the ruling fixes.
+        const byId = (a: Opt, b: Opt) => a.id.localeCompare(b.id);
+        expect([...nesa(built.therapistOptions)].sort(byId)).toEqual([TWO[0], TWO[1]].sort(byId));
       });
 
       // No server check covers a front-desk second participant, and the drawer

@@ -155,9 +155,23 @@ export function bookingStaffOptions(input: BookingStaffInput): BookingStaffOptio
   // is the SCHED-17/SCHED-29 rule and adds nothing here.
   const frontDeskResources = input.isTherapist ? [] : input.resources;
 
-  const primaryPeople =
-    input.editing || input.locationTouched
-      ? therapistOptionsForBooking(input.pool, input.assignments, locationId, input.practitionerId)
+  // Create, untouched: the full pool (W12-23, so W4-12's therapist-first
+  // auto-fill still works). After a Localizacao change: that clinic's team, as
+  // before this card. EDIT, untouched: the booking's clinic's team from open,
+  // plus every colleague with no clinic at all (PL-14 keeps them visible and
+  // create lists them), so a booking can still be handed to one of them.
+  const unassigned = (id: string) => (input.assignments.get(id) ?? []).length === 0;
+  const primaryPeople = input.locationTouched
+    ? therapistOptionsForBooking(input.pool, input.assignments, locationId, input.practitionerId)
+    : input.editing
+      ? (() => {
+          const scoped = new Set(
+            therapistOptionsForBooking(input.pool, input.assignments, locationId, input.practitionerId).map(
+              (o) => o.id,
+            ),
+          );
+          return input.pool.filter((o) => scoped.has(o.id) || unassigned(o.id));
+        })()
       : [...input.pool];
   const therapistOptions = keepCurrent(
     withSharedResourceOptions(

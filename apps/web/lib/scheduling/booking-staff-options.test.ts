@@ -178,14 +178,15 @@ describe("EDIT: people scoped to the booking's clinic from open, the current val
     const out = bookingStaffOptions(
       base({ locationId: LV, practitionerId: ANA.id, editing: editing(ANA.id, ANA.label) }),
     );
-    expect(ids(out.therapistOptions)).toEqual([ANA.id]);
+    // The other clinic's colleague is gone; a colleague with no clinic stays.
+    expect(ids(out.therapistOptions)).toEqual([ANA.id, CARLA.id]);
   });
 
   it("keeps a practitioner from another clinic that the pool still carries", () => {
     const out = bookingStaffOptions(
       base({ locationId: LV, practitionerId: BRUNO.id, editing: editing(BRUNO.id, BRUNO.label) }),
     );
-    expect(ids(out.therapistOptions)).toEqual([ANA.id, BRUNO.id]);
+    expect(ids(out.therapistOptions)).toEqual([ANA.id, BRUNO.id, CARLA.id]);
   });
 
   it("SYNTHESISES a practitioner no list carries, from the appointment row, and labels it against its twin", () => {
@@ -272,5 +273,31 @@ describe("an option rebuilt from the appointment row reads as the page names it"
       }),
     );
     expect(built.therapistOptions.find((o) => o.id === NESA_CB.id)?.label).toBe("NESA");
+  });
+});
+
+describe("Editar: the booking's clinic's team from open, plus unassigned colleagues", () => {
+  const edit = (over: Partial<BookingStaffInput> = {}) =>
+    bookingStaffOptions(
+      base({
+        locationId: LV,
+        practitionerId: ANA.id,
+        editing: { practitionerId: ANA.id, practitionerName: ANA.label },
+        ...over,
+      }),
+    );
+
+  it("keeps a colleague with no clinic, drops the other clinic's colleague", () => {
+    // Round 9 review: the edit list had dropped unassigned staff too.
+    const listed = ids(edit().therapistOptions);
+    expect(listed).toContain(CARLA.id);
+    expect(listed).toContain(ANA.id);
+    expect(listed).not.toContain(BRUNO.id);
+  });
+
+  it("control: after a Localizacao change the list is that clinic's team, as before this card", () => {
+    const listed = ids(edit({ locationTouched: true }).therapistOptions);
+    expect(listed).not.toContain(CARLA.id);
+    expect(listed).toContain(ANA.id);
   });
 });
