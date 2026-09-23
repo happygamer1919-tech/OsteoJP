@@ -22,7 +22,7 @@
     ".env.example": "0b60766258d749431e17d72265f6f2f75a6b17a1417d121d6f3e38b32a218fc3",
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
     ".github/scripts/assert-rls-executed.mjs": "8113e04eb6535e36f15d8eb0169faf1d2d4eaa2704e2e08c05a395ee9e2babd8",
-    ".github/workflows/auto-update-prs.yml": "f9e2d96c2970590070653d0782c25e4896f378773e6da97ce309d9939404f770",
+    ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
     ".github/workflows/ci.yml": "a81e30a9a2e79a1dcdfcacd2ec67d0743d69045e7f48c7890987c55f032259d4",
     ".github/workflows/db-tests.yml": "ac3baed6ab2be6dd5197d30cd2693ba293890e61e8b711115f2e1a2573958d84",
     ".github/workflows/e2e.yml": "3da608dda3f4ea0d67a49d5f5be2e218e88b77d4a919e067b4bdaa5f8bd26368",
