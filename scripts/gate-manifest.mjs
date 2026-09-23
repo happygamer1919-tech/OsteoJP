@@ -30,10 +30,12 @@
 // the friction would be routed around within a week, which is how a control
 // stops being a control.
 //
-// MEASURED COST, so the friction is a decision and not a surprise: of the last
-// 60 squashed PRs on main, **9 (15%)** modified or deleted a file in this set
-// and would have needed a GATE-CHANGE PR. Two more only ADDED a new guard file,
-// which this check does not trip on - adding a guard is not weakening one.
+// MEASURED COST, re-measured after the 2026-09-22 narrowing rather than
+// carried over: see the figure printed in that PR's description. Adding a guard
+// file never trips this check - only modifying or deleting a pinned one does.
+//
+// THE CRITERION, in one line, because it is what decides membership: a file is
+// in this set if editing it can change a REQUIRED CHECK'S VERDICT.
 
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -65,8 +67,19 @@ export const GATE_GLOBS = Object.freeze([
   //     This is the group the second breach happened in.
   "scripts/**/*.test.mjs",
   "docs/board/**/*.test.mjs",
-  // --- merge-control config. The FIRST breach was here. ---
-  ".claude/skills/**/*.md",
+  // --- `.claude/skills/**/*.md` WAS HERE AND CAME OUT, 2026-09-22, by owner
+  //     ruling: the manifest holds files that decide a REQUIRED CHECK'S
+  //     VERDICT, and nothing in CI reads those files. Verified rather than
+  //     assumed - the only references to them anywhere are this file's own
+  //     glob and a PATH STRING in gate-freeze.test.mjs; no required check
+  //     opens them.
+  //
+  //     SAY THE COST OUT LOUD: that is where the FIRST SR-71 breach happened,
+  //     a lane moving itself out of a HELD merge class. The freeze no longer
+  //     covers it. What covers it now is the merge class itself plus review,
+  //     which is what was in place when the breach happened. If that is not
+  //     enough, the answer is a check that READS those files - then they
+  //     decide a verdict and belong here on the stated criterion. ---
   // --- a gate's INPUT is a gate. `env-example-covers-the-code.test.mjs`
   //     compares the code against this file, so ADDING A NAME HERE SILENCES
   //     THAT GUARD - which is the same weakening as editing the guard itself,
