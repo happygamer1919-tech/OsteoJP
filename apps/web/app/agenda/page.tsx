@@ -6,6 +6,7 @@ import { getPatient } from "@/lib/patients/queries";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import { sharedResourcesForViewer } from "@/lib/scheduling/shared-resource-guard";
 import { listSharedResources } from "@/lib/scheduling/shared-resources";
+import { reconcileAgendaStaff } from "@/lib/scheduling/staff-options";
 import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
 import {
   formatTimeOfDay,
@@ -69,11 +70,9 @@ export default async function AgendaPage({
   // data. A therapist may narrow to one member of the set and to nothing else.
   // `practitionerId` stays the viewer's own id, because it also chooses whose
   // blocked time is drawn, and a shared device has no time off.
+  const therapistTenantResources = lockTherapist ? await listSharedResources(actor) : [];
   const sharedResources = lockTherapist
-    ? sharedResourcesForViewer(
-        await listSharedResources(actor),
-        await resolveViewerLocationIds(actor),
-      )
+    ? sharedResourcesForViewer(therapistTenantResources, await resolveViewerLocationIds(actor))
     : [];
   let practitionerIds: string[] | null = null;
   if (lockTherapist) {
@@ -261,6 +260,18 @@ export default async function AgendaPage({
       ? frontDeskResources
       : sharedResourcesForViewer(frontDeskResources, await resolveViewerLocationIds(actor));
 
+  // NESA-SCOPE: the roster (60-second cache) and the machines (per request) made
+  // to agree. A machine this viewer is not offered leaves the people lists too,
+  // even when it is flagged bookable, and labels are resolved over both, so the
+  // Terapeutas filter, Bloquear horario and the drawer name a same-named machine
+  // at each clinic the same way. See reconcileAgendaStaff.
+  const staff = reconcileAgendaStaff({
+    options,
+    tenantResources: lockTherapist ? therapistTenantResources : frontDeskResources,
+    offered: lockTherapist ? sharedResources : offeredToFrontDesk,
+    selfId: actor.userId,
+  });
+
   return (
     <AgendaViewClient
       view={view}
@@ -271,7 +282,7 @@ export default async function AgendaPage({
       // self-lock (practitioner forced to self, Terapeuta selector hidden for
       // role "therapist"). Read-scope isolation stays on `lockTherapist` above.
       viewer={{ role: actor.role, userId: actor.userId }}
-      options={{ ...options, sharedResources: lockTherapist ? sharedResources : offeredToFrontDesk }}
+      options={{ ...options, ...staff }}
       appointments={appointments}
       blocks={blockSpans}
       dayWindow={dayWindow}

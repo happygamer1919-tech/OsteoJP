@@ -52,8 +52,18 @@ vi.mock("@osteojp/ui", () => {
       createElement("div", null, title as ReactNode, children as ReactNode),
     Field: ({ label, children }: { label?: ReactNode; children?: ReactNode }) =>
       createElement("label", null, label as ReactNode, children as ReactNode),
-    Select: ({ children }: { children?: ReactNode }) =>
-      createElement("select", null, children as ReactNode),
+    // NESA-SCOPE: value and onChange pass through, so the static render marks
+    // the option the form holds as `selected` and a test can read WHICH option
+    // a select paints, not only which options it has (STAFF-01).
+    Select: ({
+      children,
+      value,
+      onChange,
+    }: {
+      children?: ReactNode;
+      value?: string;
+      onChange?: (e: unknown) => void;
+    }) => createElement("select", { value, onChange }, children as ReactNode),
     // SCHED-07: the date field is the shared picker now. Rendered as a text
     // input so a test that asks "is there a date control here" still sees one.
     DatePicker: ({ testId }: { testId?: string }) =>
@@ -365,6 +375,105 @@ describe("AppointmentDrawer — owner, admin and reception are offered NESA (SCH
     const html = render({ mode: "create" }, false, DEFAULT_VIEWER, AT_LV);
     expect(html).toContain("Dr. Pessoa Terapeuta");
     expect(html).not.toContain("Equipamento NESA");
+  });
+});
+
+// ==================================================================== //
+// NESA-SCOPE - ONE MACHINE PER CLINIC, BOTH ROWS NAMED "NESA".
+// ==================================================================== //
+// The options below are shaped the way app/agenda/page.tsx hands them over:
+// the roster already scoped and labelled for the viewer (getAgendaOptions and
+// reconcileAgendaStaff), the machines those the viewer is offered. What these
+// renders pin is the drawer's own part: the machine follows the form's
+// Localizacao, and the value in effect is always the option painted. The whole
+// role x surface matrix is lib/scheduling/nesa-scope-matrix.test.ts.
+describe("AppointmentDrawer - one machine per clinic under one name (NESA-SCOPE)", () => {
+  const LV = "loc-lv";
+  const CB = "loc-cb";
+  const loc = (id: string, label: string) => ({
+    id,
+    label,
+    opensAt: "08:00:00",
+    closesAt: "20:00:00",
+    middayClosedFrom: null,
+    middayClosedTo: null,
+  });
+  const NESA_CB = { id: "nesa-cb", label: "NESA", locationIds: [CB] };
+  const NESA_LV = { id: "nesa-lv", label: "NESA", locationIds: [LV] };
+  const ANA = { id: "ana", label: "Ana Lisboa" };
+  const shared = {
+    therapistLocationIds: { [ANA.id]: [LV], [NESA_CB.id]: [CB], [NESA_LV.id]: [LV] },
+    clinicCodes: { [LV]: "LV", [CB]: "CB" },
+    services: [],
+    packs: [],
+  };
+  /** An LV-only viewer, machine rows bookable: LV's row only. */
+  const LV_ONLY: AgendaOptions = {
+    ...shared,
+    therapists: [ANA, { id: NESA_LV.id, label: "NESA" }],
+    allTherapists: [ANA, { id: NESA_LV.id, label: "NESA" }],
+    locations: [loc(LV, "OsteoJP (LV)")],
+    bookableLocations: [{ id: LV, label: "OsteoJP (LV)" }],
+    sharedResources: [NESA_LV],
+    viewerClinicIds: [LV],
+  };
+  /** A viewer who sees both clinics: both rows, already suffixed by the page. */
+  const BOTH = (first: string): AgendaOptions => ({
+    ...shared,
+    therapists: [ANA, { id: NESA_CB.id, label: "NESA (CB)" }, { id: NESA_LV.id, label: "NESA (LV)" }],
+    allTherapists: [ANA, { id: NESA_CB.id, label: "NESA (CB)" }, { id: NESA_LV.id, label: "NESA (LV)" }],
+    locations: [loc(CB, "OsteoJP (CB)"), loc(LV, "OsteoJP (LV)")],
+    bookableLocations:
+      first === CB
+        ? [{ id: CB, label: "OsteoJP (CB)" }, { id: LV, label: "OsteoJP (LV)" }]
+        : [{ id: LV, label: "OsteoJP (LV)" }, { id: CB, label: "OsteoJP (CB)" }],
+    sharedResources: [
+      { ...NESA_CB, label: "NESA (CB)" },
+      { ...NESA_LV, label: "NESA (LV)" },
+    ],
+    viewerClinicIds: [CB, LV],
+  });
+  const machineOptions = (html: string) => html.match(/<option value="nesa-[a-z]+"[^>]*>[^<]*<\/option>/g) ?? [];
+
+  it("an LV therapist's self-locked Terapeuta offers exactly one NESA, LV's, with no suffix", () => {
+    const html = render({ mode: "create" }, false, { role: "therapist", userId: ANA.id }, LV_ONLY);
+    expect(machineOptions(html)).toEqual(['<option value="nesa-lv">NESA</option>']);
+  });
+
+  it("a two-clinic therapist at LV is not offered CB's machine; LV's keeps its suffix", () => {
+    const html = render({ mode: "create" }, false, { role: "therapist", userId: ANA.id }, BOTH(LV));
+    expect(machineOptions(html)).toEqual(['<option value="nesa-lv">NESA (LV)</option>']);
+  });
+
+  it("the owner's Nova marcacao at CB offers CB's NESA only, though the bookable roster carries both", () => {
+    const html = render({ mode: "create" }, false, { role: "owner", userId: "owner-1" }, BOTH(CB));
+    expect(machineOptions(html)).toEqual(['<option value="nesa-cb">NESA (CB)</option>']);
+  });
+
+  it("editing a legacy LV booking that names CB's row keeps THAT id selected, labelled (CB) beside LV's", () => {
+    const legacy: AgendaAppointment = {
+      ...editAppt,
+      practitionerId: NESA_CB.id,
+      practitionerName: "NESA",
+      locationId: LV,
+      locationName: "OsteoJP (LV)",
+    };
+    const html = render({ mode: "edit", appt: legacy }, false, { role: "admin", userId: "admin-lv" }, LV_ONLY);
+    expect(machineOptions(html)).toEqual([
+      '<option value="nesa-lv">NESA (LV)</option>',
+      '<option value="nesa-cb" selected="">NESA (CB)</option>',
+    ]);
+  });
+
+  it("an ordinary edit paints its own practitioner, and the machine at the booking's clinic unsuffixed", () => {
+    const html = render(
+      { mode: "edit", appt: { ...editAppt, practitionerId: ANA.id, practitionerName: ANA.label, locationId: LV } },
+      false,
+      { role: "reception", userId: "recep-lv" },
+      LV_ONLY,
+    );
+    expect(html).toContain('<option value="ana" selected="">Ana Lisboa</option>');
+    expect(machineOptions(html)).toEqual(['<option value="nesa-lv">NESA</option>']);
   });
 });
 

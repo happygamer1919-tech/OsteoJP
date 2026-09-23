@@ -6,6 +6,7 @@ import { scopedLocationId } from "@/lib/auth/location-choice";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { getStatistics, type StatisticsFilters } from "@/lib/statistics/queries";
 import { getAgendaOptions } from "@/lib/scheduling/data";
+import { relabelStaffRows, staffLabelContext } from "@/lib/scheduling/staff-options";
 import { s } from "@/lib/i18n";
 
 import { EstatisticasView } from "../estatisticas-view";
@@ -56,7 +57,15 @@ export default async function EstatisticasPainelPage({ searchParams }: { searchP
   const measured = await collectFor(shouldMeasure(actor, sp), async () =>
     Promise.all([getStatistics(actor, filters), getAgendaOptions(actor)]),
   );
-  const [stats, options] = measured.value;
+  const [rawStats, options] = measured.value;
+  // NESA-SCOPE: the per-therapist breakdown groups by staff id, so two machines
+  // with one name are two rows. They are labelled with the same collision rule
+  // as the filter above them and NEVER dropped: a breakdown row is revenue, and
+  // hiding one would make the column disagree with the total.
+  const staffLabels = staffLabelContext(options);
+  const stats = staffLabels
+    ? { ...rawStats, revenueByTherapist: relabelStaffRows(rawStats.revenueByTherapist, staffLabels, options.allTherapists ?? options.therapists) }
+    : rawStats;
 
   return (
     <>

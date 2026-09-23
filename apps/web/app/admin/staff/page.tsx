@@ -17,6 +17,7 @@ import { buildAssignedLocations } from "@/lib/admin/assigned-locations";
 import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
 import { buildScheduleDays, datedAheadByKey, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
+import { staffCardTitles } from "@/lib/scheduling/staff-options";
 import { EquipaLocationFilter } from "./EquipaLocationFilter";
 import { StaffInviteForm } from "./StaffInviteForm";
 import { StaffManageModal, type ScheduleDay } from "./StaffManageModal";
@@ -176,9 +177,22 @@ export default async function StaffPage({
     if (!assigned || assigned.size === 0) return locationPinned;
     return assigned.has(locationId);
   };
+  // NESA-SCOPE: two members with one name (one machine per clinic). A viewer
+  // with one clinic gets the card for their clinic's row only; a viewer who sees
+  // both gets both, the TITLE suffixed with the clinic code. Resolved over the
+  // whole scoped list, before search and the location filter, so a title never
+  // changes with what is typed or picked. The Gerir modal below still receives
+  // the raw full_name: its name field is the rename input, and a suffix there
+  // would be saved.
+  const cardTitles = staffCardTitles(staff, {
+    viewerScope: locationScope,
+    activeLocations: locations,
+    assignedLocations,
+  });
   const visibleStaff = staff.filter(
     (u) =>
-      matchesSearch(query, u.fullName, u.roleSlug ? ROLE_LABEL[u.roleSlug] : null) &&
+      cardTitles.has(u.id) &&
+      matchesSearch(query, u.fullName, cardTitles.get(u.id), u.roleSlug ? ROLE_LABEL[u.roleSlug] : null) &&
       atLocation(u.id),
   );
 
@@ -344,7 +358,7 @@ export default async function StaffPage({
                   <div className="flex min-w-0 items-center gap-2">
                     <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-full ${color.fill}`} />
                     <h3 className="truncate text-base font-semibold text-v2-text-primary">
-                      {u.fullName}
+                      {cardTitles.get(u.id) ?? u.fullName}
                     </h3>
                   </div>
                   <StatusBadge tone={u.isActive ? "confirmed" : "cancelled"}>
@@ -461,6 +475,7 @@ export default async function StaffPage({
                     <StaffManageModal
                       userId={u.id}
                       fullName={u.fullName}
+                      displayName={cardTitles.get(u.id)}
                       email={u.email}
                       phone={u.phone ?? ""}
                       jobTitle={u.jobTitle ?? ""}
