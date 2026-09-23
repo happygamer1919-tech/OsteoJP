@@ -33,14 +33,14 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none on this branch) | | | |
+| `NEXT-AFTER-0089_revoke_truncate_trigger_references.sql` | 0089 | 2026-09-17 | **last in the queue, deliberately.** It only removes three unused privileges from `authenticated`; the migrations that deliver a feature go first. Apply doc: `docs/migration-apply-revoke-truncate-trigger-references.md` |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
 was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 `NEXT-AFTER-0089_care_team.sql` was promoted second, on
 `care/CARE-01-assigned-therapists` (PR #1374), and took **`0091`** — see the Promoted
-table below. That is why the table above is empty again.
+table below. That is why the table above holds one file on this branch and none on main.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22.** It is
 **`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (applied and merged) ·
@@ -61,6 +61,9 @@ from a branch name.
 
 **ONE MIGRATION IS IN FLIGHT AT A TIME.** `0094` is not promoted until `0093` is
 applied to production and merged.
+
+Other branches hold their own pending files that are not listed here, because this
+table is only accurate for the branch you are reading it on. `#1399` carries one.
 
 ## Promoted
 
