@@ -341,7 +341,7 @@ SELECT a.patient_id::text,
  ORDER BY verdict, a.starts_at;
 
 \echo ''
-\echo '=== 4b. RECEPTION LIST B: two LIVE bookings on one JP row that overlap in time ==='
+\echo '=== 4b. RECEPTION LIST B: two LIVE bookings on one JP row that overlap in time, FUTURE only ==='
 
 WITH k AS (
   SELECT '54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid AS jp_cb,
@@ -366,7 +366,32 @@ SELECT l.name AS clinic,
  WHERE a.status NOT IN ('cancelled','no_show')
    AND b.status NOT IN ('cancelled','no_show')
    AND a.patient_id <> b.patient_id
+   /* FUTURE ONLY, owner ruling 2026-09-22. A past overlap is history: this
+      list's own rule is that past appointments are never touched, and the
+      imported history made list B long, and none of those rows is a
+      decision. The past pairs are counted below, not listed, and every one
+      of them is still in appointments, unchanged. */
+   AND (a.starts_at >= now() OR b.starts_at >= now())
  ORDER BY clinic, a.starts_at;
+
+\echo ''
+\echo '    4b, history: past overlapping pairs on the JP rows, COUNTED, never listed for reception.'
+
+WITH k AS (
+  SELECT '54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid AS jp_cb,
+         '0c1a0000-0000-4000-8000-000000000001'::uuid AS jp_lv
+)
+SELECT count(*)::int AS past_overlapping_pairs
+  FROM public.appointments a
+  JOIN k ON a.practitioner_id IN (k.jp_cb, k.jp_lv)
+  JOIN public.appointments b
+    ON b.practitioner_id = a.practitioner_id
+   AND b.id > a.id
+   AND b.starts_at < a.ends_at AND b.ends_at > a.starts_at
+ WHERE a.status NOT IN ('cancelled','no_show')
+   AND b.status NOT IN ('cancelled','no_show')
+   AND a.patient_id <> b.patient_id
+   AND a.starts_at < now() AND b.starts_at < now();
 
 \echo ''
 \echo '    The live-appointment predicate is the repository"s own:'

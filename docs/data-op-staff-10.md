@@ -12,7 +12,7 @@ sitting.
 | JP(lv) | `0c1a0000-0000-4000-8000-000000000001` (the Linda-a-Velha row) |
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001` |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002` |
-| Stage 1 | `scripts/data/staff-10-1-preview.sql`, sha256 `485c1eefe8ec18ea77fc8b1506a7b339c981ae3be47fdaed504b7132e7d06c24` |
+| Stage 1 | `scripts/data/staff-10-1-preview.sql`, sha256 `4580d7f92174e32a77282cefde410dfeecff174ceaf81b73ba538cfe70f4122e` |
 | Stage 2 | `scripts/data/staff-10-2-apply.sql`, sha256 `5d01cda4e743a8edb92b4f9ea1f79e66e9827322309b5ce6d3e9415edf41e899` |
 | Post-check | `scripts/data/staff-10-3-postcheck.sql`, sha256 `adf6a25132b717e83f5704e61ad4992f988ceaa15381ef1a10050b7d17266550` |
 | Pin | `origin/main`. All three files merge first, by their own PR |
@@ -72,7 +72,7 @@ sitting starts.
 ```
 (
 set -eo pipefail
-SHA1=485c1eefe8ec18ea77fc8b1506a7b339c981ae3be47fdaed504b7132e7d06c24
+SHA1=4580d7f92174e32a77282cefde410dfeecff174ceaf81b73ba538cfe70f4122e
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 rm -f /tmp/staff10-stage1.out /tmp/staff10-stage1.ok
@@ -175,7 +175,8 @@ the 30 September block is gone (11) and was recorded whole so it can be restored
 ## Rehearsed, in full, on a throwaway database
 
 **Stage 1 was re-issued on 2026-09-22** to add section 4c, reception list C (one NESA
-session held on a resource row and a person row), on the owner's ruling. Sections 0 to
+session held on a resource row and a person row), and to make list B future-only (past
+overlaps are counted, never listed), both on the owner's rulings. Sections 0 to
 5 are otherwise unchanged, and stages 2 and 3 are unchanged, so the arms below were run
 on the earlier stage 1 bytes and are not repeated. The new bytes ran end to end twice:
 on a throwaway, and READ ONLY on production on 2026-09-22, exit 0, every section

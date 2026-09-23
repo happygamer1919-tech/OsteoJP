@@ -34,7 +34,7 @@ Stage 1 writes nothing. Three of its sections are this list:
 | Section | What it lists |
 |---|---|
 | `4. RECEPTION LIST A` | the same patient booked on **both** JP rows at the **same start time** |
-| `4b. RECEPTION LIST B` | two **different** patients booked over each other on **one** JP row |
+| `4b. RECEPTION LIST B` | two **different** patients booked over each other on **one** JP row, **future only**. Past overlaps are counted on the line after it and never listed |
 | `4c. RECEPTION LIST C` | **one NESA session imported twice**: the same patient at the same start on a NESA resource row AND on a person, same service. Not a JP row; added 2026-09-22 on the owner's ruling |
 
 The columns to copy off the screen, and nothing else:
@@ -74,7 +74,7 @@ paciente só vai ser visto uma vez.
 
 **Lista B — dois pacientes diferentes à mesma hora, no mesmo terapeuta.**
 
-Isto é uma sobreposição real: duas pessoas marcadas ao mesmo tempo para a mesma
+Só aparecem marcações futuras. Isto é uma sobreposição real: duas pessoas marcadas ao mesmo tempo para a mesma
 pessoa. Uma delas tem de mudar de hora.
 
 1. Abre as duas marcações pelo `id`.
@@ -92,7 +92,10 @@ pode não aparecer na agenda dele; a marcação do terapeuta aparece. Na receç�
 duas.
 
 Se `lines_for_this_session` for maior que 1, a mesma sessão está em três ou mais
-marcações: lê essas linhas juntas (estão seguidas na lista). Se uma marcação de
+marcações: lê essas linhas juntas (estão seguidas na lista). Se `booking_clinic` e
+`resource_installed_at` forem diferentes, a marcação da NESA está na máquina da outra
+clínica: isso corrige-se mudando-a para a NESA certa, nunca cancelando, e não é feito
+pela receção. Se uma marcação de
 terapeuta (`person_row_appointment`) também estiver na Lista A, resolve primeiro a
 Lista A e depois volta a ler a Lista C.
 
