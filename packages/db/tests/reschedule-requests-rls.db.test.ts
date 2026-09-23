@@ -198,9 +198,13 @@ describe.skipIf(!live)("0080 appointment_reschedule_requests RLS", () => {
     expect(seen.has(A.reqA)).toBe(true);
     // practitioner_2 on apSecondary — this is "both practitioners are notified"
     expect(seen.has(A.reqSecondary)).toBe(true);
-    // otherT's appointment at LocB, but pX's, and therapistT treats pX: 0091
-    // made the APPOINTMENT visible and the request inherited it.
-    expect(seen.has(A.reqB)).toBe(true);
+    // CARE-LOC (0092) FLIPPED THIS, AND IT IS THE POINT OF THAT MIGRATION.
+    // apB is otherT's, at LocB, for pX - a patient therapistT treats. 0091 made
+    // it visible through the care-team arm and the request inherited that. 0092
+    // adds `location_id = ANY (viewer_location_ids())` to the same arm, and
+    // therapistT has NO staff_locations row at all, so LocB is not theirs and
+    // the appointment - and with it the request - is refused.
+    expect(seen.has(A.reqB)).toBe(false);
     // pY's: never treated by therapistT, so still invisible under every arm.
     expect(seen.has(A.reqOther)).toBe(false);
   });
