@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none on this branch) | | | |
+| `NEXT-AFTER-0095_conflict_name_visibility.sql` | `0095` (the grants revoke). Ruled **`0096`** by the owner on 2026-09-22: the conflict check returns a patient's name only where the caller's own reads would show it. At promotion its journal `when` must be strictly greater than `0095`'s | 2026-09-22 | `sched/0096-conflict-name-visibility`, Tier C, held until `0093` to `0095` are promoted, applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
