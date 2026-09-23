@@ -825,6 +825,8 @@
   "clinical.aiDraftPending": "Aguarda revisão em Revisão Consulta antes de ser finalizado.",
   "clinical.aiDraftEmpty": "A gravação não produziu conteúdo: nenhum campo da ficha foi preenchido.",
   "clinical.aiDraftReviewLink": "Abrir em Revisão Consulta",
+  "clinical.aiDraftPayloadRestTitle": "Outros dados guardados",
+  "clinical.aiDraftPayloadRestHelp": "Dados da gravação guardados neste registo que os campos acima não mostram, apresentados tal como foram guardados. Apenas leitura.",
   "clinical.aiDraftOtherTitle": "Outro conteúdo deste registo",
   "clinical.aiDraftOtherHelp": "Conteúdo guardado neste registo que não faz parte da gravação acima, apresentado tal como foi guardado. Apenas leitura.",
   "clinical.recordContentTitle": "Conteúdo do registo",

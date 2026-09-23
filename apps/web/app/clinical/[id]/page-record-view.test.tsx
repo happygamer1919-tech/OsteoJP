@@ -488,11 +488,15 @@ describe("a template-less AI record: the page drops nothing that is stored", () 
     expect(text.split("Dor cervical sintetica")).toHaveLength(2);
   });
 
-  it("an empty extraction with a reviewer's text: the recording is empty, and the text is still there", async () => {
+  it("an empty extraction with a reviewer's text: the text is there, and the record is NOT called empty", async () => {
+    // Round 2 drew "nenhum campo da ficha foi preenchido" above a reviewer's
+    // `observations` text. Round 3: "empty" only when nothing stored carries a
+    // value, so the message goes and the text stays.
     h.isImporterSourcedRecord.mockResolvedValue(false);
     const data = { _aiIngestionRaw: NULL_META, observations: REVIEWER_TEXT };
     const html = await renderPage(record({ source: "ai_ingested", aiReviewState: "in_review", data }));
-    expect(html).toContain('data-testid="ai-recording-draft-empty"');
+    expect(html).not.toContain('data-testid="ai-recording-draft-empty"');
+    expect(html).not.toContain(pt["clinical.aiDraftEmpty"]);
     expect(html).toContain('data-testid="ai-recording-draft-other"');
     expect(textOf(html)).toContain(REVIEWER_TEXT);
   });
@@ -522,3 +526,104 @@ describe("a template-less AI record: the page drops nothing that is stored", () 
     expect(html).not.toContain('data-testid="ai-recording-draft-other"');
   });
 });
+
+/**
+ * ROUND 3 (reviewer, behaviour lens): the panel showed an unrecognised key by
+ * NAME and dropped its value, where origin/main printed the whole stored
+ * payload; and a known container holding text or a list was announced as "A
+ * gravacao nao produziu conteudo". The rule now: the panel never shows less of
+ * what is stored than main did. Filled fields keep the ficha's labels; every
+ * other stored payload value is in "Outros dados guardados".
+ */
+describe("the AI draft panel shows every stored value, and says 'empty' only when nothing is stored", () => {
+  const REST = 'data-testid="ai-recording-draft-payload-rest"';
+
+  /** Every non-blank scalar leaf of a stored value, as the page prints it. */
+  function storedLeaves(v: unknown): string[] {
+    if (typeof v === "string") return v.trim() === "" ? [] : [v];
+    if (typeof v === "number" || typeof v === "boolean") return [String(v)];
+    if (v && typeof v === "object") return Object.values(v).flatMap(storedLeaves);
+    return [];
+  }
+
+  /** The <details> element of the rest block, open or not. */
+  const restDetails = (html: string) => html.match(/<details[^>]*ai-recording-draft-payload-rest[^>]*>/)?.[0];
+
+  it.each<[string, Record<string, unknown>]>([
+    ["an unrecognised key", { _aiIngestionRaw: { ...NULL_META_PAYLOAD(), sintoma_alarme: "Sim, sintetico" } }],
+    ["an unrecognised nested leaf", { _aiIngestionRaw: { systems_review: { neurological_v2: "Cefaleia sintetica" } } }],
+    ["a known container holding text", { _aiIngestionRaw: { systems_review: "Sem queixas sinteticas" } }],
+    ["a known container holding a list", { _aiIngestionRaw: { systems_review: ["Tonturas sinteticas"] } }],
+    ["metadata with values", { _aiIngestionRaw: { template: "osteopathy", _ai_meta: { confianca: 0.42 } } }],
+    [
+      "a reviewer edit over a recorded value",
+      {
+        _aiIngestionRaw: { consultation_reason: "Original da gravacao sintetico" },
+        consultation_reason: "Editado pelo revisor sintetico",
+      },
+    ],
+    ["a payload that is text", { _aiIngestionRaw: "Transcricao sintetica" }],
+  ])("THE DEFECT: %s, every stored value is on the page, and it is not called empty", async (_label, data) => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const html = await renderPage(record({ source: "ai_ingested", aiReviewState: "pending_review", data }));
+    const text = textOf(html).replace(/&quot;/g, '"');
+    const leaves = storedLeaves(data);
+    expect(leaves.length).toBeGreaterThan(0);
+    for (const leaf of leaves) expect(text, `stored value "${leaf}" is on the page`).toContain(leaf);
+    expect(html).not.toContain('data-testid="ai-recording-draft-empty"');
+    expect(html).not.toContain(pt["clinical.aiDraftEmpty"]);
+    // Content in the rest block is drawn open: nothing a reviewer must read hides behind a click.
+    expect(restDetails(html)).toMatch(/ open=""/);
+  });
+
+  it("an unrecognised key is named in the panel AND its value is in 'Outros dados guardados'", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const html = await renderPage(
+      record({
+        source: "ai_ingested",
+        aiReviewState: "pending_review",
+        data: { _aiIngestionRaw: { consultation_reason: "Dor sintetica", sintoma_alarme: "Sim, sintetico" } },
+      }),
+    );
+    expect(html).toContain('data-testid="ai-recording-draft-unknown"');
+    expect(html).toContain(REST);
+    expect(html).toContain(pt["clinical.aiDraftPayloadRestTitle"]);
+    const rest = html.slice(html.indexOf(REST));
+    expect(rest).toContain("sintoma_alarme");
+    expect(rest).toContain("Sim, sintetico");
+    // The filled value is in its field, not repeated in the rest.
+    expect(textOf(html).split("Dor sintetica")).toHaveLength(2);
+  });
+
+  it("THE COMPLAINT is still empty, and its stored envelope is kept, collapsed", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const html = await renderPage(
+      record({ source: "ai_ingested", aiReviewState: "pending_review", data: EMPTY_AI_DATA }),
+    );
+    expect(html).toContain('data-testid="ai-recording-draft-empty"');
+    expect(html).toContain(REST);
+    expect(restDetails(html)).not.toMatch(/ open=""/);
+    // Everything main printed is still in the page: the template name and each key.
+    const text = textOf(html).replace(/&quot;/g, '"');
+    expect(text).toContain('"template": "osteopathy"');
+    for (const key of Object.keys(EMPTY_AI_DATA._aiIngestionRaw._ai_meta)) expect(text).toContain(`"${key}": null`);
+  });
+
+  it("CONTROL: a draft whose every stored value is in a field has no rest block", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const html = await renderPage(
+      record({
+        source: "ai_ingested",
+        aiReviewState: "pending_review",
+        data: { _aiIngestionRaw: { consultation_reason: "Dor cervical sintetica" } },
+      }),
+    );
+    expect(html).toContain('data-testid="ai-recording-draft-fields"');
+    expect(html).not.toContain(REST);
+  });
+});
+
+/** The complaint's payload, as a fresh object. */
+function NULL_META_PAYLOAD(): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(EMPTY_AI_DATA._aiIngestionRaw)) as Record<string, unknown>;
+}

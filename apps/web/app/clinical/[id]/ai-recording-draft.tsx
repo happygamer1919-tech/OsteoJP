@@ -81,13 +81,19 @@ export function aiDraftReviewHref({
  * A draft the AI ingestion endpoint wrote from a consultation recording. Until
  * it is claimed for review it has no template, and this page used to draw it
  * under "Conteudo importado", which it is not. It now says where it came from,
- * that it waits for review, what the recording filled in, and, when that is
- * nothing, that the recording produced no content.
+ * that it waits for review, what the recording filled in, and, when nothing
+ * stored carries a value, that the recording produced no content.
  *
- * NOTHING STORED IS DROPPED. Anything the record stores outside the recording
- * that the fields do not show (`summary.otherStored`) follows the panel, under
- * the stored-content rules and a heading that says it is not the recording's.
- * A draft as ingestion or the claim writes it has none, so the block is absent.
+ * NOTHING STORED IS DROPPED, and the page never shows less than origin/main,
+ * which printed the whole stored payload as JSON:
+ *   - the recording's payload minus the values the fields show
+ *     (`summary.payloadRest`) is printed as stored under "Outros dados
+ *     guardados". It is drawn OPEN when it holds a value beyond the template's
+ *     name (an unrecognised key's answer must not hide behind a click), and
+ *     collapsed when it holds only the envelope and nulls;
+ *   - anything the record stores outside the recording that the fields do not
+ *     show (`summary.otherStored`) follows the panel, under the stored-content
+ *     rules and a heading that says it is not the recording's.
  *
  * READ-ONLY BY CONSTRUCTION: no form, no input, no action. The only way on is a
  * link to the review screen, which is where an AI draft is edited and finalized
@@ -128,34 +134,46 @@ export function AiRecordingDraft({
         <p className="text-sm text-text-secondary">{s["clinical.aiDraftHelp"]}</p>
         {awaitingReview && <p className="text-sm text-text-secondary">{s["clinical.aiDraftPending"]}</p>}
 
-        {summary.empty ? (
+        {summary.empty && (
           <p className="text-sm text-text-primary" data-testid="ai-recording-draft-empty">
             {s["clinical.aiDraftEmpty"]}
           </p>
-        ) : (
-          <>
-            {summary.filled.length > 0 && (
-              <dl className="flex flex-col gap-4" data-testid="ai-recording-draft-fields">
-                {summary.filled.map(({ path, value }) => (
-                  <div key={path} className="flex flex-col gap-1">
-                    <dt className="text-sm font-medium text-text-secondary">
-                      {aiDraftFieldLabel(fichaSchema, path, locale)}
-                    </dt>
-                    <dd className="whitespace-pre-wrap text-sm text-text-primary">
-                      {renderStoredValue(value)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-            {summary.unknownKeys.length > 0 && (
-              // Key NAMES only, as on the review screen: the values stay in the
-              // stored payload, where the reviewer reads them.
-              <p className="text-sm text-text-secondary" data-testid="ai-recording-draft-unknown">
-                {s["review.unknownKeysTitle"]}: {summary.unknownKeys.join(", ")}
-              </p>
-            )}
-          </>
+        )}
+        {summary.filled.length > 0 && (
+          <dl className="flex flex-col gap-4" data-testid="ai-recording-draft-fields">
+            {summary.filled.map(({ path, value }) => (
+              <div key={path} className="flex flex-col gap-1">
+                <dt className="text-sm font-medium text-text-secondary">
+                  {aiDraftFieldLabel(fichaSchema, path, locale)}
+                </dt>
+                <dd className="whitespace-pre-wrap text-sm text-text-primary">
+                  {renderStoredValue(value)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {summary.unknownKeys.length > 0 && (
+          // The names, as on the review screen, so a reviewer knows the ficha
+          // has no field for them. Their values are in the block below.
+          <p className="text-sm text-text-secondary" data-testid="ai-recording-draft-unknown">
+            {s["review.unknownKeysTitle"]}: {summary.unknownKeys.join(", ")}
+          </p>
+        )}
+        {summary.payloadRest !== undefined && (
+          <details
+            open={summary.payloadRestHasContent}
+            data-testid="ai-recording-draft-payload-rest"
+            className="rounded-md border border-border p-3"
+          >
+            <summary className="cursor-pointer rounded-md text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
+              {s["clinical.aiDraftPayloadRestTitle"]}
+            </summary>
+            <p className="mt-2 text-sm text-text-secondary">{s["clinical.aiDraftPayloadRestHelp"]}</p>
+            <div className="mt-2 whitespace-pre-wrap text-sm text-text-primary">
+              {renderStoredValue(summary.payloadRest)}
+            </div>
+          </details>
         )}
 
         {reviewHref && (
