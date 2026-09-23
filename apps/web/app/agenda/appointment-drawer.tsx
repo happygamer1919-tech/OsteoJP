@@ -23,7 +23,7 @@ import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
 import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
-import { patientLabel } from "@/lib/scheduling/patient-label";
+import { conflictPatientLabel, patientLabel } from "@/lib/scheduling/patient-label";
 import { getPatientContraindications, getPatientNoSmsReason, searchPatientsAction } from "@/lib/patients/actions";
 import { NO_SMS_MESSAGE_KEY } from "@/lib/patients/phone-preview";
 import type { NoSmsReason } from "@osteojp/notify";
@@ -2012,7 +2012,7 @@ function ConflictLine({ heading, items }: { heading: string; items: ConflictInfo
       {": "}
       {items
         .map((c) => {
-          const lead = c.patientName ?? (c.reason ? s[TIME_OFF_REASON_KEY[c.reason] ?? "appointment.timeOffReasonOther"] : null);
+          const lead = conflictPatientLabel(c) ?? (c.reason ? s[TIME_OFF_REASON_KEY[c.reason] ?? "appointment.timeOffReasonOther"] : null);
           const prefix = [lead, c.room].filter(Boolean).join(" · ");
           const time = `${formatTimeOfDay(new Date(c.startsAt))}-${formatTimeOfDay(new Date(c.endsAt))}`;
           return prefix ? `${prefix}: ${time}` : time;

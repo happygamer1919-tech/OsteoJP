@@ -16,6 +16,8 @@
 
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 
+import type { ConflictInfo } from "./types";
+
 const s = getStrings(DEFAULT_LOCALE);
 
 /**
@@ -39,4 +41,21 @@ export function isPatientWithheld(patientName: string | null): boolean {
  */
 export function patientLabel(patientName: string | null): string {
   return patientName ?? s["agenda.patientWithheld"];
+}
+
+/**
+ * The name on one line of a conflict warning.
+ *
+ * A THERAPIST or ROOM conflict is another booking, so a NULL name on it reads
+ * as one: `patientLabel(null)`. The conflict check returns NULL there when the
+ * caller's own reads do not show that patient (ruled migration 0096, and the
+ * second-participant read in conflict.ts already does), and a line that
+ * printed only a time would not say the slot is taken.
+ *
+ * AVAILABILITY and TIME_OFF lines are not bookings and never carry a name, so
+ * they stay NULL and each surface keeps labelling them as it does now (a
+ * time-off line by its reason).
+ */
+export function conflictPatientLabel(c: Pick<ConflictInfo, "kind" | "patientName">): string | null {
+  return c.kind === "therapist" || c.kind === "room" ? patientLabel(c.patientName) : c.patientName;
 }

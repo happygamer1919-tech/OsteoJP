@@ -234,7 +234,9 @@ export type ConflictKind = "therapist" | "room" | "availability" | "time_off";
  * (allowConflict). No PII beyond patientName.
  *
  *   therapist / room — `patientName` is the other appointment's patient; the
- *     window is that appointment's time.
+ *     window is that appointment's time. The name is null when the caller's
+ *     own reads do not return that appointment or its patient, and
+ *     conflictPatientLabel renders it as the placeholder.
  *   availability     — booking falls outside the therapist's working hours;
  *     `patientName` is null and the window is the candidate booking itself.
  *   time_off         — booking overlaps an absence block; `patientName` is null,
