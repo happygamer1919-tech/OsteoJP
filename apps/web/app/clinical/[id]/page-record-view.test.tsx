@@ -609,6 +609,59 @@ describe("the AI draft panel shows every stored value, and says 'empty' only whe
     for (const key of Object.keys(EMPTY_AI_DATA._aiIngestionRaw._ai_meta)) expect(text).toContain(`"${key}": null`);
   });
 
+  /**
+   * ROUND 4 (reviewer, behaviour lens): an unrecognised key that holds NOTHING
+   * still blocked the empty message, because "empty" asked whether any
+   * unrecognised key NAME existed. A strict-schema partner sends null for each
+   * property it did not fill, including one outside the contract.
+   */
+  it.each<[string, (p: Record<string, unknown>) => void, string]>([
+    [
+      "an unrecognised key set to null",
+      (p) => {
+        p.sintoma_alarme = null;
+      },
+      "sintoma_alarme",
+    ],
+    [
+      "an unrecognised nested leaf set to null",
+      (p) => {
+        p.systems_review = { neurological_v2: null };
+      },
+      "systems_review.neurological_v2",
+    ],
+  ])("THE DEFECT: the complaint plus %s is still empty, and the key is named and kept", async (_label, change, key) => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const payload = NULL_META_PAYLOAD();
+    change(payload);
+    const html = await renderPage(
+      record({ source: "ai_ingested", aiReviewState: "pending_review", data: { _aiIngestionRaw: payload } }),
+    );
+    expect(html).toContain('data-testid="ai-recording-draft-empty"');
+    expect(html).toContain(pt["clinical.aiDraftEmpty"]);
+    // Still named...
+    expect(html).toContain('data-testid="ai-recording-draft-unknown"');
+    expect(textOf(html)).toContain(key);
+    // ...and still printed as stored, in the rest block, collapsed: it holds nothing to read.
+    expect(html).toContain(REST);
+    expect(restDetails(html)).not.toMatch(/ open=""/);
+    const rest = textOf(html.slice(html.indexOf(REST))).replace(/&quot;/g, '"');
+    expect(rest).toContain(`"${key.split(".").pop()}": null`);
+  });
+
+  it("CONTROL: the same unrecognised key holding a value is NOT empty, and its value is drawn open", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const payload = NULL_META_PAYLOAD();
+    payload.sintoma_alarme = "Sim, sintetico";
+    const html = await renderPage(
+      record({ source: "ai_ingested", aiReviewState: "pending_review", data: { _aiIngestionRaw: payload } }),
+    );
+    expect(html).not.toContain('data-testid="ai-recording-draft-empty"');
+    expect(html).toContain('data-testid="ai-recording-draft-unknown"');
+    expect(restDetails(html)).toMatch(/ open=""/);
+    expect(textOf(html.slice(html.indexOf(REST)))).toContain("Sim, sintetico");
+  });
+
   it("CONTROL: a draft whose every stored value is in a field has no rest block", async () => {
     h.isImporterSourcedRecord.mockResolvedValue(false);
     const html = await renderPage(

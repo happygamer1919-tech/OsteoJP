@@ -57,10 +57,11 @@ describe("summariseAiRecordingDraft: what the recording produced", () => {
     expect(s.filled).toEqual([{ path: "systems_review.cardiovascular", value: "Sem alteracoes" }]);
   });
 
-  it("an unrecognised key keeps it NON-empty even with every contract key null", () => {
+  it("an unrecognised key WITH A VALUE keeps it NON-empty even with every contract key null", () => {
     // "The recording produced no content" must never be said of a draft that
-    // might carry some. The name is listed here; the value is kept in
-    // `payloadRest` (round 3, below).
+    // carries some. The name is listed here; the value is kept in
+    // `payloadRest` (round 3, below). An unrecognised key holding NOTHING does
+    // not block "empty" (round 4, at the end of this file).
     const s = summariseAiRecordingDraft(stored({ ...allContractKeysNull(), alarm_symptoms: "sim" }));
     expect(s.empty).toBe(false);
     expect(s.filled).toEqual([]);
@@ -321,5 +322,74 @@ describe("summariseAiRecordingDraft: 'empty' only when nothing stored carries a 
   it("empty containers and blank strings carry no value", () => {
     const s = summariseAiRecordingDraft(stored({ systems_review: {}, _ai_meta: { a: [], b: " " } }));
     expect(s.empty).toBe(true);
+  });
+});
+
+/**
+ * ROUND 4 (reviewer, behaviour lens): "empty" still asked whether an
+ * unrecognised key NAME existed, whatever that key held. Round 3 moved every
+ * other part of the decision onto what is stored; this part was left on the
+ * contract. A strict-schema partner sends every property it knows and null for
+ * each one it did not fill, so an empty extraction that carries ONE property
+ * outside the contract was never called empty.
+ *
+ * The rule now: an unrecognised key blocks "empty" only when it CARRIES a
+ * value. It is still named, and still kept in `payloadRest`, either way.
+ */
+describe("summariseAiRecordingDraft: an unrecognised key decides 'empty' by what it holds, not by its name", () => {
+  /** The complaint's shape (template name, the twelve contract keys null) with one change. */
+  function complaintWith(change: (payload: Record<string, unknown>) => void): Record<string, unknown> {
+    const payload: Record<string, unknown> = { template: "osteopathy", ...allContractKeysNull() };
+    change(payload);
+    return payload;
+  }
+  const nestedLeaf = (value: unknown) => (p: Record<string, unknown>) => {
+    (p.systems_review as Record<string, unknown>).neurological_v2 = value;
+  };
+
+  it.each<[string, (p: Record<string, unknown>) => void, string]>([
+    ["set to null", (p) => {
+      p.alarm_symptoms = null;
+    }, "alarm_symptoms"],
+    ["holding a blank string", (p) => {
+      p.alarm_symptoms = "  \n";
+    }, "alarm_symptoms"],
+    ["holding only empty containers and nulls", (p) => {
+      p.alarm_symptoms = { a: [], b: null, c: {} };
+    }, "alarm_symptoms"],
+    ["as a nested systems_review leaf set to null", nestedLeaf(null), "systems_review.neurological_v2"],
+    ["as a nested systems_review leaf holding a blank string", nestedLeaf(" "), "systems_review.neurological_v2"],
+  ])("THE DEFECT: an unrecognised key %s is still an EMPTY extraction", (_label, change, key) => {
+    const payload = complaintWith(change);
+    const s = summariseAiRecordingDraft(stored(payload));
+    expect(s.empty).toBe(true);
+    expect(s.filled).toEqual([]);
+    // Still named, so a reviewer knows the ficha has no field for it...
+    expect(s.unknownKeys).toEqual([key]);
+    // ...and still kept, whole, with the rest of what was stored.
+    expect(s.payloadRest).toEqual(payload);
+    expect(s.payloadRestHasContent).toBe(false);
+  });
+
+  it.each<[string, (p: Record<string, unknown>) => void]>([
+    ["holding text", (p) => {
+      p.alarm_symptoms = "Sim, sintetico";
+    }],
+    ["holding false", (p) => {
+      p.alarm_symptoms = false;
+    }],
+    ["holding zero", (p) => {
+      p.alarm_symptoms = 0;
+    }],
+    ["holding a value deep inside", (p) => {
+      p.alarm_symptoms = { a: [null, { b: "Texto sintetico" }] };
+    }],
+    ["as a nested systems_review leaf holding text", nestedLeaf("Cefaleia sintetica")],
+  ])("CONTROL: an unrecognised key %s keeps it NON-empty", (_label, change) => {
+    const s = summariseAiRecordingDraft(stored(complaintWith(change)));
+    expect(s.filled).toEqual([]);
+    expect(s.unknownKeys).toHaveLength(1);
+    expect(s.empty).toBe(false);
+    expect(s.payloadRestHasContent).toBe(true);
   });
 });

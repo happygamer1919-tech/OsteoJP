@@ -27,11 +27,18 @@ import { projectAiPayloadOntoFichaFields, readFichaKeyPath } from "./ficha-medic
  *
  * "EMPTY" IS SAID ONLY WHEN NOTHING STORED CARRIES A VALUE. Its message reads
  * "the recording produced no content: no ficha field was filled in", so it
- * needs no filled field, no unrecognised key, and no value (a non-blank string,
- * a number, a boolean) anywhere in `payloadRest` or `otherStored`. Deciding it
- * from the contract instead (the twelve keys and the names of the rest) called
- * `systems_review: "texto"` empty, because a container holding text fills no
- * field and is not an unknown key.
+ * needs no filled field and no value (a non-blank string, a number, a boolean)
+ * anywhere in `payloadRest` or `otherStored`. It is decided from what is
+ * stored, never from the contract:
+ *
+ *   - Deciding it from the twelve keys called `systems_review: "texto"` empty,
+ *     because a container holding text fills no field and is not an unknown key.
+ *   - Deciding it from the NAMES of unrecognised keys refused "empty" to a
+ *     strict-schema payload that sends null for a property outside the contract
+ *     (`alarm_symptoms: null`), which carries nothing. An unrecognised key has
+ *     no term of its own: no field shows it, so its value is in `payloadRest`
+ *     whole, and `payloadRestHasContent` sees any value it carries. It is still
+ *     named in `unknownKeys` either way.
  *
  * ONE EXEMPTION: the payload's top-level `template`, when it is a string. It is
  * the name of the form the partner filled, not something the recording
@@ -51,7 +58,11 @@ export type AiRecordingDraftSummary = {
   payloadRest: unknown;
   /** `payloadRest` holds a value beyond the template's name. */
   payloadRestHasContent: boolean;
-  /** Nothing filled, nothing unrecognised, and no stored value anywhere. */
+  /**
+   * Nothing filled, and no stored value anywhere. An unrecognised key that
+   * holds nothing (null, blank) does not make it non-empty; one that holds a
+   * value does, through `payloadRestHasContent`.
+   */
   empty: boolean;
   /**
    * The stored data outside the payload that the fields do not show.
@@ -160,11 +171,9 @@ export function summariseAiRecordingDraft(
     unknownKeys: unknown,
     payloadRest,
     payloadRestHasContent,
-    empty:
-      filled.length === 0 &&
-      unknown.length === 0 &&
-      !payloadRestHasContent &&
-      !carriesStoredValue(otherStored),
+    // No `unknown.length` term: an unrecognised key is decided by what it
+    // holds, which `payloadRestHasContent` reads (see the header).
+    empty: filled.length === 0 && !payloadRestHasContent && !carriesStoredValue(otherStored),
     otherStored,
   };
 }
