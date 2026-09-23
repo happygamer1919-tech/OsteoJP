@@ -49,6 +49,10 @@ const DELETE_ORDER = [
   "patient_locations",
   "patient_note_revisions",
   "patient_pack_instances",
+  // 0093 (RGPD-01), promoted 2026-09-23 on PR #1399: the append-only record of a
+  // patient's RGPD consent. A direct child of patients, ON DELETE NO ACTION, so
+  // a script without it aborts on the first patient who has a consent row.
+  "patient_rgpd_acceptances",
   "patient_terms_acceptances",
   "patient_trusted_devices",
   "patient_audit_log",
@@ -183,20 +187,10 @@ test("no table outside the patient graph is deleted from", () => {
 
 /* ---------------- the graph ---------------- */
 
-test("every table it deletes from still exists in schema.ts", () => {
-  // A renamed or dropped table lands here as a red test rather than as a failed
-  // transaction at 22:00.
-  for (const t of DELETE_ORDER) {
-    assert.ok(schema.includes(`"${t}"`), `${t} is deleted but is not in schema.ts`);
-  }
-});
-
-test("every table with an FK path to patients is covered", () => {
-  // Derived live from the migrations, across all five DDL forms this schema
-  // uses. If a migration adds a new child of patients, this test fails until
-  // the script covers it.
+/** Every numbered migration CI applies, comments stripped. The graph reads it. */
+const MIGRATIONS = (() => {
   const dir = path.join(REPO, "packages/db/migrations");
-  const body = fs
+  return fs
     .readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
     .map((f) => fs.readFileSync(path.join(dir, f), "utf8"))
@@ -205,9 +199,51 @@ test("every table with an FK path to patients is covered", () => {
     .filter((l) => !l.trimStart().startsWith("--"))
     .join("\n")
     .replace(/\/\*[\s\S]*?\*\//g, "");
+})();
 
-  const REF = String.raw`(?:"public"\.|public\.)?"?([a-z_0-9]+)"?`;
-  const IDN = String.raw`"?([a-z_0-9]+)"?`;
+const REF = String.raw`(?:"public"\.|public\.)?"?([a-z_0-9]+)"?`;
+const IDN = String.raw`"?([a-z_0-9]+)"?`;
+
+/** Tables some numbered migration creates. */
+const CREATED = new Set(
+  [...MIGRATIONS.matchAll(new RegExp(String.raw`CREATE TABLE\s+(?:IF NOT EXISTS\s+)?${REF}`, "gi"))].map((m) => m[1]),
+);
+
+/**
+ * ENTRIES ALLOWED TO RUN AHEAD OF THEIR MIGRATION, BY NAME. Under the gate
+ * freeze this file changes only in a GATE-CHANGE PR, and the migration that adds
+ * a child of patients arrives in an ordinary PR, so one of the two must merge
+ * first. This one lands first. Once the migration is promoted onto main the
+ * table is in CREATED and its entry here is inert; delete it in the next
+ * GATE-CHANGE that touches this file.
+ */
+const AHEAD_OF_MIGRATION = new Set(["patient_rgpd_acceptances"]);
+
+test("every table it deletes from still exists in schema.ts", () => {
+  // A renamed or dropped table lands here as a red test rather than as a failed
+  // transaction at 22:00. A table a migration CREATES must be in schema.ts, so a
+  // rename or a drop is caught exactly as before; only a table NO migration
+  // creates yet is exempt, and only if it is named in AHEAD_OF_MIGRATION.
+  for (const t of DELETE_ORDER) {
+    if (!CREATED.has(t)) {
+      assert.ok(AHEAD_OF_MIGRATION.has(t), `${t} is in DELETE_ORDER but no migration creates it and it is not declared ahead of its migration`);
+      continue;
+    }
+    assert.ok(schema.includes(`"${t}"`), `${t} is deleted but is not in schema.ts`);
+  }
+  // And what the script ACTUALLY deletes from must exist, with no exception: a
+  // declared-ahead table cannot be deleted from until its migration and its
+  // schema.ts entry are on the same branch.
+  for (const m of statements.matchAll(/delete\s+from\s+([a-z_0-9]+)/gi)) {
+    assert.ok(schema.includes(`"${m[1]}"`), `the script deletes from ${m[1]}, which is not in schema.ts`);
+  }
+});
+
+test("every table with an FK path to patients is covered", () => {
+  // Derived live from the migrations, across all five DDL forms this schema
+  // uses. If a migration adds a new child of patients, this test fails until
+  // the script covers it.
+  const body = MIGRATIONS;
   const edges = new Set();
   const add = (c, p) => edges.add(`${c}|${p}`);
 
@@ -239,11 +275,15 @@ test("every table with an FK path to patients is covered", () => {
   };
   walk("patients");
 
-  // 18 until 0091 (CARE-01) added patient_care_team on 2026-09-21.
+  // 18 until 0091 (CARE-01) added patient_care_team on 2026-09-21; 20 once 0093
+  // (RGPD-01) adds patient_rgpd_acceptances.
   assert.ok(reached.size >= 19, `expected at least 19 patient-rooted tables, found ${reached.size}`);
   const covered = new Set(DELETE_ORDER);
   for (const t of reached) {
     assert.ok(covered.has(t), `${t} has an FK path to patients but the script never deletes from it`);
+    // Listing it is not deleting it. Before 2026-09-23 a DELETE_ORDER entry with
+    // no statement behind it passed every test here.
+    assert.match(statements, new RegExp(String.raw`delete\s+from\s+${t}\b`, "i"), `${t} is in DELETE_ORDER but the script has no delete from it`);
   }
 });
 
