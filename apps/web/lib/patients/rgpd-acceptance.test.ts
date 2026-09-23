@@ -1,0 +1,322 @@
+/**
+ * RGPD-01 — the consent captured at patient creation (owner ruling
+ * Q-RGPD-NEW = b): asked at creation, NOT required, and the ficha shows
+ * "RGPD em falta" until it exists.
+ *
+ * These run the REAL modules against a fake transaction, so the assertions are
+ * on the values the app actually hands the database. The database's own rules
+ * (tenant RLS, `recorded_by = auth.uid()`, append-only, the blank-version
+ * CHECK) are proven separately and DB-gated in
+ * `packages/db/tests/patient-rgpd-acceptances.db.test.ts` — that suite proves
+ * the database refuses a lie, this one proves the app does not tell one.
+ */
+import { vi, describe, it, expect, beforeEach } from "vitest";
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
+vi.mock("./audit", () => ({ writeAudit: vi.fn(async () => {}) }));
+// SPREAD THE REAL MODULE, never a bare factory: `@osteojp/db` also supplies the
+// drizzle table this module selects from, and a factory returning only the probe
+// would leave that undefined in every test here (the vi.mock-replaces-the-whole-
+// module trap). Only the schema probe is stubbed.
+vi.mock("@osteojp/db", async (orig) => {
+  const actual = await orig<typeof import("@osteojp/db")>();
+  return { ...actual, rgpdAcceptancesSchemaPresent: vi.fn(async () => true) };
+});
+
+import { runScoped } from "@/lib/auth/context";
+import { patientRgpdAcceptances, rgpdAcceptancesSchemaPresent } from "@osteojp/db";
+import { CONSENT_DATA_KEY, readConsentState } from "../clinical/consent";
+import { writeAudit } from "./audit";
+import {
+  RGPD_VERSION,
+  getLatestRgpdAcceptance,
+  insertRgpdAcceptanceTx,
+} from "./rgpd-acceptance";
+import { parseCreatePatient } from "./validation";
+import type { RequestContext } from "@osteojp/auth";
+
+const mockRunScoped = vi.mocked(runScoped);
+const mockAudit = vi.mocked(writeAudit);
+const mockProbe = vi.mocked(rgpdAcceptancesSchemaPresent);
+
+/** The ACTING STAFF MEMBER. Deliberately not the patient id below. */
+const ctx: RequestContext = { tenantId: "tenant-1", role: "reception", userId: "staff-1" };
+const PATIENT = "patient-9";
+
+/** Captures what the module inserts, without a database. */
+function fakeInsertTx() {
+  const inserted: Record<string, unknown>[] = [];
+  const tx = {
+    insert: () => ({
+      values: async (v: Record<string, unknown>) => {
+        inserted.push(v);
+      },
+    }),
+  };
+  return { tx, inserted };
+}
+
+/** A select chain that yields `rows`, so the read can be asserted without a DB. */
+function fakeSelectTx(rows: unknown[]) {
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    orderBy: () => chain,
+    limit: async () => rows,
+  };
+  return { select: () => chain };
+}
+
+/**
+ * The same chain, but it REMEMBERS WHICH TABLE WAS READ.
+ *
+ * Asserting the table by IDENTITY (the drizzle object handed to `.from()`) is
+ * the difference between proving where the badge's answer comes from and
+ * grepping the source for a string somebody could rename.
+ */
+function fakeSelectTxCapturing(rows: unknown[]) {
+  const tablesRead: unknown[] = [];
+  const chain = {
+    from: (table: unknown) => {
+      tablesRead.push(table);
+      return chain;
+    },
+    where: () => chain,
+    orderBy: () => chain,
+    limit: async () => rows,
+  };
+  return { tx: { select: () => chain }, tablesRead };
+}
+
+describe("the tick is OPTIONAL, and anything but a true boolean means not signed", () => {
+  // The ruling is "asked at creation, NOT required". A registration with no
+  // consent is a normal registration, so the parser must never refuse it.
+  const base = { fullName: "Maria Silva", nifExempt: true, nifExemptReason: "Estrangeira" };
+
+  it("defaults to false when the key is absent — creating without ticking is allowed", () => {
+    expect(parseCreatePatient(base).rgpdConsent).toBe(false);
+  });
+
+  it("is false for every non-true value a hand-posted payload could carry", () => {
+    for (const v of ["true", 1, "on", {}, [], null, undefined]) {
+      expect(parseCreatePatient({ ...base, rgpdConsent: v as never }).rgpdConsent).toBe(false);
+    }
+  });
+
+  it("is true only for the real boolean", () => {
+    expect(parseCreatePatient({ ...base, rgpdConsent: true }).rgpdConsent).toBe(true);
+  });
+});
+
+describe("ticking records WHO and WHEN", () => {
+  beforeEach(() => {
+    mockRunScoped.mockReset();
+    mockAudit.mockClear();
+  });
+
+  it("writes patient_id, accepted_at, rgpd_version and recorded_by", async () => {
+    const { tx, inserted } = fakeInsertTx();
+    const acceptedAt = new Date("2026-09-17T10:15:00.000Z");
+
+    await insertRgpdAcceptanceTx(tx as never, ctx, { patientId: PATIENT, acceptedAt });
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      tenantId: "tenant-1",
+      patientId: PATIENT,
+      acceptedAt,
+      rgpdVersion: RGPD_VERSION,
+      // THE ACTOR IS THE STAFF MEMBER, never the patient. An acceptance with no
+      // attestable actor is worth nothing in a dispute, and the RLS INSERT
+      // policy re-checks this against auth.uid().
+      recordedBy: "staff-1",
+    });
+    expect(inserted[0]).not.toMatchObject({ recordedBy: PATIENT });
+  });
+
+  it("audits the write in the SAME transaction, with no PII in the metadata", async () => {
+    const { tx } = fakeInsertTx();
+    await insertRgpdAcceptanceTx(tx as never, ctx, {
+      patientId: PATIENT,
+      acceptedAt: new Date("2026-09-17T10:15:00.000Z"),
+    });
+
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    const [auditTx, auditCtx, entry] = mockAudit.mock.calls[0]!;
+    // Hard rule 6: the same tx, so the row and its audit commit together.
+    expect(auditTx).toBe(tx);
+    expect(auditCtx).toBe(ctx);
+    expect(entry.action).toBe("patient.rgpd_accept");
+    expect(entry.entityId).toBe(PATIENT);
+    // Hard rule 7: a version label only. No name, no NIF, no clinical content.
+    expect(entry.metadata).toEqual({ rgpdVersion: RGPD_VERSION });
+  });
+
+  it("uses the version label the build is on, and that label identifies real text", () => {
+    // Unlike 0058's first terms label, this one is not a placeholder: the
+    // wording exists at `clinical.consent.rgpd.body`. A blank label is refused
+    // by a CHECK in the migration.
+    expect(RGPD_VERSION).toBe("rgpd-v1-2026");
+    expect(RGPD_VERSION.trim()).not.toBe("");
+  });
+});
+
+describe("the badge is the ABSENCE of a row, so existing patients need no backfill", () => {
+  // BLOCK BODY, NOT A CONCISE ARROW, and the difference is not style.
+  // `mockReset()` RETURNS the mock, and vitest treats a value returned from
+  // `beforeEach` as a TEARDOWN function — so a concise body registers the mock
+  // ITSELF as teardown, and vitest calls it with ZERO arguments after every
+  // test. The implementation then runs with `fn` undefined and throws "fn is
+  // not a function", reported against the test that had just passed.
+  // terms-acceptance.test.ts carries the same warning for the same reason.
+  beforeEach(() => {
+    mockRunScoped.mockReset();
+  });
+
+  it("returns null when the patient has no consent on file", async () => {
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(fakeSelectTx([]) as never));
+    expect(await getLatestRgpdAcceptance(ctx, PATIENT)).toBeNull();
+  });
+
+  it("returns the latest consent when one exists", async () => {
+    const acceptedAt = new Date("2026-09-17T10:15:00.000Z");
+    mockRunScoped.mockImplementation(async (_c, fn) =>
+      fn(fakeSelectTx([{ acceptedAt, rgpdVersion: RGPD_VERSION }]) as never),
+    );
+    expect(await getLatestRgpdAcceptance(ctx, PATIENT)).toEqual({
+      acceptedAt: acceptedAt.toISOString(),
+      rgpdVersion: RGPD_VERSION,
+    });
+  });
+
+  it("READS THROUGH runScoped, so RLS scopes the row by tenant", async () => {
+    // The read scope is not widened by this feature: it goes through the same
+    // tenant-scoped transaction every other patient read uses. A direct client
+    // would bypass RLS, which is the defect this asserts is absent.
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(fakeSelectTx([]) as never));
+    await getLatestRgpdAcceptance(ctx, PATIENT);
+    expect(mockRunScoped).toHaveBeenCalledTimes(1);
+    expect(mockRunScoped.mock.calls[0]![0]).toBe(ctx);
+  });
+});
+
+describe("the module offers no way to rewrite history", () => {
+  it("exports no update and no delete helper", async () => {
+    // The table is append-only and the database enforces it; this asserts the
+    // app does not even offer the shape, so nobody writes a helper that would
+    // be refused at runtime.
+    const mod = await import("./rgpd-acceptance");
+    const names = Object.keys(mod);
+    expect(names.some((n) => /update|delete|revoke|withdraw/i.test(n))).toBe(false);
+    expect(names.sort()).toEqual([
+      "RGPD_VERSION",
+      "getLatestRgpdAcceptance",
+      "insertRgpdAcceptanceTx",
+      "rgpdConsentCaptureAvailable",
+    ]);
+  });
+});
+
+/**
+ * INERT UNTIL THE TABLE EXISTS.
+ *
+ * The migration is unnumbered and held, so every pre-merge environment runs
+ * without `patient_rgpd_acceptances`. The first cut of RGPD-01 assumed the table
+ * because the PR is held until the apply; that is true of production and false
+ * of CI, whose e2e database is built by `supabase db reset` from
+ * supabase/migrations. The ficha threw 42P01 on every patient page and took all
+ * three Playwright shards red. These two arms are the regression.
+ */
+describe("before the migration is applied", () => {
+  beforeEach(() => {
+    mockRunScoped.mockReset();
+    mockProbe.mockReset();
+  });
+
+  it("the ficha read returns null rather than throwing 42P01", async () => {
+    mockProbe.mockResolvedValue(false);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(fakeSelectTx([]) as never));
+
+    await expect(getLatestRgpdAcceptance(ctx, PATIENT)).resolves.toBeNull();
+    // It must not have reached the table at all.
+    expect(mockProbe).toHaveBeenCalledTimes(1);
+  });
+
+  it("the WRITE refuses instead of silently discarding the consent", async () => {
+    // The asymmetry with the read is the point. "Nothing on file" is a true
+    // answer; a write that reports success while storing nothing would tell the
+    // clinic a signature was captured that nothing recorded.
+    mockProbe.mockResolvedValue(false);
+    const { tx, inserted } = fakeInsertTx();
+
+    await expect(
+      insertRgpdAcceptanceTx(tx as never, ctx, { patientId: PATIENT, acceptedAt: new Date() }),
+    ).rejects.toThrow(/does not exist on this database/);
+    expect(inserted).toHaveLength(0);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE BADGE HAS ONE SOURCE, AND THE FICHA'S PER-RECORD TICK IS NOT IT.
+ *
+ * There are two RGPD consent surfaces in this product and they are independent:
+ * this per-patient table, and the `_consent.rgpd` item inside a clinical record
+ * (`lib/clinical/consent.ts`), which is PER RECORD and lives in
+ * `clinical_records.data`. The owner has ruled that THIS table is the
+ * authoritative consent record and the one the badge reads; the per-record tick
+ * is untouched and stays independent. Nothing reconciles them yet.
+ *
+ * So the badge must answer from exactly one of them, and these arms pin which.
+ * The per-record tick cannot clear the badge for a STRUCTURAL reason rather than
+ * a policy one: this read never reaches `clinical_records` at all.
+ */
+describe("the badge reads the per-patient table, and only that", () => {
+  beforeEach(() => {
+    mockRunScoped.mockReset();
+    mockProbe.mockReset();
+    // The table exists throughout this block. The inert-before-apply arms are
+    // above, and `mockReset` above would otherwise leave the probe undefined.
+    mockProbe.mockResolvedValue(true);
+  });
+
+  it("selects from patient_rgpd_acceptances and from no other table", async () => {
+    const { tx, tablesRead } = fakeSelectTxCapturing([]);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(tx as never));
+
+    await getLatestRgpdAcceptance(ctx, PATIENT);
+
+    // Identity, not a name: one table, and it is this one.
+    expect(tablesRead).toEqual([patientRgpdAcceptances]);
+  });
+
+  it("A GRANTED PER-RECORD TICK DOES NOT CLEAR THE BADGE", async () => {
+    // The strongest form of the per-record tick a clinician can record today,
+    // read back by the real parser so this is the actual granted state.
+    const recordData = { [CONSENT_DATA_KEY]: { treatment: "granted", rgpd: "granted" } };
+    expect(readConsentState(recordData).rgpd).toBe("granted");
+
+    // ...while the per-patient table holds nothing for this patient.
+    const { tx, tablesRead } = fakeSelectTxCapturing([]);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(tx as never));
+
+    // The ficha therefore still reads "RGPD em falta". Null is the badge.
+    expect(await getLatestRgpdAcceptance(ctx, PATIENT)).toBeNull();
+    // And the granted tick was never consulted: no clinical table was read.
+    expect(tablesRead).toEqual([patientRgpdAcceptances]);
+  });
+
+  it("THE PER-PATIENT ROW DOES CLEAR IT", async () => {
+    const acceptedAt = new Date("2026-09-18T09:00:00.000Z");
+    const { tx } = fakeSelectTxCapturing([{ acceptedAt, rgpdVersion: RGPD_VERSION }]);
+    mockRunScoped.mockImplementation(async (_c, fn) => fn(tx as never));
+
+    // Non-null is the entire condition the chip hangs on (`!rgpdAcceptance`),
+    // so a row here is what takes "RGPD em falta" off the ficha.
+    await expect(getLatestRgpdAcceptance(ctx, PATIENT)).resolves.toEqual({
+      acceptedAt: acceptedAt.toISOString(),
+      rgpdVersion: RGPD_VERSION,
+    });
+  });
+});

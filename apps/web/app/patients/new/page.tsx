@@ -5,6 +5,7 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { resolveLocationControl } from "@/lib/auth/location-choice";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { listActiveLocations } from "@/lib/invoices/queries";
+import { rgpdConsentCaptureAvailable } from "@/lib/patients/rgpd-acceptance";
 import { PatientForm } from "../_components/patient-form";
 
 const s = getStrings(DEFAULT_LOCALE);
@@ -20,9 +21,14 @@ export default async function NewPatientPage() {
   // OSTEOJP-WEB-8: the guard redirects on its own now. The .catch() also
   // swallowed a real Auth outage into a login bounce.
   const actor = await requireRequestContext();
-  const [scope, locations] = await Promise.all([
+  // RGPD-01: the tick is only offered where it can actually be recorded. The
+  // migration is unnumbered and held, so before the apply the table does not
+  // exist and the box would be refused on submit. Absent is the right control
+  // then, and the patient still registers and reads "RGPD em falta".
+  const [scope, locations, rgpdEnabled] = await Promise.all([
     viewerLocationScope(actor),
     listActiveLocations(actor),
+    rgpdConsentCaptureAvailable(actor),
   ]);
   const control = resolveLocationControl(
     scope,
@@ -41,7 +47,7 @@ export default async function NewPatientPage() {
       <h1 className="mb-6 mt-2 text-2xl font-semibold tracking-tight">
         {s["patients.new"]}
       </h1>
-      <PatientForm locations={formLocations} />
+      <PatientForm locations={formLocations} rgpdEnabled={rgpdEnabled} />
     </main>
   );
 }
