@@ -474,6 +474,22 @@ alone. It is an assertion about the apply, not an invariant.
 | `recorded_by` is pinned to the acting user | the shape by post-check 9, R5 and the CI suite; the behaviour by the rehearsal's INSERT arms only | RLS, WITH CHECK |
 | the consent is asked at patient creation and the ficha reads "RGPD em falta" until given | **NOT DISCHARGED BY THIS DOCUMENT.** The app code ships when #1399 merges, after the apply; the screen check is the owner's | the route |
 
+## Measured on production, READ ONLY, 2026-09-23T01:46Z
+
+Run by the authoring lane from its own clone, never from the apply worktree, with
+these exact files (the pins above):
+
+- **the pre-check: 15 OK, 0 FAIL.** The carries it printed: `journal_rows_before` 90,
+  `policies_before` 93, `secdef_functions_before` 26, `public_tables_before` 47,
+  `other_policies_md5` `a8044a3327d5d5656833fb9606e94ebf`;
+- **the behaviour check BEFORE, as the named actor: `2 OK / 0 VACUOUS / 5 FAIL`,
+  failing on exactly R2, R3, R4, R5 and R6.** The profile stage 1 asserts;
+- **the named actor** `4750c272-8559-466d-8d8a-b6898be93e06`: role `reception`,
+  `is_active` true, `is_shared_resource` false.
+
+Nothing here is a count of patients, clinics or consents. The transcripts stay on the
+authoring machine.
+
 ## Rehearsed on 2026-09-23 on a throwaway standing at production's position
 
 **Where it ran.** A throwaway Postgres 17 database cloned from a snapshot that
@@ -489,6 +505,10 @@ matches production on every fingerprint this document relies on, each read on
 | public tables | 47 | MATCH |
 | `patient_rgpd_acceptances` | absent | MATCH |
 | pre-check carry `other_policies_md5` | `a8044a3327d5d5656833fb9606e94ebf` | MATCH |
+
+**The actor on the throwaway** is a synthetic row carrying the production actor's id
+and role (`reception`, active, not a resource), so the blocks run unedited; its other
+columns are placeholders. Production's own actor row is read above.
 
 **How it ran.** The five blocks were extracted from this document verbatim and run
 under `zsh -f` from a clone of a private bare origin holding this branch, with
@@ -531,6 +551,8 @@ sha256), `when` 1788501400000, present exactly once.
 | stage 1 on the APPLIED database, marker gone | 1 | pre-check FAIL on 1, 2, 3, 4, 6 and `journal_rows_before`; the previous transcript byte-identical, the failed run in `.new` | journal 91, nothing re-applied |
 | stage 3 with UPDATE granted back to `authenticated` | 1 | R4 FAIL, `U=true` | restored |
 | stage 3 with the INSERT policy recreated WITHOUT `recorded_by` | 1 | R5 FAIL, `pin=false` | restored, then stage 3 green again |
+| stage 3 with the INSERT check widened to `(... AND recorded_by = auth.uid()) OR true` | 1 | R5 FAIL, `pin=false`: the md5 moved although the text still contains the pin | restored |
+| stage 3 with SELECT granted to `anon` | 1 | R6 FAIL | revoked, then stage 3 green again |
 | stage 3 with rows loaded | 1 | the exact profile: `It read 7 OK / 0 VACUOUS / 0 FAIL`. By design: the data moved | |
 | stage 1 with the table already created by hand | 1 | pre-check 1, 2, 3 FAIL | journal 90, nothing applied |
 | stage 1 with only a bare table present | 1 | pre-check 1 FAIL | journal 90, nothing applied |
@@ -544,6 +566,14 @@ sha256), `when` 1788501400000, present exactly once.
 wrong `public_tables_before` FAILs 12; `other_policies_md5` omitted STOPs with exit
 3; an UPDATE policy added on the table FAILs 7, 10 and 13; a table with a policy
 added elsewhere FAILs 10, 12 and 13. Back to clean: 14 OK.
+
+**Each wrong shape of the table itself, on a fresh copy of the applied database,**
+with the correct carries: SELECT `USING (... OR true)` FAILs 8; INSERT
+`WITH CHECK (tenant ... OR recorded_by ...)` FAILs 9; INSERT
+`WITH CHECK ((...) OR true)` FAILs 9; the index made UNIQUE FAILs 3; the index made
+partial FAILs 3; the `patient_id` foreign key made ON DELETE CASCADE FAILs 4; TRUNCATE
+granted to `patient` FAILs 6; ALL granted to `anon` FAILs 6. The post-check against a
+database where 0093 is not applied exits 0 with FAIL rows and no ERROR.
 
 **The INSERT pin in action, which no READ ONLY check can show.** On the applied
 throwaway, as the named actor (flat claims, `SET LOCAL ROLE authenticated`):
@@ -567,6 +597,12 @@ apply day.
 **CI's DB suite on the same shapes.** `packages/db/tests/patient-rgpd-acceptances.db.test.ts`
 against the applied throwaway: 9 passed. Against the unapplied snapshot: 9 skipped,
 which is the suite's schema gate saying "not measured".
+
+**The pushed tree is the rehearsed tree.** Every run recorded here extracted the five
+blocks from this document at the branch head pushed to the private origin, and the
+final run was made from the commit that carries this sentence, sidecar included. The
+blocks changed once between runs (the post-check and behaviour pins, and the stage 3
+STOP text); the whole harness was run again after that, not only the changed arms.
 
 **The patient cleanup script.** On the applied throwaway with a consent row for each
 of the tenant's patients: `main`'s `scripts/import/cleanup-test-patients.sql`
