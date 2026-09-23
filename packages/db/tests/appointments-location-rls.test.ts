@@ -38,6 +38,7 @@ const A = {
   apTlocB: randomUUID(), // LocB, practitioner therapistT (T works multi-location)
   apSecondary: randomUUID(), // LocA, practitioner otherT, practitioner_2 therapistT
   apRoom: randomUUID(), // LocA, practitioner otherT, room 'Sala 1', patient pOther
+  apCareLocA: randomUUID(), // LocA, practitioner otherT, patient pX - CARE-LOC's positive arm
 };
 
 const Z = { tenant: randomUUID(), admin: randomUUID(), loc: randomUUID(), appt: randomUUID(), patient: randomUUID() };
@@ -47,6 +48,10 @@ const W0 = "2026-05-04T09:00:00Z";
 const W1 = "2026-05-04T10:00:00Z";
 const T2 = "2026-05-05T09:00:00Z";
 const T3 = "2026-05-05T10:00:00Z";
+// CARE-LOC's own day, deliberately clear of W0/W1 and T2/T3 so the new row adds
+// no conflict to the appointment_conflicts arms below.
+const T4 = "2026-05-06T09:00:00Z";
+const T5 = "2026-05-06T10:00:00Z";
 
 async function seed(p: Sql): Promise<void> {
   await p`insert into tenants (id, name, slug) values (${A.tenant}, 'PL09b A', ${`pl09b-a-${A.tenant}`})`;
@@ -60,10 +65,19 @@ async function seed(p: Sql): Promise<void> {
     (${A.unassignedAdmin}, ${A.tenant}, ${`u-${A.unassignedAdmin}@x.pt`}, 'Unassigned Admin')`;
   await p`insert into locations (id, tenant_id, name) values
     (${A.locA}, ${A.tenant}, 'Loc A'), (${A.locB}, ${A.tenant}, 'Loc B')`;
+  // therapistT is installed at LocA and NOT at LocB. Before CARE-LOC (0092) this
+  // row did not exist and it did not matter: no policy read a THERAPIST's
+  // staff_locations. 0092 does, so without it viewer_location_ids() is empty,
+  // the care-team arm admits nothing at all, and every assertion below would
+  // pass for the wrong reason - including on a 0092 that had broken the policy
+  // outright. Production has no therapist without a membership row (measured
+  // 2026-09-22: 19 of 19 active therapists hold exactly one), so the row is
+  // also the realistic fixture.
   await p`insert into staff_locations (tenant_id, user_id, location_id) values
     (${A.tenant}, ${A.adminA},     ${A.locA}),
     (${A.tenant}, ${A.receptionA}, ${A.locA}),
-    (${A.tenant}, ${A.adminB},     ${A.locB})`;
+    (${A.tenant}, ${A.adminB},     ${A.locB}),
+    (${A.tenant}, ${A.therapistT}, ${A.locA})`;
   // pOther is created by + treated by otherT, so therapistT can NOT see it (0047).
   await p`insert into patients (id, tenant_id, full_name, created_by) values
     (${A.pX},     ${A.tenant}, 'Patient X',     ${A.otherT}),
@@ -78,6 +92,10 @@ async function seed(p: Sql): Promise<void> {
   // Room appointment at LocA for pOther (invisible to therapistT under patients RLS).
   await p`insert into appointments (id, tenant_id, patient_id, practitioner_id, location_id, room, starts_at, ends_at)
           values (${A.apRoom}, ${A.tenant}, ${A.pOther}, ${A.otherT}, ${A.locA}, 'Sala 1', ${W0}, ${W1})`;
+  // CARE-LOC's positive arm: otherT's appointment for pX at therapistT's OWN
+  // clinic. Identical to apB in every respect but the location.
+  await p`insert into appointments (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at)
+          values (${A.apCareLocA}, ${A.tenant}, ${A.pX}, ${A.otherT}, ${A.locA}, ${T4}, ${T5})`;
 
   // Cross-tenant neighbour.
   await p`insert into tenants (id, name, slug) values (${Z.tenant}, 'PL09b Z', ${`pl09b-z-${Z.tenant}`})`;
@@ -141,13 +159,36 @@ describe.skipIf(!live)("PL-09 appointments location RLS matrix", () => {
    *
    * The FOR ALL policy is untouched: 0091 is a separate FOR SELECT policy, so
    * the write matrix below still refuses therapistT on apB.
+   *
+   * NARROWED AGAIN BY 0092 (CARE-LOC), AND THIS TOO IS THE RULING. The owner
+   * ruled option (b) on 2026-09-21: the patient-following view stops at the
+   * therapist's OWN clinic. So `apB` flips back to INVISIBLE - not because 0091
+   * was wrong, but because it is `pX`'s appointment at LocB and therapistT
+   * belongs to LocA. That is one assertion reversed twice in two migrations,
+   * and both reversals are rulings rather than repairs.
+   *
+   * `apCareLocA` IS WHY THAT REVERSAL IS NOT VACUOUS, and it is the arm to keep
+   * if any is ever dropped. It is `apB` with one field changed, the location:
+   * otherT's appointment, for pX, at LocA. It must stay VISIBLE. Without it,
+   * `apB === false` would pass just as well on a 0092 that had broken the
+   * care-team policy outright, or on a therapist with no clinic at all - which
+   * is exactly the state this fixture was in before the staff_locations row
+   * above was added, and exactly why the arm went red instead of meaningless.
+   *
+   * WHAT 0092 DELIBERATELY DOES NOT NARROW: the therapist's OWN work.
+   * `apTlocB` is therapistT's own appointment at LocB, a clinic they do not
+   * belong to, and it stays visible because `appointments_rls` admits
+   * `practitioner_id = auth.uid()` with no location predicate. 0092's header
+   * says so in as many words and carries it to the owner as a question. If
+   * somebody later narrows that too, this line is the one that will go red.
    */
-  it("therapist sees OWN appointments (primary + secondary practitioner), across locations, plus every appointment of a patient they treat - and nothing for a patient they do not", async () => {
+  it("therapist sees OWN appointments (primary + secondary practitioner), across locations, plus every appointment of a patient they treat AT THEIR OWN CLINIC - and nothing for a patient they do not", async () => {
     const seen = await visible(sql, claimsFor(A.tenant, "therapist", A.therapistT));
     expect(seen.has(A.apA)).toBe(true); // primary @ LocA
-    expect(seen.has(A.apTlocB)).toBe(true); // primary @ LocB (own, cross-location)
+    expect(seen.has(A.apTlocB)).toBe(true); // primary @ LocB: OWN work, 0092 does not narrow it
     expect(seen.has(A.apSecondary)).toBe(true); // secondary practitioner
-    expect(seen.has(A.apB)).toBe(true); // otherT's, but pX's - 0091, ruling Q-CARE-1 (c)
+    expect(seen.has(A.apCareLocA)).toBe(true); // otherT's, pX's, LocA - 0091 admits it, 0092 keeps it
+    expect(seen.has(A.apB)).toBe(false); // SAME row but at LocB: 0092, ruling CARE-LOC (b)
     expect(seen.has(A.apRoom)).toBe(false); // otherT's AND pOther's: never treated, still hidden
   });
 

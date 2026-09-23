@@ -60,6 +60,37 @@
 --     FAIL and the sitting halts before B2 is read. It is declared anyway, so
 --     the rule is stated uniformly rather than argued per arm.
 --
+-- ===========================================================================
+-- RE-ISSUED 2026-09-22, BOUNDED. THE VERDICTS NOW MEASURE A 90-DAY WINDOW.
+-- ===========================================================================
+-- The first revision classified EVERY appointment in the tenant and could not
+-- finish: measured on production as a real therapist, it hit a 300-SECOND
+-- STATEMENT TIMEOUT. That is not a slow predicate and not a slow helper.
+-- `viewer_treated_patient_ids()` called on its own returns in about 71 ms.
+-- The `v` CTE was being INLINED and re-evaluated PER ROW, so a 71 ms function
+-- ran once for each appointment in the tenant.
+--
+-- TWO CHANGES, BOTH SCAFFOLDING. No predicate is altered.
+--   * `WITH v AS MATERIALIZED (...)` forces one evaluation. On its own this
+--     takes the unbounded run from a timeout to 3.0 s.
+--   * a :window_days bound (default 90) on every scan of `appointments`.
+--
+-- MEASURED, same actor, same database, the SAME THREE NUMBERS:
+--     unbounded, as written ........ TIMEOUT at 300 s
+--     90-day bound only ............ 188 s
+--     90-day bound + MATERIALIZED .. 306 ms, and the same three verdict numbers
+--   615x faster, byte-identical results.
+--
+-- WHAT THE BOUND COSTS, said plainly rather than implied: B1, B2, B3 and B4
+-- now assert over appointments STARTING IN THE LAST :window_days DAYS, not
+-- over all history. The MEANING of each verdict is unchanged - the union is
+-- still exactly the union, the negative is still refused - but the population
+-- is narrower, so a row older than the window is neither admitted nor refused
+-- by this transcript. Raise :window_days to widen it; the unbounded run is
+-- 3.0 s with MATERIALIZED and is a legitimate choice if the sitting can wait.
+-- B5, B6 and B7 are unaffected: they count care-team rows, helper output and
+-- cross-tenant rows, none of which is time-scoped.
+--
 -- The post-check proves the SHAPE: the table exists, the function is SECURITY
 -- DEFINER, who may execute it, that appointments_rls did not move. This proves
 -- what the new policy DOES, to a real actor, on the database it was applied to:
@@ -116,6 +147,14 @@
 \pset pager off
 \timing off
 \set ON_ERROR_STOP on
+
+/* The measurement window, in days. `\if :{?window_days}` leaves a value the
+ * caller passed with -v alone and defaults it otherwise, so the script runs
+ * unchanged from the apply document and can still be widened by hand. */
+\if :{?window_days}
+\else
+\set window_days 90
+\endif
 
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 
@@ -188,7 +227,7 @@ SELECT set_config('request.jwt.claims',
  * a READ ONLY transaction disallows every CREATE, temporary ones included
  * (measured: `ERROR: cannot execute CREATE VIEW in a read-only transaction`).
  * Two statements need it, so it appears twice, byte-identical. */
-WITH v AS (
+WITH v AS MATERIALIZED (
   SELECT coalesce(public.viewer_care_team_patient_ids(),     '{}'::uuid[]) AS care,
          coalesce(public.viewer_treated_patient_ids(),       '{}'::uuid[]) AS treated,
          coalesce(public.shared_resource_practitioner_ids(), '{}'::uuid[]) AS sr,
@@ -208,6 +247,7 @@ WITH v AS (
     FROM public.appointments a
    CROSS JOIN v
    WHERE a.tenant_id = (SELECT public.jwt_tenant_id())
+     AND a.starts_at >= now() - (:'window_days' || ' days')::interval
 )
 SELECT count(*) FILTER (WHERE new_arm AND NOT old_arm)::int AS new_only,
        count(*) FILTER (WHERE new_arm OR old_arm)::int      AS admitted,
@@ -217,7 +257,7 @@ SELECT count(*) FILTER (WHERE new_arm AND NOT old_arm)::int AS new_only,
 
 /* THE SUBJECT OF THE NEGATIVE: an appointment of this tenant that NEITHER arm
  * admits. Without one, B3 has nothing to be refused. */
-WITH v AS (
+WITH v AS MATERIALIZED (
   SELECT coalesce(public.viewer_care_team_patient_ids(),     '{}'::uuid[]) AS care,
          coalesce(public.viewer_treated_patient_ids(),       '{}'::uuid[]) AS treated,
          coalesce(public.shared_resource_practitioner_ids(), '{}'::uuid[]) AS sr,
@@ -237,6 +277,7 @@ WITH v AS (
     FROM public.appointments a
    CROSS JOIN v
    WHERE a.tenant_id = (SELECT public.jwt_tenant_id())
+     AND a.starts_at >= now() - (:'window_days' || ' days')::interval
 )
 SELECT (SELECT id FROM cls WHERE NOT new_arm AND NOT old_arm ORDER BY id LIMIT 1) AS neg_appt
 \gset
@@ -273,7 +314,14 @@ SELECT count(*)::int AS other_tenant_appts FROM public.appointments
 /* BECOME THE ACTOR. */
 SET LOCAL ROLE authenticated;
 
-SELECT count(*)::int AS readable FROM public.appointments \gset
+/* THE SAME WINDOW AS THE CLASSIFICATION, and B2 is why this line is not a
+ * bare count. The comparand above is bounded to :window_days; an unbounded
+ * read here compares the whole history against a 90-day comparand and B2 fails,
+ * which is exactly what
+ * it did on the first bounded run. A bound applied to one side of an
+ * equality is not a narrower measurement, it is a broken one. */
+SELECT count(*)::int AS readable FROM public.appointments
+ WHERE starts_at >= now() - (:'window_days' || ' days')::interval \gset
 SELECT count(*)::int AS sees_negative FROM public.appointments WHERE id = :'neg_appt' \gset
 SELECT count(*)::int AS sees_own      FROM public.appointments WHERE id = :'own_appt' \gset
 SELECT count(*)::int AS sees_team     FROM public.patient_care_team \gset
