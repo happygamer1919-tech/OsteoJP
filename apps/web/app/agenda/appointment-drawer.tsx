@@ -769,6 +769,15 @@ export function AppointmentDrawer({
   //     is always kept, synthesised from the appointment row when this viewer's
   //     lists do not carry it (STAFF-01).
   const staffLabels = useMemo(() => staffLabelContext(options), [options]);
+  // NESA-SCOPE: every label the page already resolved for this viewer, so an
+  // option rebuilt from the appointment row reads as the filter reads it.
+  const staffKnownLabels = useMemo(() => {
+    const known = new Map<string, string>();
+    for (const o of [...(options.sharedResources ?? []), ...(options.allTherapists ?? []), ...options.therapists]) {
+      known.set(o.id, o.label);
+    }
+    return known;
+  }, [options]);
   const staffOptions = bookingStaffOptions({
     isTherapist: viewer.role === "therapist",
     selfLocked,
@@ -784,6 +793,7 @@ export function AppointmentDrawer({
       ? { practitionerId: editing.practitionerId, practitionerName: editing.practitionerName }
       : null,
     labels: staffLabels,
+    knownLabels: staffKnownLabels,
   });
   const selfTherapistName = staffOptions.selfName;
   const sharedResourceOptions = staffOptions.selfResources;

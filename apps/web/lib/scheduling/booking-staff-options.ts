@@ -60,6 +60,13 @@ export type BookingStaffInput = {
   /** The appointment being edited, null on create. */
   editing: { practitionerId: string; practitionerName: string } | null;
   labels: Omit<StaffLabelContext, "keepId"> | null;
+  /**
+   * The viewer's resolved label for every staff id the page already names (its
+   * filter lists and machines). A value in effect that the drawer has to
+   * rebuild from the appointment row takes its label from here first, so one
+   * machine reads the same in the drawer as in the Terapeutas filter above it.
+   */
+  knownLabels?: ReadonlyMap<string, string>;
 };
 
 export type BookingStaffOptions = {
@@ -95,7 +102,7 @@ function keepCurrent(
     fromPool ??
     (fromResources ? { id: fromResources.id, label: fromResources.label } : undefined) ??
     (input.editing && input.editing.practitionerId === currentId
-      ? { id: currentId, label: input.editing.practitionerName }
+      ? { id: currentId, label: input.knownLabels?.get(currentId) ?? input.editing.practitionerName }
       : undefined);
   if (!kept) return list;
   const withKept = [...list, kept];

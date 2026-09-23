@@ -274,6 +274,34 @@ export function relabelStaffRows<R extends { id: string | null; name: string }>(
 }
 
 /**
+ * The CARE-01 card: its members and its picker are one list for naming. A
+ * member and a candidate sharing a name (two machines at two clinics) are told
+ * apart even when this viewer's picker offers only one of them; anything with
+ * nothing to collide with takes the viewer's roster label (`known`). Labels
+ * only: no member and no candidate is dropped.
+ */
+export function labelCareTeamCard<C extends StaffOption>(
+  candidates: readonly C[],
+  members: readonly { userId: string; fullName: string }[],
+  ctx: Omit<StaffLabelContext, "keepId">,
+  known: readonly StaffOption[] = [],
+): { candidates: C[]; members: { userId: string; fullName: string }[] } {
+  const listed = new Set(candidates.map((c) => c.id));
+  const union = [
+    ...candidates.map((c) => ({ id: c.id, name: c.label })),
+    ...members.filter((m) => !listed.has(m.userId)).map((m) => ({ id: m.userId, name: m.fullName })),
+  ];
+  const byId = new Map(relabelStaffRows(union, ctx, known).map((r) => [r.id, r.name]));
+  return {
+    candidates: candidates.map((c) => {
+      const label = byId.get(c.id);
+      return label === undefined || label === c.label ? c : { ...c, label };
+    }),
+    members: members.map((m) => ({ userId: m.userId, fullName: byId.get(m.userId) ?? m.fullName })),
+  };
+}
+
+/**
  * Equipa: the title each staff card shows, by id; a member absent from the map
  * is not shown. The viewer's clinics are their read scope, or every active
  * clinic when they have none (the owner, an unassigned admin), which is the

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clinicCode,
   clinicCodeMap,
+  labelCareTeamCard,
   labelStaffCollisions,
   reconcileAgendaStaff,
   relabelStaffRows,
@@ -357,5 +358,33 @@ describe("staffCardTitles - Equipa card titles", () => {
     expect(titles.has("nesa-old")).toBe(true);
     expect(titles.get(NESA_CB.id)).toBe("NESA (CB)");
     expect(titles.get(NESA_LV.id)).toBe("NESA (LV)");
+  });
+});
+
+describe("labelCareTeamCard - members and picker named as one list", () => {
+  it("a CB-only viewer: LV's machine as a member and CB's in the picker read apart", () => {
+    // Round 5 review: the member read "NESA" beside a picker offering a
+    // different "NESA".
+    const ctxCb = { viewerClinicIds: [CB], assignments: ASSIGNMENTS, clinicCodeById: CODES };
+    const candidates = resolveStaffCollisions([BRUNO, NESA_CB, NESA_LV], ctxCb);
+    const out = labelCareTeamCard(candidates, [{ userId: NESA_LV.id, fullName: "NESA" }], ctxCb, candidates);
+    expect(out.members).toEqual([{ userId: NESA_LV.id, fullName: "NESA (LV)" }]);
+    expect(out.candidates.map((c) => c.label)).toEqual([BRUNO.label, "NESA (CB)"]);
+  });
+
+  it("no collision on the card: plain names, candidates returned as the same objects", () => {
+    const ctxCb = { viewerClinicIds: [CB], assignments: ASSIGNMENTS, clinicCodeById: CODES };
+    const candidates = resolveStaffCollisions([BRUNO, NESA_CB, NESA_LV], ctxCb);
+    const out = labelCareTeamCard(candidates, [{ userId: BRUNO.id, fullName: BRUNO.label }], ctxCb, candidates);
+    expect(out.members).toEqual([{ userId: BRUNO.id, fullName: BRUNO.label }]);
+    expect(out.candidates[1]).toBe(candidates[1]);
+    expect(out.candidates[1]!.label).toBe("NESA");
+  });
+
+  it("a two-clinic viewer: a member already in the picker takes the picker's suffixed label", () => {
+    const both = { viewerClinicIds: [LV, CB], assignments: ASSIGNMENTS, clinicCodeById: CODES };
+    const candidates = resolveStaffCollisions([NESA_CB, NESA_LV], both);
+    const out = labelCareTeamCard(candidates, [{ userId: NESA_CB.id, fullName: "NESA" }], both, candidates);
+    expect(out.members).toEqual([{ userId: NESA_CB.id, fullName: "NESA (CB)" }]);
   });
 });

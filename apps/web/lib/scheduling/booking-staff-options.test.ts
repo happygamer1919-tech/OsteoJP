@@ -247,3 +247,30 @@ describe("EDIT: people scoped to the booking's clinic from open, the current val
     expect(ids(out.therapistOptions)).toEqual([ANA.id]);
   });
 });
+
+describe("an option rebuilt from the appointment row reads as the page names it", () => {
+  it("takes the viewer's resolved label (knownLabels) instead of the bare row name", () => {
+    // Round 5 review: an unassigned admin's filter says "NESA (CB)" while the
+    // drawer rebuilt the same booking's machine as bare "NESA".
+    const built = bookingStaffOptions(
+      base({
+        locationId: CB,
+        practitionerId: NESA_CB.id,
+        editing: { practitionerId: NESA_CB.id, practitionerName: "NESA" },
+        knownLabels: new Map([[NESA_CB.id, "NESA (CB)"]]),
+      }),
+    );
+    expect(built.therapistOptions.find((o) => o.id === NESA_CB.id)?.label).toBe("NESA (CB)");
+  });
+
+  it("control: without knownLabels the same rebuild keeps the row's name", () => {
+    const built = bookingStaffOptions(
+      base({
+        locationId: CB,
+        practitionerId: NESA_CB.id,
+        editing: { practitionerId: NESA_CB.id, practitionerName: "NESA" },
+      }),
+    );
+    expect(built.therapistOptions.find((o) => o.id === NESA_CB.id)?.label).toBe("NESA");
+  });
+});
