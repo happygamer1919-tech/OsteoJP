@@ -246,7 +246,10 @@ describe("reconcileAgendaStaff - the cached roster and the per-request machines 
     // an unassigned admin while Marcacoes and Horarios listed them.
     const roster = [ANA, BRUNO, NESA_CB, NESA_LV];
     const out = reconcileAgendaStaff({ options: opts([LV, CB], roster), tenantResources: MACHINES, offered: [] });
-    expect(out.allTherapists.map((o) => o.label)).toEqual([ANA.label, BRUNO.label, "NESA (CB)", "NESA (LV)"]);
+    expect(out.therapists.map((o) => o.label)).toEqual([ANA.label, BRUNO.label, "NESA (CB)", "NESA (LV)"]);
+    // Round 4 review: the BOOKING pool is a different question. Not offered, so
+    // not bookable here: neither machine enters the drawer's pool.
+    expect(out.allTherapists.map((o) => o.id)).toEqual([ANA.id, BRUNO.id]);
     expect(out.sharedResources).toEqual([]);
   });
 
@@ -254,6 +257,7 @@ describe("reconcileAgendaStaff - the cached roster and the per-request machines 
     const roster = [ANA, BRUNO, NESA_CB, NESA_LV];
     const out = reconcileAgendaStaff({ options: opts([LV], roster), tenantResources: MACHINES, offered: [MACHINES[1]!] });
     expect(out.allTherapists.map((o) => o.id)).toEqual([ANA.id, BRUNO.id, NESA_LV.id]);
+    expect(out.therapists.map((o) => o.id)).toEqual([ANA.id, BRUNO.id, NESA_LV.id]);
   });
 
   it("a bookable twin and a non-bookable twin still suffix each other (labels over the union)", () => {

@@ -598,6 +598,44 @@ for (const bookable of [true, false]) {
     });
 
     // ======================================================================
+    // AN UNASSIGNED ADMIN (no staff_locations): reads every clinic, is offered
+    // no machine to book (SCHED-29.4). Round 4 review.
+    // ======================================================================
+    describe("unassigned admin", () => {
+      const v: Viewer = {
+        name: "unassigned admin",
+        role: "admin",
+        userId: "admin-none",
+        readScope: null,
+        bookingScope: null,
+        ownClinics: [],
+      };
+
+      it("Terapeutas filter: both machines, suffixed, when they are in the roster; none otherwise", async () => {
+        const options = await agendaPage(v, bookable);
+        expect(nesa(toolbarFilter(v, options, null)).map((o) => o.label)).toEqual(
+          bookable ? ["NESA (CB)", "NESA (LV)"] : [],
+        );
+      });
+
+      it("Nova marcacao at CB: neither Terapeuta nor Terapeuta 2 offers a machine it may not book", async () => {
+        const built = drawer(v, await agendaPage(v, bookable), { kind: "create", locationId: CB });
+        expect(nesa(built.therapistOptions)).toEqual([]);
+        expect(nesa(built.practitionerTwoOptions)).toEqual([]);
+      });
+
+      it("Editar on a booking that names CB's machine: the value in effect stays painted", async () => {
+        const built = drawer(v, await agendaPage(v, bookable), {
+          kind: "edit",
+          locationId: CB,
+          practitionerId: NESA_CB,
+          practitionerName: "NESA",
+        });
+        expect(nesa(built.therapistOptions).map((o) => o.id)).toEqual([NESA_CB]);
+      });
+    });
+
+    // ======================================================================
     // A THERAPIST AT BOTH CLINICS: the suffix follows the viewer, not the list.
     // ======================================================================
     it("a two-clinic therapist's self-locked select at CB offers CB's NESA only, suffixed (CB)", async () => {

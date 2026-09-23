@@ -172,10 +172,9 @@ export function staffLabelContext(
  * The bookable roster comes from the 60-second reference cache; the machines
  * come from a per-request read (SCHED-29.4). A machine flagged bookable is in
  * BOTH. Three things follow:
- *   - a machine the viewer is NOT offered and that is installed at none of the
- *     viewer's clinics (another clinic's machine, for a single-clinic viewer)
- *     leaves the roster lists too, so it cannot come back through the bookable
- *     flag;
+ *   - a machine the viewer is NOT offered never enters the booking pool, and
+ *     leaves the filter lists too unless it is installed at one of the viewer's
+ *     clinics, so it cannot come back through the bookable flag;
  *   - where a machine is installed is taken from the per-request read, for the
  *     labels and for the drawer's location scoping alike, so a machine moved in
  *     Equipa is not labelled by the cached map for another minute;
@@ -194,20 +193,27 @@ export function reconcileAgendaStaff(args: {
 > {
   const { options } = args;
   const offeredIds = new Set(args.offered.map((r) => r.id));
-  // A machine leaves the people lists only when it is neither offered nor
-  // installed at any clinic the viewer belongs to. An unassigned admin or
-  // reception is offered no machine to BOOK (SCHED-29.4), but their viewer
-  // clinics are every active clinic, so a bookable machine stays in the
-  // Terapeutas filter, as it does on Marcacoes and Horarios for the same viewer.
+  const notOffered = new Set(args.tenantResources.map((r) => r.id).filter((id) => !offeredIds.has(id)));
+  // TWO RULES, BECAUSE THE TWO LISTS ANSWER DIFFERENT QUESTIONS.
+  // `therapists` feeds READ surfaces (the Terapeutas filter, Bloquear horario):
+  // a machine leaves it only when it is neither offered nor installed at any
+  // clinic the viewer belongs to. An unassigned admin or reception is offered
+  // no machine to book (SCHED-29.4), but their viewer clinics are every active
+  // clinic, so a bookable machine stays in their filter, as it does on
+  // Marcacoes and Horarios for the same viewer.
+  // `allTherapists` is the BOOKING drawer's pool: a machine the viewer is not
+  // offered never enters it, so the drawer cannot offer (or, for Terapeuta 2,
+  // save) a machine the booking permission would not allow. The appointment
+  // being edited keeps its own machine through keepCurrent, from the row.
   const viewerClinics = options.viewerClinicIds ? new Set(options.viewerClinicIds) : null;
-  const hidden = new Set(
+  const hiddenFromFilters = new Set(
     args.tenantResources
-      .filter((r) => !offeredIds.has(r.id))
+      .filter((r) => notOffered.has(r.id))
       .filter((r) => !viewerClinics || !r.locationIds.some((l) => viewerClinics.has(l)))
       .map((r) => r.id),
   );
-  const therapists = options.therapists.filter((o) => !hidden.has(o.id));
-  const allTherapists = (options.allTherapists ?? options.therapists).filter((o) => !hidden.has(o.id));
+  const therapists = options.therapists.filter((o) => !hiddenFromFilters.has(o.id));
+  const allTherapists = (options.allTherapists ?? options.therapists).filter((o) => !notOffered.has(o.id));
   const therapistLocationIds: Record<string, string[]> = { ...options.therapistLocationIds };
   for (const r of args.tenantResources) therapistLocationIds[r.id] = [...r.locationIds];
 
