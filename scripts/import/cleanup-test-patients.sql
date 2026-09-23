@@ -70,7 +70,7 @@
 -- part of the delete order: appointments must go BEFORE pack instances. A graph
 -- built without form 5 puts them at the same level and the transaction fails.
 --
--- 19 TABLES HAVE AN FK PATH TO `patients`, in this order (deepest first):
+-- 20 TABLES HAVE AN FK PATH TO `patients`, in this order (deepest first):
 --
 --   depth 4  ai_ingestion_requests, attachments, patient_form_submissions,
 --            record_annulments                         (via clinical_records)
@@ -80,7 +80,15 @@
 --            patient_care_team, patient_followup_contacts,
 --            patient_followup_postponements, patient_locations,
 --            patient_note_revisions, patient_pack_instances,
---            patient_terms_acceptances, patient_trusted_devices
+--            patient_rgpd_acceptances, patient_terms_acceptances,
+--            patient_trusted_devices
+--
+-- WAS 19 UNTIL MIGRATION 0093 (RGPD-01) WAS PROMOTED ON 2026-09-23, which added
+-- `patient_rgpd_acceptances` - the append-only record of a patient's RGPD
+-- consent. A direct child of `patients` with ON DELETE NO ACTION, so leaving it
+-- out would ABORT this transaction on the first patient who has a consent row.
+-- It belongs at depth 1 and is deleted with the rest of them. The script runs as
+-- the table owner, so the append-only REVOKE on `authenticated` does not bind it.
 --
 -- WAS 18 UNTIL MIGRATION 0091 (CARE-01) WAS PROMOTED ON 2026-09-21, which added
 -- `patient_care_team` - reception's assignment of a therapist to a patient, one
@@ -240,6 +248,7 @@ select
   (select count(*) from patient_locations              where patient_id in (select id from p))   as patient_locations,
   (select count(*) from patient_note_revisions         where patient_id in (select id from p))   as patient_note_revisions,
   (select count(*) from patient_pack_instances         where patient_id in (select id from p))   as patient_pack_instances,
+  (select count(*) from patient_rgpd_acceptances       where patient_id in (select id from p))   as patient_rgpd_acceptances,
   (select count(*) from patient_terms_acceptances      where patient_id in (select id from p))   as patient_terms_acceptances,
   (select count(*) from patient_trusted_devices        where patient_id in (select id from p))   as patient_trusted_devices,
   -- no FK, handled explicitly
@@ -479,6 +488,11 @@ delete from patient_note_revisions
  where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
 
 delete from patient_pack_instances
+ where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
+
+-- 0093 (RGPD-01). The patient's RGPD consent rows. NO ACTION, so omitting it
+-- aborts the transaction rather than orphaning.
+delete from patient_rgpd_acceptances
  where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
 
 delete from patient_terms_acceptances
