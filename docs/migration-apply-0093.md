@@ -19,6 +19,7 @@ the end.
 | Journal | `idx 90`, `when 1788501400000`, tag `0093_patient_rgpd_acceptances` |
 | Must follow | `0092_care_team_location`: applied to production (journal row id 90, sha256 `23964a4b…abfa`), merged to main 2026-09-23 in #1426 |
 | Branch | `patients/RGPD-01-consent-at-creation`, PR #1399, labelled `held-for-apply` |
+| Before the sitting | PR #1399 reads **all required checks green on the head being applied**. It cannot until the GATE-CHANGE that teaches the frozen `scripts/import/cleanup-test-patients.test.mjs` the new table has merged and main has been merged into this branch: the table is a child of `patients`, so that test goes red the moment 0093 is a numbered migration |
 | This document | `docs/migration-apply-0093.md`, pinned by `docs/migration-apply-0093.sha256` and asserted in STAGE 0 and again in STAGE 1 |
 | Pre-check | `scripts/db/precheck-rgpd.sql`, READ ONLY, 15 verdicts, sha256 `7741655847f34fe8dd04c6709e194d68e55113352895a01be9f08ee607005883` |
 | Post-check | `scripts/db/postcheck-rgpd.sql`, READ ONLY, 14 verdicts, sha256 `b8b2c682231de74e9805b7963c73af27784cd005e551c2c502e8056253a25e59` |
@@ -461,9 +462,105 @@ alone. It is an assertion about the apply, not an invariant.
 | `recorded_by` is pinned to the acting user | the shape by post-check 9, R5 and the CI suite; the behaviour by the rehearsal's INSERT arms only | RLS, WITH CHECK |
 | the consent is asked at patient creation and the ficha reads "RGPD em falta" until given | **NOT DISCHARGED BY THIS DOCUMENT.** The app code ships when #1399 merges, after the apply; the screen check is the owner's | the route |
 
-## Rehearsed on @@REHEARSAL_DATE@@ on a throwaway standing at production's position
+## Rehearsed on 2026-09-23 on a throwaway standing at production's position
 
-@@REHEARSAL@@
+**Where it ran.** A throwaway Postgres 17 database cloned from a snapshot that
+matches production on every fingerprint this document relies on, each read on
+2026-09-23 on production READ ONLY and on the snapshot:
+
+| Fingerprint | Production | Throwaway |
+|---|---|---|
+| journal rows / newest `when` | 90 / 1788501300000 | MATCH |
+| md5 over every journal hash, in id order | `9767e394255b6aada496688473235a14` | MATCH |
+| policies / md5 over every policy | 93 / `d23f9e7bcb700d2ec4fb38f3c9a3b20c` | MATCH |
+| SECURITY DEFINER functions in `public` | 26 | MATCH |
+| public tables | 47 | MATCH |
+| `patient_rgpd_acceptances` | absent | MATCH |
+| pre-check carry `other_policies_md5` | `a8044a3327d5d5656833fb9606e94ebf` | MATCH |
+
+**How it ran.** The five blocks were extracted from this document verbatim and run
+under `zsh -f` from a clone of a private bare origin holding this branch, with
+exactly four substitutions, each COUNTED per block: `/tmp/` to a scratch directory
+(substituted first), the `cd` line to the clone, the env line to the throwaway's
+URL, and the production target guard's invocation to an `echo`. A block that
+still named production after substitution would have been refused.
+
+| Substitution | stage 0 | HEAD CHECK | stage 1 | stage 2 | stage 3 |
+|---|---|---|---|---|---|
+| `/tmp/` | 0 | 0 | 18 | 8 | 8 |
+| `cd` | 1 | 1 | 1 | 1 | 1 |
+| env | 0 | 0 | 1 | 1 | 1 |
+| guard | 0 | 0 | 1 | 1 | 1 |
+
+**The happy path, in order:**
+
+| Arm | Exit | What it printed |
+|---|---|---|
+| stage 0 | 0 | `running from <head>`; check-journal 91 = 91; `PROMOTION AND NUMBER VERIFIED` |
+| HEAD CHECK | 0 | the same sha |
+| stage 1 | 0 | pre-check 15 OK; BEFORE `2 OK / 0 VACUOUS / 5 FAIL` on `R2 R3 R4 R5 R6`; `pending 1 [0093_patient_rgpd_acceptances]`; `journal 90 -> 91 (delta 1)`; present by sha256 |
+| stage 2 | 0 | carries `journal_before=90 policies_before=93 secdef_before=26 public_tables_before=47 other_policies_md5=a8044a33…`; post-check 14 OK; `0093 APPLIED. 15/15 pre-check OK, 14/14 post-check OK, journal 90 to 91.` |
+| stage 3 | 0 | `before 2 OK / 0 VACUOUS / 5 FAIL, after 5 OK / 2 VACUOUS / 0 FAIL` |
+
+The journal's newest row after the apply: id 91, hash
+`7a769298c43f982cdc27dc71cbec403a53861dbfc2c24b72c62c2203d370c454` (the file's
+sha256), `when` 1788501400000, present exactly once.
+
+**Every halt, each run for real:**
+
+| Arm | Exit | Halted on | Database after |
+|---|---|---|---|
+| stage 0 on a dirty tree | 1 | `the apply worktree is not clean` | untouched |
+| stage 2 before stage 1 | 1 | `stage 1 did not complete an apply in this sitting` | untouched |
+| stage 3 before stage 1 | 1 | `stage 1's BEFORE transcript is missing` | untouched |
+| stage 1 a second time in the sitting | 1 | `stage 1 ALREADY APPLIED`; both transcripts byte-identical | journal 91 |
+| stage 2 with the transcript backdated 61 minutes | 1 | `over an hour old` | journal 91 |
+| stage 2 with the marker removed | 1 | `did not complete an apply` | journal 91 |
+| stage 1 on the APPLIED database, marker gone | 1 | pre-check FAIL on 1, 2, 3, 4, 6 and `journal_rows_before`; the previous transcript byte-identical, the failed run in `.new` | journal 91, nothing re-applied |
+| stage 3 with UPDATE granted back to `authenticated` | 1 | R4 FAIL, `U=true` | restored |
+| stage 3 with the INSERT policy recreated WITHOUT `recorded_by` | 1 | R5 FAIL, `pin=false` | restored, then stage 3 green again |
+| stage 3 with rows loaded | 1 | the exact profile: `It read 7 OK / 0 VACUOUS / 0 FAIL`. By design: the data moved | |
+| stage 1 with the table already created by hand | 1 | pre-check 1, 2, 3 FAIL | journal 90, nothing applied |
+| stage 1 with only a bare table present | 1 | pre-check 1 FAIL | journal 90, nothing applied |
+| stage 1 with the named actor deactivated | 3 | the behaviour file's actor STOP, before the apply | journal 90, table absent |
+| stage 1 with 0092 missing from the journal | 1 | pre-check 5 and `journal_rows_before` FAIL | journal 89, nothing applied |
+| stage 0 with a second `0093_*.sql` pushed to the branch (private origin only, reset after) | 1 | `2 files claim migration number 0093, not 1` | untouched |
+| a write inside the READ ONLY form stage 2 uses | 1 | `cannot execute CREATE TABLE in a read-only transaction` | no table created |
+
+**The post-check's carries, each broken on the applied database:** correct carries
+14 OK; a wrong `other_policies_md5` FAILs 13; a wrong `policies_before` FAILs 10; a
+wrong `public_tables_before` FAILs 12; `other_policies_md5` omitted STOPs with exit
+3; an UPDATE policy added on the table FAILs 7, 10 and 13; a table with a policy
+added elsewhere FAILs 10, 12 and 13. Back to clean: 14 OK.
+
+**The INSERT pin in action, which no READ ONLY check can show.** On the applied
+throwaway, as the named actor (flat claims, `SET LOCAL ROLE authenticated`):
+
+| Arm | Result |
+|---|---|
+| I1 insert, own tenant, `recorded_by` = the actor | `INSERT 0 1` |
+| I2 insert, own tenant, `recorded_by` = a colleague | refused: `new row violates row-level security policy` |
+| I3 insert, another tenant, `recorded_by` = the actor | refused: the same |
+| I4 UPDATE of the actor's own row | refused: `permission denied` |
+| I5 DELETE of the actor's own row | refused: `permission denied` |
+| I6 TRUNCATE | refused: `permission denied` |
+| I7 the portal `patient` role SELECTs | refused: `permission denied` |
+| I8 a blank version | refused by `patient_rgpd_acceptances_version_not_blank` |
+
+With one row for the actor's tenant and one written as the owner for another
+tenant, the behaviour check read `7 OK / 0 VACUOUS / 0 FAIL`: R2 `1 read of 1`, R3
+`0 read of 1 that exist`. That is the proof R2 and R3 cannot give on production on
+apply day.
+
+**CI's DB suite on the same shapes.** `packages/db/tests/patient-rgpd-acceptances.db.test.ts`
+against the applied throwaway: 9 passed. Against the unapplied snapshot: 9 skipped,
+which is the suite's schema gate saying "not measured".
+
+**The patient cleanup script.** On the applied throwaway with a consent row for each
+of the tenant's patients: `main`'s `scripts/import/cleanup-test-patients.sql`
+aborts on `violates foreign key constraint "patient_rgpd_acceptances_patient_id_fkey"`,
+exit 3, nothing deleted. This branch's version completes, exit 0, patients and
+consent rows both 0.
 
 ## What this does NOT do
 
