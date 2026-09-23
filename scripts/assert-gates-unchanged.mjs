@@ -142,8 +142,21 @@ if (baseRef) {
   }
 
   // RULE C
+  //
+  // THE FREEZE'S OWN README IS NOT A STRAY. It decides no verdict, so it is
+  // deliberately NOT in the manifest (2026-09-22: the set holds only files that
+  // decide a required check's verdict). But it documents the protocol, and a
+  // rule that forbids a GATE-CHANGE PR from carrying its own documentation
+  // means the protocol can never be explained in the change that alters it.
+  // Measured: this exact PR tripped on it before the allowance existed.
+  //
+  // ONE PATH, NOT A PATTERN. `scripts/*.md` would let any new markdown ride
+  // along; this is the single file and nothing else.
+  const GATE_DOCS = new Set(["scripts/GATE-FREEZE-README.md"]);
   if (isGateChange && changedPaths.length) {
-    const strays = changedPaths.filter((p) => p !== MANIFEST_PATH && !isGateFile(p));
+    const strays = changedPaths.filter(
+      (p) => p !== MANIFEST_PATH && !isGateFile(p) && !GATE_DOCS.has(p),
+    );
     if (strays.length) {
       RED.push(
         "A GATE-CHANGE PULL REQUEST MUST TOUCH NOTHING ELSE.\n" +
