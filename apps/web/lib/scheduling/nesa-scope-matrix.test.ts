@@ -210,12 +210,20 @@ function drawer(
   viewer: Viewer,
   options: AgendaOptions,
   mode:
-    | { kind: "create"; locationId: string }
+    | {
+        kind: "create";
+        locationId: string;
+        /** A value chosen before Localizacao moved to `locationId`. */
+        practitionerId?: string;
+        practitionerTwoId?: string;
+      }
     | { kind: "edit"; locationId: string; practitionerId: string; practitionerName: string },
 ) {
   const selfLocked = viewer.role === "therapist" && mode.kind === "create";
   const practitionerId =
-    mode.kind === "edit" ? mode.practitionerId : selfLocked ? viewer.userId : null;
+    mode.kind === "edit"
+      ? mode.practitionerId
+      : (mode.practitionerId ?? (selfLocked ? viewer.userId : null));
   return bookingStaffOptions({
     isTherapist: viewer.role === "therapist",
     selfLocked,
@@ -225,7 +233,7 @@ function drawer(
     resources: options.sharedResources ?? [],
     locationId: mode.locationId,
     practitionerId,
-    practitionerTwoId: null,
+    practitionerTwoId: mode.kind === "create" ? (mode.practitionerTwoId ?? null) : null,
     locationTouched: false,
     editing:
       mode.kind === "edit"
@@ -279,7 +287,7 @@ beforeEach(() => {
 });
 
 for (const bookable of [true, false]) {
-  const variant = bookable ? "machine rows BOOKABLE (as production)" : "machine rows NOT bookable (the old e2e fixture)";
+  const variant = bookable ? "machine rows BOOKABLE" : "machine rows NOT bookable (the e2e fixture's shape)";
 
   describe(`NESA-SCOPE matrix, ${variant}`, () => {
     // ======================================================================
@@ -564,6 +572,17 @@ for (const bookable of [true, false]) {
         });
         expect(nesa(built.therapistOptions)).toEqual([TWO[1], TWO[0]]);
       });
+
+      // No server check covers a front-desk second participant, and the drawer
+      // submits Terapeuta 2 only when this list offers it (SCHED-29).
+      it("Terapeuta 2 set to CB's NESA, then Localizacao LV: CB's row is not offered, so none is submitted", async () => {
+        const built = drawer(v, await agendaPage(v, bookable), {
+          kind: "create",
+          locationId: LV,
+          practitionerTwoId: NESA_CB,
+        });
+        expect(nesa(built.practitionerTwoOptions)).toEqual([TWO[1]]);
+      });
     });
 
     // ======================================================================
@@ -580,6 +599,26 @@ for (const bookable of [true, false]) {
       };
       const built = drawer(v, await agendaPage(v, bookable), { kind: "create", locationId: CB });
       expect(built.selfResources.map((r) => `${r.id}=${r.label}`)).toEqual([`${NESA_CB}=NESA (CB)`]);
+    });
+
+    it("the same therapist with CB's NESA chosen, then Localizacao LV: CB's row stays the painted value (the server refuses it there)", async () => {
+      const v: Viewer = {
+        name: "two-clinic therapist",
+        role: "therapist",
+        userId: "ana",
+        readScope: null,
+        bookingScope: [LV, CB],
+        ownClinics: [LV, CB],
+      };
+      const built = drawer(v, await agendaPage(v, bookable), {
+        kind: "create",
+        locationId: LV,
+        practitionerId: NESA_CB,
+      });
+      expect(built.selfResources.map((r) => `${r.id}=${r.label}`)).toEqual([
+        `${NESA_LV}=NESA (LV)`,
+        `${NESA_CB}=NESA (CB)`,
+      ]);
     });
   });
 }

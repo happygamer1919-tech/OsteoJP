@@ -407,7 +407,7 @@ describe("AppointmentDrawer - one machine per clinic under one name (NESA-SCOPE)
     services: [],
     packs: [],
   };
-  /** An LV-only viewer, machines bookable (as production): LV's row only. */
+  /** An LV-only viewer, machine rows bookable: LV's row only. */
   const LV_ONLY: AgendaOptions = {
     ...shared,
     therapists: [ANA, { id: NESA_LV.id, label: "NESA" }],

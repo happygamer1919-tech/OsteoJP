@@ -44,10 +44,7 @@ import {
   type ClinicWindowRefusal,
 } from "@/lib/scheduling/clinic-hours-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
-import {
-  bookingStaffOptions,
-  practitionerAfterLocationChange,
-} from "@/lib/scheduling/booking-staff-options";
+import { bookingStaffOptions } from "@/lib/scheduling/booking-staff-options";
 import { staffLabelContext } from "@/lib/scheduling/staff-options";
 import {
   getPatientPackBalanceAction,
@@ -758,7 +755,8 @@ export function AppointmentDrawer({
   // through selects that mount only on a click.
   //   - PL-10: a self-locked therapist's own name, from the same roster.
   //   - SCHED-17: the machines a self-locked therapist may pick besides
-  //     themselves, now only those installed at the form's Localizacao.
+  //     themselves, now only those installed at the form's Localizacao, plus
+  //     the one already chosen, which the server refuses at another clinic.
   //   - SCHED-29: a self-locked therapist's "Terapeuta 2" is a machine at the
   //     chosen clinic and nobody else, so at a clinic without one it is empty
   //     and the field is not shown. The server re-checks it.
@@ -1252,9 +1250,10 @@ export function AppointmentDrawer({
             // not relaxed - OR for a shared resource installed at one of their
             // clinics. NESA-SCOPE: only the one installed at the form's
             // Localizacao, so a two-clinic therapist is never offered the other
-            // clinic's machine. The server re-checks the location
-            // (shared_resource_location); this list is what they may choose, not
-            // what makes it allowed.
+            // clinic's machine; one they already chose stays listed after a
+            // Localizacao change, so this select paints what the form submits.
+            // The server re-checks the location (shared_resource_location); this
+            // list is what they may choose, not what makes it allowed.
             <Select
               value={form.practitionerId}
               onChange={(e) => {
@@ -1556,24 +1555,10 @@ export function AppointmentDrawer({
               const newLoc = e.target.value;
               // W8-01c — a selected pack that isn't offered at the new location is
               // cleared (packs are location-scoped; null = all locations).
-              // NESA-SCOPE: a self-locked therapist's machine not installed at the
-              // new clinic goes back to the therapist, because that select has no
-              // placeholder and would otherwise paint them while submitting it.
               setForm((f) => {
                 const pack = options.packs.find((p) => p.id === f.packId);
                 const packOk = !pack || pack.locationId === null || pack.locationId === newLoc;
-                return {
-                  ...f,
-                  locationId: newLoc,
-                  packId: packOk ? f.packId : "",
-                  practitionerId: practitionerAfterLocationChange({
-                    selfLocked,
-                    selfUserId,
-                    practitionerId: f.practitionerId,
-                    resources: options.sharedResources ?? [],
-                    locationId: newLoc,
-                  }),
-                };
+                return { ...f, locationId: newLoc, packId: packOk ? f.packId : "" };
               });
             }}
           >

@@ -21,13 +21,11 @@
  * WHAT IT PROVES, the ruling first:
  *   1. A CB-only therapist is offered NESA besides themselves, is NOT offered LV
  *      at all, and books NESA at CB - the requirement, as a positive control.
- *   2. A therapist assigned to BOTH clinics picks NESA at CB, then LV: NESA-SCOPE
- *      offers a machine only where it is installed, so at LV the machine is gone
- *      and the practitioner goes back to the therapist. The server refusal this
- *      test used to reach through the form (NESA at LV) is still pinned where it
- *      lives: sharedResourceLocationAllowed in lib/scheduling/shared-resource-guard.test.ts.
- *   3. NESA-SCOPE, at the end: a second row with the SAME name at LV, as
- *      production has one machine per clinic. Asserted by option value.
+ *   2. A therapist assigned to BOTH clinics picks NESA and LV, and is REFUSED with
+ *      the shared-resource sentence; no row is written. LV is one of their
+ *      clinics, so this is the refusal the app layer adds and RLS does not make.
+ *   3. NESA-SCOPE, at the end: a second row with the SAME name at LV, the
+ *      two-row shape the card targets. Asserted by option value.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -45,6 +43,7 @@ const CB_ONLY_EMAIL = "e2e-therapist-loc-one@osteojp.test";
 const BOTH_EMAIL = "e2e-therapist-loc-multi@osteojp.test";
 const PATIENT_CB_ONLY = { id: "00000000-0000-4000-8000-00000000e5a1", name: "Paciente NESA Um" };
 const PATIENT_BOTH = { id: "00000000-0000-4000-8000-00000000e5a2", name: "Paciente NESA Dois" };
+const REFUSAL = /Este equipamento só pode ser marcado numa localização onde está instalado/;
 
 /** A Wednesday far enough ahead that nothing else in the suite books it. */
 function bookingDay(): string {
@@ -268,22 +267,26 @@ test("a CB-only therapist is offered NESA, cannot choose LV, and books NESA at C
   expect(rows[0]!.created_by).toBe(cbOnlyId);
 });
 
-test("a therapist at BOTH clinics is not offered NESA at LV, and choosing LV puts the therapist back", async ({ page }) => {
+test("a therapist at BOTH clinics is refused NESA at LV, and nothing is written", async ({ page }) => {
   test.skip(skipReason !== null, skipReason ?? "");
   await login(page, BOTH_EMAIL);
   const dialog = await openNewAppointment(page, DAY);
 
-  // The form opens at CB (the first bookable clinic by name), where NESA is.
+  // NESA-SCOPE: NESA is offered only where it is installed, and the form opens
+  // at CB (the first bookable clinic by name), where it is. Chosen by value,
+  // because a same-named twin would suffix the label.
   const therapist = dialog.getByLabel(/Terapeuta/i).first();
   await therapist.selectOption(NESA_ID);
   await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
+  // The machine already chosen stays the painted value at LV (STAFF-01), so the
+  // form submits exactly what it shows, and the server refuses it.
+  await expect(therapist).toHaveValue(NESA_ID);
+  await pickPatient(dialog, PATIENT_BOTH.name);
+  await fillDate(dateField(dialog), DAY);
+  await fillTime(dialog, "15:00");
+  await save(dialog);
 
-  // NESA-SCOPE: not installed at LV, so not offered there, and the value the
-  // form would submit is the therapist again. With no machine at LV the select
-  // gives way to the read-only line that carries that value.
-  await expect(dialog.locator(`option[value="${NESA_ID}"]`)).toHaveCount(0);
-  await expect(dialog.locator(`[data-practitioner-id="${bothId}"]`)).toHaveCount(1);
-
+  await expect(dialog.getByText(REFUSAL)).toBeVisible({ timeout: 10_000 });
   const atLv = must(
     await db
       .from("appointments")
@@ -509,7 +512,8 @@ test("SCHED-29.4: reception's Terapeuta 2 offers NESA at CB and not at LV, and t
 });
 
 /**
- * NESA-SCOPE - ONE MACHINE PER CLINIC UNDER ONE NAME, as production has it.
+ * NESA-SCOPE - ONE MACHINE PER CLINIC UNDER ONE NAME, the two-row shape the
+ * card targets.
  *
  * A second users row named exactly NESA_NAME, installed at LV, exists only for
  * this block. NOT bookable, like the first, so both reach the lists through the

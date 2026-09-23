@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  bookingStaffOptions,
-  practitionerAfterLocationChange,
-  type BookingStaffInput,
-} from "./booking-staff-options";
+import { bookingStaffOptions, type BookingStaffInput } from "./booking-staff-options";
 import type { SharedResource } from "./shared-resource-guard";
 
 /**
@@ -84,6 +80,28 @@ describe("self-locked therapist (create): machines only where they are installed
   it("Terapeuta 2 is the machine at the chosen clinic, unchanged (SCHED-29)", () => {
     expect(ids(therapist(LV).practitionerTwoOptions)).toEqual([NESA_LV.id]);
   });
+
+  // The select has no placeholder. Chosen at CB, then Localizacao LV: the CB
+  // machine stays the painted value, the form submits it and the server refuses
+  // it (shared_resource_location), as before NESA-SCOPE. It is never swapped
+  // for the therapist, which would book their own diary instead.
+  it("a machine already chosen stays an option after Localizacao moves away from it, labelled apart", () => {
+    const out = bookingStaffOptions(
+      base({
+        isTherapist: true,
+        selfLocked: true,
+        selfUserId: ANA.id,
+        locationId: LV,
+        practitionerId: NESA_CB.id,
+        resources: [NESA_CB, NESA_LV],
+      }),
+    );
+    expect(out.selfResources.map((r) => `${r.id}=${r.label}`)).toEqual(["nesa-lv=NESA (LV)", "nesa-cb=NESA (CB)"]);
+  });
+
+  it("the therapist themselves is never appended as a machine", () => {
+    expect(ids(therapist(CB).selfResources)).toEqual([NESA_CB.id]);
+  });
 });
 
 describe("front desk CREATE: W12-23 kept, machines scoped to the form's clinic", () => {
@@ -120,11 +138,36 @@ describe("front desk CREATE: W12-23 kept, machines scoped to the form's clinic",
     expect(ids(out.practitionerTwoOptions)).toEqual([BRUNO.id, NESA_CB.id]);
   });
 
-  it("Terapeuta 2 keeps its current value when the clinic changes under it", () => {
+  it("Terapeuta 2 keeps a PERSON when the clinic changes under it", () => {
+    const out = bookingStaffOptions(
+      base({ resources: [NESA_CB, NESA_LV], locationId: LV, practitionerTwoId: BRUNO.id }),
+    );
+    expect(ids(out.practitionerTwoOptions)).toEqual([ANA.id, BRUNO.id, NESA_LV.id]);
+  });
+
+  // The server checks a second participant for therapists only, and the drawer
+  // submits Terapeuta 2 only when this list offers it. Keeping the CB machine
+  // at LV would save an LV booking naming a machine that is not there.
+  it("Terapeuta 2 drops a MACHINE not installed at the new clinic, even as the value in effect", () => {
     const out = bookingStaffOptions(
       base({ resources: [NESA_CB, NESA_LV], locationId: LV, practitionerTwoId: NESA_CB.id }),
     );
-    expect(ids(out.practitionerTwoOptions)).toEqual([ANA.id, NESA_LV.id, NESA_CB.id]);
+    expect(ids(out.practitionerTwoOptions)).toEqual([ANA.id, NESA_LV.id]);
+  });
+
+  it("the same with the machine rows bookable (in the pool as well)", () => {
+    const pool = [ANA, BRUNO, { id: NESA_CB.id, label: "NESA (CB)" }, { id: NESA_LV.id, label: "NESA (LV)" }];
+    const out = bookingStaffOptions(
+      base({ pool, resources: [NESA_CB, NESA_LV], locationId: LV, practitionerTwoId: NESA_CB.id }),
+    );
+    expect(ids(out.practitionerTwoOptions)).toEqual([ANA.id, NESA_LV.id]);
+  });
+
+  it("the primary Terapeuta, by contrast, keeps it: the server refuses a machine where it is not installed", () => {
+    const out = bookingStaffOptions(
+      base({ resources: [NESA_CB, NESA_LV], locationId: LV, locationTouched: true, practitionerId: NESA_CB.id }),
+    );
+    expect(ids(out.therapistOptions)).toEqual([ANA.id, NESA_LV.id, NESA_CB.id]);
   });
 });
 
@@ -202,31 +245,5 @@ describe("EDIT: people scoped to the booking's clinic from open, the current val
       }),
     );
     expect(ids(out.therapistOptions)).toEqual([ANA.id]);
-  });
-});
-
-describe("practitionerAfterLocationChange - the self-locked select has no placeholder", () => {
-  const args = (practitionerId: string, locationId: string, selfLocked = true) => ({
-    selfLocked,
-    selfUserId: ANA.id,
-    practitionerId,
-    resources: [NESA_CB, NESA_LV],
-    locationId,
-  });
-
-  it("a machine not installed at the new clinic goes back to the therapist", () => {
-    expect(practitionerAfterLocationChange(args(NESA_CB.id, LV))).toBe(ANA.id);
-  });
-
-  it("a machine installed at the new clinic stays", () => {
-    expect(practitionerAfterLocationChange(args(NESA_LV.id, LV))).toBe(NESA_LV.id);
-  });
-
-  it("the therapist themselves stays", () => {
-    expect(practitionerAfterLocationChange(args(ANA.id, CB))).toBe(ANA.id);
-  });
-
-  it("front desk is never reset: its select has a placeholder and keeps the value (keepCurrent)", () => {
-    expect(practitionerAfterLocationChange(args(NESA_CB.id, LV, false))).toBe(NESA_CB.id);
   });
 });
