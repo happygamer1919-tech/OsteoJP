@@ -499,14 +499,26 @@ for (const bookable of [true, false]) {
 
       it("Estatisticas breakdown: both machines' revenue rows stay, labelled apart", async () => {
         const options = await agendaOptions(v, bookable);
+        // The pages pass the filter's options as `known`; the test takes the same path.
         const rows = relabelStaffRows(
           [
             { id: NESA_CB, name: "NESA", valueCents: 1, count: 1 },
             { id: NESA_LV, name: "NESA", valueCents: 2, count: 1 },
           ],
           staffLabelContext(options)!,
+          options.allTherapists ?? options.therapists,
         );
         expect(rows.map((r) => r.name)).toEqual(["NESA (CB)", "NESA (LV)"]);
+      });
+
+      it("Estatisticas breakdown holding only LV's machine: the plain name the filter shows", async () => {
+        const options = await agendaOptions(v, bookable);
+        const rows = relabelStaffRows(
+          [{ id: NESA_LV, name: "NESA", valueCents: 2, count: 1 }],
+          staffLabelContext(options)!,
+          options.allTherapists ?? options.therapists,
+        );
+        expect(rows.map((r) => r.name)).toEqual(["NESA"]);
       });
     });
 

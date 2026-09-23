@@ -172,9 +172,10 @@ export function staffLabelContext(
  * The bookable roster comes from the 60-second reference cache; the machines
  * come from a per-request read (SCHED-29.4). A machine flagged bookable is in
  * BOTH. Three things follow:
- *   - a machine the viewer is NOT offered (another clinic's, or any machine for
- *     an unassigned viewer, whom sharedResourcesForViewer offers none) leaves
- *     the roster lists too, so it cannot come back through the bookable flag;
+ *   - a machine the viewer is NOT offered and that is installed at none of the
+ *     viewer's clinics (another clinic's machine, for a single-clinic viewer)
+ *     leaves the roster lists too, so it cannot come back through the bookable
+ *     flag;
  *   - where a machine is installed is taken from the per-request read, for the
  *     labels and for the drawer's location scoping alike, so a machine moved in
  *     Equipa is not labelled by the cached map for another minute;
@@ -193,7 +194,18 @@ export function reconcileAgendaStaff(args: {
 > {
   const { options } = args;
   const offeredIds = new Set(args.offered.map((r) => r.id));
-  const hidden = new Set(args.tenantResources.map((r) => r.id).filter((id) => !offeredIds.has(id)));
+  // A machine leaves the people lists only when it is neither offered nor
+  // installed at any clinic the viewer belongs to. An unassigned admin or
+  // reception is offered no machine to BOOK (SCHED-29.4), but their viewer
+  // clinics are every active clinic, so a bookable machine stays in the
+  // Terapeutas filter, as it does on Marcacoes and Horarios for the same viewer.
+  const viewerClinics = options.viewerClinicIds ? new Set(options.viewerClinicIds) : null;
+  const hidden = new Set(
+    args.tenantResources
+      .filter((r) => !offeredIds.has(r.id))
+      .filter((r) => !viewerClinics || !r.locationIds.some((l) => viewerClinics.has(l)))
+      .map((r) => r.id),
+  );
   const therapists = options.therapists.filter((o) => !hidden.has(o.id));
   const allTherapists = (options.allTherapists ?? options.therapists).filter((o) => !hidden.has(o.id));
   const therapistLocationIds: Record<string, string[]> = { ...options.therapistLocationIds };
@@ -229,11 +241,12 @@ export function reconcileAgendaStaff(args: {
  * A breakdown row (Estatisticas) relabelled by id, never dropped. Rows without
  * a practitioner id pass through untouched.
  *
- * `known` is the viewer-wide option list the same page's filter shows (already
- * resolved by getAgendaOptions over the whole roster). A row whose id is in it
- * takes that label, so a breakdown holding only one of two same-named machines
- * still reads "NESA (CB)" beside a filter that says "NESA (CB)". Only a row the
- * filter does not list falls back to the collision rule over the rows alone.
+ * Rows that collide with each other are labelled apart by the collision rule.
+ * A row with nothing to collide with takes its label from `known`, the
+ * viewer-wide option list the same page's filter shows (already resolved by
+ * getAgendaOptions over the whole roster), so a breakdown holding only one of
+ * two same-named machines still reads "NESA (CB)" beside a filter that says
+ * "NESA (CB)".
  */
 export function relabelStaffRows<R extends { id: string | null; name: string }>(
   rows: readonly R[],
@@ -244,7 +257,12 @@ export function relabelStaffRows<R extends { id: string | null; name: string }>(
   const named = rows.flatMap((r) => (r.id ? [{ id: r.id, label: r.name }] : []));
   const labelById = new Map(labelStaffCollisions(named, ctx).map((o) => [o.id, o.label]));
   return rows.map((r) => {
-    const label = r.id ? (knownById.get(r.id) ?? labelById.get(r.id)) : undefined;
+    if (!r.id) return r;
+    // Two rows colliding in THIS list are told apart here, whatever the filter
+    // shows (a single-clinic admin's breakdown can hold both machines' rows);
+    // a row with nothing to collide with takes the filter's label.
+    const fromRows = labelById.get(r.id);
+    const label = fromRows !== undefined && fromRows !== r.name ? fromRows : (knownById.get(r.id) ?? fromRows);
     return label === undefined || label === r.name ? r : { ...r, name: label };
   });
 }
@@ -269,7 +287,17 @@ export function staffCardTitles(
   const resolved = resolveStaffCollisions(
     staff.map((u) => ({ id: u.id, label: u.fullName })),
     {
-      viewerClinicIds: args.viewerScope ?? args.activeLocations.map((l) => l.id),
+      // An unscoped viewer (the owner, an unassigned admin) is never shown fewer
+      // cards than before: every clinic any member is assigned to counts as
+      // theirs, archived ones included, so a same-named member whose only
+      // clinic was archived keeps a card and Gerir stays reachable.
+      viewerClinicIds:
+        args.viewerScope ?? [
+          ...new Set([
+            ...args.activeLocations.map((l) => l.id),
+            ...[...args.assignedLocations.values()].flatMap((s) => [...s]),
+          ]),
+        ],
       assignments: new Map([...args.assignedLocations].map(([id, set]) => [id, [...set]])),
       clinicCodeById: clinicCodeMap(args.activeLocations.map((l) => ({ id: l.id, label: l.name }))),
     },

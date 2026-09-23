@@ -241,9 +241,19 @@ describe("reconcileAgendaStaff - the cached roster and the per-request machines 
     expect(out.sharedResources.map((r) => r.id)).toEqual([NESA_LV.id]);
   });
 
-  it("an unassigned viewer is offered no machine, so none rides the roster either", () => {
-    const out = reconcileAgendaStaff({ options: opts([LV, CB]), tenantResources: MACHINES, offered: [] });
-    expect(out.allTherapists.map((o) => o.id)).toEqual([ANA.id, BRUNO.id]);
+  it("an unassigned viewer is offered no machine to book, but a bookable one stays in the filter lists", () => {
+    // Round 3 review: before this, the agenda dropped both bookable machines for
+    // an unassigned admin while Marcacoes and Horarios listed them.
+    const roster = [ANA, BRUNO, NESA_CB, NESA_LV];
+    const out = reconcileAgendaStaff({ options: opts([LV, CB], roster), tenantResources: MACHINES, offered: [] });
+    expect(out.allTherapists.map((o) => o.label)).toEqual([ANA.label, BRUNO.label, "NESA (CB)", "NESA (LV)"]);
+    expect(out.sharedResources).toEqual([]);
+  });
+
+  it("a single-clinic viewer still loses the other clinic's bookable machine", () => {
+    const roster = [ANA, BRUNO, NESA_CB, NESA_LV];
+    const out = reconcileAgendaStaff({ options: opts([LV], roster), tenantResources: MACHINES, offered: [MACHINES[1]!] });
+    expect(out.allTherapists.map((o) => o.id)).toEqual([ANA.id, BRUNO.id, NESA_LV.id]);
   });
 
   it("a bookable twin and a non-bookable twin still suffix each other (labels over the union)", () => {
@@ -331,5 +341,17 @@ describe("staffCardTitles - Equipa card titles", () => {
     const titles = staffCardTitles(staff, { viewerScope: [LV], activeLocations, assignedLocations });
     expect(titles.has(NESA_CB.id)).toBe(false);
     expect(titles.get(NESA_LV.id)).toBe("NESA");
+  });
+
+  it("an unscoped viewer keeps the card of a same-named member whose only clinic was archived", () => {
+    // Round 3 review: the owner's Equipa used to drop it, so Gerir could not be
+    // opened to move or deactivate that member.
+    const ARCHIVED = "loc-archived";
+    const withArchived = [...staff, { id: "nesa-old", fullName: "NESA" }];
+    const assigned = new Map([...assignedLocations, ["nesa-old", new Set([ARCHIVED])]]);
+    const titles = staffCardTitles(withArchived, { viewerScope: null, activeLocations, assignedLocations: assigned });
+    expect(titles.has("nesa-old")).toBe(true);
+    expect(titles.get(NESA_CB.id)).toBe("NESA (CB)");
+    expect(titles.get(NESA_LV.id)).toBe("NESA (LV)");
   });
 });
