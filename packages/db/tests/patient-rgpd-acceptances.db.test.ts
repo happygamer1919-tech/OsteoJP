@@ -5,16 +5,15 @@
  * ==========================================================================
  * THIS SUITE GATES ON THE SCHEMA, NOT ON AN ENV FLAG
  * ==========================================================================
- * `NEXT-AFTER-0089_patient_rgpd_acceptances.sql` lives in `migrations-pending/`,
- * which `drizzle-kit migrate` cannot see by construction. CI's DB-gated job
- * therefore runs against a database WITHOUT this table, and a suite that
- * asserted its behaviour there would be red for a reason that has nothing to do
- * with the code under review.
+ * The table is created by `0093_patient_rgpd_acceptances.sql`, promoted out of
+ * `migrations-pending/` on 2026-09-23. Until then `drizzle-kit migrate` could not
+ * see it, and CI's DB-gated job ran against a database WITHOUT this table. Now
+ * CI applies 0093 like any numbered migration, so these run there and must pass.
  *
- * So it asks the database. Where somebody has applied the pending SQL (a lane,
- * or production after promotion) these run and must pass; everywhere else they
- * skip and SAY SO. `describe.skip` is honest here in a way a passing stub is
- * not: it reports "not measured", never "fine".
+ * The schema gate stays, and still asks the database: a lane or a database
+ * standing before 0093 has no table, and there these skip and SAY SO.
+ * `describe.skip` is honest here in a way a passing stub is not: it reports
+ * "not measured", never "fine".
  *
  * ==========================================================================
  * WHY THERE IS NO FIXTURE, AND THAT IS THE POINT RATHER THAN A SHORTCUT

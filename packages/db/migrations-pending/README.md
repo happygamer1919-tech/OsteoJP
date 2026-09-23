@@ -42,10 +42,11 @@ was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 `care/CARE-01-assigned-therapists` (PR #1374), and took **`0091`** — see the Promoted
 table below. That is why the table above is empty again.
 
-**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-21.** It is
-**`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (#1374) ·
-`0092` RGPD-01 (#1399) · `0093` the users/tenants role fix (not yet opened) ·
-`0094` the grants revoke (#1397)**.
+**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22.** It is
+**`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (applied and merged) ·
+`0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, promoted, held
+for the apply) · `0094` the users/tenants role fix (not yet opened) · `0095` the
+grants revoke (#1397) · `0096` the conflict check's patient name**.
 
 **THIS IS THE SECOND RENUMBERING OF THAT QUEUE, and the earlier ones were real.**
 The order first recorded here was 0090 NESA, 0091 care-team, 0092 RGPD-01,
@@ -58,7 +59,7 @@ it stood, so a PR description, comment or note still naming `0092` for care-team
 table lives in `CLAUDE.md` under "SOLO's record"; read it, not a number remembered
 from a branch name.
 
-**ONE MIGRATION IS IN FLIGHT AT A TIME.** `0092` is not promoted until `0091` is
+**ONE MIGRATION IS IN FLIGHT AT A TIME.** `0094` is not promoted until `0093` is
 applied to production and merged.
 
 ## Promoted
@@ -69,3 +70,4 @@ applied to production and merged.
 | `NEXT-AFTER-0088_attachments_soft_delete.sql` | `packages/db/migrations/0089_attachments_soft_delete.sql`, bytes unchanged (sha256 `ec1b90634b4253e50fe1060b03b22a0b2fe447136baaaa811dba819d7c084ced`), journal `idx 86`, `when 1788301200000` | 2026-09-16, branch `patients/SR62-PU4-documentos-soft-delete`. Applied after 0088, from `docs/migration-apply-0089.md` |
 | `NEXT-AFTER-0089_nesa_patient_name_for_therapists.sql` | `packages/db/migrations/0090_nesa_patient_name_for_therapists.sql`, bytes unchanged (sha256 `cbff20cb90f5bb27b607055a4bf46d4b7ed5992aebe1c894d0fe559868b5c642`), journal `idx 87`, `when 1788401200000` | 2026-09-18, branch `sched/B8-nesa-names-to-therapists`. Promoted after #1338 put 0089 on main; applied to production from `docs/migration-apply-0090.md` (production journal id 88), merged in #1390 on 2026-09-21 |
 | `NEXT-AFTER-0089_care_team.sql` | `packages/db/migrations/0091_care_team.sql`, bytes unchanged (sha256 `bd207cdc8c39099ac213f087e42fbd7cc332158590c5248dcbfe3928bf5a972f`), journal `idx 88`, `when 1788501200000` | 2026-09-21, branch `care/CARE-01-assigned-therapists` (PR #1374). Promoted after 0090 was applied and merged, under the owner's re-ruling of 2026-09-21 that put CARE-01 at `0091`; **authored, NOT yet applied** — the apply runs from `docs/migration-apply-0091.md`, which is staged in **this same commit** together with its sha256 sidecar and the three pinned check scripts. **The promoted file's own header still reads "NO NUMBER YET, BY CONSTRUCTION" and says it must follow an unapplied 0089.** That sentence is stale, and it is left stale on purpose: a promotion moves the file and does not touch one byte of it, which is the only reason the sha256 in this row can pin anything. Read the header as a record of when the file was authored, and this table for where it now sits. |
+| `NEXT-AFTER-0089_patient_rgpd_acceptances.sql` | `packages/db/migrations/0093_patient_rgpd_acceptances.sql`, bytes unchanged (sha256 `7a769298c43f982cdc27dc71cbec403a53861dbfc2c24b72c62c2203d370c454`), journal `idx 90`, `when 1788501400000` | 2026-09-23, branch `patients/RGPD-01-consent-at-creation` (PR #1399). Promoted after 0092 was applied and merged, under the owner's ruling of 2026-09-22 that put RGPD-01 at `0093`; **authored, NOT yet applied**. The apply runs from `docs/migration-apply-0093.md`, staged in the same commit with its sha256 sidecar and the three pinned check scripts, and it replaces `docs/migration-apply-RGPD-01.md`. **The promoted file's own header still reads "PARKED, NOT NUMBERED".** Stale on purpose, for the same reason as 0091's row above. |
