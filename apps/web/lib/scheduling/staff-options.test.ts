@@ -287,6 +287,21 @@ describe("relabelStaffRows - a breakdown row is labelled, never dropped", () => 
     expect(out.map((r) => r.valueCents)).toEqual([100, 200, 50]);
     expect(out[2]).toBe(rows[2]);
   });
+
+  it("a breakdown holding ONE of the two machines takes the label the page's filter shows", () => {
+    const rows = [
+      { id: NESA_CB.id, name: "NESA", valueCents: 100, count: 1 },
+      { id: ANA.id, name: ANA.label, valueCents: 300, count: 3 },
+    ];
+    const ctx = { viewerClinicIds: [LV, CB], assignments: ASSIGNMENTS, clinicCodeById: CODES };
+    const filterOptions = resolveStaffCollisions([ANA, NESA_CB, NESA_LV], ctx);
+    const out = relabelStaffRows(rows, ctx, filterOptions);
+    expect(out.map((r) => r.name)).toEqual(["NESA (CB)", ANA.label]);
+    expect(out[1]).toBe(rows[1]);
+    // Control: without the filter's options the lone row has nothing to collide
+    // with and keeps the bare name, which is the mismatch this argument closes.
+    expect(relabelStaffRows(rows, ctx).map((r) => r.name)).toEqual(["NESA", ANA.label]);
+  });
 });
 
 describe("staffCardTitles - Equipa card titles", () => {

@@ -64,7 +64,7 @@ export default async function EstatisticasPainelPage({ searchParams }: { searchP
   // hiding one would make the column disagree with the total.
   const staffLabels = staffLabelContext(options);
   const stats = staffLabels
-    ? { ...rawStats, revenueByTherapist: relabelStaffRows(rawStats.revenueByTherapist, staffLabels) }
+    ? { ...rawStats, revenueByTherapist: relabelStaffRows(rawStats.revenueByTherapist, staffLabels, options.allTherapists ?? options.therapists) }
     : rawStats;
 
   return (

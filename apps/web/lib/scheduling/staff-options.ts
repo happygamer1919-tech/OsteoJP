@@ -228,15 +228,23 @@ export function reconcileAgendaStaff(args: {
 /**
  * A breakdown row (Estatisticas) relabelled by id, never dropped. Rows without
  * a practitioner id pass through untouched.
+ *
+ * `known` is the viewer-wide option list the same page's filter shows (already
+ * resolved by getAgendaOptions over the whole roster). A row whose id is in it
+ * takes that label, so a breakdown holding only one of two same-named machines
+ * still reads "NESA (CB)" beside a filter that says "NESA (CB)". Only a row the
+ * filter does not list falls back to the collision rule over the rows alone.
  */
 export function relabelStaffRows<R extends { id: string | null; name: string }>(
   rows: readonly R[],
   ctx: Omit<StaffLabelContext, "keepId">,
+  known: readonly StaffOption[] = [],
 ): R[] {
+  const knownById = new Map(known.map((o) => [o.id, o.label]));
   const named = rows.flatMap((r) => (r.id ? [{ id: r.id, label: r.name }] : []));
   const labelById = new Map(labelStaffCollisions(named, ctx).map((o) => [o.id, o.label]));
   return rows.map((r) => {
-    const label = r.id ? labelById.get(r.id) : undefined;
+    const label = r.id ? (knownById.get(r.id) ?? labelById.get(r.id)) : undefined;
     return label === undefined || label === r.name ? r : { ...r, name: label };
   });
 }

@@ -62,7 +62,7 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   // name, so there is no id left to label.
   const staffLabels = staffLabelContext(options);
   const reports = staffLabels
-    ? { ...rawReports, topTherapists: relabelStaffRows(rawReports.topTherapists, staffLabels) }
+    ? { ...rawReports, topTherapists: relabelStaffRows(rawReports.topTherapists, staffLabels, options.allTherapists ?? options.therapists) }
     : rawReports;
 
   return (
