@@ -63,7 +63,12 @@ export default async function RecordDetailPage({
   // and the body is chosen from that answer and the record's source. A record
   // with a schema never spends the read.
   const importerSourced = schema ? false : await isImporterSourcedRecord(ctx, id);
-  const view = chooseRecordView({ hasSchema: schema !== null, importerSourced, source: record.source });
+  const view = chooseRecordView({
+    hasSchema: schema !== null,
+    importerSourced,
+    source: record.source,
+    status: record.status,
+  });
   // G-D: only an imported registo lists the patient's imported originals. Read
   // under the same patients:read gate the Documentos tab and its download
   // action use.
@@ -221,13 +226,15 @@ export default async function RecordDetailPage({
               <ImportedPatientDocuments items={importedDocuments} />
             </>
           ) : view === "ai_recording" && aiSummary ? (
-            /* FICHA-IMPORTED-VIEW: an AI ingestion draft that has not been
-               claimed for review. It has no template because store.ts keeps
-               only the raw payload, and until this card it was drawn above as
-               imported content. It is a draft from a consultation recording,
-               waiting for review, and it says so; the way on is the review
-               screen, where AI drafts are edited and finalized (rule 4). No
-               form, no sign action, read-only. */
+            /* FICHA-IMPORTED-VIEW: an AI ingestion DRAFT with no template
+               (not yet claimed, or claimed when no Ficha Medica template
+               existed). It has no template because store.ts keeps only the raw
+               payload, and until this card it was drawn above as imported
+               content. It is a draft from a consultation recording, waiting
+               for review, and it says so; the way on is the review screen,
+               where AI drafts are edited and finalized (rule 4). No form, no
+               sign action, read-only. A FINALIZED template-less AI record is
+               not a draft and goes to the neutral view below. */
             <AiRecordingDraft
               recordId={id}
               summary={aiSummary}
@@ -239,8 +246,9 @@ export default async function RecordDetailPage({
           ) : (
             /* FICHA-IMPORTED-VIEW: any other record without a template that
                the importer did not write (a patient submission draft, a manual
-               record). The stored content, under the same rules as the
-               imported preview, with a heading that claims no origin. */
+               record, an AI record finalized with no template). The stored
+               content, under the same rules as the imported preview, with a
+               heading that claims no origin. */
             <StoredRecordContent
               data={record.data}
               title={s["clinical.recordContentTitle"]}

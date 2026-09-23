@@ -7,7 +7,7 @@ import type { AiReviewState, RecordStatus } from "@/lib/clinical/records";
 import { locale, s } from "@/lib/i18n";
 
 import { sectionLabel } from "./field-display";
-import { renderStoredValue } from "./stored-record-content";
+import { isAbsentStoredValue, renderStoredValue, StoredRecordContent } from "./stored-record-content";
 
 /**
  * The label a filled AI key is shown under: the Ficha Medica template's OWN
@@ -84,6 +84,11 @@ export function aiDraftReviewHref({
  * that it waits for review, what the recording filled in, and, when that is
  * nothing, that the recording produced no content.
  *
+ * NOTHING STORED IS DROPPED. Anything the record stores outside the recording
+ * that the fields do not show (`summary.otherStored`) follows the panel, under
+ * the stored-content rules and a heading that says it is not the recording's.
+ * A draft as ingestion or the claim writes it has none, so the block is absent.
+ *
  * READ-ONLY BY CONSTRUCTION: no form, no input, no action. The only way on is a
  * link to the review screen, which is where an AI draft is edited and finalized
  * (CLAUDE.md rule 4). Staff-facing copy only.
@@ -108,60 +113,75 @@ export function AiRecordingDraft({
   const reviewHref = aiDraftReviewHref({ recordId, status, aiReviewState, canReview });
   const awaitingReview =
     status === "draft" && (aiReviewState === "pending_review" || aiReviewState === "in_review");
+  const hasOtherStored = Object.values(summary.otherStored).some((v) => !isAbsentStoredValue(v));
 
   return (
-    <section
-      aria-labelledby="ai-recording-draft-title"
-      data-testid="ai-recording-draft"
-      className="flex flex-col gap-3"
-    >
-      <h2 id="ai-recording-draft-title" className="text-base font-semibold text-text-primary">
-        {s["clinical.aiDraftTitle"]}
-      </h2>
-      <p className="text-sm text-text-secondary">{s["clinical.aiDraftHelp"]}</p>
-      {awaitingReview && <p className="text-sm text-text-secondary">{s["clinical.aiDraftPending"]}</p>}
+    <>
+      <section
+        aria-labelledby="ai-recording-draft-title"
+        data-testid="ai-recording-draft"
+        className="flex flex-col gap-3"
+      >
+        <h2 id="ai-recording-draft-title" className="text-base font-semibold text-text-primary">
+          {s["clinical.aiDraftTitle"]}
+        </h2>
+        <p className="text-sm text-text-secondary">{s["clinical.aiDraftHelp"]}</p>
+        {awaitingReview && <p className="text-sm text-text-secondary">{s["clinical.aiDraftPending"]}</p>}
 
-      {summary.empty ? (
-        <p className="text-sm text-text-primary" data-testid="ai-recording-draft-empty">
-          {s["clinical.aiDraftEmpty"]}
-        </p>
-      ) : (
-        <>
-          {summary.filled.length > 0 && (
-            <dl className="flex flex-col gap-4" data-testid="ai-recording-draft-fields">
-              {summary.filled.map(({ path, value }) => (
-                <div key={path} className="flex flex-col gap-1">
-                  <dt className="text-sm font-medium text-text-secondary">
-                    {aiDraftFieldLabel(fichaSchema, path, locale)}
-                  </dt>
-                  <dd className="whitespace-pre-wrap text-sm text-text-primary">
-                    {renderStoredValue(value)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-          {summary.unknownKeys.length > 0 && (
-            // Key NAMES only, as on the review screen: the values stay in the
-            // stored payload, where the reviewer reads them.
-            <p className="text-sm text-text-secondary" data-testid="ai-recording-draft-unknown">
-              {s["review.unknownKeysTitle"]}: {summary.unknownKeys.join(", ")}
-            </p>
-          )}
-        </>
-      )}
+        {summary.empty ? (
+          <p className="text-sm text-text-primary" data-testid="ai-recording-draft-empty">
+            {s["clinical.aiDraftEmpty"]}
+          </p>
+        ) : (
+          <>
+            {summary.filled.length > 0 && (
+              <dl className="flex flex-col gap-4" data-testid="ai-recording-draft-fields">
+                {summary.filled.map(({ path, value }) => (
+                  <div key={path} className="flex flex-col gap-1">
+                    <dt className="text-sm font-medium text-text-secondary">
+                      {aiDraftFieldLabel(fichaSchema, path, locale)}
+                    </dt>
+                    <dd className="whitespace-pre-wrap text-sm text-text-primary">
+                      {renderStoredValue(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {summary.unknownKeys.length > 0 && (
+              // Key NAMES only, as on the review screen: the values stay in the
+              // stored payload, where the reviewer reads them.
+              <p className="text-sm text-text-secondary" data-testid="ai-recording-draft-unknown">
+                {s["review.unknownKeysTitle"]}: {summary.unknownKeys.join(", ")}
+              </p>
+            )}
+          </>
+        )}
 
-      {reviewHref && (
-        <p>
-          <Link
-            href={reviewHref}
-            data-testid="ai-recording-draft-review-link"
-            className="inline-flex items-center rounded-md text-sm font-medium text-accent-1-700 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          >
-            {s["clinical.aiDraftReviewLink"]}
-          </Link>
-        </p>
+        {reviewHref && (
+          <p>
+            <Link
+              href={reviewHref}
+              data-testid="ai-recording-draft-review-link"
+              className="inline-flex items-center rounded-md text-sm font-medium text-accent-1-700 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            >
+              {s["clinical.aiDraftReviewLink"]}
+            </Link>
+          </p>
+        )}
+      </section>
+      {hasOtherStored && (
+        <div className="mt-6">
+          <StoredRecordContent
+            data={summary.otherStored}
+            title={s["clinical.aiDraftOtherTitle"]}
+            help={s["clinical.aiDraftOtherHelp"]}
+            emptyText={s["clinical.recordNoContent"]}
+            testId="ai-recording-draft-other"
+            emptyTestId="ai-recording-draft-other-empty"
+          />
+        </div>
       )}
-    </section>
+    </>
   );
 }

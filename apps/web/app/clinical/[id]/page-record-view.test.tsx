@@ -418,3 +418,107 @@ describe("the immutability banner is shown for finalized records only", () => {
     expect(html).toContain(LOCKED);
   });
 });
+
+/**
+ * ROUND 2 (reviewer, behaviour lens): every template-less AI record went to the
+ * recording-draft panel, whatever its status, and the panel drew only the
+ * filled contract keys. A record signed with no template (possible before the
+ * claim bound the Ficha Medica template) rendered "Ficha finalizada e
+ * imutavel" above "Rascunho de gravacao de consulta" and "A gravacao nao
+ * produziu conteudo", and the reviewer's text was on no part of the page.
+ */
+describe("a template-less AI record: the page drops nothing that is stored", () => {
+  const NULL_META = EMPTY_AI_DATA._aiIngestionRaw;
+  const REVIEWER_TEXT = "Texto do revisor sintetico";
+
+  /** Every non-blank string leaf stored OUTSIDE the raw payload. */
+  function storedLeavesOutsideRaw(data: Record<string, unknown>): string[] {
+    const out: string[] = [];
+    const walk = (v: unknown) => {
+      if (typeof v === "string" && v.trim() !== "") out.push(v);
+      else if (v && typeof v === "object") Object.values(v).forEach(walk);
+    };
+    for (const [k, v] of Object.entries(data)) if (k !== "_aiIngestionRaw") walk(v);
+    return out;
+  }
+
+  it.each(["signed", "locked"])(
+    "THE DEFECT'S RECORD: a %s AI record with no template gets the neutral view, with the reviewer's text",
+    async (status) => {
+      h.isImporterSourcedRecord.mockResolvedValue(false);
+      const html = await renderPage(
+        record({
+          source: "ai_ingested",
+          status,
+          aiReviewState: "approved",
+          signedByName: status === "signed" ? "Revisor Sintetico" : null,
+          data: { _aiIngestionRaw: NULL_META, observations: REVIEWER_TEXT },
+        }),
+      );
+      expect(html).toContain('data-testid="record-content"');
+      expect(html).toContain(pt["clinical.recordContentTitle"]);
+      expect(textOf(html)).toContain(REVIEWER_TEXT);
+      // Finalized, and said so; never also announced as a draft.
+      expect(html).toContain(pt["clinical.lockedNotice"]);
+      expect(html).not.toContain('data-testid="ai-recording-draft"');
+      expect(html).not.toContain(pt["clinical.aiDraftTitle"]);
+      expect(html).not.toContain(pt["clinical.aiDraftEmpty"]);
+      expect(html).not.toContain(pt["clinical.aiDraftPending"]);
+      expect(textOf(html)).not.toMatch(/importad/i);
+      expect(h.getFichaMedicaTemplate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("a DRAFT carrying a reviewer's text outside the recording shows the panel AND the text", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const data = {
+      _aiIngestionRaw: { ...NULL_META, consultation_reason: "Dor cervical sintetica" },
+      consultation_reason: "Dor cervical sintetica",
+      observations: REVIEWER_TEXT,
+      systems_review: { respiratory: "Revisor respiratorio sintetico" },
+    };
+    const html = await renderPage(record({ source: "ai_ingested", aiReviewState: "in_review", data }));
+    expect(html).toContain('data-testid="ai-recording-draft"');
+    expect(html).toContain('data-testid="ai-recording-draft-other"');
+    expect(html).toContain(pt["clinical.aiDraftOtherTitle"]);
+    expect(html).not.toContain(pt["clinical.lockedNotice"]);
+    const text = textOf(html);
+    for (const leaf of storedLeavesOutsideRaw(data)) expect(text).toContain(leaf);
+    // Shown once, in the fields: the other block does not repeat it.
+    expect(text.split("Dor cervical sintetica")).toHaveLength(2);
+  });
+
+  it("an empty extraction with a reviewer's text: the recording is empty, and the text is still there", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const data = { _aiIngestionRaw: NULL_META, observations: REVIEWER_TEXT };
+    const html = await renderPage(record({ source: "ai_ingested", aiReviewState: "in_review", data }));
+    expect(html).toContain('data-testid="ai-recording-draft-empty"');
+    expect(html).toContain('data-testid="ai-recording-draft-other"');
+    expect(textOf(html)).toContain(REVIEWER_TEXT);
+  });
+
+  it("CONTROL: a draft as ingestion writes it has no 'other content' block", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    for (const data of [
+      EMPTY_AI_DATA,
+      { _aiIngestionRaw: { template: "osteopathy", consultation_reason: "Dor cervical sintetica" } },
+    ]) {
+      const html = await renderPage(record({ source: "ai_ingested", aiReviewState: "pending_review", data }));
+      expect(html).toContain('data-testid="ai-recording-draft"');
+      expect(html).not.toContain('data-testid="ai-recording-draft-other"');
+      expect(html).not.toContain(pt["clinical.aiDraftOtherTitle"]);
+    }
+  });
+
+  it("CONTROL: a stored key whose value is blank or null is not a block of its own", async () => {
+    h.isImporterSourcedRecord.mockResolvedValue(false);
+    const html = await renderPage(
+      record({
+        source: "ai_ingested",
+        aiReviewState: "in_review",
+        data: { _aiIngestionRaw: NULL_META, observations: "  ", treatment_plan: null },
+      }),
+    );
+    expect(html).not.toContain('data-testid="ai-recording-draft-other"');
+  });
+});
