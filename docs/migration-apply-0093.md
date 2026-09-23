@@ -434,8 +434,11 @@ that is the data moving, not a regression.
    NO ACTION on delete and update: a consent record never vanishes in a cascade;
 5. `authenticated` may SELECT and INSERT, and may NOT UPDATE, DELETE or TRUNCATE. The
    two positives are the control for the three negatives;
-6. the portal `patient` role and `anon` hold none of the seven table privileges,
-   TRUNCATE included, because TRUNCATE ignores row level security;
+6. the portal `patient` role and `anon` hold none of the seven table privileges it
+   names (SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER), TRUNCATE
+   included because TRUNCATE ignores row level security. **Not checked:** Postgres
+   17's eighth privilege, MAINTAIN, and column-level grants. Neither reads a row
+   under row level security; the verdict's "no privilege" means these seven;
 7. exactly two policies on the table, and none for UPDATE, DELETE or ALL;
 8. the SELECT policy is PERMISSIVE, `FOR SELECT`, `TO authenticated`, and its USING
    is EXACTLY `(tenant_id = jwt_tenant_id())`, compared by md5
@@ -462,7 +465,7 @@ alone. It is an assertion about the apply, not an invariant.
 | R3 | the actor reads no row of another tenant | **FAIL** (no table) | VACUOUS (no rows yet) |
 | R4 | append-only: no UPDATE, DELETE or TRUNCATE for `authenticated` | **FAIL** (no table) | OK |
 | R5 | the control: SELECT and INSERT, and the INSERT check is exactly tenant AND `recorded_by = auth.uid()` (md5) | **FAIL** (no table) | OK |
-| R6 | the portal `patient` role and `anon` hold nothing, of all seven privileges | **FAIL** (no table) | OK |
+| R6 | the portal `patient` role and `anon` hold none of the seven named table privileges (not MAINTAIN, not column grants) | **FAIL** (no table) | OK |
 
 ### Which acceptance check this sitting discharges, and which it does not
 
@@ -473,6 +476,16 @@ alone. It is an assertion about the apply, not an invariant.
 | a staff member reads their tenant's consents and no other tenant's | behaviour R2 and R3, **VACUOUS on production on apply day**; proven with rows on the rehearsal only | RLS |
 | `recorded_by` is pinned to the acting user | the shape by post-check 9, R5 and the CI suite; the behaviour by the rehearsal's INSERT arms only | RLS, WITH CHECK |
 | the consent is asked at patient creation and the ficha reads "RGPD em falta" until given | **NOT DISCHARGED BY THIS DOCUMENT.** The app code ships when #1399 merges, after the apply; the screen check is the owner's | the route |
+
+**The md5 pins depend on how the session renders an expression.** Post-check 8 and 9
+and R5 compare the md5 of `pg_get_expr(...)`, which prints `jwt_tenant_id()` without
+its schema only because `public` is on the session's `search_path`. Under another
+search_path the text, and so the md5, would differ, and stage 2 would halt AFTER the
+apply. The evidence that production's sitting renders the same way is the pre-check
+carry `other_policies_md5`: one md5 over the rendered expressions of all 93 existing
+policies, 90 of which call `jwt_tenant_id()` and 12 `auth.uid()` (counted on the rehearsal, whose policies match production's by that md5), read
+`a8044a3327d5d5656833fb9606e94ebf` on production and the same on the rehearsal. The
+stage blocks set no search_path, so the sitting connects exactly as that read did.
 
 ## Measured on production, READ ONLY, 2026-09-23T01:46Z
 
