@@ -631,6 +631,13 @@
       "when": 1788501300000,
       "tag": "0092_care_team_location",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788501400000,
+      "tag": "0093_patient_rgpd_acceptances",
+      "breakpoints": true
     }
   ]
 }
