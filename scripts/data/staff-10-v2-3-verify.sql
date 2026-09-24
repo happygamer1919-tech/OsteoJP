@@ -8,7 +8,9 @@
 -- audit row; this file reads them back and recomputes each against the
 -- database. A VACUOUS verdict means the arm ran over an empty set and could not
 -- have failed; the stage 3 block in the doc allows VACUOUS only on the arms it
--- names, and never on 1, 7, 8, 9, 10, 21 or 22.
+-- names, and never on 1, 7, 8, 9, 10, 19, 20, 21 or 22. Stages 1 and 2 refuse
+-- an empty md5 comparison set before the write (R25, R27), so 9, 19, 20 and 21
+-- always compare something.
 --
 -- The rows printed after the SUMMARY are the future pairs as they stand after
 -- the write, ids only: the owner-only reception note points at that section.

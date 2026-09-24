@@ -253,7 +253,18 @@ test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the do
   const allowed = b.match(/grep -vxE '([0-9|]+)'/)?.[1].split("|").map(Number);
   assert.ok(allowed?.length > 0);
   for (const n of allowed) assert.ok(verdicts.includes(n), `the allowed-VACUOUS list names ${n}, which does not exist`);
-  for (const n of [1, 7, 8, 9, 10, 21, 22]) assert.ok(!allowed.includes(n), `verdict ${n} must never be allowed VACUOUS`);
+  for (const n of [1, 7, 8, 9, 10, 19, 20, 21, 22]) assert.ok(!allowed.includes(n), `verdict ${n} must never be allowed VACUOUS`);
+});
+
+test("every untouched set stage 3 compares by md5 must be non-empty, and stage 1 refuses an empty one before the write", () => {
+  const md5Verdicts = [...S3.matchAll(/UNION ALL SELECT (\d+), '[^']*\(md5\)'/g)].map((m) => Number(m[1]));
+  assert.deepEqual(md5Verdicts, [9, 19, 20, 21], "the md5 comparison verdicts moved");
+  const r25 = SETS.slice(SETS.indexOf("'R25'"), SETS.indexOf("'R26'"));
+  assert.match(r25, /a\.practitioner_id = k\.jp_cb AND a\.location_id = k\.cb_loc AND a\.starts_at < k\.day0\) = 0/, "R25 does not refuse an empty JP(cb) past Castelo Branco set");
+  assert.match(r25, /av\.user_id = k\.jp_cb AND av\.location_id = k\.cb_loc\) = 0/, "R25 does not refuse an empty JP(cb) Castelo Branco schedule");
+  const r27 = SETS.slice(SETS.indexOf("'R27'"), SETS.indexOf(END));
+  assert.match(r27, /FROM public\.clinical_records cr\s+WHERE cr\.appointment_id IN \(SELECT h\.id FROM h UNION SELECT x\.id FROM x\s+UNION SELECT f\.p_id FROM f UNION SELECT f\.n_id FROM f\)\) = 0/, "R27 does not refuse an empty clinical record set on the written rows");
+  assert.match(r27, /\(SELECT count\(\*\) FROM tw_keep\) = 0/, "R27 does not refuse an empty kept past twin set");
 });
 
 test("stage 3 reads back only what stage 2 records, and the audit action agrees everywhere", () => {
