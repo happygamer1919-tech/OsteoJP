@@ -1024,6 +1024,43 @@ describe("buildCompactWeek", () => {
     }
   });
 
+  it("the twin rule matches patients by ID, never by name: two namesakes are not a twin", () => {
+    // Round 9 review: a namesake pair (two different patients, one person row
+    // and one machine row) at the same minute as a real twin. Paired by name,
+    // the namesakes (sorting first) would take both lanes and hide the twin.
+    const twinPatient = { patientId: "p-twin", patientName: "Xavier Sintetico Teste" };
+    const week = buildCompactWeek({
+      anchor: WED,
+      appointments: [
+        appt({ id: "nm-person", date: THU, from: "10:00", to: "10:45", patientId: "p-a", patientName: "Ana Homonima Teste" }),
+        appt({
+          id: "nm-machine",
+          date: THU,
+          from: "10:00",
+          to: "10:45",
+          practitionerId: MACHINE,
+          practitionerName: "NESA",
+          patientId: "p-b",
+          patientName: "Ana Homonima Teste",
+        }),
+        appt({ id: "tw-person", date: THU, from: "10:00", to: "10:45", ...twinPatient }),
+        appt({
+          id: "tw-machine",
+          date: THU,
+          from: "10:00",
+          to: "10:45",
+          practitionerId: MACHINE,
+          practitionerName: "NESA",
+          ...twinPatient,
+        }),
+      ],
+      sharedResourceIds: MACHINES,
+    });
+    const thu = week.days.find((d) => d.date === THU)!;
+    expect(thu.appointments.map((a) => a.id).sort()).toEqual(["tw-machine", "tw-person"]);
+    expect(thu.more.flatMap((m) => m.hiddenIds).sort()).toEqual(["nm-machine", "nm-person"]);
+  });
+
   it("the twin rule reads the PATIENT off the appointment: a twin with a third row at its minute is drawn side by side", () => {
     // The layout test above feeds `patient` by hand; this one proves
     // buildCompactWeek passes it. The third row's patient sorts first by name,
@@ -1511,13 +1548,11 @@ describe("the owner-facing text claims person left only where the page knows the
 });
 
 describe("the card's own text paraphrases the ruling and never quotes it", () => {
-  // Round 8's review: readRangeForView's comment read (the ruling: "Dom only
-  // when it holds bookings"). This is a PUBLIC repository and the ruling may
-  // appear here paraphrased only; that phrase was the card's acceptance, so it
-  // was either the owner's words or card text credited to the owner. The same
-  // pattern was in agenda-view-preference.ts ("Per device" is the ruling's
-  // unit). Every sentence of this card's own text that names the ruling must
-  // hold no quotation.
+  // Round 8's review: readRangeForView's comment quoted a phrase and credited
+  // it to the ruling, and agenda-view-preference.ts did the same with a
+  // two-word phrase. This is a PUBLIC repository and the ruling may appear here
+  // paraphrased only. Every sentence of this card's own text that names the
+  // ruling must hold no quotation. The fixtures below are invented phrases.
   const comments = (src: string) =>
     [...src.matchAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g)]
       .map((m) => m[0].replace(/^\/\*\*?|\*\/$/g, "").replace(/^\s*\*\s?/gm, "").replace(/^\/\/\s?/, ""))
@@ -1548,8 +1583,8 @@ describe("the card's own text paraphrases the ruling and never quotes it", () =>
       .filter((s) => namesTheRuling(s) && quotes(s));
 
   it("SELF-TEST: the check flags a quotation credited to the ruling, and passes a paraphrase and a quotation credited to the card", () => {
-    expect(offending('Dom shows (the ruling: "Dom only when it holds bookings"). Then more.')).toHaveLength(1);
-    expect(offending('"Per device" is the ruling\'s unit.')).toHaveLength(1);
+    expect(offending('Foo shows (the ruling: "foo only when bar"). Then more.')).toHaveLength(1);
+    expect(offending('"Per widget" is the ruling\'s unit.')).toHaveLength(1);
     expect(offending("The ruling remembers the choice for each device.")).toEqual([]);
     expect(offending('The card reads "sticky time axis" as below.')).toEqual([]);
   });

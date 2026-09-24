@@ -711,8 +711,7 @@ export function AgendaView({
       {/* AGENDA-MOBILE-WEEK: below 640 the WEEK is the compact grid further
           down, so for Semana this list is 640-767 only (Q-B6-2: the ruling is
           about phones; 640-767 keeps the list it has today). For Dia it is
-          unchanged at every width under 768: "Dia unchanged" on a phone means
-          this list. */}
+          unchanged at every width under 768: on a phone, Dia keeps this list. */}
       <AgendaWeekList
         className={view === "week" ? "max-sm:hidden md:hidden" : "md:hidden"}
         view={view}
