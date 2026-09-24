@@ -5066,10 +5066,16 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
     can (measured locally, not in CI). The chip links to the same page as the visible "O meu
     perfil" beside it, which stays (W7-02). This touches the shared staff shell,
     not only the agenda.
+  - **Q-B6-12** "sticky time axis, 30-minute rows" is read as: an axis that
+    never leaves the screen sideways, labels that scroll with their rows, a
+    label on each hour, and a rule on each hour only (no :30 rule, as on the
+    desktop). Detail in the next bullet.
 - **"Sticky time axis" is satisfied by construction.** The grid never scrolls
   sideways, so the axis never leaves the screen horizontally, and its labels
-  travel with their rows vertically (the desktop grid's own reasoning). If the
-  ruling meant a frozen axis, that is a question. The rows are 30 minutes (every
+  travel with their rows vertically (the desktop grid's own reasoning). Whether
+  that reading is what the ruling meant is an open owner question, Q-B6-12: a
+  label pinned in place while the rows scroll would name whatever row is level
+  with it, not its own. The rows are 30 minutes (every
   block is placed on that scale); the rules are drawn on the hour only, as on
   the desktop since W13-B removed its faint :30 rule. The axis labels every
   hour and also the window's end, on the bottom edge (21:00, or the later hour

@@ -1353,8 +1353,23 @@ describe("docs/QUESTIONS.md holds every Q-B6 default DECISIONS ships behind", ()
   const questions = readFileSync(new URL("../../../../docs/QUESTIONS.md", import.meta.url), "utf8");
   const ids = [...new Set([...decisions.matchAll(/\*\*(Q-B6-\d+)\*\*/g)].map((m) => m[1]!))];
 
-  it("VACUOUS GUARD: DECISIONS names the eleven defaults, Q-B6-1 to Q-B6-11", () => {
-    expect(ids).toEqual(Array.from({ length: 11 }, (_, i) => `Q-B6-${i + 1}`));
+  it("VACUOUS GUARD: DECISIONS names the twelve defaults, Q-B6-1 to Q-B6-12", () => {
+    expect(ids).toEqual(Array.from({ length: 12 }, (_, i) => `Q-B6-${i + 1}`));
+  });
+
+  it("every sentence of the card's DECISIONS entry that calls something a question names its Q-B6 id", () => {
+    // Round 7's review: the axis bullet said "If the ruling meant a frozen
+    // axis, that is a question" with no id, so the owner's queue never held
+    // it. A question with no id cannot reach QUESTIONS.md; the test above then
+    // checks that every id does.
+    const from = decisions.indexOf("## 2026-09-23 - AGENDA-MOBILE-WEEK:");
+    const next = decisions.indexOf("\n## ", from + 1);
+    const entry = decisions.slice(from, next === -1 ? decisions.length : next).replace(/\s+/g, " ");
+    const asks = entry.split(/(?<=[.:;])\s+/).filter((s) => /\b(?:is|are) (?:an? )?(?:open )?(?:owner )?question/i.test(s));
+    // VACUOUS GUARD: the entry is found and holds at least the axis sentence.
+    expect(from).toBeGreaterThan(-1);
+    expect(asks.length).toBeGreaterThanOrEqual(1);
+    for (const s of asks) expect(s, "a question without its id").toMatch(/Q-B6-\d+/);
   });
 
   it("each has a QUESTIONS entry of its own, with the default shipped and the alternative", () => {

@@ -2266,3 +2266,25 @@ perfil", which opens the same page, and "Terminar sessão" stay.
 
 **Alternative.** Keep the chip and truncate the name, or move the name and role
 into a menu.
+
+## 2026-09-24 - Q-B6-12: the phone week's "sticky time axis" scrolls with its rows and has a rule on the hour only
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK). The
+card says "sticky time axis, 08:00 to 21:00 in 30-minute rows"; this is how the
+builder read it.**
+
+Context. The phone week fits the screen's width, so it never scrolls sideways;
+it scrolls only up and down, with the day header pinned under the toolbar. The
+desktop grid removed its faint :30 rule at the owner's request (W13-B).
+
+**Default shipped.** The time axis is the grid's left column and never leaves
+the screen sideways, because nothing scrolls sideways. Its labels scroll up and
+down with their rows, as on the desktop: a label pinned in place while the rows
+move would name whatever row happens to be level with it. Each row is 30
+minutes (34px) and every block is placed on that scale; there is a label and a
+rule on each hour and no rule at :30, as on the desktop. The last hour is also
+labelled on the grid's bottom edge (21:00, or later when a booking runs later).
+
+**Alternatives.** A faint rule at :30 on the phone only, or a small ":30" label
+between the hour labels. A pinned hour label at the top of the screen that
+names the hour showing under the day header as the grid scrolls.
