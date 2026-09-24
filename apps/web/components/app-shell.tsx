@@ -159,7 +159,7 @@ export async function AppShell({
   // entry now sits beside it, next to Terminar sessão, for every role. Same link
   // primitive and the same styling as the sign-out control — no new shell pattern.
   const userArea = (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-4 max-sm:gap-1">
       {/* W13-02 (PG4): the bell is a REAL control with its own destination, and
           it sits OUTSIDE the profile link below. That placement is the whole
           fix. It was previously a decorative aria-hidden span INSIDE
@@ -171,6 +171,7 @@ export async function AppShell({
           The count is read server-side from staff_notifications (read_at IS
           NULL), never held in client state that a reload would reset. */}
       <NotificationBell
+        className="max-sm:shrink-0"
         href="/notificacoes"
         label={s["notifications.title"]}
         linkComponent={Link}
@@ -184,31 +185,43 @@ export async function AppShell({
         href="/perfil"
         aria-label={s["nav.profile"]}
         title={s["nav.profile"]}
-        // AGENDA-MOBILE-WEEK: below `sm` this chip is hidden. Measured on a
-        // local stack, this user area was 368 to 383px wide in the ~271px the
-        // mobile header leaves it at 390 (241px at 360), so EVERY staff page
-        // scrolled sideways on a phone: it, not the agenda toolbar, set the
-        // 470 to 486px page width. The chip is the one piece with a duplicate:
-        // the visible "O meu perfil" link beside it goes to the same page and
-        // stays (W7-02). Without it the area is about 202px. Default Q-B6-11.
-        className="rounded-v2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:hidden"
+        // AGENDA-MOBILE-WEEK, Q-B6-11 (answered): below `sm` this chip shows
+        // the initials avatar ALONE. The name and role are what did not fit:
+        // with them, this user area was 368 to 383px wide in the ~271px the
+        // mobile header leaves it at 390 (241px at 360, measured on a local
+        // stack), so every staff page scrolled sideways on a phone. The owner
+        // kept the avatar, which stays this same /perfil link, and dropped only
+        // the text.
+        //
+        // WHAT MAKES ROOM FOR THE AVATAR, below `sm` only: the gaps in this
+        // area are 4px, not 16, and the two text controls below trim their
+        // side padding to 8px. "O meu perfil" and "Terminar sessão" still wrap
+        // onto two lines there, as they already did. The bell and this link
+        // do not shrink: they are fixed-size targets, and without `shrink-0`
+        // the bell was squeezed below its 44px to give the text room. Measured
+        // (local Chromium, the app's CSS and Inter): the area's narrowest
+        // layout is about 223px in the 241px it has at 360. The e2e asserts
+        // the header and the page on four staff pages at 390 and 360, on the
+        // screen rather than by this arithmetic.
+        className="rounded-v2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:shrink-0"
       >
         <UserAreaCluster
           name={name || roleLabel}
           roleLabel={roleLabel}
           initials={initials || roleLabel.charAt(0).toUpperCase()}
+          textClassName="max-sm:hidden"
         />
       </Link>
       <Link
         href="/perfil"
-        className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
       >
         {s["nav.myProfile"]}
       </Link>
       <form action={logout}>
         <button
           type="submit"
-          className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
         >
           {s["common.signOut"]}
         </button>

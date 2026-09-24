@@ -851,6 +851,119 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
   });
 
   // ==================================================================
+  // Q-B6-11, ANSWERED: THE STAFF HEADER ON A PHONE. Below 640 the header
+  // shows the initials avatar and not the name and role; the avatar is still
+  // the /perfil link; the bell, "O meu perfil" and "Terminar sessão" stay; no
+  // control lies over another; and no staff page scrolls sideways. On four
+  // staff pages, because the header is the shell's and every page has it.
+  // ==================================================================
+  test("the staff header at 390 and 360: the initials avatar stays and the name does not, no control over another, no sideways scroll", async ({
+    page,
+  }) => {
+    const PAGES = ["/dashboard", `/agenda?view=week&date=${DAY}`, "/patients", "/perfil"];
+    const shellHeader = () => page.locator("header").filter({ has: page.getByRole("button", { name: "Abrir menu" }) });
+    for (const vp of [PHONE, NARROW_PHONE]) {
+      await page.setViewportSize(vp);
+      for (const path of PAGES) {
+        const where = `${vp.width} ${path}`;
+        await page.goto(path);
+        const header = shellHeader();
+        await expect(header, `${where}: the shell header`).toBeVisible();
+
+        // THE AVATAR: the /perfil link named "Perfil" (its aria-label; the
+        // visible "O meu perfil" is another link), whose first span is the
+        // initials circle and whose second is the name-and-role column.
+        const avatarLink = header.getByRole("link", { name: "Perfil", exact: true });
+        await expect(avatarLink, `${where}: the avatar link is shown`).toBeVisible();
+        await expect(avatarLink).toHaveAttribute("href", "/perfil");
+        const parts = avatarLink.locator(":scope > div > span");
+        await expect(parts, `${where}: the cluster has its avatar and its text column`).toHaveCount(2);
+        const avatar = parts.nth(0);
+        const text = parts.nth(1);
+        await expect(avatar, `${where}: the initials avatar is shown`).toBeVisible();
+        // THE INITIALS ARE THE NAME'S, read from the same render: the name
+        // is still in the DOM, hidden. So a parallel spec renaming this
+        // account cannot make the two disagree.
+        const name = ((await text.locator("span").first().textContent()) ?? "").trim();
+        expect(name.length, `${where}: the hidden name is in the DOM to read the initials from`).toBeGreaterThan(0);
+        const expected = name
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((w) => w.charAt(0).toUpperCase())
+          .join("");
+        await expect(avatar, `${where}: the avatar shows the initials`).toHaveText(expected);
+        // THE NAME AND ROLE ARE NOT SHOWN.
+        await expect(text, `${where}: the name and role are not shown`).toBeHidden();
+
+        // THE AVATAR IS WHOLE AND ON SCREEN: its box inside the viewport, and
+        // its initials inside its circle.
+        const a = await box(avatar, `${where}: the avatar`);
+        expect(a.width, `${where}: the avatar has a size`).toBeGreaterThanOrEqual(24);
+        expect(a.x, `${where}: the avatar starts on screen`).toBeGreaterThanOrEqual(0);
+        expect(a.x + a.width, `${where}: the avatar ends on screen`).toBeLessThanOrEqual(vp.width);
+        expect(a.y, `${where}: the avatar is below the top edge`).toBeGreaterThanOrEqual(0);
+        const ink = await avatar.evaluate((e) => {
+          const r = document.createRange();
+          r.selectNodeContents(e);
+          const t = r.getBoundingClientRect();
+          const b = e.getBoundingClientRect();
+          return { inside: t.left >= b.left - 0.5 && t.right <= b.right + 0.5, width: t.width };
+        });
+        expect(ink.width, `${where}: the initials are painted`).toBeGreaterThan(0);
+        expect(ink.inside, `${where}: the initials sit inside the avatar`).toBe(true);
+
+        // EVERY HEADER CONTROL IS SHOWN, ON SCREEN, AND OVER NO OTHER. The
+        // avatar is compared as its link, the target a tap lands on.
+        const controls: [string, Locator][] = [
+          ["the menu button", header.getByRole("button", { name: "Abrir menu" })],
+          ["the logo", header.getByRole("link", { name: "Ir para o painel", exact: true })],
+          ["the bell", header.getByRole("link", { name: /^Notificações/ })],
+          ["the avatar", avatarLink],
+          ["O meu perfil", header.getByRole("link", { name: "O meu perfil", exact: true })],
+          ["Terminar sessão", header.getByRole("button", { name: "Terminar sessão", exact: true })],
+        ];
+        const boxes: { what: string; b: Box }[] = [];
+        for (const [what, c] of controls) {
+          await expect(c, `${where}: ${what} is shown`).toBeVisible();
+          const b = await box(c, `${where}: ${what}`);
+          expect(b.x, `${where}: ${what} starts on screen`).toBeGreaterThanOrEqual(-0.5);
+          expect(b.x + b.width, `${where}: ${what} ends on screen`).toBeLessThanOrEqual(vp.width + 0.5);
+          boxes.push({ what, b });
+        }
+        for (let i = 0; i < boxes.length; i++) {
+          for (let j = i + 1; j < boxes.length; j++) {
+            expect(
+              disjoint(boxes[i]!.b, boxes[j]!.b),
+              `${where}: ${boxes[i]!.what} and ${boxes[j]!.what} do not overlap`,
+            ).toBe(true);
+          }
+        }
+
+        // NOTHING SCROLLS SIDEWAYS: first the header itself (nothing in it
+        // runs past its own box), then the whole page, whose message names
+        // the widest element so a page's own content is told apart from it.
+        const hs = await header.evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth, right: e.getBoundingClientRect().right }));
+        expect(hs.sw, `${where}: nothing in the header runs past it (${hs.sw} vs ${hs.cw})`).toBeLessThanOrEqual(hs.cw);
+        expect(hs.right, `${where}: the header ends on screen`).toBeLessThanOrEqual(vp.width + 0.5);
+        const o = await pageOverflow(page);
+        expect(o.scrollWidth, `${where}: page scrollWidth ${o.scrollWidth} vs ${o.clientWidth}; widest: ${o.widest}`).toBeLessThanOrEqual(
+          o.clientWidth,
+        );
+      }
+    }
+
+    // CONTROL - the breakpoint is 640, both ways: at 700 the same header
+    // still shows the name and role beside the avatar. If this fails, the
+    // hiding is not scoped to phones.
+    await page.setViewportSize({ width: 700, height: 900 });
+    await page.goto("/dashboard");
+    const wide = shellHeader().getByRole("link", { name: "Perfil", exact: true }).locator(":scope > div > span");
+    await expect(wide.nth(0), "700: the avatar is shown").toBeVisible();
+    await expect(wide.nth(1), "700: the name and role are shown").toBeVisible();
+  });
+
+  // ==================================================================
   // AGMOB-01'S LIST ARMS, WHERE THE LIST STILL SHOWS. Below 640 Semana is now
   // the grid, so these moved off 390 Semana rather than away: the list is what
   // Semana shows from 640 to 767 (Q-B6-2) and what Dia shows under 768 (Dia is
