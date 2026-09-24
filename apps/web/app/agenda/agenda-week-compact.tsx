@@ -508,6 +508,7 @@ function More({
       type="button"
       data-testid="agenda-compact-more"
       data-compact-more-count={m.count}
+      data-compact-more-at={slotLabel(m.startMin)}
       aria-label={`${what}. ${s["agenda.openDay"]} ${dayLabel}`}
       onClick={onSelect}
       className="absolute z-10 flex items-center justify-center overflow-hidden rounded-full bg-v2-text-primary text-[8px] font-bold leading-none tabular-nums text-v2-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"

@@ -25,6 +25,9 @@
 //           same moment, the two rows in the two lanes are drawn and the rest
 //           of that moment's rows sit behind one "+N" chip, which opens Dia
 //           for that day. So three rows at once read two blocks and "+1".
+//           A twin pair (a person row and a machine row of the same patient,
+//           same start) goes first at its minute, so it keeps both lanes and
+//           the other rows starting then go behind the chip (`twinsFirst`).
 //           The chip is a small pill laid across the gap between the two
 //           blocks, on their status-glyph line, where it covers no time, name
 //           or glyph of blocks that start with the hidden rows (COMPACT_FACE,
@@ -209,6 +212,12 @@ export type LaneItem = {
   machine: boolean;
   /** Tie-break after time and kind, so the layout never depends on input order. */
   label: string;
+  /**
+   * The patient, for the twin rule only: a person row and a machine row of the
+   * same patient that start at the same minute are a TWIN PAIR (`twinsFirst`).
+   * Absent or null, a row is never half of a twin.
+   */
+  patient?: string | null;
 };
 
 export type LaneLayout = {
@@ -217,10 +226,54 @@ export type LaneLayout = {
 };
 
 /**
+ * THE TWIN RULE, applied to rows already sorted by start: within each run of
+ * rows that start at the same minute, every twin pair (one person row and one
+ * machine row of the same patient) moves to the FRONT of the run, the person
+ * row first and its machine row right after it; the pairs keep the order of
+ * their person rows, and every other row keeps its place behind them. A
+ * patient with two machine rows at that minute pairs with the first one.
+ *
+ * Why the front of the run: first-fit gives the lowest free lanes to the rows
+ * that come first. So where both lanes are free when a twin starts, the pair
+ * takes lanes 0 and 1, side by side, person left, and any other row starting
+ * then needs lane 2 and goes behind the "+N" chip. Without this, the sort's
+ * "person before machine" put a THIRD person row between the twins, and the
+ * twin's machine row was the one hidden (AGENDA-MOBILE-WEEK round 6).
+ *
+ * Where a row that started EARLIER still holds one lane, only one lane is
+ * free for the pair: its person row takes it and its machine row goes behind
+ * the chip. Keeping the pair there would mean hiding a block that is already
+ * drawn from an earlier start, which a block cannot do half of.
+ */
+function twinsFirst<T extends { startMin: number; machine: boolean; patient?: string | null }>(sorted: T[]): T[] {
+  const out: T[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i;
+    while (j < sorted.length && sorted[j]!.startMin === sorted[i]!.startMin) j += 1;
+    const run = sorted.slice(i, j);
+    const paired = new Set<number>();
+    const pairs: T[] = [];
+    run.forEach((person, k) => {
+      if (person.machine || person.patient == null || paired.has(k)) return;
+      const m = run.findIndex((row, n) => !paired.has(n) && row.machine && row.patient === person.patient);
+      if (m === -1) return;
+      paired.add(k);
+      paired.add(m);
+      pairs.push(person, run[m]!);
+    });
+    out.push(...pairs, ...run.filter((_, k) => !paired.has(k)));
+    i = j;
+  }
+  return out;
+}
+
+/**
  * Side-by-side lanes for ONE day column. Pure.
  *
  * 1. Sort by start, then the LONGER drawn span first, then person before
- *    machine, then label, then id.
+ *    machine, then label, then id. Then THE TWIN RULE (`twinsFirst`): at each
+ *    start minute, a twin pair goes first, person then machine.
  * 2. Sweep into clusters: a row joins the cluster while it starts before the
  *    cluster's latest drawn end.
  * 3. First-fit lanes inside a cluster: the lowest lane whose last drawn end is
@@ -241,11 +294,11 @@ export type LaneLayout = {
  *    in one lane, and only lanes 0 and 1 are drawn.
  */
 export function layoutLanes(items: readonly LaneItem[], maxLanes: number = COMPACT_MAX_LANES): LaneLayout {
-  const drawn = items.map((it) => ({
+  const sorted = items.map((it) => ({
     ...it,
     drawnEndMin: Math.max(it.endMin, it.startMin + COMPACT_MIN_DRAWN_MINUTES),
   }));
-  drawn.sort(
+  sorted.sort(
     (a, b) =>
       a.startMin - b.startMin ||
       b.drawnEndMin - b.startMin - (a.drawnEndMin - a.startMin) ||
@@ -253,6 +306,7 @@ export function layoutLanes(items: readonly LaneItem[], maxLanes: number = COMPA
       a.label.localeCompare(b.label, "pt") ||
       (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
+  const drawn = twinsFirst(sorted);
 
   const out: LaneLayout = { placed: [], more: [] };
   let i = 0;
@@ -502,6 +556,7 @@ export function buildCompactWeek(input: BuildCompactWeekInput): CompactWeek {
         endMin,
         machine: machines.has(a.practitionerId),
         label: `${patientLabel(a.patientName)} ${a.practitionerName}`,
+        patient: a.patientId,
       })),
     );
     const rowById = new Map(rows.map((r) => [r.a.id, r]));

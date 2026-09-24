@@ -99,8 +99,15 @@ function appt(
   } as AgendaAppointment;
 }
 
-function lane(id: string, startMin: number, endMin: number, machine = false, label = id): LaneItem {
-  return { id, startMin, endMin, machine, label };
+function lane(
+  id: string,
+  startMin: number,
+  endMin: number,
+  machine = false,
+  label = id,
+  patient: string | null = null,
+): LaneItem {
+  return { id, startMin, endMin, machine, label, patient };
 }
 
 const H = (hh: number, mm = 0) => hh * 60 + mm;
@@ -319,32 +326,78 @@ describe("layoutLanes", () => {
     expect(more.reduce((n, m) => n + m.count, 0)).toBe(1);
   });
 
-  it("Q-B6-1, THE TWIN CASE: a twin pair with a third PERSON row at the same moment draws the two person rows, and the machine row goes behind '+1'", () => {
-    // Two blocks and a chip, the card's default. The order is start, longer
-    // first, person before machine, then name, so a third person row takes the
-    // right lane and the twin's machine half goes behind the chip. DECISIONS
-    // Q-B6-1 names this for the owner (keeping the twin would need a
-    // twin-aware order, which the card does not state).
-    const person = lane("twin-person", H(15), H(15, 45), false, "Ana Terapeuta");
-    const machine = lane("twin-machine", H(15), H(15, 45), true, "Ana Nesa");
-    const third = lane("third", H(15), H(15, 45), false, "Bia Terapeuta");
-    const { placed, more } = layoutLanes([machine, third, person]);
-    expect(placed).toEqual([
-      { id: "twin-person", lane: 0, lanes: 2, drawnEndMin: H(15, 45) },
-      { id: "third", lane: 1, lanes: 2, drawnEndMin: H(15, 45) },
-    ]);
-    expect(more).toHaveLength(1);
-    expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 1 });
-    expect(more[0]!.hiddenIds).toEqual(["twin-machine"]);
+  it("Q-B6-1, THE TWIN CASE: a twin pair with a third PERSON row at the same moment stays side by side, and the third row goes behind '+1'", () => {
+    // Round 6: the sort put person rows before machine rows, so a third
+    // person row took the right lane and the twin's machine half was hidden.
+    // The acceptance says a twin pair renders side by side, and two lanes plus
+    // a chip can keep it: the twin rule puts the pair first at its minute.
+    const person = lane("twin-person", H(15), H(15, 45), false, "Ana Terapeuta", "patient-x");
+    const machine = lane("twin-machine", H(15), H(15, 45), true, "Ana Nesa", "patient-x");
+    const third = lane("third", H(15), H(15, 45), false, "Bia Terapeuta", "patient-y");
+    for (const order of [
+      [machine, third, person],
+      [third, person, machine],
+      [person, machine, third],
+    ]) {
+      const { placed, more } = layoutLanes(order);
+      expect(placed).toEqual([
+        { id: "twin-person", lane: 0, lanes: 2, drawnEndMin: H(15, 45) },
+        { id: "twin-machine", lane: 1, lanes: 2, drawnEndMin: H(15, 45) },
+      ]);
+      expect(more).toHaveLength(1);
+      expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 1 });
+      expect(more[0]!.hiddenIds).toEqual(["third"]);
+    }
 
-    // CONTROL: the third row is what separates the twin. The same pair alone
-    // is side by side, person left, machine right.
-    const pair = layoutLanes([machine, person]);
-    expect(pair.more).toEqual([]);
-    expect(Object.fromEntries(pair.placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({
-      "twin-person": [0, 2],
-      "twin-machine": [1, 2],
-    });
+    // CONTROL: the PATIENT is what makes them twins. The same three rows with
+    // the machine row on ANOTHER patient are no twin, so the order is the
+    // plain one again: the two person rows are drawn and the machine row is
+    // the one behind the chip.
+    const other = lane("machine-z", H(15), H(15, 45), true, "Ana Nesa", "patient-z");
+    const plain = layoutLanes([other, third, person]);
+    expect(plain.placed.map((p) => [p.id, p.lane])).toEqual([
+      ["twin-person", 0],
+      ["third", 1],
+    ]);
+    expect(plain.more[0]!.hiddenIds).toEqual(["machine-z"]);
+  });
+
+  it("THE REVIEWER'S 'TODOS' CASE: therapist A with X, NESA with X and therapist B with Y, all at 10:00, draw X twice side by side and Y behind '+1'", () => {
+    // Rows labelled as buildCompactWeek labels them ("<patient> <practitioner>").
+    // Y sorts before X by label, so without the twin rule Y took a lane too.
+    const xA = lane("x-a", H(10), H(10, 45), false, "Xavier Teste Terapeuta A", "x");
+    const xN = lane("x-n", H(10), H(10, 45), true, "Xavier Teste NESA", "x");
+    const yB = lane("y-b", H(10), H(10, 45), false, "Alda Teste Terapeuta B", "y");
+    const { placed, more } = layoutLanes([yB, xN, xA]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({ "x-a": [0, 2], "x-n": [1, 2] });
+    expect(more.map((m) => [m.startMin, m.count, m.hiddenIds])).toEqual([[H(10), 1, ["y-b"]]]);
+  });
+
+  it("the twin outranks a LONGER row at its minute, and a second twin pair at the same minute goes behind the chip whole", () => {
+    // A 60-minute third row sorts before the 45-minute twins on length; the
+    // twin rule still puts the pair first.
+    const { placed, more } = layoutLanes([
+      lane("long", H(11), H(12), false, "Bia", "b"),
+      lane("t1-n", H(11), H(11, 45), true, "Caio NESA", "c"),
+      lane("t1-p", H(11), H(11, 45), false, "Caio", "c"),
+      lane("t2-n", H(11), H(11, 45), true, "Dora NESA", "d"),
+      lane("t2-p", H(11), H(11, 45), false, "Dora", "d"),
+    ]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ "t1-p": 0, "t1-n": 1 });
+    expect(more).toHaveLength(1);
+    expect([...more[0]!.hiddenIds].sort()).toEqual(["long", "t2-n", "t2-p"]);
+  });
+
+  it("the limit, pinned: where a row that started EARLIER still holds a lane, the twin's person row takes the free lane and its machine row goes behind the chip", () => {
+    // Only one lane is free at 10:00. Keeping the pair would mean hiding
+    // 'early', which is already drawn from 09:30.
+    const { placed, more } = layoutLanes([
+      lane("early", H(9, 30), H(10, 30), false, "Eva", "e"),
+      lane("twin-person", H(10), H(10, 45), false, "Ana", "a"),
+      lane("twin-machine", H(10), H(10, 45), true, "Ana NESA", "a"),
+    ]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ early: 0, "twin-person": 1 });
+    expect(more.flatMap((m) => m.hiddenIds)).toEqual(["twin-machine"]);
   });
 
   it("two separate crowded moments in one cluster make two chips, and the drawn row between them keeps its lane", () => {
@@ -383,17 +436,28 @@ describe("layoutLanes", () => {
 
     function randomDay(rand: () => number): LaneItem[] {
       const n = 1 + Math.floor(rand() * 14);
-      return Array.from({ length: n }, (_, k) => {
+      const rows = Array.from({ length: n }, (_, k) => {
         const start = H(8) + 15 * Math.floor(rand() * 48);
         const dur = DURATIONS[Math.floor(rand() * DURATIONS.length)]!;
-        return lane(`r${k}`, start, start + dur, rand() < 0.3, `L${Math.floor(rand() * 5)}`);
+        return lane(`r${k}`, start, start + dur, rand() < 0.3, `L${Math.floor(rand() * 5)}`, `P${Math.floor(rand() * 6)}`);
       });
+      // A twin pair on some days: the machine half of a random person row.
+      if (rand() < 0.5) {
+        const person = rows.find((r) => !r.machine);
+        if (person) {
+          rows.push(lane(`r${n}`, person.startMin, person.startMin + 45, true, `L${Math.floor(rand() * 5)}`, person.patient));
+        }
+      }
+      return rows;
     }
 
     const drawnEnd = (it: LaneItem) => Math.max(it.endMin, it.startMin + COMPACT_MIN_DRAWN_MINUTES);
     const overlaps = (a: { s: number; e: number }, b: { s: number; e: number }) => a.s < b.e && b.s < a.e;
 
-    function check(items: LaneItem[], out: LaneLayout): void {
+    /** Returns how many twin minutes it checked where a THIRD row started
+     *  with the pair: the case the round 6 order got wrong. */
+    function check(items: LaneItem[], out: LaneLayout): number {
+      let twinCrowds = 0;
       const byId = new Map(items.map((it) => [it.id, it]));
       const span = (id: string) => ({ s: byId.get(id)!.startMin, e: drawnEnd(byId.get(id)!) });
       const runningAt = (t: number) => items.filter((it) => it.startMin <= t && t < drawnEnd(it)).length;
@@ -454,23 +518,59 @@ describe("layoutLanes", () => {
           expect(out.more.some((m) => m.startMin <= t && t < m.drawnEndMin), `minute ${t} has a chip`).toBe(true);
         }
       }
+
+      // (5) THE TWIN RULE: where a twin pair starts and no drawn row that
+      //     started earlier still runs (both lanes are free), a twin pair
+      //     starting then is drawn side by side, person left, machine right,
+      //     however many other rows start with it.
+      const placedById = new Map(out.placed.map((p) => [p.id, p]));
+      for (const t of new Set(items.map((it) => it.startMin))) {
+        const startingNow = items.filter((it) => it.startMin === t);
+        const twinPatients = new Set(
+          startingNow
+            .filter((it) => !it.machine && it.patient != null)
+            .map((it) => it.patient)
+            .filter((pt) => startingNow.some((o) => o.machine && o.patient === pt)),
+        );
+        if (twinPatients.size === 0) continue;
+        const earlierHolds = out.placed.some((p) => span(p.id).s < t && t < span(p.id).e);
+        if (earlierHolds) continue;
+        const drawnPair = [...twinPatients].some((pt) => {
+          const left = startingNow.find((o) => placedById.get(o.id)?.lane === 0);
+          const right = startingNow.find((o) => placedById.get(o.id)?.lane === 1);
+          return (
+            left !== undefined &&
+            right !== undefined &&
+            !left.machine &&
+            right.machine &&
+            left.patient === pt &&
+            right.patient === pt
+          );
+        });
+        expect(drawnPair, `minute ${t}: a twin pair side by side`).toBe(true);
+        if (startingNow.length >= 3) twinCrowds += 1;
+      }
+      return twinCrowds;
     }
 
     it("hold for 400 seeded random days", () => {
       const rand = rng(20260923);
       let chips = 0;
       let drawnRightLane = 0;
+      let twinCrowds = 0;
       for (let k = 0; k < 400; k++) {
         const items = randomDay(rand);
         const out = layoutLanes(items);
-        check(items, out);
+        twinCrowds += check(items, out);
         chips += out.more.length;
         drawnRightLane += out.placed.filter((p) => p.lane === 1).length;
       }
-      // CONTROL: the sample is not trivially easy. It crowds often and still
-      // draws many rows in the right lane.
+      // CONTROL: the sample is not trivially easy. It crowds often, still
+      // draws many rows in the right lane, and holds twin pairs with a third
+      // row starting beside them.
       expect(chips).toBeGreaterThan(100);
       expect(drawnRightLane).toBeGreaterThan(100);
+      expect(twinCrowds).toBeGreaterThan(5);
     });
   });
 
@@ -583,6 +683,37 @@ describe("buildCompactWeek", () => {
       expect(pair.find((a) => a.lane === 0)!.practitionerId).toBe(PERSON);
       expect(pair.find((a) => a.lane === 1)!.practitionerId).toBe(MACHINE);
     }
+  });
+
+  it("the twin rule reads the PATIENT off the appointment: a twin with a third row at its minute is drawn side by side", () => {
+    // The layout test above feeds `patient` by hand; this one proves
+    // buildCompactWeek passes it. The third row's patient sorts first by name,
+    // so without the patient the plain order would draw it and hide the
+    // machine half.
+    const twinPatient = { patientId: "p-twin", patientName: "Xavier Sintetico Teste" };
+    const week = buildCompactWeek({
+      anchor: WED,
+      appointments: [
+        appt({ id: "tw-person", date: THU, from: "10:00", to: "10:45", ...twinPatient }),
+        appt({
+          id: "tw-machine",
+          date: THU,
+          from: "10:00",
+          to: "10:45",
+          practitionerId: MACHINE,
+          practitionerName: "NESA",
+          ...twinPatient,
+        }),
+        appt({ id: "third", date: THU, from: "10:00", to: "10:45", patientId: "p-other", patientName: "Alda Teste" }),
+      ],
+      sharedResourceIds: MACHINES,
+    });
+    const thu = week.days.find((d) => d.date === THU)!;
+    expect(thu.appointments.map((a) => [a.id, a.lane, a.lanes])).toEqual([
+      ["tw-person", 0, 2],
+      ["tw-machine", 1, 2],
+    ]);
+    expect(thu.more.flatMap((m) => m.hiddenIds)).toEqual(["third"]);
   });
 
   it("the face data: time, first name, service colour, the estado derived from BOTH axes", () => {
@@ -841,9 +972,9 @@ describe("DECISIONS Q-B6-1 states the face layoutLanes draws", () => {
 
   it("the twin case: the entry says what a third row at the same moment does to a twin pair", () => {
     const { more } = layoutLanes([
-      lane("twin-person", H(15), H(15, 45), false, "Ana Terapeuta"),
-      lane("twin-machine", H(15), H(15, 45), true, "Ana Nesa"),
-      lane("third", H(15), H(15, 45), false, "Bia Terapeuta"),
+      lane("twin-person", H(15), H(15, 45), false, "Ana Terapeuta", "patient-x"),
+      lane("twin-machine", H(15), H(15, 45), true, "Ana Nesa", "patient-x"),
+      lane("third", H(15), H(15, 45), false, "Bia Terapeuta", "patient-y"),
     ]);
     const machineHidden = more.some((m) => m.hiddenIds.includes("twin-machine"));
     expect(entry).toContain(

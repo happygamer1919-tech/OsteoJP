@@ -75,6 +75,14 @@ const SUNDAY_APPT = "00000000-0000-4000-8000-00000000b6b3";
 /** 15:00 Lisbon, clear of the 10:00 slot the first test books through the UI. */
 const TWIN_AT = "15:00";
 /**
+ * A THIRD row at the twin's minute: a person row of another patient on the
+ * same therapist, as in a "Todos os terapeutas" view. Its patient's name sorts
+ * before the twin's, so without the twin rule (Q-B6-1) the two person rows
+ * took the two lanes and the twin's machine row went behind the chip. With it,
+ * the twin keeps both lanes and this row is the one behind "+1".
+ */
+const TWIN_THIRD = { id: "00000000-0000-4000-8000-00000000b6b7", patient: PATIENTS.ana } as const;
+/**
  * Q-B6-1's crowded moment: three 30-minute rows at once on DAY, all on the e2e
  * therapist (only CONFIRMED rows may not overlap, 0061), patients from the
  * seed. The card's default is two blocks and a "+1" chip. Thirty minutes is the
@@ -282,7 +290,7 @@ async function removeTwin(db: SupabaseClient): Promise<void> {
   await db
     .from("appointments")
     .delete()
-    .in("id", [TWIN_PERSON_APPT, TWIN_MACHINE_APPT, SUNDAY_APPT, ...CROWD.map((c) => c.id)]);
+    .in("id", [TWIN_PERSON_APPT, TWIN_MACHINE_APPT, TWIN_THIRD.id, SUNDAY_APPT, ...CROWD.map((c) => c.id)]);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("practitioner_id", TWIN_MACHINE_ID);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("patient_id", TWIN_PATIENT.id);
   await db.from("patients").delete().eq("id", TWIN_PATIENT.id);
@@ -354,10 +362,11 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
       await db.from("appointments").insert([
         row(TWIN_PERSON_APPT, therapist.id, DAY, TWIN_AT),
         row(TWIN_MACHINE_APPT, TWIN_MACHINE_ID, DAY, TWIN_AT),
+        row(TWIN_THIRD.id, therapist.id, DAY, TWIN_AT, 45, TWIN_THIRD.patient.id),
         row(SUNDAY_APPT, therapist.id, SUNDAY, "10:00"),
         ...CROWD.map((c) => row(c.id, therapist.id, DAY, CROWD_AT, 30, c.patient.id)),
       ]),
-      "the twin pair, the crowded moment and the Sunday booking",
+      "the twin pair and its third row, the crowded moment and the Sunday booking",
     );
   });
 
@@ -426,8 +435,10 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
       o.clientWidth,
     );
 
-    // ARM 4 - THE TWIN PAIR RENDERS SIDE BY SIDE. Two boxes that overlap
-    // vertically and are disjoint horizontally, both inside the day's column.
+    // ARM 4 - THE TWIN PAIR RENDERS SIDE BY SIDE, with a third row starting
+    // at the same minute (the "Todos" case): two boxes that overlap
+    // vertically and are disjoint horizontally, both inside the day's column,
+    // and the third row behind a "+1" chip at that minute.
     const person = page.locator(`[data-compact-appointment-id="${TWIN_PERSON_APPT}"]`);
     const machine = page.locator(`[data-compact-appointment-id="${TWIN_MACHINE_APPT}"]`);
     await expect(person).toBeVisible();
@@ -448,6 +459,11 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     }
     // Person left, machine right.
     expect(p.x).toBeLessThan(m.x);
+    // The third row is not drawn; the chip at the twin's minute stands for it.
+    await expect(page.locator(`[data-compact-appointment-id="${TWIN_THIRD.id}"]`)).toBeHidden();
+    const twinChip = page.locator(`[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"][data-compact-more-at="${TWIN_AT}"]`);
+    await expect(twinChip).toHaveCount(1);
+    await expect(twinChip).toHaveText("+1");
 
     // ARM 5 - WHAT THE FACE SHOWS, measured on the parts, not on the block.
     // `toContainText` reads textContent, which holds "15:00" even when CSS
@@ -497,7 +513,11 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     );
     expect(Math.abs(c0!.y - c1!.y), "the two crowded blocks start on the same line").toBeLessThanOrEqual(1);
     expect(disjoint(c0!, c1!), "the two crowded blocks are side by side, not on top of each other").toBe(true);
-    const dayChips = page.locator(`[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"]`);
+    // The day holds another chip (the twin's minute), so this one is picked
+    // by its minute.
+    const dayChips = page.locator(
+      `[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"][data-compact-more-at="${CROWD_AT}"]`,
+    );
     await expect(dayChips).toHaveCount(1);
     await expect(dayChips).toHaveText("+1");
     for (const vp of [PHONE, NARROW_PHONE]) {
