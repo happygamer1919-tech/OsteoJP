@@ -478,9 +478,9 @@ Linda-a-Velha schedule with nothing to retire and no row inactive (verdict 10).
 | File, in the authoring lane's scratchpad (not committed, as for 0090 to 0093) | sha256 |
 |---|---|
 | `rehearsal/fixture.sql` | `d3f37475cdd7ecc4a7ff8585e26038e6fe7aa8535a658d35da269a46c67b4ad2` |
-| `rehearsal/reset.sql` | `737b56e098afdf8e87d4d3191507df2fb65cee5df3179faaaca23ab9dd8b64a9` |
-| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `01853fe8130575e2da01006c73a88accc2daeb5d15c9b5f03ad0b7fce4e79eb9` |
-| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `d989822f2acc59831d3a0533582756658c4d9e2c7f46e50144d45875936778e8` |
+| `rehearsal/reset.sql` | `74d74fe72c1f33fe014ff563db5c0e43c187c049cf05c29c70dabe32dd6b055b` |
+| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `dfa52cb74b013f1e493a0d95f8e10337c4c8bc29e74161bf8931a1ded0b731ad` |
+| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `14a3dd982a1d3c4ad219bb426c2140468415648928fdd999f757597e4fe29c6c` |
 | `rehearsal/extract-stage.mjs`, a byte copy of `/Users/ivan/osteojp-handover/extract-stage.mjs` | `f82cad1e6e8cc1be3b7c491fff787138161e0f079b6424119329d71c63d72198` |
 
 **How it ran.** Each block was extracted from this document at the pushed branch head
@@ -565,7 +565,7 @@ R26's control: the same 30 September block stored the way the app stores a whole
 | stage 2 with the stage 1 marker removed | 1 | `stage 1 did not pass in this sitting` | unchanged |
 | the stage 2 file run with no carry at all | 3 | a syntax error on the `set_config` statement, before the block | unchanged |
 | stage 2 after a new future pair was added between stage 1 and stage 2 | 3 | `carry s10v2_count_fcan reads ... The database moved since stage 1` | unchanged |
-| stage 2 with a trap that fails the audit insert, the last step after every write | 3 | all seven write notices printed, then the trap | **unchanged**: every write rolled back, no audit row |
+| stage 2 with a trap that fails the audit insert, the last step after every write (a `NOT VALID` CHECK constraint on `audit_log`) | 3 | all seven write notices printed, then `violates check constraint` | **unchanged**: every write rolled back, no audit row |
 | stage 2 again after the write | 1 | `stage 2 has ALREADY WRITTEN in this sitting` | written once |
 | stage 1 again after the write | 1 | the same | written once |
 | stage 1 after the write, marker removed | 1 | REFUSE on R08, R24 and R27 | written once |
@@ -594,6 +594,11 @@ after the write, stopped on VACUOUS 21. A comparison set that is empty proves no
 and learning that after the write is too late, so R25 now refuses it in stage 1 and in
 stage 2 before any write. The unit test caught two post-write checks that tested
 `valid_from = valid_until` without the NULL guards; both now use the one NULL-safe form.
+In review round 1, R30 caught the rehearsal's own trap: the arm that fails the audit insert
+used to be a trigger on `audit_log`, and the first round 1 run stopped it on R30 before
+the first write, with no write notice printed, so the arm no longer proved the rollback.
+The trap is now a CHECK constraint, which R30 does not read and which fails the same
+insert after every write.
 
 **The app's own conflict check, on a real database.**
 `apps/web/lib/scheduling/staff-10-v2-option-a-conflict.db.test.ts` seeds a twin, applies
