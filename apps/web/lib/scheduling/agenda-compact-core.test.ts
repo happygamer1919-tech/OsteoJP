@@ -10,6 +10,8 @@
 // iPhones; an assertion about the phone that is worth anything is an assertion
 // about a VALUE. agenda-week-compact.tsx is a projection of what this returns.
 
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -302,6 +304,29 @@ describe("layoutLanes", () => {
     expect(more.flatMap((m) => m.hiddenIds)).not.toContain("twin-person");
     // CONTROL: the cluster IS crowded, so the cap did fire somewhere.
     expect(more.reduce((n, m) => n + m.count, 0)).toBe(2);
+  });
+
+  it("Q-B6-1, THE TWIN CASE: a twin pair with a third row at the same moment draws the person row, and the machine row goes behind '+2'", () => {
+    // What shipped, and a departure from the card's default (two lanes plus a
+    // chip) that DECISIONS Q-B6-1 names for the owner. The chip takes the
+    // second lane, so the crowded moment draws ONE block.
+    const person = lane("twin-person", H(15), H(15, 45), false, "Ana Terapeuta");
+    const machine = lane("twin-machine", H(15), H(15, 45), true, "Ana Nesa");
+    const third = lane("third", H(15), H(15, 45), false, "Bia Terapeuta");
+    const { placed, more } = layoutLanes([machine, third, person]);
+    expect(placed).toEqual([{ id: "twin-person", lane: 0, lanes: 2, drawnEndMin: H(15, 45) }]);
+    expect(more).toHaveLength(1);
+    expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 2 });
+    expect([...more[0]!.hiddenIds].sort()).toEqual(["third", "twin-machine"]);
+
+    // CONTROL: the third row is what separates the twin. The same pair alone
+    // is side by side, person left, machine right.
+    const pair = layoutLanes([machine, person]);
+    expect(pair.more).toEqual([]);
+    expect(Object.fromEntries(pair.placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({
+      "twin-person": [0, 2],
+      "twin-machine": [1, 2],
+    });
   });
 
   it("two separate crowded moments in one cluster make two chips, and the drawn row between them keeps its lane", () => {
@@ -714,5 +739,52 @@ describe("autoScrollDecision", () => {
 
   it("before the clock is read nothing is decided", () => {
     expect(autoScrollDecision(base)).toEqual({ scroll: false, decidedFor: null });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Q-B6-1 as docs/DECISIONS.md states it is what layoutLanes draws.     */
+/* ------------------------------------------------------------------ */
+describe("DECISIONS Q-B6-1 states the face layoutLanes draws", () => {
+  // Round 4 found DECISIONS describing the shipped chip without saying that
+  // it departs from the card's default (two lanes plus a chip) or what that
+  // costs a twin pair. The owner reads DECISIONS, not this file, so the text
+  // is pinned to the code BOTH ways: change the layout and the entry must
+  // change with it; drop the entry's words and this goes red.
+  const md = readFileSync(new URL("../../../../docs/DECISIONS.md", import.meta.url), "utf8");
+  const from = md.indexOf("**Q-B6-1**");
+  const to = md.indexOf("**Q-B6-2**", from);
+  const entry = md.slice(from, to).replace(/\s+/g, " ");
+  const words = ["no", "one", "two", "three", "four"];
+
+  it("VACUOUS GUARD: the Q-B6-1 entry is found, and it is the lane entry", () => {
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    expect(entry).toContain("at most two lanes");
+  });
+
+  it("three rows at once: the entry names the face the code draws, and calls anything but two blocks a departure", () => {
+    const { placed, more } = layoutLanes([
+      lane("a", H(15), H(15, 45)),
+      lane("b", H(15), H(15, 45)),
+      lane("c", H(15), H(15, 45)),
+    ]);
+    expect(more).toHaveLength(1);
+    const blocks = `${words[placed.length]} block${placed.length === 1 ? "" : "s"}`;
+    expect(entry).toContain(`three rows at once read ${blocks} and "+${more[0]!.count}"`);
+    // The card's default reads as two blocks drawn with a chip beside them.
+    expect(/departs from the card's default/i.test(entry)).toBe(placed.length !== 2);
+  });
+
+  it("the twin case: the entry says what a third row at the same moment does to a twin pair", () => {
+    const { more } = layoutLanes([
+      lane("twin-person", H(15), H(15, 45), false, "Ana Terapeuta"),
+      lane("twin-machine", H(15), H(15, 45), true, "Ana Nesa"),
+      lane("third", H(15), H(15, 45), false, "Bia Terapeuta"),
+    ]);
+    const machineHidden = more.some((m) => m.hiddenIds.includes("twin-machine"));
+    expect(entry).toContain(
+      machineHidden ? "the machine row goes behind the chip" : "the twin stays side by side",
+    );
   });
 });

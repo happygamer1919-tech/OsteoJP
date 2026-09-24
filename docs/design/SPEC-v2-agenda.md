@@ -126,7 +126,9 @@ the bottom edge), a now line with a one-time scroll to it, and blocks showing th
 first name (truncated), the status glyph and a colour per SERVICE. Concurrent
 blocks split the column side by side into at most two lanes; where three or
 more run at once, the left lane's row is drawn and the others of that moment
-sit behind a "+N" chip that opens Dia. Between 640
+sit behind a "+N" chip that opens Dia, so three at once read one block and
+"+2" (a departure from the card's two lanes plus a chip, open as Q-B6-1, twin
+case included). Between 640
 and 767 Semana keeps the list above; Dia keeps the list at every width under 768.
 At 640 and up nothing changes: the desktop grid still stacks same-start rows and
 never truncates a name (W11-00 v3), and still colours by therapist. Below 640

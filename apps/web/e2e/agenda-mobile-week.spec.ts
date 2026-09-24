@@ -643,9 +643,26 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     await expect(page.getByTestId("agenda-compact-week")).toBeVisible();
     await expect(page).not.toHaveURL(/view=day/);
 
-    // An explicit ?view= always wins over the stored choice.
+    // An explicit ?view= always wins over the stored choice. The stored choice
+    // is Semana now, so a redirect that ignored ?view= would replace this URL
+    // with view=week. That redirect is a client effect: the server-rendered
+    // page already reads view=day and has no compact tree, so the URL and DOM
+    // assertions mean nothing until the effect has had its chance to run. The
+    // request log is the earlier witness: router.replace asks the server for
+    // the view=week page the moment it runs, long before a slow server lets
+    // the URL change.
+    const toWeek: string[] = [];
+    const onRequest = (r: { url(): string }) => {
+      if (/[?&]view=week\b/.test(r.url())) toWeek.push(r.url());
+    };
+    page.on("request", onRequest);
     await page.goto(`/agenda?view=day&date=${DAY}`);
+    await hydrated(page);
+    await page.waitForTimeout(2_000);
+    page.off("request", onRequest);
+    expect(toWeek, "no request for the stored view=week after an explicit view=day").toEqual([]);
     await expect(page).toHaveURL(/view=day/);
+    await expect(page).not.toHaveURL(/view=week/);
     await expect(page.getByTestId("agenda-compact-week")).toHaveCount(0);
   });
 

@@ -12,7 +12,8 @@ Blocks are 30, 45 and 60 minutes long. Seventeen 30-minute blocks sit in half la
 which is the tightest face the grid draws (Q-B6-1 in docs/DECISIONS.md): the whole
 start time (about 7.4px), then the status glyph and one to three letters of the name,
 one on most of them. The week also has shared-machine rows, moments of three and
-four concurrent rows (each shows its left lane plus a "+N" chip), one twin pair
+four concurrent rows (each shows its left lane plus a "+N" chip, so three at once
+read one block and "+2"; Q-B6-1 logs this as a departure from the card), one twin pair
 (Wednesday 10:00, the same patient on the therapist and on the machine), one Sunday
 booking, a cancelled row (Tuesday 12:00), no-show rows and a blocked band (Monday
 18:00 to 20:00). The Sunday booking makes the grid seven columns wide, the narrowest

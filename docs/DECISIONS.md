@@ -4955,25 +4955,48 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
     drawn and that moment's other rows sit behind one "+N" chip in the right
     lane, which opens Dia for that day. Rows around it that never run three at
     a time keep their lanes, a twin pair included. At 390px a column is about
-    59px (51px with Dom); four lanes would be about 14px each. What a half
-    lane holds, measured in Chromium with Inter:
-    - the start time is always whole. It is 9px where 9px fits and shrinks
-      with the lane where it does not: about 8.8px at 390 without Dom, 7.4px
-      at 390 with Dom, 6.6px at 360 with Dom ("15:00" at 9px semibold is
-      25.7px; a half lane has 25.7px of face without Dom at 390, 21.4px with).
-    - a block of 45 minutes or more gives the first name its own line, at 9px,
-      clipped rather than ellipsised: three or four letters at 390. A shorter
-      half-lane block keeps the status glyph before the name, which leaves it
-      one to three letters at 390 (one on most names) and none to two at 360,
-      measured on the 30-minute half-lane blocks of the screenshot week.
-    - as a tap target, a half lane is at least 24px wide from 334px up with
-      six columns and from 384px up with Dom shown. So at 390 every block and
-      chip is at least 24 by 24, and at 375 and 360 with Dom shown a half lane
-      is 23.4px and 22.3px. That is the arithmetic of seven columns, not a
-      choice.
-    If the owner wants more on a half-lane face, the options are a narrower
-    Dom column, fewer letters of the time (for example "15h"), or one lane
-    plus a chip from two concurrent rows up; each is his call.
+    59px (51px with Dom); four lanes would be about 14px each.
+    - **This departs from the card's default, and the owner should rule on
+      it.** The card's default is at most two lanes plus a "+N" chip, which
+      reads as two blocks drawn with a chip beside them. What shipped puts the
+      chip IN the second lane, so a crowded moment draws one block: three rows
+      at once read one block and "+2", not two blocks and "+1", and four rows
+      at once read one block and "+3".
+    - **The twin case.** A twin pair with a third row at the same moment
+      draws the person row and "+2": the machine row goes behind the chip. So
+      a twin pair renders side by side only while no third row runs with it.
+      Two blocks and a chip would not fix this on their own: in the current
+      order (start, longer first, person before machine, then name) a third
+      row that is a person row takes the right lane and the machine row the
+      chip, so keeping the twin together would also need a twin-aware order.
+    - **Why the chip is not a third element beside two blocks.** A column
+      split three ways gives strips of 18.8px at 390 without Dom, 16.0px with
+      Dom and 14.5px at 360 with Dom, under the 24px target the cap is argued
+      from, and a 24px chip laid over the right block would cover most of a
+      face 24 to 29px wide. Two blocks with the chip outside the column (for
+      example on the day header) would keep both faces and the twin, but the
+      chip would no longer show when the hidden rows run. Which of these, or
+      another placement, is the owner's call.
+    - **What a half lane holds**, measured in Chromium with Inter:
+      - the start time is always whole. It is 9px where 9px fits and shrinks
+        with the lane where it does not: about 8.8px at 390 without Dom, 7.4px
+        at 390 with Dom, 6.6px at 360 with Dom ("15:00" at 9px semibold is
+        25.7px; a half lane has 25.7px of face without Dom at 390, 21.4px
+        with).
+      - a block of 45 minutes or more gives the first name its own line, at
+        9px, clipped rather than ellipsised: three or four letters at 390. A
+        shorter half-lane block keeps the status glyph before the name, which
+        leaves it one to three letters at 390 (one on most names) and none to
+        two at 360, measured on the 30-minute half-lane blocks of the
+        screenshot week.
+      - as a tap target, a half lane is at least 24px wide from 334px up with
+        six columns and from 384px up with Dom shown. So at 390 every block
+        and chip is at least 24 by 24, and at 375 and 360 with Dom shown a
+        half lane is 23.4px and 22.3px. That is the arithmetic of seven
+        columns, not a choice.
+      If the owner wants more on a half-lane face, the options are a narrower
+      Dom column, fewer letters of the time (for example "15h"), or one lane
+      plus a chip from two concurrent rows up; each is his call.
   - **Q-B6-2** Semana between 640 and 767px keeps the AGMOB-01 list.
   - **Q-B6-3** service colour is a deterministic hue per service id (the same
     FNV-1a as the therapist colour) over seven existing token families, -100 fill

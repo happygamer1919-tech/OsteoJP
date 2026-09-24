@@ -27,6 +27,12 @@
 //           three at a time keep their lanes. At 390px a day column is ~59px
 //           (~51px with Dom); four lanes would be ~14px each, which holds
 //           neither a time, nor a name, nor a 24px tap target.
+//           THIS DEPARTS FROM THE CARD'S DEFAULT (two lanes plus a chip): the
+//           chip takes the second lane, so three rows at once read one block
+//           and "+2", and a twin pair with a third row at the same moment
+//           loses its machine half to the chip. DECISIONS Q-B6-1 says why and
+//           leaves it to the owner, and agenda-compact-core.test.ts pins that
+//           entry's words to what layoutLanes draws.
 //   Q-B6-5  Sunday is a column only when a loaded row falls on it. Desktop is
 //           unchanged (Mon-Sat, W3-08).
 //   Q-B6-8  blocked time and the midday closure are drawn as visual-only bands.
