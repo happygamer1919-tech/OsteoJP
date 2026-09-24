@@ -88,7 +88,7 @@ WITH k AS (
     (SELECT count(*) FROM ids WHERE s = 'msat')::int AS n_msat,
     (SELECT count(*) FROM ids JOIN public.availability_templates av ON av.id = ids.id, k
       WHERE ids.s = 'msat' AND av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
-        AND av.weekday = 6 AND av.valid_from IS NOT NULL AND av.valid_from = av.valid_until
+        AND av.weekday = 6 AND av.valid_from IS NOT NULL AND av.valid_until IS NOT NULL AND av.valid_from = av.valid_until
         AND extract(dow FROM av.valid_from)::int = 6)::int AS msat_ok,
     (SELECT count(*) FROM public.availability_templates av, k
       WHERE av.user_id = k.jp_cb AND av.location_id = k.lv_loc AND av.is_active IS TRUE)::int AS cb_lv_active,

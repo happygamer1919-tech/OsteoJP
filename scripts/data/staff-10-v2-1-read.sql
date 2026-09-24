@@ -400,6 +400,17 @@ ref AS (
   SELECT 'R24', 'there is nothing to do: every action set is empty',
          (CASE WHEN (SELECT count(*) FROM tgt) = 0 THEN 1 ELSE 0 END)::int,
          (SELECT count(*) FROM tgt)::int
+  UNION ALL
+  -- The two untouched sets stage 3 must compare by md5 are empty, so the
+  -- comparison would prove nothing: refuse before writing, not after.
+  SELECT 'R25', 'an untouched comparison set is empty: JP(cb) has no past Castelo Branco appointment or no Castelo Branco schedule row',
+         ((CASE WHEN (SELECT count(*) FROM public.appointments a, k
+                       WHERE a.practitioner_id = k.jp_cb AND a.location_id = k.cb_loc AND a.starts_at < k.day0) = 0
+                THEN 1 ELSE 0 END)
+          + (CASE WHEN (SELECT count(*) FROM public.availability_templates av, k
+                         WHERE av.user_id = k.jp_cb AND av.location_id = k.cb_loc) = 0
+                  THEN 1 ELSE 0 END))::int,
+         (SELECT count(*) FROM public.appointments a, k WHERE a.practitioner_id = k.jp_cb)::int
 )
 -- <<< STAFF-10 V2 SETS END
 SELECT jsonb_build_object(
