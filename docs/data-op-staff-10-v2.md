@@ -21,8 +21,8 @@ against a throwaway database and against nothing else.
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001` |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002` |
 | Branch | `data/STAFF-10-v2-one-held-op`, labelled `held-for-apply` from the moment its PR opens, unarmed until this op is proven |
-| Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `4ab3bf851de50ace5f3407212645a7fc56c90f625e24f8a88109476db376c0c1` |
-| Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `a79032903c56d561e073daf1b4fcb2e1131767e3251a03669a980c9980e6250d` |
+| Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `358ace9c6dd0617d4760928223c1b9d667260bbcf5ed2c0591e6bc50280361f8` |
+| Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `b00a6252739df6e8166da5089bf16b2ed5ed322b5451525e97cb9e724cf83636` |
 | Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 25 verdicts and a SUMMARY row, sha256 `725a14ce11f63f20c7b4e0ac9775ca5086ee3551f2132bb60ebd23476aa47a55` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, byte-identical to `origin/main` at `f4e892cd` |
 | This document | `docs/data-op-staff-10-v2.md`, pinned by `docs/data-op-staff-10-v2.sha256` and asserted by every stage that reads a file |
@@ -84,6 +84,7 @@ changes the files, their pins and the rehearsal.
 | D9 | Added: a block that overlaps 30 September but also covers another day | Refuses (R26): it is a longer absence, not the block ruled wrong |
 | D10 | Added: which sets must be non-empty? | The four untouched sets stage 3 compares by md5: JP(cb)'s Castelo Branco schedule rows and past Castelo Branco appointments (R25), the clinical records on the rows the op writes, and the past twin rows it leaves alone (R27). An empty one refuses before the write. Stage 1 section 5 prints how many ruling (a) rows carry a clinical record, so a refusal here is visible before stage 2 |
 | D11 | Added: what is the booking clinic of a past pair under ruling (b)? | The NESA row's own clinic (`location_id`). Ruling (b) moves that row to the one NESA installed there |
+| D12 | Added: what if stage 3's roster check would find no real Saturday to check? | Refuses (R28) before the write, for the same reason as D10 |
 
 ## Why a twin is what it is, and why the conflict proof is inline
 
@@ -140,8 +141,8 @@ git rev-parse origin/data/STAFF-10-v2-one-held-op
 set -eo pipefail
 BRANCH=data/STAFF-10-v2-one-held-op
 DOCPIN=docs/data-op-staff-10-v2.sha256
-SHA1=4ab3bf851de50ace5f3407212645a7fc56c90f625e24f8a88109476db376c0c1
-SHA2=a79032903c56d561e073daf1b4fcb2e1131767e3251a03669a980c9980e6250d
+SHA1=358ace9c6dd0617d4760928223c1b9d667260bbcf5ed2c0591e6bc50280361f8
+SHA2=b00a6252739df6e8166da5089bf16b2ed5ed322b5451525e97cb9e724cf83636
 SHA3=725a14ce11f63f20c7b4e0ac9775ca5086ee3551f2132bb60ebd23476aa47a55
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
@@ -177,7 +178,7 @@ database.
 (
 set -eo pipefail
 BRANCH=data/STAFF-10-v2-one-held-op
-SHA1=4ab3bf851de50ace5f3407212645a7fc56c90f625e24f8a88109476db376c0c1
+SHA1=358ace9c6dd0617d4760928223c1b9d667260bbcf5ed2c0591e6bc50280361f8
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -204,7 +205,7 @@ node scripts/assert-production-target.mjs
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f scripts/data/staff-10-v2-1-read.sql 2>&1 | tee /tmp/staff10v2-stage1.out
 grep -q 'STAFF-10 V2 STAGE 1 COMPLETE' /tmp/staff10v2-stage1.out || { echo "STOP: stage 1 did not print its COMPLETE line"; exit 1; }
 RN=$(grep -cE '^[[:space:]]*R[0-9]{2}[[:space:]]*\|' /tmp/staff10v2-stage1.out || true)
-[ "${RN}" = 27 ] || { echo "STOP: stage 1 printed ${RN} refusal lines, not 27"; exit 1; }
+[ "${RN}" = 28 ] || { echo "STOP: stage 1 printed ${RN} refusal lines, not 28"; exit 1; }
 REF=$(grep -E '^[[:space:]]*R[0-9]{2}[[:space:]]*\|.*\|[[:space:]]*REFUSE[[:space:]]*$' /tmp/staff10v2-stage1.out | sed -E 's/^[[:space:]]*(R[0-9]{2}).*/\1/' | tr '\n' ' ' || true)
 [ -z "${REF}" ] || { echo "STOP: stage 1 printed REFUSE on ${REF}. Stage 2 refuses on the same lines. Report them; do not go on"; exit 1; }
 RD=$(awk -F'|' 'index($1,"s10v2_run_day")>0 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' /tmp/staff10v2-stage1.out)
@@ -214,8 +215,8 @@ echo "STAGE 1 READ, NO REFUSAL. Read sections 2, 2b, 2c, 4, 6, 7 and 8 before st
 )
 ```
 
-**Read the output before pasting stage 2.** Section 4 prints 27 refusals, `R01` to
-`R27`; the block has already stopped if any reads REFUSE. A refusal that reads
+**Read the output before pasting stage 2.** Section 4 prints 28 refusals, `R01` to
+`R28`; the block has already stopped if any reads REFUSE. A refusal that reads
 `VACUOUS` read an empty population: that is not a refusal, and the sections above it
 say which population it was. Section 2b must read `partition holds`. Sections 6, 7 and
 8 are the pairs rulings (b), (c) and (d) act on, by id.
@@ -226,7 +227,7 @@ say which population it was. Section 2b must read `partition holds`. Sections 6,
 (
 set -eo pipefail
 BRANCH=data/STAFF-10-v2-one-held-op
-SHA2=a79032903c56d561e073daf1b4fcb2e1131767e3251a03669a980c9980e6250d
+SHA2=b00a6252739df6e8166da5089bf16b2ed5ed322b5451525e97cb9e724cf83636
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 NAMES=(
 s10v2_run_day
@@ -336,13 +337,14 @@ with nothing in it), 11 and 12 (no block overlapped 30 September), 13 to 18 (a r
 with nothing to do), 23 (nothing written), 24 and 25 (no practitioner_2 or no confirmed
 row to compare). **Never VACUOUS: 1, 7, 8, 9, 10, 19, 20, 21, 22.** The four md5
 comparisons (9, 19, 20, 21) are the untouched sets, and an empty one refuses before the
-write (R25, R27), so after it each of them always compares something. The block prints
+write (R25, R27), so after it each of them always compares something; verdict 8's
+Saturday is guaranteed the same way (R28). The block prints
 the profile; the profile moves with the data, so no exact profile is asserted for
 production.
 
 ## What every refusal and every verdict means
 
-**Stage 1 section 4 and stage 2 P2, the same 27 lines.** `n` must be 0. `control` is
+**Stage 1 section 4 and stage 2 P2, the same 28 lines.** `n` must be 0. `control` is
 the population the predicate read, so a 0 that saw nothing prints VACUOUS:
 
 | Code | Refuses when |
@@ -374,6 +376,7 @@ the population the predicate read, so a 0 that saw nothing prints VACUOUS:
 | R25 | an untouched set stage 3 compares by md5 is empty: JP(cb) has no past Castelo Branco appointment, or no Castelo Branco schedule row. Refused before the write, so verdicts 9 and 21 can never be vacuous after it |
 | R26 | the block overlapping 30 September also covers another day. The app stores a whole-day block as Lisbon midnight to the next Lisbon midnight, which stays inside 30 September; a block reaching past it is a longer absence, not the block that was ruled wrong |
 | R27 | an untouched set stage 3 compares by md5 is empty: no row the op writes carries a clinical record, or no past twin row is left untouched. Refused before the write, so verdicts 19 and 20 can never be vacuous after it |
+| R28 | the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha real Saturday from today and no Saturday moves to it, so verdict 8 could not run. Refused before the write |
 
 **The classes (stage 1 section 2).** `is_dated` has one definition in every file:
 `valid_from IS NOT NULL AND valid_until IS NOT NULL AND valid_from = valid_until`. It
@@ -460,8 +463,8 @@ arms, in FK order, whoever wrote the rows, and its shape is read back after ever
 |---|---|
 | `rehearsal/fixture.sql` | `d3f37475cdd7ecc4a7ff8585e26038e6fe7aa8535a658d35da269a46c67b4ad2` |
 | `rehearsal/reset.sql` | `4203d564441dd1c684028edefbf3c86053a224406671c069135d357cef5c4ca1` |
-| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `ba31b999949e026013bea99043cc862e019ada6839758c08e9ec5c6f2836263e` |
-| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `0b23c1ce0f108e20ae86f270bf57a1f3330bfc3344d3e5378ea6e0a942ccac1e` |
+| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `9822ed30467e6118c8cd2dde79be1d839bd7c9797ace9c71e52fcd46ac139018` |
+| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `4fa82c98f9db1d5288810a50c67e5a66638f4b31677b2e40508d6454f6cb87cf` |
 | `rehearsal/extract-stage.mjs`, a byte copy of `/Users/ivan/osteojp-handover/extract-stage.mjs` | `f82cad1e6e8cc1be3b7c491fff787138161e0f079b6424119329d71c63d72198` |
 
 **How it ran.** Each block was extracted from this document at the pushed branch head
@@ -526,6 +529,7 @@ users.
 | R26 | the 30 September block replaced by one from 29 September to 1 October | 1 | R26 | 3, STOP R26 | unchanged |
 | R27 | the clinical records on the rows the op writes removed | 1 | R27 | 3, STOP R27 | unchanged |
 | R27 | every past twin row the op leaves alone removed | 1 | R27 | 3, STOP R27 | unchanged |
+| R28 | JP(lv)'s dated Saturdays and every Saturday that would move removed | 1 | R28 | 3, STOP R28 | unchanged |
 
 R26's control: the same 30 September block stored the way the app stores a whole day, Lisbon midnight to the next Lisbon midnight, gives stage 1 exit 0 with no REFUSE, and section 2c marks it `deleted_by_stage_2 = true`.
 
@@ -551,7 +555,7 @@ R26's control: the same 30 September block stored the way the app stores a whole
 | stage 3 with a retired covered row switched back on | 1 | FAIL on 2, 7, 8 and 10 | restored |
 | stage 3 with a future person row cancelled | 1 | FAIL on 15, 17 and 18 | restored |
 | stage 3 restored | 0 | `25 OK / 0 VACUOUS / 0 FAIL` | |
-| stage 3 with JP(lv)'s dated rows switched off | 1 | `VACUOUS on 8, which the op never allows to be vacuous` | restored |
+| stage 3 with every dated JP(lv) Saturday, its own and the moved ones, shifted to a past Saturday | 1 | no FAIL; `VACUOUS on 8, which the op never allows to be vacuous` | restored |
 | stage 3 restored again | 0 | `25 OK / 0 VACUOUS / 0 FAIL` | |
 | the whole op on a fixture with no 30 September block | 0, 0, 0 | stage 3 `23 OK / 2 VACUOUS / 0 FAIL`, VACUOUS on 11 and 12, which the block allows | written |
 | a write inside the READ ONLY form stages 1 and 3 use | 1 | `cannot execute CREATE TABLE in a read-only transaction` | no table |

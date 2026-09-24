@@ -262,9 +262,18 @@ test("every untouched set stage 3 compares by md5 must be non-empty, and stage 1
   const r25 = SETS.slice(SETS.indexOf("'R25'"), SETS.indexOf("'R26'"));
   assert.match(r25, /a\.practitioner_id = k\.jp_cb AND a\.location_id = k\.cb_loc AND a\.starts_at < k\.day0\) = 0/, "R25 does not refuse an empty JP(cb) past Castelo Branco set");
   assert.match(r25, /av\.user_id = k\.jp_cb AND av\.location_id = k\.cb_loc\) = 0/, "R25 does not refuse an empty JP(cb) Castelo Branco schedule");
-  const r27 = SETS.slice(SETS.indexOf("'R27'"), SETS.indexOf(END));
+  const r27 = SETS.slice(SETS.indexOf("'R27'"), SETS.indexOf("'R28'"));
   assert.match(r27, /FROM public\.clinical_records cr\s+WHERE cr\.appointment_id IN \(SELECT h\.id FROM h UNION SELECT x\.id FROM x\s+UNION SELECT f\.p_id FROM f UNION SELECT f\.n_id FROM f\)\) = 0/, "R27 does not refuse an empty clinical record set on the written rows");
   assert.match(r27, /\(SELECT count\(\*\) FROM tw_keep\) = 0/, "R27 does not refuse an empty kept past twin set");
+});
+
+test("the roster check always has a real Saturday to read: R28 refuses before the write when it would not", () => {
+  const r28 = SETS.slice(SETS.indexOf("'R28'"), SETS.indexOf(END));
+  assert.match(r28, /o\.user_id = k\.jp_lv AND o\.location_id = k\.lv_loc AND o\.is_active IS TRUE/);
+  assert.match(r28, /o\.valid_from >= k\.today AND extract\(dow FROM o\.valid_from\)::int = 6/, "R28 does not look for a real Saturday from today");
+  assert.match(r28, /\+ \(SELECT count\(\*\) FROM cls c WHERE c\.f_move\) = 0/, "R28 does not count the Saturdays that move");
+  const sat = S3.slice(S3.indexOf("), sat AS ("), S3.indexOf("), v AS ("));
+  assert.match(sat, /av\.valid_from >= k\.today AND extract\(dow FROM av\.valid_from\)::int = 6/, "stage 3's Saturday is not the one R28 guarantees");
 });
 
 test("stage 3 reads back only what stage 2 records, and the audit action agrees everywhere", () => {

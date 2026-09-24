@@ -524,6 +524,19 @@ ref AS (
                 THEN 1 ELSE 0 END)
           + (CASE WHEN (SELECT count(*) FROM tw_keep) = 0 THEN 1 ELSE 0 END))::int,
          ((SELECT count(*) FROM h) + (SELECT count(*) FROM tw WHERE tw.is_past))::int
+  UNION ALL
+  -- Stage 3 checks the Linda-a-Velha roster on the next real Saturday JP(lv)
+  -- holds as a dated row. After the write those are JP(lv)'s own and the moved
+  -- ones; with neither, that check could not run, so the op refuses first.
+  SELECT 'R28', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today and none moves',
+         (CASE WHEN (SELECT count(*) FROM public.availability_templates o, k
+                      WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE
+                        AND o.valid_from IS NOT NULL AND o.valid_until IS NOT NULL AND o.valid_from = o.valid_until
+                        AND o.valid_from >= k.today AND extract(dow FROM o.valid_from)::int = 6)
+                   + (SELECT count(*) FROM cls c WHERE c.f_move) = 0
+               THEN 1 ELSE 0 END)::int,
+         (SELECT count(*) FROM public.availability_templates o, k
+           WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE)::int
 )
 -- <<< STAFF-10 V2 SETS END
   SELECT (SELECT k.tenant FROM k), (SELECT k.today FROM k), (SELECT k.day0 FROM k),
