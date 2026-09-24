@@ -9,29 +9,44 @@ a shared machine (NESA). Every name is invented (patient names end in "Teste" or
 "Sintético"), and nothing in it comes from real data. The session is the e2e
 therapist's, and the week is Monday 21 to Sunday 27 September 2026.
 
-THE CLOCK. Both shots use the real clock. They were taken at 08:32 Lisbon time on
+THE CLOCK. Both shots use the real clock. They were taken at 11:22 Lisbon time on
 Thursday 24 September, inside the grid's 08:00 to 21:00 window, so no clock was
 fixed. The Next.js development indicator is hidden in both captures; it is not
 part of the page.
 
+THE SCROLL. On a phone the shell header, the toolbar and the day header stay
+pinned at the top while the rows scroll under them, so one frame holds about
+eight hours of the grid. Each page was scrolled before its capture:
+- Semana first made its own one-time scroll to the now line. The capture script
+  then moved it so that 10:00 sits right under the pinned day header, 20 pixels
+  from where the page's own scroll had put it.
+- Dia was scrolled so that Friday's first 15:00 row sits right under its pinned
+  day header.
+
 - `agenda-mobile-week-semana-390x844.png`: Semana, the compressed week grid.
-  - The header shows the menu, the logo, the bell, "O meu perfil" and "Terminar
-    sessão" (Q-B6-11). The toolbar has Dia and Semana, the date, Hoje and the
-    arrows on one line, then Bloquear, Atualizar (its refresh icon beside the time,
-    Q-B6-10) and Nova marcação. Nothing scrolls sideways.
-  - The grid has seven columns, Seg 21 to Dom 27. Dom shows because the synthetic
-    week has a Sunday booking. Qui 24 is marked as today, and the red now line
-    crosses Thursday just after 08:30. At 08:32 the page does not need to scroll
-    to reach it.
-  - The first screen runs from 08:00 to about 15:45. Blocks are coloured by
-    service. Each one shows its whole start time, the patient's first name and
-    its status glyph; a half-lane block puts the name on a line of its own.
+  - Pinned at the top: the header (the menu, the logo, the bell, "O meu perfil"
+    and "Terminar sessão", Q-B6-11) and the toolbar (Dia and Semana, the date,
+    Hoje and the arrows on one line, then Bloquear, Atualizar with its refresh
+    icon beside the time, Q-B6-10, and Nova marcação). Nothing scrolls sideways.
+  - The day header has seven columns, Seg 21 to Dom 27. Dom shows because the
+    synthetic week has a Sunday booking, drawn at 10:00. Qui 24 is marked as
+    today, and the red now line crosses Thursday just after 11:20.
+  - The frame runs from 10:00 to about 18:05. Blocks are coloured by service.
+    Each one shows its whole start time, the patient's first name and its status
+    glyph; a half-lane block puts the name on a line of its own.
   - Concurrent rows split the column into two lanes. The twin pair on Wednesday
     at 10:30 (the same patient on the therapist and on the machine) is drawn side
-    by side. At the foot of the screen, Friday at 15:00 draws two blocks and a
-    small dark "+1" chip on their glyph line. Friday's later "+2" and the service
-    legend are further down the page.
+    by side, the therapist's row on the left: the machine is at the therapist's
+    clinic, so this page knows it is a machine.
+  - Friday at 15:00 draws two blocks and a small dark "+1" chip on their glyph
+    line, and Friday at 16:00 draws two blocks and a "+2" chip the same way
+    (Q-B6-1). A chip opens Dia for Friday.
+  - Above the frame are the rows before 10:00. Below it are the rows after about
+    18:00 and the service legend (Q-B6-3).
 - `agenda-mobile-week-dia-390x844.png`: Dia for Friday 25, the unchanged AGMOB-01
-  list with the same toolbar. Each row shows the start time, the duration, the
-  status glyph, the patient, and the practitioner and service. Machine rows
-  (NESA (B6)) are listed with the therapist's.
+  list, under the same pinned header and toolbar and its own pinned day header.
+  The frame shows Friday's rows from 15:00 to 18:00, so every row that Semana's
+  two chips stand for is listed here, the no-show struck through. Each row shows
+  the start time, the duration, the status glyph, the patient, and the
+  practitioner and service. Machine rows (NESA (B6)) are listed with the
+  therapist's.
