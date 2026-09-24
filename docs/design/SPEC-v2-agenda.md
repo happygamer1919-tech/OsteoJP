@@ -126,9 +126,11 @@ the bottom edge), a now line with a one-time scroll to it, and blocks showing th
 first name (truncated), the status glyph and a colour per SERVICE. Concurrent
 blocks split the column side by side into at most two lanes; where three or
 more run at once, the two lanes' rows are drawn and the others of that moment
-sit behind a small "+N" chip on the two blocks' glyph line that opens Dia, so
-three at once read two blocks and "+1" (the card's default, open as Q-B6-1,
-twin case included). A half-lane block gives the first name a line of its own,
+sit behind a small "+N" chip on the two blocks' glyph line that opens Dia (or
+on the glyph line of a left block starting less than half an hour after the
+hidden rows), so three at once read two blocks and "+1" (the card's default,
+open as Q-B6-1). A twin pair goes first at its minute, so it keeps both lanes
+and the other rows starting then go behind the chip. A half-lane block gives the first name a line of its own,
 so a 30-minute row is 34px tall. Between 640
 and 767 Semana keeps the list above; Dia keeps the list at every width under 768.
 At 640 and up nothing changes: the desktop grid still stacks same-start rows and

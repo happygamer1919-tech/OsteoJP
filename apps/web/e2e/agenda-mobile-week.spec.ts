@@ -94,6 +94,21 @@ const CROWD = [
   { id: "00000000-0000-4000-8000-00000000b6b5", patient: PATIENTS.joao },
   { id: "00000000-0000-4000-8000-00000000b6b6", patient: PATIENTS.maria },
 ] as const;
+/**
+ * A crowd whose rows do NOT start together (round 6): 12:30-13:15 and
+ * 12:45-13:30 hold both lanes at 13:00, so the 13:00 row is hidden, and the
+ * 13:15 row takes the left lane when 12:30 ends, 15 minutes after the hidden
+ * row. A chip drawn at 13:00 plus 22px lay across 13:15's time and name lines;
+ * it must sit on 13:15's glyph line instead. Bookings on :15 and :45 do this.
+ */
+const STAGGER = [
+  { id: "00000000-0000-4000-8000-00000000b6b8", at: "12:30", minutes: 45, patient: PATIENTS.joao },
+  { id: "00000000-0000-4000-8000-00000000b6b9", at: "12:45", minutes: 45, patient: PATIENTS.maria },
+  { id: "00000000-0000-4000-8000-00000000b6ba", at: "13:00", minutes: 30, patient: PATIENTS.ana },
+  { id: "00000000-0000-4000-8000-00000000b6bb", at: "13:15", minutes: 30, patient: PATIENTS.joao },
+] as const;
+const STAGGER_HIDDEN = STAGGER[2];
+const STAGGER_LEFT = STAGGER[3];
 
 /** Monday of DAY's week and the six Mon-Sat days, computed here and never read
  *  back off the page: a test asking the page which days it shows cannot notice
@@ -290,7 +305,14 @@ async function removeTwin(db: SupabaseClient): Promise<void> {
   await db
     .from("appointments")
     .delete()
-    .in("id", [TWIN_PERSON_APPT, TWIN_MACHINE_APPT, TWIN_THIRD.id, SUNDAY_APPT, ...CROWD.map((c) => c.id)]);
+    .in("id", [
+      TWIN_PERSON_APPT,
+      TWIN_MACHINE_APPT,
+      TWIN_THIRD.id,
+      SUNDAY_APPT,
+      ...CROWD.map((c) => c.id),
+      ...STAGGER.map((c) => c.id),
+    ]);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("practitioner_id", TWIN_MACHINE_ID);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("patient_id", TWIN_PATIENT.id);
   await db.from("patients").delete().eq("id", TWIN_PATIENT.id);
@@ -365,8 +387,9 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
         row(TWIN_THIRD.id, therapist.id, DAY, TWIN_AT, 45, TWIN_THIRD.patient.id),
         row(SUNDAY_APPT, therapist.id, SUNDAY, "10:00"),
         ...CROWD.map((c) => row(c.id, therapist.id, DAY, CROWD_AT, 30, c.patient.id)),
+        ...STAGGER.map((c) => row(c.id, therapist.id, DAY, c.at, c.minutes, c.patient.id)),
       ]),
-      "the twin pair and its third row, the crowded moment and the Sunday booking",
+      "the twin pair and its third row, the two crowds and the Sunday booking",
     );
   });
 
@@ -513,8 +536,8 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     );
     expect(Math.abs(c0!.y - c1!.y), "the two crowded blocks start on the same line").toBeLessThanOrEqual(1);
     expect(disjoint(c0!, c1!), "the two crowded blocks are side by side, not on top of each other").toBe(true);
-    // The day holds another chip (the twin's minute), so this one is picked
-    // by its minute.
+    // The day holds other chips (the twin's minute, ARM 5c's), so this one is
+    // picked by its minute.
     const dayChips = page.locator(
       `[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"][data-compact-more-at="${CROWD_AT}"]`,
     );
@@ -553,6 +576,36 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
         }
       }
     }
+    // ARM 5c - A CHIP NEVER LIES ACROSS A LEFT BLOCK THAT STARTS SOON AFTER
+    // ITS HIDDEN ROWS (round 6). The 13:00 row is hidden, the 13:15 row is
+    // drawn in the left lane, and the chip for 13:00 sits on 13:15's glyph
+    // line: inside that block's box, below its time and name, after its glyph.
+    // chipReport above already asserts that NO chip covers a time, name or
+    // glyph; this arm proves that report saw this chip.
+    await expect(page.locator(`[data-compact-appointment-id="${STAGGER_HIDDEN.id}"]`)).toBeHidden();
+    const staggerLeft = page.locator(`[data-compact-appointment-id="${STAGGER_LEFT.id}"]`);
+    await expect(staggerLeft).toHaveAttribute("data-compact-lane", "0");
+    const staggerChip = page.locator(
+      `[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"][data-compact-more-at="${STAGGER_HIDDEN.at}"]`,
+    );
+    await expect(staggerChip).toHaveCount(1);
+    await expect(staggerChip).toHaveText("+1");
+    for (const vp of [PHONE, NARROW_PHONE]) {
+      await page.setViewportSize(vp);
+      const chips = await chipReport(page);
+      const chip = await box(staggerChip, `${vp.width}: the ${STAGGER_HIDDEN.at} chip`);
+      const mine = chips.filter((c) => Math.abs(c.box.x - chip.x) < 0.5 && Math.abs(c.box.y - chip.y) < 0.5);
+      expect(mine, `${vp.width}: the report measured the ${STAGGER_HIDDEN.at} chip`).toHaveLength(1);
+      expect(mine[0]!.covers, `${vp.width}: the ${STAGGER_HIDDEN.at} chip covers no face part`).toEqual([]);
+      const left = await box(staggerLeft, `${vp.width}: the ${STAGGER_LEFT.at} block`);
+      const name = await box(staggerLeft.getByTestId("agenda-compact-patient"), `${vp.width}: its name`);
+      expect(chip.y, `${vp.width}: the chip is below the ${STAGGER_LEFT.at} block's name`).toBeGreaterThanOrEqual(
+        name.y + name.height - 0.5,
+      );
+      expect(chip.y + chip.height, `${vp.width}: the chip ends inside that block`).toBeLessThanOrEqual(left.y + left.height + 0.5);
+      expect(chip.x, `${vp.width}: the chip starts inside that block, after its glyph`).toBeGreaterThan(left.x);
+    }
+
     await page.setViewportSize(PHONE);
     // The chip opens Dia for its day.
     await dayChips.tap();

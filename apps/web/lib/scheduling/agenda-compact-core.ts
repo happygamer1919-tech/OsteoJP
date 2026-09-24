@@ -29,9 +29,11 @@
 //           same start) goes first at its minute, so it keeps both lanes and
 //           the other rows starting then go behind the chip (`twinsFirst`).
 //           The chip is a small pill laid across the gap between the two
-//           blocks, on their status-glyph line, where it covers no time, name
-//           or glyph of blocks that start with the hidden rows (COMPACT_FACE,
-//           COMPACT_CHIP and compactChipWidthPx below). At
+//           blocks, on a status-glyph line: that of the blocks that start
+//           with the hidden rows, or that of a left-lane block starting less
+//           than a row after them (layoutLanes, step 6). It covers no time,
+//           name or glyph (COMPACT_FACE, COMPACT_CHIP and compactChipWidthPx
+//           below). At
 //           390px a day column is ~59px (~51px with Dom); four lanes would be
 //           ~14px each, which holds neither a time, nor a name, nor a 24px
 //           tap target. DECISIONS Q-B6-1 logs it for the owner, and
@@ -106,6 +108,15 @@ export type CompactMore = {
   key: string;
   startMin: number;
   drawnEndMin: number;
+  /**
+   * The minute whose row the chip is drawn on: its top is this minute's line
+   * plus COMPACT_CHIP.topPx, the glyph line of a block starting then. It is
+   * `startMin`, unless a LEFT-lane block starts less than one row (30 min)
+   * after the hidden rows do: then it is that block's start, so the chip sits
+   * on that block's glyph line instead of across its time and name
+   * (AGENDA-MOBILE-WEEK round 6). See `layoutLanes`, step 6.
+   */
+  anchorMin: number;
   /** How many appointments this chip stands for (none of them is drawn). */
   count: number;
   hiddenIds: string[];
@@ -292,6 +303,22 @@ function twinsFirst<T extends { startMin: number; machine: boolean; patient?: st
  *
  *    Why no two drawn rows overlap: first-fit never puts two overlapping rows
  *    in one lane, and only lanes 0 and 1 are drawn.
+ * 6. WHERE A CHIP SITS (`anchorMin`). The chip is one glyph line tall and
+ *    reaches across the whole left lane after the glyph, so it must lie
+ *    where no left-lane block has its time or name line. By default it sits
+ *    on the glyph line of the moment the hidden rows start. A left-lane block
+ *    that starts LESS THAN ONE ROW LATER would have its time or name line
+ *    right there (the round 6 case: 09:30, 09:45, 10:00 hidden, 10:15), so
+ *    the chip moves down onto THAT block's glyph line. Why that is always
+ *    clear, with every left-lane block at least one row (34px) tall:
+ *    - the left block running when the hidden rows start began at or before
+ *      them, so its time and name lines end at or above the default line;
+ *    - lane 0 rows never overlap and each is drawn at least 30 minutes, so at
+ *      most one starts in that first row, and the next one starts at least a
+ *      row below the anchor, under the chip.
+ *    Two chips whose lines would overlap (possible only when an anchor moved
+ *    down nearly a whole row and the next hidden rows start right after) are
+ *    one chip: the counts add up, and it keeps the first one's place.
  */
 export function layoutLanes(items: readonly LaneItem[], maxLanes: number = COMPACT_MAX_LANES): LaneLayout {
   const sorted = items.map((it) => ({
@@ -357,18 +384,33 @@ export function layoutLanes(items: readonly LaneItem[], maxLanes: number = COMPA
         out.placed.push({ id: it.id, lane: laneOf[k] === 0 ? 0 : 1, lanes: 2, drawnEndMin: it.drawnEndMin });
       }
     });
+    // Step 6: the left-lane starts a chip can move onto.
+    const leftStarts = cluster.filter((_, k) => laneOf[k] === 0).map((it) => it.startMin);
+    let last: CompactMore | null = null;
     // `cluster` is sorted by start, so `hidden` is too: one sweep groups them.
     let group: (typeof cluster)[number][] = [];
     let groupEnd = Number.NEGATIVE_INFINITY;
     const flush = () => {
       if (group.length === 0) return;
-      out.more.push({
-        key: `more-${group[0]!.id}`,
-        startMin: group[0]!.startMin,
-        drawnEndMin: groupEnd,
-        count: group.length,
-        hiddenIds: group.map((g) => g.id),
-      });
+      const startMin = group[0]!.startMin;
+      const anchorMin =
+        leftStarts.find((s) => s >= startMin && s < startMin + COMPACT_MIN_DRAWN_MINUTES) ?? startMin;
+      const gapPx = last === null ? Number.POSITIVE_INFINITY : ((anchorMin - last.anchorMin) * COMPACT_ROW_PX) / COMPACT_ROW_MINUTES;
+      if (last !== null && gapPx < COMPACT_CHIP.heightPx) {
+        last.drawnEndMin = Math.max(last.drawnEndMin, groupEnd);
+        last.count += group.length;
+        last.hiddenIds.push(...group.map((g) => g.id));
+      } else {
+        last = {
+          key: `more-${group[0]!.id}`,
+          startMin,
+          drawnEndMin: groupEnd,
+          anchorMin,
+          count: group.length,
+          hiddenIds: group.map((g) => g.id),
+        };
+        out.more.push(last);
+      }
       group = [];
       groupEnd = Number.NEGATIVE_INFINITY;
     };

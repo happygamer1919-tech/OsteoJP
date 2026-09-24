@@ -112,6 +112,27 @@ function lane(
 
 const H = (hh: number, mm = 0) => hh * 60 + mm;
 
+/** Minutes to px on the grid's scale (the window's top is irrelevant: only
+ *  differences are compared). */
+const PX = (min: number) => (min * COMPACT_ROW_PX) / 30;
+
+/** The chip's box, top and bottom in px, on the scale of PX. */
+function chipBand(anchorMin: number): { top: number; bottom: number } {
+  const top = PX(anchorMin) + COMPACT_CHIP.topPx;
+  return { top, bottom: top + COMPACT_CHIP.heightPx };
+}
+
+/** A half-lane block's time and name lines, top and bottom in px: the part of
+ *  its face that spans the whole lane (the glyph line holds only the glyph,
+ *  left of where a chip starts). */
+function textBand(startMin: number): { top: number; bottom: number } {
+  const top = PX(startMin) + COMPACT_FACE.padPx;
+  return { top, bottom: top + COMPACT_FACE.timeLinePx + COMPACT_FACE.nameLinePx };
+}
+
+const bandsHit = (a: { top: number; bottom: number }, b: { top: number; bottom: number }) =>
+  a.top < b.bottom && b.top < a.bottom;
+
 /* ------------------------------------------------------------------ */
 /* Days: Mon-Sat, plus Dom only when it holds a booking.               */
 /* ------------------------------------------------------------------ */
@@ -400,6 +421,57 @@ describe("layoutLanes", () => {
     expect(more.flatMap((m) => m.hiddenIds)).toEqual(["twin-machine"]);
   });
 
+  it("THE CHIP MOVES OFF A LEFT BLOCK THAT STARTS WITHIN A ROW OF THE HIDDEN ROWS: the reviewer's 09:30, 09:45, 10:00, 10:15", () => {
+    // 10:00 needs lane 2 and is hidden. 10:15 takes lane 0 when 09:30-10:15
+    // ends. Round 6 drew the chip at 10:00 plus 22px, which is 10:15's time
+    // line (10:15 is 17px below 10:00): it painted over "10:15".
+    const { placed, more } = layoutLanes([
+      lane("a", H(9, 30), H(10, 15)),
+      lane("b", H(9, 45), H(10, 30)),
+      lane("c", H(10), H(10, 30)),
+      lane("d", H(10, 15), H(10, 45)),
+    ]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ a: 0, b: 1, d: 0 });
+    expect(more).toHaveLength(1);
+    expect(more[0]).toMatchObject({ startMin: H(10), anchorMin: H(10, 15), count: 1, hiddenIds: ["c"] });
+    // The chip lies on d's glyph line, clear of d's time and name.
+    expect(bandsHit(chipBand(more[0]!.anchorMin), textBand(H(10, 15)))).toBe(false);
+    expect(chipBand(more[0]!.anchorMin).top).toBe(PX(H(10, 15)) + COMPACT_CHIP.topPx);
+    // CONTROL: where round 6 put it, the chip crosses d's time line.
+    expect(bandsHit(chipBand(H(10)), textBand(H(10, 15)))).toBe(true);
+  });
+
+  it("CONTROL: with no left block starting within a row, the chip stays on the hidden rows' own line", () => {
+    // Same shape, but the next left block starts a whole row after the hidden
+    // one (10:30), which is under the chip, not across it.
+    const { more } = layoutLanes([
+      lane("a", H(9, 30), H(10, 15)),
+      lane("b", H(9, 45), H(10, 45)),
+      lane("c", H(10), H(10, 30)),
+      lane("d", H(10, 30), H(11)),
+    ]);
+    expect(more).toHaveLength(1);
+    expect(more[0]).toMatchObject({ startMin: H(10), anchorMin: H(10), hiddenIds: ["c"] });
+    expect(bandsHit(chipBand(H(10)), textBand(H(10, 30)))).toBe(false);
+  });
+
+  it("two chips whose lines would overlap are ONE chip: the counts add up and it keeps the first place", () => {
+    // c (10:00) is hidden and d, a left block at 10:25, moves its chip down to
+    // 10:25. e (10:30) is hidden again, at a moment whose own line is only
+    // 5 minutes (about 6px) lower: two 10px chips there would overlap.
+    const { placed, more } = layoutLanes([
+      lane("a", H(9, 30), H(10, 2)),
+      lane("b", H(9, 40), H(11)),
+      lane("c", H(10), H(10, 30)),
+      lane("d", H(10, 25), H(10, 55)),
+      lane("e", H(10, 30), H(11)),
+    ]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ a: 0, b: 1, d: 0 });
+    expect(more).toHaveLength(1);
+    expect(more[0]).toMatchObject({ startMin: H(10), drawnEndMin: H(11), anchorMin: H(10, 25), count: 2 });
+    expect(more[0]!.hiddenIds).toEqual(["c", "e"]);
+  });
+
   it("two separate crowded moments in one cluster make two chips, and the drawn row between them keeps its lane", () => {
     const { placed, more } = layoutLanes([
       lane("a1", H(9), H(9, 45)),
@@ -434,10 +506,10 @@ describe("layoutLanes", () => {
     }
     const DURATIONS = [10, 15, 30, 45, 45, 45, 60, 90];
 
-    function randomDay(rand: () => number): LaneItem[] {
+    function randomDay(rand: () => number, gridMin = 15): LaneItem[] {
       const n = 1 + Math.floor(rand() * 14);
       const rows = Array.from({ length: n }, (_, k) => {
-        const start = H(8) + 15 * Math.floor(rand() * 48);
+        const start = H(8) + gridMin * Math.floor((rand() * 720) / gridMin);
         const dur = DURATIONS[Math.floor(rand() * DURATIONS.length)]!;
         return lane(`r${k}`, start, start + dur, rand() < 0.3, `L${Math.floor(rand() * 5)}`, `P${Math.floor(rand() * 6)}`);
       });
@@ -502,6 +574,29 @@ describe("layoutLanes", () => {
         }
       }
 
+      // (2c) NO CHIP PAINTS OVER A FACE, in px: a chip reaches across the left
+      //      lane after the glyph, so its line must miss the time and name
+      //      lines of every left-lane block, miss every full-width block
+      //      whole, and miss every other chip. Its anchor is the hidden rows'
+      //      start or a left start less than one row after it.
+      for (const m of out.more) {
+        const chip = chipBand(m.anchorMin);
+        expect(m.anchorMin, `${m.key}: anchored at or after its start`).toBeGreaterThanOrEqual(m.startMin);
+        expect(m.anchorMin, `${m.key}: anchored within a row of its start`).toBeLessThan(m.startMin + 30);
+        for (const p of out.placed) {
+          const s = span(p.id).s;
+          if (p.lanes === 2 && p.lane === 0) {
+            expect(bandsHit(chip, textBand(s)), `${m.key} over ${p.id}'s time or name`).toBe(false);
+          }
+          if (p.lanes === 1) {
+            expect(bandsHit(chip, { top: PX(s), bottom: PX(span(p.id).e) - 1 }), `${m.key} over ${p.id}`).toBe(false);
+          }
+        }
+        for (const n of out.more) {
+          if (m.key < n.key) expect(bandsHit(chip, chipBand(n.anchorMin)), `${m.key} over ${n.key}`).toBe(false);
+        }
+      }
+
       // (3) THE CAP APPLIES ONLY AT THREE OR MORE AT ONCE: every hidden row
       //     runs at some minute when at least three rows run.
       for (const id of hidden) {
@@ -558,11 +653,13 @@ describe("layoutLanes", () => {
       let chips = 0;
       let drawnRightLane = 0;
       let twinCrowds = 0;
+      let movedChips = 0;
       for (let k = 0; k < 400; k++) {
         const items = randomDay(rand);
         const out = layoutLanes(items);
         twinCrowds += check(items, out);
         chips += out.more.length;
+        movedChips += out.more.filter((m) => m.anchorMin !== m.startMin).length;
         drawnRightLane += out.placed.filter((p) => p.lane === 1).length;
       }
       // CONTROL: the sample is not trivially easy. It crowds often, still
@@ -571,7 +668,51 @@ describe("layoutLanes", () => {
       expect(chips).toBeGreaterThan(100);
       expect(drawnRightLane).toBeGreaterThan(100);
       expect(twinCrowds).toBeGreaterThan(5);
-    });
+      // ...and chips that had to move off a left block's time and name.
+      expect(movedChips).toBeGreaterThan(5);
+    }, 30_000);
+
+    it("hold on a 1-minute grid too, where two chips can merge into one", () => {
+      // Bookings on odd minutes are what make an anchor move down almost a
+      // whole row with the next hidden rows right after it (the merge case).
+      // A merge is rare (about one day in a few thousand), so every day is
+      // laid out, and every day where a chip moved or merged, plus every
+      // twentieth, is checked in full.
+      const rand = rng(20260924);
+      let merged = 0;
+      let moved = 0;
+      let checked = 0;
+      for (let k = 0; k < 3000; k++) {
+        const items = randomDay(rand, 1);
+        const out = layoutLanes(items);
+        const movedHere = out.more.filter((m) => m.anchorMin !== m.startMin).length;
+        const byId = new Map(items.map((it) => [it.id, it]));
+        let mergedHere = 0;
+        for (const m of out.more) {
+          // A chip's hidden rows that do not all chain in time were two groups.
+          const spans = m.hiddenIds
+            .map((id) => byId.get(id)!)
+            .map((it) => ({ s: it.startMin, e: Math.max(it.endMin, it.startMin + COMPACT_MIN_DRAWN_MINUTES) }))
+            .sort((a, b) => a.s - b.s);
+          let end = spans[0]!.e;
+          for (const sp of spans.slice(1)) {
+            if (sp.s >= end) mergedHere += 1;
+            end = Math.max(end, sp.e);
+          }
+        }
+        if (movedHere > 0 || mergedHere > 0 || k % 20 === 0) {
+          check(items, out);
+          checked += 1;
+        }
+        moved += movedHere;
+        merged += mergedHere;
+      }
+      // CONTROL: the sample reaches both the moved anchor and the merge, and
+      // the full check ran on every such day.
+      expect(moved).toBeGreaterThan(100);
+      expect(merged).toBeGreaterThan(0);
+      expect(checked).toBeGreaterThan(200);
+    }, 60_000);
   });
 
   it("is independent of input order", () => {

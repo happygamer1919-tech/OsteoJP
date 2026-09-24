@@ -182,6 +182,28 @@ describe("AgendaWeekCompact markup", () => {
     expect(COMPACT_CHIP.topPx).toBe(22);
   });
 
+  it("a chip whose hidden row has a LEFT block starting 15 minutes after it is drawn on that block's glyph line, not across its time", () => {
+    // Round 6: 09:30, 09:45, 10:00 (hidden) and 10:15 (left lane). The chip
+    // was drawn at 10:00 + 22px, which is 10:15's time line.
+    const three = render({
+      appointments: [
+        appt({ id: "a", startsAt: iso(WED, "09:30"), endsAt: iso(WED, "10:15") }),
+        appt({ id: "b", startsAt: iso(WED, "09:45"), endsAt: iso(WED, "10:30") }),
+        appt({ id: "c", startsAt: iso(WED, "10:00"), endsAt: iso(WED, "10:30") }),
+        appt({ id: "d", startsAt: iso(WED, "10:15"), endsAt: iso(WED, "10:45") }),
+      ],
+    });
+    const chip = three.match(/<button[^>]*data-testid="agenda-compact-more"[^>]*>/)![0];
+    // It names the hidden row's minute...
+    expect(chip).toContain('data-compact-more-at="10:00"');
+    // ...and sits 22px below the TOP OF d, the 10:15 block, in the left lane.
+    const dTop = Number(three.match(/data-compact-appointment-id="d" data-compact-lane="0"[^>]*style="top:(\d+(?:\.\d+)?)px/)![1]);
+    expect(dTop).toBeCloseTo((135 * COMPACT_ROW_PX) / 30, 5);
+    const chipTop = Number(chip.match(/style="top:(\d+(?:\.\d+)?)px/)![1]);
+    expect(chipTop).toBeCloseTo(dTop + COMPACT_CHIP.topPx, 5);
+    expect(three).not.toContain('data-compact-appointment-id="c"');
+  });
+
   it("Dom is a column only when a Sunday holds a booking (Q-B6-5)", () => {
     const without = render({ appointments: [appt({ id: "a1" })] });
     expect(without.match(/data-compact-day="/g) ?? []).toHaveLength(6);

@@ -4970,11 +4970,11 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
       where the hidden rows START: 22px below that moment, which is the glyph
       line of two blocks that start with them. Where the two drawn blocks
       started earlier, the chip sits lower in them or under them, at the
-      hidden row's time (Tuesday and Wednesday in the screenshots). A row that
-      starts in the left lane less than half an hour after the hidden ones can
-      have the right end of its time or name line under the chip; the
-      screenshot week has none, and no chip there covers a time, name or
-      glyph (measured).
+      hidden row's time. Where a block in the left lane starts less than half
+      an hour after the hidden rows (bookings on :15 and :45 do this), the
+      chip moves down onto that block's glyph line, so it never lies across a
+      time or a name; two chips that would then overlap are one chip, with
+      the counts added.
     - **The twin case.** A twin pair keeps both lanes at a crowded moment. At
       each start minute the layout puts a twin pair (a person row and a machine
       row of the same patient) first, person then machine, so where both lanes

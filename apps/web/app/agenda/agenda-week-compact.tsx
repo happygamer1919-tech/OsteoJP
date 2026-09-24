@@ -362,7 +362,7 @@ export function CompactWeekView({
                 key={m.key}
                 m={m}
                 dayLabel={formatDayHeader(d.date, locale)}
-                top={minToPx(m.startMin)}
+                top={minToPx(m.anchorMin)}
                 onSelect={() => onSelectDay(d.date)}
               />
             ))}
@@ -487,8 +487,9 @@ function Block({
 /**
  * Q-B6-1: the rows of a crowded moment beyond the two drawn blocks, as one
  * "+N" chip that opens that day in Dia. It is a pill on the blocks' glyph line,
- * across the gap between them (COMPACT_CHIP): it covers no time, name or
- * glyph. It is smaller than a 24px target; the day header above the column,
+ * across the gap between them (COMPACT_CHIP), drawn on the row the core
+ * anchors it to (`anchorMin`: the hidden rows' start, or a left-lane block
+ * starting less than a row after them): it covers no time, name or glyph. It is smaller than a 24px target; the day header above the column,
  * 40px tall, opens the same Dia, which is WCAG 2.5.8's equivalent-control case.
  */
 function More({
