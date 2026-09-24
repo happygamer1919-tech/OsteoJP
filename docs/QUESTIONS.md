@@ -2086,10 +2086,12 @@ a start time, nor a name, nor a 24px tap target.
 the rows in the two lanes are drawn and that moment's other rows sit behind one
 "+N" chip that opens Dia for that day: three at once read two blocks and "+1",
 four read two blocks and "+2". A twin pair (a person row and a machine row of
-the same patient, same start) goes first at its minute, so it stays side by
-side, person left, and the other rows starting then go behind the chip; where a
-row that started earlier still holds one lane, the twin's machine row is the
-one behind the chip. The pair is recognised by the patient and the start, so it
+the same patient, same start) takes both lanes before any other row, so it is
+always side by side, person left: the other rows starting then go behind the
+chip, and so does a row that started earlier and still runs when the pair
+starts (for its whole span, with its chip at its own start). Only another pair
+that started first and still holds a lane keeps a pair out, and then the later
+pair is behind the chip whole, never split. The pair is recognised by the patient and the start, so it
 holds even for a viewer whose page does not list that machine, and two person
 rows of one patient at one minute (a double booking) stay side by side the same
 way. The chip is a small dark pill, 10px tall and about 12 to 19px wide,
@@ -2105,7 +2107,9 @@ and narrower below that.
 run: a 24px chip, one more row hidden). The chip on the day header (both faces
 kept, but it no longer shows when the hidden rows run). A twin pair that does
 not outrank the other rows at its minute, or a pair recognised only when the
-page knows the machine. More face per block through a
+page knows the machine. A row that started earlier keeping its lane under a
+twin pair, which splits the pair (its machine row goes behind the chip) but
+never hides a row from its own start. More face per block through a
 narrower Dom column or a shorter time ("15h"). One lane plus a chip from two
 concurrent rows up. A column split three ways (strips of 14.5 to 18.8px) holds
 no face and was not built.

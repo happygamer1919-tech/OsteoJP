@@ -26,8 +26,11 @@
 //           of that moment's rows sit behind one "+N" chip, which opens Dia
 //           for that day. So three rows at once read two blocks and "+1".
 //           A twin pair (a person row and a machine row of the same patient,
-//           same start) goes first at its minute, so it keeps both lanes and
-//           the other rows starting then go behind the chip (`twinsFirst`).
+//           same start) takes both lanes before any other row is placed, so
+//           it is always side by side: the other rows starting then, and a
+//           row that started earlier and still runs when the pair starts, go
+//           behind the chip (`twinsFirst`, `assignLanes`). Only another pair
+//           that started first can keep it out, and then it is hidden whole.
 //           It is recognised by the patient and the start, so it holds
 //           whether or not the viewer's page knows the machine.
 //           The chip is a small pill laid across the gap between the two
@@ -239,10 +242,12 @@ export type LaneLayout = {
 };
 
 /**
- * THE TWIN RULE, applied to rows already sorted by start. Within each run of
- * rows that start at the same minute, two rows of the SAME PATIENT are a pair,
- * and every pair moves to the FRONT of the run, one row right after the other;
- * every other row keeps its place behind them.
+ * THE TWIN RULE, part one: which rows are pairs, applied to rows already
+ * sorted by start. Within each run of rows that start at the same minute, two
+ * rows of the SAME PATIENT are a pair, and every pair moves to the FRONT of the
+ * run, one row right after the other; every other row keeps its place behind
+ * them. `partner[k]` is the index of row k's other half, or null. Part two is
+ * `assignLanes`: a pair takes both lanes before any other row is placed.
  *
  * - The twin the card names is one person row and one machine row of the same
  *   patient. The pair is recognised by the PATIENT and the START, not by the
@@ -257,20 +262,16 @@ export type LaneLayout = {
  * - Two person rows of one patient at one minute (a double booking) are a pair
  *   too, and stay side by side the same way.
  *
- * Why the front of the run: first-fit gives the lowest free lanes to the rows
- * that come first. So where both lanes are free when a pair starts, it takes
- * lanes 0 and 1, side by side, and any other row starting then needs lane 2
- * and goes behind the "+N" chip. Without this, the sort's "person before
- * machine" put a THIRD person row between the twins, and the twin's machine
- * row was the one hidden (AGENDA-MOBILE-WEEK round 6).
- *
- * Where a row that started EARLIER still holds one lane, only one lane is
- * free for the pair: its first row takes it and the second goes behind the
- * chip. Keeping the pair there would mean hiding a block that is already
- * drawn from an earlier start, which a block cannot do half of.
+ * Why the front of the run: at one minute the pair's order decides which half
+ * goes left, and which pair is kept when two start together. Without this,
+ * the sort's "person before machine" put a THIRD person row between the twins,
+ * and the twin's machine row was the one hidden (AGENDA-MOBILE-WEEK round 6).
  */
-function twinsFirst<T extends { startMin: number; machine: boolean; patient?: string | null }>(sorted: T[]): T[] {
+function twinsFirst<T extends { startMin: number; machine: boolean; patient?: string | null }>(
+  sorted: T[],
+): { rows: T[]; partner: (number | null)[] } {
   const out: T[] = [];
+  const partner: (number | null)[] = [];
   let i = 0;
   while (i < sorted.length) {
     let j = i;
@@ -296,10 +297,106 @@ function twinsFirst<T extends { startMin: number; machine: boolean; patient?: st
       const n = run.findIndex((other, x) => x !== k && !paired.has(x) && other.patient === row.patient);
       if (n !== -1) pair(k, n, samePatient);
     });
-    out.push(...personMachine, ...samePatient, ...run.filter((_, k) => !paired.has(k)));
+    // Pairs were pushed two by two, so a pair is two neighbours in `out`.
+    const pairs = [...personMachine, ...samePatient];
+    for (let k = 0; k < pairs.length; k += 2) {
+      const at = out.length;
+      out.push(pairs[k]!, pairs[k + 1]!);
+      partner.push(at + 1, at);
+    }
+    for (const row of run.filter((_, k) => !paired.has(k))) {
+      out.push(row);
+      partner.push(null);
+    }
     i = j;
   }
-  return out;
+  return { rows: out, partner };
+}
+
+/** A row `assignLanes` puts behind the "+N" chip. */
+const HIDDEN = -1;
+
+/**
+ * THE TWIN RULE, part two, and first-fit, for ONE cluster in `twinsFirst`
+ * order. Returns each row's lane, or HIDDEN. Pure.
+ *
+ * 1. THE PAIRS FIRST. A twin pair is KEPT when no pair kept before it holds
+ *    lane 0 or lane 1 at its start; a kept pair RESERVES lane 0 for its first
+ *    row (the person row, where the flag is known) and lane 1 for its second,
+ *    each for that row's drawn span. So a twin pair is side by side whatever
+ *    else runs then: the acceptance's "a twin pair renders side by side" has
+ *    no exception for a row that started earlier (AGENDA-MOBILE-WEEK round 7:
+ *    the earlier row kept its lane and the twin's machine row was hidden).
+ *    The one thing that can stop a pair is another pair: two lanes hold one
+ *    pair at a time, and the pair that started first keeps them.
+ * 2. THEN EVERY OTHER ROW, first-fit: the lowest lane where the last row
+ *    placed in it has ended by this row's start AND no kept pair's reserved
+ *    span overlaps this row's drawn span. With no pair in the cluster this is
+ *    plain first-fit, which for intervals sorted by start is optimal. A row
+ *    that finds no such lane under the cap is HIDDEN: either both lanes are
+ *    busy at its start, or it would still be running when a kept pair starts
+ *    (then it is behind the chip for its whole span, from its own start, as
+ *    every hidden row is). A pair that was not kept is placed whole or not
+ *    at all, never split.
+ */
+function assignLanes(
+  cluster: readonly { startMin: number; drawnEndMin: number }[],
+  partner: readonly (number | null)[],
+  maxLanes: number,
+): number[] {
+  const laneOf: (number | null)[] = cluster.map(() => null);
+  const reserved: { lane: number; s: number; e: number }[] = [];
+  const twins = maxLanes >= 2;
+
+  // 1. The pairs.
+  if (twins) {
+    cluster.forEach((it, k) => {
+      const n = partner[k];
+      if (n == null || n < k) return;
+      if (reserved.some((r) => r.s <= it.startMin && it.startMin < r.e)) return;
+      laneOf[k] = 0;
+      laneOf[n] = 1;
+      reserved.push({ lane: 0, s: it.startMin, e: it.drawnEndMin }, { lane: 1, s: cluster[n]!.startMin, e: cluster[n]!.drawnEndMin });
+    });
+  }
+
+  // 2. Every other row.
+  const laneEnds: number[] = [];
+  const fits = (lane: number, s: number, e: number) =>
+    (laneEnds[lane] ?? Number.NEGATIVE_INFINITY) <= s && !reserved.some((r) => r.lane === lane && r.s < e && s < r.e);
+  /** The lowest lane under the cap that `fits`, other than `not`, or HIDDEN.
+   *  A lane past every used and reserved one always fits, so this ends. */
+  const firstFit = (s: number, e: number, not = HIDDEN) => {
+    for (let lane = 0; lane < maxLanes; lane += 1) {
+      if (lane !== not && fits(lane, s, e)) return lane;
+    }
+    return HIDDEN;
+  };
+  cluster.forEach((it, k) => {
+    if (laneOf[k] !== null) return;
+    const n = twins ? partner[k] : null;
+    if (n == null) {
+      const lane = firstFit(it.startMin, it.drawnEndMin);
+      laneOf[k] = lane;
+      if (lane !== HIDDEN) laneEnds[lane] = it.drawnEndMin;
+      return;
+    }
+    if (n < k) return;
+    // A pair not kept: both halves, or neither.
+    const other = cluster[n]!;
+    const a = firstFit(it.startMin, it.drawnEndMin);
+    const b = a === HIDDEN ? HIDDEN : firstFit(other.startMin, other.drawnEndMin, a);
+    if (a === HIDDEN || b === HIDDEN) {
+      laneOf[k] = HIDDEN;
+      laneOf[n] = HIDDEN;
+      return;
+    }
+    laneOf[k] = a;
+    laneOf[n] = b;
+    laneEnds[a] = it.drawnEndMin;
+    laneEnds[b] = other.drawnEndMin;
+  });
+  return laneOf.map((l) => l ?? HIDDEN);
 }
 
 /**
@@ -310,22 +407,23 @@ function twinsFirst<T extends { startMin: number; machine: boolean; patient?: st
  *    start minute, a twin pair goes first, person then machine.
  * 2. Sweep into clusters: a row joins the cluster while it starts before the
  *    cluster's latest drawn end.
- * 3. First-fit lanes inside a cluster: the lowest lane whose last drawn end is
- *    at or before this start. For intervals sorted by start this is optimal, so
- *    the lane count IS the cluster's peak concurrency.
- * 4. A cluster of one or two lanes is drawn as it is.
- * 5. Q-B6-1, THE CARD'S DEFAULT: TWO LANES OF BLOCKS PLUS A CHIP. In a cluster
- *    that needs a third lane, every row in lane 0 or lane 1 is drawn, and every
- *    row that took lane 2 or higher is hidden. A row takes lane 2 only when
- *    lanes 0 and 1 are both busy at its start, so a hidden row always starts at
- *    a moment where two blocks are drawn, and the chip sits beside those two.
- *    The cap is therefore per MOMENT, not per cluster: a transitive chain
- *    (09:00-09:45, 09:30-10:15, 10:00-10:45 ...) never needs lane 2 and keeps
- *    every row. The hidden rows are grouped where their spans overlap, and each
- *    group is ONE "+N" chip, placed at the group's start.
+ * 3. Lanes inside a cluster (`assignLanes`): the kept twin pairs take lanes 0
+ *    and 1, then every other row takes the lowest lane that is free for it.
+ * 4. A cluster where every row is in lane 0 is drawn full width; any other is
+ *    drawn in two lanes.
+ * 5. Q-B6-1, THE CARD'S DEFAULT: TWO LANES OF BLOCKS PLUS A CHIP. Only lanes 0
+ *    and 1 exist; a row that finds neither free is hidden. So a hidden row
+ *    starts where two blocks are drawn, or runs into a kept twin pair's start
+ *    (where the pair's two blocks are drawn), or is half of a pair that
+ *    another pair kept out. The cap is per MOMENT, not per cluster: a
+ *    transitive chain (09:00-09:45, 09:30-10:15, 10:00-10:45 ...) never needs
+ *    a third lane and keeps every row. The hidden rows are grouped where their
+ *    spans overlap, and each group is ONE "+N" chip, placed at the group's
+ *    start.
  *
- *    Why no two drawn rows overlap: first-fit never puts two overlapping rows
- *    in one lane, and only lanes 0 and 1 are drawn.
+ *    Why no two drawn rows overlap: a row takes a lane only where the rows
+ *    already in it have ended and no reserved span overlaps it, and only
+ *    lanes 0 and 1 are drawn.
  * 6. WHERE A CHIP SITS (`anchorMin`). The chip is one glyph line tall and
  *    reaches across the whole left lane after the glyph, so it must lie
  *    where no left-lane block has its time or name line. By default it sits
@@ -356,57 +454,38 @@ export function layoutLanes(items: readonly LaneItem[], maxLanes: number = COMPA
       a.label.localeCompare(b.label, "pt") ||
       (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
-  const drawn = twinsFirst(sorted);
+  const { rows: drawn, partner } = twinsFirst(sorted);
 
   const out: LaneLayout = { placed: [], more: [] };
   let i = 0;
   while (i < drawn.length) {
-    // One cluster.
-    const cluster = [drawn[i]!];
+    // One cluster: drawn[first .. i).
+    const first = i;
     let clusterEnd = drawn[i]!.drawnEndMin;
     i += 1;
     while (i < drawn.length && drawn[i]!.startMin < clusterEnd) {
-      cluster.push(drawn[i]!);
       clusterEnd = Math.max(clusterEnd, drawn[i]!.drawnEndMin);
       i += 1;
     }
+    const cluster = drawn.slice(first, i);
+    // A pair shares its start, so both halves are always in one cluster.
+    const laneOf = assignLanes(
+      cluster,
+      partner.slice(first, i).map((n) => (n === null ? null : n - first)),
+      maxLanes,
+    );
+    const lanes = laneOf.every((l) => l === 0) ? 1 : 2;
 
-    const laneEnds: number[] = [];
-    const laneOf: number[] = [];
-    for (const it of cluster) {
-      let lane = laneEnds.findIndex((end) => end <= it.startMin);
-      if (lane === -1) {
-        lane = laneEnds.length;
-        laneEnds.push(it.drawnEndMin);
-      } else {
-        laneEnds[lane] = it.drawnEndMin;
-      }
-      laneOf.push(lane);
-    }
-    const lanes = laneEnds.length;
-
-    if (lanes <= maxLanes) {
-      cluster.forEach((it, k) =>
-        out.placed.push({
-          id: it.id,
-          lane: laneOf[k] === 0 ? 0 : 1,
-          lanes: lanes === 1 ? 1 : 2,
-          drawnEndMin: it.drawnEndMin,
-        }),
-      );
-      continue;
-    }
-
-    // Lanes 0 and 1 are drawn; a row that needed a third lane or more is
-    // behind the chip.
+    // Lanes 0 and 1 are drawn; a row with no lane is behind the chip.
     const hidden: (typeof cluster)[number][] = [];
     cluster.forEach((it, k) => {
-      if (laneOf[k]! >= maxLanes) {
+      if (laneOf[k] === HIDDEN) {
         hidden.push(it);
       } else {
-        out.placed.push({ id: it.id, lane: laneOf[k] === 0 ? 0 : 1, lanes: 2, drawnEndMin: it.drawnEndMin });
+        out.placed.push({ id: it.id, lane: laneOf[k] === 0 ? 0 : 1, lanes, drawnEndMin: it.drawnEndMin });
       }
     });
+    if (hidden.length === 0) continue;
     // Step 6: the left-lane starts a chip can move onto.
     const leftStarts = cluster.filter((_, k) => laneOf[k] === 0).map((it) => it.startMin);
     let last: CompactMore | null = null;

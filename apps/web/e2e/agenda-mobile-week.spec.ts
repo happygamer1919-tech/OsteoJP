@@ -112,6 +112,20 @@ const STAGGER = [
 ] as const;
 const STAGGER_HIDDEN = STAGGER[2];
 const STAGGER_LEFT = STAGGER[3];
+/**
+ * A twin pair under a row that started EARLIER (round 7 review): the 18:15 row
+ * still runs at 18:30, when a second twin pair starts (another patient, the
+ * same therapist and machine). Round 7's first-fit kept the 18:15 row in the
+ * left lane, gave the pair's person row the right lane and hid its machine
+ * row. The pair takes both lanes, and the 18:15 row is the one behind "+1".
+ */
+const UNDER_EARLIER = {
+  early: { id: "00000000-0000-4000-8000-00000000b6bc", at: "18:15", minutes: 45, patient: PATIENTS.joao },
+  at: "18:30",
+  person: "00000000-0000-4000-8000-00000000b6bd",
+  machine: "00000000-0000-4000-8000-00000000b6be",
+  patient: PATIENTS.maria,
+} as const;
 
 /** Monday of DAY's week and the six Mon-Sat days, computed here and never read
  *  back off the page: a test asking the page which days it shows cannot notice
@@ -315,6 +329,9 @@ async function removeTwin(db: SupabaseClient): Promise<void> {
       SUNDAY_APPT,
       ...CROWD.map((c) => c.id),
       ...STAGGER.map((c) => c.id),
+      UNDER_EARLIER.early.id,
+      UNDER_EARLIER.person,
+      UNDER_EARLIER.machine,
     ]);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("practitioner_id", TWIN_MACHINE_ID);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("patient_id", TWIN_PATIENT.id);
@@ -391,8 +408,18 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
         row(SUNDAY_APPT, therapist.id, SUNDAY, "10:00"),
         ...CROWD.map((c) => row(c.id, therapist.id, DAY, CROWD_AT, 30, c.patient.id)),
         ...STAGGER.map((c) => row(c.id, therapist.id, DAY, c.at, c.minutes, c.patient.id)),
+        row(
+          UNDER_EARLIER.early.id,
+          therapist.id,
+          DAY,
+          UNDER_EARLIER.early.at,
+          UNDER_EARLIER.early.minutes,
+          UNDER_EARLIER.early.patient.id,
+        ),
+        row(UNDER_EARLIER.person, therapist.id, DAY, UNDER_EARLIER.at, 45, UNDER_EARLIER.patient.id),
+        row(UNDER_EARLIER.machine, TWIN_MACHINE_ID, DAY, UNDER_EARLIER.at, 45, UNDER_EARLIER.patient.id),
       ]),
-      "the twin pair and its third row, the two crowds and the Sunday booking",
+      "the twin pairs, the rows around them, the two crowds and the Sunday booking",
     );
   });
 
@@ -491,6 +518,32 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     await expect(twinChip).toHaveCount(1);
     await expect(twinChip).toHaveText("+1");
 
+    // ARM 4b - A TWIN PAIR UNDER A ROW THAT STARTED EARLIER (round 7 review).
+    // The 18:15 row still runs at 18:30, when the second pair starts. The
+    // pair is side by side all the same, person left, on one line, and the
+    // 18:15 row is not drawn: a "+1" chip picked by its start stands for it.
+    const person2 = page.locator(`[data-compact-appointment-id="${UNDER_EARLIER.person}"]`);
+    const machine2 = page.locator(`[data-compact-appointment-id="${UNDER_EARLIER.machine}"]`);
+    await expect(person2).toBeVisible();
+    await expect(machine2).toBeVisible();
+    const p2 = await box(person2, "the second pair's person row");
+    const m2 = await box(machine2, "the second pair's machine row");
+    expect(Math.abs(p2.y - m2.y), "the second pair starts on one line").toBeLessThanOrEqual(1);
+    expect(p2.x + p2.width <= m2.x, "the second pair is side by side, person left").toBe(true);
+    for (const [b, what] of [
+      [p2, "person"],
+      [m2, "machine"],
+    ] as const) {
+      expect(b.x, `second pair ${what} starts inside its column`).toBeGreaterThanOrEqual(col.x - 0.5);
+      expect(b.x + b.width, `second pair ${what} ends inside its column`).toBeLessThanOrEqual(col.x + col.width + 0.5);
+    }
+    await expect(page.locator(`[data-compact-appointment-id="${UNDER_EARLIER.early.id}"]`)).toBeHidden();
+    const earlyChip = page.locator(
+      `[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"][data-compact-more-at="${UNDER_EARLIER.early.at}"]`,
+    );
+    await expect(earlyChip).toHaveCount(1);
+    await expect(earlyChip).toHaveText("+1");
+
     // ARM 5 - WHAT THE FACE SHOWS, measured on the parts, not on the block.
     // `toContainText` reads textContent, which holds "15:00" even when CSS
     // cuts it to "1...", and the block itself never overflows because its
@@ -539,8 +592,8 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     );
     expect(Math.abs(c0!.y - c1!.y), "the two crowded blocks start on the same line").toBeLessThanOrEqual(1);
     expect(disjoint(c0!, c1!), "the two crowded blocks are side by side, not on top of each other").toBe(true);
-    // The day holds other chips (the twin's minute, ARM 5c's), so this one is
-    // picked by its minute.
+    // The day holds other chips (the twin's minute, ARM 4b's, ARM 5c's), so
+    // this one is picked by its minute.
     const dayChips = page.locator(
       `[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"][data-compact-more-at="${CROWD_AT}"]`,
     );

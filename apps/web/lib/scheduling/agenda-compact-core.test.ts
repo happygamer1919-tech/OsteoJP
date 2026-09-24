@@ -450,16 +450,119 @@ describe("layoutLanes", () => {
     expect([...more[0]!.hiddenIds].sort()).toEqual(["long", "t2-n", "t2-p"]);
   });
 
-  it("the limit, pinned: where a row that started EARLIER still holds a lane, the twin's person row takes the free lane and its machine row goes behind the chip", () => {
-    // Only one lane is free at 10:00. Keeping the pair would mean hiding
-    // 'early', which is already drawn from 09:30.
+  it("THE EARLIER ROW (round 7 review): a row that started earlier and still runs when a twin pair starts goes behind the chip, and the twin is side by side, person left", () => {
+    // The reviewer's "Todos" case: therapist B has Z from 14:30 to 15:15, and
+    // Y has a twin pair at 15:00 (therapist A and NESA). Round 7 kept Z in
+    // lane 0, gave Y's person row lane 1 and hid Y's machine row: the twin
+    // came apart. The acceptance says a twin pair renders side by side.
+    const z = lane("z-b", H(14, 30), H(15, 15), false, "Zulmira Teste Terapeuta B", "z");
+    const yA = lane("y-a", H(15), H(15, 45), false, "Yara Teste Terapeuta A", "y");
+    const yN = lane("y-n", H(15), H(15, 45), true, "Yara Teste NESA", "y");
+    for (const order of [
+      [z, yA, yN],
+      [yN, z, yA],
+      [yA, yN, z],
+    ]) {
+      const { placed, more } = layoutLanes(order);
+      expect(placed).toEqual([
+        { id: "y-a", lane: 0, lanes: 2, drawnEndMin: H(15, 45) },
+        { id: "y-n", lane: 1, lanes: 2, drawnEndMin: H(15, 45) },
+      ]);
+      // Z is behind a "+1" chip at its own start. No left block starts in the
+      // row after 14:30 (Y starts a whole row later), so the chip stays on
+      // 14:30's line, clear of Y's time and name.
+      expect(more).toEqual([
+        { key: "more-z-b", startMin: H(14, 30), drawnEndMin: H(15, 15), anchorMin: H(14, 30), count: 1, hiddenIds: ["z-b"] },
+      ]);
+      expect(bandsHit(chipBand(more[0]!.anchorMin), textBand(H(15)))).toBe(false);
+    }
+    // The same with every machine flag false (a viewer whose page does not
+    // list that machine): the pair is the patient and the start.
+    const unknown = layoutLanes([z, { ...yA }, { ...yN, machine: false }]);
+    expect(new Set(unknown.placed.map((p) => p.id))).toEqual(new Set(["y-a", "y-n"]));
+    expect(unknown.more.flatMap((m) => m.hiddenIds)).toEqual(["z-b"]);
+
+    // An earlier row starting LESS than a row before the pair: the chip moves
+    // down onto the pair's person row (the left block starting within a row
+    // of it), on its glyph line, clear of its time and name.
+    const late = layoutLanes([lane("z-b", H(14, 45), H(15, 30), false, "Zulmira", "z"), yA, yN]);
+    expect(late.placed.map((p) => [p.id, p.lane])).toEqual([
+      ["y-a", 0],
+      ["y-n", 1],
+    ]);
+    expect(late.more).toHaveLength(1);
+    expect(late.more[0]).toMatchObject({ startMin: H(14, 45), anchorMin: H(15), hiddenIds: ["z-b"] });
+    expect(bandsHit(chipBand(late.more[0]!.anchorMin), textBand(H(15)))).toBe(false);
+
+    // The lane the earlier row would have held is free BEFORE the pair: a
+    // row that ends by 15:00 is drawn there, not hidden with it.
+    const before = layoutLanes([
+      lane("long", H(14), H(15, 15), false, "Zulmira", "z"),
+      lane("short", H(14), H(14, 30), false, "Bia", "b"),
+      lane("mid", H(14, 10), H(14, 55), false, "Caio", "c"),
+      yA,
+      yN,
+    ]);
+    expect(Object.fromEntries(before.placed.map((p) => [p.id, p.lane]))).toEqual({ short: 0, mid: 1, "y-a": 0, "y-n": 1 });
+    expect(before.more.flatMap((m) => m.hiddenIds)).toEqual(["long"]);
+
+    // CONTROL: the TWIN is what moves the earlier row. At 15:00 two rows of
+    // two patients are no pair, so Z keeps its lane from 14:30 and the
+    // plain first-fit hides the 15:00 row that finds no lane.
+    const plain = layoutLanes([
+      z,
+      lane("r-a", H(15), H(15, 45), false, "Rita Teste Terapeuta A", "r"),
+      lane("s-n", H(15), H(15, 45), true, "Sara Teste NESA", "s"),
+    ]);
+    expect(plain.placed.map((p) => [p.id, p.lane])).toEqual([
+      ["z-b", 0],
+      ["r-a", 1],
+    ]);
+    expect(plain.more.flatMap((m) => m.hiddenIds)).toEqual(["s-n"]);
+  });
+
+  it("THE EARLIER ROW in a therapist's own view: a machine-only row still running when the therapist's twin pair starts goes behind the chip", () => {
     const { placed, more } = layoutLanes([
-      lane("early", H(9, 30), H(10, 30), false, "Eva", "e"),
+      lane("nesa-only", H(9, 30), H(10, 15), true, "Wilson NESA", "w"),
       lane("twin-person", H(10), H(10, 45), false, "Ana", "a"),
       lane("twin-machine", H(10), H(10, 45), true, "Ana NESA", "a"),
     ]);
-    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ early: 0, "twin-person": 1 });
-    expect(more.flatMap((m) => m.hiddenIds)).toEqual(["twin-machine"]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({
+      "twin-person": [0, 2],
+      "twin-machine": [1, 2],
+    });
+    expect(more.map((m) => [m.startMin, m.count, m.hiddenIds])).toEqual([[H(9, 30), 1, ["nesa-only"]]]);
+  });
+
+  it("TWO PAIRS THAT OVERLAP: the pair that started first keeps both lanes, and the later pair is behind the chip WHOLE, never split", () => {
+    // Two lanes hold one pair at a time. Hiding the first pair instead would
+    // hide a pair already drawn from its start; the later pair is not split
+    // to fill the lane the first pair's shorter half frees.
+    const { placed, more } = layoutLanes([
+      lane("p1-person", H(10), H(10, 45), false, "Ana", "a"),
+      lane("p1-machine", H(10), H(10, 30), true, "Ana NESA", "a"),
+      lane("p2-person", H(10, 30), H(11, 15), false, "Bia", "b"),
+      lane("p2-machine", H(10, 30), H(11, 15), true, "Bia NESA", "b"),
+    ]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ "p1-person": 0, "p1-machine": 1 });
+    expect(more.map((m) => [m.startMin, m.count, [...m.hiddenIds].sort()])).toEqual([
+      [H(10, 30), 2, ["p2-machine", "p2-person"]],
+    ]);
+    // CONTROL: where the first pair has ended by the second's start, the
+    // second is side by side too.
+    const apart = layoutLanes([
+      lane("p1-person", H(10), H(10, 30), false, "Ana", "a"),
+      lane("p1-machine", H(10), H(10, 30), true, "Ana NESA", "a"),
+      lane("p2-person", H(10, 30), H(11, 15), false, "Bia", "b"),
+      lane("p2-machine", H(10, 30), H(11, 15), true, "Bia NESA", "b"),
+    ]);
+    expect(apart.more).toEqual([]);
+    expect(Object.fromEntries(apart.placed.map((p) => [p.id, p.lane]))).toEqual({
+      "p1-person": 0,
+      "p1-machine": 1,
+      "p2-person": 0,
+      "p2-machine": 1,
+    });
   });
 
   it("THE CHIP MOVES OFF A LEFT BLOCK THAT STARTS WITHIN A ROW OF THE HIDDEN ROWS: the reviewer's 09:30, 09:45, 10:00, 10:15", () => {
@@ -567,14 +670,37 @@ describe("layoutLanes", () => {
     const drawnEnd = (it: LaneItem) => Math.max(it.endMin, it.startMin + COMPACT_MIN_DRAWN_MINUTES);
     const overlaps = (a: { s: number; e: number }, b: { s: number; e: number }) => a.s < b.e && b.s < a.e;
 
-    /** Returns how many twin minutes it checked where a THIRD row started
-     *  with the pair: the case the round 6 order got wrong. */
-    function check(items: LaneItem[], out: LaneLayout): number {
-      let twinCrowds = 0;
+    type Reached = {
+      /** Twin minutes where a THIRD row started with the pair: the case the
+       *  round 6 order got wrong. */
+      twinCrowds: number;
+      /** Twin minutes where a row that started EARLIER still ran: the case
+       *  round 7's first-fit got wrong (it split the pair). */
+      twinUnderEarlier: number;
+      /** Rows hidden because a twin pair started while they ran. */
+      displaced: number;
+    };
+
+    /** Checks every invariant; returns how often it reached the twin cases. */
+    function check(items: LaneItem[], out: LaneLayout): Reached {
+      const reached: Reached = { twinCrowds: 0, twinUnderEarlier: 0, displaced: 0 };
       const byId = new Map(items.map((it) => [it.id, it]));
       const span = (id: string) => ({ s: byId.get(id)!.startMin, e: drawnEnd(byId.get(id)!) });
+      const runs = (id: string, t: number) => span(id).s <= t && t < span(id).e;
       const runningAt = (t: number) => items.filter((it) => it.startMin <= t && t < drawnEnd(it)).length;
       const hidden = out.more.flatMap((m) => m.hiddenIds);
+      // The pairs drawn: two drawn rows of one patient starting together, one
+      // in each lane.
+      const drawnPairs: { t: number; ids: [string, string] }[] = [];
+      for (const a of out.placed) {
+        for (const b of out.placed) {
+          const pa = byId.get(a.id)!;
+          const pb = byId.get(b.id)!;
+          if (a.lane === 0 && b.lane === 1 && a.lanes === 2 && pa.patient != null && pa.patient === pb.patient && pa.startMin === pb.startMin) {
+            drawnPairs.push({ t: pa.startMin, ids: [a.id, b.id] });
+          }
+        }
+      }
 
       // (1) Nothing lost, nothing twice.
       expect([...out.placed.map((p) => p.id), ...hidden].sort()).toEqual(items.map((i) => i.id).sort());
@@ -592,14 +718,24 @@ describe("layoutLanes", () => {
       const drawnAt = (t: number) => out.placed.filter((p) => span(p.id).s <= t && t < span(p.id).e);
       for (let t = H(8); t < H(24); t++) expect(drawnAt(t).length, `minute ${t}`).toBeLessThanOrEqual(2);
 
-      // (2b) THE CARD'S DEFAULT, TWO BLOCKS PLUS A CHIP: where a hidden row
-      //      starts, two blocks are drawn, one in each lane, and the chip that
-      //      holds it starts there too or earlier.
+      // (2b) EVERY HIDDEN ROW HAS A REASON ONE CAN POINT AT, and the chip
+      //      that holds it starts there too or earlier:
+      //      - THE CARD'S DEFAULT: two blocks are drawn at its start, one in
+      //        each lane; or
+      //      - THE TWIN RULE: a drawn twin pair starts while it runs; or
+      //      - it is half of a pair, its other half is hidden too, and a
+      //        drawn pair that started earlier holds a lane at its start.
       for (const id of hidden) {
-        const at = drawnAt(span(id).s);
-        expect(at.map((p) => p.lane).sort(), `${id}: two blocks beside its chip`).toEqual([0, 1]);
+        const { s, e } = span(id);
+        const twoAtStart = drawnAt(s).map((p) => p.lane).sort().join() === "0,1";
+        const twinStartsInside = drawnPairs.some((pr) => s < pr.t && pr.t < e);
+        const keptOut =
+          items.some((o) => o.id !== id && o.startMin === s && o.patient != null && o.patient === byId.get(id)!.patient && hidden.includes(o.id)) &&
+          drawnPairs.some((pr) => pr.t < s && pr.ids.some((pid) => runs(pid, s)));
+        expect(twoAtStart || twinStartsInside || keptOut, `${id}: hidden for a reason`).toBe(true);
+        if (!twoAtStart && twinStartsInside) reached.displaced += 1;
         const chip = out.more.find((m) => m.hiddenIds.includes(id))!;
-        expect(chip.startMin).toBeLessThanOrEqual(span(id).s);
+        expect(chip.startMin).toBeLessThanOrEqual(s);
       }
       for (const m of out.more) {
         for (const n of out.more) {
@@ -655,20 +791,28 @@ describe("layoutLanes", () => {
         }
       }
 
-      // (5) THE TWIN RULE: where two rows of one patient start together and
-      //     no drawn row that started earlier still runs (both lanes are
-      //     free), the two blocks drawn from that minute are one patient's
-      //     pair, however many other rows start with it; and where a person
-      //     row and its machine row start then, they are the pair, person left.
+      // (5) THE TWIN RULE: "a twin pair renders side by side". Where two
+      //     rows of one patient start together, the two blocks drawn from
+      //     that minute are one patient's pair, however many other rows
+      //     start with it and WHATEVER STARTED EARLIER AND STILL RUNS, unless
+      //     a pair drawn from an earlier minute holds a lane (two lanes hold
+      //     one pair at a time). Where a person row and its machine row start
+      //     then, they are the pair, person left. And a pair is never split:
+      //     of a patient's two rows at one minute, both are drawn or neither.
       const placedById = new Map(out.placed.map((p) => [p.id, p]));
       for (const t of new Set(items.map((it) => it.startMin))) {
         const startingNow = items.filter((it) => it.startMin === t);
-        const samePatient = startingNow.some((a) =>
-          startingNow.some((b) => a.id !== b.id && a.patient != null && a.patient === b.patient),
-        );
-        if (!samePatient) continue;
-        const earlierHolds = out.placed.some((p) => span(p.id).s < t && t < span(p.id).e);
-        if (earlierHolds) continue;
+        const byPatient = new Map<string, LaneItem[]>();
+        for (const it of startingNow) {
+          if (it.patient != null) byPatient.set(it.patient, [...(byPatient.get(it.patient) ?? []), it]);
+        }
+        for (const [patient, rows] of byPatient) {
+          if (rows.length !== 2) continue;
+          const drawnHere = rows.filter((r) => placedById.has(r.id)).length;
+          expect(drawnHere === 0 || drawnHere === 2, `minute ${t}: ${patient}'s pair is not split`).toBe(true);
+        }
+        if (![...byPatient.values()].some((rows) => rows.length >= 2)) continue;
+        if (drawnPairs.some((pr) => pr.t < t && pr.ids.some((pid) => runs(pid, t)))) continue;
         const left = startingNow.find((o) => placedById.get(o.id)?.lane === 0);
         const right = startingNow.find((o) => placedById.get(o.id)?.lane === 1);
         expect(left !== undefined && right !== undefined && left.patient === right.patient, `minute ${t}: a pair side by side`).toBe(true);
@@ -678,31 +822,38 @@ describe("layoutLanes", () => {
         if (personMachine) {
           expect([left!.machine, right!.machine], `minute ${t}: person left, machine right`).toEqual([false, true]);
         }
-        if (startingNow.length >= 3) twinCrowds += 1;
+        if (startingNow.length >= 3) reached.twinCrowds += 1;
+        if (items.some((o) => o.startMin < t && t < drawnEnd(o))) reached.twinUnderEarlier += 1;
       }
-      return twinCrowds;
+      return reached;
     }
 
     it("hold for 400 seeded random days", () => {
       const rand = rng(20260923);
       let chips = 0;
       let drawnRightLane = 0;
-      let twinCrowds = 0;
+      const reached: Reached = { twinCrowds: 0, twinUnderEarlier: 0, displaced: 0 };
       let movedChips = 0;
       for (let k = 0; k < 400; k++) {
         const items = randomDay(rand);
         const out = layoutLanes(items);
-        twinCrowds += check(items, out);
+        const r = check(items, out);
+        reached.twinCrowds += r.twinCrowds;
+        reached.twinUnderEarlier += r.twinUnderEarlier;
+        reached.displaced += r.displaced;
         chips += out.more.length;
         movedChips += out.more.filter((m) => m.anchorMin !== m.startMin).length;
         drawnRightLane += out.placed.filter((p) => p.lane === 1).length;
       }
       // CONTROL: the sample is not trivially easy. It crowds often, still
-      // draws many rows in the right lane, and holds twin pairs with a third
-      // row starting beside them.
+      // draws many rows in the right lane, holds twin pairs with a third row
+      // starting beside them, twin pairs starting under a row that started
+      // earlier, and rows hidden because a twin started while they ran.
       expect(chips).toBeGreaterThan(100);
       expect(drawnRightLane).toBeGreaterThan(100);
-      expect(twinCrowds).toBeGreaterThan(5);
+      expect(reached.twinCrowds).toBeGreaterThan(5);
+      expect(reached.twinUnderEarlier).toBeGreaterThan(20);
+      expect(reached.displaced).toBeGreaterThan(20);
       // ...and chips that had to move off a left block's time and name.
       expect(movedChips).toBeGreaterThan(5);
     }, 30_000);
@@ -1170,6 +1321,22 @@ describe("DECISIONS Q-B6-1 states the face layoutLanes draws", () => {
     expect(entry).toContain(
       machineHidden ? "the machine row goes behind the chip" : "the twin stays side by side",
     );
+  });
+
+  it("the earlier row: the entry says what a row still running when a twin pair starts does, and no longer says the other thing", () => {
+    // Round 7's review: the entry described the pair as split under an
+    // earlier row. Pinned both ways, so the stale sentence cannot stay beside
+    // the new one.
+    const { more } = layoutLanes([
+      lane("early", H(14, 30), H(15, 15), false, "Zulmira", "z"),
+      lane("twin-person", H(15), H(15, 45), false, "Yara", "y"),
+      lane("twin-machine", H(15), H(15, 45), true, "Yara NESA", "y"),
+    ]);
+    const earlyHidden = more.some((m) => m.hiddenIds.includes("early"));
+    const hides = "a row that started earlier and still runs when the pair starts goes behind the chip";
+    const splits = "the pair's first row takes it and the other goes behind the chip";
+    expect(entry).toContain(earlyHidden ? hides : splits);
+    expect(entry).not.toContain(earlyHidden ? splits : hides);
   });
 });
 

@@ -4975,25 +4975,31 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
       chip moves down onto that block's glyph line, so it never lies across a
       time or a name; two chips that would then overlap are one chip, with
       the counts added.
-    - **The twin case.** A twin pair keeps both lanes at a crowded moment. At
-      each start minute the layout puts a twin pair (a person row and a machine
-      row of the same patient) first, person then machine, so where both lanes
-      are free when it starts, the twin stays side by side, person left, and
-      every other row starting then goes behind the chip (a longer row or a
-      second twin pair included). The pair is recognised by the patient and
-      the start, not only by the machine flag: the page knows as machines only
-      the ones offered to the viewer (those at the viewer's clinics), and a
-      viewer can see a machine row outside that list. Two rows of one patient
-      at one minute therefore stay side by side whatever they are, a double
-      booking on two therapists included; where the flag is known, the person
-      row is on the left. Where a row that started earlier still holds one
-      lane, only one lane is free: the pair's first row takes it and the
-      other goes behind the chip, because a block already drawn from an
-      earlier start cannot be half hidden.
+    - **The twin case.** A twin pair (a person row and a machine row of the
+      same patient, same start) takes both lanes before any other row is
+      placed, person left, machine right, so the twin stays side by side
+      whatever else runs then. Every other row starting at its minute goes
+      behind the chip (a longer row or a second twin pair included), and so
+      does a row that started earlier: a row that started earlier and still
+      runs when the pair starts goes behind the chip, for its whole span, and
+      its chip is at its own start like every hidden row's (with one block or
+      none beside it there). A row that ends by the pair's start keeps its
+      lane. The one thing that keeps a pair out is another pair that started
+      first and still holds a lane, since two lanes hold one pair at a time:
+      then the later pair is behind the chip whole, never split. The pair is
+      recognised by the patient and the start, not only by the machine flag:
+      the page knows as machines only the ones offered to the viewer (those at
+      the viewer's clinics), and a viewer can see a machine row outside that
+      list. Two rows of one patient at one minute therefore stay side by side
+      whatever they are, a double booking on two therapists included; where
+      the flag is known, the person row is on the left.
     - **What the owner can pick instead.** The chip in the second lane (one
       block and "+2" where three run), which keeps a 24px chip and hides one
       more row; or the chip on the day header, which keeps both faces but no
-      longer shows when the hidden rows run. A column split three ways (strips
+      longer shows when the hidden rows run; or, for a twin pair starting under
+      a row that started earlier, that row keeps its lane and the twin's
+      machine row goes behind the chip (the pair is split, the earlier row is
+      never hidden). A column split three ways (strips
       of 18.8px at 390, 16.0px with Dom, 14.5px at 360 with Dom) holds no face.
     - **What a half lane holds**, measured in Chromium with Inter:
       - the start time is always whole. It is 9px where 9px fits and shrinks
