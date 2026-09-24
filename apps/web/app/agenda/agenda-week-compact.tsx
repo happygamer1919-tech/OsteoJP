@@ -102,6 +102,19 @@ const ROW_PX = COMPACT_ROW_PX;
  * measured. WebKit has container units since Safari 16.
  */
 const TIME_FONT = "min(9px, calc(100cqi / 2.9))";
+/**
+ * THE START TIME'S SLACK IN A HALF LANE (round 10). TIME_FONT alone left the
+ * time about 0.3px of room, and CI's Linux Chromium draws this semibold text
+ * wider than a Mac does, enough to cut it (CI read a 22px time in a 21px box at
+ * 390 with Dom shown). So the time's line, and only it, drops the face's 1px
+ * left inset and sits flush on the stripe, and its letters are 0.03em closer.
+ * The type size is unchanged (TIME_FONT still reads the face's width, which the
+ * negative margin does not change), as are the name line, the glyph and the
+ * chip. Measured locally in Chromium with the app's Inter, the narrowest case,
+ * 360 with Dom shown, went from 0.3px of slack to 2.3px; 390 with Dom from 0.3
+ * to 2.4.
+ */
+const TIME_HALF_LANE = "-ml-px tracking-[-0.03em]";
 
 const COLOR_BY_KEY: ReadonlyMap<string, ServiceColor> = new Map(
   [...SERVICE_COLORS, SERVICE_COLOR_NONE].map((c) => [c.key, c]),
@@ -464,7 +477,7 @@ function Block({
     >
       <span
         data-testid="agenda-compact-time"
-        className="block truncate font-semibold leading-[11px] tabular-nums"
+        className={`block truncate font-semibold leading-[11px] tabular-nums ${half ? TIME_HALF_LANE : ""}`}
         style={{ fontSize: TIME_FONT }}
       >
         {a.timeLabel}
