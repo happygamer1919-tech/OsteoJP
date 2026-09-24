@@ -170,8 +170,8 @@ export function rangeForView(
  * one day wider than the range it DRAWS on a desktop.
  *
  * Mon-Sat (`rangeForView`) plus that week's Sunday, so the phone grid can show
- * a Dom column when a Sunday holds a booking (the ruling: "Dom only when it
- * holds bookings"). A READ change only: no write path, no constraint and no
+ * a Dom column when that Sunday holds a booking, as the card's acceptance asks.
+ * A READ change only: no write path, no constraint and no
  * policy moves, and every desktop surface still draws `viewDates` (six days,
  * W3-08) and ignores a Sunday row. The day view is unchanged.
  *

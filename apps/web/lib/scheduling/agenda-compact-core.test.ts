@@ -1386,3 +1386,86 @@ describe("docs/QUESTIONS.md holds every Q-B6 default DECISIONS ships behind", ()
     }
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* The owner-facing text keeps up with the code and with DECISIONS.     */
+/* ------------------------------------------------------------------ */
+const repoText = (rel: string) => readFileSync(new URL(`../../../../${rel}`, import.meta.url), "utf8");
+
+/** The card's DECISIONS entry, the Q-B6 QUESTIONS entries and the SPEC
+ *  amendment, each as one line of text. */
+function cardDocs(): { decisions: string; questions: string; spec: string } {
+  const flat = (t: string) => t.replace(/\s+/g, " ");
+  const d = repoText("docs/DECISIONS.md");
+  const dFrom = d.indexOf("## 2026-09-23 - AGENDA-MOBILE-WEEK:");
+  const dNext = d.indexOf("\n## ", dFrom + 1);
+  const q = repoText("docs/QUESTIONS.md");
+  const qHeadings = [...q.matchAll(/^## .*$/gm)];
+  const qBodies = qHeadings
+    .map((h, i) => ({ h, to: qHeadings[i + 1]?.index ?? q.length }))
+    .filter(({ h }) => / - Q-B6-\d+: /.test(h[0]))
+    .map(({ h, to }) => q.slice(h.index!, to));
+  const sp = repoText("docs/design/SPEC-v2-agenda.md");
+  const sFrom = sp.indexOf("**AMENDED BELOW 640px, AGENDA-MOBILE-WEEK.**");
+  const sTo = sp.indexOf("\n---", sFrom);
+  return {
+    decisions: dFrom === -1 ? "" : flat(d.slice(dFrom, dNext === -1 ? d.length : dNext)),
+    questions: flat(qBodies.join("\n")),
+    spec: sFrom === -1 || sTo === -1 ? "" : flat(sp.slice(sFrom, sTo)),
+  };
+}
+
+describe("the card's own text paraphrases the ruling and never quotes it", () => {
+  // Round 8's review: readRangeForView's comment read (the ruling: "Dom only
+  // when it holds bookings"). This is a PUBLIC repository and the ruling may
+  // appear here paraphrased only; that phrase was the card's acceptance, so it
+  // was either the owner's words or card text credited to the owner. The same
+  // pattern was in agenda-view-preference.ts ("Per device" is the ruling's
+  // unit). Every sentence of this card's own text that names the ruling must
+  // hold no quotation.
+  const comments = (src: string) =>
+    [...src.matchAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g)]
+      .map((m) => m[0].replace(/^\/\*\*?|\*\/$/g, "").replace(/^\s*\*\s?/gm, "").replace(/^\/\/\s?/, ""))
+      .join("\n");
+  const timeTs = repoText("apps/web/lib/scheduling/time.ts");
+  const rangeFrom = timeTs.indexOf("AGENDA-MOBILE-WEEK - the range the agenda page READS");
+  const rangeTo = timeTs.indexOf("export function readRangeForView", rangeFrom);
+  const { decisions, questions, spec } = cardDocs();
+  const texts: [string, string][] = [
+    ...[
+      "apps/web/lib/scheduling/agenda-compact-core.ts",
+      "apps/web/app/agenda/agenda-week-compact.tsx",
+      "apps/web/lib/scheduling/agenda-view-preference.ts",
+      "apps/web/lib/scheduling/service-color.ts",
+    ].map((f): [string, string] => [f, comments(repoText(f))]),
+    ["time.ts readRangeForView", rangeFrom === -1 || rangeTo === -1 ? "" : comments(`/*${timeTs.slice(rangeFrom, rangeTo)}`)],
+    ["docs/DECISIONS.md (the card's entry)", decisions],
+    ["docs/QUESTIONS.md (Q-B6)", questions],
+    ["docs/design/SPEC-v2-agenda.md (the amendment)", spec],
+    ["docs/design/agenda-mobile-week/README.md", repoText("docs/design/agenda-mobile-week/README.md")],
+  ];
+  const namesTheRuling = (s: string) => /\bruling|\bruled\b/i.test(s);
+  const quotes = (s: string) => /"[^"]+"|\u201c[^\u201d]+\u201d|\u00ab[^\u00bb]+\u00bb/.test(s);
+  const offending = (t: string) =>
+    t
+      .replace(/\s+/g, " ")
+      .split(/(?<=[.;!?])\s+/)
+      .filter((s) => namesTheRuling(s) && quotes(s));
+
+  it("SELF-TEST: the check flags a quotation credited to the ruling, and passes a paraphrase and a quotation credited to the card", () => {
+    expect(offending('Dom shows (the ruling: "Dom only when it holds bookings"). Then more.')).toHaveLength(1);
+    expect(offending('"Per device" is the ruling\'s unit.')).toHaveLength(1);
+    expect(offending("The ruling remembers the choice for each device.")).toEqual([]);
+    expect(offending('The card reads "sticky time axis" as below.')).toEqual([]);
+  });
+
+  it("VACUOUS GUARD: every text is found, and together they name the ruling in several sentences", () => {
+    for (const [name, t] of texts) expect(t.length, `${name} is read`).toBeGreaterThan(200);
+    const named = texts.flatMap(([, t]) => t.replace(/\s+/g, " ").split(/(?<=[.;!?])\s+/)).filter(namesTheRuling);
+    expect(named.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("no sentence that names the ruling holds a quotation", () => {
+    for (const [name, t] of texts) expect(offending(t), name).toEqual([]);
+  });
+});

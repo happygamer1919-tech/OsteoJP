@@ -12,8 +12,9 @@
 //     toolbar), so the preference only decides a BARE /agenda.
 //   - A patient deep link (`novaMarcacaoPaciente`) is left alone: it opens the
 //     create drawer, and a second navigation under it would be a race.
-//   - It applies at every width. "Per device" is the ruling's unit, and a phone
-//     and a desktop are different devices with different storage anyway.
+//   - It applies at every width. The ruling remembers the choice for each
+//     device, and a phone and a desktop are different devices with different
+//     storage anyway.
 //   - Only the TOGGLE writes it. Tapping a day header on the phone's week is a
 //     drill-down into one day, not a choice of view.
 //
