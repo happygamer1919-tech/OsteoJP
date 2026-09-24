@@ -79,7 +79,10 @@ const TWIN_AT = "15:00";
  * same therapist, as in a "Todos os terapeutas" view. Its patient's name sorts
  * before the twin's, so without the twin rule (Q-B6-1) the two person rows
  * took the two lanes and the twin's machine row went behind the chip. With it,
- * the twin keeps both lanes and this row is the one behind "+1".
+ * the twin keeps both lanes and this row is the one behind "+1". The twin's
+ * machine is installed at no clinic, so the page does not list it as a machine:
+ * the pair is recognised by the patient and the start (measured on a local
+ * stack: a rule keyed on the machine flag hid the machine row here).
  */
 const TWIN_THIRD = { id: "00000000-0000-4000-8000-00000000b6b7", patient: PATIENTS.ana } as const;
 /**

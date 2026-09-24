@@ -4980,10 +4980,16 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
       row of the same patient) first, person then machine, so where both lanes
       are free when it starts, the twin stays side by side, person left, and
       every other row starting then goes behind the chip (a longer row or a
-      second twin pair included). Where a row that started earlier still holds
-      one lane, only one lane is free: the person row takes it and its machine
-      row goes behind the chip, because a block already drawn from an earlier
-      start cannot be half hidden.
+      second twin pair included). The pair is recognised by the patient and
+      the start, not only by the machine flag: the page knows as machines only
+      the ones offered to the viewer (those at the viewer's clinics), and a
+      viewer can see a machine row outside that list. Two rows of one patient
+      at one minute therefore stay side by side whatever they are, a double
+      booking on two therapists included; where the flag is known, the person
+      row is on the left. Where a row that started earlier still holds one
+      lane, only one lane is free: the pair's first row takes it and the
+      other goes behind the chip, because a block already drawn from an
+      earlier start cannot be half hidden.
     - **What the owner can pick instead.** The chip in the second lane (one
       block and "+2" where three run), which keeps a 24px chip and hides one
       more row; or the chip on the day header, which keeps both faces but no

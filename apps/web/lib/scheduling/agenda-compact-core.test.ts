@@ -383,6 +383,47 @@ describe("layoutLanes", () => {
     expect(plain.more[0]!.hiddenIds).toEqual(["machine-z"]);
   });
 
+  it("THE MACHINE THE PAGE DOES NOT KNOW: the same patient's two rows at one minute still stay side by side (the e2e's case)", () => {
+    // The machine flag comes from the machines OFFERED to the viewer, which an
+    // unassigned admin, or a viewer at another clinic, does not hold. Round 7's
+    // first twin rule keyed on the flag, and the e2e's twin (a machine with no
+    // clinic) came apart on the stack: measured, ARM 4 found no machine block.
+    // Labelled as buildCompactWeek labels them; every flag false.
+    const person = lane("g-person", H(15), H(15, 45), false, "Gemeo Sintetico E2E Therapist", "g");
+    const machine = lane("g-machine", H(15), H(15, 45), false, "Gemeo Sintetico NESA Gemeo (E2E)", "g");
+    const third = lane("third", H(15), H(15, 45), false, "Ana Costa E2E Therapist", "a");
+    for (const order of [
+      [third, machine, person],
+      [machine, person, third],
+    ]) {
+      const { placed, more } = layoutLanes(order);
+      expect(Object.fromEntries(placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({
+        "g-person": [0, 2],
+        "g-machine": [1, 2],
+      });
+      expect(more.flatMap((m) => m.hiddenIds)).toEqual(["third"]);
+    }
+  });
+
+  it("with the flag known, the person row goes left even when its machine row is LONGER, and a person-and-machine pair outranks a same-patient double booking", () => {
+    const { placed, more } = layoutLanes([
+      lane("x-machine", H(9), H(10), true, "Xavier NESA", "x"), // 60 minutes: sorts first on length
+      lane("x-person", H(9), H(9, 45), false, "Xavier", "x"),
+      lane("d-one", H(9), H(9, 45), false, "Dora A", "d"),
+      lane("d-two", H(9), H(9, 45), false, "Dora B", "d"),
+    ]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ "x-person": 0, "x-machine": 1 });
+    expect([...more.flatMap((m) => m.hiddenIds)].sort()).toEqual(["d-one", "d-two"]);
+    // CONTROL: without the machine pair, the double booking is the pair kept.
+    const alone = layoutLanes([
+      lane("d-one", H(9), H(9, 45), false, "Dora A", "d"),
+      lane("other", H(9), H(9, 45), false, "Alda", "a"),
+      lane("d-two", H(9), H(9, 45), false, "Dora B", "d"),
+    ]);
+    expect(Object.fromEntries(alone.placed.map((p) => [p.id, p.lane]))).toEqual({ "d-one": 0, "d-two": 1 });
+    expect(alone.more.flatMap((m) => m.hiddenIds)).toEqual(["other"]);
+  });
+
   it("THE REVIEWER'S 'TODOS' CASE: therapist A with X, NESA with X and therapist B with Y, all at 10:00, draw X twice side by side and Y behind '+1'", () => {
     // Rows labelled as buildCompactWeek labels them ("<patient> <practitioner>").
     // Y sorts before X by label, so without the twin rule Y took a lane too.
@@ -614,35 +655,29 @@ describe("layoutLanes", () => {
         }
       }
 
-      // (5) THE TWIN RULE: where a twin pair starts and no drawn row that
-      //     started earlier still runs (both lanes are free), a twin pair
-      //     starting then is drawn side by side, person left, machine right,
-      //     however many other rows start with it.
+      // (5) THE TWIN RULE: where two rows of one patient start together and
+      //     no drawn row that started earlier still runs (both lanes are
+      //     free), the two blocks drawn from that minute are one patient's
+      //     pair, however many other rows start with it; and where a person
+      //     row and its machine row start then, they are the pair, person left.
       const placedById = new Map(out.placed.map((p) => [p.id, p]));
       for (const t of new Set(items.map((it) => it.startMin))) {
         const startingNow = items.filter((it) => it.startMin === t);
-        const twinPatients = new Set(
-          startingNow
-            .filter((it) => !it.machine && it.patient != null)
-            .map((it) => it.patient)
-            .filter((pt) => startingNow.some((o) => o.machine && o.patient === pt)),
+        const samePatient = startingNow.some((a) =>
+          startingNow.some((b) => a.id !== b.id && a.patient != null && a.patient === b.patient),
         );
-        if (twinPatients.size === 0) continue;
+        if (!samePatient) continue;
         const earlierHolds = out.placed.some((p) => span(p.id).s < t && t < span(p.id).e);
         if (earlierHolds) continue;
-        const drawnPair = [...twinPatients].some((pt) => {
-          const left = startingNow.find((o) => placedById.get(o.id)?.lane === 0);
-          const right = startingNow.find((o) => placedById.get(o.id)?.lane === 1);
-          return (
-            left !== undefined &&
-            right !== undefined &&
-            !left.machine &&
-            right.machine &&
-            left.patient === pt &&
-            right.patient === pt
-          );
-        });
-        expect(drawnPair, `minute ${t}: a twin pair side by side`).toBe(true);
+        const left = startingNow.find((o) => placedById.get(o.id)?.lane === 0);
+        const right = startingNow.find((o) => placedById.get(o.id)?.lane === 1);
+        expect(left !== undefined && right !== undefined && left.patient === right.patient, `minute ${t}: a pair side by side`).toBe(true);
+        const personMachine = startingNow.some(
+          (a) => !a.machine && a.patient != null && startingNow.some((b) => b.machine && b.patient === a.patient),
+        );
+        if (personMachine) {
+          expect([left!.machine, right!.machine], `minute ${t}: person left, machine right`).toEqual([false, true]);
+        }
         if (startingNow.length >= 3) twinCrowds += 1;
       }
       return twinCrowds;
@@ -855,6 +890,20 @@ describe("buildCompactWeek", () => {
       ["tw-machine", 1, 2],
     ]);
     expect(thu.more.flatMap((m) => m.hiddenIds)).toEqual(["third"]);
+
+    // And with NO list of machines (a viewer offered none), the pair still
+    // holds: it is recognised by the patient and the start.
+    const unknown = buildCompactWeek({
+      anchor: WED,
+      appointments: [
+        appt({ id: "tw-person", date: THU, from: "10:00", to: "10:45", ...twinPatient }),
+        appt({ id: "tw-machine", date: THU, from: "10:00", to: "10:45", practitionerId: MACHINE, practitionerName: "NESA", ...twinPatient }),
+        appt({ id: "third", date: THU, from: "10:00", to: "10:45", patientId: "p-other", patientName: "Alda Teste" }),
+      ],
+    });
+    const thu2 = unknown.days.find((d) => d.date === THU)!;
+    expect(new Set(thu2.appointments.map((a) => a.id))).toEqual(new Set(["tw-person", "tw-machine"]));
+    expect(thu2.more.flatMap((m) => m.hiddenIds)).toEqual(["third"]);
   });
 
   it("the face data: time, first name, service colour, the estado derived from BOTH axes", () => {

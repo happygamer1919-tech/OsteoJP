@@ -2087,9 +2087,12 @@ the rows in the two lanes are drawn and that moment's other rows sit behind one
 "+N" chip that opens Dia for that day: three at once read two blocks and "+1",
 four read two blocks and "+2". A twin pair (a person row and a machine row of
 the same patient, same start) goes first at its minute, so it stays side by
-side and the other rows starting then go behind the chip; where a row that
-started earlier still holds one lane, the twin's machine row is the one behind
-the chip. The chip is a small dark pill, 10px tall and about 12 to 19px wide,
+side, person left, and the other rows starting then go behind the chip; where a
+row that started earlier still holds one lane, the twin's machine row is the
+one behind the chip. The pair is recognised by the patient and the start, so it
+holds even for a viewer whose page does not list that machine, and two person
+rows of one patient at one minute (a double booking) stay side by side the same
+way. The chip is a small dark pill, 10px tall and about 12 to 19px wide,
 on a block's status-glyph line, placed so that it covers no start time, name or
 glyph; the day header above the column (40px) opens the same Dia. Every
 half-lane block shows the whole start time (it shrinks to about 7.4px at 390
@@ -2101,7 +2104,8 @@ and narrower below that.
 **Alternatives.** The chip in the second lane (one block and "+2" where three
 run: a 24px chip, one more row hidden). The chip on the day header (both faces
 kept, but it no longer shows when the hidden rows run). A twin pair that does
-not outrank the other rows at its minute. More face per block through a
+not outrank the other rows at its minute, or a pair recognised only when the
+page knows the machine. More face per block through a
 narrower Dom column or a shorter time ("15h"). One lane plus a chip from two
 concurrent rows up. A column split three ways (strips of 14.5 to 18.8px) holds
 no face and was not built.
@@ -2177,7 +2181,8 @@ Context. A shared-machine row is drawn like any other block, in its service's
 colour.
 
 **Default shipped.** No visual marker. The block's accessible name says whose
-row it is, and a twin pair lays out person left, machine right.
+row it is, and a twin pair lays out person left, machine right where the page
+knows the machine (the machines offered to the viewer).
 
 **Alternative.** A small machine icon or a patterned stripe on machine rows,
 which costs face width in a half lane that already clips the name.
