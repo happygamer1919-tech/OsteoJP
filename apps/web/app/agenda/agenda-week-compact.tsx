@@ -421,8 +421,9 @@ export function CompactWeekView({
  * status.
  *
  * THE FACE IN A HALF-WIDTH LANE. A lane is 22.3px at 360 with Dom shown and
- * 28.7px at 390 without. The time sits one pixel from the stripe and sizes
- * itself to the lane (TIME_FONT); the first name has a line of its own across
+ * 28.7px at 390 without. The time sits flush on the stripe, not one pixel from
+ * it like the rest of the face (TIME_HALF_LANE), and sizes itself to the lane
+ * (TIME_FONT); the first name has a line of its own across
  * the whole face, at 9px, CLIPPED rather than ellipsised (an 8.6px ellipsis in
  * 21px would leave one letter; "Gem" is 20.2px at 9px); the status glyph has
  * the line below. Every half-lane block has that room: a row is as tall as the

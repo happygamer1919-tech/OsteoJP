@@ -3,6 +3,14 @@
 Two captures of a phone, each taken at a 390x844 CSS viewport with a device scale
 factor of 1, so each PNG is exactly 390x844 pixels.
 
+THESE CAPTURES PREDATE ROUND 10, so they show the page as it was before it. Since
+round 10 the phone header also shows the initials avatar (the /perfil link)
+between the bell and "O meu perfil" (Q-B6-11, answered), the toolbar's three
+actions have 8px of side padding instead of the 10px drawn here, and a half-lane
+block's start time sits flush on its stripe. The captions below describe the
+PNGs, not the current page. They are to be recaptured when the local stack is
+back.
+
 WHERE THEY COME FROM. A throwaway local Supabase stack seeded by
 `apps/web/e2e/seed/seed-e2e.mjs`, plus a synthetic week for the e2e therapist and
 a shared machine (NESA). Every name is invented (patient names end in "Teste" or
