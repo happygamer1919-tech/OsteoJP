@@ -3,45 +3,46 @@
 Two captures of a phone, each taken at a 390x844 CSS viewport with a device scale
 factor of 1, so each PNG is exactly 390x844 pixels.
 
-THESE CAPTURES PREDATE ROUND 10, so they show the page as it was before it. Since
-round 10 the phone header also shows the initials avatar (the /perfil link)
-between the bell and "O meu perfil" (Q-B6-11, answered), the toolbar's three
-actions have 8px of side padding instead of the 10px drawn here, and a half-lane
-block's start time sits flush on its stripe. The captions below describe the
-PNGs, not the current page. They are to be recaptured when the local stack is
-back.
+WHERE THEY COME FROM. A local Supabase lane stack (`scripts/lane-stack.mjs`),
+reset and then seeded by `apps/web/e2e/seed/seed-e2e.mjs`, plus a synthetic week
+for the e2e therapist and a shared machine (NESA). Every name is invented
+(patient names end in "Teste" or "Sintético"), and nothing in it comes from real
+data. The session is the e2e therapist's, and the week is Monday 21 to Sunday 27
+September 2026.
 
-WHERE THEY COME FROM. A throwaway local Supabase stack seeded by
-`apps/web/e2e/seed/seed-e2e.mjs`, plus a synthetic week for the e2e therapist and
-a shared machine (NESA). Every name is invented (patient names end in "Teste" or
-"Sintético"), and nothing in it comes from real data. The session is the e2e
-therapist's, and the week is Monday 21 to Sunday 27 September 2026.
-
-THE CLOCK. Both shots use the real clock. They were taken at 11:22 Lisbon time on
-Thursday 24 September, inside the grid's 08:00 to 21:00 window, so no clock was
-fixed. The Next.js development indicator is hidden in both captures; it is not
-part of the page.
+THE CLOCK. Both shots are set at 11:22 Lisbon time on Thursday 24 September,
+inside the grid's 08:00 to 21:00 window. They were retaken that evening, after
+the window had closed, so two clocks were set back to that morning: the local
+development server's clock ran from 11:21, and the browser's clock was fixed at
+the server's time as each page was opened, 11:22 both times. The now line and
+the today mark read the browser's clock. The toolbar's time reads the server's,
+so it shows 11:22 in Semana and 11:23 in Dia, the page opened second. The
+database kept the real clock. The Next.js development indicator is hidden in
+both captures; it is not part of the page.
 
 THE SCROLL. On a phone the shell header, the toolbar and the day header stay
 pinned at the top while the rows scroll under them, so one frame holds about
 eight hours of the grid. Each page was scrolled before its capture:
 - Semana first made its own one-time scroll to the now line. The capture script
-  then moved it so that 10:00 sits right under the pinned day header, 20 pixels
+  then moved it so that 10:00 sits right under the pinned day header, 25 pixels
   from where the page's own scroll had put it.
 - Dia was scrolled so that Friday's first 15:00 row sits right under its pinned
   day header.
 
 - `agenda-mobile-week-semana-390x844.png`: Semana, the compressed week grid.
-  - Pinned at the top: the header (the menu, the logo, the bell, "O meu perfil"
-    and "Terminar sessão", Q-B6-11) and the toolbar (Dia and Semana, the date,
-    Hoje and the arrows on one line, then Bloquear, Atualizar with its refresh
-    icon beside the time, Q-B6-10, and Nova marcação). Nothing scrolls sideways.
+  - Pinned at the top: the header (the menu, the logo, the bell, the initials
+    avatar, which is the /perfil link, then "O meu perfil" and "Terminar
+    sessão", each on two lines, Q-B6-11) and the toolbar (Dia and Semana; then
+    the date, Hoje and the arrows on one line; then Bloquear, Atualizar with its
+    refresh icon beside the time, Q-B6-10, and Nova marcação, the three with 8px
+    of side padding). Nothing scrolls sideways.
   - The day header has seven columns, Seg 21 to Dom 27. Dom shows because the
     synthetic week has a Sunday booking, drawn at 10:00. Qui 24 is marked as
     today, and the red now line crosses Thursday just after 11:20.
   - The frame runs from 10:00 to about 18:05. Blocks are coloured by service.
     Each one shows its whole start time, the patient's first name and its status
-    glyph; a half-lane block puts the name on a line of its own.
+    glyph; a half-lane block puts the name on a line of its own, and its start
+    time sits flush on the block's coloured stripe.
   - Concurrent rows split the column into two lanes. The twin pair on Wednesday
     at 10:30 (the same patient on the therapist and on the machine) is drawn side
     by side, the therapist's row on the left: the machine is at the therapist's
