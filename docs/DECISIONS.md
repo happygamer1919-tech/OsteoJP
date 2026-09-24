@@ -5006,9 +5006,9 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
         below. For that a 30-minute row is 34px tall, so the shortest block
         (33px) holds the three lines. With the 26px rows of an earlier draft,
         a 30-minute half-lane block put the glyph before the name, which left
-        it none to two letters. Measured on the 49 half-lane blocks of the
-        screenshot week (17 of them 30 minutes), with Dom shown: three to six
-        letters at 390 and three to five at 360. The line is 21.4px at 390 and
+        it none to two letters. Measured on the 49 half-lane blocks of an
+        earlier synthetic week (17 of them 30 minutes), with Dom shown: three
+        to six letters at 390 and three to five at 360. The line is 21.4px at 390 and
         19.3px at 360, and "Gem" at 9px is 20.2px, so a name with a wide
         letter early shows two at 360 (the e2e's "Gemeo" does). The cost is
         height: 08:00 to 21:00 is 884px instead of 676px, so the first

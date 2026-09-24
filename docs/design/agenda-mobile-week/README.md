@@ -1,41 +1,37 @@
-# AGENDA-MOBILE-WEEK screenshots (390x844, device scale 3)
+# AGENDA-MOBILE-WEEK screenshots (390x844)
 
-Taken from a throwaway local Supabase stack seeded by `apps/web/e2e/seed/seed-e2e.mjs`
-plus an invented therapist week (patient names ending in "Teste" or "Sintético"; no
-real data). Logged in as the e2e therapist, week of Mon 21 Sep 2026.
+Two captures of a phone, each taken at a 390x844 CSS viewport with a device scale
+factor of 1, so each PNG is exactly 390x844 pixels.
 
-THE WEEK. Every count below belongs to this invented week. Rows per day, Monday to
-Friday: 10, 16, 13, 19 and 20 (the Dia shot reads the Friday's 20), plus one on
-Sunday. The Friday's busiest moment is 16:00, with four concurrent rows.
+WHERE THEY COME FROM. A throwaway local Supabase stack seeded by
+`apps/web/e2e/seed/seed-e2e.mjs`, plus a synthetic week for the e2e therapist and
+a shared machine (NESA). Every name is invented (patient names end in "Teste" or
+"Sintético"), and nothing in it comes from real data. The session is the e2e
+therapist's, and the week is Monday 21 to Sunday 27 September 2026.
 
-Blocks are 30, 45 and 60 minutes long. Rows are 34px per half hour, so every block
-in a half lane, the seventeen 30-minute ones included, shows the whole start time
-(about 7.4px), the first name on its own line (three to six letters here) and the
-status glyph below it (Q-B6-1 in docs/DECISIONS.md). The week also has
-shared-machine rows, moments of three and four concurrent rows (Tuesday 14:30,
-Wednesday 15:30, Thursday 16:00, Friday 16:00: each draws two blocks and a small
-dark "+N" chip, so three at once read two blocks and "+1" and Friday's four read two
-blocks and "+2"), one twin pair (Wednesday 10:00, the same patient on the therapist
-and on the machine), one Sunday booking, a cancelled row (Tuesday 12:00), no-show
-rows and a blocked band (Monday 18:00 to 20:00). Where the hidden row starts with
-the pair (Thursday, Friday) the chip sits on the pair's glyph line, between the two
-blocks; where it starts later (Tuesday, Wednesday) it sits under the pair, at the
-hidden row's time. No chip covers a time, a name or a glyph (measured). The Sunday
-booking makes the grid seven columns wide, the narrowest its lanes get at 390.
+THE CLOCK. Both shots use the real clock. They were taken at 08:32 Lisbon time on
+Thursday 24 September, inside the grid's 08:00 to 21:00 window, so no clock was
+fixed. The Next.js development indicator is hidden in both captures; it is not
+part of the page.
 
-- `agenda-mobile-week-semana-390x844.png`: Semana on a phone, the compressed week grid,
-  real clock. It was taken in the early morning Lisbon time, outside the 08:00 to 21:00
-  window, so there is no now line and no scroll. In the toolbar, Atualizar shows its
-  refresh icon beside the time (Q-B6-10).
-- `agenda-mobile-week-semana-390-fullpage.png`: the same page, full height, so the whole
-  week, the axis down to its 21:00 end label, and the colour legend (Q-B6-3) can be read
-  in one image.
-- `agenda-mobile-week-dia-390x844.png`: Dia for the Friday, the unchanged AGMOB-01 list.
-- `agenda-mobile-week-semana-390x844-clock-fri-1610.png`: the same Semana with the
-  browser clock fixed at Friday 16:10 Lisbon, only to show the now line and the one-time
-  scroll to it. The fixed clock also makes the server and browser disagree about today,
-  which the desktop grid reports in development as a hydration warning; with a real clock
-  there is none.
-
-The Next.js development indicator is hidden in all four captures; it is not part of the
-page.
+- `agenda-mobile-week-semana-390x844.png`: Semana, the compressed week grid.
+  - The header shows the menu, the logo, the bell, "O meu perfil" and "Terminar
+    sessão" (Q-B6-11). The toolbar has Dia and Semana, the date, Hoje and the
+    arrows on one line, then Bloquear, Atualizar (its refresh icon beside the time,
+    Q-B6-10) and Nova marcação. Nothing scrolls sideways.
+  - The grid has seven columns, Seg 21 to Dom 27. Dom shows because the synthetic
+    week has a Sunday booking. Qui 24 is marked as today, and the red now line
+    crosses Thursday just after 08:30. At 08:32 the page does not need to scroll
+    to reach it.
+  - The first screen runs from 08:00 to about 15:45. Blocks are coloured by
+    service. Each one shows its whole start time, the patient's first name and
+    its status glyph; a half-lane block puts the name on a line of its own.
+  - Concurrent rows split the column into two lanes. The twin pair on Wednesday
+    at 10:30 (the same patient on the therapist and on the machine) is drawn side
+    by side. At the foot of the screen, Friday at 15:00 draws two blocks and a
+    small dark "+1" chip on their glyph line. Friday's later "+2" and the service
+    legend are further down the page.
+- `agenda-mobile-week-dia-390x844.png`: Dia for Friday 25, the unchanged AGMOB-01
+  list with the same toolbar. Each row shows the start time, the duration, the
+  status glyph, the patient, and the practitioner and service. Machine rows
+  (NESA (B6)) are listed with the therapist's.
