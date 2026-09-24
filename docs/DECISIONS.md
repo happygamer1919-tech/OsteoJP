@@ -4915,3 +4915,116 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Storage objects with no `attachments` row: Q-H5-3**, carded rather than
   handled here. A delete against a private bucket holding patient data is
   owner-confirmable and does not ride along inside a fix.
+
+## 2026-09-23 - AGENDA-MOBILE-WEEK: below 640px Semana is the week grid, compressed; the earlier desktop rulings are amended below 640 only
+
+The owner ruled (paraphrased): on a phone, Semana renders the desktop week grid,
+compressed; Dia is unchanged; the Dia/Semana choice is remembered per device; the
+same work closes the toolbar overflow at 390px; no 3-day view this round. Built on
+branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
+
+- **Scoped amendment of W11-00 v3 and W3-08, BELOW 640px ONLY.** W11-00 v3 (the
+  desktop face is one line, the name never truncated, same-start rows stacked and
+  never side by side, colour by therapist) and W3-08 (the week is six days,
+  Mon-Sat) both still hold at 640px and up, unchanged, and their unit tests and
+  `agenda-cards.spec.ts` are untouched. Below 640 the phone week truncates the
+  first name, splits concurrent rows side by side, colours by service, and shows
+  Dom when that Sunday holds a booking. `agenda-mobile-week.spec.ts` pins the
+  boundary both ways: the same twin pair is side by side at 390 and stacked at
+  1440.
+- **A separate component, not a mode of the desktop grid.**
+  `app/agenda/agenda-week-compact.tsx` renders what the pure
+  `lib/scheduling/agenda-compact-core.ts` decides (days, window, lanes, chips,
+  bands, legend). `agenda-grid.tsx` has 0 lines changed. The compact tree is
+  mounted only for `view=week`, after the desktop grid and the phone list in the
+  DOM, and displayed only under `sm`; every handle is prefixed (`data-compact-*`,
+  `agenda-compact-*`) because a CSS-swapped tree is in the DOM at every width.
+  The four desktop specs that assert W3-08 page-wide (`getByText(/^sáb/i).first()`
+  visible, `getByText(/^dom/i)` counting zero) are unchanged: the compact day
+  header draws its labels as CSS generated content from `data-compact-label`,
+  which is not DOM text, so no text locator finds a hidden "Dom 27" there. Its
+  buttons are named by their aria-label.
+- **Read range, not write path.** The week now READS Monday to the next Monday
+  (`readRangeForView`, used only by `app/agenda/page.tsx`) so the phone can show
+  Dom. No write path, constraint or policy changes. The desktop still draws
+  Mon-Sat and ignores Sunday rows; its hour window is widened only by the days it
+  draws.
+- **Defaults shipped, each one an open owner question:**
+  - **Q-B6-1** a day column splits into at most two lanes. The cap is per
+    MOMENT: where three or more rows run at once, the row in the left lane is
+    drawn and that moment's other rows sit behind one "+N" chip in the right
+    lane, which opens Dia for that day. Rows around it that never run three at
+    a time keep their lanes, a twin pair included. At 390px a column is about
+    59px (51px with Dom); four lanes would be about 14px each. What a half
+    lane holds, measured in Chromium with Inter:
+    - the start time is always whole. It is 9px where 9px fits and shrinks
+      with the lane where it does not: about 8.8px at 390 without Dom, 7.4px
+      at 390 with Dom, 6.6px at 360 with Dom ("15:00" at 9px semibold is
+      25.7px; a half lane has 25.7px of face without Dom at 390, 21.4px with).
+    - a block of 45 minutes or more gives the first name its own line, at 9px,
+      clipped rather than ellipsised: three or four letters at 390. A shorter
+      half-lane block keeps the status glyph before the name, which leaves it
+      one to three letters at 390 (one on most names) and none to two at 360,
+      measured on the 30-minute half-lane blocks of the screenshot week.
+    - as a tap target, a half lane is at least 24px wide from 334px up with
+      six columns and from 384px up with Dom shown. So at 390 every block and
+      chip is at least 24 by 24, and at 375 and 360 with Dom shown a half lane
+      is 23.4px and 22.3px. That is the arithmetic of seven columns, not a
+      choice.
+    If the owner wants more on a half-lane face, the options are a narrower
+    Dom column, fewer letters of the time (for example "15h"), or one lane
+    plus a chip from two concurrent rows up; each is his call.
+  - **Q-B6-2** Semana between 640 and 767px keeps the AGMOB-01 list.
+  - **Q-B6-3** service colour is a deterministic hue per service id (the same
+    FNV-1a as the therapist colour) over seven existing token families, -100 fill
+    and -600 stripe, with a legend of the week's services; the desktop keeps
+    colour by therapist. Every block names its service in its accessible name.
+  - **Q-B6-4** persistence is localStorage only, every access in try/catch,
+    applied at every width, and only a BARE `/agenda` consults it (an explicit
+    `?view=` always wins; a patient deep link is left alone). A bare `/agenda` on
+    a device that prefers Dia shows the week for one round trip first; removing
+    that flash needs a cookie mirror, which the ruling did not name. A day-header
+    tap does not store a preference.
+  - **Q-B6-5** the desktop week does not show Dom.
+  - **Q-B6-6** no marker on machine rows; the accessible name says whose row it
+    is. A twin lays out person left, machine right when the machine is among the
+    viewer's known shared resources.
+  - **Q-B6-7** tapping an empty slot on the phone grid does nothing.
+  - **Q-B6-8** blocked time and the midday closure are drawn as visual-only bands.
+  - **Q-B6-9** a cancelled row occupies a lane, and a Sunday holding only a
+    cancelled row still shows Dom.
+  - **Q-B6-10** below 640 the toolbar's three actions (Bloquear, Atualizar,
+    Nova marcação) stay together on one line, every visible text label stays
+    (AGENDA-02's condition), and the accessible names do not change. Bloquear
+    and Nova marcação drop their icons, which are decorative: each has its word
+    beside it. Atualizar KEEPS its refresh icon (16px there): its visible text
+    is the freshness time, a reading and not a verb, so the icon is the only
+    visible sign that the button refreshes, and a title tooltip does not exist
+    on touch. The three trim their side padding to 10px and the gaps to 6px.
+    Measured on a local stack the group went from 386px to about 304px; the
+    content box is 342px at 390 and 312px at 360. The alternative was an
+    icon-only Bloquear, which AGENDA-02's visible-label condition rules out.
+  - **Q-B6-11** below 640 the shell's name-and-role chip in the mobile header
+    is hidden. It, not the toolbar, set the page width on a phone: the header's
+    user area measured 368 to 383px in the ~271px it has at 390, so every staff
+    page scrolled sideways (470 to 486px). The toolbar's own right edge was
+    411px, so it cannot explain the 479px AGMOB-01 recorded in CI; the header
+    can (measured locally, not in CI). The chip links to the same page as the visible "O meu
+    perfil" beside it, which stays (W7-02). This touches the shared staff shell,
+    not only the agenda.
+- **"Sticky time axis" is satisfied by construction.** The grid never scrolls
+  sideways, so the axis never leaves the screen horizontally, and its labels
+  travel with their rows vertically (the desktop grid's own reasoning). If the
+  ruling meant a frozen axis, that is a question. The rows are 30 minutes (every
+  block is placed on that scale); the rules are drawn on the hour only, as on
+  the desktop since W13-B removed its faint :30 rule. The axis labels every
+  hour and also the window's end, on the bottom edge (21:00, or the later hour
+  a booking widens it to), so the last hour of the day is never unlabelled.
+- **Auto-scroll to now is decided once per week shown, at the first moment the
+  client knows the time, and only when the compact grid is the displayed tree**
+  (`getClientRects()` is empty for a `display: none` element), so no desktop
+  scroll-top measurement can move. A decision not to scroll is final for that
+  week: a phone opened at 07:50 is not moved when the clock reaches 08:00.
+  "Now" is read after mount, so the server render and hydration agree. The
+  pinned day header paints above the now line (z-30 over z-20 in one stacking
+  context), as the desktop grid's header does.

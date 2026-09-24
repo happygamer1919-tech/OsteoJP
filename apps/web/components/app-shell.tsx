@@ -184,7 +184,14 @@ export async function AppShell({
         href="/perfil"
         aria-label={s["nav.profile"]}
         title={s["nav.profile"]}
-        className="rounded-v2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        // AGENDA-MOBILE-WEEK: below `sm` this chip is hidden. Measured on a
+        // local stack, this user area was 368 to 383px wide in the ~271px the
+        // mobile header leaves it at 390 (241px at 360), so EVERY staff page
+        // scrolled sideways on a phone: it, not the agenda toolbar, set the
+        // 470 to 486px page width. The chip is the one piece with a duplicate:
+        // the visible "O meu perfil" link beside it goes to the same page and
+        // stays (W7-02). Without it the area is about 202px. Default Q-B6-11.
+        className="rounded-v2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:hidden"
       >
         <UserAreaCluster
           name={name || roleLabel}

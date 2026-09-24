@@ -11,8 +11,10 @@ import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
 import {
   formatTimeOfDay,
   lisbonMinutesFromMidnight,
-  rangeForView,
+  lisbonParts,
+  readRangeForView,
   todayInLisbon,
+  viewDates,
   type AgendaView,
 } from "@/lib/scheduling/time";
 import { closureFor, gridWindow, toMinutes } from "@/lib/scheduling/clinic-hours";
@@ -91,7 +93,10 @@ export default async function AgendaPage({
   const locationScope = await viewerLocationScope(actor);
   const locationId = lockTherapist ? null : scopedLocationId(locationScope, firstParam(sp.location));
 
-  const { startUtc, endUtc } = rangeForView(view, anchor);
+  // AGENDA-MOBILE-WEEK: the week READS Monday to Sunday so the phone grid can
+  // show Dom when a Sunday holds a booking. Every desktop surface still DRAWS
+  // Mon-Sat (viewDates) and ignores a Sunday row. A read-range change only.
+  const { startUtc, endUtc } = readRangeForView(view, anchor);
 
   // LE-agenda-does-not-learn-of-portal-bookings. Taken IMMEDIATELY BEFORE the
   // reads below, not after and not in the render: this is the instant the
@@ -165,10 +170,17 @@ export default async function AgendaPage({
   /* actually loaded for this view, and `clinicWindow` is kept separately  */
   /* so the grid can MARK the rows that only an appointment asks for.      */
   /* Passing the same object for both would silently lose the distinction. */
-  const appointmentSpans = appointments.map((a) => ({
-    startMin: lisbonMinutesFromMidnight(new Date(a.startsAt)),
-    endMin: lisbonMinutesFromMidnight(new Date(a.endsAt)),
-  }));
+  // AGENDA-MOBILE-WEEK: only the days the desktop DRAWS widen its window. The
+  // week now reads Sunday too (for the phone's Dom column), and a Sunday row
+  // must not stretch a Mon-Sat grid it is not drawn on. The phone grid computes
+  // its own window from the days it draws (agenda-compact-core.ts).
+  const drawnDates = new Set(viewDates(view, anchor));
+  const appointmentSpans = appointments
+    .filter((a) => drawnDates.has(lisbonParts(new Date(a.startsAt)).date))
+    .map((a) => ({
+      startMin: lisbonMinutesFromMidnight(new Date(a.startsAt)),
+      endMin: lisbonMinutesFromMidnight(new Date(a.endsAt)),
+    }));
   const clinicWindow = gridWindow(visibleClinics);
   const dayWindow = gridWindow(visibleClinics, appointmentSpans);
 

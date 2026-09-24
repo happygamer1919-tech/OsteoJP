@@ -49,8 +49,11 @@ export type TherapistColor = (typeof THERAPIST_COLORS)[number];
  * would reshuffle colours every render): the same id always yields the same
  * index. UUIDs differ across their whole length, so the low bits of this hash
  * spread them well across the palette.
+ *
+ * Exported for AGENDA-MOBILE-WEEK's service colour (service-color.ts), so the
+ * phone grid hashes a service id exactly as this file hashes a therapist id.
  */
-function hashId(id: string): number {
+export function hashId(id: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);

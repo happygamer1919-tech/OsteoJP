@@ -1,0 +1,718 @@
+// AGENDA-MOBILE-WEEK - the phone's Semana grid, decided here, rendered elsewhere.
+//
+// EVERY RULE BELOW HAS A CONTROL IN THE SAME FILE that fails when the rule is
+// removed or weakened, because the failure worth preventing is not "the grid is
+// empty" but "the grid is plausible and wrong": a lane layout that stacks a twin
+// pair, a window that clamps a 07:30 booking, a Sunday that appears for a row
+// from the week before.
+//
+// WHY A PURE CORE. No CI job on this repository runs WebKit and the clinic is on
+// iPhones; an assertion about the phone that is worth anything is an assertion
+// about a VALUE. agenda-week-compact.tsx is a projection of what this returns.
+
+import { describe, expect, it } from "vitest";
+
+import {
+  COMPACT_BASE_WINDOW,
+  COMPACT_MAX_LANES,
+  COMPACT_MIN_DRAWN_MINUTES,
+  COMPACT_MIN_TARGET_PX,
+  autoScrollDecision,
+  buildCompactWeek,
+  compactDates,
+  compactDayLabel,
+  compactLaneBox,
+  compactLaneWidthPx,
+  compactWindow,
+  faceName,
+  layoutLanes,
+  type AutoScrollInput,
+  type LaneItem,
+  type LaneLayout,
+} from "./agenda-compact-core";
+import type { BlockSpan } from "./blocked-time-core";
+import { s } from "../i18n";
+import type { AgendaAppointment } from "./types";
+
+const MON = "2026-09-21"; // a Monday
+const WED = "2026-09-23";
+const FRI = "2026-09-25";
+const SAT = "2026-09-26";
+const SUN = "2026-09-27"; // the Sunday AFTER this Saturday
+const PREV_SUN = "2026-09-20"; // the Sunday BEFORE this Monday
+const NEXT_MON = "2026-09-28";
+
+/** Lisbon wall-clock -> the UTC ISO string a row carries. September is WEST
+ *  (UTC+1). Written out, not computed, so it cannot agree with a bug in time.ts.
+ *  Valid for 01:00 and later, which is every time this file uses. */
+function lisbon(date: string, hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  return `${date}T${String(h! - 1).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+}
+
+const PERSON = "therapist-1";
+const MACHINE = "nesa-1";
+const MACHINES = new Set([MACHINE]);
+
+function appt(
+  over: Partial<AgendaAppointment> & { id: string; date: string; from: string; to: string },
+): AgendaAppointment {
+  const { date, from, to, id, ...rest } = over;
+  return {
+    id,
+    patientId: `p-${id}`,
+    patientName: `Paciente${id} Teste`,
+    practitionerId: PERSON,
+    practitionerName: "Terapeuta Um",
+    colorKey: null,
+    patientTwoId: null,
+    patientTwoName: null,
+    practitionerTwoId: null,
+    practitionerTwoName: null,
+    locationId: "loc-1",
+    locationName: "Clinica",
+    serviceId: "svc-osteo",
+    serviceName: "Osteopatia",
+    room: null,
+    startsAt: lisbon(date, from),
+    endsAt: lisbon(date, to),
+    status: "scheduled",
+    notes: null,
+    recurrenceRule: null,
+    recurrenceParentId: null,
+    confirmationState: "pending",
+    confirmationReceivedAt: null,
+    confirmationChannel: null,
+    hasNote: false,
+    createdBy: null,
+    createdByName: null,
+    createdAt: lisbon(date, "01:00"),
+    ...rest,
+  } as AgendaAppointment;
+}
+
+function lane(id: string, startMin: number, endMin: number, machine = false, label = id): LaneItem {
+  return { id, startMin, endMin, machine, label };
+}
+
+const H = (hh: number, mm = 0) => hh * 60 + mm;
+
+/* ------------------------------------------------------------------ */
+/* Days: Mon-Sat, plus Dom only when it holds a booking.               */
+/* ------------------------------------------------------------------ */
+describe("compactDates", () => {
+  it("is Mon-Sat when the week's Sunday holds nothing", () => {
+    expect(compactDates(WED, [])).toEqual([MON, "2026-09-22", WED, "2026-09-24", FRI, SAT]);
+  });
+
+  it("adds THIS week's Sunday when a row starts on it", () => {
+    const days = compactDates(WED, [appt({ id: "s", date: SUN, from: "10:00", to: "10:45" })]);
+    expect(days).toHaveLength(7);
+    expect(days[6]).toBe(SUN);
+  });
+
+  it("CONTROL: a row on the Sunday BEFORE this Monday, or on the next Monday, adds nothing", () => {
+    // A rule that added Dom for ANY Sunday row, or for any row outside
+    // Mon-Sat, would pass the arm above and fail here.
+    expect(compactDates(WED, [appt({ id: "p", date: PREV_SUN, from: "10:00", to: "10:45" })])).toHaveLength(6);
+    expect(compactDates(WED, [appt({ id: "n", date: NEXT_MON, from: "10:00", to: "10:45" })])).toHaveLength(6);
+  });
+
+  it("Q-B6-9: a Sunday holding only a CANCELLED row still shows Dom", () => {
+    const days = compactDates(WED, [
+      appt({ id: "c", date: SUN, from: "10:00", to: "10:45", status: "cancelled" }),
+    ]);
+    expect(days[6]).toBe(SUN);
+  });
+
+  it("on a Sunday anchor, the week shown is the one just ended, and that Sunday is its Dom", () => {
+    // viewDates("week", sunday) is the PRECEDING Mon-Sat; the Dom column must
+    // be the anchor itself, not the Sunday a week later.
+    const days = compactDates(SUN, [appt({ id: "s", date: SUN, from: "10:00", to: "10:45" })]);
+    expect(days[0]).toBe(MON);
+    expect(days[6]).toBe(SUN);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Window: 08:00-21:00, widened to every drawn booking, never clamped.  */
+/* ------------------------------------------------------------------ */
+describe("compactWindow", () => {
+  it("is the ruling's 08:00 to 21:00 when nothing lies outside it", () => {
+    expect(compactWindow([])).toEqual(COMPACT_BASE_WINDOW);
+    expect(compactWindow([{ startMin: H(9), endMin: H(20, 45) }])).toEqual({ startMin: H(8), endMin: H(21) });
+  });
+
+  it("widens to a 07:30 start and a 21:30 start, rounded OUTWARD to whole hours", () => {
+    expect(compactWindow([{ startMin: H(7, 30), endMin: H(8, 15) }]).startMin).toBe(H(7));
+    // 21:30 to 22:15 needs the 22:00 row, so the window ends at 23:00.
+    expect(compactWindow([{ startMin: H(21, 30), endMin: H(22, 15) }]).endMin).toBe(H(23));
+  });
+
+  it("CONTROL: an end exactly on the hour adds no extra row", () => {
+    // A floor-plus-one rule would give 23:00 here; ceil gives 22:00.
+    expect(compactWindow([{ startMin: H(21), endMin: H(22) }]).endMin).toBe(H(22));
+  });
+
+  it("a very short booking at 20:50 still gets a whole drawn row inside the window", () => {
+    // Drawn at least 30 minutes tall, so its drawn end is 21:20 and the 21:00
+    // row must exist, or the block would hang below the grid.
+    expect(compactWindow([{ startMin: H(20, 50), endMin: H(21) }]).endMin).toBe(H(22));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Lanes: side by side, at most two, and a +N chip for the rest.        */
+/* ------------------------------------------------------------------ */
+describe("layoutLanes", () => {
+  it("a lone block takes the whole column", () => {
+    expect(layoutLanes([lane("a", H(10), H(10, 45))]).placed).toEqual([
+      { id: "a", lane: 0, lanes: 1, drawnEndMin: H(10, 45) },
+    ]);
+  });
+
+  it("THE TWIN PAIR: same patient, same start, a person row and a machine row, render SIDE BY SIDE", () => {
+    const person = lane("p", H(10), H(10, 45), false, "Ana");
+    const machine = lane("m", H(10), H(10, 45), true, "Ana");
+    const { placed, more } = layoutLanes([machine, person]); // machine given FIRST on purpose
+    expect(more).toEqual([]);
+    expect(placed).toHaveLength(2);
+    expect(placed.every((p) => p.lanes === 2)).toBe(true);
+    // Person left, machine right, whatever order the rows arrived in.
+    expect(placed.find((p) => p.id === "p")!.lane).toBe(0);
+    expect(placed.find((p) => p.id === "m")!.lane).toBe(1);
+    expect(layoutLanes([person, machine]).placed).toEqual(placed);
+  });
+
+  it("CONTROL: two rows that do NOT overlap stay full width, one after the other", () => {
+    // A layout that split every pair side by side would pass the twin arm and
+    // fail here.
+    const { placed } = layoutLanes([lane("a", H(10), H(10, 45)), lane("b", H(11), H(11, 45))]);
+    expect(placed.map((p) => p.lanes)).toEqual([1, 1]);
+  });
+
+  it("lanes are computed on the DRAWN span: a 10-minute visit and one 15 minutes later do not paint over each other", () => {
+    // Booked spans 10:00-10:10 and 10:15-11:00 do not overlap, but the first is
+    // DRAWN 30 minutes tall (to 10:30), so they must take two lanes.
+    const { placed } = layoutLanes([lane("short", H(10), H(10, 10)), lane("next", H(10, 15), H(11))]);
+    expect(placed.map((p) => p.lanes)).toEqual([2, 2]);
+    expect(new Set(placed.map((p) => p.lane))).toEqual(new Set([0, 1]));
+    // CONTROL: with a real gap after the drawn end, they share one lane.
+    expect(
+      layoutLanes([lane("short", H(10), H(10, 10)), lane("later", H(10, 30), H(11))]).placed.map((p) => p.lanes),
+    ).toEqual([1, 1]);
+  });
+
+  it("a chain reuses a freed lane instead of opening a third", () => {
+    // A 09:00-10:00, B 09:30-10:30, C 10:00-10:45: C fits after A in lane 0.
+    const { placed, more } = layoutLanes([
+      lane("A", H(9), H(10)),
+      lane("B", H(9, 30), H(10, 30)),
+      lane("C", H(10), H(10, 45)),
+    ]);
+    expect(more).toEqual([]);
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ A: 0, B: 1, C: 0 });
+    expect(placed.every((p) => p.lanes === 2)).toBe(true);
+  });
+
+  it("Q-B6-1: THREE concurrent rows draw the first on the left and a +2 chip on the right", () => {
+    const { placed, more } = layoutLanes([
+      lane("a", H(15), H(15, 45), false, "a"),
+      lane("b", H(15), H(15, 45), true, "b"),
+      lane("c", H(15), H(15, 45), true, "c"),
+    ]);
+    expect(placed).toEqual([{ id: "a", lane: 0, lanes: 2, drawnEndMin: H(15, 45) }]);
+    expect(more).toHaveLength(1);
+    expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 2 });
+    expect(more[0]!.hiddenIds.sort()).toEqual(["b", "c"]);
+  });
+
+  it("Q-B6-1: FOUR at once (two people, two machine rows) reads 'one | +3'", () => {
+    const four = [
+      lane("own", H(16), H(16, 45), false, "Ana"),
+      lane("own-falta", H(16), H(16, 45), false, "Bruno"),
+      lane("n1", H(16), H(16, 45), true, "Carla"),
+      lane("n2", H(16), H(16, 45), true, "Duarte"),
+    ];
+    const capped = layoutLanes(four);
+    expect(capped.placed.map((p) => p.id)).toEqual(["own"]);
+    expect(capped.more.map((m) => m.count)).toEqual([3]);
+    // Nothing is lost: drawn + hidden is every row.
+    expect(capped.placed.length + capped.more[0]!.count).toBe(4);
+
+    // CONTROL: the CAP is what makes the chip. Uncapped, the same four rows
+    // take four distinct lanes and no chip - so the arm above is measuring
+    // COMPACT_MAX_LANES and not an accident of the input.
+    const uncapped = layoutLanes(four, Number.POSITIVE_INFINITY);
+    expect(uncapped.more).toEqual([]);
+    expect(new Set(uncapped.placed.map((p) => p.lane)).size).toBeGreaterThanOrEqual(2);
+    expect(COMPACT_MAX_LANES).toBe(2);
+  });
+
+  it("a cluster ends where its latest drawn end does: 17:00 after a 16:00-16:45 peak is a new cluster", () => {
+    const { placed, more } = layoutLanes([
+      lane("a", H(16), H(16, 45)),
+      lane("b", H(16), H(16, 45)),
+      lane("c", H(16), H(16, 45)),
+      lane("late", H(17), H(17, 45)),
+    ]);
+    expect(more).toHaveLength(1);
+    expect(placed.find((p) => p.id === "late")).toEqual({ id: "late", lane: 0, lanes: 1, drawnEndMin: H(17, 45) });
+  });
+
+  it("Q-B6-1 IS PER MOMENT: a chain that never runs three at once keeps its lanes; only the crowded moment is capped", () => {
+    // A 09:00-09:45, B 09:30-10:15, C 10:00-10:45 and D 10:30-11:15 never run
+    // more than two at a time. E and F at 11:00 make three (D, E, F) until
+    // 11:15. It is ONE transitive cluster, and a cap applied to the whole
+    // cluster hid B and D behind one chip from 09:00 to 11:45.
+    const { placed, more } = layoutLanes([
+      lane("A", H(9), H(9, 45)),
+      lane("B", H(9, 30), H(10, 15)),
+      lane("C", H(10), H(10, 45)),
+      lane("D", H(10, 30), H(11, 15)),
+      lane("E", H(11), H(11, 45)),
+      lane("F", H(11), H(11, 45)),
+    ]);
+    // B sits in the right lane and is DRAWN: it never runs with two others.
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ A: 0, B: 1, C: 0, E: 0 });
+    expect(placed.every((p) => p.lanes === 2)).toBe(true);
+    // The chip stands for the rows of the crowded moment that are not in the
+    // left lane, and spans only them.
+    expect(more).toHaveLength(1);
+    expect(more[0]).toMatchObject({ startMin: H(10, 30), drawnEndMin: H(11, 45), count: 2 });
+    expect([...more[0]!.hiddenIds].sort()).toEqual(["D", "F"]);
+  });
+
+  it("Q-B6-1: a twin pair in a cluster that is crowded ELSEWHERE still renders side by side", () => {
+    // The machine half ends at 10:30 and the person half at 10:45; a 10:30 row
+    // overlaps only the person half and chains the twin into a crowded 11:00
+    // (bridge, x, y). The twin itself never runs with two others, so neither
+    // half may be hidden. Under a whole-cluster cap the machine half was.
+    const { placed, more } = layoutLanes([
+      lane("twin-person", H(10), H(10, 45), false, "Ana"),
+      lane("twin-machine", H(10), H(10, 30), true, "Ana"),
+      lane("bridge", H(10, 30), H(11, 15), false, "Bia"),
+      lane("x", H(11), H(11, 45), false, "Caio"),
+      lane("y", H(11), H(11, 45), true, "Dora"),
+    ]);
+    const byId = Object.fromEntries(placed.map((p) => [p.id, p]));
+    expect(byId["twin-person"]).toMatchObject({ lane: 0, lanes: 2 });
+    expect(byId["twin-machine"]).toMatchObject({ lane: 1, lanes: 2 });
+    expect(more.flatMap((m) => m.hiddenIds)).not.toContain("twin-machine");
+    expect(more.flatMap((m) => m.hiddenIds)).not.toContain("twin-person");
+    // CONTROL: the cluster IS crowded, so the cap did fire somewhere.
+    expect(more.reduce((n, m) => n + m.count, 0)).toBe(2);
+  });
+
+  it("two separate crowded moments in one cluster make two chips, and the drawn row between them keeps its lane", () => {
+    const { placed, more } = layoutLanes([
+      lane("a1", H(9), H(9, 45)),
+      lane("a2", H(9), H(9, 45)),
+      lane("a3", H(9), H(9, 45)),
+      lane("long", H(9), H(13)), // chains everything into one cluster
+      lane("mid", H(10, 30), H(11, 15)),
+      lane("b1", H(12), H(12, 45)),
+      lane("b2", H(12), H(12, 45)),
+    ]);
+    expect(more.map((m) => [m.startMin, m.drawnEndMin, m.count])).toEqual([
+      [H(9), H(9, 45), 3],
+      [H(12), H(12, 45), 2],
+    ]);
+    expect(placed.find((p) => p.id === "mid")).toMatchObject({ lane: 1, lanes: 2 });
+    expect(placed.find((p) => p.id === "long")).toMatchObject({ lane: 0 });
+  });
+
+  /* A seeded property test. The examples above are the shapes someone
+     thought of; this is every shape a busy day can take, checked against the
+     rule as the card states it. */
+  describe("invariants over random days", () => {
+    function rng(seed: number): () => number {
+      let x = seed >>> 0;
+      return () => {
+        x = (Math.imul(x ^ (x >>> 15), 0x2c1b3c6d) + 0x9e3779b9) >>> 0;
+        x ^= x >>> 12;
+        return (x >>> 0) / 0x100000000;
+      };
+    }
+    const DURATIONS = [10, 15, 30, 45, 45, 45, 60, 90];
+
+    function randomDay(rand: () => number): LaneItem[] {
+      const n = 1 + Math.floor(rand() * 14);
+      return Array.from({ length: n }, (_, k) => {
+        const start = H(8) + 15 * Math.floor(rand() * 48);
+        const dur = DURATIONS[Math.floor(rand() * DURATIONS.length)]!;
+        return lane(`r${k}`, start, start + dur, rand() < 0.3, `L${Math.floor(rand() * 5)}`);
+      });
+    }
+
+    const drawnEnd = (it: LaneItem) => Math.max(it.endMin, it.startMin + COMPACT_MIN_DRAWN_MINUTES);
+    const overlaps = (a: { s: number; e: number }, b: { s: number; e: number }) => a.s < b.e && b.s < a.e;
+
+    function check(items: LaneItem[], out: LaneLayout): void {
+      const byId = new Map(items.map((it) => [it.id, it]));
+      const span = (id: string) => ({ s: byId.get(id)!.startMin, e: drawnEnd(byId.get(id)!) });
+      const runningAt = (t: number) => items.filter((it) => it.startMin <= t && t < drawnEnd(it)).length;
+      const hidden = out.more.flatMap((m) => m.hiddenIds);
+
+      // (1) Nothing lost, nothing twice.
+      expect([...out.placed.map((p) => p.id), ...hidden].sort()).toEqual(items.map((i) => i.id).sort());
+      for (const m of out.more) expect(m.count).toBe(m.hiddenIds.length);
+
+      // (2) Nothing paints over anything: drawn rows in one lane never overlap,
+      //     and nothing drawn in the right lane sits under a chip.
+      for (const a of out.placed) {
+        for (const b of out.placed) {
+          if (a.id < b.id && a.lane === b.lane && a.lanes === 2 && b.lanes === 2) {
+            expect(overlaps(span(a.id), span(b.id)), `${a.id}/${b.id} share lane ${a.lane}`).toBe(false);
+          }
+        }
+        for (const m of out.more) {
+          if (a.lane === 1) {
+            expect(overlaps(span(a.id), { s: m.startMin, e: m.drawnEndMin }), `${a.id} under ${m.key}`).toBe(false);
+          }
+        }
+      }
+      for (const m of out.more) {
+        for (const n of out.more) {
+          if (m.key < n.key) {
+            expect(overlaps({ s: m.startMin, e: m.drawnEndMin }, { s: n.startMin, e: n.drawnEndMin })).toBe(false);
+          }
+        }
+      }
+      // A full-width row overlaps nothing at all.
+      for (const a of out.placed.filter((p) => p.lanes === 1)) {
+        for (const other of items) {
+          if (other.id !== a.id) expect(overlaps(span(a.id), span(other.id)), `${a.id} is alone`).toBe(false);
+        }
+      }
+
+      // (3) THE CAP APPLIES ONLY AT THREE OR MORE AT ONCE: every hidden row
+      //     runs at some minute when at least three rows run.
+      for (const id of hidden) {
+        const { s, e } = span(id);
+        let crowded = false;
+        for (let t = s; t < e && !crowded; t++) crowded = runningAt(t) >= 3;
+        expect(crowded, `${id} hidden though never three at once`).toBe(true);
+      }
+
+      // (4) Every crowded minute is covered by a chip, so the reader always
+      //     sees that something is behind it.
+      for (let t = H(8); t < H(24); t++) {
+        if (runningAt(t) >= 3) {
+          expect(out.more.some((m) => m.startMin <= t && t < m.drawnEndMin), `minute ${t} has a chip`).toBe(true);
+        }
+      }
+    }
+
+    it("hold for 400 seeded random days", () => {
+      const rand = rng(20260923);
+      let chips = 0;
+      let drawnRightLane = 0;
+      for (let k = 0; k < 400; k++) {
+        const items = randomDay(rand);
+        const out = layoutLanes(items);
+        check(items, out);
+        chips += out.more.length;
+        drawnRightLane += out.placed.filter((p) => p.lane === 1).length;
+      }
+      // CONTROL: the sample is not trivially easy. It crowds often and still
+      // draws many rows in the right lane.
+      expect(chips).toBeGreaterThan(100);
+      expect(drawnRightLane).toBeGreaterThan(100);
+    });
+  });
+
+  it("is independent of input order", () => {
+    const rows = [
+      lane("a", H(9), H(9, 45), false, "Ana"),
+      lane("b", H(9, 15), H(10), true, "Bia"),
+      lane("c", H(9, 30), H(10, 15), false, "Caio"),
+      lane("d", H(11), H(11, 30), false, "Dora"),
+    ];
+    const forward = layoutLanes(rows);
+    const backward = layoutLanes([...rows].reverse());
+    expect(backward).toEqual(forward);
+  });
+});
+
+describe("compactDayLabel", () => {
+  it("cuts the weekday to three letters and keeps the day number", () => {
+    // Node's ICU gives "Segunda 21" for pt-PT short; a browser may give "Seg 21".
+    // Both must render the same three letters.
+    expect(compactDayLabel("Segunda 21")).toBe("Seg 21");
+    expect(compactDayLabel("Seg 21")).toBe("Seg 21");
+    expect(compactDayLabel("S\u00e1bado 26")).toBe("S\u00e1b 26");
+    expect(compactDayLabel("Domingo 27")).toBe("Dom 27");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The face: first name, withheld, strike.                              */
+/* ------------------------------------------------------------------ */
+describe("faceName", () => {
+  it("is the first word of the patient's name", () => {
+    expect(faceName("Bartolomeu Teste Sintetico")).toBe("Bartolomeu");
+    expect(faceName("  Ana   Costa ")).toBe("Ana");
+  });
+
+  it("a withheld patient reads the withheld label, whole, never an empty face", () => {
+    expect(faceName(null)).toBe(s["agenda.patientWithheld"]);
+    expect(s["agenda.patientWithheld"].length).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The whole week, end to end, on a dense SYNTHETIC day.                */
+/* ------------------------------------------------------------------ */
+describe("buildCompactWeek", () => {
+  /** An invented dense Thursday, one therapist plus the shared machine (N):
+   *  08:30 own; 09:00 own; 10:00 N + own; 11:00 N x2 + own; 12:30 own;
+   *  14:00 N x2 + own + own (falta); 15:30 own + N; 17:00 own;
+   *  18:00 own + own (falta). 17 rows, every width of overlap from one to four. */
+  const THU = "2026-09-24";
+  function denseDay(): AgendaAppointment[] {
+    const rows: AgendaAppointment[] = [];
+    let n = 0;
+    const add = (from: string, machine: boolean, extra: Partial<AgendaAppointment> = {}) => {
+      n += 1;
+      const [hh, mm] = from.split(":").map(Number);
+      const endMin = hh! * 60 + mm! + 45;
+      rows.push(
+        appt({
+          id: `d${String(n).padStart(2, "0")}`,
+          date: THU,
+          from,
+          to: `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`,
+          ...(machine
+            ? { practitionerId: MACHINE, practitionerName: "NESA", serviceId: "svc-nesa", serviceName: "NESA" }
+            : {}),
+          ...extra,
+        }),
+      );
+    };
+    add("08:30", false);
+    add("09:00", false);
+    add("10:00", true); add("10:00", false);
+    add("11:00", true); add("11:00", true); add("11:00", false);
+    add("12:30", false);
+    add("14:00", true); add("14:00", true); add("14:00", false); add("14:00", false, { status: "no_show" });
+    add("15:30", false); add("15:30", true);
+    add("17:00", false);
+    add("18:00", false); add("18:00", false, { status: "no_show" });
+    return rows;
+  }
+
+  it("the dense day: 17 rows, every one either drawn or counted in a chip", () => {
+    const week = buildCompactWeek({ anchor: WED, appointments: denseDay(), sharedResourceIds: MACHINES });
+    const thu = week.days.find((d) => d.date === THU)!;
+    expect(thu.appointmentCount).toBe(17);
+    const hidden = thu.more.reduce((sum, m) => sum + m.count, 0);
+    expect(thu.appointments.length + hidden).toBe(17);
+    // 11:00 (three) and 14:00 (four) are the two chips; 08:30/09:00, 10:00,
+    // 15:30 and 18:00 split in two.
+    expect(thu.more.map((m) => [m.startMin, m.count])).toEqual([
+      [H(11), 2],
+      [H(14), 3],
+    ]);
+    const lanesAt = (hh: number, mm = 0) =>
+      thu.appointments.filter((a) => a.startMin === H(hh, mm)).map((a) => a.lanes);
+    expect(lanesAt(8, 30)).toEqual([2]);
+    expect(lanesAt(9)).toEqual([2]);
+    expect(lanesAt(10)).toEqual([2, 2]);
+    expect(lanesAt(15, 30)).toEqual([2, 2]);
+    expect(lanesAt(18)).toEqual([2, 2]);
+    expect(lanesAt(12, 30)).toEqual([1]);
+    expect(lanesAt(17)).toEqual([1]);
+    // At 10:00 and 15:30 the person is on the left and the machine on the right.
+    for (const at of [H(10), H(15, 30)]) {
+      const pair = thu.appointments.filter((a) => a.startMin === at);
+      expect(pair.find((a) => a.lane === 0)!.practitionerId).toBe(PERSON);
+      expect(pair.find((a) => a.lane === 1)!.practitionerId).toBe(MACHINE);
+    }
+  });
+
+  it("the face data: time, first name, service colour, the estado derived from BOTH axes", () => {
+    const week = buildCompactWeek({
+      anchor: WED,
+      appointments: [
+        appt({
+          id: "x",
+          date: WED,
+          from: "10:00",
+          to: "10:45",
+          patientName: "Conceicao Teste",
+          // Confirmada expressed on the confirmation axis, as the synthetic
+          // week expresses it (0061 refuses two overlapping status=confirmed).
+          confirmationState: "confirmed",
+        }),
+        appt({ id: "w", date: WED, from: "12:00", to: "12:45", patientName: null }),
+        appt({ id: "f", date: WED, from: "14:00", to: "14:45", status: "no_show" }),
+      ],
+    });
+    const wed = week.days.find((d) => d.date === WED)!;
+    const x = wed.appointments.find((a) => a.id === "x")!;
+    expect(x.timeLabel).toBe("10:00");
+    expect(x.firstName).toBe("Conceicao");
+    expect(x.patientLabel).toBe("Conceicao Teste");
+    expect(x.estado).toBe("confirmada");
+    expect(x.struck).toBe(false);
+    const w = wed.appointments.find((a) => a.id === "w")!;
+    expect(w.withheld).toBe(true);
+    expect(w.firstName).toBe(s["agenda.patientWithheld"]);
+    const f = wed.appointments.find((a) => a.id === "f")!;
+    expect(f.estado).toBe("falta");
+    expect(f.struck).toBe(true);
+  });
+
+  it("the window follows the DRAWN days only, and Sunday appears only with a booking", () => {
+    const week = buildCompactWeek({
+      anchor: WED,
+      appointments: [
+        appt({ id: "early", date: MON, from: "07:30", to: "08:15" }),
+        // The Sunday BEFORE: not drawn, so it must not widen anything.
+        appt({ id: "prev", date: PREV_SUN, from: "22:00", to: "22:45" }),
+      ],
+    });
+    expect(week.days).toHaveLength(6);
+    expect(week.window).toEqual({ startMin: H(7), endMin: H(21) });
+
+    const withSunday = buildCompactWeek({
+      anchor: WED,
+      appointments: [appt({ id: "sun", date: SUN, from: "10:00", to: "10:45" })],
+    });
+    expect(withSunday.days.map((d) => d.date)).toContain(SUN);
+    expect(withSunday.days.find((d) => d.date === SUN)!.appointments.map((a) => a.id)).toEqual(["sun"]);
+  });
+
+  it("legend: each service once, sorted by name, a row with no service last", () => {
+    const week = buildCompactWeek({
+      anchor: WED,
+      appointments: [
+        appt({ id: "1", date: MON, from: "09:00", to: "09:45", serviceId: "svc-osteo", serviceName: "Osteopatia" }),
+        appt({ id: "2", date: WED, from: "09:00", to: "09:45", serviceId: "svc-osteo", serviceName: "Osteopatia" }),
+        appt({ id: "3", date: WED, from: "11:00", to: "11:45", serviceId: "svc-dren", serviceName: "Drenagem Linfatica" }),
+        appt({ id: "4", date: FRI, from: "11:00", to: "11:45", serviceId: null, serviceName: null }),
+      ],
+    });
+    expect(week.legend.map((e) => e.serviceName)).toEqual(["Drenagem Linfatica", "Osteopatia", null]);
+    // The legend's colour is the colour the block carries.
+    const wed = week.days.find((d) => d.date === WED)!;
+    const dren = wed.appointments.find((a) => a.id === "3")!;
+    expect(week.legend[0]!.colorKey).toBe(dren.colorKey);
+    expect(week.legend[2]!.colorKey).toBe("none");
+  });
+
+  it("Q-B6-8: blocked time and the closure become bands on the day, clipped to the window", () => {
+    const blocks: BlockSpan[] = [
+      { id: "b1", startsAt: lisbon(WED, "14:00"), endsAt: lisbon(WED, "16:00"), reason: "x", note: "Formacao" },
+    ];
+    const week = buildCompactWeek({
+      anchor: WED,
+      appointments: [],
+      blocks,
+      closure: { startMin: H(13), endMin: H(14), locationName: "Clinica" },
+    });
+    const wed = week.days.find((d) => d.date === WED)!;
+    expect(wed.bands).toEqual([
+      { kind: "block", id: "b1", startMin: H(14), endMin: H(16), note: "Formacao" },
+      { kind: "closure", startMin: H(13), endMin: H(14), locationName: "Clinica" },
+    ]);
+    // CONTROL: the block is on Wednesday only; the closure is on every day.
+    const mon = week.days.find((d) => d.date === MON)!;
+    expect(mon.bands.map((b) => b.kind)).toEqual(["closure"]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Geometry: a lane is a tap target.                                    */
+/* ------------------------------------------------------------------ */
+describe("compactLaneWidthPx / compactLaneBox", () => {
+  it("at 390px a two-lane block is at least 24px wide with six columns AND with seven (Dom shown)", () => {
+    expect(compactLaneWidthPx(390, 6)).toBeGreaterThanOrEqual(COMPACT_MIN_TARGET_PX);
+    expect(compactLaneWidthPx(390, 7)).toBeGreaterThanOrEqual(COMPACT_MIN_TARGET_PX);
+    // Six columns hold it down to 334px.
+    expect(compactLaneWidthPx(334, 6)).toBeGreaterThanOrEqual(COMPACT_MIN_TARGET_PX);
+  });
+
+  it("the limit is stated, not hidden: with Dom shown it holds from 384px up and not below", () => {
+    // Pinned both ways so the DECISIONS text (Q-B6-1) cannot drift from the
+    // arithmetic: 384 holds, 383 does not, and neither do 375 or 360.
+    expect(compactLaneWidthPx(384, 7)).toBeGreaterThanOrEqual(COMPACT_MIN_TARGET_PX);
+    expect(compactLaneWidthPx(383, 7)).toBeLessThan(COMPACT_MIN_TARGET_PX);
+    expect(compactLaneWidthPx(375, 7)).toBeLessThan(COMPACT_MIN_TARGET_PX);
+    expect(compactLaneWidthPx(360, 7)).toBeLessThan(COMPACT_MIN_TARGET_PX);
+  });
+
+  it("the CSS boxes are the arithmetic: no outer gutter, one gap in the middle", () => {
+    expect(compactLaneBox(0, 1)).toEqual({ left: "0px", width: "100%" });
+    expect(compactLaneBox(0, 2)).toEqual({ left: "0px", width: "calc(50% - 0.5px)" });
+    expect(compactLaneBox(1, 2)).toEqual({ left: "calc(50% + 0.5px)", width: "calc(50% - 0.5px)" });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The one-time scroll to now.                                          */
+/* ------------------------------------------------------------------ */
+describe("autoScrollDecision", () => {
+  const DATES = [MON, "2026-09-22", WED, "2026-09-24", FRI, SAT];
+  const base: AutoScrollInput = {
+    weekKey: MON,
+    decidedFor: null,
+    now: null,
+    dates: DATES,
+    window: { startMin: H(8), endMin: H(21) },
+    displayed: true,
+  };
+
+  /** Feeds the minute ticks through the decider the way the component's
+   *  effect does, carrying `decidedFor` forward. Returns the ticks that scrolled. */
+  function run(ticks: { date: string; min: number }[], over: Partial<AutoScrollInput> = {}): number[] {
+    let decidedFor: string | null = null;
+    const scrolled: number[] = [];
+    // The first render, before the clock is read.
+    ({ decidedFor } = autoScrollDecision({ ...base, ...over, decidedFor, now: null }));
+    ticks.forEach((now, k) => {
+      const d = autoScrollDecision({ ...base, ...over, decidedFor, now });
+      decidedFor = d.decidedFor;
+      if (d.scroll) scrolled.push(k);
+    });
+    return scrolled;
+  }
+
+  it("scrolls ONCE when the phone opens inside the hours on today's week", () => {
+    expect(run([{ date: WED, min: H(16, 10) }, { date: WED, min: H(16, 11) }, { date: WED, min: H(16, 12) }])).toEqual([0]);
+  });
+
+  it("opened at 07:50, it does NOT scroll when the clock reaches 08:00: the reader is left where they are", () => {
+    const ticks = Array.from({ length: 15 }, (_, k) => ({ date: WED, min: H(7, 50) + k }));
+    expect(ticks.some((t) => t.min === H(8))).toBe(true);
+    expect(run(ticks)).toEqual([]);
+  });
+
+  it("never scrolls while the compact tree is not the one on screen (a desktop)", () => {
+    expect(run([{ date: WED, min: H(16, 10) }], { displayed: false })).toEqual([]);
+  });
+
+  it("never scrolls on a week that does not hold today", () => {
+    expect(run([{ date: "2026-10-01", min: H(16, 10) }])).toEqual([]);
+  });
+
+  it("a new week shown decides again, as a fresh arrival", () => {
+    const first = autoScrollDecision({ ...base, now: { date: WED, min: H(16, 10) } });
+    expect(first).toEqual({ scroll: true, decidedFor: MON });
+    const next = autoScrollDecision({
+      ...base,
+      weekKey: NEXT_MON,
+      dates: [NEXT_MON],
+      decidedFor: first.decidedFor,
+      now: { date: WED, min: H(16, 11) },
+    });
+    expect(next).toEqual({ scroll: false, decidedFor: NEXT_MON });
+    const back = autoScrollDecision({ ...base, decidedFor: next.decidedFor, now: { date: WED, min: H(16, 12) } });
+    expect(back).toEqual({ scroll: true, decidedFor: MON });
+  });
+
+  it("before the clock is read nothing is decided", () => {
+    expect(autoScrollDecision(base)).toEqual({ scroll: false, decidedFor: null });
+  });
+});

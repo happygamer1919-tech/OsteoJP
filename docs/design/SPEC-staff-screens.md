@@ -96,6 +96,11 @@ scrolls sideways, which `e2e/agenda-mobile-week.spec.ts` asserts.
 The empty-day string on this page, "Sem marcações para esta data", is the one the
 list uses; it was specified here and had never been built.
 
+**Under 640px, AMENDED again by AGENDA-MOBILE-WEEK.** Semana on a phone is now a
+compressed week GRID (see SPEC-v2-agenda.md, Mobile), not the list; the list
+keeps Semana between 640 and 767 and keeps Dia under 768. The page still never
+scrolls sideways, and the Dia/Semana choice is remembered on the device.
+
 ## 5. Component: Appointment Drawer (W2-04)
 
 Lives in apps/web, composed from packages/ui Drawer. One drawer, three modes; same fields, same data, same endpoints as the current appointment modal.

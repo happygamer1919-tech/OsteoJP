@@ -115,6 +115,26 @@ readable, which is what reception reads at 1024 every day. At 768 a column is
 109px. So tablets and landscape phones GAIN the real grid, which 1023 denied
 them, and 768 is the number `SPEC-staff-screens.md` had already named.
 
+**AMENDED BELOW 640px, AGENDA-MOBILE-WEEK.** The owner ruled that on a phone
+Semana is the week GRID, compressed, and Dia is unchanged. So under **640px**
+Semana renders a separate compact grid (`app/agenda/agenda-week-compact.tsx`,
+decided by `lib/scheduling/agenda-compact-core.ts`): Mon to Sat plus Dom only when
+that Sunday holds a booking, a sticky day header whose cells open Dia, a time axis
+from 08:00 to 21:00 in 30-minute rows widened to cover any booking outside it
+(hour rules only, as on the desktop since W13-B, and the window's end labelled on
+the bottom edge), a now line with a one-time scroll to it, and blocks showing the start time, the
+first name (truncated), the status glyph and a colour per SERVICE. Concurrent
+blocks split the column side by side into at most two lanes; where three or
+more run at once, the left lane's row is drawn and the others of that moment
+sit behind a "+N" chip that opens Dia. Between 640
+and 767 Semana keeps the list above; Dia keeps the list at every width under 768.
+At 640 and up nothing changes: the desktop grid still stacks same-start rows and
+never truncates a name (W11-00 v3), and still colours by therapist. Below 640
+Bloquear and Nova marcação drop their decorative icons (labels stay), Atualizar
+keeps its refresh icon (its visible text is only the time), the three trim their
+padding, and the shell header hides its name chip, so the page no longer scrolls sideways at 390 or 360. The
+defaults behind this (Q-B6-1 to Q-B6-11) are in docs/DECISIONS.md.
+
 ---
 
 ## 5. Role gating
