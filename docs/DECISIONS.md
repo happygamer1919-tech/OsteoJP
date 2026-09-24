@@ -5106,8 +5106,8 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   before this round the bell was squeezed to 36px at 390 and 31px at 360 to give
   the text room. After it the bell is 44px and the avatar 40px at both widths,
   and the area's narrowest layout is 222.5px in the 241.2px the header leaves it
-  at 360. At 640 and up nothing changes; the e2e checks the name and role still
-  show at 700.
+  at 360. At 640 and up nothing changes; the e2e pins the breakpoint both ways,
+  the name and role hidden at 639 and shown at 640.
 - **The toolbar at 360, red on CI at dd2c6abf and 721ca10d.** Locally Nova
   marcação ended 7.3px inside the toolbar's content box at 360; on CI it ended
   1px past it. Read from CI's failure screenshot, Linux Chromium draws the three

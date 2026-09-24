@@ -201,14 +201,36 @@ async function box(locator: Locator, what: string): Promise<Box> {
   return b!;
 }
 
-/** The card's acceptance, measured by the browser: nothing scrolls sideways. */
+/**
+ * The card's acceptance, measured by the browser: nothing scrolls sideways.
+ *
+ * `widest` is only the failure message's pointer. It names the element that
+ * reaches furthest right AMONG THOSE THAT CAN WIDEN THE DOCUMENT: an element
+ * inside a box that clips or scrolls sideways (any overflow-x but visible,
+ * below body) is skipped, because its overflow stays in that box and the
+ * document's scrollWidth ignores it. Without that, /patients at 360 always
+ * named its table, which runs past the viewport inside the Table wrapper's
+ * overflow-hidden and widens nothing. The one case this can still misname is
+ * an absolutely positioned child whose containing block lies outside its
+ * clipping parent. The assertion reads scrollWidth, never this.
+ */
 async function pageOverflow(page: Page): Promise<{ scrollWidth: number; clientWidth: number; widest: string }> {
   return page.evaluate(() => {
     const doc = document.documentElement;
+    const clipsMemo = new Map<Element, boolean>();
+    // Does this element, or any ancestor of it below body, clip sideways?
+    const clips = (e: Element | null): boolean => {
+      if (!e || e === document.body || e === doc) return false;
+      const known = clipsMemo.get(e);
+      if (known !== undefined) return known;
+      const v = getComputedStyle(e).overflowX !== "visible" || clips(e.parentElement);
+      clipsMemo.set(e, v);
+      return v;
+    };
     let widest = { sel: "(none)", right: 0 };
     for (const n of Array.from(document.body.querySelectorAll("*"))) {
       const r = (n as HTMLElement).getBoundingClientRect();
-      if (r.width > 0 && r.right > widest.right) {
+      if (r.width > 0 && r.right > widest.right && !clips(n.parentElement)) {
         widest = { sel: `${n.tagName}.${String((n as HTMLElement).className).slice(0, 60)}`, right: Math.round(r.right) };
       }
     }
@@ -953,14 +975,27 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
       }
     }
 
-    // CONTROL - the breakpoint is 640, both ways: at 700 the same header
-    // still shows the name and role beside the avatar. If this fails, the
-    // hiding is not scoped to phones.
-    await page.setViewportSize({ width: 700, height: 900 });
-    await page.goto("/dashboard");
-    const wide = shellHeader().getByRole("link", { name: "Perfil", exact: true }).locator(":scope > div > span");
-    await expect(wide.nth(0), "700: the avatar is shown").toBeVisible();
-    await expect(wide.nth(1), "700: the name and role are shown").toBeVisible();
+    // CONTROL - the breakpoint is 640, pinned both ways, as the agenda's
+    // threshold control below pins its own: at 639 the name and role are
+    // still hidden (the hiding reaches the breakpoint, not only 390 and 360),
+    // and at 640 the same header shows them beside the avatar (the hiding
+    // stops there, so md, any width above 640 or an unscoped hide fails).
+    // Both widths are under lg, so this is the same phone header.
+    for (const [width, textShown] of [
+      [639, false],
+      [640, true],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/dashboard");
+      const parts = shellHeader().getByRole("link", { name: "Perfil", exact: true }).locator(":scope > div > span");
+      await expect(parts, `${width}: the cluster has its avatar and its text column`).toHaveCount(2);
+      await expect(parts.nth(0), `${width}: the avatar is shown`).toBeVisible();
+      if (textShown) {
+        await expect(parts.nth(1), `${width}: the name and role are shown`).toBeVisible();
+      } else {
+        await expect(parts.nth(1), `${width}: the name and role are not shown`).toBeHidden();
+      }
+    }
   });
 
   // ==================================================================
