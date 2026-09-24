@@ -544,7 +544,13 @@ export function AgendaView({
               exist on touch). Every visible text label stays (AGENDA-02's
               condition), the three stay on one line together, and the
               accessible names do not change. The e2e measures it at 390 and
-              360. Default Q-B6-10. */}
+              360. Default Q-B6-10.
+
+              ROUND 10: the side padding is 8px, not 10. At 10 the group was
+              about 304px locally, 7px inside the 312px content box at 360, and
+              CI's Linux Chromium drew it about 8px wider (its semibold "Nova
+              marcação" alone about 7px wider), so Nova marcação ended 1px into
+              the gutter there. At 8px it is about 292px locally, 19px inside. */}
           <div className="flex flex-none items-center gap-2 max-sm:gap-1.5 sm:ml-auto">
             {/* W12-28: "Bloquear horário" writes a time_off block via the existing
                 model (settings:manage-gated), replacing the informal "Não Marcar"
@@ -562,7 +568,7 @@ export function AgendaView({
                 // depending on the viewport.
                 aria-label={s["agenda.blockTime"]}
                 title={s["agenda.blockTime"]}
-                className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2.5"
+                className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
               >
                 <Ban size={18} strokeWidth={1.75} aria-hidden="true" className="flex-none max-sm:hidden" />
                 {/* SHORTER WORD, NOT AN ICON: the control keeps a visible text
@@ -613,7 +619,7 @@ export function AgendaView({
               title={`${s["agenda.refresh"]} · ${s["agenda.lastUpdated"]} ${renderedAt}`}
               disabled={refreshing}
               onClick={() => startTransition(() => router.refresh())}
-              className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:gap-1.5 max-sm:px-2.5"
+              className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:gap-1.5 max-sm:px-2"
             >
               {/* NOT decorative, so NOT hidden below sm: the visible text is a
                   time, and this icon is what says the time is a button that
@@ -649,7 +655,7 @@ export function AgendaView({
             <button
               type="button"
               onClick={() => setModal({ mode: "create" })}
-              className="inline-flex h-10 flex-none items-center gap-2 whitespace-nowrap rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2.5"
+              className="inline-flex h-10 flex-none items-center gap-2 whitespace-nowrap rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
             >
               <Plus size={20} strokeWidth={1.75} aria-hidden="true" className="flex-none max-sm:hidden" />
               {s["agenda.newAppointment"]}
