@@ -213,6 +213,12 @@ async function box(locator: Locator, what: string): Promise<Box> {
  * overflow-hidden and widens nothing. The one case this can still misname is
  * an absolutely positioned child whose containing block lies outside its
  * clipping parent. The assertion reads scrollWidth, never this.
+ *
+ * The pointer also says WHERE the element is: its closest landmark (header,
+ * main, nav, aside, footer or a dialog), the path down from it (at most four
+ * steps, by child position), and the nearest data-testid. A tag and a class
+ * alone did not: on CI "DIV.flex items-center gap-2" was the dashboard's date
+ * row, and the shell header's own left group has exactly that class.
  */
 async function pageOverflow(page: Page): Promise<{ scrollWidth: number; clientWidth: number; widest: string }> {
   return page.evaluate(() => {
@@ -227,14 +233,28 @@ async function pageOverflow(page: Page): Promise<{ scrollWidth: number; clientWi
       clipsMemo.set(e, v);
       return v;
     };
-    let widest = { sel: "(none)", right: 0 };
+    // "in main > div:nth-child(1) > div:nth-child(2) [testid dashboard-date-nav]"
+    const where = (n: Element): string => {
+      const mark = n.closest("header, main, nav, aside, footer, dialog, [role='dialog']");
+      const steps: string[] = [];
+      let e: Element | null = n;
+      for (; e && e !== mark && e !== document.body && steps.length < 4; e = e.parentElement) {
+        const at = e.parentElement ? Array.from(e.parentElement.children).indexOf(e) + 1 : 1;
+        steps.unshift(`${e.tagName.toLowerCase()}:nth-child(${at})`);
+      }
+      const gap = e && e !== mark && e !== document.body ? "... > " : "";
+      const top = mark ? mark.tagName.toLowerCase() : "body";
+      const testid = n.closest("[data-testid]")?.getAttribute("data-testid");
+      return `in ${top}${n === mark ? "" : ` > ${gap}${steps.join(" > ")}`}${testid ? ` [testid ${testid}]` : ""}`;
+    };
+    let widest: { el: Element | null; right: number } = { el: null, right: 0 };
     for (const n of Array.from(document.body.querySelectorAll("*"))) {
       const r = (n as HTMLElement).getBoundingClientRect();
-      if (r.width > 0 && r.right > widest.right && !clips(n.parentElement)) {
-        widest = { sel: `${n.tagName}.${String((n as HTMLElement).className).slice(0, 60)}`, right: Math.round(r.right) };
-      }
+      if (r.width > 0 && r.right > widest.right && !clips(n.parentElement)) widest = { el: n, right: Math.round(r.right) };
     }
-    return { scrollWidth: doc.scrollWidth, clientWidth: doc.clientWidth, widest: `${widest.sel} @ ${widest.right}px` };
+    const n = widest.el;
+    const sel = n ? `${n.tagName}.${String((n as HTMLElement).className).slice(0, 60)} ${where(n)}` : "(none)";
+    return { scrollWidth: doc.scrollWidth, clientWidth: doc.clientWidth, widest: `${sel} @ ${widest.right}px` };
   });
 }
 
@@ -878,6 +898,8 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
   // the /perfil link; the bell, "O meu perfil" and "Terminar sessão" stay; no
   // control lies over another; and no staff page scrolls sideways. On four
   // staff pages, because the header is the shell's and every page has it.
+  // On /dashboard it also checks the page's own date row, the content that
+  // made that page scroll sideways once the header fitted.
   // ==================================================================
   test("the staff header at 390 and 360: the initials avatar stays and the name does not, no control over another, no sideways scroll", async ({
     page,
@@ -960,6 +982,25 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
               `${where}: ${boxes[i]!.what} and ${boxes[j]!.what} do not overlap`,
             ).toBe(true);
           }
+        }
+
+        // THE DASHBOARD'S DATE ROW, the page content CI found running past the
+        // screen (it ended at 448px at 390): below 640 only its date field
+        // gives way. The row ends on screen, the previous and next buttons
+        // keep their 40px, and the field still shows the whole date.
+        if (path === "/dashboard") {
+          const row = page.getByTestId("dashboard-date-nav");
+          const rb = await box(row, `${where}: the date row`);
+          expect(rb.x + rb.width, `${where}: the date row ends on screen`).toBeLessThanOrEqual(vp.width + 0.5);
+          for (const name of ["Dia anterior", "Dia seguinte"]) {
+            const b = await box(row.getByRole("link", { name, exact: true }), `${where}: ${name}`);
+            expect(b.width, `${where}: ${name} keeps its 40px`).toBeGreaterThanOrEqual(39.5);
+          }
+          const fit = await row
+            .getByRole("textbox", { name: "Escolher data", exact: true })
+            .evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth, value: (e as HTMLInputElement).value }));
+          expect(fit.value, `${where}: the date field holds the date`).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
+          expect(fit.sw, `${where}: the date field shows the whole date (${fit.sw} vs ${fit.cw})`).toBeLessThanOrEqual(fit.cw);
         }
 
         // NOTHING SCROLLS SIDEWAYS: first the header itself (nothing in it

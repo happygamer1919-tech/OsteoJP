@@ -2260,8 +2260,8 @@ condition), or Bloquear moved into a menu.
 header hides the name and role but keeps the initials avatar, still the link to
 the profile, on every staff page. The bell, the visible profile link and the
 sign-out button stay, and no staff page scrolls sideways at 390 or 360. Built in
-round 10; how it fits is in docs/DECISIONS.md. The entry below is the question
-as it was asked.
+round 10, and the dashboard's date row in round 12; how it fits is in
+docs/DECISIONS.md. The entry below is the question as it was asked.
 
 **OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK). The
 builder introduced this default, and it changes the shared staff shell, not

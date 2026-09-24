@@ -5135,3 +5135,23 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   the CI numbers above are read from CI's own artifacts.
 - **Q-B6-10's text** in docs/QUESTIONS.md now gives the 8px padding; the default
   itself is unchanged.
+- **The dashboard's date row, red on CI at 0e9e082e (round 12).** Once the
+  header fitted, /dashboard still scrolled sideways: CI read the page 448px
+  wide at 390, and the widest element was the dashboard's own date row
+  (previous day, the date field, Hoje, next day), which does not wrap. The
+  date field is as wide as its text input's default width, and Linux Chromium
+  draws that about 44px wider than local Chromium (264 against 220px). Fixed in
+  the layout, below `sm` only: the row may shrink to its line and only the date
+  field gives way (`min-w-0` on both), and the three buttons get `shrink-0`,
+  without which the previous and next buttons were squeezed to about 28px at
+  360. Measured in local Chromium on the page, CSS and Inter files CI's trace
+  captured, with the input set to CI's width: before, the page 447px wide at
+  390; after, it fits at 390 and 360, the field's text box is 129px at 390 and
+  99px at 360 for a date about 80px wide, and 639 and 640 are unchanged. The
+  e2e now checks this row on /dashboard (it ends on screen, the two arrow
+  buttons keep 40px, the field shows the whole date). Its overflow pointer now
+  names the element's landmark, the path down from it and the nearest
+  data-testid, because the class alone also matched the shell header's left
+  group. /dashboard at 360 and /patients and /perfil at both widths had not run
+  on CI (the test stops at its first failure); this round read their layouts
+  in the code and did not measure them.
