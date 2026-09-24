@@ -383,25 +383,37 @@ describe("layoutLanes", () => {
     expect(plain.more[0]!.hiddenIds).toEqual(["machine-z"]);
   });
 
-  it("THE MACHINE THE PAGE DOES NOT KNOW: the same patient's two rows at one minute still stay side by side (the e2e's case)", () => {
+  it("THE MACHINE THE PAGE DOES NOT KNOW: the same patient's two rows at one minute still stay side by side (the e2e's case), in name order, and the flag puts the person left", () => {
     // The machine flag comes from the machines OFFERED to the viewer, which an
     // unassigned admin, or a viewer at another clinic, does not hold. Round 7's
     // first twin rule keyed on the flag, and the e2e's twin (a machine with no
     // clinic) came apart on the stack: measured, ARM 4 found no machine block.
-    // Labelled as buildCompactWeek labels them; every flag false.
+    // Labelled as buildCompactWeek labels them. The e2e's machine name sorts
+    // before its therapist's (round 8 review: with the old name the person was
+    // left by name alone, so the e2e's "person left" never tested the flag).
     const person = lane("g-person", H(15), H(15, 45), false, "Gemeo Sintetico E2E Therapist", "g");
-    const machine = lane("g-machine", H(15), H(15, 45), false, "Gemeo Sintetico NESA Gemeo (E2E)", "g");
+    const machine = lane("g-machine", H(15), H(15, 45), false, "Gemeo Sintetico Aparelho NESA Gemeo (E2E)", "g");
     const third = lane("third", H(15), H(15, 45), false, "Ana Costa E2E Therapist", "a");
+    const flagged = { ...machine, machine: true };
     for (const order of [
       [third, machine, person],
       [machine, person, third],
+      [person, third, machine],
     ]) {
-      const { placed, more } = layoutLanes(order);
-      expect(Object.fromEntries(placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({
+      // Every flag false (the admin's page): side by side, the halves by name.
+      const plain = layoutLanes(order);
+      expect(Object.fromEntries(plain.placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({
+        "g-machine": [0, 2],
+        "g-person": [1, 2],
+      });
+      expect(plain.more.flatMap((m) => m.hiddenIds)).toEqual(["third"]);
+      // The machine flagged (the owner's page): person left, machine right.
+      const known = layoutLanes(order.map((r) => (r === machine ? flagged : r)));
+      expect(Object.fromEntries(known.placed.map((p) => [p.id, [p.lane, p.lanes]]))).toEqual({
         "g-person": [0, 2],
         "g-machine": [1, 2],
       });
-      expect(more.flatMap((m) => m.hiddenIds)).toEqual(["third"]);
+      expect(known.more.flatMap((m) => m.hiddenIds)).toEqual(["third"]);
     }
   });
 

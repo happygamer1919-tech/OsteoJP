@@ -25,6 +25,16 @@
  * throws rather than skipping, because a skipped twin arm inside a green shard
  * would read as proof of something it never ran.
  *
+ * WHICH HALF GOES LEFT, AND WHY TWO SESSIONS. The page knows a row is a machine
+ * only when that machine is OFFERED to the viewer, and the twin machine here is
+ * installed at no clinic. So the admin (this file's default session) is offered
+ * nothing, the page does not flag the machine, and the layout's own order puts
+ * the pair's halves by name. The owner is offered every machine, so for the
+ * owner the page flags it. The machine's name sorts BEFORE the therapist's on
+ * purpose: by name alone the machine row goes left, and only the machine flag
+ * puts the person row left. The admin arms assert that (the control); the
+ * owner test asserts person left, which the flag alone can produce.
+ *
  * WHAT THIS SPEC CANNOT SAY. No CI job on this repository runs WebKit or
  * Firefox (`--project=chromium` alone in .github/workflows/e2e.yml). Chromium
  * at 390x844 emulates a viewport, not the iPhone the clinic holds. Acceptance on
@@ -38,12 +48,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { lisbonDateTimeToUtc } from "@/lib/scheduling/time";
 import {
+  E2E_PASSWORD,
   LOCATION,
   PATIENTS,
   RUN_DAY_BASE,
   SERVICE,
   TENANT_A,
   THERAPIST_NAME,
+  USERS,
   futureWeekdayDate,
 } from "./fixtures";
 
@@ -65,7 +77,9 @@ const DAY = futureWeekdayDate(RUN_DAY_BASE + 140);
 
 /** The twin pair's own ids, distinct from nesa-shared-resource.spec.ts's. */
 const TWIN_MACHINE_ID = "00000000-0000-4000-8000-00000000b6a0";
-const TWIN_MACHINE_NAME = "NESA Gemeo (E2E)";
+/** Sorts before THERAPIST_NAME ("E2E Therapist"), so the name order puts the
+ *  machine row first and only the machine flag can put the person row left. */
+const TWIN_MACHINE_NAME = "Aparelho NESA Gemeo (E2E)";
 const TWIN_PATIENT = { id: "00000000-0000-4000-8000-00000000b6a1", name: "Gemeo Sintetico" };
 const TWIN_PERSON_APPT = "00000000-0000-4000-8000-00000000b6b1";
 const TWIN_MACHINE_APPT = "00000000-0000-4000-8000-00000000b6b2";
@@ -80,9 +94,9 @@ const TWIN_AT = "15:00";
  * before the twin's, so without the twin rule (Q-B6-1) the two person rows
  * took the two lanes and the twin's machine row went behind the chip. With it,
  * the twin keeps both lanes and this row is the one behind "+1". The twin's
- * machine is installed at no clinic, so the page does not list it as a machine:
- * the pair is recognised by the patient and the start (measured on a local
- * stack: a rule keyed on the machine flag hid the machine row here).
+ * machine is installed at no clinic, so the admin's page does not list it as a
+ * machine: the pair is recognised by the patient and the start (measured on a
+ * local stack: a rule keyed on the machine flag hid the machine row here).
  */
 const TWIN_THIRD = { id: "00000000-0000-4000-8000-00000000b6b7", patient: PATIENTS.ana } as const;
 /**
@@ -510,8 +524,14 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
       expect(b.x + b.width, `${what} ends inside its column`).toBeLessThanOrEqual(col.x + col.width + 0.5);
       expect(b.width, `${what} is about half the column`).toBeLessThan(col.width * 0.6);
     }
-    // Person left, machine right.
-    expect(p.x).toBeLessThan(m.x);
+    // WHICH HALF IS LEFT, as the CONTROL for the owner test below. The admin is
+    // offered no machine (the twin's is at no clinic), so this page does not
+    // flag it, and the halves go by name: the machine's name sorts first, so
+    // the MACHINE is left here. The owner's page flags it, and there the
+    // person is left; this arm is what shows that only the flag can do that.
+    // If this reads person left, this page now knows the machine, and the
+    // owner test no longer proves the flag decides.
+    expect(m.x, "admin, machine not flagged: the halves go by name, machine left").toBeLessThan(p.x);
     // The third row is not drawn; the chip at the twin's minute stands for it.
     await expect(page.locator(`[data-compact-appointment-id="${TWIN_THIRD.id}"]`)).toBeHidden();
     const twinChip = page.locator(`[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"][data-compact-more-at="${TWIN_AT}"]`);
@@ -520,8 +540,9 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
 
     // ARM 4b - A TWIN PAIR UNDER A ROW THAT STARTED EARLIER (round 7 review).
     // The 18:15 row still runs at 18:30, when the second pair starts. The
-    // pair is side by side all the same, person left, on one line, and the
-    // 18:15 row is not drawn: a "+1" chip picked by its start stands for it.
+    // pair is side by side all the same, on one line, and the 18:15 row is
+    // not drawn: a "+1" chip picked by its start stands for it. Machine left,
+    // as in ARM 4: this page does not flag the machine (the owner test).
     const person2 = page.locator(`[data-compact-appointment-id="${UNDER_EARLIER.person}"]`);
     const machine2 = page.locator(`[data-compact-appointment-id="${UNDER_EARLIER.machine}"]`);
     await expect(person2).toBeVisible();
@@ -529,7 +550,7 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     const p2 = await box(person2, "the second pair's person row");
     const m2 = await box(machine2, "the second pair's machine row");
     expect(Math.abs(p2.y - m2.y), "the second pair starts on one line").toBeLessThanOrEqual(1);
-    expect(p2.x + p2.width <= m2.x, "the second pair is side by side, person left").toBe(true);
+    expect(m2.x + m2.width <= p2.x, "the second pair is side by side (machine left, by name)").toBe(true);
     for (const [b, what] of [
       [p2, "person"],
       [m2, "machine"],
@@ -685,6 +706,53 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     await expect(page.getByTestId("agenda-week-list")).toBeVisible();
 
     await page.screenshot({ path: "test-results/agenda-390-semana.png" });
+  });
+
+  test.describe("as the owner, whose page knows every machine", () => {
+    // A fresh session: the project's default is the admin.
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("where the page flags the machine, the person row is LEFT in both twin pairs, although by name the machine sorts first", async ({
+      page,
+    }) => {
+      // VACUOUS GUARD: the layout's name order (patient, then practitioner)
+      // puts the MACHINE row first, so person left below can come only from
+      // the machine flag. The grid test's ARM 4 is the same fact on screen.
+      for (const patient of [TWIN_PATIENT.name, UNDER_EARLIER.patient.name]) {
+        expect(
+          `${patient} ${TWIN_MACHINE_NAME}`.localeCompare(`${patient} ${THERAPIST_NAME}`, "pt"),
+          `${patient}: by name the machine row sorts first`,
+        ).toBeLessThan(0);
+      }
+
+      // The owner is offered every machine (SCHED-29.4 exempts the owner from
+      // the clinic condition), so this page flags the twin machine.
+      await page.goto("/login");
+      await page.locator('input[name="email"]').fill(USERS.owner);
+      await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+      await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+      await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 20_000 });
+
+      await page.setViewportSize(PHONE);
+      await page.goto(`/agenda?view=week&date=${DAY}`);
+      await expect(page.getByTestId("agenda-compact-week")).toBeVisible();
+      const col = await box(page.locator(`[data-compact-day="${DAY}"]`), "the day column");
+      for (const [personId, machineId, what] of [
+        [TWIN_PERSON_APPT, TWIN_MACHINE_APPT, `the ${TWIN_AT} pair`],
+        [UNDER_EARLIER.person, UNDER_EARLIER.machine, `the ${UNDER_EARLIER.at} pair, under a row that started earlier`],
+      ] as const) {
+        const person = page.locator(`[data-compact-appointment-id="${personId}"]`);
+        const machine = page.locator(`[data-compact-appointment-id="${machineId}"]`);
+        await expect(person, `${what}: the person row is drawn`).toBeVisible();
+        await expect(machine, `${what}: the machine row is drawn`).toBeVisible();
+        const p = await box(person, `${what}: person`);
+        const m = await box(machine, `${what}: machine`);
+        expect(Math.abs(p.y - m.y), `${what}: on one line`).toBeLessThanOrEqual(1);
+        expect(p.x + p.width <= m.x, `${what}: side by side, PERSON LEFT, machine right`).toBe(true);
+        expect(p.x, `${what}: inside the column`).toBeGreaterThanOrEqual(col.x - 0.5);
+        expect(m.x + m.width, `${what}: inside the column`).toBeLessThanOrEqual(col.x + col.width + 0.5);
+      }
+    });
   });
 
   test("the toolbar fits at 390 and at 360: Nova marcação inside the viewport, no control over another, no sideways scroll", async ({
