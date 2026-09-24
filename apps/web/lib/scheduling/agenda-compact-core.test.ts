@@ -1415,6 +1415,89 @@ function cardDocs(): { decisions: string; questions: string; spec: string } {
   };
 }
 
+describe("the SPEC amendment says what DECISIONS and the code say", () => {
+  // Round 8's review: after round 8 the SPEC still named "Q-B6-1 to Q-B6-11"
+  // while DECISIONS listed twelve, never mentioned the axis question Q-B6-12,
+  // and said only that a twin pair keeps both lanes: nothing on a row that
+  // started earlier (hidden for its whole span) or on a later pair (hidden
+  // whole). The guards above read DECISIONS only.
+  const { decisions, spec } = cardDocs();
+  const lower = spec.toLowerCase();
+  const ids = [...new Set([...decisions.matchAll(/\*\*(Q-B6-\d+)\*\*/g)].map((m) => m[1]!))];
+
+  it("VACUOUS GUARD: the amendment and the DECISIONS ids are found", () => {
+    expect(spec).toContain("Semana renders a separate compact grid");
+    expect(ids.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it("the range of defaults it names is the one DECISIONS lists", () => {
+    const range = [...spec.matchAll(/\(Q-B6-1 to Q-B6-(\d+)\)/g)];
+    expect(range, "one range statement").toHaveLength(1);
+    expect(`Q-B6-${range[0]![1]}`).toBe(ids[ids.length - 1]);
+    for (const m of spec.matchAll(/Q-B6-(\d+)/g)) expect(ids, `${m[0]} is a DECISIONS id`).toContain(m[0]);
+  });
+
+  it("the time axis clause names the question DECISIONS files the axis reading under", () => {
+    const axisId = /\*\*(Q-B6-\d+)\*\* "sticky time axis/.exec(decisions)?.[1];
+    expect(axisId, "DECISIONS names the axis question").toBeDefined();
+    const from = spec.indexOf("a time axis");
+    const to = spec.indexOf("a now line", from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    expect(spec.slice(from, to)).toContain(axisId!);
+  });
+
+  it("the twin sentences say what layoutLanes does with a row that started earlier and with a later pair", () => {
+    const early = layoutLanes([
+      lane("early", H(14, 30), H(15, 15), false, "Zulmira", "z"),
+      lane("twin-person", H(15), H(15, 45), false, "Yara", "y"),
+      lane("twin-machine", H(15), H(15, 45), true, "Yara NESA", "y"),
+    ]);
+    const earlyHidden = early.more.some((m) => m.hiddenIds.includes("early"));
+    expect(lower.includes("a row that started earlier and still runs when the pair starts goes behind the chip")).toBe(
+      earlyHidden,
+    );
+    const pairs = layoutLanes([
+      lane("a-person", H(15), H(15, 45), false, "Alda", "a"),
+      lane("a-machine", H(15), H(15, 45), true, "Alda NESA", "a"),
+      lane("b-person", H(15, 15), H(16), false, "Bia", "b"),
+      lane("b-machine", H(15, 15), H(16), true, "Bia NESA", "b"),
+    ]);
+    const hidden = pairs.more.flatMap((m) => m.hiddenIds);
+    const laterHiddenWhole = hidden.includes("b-person") && hidden.includes("b-machine");
+    expect(lower.includes("the later pair is behind the chip whole")).toBe(laterHiddenWhole);
+  });
+});
+
+describe("the owner-facing text claims person left only where the page knows the machine", () => {
+  // Round 8's review found the e2e's "person left" passing by name order,
+  // with the machine never flagged. Where the page does not know the machine
+  // the halves go by name, so an unqualified "person left" is false for that
+  // viewer. Pinned to the code: while an unflagged machine row can go left,
+  // every such sentence must say where the person is left.
+  const { decisions, questions, spec } = cardDocs();
+  const sentences = [decisions, questions, spec]
+    .flatMap((t) => t.split(/(?<=[.;!?])\s+/))
+    .filter((s) => /person left|person row is on the left/i.test(s));
+
+  it("VACUOUS GUARD: the three documents make the claim", () => {
+    expect(sentences.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("each claim names its condition, while an unflagged machine row can be the left half", () => {
+    const { placed } = layoutLanes([
+      lane("p", H(15), H(15, 45), false, "Gemeo Sintetico E2E Therapist", "g"),
+      lane("m", H(15), H(15, 45), false, "Gemeo Sintetico Aparelho NESA Gemeo (E2E)", "g"),
+    ]);
+    const machineLeftUnflagged = placed.find((x) => x.id === "m")?.lane === 0;
+    for (const s of sentences) {
+      expect(/knows the machine|flag is known|among the viewer's known shared resources/.test(s) || !machineLeftUnflagged, s).toBe(
+        true,
+      );
+    }
+  });
+});
+
 describe("the card's own text paraphrases the ruling and never quotes it", () => {
   // Round 8's review: readRangeForView's comment read (the ruling: "Dom only
   // when it holds bookings"). This is a PUBLIC repository and the ruling may

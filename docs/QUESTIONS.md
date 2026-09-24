@@ -2087,7 +2087,7 @@ the rows in the two lanes are drawn and that moment's other rows sit behind one
 "+N" chip that opens Dia for that day: three at once read two blocks and "+1",
 four read two blocks and "+2". A twin pair (a person row and a machine row of
 the same patient, same start) takes both lanes before any other row, so it is
-always side by side, person left: the other rows starting then go behind the
+always side by side (person left where the page knows the machine): the other rows starting then go behind the
 chip, and so does a row that started earlier and still runs when the pair
 starts (for its whole span, with its chip at its own start). Only another pair
 that started first and still holds a lane keeps a pair out, and then the later

@@ -4977,8 +4977,8 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
       the counts added.
     - **The twin case.** A twin pair (a person row and a machine row of the
       same patient, same start) takes both lanes before any other row is
-      placed, person left, machine right, so the twin stays side by side
-      whatever else runs then. Every other row starting at its minute goes
+      placed (person left, machine right where the page knows the machine),
+      so the twin stays side by side whatever else runs then. Every other row starting at its minute goes
       behind the chip (a longer row or a second twin pair included), and so
       does a row that started earlier: a row that started earlier and still
       runs when the pair starts goes behind the chip, for its whole span, and
