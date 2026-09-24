@@ -8,16 +8,20 @@ THE WEEK. Every count below belongs to this invented week. Rows per day, Monday 
 Friday: 10, 16, 13, 19 and 20 (the Dia shot reads the Friday's 20), plus one on
 Sunday. The Friday's busiest moment is 16:00, with four concurrent rows.
 
-Blocks are 30, 45 and 60 minutes long. Seventeen 30-minute blocks sit in half lanes,
-which is the tightest face the grid draws (Q-B6-1 in docs/DECISIONS.md): the whole
-start time (about 7.4px), then the status glyph and one to three letters of the name,
-one on most of them. The week also has shared-machine rows, moments of three and
-four concurrent rows (each shows its left lane plus a "+N" chip, so three at once
-read one block and "+2"; Q-B6-1 logs this as a departure from the card), one twin pair
-(Wednesday 10:00, the same patient on the therapist and on the machine), one Sunday
-booking, a cancelled row (Tuesday 12:00), no-show rows and a blocked band (Monday
-18:00 to 20:00). The Sunday booking makes the grid seven columns wide, the narrowest
-its lanes get at 390.
+Blocks are 30, 45 and 60 minutes long. Rows are 34px per half hour, so every block
+in a half lane, the seventeen 30-minute ones included, shows the whole start time
+(about 7.4px), the first name on its own line (three to six letters here) and the
+status glyph below it (Q-B6-1 in docs/DECISIONS.md). The week also has
+shared-machine rows, moments of three and four concurrent rows (Tuesday 14:30,
+Wednesday 15:30, Thursday 16:00, Friday 16:00: each draws two blocks and a small
+dark "+N" chip, so three at once read two blocks and "+1" and Friday's four read two
+blocks and "+2"), one twin pair (Wednesday 10:00, the same patient on the therapist
+and on the machine), one Sunday booking, a cancelled row (Tuesday 12:00), no-show
+rows and a blocked band (Monday 18:00 to 20:00). Where the hidden row starts with
+the pair (Thursday, Friday) the chip sits on the pair's glyph line, between the two
+blocks; where it starts later (Tuesday, Wednesday) it sits under the pair, at the
+hidden row's time. No chip covers a time, a name or a glyph (measured). The Sunday
+booking makes the grid seven columns wide, the narrowest its lanes get at 390.
 
 - `agenda-mobile-week-semana-390x844.png`: Semana on a phone, the compressed week grid,
   real clock. It was taken in the early morning Lisbon time, outside the 08:00 to 21:00

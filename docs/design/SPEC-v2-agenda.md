@@ -125,10 +125,11 @@ from 08:00 to 21:00 in 30-minute rows widened to cover any booking outside it
 the bottom edge), a now line with a one-time scroll to it, and blocks showing the start time, the
 first name (truncated), the status glyph and a colour per SERVICE. Concurrent
 blocks split the column side by side into at most two lanes; where three or
-more run at once, the left lane's row is drawn and the others of that moment
-sit behind a "+N" chip that opens Dia, so three at once read one block and
-"+2" (a departure from the card's two lanes plus a chip, open as Q-B6-1, twin
-case included). Between 640
+more run at once, the two lanes' rows are drawn and the others of that moment
+sit behind a small "+N" chip on the two blocks' glyph line that opens Dia, so
+three at once read two blocks and "+1" (the card's default, open as Q-B6-1,
+twin case included). A half-lane block gives the first name a line of its own,
+so a 30-minute row is 34px tall. Between 640
 and 767 Semana keeps the list above; Dia keeps the list at every width under 768.
 At 640 and up nothing changes: the desktop grid still stacks same-start rows and
 never truncates a name (W11-00 v3), and still colours by therapist. Below 640

@@ -16,16 +16,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   COMPACT_BASE_WINDOW,
+  COMPACT_CHIP,
+  COMPACT_FACE,
+  COMPACT_FACE_PX,
+  COMPACT_LANE_GAP_PX,
   COMPACT_MAX_LANES,
   COMPACT_MIN_DRAWN_MINUTES,
   COMPACT_MIN_TARGET_PX,
   autoScrollDecision,
   buildCompactWeek,
   compactDates,
+  compactChipWidthPx,
   compactDayLabel,
   compactLaneBox,
   compactLaneWidthPx,
   compactWindow,
+  COMPACT_ROW_PX,
   faceName,
   layoutLanes,
   type AutoScrollInput,
@@ -217,19 +223,22 @@ describe("layoutLanes", () => {
     expect(placed.every((p) => p.lanes === 2)).toBe(true);
   });
 
-  it("Q-B6-1: THREE concurrent rows draw the first on the left and a +2 chip on the right", () => {
+  it("Q-B6-1, THE CARD'S DEFAULT: THREE concurrent rows draw TWO blocks side by side and a +1 chip", () => {
     const { placed, more } = layoutLanes([
       lane("a", H(15), H(15, 45), false, "a"),
       lane("b", H(15), H(15, 45), true, "b"),
       lane("c", H(15), H(15, 45), true, "c"),
     ]);
-    expect(placed).toEqual([{ id: "a", lane: 0, lanes: 2, drawnEndMin: H(15, 45) }]);
+    expect(placed).toEqual([
+      { id: "a", lane: 0, lanes: 2, drawnEndMin: H(15, 45) },
+      { id: "b", lane: 1, lanes: 2, drawnEndMin: H(15, 45) },
+    ]);
     expect(more).toHaveLength(1);
-    expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 2 });
-    expect(more[0]!.hiddenIds.sort()).toEqual(["b", "c"]);
+    expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 1 });
+    expect(more[0]!.hiddenIds).toEqual(["c"]);
   });
 
-  it("Q-B6-1: FOUR at once (two people, two machine rows) reads 'one | +3'", () => {
+  it("Q-B6-1: FOUR at once (two people, two machine rows) reads 'two | two | +2'", () => {
     const four = [
       lane("own", H(16), H(16, 45), false, "Ana"),
       lane("own-falta", H(16), H(16, 45), false, "Bruno"),
@@ -237,8 +246,11 @@ describe("layoutLanes", () => {
       lane("n2", H(16), H(16, 45), true, "Duarte"),
     ];
     const capped = layoutLanes(four);
-    expect(capped.placed.map((p) => p.id)).toEqual(["own"]);
-    expect(capped.more.map((m) => m.count)).toEqual([3]);
+    expect(capped.placed.map((p) => [p.id, p.lane])).toEqual([
+      ["own", 0],
+      ["own-falta", 1],
+    ]);
+    expect(capped.more.map((m) => m.count)).toEqual([2]);
     // Nothing is lost: drawn + hidden is every row.
     expect(capped.placed.length + capped.more[0]!.count).toBe(4);
 
@@ -276,13 +288,14 @@ describe("layoutLanes", () => {
       lane("F", H(11), H(11, 45)),
     ]);
     // B sits in the right lane and is DRAWN: it never runs with two others.
-    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ A: 0, B: 1, C: 0, E: 0 });
+    // At 11:00 the two lanes hold D and E, both drawn, and F is behind "+1".
+    expect(Object.fromEntries(placed.map((p) => [p.id, p.lane]))).toEqual({ A: 0, B: 1, C: 0, D: 1, E: 0 });
     expect(placed.every((p) => p.lanes === 2)).toBe(true);
-    // The chip stands for the rows of the crowded moment that are not in the
-    // left lane, and spans only them.
+    // The chip stands for the rows of the crowded moment beyond the two drawn
+    // lanes, and spans only them.
     expect(more).toHaveLength(1);
-    expect(more[0]).toMatchObject({ startMin: H(10, 30), drawnEndMin: H(11, 45), count: 2 });
-    expect([...more[0]!.hiddenIds].sort()).toEqual(["D", "F"]);
+    expect(more[0]).toMatchObject({ startMin: H(11), drawnEndMin: H(11, 45), count: 1 });
+    expect(more[0]!.hiddenIds).toEqual(["F"]);
   });
 
   it("Q-B6-1: a twin pair in a cluster that is crowded ELSEWHERE still renders side by side", () => {
@@ -303,21 +316,26 @@ describe("layoutLanes", () => {
     expect(more.flatMap((m) => m.hiddenIds)).not.toContain("twin-machine");
     expect(more.flatMap((m) => m.hiddenIds)).not.toContain("twin-person");
     // CONTROL: the cluster IS crowded, so the cap did fire somewhere.
-    expect(more.reduce((n, m) => n + m.count, 0)).toBe(2);
+    expect(more.reduce((n, m) => n + m.count, 0)).toBe(1);
   });
 
-  it("Q-B6-1, THE TWIN CASE: a twin pair with a third row at the same moment draws the person row, and the machine row goes behind '+2'", () => {
-    // What shipped, and a departure from the card's default (two lanes plus a
-    // chip) that DECISIONS Q-B6-1 names for the owner. The chip takes the
-    // second lane, so the crowded moment draws ONE block.
+  it("Q-B6-1, THE TWIN CASE: a twin pair with a third PERSON row at the same moment draws the two person rows, and the machine row goes behind '+1'", () => {
+    // Two blocks and a chip, the card's default. The order is start, longer
+    // first, person before machine, then name, so a third person row takes the
+    // right lane and the twin's machine half goes behind the chip. DECISIONS
+    // Q-B6-1 names this for the owner (keeping the twin would need a
+    // twin-aware order, which the card does not state).
     const person = lane("twin-person", H(15), H(15, 45), false, "Ana Terapeuta");
     const machine = lane("twin-machine", H(15), H(15, 45), true, "Ana Nesa");
     const third = lane("third", H(15), H(15, 45), false, "Bia Terapeuta");
     const { placed, more } = layoutLanes([machine, third, person]);
-    expect(placed).toEqual([{ id: "twin-person", lane: 0, lanes: 2, drawnEndMin: H(15, 45) }]);
+    expect(placed).toEqual([
+      { id: "twin-person", lane: 0, lanes: 2, drawnEndMin: H(15, 45) },
+      { id: "third", lane: 1, lanes: 2, drawnEndMin: H(15, 45) },
+    ]);
     expect(more).toHaveLength(1);
-    expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 2 });
-    expect([...more[0]!.hiddenIds].sort()).toEqual(["third", "twin-machine"]);
+    expect(more[0]).toMatchObject({ startMin: H(15), drawnEndMin: H(15, 45), count: 1 });
+    expect(more[0]!.hiddenIds).toEqual(["twin-machine"]);
 
     // CONTROL: the third row is what separates the twin. The same pair alone
     // is side by side, person left, machine right.
@@ -339,9 +357,11 @@ describe("layoutLanes", () => {
       lane("b1", H(12), H(12, 45)),
       lane("b2", H(12), H(12, 45)),
     ]);
+    // 09:00: "long" and a1 are drawn, a2 and a3 behind "+2". 12:00: "long" and
+    // b1 are drawn, b2 behind "+1".
     expect(more.map((m) => [m.startMin, m.drawnEndMin, m.count])).toEqual([
-      [H(9), H(9, 45), 3],
-      [H(12), H(12, 45), 2],
+      [H(9), H(9, 45), 2],
+      [H(12), H(12, 45), 1],
     ]);
     expect(placed.find((p) => p.id === "mid")).toMatchObject({ lane: 1, lanes: 2 });
     expect(placed.find((p) => p.id === "long")).toMatchObject({ lane: 0 });
@@ -383,19 +403,26 @@ describe("layoutLanes", () => {
       expect([...out.placed.map((p) => p.id), ...hidden].sort()).toEqual(items.map((i) => i.id).sort());
       for (const m of out.more) expect(m.count).toBe(m.hiddenIds.length);
 
-      // (2) Nothing paints over anything: drawn rows in one lane never overlap,
-      //     and nothing drawn in the right lane sits under a chip.
+      // (2) No block paints over another: drawn rows in one lane never overlap,
+      //     so at most two drawn rows run at any minute.
       for (const a of out.placed) {
         for (const b of out.placed) {
           if (a.id < b.id && a.lane === b.lane && a.lanes === 2 && b.lanes === 2) {
             expect(overlaps(span(a.id), span(b.id)), `${a.id}/${b.id} share lane ${a.lane}`).toBe(false);
           }
         }
-        for (const m of out.more) {
-          if (a.lane === 1) {
-            expect(overlaps(span(a.id), { s: m.startMin, e: m.drawnEndMin }), `${a.id} under ${m.key}`).toBe(false);
-          }
-        }
+      }
+      const drawnAt = (t: number) => out.placed.filter((p) => span(p.id).s <= t && t < span(p.id).e);
+      for (let t = H(8); t < H(24); t++) expect(drawnAt(t).length, `minute ${t}`).toBeLessThanOrEqual(2);
+
+      // (2b) THE CARD'S DEFAULT, TWO BLOCKS PLUS A CHIP: where a hidden row
+      //      starts, two blocks are drawn, one in each lane, and the chip that
+      //      holds it starts there too or earlier.
+      for (const id of hidden) {
+        const at = drawnAt(span(id).s);
+        expect(at.map((p) => p.lane).sort(), `${id}: two blocks beside its chip`).toEqual([0, 1]);
+        const chip = out.more.find((m) => m.hiddenIds.includes(id))!;
+        expect(chip.startMin).toBeLessThanOrEqual(span(id).s);
       }
       for (const m of out.more) {
         for (const n of out.more) {
@@ -533,14 +560,16 @@ describe("buildCompactWeek", () => {
     expect(thu.appointmentCount).toBe(17);
     const hidden = thu.more.reduce((sum, m) => sum + m.count, 0);
     expect(thu.appointments.length + hidden).toBe(17);
-    // 11:00 (three) and 14:00 (four) are the two chips; 08:30/09:00, 10:00,
-    // 15:30 and 18:00 split in two.
+    // 11:00 (three) and 14:00 (four) are the two chips, each beside two
+    // drawn blocks; 08:30/09:00, 10:00, 15:30 and 18:00 split in two.
     expect(thu.more.map((m) => [m.startMin, m.count])).toEqual([
-      [H(11), 2],
-      [H(14), 3],
+      [H(11), 1],
+      [H(14), 2],
     ]);
     const lanesAt = (hh: number, mm = 0) =>
       thu.appointments.filter((a) => a.startMin === H(hh, mm)).map((a) => a.lanes);
+    expect(lanesAt(11)).toEqual([2, 2]);
+    expect(lanesAt(14)).toEqual([2, 2]);
     expect(lanesAt(8, 30)).toEqual([2]);
     expect(lanesAt(9)).toEqual([2]);
     expect(lanesAt(10)).toEqual([2, 2]);
@@ -666,6 +695,40 @@ describe("compactLaneWidthPx / compactLaneBox", () => {
     expect(compactLaneWidthPx(383, 7)).toBeLessThan(COMPACT_MIN_TARGET_PX);
     expect(compactLaneWidthPx(375, 7)).toBeLessThan(COMPACT_MIN_TARGET_PX);
     expect(compactLaneWidthPx(360, 7)).toBeLessThan(COMPACT_MIN_TARGET_PX);
+  });
+
+  it("a row holds the half-lane face whole: the shortest block (one row, less its 1px gap) is the face's height", () => {
+    // Round 5: a 30-minute half-lane block was 25px, so it put the glyph
+    // before the name and left the name none to two letters. Now every
+    // half-lane block gives the name a line of its own.
+    expect(COMPACT_FACE_PX).toBe(1 + 11 + 10 + 10 + 1);
+    expect(COMPACT_ROW_PX - 1).toBeGreaterThanOrEqual(COMPACT_FACE_PX);
+    // The shortest DRAWN span is one row.
+    expect(COMPACT_MIN_DRAWN_MINUTES).toBe(30);
+  });
+
+  it("the chip sits on the glyph line, between the left glyph and the right block's text, at every width from 360 up", () => {
+    // Its top is under the time and name lines, and it is one glyph tall, so
+    // it ends where the shortest block's face ends.
+    expect(COMPACT_CHIP.topPx).toBe(COMPACT_FACE.padPx + COMPACT_FACE.timeLinePx + COMPACT_FACE.nameLinePx);
+    expect(COMPACT_CHIP.topPx + COMPACT_CHIP.heightPx).toBeLessThanOrEqual(COMPACT_ROW_PX - 1 - COMPACT_FACE.padPx);
+    // Left: 1px after the left block's stripe, inset and glyph.
+    expect(COMPACT_CHIP.leftPx).toBe(COMPACT_FACE.stripePx + COMPACT_FACE.insetPx + COMPACT_FACE.glyphPx + 1);
+    // Right: where the right lane's text starts (lane 1 is at 50% + half the gap).
+    expect(COMPACT_CHIP.right).toBe(
+      `calc(50% - ${COMPACT_LANE_GAP_PX / 2 + COMPACT_FACE.stripePx + COMPACT_FACE.insetPx}px)`,
+    );
+    // Its width from the arithmetic: 18.7px at 390 without Dom, 12.3px at 360
+    // with Dom, the narrowest. "+N" at 8px bold is about 10px (the e2e
+    // measures it painted whole at 390 and at 360).
+    expect(compactChipWidthPx(390, 6)).toBeCloseTo(18.67, 1);
+    expect(compactChipWidthPx(390, 7)).toBeCloseTo(14.43, 1);
+    expect(compactChipWidthPx(360, 7)).toBeCloseTo(12.29, 1);
+    for (const vp of [360, 375, 390, 414, 639]) {
+      for (const cols of [6, 7]) expect(compactChipWidthPx(vp, cols), `${vp}/${cols}`).toBeGreaterThanOrEqual(12);
+    }
+    // It is the lane less the left glyph: the same arithmetic as compactLaneWidthPx.
+    expect(compactChipWidthPx(360, 7)).toBeCloseTo(compactLaneWidthPx(360, 7) - 10, 5);
   });
 
   it("the CSS boxes are the arithmetic: no outer gutter, one gap in the middle", () => {

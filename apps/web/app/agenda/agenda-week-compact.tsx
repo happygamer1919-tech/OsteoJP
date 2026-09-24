@@ -9,7 +9,10 @@ import {
   compactDayLabel,
   compactLaneBox,
   COMPACT_AXIS_PX,
+  COMPACT_CHIP,
+  COMPACT_FACE,
   COMPACT_ROW_MINUTES,
+  COMPACT_ROW_PX,
   type CompactAppointment,
   type CompactBand,
   type CompactMore,
@@ -82,15 +85,12 @@ import { EstadoMarker } from "./estado-marker";
  * name whatever row happens to be level with it (agenda-grid.tsx's reasoning).
  */
 
-/** Height of one 30-minute row. A 45-minute block is 38px, a 30-minute one 25px. */
-const ROW_PX = 26;
 /**
- * A two-lane block this tall or taller has room for three lines: the time, the
- * name on a line of its own, then the status glyph (11 + 12 + 1 + 10 plus 2px
- * of padding). A 45-minute block is 38px. A shorter two-lane block keeps two
- * lines, the glyph before the name.
+ * Height of one 30-minute row, from the core: the half-lane face (time, name,
+ * glyph) plus the 1px gap under a block, so a 30-minute block is 33px and a
+ * 45-minute one 50px.
  */
-const THREE_LINES_PX = 36;
+const ROW_PX = COMPACT_ROW_PX;
 /**
  * The start time is never cut. Measured in Chromium with Inter loaded, "15:00"
  * at 600 with tabular figures is 2.86em wide (25.7px at 9px), so it needs about
@@ -363,7 +363,6 @@ export function CompactWeekView({
                 m={m}
                 dayLabel={formatDayHeader(d.date, locale)}
                 top={minToPx(m.startMin)}
-                height={minToPx(m.drawnEndMin) - minToPx(m.startMin) - 1}
                 onSelect={() => onSelectDay(d.date)}
               />
             ))}
@@ -408,15 +407,15 @@ export function CompactWeekView({
  * it is (Q-B6-6: a machine row has no visual marker), the service and the
  * status.
  *
- * THE FACE IN A HALF-WIDTH LANE. A lane is 24.4px at 390 with Dom shown
- * (28.7px without). The old face kept 3px of padding, cut the time with an
- * ellipsis, and put a 10px glyph and a gap before the name, so a half lane read
- * "1..." and one letter. Now, in two lanes, the time sits one pixel from the
- * stripe and sizes itself to the lane (TIME_FONT), and a block tall enough for
- * three lines gives the name a line of its own at 9px and the glyph the line
- * below. The name is CLIPPED there, not ellipsised: in 21px an ellipsis (8.6px)
- * would leave one letter, clipping leaves three ("Gem" is 20.2px at 9px). A
- * shorter two-lane block keeps the glyph before the name.
+ * THE FACE IN A HALF-WIDTH LANE. A lane is 22.3px at 360 with Dom shown and
+ * 28.7px at 390 without. The time sits one pixel from the stripe and sizes
+ * itself to the lane (TIME_FONT); the first name has a line of its own across
+ * the whole face, at 9px, CLIPPED rather than ellipsised (an 8.6px ellipsis in
+ * 21px would leave one letter; "Gem" is 20.2px at 9px); the status glyph has
+ * the line below. Every half-lane block has that room: a row is as tall as the
+ * face (COMPACT_ROW_PX). With the glyph before the name, a 30-minute half lane
+ * left the name 6 to 9px: none to two letters. A block on its own keeps two
+ * lines, the glyph before an ellipsised name, with room for both.
  */
 function Block({
   a,
@@ -432,7 +431,6 @@ function Block({
   const color = colorFor(a.colorKey);
   const box = compactLaneBox(a.lane, a.lanes);
   const half = a.lanes === 2;
-  const threeLines = half && height >= THREE_LINES_PX;
   const name = [
     a.timeLabel,
     a.patientLabel,
@@ -443,8 +441,8 @@ function Block({
   const patient = (
     <span
       data-testid="agenda-compact-patient"
-      className={`block min-w-0 overflow-hidden whitespace-nowrap leading-3 ${
-        half ? "text-clip text-[9px]" : "text-ellipsis text-[10px]"
+      className={`block min-w-0 overflow-hidden whitespace-nowrap ${
+        half ? "text-clip text-[9px] leading-[10px]" : "text-ellipsis text-[10px] leading-3"
       } ${a.struck ? "line-through" : ""} ${a.withheld ? "italic" : ""}`}
     >
       {a.firstName}
@@ -456,7 +454,7 @@ function Block({
       data-compact-appointment-id={a.id}
       data-compact-lane={a.lane}
       data-compact-lanes={a.lanes}
-      data-compact-face={threeLines ? "three-lines" : "two-lines"}
+      data-compact-face={half ? "three-lines" : "two-lines"}
       aria-label={name}
       onClick={onSelect}
       className={`absolute z-10 flex flex-col items-stretch overflow-hidden rounded-[3px] border-l-2 py-px text-left text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
@@ -471,10 +469,10 @@ function Block({
       >
         {a.timeLabel}
       </span>
-      {threeLines ? (
+      {half ? (
         <>
           {patient}
-          <EstadoMarker estado={a.estado} size={10} className="mt-px" />
+          <EstadoMarker estado={a.estado} size={COMPACT_FACE.glyphPx} />
         </>
       ) : (
         <span className="flex min-w-0 items-center gap-0.5">
@@ -486,22 +484,24 @@ function Block({
   );
 }
 
-/** Q-B6-1: the rows of a moment when three or more run at once, other than
- *  the one drawn on the left, as one chip that opens that day in Dia. */
+/**
+ * Q-B6-1: the rows of a crowded moment beyond the two drawn blocks, as one
+ * "+N" chip that opens that day in Dia. It is a pill on the blocks' glyph line,
+ * across the gap between them (COMPACT_CHIP): it covers no time, name or
+ * glyph. It is smaller than a 24px target; the day header above the column,
+ * 40px tall, opens the same Dia, which is WCAG 2.5.8's equivalent-control case.
+ */
 function More({
   m,
   dayLabel,
   top,
-  height,
   onSelect,
 }: {
   m: CompactMore;
   dayLabel: string;
   top: number;
-  height: number;
   onSelect: () => void;
 }) {
-  const box = compactLaneBox(1, 2);
   const what = m.count === 1 ? s["agenda.moreOne"] : s["agenda.moreMany"].replace("{n}", String(m.count));
   return (
     <button
@@ -510,8 +510,13 @@ function More({
       data-compact-more-count={m.count}
       aria-label={`${what}. ${s["agenda.openDay"]} ${dayLabel}`}
       onClick={onSelect}
-      className="absolute z-10 flex items-start justify-center rounded-[3px] border border-dashed border-v2-text-secondary bg-v2-surface pt-0.5 text-[11px] font-semibold leading-none text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
-      style={{ top, height, left: box.left, width: box.width }}
+      className="absolute z-10 flex items-center justify-center overflow-hidden rounded-full bg-v2-text-primary text-[8px] font-bold leading-none tabular-nums text-v2-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      style={{
+        top: top + COMPACT_CHIP.topPx,
+        height: COMPACT_CHIP.heightPx,
+        left: COMPACT_CHIP.leftPx,
+        right: COMPACT_CHIP.right,
+      }}
     >
       +{m.count}
     </button>

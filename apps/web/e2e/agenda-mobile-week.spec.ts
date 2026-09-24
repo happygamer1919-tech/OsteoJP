@@ -49,6 +49,14 @@ import {
 
 const PHONE = { width: 390, height: 844 };
 const NARROW_PHONE = { width: 360, height: 780 };
+/**
+ * Letters of the first name every half-lane block paints, at 390 and at 360,
+ * both with Dom shown (the narrowest lanes each width draws), or the whole of
+ * a shorter name. The name has its own line across the face: 21.4px at 390,
+ * 19.3px at 360. At 9px "Gem" is 20.2px, so at 360 this file's "Gemeo" shows
+ * two letters (measured) where "Ana" shows three.
+ */
+const NAME_LETTERS = { phone: 3, narrow: 2 } as const;
 const DESKTOP = { width: 1440, height: 900 };
 
 /** This file's day. One offset per spec file (e2e-spec-days-do-not-collide).
@@ -66,6 +74,18 @@ const TWIN_MACHINE_APPT = "00000000-0000-4000-8000-00000000b6b2";
 const SUNDAY_APPT = "00000000-0000-4000-8000-00000000b6b3";
 /** 15:00 Lisbon, clear of the 10:00 slot the first test books through the UI. */
 const TWIN_AT = "15:00";
+/**
+ * Q-B6-1's crowded moment: three 30-minute rows at once on DAY, all on the e2e
+ * therapist (only CONFIRMED rows may not overlap, 0061), patients from the
+ * seed. The card's default is two blocks and a "+1" chip. Thirty minutes is the
+ * shortest block, the tightest face a half lane draws.
+ */
+const CROWD_AT = "17:00";
+const CROWD = [
+  { id: "00000000-0000-4000-8000-00000000b6b4", patient: PATIENTS.ana },
+  { id: "00000000-0000-4000-8000-00000000b6b5", patient: PATIENTS.joao },
+  { id: "00000000-0000-4000-8000-00000000b6b6", patient: PATIENTS.maria },
+] as const;
 
 /** Monday of DAY's week and the six Mon-Sat days, computed here and never read
  *  back off the page: a test asking the page which days it shows cannot notice
@@ -152,15 +172,15 @@ type Face = {
   timeFontPx: number;
   /** How many leading characters of the name lie wholly inside its box. */
   nameVisible: number;
+  /** The name's length, so a short name is not asked for more than it has. */
+  nameLength: number;
 };
 
-/** Every visible block and "+N" chip in the phone grid, measured part by part. */
+/** Every visible block in the phone grid, measured part by part. */
 async function faceReport(page: Page): Promise<Face[]> {
   return page.evaluate(() => {
     const out: Face[] = [];
-    const targets = document.querySelectorAll<HTMLElement>(
-      "[data-compact-appointment-id], [data-testid='agenda-compact-more']",
-    );
+    const targets = document.querySelectorAll<HTMLElement>("[data-compact-appointment-id]");
     for (const el of Array.from(targets)) {
       const box = el.getBoundingClientRect();
       if (box.width === 0) continue;
@@ -188,6 +208,51 @@ async function faceReport(page: Page): Promise<Face[]> {
         timeClient: time ? time.clientWidth : 0,
         timeFontPx: time ? Number.parseFloat(getComputedStyle(time).fontSize) : 9,
         nameVisible,
+        nameLength: name?.textContent?.length ?? 0,
+      });
+    }
+    return out;
+  });
+}
+
+type Chip = {
+  count: string;
+  box: Box;
+  /** The "+N" is painted whole: its scrollWidth fits its clientWidth. */
+  textFits: boolean;
+  /** Every time, name and glyph box of every block in the chip's column that
+   *  the chip's box intersects, as "id:part". Must be empty. */
+  covers: string[];
+};
+
+/** Every visible "+N" chip, and what, if anything, of a block's face it covers. */
+async function chipReport(page: Page): Promise<Chip[]> {
+  return page.evaluate(() => {
+    // Boxes that only touch do not count: layout rounds to 1/64 px.
+    const hits = (a: DOMRect, b: DOMRect) =>
+      a.left < b.right - 0.1 && b.left < a.right - 0.1 && a.top < b.bottom - 0.1 && b.top < a.bottom - 0.1;
+    const out: Chip[] = [];
+    for (const chip of Array.from(document.querySelectorAll<HTMLElement>("[data-testid='agenda-compact-more']"))) {
+      const c = chip.getBoundingClientRect();
+      if (c.width === 0) continue;
+      const covers: string[] = [];
+      const column = chip.closest("[data-compact-day]");
+      for (const block of Array.from(column?.querySelectorAll<HTMLElement>("[data-compact-appointment-id]") ?? [])) {
+        for (const [part, sel] of [
+          ["time", "[data-testid='agenda-compact-time']"],
+          ["name", "[data-testid='agenda-compact-patient']"],
+          // The glyph's SVG: its wrapper is a flex item stretched to the face's width.
+          ["glyph", "[data-estado] svg"],
+        ] as const) {
+          const el = block.querySelector<HTMLElement>(sel);
+          if (el && hits(c, el.getBoundingClientRect())) covers.push(`${block.dataset.compactAppointmentId}:${part}`);
+        }
+      }
+      out.push({
+        count: chip.textContent ?? "",
+        box: { x: c.x, y: c.y, width: c.width, height: c.height },
+        textFits: chip.scrollWidth <= chip.clientWidth + 0.5,
+        covers,
       });
     }
     return out;
@@ -214,7 +279,10 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
 }
 
 async function removeTwin(db: SupabaseClient): Promise<void> {
-  await db.from("appointments").delete().in("id", [TWIN_PERSON_APPT, TWIN_MACHINE_APPT, SUNDAY_APPT]);
+  await db
+    .from("appointments")
+    .delete()
+    .in("id", [TWIN_PERSON_APPT, TWIN_MACHINE_APPT, SUNDAY_APPT, ...CROWD.map((c) => c.id)]);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("practitioner_id", TWIN_MACHINE_ID);
   await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("patient_id", TWIN_PATIENT.id);
   await db.from("patients").delete().eq("id", TWIN_PATIENT.id);
@@ -267,17 +335,17 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
       }),
       "twin patient",
     );
-    const row = (id: string, practitionerId: string, date: string, at: string) => {
+    const row = (id: string, practitionerId: string, date: string, at: string, minutes = 45, patientId: string = TWIN_PATIENT.id) => {
       const startsAt = lisbonDateTimeToUtc(date, at);
       return {
         id,
         tenant_id: TENANT_A,
-        patient_id: TWIN_PATIENT.id,
+        patient_id: patientId,
         practitioner_id: practitionerId,
         location_id: LOCATION.id,
         service_id: SERVICE.id,
         starts_at: startsAt.toISOString(),
-        ends_at: new Date(startsAt.getTime() + 45 * 60_000).toISOString(),
+        ends_at: new Date(startsAt.getTime() + minutes * 60_000).toISOString(),
         status: "scheduled",
         created_by: therapist.id,
       };
@@ -287,8 +355,9 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
         row(TWIN_PERSON_APPT, therapist.id, DAY, TWIN_AT),
         row(TWIN_MACHINE_APPT, TWIN_MACHINE_ID, DAY, TWIN_AT),
         row(SUNDAY_APPT, therapist.id, SUNDAY, "10:00"),
+        ...CROWD.map((c) => row(c.id, therapist.id, DAY, CROWD_AT, 30, c.patient.id)),
       ]),
-      "the twin pair and the Sunday booking",
+      "the twin pair, the crowded moment and the Sunday booking",
     );
   });
 
@@ -385,16 +454,17 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
     // cuts it to "1...", and the block itself never overflows because its
     // children clip themselves. So: the TIME element's own scrollWidth fits its
     // clientWidth (the whole "15:00" is painted), the first letters of the name
-    // lie inside the name element's box, and every block and chip is a 24px
-    // target. At 390 with Dom shown, the narrowest lanes this width draws.
+    // lie inside the name element's box, and every block is a 24px target
+    // (the "+N" chip is not; ARM 5b measures it). At 390 with Dom shown, the
+    // narrowest lanes this width draws.
     await expect(person).toContainText(TWIN_AT);
     await expect(person.getByTestId("agenda-compact-patient")).toHaveText(TWIN_PATIENT.name.split(" ")[0]!);
     const faces = await faceReport(page);
     expect(faces.length, "blocks to measure").toBeGreaterThanOrEqual(4);
-    expect(
-      faces.filter((f) => f.lanes === "2").map((f) => f.id).sort(),
-      "the twin pair is measured in half lanes",
-    ).toEqual([TWIN_PERSON_APPT, TWIN_MACHINE_APPT].sort());
+    const halves = faces.filter((f) => f.lanes === "2").map((f) => f.id);
+    for (const id of [TWIN_PERSON_APPT, TWIN_MACHINE_APPT]) {
+      expect(halves, "the twin pair is measured in half lanes").toContain(id);
+    }
     for (const f of faces) {
       expect(f.timeScroll, `${f.id}: the whole start time is painted (${f.timeScroll} <= ${f.timeClient})`).toBeLessThanOrEqual(
         f.timeClient + 0.5,
@@ -403,17 +473,73 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
       expect(f.width, `${f.id}: at least 24px wide`).toBeGreaterThanOrEqual(24);
       expect(f.height, `${f.id}: at least 24px tall`).toBeGreaterThanOrEqual(24);
     }
-    for (const id of [TWIN_PERSON_APPT, TWIN_MACHINE_APPT]) {
-      const f = faces.find((x) => x.id === id)!;
-      expect(f.nameVisible, `${id}: the first three letters of the name are painted`).toBeGreaterThanOrEqual(3);
+    // THE NAME, IN EVERY HALF-LANE BLOCK, the 30-minute ones included: at
+    // least three letters (or the whole of a shorter name) at 390 with Dom.
+    for (const f of faces.filter((x) => x.lanes === "2")) {
+      expect(f.nameVisible, `${f.id}: the first letters of the name are painted (${f.nameVisible})`).toBeGreaterThanOrEqual(
+        Math.min(3, f.nameLength),
+      );
     }
-    // The same at 360, where only the time is asserted: a half lane there is
-    // narrower than 24px with Dom shown (the arithmetic in DECISIONS, Q-B6-1).
-    await page.setViewportSize(NARROW_PHONE);
-    for (const f of await faceReport(page)) {
-      expect(f.timeScroll, `360 ${f.id}: the whole start time is painted`).toBeLessThanOrEqual(f.timeClient + 0.5);
+
+    // ARM 5b - Q-B6-1, THE CARD'S DEFAULT: three rows at once read TWO blocks
+    // side by side and a "+1" chip, and the chip covers no time, name or
+    // glyph of any block in its column.
+    const crowd = await page
+      .locator(CROWD.map((c) => `[data-compact-appointment-id="${c.id}"]`).join(", "))
+      .evaluateAll((els) =>
+        els
+          .filter((e) => e.getBoundingClientRect().width > 0)
+          .map((e) => ({ id: (e as HTMLElement).dataset.compactAppointmentId!, lane: (e as HTMLElement).dataset.compactLane! })),
+      );
+    expect(crowd.map((c) => c.lane).sort(), "three at once: two blocks, one in each lane").toEqual(["0", "1"]);
+    const [c0, c1] = await Promise.all(
+      crowd.map((c) => box(page.locator(`[data-compact-appointment-id="${c.id}"]`), `crowded ${c.id}`)),
+    );
+    expect(Math.abs(c0!.y - c1!.y), "the two crowded blocks start on the same line").toBeLessThanOrEqual(1);
+    expect(disjoint(c0!, c1!), "the two crowded blocks are side by side, not on top of each other").toBe(true);
+    const dayChips = page.locator(`[data-compact-day="${DAY}"] [data-testid="agenda-compact-more"]`);
+    await expect(dayChips).toHaveCount(1);
+    await expect(dayChips).toHaveText("+1");
+    for (const vp of [PHONE, NARROW_PHONE]) {
+      await page.setViewportSize(vp);
+      const chips = await chipReport(page);
+      expect(chips.length, `${vp.width}: chips to measure`).toBeGreaterThanOrEqual(1);
+      for (const c of chips) {
+        expect(c.textFits, `${vp.width}: "${c.count}" is painted whole (${c.box.width.toFixed(1)}px)`).toBe(true);
+        expect(c.covers, `${vp.width}: "${c.count}" covers no face part`).toEqual([]);
+      }
+      // The chip is ON the crowded moment: inside the two blocks' rows,
+      // between their left and right edges.
+      const [b0, b1] = await Promise.all(
+        crowd.map((c) => box(page.locator(`[data-compact-appointment-id="${c.id}"]`), `${vp.width} crowded ${c.id}`)),
+      );
+      const chip = await box(dayChips, `${vp.width}: the chip`);
+      const left = Math.min(b0!.x, b1!.x);
+      const right = Math.max(b0!.x + b0!.width, b1!.x + b1!.width);
+      expect(chip.y, `${vp.width}: the chip is below the blocks' tops`).toBeGreaterThan(b0!.y);
+      expect(chip.y + chip.height, `${vp.width}: the chip ends inside the blocks`).toBeLessThanOrEqual(b0!.y + b0!.height + 0.5);
+      expect(chip.x, `${vp.width}: the chip starts inside the pair`).toBeGreaterThan(left);
+      expect(chip.x + chip.width, `${vp.width}: the chip ends inside the pair`).toBeLessThan(right);
+
+      // The time, and the name in every half-lane block, at this width too.
+      // A half lane at 360 is narrower than 24px with Dom shown (the
+      // arithmetic in DECISIONS, Q-B6-1), so the tap size is not asserted.
+      for (const f of await faceReport(page)) {
+        expect(f.timeScroll, `${vp.width} ${f.id}: the whole start time is painted`).toBeLessThanOrEqual(f.timeClient + 0.5);
+        if (f.lanes === "2") {
+          expect(f.nameVisible, `${vp.width} ${f.id}: letters of the name painted (${f.nameVisible})`).toBeGreaterThanOrEqual(
+            Math.min(NAME_LETTERS[vp.width === PHONE.width ? "phone" : "narrow"], f.nameLength),
+          );
+        }
+      }
     }
     await page.setViewportSize(PHONE);
+    // The chip opens Dia for its day.
+    await dayChips.tap();
+    await expect(page).toHaveURL(new RegExp(`view=day&date=${DAY}`));
+    await page.goto(`/agenda?view=week&date=${DAY}`);
+    await expect(page.getByTestId("agenda-compact-week")).toBeVisible();
+    await hydrated(page);
 
     // ARM 6 - a block opens the RIGHT appointment's existing edit sheet. By id:
     // the drawer prints it, and a neighbour's row cannot produce it.

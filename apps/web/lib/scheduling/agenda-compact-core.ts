@@ -20,19 +20,20 @@
 // with no React, no DOM and no clock; agenda-week-compact.tsx renders the answer.
 //
 // DEFAULTS BUILT IN HERE, each logged for the owner rather than decided quietly:
-//   Q-B6-1  a column splits into at most TWO lanes. Where three or more rows
-//           run at the same moment, the row in the left lane is drawn and the
-//           rest of that moment's rows sit behind one "+N" chip in the right
-//           lane, which opens Dia for that day. Rows around it that never run
-//           three at a time keep their lanes. At 390px a day column is ~59px
-//           (~51px with Dom); four lanes would be ~14px each, which holds
-//           neither a time, nor a name, nor a 24px tap target.
-//           THIS DEPARTS FROM THE CARD'S DEFAULT (two lanes plus a chip): the
-//           chip takes the second lane, so three rows at once read one block
-//           and "+2", and a twin pair with a third row at the same moment
-//           loses its machine half to the chip. DECISIONS Q-B6-1 says why and
-//           leaves it to the owner, and agenda-compact-core.test.ts pins that
-//           entry's words to what layoutLanes draws.
+//   Q-B6-1  a column splits into at most TWO lanes of blocks, plus a "+N"
+//           chip: the card's default. Where three or more rows run at the
+//           same moment, the two rows in the two lanes are drawn and the rest
+//           of that moment's rows sit behind one "+N" chip, which opens Dia
+//           for that day. So three rows at once read two blocks and "+1".
+//           The chip is a small pill laid across the gap between the two
+//           blocks, on their status-glyph line, where it covers no time, name
+//           or glyph of blocks that start with the hidden rows (COMPACT_FACE,
+//           COMPACT_CHIP and compactChipWidthPx below). At
+//           390px a day column is ~59px (~51px with Dom); four lanes would be
+//           ~14px each, which holds neither a time, nor a name, nor a 24px
+//           tap target. DECISIONS Q-B6-1 logs it for the owner, and
+//           agenda-compact-core.test.ts pins that entry's words to what
+//           layoutLanes draws.
 //   Q-B6-5  Sunday is a column only when a loaded row falls on it. Desktop is
 //           unchanged (Mon-Sat, W3-08).
 //   Q-B6-8  blocked time and the midday closure are drawn as visual-only bands.
@@ -97,7 +98,7 @@ export type CompactAppointment = {
   struck: boolean;
 };
 
-/** Q-B6-1: the right lane where three or more rows run at once. */
+/** Q-B6-1: the rows of a crowded moment beyond the two that are drawn. */
 export type CompactMore = {
   key: string;
   startMin: number;
@@ -216,36 +217,6 @@ export type LaneLayout = {
 };
 
 /**
- * The moments, as half-open [startMin, endMin) spans, at which MORE than
- * `maxLanes` of `rows` run at once (their drawn spans). Pure.
- */
-function crowdedSpans(
-  rows: readonly { startMin: number; drawnEndMin: number }[],
-  maxLanes: number,
-): { startMin: number; endMin: number }[] {
-  // An end sorts before a start at the same minute: 10:00-10:45 and
-  // 10:45-11:30 are consecutive, not concurrent.
-  const events = rows
-    .flatMap((r) => [
-      { at: r.startMin, delta: 1 },
-      { at: r.drawnEndMin, delta: -1 },
-    ])
-    .sort((a, b) => a.at - b.at || a.delta - b.delta);
-  const out: { startMin: number; endMin: number }[] = [];
-  let running = 0;
-  for (let k = 0; k < events.length; k++) {
-    running += events[k]!.delta;
-    const next = events[k + 1];
-    if (running > maxLanes && next && next.at > events[k]!.at) {
-      const last = out[out.length - 1];
-      if (last && last.endMin === events[k]!.at) last.endMin = next.at;
-      else out.push({ startMin: events[k]!.at, endMin: next.at });
-    }
-  }
-  return out;
-}
-
-/**
  * Side-by-side lanes for ONE day column. Pure.
  *
  * 1. Sort by start, then the LONGER drawn span first, then person before
@@ -256,21 +227,18 @@ function crowdedSpans(
  *    at or before this start. For intervals sorted by start this is optimal, so
  *    the lane count IS the cluster's peak concurrency.
  * 4. A cluster of one or two lanes is drawn as it is.
- * 5. Q-B6-1, THE CAP IS PER MOMENT, NOT PER CLUSTER. A cluster is transitive:
- *    09:00-09:45, 09:30-10:15, 10:00-10:45 ... is one cluster though no more
- *    than two of them ever run at once. So in a cluster that needs a third
- *    lane, a row is hidden only if it RUNS at a moment where more than
- *    `maxLanes` rows run and it is not the one in lane 0 then. Every other row
- *    keeps its lane. The hidden rows are grouped where their spans overlap, and
- *    each group is ONE "+N" chip in the right lane over that group's span.
+ * 5. Q-B6-1, THE CARD'S DEFAULT: TWO LANES OF BLOCKS PLUS A CHIP. In a cluster
+ *    that needs a third lane, every row in lane 0 or lane 1 is drawn, and every
+ *    row that took lane 2 or higher is hidden. A row takes lane 2 only when
+ *    lanes 0 and 1 are both busy at its start, so a hidden row always starts at
+ *    a moment where two blocks are drawn, and the chip sits beside those two.
+ *    The cap is therefore per MOMENT, not per cluster: a transitive chain
+ *    (09:00-09:45, 09:30-10:15, 10:00-10:45 ...) never needs lane 2 and keeps
+ *    every row. The hidden rows are grouped where their spans overlap, and each
+ *    group is ONE "+N" chip, placed at the group's start.
  *
- *    Why nothing overlaps: a row in lane 1 that is still drawn never runs at a
- *    crowded moment, and a row in lane 2 or higher always does (it took that
- *    lane because lanes 0 and 1 were busy when it started). If a drawn lane-1
- *    row and a hidden row overlapped, whichever started second would have
- *    started at a crowded moment with the lane-1 row running, so the lane-1 row
- *    would be hidden. A chip's span is a union of overlapping hidden spans, so
- *    no drawn lane-1 row sits under a chip either.
+ *    Why no two drawn rows overlap: first-fit never puts two overlapping rows
+ *    in one lane, and only lanes 0 and 1 are drawn.
  */
 export function layoutLanes(items: readonly LaneItem[], maxLanes: number = COMPACT_MAX_LANES): LaneLayout {
   const drawn = items.map((it) => ({
@@ -325,14 +293,11 @@ export function layoutLanes(items: readonly LaneItem[], maxLanes: number = COMPA
       continue;
     }
 
-    const crowded = crowdedSpans(cluster, maxLanes);
-    const runsWhenCrowded = (it: (typeof cluster)[number]) =>
-      crowded.some((c) => it.startMin < c.endMin && c.startMin < it.drawnEndMin);
-    // The chip takes the LAST lane that is drawn; the lanes left of it stay.
-    const chipLane = maxLanes - 1;
+    // Lanes 0 and 1 are drawn; a row that needed a third lane or more is
+    // behind the chip.
     const hidden: (typeof cluster)[number][] = [];
     cluster.forEach((it, k) => {
-      if (laneOf[k]! >= chipLane && runsWhenCrowded(it)) {
+      if (laneOf[k]! >= maxLanes) {
         hidden.push(it);
       } else {
         out.placed.push({ id: it.id, lane: laneOf[k] === 0 ? 0 : 1, lanes: 2, drawnEndMin: it.drawnEndMin });
@@ -397,6 +362,62 @@ export function compactLaneWidthPx(viewportPx: number, columns: number): number 
   const column = (viewportPx - COMPACT_AXIS_PX) / columns;
   const inner = column - 1;
   return (inner - COMPACT_LANE_GAP_PX) / 2;
+}
+
+/**
+ * The face of a block in a HALF lane, top to bottom, in px: 1px of padding, the
+ * start time on an 11px line, the first name on a 10px line of its own (9px
+ * type, clipped, never ellipsised), the 10px status glyph, 1px of padding. On
+ * the left, a 2px service stripe and 1px of padding come before all three.
+ *
+ * A half-lane face ALWAYS has the name on its own line. With the glyph before
+ * the name instead, a 30-minute half lane left the name 6 to 9px: none to two
+ * letters (AGENDA-MOBILE-WEEK round 5). So a row is as tall as this face.
+ */
+export const COMPACT_FACE = {
+  padPx: 1,
+  timeLinePx: 11,
+  nameLinePx: 10,
+  glyphPx: 10,
+  stripePx: 2,
+  insetPx: 1,
+} as const;
+
+/** The height of the whole half-lane face. */
+export const COMPACT_FACE_PX =
+  COMPACT_FACE.padPx + COMPACT_FACE.timeLinePx + COMPACT_FACE.nameLinePx + COMPACT_FACE.glyphPx + COMPACT_FACE.padPx;
+
+/**
+ * One 30-minute row. The shortest block is one row tall less the 1px gap under
+ * every block, so it holds the half-lane face exactly: 34 - 1 = 33.
+ */
+export const COMPACT_ROW_PX = COMPACT_FACE_PX + 1;
+
+/**
+ * Q-B6-1's chip: a pill on the status-glyph line, laid ACROSS the gap between
+ * the two drawn blocks. Its left edge is 1px after the left block's glyph and
+ * its right edge is where the right block's text starts (after its stripe and
+ * inset), so it covers the left block's empty glyph-line tail, the gap and the
+ * right block's stripe, and no time, name or glyph. As CSS, inside the column.
+ */
+export const COMPACT_CHIP = {
+  /** From the block's top: under the time line and the name line. */
+  topPx: COMPACT_FACE.padPx + COMPACT_FACE.timeLinePx + COMPACT_FACE.nameLinePx,
+  heightPx: COMPACT_FACE.glyphPx,
+  leftPx: COMPACT_FACE.stripePx + COMPACT_FACE.insetPx + COMPACT_FACE.glyphPx + 1,
+  /** `right` as CSS: the right lane starts at 50% + half the gap. */
+  right: `calc(50% - ${COMPACT_LANE_GAP_PX / 2 + COMPACT_FACE.stripePx + COMPACT_FACE.insetPx}px)`,
+} as const;
+
+/**
+ * The chip's width in px, for a grid `viewportPx` wide with `columns` day
+ * columns: from 1px after the left glyph to the right block's text. The same
+ * arithmetic as the CSS above. 12.3px at 360 with Dom, the narrowest case; the
+ * e2e measures that "+N" is painted whole inside it.
+ */
+export function compactChipWidthPx(viewportPx: number, columns: number): number {
+  const inner = (viewportPx - COMPACT_AXIS_PX) / columns - 1;
+  return inner / 2 + COMPACT_LANE_GAP_PX / 2 + COMPACT_FACE.stripePx + COMPACT_FACE.insetPx - COMPACT_CHIP.leftPx;
 }
 
 /* ------------------------------------------------------------------ */

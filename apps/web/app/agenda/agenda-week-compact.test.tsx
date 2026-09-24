@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgendaWeekCompact, CompactWeekView } from "./agenda-week-compact";
 import { s } from "@/lib/i18n";
-import { buildCompactWeek } from "@/lib/scheduling/agenda-compact-core";
+import { buildCompactWeek, COMPACT_CHIP, COMPACT_ROW_PX } from "@/lib/scheduling/agenda-compact-core";
 import type { BlockSpan } from "@/lib/scheduling/blocked-time-core";
 import { lisbonMinutesFromMidnight, todayInLisbon } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
@@ -141,7 +141,7 @@ describe("AgendaWeekCompact markup", () => {
     );
   });
 
-  it("a twin pair renders as two blocks in two lanes; four at once render one block and +3", () => {
+  it("a twin pair renders as two blocks in two lanes; four at once render two blocks and +2 (the card's default)", () => {
     const twin = render({
       appointments: [
         appt({ id: "person" }),
@@ -156,10 +156,30 @@ describe("AgendaWeekCompact markup", () => {
     const four = render({
       appointments: ["a", "b", "c", "d"].map((id) => appt({ id })),
     });
-    expect(four.match(/data-compact-appointment-id="/g) ?? []).toHaveLength(1);
-    expect(four).toMatch(/data-testid="agenda-compact-more" data-compact-more-count="3"/);
-    expect(four).toMatch(/>\+3<\/button>/);
-    expect(four).toContain(s["agenda.moreMany"].replace("{n}", "3"));
+    expect(four.match(/data-compact-appointment-id="/g) ?? []).toHaveLength(2);
+    expect(four).toMatch(/data-compact-lane="0" data-compact-lanes="2"/);
+    expect(four).toMatch(/data-compact-lane="1" data-compact-lanes="2"/);
+    expect(four).toMatch(/data-testid="agenda-compact-more" data-compact-more-count="2"/);
+    expect(four).toMatch(/>\+2<\/button>/);
+    expect(four).toContain(s["agenda.moreMany"].replace("{n}", "2"));
+  });
+
+  it("the chip sits on the two blocks' glyph line, across the gap between them (COMPACT_CHIP)", () => {
+    // Three 30-minute rows at 10:00 on the Wednesday: two blocks and "+1".
+    const three = render({
+      appointments: ["a", "b", "c"].map((id) => appt({ id, endsAt: iso(WED, "10:30") })),
+    });
+    const chip = three.match(/<button[^>]*data-testid="agenda-compact-more"[^>]*>/)![0];
+    // 10:00 is four rows below the 08:00 top.
+    const rowTop = 4 * COMPACT_ROW_PX;
+    expect(chip).toContain(
+      `style="top:${rowTop + COMPACT_CHIP.topPx}px;height:${COMPACT_CHIP.heightPx}px;left:${COMPACT_CHIP.leftPx}px;right:${COMPACT_CHIP.right}"`,
+    );
+    // CONTROL: the two drawn blocks start at that row, so the chip is on
+    // their face, 22px down: under the time line and the name line.
+    const tops = [...three.matchAll(/data-compact-appointment-id="[abc]"[^>]*style="top:(\d+)px/g)].map((m) => Number(m[1]));
+    expect(tops).toEqual([rowTop, rowTop]);
+    expect(COMPACT_CHIP.topPx).toBe(22);
   });
 
   it("Dom is a column only when a Sunday holds a booking (Q-B6-5)", () => {
@@ -207,8 +227,8 @@ describe("AgendaWeekCompact markup", () => {
   });
 
   it("the axis labels every hour AND the window's end on the bottom edge; the rules are hour rules only (W13-B)", () => {
-    // 26px per 30-minute row, so 52px per hour from the window's start.
-    const px = (m: number, start = 8 * 60) => ((m - start) / 30) * 26;
+    // COMPACT_ROW_PX (34px) per 30-minute row, from the window's start.
+    const px = (m: number, start = 8 * 60) => ((m - start) / 30) * COMPACT_ROW_PX;
     const axis = (html: string) => {
       const inner = html.match(/<div data-testid="agenda-compact-axis"[^>]*>(.*?)<\/div>/)![1]!;
       return [...inner.matchAll(/data-compact-axis-min="(\d+)"[^>]*style="top:(-?[\d.]+)px"[^>]*>([^<]+)</g)].map((m) => ({
@@ -265,7 +285,7 @@ describe("AgendaWeekCompact markup", () => {
     expect(render()).not.toContain('data-testid="agenda-compact-legend"');
   });
 
-  it("the face in a half lane: the time sizes itself to the lane, and a 45-minute block gives the name a line of its own", () => {
+  it("the face in a half lane: the time sizes itself to the lane, and EVERY half-lane block, 30 minutes included, gives the name a line of its own", () => {
     const pair = (from: string, to: string) =>
       render({
         appointments: [
@@ -288,11 +308,14 @@ describe("AgendaWeekCompact markup", () => {
     expect([...order].sort((x, y) => x - y)).toEqual(order);
     expect(tall).toMatch(/data-testid="agenda-compact-patient" class="[^"]*text-clip/);
 
-    // CONTROLS: a 30-minute pair has no room for three lines, and a block on
-    // its own keeps the ellipsis and the glyph before the name.
+    // The SHORTEST half-lane block, 30 minutes, is 33px (a row less its gap)
+    // and has the same three lines: the name is never after the glyph.
     const short = button(pair("10:00", "10:30"), "person");
-    expect(short).toContain('data-compact-face="two-lines"');
-    expect(short.indexOf("data-estado=")).toBeLessThan(short.indexOf("agenda-compact-patient"));
+    expect(short).toContain(`height:${COMPACT_ROW_PX - 1}px`);
+    expect(short).toContain('data-compact-face="three-lines"');
+    expect(short.indexOf("agenda-compact-patient")).toBeLessThan(short.indexOf("data-estado="));
+    expect(short).toMatch(/data-testid="agenda-compact-patient" class="[^"]*text-\[9px\] leading-\[10px\]/);
+    // CONTROL: a block on its own keeps the ellipsis and the glyph before the name.
     const alone = button(render({ appointments: [appt({ id: "a1" })] }), "a1");
     expect(alone).toContain('data-compact-lanes="1"');
     expect(alone).toContain('data-compact-face="two-lines"');

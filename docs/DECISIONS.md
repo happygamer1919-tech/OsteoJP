@@ -4950,50 +4950,65 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   Mon-Sat and ignores Sunday rows; its hour window is widened only by the days it
   draws.
 - **Defaults shipped, each one an open owner question:**
-  - **Q-B6-1** a day column splits into at most two lanes. The cap is per
-    MOMENT: where three or more rows run at once, the row in the left lane is
-    drawn and that moment's other rows sit behind one "+N" chip in the right
-    lane, which opens Dia for that day. Rows around it that never run three at
-    a time keep their lanes, a twin pair included. At 390px a column is about
-    59px (51px with Dom); four lanes would be about 14px each.
-    - **This departs from the card's default, and the owner should rule on
-      it.** The card's default is at most two lanes plus a "+N" chip, which
-      reads as two blocks drawn with a chip beside them. What shipped puts the
-      chip IN the second lane, so a crowded moment draws one block: three rows
-      at once read one block and "+2", not two blocks and "+1", and four rows
-      at once read one block and "+3".
-    - **The twin case.** A twin pair with a third row at the same moment
-      draws the person row and "+2": the machine row goes behind the chip. So
-      a twin pair renders side by side only while no third row runs with it.
-      Two blocks and a chip would not fix this on their own: in the current
-      order (start, longer first, person before machine, then name) a third
-      row that is a person row takes the right lane and the machine row the
-      chip, so keeping the twin together would also need a twin-aware order.
-    - **Why the chip is not a third element beside two blocks.** A column
-      split three ways gives strips of 18.8px at 390 without Dom, 16.0px with
-      Dom and 14.5px at 360 with Dom, under the 24px target the cap is argued
-      from, and a 24px chip laid over the right block would cover most of a
-      face 24 to 29px wide. Two blocks with the chip outside the column (for
-      example on the day header) would keep both faces and the twin, but the
-      chip would no longer show when the hidden rows run. Which of these, or
-      another placement, is the owner's call.
+  - **Q-B6-1** a day column splits into at most two lanes of blocks, plus a
+    "+N" chip: the card's default. The cap is per MOMENT: where three or more
+    rows run at once, the rows in the two lanes are drawn and that moment's
+    other rows sit behind one "+N" chip, which opens Dia for that day. So three
+    rows at once read two blocks and "+1", and four rows at once read two
+    blocks and "+2". Rows around it that never run three at a time keep their
+    lanes, a twin pair included. At 390px a column is about 59px (51px with
+    Dom); four lanes would be about 14px each.
+    - **Where the chip goes.** It is a small dark pill, "+N" in 8px bold, on
+      the two blocks' status-glyph line, laid across the gap between them: from
+      1px after the left block's glyph to where the right block's text starts.
+      It covers the empty end of the left block's glyph line, the gap and the
+      foot of the right block's colour stripe, and no time, name or glyph of
+      either block. It is 10px tall and 18.7px wide at 390 without Dom, 14.4px
+      with Dom and 12.3px at 360 with Dom. That is under the 24px target; the
+      day header above the column (40px tall) opens the same Dia, which is the
+      equivalent-control exception of WCAG 2.5.8. The chip is placed from
+      where the hidden rows START: 22px below that moment, which is the glyph
+      line of two blocks that start with them. Where the two drawn blocks
+      started earlier, the chip sits lower in them or under them, at the
+      hidden row's time (Tuesday and Wednesday in the screenshots). A row that
+      starts in the left lane less than half an hour after the hidden ones can
+      have the right end of its time or name line under the chip; the
+      screenshot week has none, and no chip there covers a time, name or
+      glyph (measured).
+    - **The twin case.** A twin pair with a third person row at the same moment
+      draws the two person rows: the machine row goes behind the chip, because
+      the order is start, longer first, person before machine, then name.
+      Keeping the twin together would need a twin-aware order, which the card
+      does not state.
+    - **What the owner can pick instead.** The chip in the second lane (one
+      block and "+2" where three run), which keeps a 24px chip and hides one
+      more row; or the chip on the day header, which keeps both faces but no
+      longer shows when the hidden rows run. A column split three ways (strips
+      of 18.8px at 390, 16.0px with Dom, 14.5px at 360 with Dom) holds no face.
     - **What a half lane holds**, measured in Chromium with Inter:
       - the start time is always whole. It is 9px where 9px fits and shrinks
         with the lane where it does not: about 8.8px at 390 without Dom, 7.4px
         at 390 with Dom, 6.6px at 360 with Dom ("15:00" at 9px semibold is
         25.7px; a half lane has 25.7px of face without Dom at 390, 21.4px
         with).
-      - a block of 45 minutes or more gives the first name its own line, at
-        9px, clipped rather than ellipsised: three or four letters at 390. A
-        shorter half-lane block keeps the status glyph before the name, which
-        leaves it one to three letters at 390 (one on most names) and none to
-        two at 360, measured on the 30-minute half-lane blocks of the
-        screenshot week.
+      - the first name has a line of its own in EVERY half-lane block, at 9px,
+        clipped rather than ellipsised, and the status glyph has the line
+        below. For that a 30-minute row is 34px tall, so the shortest block
+        (33px) holds the three lines. With the 26px rows of an earlier draft,
+        a 30-minute half-lane block put the glyph before the name, which left
+        it none to two letters. Measured on the 49 half-lane blocks of the
+        screenshot week (17 of them 30 minutes), with Dom shown: three to six
+        letters at 390 and three to five at 360. The line is 21.4px at 390 and
+        19.3px at 360, and "Gem" at 9px is 20.2px, so a name with a wide
+        letter early shows two at 360 (the e2e's "Gemeo" does). The cost is
+        height: 08:00 to 21:00 is 884px instead of 676px, so the first
+        390x844 screen shows about 7.7 hours of the grid instead of about 10
+        (the grid scrolls to now).
       - as a tap target, a half lane is at least 24px wide from 334px up with
-        six columns and from 384px up with Dom shown. So at 390 every block
-        and chip is at least 24 by 24, and at 375 and 360 with Dom shown a
-        half lane is 23.4px and 22.3px. That is the arithmetic of seven
-        columns, not a choice.
+        six columns and from 384px up with Dom shown. So at 390 every block is
+        at least 24 by 24 (the chip is not, see above), and at 375 and 360
+        with Dom shown a half lane is 23.4px and 22.3px. That is the
+        arithmetic of seven columns, not a choice.
       If the owner wants more on a half-lane face, the options are a narrower
       Dom column, fewer letters of the time (for example "15h"), or one lane
       plus a chip from two concurrent rows up; each is his call.
