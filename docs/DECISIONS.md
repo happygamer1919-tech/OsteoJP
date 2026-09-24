@@ -5088,3 +5088,50 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   "Now" is read after mount, so the server render and hydration agree. The
   pinned day header paints above the now line (z-30 over z-20 in one stacking
   context), as the desktop grid's header does.
+
+## 2026-09-24 - AGENDA-MOBILE-WEEK round 10: Q-B6-11 answered, the phone header keeps the initials avatar; two CI-only overflows closed in the layout
+
+- **Q-B6-11, answered.** The owner accepted the default with one change
+  (paraphrased): below 640px the staff header hides the name and role but keeps
+  the initials avatar, which stays the /perfil link, on every staff page. The
+  bell, "O meu perfil" and "Terminar sessão" stay, and no staff page scrolls
+  sideways at 390 or 360.
+- **How it fits, below `sm` only.** `UserAreaCluster` (packages/ui) gains an
+  optional `textClassName` for its name-and-role column; omitted, it renders
+  exactly as before, which is what its other callers (the Storybook stories)
+  get. The shell passes `max-sm:hidden`. In the user area the gaps are 4px
+  instead of 16, "O meu perfil" and "Terminar sessão" trim their side padding
+  from 12px to 8px (they already wrapped onto two lines on a phone), and the
+  bell and the avatar link get `shrink-0`: both are fixed-size targets, and
+  before this round the bell was squeezed to 36px at 390 and 31px at 360 to give
+  the text room. After it the bell is 44px and the avatar 40px at both widths,
+  and the area's narrowest layout is 222.5px in the 241.2px the header leaves it
+  at 360. At 640 and up nothing changes; the e2e checks the name and role still
+  show at 700.
+- **The toolbar at 360, red on CI at dd2c6abf and 721ca10d.** Locally Nova
+  marcação ended 7.3px inside the toolbar's content box at 360; on CI it ended
+  1px past it. Read from CI's failure screenshot, Linux Chromium draws the three
+  actions about 8px wider in all: the semibold Nova marcação label about 7px
+  wider, Bloquear about 3px wider, the Atualizar time about 2px narrower. That is
+  more than the 0.5 to 1px first assumed, so a fix sized to that would not have
+  held. Fixed in the layout, not the tolerance: below `sm` the three trim their
+  side padding from 10px to 8px. Locally the group went from 303.7px to 291.7px
+  and Nova marcação's right edge from 328.7 to 316.7 in a content box ending at
+  336 (19.3px of slack); with CI's extra width it should end near 325.
+- **The start time in a half lane, red on CI in the same runs.** CI read a 22px
+  time in a 21px box at 390 with Dom shown. TIME_FONT had left every half-lane
+  time about 0.3px of room locally. Trimming padding and letter spacing was
+  chosen over shrinking the type: the time's line alone drops the face's 1px
+  left inset (a -1px margin, so it sits flush on the stripe) and its letter
+  spacing is -0.03em. TIME_FONT still reads the face's width, so the type size
+  is unchanged, and the name line, the glyph and the "+N" chip do not move.
+  Local slack, before and after: 390 with Dom 0.33 to 2.44px (box 21.42 to
+  22.42px, text 21.09 to 19.98px), 360 with Dom 0.31 to 2.30px (box 19.28 to
+  20.28px, text 18.97 to 17.98px), 390 without Dom 0.39 to 2.72px, 360 without
+  Dom 0.36 to 2.55px. The e2e assertion is unchanged.
+- **How this round measured.** In Chromium, on the real components rendered to
+  static markup with the app's compiled Tailwind CSS and the Inter files
+  next/font serves, at 390 and 360. Not on a running stack, and not on Linux:
+  the CI numbers above are read from CI's own artifacts.
+- **Q-B6-10's text** in docs/QUESTIONS.md now gives the 8px padding; the default
+  itself is unchanged.

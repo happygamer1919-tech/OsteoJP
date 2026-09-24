@@ -2247,10 +2247,21 @@ the only visible sign that it refreshes. The three trim their side padding to
 10px and the gaps to 6px, about 304px in all. Every visible label and every
 accessible name is unchanged.
 
+Updated in round 10: the side padding is 8px, about 292px in all, because CI
+draws these labels about 8px wider than a Mac does and Nova marcação ran 1px
+past the toolbar's edge there at 360. The default itself is unchanged.
+
 **Alternative.** An icon-only Bloquear (ruled out by AGENDA-02's visible-label
 condition), or Bloquear moved into a menu.
 
-## 2026-09-24 - Q-B6-11: below 640px the staff header hides the name-and-role chip, on every staff page
+## 2026-09-24 - Q-B6-11: below 640px the staff header hides the name-and-role chip, on every staff page (ANSWERED 2026-09-24)
+
+**ANSWERED (owner, 2026-09-24): accepted with one change.** Below 640px the
+header hides the name and role but keeps the initials avatar, still the link to
+the profile, on every staff page. The bell, the visible profile link and the
+sign-out button stay, and no staff page scrolls sideways at 390 or 360. Built in
+round 10; how it fits is in docs/DECISIONS.md. The entry below is the question
+as it was asked.
 
 **OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK). The
 builder introduced this default, and it changes the shared staff shell, not
