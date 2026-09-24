@@ -506,6 +506,13 @@ ref AS (
                          WHERE av.user_id = k.jp_cb AND av.location_id = k.cb_loc) = 0
                   THEN 1 ELSE 0 END))::int,
          (SELECT count(*) FROM public.appointments a, k WHERE a.practitioner_id = k.jp_cb)::int
+  UNION ALL
+  -- The ruled block is a 30 September block. One that also covers another day
+  -- (a multi-day absence) is not it, and deleting it would erase real absence.
+  SELECT 'R26', 'the block overlapping 30 September also covers another day, so it is not the 30 September block',
+         (SELECT count(*) FROM blk JOIN public.time_off t ON t.id = blk.id, k
+           WHERE t.starts_at < k.blk_from OR t.ends_at > k.blk_to)::int,
+         (SELECT count(*) FROM blk)::int
 )
 -- <<< STAFF-10 V2 SETS END
   SELECT (SELECT k.tenant FROM k), (SELECT k.today FROM k), (SELECT k.day0 FROM k),

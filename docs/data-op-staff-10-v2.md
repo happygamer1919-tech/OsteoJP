@@ -21,15 +21,15 @@ against a throwaway database and against nothing else.
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001` |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002` |
 | Branch | `data/STAFF-10-v2-one-held-op`, labelled `held-for-apply` from the moment its PR opens, unarmed until this op is proven |
-| Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `0783a72566e79434a0e950679aaf1673f7b1b4b308b7dcd2a3da7bdf34aaee5d` |
-| Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `23946db12f51459578b359793fcf7e33957eca3c8896a475504c882047601b17` |
+| Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `85018bd1ed8eec28262ba1f1ddb94386faf3b7f6728c0957272f258196a5f613` |
+| Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `80ba61abf5d83f0345525482118dac10a6d277b7a9c2059ada6dbcd8d7b08b1f` |
 | Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 25 verdicts and a SUMMARY row, sha256 `74b7633b4fa55488ff60ef99d2ecb35ca46c39a795da5af38d01b0a72cbf55dd` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, byte-identical to `origin/main` at `f4e892cd` |
 | This document | `docs/data-op-staff-10-v2.md`, pinned by `docs/data-op-staff-10-v2.sha256` and asserted by every stage that reads a file |
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
-| What stage 2 writes | `availability_templates.is_active` false (four retire classes); `availability_templates.user_id` to JP(lv) (the moved Saturdays); ONE `time_off` DELETE (the 30 September block, copied whole into the audit row first); `appointments.practitioner_id` (rulings a and b); `appointments.practitioner_2_id` and `appointments.status` = cancelled (ruling c); `appointments.updated_at` on every appointment it writes; ONE `audit_log` row, action `staff.staff10_v2.apply` |
+| What stage 2 writes | `availability_templates.is_active` false (four retire classes); `availability_templates.user_id` to JP(lv) (the moved Saturdays); at most ONE `time_off` DELETE (the 30 September block, copied whole into the audit row first); `appointments.practitioner_id` (rulings a and b); `appointments.practitioner_2_id` and `appointments.status` = cancelled (ruling c); `appointments.updated_at` on every appointment it writes; ONE `audit_log` row, action `staff.staff10_v2.apply` |
 | What no stage touches | `clinical_records` (authorship included), `invoices`, `users`, `staff_locations`, every appointment outside the four sets, every JP(cb) row at Castelo Branco. Stage 2 compares each by md5 inside its own transaction |
-| Apply before merge | yes. The PR carries only these files and cannot merge while the label is on (`held-for-apply-blocks-merge.yml`); every stage derives its head from `origin/data/STAFF-10-v2-one-held-op` |
+| Apply before merge | yes. The PR cannot merge while the label is on (`held-for-apply-blocks-merge.yml`), so every stage derives its head from `origin/data/STAFF-10-v2-one-held-op`, never from `main` |
 
 **THIS DOCUMENT PINS ITSELF, and the sidecar is why.** A document cannot contain its
 own sha256, so the digest lives in `docs/data-op-staff-10-v2.sha256` and every stage
@@ -81,6 +81,7 @@ changes the files, their pins and the rehearsal.
 | D6 | Added: a future NESA row that is itself an unconfirmed pedido | Refuses (R23): it holds no machine hour today, so the before-proof has nothing to prove |
 | D7 | Added: the original STAFF-10 write has already run | Refuses (R07): the schedule it would meet is not the one ruled on |
 | D8 | Added: stage 2 isolation | REPEATABLE READ, so every comparison inside it reads one snapshot and a concurrent write to a row it updates aborts it rather than racing it |
+| D9 | Added: a block that overlaps 30 September but also covers another day | Refuses (R26): it is a longer absence, not the block ruled wrong |
 
 ## Why a twin is what it is, and why the conflict proof is inline
 
@@ -137,8 +138,8 @@ git rev-parse origin/data/STAFF-10-v2-one-held-op
 set -eo pipefail
 BRANCH=data/STAFF-10-v2-one-held-op
 DOCPIN=docs/data-op-staff-10-v2.sha256
-SHA1=0783a72566e79434a0e950679aaf1673f7b1b4b308b7dcd2a3da7bdf34aaee5d
-SHA2=23946db12f51459578b359793fcf7e33957eca3c8896a475504c882047601b17
+SHA1=85018bd1ed8eec28262ba1f1ddb94386faf3b7f6728c0957272f258196a5f613
+SHA2=80ba61abf5d83f0345525482118dac10a6d277b7a9c2059ada6dbcd8d7b08b1f
 SHA3=74b7633b4fa55488ff60ef99d2ecb35ca46c39a795da5af38d01b0a72cbf55dd
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
@@ -174,7 +175,7 @@ database.
 (
 set -eo pipefail
 BRANCH=data/STAFF-10-v2-one-held-op
-SHA1=0783a72566e79434a0e950679aaf1673f7b1b4b308b7dcd2a3da7bdf34aaee5d
+SHA1=85018bd1ed8eec28262ba1f1ddb94386faf3b7f6728c0957272f258196a5f613
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -201,7 +202,7 @@ node scripts/assert-production-target.mjs
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f scripts/data/staff-10-v2-1-read.sql 2>&1 | tee /tmp/staff10v2-stage1.out
 grep -q 'STAFF-10 V2 STAGE 1 COMPLETE' /tmp/staff10v2-stage1.out || { echo "STOP: stage 1 did not print its COMPLETE line"; exit 1; }
 RN=$(grep -cE '^[[:space:]]*R[0-9]{2}[[:space:]]*\|' /tmp/staff10v2-stage1.out || true)
-[ "${RN}" = 25 ] || { echo "STOP: stage 1 printed ${RN} refusal lines, not 25"; exit 1; }
+[ "${RN}" = 26 ] || { echo "STOP: stage 1 printed ${RN} refusal lines, not 26"; exit 1; }
 REF=$(grep -E '^[[:space:]]*R[0-9]{2}[[:space:]]*\|.*\|[[:space:]]*REFUSE[[:space:]]*$' /tmp/staff10v2-stage1.out | sed -E 's/^[[:space:]]*(R[0-9]{2}).*/\1/' | tr '\n' ' ' || true)
 [ -z "${REF}" ] || { echo "STOP: stage 1 printed REFUSE on ${REF}. Stage 2 refuses on the same lines. Report them; do not go on"; exit 1; }
 RD=$(awk -F'|' 'index($1,"s10v2_run_day")>0 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' /tmp/staff10v2-stage1.out)
@@ -211,8 +212,8 @@ echo "STAGE 1 READ, NO REFUSAL. Read sections 2, 2b, 2c, 4, 6, 7 and 8 before st
 )
 ```
 
-**Read the output before pasting stage 2.** Section 4 prints 25 refusals, `R01` to
-`R25`; the block has already stopped if any reads REFUSE. A refusal that reads
+**Read the output before pasting stage 2.** Section 4 prints 26 refusals, `R01` to
+`R26`; the block has already stopped if any reads REFUSE. A refusal that reads
 `VACUOUS` read an empty population: that is not a refusal, and the sections above it
 say which population it was. Section 2b must read `partition holds`. Sections 6, 7 and
 8 are the pairs rulings (b), (c) and (d) act on, by id.
@@ -223,7 +224,7 @@ say which population it was. Section 2b must read `partition holds`. Sections 6,
 (
 set -eo pipefail
 BRANCH=data/STAFF-10-v2-one-held-op
-SHA2=23946db12f51459578b359793fcf7e33957eca3c8896a475504c882047601b17
+SHA2=80ba61abf5d83f0345525482118dac10a6d277b7a9c2059ada6dbcd8d7b08b1f
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 NAMES=(
 s10v2_run_day
@@ -337,7 +338,7 @@ profile moves with the data, so no exact profile is asserted for production.
 
 ## What every refusal and every verdict means
 
-**Stage 1 section 4 and stage 2 P2, the same 25 lines.** `n` must be 0. `control` is
+**Stage 1 section 4 and stage 2 P2, the same 26 lines.** `n` must be 0. `control` is
 the population the predicate read, so a 0 that saw nothing prints VACUOUS:
 
 | Code | Refuses when |
@@ -367,6 +368,7 @@ the population the predicate read, so a 0 that saw nothing prints VACUOUS:
 | R23 | a future pair's NESA row is an unconfirmed pedido |
 | R24 | every action set is empty |
 | R25 | an untouched set stage 3 compares by md5 is empty: JP(cb) has no past Castelo Branco appointment, or no Castelo Branco schedule row. Refused before the write, so verdicts 9 and 21 can never be vacuous after it |
+| R26 | the block overlapping 30 September also covers another day. The app stores a whole-day block as Lisbon midnight to the next Lisbon midnight, which stays inside 30 September; a block reaching past it is a longer absence, not the block that was ruled wrong |
 
 **The classes (stage 1 section 2).** `is_dated` has one definition in every file:
 `valid_from IS NOT NULL AND valid_until IS NOT NULL AND valid_from = valid_until`. It
@@ -451,8 +453,8 @@ arms, in FK order, whoever wrote the rows, and its shape is read back after ever
 |---|---|
 | `rehearsal/fixture.sql` | `63db8c97078c5120a25b5b5b70462be282cadb8c6312b0709798da14edd89453` |
 | `rehearsal/reset.sql` | `4203d564441dd1c684028edefbf3c86053a224406671c069135d357cef5c4ca1` |
-| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `f9505cc8a3d17a583bdfbf430afff1208c8cbb016e226ea636c3b1045678142b` |
-| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `be0e1db8dafbbdd197faa841b0f7c9ea8cac7bf91a3693d8577f1e27074cb8da` |
+| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `8bfcc493fbcd490c5c8e1b7c89e4fb65ed77d549bf0c3e15229475cff1d0fdff` |
+| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `879e825eebd625c32cd9b37748ad07d265e57171d39c76365b0c53b034988865` |
 | `rehearsal/extract-stage.mjs`, a byte copy of `/Users/ivan/osteojp-handover/extract-stage.mjs` | `f82cad1e6e8cc1be3b7c491fff787138161e0f079b6424119329d71c63d72198` |
 
 **How it ran.** Each block was extracted from this document at the pushed branch head
@@ -514,6 +516,9 @@ users.
 | R23 | an `appointment_request` notification on a future NESA row | 1 | R23 | 3, STOP R23 | unchanged |
 | R24 | every action already done by hand | 1 | R24 | 3, STOP R24 | unchanged |
 | R25 | JP(cb)'s Castelo Branco schedule rows removed | 1 | R25 | 3, STOP R25 | unchanged |
+| R26 | the 30 September block replaced by one from 29 September to 1 October | 1 | R26 | 3, STOP R26 | unchanged |
+
+R26's control: the same 30 September block stored the way the app stores a whole day, Lisbon midnight to the next Lisbon midnight, gives stage 1 exit 0 with no REFUSE, and section 2c marks it `deleted_by_stage_2 = true`.
 
 **The handshake, the clock, the order and the instrument:**
 
