@@ -1123,3 +1123,35 @@ describe("DECISIONS Q-B6-1 states the face layoutLanes draws", () => {
     );
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Every Q-B6 default is in the owner's question queue.                 */
+/* ------------------------------------------------------------------ */
+describe("docs/QUESTIONS.md holds every Q-B6 default DECISIONS ships behind", () => {
+  // Round 6: Q-B6-1 to Q-B6-11 were called open owner questions but were
+  // written only in DECISIONS.md, and the owner answers from QUESTIONS.md
+  // ("Open questions for the owner. Append-only."). So every Q-B6 id the
+  // DECISIONS entry names must have its own QUESTIONS entry, carrying the
+  // default shipped and the alternative.
+  const decisions = readFileSync(new URL("../../../../docs/DECISIONS.md", import.meta.url), "utf8");
+  const questions = readFileSync(new URL("../../../../docs/QUESTIONS.md", import.meta.url), "utf8");
+  const ids = [...new Set([...decisions.matchAll(/\*\*(Q-B6-\d+)\*\*/g)].map((m) => m[1]!))];
+
+  it("VACUOUS GUARD: DECISIONS names the eleven defaults, Q-B6-1 to Q-B6-11", () => {
+    expect(ids).toEqual(Array.from({ length: 11 }, (_, i) => `Q-B6-${i + 1}`));
+  });
+
+  it("each has a QUESTIONS entry of its own, with the default shipped and the alternative", () => {
+    const headings = [...questions.matchAll(/^## .*$/gm)];
+    for (const id of ids) {
+      const at = headings.findIndex((h) => new RegExp(`^## .* - ${id}: `).test(h[0]));
+      expect(at, `${id} has a heading in QUESTIONS.md`).toBeGreaterThan(-1);
+      const from = headings[at]!.index!;
+      const to = headings[at + 1]?.index ?? questions.length;
+      const body = questions.slice(from, to);
+      expect(body, `${id}: the default shipped`).toContain("**Default shipped.**");
+      expect(body, `${id}: the alternative`).toMatch(/\*\*Alternatives?\.\*\*/);
+      expect(body, `${id}: it is for the owner`).toContain("**OWNER.");
+    }
+  });
+});

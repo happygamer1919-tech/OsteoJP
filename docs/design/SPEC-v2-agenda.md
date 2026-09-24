@@ -138,7 +138,8 @@ never truncates a name (W11-00 v3), and still colours by therapist. Below 640
 Bloquear and Nova marcação drop their decorative icons (labels stay), Atualizar
 keeps its refresh icon (its visible text is only the time), the three trim their
 padding, and the shell header hides its name chip, so the page no longer scrolls sideways at 390 or 360. The
-defaults behind this (Q-B6-1 to Q-B6-11) are in docs/DECISIONS.md.
+defaults behind this (Q-B6-1 to Q-B6-11) are in docs/DECISIONS.md, and each is an open
+owner question in docs/QUESTIONS.md.
 
 ---
 
