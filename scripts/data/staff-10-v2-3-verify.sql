@@ -8,9 +8,10 @@
 -- audit row; this file reads them back and recomputes each against the
 -- database. A VACUOUS verdict means the arm ran over an empty set and could not
 -- have failed; the stage 3 block in the doc allows VACUOUS only on the arms it
--- names, and never on 1, 7, 8, 9, 10, 19, 20, 21 or 22. Stages 1 and 2 refuse
+-- names, and never on 1, 7, 8, 9, 19, 20, 21 or 22. Stages 1 and 2 refuse
 -- an empty md5 comparison set before the write (R25, R27), so 9, 19, 20 and 21
--- always compare something.
+-- always compare something. Verdict 10 is VACUOUS exactly when JP(cb) had no
+-- inactive row and nothing was retired, a day on which 2 to 5 are VACUOUS too.
 --
 -- The rows printed after the SUMMARY are the future pairs as they stand after
 -- the write, ids only: the owner-only reception note points at that section.
@@ -230,7 +231,9 @@ UNION ALL SELECT 10, 'no previously inactive JP(cb) row was reactivated',
        ((v.m -> 'before' ->> 'cb_inactive')::int + v.n_rcov + v.n_rpast + v.n_rphan + v.n_rwin)::text,
        CASE WHEN v.cb_inactive_now IS DISTINCT FROM
                  ((v.m -> 'before' ->> 'cb_inactive')::int + v.n_rcov + v.n_rpast + v.n_rphan + v.n_rwin)
-            THEN 'FAIL' ELSE 'OK' END FROM v
+            THEN 'FAIL'
+            WHEN ((v.m -> 'before' ->> 'cb_inactive')::int + v.n_rcov + v.n_rpast + v.n_rphan + v.n_rwin) = 0
+            THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 11, 'no JP(cb) block overlaps 30 September any more',
        v.blk_now::text, '0',
        CASE WHEN v.blk_now <> 0 THEN 'FAIL' WHEN v.n_blk = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v

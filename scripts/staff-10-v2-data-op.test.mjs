@@ -205,6 +205,49 @@ test("the pedido and the conflict rule are INLINE: no stage calls the jwt-scoped
   }
 });
 
+test("a past pair ruling (b) moves must sit at one clinic, and section 6 prints both clinics", () => {
+  const r29 = SETS.slice(SETS.indexOf("'R29'"), SETS.indexOf("'R30'"));
+  assert.match(r29, /tw\.is_past AND tw\.n_id IN \(SELECT x\.id FROM x\)\s+AND tw\.p_loc IS DISTINCT FROM tw\.n_loc/, "R29 does not refuse a two-clinic pair ruling (b) moves");
+  assert.match(S1, /'person_clinic', lp\.name/, "section 6 does not carry the person row's clinic");
+  assert.match(S1, /e ->> 'person_clinic' AS person_row_clinic/, "section 6 does not print the person row's clinic");
+  assert.match(S1, /e ->> 'two_clinics' AS two_clinics/, "section 6 does not print the two-clinic flag");
+});
+
+test("a trigger the system did not create refuses, on exactly the tables stage 2 writes, in stage 1 and again in P4", () => {
+  const written = [...new Set([...code(S2).matchAll(/\b(?:UPDATE|DELETE FROM|INSERT INTO) public\.([a-z_]+)/g)].map((m) => m[1]))].sort();
+  const r30 = SETS.slice(SETS.indexOf("'R30'"), SETS.indexOf(END));
+  const onTables = (txt) => [...new Set([...txt.matchAll(/'public\.([a-z_]+)'::regclass/g)].map((m) => m[1]))].sort();
+  assert.deepEqual(onTables(r30), written, "R30 does not read exactly the tables stage 2 writes");
+  assert.match(r30, /FROM pg_catalog\.pg_trigger t[\s\S]*AND NOT t\.tgisinternal\)::int,/, "R30 does not count the non-internal triggers");
+  const p4 = S2.slice(S2.indexOf("-- P4."), S2.indexOf("-- P5."));
+  assert.deepEqual(onTables(p4), written, "P4 does not read exactly the tables stage 2 writes");
+  assert.match(p4, /IF v_want IS NOT NULL THEN\s+RAISE EXCEPTION 'STOP: P4/, "P4 prints a trigger but does not stop on it");
+  assert.ok(S2.indexOf("-- P4.") < S2.indexOf("-- W1."), "P4 does not run before the first write");
+  assert.match(S1, /'triggers', \(SELECT/, "stage 1 does not list the triggers it found");
+});
+
+test("stage 2 cannot hide its DONE line, and the block marks the write as soon as psql exits 0", () => {
+  const c = code(S2);
+  const pin = c.indexOf("SET client_min_messages = notice;");
+  assert.ok(pin >= 0 && pin < c.indexOf("DO $s10v2$"), "stage 2 does not pin client_min_messages before the block");
+  assert.match(S2, /RAISE NOTICE 'STAFF-10 V2 STAGE 2 DONE/, "the DONE line is not the NOTICE the block greps for");
+  const b = block("STAGE 2");
+  const psql = b.indexOf("-f scripts/data/staff-10-v2-2-write.sql");
+  const touch = b.indexOf("touch /tmp/staff10v2-written.ok");
+  const done = b.indexOf("grep -q 'STAFF-10 V2 STAGE 2 DONE'");
+  assert.ok(psql > 0 && psql < touch && touch < done, "the written marker is not touched between psql and the transcript checks");
+  for (const line of b.split("\n").slice(b.slice(0, touch).split("\n").length)) {
+    if (line.includes("STOP:")) assert.match(line, /COMMITTED and the write stands/, `a STOP after the write does not say the write stands: ${line.slice(0, 90)}`);
+  }
+  assert.doesNotMatch(DOC, /A `STOP:` line therefore always means/, "the doc still claims every STOP means nothing was written");
+});
+
+test("no file claims the op leaves every JP(cb) Castelo Branco row alone: ruling (c) can write a future one", () => {
+  for (const [label, text] of [["stage 2", S2], ["the doc", DOC]]) {
+    assert.doesNotMatch(text.replace(/\s+/g, " "), /every JP\(cb\) row at Castelo Branco/, `${label} overstates what the op leaves alone`);
+  }
+});
+
 /* ---- the handshake ------------------------------------------------------- */
 
 const CODES = [...SETS.matchAll(/\((\d+), '([a-z0-9]+)'\)/g)].map((m) => m[2]);
@@ -253,7 +296,20 @@ test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the do
   const allowed = b.match(/grep -vxE '([0-9|]+)'/)?.[1].split("|").map(Number);
   assert.ok(allowed?.length > 0);
   for (const n of allowed) assert.ok(verdicts.includes(n), `the allowed-VACUOUS list names ${n}, which does not exist`);
-  for (const n of [1, 7, 8, 9, 10, 19, 20, 21, 22]) assert.ok(!allowed.includes(n), `verdict ${n} must never be allowed VACUOUS`);
+  for (const n of [1, 7, 8, 9, 19, 20, 21, 22]) assert.ok(!allowed.includes(n), `verdict ${n} must never be allowed VACUOUS`);
+});
+
+test("an empty comparand never reads OK: every verdict but 1, 7 and 22 has a VACUOUS branch, and 7 FAILs on a zero control", () => {
+  const rows = S3.slice(S3.indexOf("), r AS ("), S3.indexOf("SELECT r.n, r.\"check\"")).split(/\nUNION ALL SELECT /);
+  rows.forEach((r, i) => {
+    const n = i + 1;
+    if ([1, 7, 22].includes(n)) return;
+    assert.match(r, /THEN 'VACUOUS'/, `verdict ${n} has no VACUOUS branch, so an empty set could read OK`);
+  });
+  assert.match(rows[6], /OR v\.lv_lv_future = 0 THEN 'FAIL'/, "verdict 7's control does not FAIL at zero");
+  const ten = rows[9];
+  assert.match(ten, /\+ v\.n_rcov \+ v\.n_rpast \+ v\.n_rphan \+ v\.n_rwin\) = 0\s+THEN 'VACUOUS'/, "verdict 10 is not VACUOUS on an empty comparand");
+  assert.ok(ten.indexOf("THEN 'FAIL'") < ten.indexOf("THEN 'VACUOUS'"), "verdict 10 must test FAIL before VACUOUS");
 });
 
 test("every untouched set stage 3 compares by md5 must be non-empty, and stage 1 refuses an empty one before the write", () => {

@@ -442,6 +442,31 @@ ref AS (
                THEN 1 ELSE 0 END)::int,
          (SELECT count(*) FROM public.availability_templates o, k
            WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE)::int
+  UNION ALL
+  -- Ruling (b) moves a past NESA row to the NESA installed at the booking clinic.
+  -- With the two rows of its pair at two clinics, which clinic booked the session
+  -- is a guess, and no ruling makes it, so the op refuses, as R18 does for a
+  -- future pair. The control is every past pair ruling (b) would act on.
+  SELECT 'R29', 'a past pair ruling (b) would move has its two rows at two clinics, so its booking clinic is ambiguous',
+         (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x)
+             AND tw.p_loc IS DISTINCT FROM tw.n_loc)::int,
+         (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x))::int
+  UNION ALL
+  -- A trigger the system did not create, on a table stage 2 writes, would run
+  -- code the write whitelist does not name, inside the committed transaction and
+  -- with no ROW_COUNT check on what it does. Main has none; production has run
+  -- ahead of main before, so the op reads the catalog and refuses rather than
+  -- trusting that. The control is every trigger on those tables, the constraint
+  -- triggers the system creates for each foreign key included, so a 0 that read
+  -- nothing prints VACUOUS.
+  SELECT 'R30', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
+         (SELECT count(*) FROM pg_catalog.pg_trigger t
+           WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
+                               'public.time_off'::regclass, 'public.audit_log'::regclass)
+             AND NOT t.tgisinternal)::int,
+         (SELECT count(*) FROM pg_catalog.pg_trigger t
+           WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
+                               'public.time_off'::regclass, 'public.audit_log'::regclass))::int
 )
 -- <<< STAFF-10 V2 SETS END
 SELECT jsonb_build_object(
@@ -540,11 +565,14 @@ SELECT jsonb_build_object(
   'x', (SELECT coalesce(jsonb_agg(jsonb_build_object(
           'nesa_row', tw.n_id::text, 'person_row', tw.p_id::text,
           'starts_lisbon', (tw.starts_at AT TIME ZONE 'Europe/Lisbon')::text,
-          'booking_clinic', l.name, 'from_nesa', x.from_user::text, 'to_nesa', coalesce(x.to_user::text, '(none)'),
+          'booking_clinic', l.name, 'person_clinic', lp.name,
+          'two_clinics', (tw.p_loc IS DISTINCT FROM tw.n_loc)::text,
+          'from_nesa', x.from_user::text, 'to_nesa', coalesce(x.to_user::text, '(none)'),
           'nesa_status', tw.n_status::text, 'person_status', tw.p_status::text,
           'person_row_in_h', (tw.p_id IN (SELECT h.id FROM h))::text)
           ORDER BY tw.starts_at, tw.n_id, tw.p_id), '[]'::jsonb)
           FROM tw JOIN x ON x.id = tw.n_id JOIN public.locations l ON l.id = tw.n_loc
+          JOIN public.locations lp ON lp.id = tw.p_loc
          WHERE tw.is_past),
   'f', (SELECT coalesce(jsonb_agg(jsonb_build_object(
           'person_row', f.p_id::text, 'nesa_row', f.n_id::text, 'nesa_user', f.n_user::text,
@@ -584,7 +612,15 @@ SELECT jsonb_build_object(
                                                         'created_at', al.created_at::text)
                                      ORDER BY al.created_at), '[]'::jsonb)
              FROM public.audit_log al
-            WHERE al.action IN ('staff.jp_lv_schedule_rows.retire', 'staff.staff10_v2.apply'))
+            WHERE al.action IN ('staff.jp_lv_schedule_rows.retire', 'staff.staff10_v2.apply')),
+  'triggers', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                 'on_table', t.tgrelid::regclass::text, 'trigger', t.tgname::text,
+                 'enabled', t.tgenabled::text, 'function', t.tgfoid::regprocedure::text)
+                 ORDER BY t.tgrelid::regclass::text, t.tgname::text), '[]'::jsonb)
+                 FROM pg_catalog.pg_trigger t
+                WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
+                                    'public.time_off'::regclass, 'public.audit_log'::regclass)
+                  AND NOT t.tgisinternal)
 )::text AS s10v2_json
 \gset
 
@@ -673,6 +709,13 @@ SELECT e ->> 'code' AS code, e ->> 'label' AS refuses_when, (e ->> 'n')::int AS 
        (e ->> 'control')::int AS control, e ->> 'verdict' AS verdict
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'refusals') e
  ORDER BY e ->> 'code';
+\echo ''
+\echo '=== 4b. WHAT ELSE WOULD RUN ON A WRITE: every trigger the system did not create, on a table stage 2 writes. R30 refuses any ==='
+SELECT e ->> 'on_table' AS on_table, e ->> 'trigger' AS trigger_name, e ->> 'enabled' AS enabled,
+       e ->> 'function' AS runs_function
+  FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'triggers') e;
+\echo '    An empty listing is the expected answer; R30 control counts every trigger read, the'
+\echo '    system constraint triggers included, so an empty listing that read nothing prints VACUOUS.'
 
 -- ---------------------------------------------------------------------------
 -- 5. RULING (a): JP(cb)'s past Linda-a-Velha appointments, summarised. Every id
@@ -700,10 +743,15 @@ SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'cb_row_appointment' AS cb_
 \echo ''
 \echo '=== 6. RULING (b): past pairs whose NESA row is not installed at the booking clinic. Stage 2 re-attributes the NESA row ==='
 SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'nesa_row' AS nesa_row, e ->> 'person_row' AS person_row,
-       e ->> 'booking_clinic' AS booking_clinic, e ->> 'from_nesa' AS from_nesa, e ->> 'to_nesa' AS to_nesa,
+       e ->> 'booking_clinic' AS booking_clinic, e ->> 'person_clinic' AS person_row_clinic,
+       e ->> 'two_clinics' AS two_clinics, e ->> 'from_nesa' AS from_nesa, e ->> 'to_nesa' AS to_nesa,
        e ->> 'nesa_status' AS nesa_status, e ->> 'person_status' AS person_status,
        e ->> 'person_row_in_h' AS person_row_moved_by_a
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'x') e;
+\echo '    booking_clinic is the NESA row''s clinic. two_clinics = true means the person row sits at'
+\echo '    another clinic, and R29 refuses it. person_row_moved_by_a = true means the person row is'
+\echo '    JP(cb) at Linda-a-Velha: ruling (a) moves it to JP(lv) and ruling (b) moves this NESA row,'
+\echo '    so the pair ends on JP(lv) and the NESA installed there (question Q3 in the doc).'
 
 -- ---------------------------------------------------------------------------
 -- 7. RULING (c): the future pairs, both rows live. Option a, pair by pair, with
@@ -733,7 +781,8 @@ SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'nesa_row' AS nesa_row, e -
        e ->> 'person_status' AS person_status, e ->> 'person_row_in_h' AS person_row_moved_by_a
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'p') e;
 \echo '    person_row_moved_by_a = true: the person row is JP(cb) at Linda-a-Velha, so ruling (a)'
-\echo '    moves it to JP(lv); the NESA row of that pair is not touched.'
+\echo '    moves it to JP(lv); the NESA row of that pair is installed at its clinic, so no ruling'
+\echo '    touches it.'
 
 -- ---------------------------------------------------------------------------
 -- 9. WHAT NO RULING ACTS ON: future pairs with one side already cancelled or

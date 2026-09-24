@@ -23,12 +23,16 @@
 --
 -- WHAT IT NEVER TOUCHES, asserted inside the transaction rather than promised:
 -- clinical_records (authorship included), invoices, users, staff_locations,
--- every appointment outside the four sets, and every JP(cb) row at Castelo
--- Branco. Each is compared by md5 before and after.
+-- every appointment outside the four sets, JP(cb)'s PAST Castelo Branco
+-- appointments and JP(cb)'s Castelo Branco schedule rows. Each is compared by
+-- md5 before and after. A FUTURE JP(cb) Castelo Branco appointment is not in
+-- that list: when it is the person row of a future NESA pair, ruling (c) writes
+-- its practitioner_2_id and updated_at, as it does for every such person row.
 --
--- ANY "STOP:" MEANS THE TRANSACTION ABORTED AND NOTHING WAS WRITTEN. There is no
--- partial write: every refusal is raised before the first write, and every
--- assertion after a write raises, which rolls the whole block back.
+-- A "STOP:" RAISED IN THIS FILE (psql exit 3) MEANS THE TRANSACTION ABORTED AND
+-- NOTHING WAS WRITTEN. There is no partial write: every refusal is raised before
+-- the first write, and every assertion after a write raises, which rolls the
+-- whole block back. psql exit 0 means the COMMIT below ran: the write stands.
 --
 -- THE CARRIES COME FROM STAGE 1, RUN ON THE SAME LISBON DAY IN THE SAME SITTING.
 -- The block between the SETS markers is stage 1's, byte for byte, so the
@@ -42,6 +46,10 @@
 \timing off
 SET TIME ZONE 'UTC';
 SET datestyle = 'ISO, YMD';
+-- The step lines and the DONE line are NOTICEs. A role or database default of
+-- client_min_messages above notice would hide them, and the stage 2 block would
+-- then miss DONE after a write that committed. Pinned here, for this session.
+SET client_min_messages = notice;
 
 \echo ''
 \echo '=== STAFF-10 V2, STAGE 2. ONE TRANSACTION, REPEATABLE READ. ==='
@@ -537,6 +545,31 @@ ref AS (
                THEN 1 ELSE 0 END)::int,
          (SELECT count(*) FROM public.availability_templates o, k
            WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE)::int
+  UNION ALL
+  -- Ruling (b) moves a past NESA row to the NESA installed at the booking clinic.
+  -- With the two rows of its pair at two clinics, which clinic booked the session
+  -- is a guess, and no ruling makes it, so the op refuses, as R18 does for a
+  -- future pair. The control is every past pair ruling (b) would act on.
+  SELECT 'R29', 'a past pair ruling (b) would move has its two rows at two clinics, so its booking clinic is ambiguous',
+         (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x)
+             AND tw.p_loc IS DISTINCT FROM tw.n_loc)::int,
+         (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x))::int
+  UNION ALL
+  -- A trigger the system did not create, on a table stage 2 writes, would run
+  -- code the write whitelist does not name, inside the committed transaction and
+  -- with no ROW_COUNT check on what it does. Main has none; production has run
+  -- ahead of main before, so the op reads the catalog and refuses rather than
+  -- trusting that. The control is every trigger on those tables, the constraint
+  -- triggers the system creates for each foreign key included, so a 0 that read
+  -- nothing prints VACUOUS.
+  SELECT 'R30', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
+         (SELECT count(*) FROM pg_catalog.pg_trigger t
+           WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
+                               'public.time_off'::regclass, 'public.audit_log'::regclass)
+             AND NOT t.tgisinternal)::int,
+         (SELECT count(*) FROM pg_catalog.pg_trigger t
+           WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
+                               'public.time_off'::regclass, 'public.audit_log'::regclass))::int
 )
 -- <<< STAFF-10 V2 SETS END
   SELECT (SELECT k.tenant FROM k), (SELECT k.today FROM k), (SELECT k.day0 FROM k),
@@ -616,17 +649,23 @@ ref AS (
   RAISE NOTICE 'P3 the run day and all 21 carries match stage 1';
 
   -- ==========================================================================
-  -- P4. WHAT ELSE RUNS ON A WRITE TO THESE TABLES. Printed; every piece cast,
-  --     because text || "char" has no operator and a print must not abort.
+  -- P4. WHAT ELSE RUNS ON A WRITE TO THESE TABLES. R30 has already refused any
+  --     trigger the system did not create; P4 reads the catalog again, prints
+  --     what it finds, and STOPS on any, so no write below can run code the
+  --     whitelist does not name. Every piece is cast, because text || "char"
+  --     has no operator and a print must not abort.
   -- ==========================================================================
   SELECT string_agg(t.tgrelid::regclass::text || '.' || t.tgname::text || ' (enabled ' || t.tgenabled::text || ')',
                     ', ' ORDER BY t.tgrelid::regclass::text, t.tgname::text)
     INTO v_want
-    FROM pg_trigger t
+    FROM pg_catalog.pg_trigger t
    WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
                        'public.time_off'::regclass, 'public.audit_log'::regclass)
      AND NOT t.tgisinternal;
-  RAISE NOTICE 'P4 triggers: %', coalesce(v_want, 'none');
+  RAISE NOTICE 'P4 triggers the system did not create, on a table this op writes: %', coalesce(v_want, 'none');
+  IF v_want IS NOT NULL THEN
+    RAISE EXCEPTION 'STOP: P4 found a trigger the system did not create on a table this op writes: %. Nothing was written', v_want;
+  END IF;
 
   -- ==========================================================================
   -- P5. THE BASELINES. Every one is read again after the writes and asserted.
