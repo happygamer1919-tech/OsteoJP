@@ -1175,7 +1175,31 @@ const IMPORTED_RECORD_DATA = {
   escala_eva: 6,
 };
 
+// FICHA-IMPORTED-VIEW: the importer's idempotency ledger row for this record,
+// as `markImported` (packages/db/src/migration/staging.ts) leaves it. The
+// record page draws the imported preview only for a record the ledger names,
+// so without this row the B1 fixture would render as an ordinary record.
+// Upserted on the ledger's own unique key, and written on every run so a lane
+// database that already holds the record gains it too.
+async function ensureImportedRecordLedger() {
+  const { error } = await db.from("migration_staging_rows").upsert(
+    {
+      tenant_id: TENANT_A,
+      batch_id: "00000000-0000-0000-0000-00000000fe0b",
+      source_system: "fisiozero",
+      entity_type: "clinical_record",
+      source_id: "e2e-imported-record-1",
+      raw: {},
+      status: "imported",
+      imported_entity_id: IMPORTED_RECORD_ID,
+    },
+    { onConflict: "tenant_id,source_system,entity_type,source_id" },
+  );
+  must(error, "imported registo clinico ledger row");
+}
+
 async function ensureImportedRecord() {
+  await ensureImportedRecordLedger();
   const status = await clinicalRecordStatus(IMPORTED_RECORD_ID);
   // A locked row is immutable (0001/0005 trigger refuses UPDATE and DELETE), so
   // once it exists it is left exactly as it is. That is the point: an imported
