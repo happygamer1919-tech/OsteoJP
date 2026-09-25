@@ -19,12 +19,17 @@
 -- start, no participant, no service, no confirmation, and it sends nothing: a
 -- raw UPDATE runs no app path, so no reminder is queued and no one is told.
 --
--- THE TABLES ARE LOCKED BEFORE THE FIRST READ. A staff reschedule takes no
--- advisory lock (apps/web/lib/scheduling/slot-lock.ts), so only a table lock
--- orders this write against one. appointments is taken SHARE ROW EXCLUSIVE and
--- the three tables the verdicts read that the app writes during the day are
--- taken SHARE, each with a lock_timeout, so a booking in flight STOPS this op
--- cleanly instead of racing it. The transaction is READ COMMITTED: every read
+-- THE TABLES ARE LOCKED BEFORE THE FIRST READ. The app orders its own writers
+-- with advisory slot locks (apps/web/lib/scheduling/slot-lock.ts): the create,
+-- clone and batch paths take them, and so does rescheduleAppointment, on its
+-- destination slots (actions.ts, "2.9, lock the DESTINATION slots"), although
+-- the header of slot-lock.ts still says the reschedule takes none. This write
+-- takes no advisory lock. It takes appointments SHARE ROW EXCLUSIVE, which
+-- every app write to appointments must wait for, whatever advisory lock it
+-- holds, so one table lock orders it against all of them at once. The three
+-- tables the verdicts read that the app writes during the day are taken SHARE,
+-- each with a lock_timeout, so a booking in flight STOPS this op cleanly
+-- instead of racing it. The transaction is READ COMMITTED: every read
 -- runs after the locks, so each one sees the tables as they stand under them.
 --
 -- A "STOP:" RAISED IN THIS FILE (psql exit 3) MEANS THE TRANSACTION ABORTED AND
@@ -180,8 +185,9 @@ cand AS (
    WHERE p.duration_min > 1
 ),
 -- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
--- with the two checks the op adds to it (the same patient, and the NESA hour of
--- a live twin), each marked where it stands. These lines are byte-identical in
+-- with the checks the op adds to it (the same patient, the NESA hour of a live
+-- twin, and the one person with two staff rows), each marked where it stands.
+-- These lines are byte-identical in
 -- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
 -- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
@@ -209,6 +215,30 @@ c_res AS (
     FROM cand c
     JOIN shared r ON r.tenant_id = c.tenant_id AND r.id IN (c.practitioner_id, c.practitioner_2_id)
 ),
+-- ONE PERSON, TWO STAFF ROWS. Not in the app's rule; the op adds it. JP is one
+-- person the tenant holds as two staff rows (STAFF-09): JP(cb), the row for
+-- Castelo Branco, and JP(lv), the row for Linda-a-Velha. The ids are JP_CB,
+-- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
+-- and the unit test holds them equal. The app reads each row as its own
+-- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
+-- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- either row as holding the person (arm same_person below, and the second block
+-- arm), and holds outright a row booked on one of the two at a clinic that is
+-- not that row's own (person_away, verdict 18). R10 refuses when the pair does
+-- not resolve in the population's tenant, so these arms cannot read a vacuous 0.
+one_person AS (
+  SELECT x.user_id, x.other_id, x.home_id
+    FROM (VALUES ('54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid, '0c1a0000-0000-4000-8000-000000000001'::uuid,
+                  'de000002-0000-0000-0000-000000000002'::uuid),
+                 ('0c1a0000-0000-4000-8000-000000000001'::uuid, '54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid,
+                  'de000002-0000-0000-0000-000000000001'::uuid)) x(user_id, other_id, home_id)
+),
+-- The other staff row of each candidate's Terapeuta, where it has one.
+c_alias AS (
+  SELECT c.id AS cand_id, op.other_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+),
 -- A row that holds its hour: not cancelled or no-show (0052), and not an
 -- unconfirmed pedido (0067's body of is_unconfirmed_pedido, inline). Bounded to
 -- the candidates' horizon, which changes no answer: a row that overlaps a
@@ -229,10 +259,12 @@ live AS (
 -- THE BOOKING ARMS (findConflicts): the therapist arm and the room arm of
 -- appointment_conflicts (0059), then for every shared resource the candidate
 -- names, the rows where it is Terapeuta and the rows where it is Terapeuta 2.
--- The candidate itself is excluded, as excludeIds excludes it.
+-- The candidate itself is excluded, as excludeIds excludes it. The same_person
+-- arm is the op's (one_person above): a row on the Terapeuta's other staff row.
 hit_booking AS (
   SELECT c.id AS cand_id, o.id AS other_id, o.starts_at AS other_s, o.ends_at AS other_e,
          CASE WHEN o.practitioner_id = c.practitioner_id THEN 'therapist'
+              WHEN o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id) THEN 'same_person'
               WHEN o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta'
               WHEN o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta_2'
               ELSE 'room' END AS arm
@@ -240,18 +272,27 @@ hit_booking AS (
     JOIN live o ON o.tenant_id = c.tenant_id AND o.id <> c.id
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.practitioner_id = c.practitioner_id
+      OR o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR (nullif(btrim(c.room), '') IS NOT NULL AND o.location_id = c.location_id
           AND lower(o.room) = lower(btrim(c.room)))
 ),
 -- THE BLOCK ARM (findScheduleConflicts): time_off on the Terapeuta, which is
--- therapist-wide and carries no clinic.
+-- therapist-wide and carries no clinic. The second arm is the op's: a block on
+-- the Terapeuta's other staff row (one_person above) holds the person too.
 hit_block AS (
   SELECT c.id AS cand_id, t.id AS block_id, t.starts_at AS block_s, t.ends_at AS block_e
     FROM cand c
     JOIN public.time_off t
       ON t.tenant_id = c.tenant_id AND t.user_id = c.practitioner_id
+     AND t.starts_at < c.e AND t.ends_at > c.s
+  UNION ALL
+  SELECT c.id, t.id, t.starts_at, t.ends_at
+    FROM cand c
+    JOIN c_alias ca ON ca.cand_id = c.id
+    JOIN public.time_off t
+      ON t.tenant_id = c.tenant_id AND t.user_id = ca.user_id
      AND t.starts_at < c.e AND t.ends_at > c.s
 ),
 -- THE SAME PATIENT BOOKED ELSEWHERE. Not in the app's rule; the op adds it, and
@@ -309,6 +350,20 @@ res_away AS (
    WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
                       WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
                         AND sl.location_id = c.location_id)
+),
+-- ONE PERSON'S ROW AT THE OTHER CLINIC. Not in the app's rule; the op adds it. A
+-- row booked on one of the two staff rows of one_person at a clinic that is not
+-- that row's own: JP(cb) at Linda-a-Velha, or JP(lv) at Castelo Branco.
+-- STAFF-10 v2 hands JP(cb)'s future Linda-a-Velha rows to reception (its Q1),
+-- retires JP(cb)'s hours there (its W1 and W2), and moves every JP(cb) row there
+-- that starts before its own run day to JP(lv) in any status (its W4). So the
+-- hours that would hold such a row, and the staff row it sits on, change with
+-- the order the two ops run in. Held outright, whatever the order.
+person_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+   WHERE op.home_id IS DISTINCT FROM c.location_id
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -420,6 +475,7 @@ pair AS (
     JOIN cand c2 ON c2.tenant_id = c.tenant_id AND c2.id <> c.id AND c2.s < c.e AND c2.e > c.s
     JOIN live o2 ON o2.id = c2.id
    WHERE c2.practitioner_id = c.practitioner_id
+      OR c2.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR c2.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR c2.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR c.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c2.id)
@@ -446,6 +502,13 @@ f AS (
          EXISTS (SELECT 1 FROM hit_patient x WHERE x.cand_id = p.id) AS hits_patient,
          EXISTS (SELECT 1 FROM res_away x WHERE x.cand_id = p.id) AS resource_away,
          EXISTS (SELECT 1 FROM hit_twin_hold x WHERE x.cand_id = p.id) AS hits_twin_hold,
+         EXISTS (SELECT 1 FROM person_away x WHERE x.cand_id = p.id) AS person_away,
+         -- The row itself an unconfirmed pedido, by the live filter's own test
+         -- (0067): the re-measure would not see it as live, so it is held.
+         (p.status = 'scheduled'
+          AND (p.origin = 'patient_portal'
+               OR EXISTS (SELECT 1 FROM public.staff_notifications sn
+                           WHERE sn.appointment_id = p.id AND sn.kind = 'appointment_request'))) IS TRUE AS is_pedido,
          EXISTS (SELECT 1 FROM public.users u WHERE u.id = p.practitioner_id AND u.is_shared_resource IS TRUE)
            AS on_resource_row
     FROM pop p
@@ -475,6 +538,8 @@ v AS (
               WHEN f.hits_patient THEN '15 SAME PATIENT BOOKED ELSEWHERE'
               WHEN f.resource_away THEN '16 NESA NOT INSTALLED AT THE CLINIC'
               WHEN f.hits_twin_hold THEN '17 OVERLAPS THE NESA HOUR OF A LIVE TWIN'
+              WHEN f.person_away THEN '18 ON A STAFF ROW MEANT FOR ANOTHER CLINIC'
+              WHEN f.is_pedido THEN '19 AN UNCONFIRMED PEDIDO'
               ELSE 'WRITE' END AS verdict
     FROM f CROSS JOIN k
 ),
@@ -547,8 +612,26 @@ ref AS (
                   OR w.is_twin IS NOT FALSE OR w.in_closure IS NOT FALSE OR w.out_of_window IS NOT FALSE
                   OR w.outside_hours IS NOT FALSE OR w.hits_booking IS NOT FALSE OR w.hits_block IS NOT FALSE
                   OR w.hits_stub IS NOT FALSE OR w.hits_patient IS NOT FALSE
-                  OR w.resource_away IS NOT FALSE OR w.hits_twin_hold IS NOT FALSE))::int,
+                  OR w.resource_away IS NOT FALSE OR w.hits_twin_hold IS NOT FALSE
+                  OR w.person_away IS NOT FALSE OR w.is_pedido IS NOT FALSE))::int,
          (SELECT count(*) FROM wr)::int
+  UNION ALL
+  -- The pair one_person names must resolve: both staff rows and the row's own
+  -- clinic, in one tenant of the population. If not, the same_person arms and
+  -- person_away would read a vacuous 0. Its control is the pair rows that do
+  -- resolve; with no population it reads VACUOUS, R06 refusing already.
+  SELECT 'R10', 'the one person with two staff rows does not resolve in the population''s tenant, so its checks would read a vacuous zero',
+         (SELECT count(*) FROM one_person op
+           WHERE EXISTS (SELECT 1 FROM pop)
+             AND NOT EXISTS (SELECT 1 FROM public.users u
+                               JOIN public.users u2 ON u2.id = op.other_id AND u2.tenant_id = u.tenant_id
+                               JOIN public.locations l ON l.id = op.home_id AND l.tenant_id = u.tenant_id
+                              WHERE u.id = op.user_id AND u.tenant_id IN (SELECT p.tenant_id FROM pop p)))::int,
+         (SELECT count(*) FROM one_person op
+           WHERE EXISTS (SELECT 1 FROM public.users u
+                           JOIN public.users u2 ON u2.id = op.other_id AND u2.tenant_id = u.tenant_id
+                           JOIN public.locations l ON l.id = op.home_id AND l.tenant_id = u.tenant_id
+                          WHERE u.id = op.user_id AND u.tenant_id IN (SELECT p.tenant_id FROM pop p)))::int
 ),
 -- ---------------------------------------------------------------------------
 -- THE CARRIES. Stage 2 recomputes them with this text and refuses on any
@@ -733,10 +816,13 @@ car AS (
 -- write, inside its transaction) and stage 3 (scripts/dur-01-data-op.test.mjs
 -- asserts it); only the cand CTE before it differs, and says where its ids
 -- come from. live_self is the positive control: every written row is itself a
--- live row, so a live filter that cannot see them reads fewer than n.
+-- live row, so a live filter that cannot see them reads fewer than n. The last
+-- three counts are the subjects of stage 3 verdicts 20, 21 and 22: written rows
+-- on a shared resource, naming one in either slot, and on a one_person row.
 -- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
--- with the two checks the op adds to it (the same patient, and the NESA hour of
--- a live twin), each marked where it stands. These lines are byte-identical in
+-- with the checks the op adds to it (the same patient, the NESA hour of a live
+-- twin, and the one person with two staff rows), each marked where it stands.
+-- These lines are byte-identical in
 -- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
 -- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
@@ -764,6 +850,30 @@ c_res AS (
     FROM cand c
     JOIN shared r ON r.tenant_id = c.tenant_id AND r.id IN (c.practitioner_id, c.practitioner_2_id)
 ),
+-- ONE PERSON, TWO STAFF ROWS. Not in the app's rule; the op adds it. JP is one
+-- person the tenant holds as two staff rows (STAFF-09): JP(cb), the row for
+-- Castelo Branco, and JP(lv), the row for Linda-a-Velha. The ids are JP_CB,
+-- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
+-- and the unit test holds them equal. The app reads each row as its own
+-- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
+-- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- either row as holding the person (arm same_person below, and the second block
+-- arm), and holds outright a row booked on one of the two at a clinic that is
+-- not that row's own (person_away, verdict 18). R10 refuses when the pair does
+-- not resolve in the population's tenant, so these arms cannot read a vacuous 0.
+one_person AS (
+  SELECT x.user_id, x.other_id, x.home_id
+    FROM (VALUES ('54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid, '0c1a0000-0000-4000-8000-000000000001'::uuid,
+                  'de000002-0000-0000-0000-000000000002'::uuid),
+                 ('0c1a0000-0000-4000-8000-000000000001'::uuid, '54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid,
+                  'de000002-0000-0000-0000-000000000001'::uuid)) x(user_id, other_id, home_id)
+),
+-- The other staff row of each candidate's Terapeuta, where it has one.
+c_alias AS (
+  SELECT c.id AS cand_id, op.other_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+),
 -- A row that holds its hour: not cancelled or no-show (0052), and not an
 -- unconfirmed pedido (0067's body of is_unconfirmed_pedido, inline). Bounded to
 -- the candidates' horizon, which changes no answer: a row that overlaps a
@@ -784,10 +894,12 @@ live AS (
 -- THE BOOKING ARMS (findConflicts): the therapist arm and the room arm of
 -- appointment_conflicts (0059), then for every shared resource the candidate
 -- names, the rows where it is Terapeuta and the rows where it is Terapeuta 2.
--- The candidate itself is excluded, as excludeIds excludes it.
+-- The candidate itself is excluded, as excludeIds excludes it. The same_person
+-- arm is the op's (one_person above): a row on the Terapeuta's other staff row.
 hit_booking AS (
   SELECT c.id AS cand_id, o.id AS other_id, o.starts_at AS other_s, o.ends_at AS other_e,
          CASE WHEN o.practitioner_id = c.practitioner_id THEN 'therapist'
+              WHEN o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id) THEN 'same_person'
               WHEN o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta'
               WHEN o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta_2'
               ELSE 'room' END AS arm
@@ -795,18 +907,27 @@ hit_booking AS (
     JOIN live o ON o.tenant_id = c.tenant_id AND o.id <> c.id
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.practitioner_id = c.practitioner_id
+      OR o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR (nullif(btrim(c.room), '') IS NOT NULL AND o.location_id = c.location_id
           AND lower(o.room) = lower(btrim(c.room)))
 ),
 -- THE BLOCK ARM (findScheduleConflicts): time_off on the Terapeuta, which is
--- therapist-wide and carries no clinic.
+-- therapist-wide and carries no clinic. The second arm is the op's: a block on
+-- the Terapeuta's other staff row (one_person above) holds the person too.
 hit_block AS (
   SELECT c.id AS cand_id, t.id AS block_id, t.starts_at AS block_s, t.ends_at AS block_e
     FROM cand c
     JOIN public.time_off t
       ON t.tenant_id = c.tenant_id AND t.user_id = c.practitioner_id
+     AND t.starts_at < c.e AND t.ends_at > c.s
+  UNION ALL
+  SELECT c.id, t.id, t.starts_at, t.ends_at
+    FROM cand c
+    JOIN c_alias ca ON ca.cand_id = c.id
+    JOIN public.time_off t
+      ON t.tenant_id = c.tenant_id AND t.user_id = ca.user_id
      AND t.starts_at < c.e AND t.ends_at > c.s
 ),
 -- THE SAME PATIENT BOOKED ELSEWHERE. Not in the app's rule; the op adds it, and
@@ -864,6 +985,20 @@ res_away AS (
    WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
                       WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
                         AND sl.location_id = c.location_id)
+),
+-- ONE PERSON'S ROW AT THE OTHER CLINIC. Not in the app's rule; the op adds it. A
+-- row booked on one of the two staff rows of one_person at a clinic that is not
+-- that row's own: JP(cb) at Linda-a-Velha, or JP(lv) at Castelo Branco.
+-- STAFF-10 v2 hands JP(cb)'s future Linda-a-Velha rows to reception (its Q1),
+-- retires JP(cb)'s hours there (its W1 and W2), and moves every JP(cb) row there
+-- that starts before its own run day to JP(lv) in any status (its W4). So the
+-- hours that would hold such a row, and the staff row it sits on, change with
+-- the order the two ops run in. Held outright, whatever the order.
+person_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+   WHERE op.home_id IS DISTINCT FROM c.location_id
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -958,8 +1093,12 @@ rc AS (
          (SELECT count(DISTINCT x.cand_id) FROM hit_patient x)::int AS patient,
          (SELECT count(*) FROM res_away x)::int AS resource_away,
          (SELECT count(DISTINCT x.cand_id) FROM hit_twin_hold x)::int AS twin_hold,
+         (SELECT count(*) FROM person_away x)::int AS person_away,
          (SELECT count(*) FROM clinic x WHERE x.ends_after_close)::int AS ends_after_close,
-         (SELECT count(*) FROM avail x WHERE x.configured)::int AS hours_configured
+         (SELECT count(*) FROM avail x WHERE x.configured)::int AS hours_configured,
+         (SELECT count(*) FROM cand c JOIN shared r ON r.id = c.practitioner_id AND r.tenant_id = c.tenant_id)::int AS on_resource,
+         (SELECT count(DISTINCT cr.cand_id) FROM c_res cr)::int AS names_resource,
+         (SELECT count(*) FROM cand c WHERE c.practitioner_id IN (SELECT op.user_id FROM one_person op))::int AS on_person_row
 )
 -- <<< DUR-01 RECHECK END
   SELECT to_jsonb(rc) INTO v_rc FROM rc;
@@ -970,7 +1109,7 @@ rc AS (
   END IF;
   IF (v_rc ->> 'booking')::int + (v_rc ->> 'block')::int + (v_rc ->> 'closure')::int + (v_rc ->> 'clinic_hours')::int
      + (v_rc ->> 'therapist_hours')::int + (v_rc ->> 'patient')::int
-     + (v_rc ->> 'resource_away')::int + (v_rc ->> 'twin_hold')::int <> 0 THEN
+     + (v_rc ->> 'resource_away')::int + (v_rc ->> 'twin_hold')::int + (v_rc ->> 'person_away')::int <> 0 THEN
     RAISE EXCEPTION 'STOP: after the write a written row overlaps something the rule forbids: %. Nothing was written', v_rc;
   END IF;
 

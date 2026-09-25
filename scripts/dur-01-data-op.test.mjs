@@ -264,6 +264,7 @@ test("the rule's arms: therapist, room, resource as Terapeuta and as Terapeuta 2
   assert.match(hb, /o\.id <> c\.id\s+AND o\.starts_at < c\.e AND o\.ends_at > c\.s/, "the booking arm is not half-open, or does not exclude the candidate");
   for (const arm of [
     "o.practitioner_id = c.practitioner_id",
+    "o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)",
     "o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)",
     "o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)",
     "lower(o.room) = lower(btrim(c.room))",
@@ -295,7 +296,12 @@ test("D5: a live twin's person row holds its NESA over the WHOLE person window, 
   const lt = S1.slice(S1.indexOf("\nlive_twin AS ("), S1.indexOf("\nSELECT jsonb_build_object("));
   assert.match(lt, /\(p\.starts_at <= n\.starts_at AND p\.ends_at >= n\.ends_at\) AS covers,/, "section 1d's covers is not STAFF-10 v2's R17");
   assert.match(lt, /WHERE n\.status NOT IN \('cancelled', 'no_show'\) AND p\.status NOT IN \('cancelled', 'no_show'\)\s+AND n\.starts_at >= \(k\.today::timestamp AT TIME ZONE 'Europe\/Lisbon'\)/, "section 1d does not read the live future pairs");
-  assert.ok(block("STAGE 1").includes("Read sections 1d, 2, 3, 3b, 4 and 6 before stage 2."), "stage 1's block does not point at section 1d");
+  assert.ok(block("STAGE 1").includes("Read sections 1d, 1e, 2, 3, 3b, 4 and 6 before stage 2."), "stage 1's block does not point at sections 1d and 1e");
+  // Section 1d names each kind of person stub, so the question block's option (b) reads against it.
+  assert.match(lt, /\(n\.ends_at - n\.starts_at = interval '1 minute'\n\s+AND EXISTS \(SELECT 1 FROM ledger lg WHERE lg\.appointment_id = n\.id\)\) AS n_stub/, "section 1d does not read whether the NESA half is a stub too");
+  for (const col of ["of_which_nesa_row_longer", "of_which_both_halves_a_minute", "of_which_other"]) {
+    assert.ok(S1.includes(` AS ${col}`), `section 1d does not print ${col}`);
+  }
 });
 
 test("the twin is list C's predicate, NULL-safe on the service, the partner in any status", () => {
@@ -303,6 +309,54 @@ test("the twin is list C's predicate, NULL-safe on the service, the partner in a
   assert.match(tw, /AND o\.starts_at = p\.starts_at AND o\.id <> p\.id\s+AND o\.service_id IS NOT DISTINCT FROM p\.service_id/);
   assert.match(tw, /\(up\.is_shared_resource IS TRUE AND uo\.is_shared_resource IS NOT TRUE\)\s+OR \(up\.is_shared_resource IS NOT TRUE AND uo\.is_shared_resource IS TRUE\)/);
   assert.doesNotMatch(tw.slice(tw.indexOf("FROM pop p")), /o\.status\s*(=|<>|IN\b|NOT\b)/i, "the twin predicate filters the partner's status, so a twin STAFF-10 v2 resolved would read as none");
+});
+
+test("one person, two staff rows: the rule names STAFF-11's JP pair, reads bookings and blocks on the other row, and holds a row at the other row's clinic", () => {
+  const rule = copies(S1, "RULE")[0];
+  // The ids are the ones the JP split's own check names, so a re-keyed row fails here, not in production.
+  const s11 = read("packages/db/scripts/staff-11-jp-one-clinic-check.mjs");
+  const id = (name) => s11.match(new RegExp(`const ${name} = "([0-9a-f-]{36})";`))?.[1];
+  const [jpCb, jpLv, cb, lv] = ["JP_CB", "JP_LV", "CB", "LV"].map(id);
+  assert.ok(jpCb && jpLv && cb && lv, "staff-11's JP ids did not parse");
+  const op = rule.slice(rule.indexOf("\none_person AS ("), rule.indexOf("\nc_alias AS ("));
+  assert.ok(op.includes(`('${jpCb}'::uuid, '${jpLv}'::uuid,\n                  '${cb}'::uuid)`), "JP(cb) is not paired with JP(lv) and Castelo Branco");
+  assert.ok(op.includes(`('${jpLv}'::uuid, '${jpCb}'::uuid,\n                  '${lv}'::uuid)`), "JP(lv) is not paired with JP(cb) and Linda-a-Velha");
+  assert.equal([...code(op).matchAll(/'[0-9a-f-]{36}'::uuid/g)].length, 6, "the pair names another id");
+  for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]]) {
+    const ids = new Set([...code(sql).matchAll(/'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'/g)].map((m) => m[1]));
+    assert.deepEqual([...ids].sort(), [jpCb, jpLv, cb, lv].sort(), `${label} names an id outside the pair`);
+  }
+  assert.match(rule, /c_alias AS \(\n\s+SELECT c\.id AS cand_id, op\.other_id AS user_id\n\s+FROM cand c\n\s+JOIN one_person op ON op\.user_id = c\.practitioner_id\n\)/);
+  const hb = rule.slice(rule.indexOf("\nhit_booking AS ("), rule.indexOf("\nhit_block AS ("));
+  assert.match(hb, /WHEN o\.practitioner_id IN \(SELECT ca\.user_id FROM c_alias ca WHERE ca\.cand_id = c\.id\) THEN 'same_person'/);
+  const hk = rule.slice(rule.indexOf("\nhit_block AS ("), rule.indexOf("\nhit_patient AS ("));
+  assert.match(hk, /JOIN c_alias ca ON ca\.cand_id = c\.id\n\s+JOIN public\.time_off t\n\s+ON t\.tenant_id = c\.tenant_id AND t\.user_id = ca\.user_id\n\s+AND t\.starts_at < c\.e AND t\.ends_at > c\.s/, "a block on the other staff row does not hold the person");
+  const away = rule.slice(rule.indexOf("\nperson_away AS ("), rule.indexOf("\nclinic AS ("));
+  assert.match(away, /JOIN one_person op ON op\.user_id = c\.practitioner_id\n\s+WHERE op\.home_id IS DISTINCT FROM c\.location_id/);
+  const pair = BASE.slice(BASE.indexOf("\npair AS ("), BASE.indexOf("\nf AS ("));
+  assert.ok(pair.includes("OR c2.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)"), "two stubs on the two rows are not compared once both are extended");
+  const r10 = BASE.slice(BASE.indexOf("'R10'"), BASE.indexOf("\n),", BASE.indexOf("'R10'")));
+  assert.match(r10, /WHERE EXISTS \(SELECT 1 FROM pop\)\n\s+AND NOT EXISTS \(SELECT 1 FROM public\.users u\n\s+JOIN public\.users u2 ON u2\.id = op\.other_id AND u2\.tenant_id = u\.tenant_id\n\s+JOIN public\.locations l ON l\.id = op\.home_id AND l\.tenant_id = u\.tenant_id/, "R10 does not refuse a pair that fails to resolve");
+  const rc = copies(S2, "RECHECK")[0];
+  assert.match(rc, /\(SELECT count\(\*\) FROM person_away x\)::int AS person_away,/);
+  assert.match(rc, /\(SELECT count\(\*\) FROM cand c WHERE c\.practitioner_id IN \(SELECT op\.user_id FROM one_person op\)\)::int AS on_person_row\n/);
+  assert.ok(DOC.includes("`18 ON A STAFF ROW MEANT FOR ANOTHER CLINIC`"));
+});
+
+test("a one-minute row that is itself an unconfirmed pedido is held (verdict 19), by the live filter's own test", () => {
+  const f = BASE.slice(BASE.indexOf("\nf AS ("), BASE.indexOf("\nv AS ("));
+  assert.match(f, /\(p\.status = 'scheduled'\n\s+AND \(p\.origin = 'patient_portal'\n\s+OR EXISTS \(SELECT 1 FROM public\.staff_notifications sn\n\s+WHERE sn\.appointment_id = p\.id AND sn\.kind = 'appointment_request'\)\)\) IS TRUE AS is_pedido,/, "the pedido flag is not the live filter's pedido test");
+  assert.match(BASE, /WHEN f\.is_pedido THEN '19 AN UNCONFIRMED PEDIDO'/);
+  assert.match(BASE, /OR w\.person_away IS NOT FALSE OR w\.is_pedido IS NOT FALSE\)\)::int,/, "R09 does not re-read the two new flags");
+});
+
+test("stage 2's header states the app's slot locks as they are: the reschedule takes them too", () => {
+  const actions = read("apps/web/lib/scheduling/actions.ts");
+  const resched = actions.slice(actions.indexOf("export async function rescheduleAppointment("));
+  assert.ok(resched.includes("const slotLocks = acquireSlotLocksForMany("), "rescheduleAppointment no longer takes slot locks; re-read stage 2's header");
+  const head = S2.slice(0, S2.indexOf("\\pset pager off"));
+  assert.doesNotMatch(head, /takes no\s+(?:--\s+)?advisory lock \(apps/, "stage 2 still says the reschedule takes no advisory lock");
+  assert.match(head, /and so does rescheduleAppointment, on its\n-- destination slots/);
 });
 
 test("the population is the ledger, one minute exactly, from now; never origin or created_at", () => {
@@ -329,11 +383,11 @@ test("every row gets exactly one verdict: the CASE lists them in order, each onc
 
 test("R09 re-reads every flag on the WRITE set NULL-safe, so a verdict order that lets a held row through refuses", () => {
   const f = BASE.slice(BASE.indexOf("\nf AS ("), BASE.indexOf("\nv AS ("));
-  const flags = [...f.matchAll(/ AS (is_twin|in_closure|out_of_window|outside_hours|resource_away|hits_[a-z_]+)\b/g)].map((m) => m[1]);
-  assert.deepEqual([...flags].sort(), ["hits_block", "hits_booking", "hits_patient", "hits_stub", "hits_twin_hold", "in_closure", "is_twin", "out_of_window", "outside_hours", "resource_away"], `the flags of f moved: ${flags.join(",")}`);
+  const flags = [...f.matchAll(/ AS (is_twin|is_pedido|in_closure|out_of_window|outside_hours|resource_away|person_away|hits_[a-z_]+)\b/g)].map((m) => m[1]);
+  assert.deepEqual([...flags].sort(), ["hits_block", "hits_booking", "hits_patient", "hits_stub", "hits_twin_hold", "in_closure", "is_pedido", "is_twin", "out_of_window", "outside_hours", "person_away", "resource_away"], `the flags of f moved: ${flags.join(",")}`);
   const r09 = BASE.slice(BASE.indexOf("'R09'"), BASE.indexOf("\n),", BASE.indexOf("'R09'")));
   for (const fl of flags) assert.match(r09, new RegExp(`w\\.${fl} IS NOT FALSE`), `R09 does not re-read ${fl}`);
-  for (const [fl, v] of [["is_twin", "08"], ["in_closure", "09"], ["out_of_window", "10"], ["outside_hours", "11"], ["hits_booking", "12"], ["hits_block", "13"], ["hits_stub", "14"], ["hits_patient", "15"], ["resource_away", "16"], ["hits_twin_hold", "17"]]) {
+  for (const [fl, v] of [["is_twin", "08"], ["in_closure", "09"], ["out_of_window", "10"], ["outside_hours", "11"], ["hits_booking", "12"], ["hits_block", "13"], ["hits_stub", "14"], ["hits_patient", "15"], ["resource_away", "16"], ["hits_twin_hold", "17"], ["person_away", "18"], ["is_pedido", "19"]]) {
     assert.match(BASE, new RegExp(`WHEN f\\.${fl} THEN '${v} `), `flag ${fl} does not hold its verdict ${v}`);
   }
   assert.match(r09, /w\.ledger_rows IS DISTINCT FROM 1 OR w\.src_seconds IS DISTINCT FROM 60/);
@@ -500,7 +554,7 @@ test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the do
   assert.ok(b.includes(`[ "\${NV}" = ${verdicts.length} ]`), "the doc's stage 3 block counts a different number");
   assert.ok(DOC.includes(`${verdicts.length} verdicts and a SUMMARY row`), "the facts table counts a different number");
   const allowed = b.match(/grep -vxE '([0-9|]+)'/)?.[1].split("|").map(Number);
-  assert.deepEqual(allowed, [18], "the allowed-VACUOUS list moved");
+  assert.deepEqual(allowed, [16, 18, 20, 21, 22], "the allowed-VACUOUS list moved");
   rows.forEach((r, i) => {
     const n = i + 1;
     if (n === 1 || n === 19) return;
@@ -514,7 +568,7 @@ test("an instrument that cannot see the written rows FAILs the rule's verdicts, 
   assert.match(rows[10], /^11, /);
   assert.match(rows[10], /CASE WHEN v\.rc_n <> v\.n_w OR v\.live_self <> v\.n_w THEN 'FAIL'/);
   for (const i of [11, 16]) assert.match(rows[i], /OR v\.live_self <> v\.n_w THEN 'FAIL'/, `verdict ${i + 1} does not FAIL on a blind live filter`);
-  for (const i of [12, 13, 14, 15, 19]) assert.match(rows[i], /OR v\.rc_n <> v\.n_w THEN 'FAIL'/, `verdict ${i + 1} does not FAIL on a blind re-measure`);
+  for (const i of [12, 13, 14, 15, 19, 21]) assert.match(rows[i], /OR v\.rc_n <> v\.n_w THEN 'FAIL'/, `verdict ${i + 1} does not FAIL on a blind re-measure`);
   assert.match(rows[20], /^21, /);
   assert.match(rows[20], /OR v\.live_self <> v\.n_w THEN 'FAIL'/, "verdict 21 does not FAIL on a blind live filter");
   const rc = copies(S3, "RECHECK")[0];
@@ -522,10 +576,21 @@ test("an instrument that cannot see the written rows FAILs the rule's verdicts, 
   assert.match(S2, /IF \(v_rc ->> 'n'\)::int <> cardinality\(v_ids\) OR \(v_rc ->> 'live_self'\)::int <> cardinality\(v_ids\) THEN/, "stage 2's re-measure does not stop on a blind instrument");
 });
 
+test("a verdict whose subject can be absent on a real day reads VACUOUS then, never OK: 16, 20, 21 and 22", () => {
+  const rows = verdictRows();
+  for (const [i, subject] of [[15, "hours_configured"], [19, "on_resource"], [20, "names_resource"], [21, "on_person_row"]]) {
+    assert.match(rows[i], new RegExp(`^${i + 1}, `));
+    assert.match(rows[i], new RegExp(`WHEN v\\.n_w = 0 OR v\\.${subject} = 0 THEN 'VACUOUS'`), `verdict ${i + 1} reads OK when no written row has its subject (${subject})`);
+    assert.match(copies(S3, "RECHECK")[0], new RegExp(`::int AS ${subject},?\n`), `the RECHECK does not count ${subject}`);
+  }
+  // The block allows exactly those, and 18, and names why in the doc.
+  assert.ok(DOC.replace(/\s+/g, " ").includes("VACUOUS on 16, 18, 20, 21 and 22 at most"), "the doc does not name the allowed VACUOUS verdicts");
+});
+
 test("stage 2's re-measure stops on any hit, before the audit row", () => {
   const a2 = S2.slice(S2.indexOf("-- A2."), S2.indexOf("-- A3."));
   const rc = copies(S2, "RECHECK")[0];
-  for (const k of ["booking", "block", "closure", "clinic_hours", "therapist_hours", "patient", "resource_away", "twin_hold"]) {
+  for (const k of ["booking", "block", "closure", "clinic_hours", "therapist_hours", "patient", "resource_away", "twin_hold", "person_away"]) {
     assert.ok(a2.includes(`(v_rc ->> '${k}')::int`), `the re-measure does not stop on ${k}`);
     assert.match(rc, new RegExp(`::int AS ${k},?\n`), `the RECHECK does not count ${k}`);
   }
@@ -553,7 +618,16 @@ test("every stage block names the held branch and its own files, and no block bu
   for (const s of ["HEAD CHECK", "STAGE 0", "STAGE 1", "STAGE 2", "STAGE 3"]) {
     const b = block(s);
     assert.ok(b.includes("data/DUR-01-import-stub-durations"), `${s} does not derive its head from the held branch`);
-    assert.doesNotMatch(b, /origin\/main/, `${s} reads origin/main`);
+    // Stage 3 alone may read main, and only once the held branch is gone (its PR merged): it is
+    // READ ONLY and its own sha256 pin, not the ref, decides what runs.
+    const mains = b.split("\n").filter((l) => /origin\/main/.test(l));
+    if (s === "STAGE 3") {
+      assert.equal(mains.length, 1, "stage 3 reads main other than in its one fallback line");
+      assert.match(mains[0], /^\[ -n "\$\{PIN\}" \] \|\| \{ .*PIN=\$\(git log -1 --format=%H origin\/main -- scripts\/data\/dur-01-3-verify\.sql\); \}$/, "stage 3's main fallback is not guarded by the branch being gone");
+      assert.match(b, /PIN=\$\(git rev-parse -q --verify origin\/\$\{BRANCH\} \|\| true\)/);
+    } else {
+      assert.equal(mains.length, 0, `${s} reads origin/main`);
+    }
     assert.doesNotMatch(b, /^\s*#/m, `${s} carries a # line`);
     assert.doesNotMatch(b, /!/, `${s} carries a !`);
     assert.doesNotMatch(b, /\\$/m, `${s} carries a backslash continuation`);

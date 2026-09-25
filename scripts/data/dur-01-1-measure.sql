@@ -15,7 +15,10 @@
 --
 -- EVERY SET IS DERIVED FROM THE DATABASE AT RUN TIME, by the block between the
 -- BASE BEGIN and BASE END markers, which stage 2 carries byte for byte. No
--- count and no id measured on production appears in this file.
+-- count and no id measured on production appears in this file. The only ids
+-- it names are the four of one_person, in the rule: JP's two staff rows and
+-- their two clinics, as packages/db/scripts/staff-11-jp-one-clinic-check.mjs
+-- on main names them.
 --
 -- THE SOURCE ROW IS REAL PATIENT DATA. The only reads of migration_staging_rows
 -- .raw are the inicio and fim keys inside the BASE's ledger CTE, turned into
@@ -104,8 +107,9 @@ cand AS (
    WHERE p.duration_min > 1
 ),
 -- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
--- with the two checks the op adds to it (the same patient, and the NESA hour of
--- a live twin), each marked where it stands. These lines are byte-identical in
+-- with the checks the op adds to it (the same patient, the NESA hour of a live
+-- twin, and the one person with two staff rows), each marked where it stands.
+-- These lines are byte-identical in
 -- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
 -- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
@@ -133,6 +137,30 @@ c_res AS (
     FROM cand c
     JOIN shared r ON r.tenant_id = c.tenant_id AND r.id IN (c.practitioner_id, c.practitioner_2_id)
 ),
+-- ONE PERSON, TWO STAFF ROWS. Not in the app's rule; the op adds it. JP is one
+-- person the tenant holds as two staff rows (STAFF-09): JP(cb), the row for
+-- Castelo Branco, and JP(lv), the row for Linda-a-Velha. The ids are JP_CB,
+-- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
+-- and the unit test holds them equal. The app reads each row as its own
+-- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
+-- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- either row as holding the person (arm same_person below, and the second block
+-- arm), and holds outright a row booked on one of the two at a clinic that is
+-- not that row's own (person_away, verdict 18). R10 refuses when the pair does
+-- not resolve in the population's tenant, so these arms cannot read a vacuous 0.
+one_person AS (
+  SELECT x.user_id, x.other_id, x.home_id
+    FROM (VALUES ('54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid, '0c1a0000-0000-4000-8000-000000000001'::uuid,
+                  'de000002-0000-0000-0000-000000000002'::uuid),
+                 ('0c1a0000-0000-4000-8000-000000000001'::uuid, '54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid,
+                  'de000002-0000-0000-0000-000000000001'::uuid)) x(user_id, other_id, home_id)
+),
+-- The other staff row of each candidate's Terapeuta, where it has one.
+c_alias AS (
+  SELECT c.id AS cand_id, op.other_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+),
 -- A row that holds its hour: not cancelled or no-show (0052), and not an
 -- unconfirmed pedido (0067's body of is_unconfirmed_pedido, inline). Bounded to
 -- the candidates' horizon, which changes no answer: a row that overlaps a
@@ -153,10 +181,12 @@ live AS (
 -- THE BOOKING ARMS (findConflicts): the therapist arm and the room arm of
 -- appointment_conflicts (0059), then for every shared resource the candidate
 -- names, the rows where it is Terapeuta and the rows where it is Terapeuta 2.
--- The candidate itself is excluded, as excludeIds excludes it.
+-- The candidate itself is excluded, as excludeIds excludes it. The same_person
+-- arm is the op's (one_person above): a row on the Terapeuta's other staff row.
 hit_booking AS (
   SELECT c.id AS cand_id, o.id AS other_id, o.starts_at AS other_s, o.ends_at AS other_e,
          CASE WHEN o.practitioner_id = c.practitioner_id THEN 'therapist'
+              WHEN o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id) THEN 'same_person'
               WHEN o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta'
               WHEN o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta_2'
               ELSE 'room' END AS arm
@@ -164,18 +194,27 @@ hit_booking AS (
     JOIN live o ON o.tenant_id = c.tenant_id AND o.id <> c.id
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.practitioner_id = c.practitioner_id
+      OR o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR (nullif(btrim(c.room), '') IS NOT NULL AND o.location_id = c.location_id
           AND lower(o.room) = lower(btrim(c.room)))
 ),
 -- THE BLOCK ARM (findScheduleConflicts): time_off on the Terapeuta, which is
--- therapist-wide and carries no clinic.
+-- therapist-wide and carries no clinic. The second arm is the op's: a block on
+-- the Terapeuta's other staff row (one_person above) holds the person too.
 hit_block AS (
   SELECT c.id AS cand_id, t.id AS block_id, t.starts_at AS block_s, t.ends_at AS block_e
     FROM cand c
     JOIN public.time_off t
       ON t.tenant_id = c.tenant_id AND t.user_id = c.practitioner_id
+     AND t.starts_at < c.e AND t.ends_at > c.s
+  UNION ALL
+  SELECT c.id, t.id, t.starts_at, t.ends_at
+    FROM cand c
+    JOIN c_alias ca ON ca.cand_id = c.id
+    JOIN public.time_off t
+      ON t.tenant_id = c.tenant_id AND t.user_id = ca.user_id
      AND t.starts_at < c.e AND t.ends_at > c.s
 ),
 -- THE SAME PATIENT BOOKED ELSEWHERE. Not in the app's rule; the op adds it, and
@@ -233,6 +272,20 @@ res_away AS (
    WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
                       WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
                         AND sl.location_id = c.location_id)
+),
+-- ONE PERSON'S ROW AT THE OTHER CLINIC. Not in the app's rule; the op adds it. A
+-- row booked on one of the two staff rows of one_person at a clinic that is not
+-- that row's own: JP(cb) at Linda-a-Velha, or JP(lv) at Castelo Branco.
+-- STAFF-10 v2 hands JP(cb)'s future Linda-a-Velha rows to reception (its Q1),
+-- retires JP(cb)'s hours there (its W1 and W2), and moves every JP(cb) row there
+-- that starts before its own run day to JP(lv) in any status (its W4). So the
+-- hours that would hold such a row, and the staff row it sits on, change with
+-- the order the two ops run in. Held outright, whatever the order.
+person_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+   WHERE op.home_id IS DISTINCT FROM c.location_id
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -344,6 +397,7 @@ pair AS (
     JOIN cand c2 ON c2.tenant_id = c.tenant_id AND c2.id <> c.id AND c2.s < c.e AND c2.e > c.s
     JOIN live o2 ON o2.id = c2.id
    WHERE c2.practitioner_id = c.practitioner_id
+      OR c2.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR c2.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR c2.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR c.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c2.id)
@@ -370,6 +424,13 @@ f AS (
          EXISTS (SELECT 1 FROM hit_patient x WHERE x.cand_id = p.id) AS hits_patient,
          EXISTS (SELECT 1 FROM res_away x WHERE x.cand_id = p.id) AS resource_away,
          EXISTS (SELECT 1 FROM hit_twin_hold x WHERE x.cand_id = p.id) AS hits_twin_hold,
+         EXISTS (SELECT 1 FROM person_away x WHERE x.cand_id = p.id) AS person_away,
+         -- The row itself an unconfirmed pedido, by the live filter's own test
+         -- (0067): the re-measure would not see it as live, so it is held.
+         (p.status = 'scheduled'
+          AND (p.origin = 'patient_portal'
+               OR EXISTS (SELECT 1 FROM public.staff_notifications sn
+                           WHERE sn.appointment_id = p.id AND sn.kind = 'appointment_request'))) IS TRUE AS is_pedido,
          EXISTS (SELECT 1 FROM public.users u WHERE u.id = p.practitioner_id AND u.is_shared_resource IS TRUE)
            AS on_resource_row
     FROM pop p
@@ -399,6 +460,8 @@ v AS (
               WHEN f.hits_patient THEN '15 SAME PATIENT BOOKED ELSEWHERE'
               WHEN f.resource_away THEN '16 NESA NOT INSTALLED AT THE CLINIC'
               WHEN f.hits_twin_hold THEN '17 OVERLAPS THE NESA HOUR OF A LIVE TWIN'
+              WHEN f.person_away THEN '18 ON A STAFF ROW MEANT FOR ANOTHER CLINIC'
+              WHEN f.is_pedido THEN '19 AN UNCONFIRMED PEDIDO'
               ELSE 'WRITE' END AS verdict
     FROM f CROSS JOIN k
 ),
@@ -471,8 +534,26 @@ ref AS (
                   OR w.is_twin IS NOT FALSE OR w.in_closure IS NOT FALSE OR w.out_of_window IS NOT FALSE
                   OR w.outside_hours IS NOT FALSE OR w.hits_booking IS NOT FALSE OR w.hits_block IS NOT FALSE
                   OR w.hits_stub IS NOT FALSE OR w.hits_patient IS NOT FALSE
-                  OR w.resource_away IS NOT FALSE OR w.hits_twin_hold IS NOT FALSE))::int,
+                  OR w.resource_away IS NOT FALSE OR w.hits_twin_hold IS NOT FALSE
+                  OR w.person_away IS NOT FALSE OR w.is_pedido IS NOT FALSE))::int,
          (SELECT count(*) FROM wr)::int
+  UNION ALL
+  -- The pair one_person names must resolve: both staff rows and the row's own
+  -- clinic, in one tenant of the population. If not, the same_person arms and
+  -- person_away would read a vacuous 0. Its control is the pair rows that do
+  -- resolve; with no population it reads VACUOUS, R06 refusing already.
+  SELECT 'R10', 'the one person with two staff rows does not resolve in the population''s tenant, so its checks would read a vacuous zero',
+         (SELECT count(*) FROM one_person op
+           WHERE EXISTS (SELECT 1 FROM pop)
+             AND NOT EXISTS (SELECT 1 FROM public.users u
+                               JOIN public.users u2 ON u2.id = op.other_id AND u2.tenant_id = u.tenant_id
+                               JOIN public.locations l ON l.id = op.home_id AND l.tenant_id = u.tenant_id
+                              WHERE u.id = op.user_id AND u.tenant_id IN (SELECT p.tenant_id FROM pop p)))::int,
+         (SELECT count(*) FROM one_person op
+           WHERE EXISTS (SELECT 1 FROM public.users u
+                           JOIN public.users u2 ON u2.id = op.other_id AND u2.tenant_id = u.tenant_id
+                           JOIN public.locations l ON l.id = op.home_id AND l.tenant_id = u.tenant_id
+                          WHERE u.id = op.user_id AND u.tenant_id IN (SELECT p.tenant_id FROM pop p)))::int
 ),
 -- ---------------------------------------------------------------------------
 -- THE CARRIES. Stage 2 recomputes them with this text and refuses on any
@@ -530,6 +611,10 @@ reasons AS (
   SELECT x.cand_id, 'nesa not installed at this clinic', x.res_id::text, NULL, NULL FROM res_away x
   UNION ALL
   SELECT x.cand_id, 'the nesa hour of a live twin, its person row', x.other_id::text, x.other_s, x.other_e FROM hit_twin_hold x
+  UNION ALL
+  SELECT x.cand_id, 'one person, a staff row meant for another clinic', x.user_id::text, NULL, NULL FROM person_away x
+  UNION ALL
+  SELECT w.id, 'an unconfirmed pedido', NULL, NULL, NULL FROM vw w WHERE w.is_pedido
 ),
 -- THE LIVE FUTURE NESA TWINS, as STAFF-10 v2's ruling (c) set reads them: a row
 -- on a shared resource and a row on a person, same tenant, patient, start and
@@ -539,7 +624,9 @@ live_twin AS (
   SELECT p.id AS p_id, n.id AS n_id, p.location_id,
          (p.starts_at <= n.starts_at AND p.ends_at >= n.ends_at) AS covers,
          (p.ends_at - p.starts_at = interval '1 minute'
-          AND EXISTS (SELECT 1 FROM ledger lg WHERE lg.appointment_id = p.id)) AS p_stub
+          AND EXISTS (SELECT 1 FROM ledger lg WHERE lg.appointment_id = p.id)) AS p_stub,
+         (n.ends_at - n.starts_at = interval '1 minute'
+          AND EXISTS (SELECT 1 FROM ledger lg WHERE lg.appointment_id = n.id)) AS n_stub
     FROM public.appointments n
     JOIN public.users un ON un.id = n.practitioner_id AND un.is_shared_resource IS TRUE
     JOIN public.appointments p
@@ -579,18 +666,47 @@ SELECT jsonb_build_object(
              FROM (VALUES (1, 'staff.dur01.extend_import_duration'), (2, 'staff.staff10_v2.apply'),
                           (3, 'staff.nesa_split.reassign')) x(ord, action)),
   'live_twins', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-                   'clinic', q.clinic, 'pairs', q.n, 'covers', q.n_cover, 'shorter', q.n_short, 'stub', q.n_stub)
+                   'clinic', q.clinic, 'pairs', q.n, 'covers', q.n_cover, 'shorter', q.n_short, 'stub', q.n_stub,
+                   'stub_short', q.n_stub_short, 'both_stubs', q.n_both, 'stub_other', q.n_stub_other)
                    ORDER BY q.ord, q.clinic), '[]'::jsonb)
                    FROM (SELECT 0 AS ord, coalesce(l.name, '(no clinic)') AS clinic, count(*) AS n,
                                 count(*) FILTER (WHERE lt.covers) AS n_cover,
                                 count(*) FILTER (WHERE NOT lt.covers) AS n_short,
-                                count(*) FILTER (WHERE lt.p_stub) AS n_stub
+                                count(*) FILTER (WHERE lt.p_stub) AS n_stub,
+                                count(*) FILTER (WHERE lt.p_stub AND NOT lt.covers) AS n_stub_short,
+                                count(*) FILTER (WHERE lt.p_stub AND lt.n_stub) AS n_both,
+                                count(*) FILTER (WHERE lt.p_stub AND lt.covers AND NOT lt.n_stub) AS n_stub_other
                            FROM live_twin lt LEFT JOIN public.locations l ON l.id = lt.location_id
                           GROUP BY 2
                          UNION ALL
                          SELECT 1, 'ALL CLINICS', count(*), count(*) FILTER (WHERE lt.covers),
-                                count(*) FILTER (WHERE NOT lt.covers), count(*) FILTER (WHERE lt.p_stub)
+                                count(*) FILTER (WHERE NOT lt.covers), count(*) FILTER (WHERE lt.p_stub),
+                                count(*) FILTER (WHERE lt.p_stub AND NOT lt.covers),
+                                count(*) FILTER (WHERE lt.p_stub AND lt.n_stub),
+                                count(*) FILTER (WHERE lt.p_stub AND lt.covers AND NOT lt.n_stub)
                            FROM live_twin lt) q),
+  'one_person', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'staff_row', op.user_id::text, 'resolves', (u.id IS NOT NULL AND lh.id IS NOT NULL)::text,
+                   'own_clinic', coalesce(lh.name, '(not found)'),
+                   'hours_own', (SELECT count(*) FROM public.availability_templates av
+                                  WHERE av.user_id = op.user_id AND av.location_id = op.home_id AND av.is_active IS TRUE),
+                   'hours_other', (SELECT count(*) FROM public.availability_templates av
+                                    WHERE av.user_id = op.user_id AND av.location_id IS DISTINCT FROM op.home_id
+                                      AND av.is_active IS TRUE),
+                   'blocks_ahead', (SELECT count(*) FROM public.time_off t, k WHERE t.user_id = op.user_id AND t.ends_at > k.t_now),
+                   'own_rows', (SELECT count(*) FROM vw w WHERE w.practitioner_id = op.user_id AND w.location_id = op.home_id),
+                   'own_write', (SELECT count(*) FROM vw w WHERE w.practitioner_id = op.user_id AND w.location_id = op.home_id
+                                    AND w.verdict = 'WRITE'),
+                   'own_block', (SELECT count(*) FROM vw w WHERE w.practitioner_id = op.user_id AND w.location_id = op.home_id
+                                    AND w.hits_block),
+                   'own_same_person', (SELECT count(DISTINCT h.cand_id) FROM hit_booking h JOIN vw w ON w.id = h.cand_id
+                                        WHERE w.practitioner_id = op.user_id AND h.arm = 'same_person'),
+                   'away_rows', (SELECT count(*) FROM vw w WHERE w.practitioner_id = op.user_id
+                                    AND w.location_id IS DISTINCT FROM op.home_id))
+                   ORDER BY op.home_id), '[]'::jsonb)
+                   FROM one_person op
+                   LEFT JOIN public.users u ON u.id = op.user_id
+                   LEFT JOIN public.locations lh ON lh.id = op.home_id AND lh.tenant_id = u.tenant_id),
   'population', (SELECT jsonb_agg(jsonb_build_object(
                    'clinic', q.clinic, 'future_1min_all', q.n_all, 'importer_written', q.n_ledger,
                    'not_in_ledger', q.n_other, 'importer_written_live', q.n_live,
@@ -702,6 +818,8 @@ SELECT jsonb_build_object(
                         CASE WHEN w.hits_patient THEN 'patient' END,
                         CASE WHEN w.resource_away THEN 'nesa_away' END,
                         CASE WHEN w.hits_twin_hold THEN 'twin_hold' END,
+                        CASE WHEN w.person_away THEN 'person_away' END,
+                        CASE WHEN w.is_pedido THEN 'pedido' END,
                         CASE WHEN w.ends_after_close THEN 'ends_after_close' END),
              'verdict', w.verdict, 'who', w.who)
              ORDER BY coalesce(l.name, '(no clinic)'), w.verdict, w.starts_at, w.id), '[]'::jsonb)
@@ -753,6 +871,7 @@ SELECT e ->> 'id' AS resource_id, e ->> 'active' AS active, e ->> 'bookable' AS 
        e ->> 'installed_at' AS installed_at
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'resources') e;
 \echo '    The twin check and the resource arms read the ACTIVE shared resources (R02 refuses none).'
+\echo '    Section 1e names the one person with two staff rows (R10 refuses a pair that does not resolve).'
 \echo ''
 \echo '=== 1b. THE CLINICS: opening, the last start the app allows, closing, and the midday closure ==='
 SELECT e ->> 'clinic' AS clinic, e ->> 'id' AS clinic_id, e ->> 'opens' AS opens,
@@ -762,18 +881,37 @@ SELECT e ->> 'clinic' AS clinic, e ->> 'id' AS clinic_id, e ->> 'opens' AS opens
 \echo '=== 1c. WHAT HAS ALREADY RUN: DUR-01 itself, STAFF-10 v2 and NESA-SPLIT, by their audit rows ==='
 SELECT e ->> 'action' AS action, (e ->> 'audit_rows')::int AS audit_rows, e ->> 'last_at' AS last_at
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'runs') e;
-\echo '    STAFF-10 v2 before or after DUR-01 is the doc''s D5. Either order is classified; a STAFF-10 v2'
-\echo '    write landing between this stage and stage 2 refuses there, on the fourth carry.'
+\echo '    STAFF-10 v2 before or after DUR-01 is the doc''s D5. Either order is classified, and 1e says'
+\echo '    what differs; a STAFF-10 v2 write landing between this stage and stage 2 refuses there.'
 \echo ''
 \echo '=== 1d. THE LIVE FUTURE NESA TWINS STAFF-10 v2 RESOLVES, and how many of them its R17 refuses ==='
 SELECT e ->> 'clinic' AS clinic, (e ->> 'pairs')::int AS live_future_pairs,
        (e ->> 'covers')::int AS person_window_covers_nesa, (e ->> 'shorter')::int AS its_r17_refuses,
-       (e ->> 'stub')::int AS person_half_is_an_importer_minute
+       (e ->> 'stub')::int AS person_half_is_an_importer_minute,
+       (e ->> 'stub_short')::int AS of_which_nesa_row_longer, (e ->> 'both_stubs')::int AS of_which_both_halves_a_minute,
+       (e ->> 'stub_other')::int AS of_which_other
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'live_twins') e;
 \echo '    STAFF-10 v2 cancels the NESA row of each pair and holds the NESA on the person row instead,'
 \echo '    over the whole person window. Verdict 17 already holds every stub that overlaps that window,'
-\echo '    so this op gives the same answer before STAFF-10 v2 or after it. its_r17_refuses above 0'
-\echo '    means STAFF-10 v2 stops, whole, until those person rows are fixed (the question block).'
+\echo '    so the NESA hour reads the same in either order; section 1e names what the order does change.'
+\echo '    its_r17_refuses above 0 means STAFF-10 v2 stops, whole, until those person rows are fixed.'
+\echo '    of_which_nesa_row_longer is the AGENDA-TWIN shape, a person minute against a longer NESA row,'
+\echo '    which its R17 refuses; of_which_both_halves_a_minute passes its R17 and leaves its person'
+\echo '    minute naming the NESA as Terapeuta 2 (question option b).'
+\echo ''
+\echo '=== 1e. THE ONE PERSON WITH TWO STAFF ROWS (JP): hours, blocks and one-minute rows on each ==='
+SELECT e ->> 'staff_row' AS staff_row, e ->> 'own_clinic' AS own_clinic, e ->> 'resolves' AS resolves,
+       (e ->> 'hours_own')::int AS hours_rows_own_clinic, (e ->> 'hours_other')::int AS hours_rows_other_clinic,
+       (e ->> 'blocks_ahead')::int AS blocks_ahead,
+       (e ->> 'own_rows')::int AS minute_rows_own_clinic, (e ->> 'own_write')::int AS of_which_write,
+       (e ->> 'own_block')::int AS of_which_over_a_block, (e ->> 'own_same_person')::int AS over_the_other_row,
+       (e ->> 'away_rows')::int AS minute_rows_other_clinic
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'one_person') e;
+\echo '    A row on one of the two at the other clinic is held outright (verdict 18), in either order.'
+\echo '    over_the_other_row counts rows held because the other staff row holds the person then.'
+\echo '    What STAFF-10 v2 still changes, when it runs first: its W3 deletes a JP(cb) block, so'
+\echo '    rows of_which_over_a_block may read WRITE after it; its W2 gives JP(lv) Saturday hours, so'
+\echo '    on a JP(lv) row with no hours_rows_own_clinic today, verdict 11 may hold rows after it.'
 
 -- ---------------------------------------------------------------------------
 -- 2. THE POPULATION, with and without the ledger filter.

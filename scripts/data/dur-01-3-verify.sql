@@ -8,11 +8,13 @@
 -- excluded ids by verdict, the carries and the md5s into its one audit row;
 -- this file reads them back and recomputes each against the database. A
 -- VACUOUS verdict means the arm ran over an empty set and could not have
--- failed; the stage 3 block in the doc allows it only on verdict 18 (no row was
--- excluded). Stage 2 refuses an empty write set (R06), so every other arm always
--- has rows to read. An instrument that cannot see the written rows (verdict
--- 11's control) FAILs, never VACUOUS, because its zero would green 12 to 17
--- and 20 to 21.
+-- failed. The stage 3 block in the doc allows it on five verdicts only, each
+-- for a subject a real day may lack: 16 (no written row has hours configured),
+-- 18 (no row was excluded), 20 (no written row is on a NESA), 21 (no written
+-- row names a NESA) and 22 (no written row is on a JP row). Stage 2 refuses an
+-- empty write set (R06), so every other arm always has rows to read. An
+-- instrument that cannot see the written rows (verdict 11's control) FAILs,
+-- never VACUOUS, because its zero would green 12 to 17 and 20 to 22.
 --
 -- THE TOTAL IS READ FROM THE AUDIT ROW, NOT COUNTED AGAIN (verdict 19). A live
 -- count of the tenant's appointments moves with the clinic: a later hard
@@ -64,10 +66,13 @@ cand AS (
 -- write, inside its transaction) and stage 3 (scripts/dur-01-data-op.test.mjs
 -- asserts it); only the cand CTE before it differs, and says where its ids
 -- come from. live_self is the positive control: every written row is itself a
--- live row, so a live filter that cannot see them reads fewer than n.
+-- live row, so a live filter that cannot see them reads fewer than n. The last
+-- three counts are the subjects of stage 3 verdicts 20, 21 and 22: written rows
+-- on a shared resource, naming one in either slot, and on a one_person row.
 -- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
--- with the two checks the op adds to it (the same patient, and the NESA hour of
--- a live twin), each marked where it stands. These lines are byte-identical in
+-- with the checks the op adds to it (the same patient, the NESA hour of a live
+-- twin, and the one person with two staff rows), each marked where it stands.
+-- These lines are byte-identical in
 -- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
 -- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
@@ -95,6 +100,30 @@ c_res AS (
     FROM cand c
     JOIN shared r ON r.tenant_id = c.tenant_id AND r.id IN (c.practitioner_id, c.practitioner_2_id)
 ),
+-- ONE PERSON, TWO STAFF ROWS. Not in the app's rule; the op adds it. JP is one
+-- person the tenant holds as two staff rows (STAFF-09): JP(cb), the row for
+-- Castelo Branco, and JP(lv), the row for Linda-a-Velha. The ids are JP_CB,
+-- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
+-- and the unit test holds them equal. The app reads each row as its own
+-- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
+-- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- either row as holding the person (arm same_person below, and the second block
+-- arm), and holds outright a row booked on one of the two at a clinic that is
+-- not that row's own (person_away, verdict 18). R10 refuses when the pair does
+-- not resolve in the population's tenant, so these arms cannot read a vacuous 0.
+one_person AS (
+  SELECT x.user_id, x.other_id, x.home_id
+    FROM (VALUES ('54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid, '0c1a0000-0000-4000-8000-000000000001'::uuid,
+                  'de000002-0000-0000-0000-000000000002'::uuid),
+                 ('0c1a0000-0000-4000-8000-000000000001'::uuid, '54d486e0-a9c3-4c82-acac-8b909ce5a2d0'::uuid,
+                  'de000002-0000-0000-0000-000000000001'::uuid)) x(user_id, other_id, home_id)
+),
+-- The other staff row of each candidate's Terapeuta, where it has one.
+c_alias AS (
+  SELECT c.id AS cand_id, op.other_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+),
 -- A row that holds its hour: not cancelled or no-show (0052), and not an
 -- unconfirmed pedido (0067's body of is_unconfirmed_pedido, inline). Bounded to
 -- the candidates' horizon, which changes no answer: a row that overlaps a
@@ -115,10 +144,12 @@ live AS (
 -- THE BOOKING ARMS (findConflicts): the therapist arm and the room arm of
 -- appointment_conflicts (0059), then for every shared resource the candidate
 -- names, the rows where it is Terapeuta and the rows where it is Terapeuta 2.
--- The candidate itself is excluded, as excludeIds excludes it.
+-- The candidate itself is excluded, as excludeIds excludes it. The same_person
+-- arm is the op's (one_person above): a row on the Terapeuta's other staff row.
 hit_booking AS (
   SELECT c.id AS cand_id, o.id AS other_id, o.starts_at AS other_s, o.ends_at AS other_e,
          CASE WHEN o.practitioner_id = c.practitioner_id THEN 'therapist'
+              WHEN o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id) THEN 'same_person'
               WHEN o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta'
               WHEN o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id) THEN 'resource_as_terapeuta_2'
               ELSE 'room' END AS arm
@@ -126,18 +157,27 @@ hit_booking AS (
     JOIN live o ON o.tenant_id = c.tenant_id AND o.id <> c.id
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.practitioner_id = c.practitioner_id
+      OR o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR (nullif(btrim(c.room), '') IS NOT NULL AND o.location_id = c.location_id
           AND lower(o.room) = lower(btrim(c.room)))
 ),
 -- THE BLOCK ARM (findScheduleConflicts): time_off on the Terapeuta, which is
--- therapist-wide and carries no clinic.
+-- therapist-wide and carries no clinic. The second arm is the op's: a block on
+-- the Terapeuta's other staff row (one_person above) holds the person too.
 hit_block AS (
   SELECT c.id AS cand_id, t.id AS block_id, t.starts_at AS block_s, t.ends_at AS block_e
     FROM cand c
     JOIN public.time_off t
       ON t.tenant_id = c.tenant_id AND t.user_id = c.practitioner_id
+     AND t.starts_at < c.e AND t.ends_at > c.s
+  UNION ALL
+  SELECT c.id, t.id, t.starts_at, t.ends_at
+    FROM cand c
+    JOIN c_alias ca ON ca.cand_id = c.id
+    JOIN public.time_off t
+      ON t.tenant_id = c.tenant_id AND t.user_id = ca.user_id
      AND t.starts_at < c.e AND t.ends_at > c.s
 ),
 -- THE SAME PATIENT BOOKED ELSEWHERE. Not in the app's rule; the op adds it, and
@@ -195,6 +235,20 @@ res_away AS (
    WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
                       WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
                         AND sl.location_id = c.location_id)
+),
+-- ONE PERSON'S ROW AT THE OTHER CLINIC. Not in the app's rule; the op adds it. A
+-- row booked on one of the two staff rows of one_person at a clinic that is not
+-- that row's own: JP(cb) at Linda-a-Velha, or JP(lv) at Castelo Branco.
+-- STAFF-10 v2 hands JP(cb)'s future Linda-a-Velha rows to reception (its Q1),
+-- retires JP(cb)'s hours there (its W1 and W2), and moves every JP(cb) row there
+-- that starts before its own run day to JP(lv) in any status (its W4). So the
+-- hours that would hold such a row, and the staff row it sits on, change with
+-- the order the two ops run in. Held outright, whatever the order.
+person_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS user_id
+    FROM cand c
+    JOIN one_person op ON op.user_id = c.practitioner_id
+   WHERE op.home_id IS DISTINCT FROM c.location_id
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -289,8 +343,12 @@ rc AS (
          (SELECT count(DISTINCT x.cand_id) FROM hit_patient x)::int AS patient,
          (SELECT count(*) FROM res_away x)::int AS resource_away,
          (SELECT count(DISTINCT x.cand_id) FROM hit_twin_hold x)::int AS twin_hold,
+         (SELECT count(*) FROM person_away x)::int AS person_away,
          (SELECT count(*) FROM clinic x WHERE x.ends_after_close)::int AS ends_after_close,
-         (SELECT count(*) FROM avail x WHERE x.configured)::int AS hours_configured
+         (SELECT count(*) FROM avail x WHERE x.configured)::int AS hours_configured,
+         (SELECT count(*) FROM cand c JOIN shared r ON r.id = c.practitioner_id AND r.tenant_id = c.tenant_id)::int AS on_resource,
+         (SELECT count(DISTINCT cr.cand_id) FROM c_res cr)::int AS names_resource,
+         (SELECT count(*) FROM cand c WHERE c.practitioner_id IN (SELECT op.user_id FROM one_person op))::int AS on_person_row
 )
 -- <<< DUR-01 RECHECK END
 , v AS (
@@ -328,7 +386,8 @@ rc AS (
     (SELECT (al.m -> 'after' ->> 'appointments')::int FROM al) AS total_after,
     (SELECT (al.m -> 'before' ->> 'appointments')::int FROM al) AS total_before,
     rc.n AS rc_n, rc.live_self, rc.booking, rc.block, rc.closure, rc.clinic_hours, rc.therapist_hours, rc.patient,
-    rc.resource_away, rc.twin_hold, rc.ends_after_close, rc.hours_configured
+    rc.resource_away, rc.twin_hold, rc.ends_after_close, rc.hours_configured,
+    rc.person_away, rc.on_resource, rc.names_resource, rc.on_person_row
   FROM rc
 ), r AS (
   SELECT 1 AS n, 'exactly one DUR-01 audit row' AS "check", v.n_audit::text AS observed, '1' AS expected,
@@ -368,10 +427,10 @@ UNION ALL SELECT 10, 'every written id is unchanged in every column the op does 
 UNION ALL SELECT 11, 'the re-measure reads every written id, and sees each as a live row (its control)',
        v.rc_n::text || ' / live ' || v.live_self::text, v.n_w::text || ' / live ' || v.n_w::text,
        CASE WHEN v.rc_n <> v.n_w OR v.live_self <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 12, 'no written id overlaps a booking: therapist, room, resource as Terapeuta or as Terapeuta 2',
+UNION ALL SELECT 12, 'no written id overlaps a booking: therapist, the same person on its other staff row, room, resource as Terapeuta or as Terapeuta 2',
        v.booking::text || ' / control ' || v.live_self::text, '0 / control ' || v.n_w::text,
        CASE WHEN v.booking <> 0 OR v.live_self <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 13, 'no written id overlaps a block on its therapist',
+UNION ALL SELECT 13, 'no written id overlaps a block on its therapist, or on the same person''s other staff row',
        v.block::text || ' / control ' || v.rc_n::text, '0 / control ' || v.n_w::text,
        CASE WHEN v.block <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 14, 'no written id runs into its clinic''s midday closure',
@@ -381,8 +440,9 @@ UNION ALL SELECT 15, 'no written id starts outside its clinic''s hours',
        v.clinic_hours::text || ' / control ' || v.rc_n::text, '0 / control ' || v.n_w::text,
        CASE WHEN v.clinic_hours <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 16, 'every written id sits inside its therapist''s hours, where they are configured',
-       v.therapist_hours::text || ' / configured ' || v.hours_configured::text, '0 / control ' || v.n_w::text,
-       CASE WHEN v.therapist_hours <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+       v.therapist_hours::text || ' / configured ' || v.hours_configured::text, '0 / configured above 0',
+       CASE WHEN v.therapist_hours <> 0 OR v.rc_n <> v.n_w THEN 'FAIL'
+            WHEN v.n_w = 0 OR v.hours_configured = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 17, 'no written id overlaps another live booking of the same patient',
        v.patient::text || ' / control ' || v.live_self::text, '0 / control ' || v.n_w::text,
        CASE WHEN v.patient <> 0 OR v.live_self <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
@@ -394,11 +454,18 @@ UNION ALL SELECT 19, 'the appointment total stage 2 counted under its lock after
        CASE WHEN v.total_after IS NULL OR v.total_before IS NULL OR v.total_after <> v.total_before
             THEN 'FAIL' ELSE 'OK' END FROM v
 UNION ALL SELECT 20, 'no written id is a NESA booked at a clinic where it is not installed (SCHED-17)',
-       v.resource_away::text || ' / control ' || v.rc_n::text, '0 / control ' || v.n_w::text,
-       CASE WHEN v.resource_away <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+       v.resource_away::text || ' / on a NESA ' || v.on_resource::text, '0 / on a NESA above 0',
+       CASE WHEN v.resource_away <> 0 OR v.rc_n <> v.n_w THEN 'FAIL'
+            WHEN v.n_w = 0 OR v.on_resource = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 21, 'no written id overlaps the NESA hour a live twin''s person row holds, or will hold after STAFF-10 v2',
-       v.twin_hold::text || ' / control ' || v.live_self::text, '0 / control ' || v.n_w::text,
-       CASE WHEN v.twin_hold <> 0 OR v.live_self <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+       v.twin_hold::text || ' / naming a NESA ' || v.names_resource::text || ' / live ' || v.live_self::text,
+       '0 / naming a NESA above 0 / live ' || v.n_w::text,
+       CASE WHEN v.twin_hold <> 0 OR v.live_self <> v.n_w THEN 'FAIL'
+            WHEN v.n_w = 0 OR v.names_resource = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 22, 'no written id sits on one person''s staff row meant for another clinic (the two JP rows)',
+       v.person_away::text || ' / on a JP row ' || v.on_person_row::text, '0 / on a JP row above 0',
+       CASE WHEN v.person_away <> 0 OR v.rc_n <> v.n_w THEN 'FAIL'
+            WHEN v.n_w = 0 OR v.on_person_row = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 )
 SELECT r.n, r."check", r.observed, r.expected, r.verdict FROM r
 UNION ALL
