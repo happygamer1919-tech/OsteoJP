@@ -79,7 +79,8 @@ name: E2E
 #   runs   it carries the held-for-apply label, so a held migration or data op
 #          keeps its E2E evidence BEFORE its apply;
 #   runs   the event is not a pull_request (workflow_dispatch proving runs);
-#   runs   the state cannot be read. A failed read is not evidence that a PR is
+#   runs   the state cannot be read, including a read that does not answer
+#          within 60 seconds. A failed read is not evidence that a PR is
 #          unarmed, so doubt costs minutes and never coverage;
 #   skips  only when all three reads come back as a clean `false`.
 #
@@ -90,6 +91,17 @@ name: E2E
 # suite starts". Arming fires `auto_merge_enabled`, which is in `types:` below,
 # so the real run starts on its own. A push to an armed PR (`synchronize`) runs
 # the full suite on the new head, as before.
+#
+# THE SAME HOLDS ONE LEVEL DOWN. A job whose only step is skipped by a
+# step-level `if:` also concludes "Success", and `continue-on-error: true`
+# turns a red step, or a red job, into a green one. Any of those would make
+# the everyday red on an unarmed PR go away without running a spec. So the
+# required job has EXACTLY ONE step, with no `if:` and no `continue-on-error`,
+# and no job in this file sets `continue-on-error`. The one step-level
+# `continue-on-error` in the file, on the shards' "Set up Supabase CLI", is
+# followed by a fallback that fails loud, and it is the only one allowed. The
+# in-job negative control lives inside the required step, so it cannot catch a
+# skip of that step itself; the structure pins in the test do.
 #
 # WHY A LIVE READ AND NOT THE EVENT PAYLOAD. A PR armed at open fires `opened`
 # and `auto_merge_enabled` seconds apart, and the two runs are not guaranteed
@@ -170,6 +182,11 @@ jobs:
           ACTION: ${{ github.event.action }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          # The live read's own ceiling, in seconds. Well inside the job's
+          # timeout-minutes: 3, so a hung read ends HERE, as exit 124, and
+          # reaches the fall-through (the suite runs) instead of the job
+          # timing out with no decision (a red "eligibility did not succeed").
+          GH_READ_TIMEOUT_S: "60"
         run: |
           set -uo pipefail
           # The runner adds `-e`. Every call that may fail sits behind
@@ -209,14 +226,18 @@ jobs:
           # One line, three words: armed, GATE-CHANGE title, held-for-apply
           # label. "unreadable" if the answer is not the shape asked for. The
           # title match ignores case and leading space: an exemption that is
-          # too WIDE runs the suite, which is the safe side.
+          # too WIDE runs the suite, which is the safe side. `timeout` (GNU
+          # coreutils, on every ubuntu runner) bounds a read that hangs: it
+          # exits 124, and 124 is a failed read like any other, so it runs the
+          # suite. A missing `timeout` exits 127, which runs it too.
           rc=0
-          STATE="$(gh pr view "$PR" -R "$REPO" --json autoMergeRequest,title,labels --jq '
+          STATE="$(timeout "${GH_READ_TIMEOUT_S:-60}" gh pr view "$PR" -R "$REPO" --json autoMergeRequest,title,labels --jq '
             if (type == "object") and has("autoMergeRequest")
                and ((.title | type) == "string") and ((.labels | type) == "array")
             then "\(.autoMergeRequest != null) \(.title | ascii_upcase | test("^\\s*GATE-CHANGE")) \(any(.labels[]; ((.name // "") | ascii_downcase) == "held-for-apply"))"
             else "unreadable" end')" || rc=$?
           ONE_LINE="$(printf '%s' "$STATE" | tr '\r\n' '  ' | cut -c1-120)"
+          if [ "$rc" -eq 124 ]; then run_anyway "gh pr view #$PR did not answer within ${GH_READ_TIMEOUT_S:-60}s (exit 124)."; fi
           if [ "$rc" -ne 0 ]; then run_anyway "gh pr view #$PR exited $rc."; fi
           echo "live read of #$PR (armed, GATE-CHANGE title, held-for-apply label): $ONE_LINE"
 
@@ -809,7 +830,10 @@ jobs:
     # moment any shard fails or the eligibility job turns the shards away, and
     # a skipped job reports "Success" to branch protection: an unarmed PR would
     # read green having run nothing. With it, both cases are a RED required
-    # check, which is the point. No other `if:` may ever go here.
+    # check, which is the point. No other `if:` may ever go here, and no
+    # `continue-on-error`, here or on the step below; that step stays the
+    # job's only step and carries no `if:` (see "THE SAME HOLDS ONE LEVEL
+    # DOWN" in the header).
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

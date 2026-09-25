@@ -32,8 +32,19 @@ on:
   # is the tree that PR's last run already tested: the push run re-tested it
   # and booted one more Supabase stack per merge to do so. Nothing reads its
   # result (no badge, no workflow_run consumer, no ruleset). WHAT IS GIVEN UP,
-  # said plainly: a merge made past a red or pending check with an admin bypass
-  # is no longer re-tested on main by this workflow.
+  # said plainly, is two things:
+  #   1. A merge made past a red or pending check with an admin bypass is no
+  #      longer re-tested on main by this workflow.
+  #   2. Main's own record of CLOCK-DEPENDENT reds. The merged tree is the one
+  #      the PR last tested, but the clock is not: a now-relative fixture can
+  #      pass on the PR's run and fail hours later on main. In the 14 days
+  #      measured before this change, 3 of 204 push runs failed. Two, both on
+  #      2026-09-17 after 18:00 UTC, failed in
+  #      lib/scheduling/estado-uncancel.db.test.ts, the now-relative-fixture
+  #      class that reddens every run after about 18:00 UTC. The third was a
+  #      Docker image-pull rate limit while starting Supabase. PR runs caught
+  #      the same time-dependent reds within two hours, so the signal survives
+  #      on PRs, but main no longer shows it on its own.
 
 # A NEW PUSH CANCELS THE RUN IT SUPERSEDES. One group per PR, cancel only on
 # pull_request events; any other run is grouped by its own run id, alone in its

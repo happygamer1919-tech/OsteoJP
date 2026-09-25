@@ -27,6 +27,14 @@
 // `if:`, DB Tests without push:main, and the concurrency blocks gated to
 // pull_request so a run on main or a dispatch run is never cancelled.
 //
+// ONE LEVEL DOWN, TOO. A job whose only step is skipped by a step-level `if:`
+// also concludes "Success", and `continue-on-error` turns a red step or job
+// green. The in-job negative control sits inside the required step, so it
+// cannot see its own step being skipped. So the required E2E job is pinned to
+// exactly one step with no `if:` and no `continue-on-error`, no job in the four
+// PR workflows sets `continue-on-error`, and every such edit is a seeded
+// mutation below that must turn the pins red.
+//
 // Run: pnpm test:scripts   (node --test, wired into the REQUIRED CI quality job)
 
 import test from "node:test";
@@ -120,6 +128,7 @@ function jobs(text) {
       text: body.join("\n"),
       name: (jobLevel.find((l) => /^ {4}name:/.test(l)) ?? "").replace(/^ {4}name:\s*/, "").trim(),
       ifs: jobLevel.filter((l) => /^ {4}if:/.test(l)).map((l) => l.trim()),
+      coe: jobLevel.filter((l) => /^ {4}continue-on-error:/.test(l)).map((l) => l.trim()),
       needs: (jobLevel.find((l) => /^ {4}needs:/.test(l)) ?? "").trim(),
     };
   });
@@ -131,6 +140,33 @@ const job = (text, id) => {
   return j;
 };
 
+/** Steps of one job's text: [{ name, keys }], keys being the step's own keys. */
+function stepsOf(jobText) {
+  const lines = jobText.split("\n");
+  const at = lines.findIndex((l) => l === "    steps:");
+  assert.notEqual(at, -1, `job has no "    steps:" line:\n${lines[0]}`);
+  const out = [];
+  for (let i = at + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.trim() === "" || /^ {0,6}#/.test(l)) continue;
+    if (/^ {0,5}\S/.test(l)) break;
+    const first = l.match(/^ {6}- ([A-Za-z0-9_-]+):(.*)$/);
+    if (first) {
+      out.push({ name: first[1] === "name" ? first[2].trim() : "", keys: [first[1]] });
+      continue;
+    }
+    if (/^ {6}\S/.test(l)) throw new Error(`unrecognised line in a steps: list: ${l}`);
+    const key = l.match(/^ {8}([A-Za-z0-9_-]+):(.*)$/);
+    if (key) {
+      assert.ok(out.length, `a step key before any step: ${l}`);
+      const s = out[out.length - 1];
+      s.keys.push(key[1]);
+      if (key[1] === "name") s.name = key[2].trim();
+    }
+  }
+  return out;
+}
+
 // --------------------------------------------------------------------------
 // Running the shipped blocks.
 // --------------------------------------------------------------------------
@@ -138,15 +174,48 @@ const job = (text, id) => {
 const ELIGIBILITY = stepRun(E2E, ELIGIBILITY_STEP);
 const VERDICT = stepRun(E2E, VERDICT_STEP);
 
+/** Is GNU coreutils timeout(1) on PATH? Every ubuntu runner has it; macOS does not. */
+const HAS_TIMEOUT = spawnSync("timeout", ["5", "true"], { encoding: "utf8" }).status === 0;
+
+// TEST-ONLY stand-in for timeout(1), installed into the stub bin ONLY on a
+// machine that has none (a Mac), so the shipped block can run there at all.
+// CI's quality job runs on ubuntu and uses the real one (pinned below). Same
+// contract: run the command, exit 124 if it outlives the limit, else its code.
+const TIMEOUT_SHIM = `#!/bin/sh
+secs="$1"; shift
+flag="\${TMPDIR:-/tmp}/timeout-shim-$$"
+"$@" &
+cmd=$!
+(
+  trap 'kill "$s" 2>/dev/null; exit 0' TERM
+  sleep "$secs" & s=$!
+  wait "$s"
+  : > "$flag"
+  kill -TERM "$cmd" 2>/dev/null
+) </dev/null >/dev/null 2>&1 &
+dog=$!
+wait "$cmd"; rc=$?
+kill "$dog" 2>/dev/null; wait "$dog" 2>/dev/null
+if [ -e "$flag" ]; then rm -f "$flag"; exit 124; fi
+exit "$rc"
+`;
+
 /** A stub `gh`: logs its argv, then answers per GH_STUB_MODE. */
 function stubBin(dir) {
   const bin = join(dir, "bin");
   mkdirSync(bin);
+  if (!HAS_TIMEOUT) {
+    writeFileSync(join(bin, "timeout"), TIMEOUT_SHIM);
+    chmodSync(join(bin, "timeout"), 0o755);
+  }
+  // `hang` never answers: `exec` so the stub's pid IS the sleep (a timeout
+  // kills exactly it), stderr closed so an orphaned sleep holds no pipe.
   const gh = `#!/bin/sh
 printf '%s' "$*" | tr '\\n' ' ' >> "$GH_STUB_LOG"; echo >> "$GH_STUB_LOG"
 case "$GH_STUB_MODE" in
   error) echo "HTTP 502: stub gateway error" >&2; exit 1 ;;
   raw) printf '%s' "$GH_STUB_RAW"; exit 0 ;;
+  hang) exec sleep "\${GH_STUB_SLEEP:-30}" 2>/dev/null ;;
 esac
 expr=""
 while [ $# -gt 0 ]; do
@@ -163,8 +232,26 @@ printf '%s' "$GH_STUB_JSON" | jq -r "$expr"
   return bin;
 }
 
+/** The live read's ceiling, as the workflow's step env sets it. */
+const READ_TIMEOUT_S = (() => {
+  const m = job(E2E, "eligibility").text.match(/^ {10}GH_READ_TIMEOUT_S: "(\d+)"$/m);
+  assert.ok(m, 'the eligibility step env no longer sets GH_READ_TIMEOUT_S: "<seconds>"');
+  return m[1];
+})();
+
 /** Run the eligibility block; returns exit code, output, the run= value, gh calls. */
-function eligibility({ block = ELIGIBILITY, event = "pull_request", action, pr = "4242", mode = "json", json, raw } = {}) {
+function eligibility({
+  block = ELIGIBILITY,
+  event = "pull_request",
+  action,
+  pr = "4242",
+  mode = "json",
+  json,
+  raw,
+  readTimeout = READ_TIMEOUT_S,
+  sleep = "30",
+  killAfterMs,
+} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "e2e-eligibility-"));
   const bin = stubBin(dir);
   const script = join(dir, "step.sh");
@@ -190,13 +277,17 @@ function eligibility({ block = ELIGIBILITY, event = "pull_request", action, pr =
       GH_STUB_MODE: mode,
       GH_STUB_JSON: json === undefined ? "" : JSON.stringify(json),
       GH_STUB_RAW: raw ?? "",
+      GH_STUB_SLEEP: sleep,
+      GH_READ_TIMEOUT_S: readTimeout,
     },
     encoding: "utf8",
+    ...(killAfterMs ? { timeout: killAfterMs, killSignal: "SIGTERM" } : {}),
   });
   const out = readFileSync(outputs, "utf8");
   const runs = out.split("\n").filter((l) => l.startsWith("run="));
   return {
     code: r.status,
+    signal: r.signal,
     log: `${r.stdout}${r.stderr}`,
     runLines: runs,
     run: runs.length === 1 ? runs[0].slice(4) : `(${runs.length} run= lines)`,
@@ -345,6 +436,52 @@ test("eligibility: a disarmed copy is caught (an unread state skipping the suite
   assert.notEqual(disarmed, ELIGIBILITY, "the disarm substitution did not apply");
   assert.equal(eligibility({ block: disarmed, mode: "error" }).run, "false");
   assert.equal(eligibility({ mode: "error" }).run, "true");
+});
+
+// A READ THAT HANGS IS A READ THAT FAILED. Without its own ceiling, a hung
+// `gh pr view` runs into the job's timeout-minutes, the job ends with no
+// decision, and the required check is a red stall that needs "Re-run all
+// jobs": fail-closed, where the ruling says an unread state RUNS the suite.
+
+const READ_WRAPPER = 'timeout "${GH_READ_TIMEOUT_S:-60}" gh pr view';
+
+test("eligibility: the live read carries its own ceiling, well inside the job's", () => {
+  assert.ok(ELIGIBILITY.includes(READ_WRAPPER), `the live read is no longer wrapped in ${READ_WRAPPER}`);
+  const m = job(E2E, "eligibility").text.match(/^ {4}timeout-minutes: (\d+)$/m);
+  assert.ok(m, "the eligibility job has no timeout-minutes");
+  assert.equal(READ_TIMEOUT_S, "60");
+  assert.ok(Number(READ_TIMEOUT_S) * 2 <= Number(m[1]) * 60, `a ${READ_TIMEOUT_S}s read ceiling leaves no room inside a ${m[1]}-minute job`);
+});
+
+test("timeout(1): CI runs the shipped block on the REAL coreutils timeout, never the shim", (t) => {
+  if (process.env.GITHUB_ACTIONS === "true") {
+    assert.ok(HAS_TIMEOUT, "the CI runner has no timeout(1); the eligibility step would exit 127 on every PR and always run the suite");
+  } else if (!HAS_TIMEOUT) {
+    t.diagnostic("no timeout(1) on this machine: the eligibility arms ran on the test-only shim");
+  }
+});
+
+test("eligibility: a read that hangs is cut off at the ceiling and the suite RUNS, with a warning", () => {
+  const started = Date.now();
+  const r = eligibility({ mode: "hang", readTimeout: "2", sleep: "30", json: pr() });
+  const took = Date.now() - started;
+  assert.equal(r.code, 0, r.log);
+  assert.equal(r.run, "true", `a hung read must run the suite:\n${r.log}`);
+  assert.match(r.log, /did not answer within 2s \(exit 124\)/);
+  assert.match(r.log, /::warning title=E2E eligibility unread, the suite runs::/);
+  assert.equal(r.calls.length, 1, "gh was not called");
+  assert.ok(took < 20_000, `the hung read took ${took} ms; the ceiling did not cut it off`);
+});
+
+test("eligibility: a disarmed copy (no ceiling on the read) is caught: a hang leaves NO decision", () => {
+  const disarmed = ELIGIBILITY.replace('timeout "${GH_READ_TIMEOUT_S:-60}" gh pr view', "gh pr view");
+  assert.notEqual(disarmed, ELIGIBILITY, "the disarm substitution did not apply");
+  // killAfterMs stands in for the job's timeout-minutes: the runner kills the
+  // step, nothing is written to GITHUB_OUTPUT, and the verdict fails closed.
+  const r = eligibility({ block: disarmed, mode: "hang", sleep: "20", killAfterMs: 3000, json: pr() });
+  assert.equal(r.code, null, `the unwrapped read returned on its own:\n${r.log}`);
+  assert.equal(r.runLines.length, 0, `a killed step still wrote a decision:\n${r.log}`);
+  assert.equal(verdict({ eligibility: "failure", run: "", shards: "skipped" }).code, 1);
 });
 
 // --------------------------------------------------------------------------
@@ -509,6 +646,130 @@ test("no job carrying a REQUIRED context has any job-level if: other than always
   }
   assert.deepEqual([...seen].sort(), [...REQUIRED_CONTEXTS].sort(), "a required context's job was not found");
 });
+
+// ONE LEVEL DOWN. The job-level pins above are not enough on their own: a
+// step-level `if:` that skips the required job's only step, or any
+// `continue-on-error`, reads green as surely as a skipped job does.
+
+/** The four PR workflows whose jobs feed a required context. */
+const PR_WORKFLOWS = ["ci.yml", "db-tests.yml", "e2e.yml", "openapi-drift.yml"];
+
+/** [file, job id, step name]: the only step-level continue-on-error allowed. */
+const ALLOWED_STEP_CONTINUE_ON_ERROR = [["e2e.yml", "shard", "Set up Supabase CLI"]];
+
+/** Every way the given workflow texts could turn a red required check green. */
+function silentPassHoles(files) {
+  const holes = [];
+  for (const [f, text] of Object.entries(files)) {
+    for (const j of jobs(text)) {
+      const required = REQUIRED_CONTEXTS.includes(j.name);
+      for (const c of j.coe) holes.push(`${f} job ${j.id} sets job-level "${c}"`);
+      if (required) {
+        for (const i of j.ifs) {
+          if (i !== "if: always()") holes.push(`${f} required job ${j.id} has "${i}"`);
+        }
+      }
+      for (const st of stepsOf(j.text)) {
+        if (!st.keys.includes("continue-on-error")) continue;
+        const ok = ALLOWED_STEP_CONTINUE_ON_ERROR.some(([af, aj, as]) => af === f && aj === j.id && as === st.name);
+        if (!ok) holes.push(`${f} job ${j.id} step "${st.name}" sets continue-on-error`);
+      }
+    }
+  }
+  const pw = job(files["e2e.yml"], "playwright");
+  const st = stepsOf(pw.text);
+  if (st.length !== 1) holes.push(`the required E2E job has ${st.length} steps; it must have exactly one`);
+  if (st[0] && st[0].name !== VERDICT_STEP) holes.push(`the required E2E job's step is "${st[0].name}", not the verdict`);
+  for (const k of ["if", "continue-on-error"]) {
+    if (st.some((x) => x.keys.includes(k))) holes.push(`the required E2E job's step sets "${k}:"`);
+  }
+  if (pw.ifs.join(" | ") !== "if: always()") holes.push(`the required E2E job's job-level if: is "${pw.ifs.join(" | ")}"`);
+  return holes;
+}
+
+const SHIPPED = Object.fromEntries(PR_WORKFLOWS.map((f) => [f, read(f)]));
+
+test("the required E2E job is one step, with no if: and no continue-on-error, and no job sets continue-on-error", () => {
+  assert.deepEqual(silentPassHoles(SHIPPED), []);
+  const pw = stepsOf(job(E2E, "playwright").text);
+  assert.deepEqual(pw.map((x) => x.name), [VERDICT_STEP]);
+  // The allowlisted step still exists, so the allowlist is not a dead entry.
+  assert.ok(
+    stepsOf(job(E2E, "shard").text).some((x) => x.name === "Set up Supabase CLI" && x.keys.includes("continue-on-error")),
+    "the allowlisted continue-on-error step is gone; drop it from ALLOWED_STEP_CONTINUE_ON_ERROR",
+  );
+});
+
+/** Insert `add` right after the one line equal to `anchor` in `text`. */
+function insertAfter(text, anchor, add) {
+  const lines = text.split("\n");
+  const at = lines.flatMap((l, i) => (l === anchor ? [i] : []));
+  assert.equal(at.length, 1, `anchor "${anchor}" found ${at.length} times`);
+  lines.splice(at[0] + 1, 0, ...add.split("\n"));
+  return lines.join("\n");
+}
+
+const VERDICT_LINE = `      - name: ${VERDICT_STEP}`;
+const SILENT_PASS_MUTATIONS = [
+  {
+    why: "a step-level if: on the verdict (an unarmed PR's only step skipped, the job green)",
+    file: "e2e.yml",
+    edit: (t) => insertAfter(t, VERDICT_LINE, "        if: needs.eligibility.outputs.run == 'true'"),
+    says: /required E2E job's step sets "if:"/,
+  },
+  {
+    why: "continue-on-error on the verdict step",
+    file: "e2e.yml",
+    edit: (t) => insertAfter(t, VERDICT_LINE, "        continue-on-error: true"),
+    says: /step "Verify the suite ran and every shard passed" sets continue-on-error/,
+  },
+  {
+    why: "job-level continue-on-error on the required playwright job",
+    file: "e2e.yml",
+    edit: (t) => insertAfter(t, "    name: Playwright E2E (seeded DB)", "    continue-on-error: true"),
+    says: /e2e\.yml job playwright sets job-level "continue-on-error: true"/,
+  },
+  {
+    why: "job-level continue-on-error on the shard job",
+    file: "e2e.yml",
+    edit: (t) => insertAfter(t, "    name: E2E shard", "    continue-on-error: true"),
+    says: /e2e\.yml job shard sets job-level "continue-on-error: true"/,
+  },
+  {
+    why: "a second step in the required job",
+    file: "e2e.yml",
+    edit: (t) => insertAfter(t, '          echo "All three E2E shards succeeded."', "\n      - name: Post a note\n        run: echo done"),
+    says: /has 2 steps; it must have exactly one/,
+  },
+  {
+    why: "continue-on-error on a shard's Playwright step (a red spec, a green shard)",
+    file: "e2e.yml",
+    edit: (t) => insertAfter(t, "      - name: Run Playwright E2E (Chromium, shard ${{ matrix.shard }}/3)", "        continue-on-error: ${{ github.event_name == 'pull_request' }}"),
+    says: /step "Run Playwright E2E \(Chromium, shard \$\{\{ matrix\.shard \}\}\/3\)" sets continue-on-error/,
+  },
+  {
+    why: "the aggregate's if: narrowed to the eligibility output",
+    file: "e2e.yml",
+    edit: (t) => t.replace("\n    if: always()\n", "\n    if: always() && needs.eligibility.outputs.run == 'true'\n"),
+    says: /required job playwright has "if: always\(\) && needs\.eligibility\.outputs\.run == 'true'"/,
+  },
+  {
+    why: "job-level continue-on-error on the required DB Tests job",
+    file: "db-tests.yml",
+    edit: (t) => insertAfter(t, "    name: DB-gated tests (RLS isolation, seeded DB)", "    continue-on-error: true"),
+    says: /db-tests\.yml job rls sets job-level "continue-on-error: true"/,
+  },
+];
+
+for (const m of SILENT_PASS_MUTATIONS) {
+  test(`silent-pass pin catches a disarmed copy: ${m.why}`, () => {
+    const mutated = m.edit(SHIPPED[m.file]);
+    assert.notEqual(mutated, SHIPPED[m.file], "the mutation did not apply");
+    const holes = silentPassHoles({ ...SHIPPED, [m.file]: mutated });
+    assert.ok(holes.length > 0, `a disarmed ${m.file} passed the pins`);
+    assert.ok(holes.some((h) => m.says.test(h)), `caught, but not for the named reason:\n${holes.join("\n")}`);
+  });
+}
 
 test("db-tests.yml: no push trigger, and a non-PR event still counts as code", () => {
   const src = read("db-tests.yml");
