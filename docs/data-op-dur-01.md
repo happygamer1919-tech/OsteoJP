@@ -672,20 +672,27 @@ one clear of everything and one whose hour overlaps a confirmed JP(lv) booking t
 Linda-a-Velha; a JP(lv) stub under the JP(cb) block; a JP(lv) stub and a JP(cb) stub
 half an hour apart; a JP(lv) stub at Castelo Branco; a clear JP stub on each row (the
 opposites); and three one-minute rows through the portal: scheduled (a pedido), with an
-`appointment_request` notification (a pedido), and confirmed (not one). One stub is
+`appointment_request` notification (a pedido), and confirmed (not one). **Review round
+3's shapes:** four stubs of one therapist at Linda-a-Velha an hour apart, each beside a
+live row of another therapist in the room it names: a room ending in a tab (beside the
+name in capitals), one ending in a no-break space (beside it in lower case), a room of
+only a tab (beside a row whose room is the same tab), and a tab inside the name (beside
+the name with a space); and two arms that take verdict 14's subject away, the one
+closure removed, or the two WRITE stubs at the clinic that has it cancelled. One stub is
 placed ninety minutes after the fixture loads, so it is always later on the run day.
 The fixture is reset BY ID between arms, in FK order, and its shape is read back after
 every reset.
 
 | File, in the authoring lane's scratchpad (not committed, as for STAFF-10 v2) | sha256 |
 |---|---|
-| `rehearsal-dur01/fixture.sql` | `5fe22c3f9794048e91b63b7db90ada72de6a99d0f0475738cd377fc97d077d3d` |
+| `rehearsal-dur01/fixture.sql` | `1889a45117c7a09740679448d15ad45326e9a12db60d3c52fbfeea93dd58a064` |
 | `rehearsal-dur01/reset.sql` | `0369d957d9d878574a09840068f615c20b5ed03d693d3bd880f4635a1baefc68` |
-| `rehearsal-dur01/arms/*.sql`, one mutation per arm, concatenated in name order | `965840c545129863f5bff3fc5f081ff707aeded3e0158b9b256ec51074647af0` |
-| `rehearsal-dur01/run-dur01-arms.zsh`, the arms runner | `0e4099b5c7289092e9b42f27ed8b6199be0366792f56349cefad1a6014226cd1` |
+| `rehearsal-dur01/arms/*.sql`, one mutation per arm, concatenated in name order | `6fcb6642a6a5bf31f253890a9c0dfd7b4fb50e6c04e6b2cc1d88c1b7c9d82170` |
+| `rehearsal-dur01/run-dur01-arms.zsh`, the arms runner | `ef1251ed2edb7d3d8cfab605afd9b1f21443a43687e2ea8ac6e8aa62f7fb8dd2` |
 | `rehearsal-dur01/extract-stage.mjs`: the handover extractor (`f82cad1e6e8cc1be3b7c491fff787138161e0f079b6424119329d71c63d72198`) with ONE change, that stage 3's one fallback line may name `origin/main` (D10); every other refusal stands, on that line too | `d0208f3e18cee4dc3be24cefa0d1dc252e7c017dc9a57a3084fb4e00b3cdc674` |
 | `rehearsal-dur01/r1/*.sql`, the round 1 stage files read from `d37ce61e`, checked against round 1's own pins before use | stage 1 `3942a09a061a422ed61d3e0ab58e730fa93de570290e841c2b1b4e269c5e2e5d`, stage 2 `aa28f519ae2b17c007b014a39f68a1a212c43cc67b7b3d947b1c1fa13d39642f`, stage 3 `fc3a9460d7e1aa303e6588b405ab0ab6caea19c445eccde54509004377ba55b4` |
 | `rehearsal-dur01/r2/*.sql`, the round 2 stage files read from `6642f01b`, checked the same way | stage 1 `9897028bf670d3db3b6c0040ed8165782074fbf424030453728bbc2bcbf42db3`, stage 2 `35cea1ace3773e47f40fb37f3de639fc24f2873b031ba33a9c681e12d743a213`, stage 3 `65c7138337bc72db675b4180feb534bb21a8c5a165c43ad45774d31395125d74` |
+| `rehearsal-dur01/r3/*.sql`, the round 3 stage files read from `299476a7`, the head the round 3 review read (the files last changed in `0bb3465c`), checked the same way | stage 1 `8d0b536fdf37df823d9a59096a6824edfc70451dafa9498c98d812a1bceceda3`, stage 2 `d9410f4ba875a94199c7d6c238a857e03bf70b294230527df70a19fec19ed677`, stage 3 `c11e78791e9281cc4dbba4a59edeb10b7dbec97283775a94943d5aa625ce752a` |
 
 **How it ran.** Each block was extracted from this document at the pushed branch head
 (cloned from a private bare origin holding the branch) and run under `zsh -f`; the
@@ -706,7 +713,7 @@ VACUOUS, `partition holds`). Every verdict fired, each on the stub built for it:
 
 | Verdict | The stub, and its opposite |
 |---|---|
-| `WRITE` | the confirmed stub, R07's control; a booking starting exactly at the proposed end (half-open); a cancelled neighbour; a no-show neighbour; a portal pedido neighbour; a notified pedido neighbour; the same room name at the other clinic; a block starting at the proposed end; 12:30 at the clinic with no closure; a start exactly at the last start; two adjacent hour windows; a stub on the Castelo Branco NESA at Castelo Branco (the opposite of 16); JP(cb) at Castelo Branco and JP(lv) at Linda-a-Velha, each clear (the opposites of 18 and of arm `same_person`); a confirmed stub through the portal (the opposite of 19) |
+| `WRITE` | the confirmed stub, R07's control; a booking starting exactly at the proposed end (half-open); a cancelled neighbour; a no-show neighbour; a portal pedido neighbour; a notified pedido neighbour; the same room name at the other clinic; a block starting at the proposed end; 12:30 at the clinic with no closure; a start exactly at the last start; two adjacent hour windows; a stub on the Castelo Branco NESA at Castelo Branco (the opposite of 16); JP(cb) at Castelo Branco and JP(lv) at Linda-a-Velha, each clear (the opposites of 18 and of arm `same_person`); a confirmed stub through the portal (the opposite of 19); a room of only a tab beside a row in that same tab room, which the app reads as no room, and a tab inside the room name beside the name with a space (the opposites of the two room stubs under 12) |
 | `01 NOT LIVE` | a cancelled stub, a no-show stub |
 | `02 COMPLETED IN THE FUTURE` | a completed future stub |
 | `03 NO SERVICE` | a stub with no service |
@@ -718,7 +725,7 @@ VACUOUS, `partition holds`). Every verdict fired, each on the stub built for it:
 | `09 RUNS INTO THE CLINIC CLOSURE` | 12:30 plus 60 at the clinic that closes at 13:00 |
 | `10 STARTS OUTSIDE CLINIC HOURS` | a 19:30 start, after the last start of 19:00 |
 | `11 OUTSIDE THE THERAPIST HOURS` | a 10:00 start for a therapist whose hours end at 10:30 |
-| `12 OVERLAPS A BOOKING` | the therapist arm; the same pedido, confirmed; a room clash in another case with a trailing space; a NESA stub against a row naming that NESA as Terapeuta 2; a NESA stub against the NESA row of a twin (flagged `twin_hold` as well); the earlier of two stubs 30 minutes apart; **arm `same_person`**: the JP(cb) stub at Linda-a-Velha over the JP(lv) booking (flagged `person_away` too), the JP(cb) stub at Castelo Branco while JP(lv) is booked at Linda-a-Velha, and the earlier of the JP(lv) and JP(cb) stubs half an hour apart |
+| `12 OVERLAPS A BOOKING` | the therapist arm; the same pedido, confirmed; a room clash in another case with a trailing space; a room ending in a tab and one ending in a no-break space, each beside the name in another case, as JavaScript's trim reads them (review round 3); a NESA stub against a row naming that NESA as Terapeuta 2; a NESA stub against the NESA row of a twin (flagged `twin_hold` as well); the earlier of two stubs 30 minutes apart; **arm `same_person`**: the JP(cb) stub at Linda-a-Velha over the JP(lv) booking (flagged `person_away` too), the JP(cb) stub at Castelo Branco while JP(lv) is booked at Linda-a-Velha, and the earlier of the JP(lv) and JP(cb) stubs half an hour apart |
 | `13 OVERLAPS A BLOCK` | a block inside the window; the JP(lv) stub under the JP(cb) block |
 | `14 OVERLAPS ANOTHER STUB ONCE BOTH ARE EXTENDED` | the later of the two stubs 30 minutes apart; the later of the JP(lv) and JP(cb) stubs, on the other staff row |
 | `15 SAME PATIENT BOOKED ELSEWHERE` | the patient at the other clinic 30 minutes in; a person stub with a NESA row of the same patient and start but another service (not a twin), which section 4 counts as `machine_alongside` |
@@ -745,9 +752,9 @@ two-minute stub in the profile and the population did not take it.
 | HEAD CHECK | 0 | the head |
 | stage 1 | 0 | ten refusals OK, none VACUOUS; `partition holds`; `STAGE 1 READ, NO REFUSAL` |
 | HEAD CHECK | 0 | the same head |
-| stage 2 | 0 | L1 the locks and `lock_timeout 5s`; P0 no audit row; P3 the run day and all four carries match; P4 no trigger the system did not create; P5 the baselines; W1 its row count equal to the WRITE set; A1 the written ends reproduce the carried digest; A2 the re-measure reading every written row as live and every arm at 0, `person_away` included, with the subjects of 20, 21 and 22 each above 0; A3 the total and both md5s unchanged; `DONE`, `COMMITTED`. Every WRITE row then ends at its start plus its default; every held stub still lasts one minute; the audit row lists the written ids and the held ids under each verdict |
+| stage 2 | 0 | L1 the locks and `lock_timeout 5s`; P0 no audit row; P3 the run day and all four carries match; P4 no trigger the system did not create; P5 the baselines; W1 its row count equal to the WRITE set; A1 the written ends reproduce the carried digest; A2 the re-measure reading every written row as live and every arm at 0, `person_away` included, with the subjects of 14, 16, 20, 21 and 22 each above 0; A3 the total and both md5s unchanged; `DONE`, `COMMITTED`. Every WRITE row then ends at its start plus its default; every held stub still lasts one minute; the audit row lists the written ids and the held ids under each verdict |
 | stage 3 | 0 | `22 OK / 0 VACUOUS / 0 FAIL`, then the RECEPTION section by id |
-| stage 3 after the merge (D10): the branch deleted from the private origin, `main` set to a commit carrying the same tree | 0 | `the held branch is gone (its PR merged)`, `verifying from 0bb3465`, the round 3 fix commit, the last to change stage 3 (the head is the later record commit), `22 OK / 0 VACUOUS / 0 FAIL` |
+| stage 3 after the merge (D10): the branch deleted from the private origin, `main` set to a commit carrying the same tree | 0 | `the held branch is gone (its PR merged)`, `verifying from 5a82597`, the fix commit of review round 3, the last to change stage 3 (the head is the later record commit), `22 OK / 0 VACUOUS / 0 FAIL` |
 | the same, with `main` at `f4e892cd`, which does not carry stage 3 | 1 | `STOP: neither the held branch nor main carries stage 3` |
 | HEAD CHECK, the branch restored | 0 | the head |
 
@@ -827,15 +834,23 @@ row is written.
 | a written row cancelled | 1 | 10 (status is a column the op does not write), 11, 12, 17 and 21 (the re-measure no longer sees it as live) | 0, the same |
 | a new JP(lv) booking over the written JP(cb) stub | 1 | 12 (arm `same_person`) | 0, the same |
 | the whole op on a day nothing is held (every held stub's ledger row removed) | 0, 0, 0 | none; VACUOUS on 18 only, which the block allows: `21 OK / 1 VACUOUS / 0 FAIL` | |
-| **the whole op on a day no written row has hours configured, is on or names a NESA, or is on a JP row** (the stubs of each kind cancelled) | 0, 0, 0 | none; VACUOUS on 16, 20, 21 and 22, each printing its subject at 0: `18 OK / 4 VACUOUS / 0 FAIL`. **Round 2's stage 3 on the same written database reads `21 OK / 0 VACUOUS / 0 FAIL`**: its 16, 20 and 21 called nothing checked OK, the review's point | |
+| **the whole op on a day no written row has hours configured, is on or names a NESA, or is on a JP row** (the stubs of each kind cancelled; the two at Castelo Branco among them were its only WRITE stubs there, so verdict 14 loses its subject too) | 0, 0, 0 | none; VACUOUS on 14, 16, 20, 21 and 22, each printing its subject at 0: `17 OK / 5 VACUOUS / 0 FAIL`. **Round 2's stage 3 on the same written database reads `21 OK / 0 VACUOUS / 0 FAIL`**: its 14, 16, 20 and 21 called nothing checked OK, review round 2's point | |
+| **Q14a, review round 3: the one midday closure removed before stage 1**, so no written row sits at a clinic with one (the stub the closure held is then written) | 0, 0, 0 | none; VACUOUS on 14 only, its subject at 0 (`0 / at a clinic with a closure 0 / control 18`): `21 OK / 1 VACUOUS / 0 FAIL`. **Round 3's stage 3 on the same written database reads 14 OK over nothing checked**, `22 OK / 0 VACUOUS / 0 FAIL`, review round 3's point | |
+| **Q14b, the review's own shape:** the closure kept, the two WRITE stubs at its clinic cancelled, so every written row is at the clinic without one | 0, 0, 0 | none; VACUOUS on 14, 20 and 21 (the cancelled NESA stub was the only written row on or naming a NESA): `19 OK / 3 VACUOUS / 0 FAIL`. Round 3's stage 3 on the same written database reads 14 OK there, `20 OK / 2 VACUOUS / 0 FAIL` | |
+
+The three arms that compare an older stage 3 with this head's on a VACUOUS verdict first cancel
+the tab-room neighbour of the stub whose room is only a tab (`arms/OLD-no-ws-room.sql`).
+The older files trim a room with `btrim`'s default, so they read that room as a room and
+would FAIL 12 on a row this head and the app both write correctly; the first run of this
+round showed it, and the comparison then read two verdicts instead of the one it is for.
 
 **Verdict 19 does not move with the clinic (D8).** Each arm passes on this head and
 FAILs on the round 1 files, run directly on the same fixture with the same change:
 
 | Arm, after the write | This head, stage 3 | Round 1 files, stage 3 |
 |---|---|---|
-| V19a: an unrelated appointment hard-deleted | exit 0, verdict 19 `after 72 / before 72` OK, `22 OK / 0 VACUOUS / 0 FAIL` | FAIL on 19 only, `18 OK / 0 VACUOUS / 1 FAIL` |
-| V19b: a booking whose transaction began before stage 2 (it slept on an open transaction while stage 2 ran) and committed after it; the runner confirmed its `created_at` is earlier than the audit row's | exit 0, the same `22 OK / 0 VACUOUS / 0 FAIL` | FAIL on 19 only, `18 OK / 0 VACUOUS / 1 FAIL`: the first verify of a correct write |
+| V19a: an unrelated appointment hard-deleted | exit 0, verdict 19 `after 80 / before 80` OK, `22 OK / 0 VACUOUS / 0 FAIL` | FAIL on 19 only, `18 OK / 0 VACUOUS / 1 FAIL` |
+| V19b: a booking whose transaction began before stage 2 and stayed open until the op's audit row was visible, then inserted and committed; the runner confirmed, on each set of files, that its `created_at` is earlier than the audit row's. It waits on the audit row itself because in this round's first run a fixed sleep lost the race on a loaded machine: the booking committed before the round 1 stage 2 counted, and the round 1 verify read OK | exit 0, the same `22 OK / 0 VACUOUS / 0 FAIL` | FAIL on 19 only, `18 OK / 0 VACUOUS / 1 FAIL`: the first verify of a correct write |
 
 The round 1 and round 2 files have no pedido verdict, so every arm that runs them first
 takes the two pedido stubs out of the ledger (`arms/OLD-no-pedido.sql`), except the
@@ -847,6 +862,18 @@ arm below that shows what they do with them.
 |---|---|---|
 | stage 1 on the JP stubs | the clear JP(cb) stub at Linda-a-Velha and the JP(lv) stub at Castelo Branco read 18; the review's shape (JP(cb) at Linda-a-Velha over a JP(lv) booking), the JP(cb) stub at Castelo Branco while JP(lv) is booked, and the earlier of the two stubs half an hour apart read 12, arm `same_person`; the later reads 14; the JP(lv) stub under the JP(cb) block reads 13; the clear stub on each row reads WRITE | every one of those reads WRITE |
 | stages 2 and 3 | exit 0, 0; JP booked twice afterwards: 0 overlapping pairs of live JP(cb) and JP(lv) rows; no JP(cb) row at Linda-a-Velha written; `22 OK / 0 VACUOUS / 0 FAIL` | exit 0, 0; JP booked twice afterwards: 3 overlapping pairs, and round 2's own stage 3 reads `21 OK / 0 VACUOUS / 0 FAIL` over them. This head's stage 3 on that database FAILs on 12, 13 and 22 |
+
+**The room as the app trims it (review round 3, the second minor).**
+
+| Arm | This head | Round 3 files, the same fixture |
+|---|---|---|
+| stage 1 on the room stubs | the room ending in a tab and the one ending in a no-break space read 12, `booking, room`; the room of only a tab and the tab inside the name read WRITE, as the app reads them | the first two read WRITE; the room of only a tab reads 12 (`btrim`'s default leaves the tab, so the rule reads it as a room and its neighbour's tab room as a clash); the tab inside the name reads WRITE |
+| stages 2 and 3 | exit 0, 0; the room double-booked afterwards: 0 overlapping pairs; the two held stubs still one minute, the two written at their default; `22 OK / 0 VACUOUS / 0 FAIL` | exit 0, 0; the room double-booked afterwards: 2 overlapping pairs, and round 3's own stage 3 reads `22 OK / 0 VACUOUS / 0 FAIL` over them. This head's stage 3 on that database FAILs on 12 only, `21 OK / 0 VACUOUS / 1 FAIL` |
+
+The runner counts a room double-booked as the app would find it: two live rows of two
+therapists at one clinic whose windows overlap, one row's room trimmed with the set the
+unit test holds equal to JavaScript's trim, equal to the other's as stored, both
+lower-cased. Before any write it reads 0 overlapping pairs on the fixture.
 
 **The order with STAFF-10 v2** (D5). STAFF-10 v2 itself cannot run here: its files name
 production ids that the fixture does not carry beyond the JP pair. Its steps are
@@ -898,13 +925,21 @@ the twin filtered on its partner's status, a `jwt_tenant_id()` call in stage 3, 
 twin's hold gated on STAFF-10 v2 not having run (U7), verdict 19 counting the live
 table (U8), and, new in this round, the `same_person` arm switched off in stage 1 (U9),
 verdict 16's VACUOUS branch dropped (U10), verdict 19 switched off (U11), and stage 3's
-block reading `main` without its guard (U12). Each failed its own test (and the pin
-test, since the file moved; U7, U9 and U11 also the byte-identity tests, as each touched
-stage 1 only); the unmutated copy passes all.
+block reading `main` without its guard (U12), and, new in review round 3, verdict 14's
+VACUOUS branch dropped (U13), the no-break space taken out of `c_room`'s set (U14), and
+the pair's room arm put back to `btrim`'s default (U15). Each failed its own test (and
+the pin test, since the file moved; U7, U9, U11 and U14 also the byte-identity tests,
+as each touched stage 1 only, and U15 the BASE one); the unmutated copy passes all.
 
 **The app's own checks, on a real database.**
-`apps/web/lib/scheduling/dur-01-classification.db.test.ts`, unchanged this round, against
-a new throwaway cloned from `s10v2_schema`, reading this round's BASE block: **5 passed**. Its
+`apps/web/lib/scheduling/dur-01-classification.db.test.ts`, against a new throwaway cloned
+from `s10v2_schema`, reading this round's BASE block: **5 passed**. Review round 3 added
+its room arms: a room ending in a tab, one ending in a no-break space, a room of only a
+tab and a tab inside the name, each beside a live row in that room written another way;
+and its two loops that ask the app once per stub now have three minutes each, because on
+this round's loaded machine the control loop of one negative-control run first ran past
+its one-minute budget (a timeout, not a verdict; rerun, it fails only where it should,
+below). Its
 seed carries no JP row, so the pair the rule names finds nothing there and every flag it
 compares reads as before. The control arm first proves the seed makes the app say what
 each arm expects (every flag true on some stub and false on another); stage 1's BASE
@@ -919,8 +954,13 @@ JWT finds nothing where the inline rule finds the booking. The JP checks are the
 own, not the app's (the app reads JP(cb) and JP(lv) as two therapists), so there is no
 app answer to agree with: the fixture arms above are their proof. Round 2's negative
 controls on the suite (SCHED-17's clause, the live twin's hold, the Terapeuta 2 arm, the
-portal pedido clause), each failing on exactly its own stub, were not re-run: the suite
-and the rule's lines they swap are unchanged. The suite is new, so
+portal pedido clause), each failing on exactly its own stub, were not re-run: the rule's
+lines they swap are unchanged. **Review round 3's two**, each a copy of stage 1 read by a
+copy of the suite on its own new throwaway: the room trimmed by `btrim`'s default again
+fails the agreement test on `room ends in a tab` (the rule reads no booking, the app
+reads one), and the set without the no-break space fails it on `room ends in a no-break
+space`; in both the control test passes, so the seed still says what the app says. The
+suite is new, so
 `.github/scripts/assert-rls-executed.mjs` covers it through its derived pass: it must
 execute in the DB Tests job.
 
@@ -958,6 +998,18 @@ execute in the DB Tests job.
   the after-merge arms). The first run of the new arms stopped before any stage ran: the
   handover extractor refuses any block that names `origin/main`, stage 3's fallback
   among them, so the extractor now exempts that one line and nothing else.
+- **Review round 3 found two minor defects, each now an arm that the round 3 files fail
+  and this head passes:** verdict 14 read OK over nothing checked on a day no written
+  row sits at a clinic with a closure (Q14a and Q14b; arm Q's day is one too), and the
+  room arm trimmed a room with `btrim`'s default, so a room ending in a tab or a
+  no-break space missed the live row the app finds, and round 3 wrote both such stubs
+  into a booked room (arm RM). The same arm shows the opposite: round 3 read a room of
+  only a tab as a room and held a row the app would let through. This round's first
+  full run also caught two faults of the rehearsal, not of the op: the round 1
+  late-commit arm raced a fixed sleep on a loaded machine, and an older stage 3
+  compared on a VACUOUS verdict also FAILed 12 on the whitespace-only room. The late
+  booking now waits on the audit row, and those comparisons cancel the tab-room
+  neighbour first.
 
 **The pushed tree is the rehearsed tree.** The last full run of the arms runner
 extracted every block from the commit that carries this section, sidecar included.
