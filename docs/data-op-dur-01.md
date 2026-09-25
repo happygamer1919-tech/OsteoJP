@@ -25,7 +25,7 @@ nothing else.
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
 | What stage 2 writes | `appointments.ends_at`, set to `starts_at` plus the service's `duration_min`, and `appointments.updated_at`, set to the op's clock, on the rows stage 1 classifies WRITE and on no other; ONE `audit_log` row, action `staff.dur01.extend_import_duration` |
 | What no stage touches | every other column of those rows (status, start, both participants, service, room, confirmation, pack, notes), every other appointment, and every other table: `time_off`, schedule rows, reminders, invoices, clinical records. Stage 2 compares the written rows' other columns and every other appointment in the tenant by md5 inside its own transaction |
-| Apply before merge | yes. The PR cannot merge while the label is on (`held-for-apply-blocks-merge.yml`), so every stage derives its head from `origin/data/DUR-01-import-stub-durations`, never from `main`. The one exception is stage 3, READ ONLY, re-issued after the merge has deleted the branch: it then reads the last `main` commit that carries its file, and its own sha256 pin still decides (the HEAD CHECK section) |
+| Apply before merge | yes. The PR cannot merge while the label is on (`held-for-apply-blocks-merge.yml`), so every stage derives its head from `origin/data/DUR-01-import-stub-durations`, never from `main`. The one exception is stage 3, READ ONLY, re-issued after the merge has deleted the branch: it then reads the last `main` commit that changed its file, and its own sha256 pin still decides (the HEAD CHECK section) |
 | Ids the stage files name | four, and no other: the two staff rows of JP, the one person the tenant holds twice (JP(cb) `54d486e0-a9c3-4c82-acac-8b909ce5a2d0`, JP(lv) `0c1a0000-0000-4000-8000-000000000001`), and the two clinics that are their own (Castelo Branco `de000002-0000-0000-0000-000000000002`, Linda-a-Velha `de000002-0000-0000-0000-000000000001`). They are `JP_CB`, `JP_LV`, `CB` and `LV` of `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` on `main`, and the unit test holds them equal |
 
 **THIS DOCUMENT PINS ITSELF, and the sidecar is why.** A document cannot contain its
@@ -149,7 +149,7 @@ pins and the rehearsal.
 | D7 | Added: can a stub written before STAFF-10 v2 be double-booked by it? | No. Verdict 17 reads the person row of every live twin as already holding that twin's NESA over its whole window, which is what STAFF-10 v2's W6 makes it do; stage 2's re-measure and stage 3's verdict 21 read it again. And no row this op writes is one STAFF-10 v2 moves: verdict 18 holds every JP(cb) row at Linda-a-Velha, which its W4 takes, and verdicts 08 and 16 every row its W5 takes. The next section has both shapes |
 | D8 | Added: why does stage 3 not count the table for its total? | A live count moves with the clinic: a later hard delete, or a booking that began before stage 2 and committed after it with an earlier `created_at`, would FAIL a correct write on its first verify. Stage 2 counts the total under its lock before and after the write and records both; verdict 19 compares the two recorded numbers |
 | D9 | Added: which stage 3 verdicts may read VACUOUS, and why only those? | 16, 18, 20, 21 and 22, each for a subject a real day may lack: no written row with hours configured (16), no row held (18), no written row on a NESA (20), none naming a NESA in either slot (21), none on a JP row (22). Each prints its subject, so a VACUOUS is read as "nothing to check", never as a pass. Every other verdict compares the written rows themselves, and R06 refuses an empty write set |
-| D10 | Added: can stage 3 be re-issued after the PR merges? | Yes. The merge deletes the held branch, so `origin/data/DUR-01-import-stub-durations` stops resolving; stage 3's block then reads the last `main` commit that carries `scripts/data/dur-01-3-verify.sql`, prints which one, and asserts the file by its sha256 as before. Stages 0 to 2 never read `main` |
+| D10 | Added: can stage 3 be re-issued after the PR merges? | Yes. The merge deletes the held branch, so `origin/data/DUR-01-import-stub-durations` stops resolving; stage 3's block then reads the last `main` commit that changed `scripts/data/dur-01-3-verify.sql` (not the tip of `main`, which later commits may move), prints which one, and asserts the file by its sha256 as before; the document at that commit checks against its own sidecar. Stages 0 to 2 never read `main` |
 
 ## The order with STAFF-10 v2 (#1444)
 
@@ -279,7 +279,7 @@ git rev-parse origin/data/DUR-01-import-stub-durations
 - **After the PR has merged,** the branch is deleted and this block prints an error
   for `rev-parse`: that is expected, and stage 1 and stage 2 are over. Stage 3 alone can
   still be pasted: it then prints `the held branch is gone` and verifies from the last
-  `main` commit that carries its file, under the same sha256 pin (D10).
+  `main` commit that changed its file, under the same sha256 pin (D10).
 
 ## STAGE 0: the files, the pins and the head
 
@@ -458,7 +458,7 @@ SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git fetch origin --prune
 PIN=$(git rev-parse -q --verify origin/${BRANCH} || true)
-[ -n "${PIN}" ] || { echo "the held branch is gone (its PR merged): verifying from the last main commit that carries stage 3"; PIN=$(git log -1 --format=%H origin/main -- scripts/data/dur-01-3-verify.sql); }
+[ -n "${PIN}" ] || { echo "the held branch is gone (its PR merged): verifying from the last main commit that changed stage 3"; PIN=$(git log -1 --format=%H origin/main -- scripts/data/dur-01-3-verify.sql); }
 [ -n "${PIN}" ] || { echo "STOP: neither the held branch nor main carries stage 3"; exit 1; }
 [ "$(git cat-file -t ${PIN})" = commit ] || { echo "STOP: ${PIN} does not resolve to a commit"; exit 1; }
 echo "verifying from ${PIN}"
@@ -744,7 +744,7 @@ two-minute stub in the profile and the population did not take it.
 | HEAD CHECK | 0 | the same head |
 | stage 2 | 0 | L1 the locks and `lock_timeout 5s`; P0 no audit row; P3 the run day and all four carries match; P4 no trigger the system did not create; P5 the baselines; W1 its row count equal to the WRITE set; A1 the written ends reproduce the carried digest; A2 the re-measure reading every written row as live and every arm at 0, `person_away` included, with the subjects of 20, 21 and 22 each above 0; A3 the total and both md5s unchanged; `DONE`, `COMMITTED`. Every WRITE row then ends at its start plus its default; every held stub still lasts one minute; the audit row lists the written ids and the held ids under each verdict |
 | stage 3 | 0 | `22 OK / 0 VACUOUS / 0 FAIL`, then the RECEPTION section by id |
-| stage 3 after the merge (D10): the branch deleted from the private origin, `main` set to a commit carrying the same tree | 0 | `the held branch is gone (its PR merged)`, `verifying from` the same commit, `22 OK / 0 VACUOUS / 0 FAIL` |
+| stage 3 after the merge (D10): the branch deleted from the private origin, `main` set to a commit carrying the same tree | 0 | `the held branch is gone (its PR merged)`, `verifying from 0bb3465`, the round 3 fix commit, the last to change stage 3 (the head is the later record commit), `22 OK / 0 VACUOUS / 0 FAIL` |
 | the same, with `main` at `f4e892cd`, which does not carry stage 3 | 1 | `STOP: neither the held branch nor main carries stage 3` |
 | HEAD CHECK, the branch restored | 0 | the head |
 
