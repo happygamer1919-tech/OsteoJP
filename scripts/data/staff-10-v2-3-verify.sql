@@ -67,7 +67,12 @@ WITH k AS (
   UNION SELECT id FROM xp UNION SELECT p FROM fp UNION SELECT n FROM fp
 ), sat AS (
   -- The next REAL Saturday, today or later, on which JP(lv) holds a dated
-  -- Linda-a-Velha row. The roster is evaluated there, not only today.
+  -- Linda-a-Velha row. The roster is evaluated there, not only today. Picked
+  -- from JP(lv)'s own rows, so the schedule half of verdict 8's positive control
+  -- holds by construction; the user half does not: the JP(lv) arm applies the
+  -- roster's user predicate (apps/api/lib/appointments/store.ts: active,
+  -- bookable, not a shared resource), so a JP(lv) the roster would not list
+  -- reads 0 there and FAILs.
   SELECT min(av.valid_from) AS d
     FROM public.availability_templates av, k
    WHERE av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
@@ -99,8 +104,10 @@ WITH k AS (
       WHERE av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
         AND (av.valid_until IS NULL OR av.valid_until >= k.today))::int AS lv_lv_future,
     (SELECT sat.d FROM sat) AS sat_day,
-    (SELECT count(*) FROM public.availability_templates av, k, sat
+    (SELECT count(*) FROM public.availability_templates av
+       JOIN public.users u ON u.id = av.user_id AND u.tenant_id = av.tenant_id, k, sat
       WHERE sat.d IS NOT NULL AND av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
+        AND u.is_active IS TRUE AND u.is_bookable IS TRUE AND u.is_shared_resource IS FALSE
         AND (av.valid_from IS NULL OR av.valid_from <= sat.d)
         AND (av.valid_until IS NULL OR av.valid_until >= sat.d))::int AS roster_lv_at_sat,
     (SELECT count(*) FROM public.availability_templates av, k, sat
@@ -216,7 +223,7 @@ UNION ALL SELECT 6, 'every moved row is an active real Saturday on JP(lv) at Lin
 UNION ALL SELECT 7, 'JP(cb) holds no active Linda-a-Velha row; control: JP(lv) holds one from today',
        v.cb_lv_active::text || ' / control ' || v.lv_lv_future::text, '0 / control above 0',
        CASE WHEN v.cb_lv_active <> 0 OR v.lv_lv_future = 0 THEN 'FAIL' ELSE 'OK' END FROM v
-UNION ALL SELECT 8, 'LV roster at the next real Saturday JP(lv) holds: JP(lv) present, JP(cb) absent',
+UNION ALL SELECT 8, 'LV roster at the next real Saturday JP(lv) holds: JP(lv) listed (active, bookable, not shared), JP(cb) holds no row there',
        coalesce(v.sat_day::text, '(no such Saturday)') || ': JP(lv) ' || v.roster_lv_at_sat::text
          || ', JP(cb) ' || v.roster_cb_at_sat::text, 'JP(lv) above 0, JP(cb) 0',
        CASE WHEN v.roster_cb_at_sat <> 0 THEN 'FAIL' WHEN v.sat_day IS NULL THEN 'VACUOUS'

@@ -136,6 +136,9 @@ DECLARE
   v_b_md5_cr_all text; v_b_md5_inv text; v_b_md5_users text; v_b_md5_sl text;
   v_b_md5_cr_att text; v_b_md5_keep text; v_b_md5_cb_past text; v_b_md5_cb_sched text;
   v_b_n_cr_att int; v_b_n_keep int; v_b_n_cb_past int; v_b_n_cb_sched int;
+  v_bn_appt_rest int; v_bn_w_fixed int; v_bn_h int; v_bn_x int; v_bn_fp int; v_bn_fn int;
+  v_bn_av_rest int; v_bn_av_w int; v_bn_to_rest int; v_bn_cr_all int; v_bn_inv int; v_bn_users int; v_bn_sl int;
+  v_md5_rows jsonb;
   v_b_mh_n int; v_b_mh_other int; v_b_mh_ctl int;
   v_a_mh_p int; v_a_mh_n int; v_a_mh_ctl int; v_a_th_p int;
 BEGIN
@@ -165,9 +168,10 @@ k AS (
          (DATE '2026-09-23')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_from,
          (DATE '2026-10-08')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_to
 ),
--- The two JP rows, as found.
+-- The two JP rows, as found, with the three user flags the Linda-a-Velha roster
+-- reads (apps/api/lib/appointments/store.ts): active, bookable, not shared.
 jp AS (
-  SELECT u.id, u.tenant_id, u.is_active
+  SELECT u.id, u.tenant_id, u.is_active, u.is_bookable, u.is_shared_resource
     FROM public.users u, k
    WHERE u.id IN (k.jp_cb, k.jp_lv)
 ),
@@ -302,6 +306,11 @@ tw AS (
 ),
 -- RULING (b), SET X: a past pair whose NESA row is not installed at the booking
 -- clinic. The NESA row is re-attributed to the one NESA installed there.
+-- QUESTION Q3's DEFAULT: a past pair whose person row is in set H (JP(cb) at
+-- Linda-a-Velha) has its person row moved by ruling (a) and its NESA row left
+-- alone and listed, installed at its clinic or not. So a NESA row that sits in
+-- ANY past pair whose person row is in H is not in X; it lands in P and in
+-- tw_keep instead.
 x AS (
   SELECT DISTINCT tw.n_id AS id, tw.n_user AS from_user, tw.n_loc AS loc,
          coalesce(i.n, 0) AS installed_here,
@@ -309,6 +318,9 @@ x AS (
     FROM tw
     LEFT JOIN inst_n i ON i.location_id = tw.n_loc
    WHERE tw.is_past AND NOT tw.n_home
+     AND NOT EXISTS (SELECT 1 FROM tw t2
+                      WHERE t2.is_past AND t2.n_id = tw.n_id
+                        AND t2.p_id IN (SELECT h.id FROM h))
 ),
 -- RULING (c), SET F: a future pair with both rows live. Option a: the person row
 -- keeps and takes the NESA as practitioner_2; the NESA row is cancelled.
@@ -324,9 +336,11 @@ f AS (
     LEFT JOIN inst_n i ON i.location_id = tw.p_loc
    WHERE NOT tw.is_past AND tw.both_live
 ),
--- RULING (d), SET P: every other past pair. Listed, never changed.
+-- RULING (d), SET P: every other past pair, that is every past pair whose NESA
+-- row ruling (b) does not move. Listed, never changed by ruling (b); a person
+-- row in H is still moved by ruling (a) (Q3).
 pp AS (
-  SELECT tw.* FROM tw WHERE tw.is_past AND tw.n_home
+  SELECT tw.* FROM tw WHERE tw.is_past AND tw.n_id NOT IN (SELECT x.id FROM x)
 ),
 -- The rows of every past pair that no write touches: compared by md5 after.
 tw_keep AS (
@@ -370,7 +384,9 @@ car AS (
 -- THE CONFIRMED-OVERLAP RULE, appointments_no_double_confirmed (0061): EXCLUDE
 -- on (practitioner_id, tstzrange(starts_at, ends_at)) WHERE status = confirmed,
 -- with no tenant, clinic or date in it. Each set below is every confirmed row a
--- target would hold after its re-attribution.
+-- target would hold after its re-attribution. R14 and R15 take as control the
+-- confirmed rows that MOVE: with none, no collision is possible, so a 0 there
+-- prints VACUOUS rather than OK.
 -- ---------------------------------------------------------------------------
 h_after AS (
   SELECT a.id, a.starts_at, a.ends_at, (a.id IN (SELECT h.id FROM h)) AS moving
@@ -395,8 +411,10 @@ ref AS (
          ((2 - (SELECT count(*) FROM jp)) + (SELECT count(DISTINCT jp.tenant_id) FROM jp) - 1)::int AS n,
          (SELECT count(*) FROM jp)::int AS control
   UNION ALL
-  SELECT 'R02', 'JP(lv) is inactive, so its Linda-a-Velha cover would vanish',
-         (SELECT count(*) FROM jp, k WHERE jp.id = k.jp_lv AND jp.is_active IS NOT TRUE)::int,
+  SELECT 'R02', 'JP(lv) is inactive, not bookable or a shared resource, so the Linda-a-Velha roster would not list it',
+         (SELECT count(*) FROM jp, k
+           WHERE jp.id = k.jp_lv
+             AND (jp.is_active IS NOT TRUE OR jp.is_bookable IS NOT TRUE OR jp.is_shared_resource IS NOT FALSE))::int,
          (SELECT count(*) FROM jp, k WHERE jp.id = k.jp_lv)::int
   UNION ALL
   SELECT 'R03', 'JP(cb) is not installed at Castelo Branco',
@@ -462,13 +480,13 @@ ref AS (
          (SELECT count(*) FROM h_after a1 JOIN h_after a2
              ON a1.id < a2.id AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
-         (SELECT count(*) FROM h_after)::int
+         (SELECT count(*) FROM h_after WHERE h_after.moving)::int
   UNION ALL
   SELECT 'R15', 'a ruling (b) re-attribution would put two overlapping confirmed rows on one NESA row',
          (SELECT count(*) FROM x_after a1 JOIN x_after a2
              ON a1.id < a2.id AND a1.holder = a2.holder AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
-         (SELECT count(*) FROM x_after)::int
+         (SELECT count(*) FROM x_after WHERE x_after.moving)::int
   UNION ALL
   SELECT 'R16', 'a future pair: the person row already has a practitioner_2',
          (SELECT count(*) FROM f WHERE f.p_t2 IS NOT NULL)::int, (SELECT count(*) FROM f)::int
@@ -685,44 +703,44 @@ ref AS (
    WHERE av.user_id = c_jp_cb AND av.is_active IS NOT TRUE;
   SELECT count(*)::int INTO v_b_timeoff FROM public.time_off t WHERE t.tenant_id = v_tenant;
 
-  SELECT md5(coalesce(string_agg((a.*)::text, E'\n' ORDER BY a.id), '')) INTO v_b_md5_appt_rest
+  SELECT count(*)::int, md5(coalesce(string_agg((a.*)::text, E'\n' ORDER BY a.id), '')) INTO v_bn_appt_rest, v_b_md5_appt_rest
     FROM public.appointments a
    WHERE a.tenant_id = v_tenant AND NOT EXISTS (SELECT 1 FROM unnest(v_written) w(id) WHERE w.id = a.id);
-  SELECT md5(coalesce(string_agg(ROW(a.id, a.tenant_id, a.patient_id, a.location_id, a.service_id, a.room,
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(a.id, a.tenant_id, a.patient_id, a.location_id, a.service_id, a.room,
                                      a.starts_at, a.ends_at, a.patient_2_id, a.confirmation_state, a.origin,
                                      a.pack_instance_id, a.notes, a.created_by, a.created_at, a.booking_group_id,
                                      a.batch_id, a.recurrence_rule, a.recurrence_parent_id)::text, E'\n' ORDER BY a.id), ''))
-    INTO v_b_md5_w_fixed
+    INTO v_bn_w_fixed, v_b_md5_w_fixed
     FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_written) w(id));
-  SELECT md5(coalesce(string_agg(ROW(a.id, a.status, a.practitioner_2_id)::text, E'\n' ORDER BY a.id), ''))
-    INTO v_b_md5_h FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_h) w(id));
-  SELECT md5(coalesce(string_agg(ROW(a.id, a.status, a.practitioner_2_id)::text, E'\n' ORDER BY a.id), ''))
-    INTO v_b_md5_x FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_x_ids) w(id));
-  SELECT md5(coalesce(string_agg(ROW(a.id, a.practitioner_id, a.status)::text, E'\n' ORDER BY a.id), ''))
-    INTO v_b_md5_fp FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_f_p) w(id));
-  SELECT md5(coalesce(string_agg(ROW(a.id, a.practitioner_id, a.practitioner_2_id)::text, E'\n' ORDER BY a.id), ''))
-    INTO v_b_md5_fn FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_f_n) w(id));
-  SELECT md5(coalesce(string_agg((av.*)::text, E'\n' ORDER BY av.id), '')) INTO v_b_md5_av_rest
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(a.id, a.status, a.practitioner_2_id)::text, E'\n' ORDER BY a.id), ''))
+    INTO v_bn_h, v_b_md5_h FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_h) w(id));
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(a.id, a.status, a.practitioner_2_id)::text, E'\n' ORDER BY a.id), ''))
+    INTO v_bn_x, v_b_md5_x FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_x_ids) w(id));
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(a.id, a.practitioner_id, a.status)::text, E'\n' ORDER BY a.id), ''))
+    INTO v_bn_fp, v_b_md5_fp FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_f_p) w(id));
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(a.id, a.practitioner_id, a.practitioner_2_id)::text, E'\n' ORDER BY a.id), ''))
+    INTO v_bn_fn, v_b_md5_fn FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_f_n) w(id));
+  SELECT count(*)::int, md5(coalesce(string_agg((av.*)::text, E'\n' ORDER BY av.id), '')) INTO v_bn_av_rest, v_b_md5_av_rest
     FROM public.availability_templates av
    WHERE av.tenant_id = v_tenant AND NOT EXISTS (SELECT 1 FROM unnest(v_sched) w(id) WHERE w.id = av.id);
-  SELECT md5(coalesce(string_agg(ROW(av.id, av.tenant_id, av.location_id, av.weekday, av.start_time, av.end_time,
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(av.id, av.tenant_id, av.location_id, av.weekday, av.start_time, av.end_time,
                                      av.valid_from, av.valid_until, av.created_at)::text, E'\n' ORDER BY av.id), ''))
-    INTO v_b_md5_av_w
+    INTO v_bn_av_w, v_b_md5_av_w
     FROM public.availability_templates av WHERE av.id IN (SELECT w.id FROM unnest(v_sched) w(id));
-  SELECT md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), '')) INTO v_b_md5_to_rest
+  SELECT count(*)::int, md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), '')) INTO v_bn_to_rest, v_b_md5_to_rest
     FROM public.time_off t
    WHERE t.tenant_id = v_tenant AND NOT EXISTS (SELECT 1 FROM unnest(v_blk) w(id) WHERE w.id = t.id);
-  SELECT md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
                                      cr.version, cr.updated_at)::text, E'\n' ORDER BY cr.id), ''))
-    INTO v_b_md5_cr_all FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant;
-  SELECT md5(coalesce(string_agg(ROW(iv.id, iv.appointment_id, iv.patient_id, iv.amount_cents, iv.status,
+    INTO v_bn_cr_all, v_b_md5_cr_all FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant;
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(iv.id, iv.appointment_id, iv.patient_id, iv.amount_cents, iv.status,
                                      iv.updated_at)::text, E'\n' ORDER BY iv.id), ''))
-    INTO v_b_md5_inv FROM public.invoices iv WHERE iv.tenant_id = v_tenant;
-  SELECT md5(coalesce(string_agg(ROW(u.id, u.is_active, u.is_bookable, u.is_shared_resource, u.role_id,
+    INTO v_bn_inv, v_b_md5_inv FROM public.invoices iv WHERE iv.tenant_id = v_tenant;
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(u.id, u.is_active, u.is_bookable, u.is_shared_resource, u.role_id,
                                      u.updated_at)::text, E'\n' ORDER BY u.id), ''))
-    INTO v_b_md5_users FROM public.users u WHERE u.tenant_id = v_tenant;
-  SELECT md5(coalesce(string_agg(ROW(sl.id, sl.user_id, sl.location_id)::text, E'\n' ORDER BY sl.id), ''))
-    INTO v_b_md5_sl FROM public.staff_locations sl WHERE sl.tenant_id = v_tenant;
+    INTO v_bn_users, v_b_md5_users FROM public.users u WHERE u.tenant_id = v_tenant;
+  SELECT count(*)::int, md5(coalesce(string_agg(ROW(sl.id, sl.user_id, sl.location_id)::text, E'\n' ORDER BY sl.id), ''))
+    INTO v_bn_sl, v_b_md5_sl FROM public.staff_locations sl WHERE sl.tenant_id = v_tenant;
 
   -- Recorded in the audit row, and recomputed by stage 3 with the same text.
   SELECT count(*)::int,
@@ -748,6 +766,35 @@ ref AS (
     v_b_appt, v_b_cb, v_b_lv, v_b_ncb, v_b_nlv, v_b_cancel, v_b_t2;
   RAISE NOTICE 'P5 untouched sets: clinical records on written rows %, past twin rows kept %, JP(cb) past CB appointments %, JP(cb) CB schedule rows %',
     v_b_n_cr_att, v_b_n_keep, v_b_n_cb_past, v_b_n_cb_sched;
+
+  -- Every md5 family this block compares, with the rows it compares. All go
+  -- into the audit row. A family that a refusal already guarantees non-empty
+  -- (appt_rest and cb_past by R25, av_rest and cb_sched by R25, w_fixed and
+  -- cr_att and cr_all by R27, keep by R27, users by R01, sl by R03 and R04) STOPS
+  -- here if it reads empty: the refusal and the baseline would disagree. The
+  -- others can be empty on a real day and print VACUOUS: h, x, fp, fn and av_w
+  -- are the written sets of a ruling or a schedule action with nothing to do,
+  -- and to_rest and inv are the tenant's other blocks and its invoices, which no
+  -- ruling promises exist. Each of those is a whole tenant table or the
+  -- complement of the op's own set, so even empty its md5 still changes on the
+  -- one write it could suffer, a new row.
+  v_md5_rows := jsonb_build_object(
+    'appt_rest', v_bn_appt_rest, 'w_fixed', v_bn_w_fixed, 'h', v_bn_h, 'x', v_bn_x, 'fp', v_bn_fp, 'fn', v_bn_fn,
+    'av_rest', v_bn_av_rest, 'av_w', v_bn_av_w, 'to_rest', v_bn_to_rest, 'cr_all', v_bn_cr_all, 'inv', v_bn_inv,
+    'users', v_bn_users, 'sl', v_bn_sl,
+    'cr_att', v_b_n_cr_att, 'keep', v_b_n_keep, 'cb_past', v_b_n_cb_past, 'cb_sched', v_b_n_cb_sched);
+  SELECT string_agg(e.key || ' ' || e.value || CASE WHEN e.value::int = 0 THEN ' VACUOUS' ELSE ' OK' END,
+                    ', ' ORDER BY e.key)
+    INTO v_want FROM jsonb_each_text(v_md5_rows) e;
+  RAISE NOTICE 'P5 md5 families and the rows each compares: %', v_want;
+  FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e
+                WHERE e.key IN ('appt_rest', 'w_fixed', 'av_rest', 'cr_all', 'users', 'sl',
+                                'cr_att', 'keep', 'cb_past', 'cb_sched')
+                  AND e.value::int = 0
+                ORDER BY 1
+  LOOP
+    RAISE EXCEPTION 'STOP: the md5 family % is empty, though a refusal guarantees it is not. Nothing was written', v_row.key;
+  END LOOP;
 
   -- ==========================================================================
   -- P6. THE MACHINE HOUR, BEFORE. Under the app rule (conflict.ts: a row holds
@@ -1085,8 +1132,11 @@ ref AS (
       'mh_held_by_nesa', v_b_mh_n, 'mh_held_by_other', v_b_mh_other, 'mh_control', v_b_mh_ctl),
     'md5', jsonb_build_object(
       'cr_att', v_b_md5_cr_att, 'keep', v_b_md5_keep, 'cb_past', v_b_md5_cb_past, 'cb_sched', v_b_md5_cb_sched,
-      'appt_rest', v_b_md5_appt_rest, 'w_fixed', v_b_md5_w_fixed, 'av_rest', v_b_md5_av_rest,
-      'to_rest', v_b_md5_to_rest, 'cr_all', v_b_md5_cr_all),
+      'appt_rest', v_b_md5_appt_rest, 'w_fixed', v_b_md5_w_fixed, 'h', v_b_md5_h, 'x', v_b_md5_x,
+      'fp', v_b_md5_fp, 'fn', v_b_md5_fn, 'av_rest', v_b_md5_av_rest, 'av_w', v_b_md5_av_w,
+      'to_rest', v_b_md5_to_rest, 'cr_all', v_b_md5_cr_all, 'inv', v_b_md5_inv, 'users', v_b_md5_users,
+      'sl', v_b_md5_sl),
+    'md5_rows', v_md5_rows,
     'after', jsonb_build_object(
       'mh_held_by_person', v_a_mh_p, 'mh_held_by_nesa', v_a_mh_n, 'therapist_hour_held', v_a_th_p,
       'mh_control', v_a_mh_ctl)

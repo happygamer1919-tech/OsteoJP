@@ -62,9 +62,10 @@ k AS (
          (DATE '2026-09-23')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_from,
          (DATE '2026-10-08')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_to
 ),
--- The two JP rows, as found.
+-- The two JP rows, as found, with the three user flags the Linda-a-Velha roster
+-- reads (apps/api/lib/appointments/store.ts): active, bookable, not shared.
 jp AS (
-  SELECT u.id, u.tenant_id, u.is_active
+  SELECT u.id, u.tenant_id, u.is_active, u.is_bookable, u.is_shared_resource
     FROM public.users u, k
    WHERE u.id IN (k.jp_cb, k.jp_lv)
 ),
@@ -199,6 +200,11 @@ tw AS (
 ),
 -- RULING (b), SET X: a past pair whose NESA row is not installed at the booking
 -- clinic. The NESA row is re-attributed to the one NESA installed there.
+-- QUESTION Q3's DEFAULT: a past pair whose person row is in set H (JP(cb) at
+-- Linda-a-Velha) has its person row moved by ruling (a) and its NESA row left
+-- alone and listed, installed at its clinic or not. So a NESA row that sits in
+-- ANY past pair whose person row is in H is not in X; it lands in P and in
+-- tw_keep instead.
 x AS (
   SELECT DISTINCT tw.n_id AS id, tw.n_user AS from_user, tw.n_loc AS loc,
          coalesce(i.n, 0) AS installed_here,
@@ -206,6 +212,9 @@ x AS (
     FROM tw
     LEFT JOIN inst_n i ON i.location_id = tw.n_loc
    WHERE tw.is_past AND NOT tw.n_home
+     AND NOT EXISTS (SELECT 1 FROM tw t2
+                      WHERE t2.is_past AND t2.n_id = tw.n_id
+                        AND t2.p_id IN (SELECT h.id FROM h))
 ),
 -- RULING (c), SET F: a future pair with both rows live. Option a: the person row
 -- keeps and takes the NESA as practitioner_2; the NESA row is cancelled.
@@ -221,9 +230,11 @@ f AS (
     LEFT JOIN inst_n i ON i.location_id = tw.p_loc
    WHERE NOT tw.is_past AND tw.both_live
 ),
--- RULING (d), SET P: every other past pair. Listed, never changed.
+-- RULING (d), SET P: every other past pair, that is every past pair whose NESA
+-- row ruling (b) does not move. Listed, never changed by ruling (b); a person
+-- row in H is still moved by ruling (a) (Q3).
 pp AS (
-  SELECT tw.* FROM tw WHERE tw.is_past AND tw.n_home
+  SELECT tw.* FROM tw WHERE tw.is_past AND tw.n_id NOT IN (SELECT x.id FROM x)
 ),
 -- The rows of every past pair that no write touches: compared by md5 after.
 tw_keep AS (
@@ -267,7 +278,9 @@ car AS (
 -- THE CONFIRMED-OVERLAP RULE, appointments_no_double_confirmed (0061): EXCLUDE
 -- on (practitioner_id, tstzrange(starts_at, ends_at)) WHERE status = confirmed,
 -- with no tenant, clinic or date in it. Each set below is every confirmed row a
--- target would hold after its re-attribution.
+-- target would hold after its re-attribution. R14 and R15 take as control the
+-- confirmed rows that MOVE: with none, no collision is possible, so a 0 there
+-- prints VACUOUS rather than OK.
 -- ---------------------------------------------------------------------------
 h_after AS (
   SELECT a.id, a.starts_at, a.ends_at, (a.id IN (SELECT h.id FROM h)) AS moving
@@ -292,8 +305,10 @@ ref AS (
          ((2 - (SELECT count(*) FROM jp)) + (SELECT count(DISTINCT jp.tenant_id) FROM jp) - 1)::int AS n,
          (SELECT count(*) FROM jp)::int AS control
   UNION ALL
-  SELECT 'R02', 'JP(lv) is inactive, so its Linda-a-Velha cover would vanish',
-         (SELECT count(*) FROM jp, k WHERE jp.id = k.jp_lv AND jp.is_active IS NOT TRUE)::int,
+  SELECT 'R02', 'JP(lv) is inactive, not bookable or a shared resource, so the Linda-a-Velha roster would not list it',
+         (SELECT count(*) FROM jp, k
+           WHERE jp.id = k.jp_lv
+             AND (jp.is_active IS NOT TRUE OR jp.is_bookable IS NOT TRUE OR jp.is_shared_resource IS NOT FALSE))::int,
          (SELECT count(*) FROM jp, k WHERE jp.id = k.jp_lv)::int
   UNION ALL
   SELECT 'R03', 'JP(cb) is not installed at Castelo Branco',
@@ -359,13 +374,13 @@ ref AS (
          (SELECT count(*) FROM h_after a1 JOIN h_after a2
              ON a1.id < a2.id AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
-         (SELECT count(*) FROM h_after)::int
+         (SELECT count(*) FROM h_after WHERE h_after.moving)::int
   UNION ALL
   SELECT 'R15', 'a ruling (b) re-attribution would put two overlapping confirmed rows on one NESA row',
          (SELECT count(*) FROM x_after a1 JOIN x_after a2
              ON a1.id < a2.id AND a1.holder = a2.holder AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
-         (SELECT count(*) FROM x_after)::int
+         (SELECT count(*) FROM x_after WHERE x_after.moving)::int
   UNION ALL
   SELECT 'R16', 'a future pair: the person row already has a practitioner_2',
          (SELECT count(*) FROM f WHERE f.p_t2 IS NOT NULL)::int, (SELECT count(*) FROM f)::int
@@ -568,8 +583,7 @@ SELECT jsonb_build_object(
           'booking_clinic', l.name, 'person_clinic', lp.name,
           'two_clinics', (tw.p_loc IS DISTINCT FROM tw.n_loc)::text,
           'from_nesa', x.from_user::text, 'to_nesa', coalesce(x.to_user::text, '(none)'),
-          'nesa_status', tw.n_status::text, 'person_status', tw.p_status::text,
-          'person_row_in_h', (tw.p_id IN (SELECT h.id FROM h))::text)
+          'nesa_status', tw.n_status::text, 'person_status', tw.p_status::text)
           ORDER BY tw.starts_at, tw.n_id, tw.p_id), '[]'::jsonb)
           FROM tw JOIN x ON x.id = tw.n_id JOIN public.locations l ON l.id = tw.n_loc
           JOIN public.locations lp ON lp.id = tw.p_loc
@@ -590,6 +604,7 @@ SELECT jsonb_build_object(
           'nesa_row', pp.n_id::text, 'person_row', pp.p_id::text,
           'starts_lisbon', (pp.starts_at AT TIME ZONE 'Europe/Lisbon')::text,
           'booking_clinic', l.name,
+          'nesa_installed_there', pp.n_home::text,
           'nesa_status', pp.n_status::text, 'person_status', pp.p_status::text,
           'person_row_in_h', (pp.p_id IN (SELECT h.id FROM h))::text)
           ORDER BY pp.starts_at, pp.n_id, pp.p_id), '[]'::jsonb)
@@ -741,17 +756,15 @@ SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'cb_row_appointment' AS cb_
 --    clinic, and the NESA row each one goes to.
 -- ---------------------------------------------------------------------------
 \echo ''
-\echo '=== 6. RULING (b): past pairs whose NESA row is not installed at the booking clinic. Stage 2 re-attributes the NESA row ==='
+\echo '=== 6. RULING (b): past pairs whose NESA row is not installed at the booking clinic, person row not in ruling (a). Stage 2 re-attributes the NESA row ==='
 SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'nesa_row' AS nesa_row, e ->> 'person_row' AS person_row,
        e ->> 'booking_clinic' AS booking_clinic, e ->> 'person_clinic' AS person_row_clinic,
        e ->> 'two_clinics' AS two_clinics, e ->> 'from_nesa' AS from_nesa, e ->> 'to_nesa' AS to_nesa,
-       e ->> 'nesa_status' AS nesa_status, e ->> 'person_status' AS person_status,
-       e ->> 'person_row_in_h' AS person_row_moved_by_a
+       e ->> 'nesa_status' AS nesa_status, e ->> 'person_status' AS person_status
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'x') e;
 \echo '    booking_clinic is the NESA row''s clinic. two_clinics = true means the person row sits at'
-\echo '    another clinic, and R29 refuses it. person_row_moved_by_a = true means the person row is'
-\echo '    JP(cb) at Linda-a-Velha: ruling (a) moves it to JP(lv) and ruling (b) moves this NESA row,'
-\echo '    so the pair ends on JP(lv) and the NESA installed there (question Q3 in the doc).'
+\echo '    another clinic, and R29 refuses it. No pair here has its person row in ruling (a): that'
+\echo '    pair''s NESA row is left alone and listed in section 8 (question Q3 in the doc).'
 
 -- ---------------------------------------------------------------------------
 -- 7. RULING (c): the future pairs, both rows live. Option a, pair by pair, with
@@ -775,14 +788,16 @@ SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'person_row' AS person_row,
 --    Its ids also go into stage 2's audit row.
 -- ---------------------------------------------------------------------------
 \echo ''
-\echo '=== 8. RULING (d): every other past pair. Listed here and in the audit row; no stage changes it ==='
+\echo '=== 8. RULING (d): every other past pair. Listed here and in the audit row; no stage changes its NESA row ==='
 SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'nesa_row' AS nesa_row, e ->> 'person_row' AS person_row,
-       e ->> 'booking_clinic' AS booking_clinic, e ->> 'nesa_status' AS nesa_status,
-       e ->> 'person_status' AS person_status, e ->> 'person_row_in_h' AS person_row_moved_by_a
+       e ->> 'booking_clinic' AS booking_clinic, e ->> 'nesa_installed_there' AS nesa_installed_there,
+       e ->> 'nesa_status' AS nesa_status, e ->> 'person_status' AS person_status,
+       e ->> 'person_row_in_h' AS person_row_moved_by_a
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'p') e;
-\echo '    person_row_moved_by_a = true: the person row is JP(cb) at Linda-a-Velha, so ruling (a)'
-\echo '    moves it to JP(lv); the NESA row of that pair is installed at its clinic, so no ruling'
-\echo '    touches it.'
+\echo '    No stage changes a NESA row listed here. person_row_moved_by_a = true: the person row is'
+\echo '    JP(cb) at Linda-a-Velha, so ruling (a) moves it to JP(lv), and its NESA row stays where it'
+\echo '    is, installed at its clinic or not (question Q3 in the doc). nesa_installed_there = false'
+\echo '    marks a NESA row that ruling (b) would have moved had its person row not been in ruling (a).'
 
 -- ---------------------------------------------------------------------------
 -- 9. WHAT NO RULING ACTS ON: future pairs with one side already cancelled or

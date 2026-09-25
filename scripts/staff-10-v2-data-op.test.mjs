@@ -248,6 +248,61 @@ test("no file claims the op leaves every JP(cb) Castelo Branco row alone: ruling
   }
 });
 
+test("question Q3's default: a NESA row whose past pair has its person row in ruling (a) stays, and is listed and kept", () => {
+  const x = SETS.slice(SETS.indexOf("\nx AS ("), SETS.indexOf("\n),", SETS.indexOf("\nx AS (")));
+  assert.match(x, /WHERE tw\.is_past AND NOT tw\.n_home\s+AND NOT EXISTS \(SELECT 1 FROM tw t2\s+WHERE t2\.is_past AND t2\.n_id = tw\.n_id\s+AND t2\.p_id IN \(SELECT h\.id FROM h\)\)/, "set X still takes a NESA row whose past pair has its person row in H");
+  assert.match(SETS, /\npp AS \(\n  SELECT tw\.\* FROM tw WHERE tw\.is_past AND tw\.n_id NOT IN \(SELECT x\.id FROM x\)\n\)/, "set P is not every past pair whose NESA row X does not move");
+  assert.match(SETS, /WHERE s\.id NOT IN \(SELECT h\.id FROM h\) AND s\.id NOT IN \(SELECT x\.id FROM x\)/, "tw_keep is not every past twin row outside H and X");
+  assert.match(S1, /'nesa_installed_there', pp\.n_home::text/, "section 8 does not say whether the listed NESA row is installed at its clinic");
+  assert.doesNotMatch(S1.slice(S1.indexOf("  'x', (SELECT"), S1.indexOf("  'f', (SELECT")), /person_row_in_h/, "section 6 still carries a person row in H");
+  const q3 = DOC.split("\n").find((l) => l.startsWith("| Q3 |"));
+  assert.ok(q3, "the doc answers no question Q3");
+  assert.doesNotMatch(q3, /OWNER TO CONFIRM|departs/i, "the doc's answer to question Q3 still describes a departure from the written default");
+});
+
+test("R14 and R15 take as control the confirmed rows that MOVE, so no confirmed mover reads VACUOUS", () => {
+  const r14 = SETS.slice(SETS.indexOf("'R14'"), SETS.indexOf("'R15'"));
+  const r15 = SETS.slice(SETS.indexOf("'R15'"), SETS.indexOf("'R16'"));
+  assert.match(r14, /\(SELECT count\(\*\) FROM h_after WHERE h_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R14's control is not the confirmed movers");
+  assert.match(r15, /\(SELECT count\(\*\) FROM x_after WHERE x_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R15's control is not the confirmed movers");
+});
+
+test("R02 and verdict 8 read the roster's own user predicate: active, bookable, not a shared resource", () => {
+  const store = read("apps/api/lib/appointments/store.ts");
+  assert.match(store, /and u\.is_active = true\s+and u\.is_bookable = true\s+\$\{notShared\}/, "the roster predicate moved; re-read it before trusting R02 and verdict 8");
+  assert.match(store, /sql`and u\.is_shared_resource = false`/, "the shared-resource exclusion moved");
+  assert.match(SETS, /SELECT u\.id, u\.tenant_id, u\.is_active, u\.is_bookable, u\.is_shared_resource\n/, "the JP rows do not carry the roster's user flags");
+  const r02 = SETS.slice(SETS.indexOf("'R02'"), SETS.indexOf("'R03'"));
+  assert.match(r02, /jp\.is_active IS NOT TRUE OR jp\.is_bookable IS NOT TRUE OR jp\.is_shared_resource IS NOT FALSE/, "R02 does not refuse a JP(lv) the roster would not list");
+  const lv = S3.slice(S3.lastIndexOf("(SELECT count(*)", S3.indexOf("AS roster_lv_at_sat")), S3.indexOf("AS roster_lv_at_sat"));
+  assert.match(lv, /JOIN public\.users u ON u\.id = av\.user_id AND u\.tenant_id = av\.tenant_id/, "verdict 8's JP(lv) arm does not join the user row");
+  assert.match(lv, /u\.is_active IS TRUE AND u\.is_bookable IS TRUE AND u\.is_shared_resource IS FALSE/, "verdict 8's JP(lv) arm does not apply the roster's user predicate");
+});
+
+test("every md5 baseline stage 2 compares is in the audit row with its row count, and a guaranteed family stops when empty", () => {
+  const c = code(S2);
+  const declared = [...new Set([...c.matchAll(/\bv_b_md5_([a-z_]+) text/g)].map((m) => m[1]))].sort();
+  assert.ok(declared.length > 0);
+  const md5Obj = c.slice(c.indexOf("'md5', jsonb_build_object("), c.indexOf("'md5_rows', v_md5_rows"));
+  const recorded = [...md5Obj.matchAll(/'([a-z_]+)', v_b_md5_\1\b/g)].map((m) => m[1]).sort();
+  assert.deepEqual(recorded, declared, "the audit row's md5 object is not every baseline stage 2 takes");
+  const rows = c.slice(c.indexOf("v_md5_rows := jsonb_build_object("), c.indexOf(");", c.indexOf("v_md5_rows := jsonb_build_object(")));
+  const counted = [...rows.matchAll(/'([a-z_]+)', v_(?:bn|b_n)_\1\b/g)].map((m) => m[1]).sort();
+  assert.deepEqual(counted, declared, "the md5_rows object does not count every md5 family");
+  for (const f of declared) {
+    assert.match(c, new RegExp(`INTO v_(?:bn|b_n)_${f}, v_b_md5_${f}\\b`), `family ${f} takes its md5 without its row count`);
+  }
+  const guard = c.slice(c.indexOf("FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e"), c.indexOf("END LOOP;", c.indexOf("FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e")));
+  assert.match(guard, /AND e\.value::int = 0/);
+  assert.match(guard, /RAISE EXCEPTION 'STOP: the md5 family % is empty/);
+  const guaranteed = guard.match(/e\.key IN \(([^)]*)\)/)?.[1].match(/'([a-z_]+)'/g).map((q) => q.slice(1, -1)).sort();
+  assert.deepEqual(guaranteed, ["appt_rest", "av_rest", "cb_past", "cb_sched", "cr_all", "cr_att", "keep", "sl", "users", "w_fixed"], "the families a refusal guarantees moved");
+  for (const f of guaranteed) assert.ok(declared.includes(f), `the guard names ${f}, which is not a family`);
+  const at = S2.indexOf("FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e");
+  assert.ok(at > 0 && at < S2.indexOf("-- W1."), "the empty-family guard does not run before the first write");
+  assert.match(c, /RAISE NOTICE 'P5 md5 families and the rows each compares: %'/, "stage 2 does not print the md5 family profile");
+});
+
 /* ---- the handshake ------------------------------------------------------- */
 
 const CODES = [...SETS.matchAll(/\((\d+), '([a-z0-9]+)'\)/g)].map((m) => m[2]);
