@@ -484,14 +484,18 @@ there, that NESA row twinned with a second person row as well (Q3); a ruling (b)
 whose person row sits at the other clinic (R29); a trigger the system did not create
 (R30, dropped again by the reset); a JP(cb) Linda-a-Velha schedule with nothing to
 retire and no row inactive (verdict 10); and a tenant with no invoice and no confirmed
-row among the ones rulings (a) and (b) move (arm W).
+row among the ones rulings (a) and (b) move (arm W). Review round 3 adds three more:
+JP(lv)'s dated Saturdays carrying weekday column 5 with no Saturday moving (R28), the
+same weekday column after the write with the moved Saturdays shifted into the past
+(verdict 8), and JP(cb)'s other blocks of that fortnight removed after the write
+(verdict 11).
 
 | File, in the authoring lane's scratchpad (not committed, as for 0090 to 0093) | sha256 |
 |---|---|
 | `rehearsal/fixture.sql` | `e54fd110c5e5f92b6181e038976126534d98e27c25abc9502fa265c8096328f7` |
 | `rehearsal/reset.sql` | `74d74fe72c1f33fe014ff563db5c0e43c187c049cf05c29c70dabe32dd6b055b` |
-| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `9f5995e4c2c3d77e8a34556639f1cb7e550e4c0547ad4ded5e2b6ba8507b6c5f` |
-| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `b10fda9eb2d8e430e9b3ac404155f626e53b24d23be08c498258fe871b00062f` |
+| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `690677242df07156480eff39bc3ed7fde36638120494c866ccc33a4fc66e6949` |
+| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `5efd7130b778bd3d170fd88f14fc6ef24a4525433b72a8d5776f0434c6efc2d2` |
 | `rehearsal/extract-stage.mjs`, a byte copy of `/Users/ivan/osteojp-handover/extract-stage.mjs` | `f82cad1e6e8cc1be3b7c491fff787138161e0f079b6424119329d71c63d72198` |
 
 **How it ran.** Each block was extracted from this document at the pushed branch head
@@ -516,7 +520,7 @@ an `echo`. The extractor refuses a block that still names production.
 | stage 1 | 0 | every refusal line OK, none VACUOUS (R14 and R15 each read a confirmed mover); `partition holds`; `STAGE 1 READ, NO REFUSAL` |
 | HEAD CHECK | 0 | the same head |
 | stage 2 | 0 | P3 the run day and all 21 carries match; P4 no trigger the system did not create; P5 every md5 family OK, none empty; P6 the machine hour held by each future pair's NESA row, control window 0; W1 to W7 each with its row count equal to its set; A2 the machine hour held by each person row over the whole NESA window, no cancelled NESA row still holding, the therapist hour held, control window 0; `DONE`, `COMMITTED`; the audit row's `md5` and `md5_rows` objects each name every family P5 printed |
-| stage 3 | 0 | `25 OK / 0 VACUOUS / 0 FAIL`, then the RECEPTION section by id |
+| stage 3 | 0 | `25 OK / 0 VACUOUS / 0 FAIL`, then the RECEPTION section by id. Verdict 8 reads `JP(lv) 1` on 26 September: only the dated Saturday, since JP(lv)'s Wednesday window no longer counts (round 2 read 2). Verdict 11 reads `0 / control 1 of 1 recorded, 2 read now` |
 
 **Every refusal, run for real.** For each arm: reset, one mutation, stage 1 (must exit 1
 with REFUSE on the code), then the stage 1 marker forced so stage 2's SQL is reached
@@ -558,6 +562,7 @@ users.
 | R27 | the clinical records on the rows the op writes removed | 1 | R27 | 3, STOP R27 | unchanged |
 | R27 | every past twin row the op leaves alone removed | 1 | R27 | 3, STOP R27 | unchanged |
 | R28 | JP(lv)'s dated Saturdays and every Saturday that would move removed | 1 | R28 | 3, STOP R28 | unchanged |
+| R28 | JP(lv)'s dated Saturdays given weekday column 5, and no Saturday moving (round 3) | 1 | R28 | 3, STOP R28 | unchanged |
 | R29 | the person row of the Linda-a-Velha ruling (b) pair moved to Castelo Branco | 1 | R29 | 3, STOP R29 | unchanged |
 | R30 | a no-op `AFTER UPDATE` trigger created on `appointments` | 1 | R30 | 3, STOP R30 | unchanged |
 
@@ -613,6 +618,28 @@ conformed the build to the written default, and its arm below replaces that one.
 | R02 on a JP(lv) that is active but not bookable, and verdict 8 on one made not bookable after the write | as in the tables above | | |
 | negative control: the unit test's four new round 2 tests against the round 1 files | | all four fail; all four pass on this head | |
 
+**Review round 3, each finding run for real.** Each fix has an arm that passes on the
+round 2 files and fails on this head. The runner reads the round 2 files out of the
+rehearsal clone at the round 2 commit (`a02bbde2`) and checks them against round 2's own
+three pins (MATCH) before any arm runs. Each file is run through this document's own
+stage block with only its SQL file and that file's pin swapped (the pin once, the path
+three times, both counted), so the block's own checks decide the exit on both sides.
+Each copy that carries a defect differs from its source by one line, and the runner
+prints that count.
+
+| Arm | Round 2 file | This head | Database after |
+|---|---|---|---|
+| R28, stage 1: JP(lv)'s dated Saturdays carry weekday column 5 and no Saturday moves | 0: R28 OK, no REFUSE | 1: REFUSE on R28; stage 2 with the marker forced, 3: `STOP: R28 refuses` (the refusal table above) | unchanged |
+| verdict 8, stage 3 after the write: JP(lv)'s own dated Saturdays carry weekday column 5, and the moved ones are shifted to past Saturdays | 0: verdict 8 OK, `JP(lv) 2` on 26 September, a day the app would not offer JP(lv) | 1: `VACUOUS on 8, which the op never allows to be vacuous`: no Saturday from today is one the app would offer | restored; stage 3 0, verdict 8 `JP(lv) 1` |
+| verdict 11, stage 3 after the write, a copy whose `time_off` read names JP(lv) in place of JP(cb) | 0: verdict 11 OK, observed 0 | 1: FAIL on 11, `0 / control 0 of 1 recorded, 0 read now` | untouched (READ ONLY) |
+| verdict 11, a copy with the containment form (starts before 30 September and ends after it) in place of the overlap form | 0: verdict 11 OK, observed 0 | 1: FAIL on 11, `0 / control 0 of 1 recorded, 2 read now` | untouched |
+| verdict 11, after the write JP(cb)'s other blocks of that fortnight removed | 0: verdict 11 OK | 0: verdict 11 VACUOUS, which the block allows (D18); `24 OK / 1 VACUOUS / 0 FAIL` | restored; stage 3 0, verdict 11 OK |
+| the written-row fingerprint: a copy of stage 2 whose W6 also sets `confirmation_channel` | 0: `STAFF-10 V2 WRITTEN`, and both future person rows carry the stray value: the change committed unseen | 3: `STOP: a written appointment changed in a column this op does not write` | round 2: written; this head: unchanged, no audit row, no stray value |
+| the same, with W6 also setting `confirmation_received_at` | 0: `WRITTEN`, both person rows carry it | 3: the same STOP | the same |
+| negative control: the unit test's three new round 3 tests against the round 2 files | all three fail | all three pass | |
+
+The full runner at this round's head ran 140 arms, and every one exited as wanted.
+
 **What the rehearsal caught.** The first full run had no R25. On a fixture with no past
 JP(cb) Castelo Branco appointment, stages 1 and 2 passed and wrote, and only stage 3,
 after the write, stopped on VACUOUS 21. A comparison set that is empty proves nothing,
@@ -637,7 +664,13 @@ cancelled without the Terapeuta 2 write) frees the hour and the booking succeeds
 exactly the two NESA-hour arms and passes the other three. The suite is new, so
 `.github/scripts/assert-rls-executed.mjs` covers it through its derived pass: it must
 execute in the DB Tests job, and a skip there would read RED because it has no
-`PERMITTED_SKIPS` entry.
+`PERMITTED_SKIPS` entry. **Round 3:** re-run against a new throwaway cloned from
+`s10v2_schema`: **5 passed**. Two earlier attempts in this round stopped on vitest's
+10 s hook timeout, one in `afterAll` after all five tests had passed and one in
+`beforeAll` before any ran, while the machine's load average stood above 40 (a first connection to a new
+database was measured at 18 s). The passing run raised `--hookTimeout` and
+`--testTimeout` on the command line for that sitting, changed no file, and finished in
+5 s.
 
 **The pushed tree is the rehearsed tree.** The last full run of the arms runner
 extracted every block from the commit that carries this section, sidecar included.
