@@ -164,7 +164,7 @@ printf '%s' "$GH_STUB_JSON" | jq -r "$expr"
 }
 
 /** Run the eligibility block; returns exit code, output, the run= value, gh calls. */
-function eligibility({ block = ELIGIBILITY, event = "pull_request", pr = "4242", mode = "json", json, raw } = {}) {
+function eligibility({ block = ELIGIBILITY, event = "pull_request", action, pr = "4242", mode = "json", json, raw } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "e2e-eligibility-"));
   const bin = stubBin(dir);
   const script = join(dir, "step.sh");
@@ -181,7 +181,7 @@ function eligibility({ block = ELIGIBILITY, event = "pull_request", pr = "4242",
       PATH: `${bin}:${process.env.PATH}`,
       GH_TOKEN: "stub-token-not-a-secret",
       EVENT: event,
-      ACTION: event === "pull_request" ? "opened" : "",
+      ACTION: action ?? (event === "pull_request" ? "opened" : ""),
       PR: pr,
       REPO: "owner/repo",
       GITHUB_OUTPUT: outputs,
@@ -322,6 +322,18 @@ test("eligibility: a workflow_dispatch proving run always runs and never calls g
   assert.equal(r.code, 0, r.log);
   assert.equal(r.run, "true", r.log);
   assert.equal(r.calls.length, 0, "a dispatch run has no PR to read");
+});
+
+test("eligibility: the step summary names the event and the action that started the run", () => {
+  // THE POST-MERGE EVIDENCE. A never-armed GATE-CHANGE PR cannot show that
+  // arming starts the suite; the first ordinary PR after the merge can, and
+  // this line in its run summary is where that is read.
+  const r = eligibility({ action: "auto_merge_enabled", json: pr({ autoMergeRequest: ARMED }) });
+  assert.equal(r.run, "true", r.log);
+  assert.match(r.summary, /- event: pull_request, action: auto_merge_enabled, PR: 4242/);
+  assert.match(r.summary, /- reason: armed: auto-merge is enabled/);
+  const d = eligibility({ event: "workflow_dispatch", action: "", pr: "" });
+  assert.match(d.summary, /- event: workflow_dispatch, action: none, PR: none/);
 });
 
 test("eligibility: a disarmed copy is caught (an unread state skipping the suite)", () => {

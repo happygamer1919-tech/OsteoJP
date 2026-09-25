@@ -52,7 +52,7 @@
     "scripts/check-openapi-drift.mjs": "8cb6a06668fbc5c3bde25efae34bba3c82530c4307c378e7918b9b581db2d175",
     "scripts/docs-do-not-name-unread-env-vars.test.mjs": "d1463aaee85d96402d3b7f813c8070f866a5be9de999a5e4c26fc3465980b5db",
     "scripts/e2e-is-typechecked.test.mjs": "869d8fbaca19ad71eb41db0d453cef92e6aefbde366837b826f0e180ca814455",
-    "scripts/e2e-runs-only-when-armed.test.mjs": "103fbc4571da0037bf673bebfa591ca817e2ed9b34700470a8d78db1cd0ef65e",
+    "scripts/e2e-runs-only-when-armed.test.mjs": "3c81d7985de09cbd789f8d38ec5439679d061d88e14cd92b3d4f7ad766263a40",
     "scripts/e2e-spec-days-do-not-collide.test.mjs": "0bb165140e66e4e8c3f9e20940d98f3ddf07bb2c8f5299f959529a9b1a7ffbe3",
     "scripts/env-example-covers-the-code.test.mjs": "8ca051fc81644d6aaebb28fe5855d70b1d09c2db8fed9c182d7b2dc69330d164",
     "scripts/external-agenda-ledger.test.mjs": "c68a1742c7a07f1bdb628305e161d82d8ba1049c7d7c9373ece882c02d5e1784",
