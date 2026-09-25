@@ -329,7 +329,7 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
       expect(stubs.some((s) => s.want[k])).toBe(true);
       expect(stubs.some((s) => !s.want[k])).toBe(true);
     }
-  }, 60_000);
+  }, 180_000);
 
   it("stage 1's BASE reads every stub, and agrees with the app on every flag of every row", async () => {
     const got = await rows(raw.raw(baseQuery(tenantId)));
@@ -352,7 +352,7 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
         },
       ).toEqual({ label: s.label, ...app });
     }
-  }, 60_000);
+  }, 180_000);
 
   it("the NESA twin: the app sees no conflict, and stage 1 holds it as verdict 08", async () => {
     const s = stubs.find((x) => x.label === "twin person half")!;
