@@ -291,6 +291,11 @@ test("D5: a live twin's person row holds its NESA over the WHOLE person window, 
   assert.doesNotMatch(code(th), /staff10_v2|audit_log/, "the hold is gated on STAFF-10 v2 having run, so the two orders read two rules");
   assert.match(DOC, /## The order with STAFF-10 v2/);
   assert.ok(DOC.includes("`17 OVERLAPS THE NESA HOUR OF A LIVE TWIN`"), "the doc does not name verdict 17");
+  // Section 1d reads STAFF-10 v2's set f (future, both live) and its R17 (the person window covers the NESA window).
+  const lt = S1.slice(S1.indexOf("\nlive_twin AS ("), S1.indexOf("\nSELECT jsonb_build_object("));
+  assert.match(lt, /\(p\.starts_at <= n\.starts_at AND p\.ends_at >= n\.ends_at\) AS covers,/, "section 1d's covers is not STAFF-10 v2's R17");
+  assert.match(lt, /WHERE n\.status NOT IN \('cancelled', 'no_show'\) AND p\.status NOT IN \('cancelled', 'no_show'\)\s+AND n\.starts_at >= \(k\.today::timestamp AT TIME ZONE 'Europe\/Lisbon'\)/, "section 1d does not read the live future pairs");
+  assert.ok(block("STAGE 1").includes("Read sections 1d, 2, 3, 3b, 4 and 6 before stage 2."), "stage 1's block does not point at section 1d");
 });
 
 test("the twin is list C's predicate, NULL-safe on the service, the partner in any status", () => {
