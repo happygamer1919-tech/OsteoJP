@@ -21,13 +21,14 @@ name: E2E
 #                                required check NAME is unchanged by sharding,
 #                                and branch protection needs no edit.
 #
-# WHY THE NAME MATTERS. Branch protection pins three contexts by exact string:
-# "Lint + typecheck + test", "DB-gated tests (RLS isolation, seeded DB)" and
-# "Playwright E2E (seeded DB)". A check context IS the job's `name`. Sharding the
-# old job directly would have renamed it to "Playwright E2E (seeded DB) (1)" and
-# friends, the required context would never report, and every PR would hang
-# forever waiting for a check that no longer exists. The aggregate job carries
-# the old name so that cannot happen.
+# WHY THE NAME MATTERS. Branch protection pins four contexts by exact string:
+# "Lint + typecheck + test", "DB-gated tests (RLS isolation, seeded DB)",
+# "Validate spec + drift check" and "Playwright E2E (seeded DB)", the same four
+# scripts/e2e-runs-only-when-armed.test.mjs lists as REQUIRED_CONTEXTS. A check
+# context IS the job's `name`. Sharding the old job directly would have renamed
+# it to "Playwright E2E (seeded DB) (1)" and friends, the required context would
+# never report, and every PR would hang forever waiting for a check that no
+# longer exists. The aggregate job carries the old name so that cannot happen.
 #
 # WHY SHARDING PAYS. The suite is deliberately serial — playwright.config.ts sets
 # fullyParallel:false and workers:1 because concurrent logins churn the dev
@@ -82,7 +83,13 @@ name: E2E
 #   runs   the state cannot be read, including a read that does not answer
 #          within 60 seconds. A failed read is not evidence that a PR is
 #          unarmed, so doubt costs minutes and never coverage;
-#   skips  only when all three reads come back as a clean `false`.
+#   runs   arming started this run (`auto_merge_enabled`) and yet the read
+#          says unarmed: API lag right after the arm, or a disarm racing it.
+#          No other event would start a run on that head, so a skip would
+#          leave an armed PR red until someone re-ran it. It runs, with a
+#          warning;
+#   skips  only when all three reads come back as a clean `false` on a run
+#          that arming did not start.
 #
 # THE REQUIRED JOB NEVER SKIPS. GitHub reports a job skipped by `if:` as
 # "Success", and that holds for a required check too, so a job-level `if:` on
@@ -107,6 +114,10 @@ name: E2E
 # and `auto_merge_enabled` seconds apart, and the two runs are not guaranteed
 # to be created in that order; the concurrency block below cancels the older.
 # Whichever survives reads the PR as it is NOW, so it sees the arm either way.
+# If the survivor is the arming run and its read still lags the arm, it runs
+# anyway (the `auto_merge_enabled` rule above), so a slow read cannot leave an
+# armed PR red. A re-run keeps its event's action, so re-running an arming run
+# always runs the suite; that costs minutes, never coverage.
 # "Re-run all jobs" re-reads too, which is the remedy after a label or a
 # GATE-CHANGE title is added to a PR that already ran: those are not trigger
 # types (a label or an edited body would otherwise restart a full armed run).
@@ -119,9 +130,11 @@ name: E2E
 # other run (workflow_dispatch) is grouped by its own run id, so it is alone in
 # its group and nothing can cancel it. The fallback has to be unique, because
 # GitHub cancels a PENDING run that shares a group even without
-# cancel-in-progress. A cancelled run's `always()` aggregate can still report,
-# red, never green; the newer run's verdict replaces it. Never re-run a
-# superseded run: it rejoins its PR's group and cancels the live one.
+# cancel-in-progress. A cancelled run's `always()` aggregate can still report:
+# green only if every shard had already passed on that head (the suite ran, so
+# that green is earned), otherwise red. Either way the newer run's verdict
+# replaces it. Never re-run a superseded run: it rejoins its PR's group and
+# cancels the live one.
 #
 # scripts/e2e-runs-only-when-armed.test.mjs runs the shipped eligibility and
 # verdict blocks against a stub `gh` and seeded failures, and pins this shape.
@@ -258,6 +271,14 @@ jobs:
           if [ "$ARMED" = "true" ]; then decide true "armed: auto-merge is enabled"; fi
           if [ "$GATE" = "true" ]; then decide true "GATE-CHANGE title: never armed, and a dispatch run cannot satisfy a required check"; fi
           if [ "$HELD" = "true" ]; then decide true "labelled held-for-apply: it keeps its E2E evidence before its apply"; fi
+          # ARMED BY THIS VERY EVENT, READ AS UNARMED. The read can lag the arm
+          # that fired it, or a disarm can race it. A skip here would be the
+          # last word on this head (no later event starts a run), so an armed
+          # PR would sit red until someone chose "Re-run all jobs". Doubt runs.
+          if [ "${ACTION:-}" = "auto_merge_enabled" ]; then
+            echo "::warning title=E2E eligibility: started by arming, read as unarmed, the suite runs::Arming started this run, but the live read of #$PR says auto-merge is off (API lag after the arm, or a disarm racing it). The suite runs rather than leave an armed PR red."
+            decide true "started by auto_merge_enabled although the live read says unarmed (read lag, or a disarm racing the arm)"
+          fi
           decide false "not armed, not titled GATE-CHANGE, not labelled held-for-apply"
 
   # -------------------------------------------------------------------------

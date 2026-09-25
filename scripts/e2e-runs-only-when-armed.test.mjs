@@ -18,9 +18,10 @@
 //
 // SEEDED REAL FAILURES STILL FAIL (Tier B): an unarmed PR, an armed PR with a
 // failed shard, shards skipped when they were meant to run, a failed
-// eligibility job and an empty decision are each red. Exemptions and an
-// unreadable state RUN the suite. And disarmed copies of both blocks are shown
-// to be caught, so a green run here is not a harness that cannot tell.
+// eligibility job and an empty decision are each red. Exemptions, an
+// unreadable state and an arming run whose read lags the arm RUN the suite.
+// And disarmed copies of both blocks are shown to be caught, so a green run
+// here is not a harness that cannot tell.
 //
 // It also pins the SHAPE the blocks depend on: the trigger types, the shards'
 // one `if:`, the aggregate's `always()`, no required-context job with any other
@@ -438,6 +439,38 @@ test("eligibility: a disarmed copy is caught (an unread state skipping the suite
   assert.equal(eligibility({ mode: "error" }).run, "true");
 });
 
+// ARMED BY THIS VERY EVENT, READ AS UNARMED. An auto_merge_enabled run whose
+// read lags the arm (or races a disarm) would otherwise decide false, and no
+// later event starts a run on that head: an armed PR red until someone re-runs
+// it. So that one clean `false` runs the suite, with a warning, and only that
+// one: every other action with the same read still skips.
+
+test("eligibility: an arming run that reads a clean unarmed state RUNS, with a warning", () => {
+  const r = eligibility({ action: "auto_merge_enabled", json: pr() });
+  assert.equal(r.code, 0, r.log);
+  assert.equal(r.runLines.length, 1, r.log);
+  assert.equal(r.run, "true", `an arming run read as unarmed must run the suite:\n${r.log}`);
+  assert.match(r.log, /^::warning title=E2E eligibility: started by arming, read as unarmed, the suite runs::/m);
+  assert.match(r.summary, /- event: pull_request, action: auto_merge_enabled, PR: 4242/);
+  assert.match(r.summary, /- reason: started by auto_merge_enabled although the live read says unarmed/);
+});
+
+test("eligibility: every other action with a clean unarmed read still SKIPS, without a warning", () => {
+  for (const action of ["opened", "synchronize", "reopened", "", "auto_merge_disabled", "AUTO_MERGE_ENABLED"]) {
+    const r = eligibility({ action, json: pr() });
+    assert.equal(r.code, 0, `action='${action}':\n${r.log}`);
+    assert.equal(r.run, "false", `action='${action}' ran the suite on an unarmed PR:\n${r.log}`);
+    assert.doesNotMatch(r.log, /::warning/, `action='${action}' warned on a clean read`);
+  }
+});
+
+test("eligibility: a disarmed copy (the arming rule removed) is caught: the arming run skips", () => {
+  const disarmed = ELIGIBILITY.replace('if [ "${ACTION:-}" = "auto_merge_enabled" ]; then', "if false; then");
+  assert.notEqual(disarmed, ELIGIBILITY, "the disarm substitution did not apply");
+  assert.equal(eligibility({ block: disarmed, action: "auto_merge_enabled", json: pr() }).run, "false");
+  assert.equal(eligibility({ action: "auto_merge_enabled", json: pr() }).run, "true");
+});
+
 // A READ THAT HANGS IS A READ THAT FAILED. Without its own ceiling, a hung
 // `gh pr view` runs into the job's timeout-minutes, the job ends with no
 // decision, and the required check is a red stall that needs "Re-run all
@@ -576,9 +609,12 @@ for (const c of [
   { why: "armed PR, a shard red", json: pr({ autoMergeRequest: ARMED }), shardOutcome: "failure", code: 1 },
   { why: "GATE-CHANGE PR, shards green", json: pr({ title: "GATE-CHANGE: x" }), shardOutcome: "success", code: 0 },
   { why: "held-for-apply PR, a shard red", json: pr({ labels: [label("held-for-apply")] }), shardOutcome: "failure", code: 1 },
+  { why: "arming run read as unarmed (lag), shards green", action: "auto_merge_enabled", json: pr(), shardOutcome: "success", code: 0 },
+  { why: "arming run read as unarmed (lag), a shard red", action: "auto_merge_enabled", json: pr(), shardOutcome: "failure", code: 1 },
+  { why: "a push to an unarmed PR", action: "synchronize", json: pr(), shardOutcome: "success", code: 1 },
 ]) {
   test(`end to end: ${c.why} -> required check exits ${c.code}`, () => {
-    const e = eligibility({ json: c.json });
+    const e = eligibility({ action: c.action, json: c.json });
     const shards = e.run === "true" ? c.shardOutcome : "skipped";
     const v = verdict({ eligibility: e.code === 0 ? "success" : "failure", run: e.run, shards });
     assert.equal(v.code, c.code, `${e.log}\n${v.out}`);
@@ -612,6 +648,7 @@ test("e2e.yml: the eligibility job always runs, reads only the PR, and exports r
   assert.match(j.text, /^ {6}run: \$\{\{ steps\.decide\.outputs\.run \}\}$/m);
   assert.match(j.text, /^ {10}PR: \$\{\{ github\.event\.pull_request\.number \}\}$/m);
   assert.match(j.text, /^ {10}EVENT: \$\{\{ github\.event_name \}\}$/m);
+  assert.match(j.text, /^ {10}ACTION: \$\{\{ github\.event\.action \}\}$/m);
   assert.match(j.text, /^ {10}REPO: \$\{\{ github\.repository \}\}$/m);
 });
 
