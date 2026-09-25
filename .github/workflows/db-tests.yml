@@ -25,10 +25,22 @@ name: DB Tests
 on:
   pull_request:
     branches: [main]
-  # Also run on push to main so the check registers as selectable in branch
-  # protection and is proven green on the default branch.
-  push:
-    branches: [main]
+  # NO push:main TRIGGER, removed 2026-09-24 (owner ruling, the Actions minutes
+  # cuts). It existed so the context would register as selectable in branch
+  # protection, and live branch protection already lists it. With strict branch
+  # protection a PR merges only when up to date, so the tree that lands on main
+  # is the tree that PR's last run already tested: the push run re-tested it
+  # and booted one more Supabase stack per merge to do so. Nothing reads its
+  # result (no badge, no workflow_run consumer, no ruleset). WHAT IS GIVEN UP,
+  # said plainly: a merge made past a red or pending check with an admin bypass
+  # is no longer re-tested on main by this workflow.
+
+# A NEW PUSH CANCELS THE RUN IT SUPERSEDES. One group per PR, cancel only on
+# pull_request events; any other run is grouped by its own run id, alone in its
+# group, so nothing can cancel it. The reasoning is in e2e.yml's header.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -70,9 +82,11 @@ jobs:
       - name: Detect whether code files changed
         id: changes
         run: |
-          # On pull_request events compare against base branch.
-          # On push to main always run.
-          if [ "${{ github.event_name }}" = "push" ]; then
+          # On pull_request events compare against base branch. Any other
+          # event runs everything: none is wired today (push:main is gone), but
+          # a trigger added later must not fall into the docs-only diff below
+          # with empty base and head shas and skip having run nothing.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
