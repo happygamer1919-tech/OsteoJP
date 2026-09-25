@@ -668,6 +668,25 @@ test("e2e.yml: the required aggregate needs both jobs and keeps if: always()", (
   assert.match(j.text, /SHARDS: \$\{\{ needs\.shard\.result \}\}/);
 });
 
+// THE COMMENTS COUNT THEM, SO THE COUNT IS PINNED. e2e.yml relies on its
+// comments to stop the next editor adding a job-level `if:`. A comment that
+// calls the shards' `if:` the file's only one misstates the aggregate's
+// `always()`, the one `if:` that must never change.
+test("e2e.yml: its job-level if: lines are the shards' and the aggregate's, and no comment says there is one", () => {
+  const all = jobs(E2E).flatMap((j) => j.ifs.map((i) => `${j.id} ${i}`));
+  assert.deepEqual(all, ["shard if: needs.eligibility.outputs.run == 'true'", "playwright if: always()"]);
+  const lines = E2E.split("\n");
+  const miscount = lines.filter(
+    (l) => /^\s*#/.test(l) && /\b(ONE|ONLY|SINGLE)\s+JOB-LEVEL\s+`?if:?`?\s+IN THIS FILE\b(?!\s+OTHER THAN)/i.test(l),
+  );
+  assert.deepEqual(miscount, [], "a comment claims e2e.yml has a single job-level if:, but it has two");
+  const at = lines.indexOf("    if: needs.eligibility.outputs.run == 'true'");
+  assert.notEqual(at, -1, "the shards' if: line was not found");
+  const above = [];
+  for (let i = at - 1; i >= 0 && /^ {4}#/.test(lines[i]); i--) above.unshift(lines[i]);
+  assert.match(above.join("\n"), /always\(\)/, "the comment on the shards' if: must name the aggregate's always() as the other one");
+});
+
 test("no job carrying a REQUIRED context has any job-level if: other than always()", () => {
   // A job skipped by `if:` reports Success to branch protection. On a required
   // context that is a pass nobody earned.

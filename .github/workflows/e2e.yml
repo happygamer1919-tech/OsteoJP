@@ -287,9 +287,10 @@ jobs:
   shard:
     name: E2E shard
     needs: [eligibility]
-    # THE ONE JOB-LEVEL `if:` IN THIS FILE, on a job branch protection does NOT
-    # require. When it is false the shards are skipped, and the aggregate below
-    # turns that into a RED required check, never a green one.
+    # THE ONLY JOB-LEVEL `if:` IN THIS FILE OTHER THAN THE AGGREGATE'S
+    # `always()`, and on a job branch protection does NOT require. When it is
+    # false the shards are skipped, and the aggregate below turns that into a
+    # RED required check, never a green one.
     if: needs.eligibility.outputs.run == 'true'
     runs-on: ubuntu-latest
     # ================================================================= //
