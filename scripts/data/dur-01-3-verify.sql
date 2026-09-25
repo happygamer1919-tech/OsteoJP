@@ -8,8 +8,9 @@
 -- excluded ids by verdict, the carries and the md5s into its one audit row;
 -- this file reads them back and recomputes each against the database. A
 -- VACUOUS verdict means the arm ran over an empty set and could not have
--- failed. The stage 3 block in the doc allows it on five verdicts only, each
--- for a subject a real day may lack: 16 (no written row has hours configured),
+-- failed. The stage 3 block in the doc allows it on six verdicts only, each
+-- for a subject a real day may lack: 14 (no written row sits at a clinic with
+-- a midday closure configured), 16 (no written row has hours configured),
 -- 18 (no row was excluded), 20 (no written row is on a NESA), 21 (no written
 -- row names a NESA) and 22 (no written row is on a JP row). Stage 2 refuses an
 -- empty write set (R06), so every other arm always has rows to read. An
@@ -66,9 +67,14 @@ cand AS (
 -- write, inside its transaction) and stage 3 (scripts/dur-01-data-op.test.mjs
 -- asserts it); only the cand CTE before it differs, and says where its ids
 -- come from. live_self is the positive control: every written row is itself a
--- live row, so a live filter that cannot see them reads fewer than n. The last
--- three counts are the subjects of stage 3 verdicts 20, 21 and 22: written rows
--- on a shared resource, naming one in either slot, and on a one_person row.
+-- live row, so a live filter that cannot see them reads fewer than n. Five
+-- counts are the subjects of the stage 3 verdicts a real day may leave with
+-- nothing to check: hours_configured (16), written rows whose therapist has
+-- hours configured at the clinic; closure_configured (14), written rows at a
+-- clinic with a midday closure configured, both ends set, as the clinic CTE
+-- reads it; and the last three, on_resource (20), names_resource (21) and
+-- on_person_row (22): written rows on a shared resource, naming one in either
+-- slot, and on a one_person row.
 -- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
 -- with the checks the op adds to it (the same patient, the NESA hour of a live
 -- twin, and the one person with two staff rows), each marked where it stands.
@@ -99,6 +105,22 @@ c_res AS (
   SELECT c.id AS cand_id, r.id AS res_id
     FROM cand c
     JOIN shared r ON r.tenant_id = c.tenant_id AND r.id IN (c.practitioner_id, c.practitioner_2_id)
+),
+-- THE ROOM each candidate's room arm reads, trimmed as the app trims it before
+-- it asks appointment_conflicts (conflict.ts, appointmentConflicts:
+-- args.room?.trim() || null). JavaScript's trim strips every character of
+-- ECMAScript's WhiteSpace and LineTerminator sets, listed below by code point:
+-- the space, tab, line feed, carriage return, form feed, vertical tab, the
+-- no-break spaces, the Unicode space separators, the line and paragraph
+-- separators and the byte order mark. Postgres btrim with no second argument
+-- strips the ASCII space only, so a room ending in a tab or a no-break space
+-- would miss the live row the app finds. A room that trims to nothing is no
+-- room and asks no room arm, as in the app. The other row's room is compared
+-- as stored, as appointment_conflicts compares a.room.
+c_room AS (
+  SELECT c.id AS cand_id,
+         nullif(btrim(c.room, E' \t\n\r\f\x0b\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '') AS room
+    FROM cand c
 ),
 -- ONE PERSON, TWO STAFF ROWS. Not in the app's rule; the op adds it. JP is one
 -- person the tenant holds as two staff rows (STAFF-09): JP(cb), the row for
@@ -142,8 +164,9 @@ live AS (
      AND o.starts_at < (SELECT max(c.e) FROM cand c)
 ),
 -- THE BOOKING ARMS (findConflicts): the therapist arm and the room arm of
--- appointment_conflicts (0059), then for every shared resource the candidate
--- names, the rows where it is Terapeuta and the rows where it is Terapeuta 2.
+-- appointment_conflicts (0059), the room read as c_room trims it, then for
+-- every shared resource the candidate names, the rows where it is Terapeuta
+-- and the rows where it is Terapeuta 2.
 -- The candidate itself is excluded, as excludeIds excludes it. The same_person
 -- arm is the op's (one_person above): a row on the Terapeuta's other staff row.
 hit_booking AS (
@@ -160,8 +183,8 @@ hit_booking AS (
       OR o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
-      OR (nullif(btrim(c.room), '') IS NOT NULL AND o.location_id = c.location_id
-          AND lower(o.room) = lower(btrim(c.room)))
+      OR (o.location_id = c.location_id
+          AND lower(o.room) IN (SELECT lower(cm.room) FROM c_room cm WHERE cm.cand_id = c.id AND cm.room IS NOT NULL))
 ),
 -- THE BLOCK ARM (findScheduleConflicts): time_off on the Terapeuta, which is
 -- therapist-wide and carries no clinic. The second arm is the op's: a block on
@@ -346,6 +369,9 @@ rc AS (
          (SELECT count(*) FROM person_away x)::int AS person_away,
          (SELECT count(*) FROM clinic x WHERE x.ends_after_close)::int AS ends_after_close,
          (SELECT count(*) FROM avail x WHERE x.configured)::int AS hours_configured,
+         (SELECT count(*) FROM cand c
+            JOIN public.locations l ON l.id = c.location_id AND l.tenant_id = c.tenant_id
+           WHERE l.midday_closed_from IS NOT NULL AND l.midday_closed_to IS NOT NULL)::int AS closure_configured,
          (SELECT count(*) FROM cand c JOIN shared r ON r.id = c.practitioner_id AND r.tenant_id = c.tenant_id)::int AS on_resource,
          (SELECT count(DISTINCT cr.cand_id) FROM c_res cr)::int AS names_resource,
          (SELECT count(*) FROM cand c WHERE c.practitioner_id IN (SELECT op.user_id FROM one_person op))::int AS on_person_row
@@ -386,7 +412,7 @@ rc AS (
     (SELECT (al.m -> 'after' ->> 'appointments')::int FROM al) AS total_after,
     (SELECT (al.m -> 'before' ->> 'appointments')::int FROM al) AS total_before,
     rc.n AS rc_n, rc.live_self, rc.booking, rc.block, rc.closure, rc.clinic_hours, rc.therapist_hours, rc.patient,
-    rc.resource_away, rc.twin_hold, rc.ends_after_close, rc.hours_configured,
+    rc.resource_away, rc.twin_hold, rc.ends_after_close, rc.hours_configured, rc.closure_configured,
     rc.person_away, rc.on_resource, rc.names_resource, rc.on_person_row
   FROM rc
 ), r AS (
@@ -433,9 +459,11 @@ UNION ALL SELECT 12, 'no written id overlaps a booking: therapist, the same pers
 UNION ALL SELECT 13, 'no written id overlaps a block on its therapist, or on the same person''s other staff row',
        v.block::text || ' / control ' || v.rc_n::text, '0 / control ' || v.n_w::text,
        CASE WHEN v.block <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 14, 'no written id runs into its clinic''s midday closure',
-       v.closure::text || ' / control ' || v.rc_n::text, '0 / control ' || v.n_w::text,
-       CASE WHEN v.closure <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 14, 'no written id runs into its clinic''s midday closure, where one is configured',
+       v.closure::text || ' / at a clinic with a closure ' || v.closure_configured::text || ' / control ' || v.rc_n::text,
+       '0 / at a clinic with a closure above 0 / control ' || v.n_w::text,
+       CASE WHEN v.closure <> 0 OR v.rc_n <> v.n_w THEN 'FAIL'
+            WHEN v.n_w = 0 OR v.closure_configured = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 15, 'no written id starts outside its clinic''s hours',
        v.clinic_hours::text || ' / control ' || v.rc_n::text, '0 / control ' || v.n_w::text,
        CASE WHEN v.clinic_hours <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v

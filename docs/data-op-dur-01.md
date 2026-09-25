@@ -17,9 +17,9 @@ nothing else.
 | Card | `DUR-01`. NEW: it is on no ruled Tier C list (`CLAUDE.md`, "SOLO's record"), and it rewrites production rows outside STAFF-10, which the TIERS place in D. So it is authored, rehearsed on the throwaway and held unarmed with the question block below |
 | Ruling, owner, 2026-09-24, paraphrased | a new held data op: measure the future appointments the Fisiozero importer wrote with a one-minute duration, then author the write that gives them their service's default duration |
 | Branch | `data/DUR-01-import-stub-durations`, from `origin/main` at `f4e892cd`. Its PR is labelled `held-for-apply` from the moment it opens and stays unarmed until this op is proven |
-| Stage 1 | `scripts/data/dur-01-1-measure.sql`, READ ONLY, sha256 `8d0b536fdf37df823d9a59096a6824edfc70451dafa9498c98d812a1bceceda3` |
-| Stage 2 | `scripts/data/dur-01-2-write.sql`, ONE DO block in ONE transaction, sha256 `d9410f4ba875a94199c7d6c238a857e03bf70b294230527df70a19fec19ed677` |
-| Stage 3 | `scripts/data/dur-01-3-verify.sql`, READ ONLY, 22 verdicts and a SUMMARY row, sha256 `c11e78791e9281cc4dbba4a59edeb10b7dbec97283775a94943d5aa625ce752a` |
+| Stage 1 | `scripts/data/dur-01-1-measure.sql`, READ ONLY, sha256 `95b9243b142776f132fe3559506998c8c0b3277def687db9823674988d0145eb` |
+| Stage 2 | `scripts/data/dur-01-2-write.sql`, ONE DO block in ONE transaction, sha256 `20778922b5d4409f03d62bbbc9314c57d8b5c4e37c869f71c008a7db39a39978` |
+| Stage 3 | `scripts/data/dur-01-3-verify.sql`, READ ONLY, 22 verdicts and a SUMMARY row, sha256 `d5a347834665bfe2aa628baca023d272c75d142ccf14f74776662f53ef99b61d` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, byte-identical to `origin/main` at `f4e892cd` |
 | This document | `docs/data-op-dur-01.md`, pinned by `docs/data-op-dur-01.sha256` and asserted by every stage that reads a file |
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
@@ -148,8 +148,9 @@ pins and the rehearsal.
 | D6 | Added: a STAFF-10 v2 write between stage 1 and stage 2? | Refused: the fourth carry is STAFF-10 v2's audit row count, and stage 2 compares it |
 | D7 | Added: can a stub written before STAFF-10 v2 be double-booked by it? | No. Verdict 17 reads the person row of every live twin as already holding that twin's NESA over its whole window, which is what STAFF-10 v2's W6 makes it do; stage 2's re-measure and stage 3's verdict 21 read it again. And no row this op writes is one STAFF-10 v2 moves: verdict 18 holds every JP(cb) row at Linda-a-Velha, which its W4 takes, and verdicts 08 and 16 every row its W5 takes. The next section has both shapes |
 | D8 | Added: why does stage 3 not count the table for its total? | A live count moves with the clinic: a later hard delete, or a booking that began before stage 2 and committed after it with an earlier `created_at`, would FAIL a correct write on its first verify. Stage 2 counts the total under its lock before and after the write and records both; verdict 19 compares the two recorded numbers |
-| D9 | Added: which stage 3 verdicts may read VACUOUS, and why only those? | 16, 18, 20, 21 and 22, each for a subject a real day may lack: no written row with hours configured (16), no row held (18), no written row on a NESA (20), none naming a NESA in either slot (21), none on a JP row (22). Each prints its subject, so a VACUOUS is read as "nothing to check", never as a pass. Every other verdict compares the written rows themselves, and R06 refuses an empty write set |
+| D9 | Added: which stage 3 verdicts may read VACUOUS, and why only those? | 14, 16, 18, 20, 21 and 22, each for a subject a real day may lack: no written row at a clinic with a midday closure configured (14: the closure is a per-clinic setting, and a day may write nothing at the one clinic that has one), no written row with hours configured (16), no row held (18), no written row on a NESA (20), none naming a NESA in either slot (21), none on a JP row (22). Each prints its subject, so a VACUOUS is read as "nothing to check", never as a pass. Every other verdict compares the written rows themselves, and R06 refuses an empty write set |
 | D10 | Added: can stage 3 be re-issued after the PR merges? | Yes. The merge deletes the held branch, so `origin/data/DUR-01-import-stub-durations` stops resolving; stage 3's block then reads the last `main` commit that changed `scripts/data/dur-01-3-verify.sql` (not the tip of `main`, which later commits may move), prints which one, and asserts the file by its sha256 as before; the document at that commit checks against its own sidecar. Stages 0 to 2 never read `main` |
+| D11 | Added: which room does the room arm read? | The candidate's room trimmed exactly as the app trims it before it asks `appointment_conflicts` (`args.room?.trim() || null` in `conflict.ts`): every character of ECMAScript's WhiteSpace and LineTerminator sets, the tab, the line ends and the no-break space among them, is stripped from both ends (CTE `c_room`, in the rule and so in every stage); a room that trims to nothing asks no room arm; the other row's room is compared as stored, both lower-cased, at the same clinic. Postgres `btrim` with no second argument strips the ASCII space only, so the round 3 files missed a room ending in a tab or a no-break space and could write a row reception's own change would refuse. The unit test holds `c_room`'s set equal to what JavaScript's trim strips over every code point of the Basic Multilingual Plane, and the DB-gated suite compares the two on a tab, a no-break space, a room of whitespace only and a tab inside the name |
 
 ## The order with STAFF-10 v2 (#1444)
 
@@ -288,9 +289,9 @@ git rev-parse origin/data/DUR-01-import-stub-durations
 set -eo pipefail
 BRANCH=data/DUR-01-import-stub-durations
 DOCPIN=docs/data-op-dur-01.sha256
-SHA1=8d0b536fdf37df823d9a59096a6824edfc70451dafa9498c98d812a1bceceda3
-SHA2=d9410f4ba875a94199c7d6c238a857e03bf70b294230527df70a19fec19ed677
-SHA3=c11e78791e9281cc4dbba4a59edeb10b7dbec97283775a94943d5aa625ce752a
+SHA1=95b9243b142776f132fe3559506998c8c0b3277def687db9823674988d0145eb
+SHA2=20778922b5d4409f03d62bbbc9314c57d8b5c4e37c869f71c008a7db39a39978
+SHA3=d5a347834665bfe2aa628baca023d272c75d142ccf14f74776662f53ef99b61d
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -324,7 +325,7 @@ echo "DUR-01 FILES VERIFIED"
 (
 set -eo pipefail
 BRANCH=data/DUR-01-import-stub-durations
-SHA1=8d0b536fdf37df823d9a59096a6824edfc70451dafa9498c98d812a1bceceda3
+SHA1=95b9243b142776f132fe3559506998c8c0b3277def687db9823674988d0145eb
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -379,7 +380,7 @@ day, after a second HEAD CHECK.
 (
 set -eo pipefail
 BRANCH=data/DUR-01-import-stub-durations
-SHA2=d9410f4ba875a94199c7d6c238a857e03bf70b294230527df70a19fec19ed677
+SHA2=20778922b5d4409f03d62bbbc9314c57d8b5c4e37c869f71c008a7db39a39978
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 NAMES=(
 dur01_run_day
@@ -452,7 +453,7 @@ also with exit 3.
 (
 set -eo pipefail
 BRANCH=data/DUR-01-import-stub-durations
-SHA3=c11e78791e9281cc4dbba4a59edeb10b7dbec97283775a94943d5aa625ce752a
+SHA3=d5a347834665bfe2aa628baca023d272c75d142ccf14f74776662f53ef99b61d
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -479,17 +480,18 @@ grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/dur01-stage3.out || { echo "STOP: 
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/dur01-stage3.out && { echo "STOP: a stage 3 verdict read FAIL"; exit 1; }
 NV=$(grep -cE '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*(OK|VACUOUS|FAIL)[[:space:]]*$' /tmp/dur01-stage3.out || true)
 [ "${NV}" = 22 ] || { echo "STOP: stage 3 printed ${NV} verdicts, not 22"; exit 1; }
-BAD=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/dur01-stage3.out | sed -E 's/^[[:space:]]*([0-9]+)[[:space:]]*\|.*/\1/' | grep -vxE '16|18|20|21|22' | tr '\n' ' ' || true)
+BAD=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/dur01-stage3.out | sed -E 's/^[[:space:]]*([0-9]+)[[:space:]]*\|.*/\1/' | grep -vxE '14|16|18|20|21|22' | tr '\n' ' ' || true)
 [ -z "${BAD}" ] || { echo "STOP: VACUOUS on ${BAD}, which the op never allows to be vacuous"; exit 1; }
 PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/dur01-stage3.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
 echo "DUR-01 VERIFIED: ${PROFILE}. The RECEPTION section above lists every row stage 2 did not write, by id."
 )
 ```
 
-**EXPECT: no FAIL, 22 verdicts, a SUMMARY row, and VACUOUS on 16, 18, 20, 21 and 22 at
-most**, which the block enforces (D9). Each of those five prints its subject: 16 the
-written rows with hours configured, 18 the rows held, 20 the written rows on a NESA, 21
-those naming a NESA, 22 those on a JP row. A VACUOUS there says the day had nothing of
+**EXPECT: no FAIL, 22 verdicts, a SUMMARY row, and VACUOUS on 14, 16, 18, 20, 21 and 22
+at most**, which the block enforces (D9). Each of those six prints its subject: 14 the
+written rows at a clinic with a midday closure configured, 16 the written rows with
+hours configured, 18 the rows held, 20 the written rows on a NESA, 21 those naming a
+NESA, 22 those on a JP row. A VACUOUS there says the day had nothing of
 that kind to check, and is reported as that, never as a pass. Every other verdict
 compares the written rows themselves, because R06 refuses an empty write set before the
 write. The block prints the profile; the profile moves with the data, so no exact
@@ -513,7 +515,7 @@ in this order (the `v` CTE of the BASE block). Only WRITE is written.
 | `09 RUNS INTO THE CLINIC CLOSURE` | the extended window touches the clinic's midday closure on its Lisbon day | reception |
 | `10 STARTS OUTSIDE CLINIC HOURS` | the start is before `opens_at` or after `closes_at` minus 60 minutes | reception |
 | `11 OUTSIDE THE THERAPIST HOURS` | the therapist has hours configured at that clinic and the extended window is not inside one merged run of that day's windows | reception |
-| `12 OVERLAPS A BOOKING` | another live row (not cancelled, not no-show, not an unconfirmed pedido) on the same therapist, on JP's other staff row when the row is on one of the two (arm `same_person`), in the same room at the same clinic, or holding a NESA the row names in either slot, as Terapeuta or as Terapeuta 2, overlaps the extended window, half-open | reception |
+| `12 OVERLAPS A BOOKING` | another live row (not cancelled, not no-show, not an unconfirmed pedido) on the same therapist, on JP's other staff row when the row is on one of the two (arm `same_person`), in the same room at the same clinic (the row's room trimmed as the app trims it, D11), or holding a NESA the row names in either slot, as Terapeuta or as Terapeuta 2, overlaps the extended window, half-open | reception |
 | `13 OVERLAPS A BLOCK` | a `time_off` block on the therapist, or on JP's other staff row, overlaps it | reception |
 | `14 OVERLAPS ANOTHER STUB ONCE BOTH ARE EXTENDED` | another live one-minute row, read at its own proposed end, shares a therapist (JP's two rows counting as one), a resource, a room or the patient | reception |
 | `15 SAME PATIENT BOOKED ELSEWHERE` | another live row of the same patient overlaps it | reception |
@@ -568,7 +570,8 @@ before the write (P5), and read back from the table after it (A1).
     to 22, so this FAILs, never VACUOUS;
 12. to 17. the rule again, over the written rows at their new ends against the table as
     it stands: no booking overlap (therapist, JP's other staff row, room, resource in
-    either slot), no block (on the therapist or on JP's other staff row), no closure, no
+    either slot), no block (on the therapist or on JP's other staff row), no closure
+    (VACUOUS when no written row sits at a clinic with a closure configured, D9), no
     start outside the clinic's hours, inside the therapist's hours where configured
     (VACUOUS when no written row has hours configured, D9), no other live booking of the
     same patient;

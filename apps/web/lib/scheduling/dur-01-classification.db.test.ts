@@ -85,7 +85,7 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
   const cb = randomUUID();
   const osteo = randomUUID();
   const nesaService = randomUUID();
-  const patients = Array.from({ length: 40 }, () => randomUUID());
+  const patients = Array.from({ length: 60 }, () => randomUUID());
 
   /** Wednesday 2031-01-15, Lisbon on UTC. */
   const at = (hhmm: string) => `2031-01-15T${hhmm}:00.000Z`;
@@ -200,11 +200,22 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
         from appointments a where a.id = ${notified}`);
     stub(base("the same pedido, confirmed", t[2]!, "13:00"), { booking: true });
     await neighbour({ practitionerId: t[2]!, from: "13:30", to: "14:00", status: "confirmed", origin: "patient_portal" });
-    // THE ROOM ARM, case and space, and the same room name at another clinic.
+    // THE ROOM ARM, case and a trailing space, and the same room name at another clinic.
     stub(base("room clash", t[3]!, "09:00", { room: "Sala 1 " }), { booking: true });
     await neighbour({ practitionerId: t[4]!, from: "09:30", to: "10:00", room: "SALA 1" });
     stub(base("same room name, other clinic", t[3]!, "11:00", { room: "Sala 2" }), {});
     await neighbour({ practitionerId: t[9]!, locationId: cb, from: "11:30", to: "12:00", room: "Sala 2" });
+    // THE ROOM AS THE APP TRIMS IT: JavaScript's trim strips a tab and a no-break
+    // space, which btrim's default does not; a room of whitespace only is no room;
+    // whitespace inside the name stays.
+    stub(base("room ends in a tab", t[3]!, "13:00", { room: "Sala 3\t" }), { booking: true });
+    await neighbour({ practitionerId: t[4]!, from: "13:30", to: "14:00", room: "SALA 3" });
+    stub(base("room ends in a no-break space", t[3]!, "15:00", { room: "Sala 4\u00a0" }), { booking: true });
+    await neighbour({ practitionerId: t[4]!, from: "15:30", to: "16:00", room: "sala 4" });
+    stub(base("room of whitespace only is no room", t[3]!, "17:00", { room: "\t" }), {});
+    await neighbour({ practitionerId: t[4]!, from: "17:30", to: "18:00", room: "\t" });
+    stub(base("a tab inside the room name stays", t[3]!, "19:00", { room: "Sala\t6" }), {});
+    await neighbour({ practitionerId: t[4]!, from: "19:30", to: "20:00", room: "Sala 6" });
     // THE RESOURCE ARMS: a stub on NESA against NESA as Terapeuta 2, and a person
     // stub naming NESA as Terapeuta 2 (the shape STAFF-10 v2 leaves) against NESA as Terapeuta.
     stub(base("NESA stub, NESA as Terapeuta 2 elsewhere", nesa, "09:00", { serviceId: nesaService }), { booking: true });

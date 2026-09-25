@@ -137,6 +137,22 @@ c_res AS (
     FROM cand c
     JOIN shared r ON r.tenant_id = c.tenant_id AND r.id IN (c.practitioner_id, c.practitioner_2_id)
 ),
+-- THE ROOM each candidate's room arm reads, trimmed as the app trims it before
+-- it asks appointment_conflicts (conflict.ts, appointmentConflicts:
+-- args.room?.trim() || null). JavaScript's trim strips every character of
+-- ECMAScript's WhiteSpace and LineTerminator sets, listed below by code point:
+-- the space, tab, line feed, carriage return, form feed, vertical tab, the
+-- no-break spaces, the Unicode space separators, the line and paragraph
+-- separators and the byte order mark. Postgres btrim with no second argument
+-- strips the ASCII space only, so a room ending in a tab or a no-break space
+-- would miss the live row the app finds. A room that trims to nothing is no
+-- room and asks no room arm, as in the app. The other row's room is compared
+-- as stored, as appointment_conflicts compares a.room.
+c_room AS (
+  SELECT c.id AS cand_id,
+         nullif(btrim(c.room, E' \t\n\r\f\x0b\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '') AS room
+    FROM cand c
+),
 -- ONE PERSON, TWO STAFF ROWS. Not in the app's rule; the op adds it. JP is one
 -- person the tenant holds as two staff rows (STAFF-09): JP(cb), the row for
 -- Castelo Branco, and JP(lv), the row for Linda-a-Velha. The ids are JP_CB,
@@ -179,8 +195,9 @@ live AS (
      AND o.starts_at < (SELECT max(c.e) FROM cand c)
 ),
 -- THE BOOKING ARMS (findConflicts): the therapist arm and the room arm of
--- appointment_conflicts (0059), then for every shared resource the candidate
--- names, the rows where it is Terapeuta and the rows where it is Terapeuta 2.
+-- appointment_conflicts (0059), the room read as c_room trims it, then for
+-- every shared resource the candidate names, the rows where it is Terapeuta
+-- and the rows where it is Terapeuta 2.
 -- The candidate itself is excluded, as excludeIds excludes it. The same_person
 -- arm is the op's (one_person above): a row on the Terapeuta's other staff row.
 hit_booking AS (
@@ -197,8 +214,8 @@ hit_booking AS (
       OR o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)
       OR o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
-      OR (nullif(btrim(c.room), '') IS NOT NULL AND o.location_id = c.location_id
-          AND lower(o.room) = lower(btrim(c.room)))
+      OR (o.location_id = c.location_id
+          AND lower(o.room) IN (SELECT lower(cm.room) FROM c_room cm WHERE cm.cand_id = c.id AND cm.room IS NOT NULL))
 ),
 -- THE BLOCK ARM (findScheduleConflicts): time_off on the Terapeuta, which is
 -- therapist-wide and carries no clinic. The second arm is the op's: a block on
@@ -402,8 +419,8 @@ pair AS (
       OR c2.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
       OR c.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c2.id)
       OR c.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c2.id)
-      OR (nullif(btrim(c.room), '') IS NOT NULL AND c2.location_id = c.location_id
-          AND lower(c2.room) = lower(btrim(c.room)))
+      OR (c2.location_id = c.location_id
+          AND lower(c2.room) IN (SELECT lower(cm.room) FROM c_room cm WHERE cm.cand_id = c.id AND cm.room IS NOT NULL))
       OR c2.patient_id IN (c.patient_id, c.patient_2_id)
       OR c2.patient_2_id IN (c.patient_id, c.patient_2_id)
 ),

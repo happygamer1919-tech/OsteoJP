@@ -267,7 +267,7 @@ test("the rule's arms: therapist, room, resource as Terapeuta and as Terapeuta 2
     "o.practitioner_id IN (SELECT ca.user_id FROM c_alias ca WHERE ca.cand_id = c.id)",
     "o.practitioner_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)",
     "o.practitioner_2_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)",
-    "lower(o.room) = lower(btrim(c.room))",
+    "lower(o.room) IN (SELECT lower(cm.room) FROM c_room cm WHERE cm.cand_id = c.id AND cm.room IS NOT NULL)",
   ]) assert.ok(hb.includes(arm), `the booking arm lost: ${arm}`);
   assert.match(rule, /t\.tenant_id = c\.tenant_id AND t\.user_id = c\.practitioner_id\s+AND t\.starts_at < c\.e AND t\.ends_at > c\.s/, "the block arm moved");
   assert.match(rule, /extract\(minute FROM l\.closes_at\)::int - 60\)\) IS TRUE/, "the start window is not closes_at minus 60");
@@ -301,6 +301,39 @@ test("D5: a live twin's person row holds its NESA over the WHOLE person window, 
   assert.match(lt, /\(n\.ends_at - n\.starts_at = interval '1 minute'\n\s+AND EXISTS \(SELECT 1 FROM ledger lg WHERE lg\.appointment_id = n\.id\)\) AS n_stub/, "section 1d does not read whether the NESA half is a stub too");
   for (const col of ["of_which_nesa_row_longer", "of_which_both_halves_a_minute", "of_which_other"]) {
     assert.ok(S1.includes(` AS ${col}`), `section 1d does not print ${col}`);
+  }
+});
+
+test("the room arm reads the candidate's room trimmed exactly as JavaScript's trim trims it, in the booking arm and the pair", () => {
+  // The app trims first (conflict.ts), then appointment_conflicts compares lower(a.room) with it.
+  assert.match(read("apps/web/lib/scheduling/conflict.ts"), /const room = args\.room\?\.trim\(\) \|\| null;/, "the app no longer trims the room with JS trim; re-read the room arm");
+  const rule = copies(S1, "RULE")[0];
+  const cr = rule.slice(rule.indexOf("\nc_room AS ("), rule.indexOf("\none_person AS ("));
+  const m = cr.match(/nullif\(btrim\(c\.room, E'([^']*)'\), ''\) AS room\n\s+FROM cand c\n\)/);
+  assert.ok(m, "c_room is not nullif(btrim(c.room, <set>), '') over cand");
+  // Decode the E'' string's escapes, and hold the set equal to what JS trim strips over the BMP.
+  const esc = { t: "\t", n: "\n", r: "\r", f: "\f" };
+  const got = new Set();
+  for (const e of m[1].match(/\\u[0-9a-f]{4}|\\x[0-9a-f]{2}|\\[tnrf]|[^\\]/g)) {
+    got.add(e.startsWith("\\u") || e.startsWith("\\x") ? String.fromCharCode(parseInt(e.slice(2), 16)) : e.startsWith("\\") ? esc[e[1]] : e);
+  }
+  assert.equal([...got].join("").length, m[1].match(/\\u[0-9a-f]{4}|\\x[0-9a-f]{2}|\\[tnrf]|[^\\]/g).length, "the set lists a character twice");
+  const js = new Set();
+  for (let g = 1; g <= 0xffff; g++) {
+    if (g >= 0xd800 && g <= 0xdfff) continue;
+    const c = String.fromCharCode(g);
+    if (("x" + c).trim() === "x" && (c + "x").trim() === "x") js.add(c);
+  }
+  const hex = (s) => [...s].map((c) => c.charCodeAt(0).toString(16)).sort().join(",");
+  assert.equal(hex(got), hex(js), "c_room's set is not the set JavaScript's trim strips");
+  // Both room comparisons read c_room; no stage trims a candidate room any other way.
+  const hb = rule.slice(rule.indexOf("\nhit_booking AS ("), rule.indexOf("\nhit_block AS ("));
+  assert.ok(hb.includes("lower(o.room) IN (SELECT lower(cm.room) FROM c_room cm WHERE cm.cand_id = c.id AND cm.room IS NOT NULL)"));
+  const pair = BASE.slice(BASE.indexOf("\npair AS ("), BASE.indexOf("\nf AS ("));
+  assert.ok(pair.includes("lower(c2.room) IN (SELECT lower(cm.room) FROM c_room cm WHERE cm.cand_id = c.id AND cm.room IS NOT NULL)"), "the pair's room arm does not read c_room");
+  for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]]) {
+    assert.doesNotMatch(code(sql), /btrim\(c2?\.room\)/, `${label} trims a room with btrim's default, the ASCII space only`);
+    assert.doesNotMatch(code(sql), /lower\(btrim\(/, `${label} compares a room trimmed another way`);
   }
 });
 
@@ -554,7 +587,7 @@ test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the do
   assert.ok(b.includes(`[ "\${NV}" = ${verdicts.length} ]`), "the doc's stage 3 block counts a different number");
   assert.ok(DOC.includes(`${verdicts.length} verdicts and a SUMMARY row`), "the facts table counts a different number");
   const allowed = b.match(/grep -vxE '([0-9|]+)'/)?.[1].split("|").map(Number);
-  assert.deepEqual(allowed, [16, 18, 20, 21, 22], "the allowed-VACUOUS list moved");
+  assert.deepEqual(allowed, [14, 16, 18, 20, 21, 22], "the allowed-VACUOUS list moved");
   rows.forEach((r, i) => {
     const n = i + 1;
     if (n === 1 || n === 19) return;
@@ -576,15 +609,19 @@ test("an instrument that cannot see the written rows FAILs the rule's verdicts, 
   assert.match(S2, /IF \(v_rc ->> 'n'\)::int <> cardinality\(v_ids\) OR \(v_rc ->> 'live_self'\)::int <> cardinality\(v_ids\) THEN/, "stage 2's re-measure does not stop on a blind instrument");
 });
 
-test("a verdict whose subject can be absent on a real day reads VACUOUS then, never OK: 16, 20, 21 and 22", () => {
+test("a verdict whose subject can be absent on a real day reads VACUOUS then, never OK: 14, 16, 20, 21 and 22", () => {
   const rows = verdictRows();
-  for (const [i, subject] of [[15, "hours_configured"], [19, "on_resource"], [20, "names_resource"], [21, "on_person_row"]]) {
+  for (const [i, subject] of [[13, "closure_configured"], [15, "hours_configured"], [19, "on_resource"], [20, "names_resource"], [21, "on_person_row"]]) {
     assert.match(rows[i], new RegExp(`^${i + 1}, `));
     assert.match(rows[i], new RegExp(`WHEN v\\.n_w = 0 OR v\\.${subject} = 0 THEN 'VACUOUS'`), `verdict ${i + 1} reads OK when no written row has its subject (${subject})`);
     assert.match(copies(S3, "RECHECK")[0], new RegExp(`::int AS ${subject},?\n`), `the RECHECK does not count ${subject}`);
   }
+  // The closure's subject reads the closure as the rule's clinic CTE does: both ends set.
+  const rc = copies(S3, "RECHECK")[0];
+  assert.match(rc, /\(SELECT count\(\*\) FROM cand c\n\s+JOIN public\.locations l ON l\.id = c\.location_id AND l\.tenant_id = c\.tenant_id\n\s+WHERE l\.midday_closed_from IS NOT NULL AND l\.midday_closed_to IS NOT NULL\)::int AS closure_configured,/, "closure_configured does not count the written rows at a clinic with both closure ends set");
+  assert.ok(copies(S1, "RULE")[0].includes("(l.midday_closed_from IS NOT NULL AND l.midday_closed_to IS NOT NULL\n"), "the clinic CTE no longer reads a closure as both ends set");
   // The block allows exactly those, and 18, and names why in the doc.
-  assert.ok(DOC.replace(/\s+/g, " ").includes("VACUOUS on 16, 18, 20, 21 and 22 at most"), "the doc does not name the allowed VACUOUS verdicts");
+  assert.ok(DOC.replace(/\s+/g, " ").includes("VACUOUS on 14, 16, 18, 20, 21 and 22 at most"), "the doc does not name the allowed VACUOUS verdicts");
 });
 
 test("stage 2's re-measure stops on any hit, before the audit row", () => {
