@@ -246,6 +246,13 @@ test("the app's checks the rule mirrors are still where and what they were", () 
   for (const call of ["checkAvailability(tx,", "checkClinicClosure(tx,", "checkClinicWindow(tx,", "findConflictsForWindow(tx,", "blockingConflicts(c)"]) {
     assert.ok(resched.includes(call), `rescheduleAppointment no longer calls ${call}; re-read what reception's own change would refuse`);
   }
+  // SCHED-17: asked on the Terapeuta and the row's clinic before any other check, and its
+  // resource condition refuses every role before the owner's exemption is read.
+  const sched17 = resched.indexOf("const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);");
+  assert.ok(sched17 > 0 && sched17 < resched.indexOf("runScoped"), "rescheduleAppointment no longer asks SCHED-17 first");
+  assert.match(actions, /const resource = resources\.find\(\(r\) => r\.id === practitionerId\) \?\? null;/, "SCHED-17 no longer reads the Terapeuta only");
+  assert.match(read("apps/web/lib/scheduling/shared-resource-guard.ts"), /if \(!args\.resource\) return true;\s+if \(!args\.resource\.locationIds\.includes\(args\.targetLocationId\)\) return false;\s+if \(args\.role === "owner"\) return true;/, "the resource condition no longer refuses the owner too");
+  assert.match(read("apps/web/lib/scheduling/shared-resources.ts"), /left join public\.staff_locations sl\s+on sl\.user_id = u\.id and sl\.tenant_id = u\.tenant_id/, "a resource's clinics are no longer its staff_locations in its tenant");
   assert.match(read("apps/web/app/agenda/appointment-drawer.tsx"), /durationMin: svc \? svc\.durationMin : f\.durationMin/, "the drawer no longer takes the service's duration");
 });
 
@@ -266,6 +273,24 @@ test("the rule's arms: therapist, room, resource as Terapeuta and as Terapeuta 2
   assert.match(rule, /date_trunc\('minute', l\.midday_closed_from::interval\)/);
   assert.match(rule, /OR w\.ws > w\.prev_max THEN 1 ELSE 0 END/, "the hours merge is not isRangeCovered's adjacent-inclusive merge");
   assert.match(rule, /r\.rs <= g\.s_min AND r\.re >= g\.e_min/);
+  // SCHED-17: the Terapeuta only, an active shared resource, not installed at the row's clinic in its tenant.
+  const away = rule.slice(rule.indexOf("\nres_away AS ("), rule.indexOf("\nclinic AS ("));
+  assert.match(away, /JOIN shared r ON r\.id = c\.practitioner_id AND r\.tenant_id = c\.tenant_id/, "SCHED-17 does not read the Terapeuta as an active shared resource");
+  assert.match(away, /WHERE NOT EXISTS \(SELECT 1 FROM public\.staff_locations sl\s+WHERE sl\.user_id = c\.practitioner_id AND sl\.tenant_id = c\.tenant_id\s+AND sl\.location_id = c\.location_id\)/, "SCHED-17 does not read where the resource is installed");
+});
+
+test("D5: a live twin's person row holds its NESA over the WHOLE person window, as STAFF-10 v2 will make it, in either order", () => {
+  const rule = copies(S1, "RULE")[0];
+  const th = rule.slice(rule.indexOf("\ntwin_hold AS ("), rule.indexOf("\nres_away AS ("));
+  assert.match(th, /SELECT p\.id AS hold_id, n\.id AS n_id, n\.practitioner_id AS res_id, p\.tenant_id, p\.starts_at, p\.ends_at\n\s+FROM live p/, "the hold is not the live person row's own window on the NESA row's practitioner");
+  assert.match(th, /JOIN public\.users up ON up\.id = p\.practitioner_id AND up\.is_shared_resource IS NOT TRUE/);
+  assert.match(th, /AND n\.starts_at = p\.starts_at AND n\.id <> p\.id\s+AND n\.service_id IS NOT DISTINCT FROM ap\.service_id\s+AND n\.status NOT IN \('cancelled', 'no_show'\)/, "the twin under the hold is not STAFF-10 v2's live future pair");
+  assert.match(th, /JOIN public\.users un ON un\.id = n\.practitioner_id AND un\.is_shared_resource IS TRUE/);
+  assert.match(th, /h\.hold_id <> c\.id AND h\.n_id <> c\.id\s+AND h\.starts_at < c\.e AND h\.ends_at > c\.s\n\s+WHERE h\.res_id IN \(SELECT cr\.res_id FROM c_res cr WHERE cr\.cand_id = c\.id\)/, "the hold is not half-open, or not on a NESA the candidate names");
+  // Unconditional on STAFF-10 v2's audit row: after it runs no live pair is left, so the same text answers both orders.
+  assert.doesNotMatch(code(th), /staff10_v2|audit_log/, "the hold is gated on STAFF-10 v2 having run, so the two orders read two rules");
+  assert.match(DOC, /## The order with STAFF-10 v2/);
+  assert.ok(DOC.includes("`17 OVERLAPS THE NESA HOUR OF A LIVE TWIN`"), "the doc does not name verdict 17");
 });
 
 test("the twin is list C's predicate, NULL-safe on the service, the partner in any status", () => {
@@ -299,11 +324,11 @@ test("every row gets exactly one verdict: the CASE lists them in order, each onc
 
 test("R09 re-reads every flag on the WRITE set NULL-safe, so a verdict order that lets a held row through refuses", () => {
   const f = BASE.slice(BASE.indexOf("\nf AS ("), BASE.indexOf("\nv AS ("));
-  const flags = [...f.matchAll(/ AS (is_twin|in_closure|out_of_window|outside_hours|hits_[a-z]+)\b/g)].map((m) => m[1]);
-  assert.deepEqual([...flags].sort(), ["hits_block", "hits_booking", "hits_patient", "hits_stub", "in_closure", "is_twin", "out_of_window", "outside_hours"], `the flags of f moved: ${flags.join(",")}`);
+  const flags = [...f.matchAll(/ AS (is_twin|in_closure|out_of_window|outside_hours|resource_away|hits_[a-z_]+)\b/g)].map((m) => m[1]);
+  assert.deepEqual([...flags].sort(), ["hits_block", "hits_booking", "hits_patient", "hits_stub", "hits_twin_hold", "in_closure", "is_twin", "out_of_window", "outside_hours", "resource_away"], `the flags of f moved: ${flags.join(",")}`);
   const r09 = BASE.slice(BASE.indexOf("'R09'"), BASE.indexOf("\n),", BASE.indexOf("'R09'")));
   for (const fl of flags) assert.match(r09, new RegExp(`w\\.${fl} IS NOT FALSE`), `R09 does not re-read ${fl}`);
-  for (const [fl, v] of [["is_twin", "08"], ["in_closure", "09"], ["out_of_window", "10"], ["outside_hours", "11"], ["hits_booking", "12"], ["hits_block", "13"], ["hits_stub", "14"], ["hits_patient", "15"]]) {
+  for (const [fl, v] of [["is_twin", "08"], ["in_closure", "09"], ["out_of_window", "10"], ["outside_hours", "11"], ["hits_booking", "12"], ["hits_block", "13"], ["hits_stub", "14"], ["hits_patient", "15"], ["resource_away", "16"], ["hits_twin_hold", "17"]]) {
     assert.match(BASE, new RegExp(`WHEN f\\.${fl} THEN '${v} `), `flag ${fl} does not hold its verdict ${v}`);
   }
   assert.match(r09, /w\.ledger_rows IS DISTINCT FROM 1 OR w\.src_seconds IS DISTINCT FROM 60/);
@@ -428,10 +453,24 @@ test("the frozen fingerprint is EVERY appointments column but ends_at and update
   assert.notDeepEqual([...short].sort(), want);
 });
 
+test("verdict 19 reads both totals from the audit row, which stage 2 counts under its lock, and counts nothing live", () => {
+  const rows = verdictRows();
+  assert.match(rows[18], /^19, /);
+  assert.match(S3, /\(SELECT \(al\.m -> 'after' ->> 'appointments'\)::int FROM al\) AS total_after,/);
+  assert.match(S3, /\(SELECT \(al\.m -> 'before' ->> 'appointments'\)::int FROM al\) AS total_before,/);
+  assert.match(rows[18], /CASE WHEN v\.total_after IS NULL OR v\.total_before IS NULL OR v\.total_after <> v\.total_before\s+THEN 'FAIL' ELSE 'OK' END/);
+  assert.doesNotMatch(code(S3), /created_at <=/, "stage 3 counts the live table against the audit time, which a late commit or a hard delete moves");
+  const audit = S2.slice(S2.indexOf("INSERT INTO public.audit_log"), S2.indexOf("GET DIAGNOSTICS", S2.indexOf("INSERT INTO public.audit_log")));
+  assert.ok(audit.includes("'after', jsonb_build_object('appointments', v_a_total),"), "stage 2 does not record the total it counted after the write");
+  const a3 = S2.slice(S2.indexOf("-- A3."), S2.indexOf("INSERT INTO public.audit_log"));
+  assert.match(a3, /SELECT count\(\*\)::int INTO v_a_total FROM public\.appointments a WHERE a\.tenant_id = v_tenant;/);
+  assert.match(a3, /IF v_a_total <> v_b_total THEN/);
+});
+
 test("stage 3 reads back only what stage 2 records", () => {
   const top = [...S3.matchAll(/m -> '([a-z_0-9]+)'/g)].map((m) => m[1]);
   const flat = [...S3.matchAll(/m ->> '([a-z_0-9]+)'/g)].map((m) => m[1]);
-  const nested = [...S3.matchAll(/m -> '(before|md5|carries)' ->> '([a-z_0-9]+)'/g)].map((m) => m[2]);
+  const nested = [...S3.matchAll(/m -> '(before|after|md5|carries)' ->> '([a-z_0-9]+)'/g)].map((m) => m[2]);
   const audit = S2.slice(S2.indexOf("INSERT INTO public.audit_log"), S2.indexOf("GET DIAGNOSTICS", S2.indexOf("INSERT INTO public.audit_log")));
   for (const k of new Set([...top, ...flat])) assert.ok(audit.includes(`'${k}', `), `stage 3 reads ${k}, which stage 2 never writes`);
   for (const k of new Set(nested)) assert.ok(audit.includes(`'${k}', `) || CARRIES.includes(k), `stage 3 reads ${k}, which stage 2 never writes`);
@@ -470,7 +509,9 @@ test("an instrument that cannot see the written rows FAILs the rule's verdicts, 
   assert.match(rows[10], /^11, /);
   assert.match(rows[10], /CASE WHEN v\.rc_n <> v\.n_w OR v\.live_self <> v\.n_w THEN 'FAIL'/);
   for (const i of [11, 16]) assert.match(rows[i], /OR v\.live_self <> v\.n_w THEN 'FAIL'/, `verdict ${i + 1} does not FAIL on a blind live filter`);
-  for (const i of [12, 13, 14, 15]) assert.match(rows[i], /OR v\.rc_n <> v\.n_w THEN 'FAIL'/, `verdict ${i + 1} does not FAIL on a blind re-measure`);
+  for (const i of [12, 13, 14, 15, 19]) assert.match(rows[i], /OR v\.rc_n <> v\.n_w THEN 'FAIL'/, `verdict ${i + 1} does not FAIL on a blind re-measure`);
+  assert.match(rows[20], /^21, /);
+  assert.match(rows[20], /OR v\.live_self <> v\.n_w THEN 'FAIL'/, "verdict 21 does not FAIL on a blind live filter");
   const rc = copies(S3, "RECHECK")[0];
   assert.match(rc, /\(SELECT count\(\*\) FROM cand c WHERE c\.id IN \(SELECT o\.id FROM live o\)\)::int AS live_self/);
   assert.match(S2, /IF \(v_rc ->> 'n'\)::int <> cardinality\(v_ids\) OR \(v_rc ->> 'live_self'\)::int <> cardinality\(v_ids\) THEN/, "stage 2's re-measure does not stop on a blind instrument");
@@ -478,8 +519,10 @@ test("an instrument that cannot see the written rows FAILs the rule's verdicts, 
 
 test("stage 2's re-measure stops on any hit, before the audit row", () => {
   const a2 = S2.slice(S2.indexOf("-- A2."), S2.indexOf("-- A3."));
-  for (const k of ["booking", "block", "closure", "clinic_hours", "therapist_hours", "patient"]) {
+  const rc = copies(S2, "RECHECK")[0];
+  for (const k of ["booking", "block", "closure", "clinic_hours", "therapist_hours", "patient", "resource_away", "twin_hold"]) {
     assert.ok(a2.includes(`(v_rc ->> '${k}')::int`), `the re-measure does not stop on ${k}`);
+    assert.match(rc, new RegExp(`::int AS ${k},?\n`), `the RECHECK does not count ${k}`);
   }
   assert.ok(S2.indexOf("-- A2.") < S2.indexOf("INSERT INTO public.audit_log"));
 });

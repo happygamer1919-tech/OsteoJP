@@ -103,9 +103,11 @@ cand AS (
     FROM pop p
    WHERE p.duration_min > 1
 ),
--- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE.
--- These lines are byte-identical in stage 1's BASE, stage 2's BASE, stage 2's
--- RECHECK and stage 3's RECHECK (scripts/dur-01-data-op.test.mjs asserts it).
+-- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
+-- with the two checks the op adds to it (the same patient, and the NESA hour of
+-- a live twin), each marked where it stands. These lines are byte-identical in
+-- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
+-- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
 -- practitioner_id, practitioner_2_id, location_id, room, s, e): the window
 -- [s, e) each candidate would hold. Every interval is half-open, as
@@ -185,6 +187,52 @@ hit_patient AS (
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.patient_id IN (c.patient_id, c.patient_2_id)
       OR o.patient_2_id IN (c.patient_id, c.patient_2_id)
+),
+-- THE NESA HOUR A LIVE TWIN WILL MOVE. Not in the app's rule today; the op adds
+-- it, so the answer does not depend on the order it runs in with STAFF-10 v2
+-- (#1444). That op resolves every future twin whose two rows are both live by
+-- its ruling (c): the person row takes the NESA as Terapeuta 2 and the NESA row
+-- is cancelled, so from then on the NESA is held over the PERSON window, which
+-- its R17 lets be longer than the NESA window. Before it runs, the app's rule
+-- reads only the NESA row. So the person row of every such twin (live, on a
+-- person, with a row of the same patient, start and service, NULL-safe, on a
+-- shared resource and not cancelled or no-show) is read here as holding that
+-- NESA over its own window, whether or not STAFF-10 v2 has run: after it has,
+-- no such pair is left, and the resource arm above reads the same hold through
+-- practitioner_2. A candidate naming that NESA in either slot is held by it,
+-- unless the candidate is that twin's own NESA row, whose hour it is.
+twin_hold AS (
+  SELECT p.id AS hold_id, n.id AS n_id, n.practitioner_id AS res_id, p.tenant_id, p.starts_at, p.ends_at
+    FROM live p
+    JOIN public.appointments ap ON ap.id = p.id
+    JOIN public.users up ON up.id = p.practitioner_id AND up.is_shared_resource IS NOT TRUE
+    JOIN public.appointments n
+      ON n.tenant_id = p.tenant_id AND n.patient_id = p.patient_id
+     AND n.starts_at = p.starts_at AND n.id <> p.id
+     AND n.service_id IS NOT DISTINCT FROM ap.service_id
+     AND n.status NOT IN ('cancelled', 'no_show')
+    JOIN public.users un ON un.id = n.practitioner_id AND un.is_shared_resource IS TRUE
+),
+hit_twin_hold AS (
+  SELECT c.id AS cand_id, h.hold_id AS other_id, h.starts_at AS other_s, h.ends_at AS other_e
+    FROM cand c
+    JOIN twin_hold h ON h.tenant_id = c.tenant_id AND h.hold_id <> c.id AND h.n_id <> c.id
+                    AND h.starts_at < c.e AND h.ends_at > c.s
+   WHERE h.res_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
+),
+-- SCHED-17 (shared-resource-guard.ts, sharedResourceLocationAllowed), which
+-- rescheduleAppointment asks before any other check and which "Guardar mesmo
+-- assim" cannot pass: a row whose Terapeuta is a shared resource may sit only
+-- at a clinic where that resource is installed (staff_locations, in its
+-- tenant), for every role, the owner included. Its other condition, the
+-- actor's own clinics, has no actor in a data op and is not read.
+res_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS res_id
+    FROM cand c
+    JOIN shared r ON r.id = c.practitioner_id AND r.tenant_id = c.tenant_id
+   WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
+                      WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
+                        AND sl.location_id = c.location_id)
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -320,6 +368,8 @@ f AS (
          EXISTS (SELECT 1 FROM hit_block x WHERE x.cand_id = p.id) AS hits_block,
          EXISTS (SELECT 1 FROM pair x WHERE x.cand_id = p.id) AS hits_stub,
          EXISTS (SELECT 1 FROM hit_patient x WHERE x.cand_id = p.id) AS hits_patient,
+         EXISTS (SELECT 1 FROM res_away x WHERE x.cand_id = p.id) AS resource_away,
+         EXISTS (SELECT 1 FROM hit_twin_hold x WHERE x.cand_id = p.id) AS hits_twin_hold,
          EXISTS (SELECT 1 FROM public.users u WHERE u.id = p.practitioner_id AND u.is_shared_resource IS TRUE)
            AS on_resource_row
     FROM pop p
@@ -347,6 +397,8 @@ v AS (
               WHEN f.hits_block THEN '13 OVERLAPS A BLOCK'
               WHEN f.hits_stub THEN '14 OVERLAPS ANOTHER STUB ONCE BOTH ARE EXTENDED'
               WHEN f.hits_patient THEN '15 SAME PATIENT BOOKED ELSEWHERE'
+              WHEN f.resource_away THEN '16 NESA NOT INSTALLED AT THE CLINIC'
+              WHEN f.hits_twin_hold THEN '17 OVERLAPS THE NESA HOUR OF A LIVE TWIN'
               ELSE 'WRITE' END AS verdict
     FROM f CROSS JOIN k
 ),
@@ -418,7 +470,8 @@ ref AS (
                   OR w.proposed_end IS NULL OR w.starts_at < (SELECT k.day1 FROM k)
                   OR w.is_twin IS NOT FALSE OR w.in_closure IS NOT FALSE OR w.out_of_window IS NOT FALSE
                   OR w.outside_hours IS NOT FALSE OR w.hits_booking IS NOT FALSE OR w.hits_block IS NOT FALSE
-                  OR w.hits_stub IS NOT FALSE OR w.hits_patient IS NOT FALSE))::int,
+                  OR w.hits_stub IS NOT FALSE OR w.hits_patient IS NOT FALSE
+                  OR w.resource_away IS NOT FALSE OR w.hits_twin_hold IS NOT FALSE))::int,
          (SELECT count(*) FROM wr)::int
 ),
 -- ---------------------------------------------------------------------------
@@ -473,6 +526,30 @@ reasons AS (
   SELECT w.id, 'starts on the run day', NULL, NULL, NULL FROM vw w WHERE left(w.verdict, 2) = '07'
   UNION ALL
   SELECT w.id, 'no service, so no default', NULL, NULL, NULL FROM vw w WHERE left(w.verdict, 2) = '03'
+  UNION ALL
+  SELECT x.cand_id, 'nesa not installed at this clinic', x.res_id::text, NULL, NULL FROM res_away x
+  UNION ALL
+  SELECT x.cand_id, 'the nesa hour of a live twin, its person row', x.other_id::text, x.other_s, x.other_e FROM hit_twin_hold x
+),
+-- THE LIVE FUTURE NESA TWINS, as STAFF-10 v2's ruling (c) set reads them: a row
+-- on a shared resource and a row on a person, same tenant, patient, start and
+-- service (NULL-safe), both live, starting from 00:00 Lisbon today. covers is
+-- its R17: the person window covers the NESA window, or STAFF-10 v2 stops.
+live_twin AS (
+  SELECT p.id AS p_id, n.id AS n_id, p.location_id,
+         (p.starts_at <= n.starts_at AND p.ends_at >= n.ends_at) AS covers,
+         (p.ends_at - p.starts_at = interval '1 minute'
+          AND EXISTS (SELECT 1 FROM ledger lg WHERE lg.appointment_id = p.id)) AS p_stub
+    FROM public.appointments n
+    JOIN public.users un ON un.id = n.practitioner_id AND un.is_shared_resource IS TRUE
+    JOIN public.appointments p
+      ON p.tenant_id = n.tenant_id AND p.patient_id = n.patient_id
+     AND p.starts_at = n.starts_at AND p.id <> n.id
+     AND p.service_id IS NOT DISTINCT FROM n.service_id
+    JOIN public.users up ON up.id = p.practitioner_id AND up.is_shared_resource IS NOT TRUE
+   CROSS JOIN k
+   WHERE n.status NOT IN ('cancelled', 'no_show') AND p.status NOT IN ('cancelled', 'no_show')
+     AND n.starts_at >= (k.today::timestamp AT TIME ZONE 'Europe/Lisbon')
 )
 SELECT jsonb_build_object(
   'meta', (SELECT jsonb_build_object(
@@ -501,6 +578,19 @@ SELECT jsonb_build_object(
              ORDER BY x.ord)
              FROM (VALUES (1, 'staff.dur01.extend_import_duration'), (2, 'staff.staff10_v2.apply'),
                           (3, 'staff.nesa_split.reassign')) x(ord, action)),
+  'live_twins', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'clinic', q.clinic, 'pairs', q.n, 'covers', q.n_cover, 'shorter', q.n_short, 'stub', q.n_stub)
+                   ORDER BY q.ord, q.clinic), '[]'::jsonb)
+                   FROM (SELECT 0 AS ord, coalesce(l.name, '(no clinic)') AS clinic, count(*) AS n,
+                                count(*) FILTER (WHERE lt.covers) AS n_cover,
+                                count(*) FILTER (WHERE NOT lt.covers) AS n_short,
+                                count(*) FILTER (WHERE lt.p_stub) AS n_stub
+                           FROM live_twin lt LEFT JOIN public.locations l ON l.id = lt.location_id
+                          GROUP BY 2
+                         UNION ALL
+                         SELECT 1, 'ALL CLINICS', count(*), count(*) FILTER (WHERE lt.covers),
+                                count(*) FILTER (WHERE NOT lt.covers), count(*) FILTER (WHERE lt.p_stub)
+                           FROM live_twin lt) q),
   'population', (SELECT jsonb_agg(jsonb_build_object(
                    'clinic', q.clinic, 'future_1min_all', q.n_all, 'importer_written', q.n_ledger,
                    'not_in_ledger', q.n_other, 'importer_written_live', q.n_live,
@@ -610,6 +700,8 @@ SELECT jsonb_build_object(
                         CASE WHEN w.hits_block THEN 'block' END,
                         CASE WHEN w.hits_stub THEN 'stub' END,
                         CASE WHEN w.hits_patient THEN 'patient' END,
+                        CASE WHEN w.resource_away THEN 'nesa_away' END,
+                        CASE WHEN w.hits_twin_hold THEN 'twin_hold' END,
                         CASE WHEN w.ends_after_close THEN 'ends_after_close' END),
              'verdict', w.verdict, 'who', w.who)
              ORDER BY coalesce(l.name, '(no clinic)'), w.verdict, w.starts_at, w.id), '[]'::jsonb)
@@ -672,6 +764,16 @@ SELECT e ->> 'action' AS action, (e ->> 'audit_rows')::int AS audit_rows, e ->> 
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'runs') e;
 \echo '    STAFF-10 v2 before or after DUR-01 is the doc''s D5. Either order is classified; a STAFF-10 v2'
 \echo '    write landing between this stage and stage 2 refuses there, on the fourth carry.'
+\echo ''
+\echo '=== 1d. THE LIVE FUTURE NESA TWINS STAFF-10 v2 RESOLVES, and how many of them its R17 refuses ==='
+SELECT e ->> 'clinic' AS clinic, (e ->> 'pairs')::int AS live_future_pairs,
+       (e ->> 'covers')::int AS person_window_covers_nesa, (e ->> 'shorter')::int AS its_r17_refuses,
+       (e ->> 'stub')::int AS person_half_is_an_importer_minute
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'live_twins') e;
+\echo '    STAFF-10 v2 cancels the NESA row of each pair and holds the NESA on the person row instead,'
+\echo '    over the whole person window. Verdict 17 already holds every stub that overlaps that window,'
+\echo '    so this op gives the same answer before STAFF-10 v2 or after it. its_r17_refuses above 0'
+\echo '    means STAFF-10 v2 stops, whole, until those person rows are fixed (the question block).'
 
 -- ---------------------------------------------------------------------------
 -- 2. THE POPULATION, with and without the ledger filter.

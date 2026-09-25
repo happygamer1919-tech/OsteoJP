@@ -11,7 +11,16 @@
 -- failed; the stage 3 block in the doc allows it only on verdict 18 (no row was
 -- excluded). Stage 2 refuses an empty write set (R06), so every other arm always
 -- has rows to read. An instrument that cannot see the written rows (verdict
--- 11's control) FAILs, never VACUOUS, because its zero would green 12 to 17.
+-- 11's control) FAILs, never VACUOUS, because its zero would green 12 to 17
+-- and 20 to 21.
+--
+-- THE TOTAL IS READ FROM THE AUDIT ROW, NOT COUNTED AGAIN (verdict 19). A live
+-- count of the tenant's appointments moves with the clinic: a later hard
+-- delete lowers it, and a booking whose transaction began before stage 2,
+-- waited on its lock and committed after it carries a created_at earlier than
+-- the audit row. Either would FAIL a correct write. So stage 2 records the
+-- total it counted under its own lock before the write and again after it, in
+-- the same transaction, and verdict 19 compares the two it recorded.
 --
 -- The rows printed after the SUMMARY are every row stage 2 did not write, as
 -- it stands now, ids only: reception's list, re-issuable.
@@ -56,9 +65,11 @@ cand AS (
 -- asserts it); only the cand CTE before it differs, and says where its ids
 -- come from. live_self is the positive control: every written row is itself a
 -- live row, so a live filter that cannot see them reads fewer than n.
--- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE.
--- These lines are byte-identical in stage 1's BASE, stage 2's BASE, stage 2's
--- RECHECK and stage 3's RECHECK (scripts/dur-01-data-op.test.mjs asserts it).
+-- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
+-- with the two checks the op adds to it (the same patient, and the NESA hour of
+-- a live twin), each marked where it stands. These lines are byte-identical in
+-- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
+-- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
 -- practitioner_id, practitioner_2_id, location_id, room, s, e): the window
 -- [s, e) each candidate would hold. Every interval is half-open, as
@@ -138,6 +149,52 @@ hit_patient AS (
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.patient_id IN (c.patient_id, c.patient_2_id)
       OR o.patient_2_id IN (c.patient_id, c.patient_2_id)
+),
+-- THE NESA HOUR A LIVE TWIN WILL MOVE. Not in the app's rule today; the op adds
+-- it, so the answer does not depend on the order it runs in with STAFF-10 v2
+-- (#1444). That op resolves every future twin whose two rows are both live by
+-- its ruling (c): the person row takes the NESA as Terapeuta 2 and the NESA row
+-- is cancelled, so from then on the NESA is held over the PERSON window, which
+-- its R17 lets be longer than the NESA window. Before it runs, the app's rule
+-- reads only the NESA row. So the person row of every such twin (live, on a
+-- person, with a row of the same patient, start and service, NULL-safe, on a
+-- shared resource and not cancelled or no-show) is read here as holding that
+-- NESA over its own window, whether or not STAFF-10 v2 has run: after it has,
+-- no such pair is left, and the resource arm above reads the same hold through
+-- practitioner_2. A candidate naming that NESA in either slot is held by it,
+-- unless the candidate is that twin's own NESA row, whose hour it is.
+twin_hold AS (
+  SELECT p.id AS hold_id, n.id AS n_id, n.practitioner_id AS res_id, p.tenant_id, p.starts_at, p.ends_at
+    FROM live p
+    JOIN public.appointments ap ON ap.id = p.id
+    JOIN public.users up ON up.id = p.practitioner_id AND up.is_shared_resource IS NOT TRUE
+    JOIN public.appointments n
+      ON n.tenant_id = p.tenant_id AND n.patient_id = p.patient_id
+     AND n.starts_at = p.starts_at AND n.id <> p.id
+     AND n.service_id IS NOT DISTINCT FROM ap.service_id
+     AND n.status NOT IN ('cancelled', 'no_show')
+    JOIN public.users un ON un.id = n.practitioner_id AND un.is_shared_resource IS TRUE
+),
+hit_twin_hold AS (
+  SELECT c.id AS cand_id, h.hold_id AS other_id, h.starts_at AS other_s, h.ends_at AS other_e
+    FROM cand c
+    JOIN twin_hold h ON h.tenant_id = c.tenant_id AND h.hold_id <> c.id AND h.n_id <> c.id
+                    AND h.starts_at < c.e AND h.ends_at > c.s
+   WHERE h.res_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
+),
+-- SCHED-17 (shared-resource-guard.ts, sharedResourceLocationAllowed), which
+-- rescheduleAppointment asks before any other check and which "Guardar mesmo
+-- assim" cannot pass: a row whose Terapeuta is a shared resource may sit only
+-- at a clinic where that resource is installed (staff_locations, in its
+-- tenant), for every role, the owner included. Its other condition, the
+-- actor's own clinics, has no actor in a data op and is not read.
+res_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS res_id
+    FROM cand c
+    JOIN shared r ON r.id = c.practitioner_id AND r.tenant_id = c.tenant_id
+   WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
+                      WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
+                        AND sl.location_id = c.location_id)
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -230,6 +287,8 @@ rc AS (
          (SELECT count(*) FROM clinic x WHERE x.out_of_window)::int AS clinic_hours,
          (SELECT count(*) FROM avail x WHERE NOT x.covered)::int AS therapist_hours,
          (SELECT count(DISTINCT x.cand_id) FROM hit_patient x)::int AS patient,
+         (SELECT count(*) FROM res_away x)::int AS resource_away,
+         (SELECT count(DISTINCT x.cand_id) FROM hit_twin_hold x)::int AS twin_hold,
          (SELECT count(*) FROM clinic x WHERE x.ends_after_close)::int AS ends_after_close,
          (SELECT count(*) FROM avail x WHERE x.configured)::int AS hours_configured
 )
@@ -266,11 +325,10 @@ rc AS (
     (SELECT count(*) FROM xl)::int AS n_x,
     (SELECT count(*) FROM xl JOIN public.appointments a ON a.id = xl.id
       WHERE a.ends_at - a.starts_at = interval '1 minute')::int AS x_still_short,
-    (SELECT count(*) FROM public.appointments a
-      WHERE a.tenant_id = (SELECT al.tenant FROM al) AND a.created_at <= (SELECT al.at FROM al))::int AS total_then_now,
+    (SELECT (al.m -> 'after' ->> 'appointments')::int FROM al) AS total_after,
     (SELECT (al.m -> 'before' ->> 'appointments')::int FROM al) AS total_before,
     rc.n AS rc_n, rc.live_self, rc.booking, rc.block, rc.closure, rc.clinic_hours, rc.therapist_hours, rc.patient,
-    rc.ends_after_close, rc.hours_configured
+    rc.resource_away, rc.twin_hold, rc.ends_after_close, rc.hours_configured
   FROM rc
 ), r AS (
   SELECT 1 AS n, 'exactly one DUR-01 audit row' AS "check", v.n_audit::text AS observed, '1' AS expected,
@@ -331,9 +389,16 @@ UNION ALL SELECT 17, 'no written id overlaps another live booking of the same pa
 UNION ALL SELECT 18, 'every id the op held still lasts one minute',
        v.x_still_short::text, v.n_x::text,
        CASE WHEN v.x_still_short <> v.n_x THEN 'FAIL' WHEN v.n_x = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 19, 'the appointment total, counting rows created up to the op, equals the recorded count',
-       v.total_then_now::text, coalesce(v.total_before::text, 'none'),
-       CASE WHEN v.total_then_now IS DISTINCT FROM v.total_before THEN 'FAIL' ELSE 'OK' END FROM v
+UNION ALL SELECT 19, 'the appointment total stage 2 counted under its lock after the write equals the one before (audit row)',
+       'after ' || coalesce(v.total_after::text, 'none'), 'before ' || coalesce(v.total_before::text, 'none'),
+       CASE WHEN v.total_after IS NULL OR v.total_before IS NULL OR v.total_after <> v.total_before
+            THEN 'FAIL' ELSE 'OK' END FROM v
+UNION ALL SELECT 20, 'no written id is a NESA booked at a clinic where it is not installed (SCHED-17)',
+       v.resource_away::text || ' / control ' || v.rc_n::text, '0 / control ' || v.n_w::text,
+       CASE WHEN v.resource_away <> 0 OR v.rc_n <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 21, 'no written id overlaps the NESA hour a live twin''s person row holds, or will hold after STAFF-10 v2',
+       v.twin_hold::text || ' / control ' || v.live_self::text, '0 / control ' || v.n_w::text,
+       CASE WHEN v.twin_hold <> 0 OR v.live_self <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 )
 SELECT r.n, r."check", r.observed, r.expected, r.verdict FROM r
 UNION ALL

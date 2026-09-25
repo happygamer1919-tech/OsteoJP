@@ -11,8 +11,15 @@
  * scripts/data/dur-01-1-measure.sql, byte for byte) over a seeded tenant, and
  * for every candidate asks the app, under runScoped with RLS, what its
  * reschedule would ask - findConflictsForWindow filtered by blockingConflicts,
- * checkAvailability, checkClinicClosure and checkClinicWindow - and requires
- * the two to agree, row for row, flag for flag.
+ * checkAvailability, checkClinicClosure, checkClinicWindow, and SCHED-17's
+ * sharedResourceLocationAllowed over listSharedResourcesTx, as
+ * sharedResourceBookingCheck asks it - and requires the two to agree, row for
+ * row, flag for flag.
+ *
+ * It also proves the order with STAFF-10 v2 cannot change the answer: a NESA
+ * stub clear of a live twin's NESA row but inside its longer person row is
+ * clear to the app today and held by stage 1 (verdict 17); with STAFF-10 v2's
+ * two writes applied to that twin, the app sees the booking too (verdict 12).
  *
  * Every arm has its opposite in the seed, so an always-true or always-false
  * mirror fails. The dates are fixed, in January 2031 (Lisbon on UTC), never
@@ -45,7 +52,7 @@ function baseQuery(tenantId: string): string {
   if (!/^[0-9a-f-]{36}$/.test(tenantId)) throw new Error("not a uuid");
   return `WITH\n${STAGE1.slice(a, b + END.length)}\n
 SELECT v.id::text AS id, v.hits_booking, v.hits_block, v.in_closure, v.out_of_window, v.outside_hours,
-       v.is_twin, v.verdict, (v.proposed_end IS NOT NULL) AS has_window
+       v.resource_away, v.hits_twin_hold, v.is_twin, v.verdict, (v.proposed_end IS NOT NULL) AS has_window
   FROM v WHERE v.tenant_id = '${tenantId}'::uuid ORDER BY v.id`;
 }
 
@@ -59,7 +66,7 @@ type Stub = {
   startsAt: string;
   room?: string | null;
 };
-type Flags = { booking: boolean; block: boolean; closure: boolean; window: boolean; hours: boolean };
+type Flags = { booking: boolean; block: boolean; closure: boolean; window: boolean; hours: boolean; resourceAway: boolean };
 
 d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row", () => {
   let sql: Awaited<ReturnType<typeof import("@osteojp/db").getDbAdmin>>;
@@ -67,6 +74,8 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
   let conflict: typeof import("./conflict");
   let availability: typeof import("./availability-enforcement");
   let clinic: typeof import("./clinic-closure-enforcement");
+  let sharedResources: typeof import("./shared-resources");
+  let guard: typeof import("./shared-resource-guard");
 
   const tenantId = randomUUID();
   const ownerId = randomUUID();
@@ -89,7 +98,10 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
 
   /** The stubs, one per arm and its opposite; `want` is what the app must say. */
   const stubs: Array<Stub & { id: string; want: Flags }> = [];
-  const none: Flags = { booking: false, block: false, closure: false, window: false, hours: false };
+  const none: Flags = { booking: false, block: false, closure: false, window: false, hours: false, resourceAway: false };
+  /** The live future twin of the D5 arm, and the NESA stub inside its person row. */
+  let d5PersonRow = "";
+  let d5NesaRow = "";
   const stub = (s: Stub, want: Partial<Flags>) => stubs.push({ ...s, id: randomUUID(), want: { ...none, ...want } });
 
   beforeAll(async () => {
@@ -99,6 +111,8 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
     conflict = await import("./conflict");
     availability = await import("./availability-enforcement");
     clinic = await import("./clinic-closure-enforcement");
+    sharedResources = await import("./shared-resources");
+    guard = await import("./shared-resource-guard");
 
     await sql.execute(raw`insert into tenants (id, name, slug) values (${tenantId}, 'DUR-01 Classification Co', ${"dur01-" + tenantId.slice(0, 8)})`);
     await sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active, is_bookable)
@@ -216,6 +230,15 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
     const twinPatient = next();
     stub(base("twin person half", t[15]!, "11:00", { serviceId: nesaService, patientId: twinPatient }), {});
     await neighbour({ practitionerId: nesa, from: "11:00", to: "12:00", serviceId: nesaService, patientId: twinPatient });
+    // SCHED-17: NESA is installed at LV only. At CB the app refuses it for every
+    // role; the NESA stub at LV above (09:00) is its opposite.
+    stub(base("NESA at a clinic where it is not installed", nesa, "18:30", { serviceId: nesaService, locationId: cb }), { resourceAway: true });
+    // D5: a live twin whose person row (an hour) is longer than its NESA row (half
+    // an hour), and a NESA stub of another patient starting where the NESA row ends.
+    const d5Patient = next();
+    d5PersonRow = await neighbour({ practitionerId: t[10]!, from: "16:00", to: "17:00", serviceId: nesaService, patientId: d5Patient });
+    d5NesaRow = await neighbour({ practitionerId: nesa, from: "16:00", to: "16:30", serviceId: nesaService, patientId: d5Patient });
+    stub(base("NESA stub inside a live twin's person row", nesa, "16:30", { serviceId: nesaService }), {});
 
     for (const s of stubs) {
       await sql.execute(raw`insert into appointments (id, tenant_id, patient_id, practitioner_id, practitioner_2_id, location_id,
@@ -229,7 +252,7 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
           jsonb_build_object('inicio', ${"2031-01-15 " + s.startsAt}::text, 'fim', ${"2031-01-15 " + plusOneMinute(s.startsAt)}::text),
           'imported', ${s.id})`);
     }
-  });
+  }, 120_000);
 
   afterAll(async () => {
     if (!sql) return;
@@ -244,7 +267,7 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
     await sql.execute(raw`delete from locations where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from users where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from tenants where id = ${tenantId}`);
-  });
+  }, 120_000);
 
   type Row = Record<string, unknown>;
   async function rows(q: Parameters<typeof sql.execute>[0]): Promise<Row[]> {
@@ -272,12 +295,16 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
       const av = await availability.checkAvailability(tx, { practitionerId: s.practitionerId, locationId: s.locationId, startsAt, endsAt });
       const cl = await clinic.checkClinicClosure(tx, { locationId: s.locationId, startsAt, endsAt });
       const cw = await clinic.checkClinicWindow(tx, { locationId: s.locationId, startsAt });
+      // sharedResourceBookingCheck, as rescheduleAppointment asks it, for the owner.
+      const resource = (await sharedResources.listSharedResourcesTx(tx)).find((r) => r.id === s.practitionerId) ?? null;
+      const allowed = guard.sharedResourceLocationAllowed({ role: "owner", actorLocationIds: [], resource, targetLocationId: s.locationId });
       return {
         booking: found.some((c) => c.kind === "therapist" || c.kind === "room"),
         block: found.some((c) => c.kind === "time_off"),
         closure: !cl.ok,
         window: !cw.ok,
         hours: !av.ok,
+        resourceAway: !allowed,
       };
     });
   }
@@ -287,11 +314,11 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
       expect({ label: s.label, ...(await appFlags(s)) }).toEqual({ label: s.label, ...s.want });
     }
     // Every flag is true on some stub and false on another.
-    for (const k of ["booking", "block", "closure", "window", "hours"] as const) {
+    for (const k of ["booking", "block", "closure", "window", "hours", "resourceAway"] as const) {
       expect(stubs.some((s) => s.want[k])).toBe(true);
       expect(stubs.some((s) => !s.want[k])).toBe(true);
     }
-  });
+  }, 60_000);
 
   it("stage 1's BASE reads every stub, and agrees with the app on every flag of every row", async () => {
     const got = await rows(raw.raw(baseQuery(tenantId)));
@@ -310,10 +337,11 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
           closure: r!.in_closure,
           window: r!.out_of_window,
           hours: r!.outside_hours,
+          resourceAway: r!.resource_away,
         },
       ).toEqual({ label: s.label, ...app });
     }
-  });
+  }, 60_000);
 
   it("the NESA twin: the app sees no conflict, and stage 1 holds it as verdict 08", async () => {
     const s = stubs.find((x) => x.label === "twin person half")!;
@@ -322,7 +350,35 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
     const r = (await rows(raw.raw(baseQuery(tenantId)))).find((x) => String(x.id) === s.id)!;
     expect(r.is_twin).toBe(true);
     expect(r.verdict).toBe("08 PART OF A NESA TWIN");
-  });
+  }, 60_000);
+
+  it("D5: the NESA hour a live twin will move is held in either order, and the app agrees once STAFF-10 v2's writes land", async () => {
+    const s = stubs.find((x) => x.label === "NESA stub inside a live twin's person row")!;
+    // Before STAFF-10 v2: the app sees nothing, stage 1 holds the stub through the person row.
+    expect(await appFlags(s)).toEqual(none);
+    const before = (await rows(raw.raw(baseQuery(tenantId)))).find((x) => String(x.id) === s.id)!;
+    expect({ booking: before.hits_booking, hold: before.hits_twin_hold, verdict: before.verdict }).toEqual({
+      booking: false,
+      hold: true,
+      verdict: "17 OVERLAPS THE NESA HOUR OF A LIVE TWIN",
+    });
+    // STAFF-10 v2's W6 and W7 on that twin: the person row takes the NESA as
+    // Terapeuta 2, the NESA row is cancelled. Undone after, so no other test sees it.
+    await sql.execute(raw`update appointments set practitioner_2_id = ${nesa} where id = ${d5PersonRow}`);
+    await sql.execute(raw`update appointments set status = 'cancelled' where id = ${d5NesaRow}`);
+    try {
+      expect((await appFlags(s)).booking).toBe(true);
+      const after = (await rows(raw.raw(baseQuery(tenantId)))).find((x) => String(x.id) === s.id)!;
+      expect({ booking: after.hits_booking, hold: after.hits_twin_hold, verdict: after.verdict }).toEqual({
+        booking: true,
+        hold: false,
+        verdict: "12 OVERLAPS A BOOKING",
+      });
+    } finally {
+      await sql.execute(raw`update appointments set practitioner_2_id = null where id = ${d5PersonRow}`);
+      await sql.execute(raw`update appointments set status = 'scheduled' where id = ${d5NesaRow}`);
+    }
+  }, 60_000);
 
   it("THE NO-CLAIMS TRAP: appointment_conflicts called with no JWT finds nothing where the inline rule finds the row", async () => {
     const s = stubs.find((x) => x.label === "therapist, inside")!;
@@ -333,5 +389,5 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
     expect(Number(r?.n)).toBe(0);
     const v = (await rows(raw.raw(baseQuery(tenantId)))).find((x) => String(x.id) === s.id)!;
     expect(v.hits_booking).toBe(true);
-  });
+  }, 60_000);
 });

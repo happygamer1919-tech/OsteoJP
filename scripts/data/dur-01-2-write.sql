@@ -179,9 +179,11 @@ cand AS (
     FROM pop p
    WHERE p.duration_min > 1
 ),
--- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE.
--- These lines are byte-identical in stage 1's BASE, stage 2's BASE, stage 2's
--- RECHECK and stage 3's RECHECK (scripts/dur-01-data-op.test.mjs asserts it).
+-- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
+-- with the two checks the op adds to it (the same patient, and the NESA hour of
+-- a live twin), each marked where it stands. These lines are byte-identical in
+-- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
+-- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
 -- practitioner_id, practitioner_2_id, location_id, room, s, e): the window
 -- [s, e) each candidate would hold. Every interval is half-open, as
@@ -261,6 +263,52 @@ hit_patient AS (
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.patient_id IN (c.patient_id, c.patient_2_id)
       OR o.patient_2_id IN (c.patient_id, c.patient_2_id)
+),
+-- THE NESA HOUR A LIVE TWIN WILL MOVE. Not in the app's rule today; the op adds
+-- it, so the answer does not depend on the order it runs in with STAFF-10 v2
+-- (#1444). That op resolves every future twin whose two rows are both live by
+-- its ruling (c): the person row takes the NESA as Terapeuta 2 and the NESA row
+-- is cancelled, so from then on the NESA is held over the PERSON window, which
+-- its R17 lets be longer than the NESA window. Before it runs, the app's rule
+-- reads only the NESA row. So the person row of every such twin (live, on a
+-- person, with a row of the same patient, start and service, NULL-safe, on a
+-- shared resource and not cancelled or no-show) is read here as holding that
+-- NESA over its own window, whether or not STAFF-10 v2 has run: after it has,
+-- no such pair is left, and the resource arm above reads the same hold through
+-- practitioner_2. A candidate naming that NESA in either slot is held by it,
+-- unless the candidate is that twin's own NESA row, whose hour it is.
+twin_hold AS (
+  SELECT p.id AS hold_id, n.id AS n_id, n.practitioner_id AS res_id, p.tenant_id, p.starts_at, p.ends_at
+    FROM live p
+    JOIN public.appointments ap ON ap.id = p.id
+    JOIN public.users up ON up.id = p.practitioner_id AND up.is_shared_resource IS NOT TRUE
+    JOIN public.appointments n
+      ON n.tenant_id = p.tenant_id AND n.patient_id = p.patient_id
+     AND n.starts_at = p.starts_at AND n.id <> p.id
+     AND n.service_id IS NOT DISTINCT FROM ap.service_id
+     AND n.status NOT IN ('cancelled', 'no_show')
+    JOIN public.users un ON un.id = n.practitioner_id AND un.is_shared_resource IS TRUE
+),
+hit_twin_hold AS (
+  SELECT c.id AS cand_id, h.hold_id AS other_id, h.starts_at AS other_s, h.ends_at AS other_e
+    FROM cand c
+    JOIN twin_hold h ON h.tenant_id = c.tenant_id AND h.hold_id <> c.id AND h.n_id <> c.id
+                    AND h.starts_at < c.e AND h.ends_at > c.s
+   WHERE h.res_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
+),
+-- SCHED-17 (shared-resource-guard.ts, sharedResourceLocationAllowed), which
+-- rescheduleAppointment asks before any other check and which "Guardar mesmo
+-- assim" cannot pass: a row whose Terapeuta is a shared resource may sit only
+-- at a clinic where that resource is installed (staff_locations, in its
+-- tenant), for every role, the owner included. Its other condition, the
+-- actor's own clinics, has no actor in a data op and is not read.
+res_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS res_id
+    FROM cand c
+    JOIN shared r ON r.id = c.practitioner_id AND r.tenant_id = c.tenant_id
+   WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
+                      WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
+                        AND sl.location_id = c.location_id)
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -396,6 +444,8 @@ f AS (
          EXISTS (SELECT 1 FROM hit_block x WHERE x.cand_id = p.id) AS hits_block,
          EXISTS (SELECT 1 FROM pair x WHERE x.cand_id = p.id) AS hits_stub,
          EXISTS (SELECT 1 FROM hit_patient x WHERE x.cand_id = p.id) AS hits_patient,
+         EXISTS (SELECT 1 FROM res_away x WHERE x.cand_id = p.id) AS resource_away,
+         EXISTS (SELECT 1 FROM hit_twin_hold x WHERE x.cand_id = p.id) AS hits_twin_hold,
          EXISTS (SELECT 1 FROM public.users u WHERE u.id = p.practitioner_id AND u.is_shared_resource IS TRUE)
            AS on_resource_row
     FROM pop p
@@ -423,6 +473,8 @@ v AS (
               WHEN f.hits_block THEN '13 OVERLAPS A BLOCK'
               WHEN f.hits_stub THEN '14 OVERLAPS ANOTHER STUB ONCE BOTH ARE EXTENDED'
               WHEN f.hits_patient THEN '15 SAME PATIENT BOOKED ELSEWHERE'
+              WHEN f.resource_away THEN '16 NESA NOT INSTALLED AT THE CLINIC'
+              WHEN f.hits_twin_hold THEN '17 OVERLAPS THE NESA HOUR OF A LIVE TWIN'
               ELSE 'WRITE' END AS verdict
     FROM f CROSS JOIN k
 ),
@@ -494,7 +546,8 @@ ref AS (
                   OR w.proposed_end IS NULL OR w.starts_at < (SELECT k.day1 FROM k)
                   OR w.is_twin IS NOT FALSE OR w.in_closure IS NOT FALSE OR w.out_of_window IS NOT FALSE
                   OR w.outside_hours IS NOT FALSE OR w.hits_booking IS NOT FALSE OR w.hits_block IS NOT FALSE
-                  OR w.hits_stub IS NOT FALSE OR w.hits_patient IS NOT FALSE))::int,
+                  OR w.hits_stub IS NOT FALSE OR w.hits_patient IS NOT FALSE
+                  OR w.resource_away IS NOT FALSE OR w.hits_twin_hold IS NOT FALSE))::int,
          (SELECT count(*) FROM wr)::int
 ),
 -- ---------------------------------------------------------------------------
@@ -681,9 +734,11 @@ car AS (
 -- asserts it); only the cand CTE before it differs, and says where its ids
 -- come from. live_self is the positive control: every written row is itself a
 -- live row, so a live filter that cannot see them reads fewer than n.
--- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE.
--- These lines are byte-identical in stage 1's BASE, stage 2's BASE, stage 2's
--- RECHECK and stage 3's RECHECK (scripts/dur-01-data-op.test.mjs asserts it).
+-- >>> DUR-01 RULE BEGIN. The app's own rule for one candidate window, INLINE,
+-- with the two checks the op adds to it (the same patient, and the NESA hour of
+-- a live twin), each marked where it stands. These lines are byte-identical in
+-- stage 1's BASE, stage 2's BASE, stage 2's RECHECK and stage 3's RECHECK
+-- (scripts/dur-01-data-op.test.mjs asserts it).
 -- They read one input, cand (id, tenant_id, patient_id, patient_2_id,
 -- practitioner_id, practitioner_2_id, location_id, room, s, e): the window
 -- [s, e) each candidate would hold. Every interval is half-open, as
@@ -763,6 +818,52 @@ hit_patient AS (
                AND o.starts_at < c.e AND o.ends_at > c.s
    WHERE o.patient_id IN (c.patient_id, c.patient_2_id)
       OR o.patient_2_id IN (c.patient_id, c.patient_2_id)
+),
+-- THE NESA HOUR A LIVE TWIN WILL MOVE. Not in the app's rule today; the op adds
+-- it, so the answer does not depend on the order it runs in with STAFF-10 v2
+-- (#1444). That op resolves every future twin whose two rows are both live by
+-- its ruling (c): the person row takes the NESA as Terapeuta 2 and the NESA row
+-- is cancelled, so from then on the NESA is held over the PERSON window, which
+-- its R17 lets be longer than the NESA window. Before it runs, the app's rule
+-- reads only the NESA row. So the person row of every such twin (live, on a
+-- person, with a row of the same patient, start and service, NULL-safe, on a
+-- shared resource and not cancelled or no-show) is read here as holding that
+-- NESA over its own window, whether or not STAFF-10 v2 has run: after it has,
+-- no such pair is left, and the resource arm above reads the same hold through
+-- practitioner_2. A candidate naming that NESA in either slot is held by it,
+-- unless the candidate is that twin's own NESA row, whose hour it is.
+twin_hold AS (
+  SELECT p.id AS hold_id, n.id AS n_id, n.practitioner_id AS res_id, p.tenant_id, p.starts_at, p.ends_at
+    FROM live p
+    JOIN public.appointments ap ON ap.id = p.id
+    JOIN public.users up ON up.id = p.practitioner_id AND up.is_shared_resource IS NOT TRUE
+    JOIN public.appointments n
+      ON n.tenant_id = p.tenant_id AND n.patient_id = p.patient_id
+     AND n.starts_at = p.starts_at AND n.id <> p.id
+     AND n.service_id IS NOT DISTINCT FROM ap.service_id
+     AND n.status NOT IN ('cancelled', 'no_show')
+    JOIN public.users un ON un.id = n.practitioner_id AND un.is_shared_resource IS TRUE
+),
+hit_twin_hold AS (
+  SELECT c.id AS cand_id, h.hold_id AS other_id, h.starts_at AS other_s, h.ends_at AS other_e
+    FROM cand c
+    JOIN twin_hold h ON h.tenant_id = c.tenant_id AND h.hold_id <> c.id AND h.n_id <> c.id
+                    AND h.starts_at < c.e AND h.ends_at > c.s
+   WHERE h.res_id IN (SELECT cr.res_id FROM c_res cr WHERE cr.cand_id = c.id)
+),
+-- SCHED-17 (shared-resource-guard.ts, sharedResourceLocationAllowed), which
+-- rescheduleAppointment asks before any other check and which "Guardar mesmo
+-- assim" cannot pass: a row whose Terapeuta is a shared resource may sit only
+-- at a clinic where that resource is installed (staff_locations, in its
+-- tenant), for every role, the owner included. Its other condition, the
+-- actor's own clinics, has no actor in a data op and is not read.
+res_away AS (
+  SELECT c.id AS cand_id, c.practitioner_id AS res_id
+    FROM cand c
+    JOIN shared r ON r.id = c.practitioner_id AND r.tenant_id = c.tenant_id
+   WHERE NOT EXISTS (SELECT 1 FROM public.staff_locations sl
+                      WHERE sl.user_id = c.practitioner_id AND sl.tenant_id = c.tenant_id
+                        AND sl.location_id = c.location_id)
 ),
 -- THE CLINIC (clinic-closure-enforcement.ts and clinic-hours.ts), anchored on
 -- the candidate's own Lisbon day. The midday closure is any overlap, both ends
@@ -855,6 +956,8 @@ rc AS (
          (SELECT count(*) FROM clinic x WHERE x.out_of_window)::int AS clinic_hours,
          (SELECT count(*) FROM avail x WHERE NOT x.covered)::int AS therapist_hours,
          (SELECT count(DISTINCT x.cand_id) FROM hit_patient x)::int AS patient,
+         (SELECT count(*) FROM res_away x)::int AS resource_away,
+         (SELECT count(DISTINCT x.cand_id) FROM hit_twin_hold x)::int AS twin_hold,
          (SELECT count(*) FROM clinic x WHERE x.ends_after_close)::int AS ends_after_close,
          (SELECT count(*) FROM avail x WHERE x.configured)::int AS hours_configured
 )
@@ -866,7 +969,8 @@ rc AS (
       v_rc ->> 'n', v_rc ->> 'live_self', cardinality(v_ids);
   END IF;
   IF (v_rc ->> 'booking')::int + (v_rc ->> 'block')::int + (v_rc ->> 'closure')::int + (v_rc ->> 'clinic_hours')::int
-     + (v_rc ->> 'therapist_hours')::int + (v_rc ->> 'patient')::int <> 0 THEN
+     + (v_rc ->> 'therapist_hours')::int + (v_rc ->> 'patient')::int
+     + (v_rc ->> 'resource_away')::int + (v_rc ->> 'twin_hold')::int <> 0 THEN
     RAISE EXCEPTION 'STOP: after the write a written row overlaps something the rule forbids: %. Nothing was written', v_rc;
   END IF;
 
@@ -913,6 +1017,7 @@ rc AS (
     'verdicts', v_verdicts,
     'population', v_pop_n,
     'before', jsonb_build_object('appointments', v_b_total, 'written', cardinality(v_ids)),
+    'after', jsonb_build_object('appointments', v_a_total),
     'md5', jsonb_build_object('frozen', v_b_md5_frozen, 'rest', v_b_md5_rest),
     'md5_rows', jsonb_build_object('frozen', v_bn_frozen, 'rest', v_bn_rest),
     'recheck', v_rc
