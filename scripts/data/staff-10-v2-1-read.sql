@@ -447,12 +447,17 @@ ref AS (
   UNION ALL
   -- Stage 3 checks the Linda-a-Velha roster on the next real Saturday JP(lv)
   -- holds as a dated row. After the write those are JP(lv)'s own and the moved
-  -- ones; with neither, that check could not run, so the op refuses first.
-  SELECT 'R28', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today and none moves',
+  -- ones; with neither, that check could not run, so the op refuses first. A
+  -- real Saturday is one on which the slot query and the confirm guard would
+  -- offer the row: the DATE is a Saturday AND the weekday column is 6, the
+  -- column both compare with the day (apps/api/lib/appointments/store.ts). A
+  -- dated Saturday carrying another weekday column is never offered, so it does
+  -- not count; f_move already requires both.
+  SELECT 'R28', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today with weekday column 6, and none moves',
          (CASE WHEN (SELECT count(*) FROM public.availability_templates o, k
                       WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE
                         AND o.valid_from IS NOT NULL AND o.valid_until IS NOT NULL AND o.valid_from = o.valid_until
-                        AND o.valid_from >= k.today AND extract(dow FROM o.valid_from)::int = 6)
+                        AND o.valid_from >= k.today AND extract(dow FROM o.valid_from)::int = 6 AND o.weekday = 6)
                    + (SELECT count(*) FROM cls c WHERE c.f_move) = 0
                THEN 1 ELSE 0 END)::int,
          (SELECT count(*) FROM public.availability_templates o, k

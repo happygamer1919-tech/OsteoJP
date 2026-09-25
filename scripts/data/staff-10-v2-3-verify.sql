@@ -12,6 +12,9 @@
 -- an empty md5 comparison set before the write (R25, R27), so 9, 19, 20 and 21
 -- always compare something. Verdict 10 is VACUOUS exactly when JP(cb) had no
 -- inactive row and nothing was retired, a day on which 2 to 5 are VACUOUS too.
+-- Verdict 11 is VACUOUS when no block was deleted, or when time_off shows JP(cb)
+-- no block from 23 September to 7 October, so a read that sees nothing never
+-- prints OK; it FAILs when its own predicate misses a block stage 2 recorded.
 --
 -- The rows printed after the SUMMARY are the future pairs as they stand after
 -- the write, ids only: the owner-only reception note points at that section.
@@ -38,6 +41,8 @@ WITH k AS (
          'bdc466d7-f81f-4f8c-aa2e-b85194d73e1a'::uuid AS nesa_lv,
          (DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from,
          (DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to,
+         (DATE '2026-09-23')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_from,
+         (DATE '2026-10-08')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_to,
          '2000-01-01 03:00:00+00'::timestamptz AS ctl_from,
          '2000-01-01 03:01:00+00'::timestamptz AS ctl_to,
          (now() AT TIME ZONE 'Europe/Lisbon')::date AS today
@@ -67,17 +72,36 @@ WITH k AS (
   UNION SELECT id FROM xp UNION SELECT p FROM fp UNION SELECT n FROM fp
 ), sat AS (
   -- The next REAL Saturday, today or later, on which JP(lv) holds a dated
-  -- Linda-a-Velha row. The roster is evaluated there, not only today. Picked
-  -- from JP(lv)'s own rows, so the schedule half of verdict 8's positive control
+  -- Linda-a-Velha row. The roster is evaluated there, not only today. A real
+  -- Saturday row is one the app would offer on that day: the DATE is a Saturday
+  -- AND the weekday column is 6, because the slot grid and the confirm guard
+  -- (apps/api/lib/appointments/store.ts, the slot query and
+  -- availabilityCoversExists) both require av.weekday to equal the day's weekday.
+  -- R28 refuses before the write when no such row would exist. Picked from
+  -- JP(lv)'s own rows, so the schedule half of verdict 8's positive control
   -- holds by construction; the user half does not: the JP(lv) arm applies the
-  -- roster's user predicate (apps/api/lib/appointments/store.ts: active,
-  -- bookable, not a shared resource), so a JP(lv) the roster would not list
-  -- reads 0 there and FAILs.
+  -- roster's user predicate (active, bookable, not a shared resource), so a
+  -- JP(lv) the roster would not list reads 0 there and FAILs.
   SELECT min(av.valid_from) AS d
     FROM public.availability_templates av, k
    WHERE av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
      AND av.valid_from IS NOT NULL AND av.valid_until IS NOT NULL AND av.valid_from = av.valid_until
-     AND av.valid_from >= k.today AND extract(dow FROM av.valid_from)::int = 6
+     AND av.valid_from >= k.today AND extract(dow FROM av.valid_from)::int = 6 AND av.weekday = 6
+), blk AS (
+  -- The 30 September read and its positive controls, by ONE predicate over two
+  -- sources: time_off as it reads now, and the blocks stage 2 copied whole into
+  -- the audit row before deleting them, read back as time_off rows. Both pass
+  -- the same user id and the same window, and on_30 is the same overlap test for
+  -- both, so a wrong user id or a broken predicate cannot read 0 now without also
+  -- missing the block it was meant to find (verdict 11 FAILs), and a time_off
+  -- that reads nothing shows no JP(cb) block from 23 September to 7 October
+  -- either (verdict 11 is VACUOUS, not OK).
+  SELECT t.src, (t.starts_at < k.blk_to AND t.ends_at > k.blk_from) AS on_30
+    FROM (SELECT 'now' AS src, x.* FROM public.time_off x
+          UNION ALL
+          SELECT 'recorded', x.*
+            FROM al, jsonb_populate_recordset(NULL::public.time_off, coalesce(al.m -> 'deleted_blocks', '[]'::jsonb)) x) t, k
+   WHERE t.user_id = k.jp_cb AND t.starts_at < k.ctl_blk_to AND t.ends_at > k.ctl_blk_from
 ), v AS (
   SELECT
     (SELECT count(*) FROM public.audit_log a WHERE a.action = 'staff.staff10_v2.apply')::int AS audit_rows,
@@ -108,8 +132,11 @@ WITH k AS (
        JOIN public.users u ON u.id = av.user_id AND u.tenant_id = av.tenant_id, k, sat
       WHERE sat.d IS NOT NULL AND av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
         AND u.is_active IS TRUE AND u.is_bookable IS TRUE AND u.is_shared_resource IS FALSE
+        AND av.weekday = extract(dow FROM sat.d)::int
         AND (av.valid_from IS NULL OR av.valid_from <= sat.d)
         AND (av.valid_until IS NULL OR av.valid_until >= sat.d))::int AS roster_lv_at_sat,
+    -- JP(cb)'s arm must read 0, so it takes no weekday predicate: any active
+    -- JP(cb) Linda-a-Velha row covering the day counts against it.
     (SELECT count(*) FROM public.availability_templates av, k, sat
       WHERE sat.d IS NOT NULL AND av.user_id = k.jp_cb AND av.location_id = k.lv_loc AND av.is_active IS TRUE
         AND (av.valid_from IS NULL OR av.valid_from <= sat.d)
@@ -122,8 +149,9 @@ WITH k AS (
     (SELECT count(*) FROM public.availability_templates av, k
       WHERE av.user_id = k.jp_cb AND av.is_active IS NOT TRUE)::int AS cb_inactive_now,
     (SELECT jsonb_array_length(coalesce(al.m -> 'deleted_blocks', '[]'::jsonb)) FROM al)::int AS n_blk,
-    (SELECT count(*) FROM public.time_off t, k
-      WHERE t.user_id = k.jp_cb AND t.starts_at < k.blk_to AND t.ends_at > k.blk_from)::int AS blk_now,
+    (SELECT count(*) FROM blk WHERE blk.src = 'now' AND blk.on_30)::int AS blk_now,
+    (SELECT count(*) FROM blk WHERE blk.src = 'recorded' AND blk.on_30)::int AS blk_replay,
+    (SELECT count(*) FROM blk WHERE blk.src = 'now')::int AS blk_win_now,
     (SELECT count(*) FROM al, jsonb_array_elements(coalesce(al.m -> 'deleted_blocks', '[]'::jsonb)) b
       WHERE b ? 'id' AND b ? 'user_id' AND b ? 'starts_at' AND b ? 'ends_at' AND b ? 'reason')::int AS blk_recorded,
     (SELECT count(*) FROM ids WHERE s = 'h')::int AS n_h,
@@ -223,7 +251,7 @@ UNION ALL SELECT 6, 'every moved row is an active real Saturday on JP(lv) at Lin
 UNION ALL SELECT 7, 'JP(cb) holds no active Linda-a-Velha row; control: JP(lv) holds one from today',
        v.cb_lv_active::text || ' / control ' || v.lv_lv_future::text, '0 / control above 0',
        CASE WHEN v.cb_lv_active <> 0 OR v.lv_lv_future = 0 THEN 'FAIL' ELSE 'OK' END FROM v
-UNION ALL SELECT 8, 'LV roster at the next real Saturday JP(lv) holds: JP(lv) listed (active, bookable, not shared), JP(cb) holds no row there',
+UNION ALL SELECT 8, 'LV roster at the next real Saturday JP(lv) holds: JP(lv) listed (active, bookable, not shared, a row with weekday 6 covering the day), JP(cb) holds no row there',
        coalesce(v.sat_day::text, '(no such Saturday)') || ': JP(lv) ' || v.roster_lv_at_sat::text
          || ', JP(cb) ' || v.roster_cb_at_sat::text, 'JP(lv) above 0, JP(cb) 0',
        CASE WHEN v.roster_cb_at_sat <> 0 THEN 'FAIL' WHEN v.sat_day IS NULL THEN 'VACUOUS'
@@ -241,9 +269,12 @@ UNION ALL SELECT 10, 'no previously inactive JP(cb) row was reactivated',
             THEN 'FAIL'
             WHEN ((v.m -> 'before' ->> 'cb_inactive')::int + v.n_rcov + v.n_rpast + v.n_rphan + v.n_rwin) = 0
             THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 11, 'no JP(cb) block overlaps 30 September any more',
-       v.blk_now::text, '0',
-       CASE WHEN v.blk_now <> 0 THEN 'FAIL' WHEN v.n_blk = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 11, 'no JP(cb) block overlaps 30 September any more; control: the same read finds every block stage 2 recorded, and JP(cb) blocks from 23 September to 7 October read now',
+       v.blk_now::text || ' / control ' || v.blk_replay::text || ' of ' || v.n_blk::text || ' recorded, '
+         || v.blk_win_now::text || ' read now',
+       '0 / control ' || v.n_blk::text || ' of ' || v.n_blk::text || ' recorded, above 0 read now',
+       CASE WHEN v.blk_now <> 0 OR v.blk_replay <> v.n_blk THEN 'FAIL'
+            WHEN v.n_blk = 0 OR v.blk_win_now = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 12, 'every deleted block was recorded whole, so it can be restored',
        v.blk_recorded::text, v.n_blk::text,
        CASE WHEN v.blk_recorded <> v.n_blk THEN 'FAIL' WHEN v.n_blk = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v

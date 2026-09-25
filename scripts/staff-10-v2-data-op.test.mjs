@@ -279,6 +279,124 @@ test("R02 and verdict 8 read the roster's own user predicate: active, bookable, 
   assert.match(lv, /u\.is_active IS TRUE AND u\.is_bookable IS TRUE AND u\.is_shared_resource IS FALSE/, "verdict 8's JP(lv) arm does not apply the roster's user predicate");
 });
 
+test("R28 and verdict 8 read the weekday column the slot query reads: a real Saturday row has weekday 6", () => {
+  const store = read("apps/api/lib/appointments/store.ts");
+  assert.match(store, /and av\.weekday = extract\(dow from \(\$\{s\} at time zone \$\{LISBON\}\)\)::int/, "the confirm guard's weekday predicate moved; re-read it before trusting R28 and verdict 8");
+  assert.match(store, /and av\.weekday = extract\(dow from d\.day\)::int/, "the slot grid's weekday predicate moved; re-read it before trusting R28 and verdict 8");
+  const r28 = SETS.slice(SETS.indexOf("'R28'"), SETS.indexOf("'R29'"));
+  assert.match(r28, /extract\(dow FROM o\.valid_from\)::int = 6 AND o\.weekday = 6\)/, "R28 counts a dated Saturday whose weekday column is not 6, which the app never offers");
+  const sat = S3.slice(S3.indexOf("), sat AS ("), S3.indexOf("), blk AS ("));
+  assert.match(sat, /extract\(dow FROM av\.valid_from\)::int = 6 AND av\.weekday = 6\n/, "verdict 8's Saturday can be a row the app never offers on that day");
+  const lv = S3.slice(S3.lastIndexOf("(SELECT count(*)", S3.indexOf("AS roster_lv_at_sat")), S3.indexOf("AS roster_lv_at_sat"));
+  assert.match(lv, /AND av\.weekday = extract\(dow FROM sat\.d\)::int\n/, "verdict 8's JP(lv) arm does not apply the weekday predicate");
+});
+
+/** The verdict rows of stage 3, one string per verdict, in order. */
+const verdictRows = () => S3.slice(S3.indexOf("), r AS ("), S3.indexOf("SELECT r.n, r.\"check\"")).split(/\nUNION ALL SELECT /);
+
+test("verdict 11 has a positive control: ONE predicate reads time_off now and the blocks stage 2 recorded, and an empty read is VACUOUS", () => {
+  const blk = S3.slice(S3.indexOf("), blk AS ("), S3.indexOf("), v AS ("));
+  assert.match(blk, /SELECT 'now' AS src, x\.\* FROM public\.time_off x\s+UNION ALL\s+SELECT 'recorded', x\.\*\s+FROM al, jsonb_populate_recordset\(NULL::public\.time_off, coalesce\(al\.m -> 'deleted_blocks', '\[\]'::jsonb\)\) x\) t, k/, "the recorded blocks do not pass through the same read as time_off");
+  assert.match(blk, /\n   WHERE t\.user_id = k\.jp_cb AND t\.starts_at < k\.ctl_blk_to AND t\.ends_at > k\.ctl_blk_from\n/, "the user and the window are not applied once to both sources");
+  assert.equal((code(blk).match(/k\.blk_to/g) ?? []).length, 1, "the 30 September test is written more than once, so the control could read a different predicate");
+  for (const w of ["(DATE '2026-09-23')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_from", "(DATE '2026-10-08')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_to"]) {
+    assert.ok(SETS.includes(w) && S3.includes(w), `stage 3's control window is not stage 1's R06 window: ${w}`);
+  }
+  assert.equal((code(S3).match(/public\.time_off\b/g) ?? []).length, 2, "stage 3 reads time_off outside the controlled read");
+  assert.match(S3, /\(SELECT count\(\*\) FROM blk WHERE blk\.src = 'now' AND blk\.on_30\)::int AS blk_now,/);
+  assert.match(S3, /\(SELECT count\(\*\) FROM blk WHERE blk\.src = 'recorded' AND blk\.on_30\)::int AS blk_replay,/);
+  assert.match(S3, /\(SELECT count\(\*\) FROM blk WHERE blk\.src = 'now'\)::int AS blk_win_now,/);
+  const eleven = verdictRows()[10];
+  assert.match(eleven, /^11, 'no JP\(cb\) block overlaps 30 September/);
+  assert.match(eleven, /CASE WHEN v\.blk_now <> 0 OR v\.blk_replay <> v\.n_blk THEN 'FAIL'\s+WHEN v\.n_blk = 0 OR v\.blk_win_now = 0 THEN 'VACUOUS' ELSE 'OK' END/, "verdict 11 is not FAIL on a missed recorded block and VACUOUS on an empty read");
+});
+
+/* The columns of public.appointments, twice: from the drizzle table and from the
+   migrations' own DDL, which must agree, so a column added by either lands here. */
+const stripSql = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--.*$/gm, "");
+function appointmentColumnsFromSchema() {
+  const src = read("packages/db/src/schema.ts");
+  const at = src.indexOf("export const appointments = pgTable(");
+  assert.ok(at >= 0, "schema.ts has no appointments table");
+  const open = src.indexOf("{", at);
+  const close = src.indexOf("\n  },\n", open);
+  const body = src.slice(open, close).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  return [...body.matchAll(/^\s+[a-zA-Z0-9]+: [a-zA-Z0-9]+\("([a-z_0-9]+)"/gm)].map((m) => m[1]);
+}
+function appointmentColumnsFromMigrations() {
+  const journal = JSON.parse(read("packages/db/migrations/meta/_journal.json"));
+  const cols = [];
+  const TABLE = String.raw`(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:ONLY\s+)?(?:"?public"?\.)?"?appointments"?`;
+  for (const e of journal.entries) {
+    const sql = stripSql(read(`packages/db/migrations/${e.tag}.sql`));
+    for (const m of sql.matchAll(new RegExp(String.raw`CREATE TABLE ${TABLE} \(([\s\S]*?)\n\);`, "gi"))) {
+      for (const c of m[1].matchAll(/^\s*"?([a-z_0-9]+)"?\s+/gm)) {
+        if (!/^(constraint|primary|unique|check|foreign|exclude)$/i.test(c[1])) cols.push(c[1]);
+      }
+    }
+    for (const stmt of sql.split(";")) {
+      if (!new RegExp(String.raw`^\s*ALTER TABLE ${TABLE}\s`, "i").test(stmt)) continue;
+      for (const m of stmt.matchAll(/ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_0-9]+)"?/gi)) if (!cols.includes(m[1])) cols.push(m[1]);
+      for (const m of stmt.matchAll(/DROP COLUMN\s+(?:IF EXISTS\s+)?"?([a-z_0-9]+)"?/gi)) cols.splice(cols.indexOf(m[1]), 1);
+      for (const m of stmt.matchAll(/RENAME COLUMN\s+"?([a-z_0-9]+)"?\s+TO\s+"?([a-z_0-9]+)"?/gi)) cols.splice(cols.indexOf(m[1]), 1, m[2]);
+    }
+  }
+  return cols;
+}
+/** Every appointments column stage 2 assigns in an UPDATE ... SET. */
+function writtenAppointmentColumns(s2) {
+  const cols = new Set();
+  for (const m of code(s2).matchAll(/UPDATE public\.appointments SET ([\s\S]*?)\n\s*(?:WHERE|FROM)\b/g)) {
+    for (const c of m[1].matchAll(/(?:^|,)\s*([a-z_0-9]+)\s*=/g)) cols.add(c[1]);
+  }
+  return [...cols].sort();
+}
+/** The column lists of the w_fixed fingerprint: the baseline, then the check after the writes. */
+function fixedFingerprints(s2) {
+  const c = code(s2);
+  return ["INTO v_bn_w_fixed, v_b_md5_w_fixed", "IS DISTINCT FROM v_b_md5_w_fixed"].map((anchor) => {
+    const at = c.indexOf(anchor);
+    assert.ok(at > 0, `stage 2 has no "${anchor}"`);
+    const row = c.lastIndexOf("ROW(", at);
+    const end = c.indexOf(")::text", row);
+    assert.ok(row > 0 && end > row && end < at, `the w_fixed ROW() before "${anchor}" did not parse`);
+    return [...c.slice(row + 4, end).matchAll(/\ba\.([a-z_0-9]+)/g)].map((m) => m[1]);
+  });
+}
+/** What each w_fixed list lacks, or holds beyond, the columns the op does not write. */
+function fixedGap(s2, columns, written) {
+  const want = columns.filter((col) => !written.includes(col));
+  return fixedFingerprints(s2).map((list) => ({
+    missing: want.filter((col) => !list.includes(col)),
+    extra: list.filter((col) => !want.includes(col)),
+  }));
+}
+
+test("the written-row fingerprint covers EVERY appointments column the op does not write, from schema.ts and the migrations", () => {
+  const schema = appointmentColumnsFromSchema();
+  const migrated = appointmentColumnsFromMigrations();
+  assert.ok(schema.length > 0 && new Set(schema).size === schema.length, "schema.ts's appointments columns did not parse");
+  assert.deepEqual([...migrated].sort(), [...schema].sort(), "schema.ts and the migrations disagree on the appointments columns");
+  for (const col of ["confirmation_received_at", "confirmation_channel", "confirmation_state", "origin", "pack_instance_id"]) {
+    assert.ok(schema.includes(col), `the column parse missed ${col}`);
+  }
+  const written = writtenAppointmentColumns(S2);
+  assert.deepEqual(written, ["practitioner_2_id", "practitioner_id", "status", "updated_at"], "stage 2 writes an appointments column the fingerprint was not built around");
+  const [before, after] = fixedFingerprints(S2);
+  assert.deepEqual(after, before, "the w_fixed check after the writes is not the baseline's list");
+  for (const [i, g] of fixedGap(S2, schema, written).entries()) {
+    const which = i === 0 ? "the baseline" : "the check after the writes";
+    assert.deepEqual(g.missing, [], `${which} of w_fixed leaves out a column the op does not write: ${g.missing.join(", ")}`);
+    assert.deepEqual(g.extra, [], `${which} of w_fixed names a column the op writes, or none at all: ${g.extra.join(", ")}`);
+  }
+  // The assertion can fail: round 2's list, without the two confirmation columns, is caught.
+  const round2 = S2.replaceAll("a.confirmation_received_at, a.confirmation_channel, ", "");
+  assert.notEqual(round2, S2);
+  for (const g of fixedGap(round2, schema, written)) {
+    assert.deepEqual(g.missing, ["confirmation_received_at", "confirmation_channel"], "the gap check does not see a missing column");
+  }
+});
+
 test("every md5 baseline stage 2 compares is in the audit row with its row count, and a guaranteed family stops when empty", () => {
   const c = code(S2);
   const declared = [...new Set([...c.matchAll(/\bv_b_md5_([a-z_]+) text/g)].map((m) => m[1]))].sort();

@@ -553,12 +553,17 @@ ref AS (
   UNION ALL
   -- Stage 3 checks the Linda-a-Velha roster on the next real Saturday JP(lv)
   -- holds as a dated row. After the write those are JP(lv)'s own and the moved
-  -- ones; with neither, that check could not run, so the op refuses first.
-  SELECT 'R28', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today and none moves',
+  -- ones; with neither, that check could not run, so the op refuses first. A
+  -- real Saturday is one on which the slot query and the confirm guard would
+  -- offer the row: the DATE is a Saturday AND the weekday column is 6, the
+  -- column both compare with the day (apps/api/lib/appointments/store.ts). A
+  -- dated Saturday carrying another weekday column is never offered, so it does
+  -- not count; f_move already requires both.
+  SELECT 'R28', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today with weekday column 6, and none moves',
          (CASE WHEN (SELECT count(*) FROM public.availability_templates o, k
                       WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE
                         AND o.valid_from IS NOT NULL AND o.valid_until IS NOT NULL AND o.valid_from = o.valid_until
-                        AND o.valid_from >= k.today AND extract(dow FROM o.valid_from)::int = 6)
+                        AND o.valid_from >= k.today AND extract(dow FROM o.valid_from)::int = 6 AND o.weekday = 6)
                    + (SELECT count(*) FROM cls c WHERE c.f_move) = 0
                THEN 1 ELSE 0 END)::int,
          (SELECT count(*) FROM public.availability_templates o, k
@@ -706,8 +711,14 @@ ref AS (
   SELECT count(*)::int, md5(coalesce(string_agg((a.*)::text, E'\n' ORDER BY a.id), '')) INTO v_bn_appt_rest, v_b_md5_appt_rest
     FROM public.appointments a
    WHERE a.tenant_id = v_tenant AND NOT EXISTS (SELECT 1 FROM unnest(v_written) w(id) WHERE w.id = a.id);
+  -- w_fixed: EVERY appointments column the op does not write. The op writes
+  -- practitioner_id, practitioner_2_id, status and updated_at and nothing else;
+  -- the other columns are listed here in full (packages/db/src/schema.ts and the
+  -- migrations, which scripts/staff-10-v2-data-op.test.mjs reads to hold this
+  -- list complete), and the same list is compared after the writes.
   SELECT count(*)::int, md5(coalesce(string_agg(ROW(a.id, a.tenant_id, a.patient_id, a.location_id, a.service_id, a.room,
-                                     a.starts_at, a.ends_at, a.patient_2_id, a.confirmation_state, a.origin,
+                                     a.starts_at, a.ends_at, a.patient_2_id, a.confirmation_state,
+                                     a.confirmation_received_at, a.confirmation_channel, a.origin,
                                      a.pack_instance_id, a.notes, a.created_by, a.created_at, a.booking_group_id,
                                      a.batch_id, a.recurrence_rule, a.recurrence_parent_id)::text, E'\n' ORDER BY a.id), ''))
     INTO v_bn_w_fixed, v_b_md5_w_fixed
@@ -957,7 +968,8 @@ ref AS (
     RAISE EXCEPTION 'STOP: an appointment outside the four sets changed';
   END IF;
   IF (SELECT md5(coalesce(string_agg(ROW(a.id, a.tenant_id, a.patient_id, a.location_id, a.service_id, a.room,
-                                         a.starts_at, a.ends_at, a.patient_2_id, a.confirmation_state, a.origin,
+                                         a.starts_at, a.ends_at, a.patient_2_id, a.confirmation_state,
+                                         a.confirmation_received_at, a.confirmation_channel, a.origin,
                                          a.pack_instance_id, a.notes, a.created_by, a.created_at, a.booking_group_id,
                                          a.batch_id, a.recurrence_rule, a.recurrence_parent_id)::text, E'\n' ORDER BY a.id), ''))
         FROM public.appointments a WHERE a.id IN (SELECT w.id FROM unnest(v_written) w(id)))
