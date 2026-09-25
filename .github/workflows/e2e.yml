@@ -1,6 +1,13 @@
 name: E2E
 
-# Two jobs, and the distinction between them is the whole design:
+# Three jobs. The distinction between the last two is the whole design, and
+# the first decides whether the second runs at all:
+#
+#   "E2E eligibility"          : the decision. Reads the PR's live state and
+#                                says whether the suite runs (armed, GATE-CHANGE
+#                                or held-for-apply; see "E2E RUNS ONLY WHEN THE
+#                                PR IS ARMED" below). NOT wired to branch
+#                                protection.
 #
 #   "E2E shard (1|2|3)"        — the work. Three runners, each with its OWN
 #                                Supabase stack, each running one third of the
@@ -9,9 +16,10 @@ name: E2E
 #
 #   "Playwright E2E (seeded DB)" — REQUIRED gate. Does no testing itself: it
 #                                depends on all three shards and fails unless
-#                                every one of them succeeded. This job exists so
-#                                the required check NAME is unchanged by
-#                                sharding, and branch protection needs no edit.
+#                                the suite was meant to run AND every one of
+#                                them succeeded. This job exists so the
+#                                required check NAME is unchanged by sharding,
+#                                and branch protection needs no edit.
 #
 # WHY THE NAME MATTERS. Branch protection pins three contexts by exact string:
 # "Lint + typecheck + test", "DB-gated tests (RLS isolation, seeded DB)" and

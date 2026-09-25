@@ -25,7 +25,7 @@
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
     ".github/workflows/ci.yml": "f028396c6e981733c8a28cc0cfb5b4aff78479149795e2503a97143e3920464c",
     ".github/workflows/db-tests.yml": "de5685b651e90fa2f1ebf807497625d48a4e67fd729fb935d04df2bea5cc6d1a",
-    ".github/workflows/e2e.yml": "f56f8605e873acaec97aaee15f7198ddbe381871cf36992f98f56f8c6d4ecf36",
+    ".github/workflows/e2e.yml": "8e887419322bed4a2e9f337530ffa10542567014cd76993b03e05581e03e47e1",
     ".github/workflows/held-for-apply-blocks-merge.yml": "1874ed14cdbf61261e0d5da952a78f65828c3f81a179b7b309853054a0b57566",
     ".github/workflows/openapi-drift.yml": "79fa51f5d2be2861bd193559610a7d1b762913c20df7a017a1e0e6131b6eb68a",
     ".github/workflows/prod-drift-check.yml": "b1007535c2cce199ff59e1720b4270f84443aeffc4feff80c2d2d4856a50ec0f",
