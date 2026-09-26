@@ -512,19 +512,176 @@ calling it a defect of the op.
 
 ## Rehearsal
 
-### These files: NOT RUN YET
+### These files: the full run of 2026-09-26, on `d92106a2`
 
-**PLACEHOLDER, REPLACED BY THE RECORD OF THE FULL RUN. The database rehearsal has not
-run on the files this document pins.** The kit, `b7-rehearsal/` in the authoring lane's
-scratchpad (not committed, as for 0090 to 0093), is being adapted to the owner's rulings
-of 2026-09-26: a fixture that keeps JP(cb)'s 30 September block, as production will on
-the day; the refusal arms renumbered, the arms of the dropped refusals and verdict
-retired; and new arms for the empty per-row clinical record set, the whole-table
-clinical records control, and the 30 September block present and untouched.
+**On 2026-09-26 the whole kit ran on `d92106a2`, the commit that changed the stage files
+for the owner's rulings of 2026-09-26: 179 arms and 231 checks, and every arm exited
+as wanted and every check held.** The bytes that changed after that commit are this
+section and the sidecar, and nothing else: the three stage files, their pins and every
+fenced block are the same at `d92106a2` and on the commit that carries this section, and
+on that commit the kit's 21 arms that need no database and the unit test ran again,
+green.
 
-The DB-gated suite `apps/web/lib/scheduling/staff-10-v2-option-a-conflict.db.test.ts`
-is unchanged but for its comments: the op is no longer called held, and the two ruling
-(c) writes it repeats carry their new numbers, `W5` and `W6`. CI's DB Tests job runs it.
+**Where it ran.** The throwaway container `supabase_db_OsteoJP-solo-rehearsal` (Postgres
+17, `127.0.0.1:55522`), never an existing database: the run made a NEW one,
+`CREATE DATABASE <run> TEMPLATE s10v2_schema`, where `s10v2_schema` is production's schema
+at 0092 with main's `0093_patient_rgpd_acceptances.sql` applied and its journal row added,
+every public table emptied. Its drizzle journal read `91 139cb96adcdf063d9c6a8613f77503a8`
+(entries, and md5 over the sha256 of every migration file in journal order), equal to
+main's migration files in the commit under test (MATCH); 48 public tables, 95 policies, no
+appointment row before the fixture.
+
+**What the kit changed for these rulings.** The fixture keeps JP(cb)'s 30 September
+block, a block inside that Lisbon day as production's is, and gains a third clinical
+record, on a row no stage writes; every other shape is the one the history below
+describes. The refusal arms carry the new codes, the arms of the dropped refusals and
+verdict are retired, and new arms cover each ruling. The runner now asserts every REFUSE
+set, STOP, FAIL set and VACUOUS set an arm is run for, where it used to print them. Each
+block was extracted from this document at the commit under test (cloned from a local
+bare origin whose `main` is that commit) and run under `zsh -f`, the happy path as an
+interactive paste, `zsh -f -i < block`, with exactly four substitutions, each counted:
+
+| Substitution | stage 0 | stage 1 | stage 2 | stage 3 |
+|---|---|---|---|---|
+| `/tmp/` | 6 | 11 | 13 | 10 |
+| `cd` | 1 | 1 | 1 | 1 |
+| env | 0 | 1 | 1 | 1 |
+| guard | 0 | 1 | 1 | 1 |
+
+**The happy path, pasted interactively, JP(cb)'s 30 September block in place:**
+
+| Arm | Exit | What it printed |
+|---|---|---|
+| stage 0 | 0 | `STAFF-10 V2 FILES VERIFIED`, the recorded sha the commit under test |
+| stage 1 | 0 | 28 refusal lines, every one OK, none VACUOUS; `partition holds`; section 4c five sets, every one OK; no section 2c; `STAGE 1 READ, NO REFUSAL` |
+| stage 2 | 0 | P3 the run day and all 19 carries match; P4 no trigger; P5 every md5 family OK, none empty, the whole clinical_records table among them; P6 the machine hour held by each future pair's NESA row, control window 0; W1 to W6 each with its row count; A2 the hour held by each person row, control window 0; `DONE`, `COMMITTED`. `time_off` equal by count and md5 before and after it, and the 30 September block equal by its own md5 |
+| stage 3 | 0 | `27 OK / 0 VACUOUS / 0 FAIL`; verdict 11 OK, the block among the rows it compares; verdict 18 OK, `0 created or edited after the op`; the 30 September block still equal by its own md5 after the sitting |
+
+**Production's shape: no clinical record on a row the op writes (arm C).** Stages 0 to 3
+exit 0. Stage 1 refuses nothing; section 4c reads the per-row set `0 VACUOUS` and the
+whole table `OK`. Stage 2's P5 reads `cr_att 0 VACUOUS` and `cr_all OK`. Stage 3 reads
+`26 OK / 1 VACUOUS / 0 FAIL`, VACUOUS on 19 only, which the block allows, and verdict 18
+OK.
+
+**Before and after the rulings, on production's shape (arm Y).** Stage 1 as it stood
+before them (`789c020d`), run through this document's stage 1 block with only its file and
+its pin swapped, on the database of arm C with the 30 September block in place: exit 1,
+REFUSE on R06 (the block) and R27 (no clinical record on a written row). These files on the
+same database: exit 0, no REFUSE.
+
+**Every refusal, run for real.** For each arm: reset, one mutation, stage 1 (exit 1, and
+its REFUSE set must be exactly the one wanted), then the stage 1 mark forced so stage 2's
+SQL is reached (exit 3, `STOP: <first code> refuses`), then the database compared with its
+state after the mutation by one md5 over appointments, schedule rows, blocks, audit rows,
+users and clinical records, and the v2 audit rows counted before and after.
+
+| Code | Mutation | stage 1 | REFUSE set | stage 2 | database after |
+|---|---|---|---|---|---|
+| R01 | JP(lv) moved to a second tenant | 1 | R01 | 3, STOP R01 | unchanged |
+| R02 | JP(lv) inactive | 1 | R02 | 3, STOP R02 | unchanged |
+| R02 | JP(lv) active but not bookable | 1 | R02 | 3, STOP R02 | unchanged |
+| R03 | JP(cb)'s Castelo Branco install removed | 1 | R03 | 3, STOP R03 | unchanged |
+| R04 | JP(lv)'s Linda-a-Velha install removed | 1 | R04 | 3, STOP R04 | unchanged |
+| R05 | an INACTIVE JP(lv) copy of a Saturday to move | 1 | R05 | 3, STOP R05 | unchanged |
+| R06 | the original STAFF-10 audit row | 1 | R06 | 3, STOP R06 | unchanged |
+| R07 | a v2 audit row | 1 | R07 | 3, STOP R07 | unchanged |
+| R08 | a future dated Tuesday on JP(cb) at Linda-a-Velha | 1 | R08 | 3, STOP R08 | unchanged |
+| R09 | NESA(cb) not flagged | 1 | R09 and R10 (its consequence) | 3, STOP R09 | unchanged |
+| R10 | NESA(cb) also installed at Linda-a-Velha | 1 | R10 | 3, STOP R10 | unchanged |
+| R11 | a Linda-a-Velha row with JP(cb) as practitioner_2 | 1 | R11 | 3, STOP R11 | unchanged |
+| R12 | a ruling (a) row with JP(lv) as practitioner_2 | 1 | R12 | 3, STOP R12 | unchanged |
+| R13 | the JP(lv) row next to a confirmed ruling (a) row made confirmed | 1 | R13 | 3, STOP R13 | unchanged |
+| R14 | a ruling (b) row confirmed, and a confirmed NESA(lv) row over it | 1 | R14 | 3, STOP R14 | unchanged |
+| R15 | a future person row given a practitioner_2 | 1 | R15 | 3, STOP R15 | unchanged |
+| R16 | a future person row cut to one minute | 1 | R16 | 3, STOP R16 | unchanged |
+| R17 | a future NESA row moved to NESA(cb), not installed there | 1 | R17 | 3, STOP R17 | unchanged |
+| R18 | an `appointment_request` notification on a future person row | 1 | R18 | 3, STOP R18 | unchanged |
+| R19 | an invoice on a future NESA row | 1 | R19 | 3, STOP R19 | unchanged |
+| R19 | a pack session on a future NESA row | 1 | R19 | 3, STOP R19 | unchanged |
+| R19 | a clinical record on a future NESA row | 1 | R19 | 3, STOP R19 | unchanged |
+| R20 | a future pair moved to start in one hour | 1 | R20 | 3, STOP R20 | unchanged |
+| R21 | a second person row on a future pair | 1 | R21 | 3, STOP R21 | unchanged |
+| R22 | an `appointment_request` notification on a future NESA row | 1 | R22 | 3, STOP R22 | unchanged |
+| R23 | every action already done by hand | 1 | R23 (the per-row clinical records no longer refuse with it) | 3, STOP R23 | unchanged |
+| R24 | JP(cb)'s Castelo Branco schedule rows removed | 1 | R24 | 3, STOP R24 | unchanged |
+| R25 | every clinical record of the tenant removed (the whole table empty) | 1 | R25 | 3, STOP R25 | unchanged |
+| R25 | every past twin row the op leaves alone removed | 1 | R25 | 3, STOP R25 | unchanged |
+| R26 | JP(lv)'s dated Saturdays and every Saturday that would move removed | 1 | R26 | 3, STOP R26 | unchanged |
+| R26 | JP(lv)'s dated Saturdays given weekday column 5, and no Saturday moving | 1 | R26 | 3, STOP R26 | unchanged |
+| R27 | the person row of the Linda-a-Velha ruling (b) pair moved to Castelo Branco | 1 | R27 | 3, STOP R27 | unchanged |
+| R28 | a no-op `AFTER UPDATE` trigger created on `appointments` | 1 | R28 | 3, STOP R28 | unchanged |
+
+**The 30 September block stays (arm B).** With the base fixture's block and five more of
+every shape on and around that day (one across it from the evening before, one over
+several days, one ending 23:59 the day before, one whole day before, and a JP(lv) block
+on the day): stage 1 exit 0, no REFUSE; stage 2 exit 0, and every block equal by count and
+md5 after it, the 30 September block by its own md5 too; stage 3 exit 0, verdict 11 OK,
+`27 OK / 0 VACUOUS / 0 FAIL`.
+
+**Stage 3 can go red, and each control can fail.** Each arm: one change after the write,
+stage 3, the FAIL set asserted, the change undone, stage 3 again at exit 0.
+
+| After the write | Exit | FAIL on |
+|---|---|---|
+| a retired covered row switched back on | 1 | 2, 7, 8, 10 |
+| a future person row cancelled | 1 | 14, 16, 17, 26 |
+| every dated JP(lv) Saturday shifted to a past Saturday | 1 | none: `VACUOUS on 8`, which the block never allows |
+| JP(lv) made not bookable, its Saturday rows standing | 1 | 8 |
+| a JP(cb) block added | 1 | 11 |
+| another block of the tenant edited | 1 | 11 |
+| the 30 September block itself edited | 1 | 11 |
+| a live appointment cancelled with the op's stamp | 1 | 26 |
+| a row given the op's stamp with a practitioner_2 | 1 | 27 |
+| JP(lv)'s own dated Saturdays given weekday column 5, the moved ones shifted to the past | 1 | none: `VACUOUS on 8` |
+| a clinical record created on a row no stage writes | 1 | 18, observed `1 created or edited after the op` |
+| the record on a row no stage writes saved again | 1 | 18, observed `1 created or edited after the op` |
+| the record on a ruling (a) row given another author | 1 | 18 and 19 |
+| a copy of stage 3 whose `time_off` control leaves no block out | 1 | 11, control `EQUAL` |
+| a copy of stage 3 whose clinical_records control leaves no record out | 1 | 18, control `EQUAL` |
+
+**Inside stage 2's transaction (arm S).** A copy of stage 2 that, after its W6, touches a
+clinical record on a row no stage writes, run through this document's stage 2 block with
+only its file and its pin swapped: exit 3, all six write notices printed, then `STOP: the
+tenant's clinical_records changed inside this transaction`; the database, the clinical
+records and the v2 audit rows exactly as before.
+
+**The handshake, the clock, the order and the instrument:** the arms of the history below
+ran again on these files, each exiting as wanted: a wrong digest in stage 1's transcript
+(3, the carry STOP), stage 1's run day set to yesterday (1 in the block, 3 when the file runs
+directly), a transcript 61 minutes old (1), no stage 1 mark (1), no carry at all (3),
+the database moved between stage 1 and stage 2 (3), a CHECK constraint that fails the audit
+insert after all six writes (3, every write rolled back, no audit row), main moved between
+stage 1 and stage 2 (1, nothing written), stage 0, 1 and 2 again after the write (1 each),
+stage 1 after the write with the written marker removed (1, REFUSE on R07 and R23), stage 2
+with its markers forced (3, `STOP: R07 refuses`, written once), stage 3 after main moved
+(0, `MAIN MOVED since stage 0` with both shas), a database whose default hides NOTICEs (0,
+every step line and `DONE`, the file's pin), the written-row fingerprint on a copy of stage 2
+that also sets either confirmation column (3), and a write inside the READ ONLY form
+stages 1 and 3 use (refused).
+
+**Whole runs on other shapes, each VACUOUS set asserted:** the tenant holds no block at
+all, VACUOUS on 11 only; question Q3's pairs, 27 OK, NESA row 50 still on NESA(cb) and in
+`keep_ids`; no invoice and no confirmed mover, 27 OK with P5 `inv 0 VACUOUS`; nothing to
+retire and no JP(cb) row inactive before, VACUOUS on 2, 3, 4, 5 and 10.
+
+| File, in the authoring lane's scratchpad (not committed, as for 0090 to 0093) | sha256 |
+|---|---|
+| `rehearsal/fixture.sql` | `af5faa32bbcdcb31e71f3911de0221d49b69f43f1bdcc0d0d3da09dd69599c4f` |
+| `rehearsal/reset.sql` | `74d74fe72c1f33fe014ff563db5c0e43c187c049cf05c29c70dabe32dd6b055b` |
+| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `58f60d42b032214b1f70ea081fa132449726b463f92074c6032260805c96bc74` |
+| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `a56a68f9367869cebbb85a0624b9cb77ea2cb675ce19d856a49bd6e855526ba1` |
+| `rehearsal/extract-stage.mjs`, adapted from `/Users/ivan/osteojp-handover/extract-stage.mjs` to allow `origin/main` and refuse `origin/data/` | `bb1fc378bb6d550e3e13614d5cd1046d14f7a2b6f2cd70d2d68642c372dd89b7` |
+
+**What this run caught.** Its first attempt on the same commit ran every arm as wanted but
+failed one check of the runner's own: the refusal loop asserted that no v2 audit row exists
+after stage 2, and the R07 arm's mutation is a v2 audit row. The check now compares the v2
+audit rows before and after stage 2, and the run above is the one after that fix.
+
+**The app's own conflict check, on a real database.**
+`apps/web/lib/scheduling/staff-10-v2-option-a-conflict.db.test.ts` is unchanged by these
+rulings. It ran again against a new throwaway cloned from `s10v2_schema`: **5 passed**,
+with `--hookTimeout` and `--testTimeout` raised on the command line for a loaded machine
+and no file changed. CI's DB Tests job runs it.
 
 ### The previous files, at `8e65d777`, kept as history
 
