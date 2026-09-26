@@ -29,6 +29,13 @@ on:
   push:
     branches: [main]
 
+# A NEW PUSH TO A PR CANCELS THE RUN IT SUPERSEDES. One group per PR, cancel
+# only on pull_request events. A push to main is grouped by its own run id, alone
+# in its group, so it is never cancelled. The reasoning is in e2e.yml's header.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
