@@ -31,6 +31,20 @@ If this file drifts from them, they win.
   osteojp-portal) are green. **Never `--admin`, never the bypass box.** A refused
   merge is a HALT, not a workaround. A flaky unrelated check is re-run, not merged
   around; never present a red required check as done.
+- **A GREEN self-merge is done by ARMING, at open (CLAUDE.md, rule R2).** Right
+  after the PR opens, run `scripts/merge-on-green.sh <PR>` (the /ship step 4). It
+  arms the PR with `gh pr merge <PR> --auto --squash` and confirms by re-reading
+  the PR; GitHub is the watcher and squash-merges once every check branch
+  protection requires is green. Never poll checks in a loop, and never wait for
+  green before arming: once the CI-minutes change (#1446) is merged, the
+  required E2E check reads red on an unarmed PR until it is armed, because arming
+  is what starts the suite. Auto-merge waits only on branch protection's
+  required checks; the Vercel deploys named above are not among them.
+- **Two kinds of PR go to the owner UNARMED, and the script refuses both with no
+  merge call:** a PR labelled `held-for-apply` (exit 6: it arms only after its
+  apply is proven and the label comes off, per CLAUDE.md), and a PR whose title
+  starts with `GATE-CHANGE` (exit 7: the owner merges gate changes by hand). A
+  refusal is the answer; never route around it with a hand `gh pr merge`.
 - **Merge classes:** (a) GREEN self-merge - the default for a migration-free loop;
   (b) OWNER VISUAL GATE - visual-heavy loops: all checks green is necessary but NOT
   sufficient; push, paste the platform PREVIEW URL + the surfaces to inspect, and
