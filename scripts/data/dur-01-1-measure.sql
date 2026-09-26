@@ -1031,8 +1031,10 @@ SELECT jsonb_build_object(
                              ELSE 'another shape' END,
                'reason', b.reason::text, 'note', CASE WHEN b.has_note THEN 'yes, class ' || b.note_class::text ELSE 'none' END,
                'created_lisbon', to_char(b.created_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS'),
-               'made_with', b.made_with::text || ' block(s) of this therapist, days '
-                            || to_char(b.made_with_first, 'YYYY-MM-DD') || ' to ' || to_char(b.made_with_last, 'YYYY-MM-DD'),
+               'made_with', b.made_with::text || ' block(s) of this therapist share its created_at, starting '
+                            || to_char(b.made_with_first, 'YYYY-MM-DD')
+                            || CASE WHEN b.made_with_last > b.made_with_first
+                                    THEN ' to ' || to_char(b.made_with_last, 'YYYY-MM-DD') ELSE '' END,
                'holds_rows', b.holds_rows)
                ORDER BY b.user_id, b.starts_at, b.id), '[]'::jsonb)
                FROM blk b),

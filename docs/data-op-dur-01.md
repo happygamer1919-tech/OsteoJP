@@ -26,7 +26,7 @@ says what has run on these exact bytes.
 | Ruling, owner, 2026-09-24, paraphrased | a new data op: measure the future appointments the Fisiozero importer wrote with a one-minute duration, then author the write that gives them their service's default duration |
 | Rulings, owner, 2026-09-26, paraphrased | (1) write the WRITE set at each service's default duration; (2) the NESA twins are STAFF-10 v2's, and this op does not write them; (3) the rows outside the therapist's hours and the rows over a block go to reception, and this op does not write them; (4) the rows that are not live stay untouched; (5) this op runs after STAFF-10 v2, with a fresh stage 1 on its own run day, and stage 1 and stage 2 refuse while STAFF-10 v2 has not run, with a control; (6) stage 3 proves the durations, and proves that no other column moved by one md5 over the written rows' untouched columns and one md5 over every other appointment of the tenant, each against the baseline stage 2 records, each with a control that can fail; (7) it runs from `origin/main` after its PR merges, the way STAFF-10 v2 does |
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/dur01-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
-| Stage 1 | `scripts/data/dur-01-1-measure.sql`, READ ONLY, sha256 `18198659b9f54fbeb287820c39312f2cd82a15b7ca09dec6589fd7e7f47327b6` |
+| Stage 1 | `scripts/data/dur-01-1-measure.sql`, READ ONLY, sha256 `0bf5fca17b9c29e5a202c1ee1f8b054250bbebeb46e8c1e42c52744e3cf7f5dc` |
 | Stage 2 | `scripts/data/dur-01-2-write.sql`, ONE DO block in ONE transaction, sha256 `e571291a11564c2648836e4f3d7303560eefe54a23805f8b1d9baf35e59206f0` |
 | Stage 3 | `scripts/data/dur-01-3-verify.sql`, READ ONLY, 23 verdicts and a SUMMARY row, sha256 `71de3658ba89fcaf319f79fe1a33959f8b907d396e6c3ca58c713dae4628a335` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
@@ -214,7 +214,7 @@ to paste: the machine runs it inside the blocks, and halts on it.
 (
 set -eo pipefail
 DOCPIN=docs/data-op-dur-01.sha256
-SHA1=18198659b9f54fbeb287820c39312f2cd82a15b7ca09dec6589fd7e7f47327b6
+SHA1=0bf5fca17b9c29e5a202c1ee1f8b054250bbebeb46e8c1e42c52744e3cf7f5dc
 SHA2=e571291a11564c2648836e4f3d7303560eefe54a23805f8b1d9baf35e59206f0
 SHA3=71de3658ba89fcaf319f79fe1a33959f8b907d396e6c3ca58c713dae4628a335
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
@@ -255,7 +255,7 @@ later stage runs from.
 ```
 (
 set -eo pipefail
-SHA1=18198659b9f54fbeb287820c39312f2cd82a15b7ca09dec6589fd7e7f47327b6
+SHA1=0bf5fca17b9c29e5a202c1ee1f8b054250bbebeb46e8c1e42c52744e3cf7f5dc
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
