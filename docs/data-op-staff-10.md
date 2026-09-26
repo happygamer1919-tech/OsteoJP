@@ -1,7 +1,7 @@
 # STAFF-10 schedule rows: JP(cb) stops holding hours at Linda-a-Velha
 
 > **SUPERSEDED on 2026-09-24. DO NOT RUN ANY BLOCK IN THIS DOCUMENT.** The STAFF-10
-> write is now one held data op, `docs/data-op-staff-10-v2.md`, run from its own branch
+> write is now one data op, `docs/data-op-staff-10-v2.md`, run from main
 > and pinned by its own sidecar. That op carries this document's schedule-row actions
 > forward with their defects fixed. Its three SQL files stay on main byte-identical, and
 > the text below this banner is unchanged, kept as history.

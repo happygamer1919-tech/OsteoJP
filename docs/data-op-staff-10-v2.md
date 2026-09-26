@@ -171,7 +171,7 @@ SHA3=857ea80004f0227c931b2874adc155206bb42a548a51dee3045dbaf9c78f1991
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. Never run stage 0, 1 or 2 again; stage 3 runs from the sha stage 0 recorded"; exit 1; }
+[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
 rm -f /tmp/staff10v2-main.sha /tmp/staff10v2-stage1.out /tmp/staff10v2-stage1.ok
@@ -210,7 +210,7 @@ SHA1=095ffe9185b3bace41da43b39b9f46096a8a16af68ab057d0d52310c445fe15b
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. Never run stage 1 or 2 again; stage 3 only"; exit 1; }
+[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
 rm -f /tmp/staff10v2-stage1.out /tmp/staff10v2-stage1.ok
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
@@ -276,7 +276,7 @@ s10v2_count_fcan s10v2_digest_fcan
 )
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. Never run it again; stage 3 only"; exit 1; }
+[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
 [ -n "$(find /tmp/staff10v2-stage1.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not pass in this sitting, or passed over an hour ago. The sitting stops"; exit 1; }
 test -f /tmp/staff10v2-stage1.out || { echo "STOP: stage 1 left no transcript. The sitting stops"; exit 1; }
 [ -n "$(find /tmp/staff10v2-stage1.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's"; exit 1; }
@@ -313,8 +313,8 @@ node scripts/assert-production-target.mjs
 rm -f /tmp/staff10v2-stage2.out
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "${ARGS[@]}" -f scripts/data/staff-10-v2-2-write.sql 2>&1 | tee /tmp/staff10v2-stage2.out
 touch /tmp/staff10v2-written.ok
-grep -q 'STAFF-10 V2 STAGE 2 DONE' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so stage 2 COMMITTED and the write stands, but its DONE line is missing. Never run stage 0, 1 or 2 again. Paste stage 3 and report both"; exit 1; }
-grep -q 'STAFF-10 V2 STAGE 2 COMMITTED' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so stage 2 COMMITTED and the write stands, but its COMMITTED line is missing. Never run stage 0, 1 or 2 again. Paste stage 3 and report both"; exit 1; }
+grep -q 'STAFF-10 V2 STAGE 2 DONE' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+grep -q 'STAFF-10 V2 STAGE 2 COMMITTED' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
 echo "STAFF-10 V2 WRITTEN. Paste stage 3 now."
 )
 ```
@@ -326,19 +326,26 @@ means **nothing was written**, and so does every `STOP:` the block prints before
 runs, the HEAD CHECK's included. **psql exit 0 means the COMMIT ran and the write
 stands:** the block touches the written marker at once, before it reads the
 transcript, and the two `STOP:` lines it can print after that point say so in their
-own words. The file pins `client_min_messages = notice`, so a quieter role or database
-default cannot hide the step lines. The NOTICE lines name each step: `P1` the sets,
-`P2` each refusal with its control, `P3` the run day and the carries, `P4` the triggers
-the system did not create (none, or it stops), `P5` the baselines and the md5 family
-profile (D15), `P6` the machine hour before, `W1` to `W6` each write with its row count,
-`A2` the machine hour after, and `STAFF-10 V2 STAGE 2 DONE`, then `COMMITTED` after the
-COMMIT.
+own words. Either one stops the sitting like every other `STOP:`: GREEN reports the
+whole output, never runs stage 0, 1 or 2 again, and stage 3, READ ONLY, runs only when
+the owner or the lead says so. The file pins `client_min_messages = notice`, so a
+quieter role or database default cannot hide the step lines. The NOTICE lines name
+each step: `P1` the sets, `P2` each refusal with its control, `P3` the run day and the
+carries, `P4` the triggers the system did not create (none, or it stops), `P5` the
+baselines and the md5 family profile (D15), `P6` the machine hour before, `W1` to `W6`
+each write with its row count, `A2` the machine hour after, and
+`STAFF-10 V2 STAGE 2 DONE`, then `COMMITTED` after the COMMIT.
 
-**psql exit 3** is every in-database STOP. An undefined carry fails before the block,
-on the `set_config` statement, also with exit 3. **Any other exit** (psql exits 2 on a
-lost connection, possibly during the COMMIT) stops the sitting with nothing else
-pasted: stage 3 is READ ONLY, and its verdict 1 answers whether the write stands, on
-the lead's call. R08 refuses a second write regardless.
+**Only exit 0 with the `DONE` and `COMMITTED` lines goes on to stage 3,** and the
+block then prints `STAFF-10 V2 WRITTEN. Paste stage 3 now.` **Every other exit stops
+the sitting, with nothing else pasted.** psql exit 3 is every in-database STOP, and
+nothing was written; an undefined carry fails before the block, on the `set_config`
+statement, also with exit 3. A `STOP:` the block prints exits 1: before psql nothing
+was written, and after it (the two lines above) the write stands. Any other exit (psql
+exits 2 on a lost connection, possibly during the COMMIT) leaves open whether the write
+stands. In every case GREEN reports the exit code and the whole output, and stage 3,
+READ ONLY, runs only when the owner or the lead says so; its verdict 1 answers whether
+the write stands. R08 refuses a second write regardless.
 
 ## STAGE 3: the verify. READ ONLY, re-issuable
 
@@ -500,7 +507,8 @@ properties and was run red against a seeded wrong copy for each new one; and the
 kit's 21 arms that need no database (stage 0 and its pins, the HEAD CHECK halts in
 stages 1 and 2, the refusals on a missing or foreign stage 1 mark, the written marker,
 a missing recorded sha, and stage 3's report of a moved main before its psql), run
-under `zsh -f` on the commit that carries this sentence, every one exiting as wanted.
+under `zsh -f` on the commit that carries this sentence, the review pass fix whose
+subject begins `STAFF-10 v2: fix the review pass`, every one exiting as wanted.
 
 The kit for the re-run is ready in the authoring lane's scratchpad, `b7-rehearsal/`
 (not committed, as for 0090 to 0093): a fixture with no 30 September block, the state
