@@ -694,8 +694,9 @@ ran**, which it never saw, with a NESA stub of another patient inside its person
 | `b8-rehearsal/evidence.sql`, section 9's shapes | `fcb73e0c9188aa195c6144c90352285d498db8f4798eabb7275f96a0cc32cf5f` |
 | `b8-rehearsal/reset.sql`, the reset by id, clinical records and status events included | `8fb04712932363a605bd21b3dadb8bd20490c0b5d35f3a1bb007b47c6d0a3efb` |
 | `b8-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `ab4e9cd71c6aabcc7d10201e6c3590760eba2a33c8a9e1a00e9a23b9d9143646` |
-| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `c325d6e1d0bf0df32f23ed82ed5d16046581f3286906373f5716d6b1fde2ecaa` |
+| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `6cf92276b2d5653d50f634d7dc7d3b7bc6a45778f9a25511c39b017a1a3b8f5e` |
 | `b8r2/disp-rehearsal.zsh`, review round 2's rehearsal of GREEN's BEFORE YOU START block, on a local clone with no database | `70688ea3ab82a1a2723682a143172ab77c3bfdc5b10be08d95408b027db330e0` |
+| `b8r3/premut.zsh`, review round 3's seven seeded wrong copies, run on the head before this round (`64651d3d`) | `cebf45bf39d6fc01a80a398223af66989c794bd431606609f5b1e42b3a260e7d` |
 | `b8-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, byte for byte: origin/main allowed, a branch head refused | `bb1fc378bb6d550e3e13614d5cd1046d14f7a2b6f2cd70d2d68642c372dd89b7` |
 
 **How it ran.** A simulated origin, a local bare repository whose `main` is the commit
@@ -716,8 +717,8 @@ still names production or a branch head.
 
 **Every arm, and what it showed.** The runner counts an arm's exit against the one
 wanted and every check it makes, and exits 0 only when all of them hold. Its last full
-run, `b8r2_run_a` on the commit that carries this section (review round 2): **175 arms
-and 193 checks, every one as wanted.**
+run, `b8r3_run_a` on the commit that carries this section (review round 3): **182 arms
+and 207 checks, every one as wanted.**
 
 **The head and the files, before any database** (the HEAD CHECK of the section above):
 
@@ -877,13 +878,21 @@ round 2 added three more, the same way:** section 9 printing a patient's name fr
 values its final SELECT builds, section 9 printing a block's note text from there, and
 the written marker's guard given back a 12-hour window. Each exited 1 on exactly one
 test, its own. Before this round's test changes, the first two passed every test, stage
-1 and the sidecar re-pinned, as the reviewer found.
+1 and the sidecar re-pinned, as the reviewer found. **Review round 3 added seven more,
+the same way:** section 9c's series rows matched without their clinic, and without
+their Lisbon weekday; section 9f's hours read for every therapist, not only those
+verdict 11 reads; section 9a's same-transaction count taken over every block of the
+tenant; verdict 23's stamped count reading `created_at` only; and stage 2's A3
+frozen md5 check, then its rest md5 check, disarmed by `IF false AND`. Each exited 1
+on exactly one test, its own. Before this round's tests existed, all seven passed every
+test of the head `64651d3d`, the stage file's pin and the sidecar re-pinned, as the
+reviewer found.
 
 **The app's own checks, on a real database.**
 `apps/web/lib/scheduling/dur-01-classification.db.test.ts`, unchanged this round, run
 against a new throwaway cloned from `s10v2_schema` and this head's stage 1, whose BASE
 gained R11 and whose rule's comments changed (again in review round 1, one comment
-only; review round 2 changed no stage file): **5 passed**, in 18 seconds on a machine
+only; review rounds 2 and 3 changed no stage file): **5 passed**, in 18 seconds on a machine
 under load. The control arm first proves the
 seed makes the app say what each arm expects; stage 1's BASE then agrees with
 `findConflictsForWindow` plus `blockingConflicts`, `checkAvailability`,
@@ -943,6 +952,25 @@ this round let stage 0 through, which recorded the moved main in place of the sh
 3 verifies from, and stage 1 passed its HEAD CHECK and reached psql. The guard now reads
 that the marker exists, whatever its age, and its STOP no longer says the write was in
 this sitting.
+
+**Review round 3 of these files found two minor defects.** No stage file changed for
+either. The unit test did not hold the definitions of section 9's new evidence or of
+what verdict 23's stamped count counts: a copy of stage 1 whose series rows ignored
+the clinic or the Lisbon weekday, whose hours read every therapist, or whose
+same-transaction count read every block of the tenant, and a copy of stage 3 whose
+stamped count read `created_at` alone, each passed every test with its pin and the
+sidecar re-pinned. So did an older gap of the same class, stage 2's A3 md5 checks
+disarmed. The unit test now holds each: the series key in the held rows, the series,
+its rows and its counts; 9a's same-transaction count as the therapist's blocks of one
+`created_at`, the way the app's batch writes them; 9f's filter as the therapists and
+clinics verdict 11 reads; the stamped count as rows created or updated after the op's
+audit row; and A3 as the baseline's own expressions, each check stopping. The seven
+unit-mutation arms above show each failing its own test alone. The other defect sat
+in GREEN's dispatch draft, which is not a committed file, and is fixed where it lives:
+its reading guide said section 6 goes into the report, but its REPORT list asked only
+for section 6's row-count footer, so a report could lose the reception list's reasons,
+ids and windows, the block end dates among them. The REPORT list now asks for
+section 6 verbatim.
 
 **The pushed tree is the rehearsed tree.** The last full run of the arms runner
 extracted every block from the commit that carries this section, sidecar included.

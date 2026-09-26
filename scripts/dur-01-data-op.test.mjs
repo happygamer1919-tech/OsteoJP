@@ -972,6 +972,66 @@ test("stages 0, 1 and 2 refuse while the written marker exists, whatever its age
   assert.ok(DOC.replace(/\s+/g, " ").includes("Each refuses while the written marker `/tmp/dur01-written.ok` exists, whatever its age"), "the document does not say the guard holds whatever the marker's age");
 });
 
+/* ---- review round 3 of the files of 2026-09-26 ---------------------------- */
+
+/** SQL with its whitespace folded to one space, so a test reads a clause, not its layout. */
+const fold = (s) => s.replace(/\s+/g, " ").trim();
+
+test("section 9's keys: a series is one patient, therapist, clinic, Lisbon weekday and Lisbon start time; 9a's transaction is its therapist's blocks of one created_at; 9f reads the therapists verdict 11 reads, at the row's clinic", () => {
+  // 9c. A held row's weekday and start time are read in Lisbon, and a series groups on all six keys.
+  const held = fold(between(S1, "\nheld AS (", "\n),", "section 9's held rows"));
+  assert.ok(held.endsWith("extract(isodow FROM (w.starts_at AT TIME ZONE 'Europe/Lisbon'))::int AS dow, to_char(w.starts_at AT TIME ZONE 'Europe/Lisbon', 'HH24:MI') AS hhmi FROM vw w WHERE w.who = 'reception'"), "a held row's weekday or start time is not read in Lisbon, or the held rows are not reception's");
+  const ser = fold(between(S1, "\nser AS (", "\n),", "section 9's series"));
+  assert.ok(ser.endsWith("FROM held h GROUP BY h.tenant_id, h.patient_id, h.practitioner_id, h.location_id, h.dow, h.hhmi"), "a series is not one patient, therapist, clinic, weekday and start time");
+  // A series' rows match all six keys, the weekday and the time read in Lisbon as for the held row.
+  const serRow = fold(between(S1, "\nser_row AS (", "\n),", "section 9's series rows"));
+  assert.equal(serRow.slice(serRow.indexOf("FROM ser s")), "FROM ser s JOIN public.appointments a ON a.tenant_id = s.tenant_id AND a.patient_id = s.patient_id AND a.practitioner_id = s.practitioner_id AND a.location_id = s.location_id AND extract(isodow FROM (a.starts_at AT TIME ZONE 'Europe/Lisbon'))::int = s.dow AND to_char(a.starts_at AT TIME ZONE 'Europe/Lisbon', 'HH24:MI') = s.hhmi", "a series row is matched on less than its series' patient, therapist, clinic, Lisbon weekday and Lisbon start time");
+  // 9c counts a series from today and before today on that same key.
+  const series = fold(between(S1, "\n  'series', (SELECT", "\n  'patients', (SELECT", "section 9c's values"));
+  const key = "WHERE r.patient_id = s.patient_id AND r.practitioner_id = s.practitioner_id AND r.location_id = s.location_id AND r.dow = s.dow AND r.hhmi = s.hhmi AND";
+  assert.equal(series.split(`${key} NOT r.past)`).length - 1, 1, "9c does not count a series from today on the series' key");
+  assert.equal(series.split(`${key} r.past)`).length - 1, 1, "9c does not count a series before today on the series' key");
+  // 9a. The blocks made in a block's transaction: its therapist's blocks with its created_at, as the app's batch writes them.
+  const blk = fold(between(S1, "\nblk AS (", "\n),", "section 9a's blocks"));
+  const tx = "FROM public.time_off t2 WHERE t2.tenant_id = t.tenant_id AND t2.user_id = t.user_id AND t2.created_at = t.created_at)";
+  for (const [agg, as] of [["count(*)", "made_with"], ["min((t2.starts_at AT TIME ZONE 'Europe/Lisbon')::date)", "made_with_first"], ["max((t2.starts_at AT TIME ZONE 'Europe/Lisbon')::date)", "made_with_last"]]) {
+    assert.ok(blk.includes(`(SELECT ${agg} ${tx} AS ${as}`), `9a's ${as} does not read the blocks of the same therapist with the same created_at`);
+  }
+  assert.equal(blk.split("FROM public.time_off t2").length - 1, 3, "9a reads the blocks of a transaction some other way");
+  const batch = between(read("apps/web/lib/admin/time-off.ts"), "export async function createTimeOffBlockBatch(", "\n}\n", "the app's batch writer");
+  assert.match(batch, /await tx\.insert\(timeOff\)\.values\(\{\n\s+tenantId: actor\.tenantId,[^\n]*\n\s+userId: input\.userId,/, "the app's batch no longer writes every block of a call for one therapist; re-read 9a's transaction count");
+  // 9f. The active schedule rows of each therapist verdict 11 reads, at that row's clinic, and no other.
+  assert.ok(S1.includes("WHEN f.outside_hours THEN '11 OUTSIDE THE THERAPIST HOURS'"), "verdict 11 no longer reads outside_hours; re-read 9f");
+  assert.equal(fold(between(S1, "\nhrs AS (", "\nSELECT jsonb_build_object(", "section 9f's hours")), "hrs AS ( SELECT av.user_id, av.location_id, av.weekday, av.start_time, av.end_time, av.valid_from, av.valid_until FROM public.availability_templates av WHERE av.is_active IS TRUE AND (av.user_id, av.location_id) IN (SELECT DISTINCT w.practitioner_id, w.location_id FROM vw w WHERE w.outside_hours) )", "9f reads other schedule rows than the active ones of each therapist verdict 11 reads, at that row's clinic");
+});
+
+test("verdict 23's stamped count is every other appointment of the tenant the app created or updated after the op's audit row", () => {
+  assert.ok(fold(between(S3, "WITH al AS (", "\n), wl AS (", "stage 3's al CTE")).includes("SELECT a.metadata AS m, a.created_at AS at, a.tenant_id AS tenant FROM public.audit_log a WHERE a.action = 'staff.dur01.extend_import_duration'"), "al.at is not the time of the op's audit row");
+  const v = fold(between(S3, "\n, v AS (", "\n), r AS (", "stage 3's v CTE"));
+  assert.ok(v.includes("(SELECT count(*) FROM public.appointments a, al WHERE a.tenant_id = al.tenant AND a.id NOT IN (SELECT wl.id FROM wl) AND (a.created_at > al.at OR a.updated_at > al.at))::int AS rest_stamped_since,"), "verdict 23's stamped count is not every other appointment of the tenant created or updated after the op's audit row");
+  assert.ok(DOC.includes("Its observed column counts the rows the app stamped (`created_at` or `updated_at`) after the op's audit row"), "the document does not say what verdict 23's stamped count reads");
+});
+
+test("stage 2's A3 recounts the total and recomputes both fingerprints with the baseline's own expressions, and stops on any of them moving, after the re-measure and before the audit row", () => {
+  const baseline = fold(between(S2, "SELECT count(*)::int INTO v_b_total", "-- The per-id record the audit row carries", "stage 2's baselines"))
+    .replaceAll("SELECT count(*)::int, md5(", "SELECT md5(")
+    .replaceAll("INTO v_bn_frozen, v_b_md5_frozen", "INTO v_x_md5_frozen")
+    .replaceAll("INTO v_bn_rest, v_b_md5_rest", "INTO v_x_md5_rest")
+    .replaceAll("v_b_total", "v_x_total");
+  const a3 = between(S2, "-- A3.", "INSERT INTO public.audit_log", "stage 2's A3");
+  const recount = fold(between(a3, "SELECT count(*)::int INTO v_a_total", "IF v_a_total", "A3's recount")).replaceAll("v_a_", "v_x_");
+  assert.equal(recount, baseline, "A3 does not recompute the total and the two fingerprints exactly as the baseline took them");
+  const checks = fold(a3.slice(a3.indexOf("IF v_a_total")));
+  for (const [cond, stop] of [
+    ["v_a_total <> v_b_total", "'STOP: the appointment total moved from % to %', v_b_total, v_a_total"],
+    ["v_a_md5_frozen IS DISTINCT FROM v_b_md5_frozen", "'STOP: a written appointment changed in a column this op does not write'"],
+    ["v_a_md5_rest IS DISTINCT FROM v_b_md5_rest", "'STOP: an appointment outside the write set changed'"],
+  ]) {
+    assert.ok(checks.includes(`IF ${cond} THEN RAISE EXCEPTION ${stop}; END IF;`), `A3 does not stop when ${cond}`);
+  }
+  assert.ok(S2.indexOf("-- A2.") < S2.indexOf("-- A3.") && S2.indexOf("-- A3.") < S2.indexOf("INSERT INTO public.audit_log"), "A3 does not run after the re-measure and before the audit row");
+});
+
 test("no public byte of the op carries a count next to a counted noun, or a dash", () => {
   const noun = /\b\d[\d,.]*\s*(?:future |past |live |twin |nesa |person |one-minute |held |written )?(?:pairs?|rows?|twins?|patients?|appointments?|bookings?|stubs?|thousand)\b/i;
   const self = readFileSync(fileURLToPath(import.meta.url), "utf8");
