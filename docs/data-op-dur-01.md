@@ -2,13 +2,18 @@
 
 **Status: NOT RUN.** A DATA operation, not a migration: no schema change, no journal
 entry. Four blocks, each pasted whole, on its own and in order: stage 0 (the files and
-the head it runs from), stage 1 (measure), stage 2 (write) and stage 3 (verify). Any
-`STOP:` line, any REFUSE, any `FAIL` verdict, any `ERROR` and any non-zero exit halts
-the sitting:
+the head it runs from), stage 1 (measure), stage 2 (write) and stage 3 (verify). One
+rule governs every halt, in these words here and in GREEN's dispatch:
 
-A refusal or a STOP stops the sitting, and nothing continues to the next block.
-
-Whether and when a halted sitting starts again is the lead's call, never the runner's.
+THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any
+STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and
+nothing continues to the next block. After stage 2 has committed, a post-commit STOP
+still stops the sitting: the write stands, and stage 3 (READ ONLY) runs only on the
+owner's or the lead's word. The only onward path from stage 2 to stage 3 is exit 0
+with the line "DUR-01 WRITTEN. Paste stage 3 now." No block, and no dispatch
+step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:
+no closing read and no journal read. Whether and when a halted sitting starts again
+is the lead's call, never the runner's.
 
 **It runs AFTER STAFF-10 v2 (#1444), by the owner's ruling, with a fresh stage 1 on its
 own run day.** Stage 1 and stage 2 refuse (R11) while STAFF-10 v2's audit row, action
@@ -117,7 +122,7 @@ pins and the rehearsal.
 | D7 | Added: what does this op still guard once STAFF-10 v2 has run? | The twin predicate and verdict 17 stay, unconditional on STAFF-10 v2's audit row: a live twin booked after STAFF-10 v2 ran reads 08, and a NESA stub inside such a twin's person window reads 17. Verdict 18 holds JP(cb)'s rows at Linda-a-Velha from STAFF-10 v2's run day on, which it leaves on JP(cb) for reception (its Q1) |
 | D8 | Added: why does stage 3 not count the table for its total? | A live count moves with the clinic: a later hard delete, or a booking that began before stage 2 and committed after it with an earlier `created_at`, would FAIL a correct write on its first verify. Stage 2 counts the total under its lock before and after the write and records both; verdict 19 compares the two recorded numbers |
 | D9 | Added: which stage 3 verdicts may read VACUOUS, and why only those? | 14, 16, 18, 20, 21 and 22, each for a subject a real day may lack: no written row at a clinic with a midday closure configured (14), no written row with hours configured (16), no row held (18), no written row on a NESA (20), none naming a NESA in either slot (21), none on a JP row (22). Each prints its subject, so a VACUOUS is read as "nothing to check", never as a pass. Every other verdict compares the written rows themselves, or every other appointment of the tenant (23), and R06 and P5 refuse an empty set of either before the write |
-| D10 | Added: is stage 3 re-issuable? | Yes, READ ONLY, from the sha stage 0 recorded in `/tmp/dur01-main.sha`, whatever main has done since; it prints whether main moved, with both shas, and never stops on it. If the recorded sha is gone, stage 3 stops and the lead rules. The PR merges before the sitting, so no block reads a branch |
+| D10 | Added: can stage 3 run again? | Only on the owner's or the lead's word, never on the runner's (the halt rule). It is READ ONLY and runs from the sha stage 0 recorded in `/tmp/dur01-main.sha`, whatever main has done since; it prints whether main moved, with both shas, and never stops on it. If the recorded sha is gone, stage 3 stops and the lead rules. The PR merges before the sitting, so no block reads a branch |
 | D11 | Added: which room does the room arm read? | The candidate's room trimmed exactly as the app trims it before it asks `appointment_conflicts` (`args.room?.trim() || null` in `conflict.ts`): every character of ECMAScript's WhiteSpace and LineTerminator sets, the tab, the line ends and the no-break space among them, is stripped from both ends (CTE `c_room`, in the rule and so in every stage); a room that trims to nothing asks no room arm; the other row's room is compared as stored, both lower-cased, at the same clinic. The unit test holds `c_room`'s set equal to what JavaScript's trim strips over every code point of the Basic Multilingual Plane |
 | D12 | Added: R11's control | R11 counts the population's tenant when it has no `staff.staff10_v2.apply` audit row, and prints as its control the audit rows of that action in that tenant: 0 and REFUSE before STAFF-10 v2, at least 1 and OK after it. With no population it reads VACUOUS, and R06 refuses. The rehearsal runs both ways on the same fixture |
 | D13 | Added: verdict 23 moves with the clinic | By the ruling it compares EVERY other appointment of the tenant with the baseline stage 2 recorded under its lock. So any booking, edit or delete in the tenant after the write, a portal booking at night or an SMS confirmation included, FAILs it, on the first verify as on a later one. Its observed column counts the rows the app stamped (`created_at` or `updated_at`) after the op's audit row, and its count shows a row added or removed, so the reader can tell the clinic's own change from the op's. Stage 3 runs straight after stage 2, outside clinic hours, which keeps that window short |
@@ -220,7 +225,7 @@ SHA3=71de3658ba89fcaf319f79fe1a33959f8b907d396e6c3ca58c713dae4628a335
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
 rm -f /tmp/dur01-main.sha /tmp/dur01-stage1.out /tmp/dur01-stage1.ok
@@ -259,7 +264,7 @@ SHA1=0bf5fca17b9c29e5a202c1ee1f8b054250bbebeb46e8c1e42c52744e3cf7f5dc
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 rm -f /tmp/dur01-stage1.out /tmp/dur01-stage1.ok
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
@@ -324,7 +329,7 @@ dur01_s10v2_runs
 )
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 [ -n "$(find /tmp/dur01-stage1.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not pass in this sitting, or passed over an hour ago. The sitting stops"; exit 1; }
 test -f /tmp/dur01-stage1.out || { echo "STOP: stage 1 left no transcript. The sitting stops"; exit 1; }
 [ -n "$(find /tmp/dur01-stage1.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's"; exit 1; }
@@ -361,8 +366,8 @@ node scripts/assert-production-target.mjs
 rm -f /tmp/dur01-stage2.out
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "${ARGS[@]}" -f scripts/data/dur-01-2-write.sql 2>&1 | tee /tmp/dur01-stage2.out
 touch /tmp/dur01-written.ok
-grep -q 'DUR-01 STAGE 2 DONE' /tmp/dur01-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
-grep -q 'DUR-01 STAGE 2 COMMITTED' /tmp/dur01-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+grep -q 'DUR-01 STAGE 2 DONE' /tmp/dur01-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
+grep -q 'DUR-01 STAGE 2 COMMITTED' /tmp/dur01-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 echo "DUR-01 WRITTEN. Paste stage 3 now."
 )
 ```
@@ -375,7 +380,7 @@ CHECK's included. **psql exit 0 means the COMMIT ran and the write stands:** the
 touches the written marker at once, before it reads the transcript, and the two `STOP:`
 lines it can print after that point say so in their own words. Either one stops the
 sitting like every other `STOP:`: GREEN reports the whole output, never runs stage 0, 1
-or 2 again, and stage 3, READ ONLY, runs only when the owner or the lead says so. The
+or 2 again, and stage 3, READ ONLY, runs only on the owner's or the lead's word. The
 file pins `client_min_messages = notice`, so a quieter role or database default cannot
 hide the step lines. The NOTICE lines name each step: `L1` the locks, `P0` the re-run
 refusal, `P1` the sets, `P2` each refusal with its control (R11 among them), `P3` the
@@ -393,11 +398,11 @@ before the block, on the `set_config` statement, also with exit 3. A `STOP:` the
 prints exits 1: before psql nothing was written, and after it (the two lines above) the
 write stands. Any other exit (psql exits 2 on a lost connection, possibly during the
 COMMIT) leaves open whether the write stands. In every case GREEN reports the exit code
-and the whole output, and stage 3, READ ONLY, runs only when the owner or the lead says
-so; its verdict 1 answers whether the write stands. R04 and P0 refuse a second write
+and the whole output, and stage 3, READ ONLY, runs only on the owner's or the lead's
+word; its verdict 1 answers whether the write stands. R04 and P0 refuse a second write
 regardless.
 
-## STAGE 3: the verify. READ ONLY, re-issuable
+## STAGE 3: the verify. READ ONLY
 
 ```
 (
@@ -545,7 +550,7 @@ before the write (P5), and read back from the table after it (A1).
     whole rows equal the baseline stage 2 recorded, and the control, the same md5 with
     one row left out, differs from it (ruling 6, D13).
 
-**Stage 3 is re-issuable, and its answers move with the clinic.** A reception edit
+**Stage 3 can run again, on the owner's or the lead's word, and its answers move with the clinic.** A reception edit
 after the sitting can change 3 to 18 and 20 to 23 honestly: a written row shortened
 later FAILs 4, 5 and 6, one cancelled later FAILs 10 (status is a column the op does not
 write), 11, 12, 17 and 21 (the re-measure no longer sees it as live), a new booking over

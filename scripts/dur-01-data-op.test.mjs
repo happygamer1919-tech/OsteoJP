@@ -29,6 +29,25 @@ const S3 = read(F3);
 const DOC = read(DOCF);
 const ACTION = "staff.dur01.extend_import_duration";
 
+/**
+ * The halt rule, in the exact words the document states it: STAFF-10 v2's rule
+ * (docs/data-op-staff-10-v2.md), with this op's WRITTEN line. The owner ruled
+ * the same sentence for both ops, stated identically in the document and in
+ * GREEN's dispatch; the dispatch is checked against these bytes by the lead, not
+ * here: it is not a committed file.
+ */
+const HALT_RULE = [
+  "THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any",
+  "STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and",
+  "nothing continues to the next block. After stage 2 has committed, a post-commit STOP",
+  "still stops the sitting: the write stands, and stage 3 (READ ONLY) runs only on the",
+  "owner's or the lead's word. The only onward path from stage 2 to stage 3 is exit 0",
+  'with the line "DUR-01 WRITTEN. Paste stage 3 now." No block, and no dispatch',
+  "step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:",
+  "no closing read and no journal read. Whether and when a halted sitting starts again",
+  "is the lead's call, never the runner's.",
+].join("\n");
+
 /** SQL with line comments stripped, so a word in a comment never passes for code. */
 const code = (s) => s.replace(/--.*$/gm, "");
 /** A string made safe to sit inside a RegExp. */
@@ -512,7 +531,7 @@ test("stage 2 cannot hide its DONE line, the block marks the write as soon as ps
     says(/ The sitting stops here\./, "that the sitting stops here");
     says(/ Never run stage 0, 1 or 2 again\./, "never to run stage 0, 1 or 2 again");
     says(/ GREEN reports this whole output/, "that GREEN reports the whole output");
-    says(/stage 3 \(READ ONLY\) runs only when the owner or the lead says so"; exit 1; \}$/, "that stage 3 runs only when the owner or the lead says so");
+    says(/stage 3 \(READ ONLY\) runs only on the owner's or the lead's word"; exit 1; \}$/, "that stage 3 runs only on the owner's or the lead's word");
     assert.doesNotMatch(line, /paste stage 3|stage 3 only|go on to stage 3/i, `a STOP after the write sends the runner on to stage 3: ${line.slice(0, 90)}`);
   }
   // The success path: after both transcript checks, exit 0 with DONE and COMMITTED goes on to stage 3.
@@ -757,9 +776,9 @@ test("every script a block runs is pinned by sha256 in that block and checked be
   for (const f of [F1, F2, F3, GUARD]) assert.ok(s0.includes(`[ "$(shasum -a 256 ${f} | cut -d' ' -f1)" = `), `stage 0 does not check ${f}`);
 });
 
-test("the document says a refusal or a STOP stops the sitting, no block or stage file tells anyone to run stage 1 again, and no STOP sends the runner on to stage 3", () => {
-  assert.ok(DOC.includes("A refusal or a STOP stops the sitting, and nothing continues to the next block."), "the document does not say that a refusal or a STOP stops the sitting");
-  assert.ok(DOC.includes("Whether and when a halted sitting starts again is the lead's call, never the runner's."), "the document does not leave a restart to the lead");
+test("the document states the halt rule once, word for word, before the facts; every STOP exits at once; nothing tells anyone to run stage 1 again or sends the runner on to stage 3", () => {
+  assert.equal(DOC.split(HALT_RULE).length - 1, 1, "the document does not state the halt rule exactly once, word for word");
+  assert.ok(DOC.indexOf(HALT_RULE) < DOC.indexOf("| Fact | Value |"), "the halt rule is not stated before the facts table, at the head of the document");
   assert.ok(DOC.replace(/\s+/g, " ").includes("**A refusal in a measurement sitting also stops it:**"), "the document does not say a refusal stops a measurement sitting too");
   for (const [label, b] of STAGE_BLOCKS()) assert.doesNotMatch(b, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
   for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]]) assert.doesNotMatch(sql, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
@@ -770,14 +789,15 @@ test("the document says a refusal or a STOP stops the sitting, no block or stage
       stops++;
       assert.doesNotMatch(line, /paste stage 3|stage 3 only|go on to stage 3/i, `${label}: a STOP sends the runner on to stage 3: ${line.slice(0, 100)}`);
       if (/ALREADY WRITTEN/.test(line)) written.push(label);
-      if (/ALREADY WRITTEN/.test(line)) assert.ok(line.endsWith(` The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }`), `${label}: the ALREADY WRITTEN STOP does not stop the sitting and leave stage 3 to the owner or the lead: ${line.slice(0, 100)}`);
+      assert.match(line, /(\|\||&&) \{ echo "STOP: [^"]*"; (echo "\$\{STRAY\}"; )?exit 1; \}/, `${label}: a STOP does not exit at once: ${line.slice(0, 100)}`);
+      if (/ALREADY WRITTEN/.test(line)) assert.ok(line.endsWith(` The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }`), `${label}: the ALREADY WRITTEN STOP does not stop the sitting and leave stage 3 to the owner or the lead: ${line.slice(0, 100)}`);
     }
   }
   assert.ok(stops > 0, "no block prints a STOP line, so this read nothing");
   assert.deepEqual(written, ["stage 0", "stage 1", "stage 2"], "stages 0, 1 and 2 do not each refuse once stage 2 has written");
   assert.doesNotMatch(CURRENT(), /paste stage 3 and report/i, "the document still tells the runner to paste stage 3 after a STOP");
   const prose = between(DOC, "## STAGE 2", "## STAGE 3", "the stage 2 section").split("\n```\n").at(-1);
-  for (const want of ["Either one stops the sitting like every other `STOP:`", "stage 3, READ ONLY, runs only when the owner or the lead says so", "**Every other exit stops the sitting, with nothing else pasted.**"]) {
+  for (const want of ["Either one stops the sitting like every other `STOP:`", "stage 3, READ ONLY, runs only on the owner's or the lead's word", "**Every other exit stops the sitting, with nothing else pasted.**"]) {
     assert.ok(prose.replace(/\s+/g, " ").includes(want), `the prose under the stage 2 block does not say: ${want}`);
   }
 });
