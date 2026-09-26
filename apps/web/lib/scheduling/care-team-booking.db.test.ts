@@ -420,6 +420,25 @@ d("CARE-02c: booking a therapist puts them on the care team, once, with a notice
     expect(seen).toEqual([]);
   });
 
+  /**
+   * THE CONFLICT TARGET, not the savepoint, is what keeps a mixed booking
+   * right. One INSERT carries every pair; without ON CONFLICT the pair already
+   * on the team would abort the whole statement and the NEW therapist beside it
+   * would be lost with it (the savepoint would swallow the error, so nothing
+   * else would notice).
+   */
+  it("A MIXED BOOKING: one therapist already on the team, one new; only the new one is added and told", async () => {
+    const pJ = await patient("Paciente J");
+    const rec = as("reception", reception);
+    await careTeam.assignTherapist(rec, pJ, t1);
+    expect(
+      await book({ patientId: pJ, practitionerId: t1, practitionerTwoId: t2, start: at(WED + 14, 9) }),
+    ).toMatchObject({ ok: true });
+    expect((await team(pJ)).map((m) => m.user_id).sort()).toEqual([t1, t2].sort());
+    expect(await notices(t1)).toEqual([]);
+    expect(await notices(t2)).toHaveLength(1);
+  });
+
   it("CURRENT DEFAULT: a therapist REMOVED by hand is added again, as automatic, by their next booking", async () => {
     const pH = await patient("Paciente H");
     const rec = as("reception", reception);
