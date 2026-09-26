@@ -12,9 +12,15 @@
 -- an empty md5 comparison set before the write (R25, R27), so 9, 19, 20 and 21
 -- always compare something. Verdict 10 is VACUOUS exactly when JP(cb) had no
 -- inactive row and nothing was retired, a day on which 2 to 5 are VACUOUS too.
--- Verdict 11 is VACUOUS when no block was deleted, or when time_off shows JP(cb)
--- no block from 23 September to 7 October, so a read that sees nothing never
--- prints OK; it FAILs when its own predicate misses a block stage 2 recorded.
+-- Verdict 11 reads the 30 September block with stage 1's own CTE, byte for
+-- byte: it FAILs on any JP(cb) block overlapping that Lisbon day, and on a read
+-- that misses either of its two synthetic blocks; it is VACUOUS when time_off
+-- shows JP(cb) no block at all, so a read that sees nothing never prints OK.
+-- Verdict 12 compares the tenant's time_off, count and md5, with the baseline
+-- stage 2 recorded: this op writes no block. Verdicts 26 and 27 find the rows
+-- stage 2 wrote by the stamp it put on them, not by the audit row's lists, and
+-- FAIL unless those lists are exactly the rows it cancelled and the rows it gave
+-- a practitioner_2.
 --
 -- The rows printed after the SUMMARY are the future pairs as they stand after
 -- the write, ids only: the owner-only reception note points at that section.
@@ -41,8 +47,10 @@ WITH k AS (
          'bdc466d7-f81f-4f8c-aa2e-b85194d73e1a'::uuid AS nesa_lv,
          (DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from,
          (DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to,
-         (DATE '2026-09-23')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_from,
-         (DATE '2026-10-08')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_to,
+         (DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from,
+         (DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to,
+         (DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from,
+         (DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to,
          '2000-01-01 03:00:00+00'::timestamptz AS ctl_from,
          '2000-01-01 03:01:00+00'::timestamptz AS ctl_to,
          (now() AT TIME ZONE 'Europe/Lisbon')::date AS today
@@ -87,21 +95,39 @@ WITH k AS (
    WHERE av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
      AND av.valid_from IS NOT NULL AND av.valid_until IS NOT NULL AND av.valid_from = av.valid_until
      AND av.valid_from >= k.today AND extract(dow FROM av.valid_from)::int = 6 AND av.weekday = 6
-), blk AS (
-  -- The 30 September read and its positive controls, by ONE predicate over two
-  -- sources: time_off as it reads now, and the blocks stage 2 copied whole into
-  -- the audit row before deleting them, read back as time_off rows. Both pass
-  -- the same user id and the same window, and on_30 is the same overlap test for
-  -- both, so a wrong user id or a broken predicate cannot read 0 now without also
-  -- missing the block it was meant to find (verdict 11 FAILs), and a time_off
-  -- that reads nothing shows no JP(cb) block from 23 September to 7 October
-  -- either (verdict 11 is VACUOUS, not OK).
-  SELECT t.src, (t.starts_at < k.blk_to AND t.ends_at > k.blk_from) AS on_30
-    FROM (SELECT 'now' AS src, x.* FROM public.time_off x
+), b30 AS (
+  SELECT s.src, s.id, s.starts_at, s.ends_at, s.reason
+    FROM (SELECT 'real' AS src, t.id, t.user_id, t.starts_at, t.ends_at, t.reason::text AS reason
+            FROM public.time_off t
           UNION ALL
-          SELECT 'recorded', x.*
-            FROM al, jsonb_populate_recordset(NULL::public.time_off, coalesce(al.m -> 'deleted_blocks', '[]'::jsonb)) x) t, k
-   WHERE t.user_id = k.jp_cb AND t.starts_at < k.ctl_blk_to AND t.ends_at > k.ctl_blk_from
+          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30_from, k0.ctl30_to, 'synthetic, inside the day' FROM k k0
+          UNION ALL
+          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30x_from, k0.ctl30x_to, 'synthetic, across the day' FROM k k0) s, k
+   WHERE s.user_id = k.jp_cb AND tstzrange(s.starts_at, s.ends_at) && tstzrange(k.blk_from, k.blk_to)
+), stamped AS (
+  -- Every appointment stage 2 wrote carries its transaction time in updated_at,
+  -- and stage 2 asserts the audit row's created_at is that same time. So this
+  -- finds the rows it wrote WITHOUT the audit row's lists, and verdicts 26 and
+  -- 27 can disagree with them. A later edit moves a row's updated_at, so these
+  -- two answer for the sitting, as 15 to 23 do.
+  SELECT a.id, a.status, a.practitioner_2_id
+    FROM public.appointments a, al
+   WHERE a.tenant_id = al.tenant AND a.updated_at = al.at
+), can AS (
+  -- Cancelled by the op: stamped, cancelled, and not a ruling (a) or (b) row,
+  -- which keeps whatever status it had before, cancelled included.
+  SELECT st.id FROM stamped st
+   WHERE st.status = 'cancelled'
+     AND st.id NOT IN (SELECT ids.id FROM ids WHERE ids.s = 'h')
+     AND st.id NOT IN (SELECT xp.id FROM xp)
+), t2 AS (
+  -- Given a practitioner_2 by the op: stamped, carrying one, and not a ruling
+  -- (a) or (b) row or a cancelled NESA row, whose practitioner_2 it never writes.
+  SELECT st.id, st.practitioner_2_id FROM stamped st
+   WHERE st.practitioner_2_id IS NOT NULL
+     AND st.id NOT IN (SELECT ids.id FROM ids WHERE ids.s = 'h')
+     AND st.id NOT IN (SELECT xp.id FROM xp)
+     AND st.id NOT IN (SELECT fp.n FROM fp)
 ), v AS (
   SELECT
     (SELECT count(*) FROM public.audit_log a WHERE a.action = 'staff.staff10_v2.apply')::int AS audit_rows,
@@ -148,12 +174,16 @@ WITH k AS (
       WHERE av.user_id = k.jp_cb AND av.location_id = k.cb_loc) AS md5_cb_sched_now,
     (SELECT count(*) FROM public.availability_templates av, k
       WHERE av.user_id = k.jp_cb AND av.is_active IS NOT TRUE)::int AS cb_inactive_now,
-    (SELECT jsonb_array_length(coalesce(al.m -> 'deleted_blocks', '[]'::jsonb)) FROM al)::int AS n_blk,
-    (SELECT count(*) FROM blk WHERE blk.src = 'now' AND blk.on_30)::int AS blk_now,
-    (SELECT count(*) FROM blk WHERE blk.src = 'recorded' AND blk.on_30)::int AS blk_replay,
-    (SELECT count(*) FROM blk WHERE blk.src = 'now')::int AS blk_win_now,
-    (SELECT count(*) FROM al, jsonb_array_elements(coalesce(al.m -> 'deleted_blocks', '[]'::jsonb)) b
-      WHERE b ? 'id' AND b ? 'user_id' AND b ? 'starts_at' AND b ? 'ends_at' AND b ? 'reason')::int AS blk_recorded,
+    (SELECT count(*) FROM b30 WHERE b30.src = 'real')::int AS b30_real,
+    (SELECT count(*) FROM b30 WHERE b30.src = 'control')::int AS b30_ctl,
+    (SELECT count(*) FROM public.time_off t, k WHERE t.user_id = k.jp_cb)::int AS jpcb_blocks_now,
+    (SELECT count(*) FROM public.time_off t, al WHERE t.tenant_id = al.tenant)::int AS to_n_now,
+    (SELECT md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), ''))
+       FROM public.time_off t, al WHERE t.tenant_id = al.tenant) AS to_md5_now,
+    (SELECT md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), ''))
+       FROM public.time_off t, al
+      WHERE t.tenant_id = al.tenant
+        AND t.id <> (SELECT t1.id FROM public.time_off t1 WHERE t1.tenant_id = al.tenant ORDER BY t1.id LIMIT 1)) AS to_md5_less_one,
     (SELECT count(*) FROM ids WHERE s = 'h')::int AS n_h,
     (SELECT count(*) FROM ids JOIN public.appointments a ON a.id = ids.id, k, al
       WHERE ids.s = 'h' AND a.practitioner_id = k.jp_lv AND a.location_id = k.lv_loc
@@ -227,6 +257,13 @@ WITH k AS (
         AND a1.practitioner_id IN (k.jp_lv, k.nesa_cb, k.nesa_lv))::int AS confirmed_overlaps,
     (SELECT count(*) FROM public.appointments a, k
       WHERE a.status = 'confirmed' AND a.practitioner_id IN (k.jp_lv, k.nesa_cb, k.nesa_lv))::int AS confirmed_rows,
+    (SELECT count(*) FROM can)::int AS n_can,
+    ((SELECT count(*) FROM (SELECT can.id FROM can EXCEPT SELECT fp.n FROM fp) d)
+      + (SELECT count(*) FROM (SELECT fp.n FROM fp EXCEPT SELECT can.id FROM can) d))::int AS can_diff,
+    (SELECT count(*) FROM t2)::int AS n_t2,
+    ((SELECT count(*) FROM (SELECT t2.id FROM t2 EXCEPT SELECT fp.p FROM fp) d)
+      + (SELECT count(*) FROM (SELECT fp.p FROM fp EXCEPT SELECT t2.id FROM t2) d)
+      + (SELECT count(*) FROM fp JOIN t2 ON t2.id = fp.p WHERE t2.practitioner_2_id IS DISTINCT FROM fp.r))::int AS t2_diff,
     (SELECT al.m FROM al) AS m
   FROM (SELECT 1) one
 ), r AS (
@@ -269,15 +306,19 @@ UNION ALL SELECT 10, 'no previously inactive JP(cb) row was reactivated',
             THEN 'FAIL'
             WHEN ((v.m -> 'before' ->> 'cb_inactive')::int + v.n_rcov + v.n_rpast + v.n_rphan + v.n_rwin) = 0
             THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 11, 'no JP(cb) block overlaps 30 September any more; control: the same read finds every block stage 2 recorded, and JP(cb) blocks from 23 September to 7 October read now',
-       v.blk_now::text || ' / control ' || v.blk_replay::text || ' of ' || v.n_blk::text || ' recorded, '
-         || v.blk_win_now::text || ' read now',
-       '0 / control ' || v.n_blk::text || ' of ' || v.n_blk::text || ' recorded, above 0 read now',
-       CASE WHEN v.blk_now <> 0 OR v.blk_replay <> v.n_blk THEN 'FAIL'
-            WHEN v.n_blk = 0 OR v.blk_win_now = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 12, 'every deleted block was recorded whole, so it can be restored',
-       v.blk_recorded::text, v.n_blk::text,
-       CASE WHEN v.blk_recorded <> v.n_blk THEN 'FAIL' WHEN v.n_blk = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 11, 'no JP(cb) block overlaps the Lisbon day 30 September; control: the same read matches both synthetic blocks, and JP(cb) blocks read now at any date',
+       v.b30_real::text || ' / control ' || v.b30_ctl::text || ' of 2 synthetic, ' || v.jpcb_blocks_now::text || ' read now',
+       '0 / control 2 of 2 synthetic, above 0 read now',
+       CASE WHEN v.b30_real <> 0 OR v.b30_ctl <> 2 THEN 'FAIL'
+            WHEN v.jpcb_blocks_now = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 12, 'time_off is unchanged by the op: the blocks of the tenant, count and md5, equal the stage 2 baseline; control: the same md5 less one block differs from it',
+       v.to_n_now::text || ' ' || left(v.to_md5_now, 8) || ' / control '
+         || CASE WHEN v.to_md5_less_one IS DISTINCT FROM (v.m -> 'md5' ->> 'to') THEN 'differs' ELSE 'EQUAL' END,
+       (v.m -> 'before' ->> 'time_off') || ' ' || left(v.m -> 'md5' ->> 'to', 8) || ' / control differs',
+       CASE WHEN v.to_md5_now IS DISTINCT FROM (v.m -> 'md5' ->> 'to')
+              OR v.to_n_now IS DISTINCT FROM (v.m -> 'before' ->> 'time_off')::int
+              OR (v.to_n_now > 0 AND v.to_md5_less_one IS NOT DISTINCT FROM (v.m -> 'md5' ->> 'to')) THEN 'FAIL'
+            WHEN (v.m -> 'before' ->> 'time_off')::int = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 13, 'ruling (a): every recorded row is on JP(lv), at Linda-a-Velha, before the run day',
        v.h_ok::text, v.n_h::text,
        CASE WHEN v.h_ok <> v.n_h THEN 'FAIL' WHEN v.n_h = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
@@ -321,6 +362,12 @@ UNION ALL SELECT 24, 'no LV row names JP(cb) as practitioner_2 and none holds JP
 UNION ALL SELECT 25, 'no two confirmed rows overlap on JP(lv) or either NESA row; control: their confirmed rows',
        v.confirmed_overlaps::text || ' / control ' || v.confirmed_rows::text, '0 / control above 0',
        CASE WHEN v.confirmed_overlaps <> 0 THEN 'FAIL' WHEN v.confirmed_rows = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 26, 'ruling (c): the NESA rows the audit row lists are exactly the rows the op cancelled, found by its stamp and not by the list',
+       v.n_can::text || ' cancelled by the op, ' || v.can_diff::text || ' differing from the list', v.n_f::text || ', none differing',
+       CASE WHEN v.can_diff <> 0 THEN 'FAIL' WHEN v.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 27, 'ruling (c): the person rows the audit row lists are exactly the rows the op gave a practitioner_2, each its NESA, found by its stamp and not by the list',
+       v.n_t2::text || ' given one by the op, ' || v.t2_diff::text || ' differing from the list', v.n_f::text || ', none differing',
+       CASE WHEN v.t2_diff <> 0 THEN 'FAIL' WHEN v.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 )
 SELECT r.n, r."check", r.observed, r.expected, r.verdict FROM r
 UNION ALL

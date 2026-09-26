@@ -8,8 +8,6 @@
 --   public.availability_templates.is_active -> false  (retire_covered, retire_past,
 --                                                     retire_phantom, retire_sat_window)
 --   public.availability_templates.user_id   -> JP(lv) (move_saturday)
---   public.time_off                          DELETE   (the block overlapping 30 September,
---                                                     recorded whole in the audit row first)
 --   public.appointments.practitioner_id     -> JP(lv) (ruling a, set H)
 --   public.appointments.practitioner_id     -> the NESA installed at the booking clinic
 --                                                     (ruling b, set X)
@@ -22,12 +20,15 @@
 --                                                     before-count and every md5
 --
 -- WHAT IT NEVER TOUCHES, asserted inside the transaction rather than promised:
--- clinical_records (authorship included), invoices, users, staff_locations,
--- every appointment outside the four sets, JP(cb)'s PAST Castelo Branco
--- appointments and JP(cb)'s Castelo Branco schedule rows. Each is compared by
--- md5 before and after. A FUTURE JP(cb) Castelo Branco appointment is not in
--- that list: when it is the person row of a future NESA pair, ruling (c) writes
--- its practitioner_2_id and updated_at, as it does for every such person row.
+-- time_off (it writes no block: the owner removes the 30 September block in the
+-- app before the sitting, and R06 refuses here, in the database, while any
+-- JP(cb) block overlaps that Lisbon day), clinical_records (authorship
+-- included), invoices, users, staff_locations, every appointment outside the
+-- four sets, JP(cb)'s PAST Castelo Branco appointments and JP(cb)'s Castelo
+-- Branco schedule rows. Each is compared by md5 before and after. A FUTURE
+-- JP(cb) Castelo Branco appointment is not in that list: when it is the person
+-- row of a future NESA pair, ruling (c) writes its practitioner_2_id and
+-- updated_at, as it does for every such person row.
 --
 -- A "STOP:" RAISED IN THIS FILE (psql exit 3) MEANS THE TRANSACTION ABORTED AND
 -- NOTHING WAS WRITTEN. There is no partial write: every refusal is raised before
@@ -75,8 +76,6 @@ SELECT count(*) AS carries_lifted
     (set_config('s10v2.s10v2_digest_rphan',  :'s10v2_digest_rphan',  false)),
     (set_config('s10v2.s10v2_count_rwin',    :'s10v2_count_rwin',    false)),
     (set_config('s10v2.s10v2_digest_rwin',   :'s10v2_digest_rwin',   false)),
-    (set_config('s10v2.s10v2_count_dblk',    :'s10v2_count_dblk',    false)),
-    (set_config('s10v2.s10v2_digest_dblk',   :'s10v2_digest_dblk',   false)),
     (set_config('s10v2.s10v2_count_hjp',     :'s10v2_count_hjp',     false)),
     (set_config('s10v2.s10v2_digest_hjp',    :'s10v2_digest_hjp',    false)),
     (set_config('s10v2.s10v2_count_xnesa',   :'s10v2_count_xnesa',   false)),
@@ -108,7 +107,6 @@ DECLARE
   v_rphan   uuid[];
   v_rwin    uuid[];
   v_retire  uuid[];
-  v_blk     uuid[];
   v_h       uuid[];
   v_x       jsonb;
   v_f       jsonb;
@@ -121,7 +119,6 @@ DECLARE
   v_f_n     uuid[];
   v_written uuid[];
   v_sched   uuid[];
-  v_blk_rows jsonb;
 
   v_row     record;
   v_key     text;
@@ -132,12 +129,12 @@ DECLARE
   v_b_appt int; v_b_cb int; v_b_lv int; v_b_ncb int; v_b_nlv int; v_b_cancel int; v_b_t2 int;
   v_b_cb_lv_rows int; v_b_lv_lv_rows int; v_b_cb_inactive int; v_b_timeoff int;
   v_b_md5_appt_rest text; v_b_md5_w_fixed text; v_b_md5_h text; v_b_md5_x text; v_b_md5_fp text; v_b_md5_fn text;
-  v_b_md5_av_rest text; v_b_md5_av_w text; v_b_md5_to_rest text;
+  v_b_md5_av_rest text; v_b_md5_av_w text; v_b_md5_to text;
   v_b_md5_cr_all text; v_b_md5_inv text; v_b_md5_users text; v_b_md5_sl text;
   v_b_md5_cr_att text; v_b_md5_keep text; v_b_md5_cb_past text; v_b_md5_cb_sched text;
   v_b_n_cr_att int; v_b_n_keep int; v_b_n_cb_past int; v_b_n_cb_sched int;
   v_bn_appt_rest int; v_bn_w_fixed int; v_bn_h int; v_bn_x int; v_bn_fp int; v_bn_fn int;
-  v_bn_av_rest int; v_bn_av_w int; v_bn_to_rest int; v_bn_cr_all int; v_bn_inv int; v_bn_users int; v_bn_sl int;
+  v_bn_av_rest int; v_bn_av_w int; v_bn_to int; v_bn_cr_all int; v_bn_inv int; v_bn_users int; v_bn_sl int;
   v_md5_rows jsonb;
   v_b_mh_n int; v_b_mh_other int; v_b_mh_ctl int;
   v_a_mh_p int; v_a_mh_n int; v_a_mh_ctl int; v_a_th_p int;
@@ -165,8 +162,10 @@ k AS (
          ((now() AT TIME ZONE 'Europe/Lisbon')::date)::timestamp AT TIME ZONE 'Europe/Lisbon' AS day0,
          (DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from,
          (DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to,
-         (DATE '2026-09-23')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_from,
-         (DATE '2026-10-08')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_to
+         (DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from,
+         (DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to,
+         (DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from,
+         (DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to
 ),
 -- The two JP rows, as found, with the three user flags the Linda-a-Velha roster
 -- reads (apps/api/lib/appointments/store.ts): active, bookable, not shared.
@@ -243,19 +242,23 @@ cls AS (
     FROM cls1 c
 ),
 -- ---------------------------------------------------------------------------
--- THE 30 SEPTEMBER BLOCK: the OVERLAP form, so a block that starts and ends on
--- 30 September is caught. blk_win is its positive control: JP(cb)'s blocks from
--- 23 September to 7 October, printed so a zero can be read.
+-- THE 30 SEPTEMBER BLOCK. No stage writes it: the owner removes it in the app
+-- before the sitting, and R06 refuses while any JP(cb) block overlaps the Lisbon
+-- day 30 September. ONE predicate, tstzrange overlap with that day, reads two
+-- sources: every time_off row, and two synthetic JP(cb) blocks it must match,
+-- one inside the day (09:00 to 20:00) and one across it (20:00 the day before
+-- to 09:00 the day after). A read that misses either is broken, and R26 refuses
+-- it. Stage 3 carries this CTE byte for byte (verdict 11).
 -- ---------------------------------------------------------------------------
-blk AS (
-  SELECT t.id
-    FROM public.time_off t, k
-   WHERE t.user_id = k.jp_cb AND t.starts_at < k.blk_to AND t.ends_at > k.blk_from
-),
-blk_win AS (
-  SELECT t.id
-    FROM public.time_off t, k
-   WHERE t.user_id = k.jp_cb AND t.starts_at < k.ctl_blk_to AND t.ends_at > k.ctl_blk_from
+b30 AS (
+  SELECT s.src, s.id, s.starts_at, s.ends_at, s.reason
+    FROM (SELECT 'real' AS src, t.id, t.user_id, t.starts_at, t.ends_at, t.reason::text AS reason
+            FROM public.time_off t
+          UNION ALL
+          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30_from, k0.ctl30_to, 'synthetic, inside the day' FROM k k0
+          UNION ALL
+          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30x_from, k0.ctl30x_to, 'synthetic, across the day' FROM k k0) s, k
+   WHERE s.user_id = k.jp_cb AND tstzrange(s.starts_at, s.ends_at) && tstzrange(k.blk_from, k.blk_to)
 ),
 -- ---------------------------------------------------------------------------
 -- RULING (a), SET H: JP(cb)'s Linda-a-Velha appointments that start before the
@@ -359,7 +362,6 @@ tgt AS (
   UNION ALL SELECT 'msat', c.id::text FROM cls c WHERE c.f_move
   UNION ALL SELECT 'rphan', c.id::text FROM cls c WHERE c.f_phan
   UNION ALL SELECT 'rwin', c.id::text FROM cls c WHERE c.f_win
-  UNION ALL SELECT 'dblk', b.id::text FROM blk b
   UNION ALL SELECT 'hjp', h.id::text FROM h
   UNION ALL SELECT 'xnesa', x.id::text || '>' || coalesce(x.to_user::text, 'none') FROM x
   UNION ALL SELECT 'ft2', f.p_id::text || '>' || f.n_user::text FROM f
@@ -367,7 +369,7 @@ tgt AS (
 ),
 codes AS (
   SELECT * FROM (VALUES (1, 'rcov'), (2, 'rpast'), (3, 'msat'), (4, 'rphan'), (5, 'rwin'),
-                        (6, 'dblk'), (7, 'hjp'), (8, 'xnesa'), (9, 'ft2'), (10, 'fcan')) v(ord, code)
+                        (6, 'hjp'), (7, 'xnesa'), (8, 'ft2'), (9, 'fcan')) v(ord, code)
 ),
 car AS (
   SELECT 0 AS ord, 's10v2_run_day' AS carry, (SELECT k.today::text FROM k) AS value
@@ -438,9 +440,9 @@ ref AS (
                             AND o.valid_until IS NOT DISTINCT FROM c.valid_until))::int,
          (SELECT count(*) FROM cls c WHERE c.f_move)::int
   UNION ALL
-  SELECT 'R06', 'more than one JP(cb) block overlaps 30 September',
-         GREATEST((SELECT count(*) FROM blk) - 1, 0)::int,
-         (SELECT count(*) FROM blk_win)::int
+  SELECT 'R06', 'a JP(cb) block overlaps the Lisbon day 30 September; the owner removes it in the app before the sitting, and section 2c names it',
+         (SELECT count(*) FROM b30 WHERE b30.src = 'real')::int,
+         (SELECT count(*) FROM b30 WHERE b30.src = 'control')::int
   UNION ALL
   SELECT 'R07', 'the original STAFF-10 write has already run (its audit row)',
          (SELECT count(*) FROM public.audit_log al WHERE al.action = 'staff.jp_lv_schedule_rows.retire')::int,
@@ -533,12 +535,13 @@ ref AS (
                   THEN 1 ELSE 0 END))::int,
          (SELECT count(*) FROM public.appointments a, k WHERE a.practitioner_id = k.jp_cb)::int
   UNION ALL
-  -- The ruled block is a 30 September block. One that also covers another day
-  -- (a multi-day absence) is not it, and deleting it would erase real absence.
-  SELECT 'R26', 'the block overlapping 30 September also covers another day, so it is not the 30 September block',
-         (SELECT count(*) FROM blk JOIN public.time_off t ON t.id = blk.id, k
-           WHERE t.starts_at < k.blk_from OR t.ends_at > k.blk_to)::int,
-         (SELECT count(*) FROM blk)::int
+  -- R06's read proves itself: the same predicate must match both synthetic
+  -- JP(cb) blocks, one inside the Lisbon day and one across it. A read that
+  -- misses either would miss a real block too, and R06 could then read 0 over a
+  -- block that is there. The control is the two synthetic blocks offered.
+  SELECT 'R26', 'the 30 September read missed a synthetic JP(cb) block it must match (inside the day, or across it), so R06 cannot be trusted',
+         (2 - (SELECT count(*) FROM b30 WHERE b30.src = 'control'))::int,
+         2
   UNION ALL
   -- The other two untouched sets stage 3 compares by md5: the clinical records
   -- on the rows the op writes, and the past twin rows it leaves alone. Empty,
@@ -588,11 +591,11 @@ ref AS (
   SELECT 'R30', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
          (SELECT count(*) FROM pg_catalog.pg_trigger t
            WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
-                               'public.time_off'::regclass, 'public.audit_log'::regclass)
+                               'public.audit_log'::regclass)
              AND NOT t.tgisinternal)::int,
          (SELECT count(*) FROM pg_catalog.pg_trigger t
            WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
-                               'public.time_off'::regclass, 'public.audit_log'::regclass))::int
+                               'public.audit_log'::regclass))::int
 )
 -- <<< STAFF-10 V2 SETS END
   SELECT (SELECT k.tenant FROM k), (SELECT k.today FROM k), (SELECT k.day0 FROM k),
@@ -601,7 +604,6 @@ ref AS (
          coalesce((SELECT array_agg(c.id ORDER BY c.id) FROM cls c WHERE c.f_move), '{}'::uuid[]),
          coalesce((SELECT array_agg(c.id ORDER BY c.id) FROM cls c WHERE c.f_phan), '{}'::uuid[]),
          coalesce((SELECT array_agg(c.id ORDER BY c.id) FROM cls c WHERE c.f_win), '{}'::uuid[]),
-         coalesce((SELECT array_agg(b.id ORDER BY b.id) FROM blk b), '{}'::uuid[]),
          coalesce((SELECT array_agg(h.id ORDER BY h.id) FROM h), '{}'::uuid[]),
          coalesce((SELECT jsonb_agg(jsonb_build_object('id', x.id, 'from', x.from_user, 'to', x.to_user)
                                     ORDER BY x.id) FROM x), '[]'::jsonb),
@@ -614,7 +616,7 @@ ref AS (
          (SELECT jsonb_agg(jsonb_build_object('code', r.code, 'label', r.label, 'n', r.n, 'control', r.control)
                            ORDER BY r.code) FROM ref r),
          (SELECT jsonb_object_agg(c.carry, c.value) FROM car c)
-    INTO v_tenant, v_today, v_day0, v_rcov, v_rpast, v_msat, v_rphan, v_rwin, v_blk, v_h,
+    INTO v_tenant, v_today, v_day0, v_rcov, v_rpast, v_msat, v_rphan, v_rwin, v_h,
          v_x, v_f, v_pp, v_keep, v_ref, v_car;
 
   v_x_ids   := ARRAY(SELECT (e ->> 'id')::uuid FROM jsonb_array_elements(v_x) e ORDER BY 1);
@@ -625,9 +627,8 @@ ref AS (
   v_written := v_h || v_x_ids || v_f_p || v_f_n;
 
   RAISE NOTICE 'P1 tenant %, run day (Lisbon) %, past means before %', v_tenant, v_today, v_day0;
-  RAISE NOTICE 'P1 retire_covered % / retire_past % / move_saturday % / retire_phantom % / retire_sat_window % / block %',
-    cardinality(v_rcov), cardinality(v_rpast), cardinality(v_msat), cardinality(v_rphan), cardinality(v_rwin),
-    cardinality(v_blk);
+  RAISE NOTICE 'P1 retire_covered % / retire_past % / move_saturday % / retire_phantom % / retire_sat_window %',
+    cardinality(v_rcov), cardinality(v_rpast), cardinality(v_msat), cardinality(v_rphan), cardinality(v_rwin);
   RAISE NOTICE 'P1 ruling a % / ruling b % / ruling c % / ruling d listed % / past twin rows kept %',
     cardinality(v_h), cardinality(v_x_ids), cardinality(v_f_p), jsonb_array_length(v_pp), cardinality(v_keep);
 
@@ -651,12 +652,12 @@ ref AS (
   -- P3. THE CARRIES. Same Lisbon day, then every count and digest, per action.
   -- ==========================================================================
   IF current_setting('s10v2.s10v2_run_day', true) IS DISTINCT FROM v_today::text THEN
-    RAISE EXCEPTION 'STOP: stage 1 ran on Lisbon day %, and today is %. Run stage 1 again today',
+    RAISE EXCEPTION 'STOP: stage 1 ran on Lisbon day %, and today is %. Nothing was written; the sitting stops here',
       current_setting('s10v2.s10v2_run_day', true), v_today;
   END IF;
   SELECT count(*)::int INTO v_n FROM jsonb_object_keys(v_car);
-  IF v_n <> 21 THEN
-    RAISE EXCEPTION 'STOP: the carry set has % names, not 21', v_n;
+  IF v_n <> 19 THEN
+    RAISE EXCEPTION 'STOP: the carry set has % names, not 19', v_n;
   END IF;
   FOR v_row IN SELECT c.key, c.value FROM jsonb_each_text(v_car) c ORDER BY 1
   LOOP
@@ -665,11 +666,11 @@ ref AS (
       RAISE EXCEPTION 'STOP: carry % was not passed from stage 1', v_row.key;
     END IF;
     IF v_want IS DISTINCT FROM v_row.value THEN
-      RAISE EXCEPTION 'STOP: carry % reads % now and stage 1 printed %. The database moved since stage 1. Run stage 1 again',
+      RAISE EXCEPTION 'STOP: carry % reads % now and stage 1 printed %. The database moved since stage 1. Nothing was written; the sitting stops here',
         v_row.key, v_row.value, v_want;
     END IF;
   END LOOP;
-  RAISE NOTICE 'P3 the run day and all 21 carries match stage 1';
+  RAISE NOTICE 'P3 the run day and all 19 carries match stage 1';
 
   -- ==========================================================================
   -- P4. WHAT ELSE RUNS ON A WRITE TO THESE TABLES. R30 has already refused any
@@ -683,7 +684,7 @@ ref AS (
     INTO v_want
     FROM pg_catalog.pg_trigger t
    WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
-                       'public.time_off'::regclass, 'public.audit_log'::regclass)
+                       'public.audit_log'::regclass)
      AND NOT t.tgisinternal;
   RAISE NOTICE 'P4 triggers the system did not create, on a table this op writes: %', coalesce(v_want, 'none');
   IF v_want IS NOT NULL THEN
@@ -738,9 +739,11 @@ ref AS (
                                      av.valid_from, av.valid_until, av.created_at)::text, E'\n' ORDER BY av.id), ''))
     INTO v_bn_av_w, v_b_md5_av_w
     FROM public.availability_templates av WHERE av.id IN (SELECT w.id FROM unnest(v_sched) w(id));
-  SELECT count(*)::int, md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), '')) INTO v_bn_to_rest, v_b_md5_to_rest
-    FROM public.time_off t
-   WHERE t.tenant_id = v_tenant AND NOT EXISTS (SELECT 1 FROM unnest(v_blk) w(id) WHERE w.id = t.id);
+  -- to: EVERY time_off row of the tenant. This op writes none, so the count and
+  -- this md5 must read the same after the writes, and stage 3 verdict 12 reads
+  -- them again against the audit row.
+  SELECT count(*)::int, md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), '')) INTO v_bn_to, v_b_md5_to
+    FROM public.time_off t WHERE t.tenant_id = v_tenant;
   SELECT count(*)::int, md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
                                      cr.version, cr.updated_at)::text, E'\n' ORDER BY cr.id), ''))
     INTO v_bn_cr_all, v_b_md5_cr_all FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant;
@@ -785,13 +788,12 @@ ref AS (
   -- here if it reads empty: the refusal and the baseline would disagree. The
   -- others can be empty on a real day and print VACUOUS: h, x, fp, fn and av_w
   -- are the written sets of a ruling or a schedule action with nothing to do,
-  -- and to_rest and inv are the tenant's other blocks and its invoices, which no
-  -- ruling promises exist. Each of those is a whole tenant table or the
-  -- complement of the op's own set, so even empty its md5 still changes on the
-  -- one write it could suffer, a new row.
+  -- and to and inv are the tenant's blocks and its invoices, which no ruling
+  -- promises exist. Each of those is a whole tenant table, so even empty its md5
+  -- still changes on the one write it could suffer, a new row.
   v_md5_rows := jsonb_build_object(
     'appt_rest', v_bn_appt_rest, 'w_fixed', v_bn_w_fixed, 'h', v_bn_h, 'x', v_bn_x, 'fp', v_bn_fp, 'fn', v_bn_fn,
-    'av_rest', v_bn_av_rest, 'av_w', v_bn_av_w, 'to_rest', v_bn_to_rest, 'cr_all', v_bn_cr_all, 'inv', v_bn_inv,
+    'av_rest', v_bn_av_rest, 'av_w', v_bn_av_w, 'to', v_bn_to, 'cr_all', v_bn_cr_all, 'inv', v_bn_inv,
     'users', v_bn_users, 'sl', v_bn_sl,
     'cr_att', v_b_n_cr_att, 'keep', v_b_n_keep, 'cb_past', v_b_n_cb_past, 'cb_sched', v_b_n_cb_sched);
   SELECT string_agg(e.key || ' ' || e.value || CASE WHEN e.value::int = 0 THEN ' VACUOUS' ELSE ' OK' END,
@@ -877,26 +879,16 @@ ref AS (
   END IF;
   RAISE NOTICE 'W2 moved % Saturday row(s) to JP(lv)', v_n;
 
-  -- W3. The 30 September block, recorded whole before it goes.
-  SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.id), '[]'::jsonb) INTO v_blk_rows
-    FROM public.time_off t WHERE t.id = ANY(v_blk);
-  DELETE FROM public.time_off WHERE id = ANY(v_blk) AND user_id = c_jp_cb;
-  GET DIAGNOSTICS v_n = ROW_COUNT;
-  IF v_n <> cardinality(v_blk) THEN
-    RAISE EXCEPTION 'STOP: W3 deleted % blocks, expected %', v_n, cardinality(v_blk);
-  END IF;
-  RAISE NOTICE 'W3 deleted % block(s) overlapping 30 September (recorded whole in the audit row)', v_n;
-
-  -- W4. Ruling (a): JP(cb)'s past Linda-a-Velha appointments to JP(lv).
+  -- W3. Ruling (a): JP(cb)'s past Linda-a-Velha appointments to JP(lv).
   UPDATE public.appointments SET practitioner_id = c_jp_lv, updated_at = now()
    WHERE id = ANY(v_h) AND practitioner_id = c_jp_cb AND location_id = c_lv_loc AND starts_at < v_day0;
   GET DIAGNOSTICS v_n = ROW_COUNT;
   IF v_n <> cardinality(v_h) THEN
-    RAISE EXCEPTION 'STOP: W4 re-attributed % ruling (a) rows, expected %', v_n, cardinality(v_h);
+    RAISE EXCEPTION 'STOP: W3 re-attributed % ruling (a) rows, expected %', v_n, cardinality(v_h);
   END IF;
-  RAISE NOTICE 'W4 re-attributed % past JP(cb) Linda-a-Velha appointment(s) to JP(lv)', v_n;
+  RAISE NOTICE 'W3 re-attributed % past JP(cb) Linda-a-Velha appointment(s) to JP(lv)', v_n;
 
-  -- W5. Ruling (b): each past NESA row to the NESA installed at its clinic.
+  -- W4. Ruling (b): each past NESA row to the NESA installed at its clinic.
   UPDATE public.appointments SET practitioner_id = t.to_user, updated_at = now()
     FROM (SELECT (e ->> 'id')::uuid AS id, (e ->> 'from')::uuid AS from_user, (e ->> 'to')::uuid AS to_user
             FROM jsonb_array_elements(v_x) e) t
@@ -904,35 +896,35 @@ ref AS (
      AND t.to_user IS NOT NULL AND appointments.starts_at < v_day0;
   GET DIAGNOSTICS v_n = ROW_COUNT;
   IF v_n <> cardinality(v_x_ids) THEN
-    RAISE EXCEPTION 'STOP: W5 re-attributed % ruling (b) rows, expected %', v_n, cardinality(v_x_ids);
+    RAISE EXCEPTION 'STOP: W4 re-attributed % ruling (b) rows, expected %', v_n, cardinality(v_x_ids);
   END IF;
-  RAISE NOTICE 'W5 re-attributed % past NESA row(s) to the NESA installed at the booking clinic', v_n;
+  RAISE NOTICE 'W4 re-attributed % past NESA row(s) to the NESA installed at the booking clinic', v_n;
 
-  -- W6. Ruling (c): the person row takes the NESA as practitioner_2.
+  -- W5. Ruling (c): the person row takes the NESA as practitioner_2.
   UPDATE public.appointments SET practitioner_2_id = t.r, updated_at = now()
     FROM (SELECT (e ->> 'p')::uuid AS p, (e ->> 'r')::uuid AS r FROM jsonb_array_elements(v_f) e) t
    WHERE appointments.id = t.p AND appointments.practitioner_2_id IS NULL
      AND appointments.status NOT IN ('cancelled', 'no_show');
   GET DIAGNOSTICS v_n = ROW_COUNT;
   IF v_n <> cardinality(v_f_p) THEN
-    RAISE EXCEPTION 'STOP: W6 set practitioner_2 on % person rows, expected %', v_n, cardinality(v_f_p);
+    RAISE EXCEPTION 'STOP: W5 set practitioner_2 on % person rows, expected %', v_n, cardinality(v_f_p);
   END IF;
-  RAISE NOTICE 'W6 set the NESA as practitioner_2 on % future person row(s)', v_n;
+  RAISE NOTICE 'W5 set the NESA as practitioner_2 on % future person row(s)', v_n;
 
-  -- W7. Ruling (c): the NESA row of each future pair is cancelled.
+  -- W6. Ruling (c): the NESA row of each future pair is cancelled.
   UPDATE public.appointments SET status = 'cancelled', updated_at = now()
    WHERE id = ANY(v_f_n) AND status NOT IN ('cancelled', 'no_show');
   GET DIAGNOSTICS v_n = ROW_COUNT;
   IF v_n <> cardinality(v_f_n) THEN
-    RAISE EXCEPTION 'STOP: W7 cancelled % NESA rows, expected %', v_n, cardinality(v_f_n);
+    RAISE EXCEPTION 'STOP: W6 cancelled % NESA rows, expected %', v_n, cardinality(v_f_n);
   END IF;
-  RAISE NOTICE 'W7 cancelled % future NESA row(s)', v_n;
+  RAISE NOTICE 'W6 cancelled % future NESA row(s)', v_n;
 
   -- ==========================================================================
   -- A. THE EXACT DELTAS, and every untouched set by md5.
   -- ==========================================================================
   IF (SELECT count(*) FROM public.appointments a WHERE a.tenant_id = v_tenant) <> v_b_appt THEN
-    RAISE EXCEPTION 'STOP: the appointment total moved; this op creates and deletes no appointment';
+    RAISE EXCEPTION 'STOP: the appointment total moved; this op neither creates nor removes an appointment';
   END IF;
   IF (SELECT count(*) FROM public.appointments a WHERE a.practitioner_id = c_jp_cb) <> v_b_cb - cardinality(v_h)
      OR (SELECT count(*) FROM public.appointments a WHERE a.practitioner_id = c_jp_lv) <> v_b_lv + cardinality(v_h) THEN
@@ -1031,12 +1023,11 @@ ref AS (
     RAISE EXCEPTION 'STOP: a moved row is not an active real Saturday on JP(lv)';
   END IF;
 
-  IF (SELECT count(*) FROM public.time_off t WHERE t.tenant_id = v_tenant) <> v_b_timeoff - cardinality(v_blk)
+  IF (SELECT count(*) FROM public.time_off t WHERE t.tenant_id = v_tenant) <> v_b_timeoff
      OR (SELECT md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), ''))
-           FROM public.time_off t
-          WHERE t.tenant_id = v_tenant AND NOT EXISTS (SELECT 1 FROM unnest(v_blk) w(id) WHERE w.id = t.id))
-        IS DISTINCT FROM v_b_md5_to_rest THEN
-    RAISE EXCEPTION 'STOP: time_off changed other than by the one deleted block';
+           FROM public.time_off t WHERE t.tenant_id = v_tenant)
+        IS DISTINCT FROM v_b_md5_to THEN
+    RAISE EXCEPTION 'STOP: time_off changed inside this transaction, and this op writes no time_off row';
   END IF;
 
   IF (SELECT md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
@@ -1115,8 +1106,11 @@ ref AS (
   END IF;
 
   -- ==========================================================================
-  -- THE AUDIT ROW. Ids, counts and md5s only: no patient data, no free text
-  -- beyond the deleted block copied whole. Stage 3 reads every number back.
+  -- THE AUDIT ROW. Ids, counts and md5s only: no patient data and no free text.
+  -- Stage 3 reads every number back. f_pairs lists every future pair ruling (c)
+  -- acts on: p the kept person row, n the cancelled NESA row, r the NESA, s and
+  -- e the NESA window. Stage 3 verdicts 26 and 27 prove those lists are exactly
+  -- the rows this transaction cancelled and gave a practitioner_2.
   -- ==========================================================================
   INSERT INTO public.audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
   VALUES (v_tenant, NULL, c_action, 'user', c_jp_cb, jsonb_build_object(
@@ -1130,7 +1124,6 @@ ref AS (
     'retired_phantom_ids', to_jsonb(v_rphan),
     'retired_sat_window_ids', to_jsonb(v_rwin),
     'moved_saturday_ids', to_jsonb(v_msat),
-    'deleted_blocks', v_blk_rows,
     'h_ids', to_jsonb(v_h),
     'x_pairs', v_x,
     'f_pairs', v_f,
@@ -1146,7 +1139,7 @@ ref AS (
       'cr_att', v_b_md5_cr_att, 'keep', v_b_md5_keep, 'cb_past', v_b_md5_cb_past, 'cb_sched', v_b_md5_cb_sched,
       'appt_rest', v_b_md5_appt_rest, 'w_fixed', v_b_md5_w_fixed, 'h', v_b_md5_h, 'x', v_b_md5_x,
       'fp', v_b_md5_fp, 'fn', v_b_md5_fn, 'av_rest', v_b_md5_av_rest, 'av_w', v_b_md5_av_w,
-      'to_rest', v_b_md5_to_rest, 'cr_all', v_b_md5_cr_all, 'inv', v_b_md5_inv, 'users', v_b_md5_users,
+      'to', v_b_md5_to, 'cr_all', v_b_md5_cr_all, 'inv', v_b_md5_inv, 'users', v_b_md5_users,
       'sl', v_b_md5_sl),
     'md5_rows', v_md5_rows,
     'after', jsonb_build_object(
@@ -1157,10 +1150,14 @@ ref AS (
   IF v_n <> 1 OR (SELECT count(*) FROM public.audit_log al WHERE al.action = c_action) <> 1 THEN
     RAISE EXCEPTION 'STOP: the audit row was not written exactly once';
   END IF;
+  -- Stage 3 finds the rows this transaction wrote by their updated_at, which is
+  -- now(), and reads that time from the audit row's created_at. Asserted here.
+  IF (SELECT count(*) FROM public.audit_log al WHERE al.action = c_action AND al.created_at = now()) <> 1 THEN
+    RAISE EXCEPTION 'STOP: the audit row does not carry this transaction''s time, which stage 3 reads as the stamp on every written appointment';
+  END IF;
 
-  RAISE NOTICE 'STAFF-10 V2 STAGE 2 DONE: schedule % retired and % moved, % block(s) deleted; ruling a %, ruling b %, ruling c % pair(s); JP(cb) holds no active Linda-a-Velha row',
-    cardinality(v_retire), cardinality(v_msat), cardinality(v_blk), cardinality(v_h), cardinality(v_x_ids),
-    cardinality(v_f_p);
+  RAISE NOTICE 'STAFF-10 V2 STAGE 2 DONE: schedule % retired and % moved, no time_off row written; ruling a %, ruling b %, ruling c % pair(s); JP(cb) holds no active Linda-a-Velha row',
+    cardinality(v_retire), cardinality(v_msat), cardinality(v_h), cardinality(v_x_ids), cardinality(v_f_p);
 END $s10v2$;
 
 COMMIT;

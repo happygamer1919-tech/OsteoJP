@@ -2,7 +2,7 @@
  * staff-10-v2-option-a-conflict.db.test.ts - STAFF-10 v2, ruling (c), against a
  * real database and the app's REAL conflict check.
  *
- * The held data op (docs/data-op-staff-10-v2.md) resolves a future NESA twin
+ * The data op (docs/data-op-staff-10-v2.md) resolves a future NESA twin
  * (one session held on a NESA row AND on a person row) by option a: the person
  * row keeps and takes the NESA as practitioner_2, and the NESA row is cancelled.
  * Its stages prove the machine hour stays held with the app's rule written
@@ -12,7 +12,7 @@
  * runScoped, with RLS) still refuses a second booking of that NESA hour, and of
  * the therapist's hour.
  *
- * The two writes below have the op's shape: stage 2 W6 and W7.
+ * The two writes below have the op's shape: stage 2 W5 and W6.
  *
  * runScoped is REAL. Only the request context, the client IP and the reminder
  * send are mocked, as in nesa-both-roles-conflict.db.test.ts.
@@ -153,7 +153,7 @@ d("STAFF-10 v2 option a: after the rewrite, the app still holds the NESA hour an
     return { nesaRow, personRow };
   }
 
-  /** Stage 2's W6 and W7, on one pair. */
+  /** Stage 2's W5 and W6, on one pair. */
   async function optionA(pair: { nesaRow: string; personRow: string }): Promise<void> {
     await sql.execute(raw`update appointments set practitioner_2_id = ${nesaId}, updated_at = now()
       where id = ${pair.personRow} and practitioner_2_id is null and status not in ('cancelled', 'no_show')`);

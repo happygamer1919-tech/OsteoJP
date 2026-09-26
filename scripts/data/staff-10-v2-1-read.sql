@@ -1,8 +1,8 @@
 -- ============================================================================
 -- STAFF-10 V2, STAGE 1 of 3: THE READ. IT WRITES NOTHING.
 --
--- Card STAFF-10 (a ruled Tier C item). One held production data op that
--- replaces PR #1433 and the original STAFF-10 stage 2. Owner rulings of
+-- Card STAFF-10 (a ruled Tier C item). One production data op, run from main,
+-- that replaces PR #1433 and the original STAFF-10 stage 2. Owner rulings of
 -- 2026-09-24, paraphrased (docs/data-op-staff-10-v2.md has the full question
 -- block):
 --   (a) JP(cb)'s Linda-a-Velha appointments from before the start of the Lisbon
@@ -13,6 +13,10 @@
 --       practitioner_2, and the NESA row is cancelled (option a);
 --   (d) every other past twin is listed here and never changed;
 --   (e) the original schedule-row actions carry forward, defects fixed.
+--
+-- NO STAGE WRITES A time_off ROW. The owner removes the 30 September block in
+-- the app before the sitting; R06 refuses while any JP(cb) block overlaps the
+-- Lisbon day 30 September, and section 2c names each one by id.
 --
 -- EVERY SET IS DERIVED FROM THE DATABASE AT RUN TIME, by the block between the
 -- SETS BEGIN and SETS END markers, which stage 2 carries byte for byte. No
@@ -59,8 +63,10 @@ k AS (
          ((now() AT TIME ZONE 'Europe/Lisbon')::date)::timestamp AT TIME ZONE 'Europe/Lisbon' AS day0,
          (DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from,
          (DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to,
-         (DATE '2026-09-23')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_from,
-         (DATE '2026-10-08')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl_blk_to
+         (DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from,
+         (DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to,
+         (DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from,
+         (DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to
 ),
 -- The two JP rows, as found, with the three user flags the Linda-a-Velha roster
 -- reads (apps/api/lib/appointments/store.ts): active, bookable, not shared.
@@ -137,19 +143,23 @@ cls AS (
     FROM cls1 c
 ),
 -- ---------------------------------------------------------------------------
--- THE 30 SEPTEMBER BLOCK: the OVERLAP form, so a block that starts and ends on
--- 30 September is caught. blk_win is its positive control: JP(cb)'s blocks from
--- 23 September to 7 October, printed so a zero can be read.
+-- THE 30 SEPTEMBER BLOCK. No stage writes it: the owner removes it in the app
+-- before the sitting, and R06 refuses while any JP(cb) block overlaps the Lisbon
+-- day 30 September. ONE predicate, tstzrange overlap with that day, reads two
+-- sources: every time_off row, and two synthetic JP(cb) blocks it must match,
+-- one inside the day (09:00 to 20:00) and one across it (20:00 the day before
+-- to 09:00 the day after). A read that misses either is broken, and R26 refuses
+-- it. Stage 3 carries this CTE byte for byte (verdict 11).
 -- ---------------------------------------------------------------------------
-blk AS (
-  SELECT t.id
-    FROM public.time_off t, k
-   WHERE t.user_id = k.jp_cb AND t.starts_at < k.blk_to AND t.ends_at > k.blk_from
-),
-blk_win AS (
-  SELECT t.id
-    FROM public.time_off t, k
-   WHERE t.user_id = k.jp_cb AND t.starts_at < k.ctl_blk_to AND t.ends_at > k.ctl_blk_from
+b30 AS (
+  SELECT s.src, s.id, s.starts_at, s.ends_at, s.reason
+    FROM (SELECT 'real' AS src, t.id, t.user_id, t.starts_at, t.ends_at, t.reason::text AS reason
+            FROM public.time_off t
+          UNION ALL
+          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30_from, k0.ctl30_to, 'synthetic, inside the day' FROM k k0
+          UNION ALL
+          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30x_from, k0.ctl30x_to, 'synthetic, across the day' FROM k k0) s, k
+   WHERE s.user_id = k.jp_cb AND tstzrange(s.starts_at, s.ends_at) && tstzrange(k.blk_from, k.blk_to)
 ),
 -- ---------------------------------------------------------------------------
 -- RULING (a), SET H: JP(cb)'s Linda-a-Velha appointments that start before the
@@ -253,7 +263,6 @@ tgt AS (
   UNION ALL SELECT 'msat', c.id::text FROM cls c WHERE c.f_move
   UNION ALL SELECT 'rphan', c.id::text FROM cls c WHERE c.f_phan
   UNION ALL SELECT 'rwin', c.id::text FROM cls c WHERE c.f_win
-  UNION ALL SELECT 'dblk', b.id::text FROM blk b
   UNION ALL SELECT 'hjp', h.id::text FROM h
   UNION ALL SELECT 'xnesa', x.id::text || '>' || coalesce(x.to_user::text, 'none') FROM x
   UNION ALL SELECT 'ft2', f.p_id::text || '>' || f.n_user::text FROM f
@@ -261,7 +270,7 @@ tgt AS (
 ),
 codes AS (
   SELECT * FROM (VALUES (1, 'rcov'), (2, 'rpast'), (3, 'msat'), (4, 'rphan'), (5, 'rwin'),
-                        (6, 'dblk'), (7, 'hjp'), (8, 'xnesa'), (9, 'ft2'), (10, 'fcan')) v(ord, code)
+                        (6, 'hjp'), (7, 'xnesa'), (8, 'ft2'), (9, 'fcan')) v(ord, code)
 ),
 car AS (
   SELECT 0 AS ord, 's10v2_run_day' AS carry, (SELECT k.today::text FROM k) AS value
@@ -332,9 +341,9 @@ ref AS (
                             AND o.valid_until IS NOT DISTINCT FROM c.valid_until))::int,
          (SELECT count(*) FROM cls c WHERE c.f_move)::int
   UNION ALL
-  SELECT 'R06', 'more than one JP(cb) block overlaps 30 September',
-         GREATEST((SELECT count(*) FROM blk) - 1, 0)::int,
-         (SELECT count(*) FROM blk_win)::int
+  SELECT 'R06', 'a JP(cb) block overlaps the Lisbon day 30 September; the owner removes it in the app before the sitting, and section 2c names it',
+         (SELECT count(*) FROM b30 WHERE b30.src = 'real')::int,
+         (SELECT count(*) FROM b30 WHERE b30.src = 'control')::int
   UNION ALL
   SELECT 'R07', 'the original STAFF-10 write has already run (its audit row)',
          (SELECT count(*) FROM public.audit_log al WHERE al.action = 'staff.jp_lv_schedule_rows.retire')::int,
@@ -427,12 +436,13 @@ ref AS (
                   THEN 1 ELSE 0 END))::int,
          (SELECT count(*) FROM public.appointments a, k WHERE a.practitioner_id = k.jp_cb)::int
   UNION ALL
-  -- The ruled block is a 30 September block. One that also covers another day
-  -- (a multi-day absence) is not it, and deleting it would erase real absence.
-  SELECT 'R26', 'the block overlapping 30 September also covers another day, so it is not the 30 September block',
-         (SELECT count(*) FROM blk JOIN public.time_off t ON t.id = blk.id, k
-           WHERE t.starts_at < k.blk_from OR t.ends_at > k.blk_to)::int,
-         (SELECT count(*) FROM blk)::int
+  -- R06's read proves itself: the same predicate must match both synthetic
+  -- JP(cb) blocks, one inside the Lisbon day and one across it. A read that
+  -- misses either would miss a real block too, and R06 could then read 0 over a
+  -- block that is there. The control is the two synthetic blocks offered.
+  SELECT 'R26', 'the 30 September read missed a synthetic JP(cb) block it must match (inside the day, or across it), so R06 cannot be trusted',
+         (2 - (SELECT count(*) FROM b30 WHERE b30.src = 'control'))::int,
+         2
   UNION ALL
   -- The other two untouched sets stage 3 compares by md5: the clinical records
   -- on the rows the op writes, and the past twin rows it leaves alone. Empty,
@@ -482,11 +492,11 @@ ref AS (
   SELECT 'R30', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
          (SELECT count(*) FROM pg_catalog.pg_trigger t
            WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
-                               'public.time_off'::regclass, 'public.audit_log'::regclass)
+                               'public.audit_log'::regclass)
              AND NOT t.tgisinternal)::int,
          (SELECT count(*) FROM pg_catalog.pg_trigger t
            WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
-                               'public.time_off'::regclass, 'public.audit_log'::regclass))::int
+                               'public.audit_log'::regclass))::int
 )
 -- <<< STAFF-10 V2 SETS END
 SELECT jsonb_build_object(
@@ -548,14 +558,13 @@ SELECT jsonb_build_object(
                                                      AND (c.label = 'retire_sat_window') = c.f_win
                                                      AND (c.label = 'UNCLASSIFIED') = c.f_unc))
                   FROM cls c),
-  'blocks', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-               'id', t.id::text,
-               'starts_lisbon', (t.starts_at AT TIME ZONE 'Europe/Lisbon')::text,
-               'ends_lisbon', (t.ends_at AT TIME ZONE 'Europe/Lisbon')::text,
-               'reason', t.reason::text,
-               'deleted_by_stage_2', (t.id IN (SELECT blk.id FROM blk))::text)
-               ORDER BY t.starts_at, t.id), '[]'::jsonb)
-               FROM public.time_off t WHERE t.id IN (SELECT blk_win.id FROM blk_win)),
+  'blocks_30', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                  'id', b.id::text,
+                  'starts_lisbon', (b.starts_at AT TIME ZONE 'Europe/Lisbon')::text,
+                  'ends_lisbon', (b.ends_at AT TIME ZONE 'Europe/Lisbon')::text,
+                  'reason', b.reason)
+                  ORDER BY b.starts_at, b.id), '[]'::jsonb)
+                  FROM b30 b WHERE b.src = 'real'),
   'carries', (SELECT jsonb_agg(jsonb_build_object('ord', c.ord, 'carry', c.carry, 'value', c.value) ORDER BY c.ord)
                 FROM car c),
   'refusals', (SELECT jsonb_agg(jsonb_build_object(
@@ -639,7 +648,7 @@ SELECT jsonb_build_object(
                  ORDER BY t.tgrelid::regclass::text, t.tgname::text), '[]'::jsonb)
                  FROM pg_catalog.pg_trigger t
                 WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
-                                    'public.time_off'::regclass, 'public.audit_log'::regclass)
+                                    'public.audit_log'::regclass)
                   AND NOT t.tgisinternal)
 )::text AS s10v2_json
 \gset
@@ -699,15 +708,17 @@ SELECT (p ->> 'active_rows')::int AS active_rows,
   FROM (SELECT :'s10v2_json'::jsonb -> 'partition' AS p) s;
 
 -- ---------------------------------------------------------------------------
--- 2c. JP(cb)'s blocks from 23 September to 7 October: the positive control for
---     the 30 September predicate. No note text is printed.
+-- 2c. Every JP(cb) block that overlaps the Lisbon day 30 September, by id. The
+--     owner removes that block in the app before the sitting, so this lists
+--     nothing; R06 refuses any row here. No note text is printed.
 -- ---------------------------------------------------------------------------
 \echo ''
-\echo '=== 2c. JP(cb) BLOCKS FROM 23 SEPTEMBER TO 7 OCTOBER. Stage 2 deletes the one that overlaps 30 September ==='
+\echo '=== 2c. JP(cb) BLOCKS OVERLAPPING THE LISBON DAY 30 SEPTEMBER. Must list nothing: R06 refuses any row here ==='
 SELECT e ->> 'id' AS id, e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'ends_lisbon' AS ends_lisbon,
-       e ->> 'reason' AS reason, e ->> 'deleted_by_stage_2' AS deleted_by_stage_2
-  FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'blocks') e;
-\echo '    JP(cb) WEDNESDAY blocks other than 30 September are left alone, as ruled.'
+       e ->> 'reason' AS reason
+  FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'blocks_30') e;
+\echo '    The owner removes the 30 September block in the app before the sitting. No stage writes a'
+\echo '    block. R26 proves this read: the same predicate must match two synthetic JP(cb) blocks.'
 
 -- ---------------------------------------------------------------------------
 -- 3. THE CARRIES. Stage 2 is handed every one and refuses if any has moved.
