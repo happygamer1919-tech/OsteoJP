@@ -269,6 +269,26 @@ function lexSql(src, top = true) {
 }
 const FORBIDDEN = /\b(DELETE|DROP|TRUNCATE)\b/i;
 
+/**
+ * `text` cut at its top-level commas, outside every parenthesis, string and
+ * comment, each part with its line comments dropped and its whitespace folded to
+ * one space. The cut points are read on the lexed text, whose strings and
+ * comments are blanked at the same positions, so a comma inside a label, a
+ * literal or a subquery never cuts.
+ */
+function splitTop(text) {
+  const lexed = lexSql(text, false).code;
+  const parts = [];
+  let from = 0;
+  for (let i = 0, depth = 0; i < lexed.length; i++) {
+    if (lexed[i] === "(") depth++;
+    else if (lexed[i] === ")") depth--;
+    else if (lexed[i] === "," && depth === 0) { parts.push(text.slice(from, i)); from = i + 1; }
+  }
+  parts.push(text.slice(from));
+  return parts.map((p) => code(p).replace(/\s+/g, " ").trim());
+}
+
 test("no stage file carries a DELETE, DROP or TRUNCATE statement: the SQL is lexed, so a comment or a string can neither hide nor fake one", () => {
   // The lexer, on the shapes it must read right both ways, first.
   const seen = (sql) => FORBIDDEN.test(lexSql(sql).code);
@@ -520,6 +540,20 @@ test("the carries: the link set's count and digest, lifted in plain SQL, compare
   const blockNames = block("STAGE 2").match(/NAMES=\(\n([\s\S]*?)\n\)/)?.[1].split(/\s+/).filter(Boolean);
   assert.deepEqual(blockNames, names, "the doc's stage 2 block does not pass exactly these carries, in order");
   assert.match(car, /coalesce\(md5\(string_agg\(l\.attachment_id::text \|\| ':' \|\| l\.record_id::text, ','\n\s+ORDER BY l\.attachment_id, l\.record_id\)\), 'empty'\)/, "the digest expression moved");
+  // P3, the one place the block holds what stage 1 printed against what it
+  // recomputes: v_car is the car CTE of the SETS block, assigned once; each of its
+  // names is read back from what set_config lifted, refused when it was not passed,
+  // and refused when it differs. The later count and digest checks compare with v_car.
+  const c2 = code(S2);
+  assert.ok(c2.includes("(SELECT jsonb_object_agg(c.carry, c.value) FROM car c)\n    INTO v_tenant, v_lnk, v_regs, v_excl, v_excl_ids, v_ref, v_car;"), "stage 2's v_car is not the car CTE, recomputed");
+  assert.doesNotMatch(c2, /\bv_car\s*:=/, "stage 2 assigns v_car a second time");
+  const p3 = between(c2, "SELECT count(*)::int INTO v_n FROM jsonb_object_keys(v_car);", "RAISE NOTICE 'P3 both carries match stage 1';", "P3").replace(/\s+/g, " ").trim();
+  assert.equal(p3, "SELECT count(*)::int INTO v_n FROM jsonb_object_keys(v_car); IF v_n <> 2 THEN RAISE EXCEPTION 'STOP: the carry set has % names, not 2', v_n; END IF; "
+    + "FOR v_row IN SELECT c.key, c.value FROM jsonb_each_text(v_car) c ORDER BY 1 LOOP v_want := current_setting('anexo2.' || v_row.key, true); "
+    + "IF v_want IS NULL OR v_want = '' THEN RAISE EXCEPTION 'STOP: carry % was not passed from stage 1', v_row.key; END IF; "
+    + "IF v_want IS DISTINCT FROM v_row.value THEN RAISE EXCEPTION 'STOP: carry % reads % now and stage 1 printed %. The database moved since stage 1. Nothing was written; the sitting stops here', v_row.key, v_row.value, v_want; END IF; END LOOP; "
+    + "IF cardinality(v_att) <> (v_car ->> 'anexo_v2_count')::int THEN RAISE EXCEPTION 'STOP: the link set holds % documents and the carry counts %', cardinality(v_att), v_car ->> 'anexo_v2_count'; END IF;",
+  "P3 does not hold every carry stage 1 printed against the one it recomputes, and refuse on a carry missing or different");
 });
 
 test("stage 2 refuses on stale or foreign carries: stage 1 passed within the hour, on the recorded sha", () => {
@@ -539,6 +573,72 @@ test("every refusal stage 1 prints is a refusal stage 2 raises, each with its co
   assert.match(S2, /WHERE \(e ->> 'n'\)::int > 0 ORDER BY 1\s+LOOP\s+RAISE EXCEPTION 'STOP: % refuses/);
   assert.ok(block("STAGE 1").includes(`[ "\${RN}" = ${codes.length} ]`), "stage 1's block does not count every refusal line");
   for (const c of codes) assert.match(DOC, new RegExp(`^\\| ${c} \\| `, "m"), `the doc's refusal table does not explain ${c}`);
+});
+
+/**
+ * Every refusal of the SETS block as [code, n, control], each folded to one line.
+ * The rows are cut at their UNION ALLs and each row at its top-level commas, both
+ * read on the lexed text, so a comment or a label can move neither cut.
+ */
+function refusalRows() {
+  const head = "\nref AS (\n";
+  const body = between(SETS, head, `\n)\n${END}`, "the ref CTE").slice(head.length);
+  const rows = [];
+  let from = 0;
+  for (const m of lexSql(body, false).code.matchAll(/\n\s+UNION ALL\n/g)) {
+    rows.push(body.slice(from, m.index));
+    from = m.index + m[0].length;
+  }
+  rows.push(body.slice(from));
+  return rows.map((r) => {
+    const parts = splitTop(r);
+    assert.equal(parts.length, 4, `a refusal row is not a code, a label, n and a control: ${parts.join(" | ").slice(0, 120)}`);
+    return [parts[0].match(/^SELECT '(R\d{2})'/)?.[1], parts[2].replace(/ AS n$/, ""), parts[3].replace(/ AS control$/, "")];
+  });
+}
+
+// What each refusal counts (n) and the population it reads (control), whole, as the
+// doc's refusal table states them. Some have a test of their own as well; this one
+// holds every predicate, so none can be blinded (WHERE false, a comparison that can
+// never hold) or its control emptied while the other tests stay green.
+const REFUSAL_PREDICATES = [
+  ["R01", "((2 - (SELECT count(*) FROM cl)) + GREATEST((SELECT count(DISTINCT cl.tenant_id) FROM cl) - 1, 0))::int",
+    "(SELECT count(*) FROM cl)::int"],
+  ["R02", "(SELECT count(*) FROM public.audit_log al WHERE al.action = 'attachment.anexo_link.backfill')::int",
+    "(SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant)::int"],
+  ["R03", "(SELECT count(*) FROM public.audit_log al WHERE al.action = 'attachment.anexo_link_v2.backfill')::int",
+    "(SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant)::int"],
+  ["R04", "(SELECT count(*) FROM (SELECT l.attachment_id FROM lnk l GROUP BY l.attachment_id HAVING count(DISTINCT l.record_id) > 1) x)::int",
+    "(SELECT count(DISTINCT l.attachment_id) FROM lnk l)::int"],
+  ["R05", "(SELECT count(*) FROM (SELECT c.storage_path FROM cls c WHERE c.storage_path IN (SELECT l.storage_path FROM lnk l) AND c.attachment_id IS NOT NULL AND c.att_deleted IS NULL GROUP BY c.storage_path HAVING count(DISTINCT c.attachment_id) > 1) x)::int",
+    "(SELECT count(DISTINCT l.storage_path) FROM lnk l)::int"],
+  ["R06", "(SELECT count(*) FROM lnk l WHERE l.att_patient IS DISTINCT FROM l.cr_patient)::int",
+    "(SELECT count(*) FROM lnk)::int"],
+  ["R07", "(SELECT count(DISTINCT l.record_id) FROM lnk l WHERE l.cr_status IS DISTINCT FROM 'locked')::int",
+    "(SELECT count(DISTINCT l.record_id) FROM lnk l)::int"],
+  ["R08", "(SELECT count(DISTINCT l.record_id) FROM lnk l, k WHERE l.cr_tenant IS DISTINCT FROM k.tenant)::int",
+    "(SELECT count(DISTINCT l.record_id) FROM lnk l)::int"],
+  ["R09", "(CASE WHEN (SELECT count(*) FROM lnk) = 0 THEN 1 ELSE 0 END)::int",
+    "(SELECT count(*) FROM cls c WHERE NOT c.f_other)::int"],
+  ["R10", "(SELECT count(*) FROM cls c WHERE c.f_unc OR (c.f_other::int + c.f_noreg::int + c.f_nodoc::int + c.f_here::int + c.f_else::int + c.f_del::int + c.f_link::int + c.f_unc::int) <> 1)::int",
+    "(SELECT count(*) FROM cls)::int"],
+  ["R11", "((SELECT count(*) FROM (SELECT sp.file_name FROM split sp WHERE sp.src = 'control' EXCEPT ALL SELECT unnest(ARRAY['a.pdf', 'b.pdf', 'c.pdf'])) x) + (SELECT count(*) FROM (SELECT unnest(ARRAY['a.pdf', 'b.pdf', 'c.pdf']) EXCEPT ALL SELECT sp.file_name FROM split sp WHERE sp.src = 'control') y))::int",
+    "(SELECT count(*) FROM split sp WHERE sp.src = 'control')::int"],
+  ["R12", "(SELECT count(*) FROM pg_catalog.pg_trigger t WHERE t.tgrelid IN ('public.attachments'::regclass, 'public.audit_log'::regclass) AND NOT t.tgisinternal)::int",
+    "(SELECT count(*) FROM pg_catalog.pg_trigger t WHERE t.tgrelid IN ('public.attachments'::regclass, 'public.audit_log'::regclass))::int"],
+];
+
+test("every refusal's n and its control are the predicate the refusal table states, pinned whole: a predicate blinded or a control emptied goes red", () => {
+  // The row reader, on the shapes it must read right, first.
+  assert.deepEqual(splitTop("SELECT 'R99', 'a, b (c)', (SELECT count(*) FROM x WHERE y IN (1, 2))::int, -- n, here\n  0::int"),
+    ["SELECT 'R99'", "'a, b (c)'", "(SELECT count(*) FROM x WHERE y IN (1, 2))::int", "0::int"], "a comma in a label, a subquery or a comment cuts a refusal row");
+  const rows = refusalRows();
+  assert.deepEqual(rows.map((r) => r[0]), REFUSAL_PREDICATES.map((r) => r[0]), "the refusal rows are not R01 to R12, in order");
+  for (const [c, n, control] of REFUSAL_PREDICATES) {
+    const [, gotN, gotControl] = rows.find((r) => r[0] === c);
+    assert.equal(gotN, n, `${c} counts something other than its predicate`);
+    assert.equal(gotControl, control, `${c}'s control reads another population`);
+  }
 });
 
 /* ---- the verify ---------------------------------------------------------- */
@@ -578,6 +678,72 @@ test("an empty comparand never reads OK: 10 and 11 read VACUOUS, every other ver
   assert.match(rows[3], /OR v\.digest_less_one IS NOT DISTINCT FROM \(v\.m ->> 'digest'\) THEN 'FAIL'/, "verdict 4 loses its control");
   assert.match(S3, /ORDER BY a\.id OFFSET 1\) s\) AS digest_less_one/, "the less-one digest does not drop a pair");
   assert.match(rows[8], /v\.unrecorded <> 0 OR v\.imported_linked_now < v\.n_link/, "verdict 9 does not find the written rows without the list");
+});
+
+// What each stage 3 verdict compares: its CASE, whole, and every read of the v CTE
+// it compares, whole, over the rows the audit row names. A comparison dropped from a
+// CASE, a bound loosened, or a read blinded (WHERE false, another status) goes red here.
+const VERDICT_CASES = [
+  "CASE WHEN v.v2_rows = 1 AND v.tenant_audit_rows > 0 THEN 'OK' ELSE 'FAIL' END",
+  "CASE WHEN v.old_rows <> 0 OR v.v2_rows <> 1 THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.link_ok <> v.n_link OR v.n_pairs <> v.n_link OR v.n_link = 0 THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.digest_now IS DISTINCT FROM (v.m ->> 'digest') OR v.digest_less_one IS NOT DISTINCT FROM (v.m ->> 'digest') THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.md5_w_fixed_now IS DISTINCT FROM (v.m -> 'md5' ->> 'w_fixed') OR v.w_rows_now <> v.n_link OR v.n_link = 0 THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.mismatch <> 0 OR v.linked_read <> v.n_link OR v.n_link = 0 THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.unlocked <> 0 OR v.regs_read <> v.n_reg OR v.n_rg <> v.n_reg OR v.n_reg = 0 THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.md5_cr_t_now IS DISTINCT FROM (v.m -> 'md5' ->> 'cr_t') OR v.regs_read <> v.n_reg OR v.n_reg = 0 THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.unrecorded <> 0 OR v.imported_linked_now < v.n_link OR v.n_link = 0 THEN 'FAIL' ELSE 'OK' END",
+  "CASE WHEN v.md5_excl_now IS DISTINCT FROM (v.m -> 'md5' ->> 'excl') OR v.ex_read IS DISTINCT FROM coalesce((v.m -> 'md5_rows' ->> 'excl')::int, 0) THEN 'FAIL' WHEN coalesce((v.m -> 'md5_rows' ->> 'excl')::int, 0) = 0 THEN 'VACUOUS' ELSE 'OK' END",
+  "CASE WHEN v.md5_ep_t_now IS DISTINCT FROM (v.m -> 'md5' ->> 'ep_t') OR v.ep_read IS DISTINCT FROM coalesce((v.m -> 'md5_rows' ->> 'ep_t')::int, 0) THEN 'FAIL' WHEN coalesce((v.m -> 'md5_rows' ->> 'ep_t')::int, 0) = 0 THEN 'VACUOUS' ELSE 'OK' END",
+  "CASE WHEN v.documentos_ok <> v.n_link OR v.n_link = 0 THEN 'FAIL' ELSE 'OK' END",
+];
+const IMPORTED = "a.storage_path LIKE a.tenant_id::text || '/migration/fisiozero/%'";
+const TARGET_EPISODES = "WHERE ep.id IN (SELECT cr.episode_id FROM public.clinical_records cr WHERE cr.id IN (SELECT rg.id FROM rg))";
+const V_READS = {
+  v2_rows: "(SELECT count(*) FROM public.audit_log x WHERE x.action = 'attachment.anexo_link_v2.backfill')::int",
+  old_rows: "(SELECT count(*) FROM public.audit_log x WHERE x.action = 'attachment.anexo_link.backfill')::int",
+  tenant_audit_rows: "(SELECT count(*) FROM public.audit_log x, al WHERE x.tenant_id = al.tenant)::int",
+  m: "(SELECT al.m FROM al)",
+  n_link: "coalesce((SELECT (al.m ->> 'linked_count')::int FROM al), 0)",
+  n_reg: "coalesce((SELECT (al.m ->> 'registos_touched')::int FROM al), 0)",
+  n_pairs: "(SELECT count(*) FROM pr)::int",
+  n_rg: "(SELECT count(*) FROM rg)::int",
+  link_ok: "(SELECT count(*) FROM pr JOIN public.attachments a ON a.id = pr.a_id AND a.clinical_record_id = pr.r_id)::int",
+  digest_now: "(SELECT coalesce(md5(string_agg(a.id::text || ':' || a.clinical_record_id::text, ',' ORDER BY a.id, a.clinical_record_id)), 'empty') FROM pr JOIN public.attachments a ON a.id = pr.a_id)",
+  digest_less_one: "(SELECT coalesce(md5(string_agg(s.id::text || ':' || s.clinical_record_id::text, ',' ORDER BY s.id, s.clinical_record_id)), 'empty') FROM (SELECT a.id, a.clinical_record_id FROM pr JOIN public.attachments a ON a.id = pr.a_id ORDER BY a.id OFFSET 1) s)",
+  w_rows_now: "(SELECT count(*) FROM pr JOIN public.attachments a ON a.id = pr.a_id)::int",
+  md5_w_fixed_now: `(SELECT md5(coalesce(${W_FIXED} a.size_bytes, a.uploaded_by, a.created_at, a.deleted_at, a.deleted_by_user_id, a.delete_reason)::text, E'\\n' ORDER BY a.id), '')) FROM public.attachments a WHERE a.id IN (SELECT pr.a_id FROM pr))`,
+  linked_read: "(SELECT count(*) FROM pr JOIN public.attachments a ON a.id = pr.a_id JOIN public.clinical_records cr ON cr.id = a.clinical_record_id)::int",
+  mismatch: "(SELECT count(*) FROM pr JOIN public.attachments a ON a.id = pr.a_id JOIN public.clinical_records cr ON cr.id = a.clinical_record_id WHERE a.patient_id IS DISTINCT FROM cr.patient_id)::int",
+  regs_read: "(SELECT count(*) FROM rg JOIN public.clinical_records cr ON cr.id = rg.id)::int",
+  unlocked: "(SELECT count(*) FROM rg JOIN public.clinical_records cr ON cr.id = rg.id WHERE cr.status IS DISTINCT FROM 'locked')::int",
+  md5_cr_t_now: "(SELECT md5(coalesce(string_agg(md5((cr.*)::text), E'\\n' ORDER BY cr.id), '')) FROM public.clinical_records cr WHERE cr.id IN (SELECT rg.id FROM rg))",
+  imported_linked_now: `(SELECT count(*) FROM public.attachments a WHERE ${IMPORTED} AND a.clinical_record_id IS NOT NULL)::int`,
+  unrecorded: `(SELECT count(*) FROM public.attachments a WHERE ${IMPORTED} AND a.clinical_record_id IS NOT NULL AND a.id NOT IN (SELECT pr.a_id FROM pr) AND a.id NOT IN (SELECT pre.id FROM pre))::int`,
+  md5_excl_now: "(SELECT md5(coalesce(string_agg((a.*)::text, E'\\n' ORDER BY a.id), '')) FROM public.attachments a WHERE a.id IN (SELECT ex.id FROM ex))",
+  ex_read: "(SELECT count(*) FROM public.attachments a WHERE a.id IN (SELECT ex.id FROM ex))::int",
+  ep_read: `(SELECT count(*) FROM public.clinical_episodes ep ${TARGET_EPISODES})::int`,
+  md5_ep_t_now: `(SELECT md5(coalesce(string_agg((ep.*)::text, E'\\n' ORDER BY ep.id), '')) FROM public.clinical_episodes ep ${TARGET_EPISODES})`,
+  documentos_ok: `(SELECT count(*) FROM pr JOIN public.attachments a ON a.id = pr.a_id WHERE a.patient_id IS NOT NULL AND ${IMPORTED})::int`,
+};
+// The sets every read is over: the one v2 audit row, and the pairs, registos,
+// left-alone ids and already-linked ids stage 2 wrote into it.
+const VERIFY_SOURCES = "WITH al AS ( SELECT a.metadata AS m, a.created_at AS at, a.tenant_id AS tenant FROM public.audit_log a WHERE a.action = 'attachment.anexo_link_v2.backfill' ORDER BY a.created_at DESC LIMIT 1 ), "
+  + "pr AS ( SELECT (e ->> 'a')::uuid AS a_id, (e ->> 'r')::uuid AS r_id FROM al CROSS JOIN LATERAL jsonb_array_elements(al.m -> 'pairs') e ), "
+  + "rg AS ( SELECT (x.v)::uuid AS id FROM al CROSS JOIN LATERAL jsonb_array_elements_text(al.m -> 'registos') x(v) ), "
+  + "ex AS ( SELECT (x.v)::uuid AS id FROM al CROSS JOIN LATERAL jsonb_array_elements_text(al.m -> 'excluded_ids') x(v) ), "
+  + "pre AS ( SELECT (x.v)::uuid AS id FROM al CROSS JOIN LATERAL jsonb_array_elements_text(al.m -> 'prelinked_ids') x(v)";
+
+test("every stage 3 verdict compares exactly what it names: each CASE, each read of the v CTE and the sets they read are pinned whole", () => {
+  const cases = verdictRows().map((r) => splitTop(r).at(-1).replace(/ FROM v$/, "").replace(/ AS verdict$/, ""));
+  assert.equal(cases.length, VERDICT_CASES.length, "stage 3 prints another number of verdicts than this test pins");
+  cases.forEach((c, i) => assert.equal(c, VERDICT_CASES[i], `verdict ${i + 1} compares something other than what it names`));
+  const head = "), v AS (\n  SELECT\n";
+  const reads = splitTop(between(S3, head, "\n), r AS (\n", "the v CTE").slice(head.length)).map((p) => p.match(/^([\s\S]+) AS ([a-z_0-9]+)$/)?.slice(1));
+  assert.ok(reads.every(Boolean), "a read of the v CTE has no name");
+  assert.deepEqual(reads.map((r) => r[1]), Object.keys(V_READS), "the v CTE reads another set of names than this test pins");
+  for (const [expr, name] of reads) assert.equal(expr, V_READS[name], `the read ${name} that a verdict compares reads something else`);
+  assert.equal(code(between(S3, "WITH al AS (", "), v AS (", "the verify's sources")).replace(/\s+/g, " ").trim(), VERIFY_SOURCES, "stage 3 reads its verdicts over another audit row or other recorded sets");
 });
 
 test("stage 3 reads back only what stage 2 records, and the audit actions agree everywhere", () => {
@@ -828,12 +994,29 @@ test("the order after DUR-01 is stated in the document and not coupled in SQL: n
   }
 });
 
-test("no public byte of the op carries a count next to a counted noun, or a dash", () => {
+test("no public byte of the op carries a count next to a counted noun, or a dash, and no byte this branch adds is outside ASCII", () => {
   const noun = /\b\d[\d,.]*\s*(?:future |past |live |linked |imported |named )?(?:pairs?|rows?|patients?|appointments?|documents?|registos?|attachments?|files?|thousand)\b/i;
   for (const [label, text] of [...STAGES, ["the doc", DOC], ["the sidecar", read(SIDEF)]]) {
     text.split("\n").forEach((line, i) => {
       assert.doesNotMatch(line, noun, `${label}:${i + 1} reads like a count: ${line.trim().slice(0, 100)}`);
       assert.doesNotMatch(line, /[\u2013\u2014]/, `${label}:${i + 1} carries an en or em dash`);
     });
+  }
+  // Every file this branch adds, and the banner it adds to the original doc, is
+  // ASCII: the whitespace the trim strips is written as escapes inside E-strings,
+  // never as the invisible characters themselves. The original doc's own text
+  // below the banner is history and is not this branch's.
+  const old = read(OLDDOCF);
+  const banner = old.slice(0, old.indexOf("**Status: NOT RUN.**"));
+  assert.ok(banner.includes("SUPERSEDED"), "the original doc's banner was not found, so this read nothing");
+  for (const [label, text] of [...STAGES, ["the doc", DOC], ["the sidecar", read(SIDEF)], ["this test", read("scripts/anexo-link-v2-data-op.test.mjs")], ["the original doc's banner", banner]]) {
+    text.split("\n").forEach((line, i) => {
+      const ch = line.match(/[^\x00-\x7f]/)?.[0];
+      assert.equal(ch, undefined, `${label}:${i + 1} carries U+${ch?.codePointAt(0).toString(16).padStart(4, "0")}, a character outside ASCII`);
+    });
+  }
+  for (const [name, lit] of [["ws", SETS.match(/^\s+E'([^']*)' AS ws$/m)?.[1]], ["the synthetic cell", SETS.match(/SELECT 'control', [^\n]*\n\s+E'([^']*)'\n/)?.[1]]]) {
+    assert.ok(lit, `${name} is not one E-string in the SETS block`);
+    assert.match(lit, /^(?:[\x20-\x7e]|\\[tnrf]|\\x[0-9a-f]{2}|\\u[0-9a-f]{4})+$/, `${name} is not written in printable ASCII and escapes`);
   }
 });

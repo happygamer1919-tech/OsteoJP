@@ -498,10 +498,10 @@ row. Each refusal adds its own shape by an arm, so the other arms keep theirs.
 |---|---|
 | `b14-rehearsal/build-base.zsh` | `973273163578626d2410752243a4968127de40cfdf0b6229ac77f0b3f72dd99f` |
 | `b14-rehearsal/fixture.sql` | `15b83bd9990f5d289317cdf88dfd17199cd3072963c6d6381fc591897649d591` |
-| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `351f0c5d297f24f45a363a774735abe581e364a4832071853bd0307256db8da2` |
-| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `1a5d06a827c781f903cbb60a258489d3406ce0bf160f763b768ec8227e7e53b6` |
+| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `aca7ebfde4b826a90150b8ad5f666d1f1b1c1e60bf5a8db26be212e2ca424371` |
+| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `36c5743f8e7f8cd89fa153e0bc33ad012c0326be08e9b47f0a3273854e37b85c` |
 | `b14-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, unchanged but its header | `241840aed7091688976a019c4eab6cc687ce291e0ca8c9a6e573b2512cbcce7c` |
-| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `ca0372937e3f8b8eca628f5844bd327e5ef5c9b8c0f2fb7b037896983b929bc4` |
+| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `b6cac80e542a6f31c1693b808cf878157158d41e567783653f44003283dad3f6` |
 
 **How it ran.** Each block was extracted from this document at the commit under test (cloned
 from a local bare origin whose `main` is that commit; the clone's origin is asserted to be it
@@ -526,7 +526,7 @@ extractor refuses a block that still names production.
 | stage 1 | 0 | every refusal OK, none VACUOUS; `partition holds`; classes link, already_linked, linked_elsewhere, soft_deleted, no_document, no_registo and other_tenant each present; the count carry `5` and its digest |
 | stage 2 | 0 | P3 both carries match; P4 no trigger the system did not create; P5 every md5 family OK, none empty; W1 linked the link set exactly; A the deltas exact and every family unchanged; `DONE`, `COMMITTED` |
 | stage 3 | 0 | `12 OK / 0 VACUOUS / 0 FAIL` |
-| database after | | the five link pairs carry their registos; every other attachment row unchanged by md5; `clinical_records` unchanged by md5; the soft-deleted document still unlinked and deleted; the other tenant's document still unlinked; one v2 audit row |
+| database after | | the five link pairs carry their registos; every other attachment row unchanged by md5; `clinical_records` unchanged by md5; the soft-deleted document still unlinked and deleted; the other tenant's document still unlinked; one v2 audit row, which records the no_registo class's document among the ids verdict 10 reads |
 | stage 0, then 1, then 2 again | 1, 1, 1 | `STOP: stage 2 has ALREADY WRITTEN in this sitting` |
 | stage 1 with the markers removed | 1 | REFUSE on R03 and R09 (its consequence: nothing is left to link) |
 | stage 2 with its mark forced | 3 | `STOP: R03 refuses`; still one audit row, the database unchanged by md5 |
@@ -609,6 +609,10 @@ both counted), so the block's own checks decide the exit.
 | the original op's audit row | 1 | 2 | `11 OK / 0 VACUOUS / 1 FAIL` |
 | a linked document soft deleted from Documentos | 1 | 5 | `11 OK / 0 VACUOUS / 1 FAIL` |
 | patient 1 merged into patient 9 by merge_patients, the one update the immutability trigger lets through on a locked registo | 1 | 5, 8, 11 | `9 OK / 0 VACUOUS / 3 FAIL` |
+| the document the op left alone because the registo its staging row names is not there (no_registo), renamed and retyped | 1 | 10 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| patient 5, who owns a named document the op left alone (linked_elsewhere) and no target registo, merged into patient 9 by merge_patients, which re-points every document of the merged patient | 1 | 10 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| a migration adds a column to clinical_records, and no row is written | 1 | 8 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| a migration adds a column to attachments and one to clinical_episodes, and no row is written | 1 | 10, 11 | `10 OK / 0 VACUOUS / 2 FAIL` |
 | a target registo signed, which the immutability trigger refuses: its UPDATE exits 3, the database unchanged | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
 | none: a fresh copy of the written database | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
 | a copy of stage 3 whose less-one digest drops nothing (verdict 4's control made blind) | 1 | 4 | |
@@ -625,7 +629,7 @@ carries. This is the evidence for the section "What changed from the original op
 | after O3 | | the soft-deleted document linked: true; the two names after a no-break space and a tab linked: 0 of 2 |
 
 **The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
-and `prove-red.mjs` ran it against 94 seeded wrong copies of the committed tree, each
+and `prove-red.mjs` ran it against 129 seeded wrong copies of the committed tree, each
 re-pinned so only its target property is wrong: every copy turned its target test red, and the
 green control (DELETE, DROP and TRUNCATE only inside comments, a string and an echo) kept every
 test green. Every test has at least one copy.
@@ -639,7 +643,7 @@ hours old would have passed it; the pin now ends at the number. And the whitespa
 trim strips had been written into the first commit as literal invisible characters; every one is
 an escape inside an E-string now, and no byte this op adds is outside ASCII.
 
-**What review round 1 caught,** each fixed on the commit that carries this section. Two unit
+**What review round 1 caught,** each fixed in that round. Two unit
 test pins could not fail: P4's slice began at R12's read of the same catalog inside the SETS
 block, and three of stage 2's checks after the write (each document's registo, the audit row
 written once, its time) had no pin; both now have seeded wrong copies. R05 was narrower than
@@ -649,6 +653,26 @@ links. And two sentences of this document were false: the DUR-01 section said th
 `audit_log` only by its own two actions, and three tenant-wide controls read every row; the
 re-issuable paragraph said a signed registo FAILs 7 and 8, and the immutability trigger refuses
 the signature, as the stage 3 arms above show.
+
+**What review round 2 caught,** each fixed in that round. `excl`, the named documents the op
+leaves alone, named four classes and left out `no_registo`: a document named by a registo that
+is not there was listed by stage 1 and left alone, but neither recorded in the audit row nor
+compared by verdict 10. It is now every named document outside the link set, whatever its class:
+the happy path above checks the audit row records that document, and the stage 3 arm that edits
+it FAILs 10. Two unit test pins on stage 2's write read only the first SET column, so a second
+column on a continuation line passed both; the test now reads the whole SET list. And the
+re-issuable paragraph called a FAIL on 8 with no merge an integrity breach, though a migration
+moves 8, 10 and 11 with no row written, as the two arms above that add a column show; it now
+says so, and that a merge re-pointing a document the op left alone FAILs 10.
+
+**What review round 3 caught,** fixed on the commit that carries this section; no stage file
+changed. Four properties had no pin that could fail: stage 2's one comparison of each carry
+stage 1 printed with the one it recomputes (P3); what each stage 3 verdict compares, its CASE
+and the reads behind it; the predicates of R01, R08 and R09; and the rule that no byte this op
+adds is outside ASCII. The unit test now pins P3 whole, every verdict's CASE and every read it
+compares, every refusal's `n` and control, and every byte of the files this op adds. The
+review's seeded copies, and their siblings, each stayed green on the commit before and turn
+their target test red on this one.
 
 ## Undoing it
 
