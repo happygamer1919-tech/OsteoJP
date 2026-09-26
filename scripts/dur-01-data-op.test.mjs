@@ -852,17 +852,29 @@ test("verdicts 10 and 23: the untouched columns of the written rows and every ot
 });
 
 test("section 9 is READ ONLY evidence: it reads no patient name and no raw row, prints a note only as a flag and a class, refuses nothing, and reads the app's block trail", () => {
-  const nine = between(S1, "\nblk AS (", "\nSELECT jsonb_build_object(", "section 9's CTEs");
+  // Section 9 is three pieces of stage 1, and every guard below reads all three: its CTEs,
+  // the values the final SELECT builds from them, and the SELECTs that print 9a to 9f from
+  // those values alone. Until review round 2 they read only the CTEs.
+  const ctes = between(S1, "\nblk AS (", "\nSELECT jsonb_build_object(", "section 9's CTEs");
+  const shown = between(S1, "\\echo '=== 9. ", "\nROLLBACK;", "section 9's printing");
+  const keys = [...shown.matchAll(/:'dur01_json'::jsonb -> '([a-z_]+)'/g)].map((m) => m[1]);
+  assert.deepEqual(keys, ["blocks", "block_trail", "series", "patients", "series_rows", "hours"], "sections 9a to 9f print other values than this test reads");
+  const values = between(S1, `\n  '${keys[0]}', (SELECT`, "\n)::text AS dur01_json", "section 9's values in the final SELECT");
+  for (const k of keys) assert.ok(values.includes(`\n  '${k}', (SELECT`), `section 9's value ${k} is built outside the part of the final SELECT this test reads`);
+  const nine = [ctes, values, shown].join("\n");
   assert.doesNotMatch(code(nine), /full_name|\bnif\b|phone|email|date_of_birth/, "section 9 reads a patient's personal data");
+  assert.doesNotMatch(code(nine), /\bpublic\.patients\b/, "section 9 reads the patients table");
   assert.doesNotMatch(code(nine), /\braw\b/, "section 9 reads the importer's raw row");
   assert.doesNotMatch(code(nine), /\bref\b|\bwr\b|'REFUSE'/, "section 9 feeds a refusal or the write set");
   // A block's note: whether it is there, and a class shared by equal notes; never the text.
   const notes = [...code(S1).matchAll(/\b[a-z]\.note\b[^s]/g)].map((m) => m[0]);
   assert.ok(notes.length > 0, "section 9 reads no note, so this read nothing");
   assert.match(nine, /\(t\.note IS NOT NULL AND btrim\(t\.note\) <> ''\) AS has_note,\n\s+dense_rank\(\) OVER \(ORDER BY md5\(coalesce\(t\.note, ''\)\)\) AS note_class,/, "a block's note is read other than as a flag and a class");
-  assert.equal((code(nine).match(/\bt\.note\b/g) ?? []).length, 3, "a block's note is read somewhere else in section 9");
+  // Every read of a note column, by any alias or none; a JSON key, a column label or a line psql only echoes is not a read.
+  const reads = (col) => code(nine).replace(/^\\echo .*$/gm, "").replace(new RegExp(`'${col}'|\\bAS ${col}\\b`, "g"), "").match(new RegExp(`\\b(?:[a-z][a-z0-9_]*\\.)?${col}\\b`, "g")) ?? [];
+  assert.deepEqual(reads("note"), ["t.note", "t.note", "t.note"], "a block's note is read somewhere else in section 9");
   assert.match(nine, /\(a\.notes IS NOT NULL AND btrim\(a\.notes\) <> ''\) AS has_notes,/, "an appointment's notes are read other than as a flag");
-  assert.equal((code(nine).match(/\ba\.notes\b/g) ?? []).length, 2, "an appointment's notes are read somewhere else in section 9");
+  assert.deepEqual(reads("notes"), ["a.notes", "a.notes"], "an appointment's notes are read somewhere else in section 9");
   // The trail the app leaves: time_off.create and time_off.update name the block; a batch is matched by its transaction time.
   assert.match(nine, /\(\(al\.entity_type = 'time_off' AND al\.entity_id = b\.id\)\n\s+OR \(al\.action = 'time_off\.create_batch' AND al\.created_at = b\.created_at\)\)/, "section 9 does not read the block trail the app writes");
   const timeOff = read("apps/web/lib/admin/time-off.ts");
@@ -943,6 +955,21 @@ test("section 1d names its count by what it counts, the pairs whose person windo
     assert.doesNotMatch(text.replace(/\s+/g, " "), /STAFF-10 v2 would refuse|refused_by_staff10_v2|its_r\d+_refuses/i, `${label} reads section 1d's count as the pairs STAFF-10 v2 would refuse`);
   }
   assert.ok(DOC.replace(/\s+/g, " ").includes("how many of them have a person window that does not cover the NESA window"), "the document does not say what section 1d counts");
+});
+
+/* ---- review round 2 of the files of 2026-09-26 ---------------------------- */
+
+test("stages 0, 1 and 2 refuse while the written marker exists, whatever its age: the guard reads that it is there, never how old it is", () => {
+  const guard = '[ -z "$(find /tmp/dur01-written.ok 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN. The sitting stops here.';
+  for (const n of [0, 1, 2]) {
+    const lines = block(`STAGE ${n}`).split("\n").filter((l) => l.includes("/tmp/dur01-written.ok"));
+    const g = lines.filter((l) => l.includes("ALREADY WRITTEN"));
+    assert.equal(g.length, 1, `stage ${n} does not guard once on the written marker`);
+    assert.ok(g[0].startsWith(guard), `stage ${n}'s guard does not refuse on the marker whatever its age: ${g[0].slice(0, 90)}`);
+    for (const l of lines) assert.doesNotMatch(l, /find \/tmp\/dur01-written\.ok\s+-/, `stage ${n} reads the written marker's age: ${l.slice(0, 90)}`);
+  }
+  assert.ok(block("STAGE 2").split("\n").includes("touch /tmp/dur01-written.ok"), "stage 2 no longer marks the write");
+  assert.ok(DOC.replace(/\s+/g, " ").includes("Each refuses while the written marker `/tmp/dur01-written.ok` exists, whatever its age"), "the document does not say the guard holds whatever the marker's age");
 });
 
 test("no public byte of the op carries a count next to a counted noun, or a dash", () => {

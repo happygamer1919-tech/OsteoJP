@@ -45,8 +45,9 @@ says what has run on these exact bytes.
 own sha256, so the digest lives in `docs/data-op-dur-01.sha256` and every stage checks
 it with `shasum -a 256 -c` before it trusts a pin written here. The sidecar sits on the
 same head as the document, so a main that moved to a new document and a new sidecar
-together would pass that check: GREEN's dispatch names this document's sha256, and the
-HEAD CHECK halts on any moved main.
+together would pass that check: GREEN's dispatch names this document's sha256 and
+compares it by machine before the sitting's first read, and the HEAD CHECK halts on any
+moved main.
 
 **There is no `#` line inside any block,** every parameter a colon follows is braced,
 there are no backslash continuations and no `!`. The blocks are pasted into zsh
@@ -212,10 +213,11 @@ to paste: the machine runs it inside the blocks, and halts on it.
   and asserts its own file and the target guard by sha256 before it runs either.
 - **Stage 1 marks its pass with the recorded sha,** and stage 2 refuses unless that
   mark names the sha it is about to run from.
-- **After stage 2 has written: NEVER run stage 0, 1 or 2 again.** Each refuses once the
-  written marker exists, and R04 and P0 refuse in the database regardless. **Stage 3 is
-  READ ONLY** and runs from the recorded sha whatever main has done since: it prints
-  whether main moved, with both shas, and never stops on it.
+- **After stage 2 has written: NEVER run stage 0, 1 or 2 again.** Each refuses while the
+  written marker `/tmp/dur01-written.ok` exists, whatever its age, so a sitting the lead
+  starts again the next day meets it too, and R04 and P0 refuse in the database
+  regardless. **Stage 3 is READ ONLY** and runs from the recorded sha whatever main has
+  done since: it prints whether main moved, with both shas, and never stops on it.
 - **A moved main before the write ends the sitting.** Nothing is written, both shas go
   in the report, and whether and when to start again is the lead's call.
 - **If `/tmp/dur01-main.sha` is gone,** stages 1 to 3 stop, and the lead rules.
@@ -232,7 +234,7 @@ SHA3=377bcbccbef16b1db5018a50d0ed25ce82c284803c6061bb5ec88fd7d2ccffbe
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
+[ -z "$(find /tmp/dur01-written.ok 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
 rm -f /tmp/dur01-main.sha /tmp/dur01-stage1.out /tmp/dur01-stage1.ok
@@ -271,7 +273,7 @@ SHA1=fd09f7d4c2cd3b26847df628193da77a2449a261b2050a9747988b8e8351d93f
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
+[ -z "$(find /tmp/dur01-written.ok 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 rm -f /tmp/dur01-stage1.out /tmp/dur01-stage1.ok
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
@@ -336,7 +338,7 @@ dur01_s10v2_runs
 )
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/dur01-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
+[ -z "$(find /tmp/dur01-written.ok 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 [ -n "$(find /tmp/dur01-stage1.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not pass in this sitting, or passed over an hour ago. The sitting stops"; exit 1; }
 test -f /tmp/dur01-stage1.out || { echo "STOP: stage 1 left no transcript. The sitting stops"; exit 1; }
 [ -n "$(find /tmp/dur01-stage1.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's"; exit 1; }
@@ -692,7 +694,8 @@ ran**, which it never saw, with a NESA stub of another patient inside its person
 | `b8-rehearsal/evidence.sql`, section 9's shapes | `fcb73e0c9188aa195c6144c90352285d498db8f4798eabb7275f96a0cc32cf5f` |
 | `b8-rehearsal/reset.sql`, the reset by id, clinical records and status events included | `8fb04712932363a605bd21b3dadb8bd20490c0b5d35f3a1bb007b47c6d0a3efb` |
 | `b8-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `ab4e9cd71c6aabcc7d10201e6c3590760eba2a33c8a9e1a00e9a23b9d9143646` |
-| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `96e1073fa05658ac1df5223b662a64ddd589ac7a719c55d087f6e05258eef244` |
+| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `c325d6e1d0bf0df32f23ed82ed5d16046581f3286906373f5716d6b1fde2ecaa` |
+| `b8r2/disp-rehearsal.zsh`, review round 2's rehearsal of GREEN's BEFORE YOU START block, on a local clone with no database | `70688ea3ab82a1a2723682a143172ab77c3bfdc5b10be08d95408b027db330e0` |
 | `b8-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, byte for byte: origin/main allowed, a branch head refused | `bb1fc378bb6d550e3e13614d5cd1046d14f7a2b6f2cd70d2d68642c372dd89b7` |
 
 **How it ran.** A simulated origin, a local bare repository whose `main` is the commit
@@ -713,8 +716,8 @@ still names production or a branch head.
 
 **Every arm, and what it showed.** The runner counts an arm's exit against the one
 wanted and every check it makes, and exits 0 only when all of them hold. Its last full
-run, `b8r1_run_a` on the commit that carries this section (review round 1): **169 arms
-and 182 checks, every one as wanted.**
+run, `b8r2_run_a` on the commit that carries this section (review round 2): **175 arms
+and 193 checks, every one as wanted.**
 
 **The head and the files, before any database** (the HEAD CHECK of the section above):
 
@@ -727,7 +730,8 @@ and 182 checks, every one as wanted.**
 | stage 2 after main moved since stage 1 | 1 | the same, with nothing written |
 | stage 2 before stage 1; stage 2 on a stage 1 mark naming another sha | 1, 1 | `stage 1 did not pass in this sitting`; `stage 1 did not pass on the recorded sha` |
 | stage 1 with the worktree's stage 1 file edited after stage 0 | 1 | `the apply worktree is not clean` |
-| stage 0, stage 1 and stage 2 once the written marker exists | 1, 1, 1 | `stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again...`; the recorded sha survives |
+| stage 0, stage 1 and stage 2 once the written marker exists | 1, 1, 1 | `stage 2 has ALREADY WRITTEN. The sitting stops here. Never run stage 0, 1 or 2 again...`; the recorded sha survives |
+| the same with the marker 14 hours old and main moved since (review round 2) | 1, 1, 1 | `ALREADY WRITTEN` from each, stage 1's before its HEAD CHECK and its target guard; the recorded sha survives, not the moved main |
 | stage 1 and stage 3 with no recorded sha | 1, 1 | `stage 0 recorded no sha` |
 
 **The order (ruling 5), both ways on one fixture:**
@@ -868,13 +872,19 @@ block's REFUSE grep reading `REFUSED`, the stage 3 block's FAIL grep reading `FA
 the rule's comment naming a refusal of STAFF-10 v2 by its number again, stage 3's
 header saying it may run again at any time, and section 1d's count named as if it were
 every pair STAFF-10 v2 refuses. Each exited 1 on exactly one test, its own. Before this
-round's tests existed, the first two passed every test, sidecar re-pinned.
+round's tests existed, the first two passed every test, sidecar re-pinned. **Review
+round 2 added three more, the same way:** section 9 printing a patient's name from the
+values its final SELECT builds, section 9 printing a block's note text from there, and
+the written marker's guard given back a 12-hour window. Each exited 1 on exactly one
+test, its own. Before this round's test changes, the first two passed every test, stage
+1 and the sidecar re-pinned, as the reviewer found.
 
 **The app's own checks, on a real database.**
 `apps/web/lib/scheduling/dur-01-classification.db.test.ts`, unchanged this round, run
 against a new throwaway cloned from `s10v2_schema` and this head's stage 1, whose BASE
 gained R11 and whose rule's comments changed (again in review round 1, one comment
-only): **5 passed**, in 18 seconds on a machine under load. The control arm first proves the
+only; review round 2 changed no stage file): **5 passed**, in 18 seconds on a machine
+under load. The control arm first proves the
 seed makes the app say what each arm expects; stage 1's BASE then agrees with
 `findConflictsForWindow` plus `blockingConflicts`, `checkAvailability`,
 `checkClinicClosure`, `checkClinicWindow` and SCHED-17 on every flag of every stub; the
@@ -908,6 +918,31 @@ was named as if it were every pair STAFF-10 v2 refuses, while it counts only the
 whose person window does not cover the NESA window; it is now named by what it counts,
 and the section "The order with STAFF-10 v2" says what a 0 there does not mean. The
 other two defects sat outside the committed files and are fixed where they live.
+
+**Review round 2 of these files found one major defect and two minor ones.** The major
+one sat in GREEN's dispatch draft, which is not a committed file, and is fixed where it
+lives: its BEFORE YOU START block compared only the migration reader by machine and
+echoed the rest, with no `set -eo pipefail`, so after a failed fetch, a merge commit not
+on main, a dirty worktree, or a document, sidecar or pin that was not the approved one,
+the block went on to the production journal read. The block now runs under
+`set -eo pipefail` and compares every value before the read, among them the document's
+sha256 the dispatch names (the defence against a moved main that carries a re-pinned
+sidecar, above) and main's copy of the reader. It was rehearsed on a local clone, never
+on production, with a URL the reader refuses before it connects: this round's block
+stopped before the read on each of those states and on a document missing from main,
+and read only once every check had passed; the block before this round ran the read
+after every one of them but a drifted worktree reader. The two minor ones are in the
+committed files. Section 9's guards in the unit test read only its CTEs, not the values
+the final SELECT builds for 9a to 9f: a copy of stage 1 that printed a patient's name
+and a block's note text from there, stage 1 and the sidecar re-pinned, passed every
+test. The guards now read the CTEs, those values and the SELECTs that print them, count
+every read of a note column by any alias or none, and refuse any read of the patients
+table. And the written marker stopped stages 0, 1 and 2 only while it was under 12 hours
+old (`find -mmin -720`): with the marker 14 hours old and main moved, the blocks before
+this round let stage 0 through, which recorded the moved main in place of the sha stage
+3 verifies from, and stage 1 passed its HEAD CHECK and reached psql. The guard now reads
+that the marker exists, whatever its age, and its STOP no longer says the write was in
+this sitting.
 
 **The pushed tree is the rehearsed tree.** The last full run of the arms runner
 extracted every block from the commit that carries this section, sidecar included.
