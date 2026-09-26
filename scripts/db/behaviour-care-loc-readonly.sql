@@ -102,9 +102,18 @@
 -- there. That is the division of labour, and this paragraph is what keeps it
 -- honest.
 --
--- IT PRINTS COUNTS AND VERDICTS AND NOTHING ELSE. No name, no phone, no email,
--- no patient id and no appointment id reaches the transcript: every subject is
--- chosen into a psql variable with \gset and used, never echoed.
+-- IT PRINTS THE ACTOR LINE, THEN COUNTS AND VERDICTS, AND NOTHING ELSE. No name,
+-- no phone, no email, no patient id and no appointment id reaches the
+-- transcript: every subject is chosen into a psql variable with \gset and used,
+-- never echoed.
+--
+-- THE ACTOR LINE, printed once before anything is checked, names the staff user
+-- this run acts as by its id and role slug, and says how it was chosen:
+--     ACTOR id <uuid> | role <slug> | chosen <how>
+-- where <how> is "passed in with -v actor_id" or "picked at run time (the
+-- lowest matching id)". The id is there so whoever reads the transcript can
+-- tell, by comparing ids, whether the run acted as a particular account, such
+-- as a test account about to be deactivated. It is a staff id, never a name.
 --
 -- IT IMPERSONATES, IT DOES NOT LOG IN. set_config on request.jwt.claims then
 -- SET LOCAL ROLE authenticated, which is what packages/db/tests/rls-harness.ts
@@ -153,7 +162,9 @@ BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
  *     psql ... -v actor_id=<uuid> -f scripts/db/behaviour-care-loc-readonly.sql
  * An actor passed that way is used as given and this query is skipped. */
 \if :{?actor_id}
+\set actor_source 'passed in with -v actor_id'
 \else
+\set actor_source 'picked at run time (the lowest matching id)'
 SELECT (
 SELECT u.id
   FROM public.users u
@@ -212,6 +223,13 @@ SELECT (SELECT u.id::text
 \set actor_id :actor_checked
 
 SELECT tenant_id AS actor_tenant FROM public.users WHERE id = :'actor_id' \gset
+
+/* THE ACTOR LINE. The role slug only, read from the table; a scalar subquery
+ * so a missing role prints NO ROLE rather than ending the run on \gset. The
+ * id is the normalised one above, so it is the id the claims below carry. */
+SELECT coalesce((SELECT r.slug FROM public.users u JOIN public.roles r ON r.id = u.role_id
+                  WHERE u.id = :'actor_id'::uuid), 'NO ROLE') AS actor_role \gset
+\echo 'ACTOR id' :actor_id '| role' :actor_role '| chosen' :actor_source
 
 /* THE CLAIMS, SET BEFORE THE ROLE CHANGE. */
 SELECT set_config('request.jwt.claims',

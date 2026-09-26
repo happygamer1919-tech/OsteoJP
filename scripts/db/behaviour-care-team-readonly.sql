@@ -116,10 +116,18 @@
 --   B7  tenant isolation is intact: zero appointments of any other tenant are
 --       readable, against a non-zero number that exist.
 --
--- IT PRINTS COUNTS AND VERDICTS AND NOTHING ELSE. No name, no phone, no email,
--- no patient id and no appointment id reaches the transcript: the actor and
--- both appointments are chosen into psql variables with \gset and used, never
--- echoed.
+-- IT PRINTS THE ACTOR LINE, THEN COUNTS AND VERDICTS, AND NOTHING ELSE. No name,
+-- no phone, no email, no patient id and no appointment id reaches the
+-- transcript: both appointments are chosen into psql variables with \gset and
+-- used, never echoed.
+--
+-- THE ACTOR LINE, printed once before anything is checked, names the staff user
+-- this run acts as by its id and role slug, and says how it was chosen:
+--     ACTOR id <uuid> | role <slug> | chosen <how>
+-- This file always PICKS its actor at run time (the lowest matching id) and
+-- never reads -v actor_id. The id is there so whoever reads the transcript can
+-- tell, by comparing ids, whether the run acted as a particular account, such
+-- as a test account about to be deactivated. It is a staff id, never a name.
 --
 -- IT IMPERSONATES, IT DOES NOT LOG IN. `SET LOCAL ROLE authenticated` plus the
 -- `request.jwt.claims` GUC is what packages/db/tests/rls-harness.ts does in
@@ -209,6 +217,13 @@ SELECT u.id
 \endif
 
 SELECT u.tenant_id AS actor_tenant FROM public.users u WHERE u.id = :'actor_id' \gset
+
+/* THE ACTOR LINE. The role slug only, read from the table; a scalar subquery
+ * so a missing role prints NO ROLE rather than ending the run on \gset. */
+SELECT coalesce((SELECT r.slug FROM public.users u JOIN public.roles r ON r.id = u.role_id
+                  WHERE u.id = :'actor_id'::uuid), 'NO ROLE') AS actor_role \gset
+\set actor_source 'picked at run time (the lowest matching id, -v actor_id is not read by this file)'
+\echo 'ACTOR id' :actor_id '| role' :actor_role '| chosen' :actor_source
 
 /* BECOME THE ACTOR AS FAR AS THE CLAIMS GO. The role change comes later; the
  * helpers below must resolve from these claims on BOTH sides of it. */
