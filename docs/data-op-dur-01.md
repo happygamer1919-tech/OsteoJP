@@ -559,6 +559,14 @@ before the write (P5), and read back from the table after it (A1).
     whole rows equal the baseline stage 2 recorded, and the control, the same md5 with
     one row left out, differs from it (ruling 6, D13).
 
+**Verdicts 10 and 23 read each value over its own set.** Verdict 10's md5, its control
+and its count read the written rows, the audit row's list; verdict 23's read every other
+appointment of the recorded tenant. Each control leaves out one row of that same set,
+and each baseline is the one stage 2 recorded under its own key, taken with the same md5
+expression. A control over another set always differs and a count read from the
+baseline always matches, so either would let a blind digest or a moved count read OK;
+the unit test holds every one of those expressions.
+
 **Stage 3 can run again, on the owner's or the lead's word, and its answers move with the clinic.** A reception edit
 after the sitting can change 3 to 18 and 20 to 23 honestly: a written row shortened
 later FAILs 4, 5 and 6, one cancelled later FAILs 10 (status is a column the op does not
@@ -619,6 +627,9 @@ It prints ids, times, counts, enum values and flags only. A block's note prints 
 present or not, with a class number shared by the listed blocks whose note is the same
 (an md5, ranked); an appointment's notes only as present or not; no patient name is read,
 and the importer's raw row is not read there. The unit test holds each of those.
+9a prints only the blocks a population row sits under, 9b only the audit rows of the
+block's own tenant, 9d only the series' patients, and 9e only each series' rows from
+the Lisbon today. The unit test holds every filter that decides what section 9 prints.
 
 **No separate READ ONLY sitting is needed before this op's own run.** Section 9 is read
 on the run day, after STAFF-10 v2, in stage 1 itself. Before that, reception can see
@@ -694,9 +705,10 @@ ran**, which it never saw, with a NESA stub of another patient inside its person
 | `b8-rehearsal/evidence.sql`, section 9's shapes | `fcb73e0c9188aa195c6144c90352285d498db8f4798eabb7275f96a0cc32cf5f` |
 | `b8-rehearsal/reset.sql`, the reset by id, clinical records and status events included | `8fb04712932363a605bd21b3dadb8bd20490c0b5d35f3a1bb007b47c6d0a3efb` |
 | `b8-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `ab4e9cd71c6aabcc7d10201e6c3590760eba2a33c8a9e1a00e9a23b9d9143646` |
-| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `6cf92276b2d5653d50f634d7dc7d3b7bc6a45778f9a25511c39b017a1a3b8f5e` |
+| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `270029072682c029959f0cbb96a517f2fa6d13775c2724b09391bb51aa1aea52` |
 | `b8r2/disp-rehearsal.zsh`, review round 2's rehearsal of GREEN's BEFORE YOU START block, on a local clone with no database | `70688ea3ab82a1a2723682a143172ab77c3bfdc5b10be08d95408b027db330e0` |
 | `b8r3/premut.zsh`, review round 3's seven seeded wrong copies, run on the head before this round (`64651d3d`) | `cebf45bf39d6fc01a80a398223af66989c794bd431606609f5b1e42b3a260e7d` |
+| `b8r4/premut.zsh`, review round 4's eleven seeded wrong copies, run on the head before this round (`6f1a08f3`) | `fda2cc460770875d06b966d890fde2c5e6d712b41a06c52de898b09fc2a059a0` |
 | `b8-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, byte for byte: origin/main allowed, a branch head refused | `bb1fc378bb6d550e3e13614d5cd1046d14f7a2b6f2cd70d2d68642c372dd89b7` |
 
 **How it ran.** A simulated origin, a local bare repository whose `main` is the commit
@@ -717,8 +729,8 @@ still names production or a branch head.
 
 **Every arm, and what it showed.** The runner counts an arm's exit against the one
 wanted and every check it makes, and exits 0 only when all of them hold. Its last full
-run, `b8r3_run_a` on the commit that carries this section (review round 3): **182 arms
-and 207 checks, every one as wanted.**
+run, `b8r4_run_a` on the commit that carries this section (review round 4): **193 arms
+and 229 checks, every one as wanted.**
 
 **The head and the files, before any database** (the HEAD CHECK of the section above):
 
@@ -886,13 +898,22 @@ tenant; verdict 23's stamped count reading `created_at` only; and stage 2's A3
 frozen md5 check, then its rest md5 check, disarmed by `IF false AND`. Each exited 1
 on exactly one test, its own. Before this round's tests existed, all seven passed every
 test of the head `64651d3d`, the stage file's pin and the sidecar re-pinned, as the
-reviewer found.
+reviewer found. **Review round 4 added eleven more, the same way:** verdict 10's control
+read over the held rows; verdict 23's control over the tenant with the written rows put
+back; verdict 10's count, then verdict 23's, read from the baseline it is compared with;
+verdict 10's baseline read under the rest key; section 9a printing every block of the
+tenant; 9e printing each series' past rows, and printing rows with no trail row; a
+series row's past read against the clock rather than the Lisbon today; 9b's trail read
+without the block's tenant; and 9d printing every patient of the tenant. Each exited 1
+on exactly one test, its own. Before this round's tests existed, all eleven passed
+every test of the head `6f1a08f3`, the stage file's pin and the sidecar re-pinned: the
+reviewer's six, and five more of the same class.
 
 **The app's own checks, on a real database.**
 `apps/web/lib/scheduling/dur-01-classification.db.test.ts`, unchanged this round, run
 against a new throwaway cloned from `s10v2_schema` and this head's stage 1, whose BASE
 gained R11 and whose rule's comments changed (again in review round 1, one comment
-only; review rounds 2 and 3 changed no stage file): **5 passed**, in 18 seconds on a machine
+only; review rounds 2 to 4 changed no stage file): **5 passed**, in 18 seconds on a machine
 under load. The control arm first proves the
 seed makes the app say what each arm expects; stage 1's BASE then agrees with
 `findConflictsForWindow` plus `blockingConflicts`, `checkAvailability`,
@@ -971,6 +992,25 @@ its reading guide said section 6 goes into the report, but its REPORT list asked
 for section 6's row-count footer, so a report could lose the reception list's reasons,
 ids and windows, the block end dates among them. The REPORT list now asks for
 section 6 verbatim.
+
+**Review round 4 of these files found two minor defects,** both in what the unit test
+held, and no stage file changed for either. The test pinned verdicts 10 and 23's
+leave-one-out clause and their CASE, but not the set each control reads nor what each
+count counts: a copy of stage 3 whose verdict 10 control read the held rows, whose
+verdict 23 control put the written rows back, or whose count for either verdict read the
+baseline it is compared with passed every test, its pin and the sidecar re-pinned. The
+first two make a control that always differs, so a blind digest reads OK; the other two
+compare the baseline with itself. The test now holds every value both verdicts read, as
+one whole expression each: the md5 now and its control over one set, the control less
+one row of that same set, the count over it, and each baseline under its own key, the
+md5 taken with stage 2's own expression. And section 9's filters were not all held: a
+copy of stage 1 whose 9a printed every block of the tenant, or whose 9e printed each
+series' past rows, passed every test. The test now holds every filter that decides what
+section 9 prints: 9a's blocks, 9b's tenant, 9d's patients, the Lisbon today behind 9e,
+9e's rows, and the set each printed value reads. The eleven unit-mutation arms above
+show each failing its own test alone. GREEN's dispatch draft and reception's list were
+read against this round and needed no change: the stage files and their pins are the
+same.
 
 **The pushed tree is the rehearsed tree.** The last full run of the arms runner
 extracted every block from the commit that carries this section, sidecar included.

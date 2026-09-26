@@ -1032,6 +1032,77 @@ test("stage 2's A3 recounts the total and recomputes both fingerprints with the 
   assert.ok(S2.indexOf("-- A2.") < S2.indexOf("-- A3.") && S2.indexOf("-- A3.") < S2.indexOf("INSERT INTO public.audit_log"), "A3 does not run after the re-measure and before the audit row");
 });
 
+/* ---- review round 4 of the files of 2026-09-26 ---------------------------- */
+
+/**
+ * The whole expression a folded SELECT list gives the alias `name`: from its opening
+ * parenthesis to its closing one (and a trailing ::int), standing alone as one item of
+ * the list. A wrapper, a second definition or another set fails here, not at run time.
+ */
+function field(sel, name) {
+  const tail = ` AS ${name},`;
+  assert.equal(sel.split(tail).length - 1, 1, `the select list does not name ${name} exactly once`);
+  const body = sel.slice(0, sel.indexOf(tail));
+  let i = body.length - (body.endsWith("::int") ? "::int".length : 0) - 1;
+  assert.equal(body[i], ")", `${name} is not one parenthesised expression`);
+  for (let depth = 0; i >= 0; i--) {
+    if (body[i] === ")") depth++;
+    else if (body[i] === "(" && --depth === 0) break;
+  }
+  assert.ok(i > 0 && body.slice(i - 2, i) === ", ", `${name} is not one whole item of the select list`);
+  return body.slice(i);
+}
+
+test("verdicts 10 and 23 read every value over its own set: the md5 now, the control less one row of that same set, the count now over that set, and the baselines stage 2 recorded under their own keys", () => {
+  // Stage 2's two fingerprints, as it takes them under the lock: stage 3 must recompute the same expressions.
+  const base = fold(between(S2, "SELECT count(*)::int INTO v_b_total", "-- The per-id record the audit row carries", "stage 2's baselines"));
+  const md5f = base.match(/SELECT count\(\*\)::int, (md5\([^;]*?\)) INTO v_bn_frozen, v_b_md5_frozen FROM public\.appointments a WHERE a\.id = ANY\(v_ids\);/)?.[1];
+  const md5r = base.match(/SELECT count\(\*\)::int, (md5\([^;]*?\)) INTO v_bn_rest, v_b_md5_rest FROM public\.appointments a WHERE a\.tenant_id = v_tenant AND NOT \(a\.id = ANY\(v_ids\)\);/)?.[1];
+  assert.ok(md5f && md5r, "stage 2's two fingerprints did not parse");
+  const v = fold(between(S3, "\n, v AS (", "\n), r AS (", "stage 3's v CTE"));
+  // Verdict 10's set is the written rows (the audit row's list, wl); verdict 23's is every other appointment of the recorded tenant.
+  const W = "FROM public.appointments a WHERE a.id IN (SELECT wl.id FROM wl)";
+  const R = "FROM public.appointments a, al WHERE a.tenant_id = al.tenant AND a.id NOT IN (SELECT wl.id FROM wl)";
+  const want = {
+    frozen_now: `(SELECT ${md5f} ${W})`,
+    frozen_less_one: `(SELECT ${md5f} ${W} AND a.id <> (SELECT wl1.id FROM wl wl1 ORDER BY wl1.id LIMIT 1))`,
+    frozen_n_now: `(SELECT count(*) ${W})::int`,
+    frozen_then: "(SELECT al.m -> 'md5' ->> 'frozen' FROM al)",
+    frozen_n_then: "(SELECT (al.m -> 'md5_rows' ->> 'frozen')::int FROM al)",
+    rest_now: `(SELECT ${md5r} ${R})`,
+    rest_less_one: `(SELECT ${md5r} ${R} AND a.id <> (SELECT a1.id FROM public.appointments a1, al al1 WHERE a1.tenant_id = al1.tenant AND a1.id NOT IN (SELECT wl.id FROM wl) ORDER BY a1.id LIMIT 1))`,
+    rest_n_now: `(SELECT count(*) ${R})::int`,
+    rest_then: "(SELECT al.m -> 'md5' ->> 'rest' FROM al)",
+    rest_n_then: "(SELECT (al.m -> 'md5_rows' ->> 'rest')::int FROM al)",
+  };
+  for (const [name, expr] of Object.entries(want)) assert.equal(field(v, name), expr, `stage 3's ${name} reads another set, another count or another key`);
+  // The helper can fail: a count that reads the baseline, and a control over the held rows, are caught.
+  assert.notEqual(field(v.replace(want.frozen_n_now, "(SELECT (al.m -> 'md5_rows' ->> 'frozen')::int FROM al)"), "frozen_n_now"), want.frozen_n_now);
+  assert.notEqual(field(v.replace(want.frozen_less_one, want.frozen_less_one.replace("(SELECT wl.id FROM wl) AND", "(SELECT xl.id FROM xl) AND")), "frozen_less_one"), want.frozen_less_one);
+  assert.ok(DOC.replace(/\s+/g, " ").includes("Verdicts 10 and 23 read each value over its own set"), "the document does not say what verdicts 10 and 23 read");
+});
+
+test("section 9 prints only its own rows: 9a the blocks a population row sits under, 9b their trail in their tenant, 9d the series' patients, 9e each series' rows from the Lisbon today, and each value the rows of its set", () => {
+  const cte = (name) => fold(between(S1, `\n${name} AS (`, "\n),", `section 9's ${name}`));
+  // 9a and 9b. The blocks verdict 13 reads, and the audit rows of their own tenant naming them or their batch.
+  assert.ok(cte("blk").endsWith("FROM public.time_off t WHERE t.id IN (SELECT hb.block_id FROM hit_block hb)"), "9a prints other blocks than those a population row sits under");
+  assert.ok(cte("blk_trail").endsWith("FROM blk b JOIN public.audit_log al ON al.tenant_id = b.tenant_id AND ((al.entity_type = 'time_off' AND al.entity_id = b.id) OR (al.action = 'time_off.create_batch' AND al.created_at = b.created_at))"), "9b reads audit rows outside the block's tenant, or other rows than those naming it or its batch");
+  // 9d. The patients of the series, and no one else.
+  assert.ok(cte("ser_pat").endsWith("FROM (SELECT DISTINCT s.tenant_id, s.patient_id FROM ser s) p"), "9d prints other patients than those of the series");
+  // 9e. A series row is past when it starts before the Lisbon today, and 9e's trail is read for the rows from today alone.
+  assert.ok(cte("ser_row").includes("(a.starts_at < (SELECT k.today::timestamp AT TIME ZONE 'Europe/Lisbon' FROM k)) AS past,"), "a series row's past is not read against the Lisbon today");
+  assert.ok(cte("ser_trail").endsWith("FROM ser_row r WHERE NOT r.past"), "9e prints other rows than each series' rows from today");
+  // Each value the final SELECT prints reads the rows of its set, whole; 9e only the rows with a trail, which is to say from today.
+  const keys = ["blocks", "block_trail", "series", "patients", "series_rows", "hours"];
+  const ends = ["FROM blk b)", "FROM blk b LEFT JOIN blk_trail x ON x.block_id = b.id)", "FROM ser s)", "FROM ser_pat p)", "FROM ser_row r JOIN ser_trail x ON x.id = r.id)", "FROM hrs h)"];
+  keys.forEach((k, i) => {
+    const to = i + 1 < keys.length ? `\n  '${keys[i + 1]}', (SELECT` : "\n)::text AS dur01_json";
+    const value = fold(between(S1, `\n  '${k}', (SELECT`, to, `section 9's value ${k}`)).replace(/,$/, "");
+    assert.ok(value.endsWith(ends[i]), `section 9's value ${k} does not read ${ends[i]}`);
+  });
+  assert.ok(DOC.replace(/\s+/g, " ").includes("The unit test holds every filter that decides what section 9 prints"), "the document does not say which rows section 9 prints");
+});
+
 test("no public byte of the op carries a count next to a counted noun, or a dash", () => {
   const noun = /\b\d[\d,.]*\s*(?:future |past |live |twin |nesa |person |one-minute |held |written )?(?:pairs?|rows?|twins?|patients?|appointments?|bookings?|stubs?|thousand)\b/i;
   const self = readFileSync(fileURLToPath(import.meta.url), "utf8");
