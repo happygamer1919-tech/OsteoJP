@@ -521,6 +521,16 @@ test("question Q3's default: a NESA row whose past pair has its person row in ru
   assert.doesNotMatch(q3, /OWNER TO CONFIRM|departs/i, "the doc's answer to question Q3 still describes a departure from the written default");
 });
 
+test("question Q13 reads a pair on its own date the way the code does: PAST is before 00:00 Lisbon on the run day, so that pair is still a future pair", () => {
+  assert.match(SETS, /\(\(now\(\) AT TIME ZONE 'Europe\/Lisbon'\)::date\)::timestamp AT TIME ZONE 'Europe\/Lisbon' AS day0\n/, "day0 is no longer 00:00 Lisbon on the run day; re-read question Q13 before trusting it");
+  assert.match(SETS, /\(n\.starts_at < k\.day0\) AS is_past,/, "a pair's PAST test moved; re-read question Q13 before trusting it");
+  const q13 = DOC.split("\n").find((l) => l.startsWith("| Q13 |"));
+  assert.ok(q13, "the doc answers no question Q13");
+  assert.doesNotMatch(q13, /on or after that date the pair is a past twin/, "Q13 calls a pair on its own date a past twin, which the code does not");
+  assert.match(q13, /PAST means starting before 00:00 Lisbon on the run day, so on its own date a pair is still a future pair: stage 1 lists it in section 7, ruling \(c\) acts on it, and R20 refuses it only when it starts before now plus two hours\./, "Q13 does not say that a pair on its own date is still a future pair");
+  assert.match(q13, /when a pair in section 7 starts on the run day, the sitting stops before stage 2\./, "Q13 does not stop a sitting held on a future pair's own date");
+});
+
 test("R13 and R14 take as control the confirmed rows that MOVE, so no confirmed mover reads VACUOUS", () => {
   const r13 = between(SETS, "'R13'", "'R14'", "R13");
   const r14 = between(SETS, "'R14'", "'R15'", "R14");
@@ -783,6 +793,14 @@ test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the do
   assert.deepEqual([...allowed].sort((x, y) => x - y), [2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 19, 23, 24, 25, 26, 27], "the allowed-VACUOUS list moved");
 });
 
+test("stage 3 and the document name the same verdicts as the ones an edit after the sitting can change", () => {
+  const doc = norm(between(DOC, "**Stage 3 writes nothing, and its answers move with the clinic.**", "\n## ", "the paragraph after the verdict list")).match(/An edit after the sitting can change 11, (\d+) to (\d+), 26 and 27 honestly/);
+  assert.ok(doc, "the document no longer names the verdicts an edit after the sitting can change");
+  const s3 = between(S3, "), stamped AS (", "), can AS (", "stage 3's stamped CTE").match(/answer for the sitting, as (\d+) to (\d+) do\./);
+  assert.ok(s3, "stage 3's stamped CTE no longer says which other verdicts answer for the sitting");
+  assert.deepEqual([s3[1], s3[2]], [doc[1], doc[2]], "stage 3 and the document name different verdicts as the ones an edit after the sitting can change");
+});
+
 test("an empty comparand never reads OK: every verdict but 1, 7 and 22 has a VACUOUS branch, and 7 FAILs on a zero control", () => {
   const rows = verdictRows();
   rows.forEach((r, i) => {
@@ -813,7 +831,7 @@ test("the roster check always has a real Saturday to read: R26 refuses before th
   assert.match(r26, /o\.valid_from >= k\.today AND extract\(dow FROM o\.valid_from\)::int = 6/, "R26 does not look for a real Saturday from today");
   assert.match(r26, /\+ \(SELECT count\(\*\) FROM cls c WHERE c\.f_move\) = 0/, "R26 does not count the Saturdays that move");
   const sat = satCte();
-  assert.match(sat, /av\.valid_from >= k\.today AND extract\(dow FROM av\.valid_from\)::int = 6/, "stage 3's Saturday is not the one R28 guarantees");
+  assert.match(sat, /av\.valid_from >= k\.today AND extract\(dow FROM av\.valid_from\)::int = 6/, "stage 3's Saturday is not the one R26 guarantees");
 });
 
 test("stage 3 reads back only what stage 2 records, and the audit action agrees everywhere", () => {

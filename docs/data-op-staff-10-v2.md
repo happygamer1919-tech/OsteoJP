@@ -38,7 +38,7 @@ bytes.
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/staff10v2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
 | Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `5a71020e56e4a10e5fed1d5f5ee3c648bbe85f03ecbe1e4201f0b75c3720f27f` |
 | Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `55b1f2f8a67b106ce218509bb4f02d915b6055bafec03316ba199d3f518b317c` |
-| Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 27 verdicts and a SUMMARY row, sha256 `cf736756a981dce75dde8c2de97735ed8c8f6f5bede8046bf840116c23c3172c` |
+| Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 27 verdicts and a SUMMARY row, sha256 `fb3623c7445c3e3588e52c462b35cb88b046ed35e945f4342f097fffec5df27c` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
 | This document | `docs/data-op-staff-10-v2.md`, pinned by `docs/data-op-staff-10-v2.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
@@ -91,7 +91,7 @@ changes the files, their pins and the rehearsal.
 | Q10 | A phantom row (the weekday column differs from the date's weekday) | Retired (`retire_phantom`) |
 | Q11 | The open-ended Saturday window `e37ba817` | Classified by the NULL-safe rule, so it is a `retire_sat_window`. Stage 1 section 2 prints, for every Saturday window, how many JP(lv) Saturday rows exist from its start |
 | Q12 | A dated real Saturday JP(lv) does not already hold | Moves to JP(lv), whatever the cadence |
-| Q13 | When must this run? | Before the first future pair's date: on or after that date the pair is a past twin, which changes what the op does to it. GREEN's dispatch names the sitting's date, and stage 1 section 7 prints every future pair's |
+| Q13 | When must this run? | Before the first future pair's date. PAST means starting before 00:00 Lisbon on the run day, so on its own date a pair is still a future pair: stage 1 lists it in section 7, ruling (c) acts on it, and R20 refuses it only when it starts before now plus two hours. After that date it is a past twin, and ruling (b) or (d) acts on it in place of (c). A sitting on that date is therefore not before it: when a pair in section 7 starts on the run day, the sitting stops before stage 2. GREEN's dispatch names the sitting's date, and stage 1 section 7 prints every future pair's |
 | Q14 | New v2 files or a rewrite in place? | New v2 files. The original files and the frozen `scripts/staff-10-data-op.test.mjs` stay byte-identical |
 | Q15 | The figures already on main and in #1433's history | Left as they are: the owner's call |
 | Q16 | Who fills in the reception list for the future pairs? | An owner-only template, written now and never committed; stage 3 prints the ids on the run day |
@@ -175,7 +175,7 @@ set -eo pipefail
 DOCPIN=docs/data-op-staff-10-v2.sha256
 SHA1=5a71020e56e4a10e5fed1d5f5ee3c648bbe85f03ecbe1e4201f0b75c3720f27f
 SHA2=55b1f2f8a67b106ce218509bb4f02d915b6055bafec03316ba199d3f518b317c
-SHA3=cf736756a981dce75dde8c2de97735ed8c8f6f5bede8046bf840116c23c3172c
+SHA3=fb3623c7445c3e3588e52c462b35cb88b046ed35e945f4342f097fffec5df27c
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -364,7 +364,7 @@ the write stands. R07 refuses a second write regardless.
 ```
 (
 set -eo pipefail
-SHA3=cf736756a981dce75dde8c2de97735ed8c8f6f5bede8046bf840116c23c3172c
+SHA3=fb3623c7445c3e3588e52c462b35cb88b046ed35e945f4342f097fffec5df27c
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -512,15 +512,27 @@ calling it a defect of the op.
 
 ## Rehearsal
 
-### These files: the full run of 2026-09-26, on `d92106a2`
+### These files: the full run of 2026-09-26, after review round 1
 
-**On 2026-09-26 the whole kit ran on `d92106a2`, the commit that changed the stage files
-for the owner's rulings of 2026-09-26: 179 arms and 231 checks, and every arm exited
-as wanted and every check held.** The bytes that changed after that commit are this
-section and the sidecar, and nothing else: the three stage files, their pins and every
-fenced block are the same at `d92106a2` and on the commit that carries this section, and
-on that commit the kit's 21 arms that need no database and the unit test ran again,
-green.
+**On 2026-09-26, after review round 1, the whole kit ran again: 183 arms and 241 checks,
+and every arm exited as wanted and every check held.** Its commit under test, `05a5dcb5`,
+is this round's fixes on `ece0a30c`, committed in the authoring lane's scratch clone
+before this section was written and never pushed. Its three stage files, their pins and
+every fenced block are this commit's, byte for byte; the table gives each block's sha256
+(the lines between its fences, each ending in a newline), and the two that moved since
+`ece0a30c` are stages 0 and 3, by stage 3's pin. This commit differs from `05a5dcb5` in
+this section and the sidecar only, and on this commit the kit's 21 arms that need no
+database, GREEN's dispatch arms, the proof harness and the unit test ran again, green.
+The run this section recorded before this round, on `d92106a2` (179 arms, 231 checks),
+ran every arm this run ran but one: review round 1 added arm Q13, and each of the others
+exited here as it did there.
+
+| Fenced block | sha256 at `05a5dcb5`, and on this commit |
+|---|---|
+| stage 0 | `b6a2a9b52b9c91d415a58158f3d70a1eadc4cc61947e7cbb8f1f161520e3fa16` |
+| stage 1 | `8936a3241812938c52a53960d6b0d30ca26a88d2cdd418a7ff1d0fbc204877f6` |
+| stage 2 | `4712254715efe2b71e14b57c933880ee17002698bb73761bcc6cf00827d9d05c` |
+| stage 3 | `943799ed9155b41b95ac3193dbbd7bfde802a4032d97b0ff5f68b2bb094f7612` |
 
 **Where it ran.** The throwaway container `supabase_db_OsteoJP-solo-rehearsal` (Postgres
 17, `127.0.0.1:55522`), never an existing database: the run made a NEW one,
@@ -668,20 +680,76 @@ retire and no JP(cb) row inactive before, VACUOUS on 2, 3, 4, 5 and 10.
 |---|---|
 | `rehearsal/fixture.sql` | `af5faa32bbcdcb31e71f3911de0221d49b69f43f1bdcc0d0d3da09dd69599c4f` |
 | `rehearsal/reset.sql` | `74d74fe72c1f33fe014ff563db5c0e43c187c049cf05c29c70dabe32dd6b055b` |
-| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `58f60d42b032214b1f70ea081fa132449726b463f92074c6032260805c96bc74` |
-| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `a56a68f9367869cebbb85a0624b9cb77ea2cb675ce19d856a49bd6e855526ba1` |
+| `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `6b1c2e1752a85a44a5c231dbc3a1844d72cf1184b50f863002c3e410f2cf19ad` |
+| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `94a0ed1122fbd153ba37c04d8f3da44d2fb0474482d6a972f40ba55b2b7f9c65` |
 | `rehearsal/extract-stage.mjs`, adapted from `/Users/ivan/osteojp-handover/extract-stage.mjs` to allow `origin/main` and refuse `origin/data/` | `bb1fc378bb6d550e3e13614d5cd1046d14f7a2b6f2cd70d2d68642c372dd89b7` |
+| `rehearsal/dispatch-arms.mjs`, GREEN's dispatch blocks against a stand-in read (review round 1) | `5c24757d649c25f2ec3b51f00460b74adf900f955c087d38623f506b3519e9b1` |
+| `rehearsal/fake-reader.mjs`, the stand-in: it prints which bytes the read would have run, and touches no database | `f5e9a13e104d61dcf4e582467df59ff3ed799595ada2d65a70f5e4bc26765796` |
+| `rehearsal/prove-red.mjs`, the proof harness: the unit test against seeded wrong copies of the committed tree | `7dfe0d2e7a6976aa1b7e0e1ca98bb6803a69306964bdecd4f80c0da1034efee7` |
+| `rehearsal/dispatch-before-review-round-1.txt`, GREEN's dispatch draft before this round | `16d6e001d451b46e5dab52433f86522cf0abd23814ba994f244fadf4e2e2b83e` |
+| `rehearsal/dispatch-review-round-1.txt`, GREEN's dispatch draft as this round rehearsed it, its two placeholders unfilled | `d4977d9635ab2d16cc699d17d1c86343713a58009b913ddbfd5dc5f22c55ce9d` |
 
-**What this run caught.** Its first attempt on the same commit ran every arm as wanted but
-failed one check of the runner's own: the refusal loop asserted that no v2 audit row exists
-after stage 2, and the R07 arm's mutation is a v2 audit row. The check now compares the v2
-audit rows before and after stage 2, and the run above is the one after that fix.
+**What the run on `d92106a2` caught.** Its first attempt on that commit ran every arm as
+wanted but failed one check of the runner's own: the refusal loop asserted that no v2 audit
+row exists after stage 2, and the R07 arm's mutation is a v2 audit row. The check now
+compares the v2 audit rows before and after stage 2, and every run recorded above came after
+that fix.
 
 **The app's own conflict check, on a real database.**
 `apps/web/lib/scheduling/staff-10-v2-option-a-conflict.db.test.ts` is unchanged by these
 rulings. It ran again against a new throwaway cloned from `s10v2_schema`: **5 passed**,
 with `--hookTimeout` and `--testTimeout` raised on the command line for a loaded machine
 and no file changed. CI's DB Tests job runs it.
+
+**Review round 1, each finding run for real.** A fresh-context reviewer read every byte
+changed since `a02bbde2`, GREEN's dispatch draft included, and found one major defect and
+three minor ones. Each is fixed here.
+
+- **GREEN's dispatch (major; the dispatch is not committed).** Its BEFORE YOU START block
+  had no `set -e` and compared nothing by machine, so its production journal read still ran
+  after a failed fetch, on a dirty worktree or on a reader no one had checked; and its
+  closing read ran the reader at the recorded sha without hashing it. Both are blocks now,
+  under `set -eo pipefail`. The first compares by machine the merge commit, a clean
+  worktree, the document and its sidecar, the four pins, the reader in the worktree and on
+  main, the run date and the hour, each with a STOP and `exit 1`, and only then reads,
+  through `tee`, and compares the journal count. The second checks that the worktree is on
+  the recorded sha and that the reader there is the pinned file before it reads. Rehearsed
+  without a database, the read replaced by a stand-in, each block pasted as `zsh -f -i` and
+  run again as a script, the draft before this round against this one: 36 arms and 76 checks
+  in each mode, every one as wanted. In the 13 setups that must stop before the read (a
+  directory that is not a repository, a fetch that fails, a dirty worktree, another reader in
+  the worktree, on main or at the recorded sha, another document, another stage 2, another
+  date, the placeholders left unfilled, a merge commit main does not hold, a worktree off the
+  recorded sha, no recorded sha) the draft before this round reached the read every time and
+  this one never did; on a journal count that is not the pinned one, before the op and after
+  it, the draft before this round exited 0 and this one stops.
+- **Stage 3's comment (minor).** The comment in stage 3's `stamped` CTE named verdicts 15
+  to 23 as the others that answer for the sitting, the range from before the old verdict 11
+  went; it names 14 to 23, as the paragraph after the verdict list does. A comment, so no arm
+  can tell the two files apart, but it moved stage 3's pin, so every arm that runs stage 3 or
+  its block ran again in the run above. A new unit test holds the comment and that paragraph
+  to one range: it fails on the stage 3 before this round and passes on this one.
+- **Question Q13 (minor).** Q13 said that on the first future pair's own date the pair is a
+  past twin. The code keeps it a future pair, because PAST means before 00:00 Lisbon on the
+  run day. Q13 now says so, and says that the sitting stops before stage 2 when a pair in
+  section 7 starts on the run day, as GREEN's dispatch already did. Arm Q13 runs the shape:
+  the fixture's first future pair moved to 23:20 Lisbon on the run day, beyond now plus two
+  hours. Stage 1 exit 0: section 0 reads PAST as before 00:00 that day, section 7 lists the
+  pair with its start on the run day, section 8 does not list it, and R20 reads OK. Stage 2
+  exit 0: the pair's NESA row cancelled, the NESA named as its person row's practitioner_2,
+  and the pair in the audit row's `f_pairs`. Stage 3 exit 0, `27 OK / 0 VACUOUS / 0 FAIL`,
+  the pair in its RECEPTION section. That is ruling (c), not a past twin. A new unit test
+  ties Q13 to the SETS block's PAST test: it fails on the Q13 before this round, and on a
+  PAST test moved to the end of the run day with Q13 left as it is.
+- **The unit test's message (minor).** The R26 test's last message named R28, the trigger
+  refusal, for the Saturday R26 guarantees; it names R26. With stage 3's Saturday seeded off
+  R26's predicate the test goes red before and after this round, and its message names R28
+  before it and R26 now.
+
+The proof harness ran 65 seeded copies on `05a5dcb5`, each as wanted, five of them this
+round's: stage 3's comment and Q13 each put back as they were, red on the new tests and
+green on the unit test before this round, which is the defect; the paragraph's range and
+the moved PAST test, each red; and the Saturday's message naming R26.
 
 ### The previous files, at `8e65d777`, kept as history
 
