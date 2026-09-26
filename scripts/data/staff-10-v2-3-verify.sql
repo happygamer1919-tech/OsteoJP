@@ -95,7 +95,7 @@ WITH k AS (
   -- and stage 2 asserts the audit row's created_at is that same time. So this
   -- finds the rows it wrote WITHOUT the audit row's lists, and verdicts 26 and
   -- 27 can disagree with them. A later edit moves a row's updated_at, so these
-  -- two answer for the sitting, as 14 to 23 do.
+  -- two answer for the sitting, as 2 to 24 do.
   SELECT a.id, a.status, a.practitioner_2_id
     FROM public.appointments a, al
    WHERE a.tenant_id = al.tenant AND a.updated_at = al.at

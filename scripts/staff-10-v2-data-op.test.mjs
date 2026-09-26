@@ -793,12 +793,55 @@ test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the do
   assert.deepEqual([...allowed].sort((x, y) => x - y), [2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 19, 23, 24, 25, 26, 27], "the allowed-VACUOUS list moved");
 });
 
-test("stage 3 and the document name the same verdicts as the ones an edit after the sitting can change", () => {
-  const doc = norm(between(DOC, "**Stage 3 writes nothing, and its answers move with the clinic.**", "\n## ", "the paragraph after the verdict list")).match(/An edit after the sitting can change 11, (\d+) to (\d+), 26 and 27 honestly/);
+/** A list of verdicts as the prose writes it, "2 to 24, 26 and 27", as sorted numbers. */
+function verdictList(s, label) {
+  const out = new Set();
+  for (const part of s.split(/, | and /)) {
+    const m = part.trim().match(/^(\d+)(?: to (\d+))?$/);
+    assert.ok(m, `${label}: "${part}" is not a verdict or a range of verdicts`);
+    const [a, b] = [Number(m[1]), Number(m[2] ?? m[1])];
+    assert.ok(a <= b, `${label}: the range ${part} runs backwards`);
+    for (let n = a; n <= b; n++) out.add(n);
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+test("stage 3 and the document name the same verdicts as the ones an edit after the sitting can change, and they are every verdict but 1 and 25", () => {
+  const para = norm(between(DOC, "**Stage 3 writes nothing, and its answers move with the clinic.**", "\n## ", "the paragraph after the verdict list"));
+  const doc = para.match(/an edit after the sitting can change ([0-9a-z, ]+?) honestly/i);
   assert.ok(doc, "the document no longer names the verdicts an edit after the sitting can change");
-  const s3 = between(S3, "), stamped AS (", "), can AS (", "stage 3's stamped CTE").match(/answer for the sitting, as (\d+) to (\d+) do\./);
+  const named = verdictList(doc[1], "the document");
+  // Every verdict reads the database as it stands when stage 3 runs, so only a verdict no
+  // edit can FAIL may be left off, and there are two: 1 counts the v2 audit rows, which
+  // only stage 2 writes (R07 refuses a second), and 25 counts what 0061's EXCLUDE refuses.
+  const all = [...S3.matchAll(/^(?:SELECT|UNION ALL SELECT) (\d+)(?: AS n)?, '/gm)].map((m) => Number(m[1])).filter((n) => n !== 99);
+  assert.deepEqual(named, all.filter((n) => n !== 1 && n !== 25), "the document does not name every verdict an edit after the sitting can change: a schedule, appointment, block or clinical record edit can FAIL every verdict but 1 and 25");
+  const s3 = between(S3, "), stamped AS (", "), can AS (", "stage 3's stamped CTE").match(/answer for the sitting, as ([0-9a-z, ]+?) do\./);
   assert.ok(s3, "stage 3's stamped CTE no longer says which other verdicts answer for the sitting");
-  assert.deepEqual([s3[1], s3[2]], [doc[1], doc[2]], "stage 3 and the document name different verdicts as the ones an edit after the sitting can change");
+  assert.deepEqual(verdictList(`${s3[1]}, 26 and 27`, "stage 3's stamped CTE"), named, "stage 3 and the document name different verdicts as the ones an edit after the sitting can change");
+  assert.match(para, /Only 1 and 25 cannot FAIL after the sitting/, "the document does not say which verdicts no edit can FAIL");
+  const rows = verdictRows();
+  assert.match(rows[0], /CASE WHEN v\.audit_rows <> 1 THEN 'FAIL' ELSE 'OK' END/, "verdict 1 no longer reads the v2 audit row count alone");
+  assert.ok(S3.includes(`(SELECT count(*) FROM public.audit_log a WHERE a.action = '${ACTION}')::int AS audit_rows`), "verdict 1 counts something other than the v2 audit rows");
+  assert.ok(between(SETS, "'R07'", "'R08'", "R07").includes(`(SELECT count(*) FROM public.audit_log al WHERE al.action = '${ACTION}')::int,`), "R07 no longer refuses a second write, so verdict 1 could move");
+  assert.match(rows[24], /CASE WHEN v\.confirmed_overlaps <> 0 THEN 'FAIL'/, "verdict 25 no longer FAILs on an overlap only");
+  assert.match(norm(S3), /ON a1\.id < a2\.id AND a1\.practitioner_id = a2\.practitioner_id AND tstzrange\(a1\.starts_at, a1\.ends_at\) && tstzrange\(a2\.starts_at, a2\.ends_at\), k WHERE a1\.status = 'confirmed' AND a2\.status = 'confirmed'/, "verdict 25 no longer counts exactly the overlaps 0061 refuses");
+  const m0061 = norm(read("packages/db/migrations/0061_no_double_confirmed_and_confirm_notification.sql"));
+  assert.ok(m0061.includes("'ADD CONSTRAINT appointments_no_double_confirmed ' 'EXCLUDE USING gist (' ' practitioner_id %I.%I WITH =, ' ' tstzrange(starts_at, ends_at) WITH &&' ') WHERE (status = ''confirmed'')'"), "0061 no longer refuses two confirmed rows that overlap on one practitioner, so verdict 25 can FAIL after the sitting");
+});
+
+test("stage 3 marks its pass with the recorded sha only after every check, and removes the mark before anything else, so the mark speaks for the last paste", () => {
+  const l = block("STAGE 3").split("\n");
+  const mark = "/tmp/staff10v2-stage3.ok";
+  assert.deepEqual(l.filter((x) => x.includes(mark)), [`rm -f ${mark}`, `echo "\${REC}" > ${mark}`], "stage 3 touches its pass mark other than by removing it first and writing it last");
+  const first = l.findIndex((x, i) => i > 0 && x !== "" && x !== "set -eo pipefail" && !/^[A-Z0-9]+=[0-9a-f]{64}$/.test(x));
+  assert.equal(l[first], `rm -f ${mark}`, "stage 3 does not remove its pass mark before anything that can stop it");
+  const write = l.indexOf(`echo "\${REC}" > ${mark}`);
+  const lastStop = Math.max(...l.map((x, i) => (x.includes("STOP:") ? i : -1)));
+  assert.ok(lastStop > first && write > lastStop, "stage 3 writes its pass mark before its last check");
+  assert.ok(l[write + 1].startsWith('echo "STAFF-10 V2 VERIFIED: '), "stage 3's pass mark is not written just before its VERIFIED line");
+  assert.equal(l[write + 2], ")", "something runs after stage 3's VERIFIED line");
+  assert.ok(l.slice(lastStop + 1, write).every((x) => /^PROFILE=\$\(.*\|\| true\)$/.test(x)), "something that can fail sits between stage 3's last check and its pass mark");
 });
 
 test("an empty comparand never reads OK: every verdict but 1, 7 and 22 has a VACUOUS branch, and 7 FAILs on a zero control", () => {

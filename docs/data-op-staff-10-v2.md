@@ -38,7 +38,7 @@ bytes.
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/staff10v2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
 | Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `5a71020e56e4a10e5fed1d5f5ee3c648bbe85f03ecbe1e4201f0b75c3720f27f` |
 | Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `55b1f2f8a67b106ce218509bb4f02d915b6055bafec03316ba199d3f518b317c` |
-| Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 27 verdicts and a SUMMARY row, sha256 `fb3623c7445c3e3588e52c462b35cb88b046ed35e945f4342f097fffec5df27c` |
+| Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 27 verdicts and a SUMMARY row, sha256 `450c70b791097a332668363d06262e4cd9a6a98fc4926665dc165a35d3668a7f` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
 | This document | `docs/data-op-staff-10-v2.md`, pinned by `docs/data-op-staff-10-v2.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
@@ -159,6 +159,10 @@ to paste: the machine runs it inside the blocks, and halts on it.
   and asserts its own file and the target guard by sha256 before it runs either.
 - **Stage 1 marks its pass with the recorded sha,** and stage 2 refuses unless that
   mark names the sha it is about to run from.
+- **Stage 3 marks its pass the same way,** in `/tmp/staff10v2-stage3.ok`, and only after
+  every check it makes. It removes the mark before anything else, so a paste of stage 3
+  that stops leaves none and the mark speaks for the last paste. GREEN's closing
+  journal read runs only on a mark that names the recorded sha.
 - **After stage 2 has written: NEVER run stage 0, 1 or 2 again.** Each refuses once the
   written marker exists, and R07 refuses in the database regardless. **Stage 3 is READ
   ONLY** and runs from the recorded sha whatever main has done since: it prints whether
@@ -175,7 +179,7 @@ set -eo pipefail
 DOCPIN=docs/data-op-staff-10-v2.sha256
 SHA1=5a71020e56e4a10e5fed1d5f5ee3c648bbe85f03ecbe1e4201f0b75c3720f27f
 SHA2=55b1f2f8a67b106ce218509bb4f02d915b6055bafec03316ba199d3f518b317c
-SHA3=fb3623c7445c3e3588e52c462b35cb88b046ed35e945f4342f097fffec5df27c
+SHA3=450c70b791097a332668363d06262e4cd9a6a98fc4926665dc165a35d3668a7f
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -364,9 +368,10 @@ the write stands. R07 refuses a second write regardless.
 ```
 (
 set -eo pipefail
-SHA3=fb3623c7445c3e3588e52c462b35cb88b046ed35e945f4342f097fffec5df27c
+SHA3=450c70b791097a332668363d06262e4cd9a6a98fc4926665dc165a35d3668a7f
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
+rm -f /tmp/staff10v2-stage3.ok
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 test -f /tmp/staff10v2-main.sha || { echo "STOP: stage 0 recorded no sha in this sitting, and stage 3 runs only from the recorded sha. The lead rules"; exit 1; }
 REC=$(cat /tmp/staff10v2-main.sha)
@@ -396,6 +401,7 @@ NV=$(grep -cE '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*(OK|VACUOUS|FAIL
 BAD=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/staff10v2-stage3.out | sed -E 's/^[[:space:]]*([0-9]+)[[:space:]]*\|.*/\1/' | grep -vxE '2|3|4|5|6|10|11|12|13|14|15|16|17|19|23|24|25|26|27' | tr '\n' ' ' || true)
 [ -z "${BAD}" ] || { echo "STOP: VACUOUS on ${BAD}, which the op never allows to be vacuous"; exit 1; }
 PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/staff10v2-stage3.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
+echo "${REC}" > /tmp/staff10v2-stage3.ok
 echo "STAFF-10 V2 VERIFIED: ${PROFILE}. The RECEPTION section above lists each future pair by id."
 )
 ```
@@ -414,7 +420,10 @@ of them always compares something; verdict 8's Saturday is guaranteed the same w
 were created or edited after the op: a clinician's save between the write and this
 read FAILs 18 honestly, and that count is what the lead reads it against (D18). The
 block prints the profile; the profile moves with the data, so no exact profile is
-asserted for production. After the
+asserted for production. Only a pass writes the mark `/tmp/staff10v2-stage3.ok`, the
+recorded sha, just before the last line; the block removes it before anything else, so
+a stage 3 that stops leaves no mark, and GREEN's closing journal read runs only on it.
+After the
 SUMMARY, stage 3 prints the RECEPTION section: each future pair after the write, ids
 only, which stays in `/tmp/staff10v2-stage3.out` until stage 3 is pasted again.
 
@@ -503,36 +512,47 @@ names a block: the op writes none.
 27. ruling (c): the person rows it lists are exactly the rows the op gave a practitioner_2, each naming its NESA, found the same way.
 
 **Stage 3 writes nothing, and its answers move with the clinic.** Pasting it again
-is the owner's or the lead's call, never the runner's (the halt rule). An edit after
-the sitting can change 11, 14 to 23, 26 and 27 honestly: a future person row cancelled
-later FAILs 14, 16 and 17, and 26 or 27 with them; a block the clinic adds or edits
-FAILs 11; a clinical record created or saved after the write FAILs 18, and its observed
-column counts those records. Read a later FAIL against the audit row's time before
-calling it a defect of the op.
+is the owner's or the lead's call, never the runner's (the halt rule). Every verdict
+reads the database as it stands when stage 3 runs, so an edit after the sitting can
+change 2 to 24, 26 and 27 honestly. The schedule verdicts, 2 to 10, move with a
+schedule row the clinic adds, edits or archives, or a retired one the app revives when
+the same row is asked for again: any change to JP(cb)'s Castelo Branco schedule, a row
+added included, FAILs 9, and a JP(cb) row archived or revived FAILs 10. A future person
+row cancelled later FAILs 14, 16 and 17, and 26 or 27 with them; any other appointment
+added, edited or removed can FAIL 12, 13, 15 or 20 to 24; a block the clinic adds, edits
+or removes FAILs 11; a clinical record created or saved after the write FAILs 18, and
+its observed column counts those records, and one created on a row the op wrote FAILs
+19 too. Verdicts 7 and 8 also read today's date, so a later day moves them with no edit
+at all: once JP(lv) holds no dated real Saturday from that day, 8 reads VACUOUS and the
+block stops on it. Only 1 and 25 cannot FAIL after the sitting, whatever the clinic
+does: stage 2 is the only writer of the v2 audit action and R07 refuses a second write,
+and `appointments_no_double_confirmed` (0061) refuses two confirmed rows that overlap on
+one practitioner. Read a later FAIL against the audit row's time before calling it a
+defect of the op.
 
 ## Rehearsal
 
-### These files: the full run of 2026-09-26, after review round 1
+### These files: the full run of 2026-09-26, after review round 2
 
-**On 2026-09-26, after review round 1, the whole kit ran again: 183 arms and 241 checks,
-and every arm exited as wanted and every check held.** Its commit under test, `05a5dcb5`,
-is this round's fixes on `ece0a30c`, committed in the authoring lane's scratch clone
-before this section was written and never pushed. Its three stage files, their pins and
-every fenced block are this commit's, byte for byte; the table gives each block's sha256
-(the lines between its fences, each ending in a newline), and the two that moved since
-`ece0a30c` are stages 0 and 3, by stage 3's pin. This commit differs from `05a5dcb5` in
-this section and the sidecar only, and on this commit the kit's 21 arms that need no
-database, GREEN's dispatch arms, the proof harness and the unit test ran again, green.
-The run this section recorded before this round, on `d92106a2` (179 arms, 231 checks),
-ran every arm this run ran but one: review round 1 added arm Q13, and each of the others
-exited here as it did there.
+**On 2026-09-26, after review round 2, the whole kit ran again: 199 arms and 304
+checks, and every arm exited as wanted and every check held.** Its commit under test,
+`2deb51e8`, is this round's fixes on `4aeeed1b`, committed in the authoring lane's scratch
+clone before this section was written and never pushed. Its three stage files, their pins
+and every fenced block are this commit's, byte for byte; the table gives each block's
+sha256 (the lines between its fences, each ending in a newline), and the two that moved
+since `4aeeed1b` are stages 0 and 3: stage 0 by stage 3's pin, stage 3 by that pin and its
+pass mark. This commit differs from `2deb51e8` in this section and the sidecar only, and
+on this commit the kit's 21 arms that need no database, GREEN's dispatch arms, the proof
+harness and the unit test ran again, green. The run this section recorded before this
+round, on `05a5dcb5` (183 arms, 241 checks), ran every arm this run ran but those of
+section E, which review round 2 added, and each of the others exited here as it did there.
 
-| Fenced block | sha256 at `05a5dcb5`, and on this commit |
+| Fenced block | sha256 at `2deb51e8`, and on this commit |
 |---|---|
-| stage 0 | `b6a2a9b52b9c91d415a58158f3d70a1eadc4cc61947e7cbb8f1f161520e3fa16` |
+| stage 0 | `9f83ec2a32e8c2f9c456dde3b96551966d63383b4527aafc7f77e6324b48dab3` |
 | stage 1 | `8936a3241812938c52a53960d6b0d30ca26a88d2cdd418a7ff1d0fbc204877f6` |
 | stage 2 | `4712254715efe2b71e14b57c933880ee17002698bb73761bcc6cf00827d9d05c` |
-| stage 3 | `943799ed9155b41b95ac3193dbbd7bfde802a4032d97b0ff5f68b2bb094f7612` |
+| stage 3 | `ddac6731a1550c6fd8dcd4ec5ed89fde1c593e655827ec58414655786e7190da` |
 
 **Where it ran.** The throwaway container `supabase_db_OsteoJP-solo-rehearsal` (Postgres
 17, `127.0.0.1:55522`), never an existing database: the run made a NEW one,
@@ -555,10 +575,13 @@ interactive paste, `zsh -f -i < block`, with exactly four substitutions, each co
 
 | Substitution | stage 0 | stage 1 | stage 2 | stage 3 |
 |---|---|---|---|---|
-| `/tmp/` | 6 | 11 | 13 | 10 |
+| `/tmp/` | 6 | 11 | 13 | 12 |
 | `cd` | 1 | 1 | 1 | 1 |
 | env | 0 | 1 | 1 | 1 |
 | guard | 0 | 1 | 1 | 1 |
+
+Stage 3's `/tmp/` count read 10 before review round 2: its block now removes its pass mark
+first and writes it last.
 
 **The happy path, pasted interactively, JP(cb)'s 30 September block in place:**
 
@@ -567,7 +590,7 @@ interactive paste, `zsh -f -i < block`, with exactly four substitutions, each co
 | stage 0 | 0 | `STAFF-10 V2 FILES VERIFIED`, the recorded sha the commit under test |
 | stage 1 | 0 | 28 refusal lines, every one OK, none VACUOUS; `partition holds`; section 4c five sets, every one OK; no section 2c; `STAGE 1 READ, NO REFUSAL` |
 | stage 2 | 0 | P3 the run day and all 19 carries match; P4 no trigger; P5 every md5 family OK, none empty, the whole clinical_records table among them; P6 the machine hour held by each future pair's NESA row, control window 0; W1 to W6 each with its row count; A2 the hour held by each person row, control window 0; `DONE`, `COMMITTED`. `time_off` equal by count and md5 before and after it, and the 30 September block equal by its own md5 |
-| stage 3 | 0 | `27 OK / 0 VACUOUS / 0 FAIL`; verdict 11 OK, the block among the rows it compares; verdict 18 OK, `0 created or edited after the op`; the 30 September block still equal by its own md5 after the sitting |
+| stage 3 | 0 | `27 OK / 0 VACUOUS / 0 FAIL`; verdict 11 OK, the block among the rows it compares; verdict 18 OK, `0 created or edited after the op`; the 30 September block still equal by its own md5 after the sitting; the pass mark `/tmp/staff10v2-stage3.ok` names the recorded sha |
 
 **Production's shape: no clinical record on a row the op writes (arm C).** Stages 0 to 3
 exit 0. Stage 1 refuses nothing; section 4c reads the per-row set `0 VACUOUS` and the
@@ -631,7 +654,9 @@ md5 after it, the 30 September block by its own md5 too; stage 3 exit 0, verdict
 `27 OK / 0 VACUOUS / 0 FAIL`.
 
 **Stage 3 can go red, and each control can fail.** Each arm: one change after the write,
-stage 3, the FAIL set asserted, the change undone, stage 3 again at exit 0.
+stage 3, the FAIL set asserted, the change undone, stage 3 again at exit 0. Since review
+round 2 each red arm also asserts that stage 3 left no pass mark, and each pass after it
+that the mark names the recorded sha.
 
 | After the write | Exit | FAIL on |
 |---|---|---|
@@ -651,6 +676,24 @@ stage 3, the FAIL set asserted, the change undone, stage 3 again at exit 0.
 | a copy of stage 3 whose `time_off` control leaves no block out | 1 | 11, control `EQUAL` |
 | a copy of stage 3 whose clinical_records control leaves no record out | 1 | 18, control `EQUAL` |
 
+**GREEN's closing journal read after a real stage 3 (section E, review round 2).** Report
+step 6 of GREEN's dispatch, taken from the round 1 draft (OLD) and from this round's (NEW),
+pasted as `zsh -f -i` right after a real stage 3 on this database, its production read
+replaced by a stand-in that prints `FAKE READER RAN` and touches no database; three
+substitutions, each counted (`/tmp/`, the `cd`, the read).
+
+| Stage 3 just before | Stage 3 exit | Pass mark | OLD | NEW |
+|---|---|---|---|---|
+| the happy path's pass | 0 | the recorded sha | 0, read | 0, read, `CLOSING READ` |
+| a clinical record created after the write | 1, FAIL on 18 | none | 0, read | 1, `STOP: stage 3 left no pass mark`, no read |
+| every dated JP(lv) Saturday shifted to a past Saturday | 1, `VACUOUS on 8`, no FAIL line | none | 0, read | 1, the same STOP, no read |
+| a pass, then a re-paste that stops at its pin check, before psql | 1 | none | 0, read | 1, the same STOP, no read |
+| a pass again, each change undone | 0 | the recorded sha | 0, read | 0, read, `CLOSING READ` |
+
+After the re-paste the transcript on disk was still the earlier pass (its COMPLETE line,
+its SUMMARY, 27 verdicts, no FAIL), so a check of the transcript alone would have let the
+read run.
+
 **Inside stage 2's transaction (arm S).** A copy of stage 2 that, after its W6, touches a
 clinical record on a row no stage writes, run through this document's stage 2 block with
 only its file and its pin swapped: exit 3, all six write notices printed, then `STOP: the
@@ -666,10 +709,10 @@ insert after all six writes (3, every write rolled back, no audit row), main mov
 stage 1 and stage 2 (1, nothing written), stage 0, 1 and 2 again after the write (1 each),
 stage 1 after the write with the written marker removed (1, REFUSE on R07 and R23), stage 2
 with its markers forced (3, `STOP: R07 refuses`, written once), stage 3 after main moved
-(0, `MAIN MOVED since stage 0` with both shas), a database whose default hides NOTICEs (0,
-every step line and `DONE`, the file's pin), the written-row fingerprint on a copy of stage 2
-that also sets either confirmation column (3), and a write inside the READ ONLY form
-stages 1 and 3 use (refused).
+(0, `MAIN MOVED since stage 0` with both shas, its pass mark the recorded sha), a database
+whose default hides NOTICEs (0, every step line and `DONE`, the file's pin), the written-row
+fingerprint on a copy of stage 2 that also sets either confirmation column (3), and a write
+inside the READ ONLY form stages 1 and 3 use (refused).
 
 **Whole runs on other shapes, each VACUOUS set asserted:** the tenant holds no block at
 all, VACUOUS on 11 only; question Q3's pairs, 27 OK, NESA row 50 still on NESA(cb) and in
@@ -681,19 +724,27 @@ retire and no JP(cb) row inactive before, VACUOUS on 2, 3, 4, 5 and 10.
 | `rehearsal/fixture.sql` | `af5faa32bbcdcb31e71f3911de0221d49b69f43f1bdcc0d0d3da09dd69599c4f` |
 | `rehearsal/reset.sql` | `74d74fe72c1f33fe014ff563db5c0e43c187c049cf05c29c70dabe32dd6b055b` |
 | `rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `6b1c2e1752a85a44a5c231dbc3a1844d72cf1184b50f863002c3e410f2cf19ad` |
-| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `94a0ed1122fbd153ba37c04d8f3da44d2fb0474482d6a972f40ba55b2b7f9c65` |
+| `rehearsal/run-s10v2-arms.zsh`, the arms runner | `abaa95f98d0a1f1820ed07ccdb33688d4e6697cd750821d6f8ea4d4b33590972` |
 | `rehearsal/extract-stage.mjs`, adapted from `/Users/ivan/osteojp-handover/extract-stage.mjs` to allow `origin/main` and refuse `origin/data/` | `bb1fc378bb6d550e3e13614d5cd1046d14f7a2b6f2cd70d2d68642c372dd89b7` |
-| `rehearsal/dispatch-arms.mjs`, GREEN's dispatch blocks against a stand-in read (review round 1) | `5c24757d649c25f2ec3b51f00460b74adf900f955c087d38623f506b3519e9b1` |
+| `rehearsal/closing-block.mjs`, GREEN's closing read out of a dispatch draft, for section E (review round 2) | `11423a4773c32327d354cf95b67489e2283cab48fcc5d869c2450dcec3da7386` |
+| `rehearsal/dispatch-arms.mjs`, GREEN's dispatch blocks against a stand-in read (review rounds 1 and 2) | `dfe73fd437d44030e1c995a09a4b242517e919604e4295e77fd1758cf2f3c7d7` |
 | `rehearsal/fake-reader.mjs`, the stand-in: it prints which bytes the read would have run, and touches no database | `f5e9a13e104d61dcf4e582467df59ff3ed799595ada2d65a70f5e4bc26765796` |
-| `rehearsal/prove-red.mjs`, the proof harness: the unit test against seeded wrong copies of the committed tree | `7dfe0d2e7a6976aa1b7e0e1ca98bb6803a69306964bdecd4f80c0da1034efee7` |
-| `rehearsal/dispatch-before-review-round-1.txt`, GREEN's dispatch draft before this round | `16d6e001d451b46e5dab52433f86522cf0abd23814ba994f244fadf4e2e2b83e` |
-| `rehearsal/dispatch-review-round-1.txt`, GREEN's dispatch draft as this round rehearsed it, its two placeholders unfilled | `d4977d9635ab2d16cc699d17d1c86343713a58009b913ddbfd5dc5f22c55ce9d` |
+| `rehearsal/prove-red.mjs`, the proof harness: the unit test against seeded wrong copies of the committed tree | `8a581304b08c2610a36fcfd21b14d00973066379820df37b20e7824a7e845594` |
+| `rehearsal/dispatch-before-review-round-1.txt`, GREEN's dispatch draft before review round 1 | `16d6e001d451b46e5dab52433f86522cf0abd23814ba994f244fadf4e2e2b83e` |
+| `rehearsal/dispatch-review-round-1.txt`, GREEN's dispatch draft as review round 1 left it, this round's OLD | `d4977d9635ab2d16cc699d17d1c86343713a58009b913ddbfd5dc5f22c55ce9d` |
+| `rehearsal/dispatch-review-round-2.txt`, GREEN's dispatch draft as this round rehearsed it, its two placeholders unfilled | `a083fd2251ea264281958e40f47bddccef3dc0b5252e0cbf90ecb27f44e9a179` |
 
 **What the run on `d92106a2` caught.** Its first attempt on that commit ran every arm as
 wanted but failed one check of the runner's own: the refusal loop asserted that no v2 audit
 row exists after stage 2, and the R07 arm's mutation is a v2 audit row. The check now
 compares the v2 audit rows before and after stage 2, and every run recorded above came after
 that fix.
+
+**What the first run on `2deb51e8` caught.** It ran every arm as wanted, but failed three
+checks of the runner's own, all in section E: each looked for the closing read's STOP at the
+start of a line, and a block pasted as an interactive zsh reads it prints the prompts for
+its continuation lines on the same line as its first output. The check now reads the STOP
+anywhere in its line, and the run recorded above came after that fix.
 
 **The app's own conflict check, on a real database.**
 `apps/web/lib/scheduling/staff-10-v2-option-a-conflict.db.test.ts` is unchanged by these
@@ -713,7 +764,8 @@ three minor ones. Each is fixed here.
   worktree, the document and its sidecar, the four pins, the reader in the worktree and on
   main, the run date and the hour, each with a STOP and `exit 1`, and only then reads,
   through `tee`, and compares the journal count. The second checks that the worktree is on
-  the recorded sha and that the reader there is the pinned file before it reads. Rehearsed
+  the recorded sha and that the reader there is the pinned file before it reads (review
+  round 2 adds stage 2's and stage 3's outcomes to it, below). Rehearsed
   without a database, the read replaced by a stand-in, each block pasted as `zsh -f -i` and
   run again as a script, the draft before this round against this one: 36 arms and 76 checks
   in each mode, every one as wanted. In the 13 setups that must stop before the read (a
@@ -725,7 +777,8 @@ three minor ones. Each is fixed here.
   it, the draft before this round exited 0 and this one stops.
 - **Stage 3's comment (minor).** The comment in stage 3's `stamped` CTE named verdicts 15
   to 23 as the others that answer for the sitting, the range from before the old verdict 11
-  went; it names 14 to 23, as the paragraph after the verdict list does. A comment, so no arm
+  went; it names 14 to 23, as the paragraph after the verdict list did (review round 2
+  widens both, below). A comment, so no arm
   can tell the two files apart, but it moved stage 3's pin, so every arm that runs stage 3 or
   its block ran again in the run above. A new unit test holds the comment and that paragraph
   to one range: it fails on the stage 3 before this round and passes on this one.
@@ -750,6 +803,54 @@ The proof harness ran 65 seeded copies on `05a5dcb5`, each as wanted, five of th
 round's: stage 3's comment and Q13 each put back as they were, red on the new tests and
 green on the unit test before this round, which is the defect; the paragraph's range and
 the moved PAST test, each red; and the Saturday's message naming R26.
+
+**Review round 2, each finding run for real.** A fresh-context reviewer read every byte
+changed since `a02bbde2` again, GREEN's dispatch draft included, and found two minor
+defects. Each is fixed here.
+
+- **GREEN's closing journal read (minor; the dispatch is not committed).** It checked the
+  head and the reader by machine, and stage 3's outcome only in prose, so after a stage 3
+  that stopped (a clinician's save between stage 2 and stage 3 FAILs 18, the reviewer's
+  case) it still read production. Stage 3 now marks its pass as stage 1 does: its block
+  removes `/tmp/staff10v2-stage3.ok` before anything else and writes the recorded sha into
+  it only after its last check. The closing read checks, before it reads, that stage 2
+  exited 0 (its written marker, and its DONE and COMMITTED lines) and that the mark names
+  the recorded sha and is newer than the write. The reviewer suggested checking stage 3's
+  transcript instead; section E shows why the mark is the stronger signal: a re-paste of
+  stage 3 that stops before its psql leaves the earlier passing transcript on disk, and no
+  mark. Rehearsed on the database (section E, above) and without one: GREEN's dispatch arms,
+  each block pasted as `zsh -f -i` and run again as a script, 37 arms and 91 checks in
+  each mode, every one as wanted. BEFORE YOU START changed only in stage 3's pin, checked
+  byte for byte, so its 13 setups ran on this round's draft alone, each exiting as round 1
+  recorded. The closing read ran on both drafts after a sitting whose files say stage 2 and
+  stage 3 passed, and after one change each: with no pass mark, a mark naming another sha, a
+  mark older than the write, no written marker, a stage 2 transcript with no DONE line, with
+  no COMMITTED line, or none at all, the round 1 draft read production every time and this
+  one never did; the happy path, a reader that is not the pin, a worktree off the recorded
+  sha, no recorded sha and a journal count that is not the pinned one each ended alike on
+  both.
+- **The paragraph after the verdict list (minor).** It named 11, 14 to 23, 26 and 27 as the
+  verdicts an edit after the sitting can change honestly, and stage 3's `stamped` comment
+  and a round 1 unit test held that range. Every verdict reads the database as it stands
+  when stage 3 runs, and the app adds, edits and archives schedule rows, revives a retired
+  one when the same row is asked for again, and hard deletes an appointment that carries no
+  note, record or invoice; so a JP(cb) Castelo Branco schedule edit FAILs 9 (the reviewer's
+  case), and every verdict but 1 and 25 can move. The paragraph now names 2 to 24, 26 and
+  27, says which edits move which verdicts, that 7 and 8 also read today's date, and why 1
+  and 25 cannot FAIL (only stage 2 writes the v2 audit action and R07 refuses a second;
+  0061's `appointments_no_double_confirmed` refuses the overlap 25 counts). The comment names
+  2 to 24, which moves stage 3's pin, so every arm that runs stage 3 or its block ran again
+  above. The unit test now reads both lists, requires them to agree and to be every verdict
+  stage 3 prints but 1 and 25, and holds the two exceptions to verdict 1's comparand, R07 and
+  0061's constraint: it fails on round 1's files and passes on this commit.
+
+The proof harness ran 75 seeded copies on `2deb51e8`, each as wanted, ten of them this
+round's: the paragraph and the comment put back as round 1 had them, red on the new test
+and green on round 1's, which is the defect; the lists without 9, and with 25; 0061's
+constraint narrowed; the paragraph without its sentence on 1 and 25; and stage 3's pass
+mark written before the FAIL check, never removed, removed after the first STOP, written
+with origin/main's sha, or followed by another command, each red. Round 1's two range seeds
+now read the round 2 texts.
 
 ### The previous files, at `8e65d777`, kept as history
 
