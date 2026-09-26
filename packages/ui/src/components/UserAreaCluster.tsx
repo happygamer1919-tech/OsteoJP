@@ -33,6 +33,13 @@ export interface UserAreaClusterProps {
   /** 1-2 letter initials for the avatar. */
   initials: string;
   className?: string;
+  /**
+   * Extra classes for the name-and-role column only, for a caller that shows
+   * the avatar alone at some widths (AGENDA-MOBILE-WEEK, Q-B6-11: the staff
+   * header passes `max-sm:hidden`, so a phone shows the initials and not the
+   * name). Omitted, the cluster renders exactly as before.
+   */
+  textClassName?: string;
 }
 
 const cx = (...c: Array<string | false | null | undefined>): string =>
@@ -43,6 +50,7 @@ export function UserAreaCluster({
   roleLabel,
   initials,
   className,
+  textClassName,
 }: UserAreaClusterProps) {
   return (
     <div className={cx("inline-flex items-center gap-3", className)}>
@@ -52,7 +60,7 @@ export function UserAreaCluster({
       >
         {initials}
       </span>
-      <span className="flex min-w-0 flex-col leading-tight">
+      <span className={cx("flex min-w-0 flex-col leading-tight", textClassName)}>
         <span className="truncate text-sm font-medium text-v2-text-primary">{name}</span>
         <span className="truncate text-xs text-v2-text-secondary">{roleLabel}</span>
       </span>

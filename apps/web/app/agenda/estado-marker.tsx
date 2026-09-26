@@ -39,11 +39,15 @@ export function EstadoMarker({
   estado,
   showLabel,
   className,
+  size = 14,
 }: {
   estado: Estado;
   /** Render the estado label as visible text (hover) instead of aria-only (face/row). */
   showLabel?: boolean;
   className?: string;
+  /** Glyph size in px. 14 everywhere except AGENDA-MOBILE-WEEK's phone grid,
+   *  whose lanes are ~28px wide and take a 10px glyph. */
+  size?: number;
 }) {
   const Icon = ESTADO_ICON[estado];
   const label = s[ESTADO_LABEL_KEY[estado]];
@@ -54,7 +58,7 @@ export function EstadoMarker({
       aria-label={`${s["appointment.status"]}: ${label}`}
       className={`inline-flex shrink-0 items-center gap-1 ${ESTADO_COLOR_CLASS[estado]} ${className ?? ""}`}
     >
-      <Icon size={14} strokeWidth={1.9} aria-hidden="true" />
+      <Icon size={size} strokeWidth={1.9} aria-hidden="true" />
       {showLabel ? <span className="text-xs font-medium">{label}</span> : null}
     </span>
   );

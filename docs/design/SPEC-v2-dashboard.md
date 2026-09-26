@@ -29,6 +29,8 @@ The HeritageFrame wraps the content area at `density="restrained"` (OsteoJP them
 
 A glass control cluster: previous button, glass date picker, "Hoje" button, next button. Drives the dashboard's date context using the existing date state. ASSUMPTION: the v1 dashboard is single-day "today" focused; the date navigation here scopes the KPI "hoje" and "Próximas marcações" panel to the selected day. If the v1 dashboard has no date selector at all, ship the cluster wired to the same "today" fetch and flag the date-scoping behavior to Ivan.
 
+Under 640px (AGENDA-MOBILE-WEEK, Q-B6-11) the cluster stays on one line and fits the screen: the date field narrows and the three buttons keep their size, so the page does not scroll sideways at 390 or 360. At 640 and up it is unchanged.
+
 ---
 
 ## 2. KPI cards row (four, GlassKpiCard)

@@ -80,10 +80,13 @@ function monthStart(dateStr: string): string {
   return `${y}-${m}-01`;
 }
 
+// `max-sm:shrink-0`: below `sm` the date row may shrink to the screen and only
+// the date field gives way (see the row below). Without it the previous and
+// next buttons were squeezed to about 28px at 360 to make that room.
 const iconNav =
-  "inline-flex size-10 items-center justify-center rounded-v2 border border-v2-border bg-v2-surface text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "inline-flex size-10 items-center justify-center rounded-v2 border border-v2-border bg-v2-surface text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:shrink-0";
 const ghostNav =
-  "inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:shrink-0";
 
 export default async function DashboardPage({
   searchParams,
@@ -263,7 +266,17 @@ export default async function DashboardPage({
           </h1>
           <p className="text-v2-text-secondary">{s["dashboard.subheading"]}</p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* AGENDA-MOBILE-WEEK, Q-B6-11 (answered: no staff page scrolls
+            sideways at 390 or 360). This row did not wrap, and the date
+            field is as wide as its text input's default width, so on a phone
+            the row ran past the screen: CI measured it ending at 448px at 390.
+            Below `sm` the row may shrink to the line (`min-w-0`) and only the
+            date field gives way (DateJump's `min-w-0`); the three buttons
+            keep their size. Measured in local Chromium on the page, CSS and
+            Inter files CI captured: the field's text box is 129px at 390 and
+            99px at 360 for a date about 80px wide. At 640 and up nothing
+            changes. */}
+        <div data-testid="dashboard-date-nav" className="flex items-center gap-2 max-sm:min-w-0">
           <Link href={`/dashboard?date=${addDays(date, -1)}`} aria-label={s["dashboard.prevDay"]} className={iconNav}>
             <ChevronLeft size={20} strokeWidth={1.75} aria-hidden="true" />
           </Link>
