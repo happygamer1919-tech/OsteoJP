@@ -1,5 +1,12 @@
 # Anexo link: the imported documents that name a registo get linked to it
 
+> **SUPERSEDED on 2026-09-26. DO NOT RUN ANY BLOCK IN THIS DOCUMENT.** The ANEXO LINK
+> write is now `docs/data-op-anexo-link-v2.md`, run from main and pinned by its own
+> sidecar, with this document's ruled scope unchanged and the defects of these files
+> fixed (that document's section "What changed from the original op, and why"). Its three
+> SQL files stay on main byte-identical, and the text below this banner is unchanged,
+> kept as history. Nothing in it ever ran.
+
 **Status: NOT RUN.** A DATA operation, not a migration: no schema change, no
 journal entry, no `drizzle-kit`. Three files, two pasted blocks. Every command is
 literal; there is nothing to substitute. Any `STOP:` line, any `FAIL` verdict or
