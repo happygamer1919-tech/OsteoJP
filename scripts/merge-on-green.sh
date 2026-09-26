@@ -22,7 +22,7 @@
 #   - a PR that is not OPEN. `gh pr merge` on an already-merged PR prints "was
 #     already merged" and EXITS 0; an earlier version of this script reported
 #     that as its own merge. A false green, so the state is checked first.
-#   - a draft PR. It is not ready, and GitHub refuses auto-merge on a draft.
+#   - a draft PR. A draft is not ready for review, so it is not ready to merge.
 #   - a PR labelled `held-for-apply`. A held migration or data-op PR arms only
 #     after its apply is proven, and the label comes off BEFORE it arms
 #     (CLAUDE.md). While the label is on, arming it here could merge it ahead of
@@ -31,9 +31,9 @@
 #     the owner merges it by hand, and CI's "A GATE-CHANGE pull request is never
 #     armed" step turns red if one is. Matched after leading spaces and in any
 #     case, which is wider than CI's own match on purpose: a refusal that is too
-#     wide costs a hand arm, one that is too narrow merges a gate change.
-#   The label is matched in any case as well (GitHub label names are unique
-#   regardless of case).
+#     wide sends an ordinary PR to the owner, one that is too narrow merges a
+#     gate change.
+#   The label is matched in any case as well, for the same reason.
 #
 # HOW IT CONFIRMS. By RE-READING the PR after the arm call, never by the exit
 # code of the call that was supposed to change it. It exits 0 only when that
