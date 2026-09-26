@@ -1,17 +1,20 @@
 -- ============================================================================
 -- DUR-01, STAGE 1 of 3: THE MEASUREMENT. IT WRITES NOTHING.
 --
--- Card DUR-01, a NEW held data op, owner ruling of 2026-09-24, paraphrased:
+-- Card DUR-01 (docs/data-op-dur-01.md), owner rulings paraphrased. 2026-09-24:
 -- measure the future appointments the Fisiozero importer wrote with a one
 -- minute duration, then author a write that gives each one its service's
--- default duration where nothing stands in the way. Held unarmed with a
--- question block (docs/data-op-dur-01.md), because the premise, what a one
--- minute Fisiozero row means, is the owner's to rule.
+-- default duration where nothing stands in the way. 2026-09-26: write the
+-- WRITE set at each service's default; the NESA twins are STAFF-10 v2's; the
+-- rows outside the therapist's hours or over a block are reception's; the rows
+-- that are not live stay untouched; and this op runs AFTER STAFF-10 v2, with a
+-- fresh stage 1 on its own run day. R11 refuses while STAFF-10 v2's audit row
+-- is absent, here and in stage 2 before any write.
 --
--- THIS STAGE RUNS ON ITS OWN. It is the measurement sitting the question block
--- asks for before any decision about stage 2: it prints every row, its verdict
--- and why, and the carries stage 2 would need. Running it commits nobody to
--- stage 2.
+-- THIS STAGE CAN RUN ON ITS OWN, as a measurement sitting: it prints every
+-- row, its verdict and why, the carries stage 2 would need, and section 9's
+-- evidence for reception. Any refusal it prints stops that sitting as it stops
+-- any other. Running it commits nobody to stage 2.
 --
 -- EVERY SET IS DERIVED FROM THE DATABASE AT RUN TIME, by the block between the
 -- BASE BEGIN and BASE END markers, which stage 2 carries byte for byte. No
@@ -24,6 +27,8 @@
 -- .raw are the inicio and fim keys inside the BASE's ledger CTE, turned into
 -- one integer there. Nothing below prints a raw value, a patient name or any
 -- free text; the tables carry ids, clinic and service names, times and counts.
+-- Section 9 reads no raw value and no patient name at all, and prints a block's
+-- note only as whether it is there and which listed blocks share one.
 --
 -- ONE STATEMENT COMPUTES EVERYTHING. The sets are evaluated once, packaged into
 -- one JSON value held in the psql variable dur01_json by \gset (a client-side
@@ -386,8 +391,7 @@ avail AS (
     FROM av_cfg g
 ),
 -- <<< DUR-01 RULE END
--- THE NESA TWIN (list C's predicate, origin/data/STAFF-10-list-c-nesa-twins,
--- and STAFF-10 v2's tw): another row in the tenant with the same patient, the
+-- THE NESA TWIN (list C's predicate, from PR #1433, and STAFF-10 v2's tw): another row in the tenant with the same patient, the
 -- same start and the same service (NULL-safe), one of the two on a shared
 -- resource and the other not. The partner is counted in ANY status, so a twin
 -- whose NESA row STAFF-10 v2 has already cancelled is still a twin here.
@@ -571,6 +575,19 @@ ref AS (
                            JOIN public.users u2 ON u2.id = op.other_id AND u2.tenant_id = u.tenant_id
                            JOIN public.locations l ON l.id = op.home_id AND l.tenant_id = u.tenant_id
                           WHERE u.id = op.user_id AND u.tenant_id IN (SELECT p.tenant_id FROM pop p)))::int
+  UNION ALL
+  -- THE ORDER, RULED BY THE OWNER ON 2026-09-26: this op runs AFTER STAFF-10 v2.
+  -- STAFF-10 v2's one audit row, action staff.staff10_v2.apply, in the
+  -- population's tenant, is the only mark that it ran; while it is absent this
+  -- line refuses, here and in stage 2's P2 before any write. Its control is
+  -- those audit rows: after STAFF-10 v2 it reads at least 1. With no population
+  -- at all it reads VACUOUS, and R06 refuses.
+  SELECT 'R11', 'STAFF-10 v2 has not run (no staff.staff10_v2.apply audit row in the population''s tenant), and this op runs only after it',
+         (SELECT count(*) FROM (SELECT DISTINCT p.tenant_id FROM pop p) t
+           WHERE NOT EXISTS (SELECT 1 FROM public.audit_log al
+                              WHERE al.tenant_id = t.tenant_id AND al.action = 'staff.staff10_v2.apply'))::int,
+         (SELECT count(*) FROM public.audit_log al
+           WHERE al.action = 'staff.staff10_v2.apply' AND al.tenant_id IN (SELECT p.tenant_id FROM pop p))::int
 ),
 -- ---------------------------------------------------------------------------
 -- THE CARRIES. Stage 2 recomputes them with this text and refuses on any
@@ -599,7 +616,7 @@ vw AS (
          CASE WHEN v.verdict = 'WRITE' THEN 'stage 2 writes it'
               WHEN left(v.verdict, 2) IN ('01', '04') THEN 'left alone'
               WHEN left(v.verdict, 2) = '02' THEN 'owner, the DATA-future card'
-              WHEN left(v.verdict, 2) = '08' THEN 'owner, question option (b)'
+              WHEN left(v.verdict, 2) = '08' THEN 'STAFF-10 v2, its ruling (c)'
               WHEN left(v.verdict, 2) IN ('05', '06') THEN 'held as a finding'
               ELSE 'reception' END AS who
     FROM v
@@ -654,6 +671,139 @@ live_twin AS (
    CROSS JOIN k
    WHERE n.status NOT IN ('cancelled', 'no_show') AND p.status NOT IN ('cancelled', 'no_show')
      AND n.starts_at >= (k.today::timestamp AT TIME ZONE 'Europe/Lisbon')
+),
+-- ---------------------------------------------------------------------------
+-- SECTION 9: READ ONLY EVIDENCE FOR RECEPTION AND THE OWNER. Nothing in it is a
+-- verdict and nothing in it refuses: it answers what the code cannot. It prints
+-- ids, times, counts, enum values and flags. A block's note is printed only as
+-- whether it is there and which listed blocks share one (md5, ranked), never
+-- as text; an appointment's notes only as whether they are there; no patient
+-- name is read, and the importer's raw row is not read here.
+--
+-- 9a and 9b. EVERY BLOCK THAT HOLDS A POPULATION ROW, whole, and the trail the
+-- app leaves when it writes one. apps/web/lib/admin/time-off.ts is the only
+-- writer of time_off in the code: createTimeOffBlock writes one row and one
+-- audit row, time_off.create, naming it; createTimeOffBlockBatch writes one row
+-- per date and ONE audit row, time_off.create_batch, naming none, in one
+-- transaction, so the batch's rows and its audit row share one created_at;
+-- updateTimeOffBlock writes time_off.update naming the row. The importer never
+-- writes time_off (packages/db/src/migration writes patients, appointments,
+-- episodes, records and attachments). The app writes whole Lisbon days (an
+-- ausencia prolongada, reason vacation) or hours inside one Lisbon day (reason
+-- other); any other shape or reason is not one it writes.
+blk AS (
+  SELECT t.id, t.tenant_id, t.user_id, t.starts_at, t.ends_at, t.reason, t.created_at,
+         (t.starts_at AT TIME ZONE 'Europe/Lisbon') AS s_l, (t.ends_at AT TIME ZONE 'Europe/Lisbon') AS e_l,
+         (t.note IS NOT NULL AND btrim(t.note) <> '') AS has_note,
+         dense_rank() OVER (ORDER BY md5(coalesce(t.note, ''))) AS note_class,
+         (SELECT count(DISTINCT hb.cand_id) FROM hit_block hb WHERE hb.block_id = t.id) AS holds_rows,
+         (SELECT count(*) FROM public.time_off t2
+           WHERE t2.tenant_id = t.tenant_id AND t2.user_id = t.user_id AND t2.created_at = t.created_at) AS made_with,
+         (SELECT min((t2.starts_at AT TIME ZONE 'Europe/Lisbon')::date) FROM public.time_off t2
+           WHERE t2.tenant_id = t.tenant_id AND t2.user_id = t.user_id AND t2.created_at = t.created_at) AS made_with_first,
+         (SELECT max((t2.starts_at AT TIME ZONE 'Europe/Lisbon')::date) FROM public.time_off t2
+           WHERE t2.tenant_id = t.tenant_id AND t2.user_id = t.user_id AND t2.created_at = t.created_at) AS made_with_last
+    FROM public.time_off t
+   WHERE t.id IN (SELECT hb.block_id FROM hit_block hb)
+),
+blk_trail AS (
+  SELECT b.id AS block_id, al.action, al.created_at, al.actor_user_id,
+         (SELECT r.slug FROM public.users u JOIN public.roles r ON r.id = u.role_id WHERE u.id = al.actor_user_id) AS actor_role,
+         CASE WHEN al.metadata ->> 'mode' IN ('pontual', 'prolongada') THEN al.metadata ->> 'mode' ELSE '-' END AS app_mode,
+         CASE WHEN al.metadata ->> 'blocks' ~ '^[0-9]+$' THEN al.metadata ->> 'blocks' ELSE '-' END AS batch_blocks,
+         CASE WHEN al.metadata ->> 'overlappingAppointments' ~ '^[0-9]+$'
+              THEN al.metadata ->> 'overlappingAppointments' ELSE '-' END AS overlaps_warned
+    FROM blk b
+    JOIN public.audit_log al
+      ON al.tenant_id = b.tenant_id
+     AND ((al.entity_type = 'time_off' AND al.entity_id = b.id)
+          OR (al.action = 'time_off.create_batch' AND al.created_at = b.created_at))
+),
+-- 9c to 9f. THE SERIES OF EACH ROW HELD FOR RECEPTION: every appointment of the
+-- same patient with the same therapist at the same clinic, on the same Lisbon
+-- weekday at the same Lisbon start time, before today and from today, in any
+-- status and of any length. Its past says whether the series has been real:
+-- completed rows (the importer maps the source's realizada to completed), rows
+-- with a clinical record, rows staff made rather than the importer. The
+-- patient's whole span says whether the patient behaves like a person (a few
+-- therapists, records, invoices) or like a slot marker the old system booked
+-- across many therapists, without reading the name.
+held AS (
+  SELECT w.id, w.tenant_id, w.patient_id, w.practitioner_id, w.location_id, w.verdict, w.starts_at,
+         extract(isodow FROM (w.starts_at AT TIME ZONE 'Europe/Lisbon'))::int AS dow,
+         to_char(w.starts_at AT TIME ZONE 'Europe/Lisbon', 'HH24:MI') AS hhmi
+    FROM vw w WHERE w.who = 'reception'
+),
+ser AS (
+  SELECT h.tenant_id, h.patient_id, h.practitioner_id, h.location_id, h.dow, h.hhmi,
+         count(*) AS held_n, min(h.starts_at) AS held_first, max(h.starts_at) AS held_last,
+         string_agg(DISTINCT left(h.verdict, 2), ' ' ORDER BY left(h.verdict, 2)) AS held_verdicts
+    FROM held h
+   GROUP BY h.tenant_id, h.patient_id, h.practitioner_id, h.location_id, h.dow, h.hhmi
+),
+ser_row AS (
+  SELECT s.tenant_id, s.patient_id, s.practitioner_id, s.location_id, s.dow, s.hhmi,
+         a.id, a.status, a.origin, a.starts_at, a.ends_at, a.created_at, a.updated_at, a.created_by,
+         (a.notes IS NOT NULL AND btrim(a.notes) <> '') AS has_notes,
+         (a.starts_at < (SELECT k.today::timestamp AT TIME ZONE 'Europe/Lisbon' FROM k)) AS past,
+         (a.ends_at - a.starts_at = interval '1 minute') AS one_minute,
+         EXISTS (SELECT 1 FROM ledger lg WHERE lg.appointment_id = a.id AND lg.tenant_id = a.tenant_id) AS imported,
+         EXISTS (SELECT 1 FROM public.clinical_records cr WHERE cr.appointment_id = a.id) AS has_record
+    FROM ser s
+    JOIN public.appointments a
+      ON a.tenant_id = s.tenant_id AND a.patient_id = s.patient_id AND a.practitioner_id = s.practitioner_id
+     AND a.location_id = s.location_id
+     AND extract(isodow FROM (a.starts_at AT TIME ZONE 'Europe/Lisbon'))::int = s.dow
+     AND to_char(a.starts_at AT TIME ZONE 'Europe/Lisbon', 'HH24:MI') = s.hhmi
+),
+ser_pat AS (
+  SELECT p.tenant_id, p.patient_id,
+         (SELECT count(*) FROM public.appointments a WHERE a.tenant_id = p.tenant_id AND a.patient_id = p.patient_id) AS rows_ever,
+         (SELECT count(DISTINCT a.practitioner_id) FROM public.appointments a
+           WHERE a.tenant_id = p.tenant_id AND a.patient_id = p.patient_id) AS therapists_ever,
+         (SELECT count(*) FROM public.appointments a
+           WHERE a.tenant_id = p.tenant_id AND a.patient_id = p.patient_id AND a.status = 'completed') AS completed_ever,
+         (SELECT count(*) FROM public.clinical_records cr WHERE cr.tenant_id = p.tenant_id AND cr.patient_id = p.patient_id) AS records_ever,
+         (SELECT count(*) FROM public.invoices i WHERE i.tenant_id = p.tenant_id AND i.patient_id = p.patient_id) AS invoices_ever
+    FROM (SELECT DISTINCT s.tenant_id, s.patient_id FROM ser s) p
+),
+-- An appointment's trail: every audit row naming it, by action, and every status
+-- change the app recorded for it (analytics_events, appointment_status_changed).
+-- An action is an app constant; a status outside the enum prints as (other).
+ser_trail AS (
+  SELECT r.id,
+         (SELECT string_agg(x.action || ' x' || x.n::text, ', ' ORDER BY x.action)
+            FROM (SELECT al.action, count(*) AS n FROM public.audit_log al
+                   WHERE al.entity_type = 'appointment' AND al.entity_id = r.id GROUP BY al.action) x) AS audit_actions,
+         (SELECT to_char(al.created_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || ' by '
+                 || coalesce(al.actor_user_id::text, '(no actor)')
+            FROM public.audit_log al WHERE al.entity_type = 'appointment' AND al.entity_id = r.id
+           ORDER BY al.created_at DESC, al.id DESC LIMIT 1) AS audit_last,
+         (SELECT string_agg(
+                   CASE WHEN e.payload ->> 'from_status' IN ('scheduled', 'confirmed', 'completed', 'cancelled', 'no_show')
+                        THEN e.payload ->> 'from_status' ELSE '(other)' END || '>'
+                   || CASE WHEN e.payload ->> 'to_status' IN ('scheduled', 'confirmed', 'completed', 'cancelled', 'no_show')
+                           THEN e.payload ->> 'to_status' ELSE '(other)' END
+                   || ' ' || to_char(e.occurred_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI'),
+                   ', ' ORDER BY e.occurred_at)
+            FROM public.analytics_events e
+           WHERE e.tenant_id = r.tenant_id AND e.event_type = 'appointment_status_changed'
+             AND e.entity_type = 'appointment' AND e.entity_id = r.id) AS status_changes,
+         (SELECT m.batch_id::text FROM public.migration_staging_rows m
+           WHERE m.tenant_id = r.tenant_id AND m.imported_entity_id = r.id AND m.entity_type = 'appointment'
+           ORDER BY m.created_at, m.id LIMIT 1) AS batch,
+         (SELECT to_char(min(m.created_at) AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') FROM public.migration_staging_rows m
+           WHERE m.tenant_id = r.tenant_id AND m.imported_entity_id = r.id AND m.entity_type = 'appointment') AS staged_at
+    FROM ser_row r
+   WHERE NOT r.past
+),
+-- The hours of each therapist verdict 11's flag reads, at the row's clinic: every
+-- active schedule row, as checkAvailability reads them.
+hrs AS (
+  SELECT av.user_id, av.location_id, av.weekday, av.start_time, av.end_time, av.valid_from, av.valid_until
+    FROM public.availability_templates av
+   WHERE av.is_active IS TRUE
+     AND (av.user_id, av.location_id) IN (SELECT DISTINCT w.practitioner_id, w.location_id FROM vw w WHERE w.outside_hours)
 )
 SELECT jsonb_build_object(
   'meta', (SELECT jsonb_build_object(
@@ -848,12 +998,16 @@ SELECT jsonb_build_object(
                   'would_end', coalesce(to_char(w.proposed_end AT TIME ZONE 'Europe/Lisbon', 'HH24:MI'), '-'),
                   'verdict', w.verdict, 'reason', r.kind, 'other_id', coalesce(r.other_id, '-'),
                   'other_window', coalesce(to_char(r.other_s AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || '-'
-                                           || to_char(r.other_e AT TIME ZONE 'Europe/Lisbon', 'HH24:MI'), '-'))
+                                           || CASE WHEN (r.other_e AT TIME ZONE 'Europe/Lisbon')::date
+                                                        = (r.other_s AT TIME ZONE 'Europe/Lisbon')::date
+                                                   THEN to_char(r.other_e AT TIME ZONE 'Europe/Lisbon', 'HH24:MI')
+                                                   ELSE to_char(r.other_e AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') END,
+                                           '-'))
                   ORDER BY coalesce(l.name, '(no clinic)'), w.starts_at, w.id, r.kind, r.other_id), '[]'::jsonb)
                   FROM vw w
                   JOIN reasons r ON r.id = w.id
                   LEFT JOIN public.locations l ON l.id = w.location_id
-                 WHERE w.who IN ('reception', 'owner, question option (b)')),
+                 WHERE w.who IN ('reception', 'STAFF-10 v2, its ruling (c)')),
   'carries', (SELECT jsonb_agg(jsonb_build_object('ord', c.ord, 'carry', c.carry, 'value', c.value) ORDER BY c.ord)
                 FROM car c),
   'refusals', (SELECT jsonb_agg(jsonb_build_object(
@@ -866,7 +1020,91 @@ SELECT jsonb_build_object(
                  ORDER BY t.tgrelid::regclass::text, t.tgname::text), '[]'::jsonb)
                  FROM pg_catalog.pg_trigger t
                 WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.audit_log'::regclass)
-                  AND NOT t.tgisinternal)
+                  AND NOT t.tgisinternal),
+  'blocks', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+               'block', b.id::text, 'therapist_id', b.user_id::text,
+               'starts_lisbon', to_char(b.s_l, 'YYYY-MM-DD HH24:MI'), 'ends_lisbon', to_char(b.e_l, 'YYYY-MM-DD HH24:MI'),
+               'shape', CASE WHEN b.s_l::time = '00:00' AND b.e_l::time = '00:00' AND b.e_l::date > b.s_l::date
+                               THEN 'whole days, ' || to_char(b.s_l::date, 'YYYY-MM-DD') || ' to '
+                                    || to_char(b.e_l::date - 1, 'YYYY-MM-DD')
+                             WHEN b.e_l::date = b.s_l::date THEN 'hours inside one day'
+                             ELSE 'another shape' END,
+               'reason', b.reason::text, 'note', CASE WHEN b.has_note THEN 'yes, class ' || b.note_class::text ELSE 'none' END,
+               'created_lisbon', to_char(b.created_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS'),
+               'made_with', b.made_with::text || ' block(s) of this therapist, days '
+                            || to_char(b.made_with_first, 'YYYY-MM-DD') || ' to ' || to_char(b.made_with_last, 'YYYY-MM-DD'),
+               'holds_rows', b.holds_rows)
+               ORDER BY b.user_id, b.starts_at, b.id), '[]'::jsonb)
+               FROM blk b),
+  'block_trail', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                    'block', b.id::text, 'made_by', coalesce(x.action, 'none: no audit row of the app''s block screens names it'),
+                    'at_lisbon', coalesce(to_char(x.created_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS'), '-'),
+                    'actor_id', coalesce(x.actor_user_id::text, '-'), 'actor_role', coalesce(x.actor_role, '-'),
+                    'app_mode', coalesce(x.app_mode, '-'), 'batch_blocks', coalesce(x.batch_blocks, '-'),
+                    'overlaps_warned', coalesce(x.overlaps_warned, '-'))
+                    ORDER BY b.user_id, b.starts_at, b.id, x.created_at, x.action), '[]'::jsonb)
+                    FROM blk b LEFT JOIN blk_trail x ON x.block_id = b.id),
+  'series', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+               'patient_id', s.patient_id::text, 'therapist_id', s.practitioner_id::text,
+               'clinic', coalesce((SELECT l.name FROM public.locations l WHERE l.id = s.location_id), '(no clinic)'),
+               'when', (ARRAY['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])[s.dow] || ' ' || s.hhmi,
+               'held', s.held_n::text || ' held (' || s.held_verdicts || '), '
+                       || to_char(s.held_first AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD') || ' to '
+                       || to_char(s.held_last AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD'),
+               'from_today', (SELECT count(*)::text || ' in all: ' || count(*) FILTER (WHERE r.status IN ('cancelled', 'no_show'))::text
+                                     || ' not live, ' || count(*) FILTER (WHERE r.one_minute)::text || ' one minute, '
+                                     || count(*) FILTER (WHERE r.imported)::text || ' imported'
+                                FROM ser_row r
+                               WHERE r.patient_id = s.patient_id AND r.practitioner_id = s.practitioner_id
+                                 AND r.location_id = s.location_id AND r.dow = s.dow AND r.hhmi = s.hhmi AND NOT r.past),
+               'before_today', (SELECT CASE WHEN count(*) = 0 THEN 'none'
+                                            ELSE count(*)::text || ' in all: completed '
+                                                 || count(*) FILTER (WHERE r.status = 'completed')::text
+                                                 || ', no-show ' || count(*) FILTER (WHERE r.status = 'no_show')::text
+                                                 || ', cancelled ' || count(*) FILTER (WHERE r.status = 'cancelled')::text
+                                                 || ', still open ' || count(*) FILTER (WHERE r.status IN ('scheduled', 'confirmed'))::text
+                                                 || '; one minute ' || count(*) FILTER (WHERE r.one_minute)::text
+                                                 || ', imported ' || count(*) FILTER (WHERE r.imported)::text
+                                                 || ', with a clinical record ' || count(*) FILTER (WHERE r.has_record)::text
+                                                 || '; ' || to_char(min(r.starts_at) AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD')
+                                                 || ' to ' || to_char(max(r.starts_at) AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD') END
+                                  FROM ser_row r
+                                 WHERE r.patient_id = s.patient_id AND r.practitioner_id = s.practitioner_id
+                                   AND r.location_id = s.location_id AND r.dow = s.dow AND r.hhmi = s.hhmi AND r.past),
+               'with_this_therapist', (SELECT 'completed ' || count(*)::text || ', the last '
+                                              || coalesce(to_char(max(a.starts_at) AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD'), 'never')
+                                         FROM public.appointments a
+                                        WHERE a.tenant_id = s.tenant_id AND a.patient_id = s.patient_id
+                                          AND a.practitioner_id = s.practitioner_id AND a.status = 'completed'))
+               ORDER BY s.location_id, s.practitioner_id, s.patient_id, s.dow, s.hhmi), '[]'::jsonb)
+               FROM ser s),
+  'patients', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                 'patient_id', p.patient_id::text, 'rows_ever', p.rows_ever, 'therapists_ever', p.therapists_ever,
+                 'completed_ever', p.completed_ever, 'records_ever', p.records_ever, 'invoices_ever', p.invoices_ever)
+                 ORDER BY p.patient_id), '[]'::jsonb)
+                 FROM ser_pat p),
+  'series_rows', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                    'appointment', r.id::text, 'patient_id', r.patient_id::text, 'therapist_id', r.practitioner_id::text,
+                    'starts_lisbon', to_char(r.starts_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI'),
+                    'status', r.status::text, 'minutes', round(extract(epoch FROM r.ends_at - r.starts_at) / 60)::text,
+                    'origin', r.origin::text,
+                    'imported', CASE WHEN r.imported THEN 'yes, batch ' || coalesce(x.batch, '-') || ', staged ' || coalesce(x.staged_at, '-')
+                                     ELSE 'no' END,
+                    'created_lisbon', to_char(r.created_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI'),
+                    'updated_lisbon', to_char(r.updated_at AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI'),
+                    'created_by', coalesce(r.created_by::text, '-'), 'notes', CASE WHEN r.has_notes THEN 'yes' ELSE 'no' END,
+                    'audit', coalesce(x.audit_actions, 'none'), 'audit_last', coalesce(x.audit_last, '-'),
+                    'status_changes', coalesce(x.status_changes, 'none'))
+                    ORDER BY r.location_id, r.practitioner_id, r.patient_id, r.starts_at, r.id), '[]'::jsonb)
+                    FROM ser_row r JOIN ser_trail x ON x.id = r.id),
+  'hours', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+              'therapist_id', h.user_id::text,
+              'clinic', coalesce((SELECT l.name FROM public.locations l WHERE l.id = h.location_id), '(no clinic)'),
+              'weekday', (ARRAY['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])[CASE WHEN h.weekday = 0 THEN 7 ELSE h.weekday END],
+              'from', to_char(h.start_time, 'HH24:MI'), 'to', to_char(h.end_time, 'HH24:MI'),
+              'valid', coalesce(to_char(h.valid_from, 'YYYY-MM-DD'), 'open') || ' to ' || coalesce(to_char(h.valid_until, 'YYYY-MM-DD'), 'open'))
+              ORDER BY h.user_id, h.location_id, CASE WHEN h.weekday = 0 THEN 7 ELSE h.weekday END, h.start_time), '[]'::jsonb)
+              FROM hrs h)
 )::text AS dur01_json
 \gset
 
@@ -898,8 +1136,8 @@ SELECT e ->> 'clinic' AS clinic, e ->> 'id' AS clinic_id, e ->> 'opens' AS opens
 \echo '=== 1c. WHAT HAS ALREADY RUN: DUR-01 itself, STAFF-10 v2 and NESA-SPLIT, by their audit rows ==='
 SELECT e ->> 'action' AS action, (e ->> 'audit_rows')::int AS audit_rows, e ->> 'last_at' AS last_at
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'runs') e;
-\echo '    STAFF-10 v2 before or after DUR-01 is the doc''s D5. Either order is classified, and 1e says'
-\echo '    what differs; a STAFF-10 v2 write landing between this stage and stage 2 refuses there.'
+\echo '    DUR-01 runs AFTER STAFF-10 v2 (owner ruling of 2026-09-26): R11 refuses until its row above'
+\echo '    reads at least 1, and a STAFF-10 v2 row landing between this stage and stage 2 refuses there.'
 \echo ''
 \echo '=== 1d. THE LIVE FUTURE NESA TWINS STAFF-10 v2 RESOLVES, and how many of them its R17 refuses ==='
 SELECT e ->> 'clinic' AS clinic, (e ->> 'pairs')::int AS live_future_pairs,
@@ -908,13 +1146,9 @@ SELECT e ->> 'clinic' AS clinic, (e ->> 'pairs')::int AS live_future_pairs,
        (e ->> 'stub_short')::int AS of_which_nesa_row_longer, (e ->> 'both_stubs')::int AS of_which_both_halves_a_minute,
        (e ->> 'stub_other')::int AS of_which_other
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'live_twins') e;
-\echo '    STAFF-10 v2 cancels the NESA row of each pair and holds the NESA on the person row instead,'
-\echo '    over the whole person window. Verdict 17 already holds every stub that overlaps that window,'
-\echo '    so the NESA hour reads the same in either order; section 1e names what the order does change.'
-\echo '    its_r17_refuses above 0 means STAFF-10 v2 stops, whole, until those person rows are fixed.'
-\echo '    of_which_nesa_row_longer is the AGENDA-TWIN shape, a person minute against a longer NESA row,'
-\echo '    which its R17 refuses; of_which_both_halves_a_minute passes its R17 and leaves its person'
-\echo '    minute naming the NESA as Terapeuta 2 (question option b).'
+\echo '    STAFF-10 v2 resolves every live future pair (its ruling c): the NESA row is cancelled and the'
+\echo '    person row holds the NESA as Terapeuta 2 over its whole window. Run after it, this section'
+\echo '    reads no pair it saw; a pair here was booked since, and verdicts 08 and 17 hold its rows.'
 \echo ''
 \echo '=== 1e. THE ONE PERSON WITH TWO STAFF ROWS (JP): hours, blocks and one-minute rows on each ==='
 SELECT e ->> 'staff_row' AS staff_row, e ->> 'own_clinic' AS own_clinic, e ->> 'resolves' AS resolves,
@@ -924,11 +1158,9 @@ SELECT e ->> 'staff_row' AS staff_row, e ->> 'own_clinic' AS own_clinic, e ->> '
        (e ->> 'own_block')::int AS of_which_over_a_block, (e ->> 'own_same_person')::int AS over_the_other_row,
        (e ->> 'away_rows')::int AS minute_rows_other_clinic
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'one_person') e;
-\echo '    A row on one of the two at the other clinic is held outright (verdict 18), in either order.'
+\echo '    A row on one of the two at the other clinic is held outright (verdict 18): after STAFF-10 v2,'
+\echo '    JP(cb) rows at Linda-a-Velha from its run day on stay on JP(cb) for reception (its Q1).'
 \echo '    over_the_other_row counts rows held because the other staff row holds the person then.'
-\echo '    What STAFF-10 v2 still changes, when it runs first: its W3 deletes a JP(cb) block, so'
-\echo '    rows of_which_over_a_block may read WRITE after it; its W2 gives JP(lv) Saturday hours, so'
-\echo '    on a JP(lv) row with no hours_rows_own_clinic today, verdict 11 may hold rows after it.'
 
 -- ---------------------------------------------------------------------------
 -- 2. THE POPULATION, with and without the ledger filter.
@@ -968,10 +1200,10 @@ SELECT (p ->> 'population')::int AS population, (p ->> 'classified')::int AS cla
   FROM (SELECT :'dur01_json'::jsonb -> 'partition' AS p) s;
 
 -- ---------------------------------------------------------------------------
--- 4. BY SERVICE: the evidence for the premise question.
+-- 4. BY SERVICE: what the one-minute rows are.
 -- ---------------------------------------------------------------------------
 \echo ''
-\echo '=== 4. BY SERVICE: what the one-minute rows are, the evidence for the premise question ==='
+\echo '=== 4. BY SERVICE: what the one-minute rows are, and how many sit on a person with a machine alongside ==='
 SELECT e ->> 'clinic' AS clinic, e ->> 'service' AS service, e ->> 'service_id' AS service_id,
        e ->> 'default_min' AS default_min, (e ->> 'rows')::int AS importer_rows, (e ->> 'write')::int AS write,
        (e ->> 'nesa_twin')::int AS nesa_twin, (e ->> 'on_resource_row')::int AS on_resource_row,
@@ -980,7 +1212,7 @@ SELECT e ->> 'clinic' AS clinic, e ->> 'service' AS service, e ->> 'service_id' 
 \echo '    person_row: the stub names a therapist, not a machine. machine_alongside: of those, how many'
 \echo '    have a live row of the same patient on a shared resource over the proposed window (or the'
 \echo '    hour from the start). Many of those means the stub may be "the therapist starts the machine",'
-\echo '    and extending it would hold the therapist for the whole default. The question block asks this.'
+\echo '    and extending it holds the therapist for the whole default. The owner ruled on 2026-09-26: write it.'
 
 -- ---------------------------------------------------------------------------
 -- 5. EVERY ROW. Ids only.
@@ -997,14 +1229,14 @@ SELECT e ->> 'clinic' AS clinic, e ->> 'appointment' AS appointment, e ->> 'star
 -- 6. THE RECEPTION AND HELD LIST: every reason, one line each. Ids only.
 -- ---------------------------------------------------------------------------
 \echo ''
-\echo '=== 6. THE RECEPTION LIST, and the twins held for the owner: one line per reason, ids only ==='
+\echo '=== 6. THE RECEPTION LIST, and the NESA twins left to STAFF-10 v2: one line per reason, ids only ==='
 SELECT e ->> 'clinic' AS clinic, e ->> 'appointment' AS appointment, e ->> 'patient_id' AS patient_id,
        e ->> 'therapist_id' AS therapist_id, e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'would_end' AS would_end,
        e ->> 'verdict' AS verdict, e ->> 'reason' AS reason, e ->> 'other_id' AS other_id,
        e ->> 'other_window' AS other_window_lisbon
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'reception') e;
 \echo '    Stage 2 never writes these. Reception fixes each by hand in the agenda, where the app''s own'
-\echo '    checks run; a NESA twin waits for the owner''s answer to question option (b).'
+\echo '    checks run. A NESA twin is STAFF-10 v2''s (its ruling c), and this op never writes one.'
 
 -- ---------------------------------------------------------------------------
 -- 7. THE CARRIES. Stage 2 is handed every one and refuses if any has moved.
@@ -1030,6 +1262,62 @@ SELECT e ->> 'on_table' AS on_table, e ->> 'trigger' AS trigger_name, e ->> 'ena
        e ->> 'function' AS runs_function
   FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'triggers') e;
 \echo '    An empty listing is the expected answer.'
+
+-- ---------------------------------------------------------------------------
+-- 9. WHAT THE CODE CANNOT ANSWER. READ ONLY evidence, never a verdict.
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '=== 9. WHAT THE CODE CANNOT ANSWER: READ ONLY evidence for reception and the owner. Nothing here is a verdict or a refusal ==='
+\echo ''
+\echo '=== 9a. EVERY BLOCK THAT HOLDS A POPULATION ROW, whole: both ends as a Lisbon date and time, its shape, when it was made ==='
+SELECT e ->> 'block' AS block, e ->> 'therapist_id' AS therapist_id, e ->> 'starts_lisbon' AS starts_lisbon,
+       e ->> 'ends_lisbon' AS ends_lisbon, e ->> 'shape' AS shape, e ->> 'reason' AS reason, e ->> 'note' AS note,
+       e ->> 'created_lisbon' AS created_lisbon, e ->> 'made_with' AS made_in_the_same_transaction,
+       (e ->> 'holds_rows')::int AS holds_rows
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'blocks') e;
+\echo '    The app writes a block as whole Lisbon days (an ausencia prolongada, reason vacation) or as hours'
+\echo '    inside one Lisbon day (reason other). made_in_the_same_transaction counts this therapist''s blocks'
+\echo '    that share its created_at: a batch (bloquear lote) writes every date in one transaction.'
+\echo ''
+\echo '=== 9b. HOW EACH OF THOSE BLOCKS WAS MADE: every audit row naming it, and the batch audit row of its transaction ==='
+SELECT e ->> 'block' AS block, e ->> 'made_by' AS audit_action, e ->> 'at_lisbon' AS at_lisbon,
+       e ->> 'actor_id' AS actor_id, e ->> 'actor_role' AS actor_role, e ->> 'app_mode' AS app_mode,
+       e ->> 'batch_blocks' AS blocks_in_the_batch, e ->> 'overlaps_warned' AS bookings_it_warned_about
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'block_trail') e;
+\echo '    time_off.create names the one block it wrote; time_off.create_batch names none, and is matched by'
+\echo '    its transaction time; time_off.update names the block it moved. The importer writes no block.'
+\echo ''
+\echo '=== 9c. THE SERIES OF EACH ROW HELD FOR RECEPTION: the same patient, therapist, clinic, Lisbon weekday and start time ==='
+SELECT e ->> 'patient_id' AS patient_id, e ->> 'therapist_id' AS therapist_id, e ->> 'clinic' AS clinic,
+       e ->> 'when' AS weekday_and_time, e ->> 'held' AS held, e ->> 'from_today' AS from_today,
+       e ->> 'before_today' AS before_today, e ->> 'with_this_therapist' AS with_this_therapist_any_time
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'series') e;
+\echo '    before_today is the evidence: completed rows (the importer maps realizada to completed) and rows'
+\echo '    with a clinical record are sessions that happened; a series with none has never been seen to happen.'
+\echo ''
+\echo '=== 9d. EACH SERIES'' PATIENT, whole: whether the patient behaves like a person or like a slot marker ==='
+SELECT e ->> 'patient_id' AS patient_id, (e ->> 'rows_ever')::int AS appointments_ever,
+       (e ->> 'therapists_ever')::int AS therapists_ever, (e ->> 'completed_ever')::int AS completed_ever,
+       (e ->> 'records_ever')::int AS clinical_records_ever, (e ->> 'invoices_ever')::int AS invoices_ever
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'patients') e;
+\echo '    No name is read. A patient booked with many therapists and never with a record or an invoice'
+\echo '    reads like a marker the old system used to hold time, not like a person.'
+\echo ''
+\echo '=== 9e. EVERY ROW OF THOSE SERIES FROM TODAY, any status: where it came from, and what staff did to it since ==='
+SELECT e ->> 'appointment' AS appointment, e ->> 'patient_id' AS patient_id, e ->> 'therapist_id' AS therapist_id,
+       e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'status' AS status, e ->> 'minutes' AS minutes,
+       e ->> 'origin' AS origin, e ->> 'imported' AS imported, e ->> 'created_lisbon' AS created_lisbon,
+       e ->> 'updated_lisbon' AS updated_lisbon, e ->> 'created_by' AS created_by, e ->> 'notes' AS notes,
+       e ->> 'audit' AS audit_rows_naming_it, e ->> 'audit_last' AS last_audit_row, e ->> 'status_changes' AS status_changes
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'series_rows') e;
+\echo '    An imported row carries its ledger batch. A status change or an audit row after the import is a'
+\echo '    person acting on the row in the app: a cancel, a reschedule, a confirmation.'
+\echo ''
+\echo '=== 9f. THE HOURS OF EACH THERAPIST WHOSE ROW VERDICT 11 READS, at that row''s clinic: every active schedule row ==='
+SELECT e ->> 'therapist_id' AS therapist_id, e ->> 'clinic' AS clinic, e ->> 'weekday' AS weekday,
+       e ->> 'from' AS from_time, e ->> 'to' AS to_time, e ->> 'valid' AS valid
+  FROM jsonb_array_elements(:'dur01_json'::jsonb -> 'hours') e;
+\echo '    A weekday missing here is a weekday this therapist has no hours at that clinic.'
 
 ROLLBACK;
 

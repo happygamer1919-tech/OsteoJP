@@ -13,9 +13,21 @@
 -- a midday closure configured), 16 (no written row has hours configured),
 -- 18 (no row was excluded), 20 (no written row is on a NESA), 21 (no written
 -- row names a NESA) and 22 (no written row is on a JP row). Stage 2 refuses an
--- empty write set (R06), so every other arm always has rows to read. An
+-- empty write set (R06) and a tenant with no other appointment (P5), so every
+-- other arm always has rows to read. An
 -- instrument that cannot see the written rows (verdict 11's control) FAILs,
 -- never VACUOUS, because its zero would green 12 to 17 and 20 to 22.
+--
+-- WHAT DID NOT MOVE, AGAINST THE BASELINES STAGE 2 RECORDED (owner ruling of
+-- 2026-09-26). Verdict 10: every column the op does not write, over the rows it
+-- wrote; verdict 23: every other appointment of the tenant, whole. Each is one
+-- md5, compared with the md5 and the row count stage 2 took under its lock and
+-- wrote into the audit row, and each carries a control that can FAIL: the same
+-- md5 with one row left out must differ from the baseline, or the digest could
+-- not see a row go. Verdict 23 moves with the clinic, by design: any booking,
+-- edit or delete in the tenant after the write FAILs it, and its observed
+-- column counts the rows the app stamped after the op, so a reader can tell the
+-- clinic's own change from the op's.
 --
 -- THE TOTAL IS READ FROM THE AUDIT ROW, NOT COUNTED AGAIN (verdict 19). A live
 -- count of the tenant's appointments moves with the clinic: a later hard
@@ -405,7 +417,32 @@ rc AS (
                                      a.confirmation_channel, a.booking_group_id, a.batch_id, a.patient_2_id,
                                      a.practitioner_2_id, a.origin, a.pack_instance_id)::text, E'\n' ORDER BY a.id), ''))
        FROM public.appointments a WHERE a.id IN (SELECT wl.id FROM wl)) AS frozen_now,
+    (SELECT md5(coalesce(string_agg(ROW(a.id, a.tenant_id, a.patient_id, a.practitioner_id, a.location_id,
+                                     a.service_id, a.room, a.starts_at, a.status, a.recurrence_rule, a.recurrence_parent_id,
+                                     a.notes, a.created_by, a.created_at, a.confirmation_state, a.confirmation_received_at,
+                                     a.confirmation_channel, a.booking_group_id, a.batch_id, a.patient_2_id,
+                                     a.practitioner_2_id, a.origin, a.pack_instance_id)::text, E'\n' ORDER BY a.id), ''))
+       FROM public.appointments a WHERE a.id IN (SELECT wl.id FROM wl)
+        AND a.id <> (SELECT wl1.id FROM wl wl1 ORDER BY wl1.id LIMIT 1)) AS frozen_less_one,
+    (SELECT count(*) FROM public.appointments a WHERE a.id IN (SELECT wl.id FROM wl))::int AS frozen_n_now,
     (SELECT al.m -> 'md5' ->> 'frozen' FROM al) AS frozen_then,
+    (SELECT (al.m -> 'md5_rows' ->> 'frozen')::int FROM al) AS frozen_n_then,
+    (SELECT md5(coalesce(string_agg((a.*)::text, E'\n' ORDER BY a.id), ''))
+       FROM public.appointments a, al
+      WHERE a.tenant_id = al.tenant AND a.id NOT IN (SELECT wl.id FROM wl)) AS rest_now,
+    (SELECT md5(coalesce(string_agg((a.*)::text, E'\n' ORDER BY a.id), ''))
+       FROM public.appointments a, al
+      WHERE a.tenant_id = al.tenant AND a.id NOT IN (SELECT wl.id FROM wl)
+        AND a.id <> (SELECT a1.id FROM public.appointments a1, al al1
+                      WHERE a1.tenant_id = al1.tenant AND a1.id NOT IN (SELECT wl.id FROM wl)
+                      ORDER BY a1.id LIMIT 1)) AS rest_less_one,
+    (SELECT count(*) FROM public.appointments a, al
+      WHERE a.tenant_id = al.tenant AND a.id NOT IN (SELECT wl.id FROM wl))::int AS rest_n_now,
+    (SELECT count(*) FROM public.appointments a, al
+      WHERE a.tenant_id = al.tenant AND a.id NOT IN (SELECT wl.id FROM wl)
+        AND (a.created_at > al.at OR a.updated_at > al.at))::int AS rest_stamped_since,
+    (SELECT al.m -> 'md5' ->> 'rest' FROM al) AS rest_then,
+    (SELECT (al.m -> 'md5_rows' ->> 'rest')::int FROM al) AS rest_n_then,
     (SELECT count(*) FROM xl)::int AS n_x,
     (SELECT count(*) FROM xl JOIN public.appointments a ON a.id = xl.id
       WHERE a.ends_at - a.starts_at = interval '1 minute')::int AS x_still_short,
@@ -446,9 +483,12 @@ UNION ALL SELECT 8, 'the undo is exact: every recorded before end is its start p
 UNION ALL SELECT 9, 'every written id carries updated_at at or after the op''s clock',
        v.stamped::text, v.n_w::text,
        CASE WHEN v.stamped <> v.n_w THEN 'FAIL' WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 10, 'every written id is unchanged in every column the op does not write (md5)',
-       left(coalesce(v.frozen_now, 'none'), 8), left(coalesce(v.frozen_then, 'none'), 8),
-       CASE WHEN v.frozen_now IS DISTINCT FROM v.frozen_then THEN 'FAIL'
+UNION ALL SELECT 10, 'every written id is unchanged in every column the op does not write: count and md5 equal the stage 2 baseline; control: the same md5 less one row differs from it',
+       v.frozen_n_now::text || ' ' || left(coalesce(v.frozen_now, 'none'), 8) || ' / control '
+         || CASE WHEN v.frozen_less_one IS DISTINCT FROM v.frozen_then THEN 'differs' ELSE 'EQUAL' END,
+       coalesce(v.frozen_n_then::text, 'none') || ' ' || left(coalesce(v.frozen_then, 'none'), 8) || ' / control differs',
+       CASE WHEN v.frozen_now IS DISTINCT FROM v.frozen_then OR v.frozen_n_now IS DISTINCT FROM v.frozen_n_then
+              OR v.frozen_less_one IS NOT DISTINCT FROM v.frozen_then THEN 'FAIL'
             WHEN v.n_w = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 UNION ALL SELECT 11, 'the re-measure reads every written id, and sees each as a live row (its control)',
        v.rc_n::text || ' / live ' || v.live_self::text, v.n_w::text || ' / live ' || v.n_w::text,
@@ -494,6 +534,14 @@ UNION ALL SELECT 22, 'no written id sits on one person''s staff row meant for an
        v.person_away::text || ' / on a JP row ' || v.on_person_row::text, '0 / on a JP row above 0',
        CASE WHEN v.person_away <> 0 OR v.rc_n <> v.n_w THEN 'FAIL'
             WHEN v.n_w = 0 OR v.on_person_row = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 23, 'every other appointment of the tenant is unchanged: count and md5 of the whole rows equal the stage 2 baseline; control: the same md5 less one row differs from it',
+       v.rest_n_now::text || ' ' || left(coalesce(v.rest_now, 'none'), 8) || ' / control '
+         || CASE WHEN v.rest_less_one IS DISTINCT FROM v.rest_then THEN 'differs' ELSE 'EQUAL' END
+         || ' / stamped since the op ' || v.rest_stamped_since::text,
+       coalesce(v.rest_n_then::text, 'none') || ' ' || left(coalesce(v.rest_then, 'none'), 8) || ' / control differs',
+       CASE WHEN v.rest_now IS DISTINCT FROM v.rest_then OR v.rest_n_now IS DISTINCT FROM v.rest_n_then
+              OR v.rest_less_one IS NOT DISTINCT FROM v.rest_then THEN 'FAIL'
+            WHEN v.rest_n_then = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
 )
 SELECT r.n, r."check", r.observed, r.expected, r.verdict FROM r
 UNION ALL

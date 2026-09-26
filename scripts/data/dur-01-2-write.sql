@@ -1,8 +1,12 @@
 -- ============================================================================
 -- DUR-01, STAGE 2 of 3: THE WRITE. ONE DO BLOCK, ONE TRANSACTION.
 --
--- Card DUR-01, a NEW held data op (docs/data-op-dur-01.md). Built to option (a)
--- of its question block: write only the rows stage 1 classifies WRITE.
+-- Card DUR-01 (docs/data-op-dur-01.md). Built to the owner's rulings of
+-- 2026-09-26, paraphrased: write the WRITE set at each service's default
+-- duration; the NESA twins are STAFF-10 v2's; the rows outside the therapist's
+-- hours or over a block are reception's; the rows that are not live stay
+-- untouched. It runs AFTER STAFF-10 v2: R11, in the BASE below, refuses before
+-- any write while STAFF-10 v2's audit row is absent.
 --
 -- WHAT IT WRITES, AND NOTHING ELSE:
 --   public.appointments.ends_at    -> starts_at + the service's duration_min,
@@ -464,8 +468,7 @@ avail AS (
     FROM av_cfg g
 ),
 -- <<< DUR-01 RULE END
--- THE NESA TWIN (list C's predicate, origin/data/STAFF-10-list-c-nesa-twins,
--- and STAFF-10 v2's tw): another row in the tenant with the same patient, the
+-- THE NESA TWIN (list C's predicate, from PR #1433, and STAFF-10 v2's tw): another row in the tenant with the same patient, the
 -- same start and the same service (NULL-safe), one of the two on a shared
 -- resource and the other not. The partner is counted in ANY status, so a twin
 -- whose NESA row STAFF-10 v2 has already cancelled is still a twin here.
@@ -649,6 +652,19 @@ ref AS (
                            JOIN public.users u2 ON u2.id = op.other_id AND u2.tenant_id = u.tenant_id
                            JOIN public.locations l ON l.id = op.home_id AND l.tenant_id = u.tenant_id
                           WHERE u.id = op.user_id AND u.tenant_id IN (SELECT p.tenant_id FROM pop p)))::int
+  UNION ALL
+  -- THE ORDER, RULED BY THE OWNER ON 2026-09-26: this op runs AFTER STAFF-10 v2.
+  -- STAFF-10 v2's one audit row, action staff.staff10_v2.apply, in the
+  -- population's tenant, is the only mark that it ran; while it is absent this
+  -- line refuses, here and in stage 2's P2 before any write. Its control is
+  -- those audit rows: after STAFF-10 v2 it reads at least 1. With no population
+  -- at all it reads VACUOUS, and R06 refuses.
+  SELECT 'R11', 'STAFF-10 v2 has not run (no staff.staff10_v2.apply audit row in the population''s tenant), and this op runs only after it',
+         (SELECT count(*) FROM (SELECT DISTINCT p.tenant_id FROM pop p) t
+           WHERE NOT EXISTS (SELECT 1 FROM public.audit_log al
+                              WHERE al.tenant_id = t.tenant_id AND al.action = 'staff.staff10_v2.apply'))::int,
+         (SELECT count(*) FROM public.audit_log al
+           WHERE al.action = 'staff.staff10_v2.apply' AND al.tenant_id IN (SELECT p.tenant_id FROM pop p))::int
 ),
 -- ---------------------------------------------------------------------------
 -- THE CARRIES. Stage 2 recomputes them with this text and refuses on any
@@ -706,7 +722,7 @@ car AS (
   -- P3. THE CARRIES. Same Lisbon day, then each carry against stage 1's.
   -- ==========================================================================
   IF current_setting('dur01.dur01_run_day', true) IS DISTINCT FROM v_today::text THEN
-    RAISE EXCEPTION 'STOP: stage 1 ran on Lisbon day %, and today is %. Run stage 1 again today',
+    RAISE EXCEPTION 'STOP: stage 1 ran on Lisbon day %, and today is %. Nothing was written, and the sitting stops',
       current_setting('dur01.dur01_run_day', true), v_today;
   END IF;
   SELECT count(*)::int INTO v_n FROM jsonb_object_keys(v_car);
@@ -720,7 +736,7 @@ car AS (
       RAISE EXCEPTION 'STOP: carry % was not passed from stage 1', v_row.key;
     END IF;
     IF v_want IS DISTINCT FROM v_row.value THEN
-      RAISE EXCEPTION 'STOP: carry % reads % now and stage 1 printed %. The database moved since stage 1. Run stage 1 again',
+      RAISE EXCEPTION 'STOP: carry % reads % now and stage 1 printed %. The database moved since stage 1. Nothing was written, and the sitting stops',
         v_row.key, v_row.value, v_want;
     END IF;
   END LOOP;
@@ -1188,7 +1204,7 @@ rc AS (
   VALUES (v_tenant, NULL, c_action, 'appointment', NULL, jsonb_build_object(
     'card', 'DUR-01',
     'source', 'data_op_dur_01',
-    'option', 'a',
+    'ruling', 'owner 2026-09-26: the WRITE set at each service default, after STAFF-10 v2',
     'run_day_lisbon', v_today,
     'writes_from', v_day1,
     'clock', v_clock,
