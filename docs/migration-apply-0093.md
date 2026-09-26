@@ -4,6 +4,8 @@
 on the branch below. Any `STOP:` line, any `FAIL` verdict or any `ERROR` halts the
 sitting.
 
+**History, added after the apply:** PR #1399 was squash-merged to main on 2026-09-23 at 11:10:13Z as `2222f34b`, before the apply; GREEN applied 0093 in the sitting of 2026-09-24 from the restored ref `patients/RGPD-01-consent-at-creation` at `ecede887`, with this document at sha256 `2d1cc3fbec5ba2459e1e3a12bcf02510da6933cbf4a4cd5ee2e2f9ace001706a` (the sidecar value at the time, updated since because this line changes the digest), production journal 90 to 91; the ref has since been deleted and the same commit is still reachable as `refs/pull/1399/head`.
+
 **This document is written at the standard `docs/migration-apply-0092.md` set,
 section for section,** and nothing is carried over from 0092's numbers: every count
 below was read off production READ ONLY on 2026-09-23 or measured on a throwaway

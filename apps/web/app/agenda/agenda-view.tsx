@@ -3,7 +3,14 @@
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { Ban, ChevronLeft, ChevronRight, MapPin, Plus, RotateCw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition, type CSSProperties } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+  type CSSProperties,
+} from "react";
 
 import type { Role } from "@osteojp/auth";
 
@@ -23,11 +30,22 @@ import {
   readViewPreference,
   writeViewPreference,
 } from "@/lib/scheduling/agenda-view-preference";
+import {
+  clientStoredServiceFilter,
+  filterByService,
+  parseServiceFilter,
+  sanitizeServiceSelection,
+  serverStoredServiceFilter,
+  subscribeNothing,
+  toggleServiceSelection,
+  writeServiceFilter,
+} from "@/lib/scheduling/agenda-service-filter";
 import { withSharedResourceOptions } from "@/lib/scheduling/shared-resource-guard";
 import type {
   AgendaAppointment,
   AgendaFilters,
   AgendaOptions,
+  Option,
 } from "@/lib/scheduling/types";
 
 import { AgendaGrid } from "./agenda-grid";
@@ -35,6 +53,7 @@ import { AgendaWeekCompact } from "./agenda-week-compact";
 import { AgendaWeekList } from "./agenda-week-list";
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 import { BlockTimeDialog } from "./block-time-dialog";
+import { ServiceFilterPanel, ServiceFilterToggle } from "./service-filter";
 
 // v2 glass toolbar controls (SPEC-v2-foundation §7 nav-button idiom): no opaque
 // border/fill, neutral hover tint, the global focus ring. Mirrors the shell's
@@ -50,6 +69,7 @@ export function AgendaView({
   viewer,
   options,
   appointments,
+  serviceChips = [],
   blocks,
   dayWindow,
   clinicWindow,
@@ -72,6 +92,10 @@ export function AgendaView({
   viewer: { role: Role; userId: string };
   options: AgendaOptions;
   appointments: AgendaAppointment[];
+  /** AGENDA-FILTER-SERVICE: the services offered as filter chips, already
+   *  scoped by page.tsx to the viewer's clinics, in the app's service order.
+   *  Empty (or absent) renders no service filter at all. */
+  serviceChips?: Option[];
   /** W9-04: time_off spans for the visible range. Non-empty ONLY when the agenda
    *  is scoped to one therapist - see page.tsx for why. */
   blocks: BlockSpan[];
@@ -274,6 +298,42 @@ export function AgendaView({
 
   const step = view === "week" ? 7 : 1;
 
+  /* AGENDA-FILTER-SERVICE - WHICH BOOKINGS ARE ON SCREEN.
+   *
+   * The server has already applied the therapist and clinic filters; this
+   * applies the service chips over exactly what it returned, so a booking shows
+   * only if it passes BOTH. Blocks are not bookings and are never filtered.
+   *
+   * THE SELECTION, and why it is two values. `storedServices` is the device's
+   * localStorage, read through useSyncExternalStore so the server render and
+   * the hydrating render both read nothing (serverStoredServiceFilter) and the
+   * stored value arrives one render later without a hydration mismatch and
+   * without a setState in an effect. `pickedServices` is what was pressed on
+   * this page, and wins once there is one: a storage that refuses the write
+   * (blocked, full, private) must still leave the filter working for this
+   * visit, merely not remembered. Every access is guarded in
+   * lib/scheduling/agenda-service-filter.ts.
+   *
+   * Both are cleaned against the chips on offer, so an id that is no longer
+   * offered filters nothing and shows on no badge. */
+  const offeredServiceIds = serviceChips.map((c) => c.id);
+  const storedServices = useSyncExternalStore(
+    subscribeNothing,
+    clientStoredServiceFilter,
+    serverStoredServiceFilter,
+  );
+  const [pickedServices, setPickedServices] = useState<string[] | null>(null);
+  const selectedServices = pickedServices
+    ? sanitizeServiceSelection(pickedServices, offeredServiceIds)
+    : parseServiceFilter(storedServices, offeredServiceIds);
+  const [servicePanelOpen, setServicePanelOpen] = useState(false);
+  function chooseServices(next: string[]) {
+    setPickedServices(next);
+    writeServiceFilter(browserViewStorage(), next);
+  }
+  // THE ONE LIST every surface below draws from, and the count reads.
+  const shownAppointments = filterByService(appointments, selectedServices);
+
   // W4-17 — live appointment count for the VISIBLE range. Computed exactly as the
   // grid decides visibility (an appointment whose Lisbon calendar day falls in
   // viewDates(view, anchor)), so it matches the grid AND the phone list on every
@@ -281,7 +341,9 @@ export function AgendaView({
   // with navigation + filters
   // (the `appointments` prop is refetched server-side for the range + filters).
   const visibleDates = new Set(viewDates(view, anchor));
-  const visibleCount = appointments.filter((a) =>
+  // AGENDA-FILTER-SERVICE: counts what is SHOWN, so the chip and the grid
+  // never disagree while a service filter is on.
+  const visibleCount = shownAppointments.filter((a) =>
     visibleDates.has(lisbonParts(new Date(a.startsAt)).date),
   ).length;
   const countLabel = visibleCount === 1 ? s["agenda.apptCountOne"] : s["agenda.apptCountMany"];
@@ -421,6 +483,19 @@ export function AgendaView({
                 </Select>
               </div>
             )}
+            {/* AGENDA-FILTER-SERVICE, desktop copy: a filter, so it sits on the
+                filters' line. At 1280 the control row below has ~78px spare
+                and a labelled toggle there would wrap it (AGENDA-02's
+                ceiling). Displayed from `md`; the phone copy is on line 2. */}
+            {serviceChips.length > 0 && (
+              <ServiceFilterToggle
+                testId="agenda-service-filter-toggle"
+                className="hidden md:inline-flex"
+                count={selectedServices.length}
+                expanded={servicePanelOpen}
+                onToggle={() => setServicePanelOpen((o) => !o)}
+              />
+            )}
           </div>
         </div>
 
@@ -488,6 +563,23 @@ export function AgendaView({
               ]}
             />
           </div>
+
+          {/* AGENDA-FILTER-SERVICE, phone copy. Under `md` this group is
+              `display: contents`, so this button is a direct item of the
+              wrapping bar and shares the Dia/Semana row: about 210px spare
+              at 390 and 180 at 360 beside the ~120px toggle, for a toggle of
+              about 85px (110 with its badge). No new row. Line 1 would have
+              squeezed each select to ~70px. `md:hidden`, so from `md` up the
+              group is exactly what it was. */}
+          {serviceChips.length > 0 && (
+            <ServiceFilterToggle
+              testId="agenda-service-filter-toggle-phone"
+              className="inline-flex md:hidden"
+              count={selectedServices.length}
+              expanded={servicePanelOpen}
+              onToggle={() => setServicePanelOpen((o) => !o)}
+            />
+          )}
 
           <div className="flex flex-none items-center gap-1">
             <button
@@ -662,6 +754,21 @@ export function AgendaView({
             </button>
           </div>
         </div>
+
+        {/* AGENDA-FILTER-SERVICE - the chips, a row of the toolbar while open.
+            In the flow rather than floating, so it wraps inside the toolbar's
+            content box and cannot widen the page at any width; the toolbar's
+            ResizeObserver moves the pinned weekday row down with it. Rendered
+            only while open, so a closed toolbar has exactly the controls it
+            had before this card. */}
+        {servicePanelOpen && serviceChips.length > 0 && (
+          <ServiceFilterPanel
+            services={serviceChips}
+            selected={selectedServices}
+            onToggle={(id) => chooseServices(toggleServiceSelection(selectedServices, id, offeredServiceIds))}
+            onClear={() => chooseServices([])}
+          />
+        )}
       </div>
 
       {/* No empty-period banner: the agenda grid (empty time columns) is its
@@ -679,7 +786,7 @@ export function AgendaView({
       <AgendaGrid
         view={view}
         anchor={anchor}
-        appointments={appointments}
+        appointments={shownAppointments}
         blocks={blocks}
         dayWindow={dayWindow}
         clinicWindow={clinicWindow}
@@ -722,7 +829,7 @@ export function AgendaView({
         className={view === "week" ? "max-sm:hidden md:hidden" : "md:hidden"}
         view={view}
         anchor={anchor}
-        appointments={appointments}
+        appointments={shownAppointments}
         blocks={blocks}
         closure={closure}
         dayWindow={dayWindow}
@@ -748,7 +855,7 @@ export function AgendaView({
         <AgendaWeekCompact
           className="sm:hidden"
           anchor={anchor}
-          appointments={appointments}
+          appointments={shownAppointments}
           blocks={blocks}
           closure={closure}
           sharedResourceIds={new Set((options.sharedResources ?? []).map((r) => r.id))}

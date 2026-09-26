@@ -655,6 +655,11 @@ export function patientAppointmentConditions(filters?: PatientAppointmentFilters
 // KEY PART CHANGED to `agenda-reference-v2` deliberately: the cached VALUE now
 // has a different shape, and reusing `agenda-stable-ref` would let a deploy
 // read an old entry back into the new destructure.
+//
+// AND TO `agenda-reference-v3` by AGENDA-FILTER-SERVICE, for the same reason:
+// each service row now carries its `locationId`, which the agenda's service
+// chips are scoped by. A v2 entry read back after the deploy would have no
+// `locationId` on any row, and the chips would silently offer every service.
 const fetchAgendaReferenceData = unstable_cache(
   async (ctx: RequestContext) =>
     runScoped(ctx, async (tx) => {
@@ -696,6 +701,10 @@ const fetchAgendaReferenceData = unstable_cache(
               label: services.name,
               durationMin: services.durationMin,
               contraindicationSensitive: services.contraindicationSensitive,
+              // AGENDA-FILTER-SERVICE: where the service is offered (null =
+              // every clinic), so the agenda's service chips can be the
+              // services at the VIEWER's clinics (servicesAtClinics).
+              locationId: services.locationId,
             })
             .from(services)
             .where(eq(services.isActive, true))
@@ -733,7 +742,7 @@ const fetchAgendaReferenceData = unstable_cache(
         assignmentEntries: [...assignments.entries()],
       };
     }),
-  ["agenda-reference-v2"],
+  ["agenda-reference-v3"],
   { revalidate: 60, tags: ["agenda-reference-data"] },
 );
 

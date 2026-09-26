@@ -50,7 +50,15 @@
 --   R6  the portal patient role and anon hold no privilege on the table, of all
 --       seven (TRUNCATE ignores row level security, so it is checked too).
 --
--- IT PRINTS COUNTS AND VERDICTS AND NOTHING ELSE. No name, no patient id.
+-- IT PRINTS THE ACTOR LINE, THEN COUNTS AND VERDICTS, AND NOTHING ELSE. No
+-- name, no phone, no email, no patient id.
+--
+-- THE ACTOR LINE, printed once before anything is checked, names the staff user
+-- this run acts as by its id and role slug, and says how it was chosen:
+--     ACTOR id <uuid> | role <slug> | chosen passed in with -v actor_id
+-- The id is there so whoever reads the transcript can tell, by comparing ids,
+-- whether the run acted as a particular account, such as a test account about
+-- to be deactivated. It is a staff id, never a name.
 --
 -- THE ACTOR IS PASSED, NOT CHOSEN: -v actor_id=<an active staff user>. It is
 -- verified (active, not a shared resource, holds a role) and its id re-read from
@@ -85,6 +93,11 @@ SELECT (SELECT u.id::text FROM public.users u JOIN public.roles r ON r.id = u.ro
 SELECT u.tenant_id::text AS actor_tenant, r.slug AS actor_role
   FROM public.users u JOIN public.roles r ON r.id = u.role_id
  WHERE u.id = :'actor_id'::uuid \gset
+
+/* THE ACTOR LINE. The id is the normalised one above and the role is the slug
+ * just read, which is also the role the claims below carry. */
+\set actor_source 'passed in with -v actor_id'
+\echo 'ACTOR id' :actor_id '| role' :actor_role '| chosen' :actor_source
 
 SELECT to_regclass('public.patient_rgpd_acceptances') IS NOT NULL AS tbl_present \gset
 
