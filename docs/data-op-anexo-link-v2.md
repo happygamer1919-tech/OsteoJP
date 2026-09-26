@@ -17,6 +17,7 @@ nothing else; the section "Rehearsal" says what has run on these exact bytes.
 | Fact | Value |
 |---|---|
 | Card | `INC-imported-fichas-sem-anexos-originals-are-patient-level`, ruling (a) |
+| Tier | A production data op that is NOT on the ruled Tier C list (`CLAUDE.md`, "SOLO's record"): it rewrites production rows outside STAFF-10. Authored, rehearsed on the throwaway and held unarmed with a question block (Q2 below); nothing runs until the owner rules it onto that list and his dispatch names these files |
 | Replaces | the original op, `docs/data-op-anexo-link.md` and its three files, which carry a SUPERSEDED banner, stay on main byte-identical and must not be run. They never ran |
 | Ruling, owner, 2026-09-13, paraphrased | (a) a document that a Fisiozero episode row named against ONE specific registo is linked to that registo, pinned and counted, rehearsed first; nothing else is guessed. With it, a linked imported original shows on the ficha's Anexos AND stays on the patient's Documentos tab (the app half, built and merged in #1310) |
 | Order | **After DUR-01**, by the owner's order. Not coupled in SQL: the section "The order with DUR-01" says why there is no data dependency to couple |
@@ -106,6 +107,7 @@ the files, their pins and the rehearsal.
 | # | Question | Default built |
 |---|---|---|
 | Q1 | A named document that staff have soft deleted: link it too? | **No.** It is left unlinked and soft deleted, listed by id in stage 1 section 2d and in the audit row (`excluded.soft_deleted`), and stage 3 verdict 10 proves it unchanged. Not a refusal: the rest of the link set still runs. The original files would have linked it; the Anexos read hides a soft-deleted row either way (SR-62 PU-4), so a link would only write a row staff removed |
+| Q2 | May GREEN run it at all? The owner ruled the scope on 2026-09-13, before the tiers, and the op is on no ruled Tier C list | **Held.** Nothing runs until the owner rules it onto the Tier C list and his dispatch names these three files and this document's sha256, after DUR-01. Recommended first sitting: stage 0 and stage 1 alone, READ ONLY, so section 2 shows the link set and every class it leaves alone before anyone rules on stage 2 |
 | D1 | Added: which tenant? | The tenant that owns the Linda-a-Velha row, and R01 refuses unless the Castelo Branco row sits in it. The original files took whatever tenant the candidates were in and refused more than one; here another tenant's named documents are class `other_tenant`, listed, never linked, and compared by md5 |
 | D2 | Added: a named file that resolves to two document rows? | Refuses (R05): which row the cell names would be a guess |
 | D3 | Added: a staging row whose registo is not there? | Class `no_registo`, listed, never linked. The original files dropped it silently in an inner join |
@@ -438,7 +440,175 @@ calling it a defect of the op.
 
 ## Rehearsal
 
-REHEARSAL-PLACEHOLDER
+**Every block and every stage file below ran, as committed, at the commit that carries this
+section,** on the local throwaway container only. Nothing here has touched production. The kit
+lives in the authoring lane's scratchpad, `b14-rehearsal/` (not committed, as for 0090 to 0093
+and STAFF-10 v2), and one runner reproduces every table below.
+
+**Where it ran.** The throwaway container `supabase_db_OsteoJP-solo-rehearsal` (PostgreSQL
+17.6, `127.0.0.1:55522`), never an existing database. `b14_base` was built for this op from
+main's drizzle migrations, applied in journal order, with the `auth` schema copied schema-only
+from the image's own `postgres` database; `b14_fixture` is `b14_base` plus the fixture. Every
+arm runs on its own NEW database, `CREATE DATABASE <run> TEMPLATE b14_fixture` (the stage 3
+arms on a copy of the written happy-path database), and the runner drops every database it
+created, and no other.
+
+| Fingerprint | Value |
+|---|---|
+| main's migration files: entries, and md5 over the sha256 of every file in journal order | `91 139cb96adcdf063d9c6a8613f77503a8`, the files `b14_base` was built from, equal to the clone of the commit under test (MATCH) |
+| public tables / policies | 48 / 95, equal to the STAFF-10 v2 rehearsal's schema copy, column for column |
+
+**The fixture is synthetic.** No real patient data; the two clinic ids are production's (already
+on main), every other id starts `a0e1`. Two tenants: the op's (it owns both clinic rows) and
+another. It carries every shape the op meets: a registo naming one file (link); a registo whose
+cell names three files with a comma, a semicolon, a no-break space and a tab, one name with an
+inner space (link, all three); a cell naming one file twice (one link); a document already on its
+registo (already_linked); a document on another registo of the same patient (linked_elsewhere);
+a soft-deleted document (soft_deleted); a named file with no document row (no_document); a staging
+row whose registo is not there (no_registo); a staging row that never became a registo, an empty
+cell and an attachment ledger row (none read as cells); the other tenant's named document
+(other_tenant); an imported original no cell names; a staff upload on a registo and a staff
+patient document; a staff draft registo; a consultation recording key; and one unrelated audit
+row. Each refusal adds its own shape by an arm, so the other arms keep theirs.
+
+| File, in the authoring lane's scratchpad | sha256 |
+|---|---|
+| `b14-rehearsal/build-base.zsh` | `973273163578626d2410752243a4968127de40cfdf0b6229ac77f0b3f72dd99f` |
+| `b14-rehearsal/fixture.sql` | `15b83bd9990f5d289317cdf88dfd17199cd3072963c6d6381fc591897649d591` |
+| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `8ef6852f3ff3f810b7818fc28f6c16e9a0561666f4226ce04e0ef78e5fa4108b` |
+| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `1bd6d4ba94913ebd901dc4d4b8514697c6203d15e4db1d6ba5fdafe8e562c3fc` |
+| `b14-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, unchanged but its header | `241840aed7091688976a019c4eab6cc687ce291e0ca8c9a6e573b2512cbcce7c` |
+| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `7d2bf25962aff798728d20270b44f3f3ae6a61191cdda0e715a442a7bd33b29b` |
+
+**How it ran.** Each block was extracted from this document at the commit under test (cloned
+from a local bare origin whose `main` is that commit; the clone's origin is asserted to be it
+before any block runs) and run under `zsh -f`; the happy path ran as an interactive paste,
+`zsh -f -i < block`. Exactly four substitutions, each counted per block: `/tmp/` to a scratch
+directory, the `cd` line to the clone, the env line to `export DATABASE_URL_DIRECT=${ANEXO2_DBURL}`
+(each arm sets it to its own database), and the target guard's invocation to an `echo`. The
+extractor refuses a block that still names production.
+
+| Substitution | stage 0 | stage 1 | stage 2 | stage 3 |
+|---|---|---|---|---|
+| `/tmp/` | 6 | 11 | 13 | 10 |
+| `cd` | 1 | 1 | 1 | 1 |
+| env | 0 | 1 | 1 | 1 |
+| guard | 0 | 1 | 1 | 1 |
+
+**The happy path, pasted interactively:**
+
+| Arm | Exit | What it printed |
+|---|---|---|
+| stage 0 | 0 | the sidecar `OK`, `running from origin/main <the commit under test>`, `ANEXO LINK V2 FILES VERIFIED` |
+| stage 1 | 0 | every refusal OK, none VACUOUS; `partition holds`; classes link, already_linked, linked_elsewhere, soft_deleted, no_document, no_registo and other_tenant each present; the count carry `5` and its digest |
+| stage 2 | 0 | P3 both carries match; P4 no trigger the system did not create; P5 every md5 family OK, none empty; W1 linked the link set exactly; A the deltas exact and every family unchanged; `DONE`, `COMMITTED` |
+| stage 3 | 0 | `12 OK / 0 VACUOUS / 0 FAIL` |
+| database after | | the five link pairs carry their registos; every other attachment row unchanged by md5; `clinical_records` unchanged by md5; the soft-deleted document still unlinked and deleted; the other tenant's document still unlinked; one v2 audit row |
+| stage 0, then 1, then 2 again | 1, 1, 1 | `STOP: stage 2 has ALREADY WRITTEN in this sitting` |
+| stage 1 with the markers removed | 1 | REFUSE on R03 and R09 (its consequence: nothing is left to link) |
+| stage 2 with its mark forced | 3 | `STOP: R03 refuses`; still one audit row, the database unchanged by md5 |
+| stage 3 after main moved | 0 | `MAIN MOVED since stage 0` with both shas, `12 OK / 0 VACUOUS / 0 FAIL` |
+
+**Every refusal, run for real.** For each arm: a new database, one mutation, stage 1 (must exit 1
+with REFUSE on the code), then the stage 1 mark forced so stage 2's SQL is reached (must exit 3,
+`STOP: <code> refuses`), then the database compared with its state after the mutation by one md5
+over attachments, audit rows, clinical records, episodes, staging rows and consultations.
+
+| Code | Mutation | stage 1 | REFUSE on | stage 2 | database after |
+|---|---|---|---|---|---|
+| R01 | the Castelo Branco row moved to the other tenant | 1 | R01 | 3, STOP R01 | unchanged |
+| R02 | the original op's audit row | 1 | R02 | 3, STOP R02 | unchanged |
+| R03 | a v2 audit row | 1 | R03 | 3, STOP R03 | unchanged |
+| R04 | a second locked registo of patient 1 whose cell names exame-1.pdf too | 1 | R04 | 3, STOP R04 | unchanged |
+| R05 | a second live, unlinked document row at exame-1.pdf's path | 1 | R05 | 3, STOP R05 | unchanged |
+| R06 | exame-1.pdf belongs to patient 2, its registo to patient 1 | 1 | R06 | 3, STOP R06 | unchanged |
+| R06 | exame-1.pdf has no patient at all | 1 | R06 | 3, STOP R06 | unchanged |
+| R07 | a DRAFT registo of patient 1 whose staging row names a file with a live document | 1 | R07 | 3, STOP R07 | unchanged |
+| R08 | a staging row of this tenant names the OTHER tenant's registo; the document carries that registo's patient, so R06 stays quiet | 1 | R08 | 3, STOP R08 | unchanged |
+| R09 | every link done by hand already, so the link set is empty | 1 | R09 | 3, STOP R09 | unchanged |
+| R12 | a no-op AFTER UPDATE trigger the system did not create, on attachments | 1 | R12 | 3, STOP R12 | unchanged |
+| R12 | the same, on audit_log | 1 | R12 | 3, STOP R12 | unchanged |
+
+**The file-name read and the partition, proved on seeded wrong copies.** Each copy differs from
+its file by one line, the same line in stage 1 and stage 2, and runs through this document's own
+block with only its SQL file and that file's pin swapped (the pin once, the path three times,
+both counted), so the block's own checks decide the exit.
+
+| Copy | stage 1 | REFUSE on | stage 2 | database after |
+|---|---|---|---|---|
+| the soft-deleted class no longer requires a soft delete, so it overlaps the link class | 1 | R10 | 3, STOP R10 | unchanged |
+| the no-break space left out of `ws` | 1 | R11 | 3, STOP R11 | unchanged |
+| the cell split on a comma only | 1 | R11 | 3, STOP R11 | unchanged |
+| the file name trimmed with `btrim`'s default, as the original files did | 1 | R11 | 3, STOP R11 | unchanged |
+
+**The head, the pins, the carries, the clock and the one transaction:**
+
+| Arm | Exit | Halted on, or printed | Database after |
+|---|---|---|---|
+| stage 0 | 0 | `ANEXO LINK V2 FILES VERIFIED`; the recorded sha is the simulated main | untouched |
+| stage 0 on a dirty worktree | 1 | `STOP: the apply worktree is not clean` | untouched |
+| stage 0 when main carries a stage file that is not its pin | 1 | `STOP: stage 1 on disk is not the approved file` | untouched; no sha recorded |
+| stage 0 when main carries a changed document | 1 | `STOP: this document is not the approved one` | untouched |
+| stage 0 when main carries a changed target guard | 1 | `STOP: the target guard on disk is not the approved file` | untouched |
+| stage 1 after main moved since stage 0 | 1 | `STOP: main moved since stage 0, the merge freeze was broken` | untouched: no psql ran |
+| stage 2 after main moved since stage 1 | 1 | `STOP: main moved since stage 0, the merge freeze was broken` | untouched: no psql ran |
+| stage 2 before stage 1 | 1 | `STOP: stage 1 did not pass in this sitting, or passed over an hour ago` | untouched |
+| stage 2 with stage 1's mark on another sha | 1 | `STOP: stage 1 did not pass on the recorded sha` | untouched |
+| stage 1 with a pinned file edited in the worktree after stage 0 | 1 | `STOP: the apply worktree is not clean` | untouched |
+| stage 0 with the written marker present | 1 | `STOP: stage 2 has ALREADY WRITTEN in this sitting` | untouched; the recorded sha survives |
+| stage 1 with no recorded sha | 1 | `STOP: stage 0 recorded no sha in this sitting` | untouched |
+| stage 3 with no recorded sha | 1 | `STOP: stage 0 recorded no sha in this sitting, and stage 3 runs only from the recorded sha` | untouched |
+| stage 2 with the digest altered in stage 1's transcript | 3 | `STOP: carry anexo_v2_digest reads f13e23ec149eace862661dc043528db1 now and stage 1 printed ffffffffffffffffffffffffffffffff` | unchanged |
+| stage 2 with stage 1's transcript backdated 61 minutes | 1 | `STOP: stage 1's transcript is over an hour old; it is not this sitting's` | unchanged |
+| stage 2 with stage 1's mark removed | 1 | `STOP: stage 1 did not pass in this sitting, or passed over an hour ago` | unchanged |
+| the SQL of stage 2 run directly with no carry | 3 | a syntax error on the `set_config` statement, before the block | unchanged |
+| stage 2 after a named document was added between stage 1 and stage 2 | 3 | `STOP: carry anexo_v2_count reads 6 now and stage 1 printed 5` | unchanged |
+| stage 2 after one document of the set was soft deleted and another added, the count kept | 3 | `STOP: carry anexo_v2_digest reads 6b5bcd0bfbf2e01a07723b2cb2179b88 now and stage 1 printed f13e23ec149eace862661dc043528db1` | unchanged: the digest, not the count, caught it |
+| stage 2 with a trap that fails the audit insert, the last step after the write (a `NOT VALID` CHECK on `audit_log`) | 3 | the `W1` notice, then `violates check constraint` | **unchanged**: the write rolled back, no audit row |
+| stages 1 and 2 on a database whose default hides NOTICEs | 0 | every step line and `DONE`, because the file pins `client_min_messages` | written once |
+| a write inside the READ ONLY transaction stages 1 and 3 use | 1 | `cannot execute UPDATE in a read-only transaction` | unchanged |
+
+**Stage 3 after a real write,** each mutation on its own copy of the written happy-path database:
+
+| Mutation after the write | Exit | FAIL on | Profile |
+|---|---|---|---|
+| one linked document unlinked by hand | 1 | 3, 4, 6 | `9 OK / 0 VACUOUS / 3 FAIL` |
+| a linked document renamed | 1 | 5 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| a linked document moved to another patient | 1 | 5, 6 | `10 OK / 0 VACUOUS / 2 FAIL` |
+| an imported original the op did not name, linked by hand | 1 | 9 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| a document the op left alone, edited | 1 | 10 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| a target registo's episode retitled | 1 | 11 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| a second v2 audit row | 1 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 | `0 OK / 0 VACUOUS / 12 FAIL` |
+| the original op's audit row | 1 | 2 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| a linked document soft deleted from Documentos | 1 | 5 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| none: a fresh copy of the written database | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
+| a copy of stage 3 whose less-one digest drops nothing (verdict 4's control made blind) | 1 | 4 | |
+| before the op: no named document left alone, no episode on a target registo; stages 1, 2 and 3 all exit 0 | 0 | none; VACUOUS on 10 and 11, which the block allows | `10 OK / 2 VACUOUS / 0 FAIL` |
+
+**The original files, on the same fixture** (never on production), run directly with their own
+carries. This is the evidence for the section "What changed from the original op, and why":
+
+| Arm | Exit | What it printed |
+|---|---|---|
+| original stage 2 on the whole fixture | 3 | `STOP: the candidate set spans 2 tenants; this block links one tenant at a time` |
+| original stage 2, one tenant, the cell naming one file twice kept | 3 | `STOP: linked` one row fewer than it counted: the name the cell carries twice was counted twice and updated once |
+| original stage 2, that cell cut to one name | 0 | `ANEXO LINK STAGE 2 DONE` |
+| after O3 | | the soft-deleted document linked: true; the two names after a no-break space and a tab linked: 0 of 2 |
+
+**The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
+and `prove-red.mjs` ran it against 77 seeded wrong copies of the committed tree, each
+re-pinned so only its target property is wrong: every copy turned its target test red, and the
+green control (DELETE, DROP and TRUNCATE only inside comments, a string and an echo) kept every
+test green. Every test has at least one copy.
+
+**What the rehearsal caught.** The first full run passed every arm but one check: the R08 arm's
+document also belonged to another patient than its registo, so stage 2 stopped on R06, the
+lower code, before reaching R08. That was the arm's shape, not the op's; the arm now gives the
+document that registo's patient, and stage 2 stops on R08. The seeded wrong copies caught one
+pin too loose: the stale-carry test matched `-mmin -600` as `-mmin -60`, so a stage 1 mark ten
+hours old would have passed it; the pin now ends at the number. And the whitespace JavaScript's
+trim strips had been written into the first commit as literal invisible characters; every one is
+an escape inside an E-string now, and no byte this op adds is outside ASCII.
 
 ## Undoing it
 
