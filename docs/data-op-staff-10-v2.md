@@ -491,12 +491,16 @@ FAIL against the audit row's time before calling it a defect of the op.
 
 ### These files: NOT RUN YET
 
-**PLACEHOLDER, TO BE REPLACED BY THE RE-RUN. No rehearsal has run on the files this
-document pins, and until one has, this op is not READY-TO-APPLY.** Only the unit test
-has read these files: `scripts/staff-10-v2-data-op.test.mjs`, which holds their
-properties and was run red against a seeded wrong copy for each new one. The throwaway
-container was not available to the authoring lane when these files were written, so
-nothing in this section has run against a database.
+**PLACEHOLDER, TO BE REPLACED BY THE RE-RUN. The database rehearsal has not run on
+the files this document pins, and until it has, this op is not READY-TO-APPLY.** The
+throwaway container was not available to the authoring lane when these files were
+written, so nothing that reads or writes a database has run on them. What has run on
+these bytes: the unit test, `scripts/staff-10-v2-data-op.test.mjs`, which holds their
+properties and was run red against a seeded wrong copy for each new one; and the
+kit's 21 arms that need no database (stage 0 and its pins, the HEAD CHECK halts in
+stages 1 and 2, the refusals on a missing or foreign stage 1 mark, the written marker,
+a missing recorded sha, and stage 3's report of a moved main before its psql), run
+under `zsh -f` on the commit that carries this sentence, every one exiting as wanted.
 
 The kit for the re-run is ready in the authoring lane's scratchpad, `b7-rehearsal/`
 (not committed, as for 0090 to 0093): a fixture with no 30 September block, the state
@@ -532,8 +536,8 @@ against the one wanted, the happy path's stage 3 profile, and the commit it ran 
 | JP(cb) holds no block at all | stages 1, 2 and 3 exit 0, verdict 11 VACUOUS, which the block allows |
 
 The DB-gated suite `apps/web/lib/scheduling/staff-10-v2-option-a-conflict.db.test.ts`
-is unchanged but for two comments naming the ruling (c) writes by their new numbers,
-`W5` and `W6`; CI's DB Tests job runs it.
+is unchanged but for its comments: the op is no longer called held, and the two ruling
+(c) writes it repeats carry their new numbers, `W5` and `W6`. CI's DB Tests job runs it.
 
 ### The previous files, at `8e65d777`, kept as history
 
