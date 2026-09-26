@@ -13,7 +13,11 @@
 //
 // Arming is also a way to merge something by accident, so the script refuses,
 // with a distinct exit code and no merge call, a PR that is not OPEN, a draft,
-// a PR labelled held-for-apply, and a PR titled GATE-CHANGE.
+// a PR labelled held-for-apply, and a PR titled GATE-CHANGE. A held or
+// GATE-CHANGE PR that is armed ALREADY gets its own code (8) and says so,
+// because GitHub merges it on green whatever its label. A re-read after the
+// arm call that fails proves nothing either way, so it is UNKNOWN (9), never
+// "not armed".
 //
 // HOW IT RUNS THE SCRIPT. The shipped shell script is executed with a FAKE `gh`
 // first on PATH. The fake answers from canned JSON per case and records every
@@ -38,7 +42,8 @@
 // THE DOCUMENTS. The last tests read .claude/commands/ship.md and the
 // conventions skill, the two files that tell an agent to run this script, and
 // check they do not contradict it: no arm claim in a PR body written before the
-// arm, no copied list of required checks, no merge that waits on Vercel. The
+// arm, no copied list of required checks, no merge that waits on Vercel, and
+// ship.md's exit-code table lists the codes the script's header lists. The
 // variable above does not affect them.
 //
 // Run: pnpm test:scripts   (node --test, wired into the REQUIRED CI quality job)
@@ -65,6 +70,8 @@ const EXIT = {
   draft: 5,
   held: 6,
   gateChange: 7,
+  alreadyArmed: 8,
+  unknown: 9,
 };
 
 // ---------------------------------------------------------------------------
@@ -301,6 +308,27 @@ test("the read after arming shows CLOSED: exit 1", () => {
   assert.equal(r.status, EXIT.notArmed, show(r));
 });
 
+test("the re-read after the arm call fails: exit 9 UNKNOWN, never NOT ARMED, and no second arm", () => {
+  // `after: null` makes the fake's second `gh pr view` fail with no output, as
+  // a network or API error would. The arm call itself may have taken (first
+  // world) or reported an error (second); either way the read shows nothing.
+  for (const world of [
+    { before: pr(), after: null },
+    { before: pr(), after: null, mergeExit: 1, mergeErr: "a transient error printed by gh\n" },
+  ]) {
+    const r = record(run(world));
+    assert.equal(r.status, EXIT.unknown, show(r));
+    assert.match(r.stderr, /UNKNOWN/, show(r));
+    assert.match(r.stderr, /may be armed/, show(r));
+    assert.doesNotMatch(r.stderr, /NOT ARMED|Nothing will merge/, "an unread re-read was reported as not armed" + show(r));
+    assert.deepEqual(
+      r.calls.map((a) => a.slice(0, 2).join(" ")),
+      ["auth status", "pr view", "pr merge", "pr view"],
+      "exactly one arm and one re-read, no retry" + show(r),
+    );
+  }
+});
+
 test("held-for-apply is refused (exit 6) with no merge call, in any case and among other labels", () => {
   for (const labels of [
     [{ name: "held-for-apply" }],
@@ -316,6 +344,39 @@ test("a GATE-CHANGE title is refused (exit 7) with no merge call, after leading 
     const r = record(run({ before: pr({ title }), after: pr({ title, autoMergeRequest: ARMED_REQUEST }) }));
     assertRefused(r, EXIT.gateChange, /GATE-CHANGE/);
   }
+});
+
+test("a held-for-apply or GATE-CHANGE PR that is ALREADY armed: exit 8, says ALREADY ARMED and how to disarm, never 'unarmed'", () => {
+  // Labels do not stop auto-merge: GitHub merges an armed PR on green whatever
+  // it is labelled. A report of "unarmed" here would hide a merge ahead of the
+  // owner. An armed draft is checked too: it must read as armed, not only as a
+  // draft.
+  for (const [over, reason] of [
+    [{ labels: [{ name: "held-for-apply" }] }, /held-for-apply/],
+    [{ labels: [{ name: "area:db" }, { name: "Held-For-Apply" }], isDraft: true }, /held-for-apply/],
+    [{ title: "GATE-CHANGE: a required check moves" }, /GATE-CHANGE/],
+    [{ title: "  gate-change: lower case", isDraft: true }, /GATE-CHANGE/],
+  ]) {
+    const armed = pr({ ...over, autoMergeRequest: ARMED_REQUEST });
+    const r = record(run({ before: armed, after: armed }));
+    assertRefused(r, EXIT.alreadyArmed, reason);
+    assert.match(r.stderr, /ALREADY ARMED/, show(r));
+    assert.match(r.stderr, /gh pr merge 1234 --disable-auto/, show(r));
+    assert.doesNotMatch(r.stderr, /unarmed|nothing armed/i, "an armed PR was reported as unarmed" + show(r));
+  }
+});
+
+test("CONTROL: the ALREADY ARMED refusal is not wider than held and GATE-CHANGE", () => {
+  // An ordinary PR that is already armed is armed again and exits 0, and an
+  // unarmed held PR still gets the plain refusal (6) that says it is unarmed.
+  const armed = pr({ autoMergeRequest: ARMED_REQUEST });
+  const r = record(run({ before: armed, after: armed }));
+  assert.deepEqual(armProblems(r), [], show(r));
+
+  const labels = [{ name: "held-for-apply" }];
+  const held = record(run({ before: pr({ labels }), after: pr({ labels }) }));
+  assertRefused(held, EXIT.held, /unarmed/);
+  assert.doesNotMatch(held.stderr, /ALREADY ARMED/, show(held));
 });
 
 test("CONTROL: a title that only MENTIONS GATE-CHANGE, and a label that only contains held, are armed", () => {
@@ -462,6 +523,15 @@ test("ship.md: no copied list of required checks", () => {
   const md = readFileSync(SHIP_MD, "utf8");
   assert.match(md, /scripts\/merge-on-green\.sh <PR_NUMBER>/, "ship.md no longer runs the script");
   assert.deepEqual(copiedCheckNames(md), []);
+});
+
+test("ship.md: its exit-code table lists the same codes as the script's header table, 2 retired", () => {
+  const codes = (re, text) => [...text.matchAll(re)].map((m) => Number(m[1])).sort((a, b) => a - b);
+  const script = codes(/^#\s+(\d)\s{2}\S/gm, readFileSync(SHIPPED, "utf8"));
+  const md = readFileSync(SHIP_MD, "utf8");
+  assert.ok(script.includes(8) && script.includes(9), `the script header table was not parsed: ${script}`);
+  assert.deepEqual(codes(/^\| (\d) \|/gm, md), script.filter((c) => c !== 2));
+  assert.match(md, /Exit 2 \([^)]*\) is retired/);
 });
 
 test("conventions skill: the merge policy copies no check list and waits on no Vercel deploy", () => {

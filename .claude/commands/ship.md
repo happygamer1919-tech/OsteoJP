@@ -1,5 +1,5 @@
 ---
-description: Rebase current branch onto latest main, push, open a PR if none exists, then arm it with gh pr merge --auto --squash so GitHub squash-merges it once every required check is green. Refuses, unarmed, a PR labelled held-for-apply or titled GATE-CHANGE. Usage: /ship (run from any feature branch)
+description: Rebase current branch onto latest main, push, open a PR if none exists, then arm it with gh pr merge --auto --squash so GitHub squash-merges it once every required check is green. Refuses, without arming, a PR labelled held-for-apply or titled GATE-CHANGE, and says ALREADY ARMED if one is armed already. Usage: /ship (run from any feature branch)
 ---
 
 You are shipping the current branch. Follow every step in order. Stop and
@@ -16,7 +16,8 @@ checks, so they do not gate the merge.
 
 Two kinds of PR are never armed by /ship, and step 4 refuses both: a PR
 labelled `held-for-apply` and a PR titled `GATE-CHANGE`. They go to the owner
-unarmed.
+unarmed. If one of them is armed already, step 4 says so (exit 8) and it is
+disarmed before it goes to the owner.
 
 ## Steps
 
@@ -107,8 +108,20 @@ It refuses, with no merge call at all:
   spaces and in any case. A gate change is never armed; the owner merges it by
   hand. Stop and report it.
 - a draft (exit 5), and a PR that is not OPEN (exit 4).
+- a `held-for-apply` or `GATE-CHANGE` PR that is armed ALREADY (exit 8, message
+  `REFUSED, AND ALREADY ARMED`), draft or not. Labels do not stop auto-merge, so
+  GitHub merges it on green unless it is disarmed. Disarm it at once with
+  `gh pr merge <PR_NUMBER> --disable-auto`, confirm
+  `gh pr view <PR_NUMBER> --json autoMergeRequest` reads null, and report it:
+  it goes to the owner as the other refusals do, now unarmed.
 
-A refusal is the answer. Never route around it with a hand `gh pr merge`.
+A refusal is the answer. Never route around it with a hand `gh pr merge`; the
+one hand call a refusal asks for is the `--disable-auto` above.
+
+Exit 9 (`UNKNOWN`) means the arm call ran but the PR could not be re-read after
+it. The arm may have taken, so never report it as unarmed: read it with
+`gh pr view <PR_NUMBER> --json state,autoMergeRequest` and report what that
+shows.
 
 No `GH_TOKEN` needed: the script uses whatever `gh` is already authenticated
 with, and `gh` picks up `GH_TOKEN` by itself when one is set. If `gh` is not
@@ -123,13 +136,16 @@ Exit codes:
 | 3 | bad usage (no PR number, or not all digits), `gh` missing or unauthenticated, or the PR could not be read |
 | 4 | refused: the PR is not OPEN (already merged, or closed) |
 | 5 | refused: the PR is a draft |
-| 6 | refused: the PR is labelled `held-for-apply` |
-| 7 | refused: the PR title starts with `GATE-CHANGE` |
+| 6 | refused: the PR is labelled `held-for-apply`, and it is not armed |
+| 7 | refused: the PR title starts with `GATE-CHANGE`, and it is not armed |
+| 8 | refused, and ALREADY ARMED: a `held-for-apply` or `GATE-CHANGE` PR has auto-merge enabled; disarm it |
+| 9 | unknown: the arm call ran, the re-read failed, so the PR may be armed; read it before reporting |
 
 Exit 2 ("timed out with checks still pending") is retired: the script no longer
 waits, so it cannot time out.
 
 Report the outcome to the user: armed (GitHub merges it on green), merged at
-once, or refused and why. A required check that goes red after arming is a real
-failure: fix it and push, then confirm the PR still reads armed with
-`gh pr view <PR_NUMBER> --json autoMergeRequest`.
+once, refused and why, refused and found armed (and that you disarmed it), or
+unknown (and what the read showed). A required check that goes red after
+arming is a real failure: fix it and push, then confirm the PR still reads
+armed with `gh pr view <PR_NUMBER> --json autoMergeRequest`.

@@ -46,7 +46,13 @@ If this file drifts from them, they win.
   merge call:** a PR labelled `held-for-apply` (exit 6: it arms only after its
   apply is proven and the label comes off, per CLAUDE.md), and a PR whose title
   starts with `GATE-CHANGE` (exit 7: the owner merges gate changes by hand). A
-  refusal is the answer; never route around it with a hand `gh pr merge`.
+  refusal is the answer; never route around it with a hand `gh pr merge`. If
+  either kind is armed ALREADY, the script exits 8 and says
+  `REFUSED, AND ALREADY ARMED`: labels do not stop auto-merge, so disarm it at
+  once with `gh pr merge <PR> --disable-auto`, confirm it reads unarmed, and
+  report it.
+  Exit 9 (`UNKNOWN`) means the re-read after the arm call failed: the PR may be
+  armed, so read it before reporting anything.
 - **Merge classes:** (a) GREEN self-merge - the default for a migration-free loop;
   (b) OWNER VISUAL GATE - visual-heavy loops: all checks green is necessary but NOT
   sufficient; push, paste the platform PREVIEW URL + the surfaces to inspect, and

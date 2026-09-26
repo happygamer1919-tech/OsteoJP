@@ -34,13 +34,23 @@
 #     wide sends an ordinary PR to the owner, one that is too narrow merges a
 #     gate change.
 #   The label is matched in any case as well, for the same reason.
+#   A held or GATE-CHANGE PR can already be armed (by hand, before the label
+#   went on or against the order CLAUDE.md sets). Labels do not stop auto-merge,
+#   so GitHub merges it on green anyway. The first read therefore takes the
+#   auto-merge state too, and such a PR gets its own exit code and an ALREADY
+#   ARMED message, never "unarmed". This is checked before the draft refusal,
+#   so a draft that reads armed is reported as armed, not only as a draft. The
+#   script still makes no merge call: it reports, and the caller disarms.
 #
 # HOW IT CONFIRMS. By RE-READING the PR after the arm call, never by the exit
 # code of the call that was supposed to change it. It exits 0 only when that
 # read shows auto-merge enabled on an OPEN PR, or the PR MERGED. The second
 # happens when the checks are already green: `gh pr merge --auto` on a PR that
-# can merge right now merges it at once instead of arming it. Anything else is
-# exit 1, and the message says what the read showed.
+# can merge right now merges it at once instead of arming it. A read that
+# shows the PR open and unarmed, or closed, is exit 1, and the message says
+# what the read showed. A re-read that fails, or comes back in a shape it does
+# not expect, proves nothing either way: the arm may have taken. That is exit
+# 9, UNKNOWN, never "not armed".
 #
 # WHAT IT NEVER DOES. It never calls `gh pr merge` without `--auto`, never passes
 # `--admin`, and never polls checks in a loop. It makes exactly one arm call.
@@ -58,9 +68,14 @@
 #      not authenticated, or the PR could not be read
 #   4  refused: the PR is not OPEN (already MERGED, or CLOSED)
 #   5  refused: the PR is a draft
-#   6  refused: the PR is labelled held-for-apply
-#   7  refused: the PR title starts with GATE-CHANGE
-# Every refusal (4 to 7) makes no `gh pr merge` call at all.
+#   6  refused: the PR is labelled held-for-apply (and is not armed)
+#   7  refused: the PR title starts with GATE-CHANGE (and is not armed)
+#   8  refused, and ALREADY ARMED: a held-for-apply or GATE-CHANGE PR already
+#      has auto-merge enabled, so GitHub merges it on green unless it is
+#      disarmed (`gh pr merge <PR> --disable-auto`)
+#   9  UNKNOWN: the arm call ran but the re-read failed or had an unexpected
+#      shape, so whether the PR is armed is not known. It may merge on green.
+# Every refusal (4 to 8) makes no `gh pr merge` call at all.
 
 set -uo pipefail
 
@@ -84,11 +99,11 @@ command -v gh >/dev/null 2>&1 || { echo "gh is not installed" >&2; exit 3; }
 gh auth status >/dev/null 2>&1 || {
   echo "gh is not authenticated. Run 'gh auth login', or set GH_TOKEN." >&2; exit 3; }
 
-# ONE read, so the four facts below describe the same moment of the PR.
-# Lines: state, isDraft, held-for-apply label present, title. Title is last so
-# nothing it contains can shift the other three.
-INFO="$(gh pr view "$PR" --json state,isDraft,labels,title \
-  --jq '.state, .isDraft, any(.labels[]; (.name | ascii_downcase) == "held-for-apply"), .title' 2>/dev/null)"
+# ONE read, so the five facts below describe the same moment of the PR.
+# Lines: state, isDraft, held-for-apply label present, auto-merge already
+# enabled, title. Title is last so nothing it contains can shift the others.
+INFO="$(gh pr view "$PR" --json state,isDraft,labels,autoMergeRequest,title \
+  --jq '.state, .isDraft, any(.labels[]; (.name | ascii_downcase) == "held-for-apply"), (.autoMergeRequest != null), .title' 2>/dev/null)"
 if [ -z "$INFO" ]; then
   echo "could not read PR #$PR. Nothing armed." >&2
   exit 3
@@ -97,7 +112,8 @@ fi
 STATE="$(printf '%s\n' "$INFO" | sed -n 1p)"
 DRAFT="$(printf '%s\n' "$INFO" | sed -n 2p)"
 HELD="$(printf '%s\n' "$INFO" | sed -n 3p)"
-TITLE="$(printf '%s\n' "$INFO" | sed -n 4p)"
+ARMED_BEFORE="$(printf '%s\n' "$INFO" | sed -n 4p)"
+TITLE="$(printf '%s\n' "$INFO" | sed -n 5p)"
 
 # Refuse a read that does not have the expected shape rather than guess at it.
 case "$STATE" in OPEN | CLOSED | MERGED) ;; *)
@@ -109,10 +125,34 @@ esac
 case "$HELD" in true | false) ;; *)
   echo "could not read PR #$PR: unexpected label answer '$HELD'. Nothing armed." >&2; exit 3 ;;
 esac
+case "$ARMED_BEFORE" in true | false) ;; *)
+  echo "could not read PR #$PR: unexpected auto-merge answer '$ARMED_BEFORE'. Nothing armed." >&2; exit 3 ;;
+esac
 
 if [ "$STATE" != "OPEN" ]; then
   echo "REFUSED: PR #$PR is $STATE, not OPEN. Nothing to arm." >&2
   exit 4
+fi
+
+# Leading whitespace stripped, compared in upper case. Bash 3.2 (macOS) has no
+# ${var^^}, hence tr.
+TITLE_UP="$(printf '%s' "$TITLE" | tr '[:lower:]' '[:upper:]')"
+TITLE_UP="${TITLE_UP#"${TITLE_UP%%[![:space:]]*}"}"
+GATE=false
+case "$TITLE_UP" in GATE-CHANGE*) GATE=true ;; esac
+
+# A PR this script must never arm that is armed ALREADY. Before the draft
+# refusal on purpose: what matters here is the auto-merge state, draft or not.
+if [ "$ARMED_BEFORE" = "true" ] && { [ "$HELD" = "true" ] || [ "$GATE" = "true" ]; }; then
+  if [ "$HELD" = "true" ] && [ "$GATE" = "true" ]; then
+    WHY="is labelled held-for-apply and titled GATE-CHANGE"
+  elif [ "$HELD" = "true" ]; then
+    WHY="is labelled held-for-apply"
+  else
+    WHY="is titled GATE-CHANGE"
+  fi
+  echo "REFUSED, AND ALREADY ARMED: PR #$PR $WHY, and auto-merge is ALREADY enabled on it. GitHub squash-merges it as soon as its required checks are green, labels do not stop it. This script made no merge call. Disarm it now: gh pr merge $PR --disable-auto" >&2
+  exit 8
 fi
 
 if [ "$DRAFT" = "true" ]; then
@@ -125,15 +165,10 @@ if [ "$HELD" = "true" ]; then
   exit 6
 fi
 
-# Leading whitespace stripped, compared in upper case. Bash 3.2 (macOS) has no
-# ${var^^}, hence tr.
-TITLE_UP="$(printf '%s' "$TITLE" | tr '[:lower:]' '[:upper:]')"
-TITLE_UP="${TITLE_UP#"${TITLE_UP%%[![:space:]]*}"}"
-case "$TITLE_UP" in
-  GATE-CHANGE*)
-    echo "REFUSED: PR #$PR is titled GATE-CHANGE. A gate change is never armed; the owner merges it by hand." >&2
-    exit 7 ;;
-esac
+if [ "$GATE" = "true" ]; then
+  echo "REFUSED: PR #$PR is titled GATE-CHANGE. A gate change is never armed; the owner merges it by hand." >&2
+  exit 7
+fi
 
 echo "arming PR #$PR: gh pr merge $PR --auto --squash"
 gh pr merge "$PR" --auto --squash
@@ -150,6 +185,13 @@ AFTER="$(gh pr view "$PR" --json state,autoMergeRequest \
 FINAL="$(printf '%s\n' "$AFTER" | sed -n 1p)"
 ARMED="$(printf '%s\n' "$AFTER" | sed -n 2p)"
 
+# A failed or malformed re-read shows nothing about the arm, which may have
+# taken. Say so; never report it as "not armed".
+case "$FINAL:$ARMED" in OPEN:true | OPEN:false | CLOSED:true | CLOSED:false | MERGED:true | MERGED:false) ;; *)
+  echo "UNKNOWN: the arm call exited $ARM_RC, and PR #$PR could not be re-read after it (state '${FINAL:-unread}', auto-merge '${ARMED:-unread}'). It may be armed, and then GitHub merges it on green. Read it before reporting: gh pr view $PR --json state,autoMergeRequest" >&2
+  exit 9 ;;
+esac
+
 if [ "$FINAL" = "MERGED" ]; then
   echo "MERGED #$PR at once: its required checks were already green."
   exit 0
@@ -158,5 +200,5 @@ if [ "$FINAL" = "OPEN" ] && [ "$ARMED" = "true" ]; then
   echo "ARMED #$PR: GitHub squash-merges it when every required check is green."
   exit 0
 fi
-echo "NOT ARMED: after the arm call PR #$PR reads state '${FINAL:-unread}', auto-merge '${ARMED:-unread}'. Nothing will merge it." >&2
+echo "NOT ARMED: after the arm call PR #$PR reads state '$FINAL', auto-merge '$ARMED'. Nothing will merge it." >&2
 exit 1
