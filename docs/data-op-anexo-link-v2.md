@@ -30,7 +30,7 @@ nothing else; the section "Rehearsal" says what has run on these exact bytes.
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001`. The op links in the tenant that owns this row, and no other |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002`. R01 refuses unless it sits in the same tenant |
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/anexo2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
-| Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50` |
+| Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `e2ece4302398ea12e9508c391d1f46a07faa7f0cdf94609c693c405afef360dd` |
 | Stage 2 | `scripts/data/anexo-link-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5` |
 | Stage 3 | `scripts/data/anexo-link-v2-3-verify.sql`, READ ONLY, 12 verdicts and a SUMMARY row, sha256 `28fd91982f183d505b482a38e103fbf73e3dec681c13197b83f72ce7571f4e29` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
@@ -123,9 +123,10 @@ the files, their pins and the rehearsal.
 |---|---|---|
 | Q1 | A named document that staff have soft deleted: link it too? | **No.** It is left unlinked and soft deleted, listed by id in stage 1 section 2d and in the audit row (`excluded.soft_deleted`), and stage 3 verdict 10 proves it unchanged. Not a refusal: the rest of the link set still runs. The original files would have linked it; the Anexos read hides a soft-deleted row either way (SR-62 PU-4), so a link would only write a row staff removed |
 | Q2 | May GREEN run it at all? The owner ruled the scope on 2026-09-13, before the tiers, and the op is on no ruled Tier C list | **Held.** Nothing runs until the owner rules it onto the Tier C list and his dispatch names these three files and this document's sha256, after DUR-01. Recommended first sitting: stage 0 and stage 1 alone, READ ONLY, so section 2 shows the link set and every class it leaves alone before anyone rules on stage 2 |
+| Q3 | A document named against a registo that exists, and also by a staging row whose registo is not there: link it to the one that exists, or refuse the sitting? | **Linked**, as the original files would have: their inner join dropped the staging row whose registo is gone, so R04 counts only registos that exist. Stage 1 section 2d lists that no_registo pair with `linked_by_another_pair` true, so it shows before stage 2, and the document is then compared as a linked one (`w_fixed`, verdict 5), not as one left alone. A ruling to refuse would count those pairs in R04 |
 | D1 | Added: which tenant? | The tenant that owns the Linda-a-Velha row, and R01 refuses unless the Castelo Branco row sits in it. The original files took whatever tenant the candidates were in and refused more than one; here another tenant's named documents are class `other_tenant`, listed, never linked, and compared by md5 |
 | D2 | Added: a named file to link that resolves to more than one live document row? | Refuses (R05), whether the other row is unlinked, already on that registo or on another: which row the cell names would be a guess, and a link would show the file twice on one registo or put it on two. A soft-deleted row at the same path does not count: Q1 leaves it alone, and the live row is linked |
-| D3 | Added: a staging row whose registo is not there? | Class `no_registo`, listed, never linked. A document its file names is left alone like every named document outside the link set: recorded in the audit row and compared by md5 (verdict 10). The original files dropped it silently in an inner join |
+| D3 | Added: a staging row whose registo is not there? | Class `no_registo`, listed, and the pair is never written. A document its file names is left alone like every named document outside the link set, recorded in the audit row and compared by md5 (verdict 10), unless another pair names it against a registo that exists: that pair links it, and section 2d marks the no_registo pair `linked_by_another_pair` (Q3). The original files dropped the row silently in an inner join |
 | D4 | Added: a registo in another tenant than its staging row? | Refuses (R08) |
 | D5 | Added: what if there is nothing to link? | Refuses (R09), so every stage 3 verdict but two always compares something, and no audit row is written for a no-op, as the original stage 2 already refused |
 | D6 | Added: what if a table stage 2 writes carries a trigger the system did not create? | Refuses (R12), and stage 2's P4 reads the catalog again and stops too. Main has none on `attachments` or `audit_log`; production has run ahead of main before |
@@ -166,7 +167,7 @@ machine runs it inside the blocks, and halts on it.
 (
 set -eo pipefail
 DOCPIN=docs/data-op-anexo-link-v2.sha256
-SHA1=d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50
+SHA1=e2ece4302398ea12e9508c391d1f46a07faa7f0cdf94609c693c405afef360dd
 SHA2=926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5
 SHA3=28fd91982f183d505b482a38e103fbf73e3dec681c13197b83f72ce7571f4e29
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
@@ -207,7 +208,7 @@ later stage runs from.
 ```
 (
 set -eo pipefail
-SHA1=d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50
+SHA1=e2ece4302398ea12e9508c391d1f46a07faa7f0cdf94609c693c405afef360dd
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -253,8 +254,9 @@ block has already stopped if any reads REFUSE. A refusal that reads `VACUOUS` re
 population: that is not a refusal, and the sections above it say which population it was.
 Section 2b must read `partition holds`, and the block checks it. Section 4b must be empty.
 Section 2 is the link set and every class the op leaves alone; section 2d names each pair it
-leaves alone by id. Section 3 holds the two carries stage 2 consumes; nobody types them, stage
-2 parses them out of the transcript this block wrote.
+leaves alone by id, and marks one whose document another pair links (Q3). Section 3 holds the
+two carries stage 2 consumes; nobody types them, stage 2 parses them out of the transcript this
+block wrote.
 
 ## STAGE 2: the write
 
@@ -365,13 +367,13 @@ node scripts/assert-production-target.mjs
 rm -f /tmp/anexo2-stage3.out
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f scripts/data/anexo-link-v2-3-verify.sql 2>&1 | tee /tmp/anexo2-stage3.out
 grep -q 'ANEXO LINK V2 STAGE 3 COMPLETE' /tmp/anexo2-stage3.out || { echo "STOP: stage 3 did not print its COMPLETE line"; exit 1; }
-grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/anexo2-stage3.out || { echo "STOP: stage 3 printed no SUMMARY row"; exit 1; }
+grep -qE '^[[:space:]]*99[[:space:]]*\|[[:space:]]*SUMMARY[[:space:]]*\|' /tmp/anexo2-stage3.out || { echo "STOP: stage 3 printed no SUMMARY row"; exit 1; }
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/anexo2-stage3.out && { echo "STOP: a stage 3 verdict read FAIL"; exit 1; }
 NV=$(grep -cE '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*(OK|VACUOUS|FAIL)[[:space:]]*$' /tmp/anexo2-stage3.out || true)
 [ "${NV}" = 12 ] || { echo "STOP: stage 3 printed ${NV} verdicts, not 12"; exit 1; }
 BAD=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/anexo2-stage3.out | sed -E 's/^[[:space:]]*([0-9]+)[[:space:]]*\|.*/\1/' | grep -vxE '10|11' | tr '\n' ' ' || true)
 [ -z "${BAD}" ] || { echo "STOP: VACUOUS on ${BAD}, which the op never allows to be vacuous"; exit 1; }
-PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/anexo2-stage3.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
+PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|[[:space:]]*SUMMARY[[:space:]]*\|' /tmp/anexo2-stage3.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
 echo "ANEXO LINK V2 VERIFIED: ${PROFILE}."
 )
 ```
@@ -409,7 +411,8 @@ resolves to in the staging row's tenant, or none), DISTINCT. Each class is its o
 mutually exclusive by construction, and R10 proves every pair sets exactly one:
 
 - `other_tenant`: the staging row is not in the op's tenant (D1). Never linked;
-- `no_registo`: the registo the staging row names is not there (D3). Never linked;
+- `no_registo`: the registo the staging row names is not there (D3). The pair is never written;
+  its document can be, by another pair (Q3);
 - `no_document`: the named file has no document row. Nothing to link;
 - `already_linked`: the document already carries that registo. Nothing to do;
 - `linked_elsewhere`: the document carries another registo. Left alone;
@@ -504,10 +507,10 @@ row. Each refusal adds its own shape by an arm, so the other arms keep theirs.
 |---|---|
 | `b14-rehearsal/build-base.zsh` | `973273163578626d2410752243a4968127de40cfdf0b6229ac77f0b3f72dd99f` |
 | `b14-rehearsal/fixture.sql` | `15b83bd9990f5d289317cdf88dfd17199cd3072963c6d6381fc591897649d591` |
-| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `7ed49a4708178fbb6ee77f6461be40d2f0e2935c11464f595a1680ee57f27c1d` |
-| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `2fa0b102d6f499ecdfede44aec8ffbc9a5f110b4d4ca28fb73a4444d6321b310` |
+| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `19456b31651c0d05aa380eb58e43824e254a89fcf0414a345a696b99ea5ff673` |
+| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `71523788860e23f1a04b4130269c072c55ea3f649de59e636b6900b9a91c7b24` |
 | `b14-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, unchanged but its header | `241840aed7091688976a019c4eab6cc687ce291e0ca8c9a6e573b2512cbcce7c` |
-| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `e0c8383a7aff10a6632e8cf522623204bd85c29cab133bfd59e1e74b1415a257` |
+| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `ead924d4e8dd4f4d306975f6d0ff8a4fce72d5e82bba90d7ed098b6527648cd2` |
 
 **How it ran.** Each block was extracted from this document at the commit under test (cloned
 from a local bare origin whose `main` is that commit; the clone's origin is asserted to be it
@@ -535,31 +538,32 @@ extractor refuses a block that still names production.
 | database after | | the five link pairs carry their registos; every other attachment row unchanged by md5; `clinical_records` unchanged by md5; the soft-deleted document still unlinked and deleted; the other tenant's document still unlinked; one v2 audit row, which records the no_registo class's document among the ids verdict 10 reads |
 | stage 0, then 1, then 2 again | 1, 1, 1 | `STOP: stage 2 has ALREADY WRITTEN in this sitting` |
 | stage 1 with the markers removed | 1 | REFUSE on R03 and R09 (its consequence: nothing is left to link) |
-| stage 2 with its mark forced | 3 | `STOP: R03 refuses`; still one audit row, the database unchanged by md5 |
+| stage 2 with its mark forced | 3 | `STOP: R03 refuses`; still one audit row, the database unchanged by md5, no written marker |
 | stage 3 after main moved | 0 | `MAIN MOVED since stage 0` with both shas, `12 OK / 0 VACUOUS / 0 FAIL` |
 
 **Every refusal, run for real.** For each arm: a new database, one mutation, stage 1 (must exit 1
 with REFUSE on the code), then the stage 1 mark forced so stage 2's SQL is reached (must exit 3,
 `STOP: <code> refuses`), then the database compared with its state after the mutation by one md5
-over attachments, audit rows, clinical records, episodes, staging rows and consultations. The
-last row is the shape R05 must let through, run as a sitting: stage 1 and stage 2 exit 0.
+over attachments, audit rows, clinical records, episodes, staging rows and consultations, and
+the written marker checked absent. The last row is the shape R05 must let through, run as a
+sitting: stage 1 and stage 2 exit 0.
 
 | Code | Mutation | stage 1 | REFUSE on | stage 2 | database after |
 |---|---|---|---|---|---|
-| R01 | the Castelo Branco row moved to the other tenant | 1 | R01 | 3, STOP R01 | unchanged |
-| R02 | the original op's audit row | 1 | R02 | 3, STOP R02 | unchanged |
-| R03 | a v2 audit row | 1 | R03 | 3, STOP R03 | unchanged |
-| R04 | a second locked registo of patient 1 whose cell names exame-1.pdf too | 1 | R04 | 3, STOP R04 | unchanged |
-| R05 | a second live, unlinked document row at exame-1.pdf's path | 1 | R05 | 3, STOP R05 | unchanged |
-| R05 | a second live row at exame-1.pdf's path, already on the registo that names it, so a link would show the file twice there | 1 | R05 | 3, STOP R05 | unchanged |
-| R05 | a second live row at exame-1.pdf's path, on another registo of the same patient, so a link would put the file on two registos | 1 | R05 | 3, STOP R05 | unchanged |
-| R06 | exame-1.pdf belongs to patient 2, its registo to patient 1 | 1 | R06 | 3, STOP R06 | unchanged |
-| R06 | exame-1.pdf has no patient at all | 1 | R06 | 3, STOP R06 | unchanged |
-| R07 | a DRAFT registo of patient 1 whose staging row names a file with a live document | 1 | R07 | 3, STOP R07 | unchanged |
-| R08 | a staging row of this tenant names the OTHER tenant's registo; the document carries that registo's patient, so R06 stays quiet | 1 | R08 | 3, STOP R08 | unchanged |
-| R09 | every link done by hand already, so the link set is empty | 1 | R09 | 3, STOP R09 | unchanged |
-| R12 | a no-op AFTER UPDATE trigger the system did not create, on attachments | 1 | R12 | 3, STOP R12 | unchanged |
-| R12 | the same, on audit_log | 1 | R12 | 3, STOP R12 | unchanged |
+| R01 | the Castelo Branco row moved to the other tenant | 1 | R01 | 3, STOP R01 | unchanged; no written marker |
+| R02 | the original op's audit row | 1 | R02 | 3, STOP R02 | unchanged; no written marker |
+| R03 | a v2 audit row | 1 | R03 | 3, STOP R03 | unchanged; no written marker |
+| R04 | a second locked registo of patient 1 whose cell names exame-1.pdf too | 1 | R04 | 3, STOP R04 | unchanged; no written marker |
+| R05 | a second live, unlinked document row at exame-1.pdf's path | 1 | R05 | 3, STOP R05 | unchanged; no written marker |
+| R05 | a second live row at exame-1.pdf's path, already on the registo that names it, so a link would show the file twice there | 1 | R05 | 3, STOP R05 | unchanged; no written marker |
+| R05 | a second live row at exame-1.pdf's path, on another registo of the same patient, so a link would put the file on two registos | 1 | R05 | 3, STOP R05 | unchanged; no written marker |
+| R06 | exame-1.pdf belongs to patient 2, its registo to patient 1 | 1 | R06 | 3, STOP R06 | unchanged; no written marker |
+| R06 | exame-1.pdf has no patient at all | 1 | R06 | 3, STOP R06 | unchanged; no written marker |
+| R07 | a DRAFT registo of patient 1 whose staging row names a file with a live document | 1 | R07 | 3, STOP R07 | unchanged; no written marker |
+| R08 | a staging row of this tenant names the OTHER tenant's registo; the document carries that registo's patient, so R06 stays quiet | 1 | R08 | 3, STOP R08 | unchanged; no written marker |
+| R09 | every link done by hand already, so the link set is empty | 1 | R09 | 3, STOP R09 | unchanged; no written marker |
+| R12 | a no-op AFTER UPDATE trigger the system did not create, on attachments | 1 | R12 | 3, STOP R12 | unchanged; no written marker |
+| R12 | the same, on audit_log | 1 | R12 | 3, STOP R12 | unchanged; no written marker |
 | R05 | a second row at exame-1.pdf's path that staff soft deleted, which Q1 leaves alone: not a refusal | 0 | none | 0, `COMMITTED` | the live row linked, the soft-deleted twin still unlinked and deleted |
 
 **The file-name read and the partition, proved on seeded wrong copies.** Each copy differs from
@@ -625,6 +629,24 @@ both counted), so the block's own checks decide the exit.
 | stage 3 read as a role row-level security blinds (`authenticated`, no JWT claims), so it sees no audit row and no document: verdict 1 FAILs, with no control | 1 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 | `0 OK / 0 VACUOUS / 12 FAIL` |
 | before the op: no named document left alone, no episode on a target registo; stages 1, 2 and 3 all exit 0 | 0 | none; VACUOUS on 10 and 11, which the block allows | `10 OK / 2 VACUOUS / 0 FAIL` |
 
+**Review round 5, run for real.** The shape Q3 asks about, a link set whose count carry reads
+99, and the halts the blocks owe to their own `set -eo pipefail`, `-v ON_ERROR_STOP=1` and target
+guard. A row that says "a copy" runs this document's own block with that one line taken out:
+its exit is the defect the unit test now holds off, not the op's.
+
+| Arm | Exit | What it printed | Database after |
+|---|---|---|---|
+| Q3: exame-1.pdf also named by a staging row whose registo is not there; stage 1 | 0 | no REFUSE; section 2d lists that no_registo pair with `linked_by_another_pair` true, and every other pair false | untouched |
+| Q3, stage 2 | 0 | `COMMITTED` | exame-1.pdf carries the registo that exists; the audit row records it among the linked pairs, not among the left-alone ids |
+| Q3, stage 3 | 0 | `12 OK / 0 VACUOUS / 0 FAIL` | |
+| a link set whose count carry reads 99: stages 1, 2 and 3 | 0, 0, 0 | the FOR THE RECORD row reads `99 \| 99 \| 0`, and the block's last line is `ANEXO LINK V2 VERIFIED: 12 OK / 0 VACUOUS / 0 FAIL.` | written once |
+| the same, a copy of stage 3 whose SUMMARY row is dropped (`HAVING false`) | 1 | `STOP: stage 3 printed no SUMMARY row`, though the FOR THE RECORD row begins with 99 | |
+| stage 2 on a database where R03 refuses, as committed | 3 | `STOP: R03 refuses`; no written marker | unchanged |
+| the same, a copy of the block without `set -eo pipefail` | 1 | `STOP: R03 refuses`, then `THE WRITE STANDS`; the written marker touched over a write that never ran | unchanged |
+| the same, a copy of the block without `-v ON_ERROR_STOP=1` | 1 | `STOP: R03 refuses`, then `COMMITTED` and `THE WRITE STANDS`: psql ran on past the refusal and exited 0; the written marker touched | unchanged |
+| stage 1 with its target guard failing, as committed | 1 | nothing after the guard: no psql ran, no stage 1 mark | untouched |
+| the same, a copy of the block without `set -eo pipefail` | 0 | `STAGE 1 READ, NO REFUSAL`: it read the database and marked its pass past a failing guard | untouched |
+
 **The original files, on the same fixture** (never on production), run directly with their own
 carries. This is the evidence for the section "What changed from the original op, and why":
 
@@ -636,7 +658,7 @@ carries. This is the evidence for the section "What changed from the original op
 | after O3 | | the soft-deleted document linked: true; the two names after a no-break space and a tab linked: 0 of 2 |
 
 **The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
-and `prove-red.mjs` ran it against 157 seeded wrong copies of the committed tree, each
+and `prove-red.mjs` ran it against 175 seeded wrong copies of the committed tree, each
 re-pinned so only its target property is wrong: every copy turned its target test red, and the
 green control (DELETE, DROP and TRUNCATE only inside comments, a string and an echo) kept every
 test green. Every test has at least one copy.
@@ -681,7 +703,7 @@ compares, every refusal's `n` and control, and every byte of the files this op a
 review's seeded copies, and their siblings, each stayed green on the commit before and turned
 their target test red on that one.
 
-**What review round 4 caught,** fixed on the commit that carries this section. Two properties
+**What review round 4 caught,** each fixed in that round. Two properties
 had no pin: the clean-worktree check of stages 0 to 2, and the original document's text below
 its banner; nor had four checks the blocks make: stage 3's FAIL halt, stage 1's REFUSE halt,
 its `partition holds` check, and the COMPLETE and sidecar checks of stages 1 to 3. The unit test
@@ -695,8 +717,28 @@ the count of its tenant's audit rows, could never decide it, because the v2 row 
 of the three tenant-wide controls review round 1 named, two remain. Verdict 1 now asserts
 exactly one v2 row and nothing else, with a comment the only change to a stage file; the stage 3
 arm above that reads as a role row-level security blinds FAILs it, with no control. The
-review's seeded copies, and their siblings, each stayed green on the commit before and turn
-their target test red on this one.
+review's seeded copies, and their siblings, each stayed green on the commit before and turned
+their target test red on that one.
+
+**What review round 5 caught,** fixed on the commit that carries this section. Nothing pinned
+what makes the blocks halt: the `set -eo pipefail` that opens each block and the
+`-v ON_ERROR_STOP=1` on each psql line. The unit test's block checks supplied a
+`set -eo pipefail` of their own and never ran psql, so they passed with either line gone; the
+round 5 table above shows what each copy does to a sitting. The unit test now runs each block
+from its own head, with stand-ins for the target guard and for psql that stop at an ERROR with
+exit 3 only under `ON_ERROR_STOP`, and pins both lines, `-X`, and the guard before psql.
+Stage 1's REFUSE halt reads a `verdict` in the last column only, and nothing tied that to
+section 4's SELECT: the unit test now prints section 4 in the column order the SQL gives, and
+stage 3's rows the same way. A document named by a no_registo pair and linked by another pair
+was listed under section 2d's promise that no stage changes it: section 2d now marks such a
+pair `linked_by_another_pair`, its header states the exception, D3 says so, and Q3 asks the
+owner whether it should refuse instead; the default built is the original files' reading, which
+links it. And stage 3's SUMMARY check matched any row whose first column read 99, the FOR THE
+RECORD row included once the link set holds that many: the check and the profile read now
+anchor on the SUMMARY label, and the round 5 arm whose count carry reads 99 shows both. The
+seeded copies of the first two findings, and their siblings, stayed green on the commit before
+and turn their target test red on this one; this commit's unit test, run on the commit before,
+goes red on exactly the tests of the last two.
 
 ## Undoing it
 
@@ -716,6 +758,7 @@ here deletes a row, so there is nothing else to restore.
 - **It touches no Storage object** and no other column pointing into storage.
 - **It guesses nothing.** A document named by two registos, a file with two live document
   rows, a patient mismatch, a registo that is not locked or one in another tenant each refuse
-  the whole sitting.
+  the whole sitting. A document also named against a registo that is not there is linked to
+  the one that is, as the original files would have; Q3 asks the owner whether it should refuse.
 - **It sends nothing** and writes no staff notification.
 - **No stage file holds a DELETE, DROP or TRUNCATE statement.**

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -855,58 +855,192 @@ test("stages 0, 1 and 2 refuse a worktree that is not clean before they fetch, a
   }
 });
 
-/** The lines of a stage block after its psql line: the checks it makes on the transcript psql left. */
-function tail(n) {
-  const l = block(`STAGE ${n}`).split("\n");
-  const at = l.findIndex((x) => x.startsWith("psql "));
-  assert.ok(at > 0 && l.at(-1) === ")", `the stage ${n} block has no psql line, or does not close its subshell`);
-  return l.slice(at + 1, -1).join("\n");
+/**
+ * Stand-ins for the two programs a block runs after its HEAD CHECK, written into
+ * dir/bin for the block to find first on PATH. node is the target guard, and exits
+ * guard. psql prints transcript and exits 0; given error, it prints error.head (the
+ * transcript up to and including an ERROR) and then does what psql does with a file:
+ * with -v ON_ERROR_STOP=1 it exits 3 there, and without it runs on, prints
+ * error.rest and exits 0. It leaves dir/psql.ran behind whenever it runs.
+ */
+function standIns(dir, { transcript = "", guard = 0, error = null } = {}) {
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(dir, "psql.head"), error ? error.head : transcript);
+  writeFileSync(join(dir, "psql.rest"), error ? error.rest : "");
+  const stop = error ? 'for a in "$@"; do [ "$a" = ON_ERROR_STOP=1 ] && exit 3; done\n' : "";
+  writeFileSync(join(bin, "psql"), `#!/bin/sh\n: > '${dir}/psql.ran'\ncat '${dir}/psql.head'\n${stop}cat '${dir}/psql.rest'\nexit 0\n`, { mode: 0o755 });
+  writeFileSync(join(bin, "node"), `#!/bin/sh\nexit ${guard}\n`, { mode: 0o755 });
+  return bin;
 }
 
 /**
- * The stage `n` block's own checks after psql, run under bash on a transcript this
- * test writes, with `/tmp/` moved to a scratch directory. So a check that no longer
- * halts where it must (a grep for a word the SQL never prints, a check deleted) goes
- * red here, where a pin on the text would pass a grep that can never match.
+ * The stage n block run under bash from its target guard to its close, after the
+ * block's own head (its lines between the opening parenthesis and its first blank
+ * line: its shell options and its pins), with REC set, /tmp/ moved to a scratch
+ * directory and the stand-ins above first on PATH. The test adds no shell option of
+ * its own, so what the block owes to its own set -eo pipefail and its own psql flags
+ * is tested here, not supplied; and a check that no longer halts where it must (a
+ * grep for a word the SQL never prints, a check deleted) goes red here, where a pin
+ * on the text would pass a grep that can never match.
  */
-function runTail(n, transcript, rec = "a".repeat(40)) {
+function runTail(n, transcript, { rec = "a".repeat(40), guard = 0, error = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anexo2-tail-"));
   try {
-    writeFileSync(join(dir, `anexo2-stage${n}.out`), transcript);
-    const body = tail(n).split("/tmp/").join(`${dir}/`);
-    const r = spawnSync("bash", ["-c", `(\nset -eo pipefail\nREC=${rec}\n${body}\n)`], { encoding: "utf8" });
-    const file = (f) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), "utf8").trim() : null);
-    return { code: r.status, out: `${r.stdout}${r.stderr}`, mark: file("anexo2-stage1.ok"), written: file("anexo2-written.ok") !== null };
+    const bin = standIns(dir, { transcript, guard, error });
+    const l = block(`STAGE ${n}`).split("\n");
+    const head = l.indexOf("");
+    const from = l.indexOf(`node ${GUARD}`);
+    const psql = l.findIndex((x) => x.startsWith("psql "));
+    assert.ok(l[0] === "(" && head > 1 && from > head && l.at(-1) === ")", `the stage ${n} block has no head before its first blank line, no target guard line after it, or does not close its subshell`);
+    assert.ok(from < psql, `the stage ${n} block runs psql before its target guard, or runs no psql`);
+    const body = [...l.slice(1, head), `REC=${rec}`, ...l.slice(from, -1)].join("\n").split("/tmp/").join(`${dir}/`);
+    const r = spawnSync("bash", ["-c", `(\n${body}\n)`], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    const file = (x) => (existsSync(join(dir, x)) ? readFileSync(join(dir, x), "utf8").trim() : null);
+    return { code: r.status, out: `${r.stdout}${r.stderr}`, mark: file("anexo2-stage1.ok"), written: file("anexo2-written.ok") !== null, psqlRan: existsSync(join(dir, "psql.ran")) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-const REF_CODES = Array.from({ length: 12 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`);
-/** A stage 1 transcript in psql's aligned shape; `verdicts` maps a refusal code to what it reads. */
-function stage1Out({ verdicts = {}, codes = REF_CODES, partition = "partition holds", complete = true } = {}) {
+/**
+ * Rows as psql's aligned format prints them: each header centred over its column, a
+ * rule, then each row with numbers right-aligned and text left-aligned, the last
+ * column unpadded, then the row count. cols is [[name, numeric], ...].
+ */
+function aligned(cols, rows) {
+  const w = cols.map(([name], i) => Math.max(name.length, ...rows.map((r) => String(r[i]).length)));
+  const centre = (s, n) => " ".repeat(Math.floor((n - s.length) / 2)) + s + " ".repeat(n - s.length - Math.floor((n - s.length) / 2));
+  const cell = (v, i) => (cols[i][1] ? String(v).padStart(w[i]) : i === cols.length - 1 ? String(v) : String(v).padEnd(w[i]));
   return [
-    "=== ANEXO LINK V2, STAGE 1. READ ONLY ===",
-    " pairs | in_exactly_one | unclassified | label_agrees |    partition    ",
-    "-------+----------------+--------------+--------------+-----------------",
-    `    11 |             11 |            0 |           11 | ${partition}`,
-    ...codes.map((c) => ` ${c}  | a refusal label | ${verdicts[c] === "REFUSE" ? 1 : 0} |       2 | ${verdicts[c] ?? "OK"}`),
-    ...(complete ? ["=== ANEXO LINK V2 STAGE 1 COMPLETE. Nothing was written. ==="] : []),
+    ` ${cols.map(([name], i) => centre(name, w[i])).join(" | ")} `,
+    w.map((n) => "-".repeat(n + 2)).join("+"),
+    ...rows.map((r) => ` ${r.map((v, i) => cell(v, i)).join(" | ")}`),
+    `(${rows.length} ${rows.length === 1 ? "row" : "rows"})`,
+  ];
+}
+
+/** The items of the one SELECT in sql whose FROM clause starts with the anchor from, cut at their top-level commas. */
+function selectList(sql, from, label) {
+  const end = sql.indexOf(from);
+  assert.ok(end > 0 && sql.indexOf(from, end + 1) < 0, `${label}: its FROM ${JSON.stringify(from)} is not found exactly once`);
+  const start = sql.lastIndexOf("\nSELECT ", end);
+  assert.ok(start >= 0, `${label}: no SELECT before its FROM`);
+  return splitTop(sql.slice(start + "\nSELECT ".length, end));
+}
+
+/**
+ * The columns stage 1 section 4 prints, in the order its SELECT lists them, each as
+ * the key it reads from a refusal, its alias, and whether psql right-aligns it. The
+ * transcripts below print section 4 in this order, so the block's REFUSE grep is run
+ * against the shape the SQL prints: a SELECT reordered so that grep reads nothing
+ * goes red here.
+ */
+function refusalColumns() {
+  return selectList(S1, "\n  FROM jsonb_array_elements(:'anexo_v2_json'::jsonb -> 'refusals') e", "stage 1 section 4").map((item) => {
+    const m = item.match(/^(\()?e ->> '([a-z_]+)'(?:\)(::int))? AS ([a-z_]+)$/);
+    assert.ok(m && Boolean(m[1]) === Boolean(m[3]), `stage 1 section 4 prints a column this test does not read: ${item}`);
+    return { key: m[2], alias: m[4], numeric: Boolean(m[3]) };
+  });
+}
+
+/**
+ * Stage 3's last SELECT: the columns of its verdict rows, in order, and the items of
+ * its SUMMARY row, which a UNION lines up with them column for column.
+ */
+function verifyShape() {
+  const body = between(S3, "\n)\nSELECT ", "\n ORDER BY 1;", "stage 3's verdicts and SUMMARY").slice("\n)\n".length);
+  const parts = body.split(/\nUNION ALL\n/);
+  assert.equal(parts.length, 2, "stage 3's last SELECT is not its verdict rows and one SUMMARY row");
+  const list = (p) => splitTop(p.replace(/^SELECT /, "").replace(/\s+FROM r\s*$/, ""));
+  const cols = list(parts[0]).map((item) => {
+    const m = item.match(/^r\.("?)([a-z_]+)\1$/);
+    assert.ok(m, `stage 3 prints a verdict column this test does not read: ${item}`);
+    return m[2];
+  });
+  const summary = list(parts[1]);
+  assert.equal(summary.length, cols.length, "the SUMMARY row does not line up with the verdict columns");
+  return { cols, summary };
+}
+
+/** The columns of the FOR THE RECORD row stage 3 prints after its SUMMARY, in order. */
+function recordColumns() {
+  return selectList(S3, "\n  FROM public.audit_log al\n CROSS JOIN LATERAL jsonb_array_elements(al.metadata -> 'pairs') e", "stage 3's FOR THE RECORD row").map((item) => {
+    const m = item.match(/^count\(\*\)(?: FILTER \(WHERE .+\))? AS ([a-z_]+)$/);
+    assert.ok(m, `the FOR THE RECORD row prints a column this test does not read: ${item}`);
+    return m[1];
+  });
+}
+
+const REF_CODES = Array.from({ length: 12 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`);
+/**
+ * A stage 1 transcript as psql prints it: section 2b, then section 4 in the column
+ * order its SELECT gives; verdicts maps a refusal code to what it reads. complete
+ * false stops it before the ROLLBACK and the COMPLETE line.
+ */
+function stage1Out({ verdicts = {}, codes = REF_CODES, partition = "partition holds", complete = true } = {}) {
+  const cols = refusalColumns();
+  const row = (c) => {
+    const v = { code: c, label: `what ${c} refuses`, n: verdicts[c] === "REFUSE" ? 1 : 0, control: 2, verdict: verdicts[c] ?? "OK" };
+    return cols.map((col) => {
+      assert.ok(col.key in v, `stage 1 section 4 prints ${col.key}, which this test does not model`);
+      return v[col.key];
+    });
+  };
+  return [
+    "=== ANEXO LINK V2, STAGE 1. READ ONLY. ===",
+    "=== 2b. THE PARTITION: every named pair lands in exactly one class ===",
+    ...aligned([["pairs", true], ["in_exactly_one", true], ["unclassified", true], ["label_agrees", true], ["partition", false]], [[11, 11, 0, 11, partition]]),
+    "",
+    "=== 4. THE REFUSALS. Any REFUSE stops the sitting here; stage 2 refuses on the same lines ===",
+    ...aligned(cols.map((col) => [col.alias, col.numeric]), codes.map(row)),
+    "",
+    ...(complete ? ["ROLLBACK", "", "=== ANEXO LINK V2 STAGE 1 COMPLETE. Nothing was written. ==="] : []),
     "",
   ].join("\n");
 }
-/** A stage 3 transcript in psql's aligned shape; `verdicts` maps a verdict number to what it reads. */
-function stage3Out({ verdicts = {}, count = 12, summary = true, complete = true } = {}) {
+/**
+ * A stage 3 transcript as psql prints it: the verdict rows and the SUMMARY row in the
+ * columns stage 3's SELECT gives, then the FOR THE RECORD row, whose first column is
+ * the count of recorded pairs (record); verdicts maps a verdict number to what it
+ * reads. complete false stops it before the ROLLBACK and the COMPLETE line.
+ */
+function stage3Out({ verdicts = {}, count = 12, summary = true, complete = true, record = 5 } = {}) {
+  const { cols, summary: items } = verifyShape();
   const rows = Array.from({ length: count }, (_, i) => [i + 1, verdicts[i + 1] ?? "OK"]);
   const tally = (w) => rows.filter((r) => r[1] === w).length;
+  const verdictRow = ([n, w]) => {
+    const v = { n, check: `what verdict ${n} compares`, observed: "5", expected: "5, above 0", verdict: w };
+    return cols.map((c) => {
+      assert.ok(c in v, `stage 3 prints ${c}, which this test does not model`);
+      return v[c];
+    });
+  };
+  const summaryRow = items.map((it) => {
+    if (/^\d+$/.test(it)) return Number(it);
+    if (/^'[^']*'$/.test(it)) return it.slice(1, -1);
+    if (it.includes("' OK / '") && it.includes("' VACUOUS / '") && it.endsWith("' FAIL'")) return `${tally("OK")} OK / ${tally("VACUOUS")} VACUOUS / ${tally("FAIL")} FAIL`;
+    if (it.endsWith("' verdicts'")) return `${count} verdicts`;
+    return assert.fail(`the SUMMARY row prints an item this test does not model: ${it}`);
+  });
+  const numeric = items.map((it) => /^\d+$/.test(it));
+  const rc = recordColumns();
+  const recorded = { recorded_pairs: record, still_on_their_registo: record, soft_deleted_since: 0 };
   return [
-    "  n | check | observed | expected | verdict",
-    ...rows.map(([n, w]) => `${String(n).padStart(3)} | a verdict label | 5 | 5, above 0 | ${w}`),
-    ...(summary ? [` 99 | SUMMARY | ${tally("OK")} OK / ${tally("VACUOUS")} VACUOUS / ${tally("FAIL")} FAIL | ${count} verdicts | SUMMARY`] : []),
-    ...(complete ? ["=== ANEXO LINK V2 STAGE 3 COMPLETE. Nothing was written. ==="] : []),
+    "=== ANEXO LINK V2, STAGE 3. READ ONLY. Every verdict must read OK or a named VACUOUS ===",
+    ...aligned(cols.map((c, i) => [c, numeric[i]]), [...rows.map(verdictRow), ...(summary ? [summaryRow] : [])]),
+    "",
+    "=== FOR THE RECORD: the documents the op linked, as they stand now ===",
+    ...aligned(rc.map((c) => [c, true]), [rc.map((c) => {
+      assert.ok(c in recorded, `the FOR THE RECORD row prints ${c}, which this test does not model`);
+      return recorded[c];
+    })]),
+    "",
+    ...(complete ? ["ROLLBACK", "", "=== ANEXO LINK V2 STAGE 3 COMPLETE. Nothing was written. ==="] : []),
     "",
   ].join("\n");
 }
+const STAGE2_DONE = "NOTICE:  ANEXO LINK V2 STAGE 2 DONE: linked\nCOMMIT\n=== ANEXO LINK V2 STAGE 2 COMMITTED ===\n";
 
 test("the checks each block makes on its transcript halt where they must: run under bash on written transcripts, every halt arm stops and every clean arm goes on", () => {
   const halts = (r, stop, what) => {
@@ -932,8 +1066,7 @@ test("the checks each block makes on its transcript halt where they must: run un
     assert.equal(r.mark, null, `stage 1 on ${what} marked its pass, so stage 2 would run`);
   }
   // Stage 2: the written marker stands as soon as psql exits 0, whatever the transcript says.
-  const done = "NOTICE:  ANEXO LINK V2 STAGE 2 DONE: linked\n=== ANEXO LINK V2 STAGE 2 COMMITTED ===\n";
-  const s2 = runTail(2, done);
+  const s2 = runTail(2, STAGE2_DONE);
   assert.equal(s2.code, 0, `stage 2 halts on a clean write\n${s2.out}`);
   assert.ok(s2.written && s2.out.includes(WRITTEN_LINE), "stage 2 does not mark the write and send the runner on");
   for (const [what, out, stop] of [
@@ -952,18 +1085,90 @@ test("the checks each block makes on its transcript halt where they must: run un
   const allowed = runTail(3, stage3Out({ verdicts: { 10: "VACUOUS", 11: "VACUOUS" } }));
   assert.equal(allowed.code, 0, `stage 3 halts on VACUOUS 10 and 11, which the op allows\n${allowed.out}`);
   assert.ok(allowed.out.includes("ANEXO LINK V2 VERIFIED: 10 OK / 2 VACUOUS / 0 FAIL."), `stage 3 does not print the profile it read\n${allowed.out}`);
+  // The FOR THE RECORD row after the SUMMARY begins with the count of recorded pairs. At 99 its
+  // first column reads like the SUMMARY row's: it must neither join the profile the block prints
+  // nor stand in for a SUMMARY row that is missing (the second arm below).
+  const at99 = runTail(3, stage3Out({ record: 99 }));
+  assert.equal(at99.code, 0, `stage 3 halts on a clean verify of a link set whose count reads 99\n${at99.out}`);
+  assert.deepEqual(at99.out.split("\n").filter((x) => x.startsWith("ANEXO LINK V2 VERIFIED")), ["ANEXO LINK V2 VERIFIED: 12 OK / 0 VACUOUS / 0 FAIL."], `stage 3 printed more than its profile when the FOR THE RECORD row begins with 99\n${at99.out}`);
   for (const [what, out, stop] of [
     ["a FAIL on 3, 4 and 6", stage3Out({ verdicts: { 3: "FAIL", 4: "FAIL", 6: "FAIL" } }), "STOP: a stage 3 verdict read FAIL"],
     ["a FAIL on 12 alone", stage3Out({ verdicts: { 12: "FAIL" } }), "STOP: a stage 3 verdict read FAIL"],
     ["a VACUOUS on 9", stage3Out({ verdicts: { 9: "VACUOUS" } }), "STOP: VACUOUS on 9 "],
     ["no COMPLETE line", stage3Out({ complete: false }), "STOP: stage 3 did not print its COMPLETE line"],
     ["no SUMMARY row", stage3Out({ summary: false }), "STOP: stage 3 printed no SUMMARY row"],
+    ["no SUMMARY row, and a FOR THE RECORD row that begins with 99", stage3Out({ summary: false, record: 99 }), "STOP: stage 3 printed no SUMMARY row"],
     ["11 verdicts", stage3Out({ count: 11 }), "STOP: stage 3 printed 11 verdicts, not 12"],
   ]) {
     const r = runTail(3, out);
     halts(r, stop, `stage 3 on ${what}`);
     assert.ok(!r.out.includes("ANEXO LINK V2 VERIFIED"), `stage 3 on ${what} still printed VERIFIED`);
   }
+});
+
+const ENV_LINE = "set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport";
+const PSQL_LINES = {
+  "stage 1": `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f ${F1} 2>&1 | tee /tmp/anexo2-stage1.out`,
+  "stage 2": `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "\${ARGS[@]}" -f ${F2} 2>&1 | tee /tmp/anexo2-stage2.out`,
+  "stage 3": `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f ${F3} 2>&1 | tee /tmp/anexo2-stage3.out`,
+};
+
+test("every block halts on its own: it opens with set -eo pipefail, its psql stops at the first ERROR, and a failing target guard or psql stops it with nothing marked", () => {
+  // The psql stand-in, on the two shapes it must read right, first: psql stops at an
+  // ERROR with exit 3 only when ON_ERROR_STOP is set, and otherwise runs on and exits 0.
+  const dir = mkdtempSync(join(tmpdir(), "anexo2-psql-"));
+  try {
+    const bin = standIns(dir, { error: { head: "before\nERROR:  x\n", rest: "after\n" } });
+    const stops = spawnSync(join(bin, "psql"), ["-X", "-v", "ON_ERROR_STOP=1", "-f", "x.sql"], { encoding: "utf8" });
+    assert.deepEqual([stops.status, stops.stdout], [3, "before\nERROR:  x\n"], "the psql stand-in does not stop at the ERROR with exit 3 under -v ON_ERROR_STOP=1");
+    const runsOn = spawnSync(join(bin, "psql"), ["-X", "-f", "x.sql"], { encoding: "utf8" });
+    assert.deepEqual([runsOn.status, runsOn.stdout], [0, "before\nERROR:  x\nafter\n"], "the psql stand-in does not run on past the ERROR and exit 0 without ON_ERROR_STOP, as psql does");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // What each block owes its halts to, in its own text: its head, and its psql line.
+  for (const [label, b] of STAGE_BLOCKS()) {
+    const l = b.split("\n");
+    assert.deepEqual(l.slice(0, 2), ["(", "set -eo pipefail"], `${label} does not open its subshell with set -eo pipefail, so a failing command, or psql failing inside its pipe to tee, would not stop it`);
+    const opts = l.filter((x) => /(?:^|[;&|(]\s*)set\s+[-+]/.test(x));
+    assert.deepEqual(opts, label === "stage 0" ? ["set -eo pipefail"] : ["set -eo pipefail", ENV_LINE], `${label} sets a shell option besides its head and the environment line`);
+    const psql = l.filter((x) => /(?:^|[;&|(]\s*)psql\s/.test(x));
+    assert.deepEqual(psql, label === "stage 0" ? [] : [PSQL_LINES[label]], `${label} does not run psql exactly as pinned: -X, -v ON_ERROR_STOP=1, and into its transcript through tee`);
+  }
+  // And what those lines do: each block run from its own head, a failing guard and a psql
+  // stopped at an ERROR each stop it, with psql never run or its exit 3 kept, and nothing marked.
+  const nothing = (r, what) => {
+    assert.equal(r.mark, null, `${what}: stage 1 marked its pass, so stage 2 would run`);
+    assert.ok(!r.written, `${what}: the written marker was touched, which locks stages 0 to 2 out over a write that never ran`);
+    for (const w of ["NO REFUSAL", "THE WRITE STANDS", WRITTEN_LINE, "ANEXO LINK V2 VERIFIED"]) assert.ok(!r.out.includes(w), `${what}: the block printed ${w}\n${r.out}`);
+  };
+  const clean = { 1: stage1Out(), 2: STAGE2_DONE, 3: stage3Out() };
+  for (const n of [1, 2, 3]) {
+    const g = runTail(n, clean[n], { guard: 1 });
+    assert.ok(g.code !== 0 && !g.psqlRan, `stage ${n} ran psql after its target guard failed (exit ${g.code})\n${g.out}`);
+    nothing(g, `stage ${n} after a failing target guard`);
+  }
+  const errors = {
+    1: { head: `${stage1Out({ complete: false })}psql:${F1}:400: ERROR:  canceling statement due to statement timeout\n`, rest: "ROLLBACK\n\n=== ANEXO LINK V2 STAGE 1 COMPLETE. Nothing was written. ===\n" },
+    2: { head: `NOTICE:  P1 the sets\npsql:${F2}:600: ERROR:  STOP: R03 refuses. Nothing was written; the sitting stops here\n`, rest: "ROLLBACK\n=== ANEXO LINK V2 STAGE 2 COMMITTED ===\n" },
+    3: { head: `${stage3Out({ complete: false })}psql:${F3}:170: ERROR:  canceling statement due to statement timeout\n`, rest: "ROLLBACK\n\n=== ANEXO LINK V2 STAGE 3 COMPLETE. Nothing was written. ===\n" },
+  };
+  for (const n of [1, 2, 3]) {
+    const e = runTail(n, null, { error: errors[n] });
+    assert.equal(e.code, 3, `stage ${n} did not stop with psql's exit 3 at an ERROR (exit ${e.code})\n${e.out}`);
+    nothing(e, `stage ${n} after psql stopped at an ERROR`);
+  }
+});
+
+test("a document another pair links is never promised left alone: stage 1 section 2d marks it, D3 says so, and Q3 asks the owner", () => {
+  assert.ok(S1.includes("'linked_by_another_pair', EXISTS (SELECT 1 FROM lnk l WHERE l.attachment_id = c.attachment_id))\n"), "stage 1 does not mark a left-alone pair whose document the link set links");
+  const d = between(S1, "\\echo '=== 2d.", "-- 3. THE CARRIES", "section 2d");
+  assert.ok(d.startsWith("\\echo '=== 2d. EVERY PAIR THE OP LEAVES ALONE, by id. No stage changes a document listed here, unless linked_by_another_pair reads true ==='\n"), "section 2d promises that no stage changes any document it lists, though another pair can link one");
+  assert.match(d, /\n\s+e ->> 'document_now_on' AS document_now_on, e ->> 'linked_by_another_pair' AS linked_by_another_pair\n/, "section 2d does not print the mark");
+  assert.match(DOC, /^\| Q3 \| A document named against a registo that exists, and also by a staging row whose registo is not there: [^\n]*section 2d lists that no_registo pair with `linked_by_another_pair` true/m, "the owner questions do not ask Q3, or its default does not name the mark");
+  const flat = DOC.replace(/\s+/g, " ");
+  assert.ok(flat.includes("unless another pair names it against a registo that exists: that pair links it, and section 2d marks the no_registo pair `linked_by_another_pair` (Q3)"), "D3 does not say that another pair can link a document a no_registo pair names");
+  assert.ok(!flat.includes("A document its file names is left alone like every named document outside the link set: recorded in the audit row"), "D3 still promises that every document a no_registo pair names is left alone");
 });
 
 test("every script a block runs is pinned by sha256 in that block and checked before it runs, and stage 0 checks all four", () => {

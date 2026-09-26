@@ -302,7 +302,8 @@ SELECT jsonb_build_object(
   'left_alone', (SELECT coalesce(jsonb_agg(jsonb_build_object(
                    'class', c.label, 'document', coalesce(c.attachment_id::text, '(none)'),
                    'registo', c.record_id::text,
-                   'document_now_on', coalesce(c.att_record::text, '(no registo)'))
+                   'document_now_on', coalesce(c.att_record::text, '(no registo)'),
+                   'linked_by_another_pair', EXISTS (SELECT 1 FROM lnk l WHERE l.attachment_id = c.attachment_id))
                    ORDER BY c.label, c.record_id, c.attachment_id), '[]'::jsonb)
                    FROM cls c WHERE NOT c.f_link),
   'carries', (SELECT jsonb_agg(jsonb_build_object('ord', c.ord, 'carry', c.carry, 'value', c.value) ORDER BY c.ord)
@@ -377,10 +378,12 @@ SELECT e ->> 'registo_status' AS registo_status, (e ->> 'registos')::int AS regi
        (e ->> 'documents')::int AS documents
   FROM jsonb_array_elements(:'anexo_v2_json'::jsonb -> 'link_by_status') e;
 \echo ''
-\echo '=== 2d. EVERY PAIR THE OP LEAVES ALONE, by id. No stage changes a document listed here ==='
+\echo '=== 2d. EVERY PAIR THE OP LEAVES ALONE, by id. No stage changes a document listed here, unless linked_by_another_pair reads true ==='
 SELECT e ->> 'class' AS class, e ->> 'document' AS document, e ->> 'registo' AS named_by_registo,
-       e ->> 'document_now_on' AS document_now_on
+       e ->> 'document_now_on' AS document_now_on, e ->> 'linked_by_another_pair' AS linked_by_another_pair
   FROM jsonb_array_elements(:'anexo_v2_json'::jsonb -> 'left_alone') e;
+\echo '    linked_by_another_pair true: the pair is left alone, but another pair names the same document'
+\echo '    against a registo that exists, so that pair links it (question Q3). Only a no_registo pair can read true.'
 
 -- ---------------------------------------------------------------------------
 -- 3. THE CARRIES. Stage 2 is handed both and refuses if either has moved.
