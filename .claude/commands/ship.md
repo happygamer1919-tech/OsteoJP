@@ -65,8 +65,8 @@ gh pr create --base main --title "<branch-description>" --body "$(cat <<'EOF'
 - <bullet points from commit messages>
 
 ## Checks
-Armed at open: GitHub squash-merges this PR once every required check is green.
-Vercel statuses are not required checks.
+Branch protection's required checks gate this merge. Vercel statuses are not
+required checks.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
@@ -74,6 +74,10 @@ EOF
 ```
 
 Capture the PR number from the output. If a PR already exists, use that number.
+
+The body says nothing about arming: it is written before step 4 runs, and
+step 4 can refuse the PR or fail to arm it. Whether the PR is armed shows on
+the PR itself and in the step 4 report.
 
 ### 4. Arm the PR (GitHub merges it on green)
 

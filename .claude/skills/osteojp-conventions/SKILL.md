@@ -25,10 +25,11 @@ If this file drifts from them, they win.
 
 - Gates, from repo root, in order: `pnpm lint`, `pnpm typecheck`, `pnpm test`,
   `pnpm build`, and `pnpm test:e2e` for any user-facing change.
-- **Read required checks from the CHECKS API, never the PR banner.** GREEN
-  self-merge only when EVERY required check (DB-gated tests, Lint+typecheck+test,
-  Playwright E2E) AND all three Vercel deploys (osteojp-api, osteojp-platform,
-  osteojp-portal) are green. **Never `--admin`, never the bypass box.** A refused
+- **Read required checks from the CHECKS API, never the PR banner.** Branch
+  protection decides which checks are required, and a GREEN self-merge lands
+  only when every one of them passes. This file does not copy the list: a copied
+  list drifts (it named three while branch protection required four).
+  **Never `--admin`, never the bypass box.** A refused
   merge is a HALT, not a workaround. A flaky unrelated check is re-run, not merged
   around; never present a red required check as done.
 - **A GREEN self-merge is done by ARMING, at open (CLAUDE.md, rule R2).** Right
@@ -39,7 +40,8 @@ If this file drifts from them, they win.
   green before arming: once the CI-minutes change (#1446) is merged, the
   required E2E check reads red on an unarmed PR until it is armed, because arming
   is what starts the suite. Auto-merge waits only on branch protection's
-  required checks; the Vercel deploys named above are not among them.
+  required checks. The Vercel deploys (osteojp-api, osteojp-platform,
+  osteojp-portal) are not among them, so they do not gate the merge.
 - **Two kinds of PR go to the owner UNARMED, and the script refuses both with no
   merge call:** a PR labelled `held-for-apply` (exit 6: it arms only after its
   apply is proven and the label comes off, per CLAUDE.md), and a PR whose title

@@ -35,6 +35,12 @@
 // this change, and a copy with `--auto` removed). The in-file negative control
 // at the bottom always mutates the SHIPPED script, whatever the variable says.
 //
+// THE DOCUMENTS. The last tests read .claude/commands/ship.md and the
+// conventions skill, the two files that tell an agent to run this script, and
+// check they do not contradict it: no arm claim in a PR body written before the
+// arm, no copied list of required checks, no merge that waits on Vercel. The
+// variable above does not affect them.
+//
 // Run: pnpm test:scripts   (node --test, wired into the REQUIRED CI quality job)
 
 import test from "node:test";
@@ -391,4 +397,95 @@ test("NEGATIVE CONTROL: the shipped script with --auto removed is caught", () =>
     problems.some((m) => /wanted exactly "gh pr merge 1234 --auto --squash"/.test(m)),
     "the exact-argv assertion did not name the missing --auto: " + problems.join("; "),
   );
+});
+
+// ---------------------------------------------------------------------------
+// The two documents that tell an agent to run this script must agree with it.
+// An agent reads these, not the script, so a stale sentence in either one is
+// how the old "wait for green, then merge" habit comes back. Each check is a
+// function returning what is wrong, so the controls below can show it catches
+// the text these documents carried before review round 1.
+// ---------------------------------------------------------------------------
+
+const SHIP_MD = join(ROOT, ".claude/commands/ship.md");
+const SKILL_MD = join(ROOT, ".claude/skills/osteojp-conventions/SKILL.md");
+
+/** Branch protection's required contexts, however a document spells them. */
+const CHECK_NAME_PATTERNS = [/Lint ?\+ ?typecheck/i, /DB-gated tests/i, /Playwright E2E/i, /Validate spec/i];
+
+/** Required-check names a document copies. A copied list drifts from branch protection. */
+function copiedCheckNames(text) {
+  return CHECK_NAME_PATTERNS.filter((re) => re.test(text)).map(String);
+}
+
+/** Prose sentences, with code spans removed (`merge-on-green.sh` is not the word green). */
+function sentences(text) {
+  return text
+    .replace(/`[^`]*`/g, "")
+    .replace(/\s+/g, " ")
+    .split(/\.\s+/);
+}
+
+/** Sentences that make a merge wait on a Vercel deploy. Auto-merge never does. */
+function vercelGreenConditions(text) {
+  return sentences(text).filter((s) => /Vercel/.test(s) && /\bgreen\b/i.test(s));
+}
+
+/**
+ * Anything the PR body says about arming. /ship writes the body in step 3,
+ * before step 4 arms, and step 4 can refuse (exit 4 to 7) or fail to arm
+ * (exit 1), so the body cannot know the outcome and must not state one.
+ */
+function armClaims(body) {
+  return [/\barm(?:ed|ing|s)?\b/i, /auto-?merge/i].filter((re) => re.test(body)).map(String);
+}
+
+/** The PR body template in ship.md step 3: the heredoc of the `gh pr create` call. */
+function prBodyTemplate(md) {
+  const m = md.match(/gh pr create[^\n]*<<'EOF'\n([\s\S]*?)\nEOF\n/);
+  return m ? m[1] : null;
+}
+
+/** The skill's "The gates and the merge policy" section, up to the next heading. */
+function gatesSection(md) {
+  const m = md.match(/\n## The gates and the merge policy\n([\s\S]*?)\n## /);
+  return m ? m[1] : null;
+}
+
+test("ship.md: the PR body, written before step 4 arms, says nothing about arming", () => {
+  const body = prBodyTemplate(readFileSync(SHIP_MD, "utf8"));
+  assert.ok(body && /## Checks/.test(body), "the step 3 PR body template was not found in ship.md");
+  assert.deepEqual(armClaims(body), [], `the PR body claims an arm outcome:\n${body}`);
+});
+
+test("ship.md: no copied list of required checks", () => {
+  const md = readFileSync(SHIP_MD, "utf8");
+  assert.match(md, /scripts\/merge-on-green\.sh <PR_NUMBER>/, "ship.md no longer runs the script");
+  assert.deepEqual(copiedCheckNames(md), []);
+});
+
+test("conventions skill: the merge policy copies no check list and waits on no Vercel deploy", () => {
+  const section = gatesSection(readFileSync(SKILL_MD, "utf8"));
+  assert.ok(section && /merge-on-green\.sh/.test(section), "the gates section was not found, or no longer names the script");
+  assert.deepEqual(copiedCheckNames(section), []);
+  assert.deepEqual(vercelGreenConditions(section), []);
+});
+
+test("NEGATIVE CONTROL: the document checks catch the text carried before review round 1", () => {
+  const oldBody =
+    "## Summary\n- <bullet points from commit messages>\n\n## Checks\n" +
+    "Armed at open: GitHub squash-merges this PR once every required check is green.\n" +
+    "Vercel statuses are not required checks.\n";
+  assert.ok(armClaims(oldBody).length > 0, "the arm claim in the old PR body was not caught");
+
+  const oldRule =
+    "- **Read required checks from the CHECKS API, never the PR banner.** GREEN\n" +
+    "  self-merge only when EVERY required check (DB-gated tests, Lint+typecheck+test,\n" +
+    "  Playwright E2E) AND all three Vercel deploys (osteojp-api, osteojp-platform,\n" +
+    "  osteojp-portal) are green. **Never `--admin`, never the bypass box.**\n";
+  assert.equal(copiedCheckNames(oldRule).length, 3, "the three copied check names were not all caught");
+  assert.equal(vercelGreenConditions(oldRule).length, 1, "the wait on the Vercel deploys was not caught");
+
+  // And the checks are not so wide that the script's own name trips them.
+  assert.deepEqual(vercelGreenConditions("The Vercel deploys do not gate `merge-on-green.sh`."), []);
 });
