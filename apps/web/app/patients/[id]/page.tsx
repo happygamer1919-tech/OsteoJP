@@ -51,6 +51,7 @@ import { toGuestIntakeDisplay } from "../../../lib/guest-intake/view";
 import { GuestIntakeAnswers } from "../../../components/guest-intake-answers";
 // CARE-01: the therapists reception has assigned to this patient.
 import { listCareTeam } from "../../../lib/admin/care-team";
+import { labelCareTeamCard, staffLabelContext } from "../../../lib/scheduling/staff-options";
 import { CareTeamCard } from "./care-team-card";
 
 export const dynamic = "force-dynamic";
@@ -285,8 +286,21 @@ export default async function PatientProfilePage({
   const canManageCareTeam = can(ctx.role, "care_team:manage");
   const careTeam =
     tab === "resumo" && canManageCareTeam ? await listCareTeam(ctx, patient.id) : [];
-  const careTeamCandidates =
-    tab === "resumo" && canManageCareTeam ? (await getAgendaOptions(ctx)).therapists : [];
+  const careTeamOptions =
+    tab === "resumo" && canManageCareTeam ? await getAgendaOptions(ctx) : null;
+  // NESA-SCOPE: members and picker are named as one list (labelCareTeamCard),
+  // so two same-named machines on this card always read apart. Labels only.
+  const careTeamLabels = careTeamOptions ? staffLabelContext(careTeamOptions) : null;
+  const careTeamMembersRaw = careTeam.map((m) => ({ userId: m.userId, fullName: m.fullName }));
+  const { candidates: careTeamCandidates, members: careTeamMembers } =
+    careTeamLabels && careTeamOptions
+      ? labelCareTeamCard(
+          careTeamOptions.therapists,
+          careTeamMembersRaw,
+          careTeamLabels,
+          careTeamOptions.allTherapists ?? careTeamOptions.therapists,
+        )
+      : { candidates: careTeamOptions?.therapists ?? [], members: careTeamMembersRaw };
   // Faturação tab: fetch invoices for this patient when the tab is active.
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // U1 — the Marcações filters, read from the URL and applied IN SQL.
@@ -337,9 +351,12 @@ export default async function PatientProfilePage({
     marcacoesFilters.semNota;
   // The three dropdowns. Same 60s-cached reference read the Notas tab already
   // uses; fetched only when the tab that renders them is the one being shown.
+  // NESA-SCOPE: a therapist's Terapeuta list is narrowed to their own clinics,
+  // so the id the URL is filtering by is kept in it, or the select would paint
+  // its "all" option over a filtered list.
   const consultasOptions =
     tab === "consultas"
-      ? await getAgendaOptions(ctx)
+      ? await getAgendaOptions(ctx, null, { keepStaffId: marcacoesFilters.therapist || null })
       : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again),
   // narrowed by whatever the URL asks for. No filter set = the whole history,
@@ -526,7 +543,7 @@ export default async function PatientProfilePage({
                 <CareTeamCard
                   patientId={id}
                   locale={DEFAULT_LOCALE}
-                  members={careTeam.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
+                  members={careTeamMembers}
                   candidates={careTeamCandidates}
                   error={typeof m === "string" && m.startsWith("err")}
                 />

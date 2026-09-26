@@ -1,0 +1,65 @@
+name: held-for-apply-blocks-merge
+
+# A PULL REQUEST LABELLED held-for-apply CANNOT MERGE WHILE IT CARRIES THE LABEL.
+#
+# The label marks a PR whose migration or data op is not yet applied to
+# production. CLAUDE.md carries the rule: the label goes on when a held PR opens
+# and comes off only once its apply is proven, before the PR arms. Until
+# 2026-09-23 the label was enforced by nothing but that sentence and by
+# auto-update-prs.yml skipping the branch. That day #1399 was merged while 0093
+# was still unapplied, and the squash merge deleted the branch its apply
+# document resolves, so the rehearsed package could not run. The owner ruled
+# that a required check blocks the merge. This job is that check.
+#
+# HOW IT DECIDES. It reads the label NAMES from the event payload: no token, no
+# checkout, no API call. It runs again on every labeled and unlabeled event, so
+# taking the label off turns the latest run green without a new commit, and
+# putting it on turns it red. The match is exact apart from case (GitHub label
+# names are unique regardless of case): "held-for-apply-later" does not match.
+#
+# IT FAILS CLOSED. If the labels cannot be read, the job fails and says so.
+#
+# THE CHECK NAME for branch protection is this job's name:
+#     held-for-apply-blocks-merge
+# Listing it as a required status check is the owner's setting. Until it is
+# listed, this job reports on every PR but blocks nothing.
+#
+# scripts/held-for-apply-blocks-merge.test.mjs runs the shipped `run:` block
+# against labelled, unlabelled and malformed label lists, and proves on a
+# disarmed copy that it would notice the block stop failing.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  held-for-apply-blocks-merge:
+    name: held-for-apply-blocks-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail while the PR carries the held-for-apply label
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          printf '%s' "${LABELS}" | jq -e '(. // []) | any(.[]; ascii_downcase == "held-for-apply")' > /dev/null
+          rc=$?
+          set -e
+          case "${rc}" in
+            0)
+              echo "::error::PR #${PR_NUMBER} carries the label held-for-apply. Its apply is not proven, so it cannot merge. The label comes off only after the apply is proven."
+              exit 1
+              ;;
+            1)
+              echo "PR #${PR_NUMBER} does not carry held-for-apply. This check does not block the merge."
+              exit 0
+              ;;
+            *)
+              echo "::error::Could not read this PR's labels (jq exit ${rc}). Failing closed."
+              exit 1
+              ;;
+          esac

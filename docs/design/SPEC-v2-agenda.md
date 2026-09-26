@@ -115,6 +115,40 @@ readable, which is what reception reads at 1024 every day. At 768 a column is
 109px. So tablets and landscape phones GAIN the real grid, which 1023 denied
 them, and 768 is the number `SPEC-staff-screens.md` had already named.
 
+**AMENDED BELOW 640px, AGENDA-MOBILE-WEEK.** The owner ruled that on a phone
+Semana is the week GRID, compressed, and Dia is unchanged. So under **640px**
+Semana renders a separate compact grid (`app/agenda/agenda-week-compact.tsx`,
+decided by `lib/scheduling/agenda-compact-core.ts`): Mon to Sat plus Dom only when
+that Sunday holds a booking, a sticky day header whose cells open Dia, a time axis
+from 08:00 to 21:00 in 30-minute rows widened to cover any booking outside it
+(hour rules only, as on the desktop since W13-B, and the window's end labelled on
+the bottom edge; the axis never leaves the screen sideways and its labels scroll
+with their rows, which is how the builder read the card's axis wording, open as
+Q-B6-12), a now line with a one-time scroll to it, and blocks showing the start time, the
+first name (truncated), the status glyph and a colour per SERVICE. Concurrent
+blocks split the column side by side into at most two lanes; where three or
+more run at once, the two lanes' rows are drawn and the others of that moment
+sit behind a small "+N" chip on the two blocks' glyph line that opens Dia (or
+on the glyph line of a left block starting less than half an hour after the
+hidden rows), so three at once read two blocks and "+1" (the card's default,
+open as Q-B6-1). A twin pair (a person row and a machine row of one patient,
+same start) takes both lanes before any other row, so it is side by side, person
+left where the page knows the machine, and the other rows starting then go
+behind the chip. A row that started earlier and still runs when the pair starts
+goes behind the chip too, for its whole span, with its chip at its own start.
+Two lanes hold one pair at a time: where a pair starts while an earlier pair
+still holds a lane, the later pair is behind the chip whole, never split. A half-lane block gives the first name a line of its own,
+so a 30-minute row is 34px tall. Between 640
+and 767 Semana keeps the list above; Dia keeps the list at every width under 768.
+At 640 and up nothing changes: the desktop grid still stacks same-start rows and
+never truncates a name (W11-00 v3), and still colours by therapist. Below 640
+Bloquear and Nova marcação drop their decorative icons (labels stay), Atualizar
+keeps its refresh icon (its visible text is only the time), the three trim their
+padding, and the shell header shows the initials avatar without the name and role
+(Q-B6-11, answered), so the page no longer scrolls sideways at 390 or 360. The
+defaults behind this (Q-B6-1 to Q-B6-12) are in docs/DECISIONS.md, and each is an
+owner question in docs/QUESTIONS.md, open except Q-B6-11.
+
 ---
 
 ## 5. Role gating

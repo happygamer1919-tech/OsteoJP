@@ -3,15 +3,19 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { scopedLocationId } from "@/lib/auth/location-choice";
 import { resolveViewerLocationIds, viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { getPatient } from "@/lib/patients/queries";
+import { servicesAtClinics } from "@/lib/scheduling/agenda-service-filter";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import { sharedResourcesForViewer } from "@/lib/scheduling/shared-resource-guard";
 import { listSharedResources } from "@/lib/scheduling/shared-resources";
+import { reconcileAgendaStaff } from "@/lib/scheduling/staff-options";
 import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
 import {
   formatTimeOfDay,
   lisbonMinutesFromMidnight,
-  rangeForView,
+  lisbonParts,
+  readRangeForView,
   todayInLisbon,
+  viewDates,
   type AgendaView,
 } from "@/lib/scheduling/time";
 import { closureFor, gridWindow, toMinutes } from "@/lib/scheduling/clinic-hours";
@@ -69,11 +73,9 @@ export default async function AgendaPage({
   // data. A therapist may narrow to one member of the set and to nothing else.
   // `practitionerId` stays the viewer's own id, because it also chooses whose
   // blocked time is drawn, and a shared device has no time off.
+  const therapistTenantResources = lockTherapist ? await listSharedResources(actor) : [];
   const sharedResources = lockTherapist
-    ? sharedResourcesForViewer(
-        await listSharedResources(actor),
-        await resolveViewerLocationIds(actor),
-      )
+    ? sharedResourcesForViewer(therapistTenantResources, await resolveViewerLocationIds(actor))
     : [];
   let practitionerIds: string[] | null = null;
   if (lockTherapist) {
@@ -92,7 +94,10 @@ export default async function AgendaPage({
   const locationScope = await viewerLocationScope(actor);
   const locationId = lockTherapist ? null : scopedLocationId(locationScope, firstParam(sp.location));
 
-  const { startUtc, endUtc } = rangeForView(view, anchor);
+  // AGENDA-MOBILE-WEEK: the week READS Monday to Sunday so the phone grid can
+  // show Dom when a Sunday holds a booking. Every desktop surface still DRAWS
+  // Mon-Sat (viewDates) and ignores a Sunday row. A read-range change only.
+  const { startUtc, endUtc } = readRangeForView(view, anchor);
 
   // LE-agenda-does-not-learn-of-portal-bookings. Taken IMMEDIATELY BEFORE the
   // reads below, not after and not in the render: this is the instant the
@@ -166,10 +171,17 @@ export default async function AgendaPage({
   /* actually loaded for this view, and `clinicWindow` is kept separately  */
   /* so the grid can MARK the rows that only an appointment asks for.      */
   /* Passing the same object for both would silently lose the distinction. */
-  const appointmentSpans = appointments.map((a) => ({
-    startMin: lisbonMinutesFromMidnight(new Date(a.startsAt)),
-    endMin: lisbonMinutesFromMidnight(new Date(a.endsAt)),
-  }));
+  // AGENDA-MOBILE-WEEK: only the days the desktop DRAWS widen its window. The
+  // week now reads Sunday too (for the phone's Dom column), and a Sunday row
+  // must not stretch a Mon-Sat grid it is not drawn on. The phone grid computes
+  // its own window from the days it draws (agenda-compact-core.ts).
+  const drawnDates = new Set(viewDates(view, anchor));
+  const appointmentSpans = appointments
+    .filter((a) => drawnDates.has(lisbonParts(new Date(a.startsAt)).date))
+    .map((a) => ({
+      startMin: lisbonMinutesFromMidnight(new Date(a.startsAt)),
+      endMin: lisbonMinutesFromMidnight(new Date(a.endsAt)),
+    }));
   const clinicWindow = gridWindow(visibleClinics);
   const dayWindow = gridWindow(visibleClinics, appointmentSpans);
 
@@ -261,6 +273,26 @@ export default async function AgendaPage({
       ? frontDeskResources
       : sharedResourcesForViewer(frontDeskResources, await resolveViewerLocationIds(actor));
 
+  // NESA-SCOPE: the roster (60-second cache) and the machines (per request) made
+  // to agree. A machine this viewer is not offered leaves the people lists too,
+  // even when it is flagged bookable, and labels are resolved over both, so the
+  // Terapeutas filter, Bloquear horario and the drawer name a same-named machine
+  // at each clinic the same way. See reconcileAgendaStaff.
+  const staff = reconcileAgendaStaff({
+    options,
+    tenantResources: lockTherapist ? therapistTenantResources : frontDeskResources,
+    offered: lockTherapist ? sharedResources : offeredToFrontDesk,
+    selfId: actor.userId,
+  });
+
+  // AGENDA-FILTER-SERVICE: the service chips are the ACTIVE services offered at
+  // the VIEWER's clinics (`viewerClinicIds`: every active clinic for the owner
+  // and an unassigned staffer, their staff_locations otherwise), in the order
+  // getAgendaOptions lists them. Not narrowed by the toolbar's clinic: the
+  // selection is one list per device, and a chip that came and went with the
+  // clinic select would drop a stored choice every time the clinic changed.
+  const serviceChips = servicesAtClinics(options.services, options.viewerClinicIds);
+
   return (
     <AgendaViewClient
       view={view}
@@ -271,8 +303,9 @@ export default async function AgendaPage({
       // self-lock (practitioner forced to self, Terapeuta selector hidden for
       // role "therapist"). Read-scope isolation stays on `lockTherapist` above.
       viewer={{ role: actor.role, userId: actor.userId }}
-      options={{ ...options, sharedResources: lockTherapist ? sharedResources : offeredToFrontDesk }}
+      options={{ ...options, ...staff }}
       appointments={appointments}
+      serviceChips={serviceChips}
       blocks={blockSpans}
       dayWindow={dayWindow}
       clinicWindow={clinicWindow}
