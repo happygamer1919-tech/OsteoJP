@@ -14,11 +14,14 @@
 -- compares the link set itself, which stage 2 refuses to write empty (R09), and
 -- FAILs on an empty comparand rather than reading VACUOUS.
 --
--- Verdict 4 carries its own control: the digest over every recorded pair less
--- one must DIFFER from the stored digest, so a digest that cannot see a pair go
--- FAILs. Verdict 9 finds the rows the op could have written without the audit
--- row's list: every imported original that carries a registo must be one the op
--- recorded linking, or one that carried a registo before it.
+-- Verdict 1 needs no control: it asserts exactly one v2 row, so a read blind to
+-- audit_log reads 0 and FAILs it, and a count of the tenant's audit rows beside
+-- it would always include that row. Verdict 4 carries its own control: the
+-- digest over every recorded pair less one must DIFFER from the stored digest,
+-- so a digest that cannot see a pair go FAILs. Verdict 9 finds the rows the op
+-- could have written without the audit row's list: every imported original that
+-- carries a registo must be one the op recorded linking, or one that carried a
+-- registo before it.
 --
 -- Run:
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f scripts/data/anexo-link-v2-3-verify.sql
@@ -52,7 +55,6 @@ WITH al AS (
   SELECT
     (SELECT count(*) FROM public.audit_log x WHERE x.action = 'attachment.anexo_link_v2.backfill')::int AS v2_rows,
     (SELECT count(*) FROM public.audit_log x WHERE x.action = 'attachment.anexo_link.backfill')::int AS old_rows,
-    (SELECT count(*) FROM public.audit_log x, al WHERE x.tenant_id = al.tenant)::int AS tenant_audit_rows,
     (SELECT al.m FROM al) AS m,
     coalesce((SELECT (al.m ->> 'linked_count')::int FROM al), 0) AS n_link,
     coalesce((SELECT (al.m ->> 'registos_touched')::int FROM al), 0) AS n_reg,
@@ -100,9 +102,9 @@ WITH al AS (
       WHERE a.patient_id IS NOT NULL
         AND a.storage_path LIKE a.tenant_id::text || '/migration/fisiozero/%')::int AS documentos_ok
 ), r AS (
-SELECT 1 AS n, 'exactly one v2 audit row; control: the audit rows of its tenant read' AS "check",
-       v.v2_rows::text || ' / control ' || v.tenant_audit_rows::text AS observed, '1 / control above 0' AS expected,
-       CASE WHEN v.v2_rows = 1 AND v.tenant_audit_rows > 0 THEN 'OK' ELSE 'FAIL' END AS verdict FROM v
+SELECT 1 AS n, 'exactly one v2 audit row; no control: a read blind to audit_log reads 0 and FAILs it' AS "check",
+       v.v2_rows::text AS observed, '1' AS expected,
+       CASE WHEN v.v2_rows = 1 THEN 'OK' ELSE 'FAIL' END AS verdict FROM v
 UNION ALL SELECT 2, 'the original ANEXO LINK write never ran; control: the v2 audit row is read',
        v.old_rows::text || ' / control ' || v.v2_rows::text, '0 / control 1',
        CASE WHEN v.old_rows <> 0 OR v.v2_rows <> 1 THEN 'FAIL' ELSE 'OK' END FROM v

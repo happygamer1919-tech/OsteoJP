@@ -2,12 +2,18 @@
 
 **Status: NOT RUN. HELD.** A DATA operation, not a migration: no schema change, no journal
 entry. Four blocks, each pasted whole, on its own and in order: stage 0 (the files and the
-head it runs from), stage 1 (read), stage 2 (write) and stage 3 (verify). Any `STOP:` line,
-any REFUSE, any `FAIL` verdict, any `ERROR` and any non-zero exit halts the sitting:
+head it runs from), stage 1 (read), stage 2 (write) and stage 3 (verify). One rule governs
+every halt, in STAFF-10 v2's words, here and in GREEN's dispatch:
 
-A refusal or a STOP stops the sitting, and nothing continues to the next block.
-
-Whether and when a halted sitting starts again is the lead's call, never the runner's.
+THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any
+STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and
+nothing continues to the next block. After stage 2 has committed, a post-commit STOP
+still stops the sitting: the write stands, and stage 3 (READ ONLY) runs only on the
+owner's or the lead's word. The only onward path from stage 2 to stage 3 is exit 0
+with the line "ANEXO LINK V2 WRITTEN. Paste stage 3 now." No block, and no dispatch
+step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:
+no closing read and no journal read. Whether and when a halted sitting starts again
+is the lead's call, never the runner's.
 
 **Authored by SOLO. Run by GREEN,** a fresh session launched with the apply settings, on the
 owner's dispatch naming the three files below by filename (`CLAUDE.md`, "Who applies
@@ -26,7 +32,7 @@ nothing else; the section "Rehearsal" says what has run on these exact bytes.
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/anexo2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
 | Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50` |
 | Stage 2 | `scripts/data/anexo-link-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5` |
-| Stage 3 | `scripts/data/anexo-link-v2-3-verify.sql`, READ ONLY, 12 verdicts and a SUMMARY row, sha256 `80b6ab24d899bfe02f5578f5a3ae31a3533ad752efb851ed3e8fe99469f4cb89` |
+| Stage 3 | `scripts/data/anexo-link-v2-3-verify.sql`, READ ONLY, 12 verdicts and a SUMMARY row, sha256 `28fd91982f183d505b482a38e103fbf73e3dec681c13197b83f72ce7571f4e29` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
 | This document | `docs/data-op-anexo-link-v2.md`, pinned by `docs/data-op-anexo-link-v2.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
@@ -65,18 +71,19 @@ checks it, because there is no data dependency to check. DUR-01 writes
 `appointments.ends_at` and `appointments.updated_at` on the importer's one-minute future
 bookings and one `audit_log` row of its own action. This op reads no appointment, and every
 refusal and verdict it takes from `audit_log` is keyed on its own two actions (the original
-op's and this one's), never on DUR-01's. Three controls count every audit row of the op's
+op's and this one's), never on DUR-01's. Two controls count every audit row of the op's
 tenant, whatever its action, so a read that could not see that tenant's audit rows prints
-VACUOUS or FAILs rather than OK: the controls of R02 and R03 (stages 1 and 2) and verdict 1's
-(stage 3). Once DUR-01 has run, DUR-01's audit row is one of the rows those controls count. A
+VACUOUS rather than OK: the controls of R02 and R03 (stages 1 and 2). Stage 3 needs no such
+count: verdict 1 asserts exactly one v2 audit row, so a read blind to `audit_log` reads 0 and
+FAILs it. Once DUR-01 has run, DUR-01's audit row is one of the rows those controls count. A
 refusal's control only decides whether its line reads VACUOUS or OK, so that row can move
-R02's or R03's line from VACUOUS to OK and never to REFUSE, and it cannot move verdict 1,
-whose count already includes the v2 row itself; nothing reads DUR-01's action, id or metadata. The op's sets come from
-`migration_staging_rows`, `attachments` and `clinical_records`, none of which DUR-01 writes,
-and its md5 families cover none of DUR-01's rows. So DUR-01 having run, or not, changes no
-refusal and no verdict, and no stage refuses on it. A coupling in SQL would make this op refuse
-over a state it cannot see a reason to care about. The unit test holds every `audit_log` read
-of every stage to exactly this: keyed on the op's two actions, or one of those three counts.
+R02's or R03's line from VACUOUS to OK and never to REFUSE; nothing reads DUR-01's action,
+id or metadata. The op's sets come from `migration_staging_rows`, `attachments` and
+`clinical_records`, none of which DUR-01 writes, and its md5 families cover none of DUR-01's
+rows. So DUR-01 having run, or not, changes no refusal and no verdict, and no stage refuses on
+it. A coupling in SQL would make this op refuse over a state it cannot see a reason to care
+about. The unit test holds every `audit_log` read of every stage to exactly this: keyed on the
+op's two actions, or one of those two controls.
 
 ## What changed from the original op, and why
 
@@ -161,11 +168,11 @@ set -eo pipefail
 DOCPIN=docs/data-op-anexo-link-v2.sha256
 SHA1=d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50
 SHA2=926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5
-SHA3=80b6ab24d899bfe02f5578f5a3ae31a3533ad752efb851ed3e8fe99469f4cb89
+SHA3=28fd91982f183d505b482a38e103fbf73e3dec681c13197b83f72ce7571f4e29
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
 rm -f /tmp/anexo2-main.sha /tmp/anexo2-stage1.out /tmp/anexo2-stage1.ok
@@ -204,7 +211,7 @@ SHA1=d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 rm -f /tmp/anexo2-stage1.out /tmp/anexo2-stage1.ok
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
@@ -262,7 +269,7 @@ anexo_v2_digest
 )
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 [ -n "$(find /tmp/anexo2-stage1.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not pass in this sitting, or passed over an hour ago. The sitting stops"; exit 1; }
 test -f /tmp/anexo2-stage1.out || { echo "STOP: stage 1 left no transcript. The sitting stops"; exit 1; }
 [ -n "$(find /tmp/anexo2-stage1.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's"; exit 1; }
@@ -297,8 +304,8 @@ node scripts/assert-production-target.mjs
 rm -f /tmp/anexo2-stage2.out
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "${ARGS[@]}" -f scripts/data/anexo-link-v2-2-write.sql 2>&1 | tee /tmp/anexo2-stage2.out
 touch /tmp/anexo2-written.ok
-grep -q 'ANEXO LINK V2 STAGE 2 DONE' /tmp/anexo2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
-grep -q 'ANEXO LINK V2 STAGE 2 COMMITTED' /tmp/anexo2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+grep -q 'ANEXO LINK V2 STAGE 2 DONE' /tmp/anexo2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
+grep -q 'ANEXO LINK V2 STAGE 2 COMMITTED' /tmp/anexo2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 echo "ANEXO LINK V2 WRITTEN. Paste stage 3 now."
 )
 ```
@@ -311,9 +318,8 @@ included. **psql exit 0 means the COMMIT ran and the write stands:** the block t
 written marker at once, before it reads the transcript, and the two `STOP:` lines it can print
 after that point say so in their own words. Either one stops the sitting like every other
 `STOP:`: GREEN reports the whole output, never runs stage 0, 1 or 2 again, and stage 3, READ
-ONLY, runs only when the owner or the lead says so. The file pins
-`client_min_messages = notice`, so a quieter role or database default cannot hide the step
-lines. The NOTICE lines name each step: `P1` the sets, `P2` each refusal with its control,
+ONLY, runs only on the owner's or the lead's word. The file pins `client_min_messages = notice`,
+so a quieter role or database default cannot hide the step lines. The NOTICE lines name each step: `P1` the sets, `P2` each refusal with its control,
 `P3` the carries, `P4` the triggers the system did not create (none, or it stops), `P5` the
 baselines and the md5 family profile, `W1` the write with its row count, `A` the exact deltas
 and every md5 family unchanged, and `ANEXO LINK V2 STAGE 2 DONE`, then `COMMITTED` after the
@@ -326,15 +332,15 @@ undefined carry fails before the block, on the `set_config` statement, also with
 `STOP:` the block prints exits 1: before psql nothing was written, and after it (the two lines
 above) the write stands. Any other exit (psql exits 2 on a lost connection, possibly during the
 COMMIT) leaves open whether the write stands. In every case GREEN reports the exit code and the
-whole output, and stage 3, READ ONLY, runs only when the owner or the lead says so; its verdict
-1 answers whether the write stands. R03 refuses a second write regardless.
+whole output, and stage 3, READ ONLY, runs only on the owner's or the lead's word; its
+verdict 1 answers whether the write stands. R03 refuses a second write regardless.
 
 ## STAGE 3: the verify. READ ONLY, re-issuable
 
 ```
 (
 set -eo pipefail
-SHA3=80b6ab24d899bfe02f5578f5a3ae31a3533ad752efb851ed3e8fe99469f4cb89
+SHA3=28fd91982f183d505b482a38e103fbf73e3dec681c13197b83f72ce7571f4e29
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -427,9 +433,9 @@ named document outside the link set, whatever its class),
 R09 guarantees them rows; the others print VACUOUS when empty and still compare, since even an
 empty table's md5 changes on the one write it could suffer, a new row.
 
-**Stage 3's 12 verdicts, each with a control that can FAIL it:**
+**Stage 3's 12 verdicts, each able to FAIL:**
 
-1. exactly one v2 audit row, with the audit rows of its tenant read as the control;
+1. exactly one v2 audit row. It needs no control: a read blind to `audit_log` reads 0 and FAILs it, and a count of the tenant's audit rows beside it would always include that row;
 2. the original ANEXO LINK write never ran, with the v2 row read as the control;
 3. every recorded document carries the registo stage 2 recorded for it;
 4. the digest recomputes from the rows as they stand, and the same digest less one pair differs (FAIL if it does not: the digest could not see a pair go);
@@ -498,10 +504,10 @@ row. Each refusal adds its own shape by an arm, so the other arms keep theirs.
 |---|---|
 | `b14-rehearsal/build-base.zsh` | `973273163578626d2410752243a4968127de40cfdf0b6229ac77f0b3f72dd99f` |
 | `b14-rehearsal/fixture.sql` | `15b83bd9990f5d289317cdf88dfd17199cd3072963c6d6381fc591897649d591` |
-| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `aca7ebfde4b826a90150b8ad5f666d1f1b1c1e60bf5a8db26be212e2ca424371` |
-| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `36c5743f8e7f8cd89fa153e0bc33ad012c0326be08e9b47f0a3273854e37b85c` |
+| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `7ed49a4708178fbb6ee77f6461be40d2f0e2935c11464f595a1680ee57f27c1d` |
+| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `2fa0b102d6f499ecdfede44aec8ffbc9a5f110b4d4ca28fb73a4444d6321b310` |
 | `b14-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, unchanged but its header | `241840aed7091688976a019c4eab6cc687ce291e0ca8c9a6e573b2512cbcce7c` |
-| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `b6cac80e542a6f31c1693b808cf878157158d41e567783653f44003283dad3f6` |
+| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `e0c8383a7aff10a6632e8cf522623204bd85c29cab133bfd59e1e74b1415a257` |
 
 **How it ran.** Each block was extracted from this document at the commit under test (cloned
 from a local bare origin whose `main` is that commit; the clone's origin is asserted to be it
@@ -616,6 +622,7 @@ both counted), so the block's own checks decide the exit.
 | a target registo signed, which the immutability trigger refuses: its UPDATE exits 3, the database unchanged | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
 | none: a fresh copy of the written database | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
 | a copy of stage 3 whose less-one digest drops nothing (verdict 4's control made blind) | 1 | 4 | |
+| stage 3 read as a role row-level security blinds (`authenticated`, no JWT claims), so it sees no audit row and no document: verdict 1 FAILs, with no control | 1 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 | `0 OK / 0 VACUOUS / 12 FAIL` |
 | before the op: no named document left alone, no episode on a target registo; stages 1, 2 and 3 all exit 0 | 0 | none; VACUOUS on 10 and 11, which the block allows | `10 OK / 2 VACUOUS / 0 FAIL` |
 
 **The original files, on the same fixture** (never on production), run directly with their own
@@ -629,7 +636,7 @@ carries. This is the evidence for the section "What changed from the original op
 | after O3 | | the soft-deleted document linked: true; the two names after a no-break space and a tab linked: 0 of 2 |
 
 **The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
-and `prove-red.mjs` ran it against 129 seeded wrong copies of the committed tree, each
+and `prove-red.mjs` ran it against 157 seeded wrong copies of the committed tree, each
 re-pinned so only its target property is wrong: every copy turned its target test red, and the
 green control (DELETE, DROP and TRUNCATE only inside comments, a string and an echo) kept every
 test green. Every test has at least one copy.
@@ -665,12 +672,29 @@ re-issuable paragraph called a FAIL on 8 with no merge an integrity breach, thou
 moves 8, 10 and 11 with no row written, as the two arms above that add a column show; it now
 says so, and that a merge re-pointing a document the op left alone FAILs 10.
 
-**What review round 3 caught,** fixed on the commit that carries this section; no stage file
-changed. Four properties had no pin that could fail: stage 2's one comparison of each carry
-stage 1 printed with the one it recomputes (P3); what each stage 3 verdict compares, its CASE
-and the reads behind it; the predicates of R01, R08 and R09; and the rule that no byte this op
-adds is outside ASCII. The unit test now pins P3 whole, every verdict's CASE and every read it
+**What review round 3 caught,** each fixed in that round; no stage file changed. Four
+properties had no pin that could fail: stage 2's one comparison of each carry stage 1 printed
+with the one it recomputes (P3); what each stage 3 verdict compares, its CASE and the reads
+behind it; the predicates of R01, R08 and R09; and the rule that no byte this op adds is outside
+ASCII. The unit test now pins P3 whole, every verdict's CASE and every read it
 compares, every refusal's `n` and control, and every byte of the files this op adds. The
+review's seeded copies, and their siblings, each stayed green on the commit before and turned
+their target test red on that one.
+
+**What review round 4 caught,** fixed on the commit that carries this section. Two properties
+had no pin: the clean-worktree check of stages 0 to 2, and the original document's text below
+its banner; nor had four checks the blocks make: stage 3's FAIL halt, stage 1's REFUSE halt,
+its `partition holds` check, and the COMPLETE and sidecar checks of stages 1 to 3. The unit test
+now runs every block's checks after psql under bash, on transcripts it writes, so a grep for a
+word the SQL never prints halts nothing and goes red; it pins the clean-worktree and sidecar
+checks in place, and holds the original document, less its banner, to its sha256 on main before
+this op. The halt rule was STAFF-10 v2's superseded wording: it is now the rule STAFF-10 v2
+states since the owner's ruling of 2026-09-26, word for word but for this op's own onward line,
+and every STOP after the write ends on the owner's or the lead's word. And verdict 1's control,
+the count of its tenant's audit rows, could never decide it, because the v2 row is one of them;
+of the three tenant-wide controls review round 1 named, two remain. Verdict 1 now asserts
+exactly one v2 row and nothing else, with a comment the only change to a stage file; the stage 3
+arm above that reads as a role row-level security blinds FAILs it, with no control. The
 review's seeded copies, and their siblings, each stayed green on the commit before and turn
 their target test red on this one.
 

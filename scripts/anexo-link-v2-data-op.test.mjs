@@ -7,8 +7,10 @@
 // moves.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -684,7 +686,7 @@ test("an empty comparand never reads OK: 10 and 11 read VACUOUS, every other ver
 // it compares, whole, over the rows the audit row names. A comparison dropped from a
 // CASE, a bound loosened, or a read blinded (WHERE false, another status) goes red here.
 const VERDICT_CASES = [
-  "CASE WHEN v.v2_rows = 1 AND v.tenant_audit_rows > 0 THEN 'OK' ELSE 'FAIL' END",
+  "CASE WHEN v.v2_rows = 1 THEN 'OK' ELSE 'FAIL' END",
   "CASE WHEN v.old_rows <> 0 OR v.v2_rows <> 1 THEN 'FAIL' ELSE 'OK' END",
   "CASE WHEN v.link_ok <> v.n_link OR v.n_pairs <> v.n_link OR v.n_link = 0 THEN 'FAIL' ELSE 'OK' END",
   "CASE WHEN v.digest_now IS DISTINCT FROM (v.m ->> 'digest') OR v.digest_less_one IS NOT DISTINCT FROM (v.m ->> 'digest') THEN 'FAIL' ELSE 'OK' END",
@@ -702,7 +704,6 @@ const TARGET_EPISODES = "WHERE ep.id IN (SELECT cr.episode_id FROM public.clinic
 const V_READS = {
   v2_rows: "(SELECT count(*) FROM public.audit_log x WHERE x.action = 'attachment.anexo_link_v2.backfill')::int",
   old_rows: "(SELECT count(*) FROM public.audit_log x WHERE x.action = 'attachment.anexo_link.backfill')::int",
-  tenant_audit_rows: "(SELECT count(*) FROM public.audit_log x, al WHERE x.tenant_id = al.tenant)::int",
   m: "(SELECT al.m FROM al)",
   n_link: "coalesce((SELECT (al.m ->> 'linked_count')::int FROM al), 0)",
   n_reg: "coalesce((SELECT (al.m ->> 'registos_touched')::int FROM al), 0)",
@@ -828,6 +829,143 @@ test("the document runs from origin/main: stage 0 records the sha, stages 1 and 
   assert.ok(s3.some((l) => l.includes("MAIN MOVED since stage 0")), "stage 3 does not report a moved main");
 });
 
+const CLEAN = ["STRAY=$(git status --short)", '[ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }'];
+const SIDECAR = 'shasum -a 256 -c docs/data-op-anexo-link-v2.sha256 || { echo "STOP: this document is not the approved one"; exit 1; }';
+
+test("stages 0, 1 and 2 refuse a worktree that is not clean before they fetch, and stages 1 to 3 check the sidecar on the recorded sha before the environment or psql", () => {
+  for (const [label, b] of STAGE_BLOCKS()) {
+    const l = b.split("\n");
+    const at = l.indexOf(CLEAN[0]);
+    const fetch = l.indexOf("git fetch origin --prune");
+    if (label === "stage 3") {
+      assert.equal(at, -1, "stage 3 refuses a worktree that is not clean, but after the write only it may still run");
+    } else {
+      assert.ok(at >= 0 && l[at + 1] === CLEAN[1], `${label} does not refuse a worktree that is not clean`);
+      assert.equal(l.filter((x) => x.includes("STRAY")).length, 2, `${label} checks its worktree more than once, so this test cannot tell which check halts`);
+      const written = l.findIndex((x) => x.includes("/tmp/anexo2-written.ok"));
+      assert.ok(written >= 0 && written < at && at < fetch, `${label} does not check the worktree after the written marker and before it fetches`);
+    }
+    if (label === "stage 0") continue;
+    const side = l.indexOf(SIDECAR);
+    const co = l.indexOf("git checkout -q --detach ${REC}");
+    const env = l.findIndex((x) => x.includes("osteojp-secrets"));
+    const psql = l.findIndex((x) => x.startsWith("psql "));
+    assert.equal(l.filter((x) => x.includes("docs/data-op-anexo-link-v2.sha256")).length, 1, `${label} does not check the sidecar exactly once`);
+    assert.ok(co >= 0 && co < side && side < env && env < psql, `${label} does not check the sidecar after it checks out the recorded sha and before it loads the environment and runs psql`);
+  }
+});
+
+/** The lines of a stage block after its psql line: the checks it makes on the transcript psql left. */
+function tail(n) {
+  const l = block(`STAGE ${n}`).split("\n");
+  const at = l.findIndex((x) => x.startsWith("psql "));
+  assert.ok(at > 0 && l.at(-1) === ")", `the stage ${n} block has no psql line, or does not close its subshell`);
+  return l.slice(at + 1, -1).join("\n");
+}
+
+/**
+ * The stage `n` block's own checks after psql, run under bash on a transcript this
+ * test writes, with `/tmp/` moved to a scratch directory. So a check that no longer
+ * halts where it must (a grep for a word the SQL never prints, a check deleted) goes
+ * red here, where a pin on the text would pass a grep that can never match.
+ */
+function runTail(n, transcript, rec = "a".repeat(40)) {
+  const dir = mkdtempSync(join(tmpdir(), "anexo2-tail-"));
+  try {
+    writeFileSync(join(dir, `anexo2-stage${n}.out`), transcript);
+    const body = tail(n).split("/tmp/").join(`${dir}/`);
+    const r = spawnSync("bash", ["-c", `(\nset -eo pipefail\nREC=${rec}\n${body}\n)`], { encoding: "utf8" });
+    const file = (f) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), "utf8").trim() : null);
+    return { code: r.status, out: `${r.stdout}${r.stderr}`, mark: file("anexo2-stage1.ok"), written: file("anexo2-written.ok") !== null };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const REF_CODES = Array.from({ length: 12 }, (_, i) => `R${String(i + 1).padStart(2, "0")}`);
+/** A stage 1 transcript in psql's aligned shape; `verdicts` maps a refusal code to what it reads. */
+function stage1Out({ verdicts = {}, codes = REF_CODES, partition = "partition holds", complete = true } = {}) {
+  return [
+    "=== ANEXO LINK V2, STAGE 1. READ ONLY ===",
+    " pairs | in_exactly_one | unclassified | label_agrees |    partition    ",
+    "-------+----------------+--------------+--------------+-----------------",
+    `    11 |             11 |            0 |           11 | ${partition}`,
+    ...codes.map((c) => ` ${c}  | a refusal label | ${verdicts[c] === "REFUSE" ? 1 : 0} |       2 | ${verdicts[c] ?? "OK"}`),
+    ...(complete ? ["=== ANEXO LINK V2 STAGE 1 COMPLETE. Nothing was written. ==="] : []),
+    "",
+  ].join("\n");
+}
+/** A stage 3 transcript in psql's aligned shape; `verdicts` maps a verdict number to what it reads. */
+function stage3Out({ verdicts = {}, count = 12, summary = true, complete = true } = {}) {
+  const rows = Array.from({ length: count }, (_, i) => [i + 1, verdicts[i + 1] ?? "OK"]);
+  const tally = (w) => rows.filter((r) => r[1] === w).length;
+  return [
+    "  n | check | observed | expected | verdict",
+    ...rows.map(([n, w]) => `${String(n).padStart(3)} | a verdict label | 5 | 5, above 0 | ${w}`),
+    ...(summary ? [` 99 | SUMMARY | ${tally("OK")} OK / ${tally("VACUOUS")} VACUOUS / ${tally("FAIL")} FAIL | ${count} verdicts | SUMMARY`] : []),
+    ...(complete ? ["=== ANEXO LINK V2 STAGE 3 COMPLETE. Nothing was written. ==="] : []),
+    "",
+  ].join("\n");
+}
+
+test("the checks each block makes on its transcript halt where they must: run under bash on written transcripts, every halt arm stops and every clean arm goes on", () => {
+  const halts = (r, stop, what) => {
+    assert.equal(r.code, 1, `${what}: the block went on (exit ${r.code})\n${r.out}`);
+    assert.ok(r.out.includes(stop), `${what}: the block did not print ${JSON.stringify(stop)}\n${r.out}`);
+  };
+  // Stage 1: the mark that lets stage 2 run is written only on a clean read.
+  const s1 = runTail(1, stage1Out());
+  assert.equal(s1.code, 0, `stage 1 halts on a clean read\n${s1.out}`);
+  assert.equal(s1.mark, "a".repeat(40), "stage 1 does not mark its pass with the recorded sha");
+  assert.ok(s1.out.includes("STAGE 1 READ, NO REFUSAL."), "stage 1 does not say it read no refusal");
+  const vac = runTail(1, stage1Out({ verdicts: { R02: "VACUOUS", R03: "VACUOUS" } }));
+  assert.equal(vac.code, 0, `stage 1 halts on a VACUOUS refusal, which is not a refusal\n${vac.out}`);
+  for (const [what, out, stop] of [
+    ["a REFUSE on R05", stage1Out({ verdicts: { R05: "REFUSE" } }), "STOP: stage 1 printed REFUSE on R05 "],
+    ["a REFUSE on R01 and R12", stage1Out({ verdicts: { R01: "REFUSE", R12: "REFUSE" } }), "STOP: stage 1 printed REFUSE on R01 R12 "],
+    ["no COMPLETE line", stage1Out({ complete: false }), "STOP: stage 1 did not print its COMPLETE line"],
+    ["a partition that does not hold", stage1Out({ partition: "PARTITION BROKEN" }), "STOP: stage 1 did not print partition holds"],
+    ["11 refusal lines", stage1Out({ codes: REF_CODES.slice(0, 11) }), "STOP: stage 1 printed 11 refusal lines, not 12"],
+  ]) {
+    const r = runTail(1, out);
+    halts(r, stop, `stage 1 on ${what}`);
+    assert.equal(r.mark, null, `stage 1 on ${what} marked its pass, so stage 2 would run`);
+  }
+  // Stage 2: the written marker stands as soon as psql exits 0, whatever the transcript says.
+  const done = "NOTICE:  ANEXO LINK V2 STAGE 2 DONE: linked\n=== ANEXO LINK V2 STAGE 2 COMMITTED ===\n";
+  const s2 = runTail(2, done);
+  assert.equal(s2.code, 0, `stage 2 halts on a clean write\n${s2.out}`);
+  assert.ok(s2.written && s2.out.includes(WRITTEN_LINE), "stage 2 does not mark the write and send the runner on");
+  for (const [what, out, stop] of [
+    ["no DONE line", "=== ANEXO LINK V2 STAGE 2 COMMITTED ===\n", "but its DONE line is missing"],
+    ["no COMMITTED line", "NOTICE:  ANEXO LINK V2 STAGE 2 DONE: linked\n", "but its COMMITTED line is missing"],
+  ]) {
+    const r = runTail(2, out);
+    halts(r, stop, `stage 2 on ${what}`);
+    assert.ok(r.written, `stage 2 on ${what} left no written marker, though psql exited 0 and the write stands`);
+    assert.ok(!r.out.includes(WRITTEN_LINE), `stage 2 on ${what} sent the runner on to stage 3`);
+  }
+  // Stage 3: VERIFIED only with 12 verdicts, a SUMMARY, the COMPLETE line, no FAIL, and VACUOUS on 10 and 11 alone.
+  const s3 = runTail(3, stage3Out());
+  assert.equal(s3.code, 0, `stage 3 halts on a clean verify\n${s3.out}`);
+  assert.ok(s3.out.includes("ANEXO LINK V2 VERIFIED: 12 OK / 0 VACUOUS / 0 FAIL."), `stage 3 does not print its profile\n${s3.out}`);
+  const allowed = runTail(3, stage3Out({ verdicts: { 10: "VACUOUS", 11: "VACUOUS" } }));
+  assert.equal(allowed.code, 0, `stage 3 halts on VACUOUS 10 and 11, which the op allows\n${allowed.out}`);
+  assert.ok(allowed.out.includes("ANEXO LINK V2 VERIFIED: 10 OK / 2 VACUOUS / 0 FAIL."), `stage 3 does not print the profile it read\n${allowed.out}`);
+  for (const [what, out, stop] of [
+    ["a FAIL on 3, 4 and 6", stage3Out({ verdicts: { 3: "FAIL", 4: "FAIL", 6: "FAIL" } }), "STOP: a stage 3 verdict read FAIL"],
+    ["a FAIL on 12 alone", stage3Out({ verdicts: { 12: "FAIL" } }), "STOP: a stage 3 verdict read FAIL"],
+    ["a VACUOUS on 9", stage3Out({ verdicts: { 9: "VACUOUS" } }), "STOP: VACUOUS on 9 "],
+    ["no COMPLETE line", stage3Out({ complete: false }), "STOP: stage 3 did not print its COMPLETE line"],
+    ["no SUMMARY row", stage3Out({ summary: false }), "STOP: stage 3 printed no SUMMARY row"],
+    ["11 verdicts", stage3Out({ count: 11 }), "STOP: stage 3 printed 11 verdicts, not 12"],
+  ]) {
+    const r = runTail(3, out);
+    halts(r, stop, `stage 3 on ${what}`);
+    assert.ok(!r.out.includes("ANEXO LINK V2 VERIFIED"), `stage 3 on ${what} still printed VERIFIED`);
+  }
+});
+
 test("every script a block runs is pinned by sha256 in that block and checked before it runs, and stage 0 checks all four", () => {
   for (const [label, b] of STAGE_BLOCKS()) {
     const l = b.split("\n");
@@ -852,10 +990,33 @@ test("every script a block runs is pinned by sha256 in that block and checked be
   for (const f of [F1, F2, F3, GUARD]) assert.ok(s0.includes(`[ "$(shasum -a 256 ${f} | cut -d' ' -f1)" = `), `stage 0 does not check ${f}`);
 });
 
-const HALT_RULE = "A refusal or a STOP stops the sitting, and nothing continues to the next block.\n\nWhether and when a halted sitting starts again is the lead's call, never the runner's.";
+/**
+ * THE HALT RULE as STAFF-10 v2 states it since its owner ruling of 2026-09-26 (one
+ * halt rule, in the same words in the document and in GREEN's dispatch), copied here
+ * because that document is not on main. This op states it word for word, with its
+ * own onward line in place of STAFF-10 v2's, and nothing else changed.
+ */
+const STAFF10_HALT_RULE = [
+  "THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any",
+  "STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and",
+  "nothing continues to the next block. After stage 2 has committed, a post-commit STOP",
+  "still stops the sitting: the write stands, and stage 3 (READ ONLY) runs only on the",
+  "owner's or the lead's word. The only onward path from stage 2 to stage 3 is exit 0",
+  "with the line \"STAFF-10 V2 WRITTEN. Paste stage 3 now.\" No block, and no dispatch",
+  "step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:",
+  "no closing read and no journal read. Whether and when a halted sitting starts again",
+  "is the lead's call, never the runner's.",
+].join("\n");
+const WRITTEN_LINE = "ANEXO LINK V2 WRITTEN. Paste stage 3 now.";
+const HALT_RULE = STAFF10_HALT_RULE.replace("\"STAFF-10 V2 WRITTEN. Paste stage 3 now.\"", `"${WRITTEN_LINE}"`);
+const AFTER_STOP = "stage 3 (READ ONLY) runs only on the owner's or the lead's word";
 
 test("the halt rule is STAFF-10 v2's, word for word; no block or stage file tells anyone to run stage 1 again, and no STOP sends the runner on to stage 3", () => {
-  assert.ok(DOC.includes(HALT_RULE), "the document does not carry the halt rule");
+  assert.notEqual(HALT_RULE, STAFF10_HALT_RULE, "this op's onward line did not replace STAFF-10 v2's, so this test compares nothing");
+  assert.equal(DOC.split(HALT_RULE).length - 1, 1, "the document does not state STAFF-10 v2's halt rule exactly once, word for word");
+  assert.ok(DOC.indexOf(HALT_RULE) < DOC.indexOf("| Fact | Value |"), "the halt rule is not stated at the head of the document, before the facts table");
+  assert.ok(block("STAGE 2").split("\n").includes(`echo "${WRITTEN_LINE}"`), "the stage 2 block's onward line is not the one the halt rule names");
+  assert.ok(HALT_RULE.replace(/\s+/g, " ").includes(AFTER_STOP), "the words every STOP after the write ends on are not the halt rule's");
   for (const [label, b] of STAGE_BLOCKS()) assert.doesNotMatch(b, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
   for (const [label, sql] of STAGES) assert.doesNotMatch(sql, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
   let stops = 0;
@@ -866,16 +1027,21 @@ test("the halt rule is STAFF-10 v2's, word for word; no block or stage file tell
       assert.doesNotMatch(line, /paste stage 3|stage 3 only|go on to stage 3/i, `${label}: a STOP sends the runner on to stage 3: ${line.slice(0, 100)}`);
       if (/ALREADY WRITTEN/.test(line)) {
         written.push(label);
-        assert.ok(line.endsWith(` The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }`), `${label}: the ALREADY WRITTEN STOP does not stop the sitting and leave stage 3 to the owner or the lead`);
+        assert.ok(line.endsWith(` The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and ${AFTER_STOP}"; exit 1; }`), `${label}: the ALREADY WRITTEN STOP does not stop the sitting and leave stage 3 to the owner's or the lead's word`);
       }
     }
   }
   assert.ok(stops > 0, "no block prints a STOP line, so this read nothing");
   assert.deepEqual(written, ["stage 0", "stage 1", "stage 2"], "stages 0, 1 and 2 do not each refuse once stage 2 has written");
   const prose = between(DOC, "## STAGE 2", "## STAGE 3", "the stage 2 section").split("\n```\n").at(-1);
-  for (const want of ["Either one stops the sitting like every other `STOP:`", "stage 3, READ ONLY, runs only when the owner or the lead says so", "**Every other exit stops the sitting, with nothing else pasted.**"]) {
+  for (const want of [
+    "Either one stops the sitting like every other `STOP:`: GREEN reports the whole output, never runs stage 0, 1 or 2 again, and stage 3, READ ONLY, runs only on the owner's or the lead's word.",
+    "**Every other exit stops the sitting, with nothing else pasted.**",
+    "In every case GREEN reports the exit code and the whole output, and stage 3, READ ONLY, runs only on the owner's or the lead's word;",
+  ]) {
     assert.ok(prose.replace(/\s+/g, " ").includes(want), `the prose under the stage 2 block does not say: ${want}`);
   }
+  assert.doesNotMatch(DOC.replace(/\s+/g, " "), /when the owner or the lead says so/, "the document keeps the halt rule's superseded ending somewhere");
 });
 
 test("stage 2 cannot hide its DONE line, the block marks the write as soon as psql exits 0, and a STOP after the write stops the sitting", () => {
@@ -893,7 +1059,7 @@ test("stage 2 cannot hide its DONE line, the block marks the write as soon as ps
   const stops = after.filter((line) => line.includes("STOP:"));
   assert.deepEqual(stops.map((l) => l.match(/^grep -q '([^']+)'/)?.[1]), ["ANEXO LINK V2 STAGE 2 DONE", "ANEXO LINK V2 STAGE 2 COMMITTED"], "the block does not print exactly two STOP lines after the write");
   for (const line of stops) {
-    assert.match(line, /"STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its (DONE|COMMITTED) line is missing\. The sitting stops here\. Never run stage 0, 1 or 2 again\. GREEN reports this whole output, and stage 3 \(READ ONLY\) runs only when the owner or the lead says so"; exit 1; \}$/);
+    assert.match(line, /"STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its (DONE|COMMITTED) line is missing\. The sitting stops here\. Never run stage 0, 1 or 2 again\. GREEN reports this whole output, and stage 3 \(READ ONLY\) runs only on the owner's or the lead's word"; exit 1; \}$/);
   }
   const onward = after.filter((l) => /stage 3/i.test(l) && !l.includes("STOP:"));
   assert.deepEqual(onward, ['echo "ANEXO LINK V2 WRITTEN. Paste stage 3 now."'], "the only line sending the runner on to stage 3 is not the WRITTEN line");
@@ -923,10 +1089,19 @@ test("the doc pins each file by its sha256, and the sidecar pins the doc", () =>
   assert.equal(read(SIDEF), `${sha256(DOCF)}  ${DOCF}\n`, "the sidecar does not pin the doc");
 });
 
+/** sha256 of docs/data-op-anexo-link.md as main carried it before this op (d5c85b83), with no banner. */
+const ORIGINAL_DOC_SHA256 = "5b5b84113145e2fb4794e973a0b08e481427bd3680f8713bd7522cd60868d74a";
+
 test("the original ANEXO LINK files are byte-identical to what their own doc pinned, and that doc is SUPERSEDED", () => {
   const old = read(OLDDOCF);
   assert.match(old, /^> \*\*SUPERSEDED on 2026-09-26\. DO NOT RUN ANY BLOCK IN THIS DOCUMENT\.\*\* The ANEXO LINK\n> write is now `docs\/data-op-anexo-link-v2\.md`/m, "the original doc carries no SUPERSEDED banner naming v2");
   assert.ok(old.indexOf("SUPERSEDED") < old.indexOf("**Status: NOT RUN.**"), "the banner is not above the original text");
+  // The banner is quote lines and one blank line, and the document without it is,
+  // byte for byte, the original as main carried it before this op (d5c85b83).
+  const from = old.indexOf("> **SUPERSEDED");
+  const status = old.indexOf("**Status: NOT RUN.**");
+  assert.match(old.slice(from, status), /^(?:> [^\n]*\n)+\n$/, "the banner carries something besides its quote lines and one blank line");
+  assert.equal(createHash("sha256").update(old.slice(0, from) + old.slice(status)).digest("hex"), ORIGINAL_DOC_SHA256, "the original document's text below its banner changed");
   for (const f of ["anexo-link-1-preview.sql", "anexo-link-2-apply.sql", "anexo-link-3-postcheck.sql"]) {
     const pinned = old.match(new RegExp(`scripts/data/${esc(f)}\`, sha256 \`([0-9a-f]{64})\``))?.[1];
     assert.ok(pinned, `the original doc does not pin ${f}`);
@@ -965,7 +1140,7 @@ const OWN_ACTION = new RegExp(`\\b[a-z]+\\.action (?:= '${esc(ACTION)}'|= '${esc
 const TENANT_CONTROLS = {
   "stage 1": ["SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant", 2],
   "stage 2": ["SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant", 2],
-  "stage 3": ["SELECT count(*) FROM public.audit_log x, al WHERE x.tenant_id = al.tenant", 1],
+  "stage 3": [null, 0],
 };
 
 test("the order after DUR-01 is stated in the document and not coupled in SQL: no stage reads appointments, every audit_log read is keyed on this op's two actions but the tenant-wide controls, and the document names them", () => {
@@ -981,15 +1156,17 @@ test("the order after DUR-01 is stated in the document and not coupled in SQL: n
     }
     assert.equal(reads.filter((r) => r === control).length, n, `${label} counts the tenant's audit rows ${reads.filter((r) => r === control).length} times, not ${n}`);
   }
-  // Where the controls sit: R02's and R03's control column, and verdict 1's.
+  // Where the controls sit: R02's and R03's control column. Stage 3 has none: verdict 1
+  // asserts exactly one v2 row, and a tenant-wide count beside it always includes that row,
+  // so it could never decide the verdict (review round 4).
   for (const c of ["R02", "R03"]) {
     const row = between(SETS, `'${c}'`, `'R0${Number(c[2]) + 1}'`, c);
     assert.match(row, new RegExp(`\\n\\s+\\(${esc(TENANT_CONTROLS["stage 1"][0])}\\)::int\\n\\s+UNION ALL\\n\\s+SELECT $`), `${c}'s control is not the tenant-wide count`);
   }
-  assert.equal((S3.match(/\btenant_audit_rows\b/g) ?? []).length, 3, "the tenant-wide count in stage 3 is read by more than verdict 1");
-  assert.match(verdictRows()[0], /v\.tenant_audit_rows::text[\s\S]*v\.tenant_audit_rows > 0/, "verdict 1 does not read the tenant-wide count as its control");
+  assert.match(verdictRows()[0], /CASE WHEN v\.v2_rows = 1 THEN 'OK' ELSE 'FAIL' END/, "verdict 1 does not FAIL on everything but exactly one v2 row");
+  assert.match(DOC, /^1\. exactly one v2 audit row\. It needs no control: a read blind to `audit_log` reads 0 and FAILs it/m, "the doc presents verdict 1 with a control that cannot FAIL it");
   const section = between(DOC, "## The order with DUR-01\n", "\n## ", "the DUR-01 section").replace(/\s+/g, " ");
-  for (const want of ["the controls of R02 and R03", "verdict 1's", "DUR-01's audit row is one of the rows those controls count"]) {
+  for (const want of ["Two controls count every audit row of the op's tenant", "the controls of R02 and R03 (stages 1 and 2)", "verdict 1 asserts exactly one v2 audit row, so a read blind to `audit_log` reads 0 and FAILs it", "DUR-01's audit row is one of the rows those controls count"]) {
     assert.ok(section.includes(want), `the DUR-01 section does not say: ${want}`);
   }
 });
