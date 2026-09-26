@@ -508,9 +508,10 @@ row. Each refusal adds its own shape by an arm, so the other arms keep theirs.
 | `b14-rehearsal/build-base.zsh` | `973273163578626d2410752243a4968127de40cfdf0b6229ac77f0b3f72dd99f` |
 | `b14-rehearsal/fixture.sql` | `15b83bd9990f5d289317cdf88dfd17199cd3072963c6d6381fc591897649d591` |
 | `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `19456b31651c0d05aa380eb58e43824e254a89fcf0414a345a696b99ea5ff673` |
-| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `71523788860e23f1a04b4130269c072c55ea3f649de59e636b6900b9a91c7b24` |
+| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `5e84f5a8a7141cefd1fd47818ef14770cfaf7849c837c18b882828bd6432bacf` |
 | `b14-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, unchanged but its header | `241840aed7091688976a019c4eab6cc687ce291e0ca8c9a6e573b2512cbcce7c` |
-| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `ead924d4e8dd4f4d306975f6d0ff8a4fce72d5e82bba90d7ed098b6527648cd2` |
+| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `2b3f0476bdfb8eedfc6645ff33add087b2bc55519b9c14e5f565a8e6f2a45e7c` |
+| `b14-rehearsal/smuggle.mjs`, the review round 6 copies of stage 2 | `8a1d781334c737090c4a78f51b4e32188046018c7bad0a2cc3706ba93c68eee5` |
 
 **How it ran.** Each block was extracted from this document at the commit under test (cloned
 from a local bare origin whose `main` is that commit; the clone's origin is asserted to be it
@@ -647,6 +648,28 @@ its exit is the defect the unit test now holds off, not the op's.
 | stage 1 with its target guard failing, as committed | 1 | nothing after the guard: no psql ran, no stage 1 mark | untouched |
 | the same, a copy of the block without `set -eo pipefail` | 0 | `STAGE 1 READ, NO REFUSAL`: it read the database and marked its pass past a failing guard | untouched |
 
+**Review round 6, run for real.** Each check stage 2 makes after the write, made to fire. A copy of
+stage 2 carries one write more inside its block, right after W1, and runs through this
+document's own stage 2 block with only its file and that file's pin swapped: the checks as
+committed stop every one after the `W1` notice, with exit 3, the database unchanged and no
+written marker. The review copy is that copy with the one check that stops it made to compare
+nothing, as review round 6's seeded copies did: its exit is the defect the unit test's new pins
+hold off, not the op's. The digest check has no row: it reads the rows the check before it
+reads, each linked document's registo, and that check stops any write that would move the
+digest first.
+
+| One write more, after W1 | The checks as committed | The review copy | Its exit | Database after the review copy |
+|---|---|---|---|---|
+| every consultation's recording key changed | 3, `STOP: consultations changed` | the consultations recomputation replaced by its own baseline | 0, `COMMITTED`, then `ANEXO LINK V2 WRITTEN` | the recording key changed, committed with the v2 audit row |
+| a staging row the op never reads changed | 3, `STOP: migration_staging_rows changed` | the staging rows recomputation replaced by its own baseline | 0, `COMMITTED`, then `ANEXO LINK V2 WRITTEN` | the staging row changed, committed with the v2 audit row |
+| the other tenant's episode retitled | 3, `STOP: clinical_episodes changed` | the recomputation over every episode replaced by its own baseline | 0, `COMMITTED`, then `ANEXO LINK V2 WRITTEN` | the episode retitled, committed with the v2 audit row |
+| the staff draft registo's data changed | 3, `STOP: clinical_records changed` | the recomputation over every registo replaced by its own baseline | 0, `COMMITTED`, then `ANEXO LINK V2 WRITTEN` | the draft's data changed, committed with the v2 audit row |
+| the staff patient document renamed | 3, `STOP: an attachment outside the link set changed` | the recomputation over every other attachment replaced by its own baseline | 0, `COMMITTED`, then `ANEXO LINK V2 WRITTEN` | the staff document renamed, committed with the v2 audit row |
+| every document the op leaves alone renamed | 3, `STOP: an attachment outside the link set changed` | the recomputation over the left-alone documents replaced by its own baseline | 3, `STOP: an attachment outside the link set changed`: the recomputation over every other attachment, beside it in the same check, still caught it | unchanged, no written marker |
+| every linked document renamed | 3, `STOP: a linked document changed in a column this op does not write` | the `w_fixed` check disarmed with `AND false` | 0, `COMMITTED`, then `ANEXO LINK V2 WRITTEN` | every linked document renamed, committed with the v2 audit row |
+| the staff patient document's patient cleared | 3, `STOP: the documents with a patient moved 13 -> 12` | the linked, unlinked and with-patient counts after the write taken from the baselines | 3, `STOP: an attachment outside the link set changed`: a later check, the recomputation over every other attachment, still caught it | unchanged, no written marker |
+| an imported original already on its registo unlinked, and one no cell names linked, so every count holds | 3, `STOP: 1 imported original(s) carry a registo that neither this op nor anything before it gave them` | `v_pre` taken over every imported original, linked or not | 3, `STOP: an attachment outside the link set changed`: a later check, the recomputation over every other attachment, still caught it | unchanged, no written marker |
+
 **The original files, on the same fixture** (never on production), run directly with their own
 carries. This is the evidence for the section "What changed from the original op, and why":
 
@@ -658,10 +681,11 @@ carries. This is the evidence for the section "What changed from the original op
 | after O3 | | the soft-deleted document linked: true; the two names after a no-break space and a tab linked: 0 of 2 |
 
 **The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
-and `prove-red.mjs` ran it against 175 seeded wrong copies of the committed tree, each
+and `prove-red.mjs` ran it against 212 seeded wrong copies of the committed tree, each
 re-pinned so only its target property is wrong: every copy turned its target test red, and the
-green control (DELETE, DROP and TRUNCATE only inside comments, a string and an echo) kept every
-test green. Every test has at least one copy.
+green controls (DELETE, DROP and TRUNCATE only inside comments, a string and an echo; an
+assignment to a guarded name only inside a comment and a string; a heading of this document
+quoted in its prose) kept every test green. Every test has at least one copy.
 
 **What the rehearsal caught.** The first full run passed every arm but one check: the R08 arm's
 document also belonged to another patient than its registo, so stage 2 stopped on R06, the
@@ -720,7 +744,7 @@ arm above that reads as a role row-level security blinds FAILs it, with no contr
 review's seeded copies, and their siblings, each stayed green on the commit before and turned
 their target test red on that one.
 
-**What review round 5 caught,** fixed on the commit that carries this section. Nothing pinned
+**What review round 5 caught,** each fixed in that round. Nothing pinned
 what makes the blocks halt: the `set -eo pipefail` that opens each block and the
 `-v ON_ERROR_STOP=1` on each psql line. The unit test's block checks supplied a
 `set -eo pipefail` of their own and never ran psql, so they passed with either line gone; the
@@ -737,8 +761,26 @@ links it. And stage 3's SUMMARY check matched any row whose first column read 99
 RECORD row included once the link set holds that many: the check and the profile read now
 anchor on the SUMMARY label, and the round 5 arm whose count carry reads 99 shows both. The
 seeded copies of the first two findings, and their siblings, stayed green on the commit before
-and turn their target test red on this one; this commit's unit test, run on the commit before,
-goes red on exactly the tests of the last two.
+and turned their target test red on that one; that round's unit test, run on the commit before
+it, went red on exactly the tests of the last two.
+
+**What review round 6 caught,** fixed on the commit that carries this section; no stage file
+changed. Two properties had no pin that could fail. The unit test pinned only the IF lines of
+stage 2's checks after the write, not the reads they compare: a recomputation replaced by its
+own baseline, the `w_fixed` check disarmed with `AND false`, the counts after the write taken
+from arithmetic on the baselines, the digest taken from the plan instead of the rows as
+written, or `v_pre` widened, each kept every IF line and stayed green. The unit test now pins
+P5's baselines, `v_pre` among them, and section A's reads and checks whole, holds P5 before the
+write and section A after it, refuses any other assignment to a baseline, an after-read,
+`v_pre` or the digest, and holds the audit row to record `v_pre` as `prelinked_ids`; the round 6
+table above shows each of those checks stopping a write for real, and what the review copy of
+it lets through. And nothing pinned the rule that no public byte quotes an owner ruling: the
+unit test now holds the facts table's Ruling row, the headers of stages 1 and 2 and the owner
+questions to their paraphrased label, refuses a phrase that presents words as the owner's, and
+names every double-quoted span of this document's prose and of the stage files' comments as
+what it is. The review's seeded copies stayed green on the commit before, and so did their
+siblings but two an older pin already caught (the total after the write taken from its baseline,
+and the digest read with its own text gone); every one turns its target test red on this one.
 
 ## Undoing it
 

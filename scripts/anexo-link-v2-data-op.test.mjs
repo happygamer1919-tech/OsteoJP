@@ -511,6 +511,85 @@ test("the exact deltas: the total holds, linked and unlinked move by exactly the
   assert.match(a, /IF v_digest IS DISTINCT FROM \(v_car ->> 'anexo_v2_digest'\) THEN/, "the rows as written are not held to the carried digest");
 });
 
+// P5, every baseline stage 2 reads before the write, and section A, every read after
+// it with the check each read feeds, pinned whole (comments dropped, whitespace
+// folded). An IF alone can be armed and still compare nothing: a recomputation
+// replaced by its own baseline, a count replaced by arithmetic on the baselines, the
+// digest taken from the plan instead of the rows as written, or v_pre widened, all
+// keep every IF line and go red here (review round 6).
+const P5_BASELINES = [
+  "SELECT count(*)::int INTO v_b_total FROM public.attachments a;",
+  "SELECT count(*)::int INTO v_b_linked FROM public.attachments a WHERE a.tenant_id = v_tenant AND a.clinical_record_id IS NOT NULL;",
+  "SELECT count(*)::int INTO v_b_unlinked FROM public.attachments a WHERE a.tenant_id = v_tenant AND a.clinical_record_id IS NULL;",
+  "SELECT count(*)::int INTO v_b_with_patient FROM public.attachments a WHERE a.tenant_id = v_tenant AND a.patient_id IS NOT NULL;",
+  "v_pre := ARRAY(SELECT a.id FROM public.attachments a WHERE a.storage_path LIKE a.tenant_id::text || '/migration/fisiozero/%' AND a.clinical_record_id IS NOT NULL ORDER BY a.id);",
+  "SELECT count(*)::int, md5(coalesce(string_agg(ROW(a.id, a.tenant_id, a.patient_id, a.storage_path, a.file_name, a.mime_type, a.size_bytes, a.uploaded_by, a.created_at, a.deleted_at, a.deleted_by_user_id, a.delete_reason)::text, E'\\n' ORDER BY a.id), '')) INTO v_bn_w_fixed, v_b_md5_w_fixed FROM public.attachments a WHERE a.id = ANY(v_att);",
+  "SELECT count(*)::int, md5(coalesce(string_agg(md5((a.*)::text), E'\\n' ORDER BY a.id), '')) INTO v_bn_att_rest, v_b_md5_att_rest FROM public.attachments a WHERE NOT (a.id = ANY(v_att));",
+  "SELECT count(*)::int, md5(coalesce(string_agg((a.*)::text, E'\\n' ORDER BY a.id), '')) INTO v_bn_excl, v_b_md5_excl FROM public.attachments a WHERE a.id = ANY(v_excl_ids);",
+  "SELECT count(*)::int, md5(coalesce(string_agg(md5((cr.*)::text), E'\\n' ORDER BY cr.id), '')) INTO v_bn_cr_all, v_b_md5_cr_all FROM public.clinical_records cr;",
+  "SELECT count(*)::int, md5(coalesce(string_agg(md5((cr.*)::text), E'\\n' ORDER BY cr.id), '')) INTO v_bn_cr_t, v_b_md5_cr_t FROM public.clinical_records cr WHERE cr.id = ANY(v_regs);",
+  "SELECT count(*)::int, md5(coalesce(string_agg((ep.*)::text, E'\\n' ORDER BY ep.id), '')) INTO v_bn_ep_all, v_b_md5_ep_all FROM public.clinical_episodes ep;",
+  "SELECT count(*)::int, md5(coalesce(string_agg((ep.*)::text, E'\\n' ORDER BY ep.id), '')) INTO v_bn_ep_t, v_b_md5_ep_t FROM public.clinical_episodes ep WHERE ep.id IN (SELECT cr.episode_id FROM public.clinical_records cr WHERE cr.id = ANY(v_regs));",
+  "SELECT count(*)::int, md5(coalesce(string_agg(md5((s.*)::text), E'\\n' ORDER BY s.id), '')) INTO v_bn_stg, v_b_md5_stg FROM public.migration_staging_rows s;",
+  "SELECT count(*)::int, md5(coalesce(string_agg((co.*)::text, E'\\n' ORDER BY co.id), '')) INTO v_bn_cons, v_b_md5_cons FROM public.consultations co;",
+].join(" ");
+const SECTION_A = [
+  "SELECT count(*)::int INTO v_a_total FROM public.attachments a;",
+  "SELECT count(*)::int INTO v_a_linked FROM public.attachments a WHERE a.tenant_id = v_tenant AND a.clinical_record_id IS NOT NULL;",
+  "SELECT count(*)::int INTO v_a_unlinked FROM public.attachments a WHERE a.tenant_id = v_tenant AND a.clinical_record_id IS NULL;",
+  "SELECT count(*)::int INTO v_a_with_patient FROM public.attachments a WHERE a.tenant_id = v_tenant AND a.patient_id IS NOT NULL;",
+  "IF v_a_total <> v_b_total THEN RAISE EXCEPTION 'STOP: the attachment total moved % -> %; this op neither creates nor removes a document', v_b_total, v_a_total; END IF;",
+  "IF v_a_linked <> v_b_linked + cardinality(v_att) OR v_a_unlinked <> v_b_unlinked - cardinality(v_att) THEN RAISE EXCEPTION 'STOP: linked % -> % and unlinked % -> %, not exactly plus and minus the link set', v_b_linked, v_a_linked, v_b_unlinked, v_a_unlinked; END IF;",
+  "IF v_a_with_patient <> v_b_with_patient THEN RAISE EXCEPTION 'STOP: the documents with a patient moved % -> %; a link never clears a patient', v_b_with_patient, v_a_with_patient; END IF;",
+  "SELECT count(*)::int INTO v_n FROM jsonb_array_elements(v_lnk) e JOIN public.attachments a ON a.id = (e ->> 'a')::uuid AND a.clinical_record_id = (e ->> 'r')::uuid;",
+  "IF v_n <> cardinality(v_att) THEN RAISE EXCEPTION 'STOP: % of % linked documents carry the registo that named them', v_n, cardinality(v_att); END IF;",
+  "SELECT coalesce(md5(string_agg(a.id::text || ':' || a.clinical_record_id::text, ',' ORDER BY a.id, a.clinical_record_id)), 'empty') INTO v_digest FROM public.attachments a WHERE a.id = ANY(v_att);",
+  "IF v_digest IS DISTINCT FROM (v_car ->> 'anexo_v2_digest') THEN RAISE EXCEPTION 'STOP: the rows as written digest to %, and stage 1 carried %', v_digest, v_car ->> 'anexo_v2_digest'; END IF;",
+  "SELECT count(*)::int INTO v_n FROM public.attachments a JOIN public.clinical_records cr ON cr.id = a.clinical_record_id WHERE a.id = ANY(v_att) AND a.patient_id IS DISTINCT FROM cr.patient_id;",
+  "IF v_n <> 0 THEN RAISE EXCEPTION 'STOP: % linked document(s) belong to another patient than their registo', v_n; END IF;",
+  "SELECT count(*)::int INTO v_n FROM public.clinical_records cr WHERE cr.id = ANY(v_regs) AND cr.status = 'locked';",
+  "IF v_n <> cardinality(v_regs) THEN RAISE EXCEPTION 'STOP: % of % target registos are locked after the write', v_n, cardinality(v_regs); END IF;",
+  "SELECT count(*)::int INTO v_n FROM public.attachments a WHERE a.storage_path LIKE a.tenant_id::text || '/migration/fisiozero/%' AND a.clinical_record_id IS NOT NULL AND NOT (a.id = ANY(v_pre)) AND NOT (a.id = ANY(v_att));",
+  "IF v_n <> 0 THEN RAISE EXCEPTION 'STOP: % imported original(s) carry a registo that neither this op nor anything before it gave them', v_n; END IF;",
+  "IF (SELECT md5(coalesce(string_agg(ROW(a.id, a.tenant_id, a.patient_id, a.storage_path, a.file_name, a.mime_type, a.size_bytes, a.uploaded_by, a.created_at, a.deleted_at, a.deleted_by_user_id, a.delete_reason)::text, E'\\n' ORDER BY a.id), '')) FROM public.attachments a WHERE a.id = ANY(v_att)) IS DISTINCT FROM v_b_md5_w_fixed THEN RAISE EXCEPTION 'STOP: a linked document changed in a column this op does not write'; END IF;",
+  "IF (SELECT md5(coalesce(string_agg(md5((a.*)::text), E'\\n' ORDER BY a.id), '')) FROM public.attachments a WHERE NOT (a.id = ANY(v_att))) IS DISTINCT FROM v_b_md5_att_rest OR (SELECT md5(coalesce(string_agg((a.*)::text, E'\\n' ORDER BY a.id), '')) FROM public.attachments a WHERE a.id = ANY(v_excl_ids)) IS DISTINCT FROM v_b_md5_excl THEN RAISE EXCEPTION 'STOP: an attachment outside the link set changed'; END IF;",
+  "IF (SELECT md5(coalesce(string_agg(md5((cr.*)::text), E'\\n' ORDER BY cr.id), '')) FROM public.clinical_records cr) IS DISTINCT FROM v_b_md5_cr_all OR (SELECT md5(coalesce(string_agg(md5((cr.*)::text), E'\\n' ORDER BY cr.id), '')) FROM public.clinical_records cr WHERE cr.id = ANY(v_regs)) IS DISTINCT FROM v_b_md5_cr_t THEN RAISE EXCEPTION 'STOP: clinical_records changed; this op writes none'; END IF;",
+  "IF (SELECT md5(coalesce(string_agg((ep.*)::text, E'\\n' ORDER BY ep.id), '')) FROM public.clinical_episodes ep) IS DISTINCT FROM v_b_md5_ep_all OR (SELECT md5(coalesce(string_agg((ep.*)::text, E'\\n' ORDER BY ep.id), '')) FROM public.clinical_episodes ep WHERE ep.id IN (SELECT cr.episode_id FROM public.clinical_records cr WHERE cr.id = ANY(v_regs))) IS DISTINCT FROM v_b_md5_ep_t THEN RAISE EXCEPTION 'STOP: clinical_episodes changed; this op writes none'; END IF;",
+  "IF (SELECT md5(coalesce(string_agg(md5((s.*)::text), E'\\n' ORDER BY s.id), '')) FROM public.migration_staging_rows s) IS DISTINCT FROM v_b_md5_stg THEN RAISE EXCEPTION 'STOP: migration_staging_rows changed; this op reads it and writes none'; END IF;",
+  "IF (SELECT md5(coalesce(string_agg((co.*)::text, E'\\n' ORDER BY co.id), '')) FROM public.consultations co) IS DISTINCT FROM v_b_md5_cons THEN RAISE EXCEPTION 'STOP: consultations changed; this op writes none'; END IF;",
+].join(" ");
+const P5_FROM = "SELECT count(*)::int INTO v_b_total";
+const P5_TO = "RAISE NOTICE 'P5 baseline";
+const A_FROM = "SELECT count(*)::int INTO v_a_total";
+const A_TO = "RAISE NOTICE 'A the deltas";
+
+test("every check stage 2 makes after the write compares real reads: P5's baselines and v_pre before the write, section A's reads after it, each pinned whole, assigned nowhere else, and v_pre recorded as prelinked_ids", () => {
+  const c = code(S2);
+  const fold = (s) => s.replace(/\s+/g, " ").trim();
+  assert.equal(fold(between(c, P5_FROM, P5_TO, "P5")), P5_BASELINES, "a baseline stage 2 reads before the write, v_pre among them, reads something else");
+  assert.equal(fold(between(c, A_FROM, A_TO, "section A")), SECTION_A, "a check after the write compares something other than a read of the table as written: a recomputation replaced by its baseline, a count by arithmetic, the digest by the plan, or a check disarmed");
+  for (const anchor of [P5_FROM, A_FROM]) assert.equal(c.split(anchor).length - 1, 1, `stage 2 reads ${anchor} more than once, so this test cannot tell which read a check compares`);
+  const p5 = c.indexOf(P5_FROM);
+  const write = c.indexOf("UPDATE public.attachments SET");
+  const a = c.indexOf(A_FROM);
+  assert.ok(p5 > 0 && c.indexOf(P5_TO, p5) < write && write < a, "P5 is not read before the write, or section A is not read after it");
+  // No baseline, after-read, v_pre or v_digest is assigned outside the two pinned
+  // slices: a second assignment after the write would make a check compare the table
+  // with itself, and every line above would still match.
+  const outside = lexSql(c.slice(0, p5) + c.slice(c.indexOf(P5_TO, p5), a) + c.slice(c.indexOf(A_TO, a)), false).code;
+  const guarded = /^(?:v_b_[a-z_0-9]+|v_bn_[a-z_0-9]+|v_a_[a-z_0-9]+|v_pre|v_digest)$/;
+  const assigned = [
+    ...[...outside.matchAll(/\b(v_[a-z_0-9]+)\s*:=/g)].map((m) => m[1]),
+    ...[...outside.matchAll(/(?:^|;|\bTHEN|\bELSE|\bLOOP|\bBEGIN)\s*(v_[a-z_0-9]+)\s*=(?!=)/gim)].map((m) => m[1]),
+    ...[...outside.matchAll(/\bINTO\s+(?:STRICT\s+)?((?:v_[a-z_0-9]+\s*,\s*)*v_[a-z_0-9]+)/gi)].flatMap((m) => m[1].split(/\s*,\s*/)),
+    ...[...outside.matchAll(/\bGET\s+DIAGNOSTICS\s+(v_[a-z_0-9]+)\s*:?=/gi)].map((m) => m[1]),
+  ];
+  assert.ok(assigned.includes("v_att") && assigned.includes("v_n"), "the assignment reader found none of the block's own assignments, so it read nothing");
+  const stray = assigned.filter((v) => guarded.test(v));
+  assert.deepEqual(stray, [], `stage 2 assigns ${stray.join(", ")} outside P5 and section A`);
+  assert.ok(between(S2, "INSERT INTO public.audit_log", "GET DIAGNOSTICS v_n = ROW_COUNT;", "the audit row").includes("\n    'prelinked_ids', to_jsonb(v_pre),\n"), "the audit row does not record v_pre as prelinked_ids, which verdict 9 reads");
+});
+
 test("every check stage 2 makes after the write is armed: each document carries the registo that named it, patients match, registos stay locked, no other original gained a registo, and the audit row is written once, at this transaction's time", () => {
   const c = code(S2);
   const write = c.indexOf("UPDATE public.attachments SET");
@@ -1400,5 +1479,48 @@ test("no public byte of the op carries a count next to a counted noun, or a dash
   for (const [name, lit] of [["ws", SETS.match(/^\s+E'([^']*)' AS ws$/m)?.[1]], ["the synthetic cell", SETS.match(/SELECT 'control', [^\n]*\n\s+E'([^']*)'\n/)?.[1]]]) {
     assert.ok(lit, `${name} is not one E-string in the SETS block`);
     assert.match(lit, /^(?:[\x20-\x7e]|\\[tnrf]|\\x[0-9a-f]{2}|\\u[0-9a-f]{4})+$/, `${name} is not written in printable ASCII and escapes`);
+  }
+});
+
+/**
+ * Every double-quoted span of the document's prose (its fenced blocks aside, whose
+ * quotes are shell strings the tests above pin) and of the stage files' comments, as
+ * what it is. None is the owner's words: a ruling is paraphrased and labelled so, never
+ * quoted, so a new quoted span must be named here, where a reviewer reads it.
+ */
+const PROSE_QUOTES = [
+  WRITTEN_LINE, // the halt rule's onward line, which the stage 2 block echoes (STAFF-10 v2's rule, not a ruling)
+  "Who applies migrations", // a CLAUDE.md section title
+  "SOLO's record", // a CLAUDE.md section title
+  "documentos.csv is the richest source, it wins on a filename already seen", // the importer's own comment, read below from fisiozero.ts
+  "Sem anexos", // what the ficha prints
+  "no stage touches", // this document's own facts row
+  "a copy", // the rehearsal section's own label
+];
+const SQL_COMMENT_QUOTES = ["${DATABASE_URL_DIRECT}", "STOP:", "char"];
+const OWNERS_WORDS = /\b(?:in (?:his|her|the owner's) (?:own )?words|his own words|verbatim|the owner (?:said|wrote|put it))\b/i;
+
+test("no public byte quotes an owner ruling: the ruling is paraphrased and labelled so wherever the op cites it, and every quoted span is named as something else", () => {
+  const rulingRows = DOC.split("\n").filter((l) => /^\| Ruling\b/i.test(l));
+  assert.equal(rulingRows.length, 1, "the facts table does not carry exactly one Ruling row");
+  assert.ok(rulingRows[0].startsWith("| Ruling, owner, 2026-09-13, paraphrased | "), "the facts table's Ruling row is not labelled paraphrased");
+  assert.doesNotMatch(rulingRows[0], /"/, "the facts table's Ruling row quotes");
+  assert.ok(S1.includes("owner\n-- ruling (a) of 2026-09-13, paraphrased (docs/data-op-anexo-link-v2.md has the\n"), "stage 1's header does not label the ruling paraphrased");
+  assert.ok(S2.includes("owner\n-- ruling (a) of 2026-09-13, paraphrased in stage 1's header and in\n"), "stage 2's header does not label the ruling paraphrased");
+  const questions = "## The owner questions, and the default this op is built to\n\n";
+  assert.ok(between(DOC, questions, "\n\n", "the owner questions").slice(questions.length).startsWith("Paraphrased, no counts."), "the owner questions are not labelled paraphrased");
+  for (const [label, text] of [...STAGES, ["the doc", DOC], ["the sidecar", read(SIDEF)]]) {
+    text.split("\n").forEach((line, i) => assert.doesNotMatch(line, OWNERS_WORDS, `${label}:${i + 1} presents words as the owner's: ${line.trim().slice(0, 100)}`));
+  }
+  let fenced = false;
+  const prose = DOC.split("\n").map((l) => (l === "```" ? ((fenced = !fenced), "") : fenced ? "" : l)).join("\n");
+  const headings = DOC.split("\n").filter((l) => l.startsWith("## ")).map((l) => l.slice(3));
+  const spans = [...prose.matchAll(/"([^"]*)"/g)].map((m) => m[1].replace(/\s+/g, " "));
+  assert.ok(spans.includes(WRITTEN_LINE), "the prose's quoted spans were not found, so this read nothing");
+  for (const s of spans) assert.ok(PROSE_QUOTES.includes(s) || headings.includes(s), `the doc quotes something this test does not name, which may be the owner's words: "${s.slice(0, 100)}"`);
+  assert.ok(FISIOZERO.includes("documentos.csv is the RICHEST source"), "the importer's comment the doc quotes is gone from fisiozero.ts");
+  for (const [label, sql] of STAGES) {
+    const comments = sql.split("\n").filter((l) => /^\s*--/.test(l)).join("\n");
+    for (const m of comments.matchAll(/"([^"\n]*)"/g)) assert.ok(SQL_COMMENT_QUOTES.includes(m[1]), `${label} quotes something this test does not name, in a comment: "${m[1].slice(0, 100)}"`);
   }
 });
