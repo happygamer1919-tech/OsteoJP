@@ -24,8 +24,8 @@ nothing else; the section "Rehearsal" says what has run on these exact bytes.
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001`. The op links in the tenant that owns this row, and no other |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002`. R01 refuses unless it sits in the same tenant |
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/anexo2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
-| Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `1a118525854fcd951b5c03eb8cabae235e182d6287747e1251cb2de31853dfa0` |
-| Stage 2 | `scripts/data/anexo-link-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `926bcdc499b30021be75fa5b610b3ee34eabb16e7d80befff6ae461d8447e63a` |
+| Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `eb1d905b75bb013534cb5fdc793c6839035b6d67b6a386e4165327e8f3f68740` |
+| Stage 2 | `scripts/data/anexo-link-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `c030d13d095c6b0254c453243e86024cf88f5435291015f6126a740a74e525ff` |
 | Stage 3 | `scripts/data/anexo-link-v2-3-verify.sql`, READ ONLY, 12 verdicts and a SUMMARY row, sha256 `80b6ab24d899bfe02f5578f5a3ae31a3533ad752efb851ed3e8fe99469f4cb89` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
 | This document | `docs/data-op-anexo-link-v2.md`, pinned by `docs/data-op-anexo-link-v2.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
@@ -63,12 +63,20 @@ guesses.
 The owner's order runs this op **after DUR-01**. This document states the order; no stage
 checks it, because there is no data dependency to check. DUR-01 writes
 `appointments.ends_at` and `appointments.updated_at` on the importer's one-minute future
-bookings and one `audit_log` row of its own action. This op reads no appointment, and reads
-`audit_log` only for its own two actions (the original op's and this one's). Its sets come
-from `migration_staging_rows`, `attachments` and `clinical_records`, none of which DUR-01
-writes, and its md5 families cover none of DUR-01's rows. So DUR-01 having run, or not, changes
-nothing this op reads, and no stage refuses on it. A coupling in SQL would make this op refuse
-over a state it cannot see a reason to care about.
+bookings and one `audit_log` row of its own action. This op reads no appointment, and every
+refusal and verdict it takes from `audit_log` is keyed on its own two actions (the original
+op's and this one's), never on DUR-01's. Three controls count every audit row of the op's
+tenant, whatever its action, so a read that could not see that tenant's audit rows prints
+VACUOUS or FAILs rather than OK: the controls of R02 and R03 (stages 1 and 2) and verdict 1's
+(stage 3). Once DUR-01 has run, DUR-01's audit row is one of the rows those controls count. A
+refusal's control only decides whether its line reads VACUOUS or OK, so that row can move
+R02's or R03's line from VACUOUS to OK and never to REFUSE, and it cannot move verdict 1,
+whose count already includes the v2 row itself; nothing reads DUR-01's action, id or metadata. The op's sets come from
+`migration_staging_rows`, `attachments` and `clinical_records`, none of which DUR-01 writes,
+and its md5 families cover none of DUR-01's rows. So DUR-01 having run, or not, changes no
+refusal and no verdict, and no stage refuses on it. A coupling in SQL would make this op refuse
+over a state it cannot see a reason to care about. The unit test holds every `audit_log` read
+of every stage to exactly this: keyed on the op's two actions, or one of those three counts.
 
 ## What changed from the original op, and why
 
@@ -109,7 +117,7 @@ the files, their pins and the rehearsal.
 | Q1 | A named document that staff have soft deleted: link it too? | **No.** It is left unlinked and soft deleted, listed by id in stage 1 section 2d and in the audit row (`excluded.soft_deleted`), and stage 3 verdict 10 proves it unchanged. Not a refusal: the rest of the link set still runs. The original files would have linked it; the Anexos read hides a soft-deleted row either way (SR-62 PU-4), so a link would only write a row staff removed |
 | Q2 | May GREEN run it at all? The owner ruled the scope on 2026-09-13, before the tiers, and the op is on no ruled Tier C list | **Held.** Nothing runs until the owner rules it onto the Tier C list and his dispatch names these three files and this document's sha256, after DUR-01. Recommended first sitting: stage 0 and stage 1 alone, READ ONLY, so section 2 shows the link set and every class it leaves alone before anyone rules on stage 2 |
 | D1 | Added: which tenant? | The tenant that owns the Linda-a-Velha row, and R01 refuses unless the Castelo Branco row sits in it. The original files took whatever tenant the candidates were in and refused more than one; here another tenant's named documents are class `other_tenant`, listed, never linked, and compared by md5 |
-| D2 | Added: a named file that resolves to two document rows? | Refuses (R05): which row the cell names would be a guess |
+| D2 | Added: a named file to link that resolves to more than one live document row? | Refuses (R05), whether the other row is unlinked, already on that registo or on another: which row the cell names would be a guess, and a link would show the file twice on one registo or put it on two. A soft-deleted row at the same path does not count: Q1 leaves it alone, and the live row is linked |
 | D3 | Added: a staging row whose registo is not there? | Class `no_registo`, listed, never linked. The original files dropped it silently in an inner join |
 | D4 | Added: a registo in another tenant than its staging row? | Refuses (R08) |
 | D5 | Added: what if there is nothing to link? | Refuses (R09), so every stage 3 verdict but two always compares something, and no audit row is written for a no-op, as the original stage 2 already refused |
@@ -151,8 +159,8 @@ machine runs it inside the blocks, and halts on it.
 (
 set -eo pipefail
 DOCPIN=docs/data-op-anexo-link-v2.sha256
-SHA1=1a118525854fcd951b5c03eb8cabae235e182d6287747e1251cb2de31853dfa0
-SHA2=926bcdc499b30021be75fa5b610b3ee34eabb16e7d80befff6ae461d8447e63a
+SHA1=eb1d905b75bb013534cb5fdc793c6839035b6d67b6a386e4165327e8f3f68740
+SHA2=c030d13d095c6b0254c453243e86024cf88f5435291015f6126a740a74e525ff
 SHA3=80b6ab24d899bfe02f5578f5a3ae31a3533ad752efb851ed3e8fe99469f4cb89
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
@@ -192,7 +200,7 @@ later stage runs from.
 ```
 (
 set -eo pipefail
-SHA1=1a118525854fcd951b5c03eb8cabae235e182d6287747e1251cb2de31853dfa0
+SHA1=eb1d905b75bb013534cb5fdc793c6839035b6d67b6a386e4165327e8f3f68740
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -246,7 +254,7 @@ leaves alone by id. Section 3 holds the two carries stage 2 consumes; nobody typ
 ```
 (
 set -eo pipefail
-SHA2=926bcdc499b30021be75fa5b610b3ee34eabb16e7d80befff6ae461d8447e63a
+SHA2=c030d13d095c6b0254c453243e86024cf88f5435291015f6126a740a74e525ff
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 NAMES=(
 anexo_v2_count
@@ -381,7 +389,7 @@ population the predicate read, so a 0 that saw nothing prints VACUOUS:
 | R02 | the original ANEXO LINK write has already run (`attachment.anexo_link.backfill`) |
 | R03 | this v2 write has already run (`attachment.anexo_link_v2.backfill`) |
 | R04 | a document in the link set is named by more than one registo. Its control is the link set's documents |
-| R05 | a named file resolves to more than one document row in the link set (D2) |
+| R05 | a named file the link set would link resolves to more than one live document row of the tenant, linked or not (D2); a soft-deleted row at that path does not count. Its control is the paths the link set would link |
 | R06 | a document in the link set belongs to another patient than its registo, or to none (NULL-safe) |
 | R07 | a target registo is not locked. The app refuses adding an attachment to a registo that is not a draft (`confirmAttachment` returns `finalized`), and every imported registo is locked: this backfill does in the database what that screen refuses, deliberately, for imported history only, so it must not also sweep up a draft somebody is still editing |
 | R08 | a target registo sits in another tenant than its staging row (D4) |
@@ -434,9 +442,17 @@ empty table's md5 changes on the one write it could suffer, a new row.
 12. every linked document still shows on its patient's Documentos tab: it has a patient and its path is under the tenant's imported prefix, the rule `documentosRowSql` reads (`apps/web/lib/patients/documents.ts`, #1310).
 
 **Stage 3 is re-issuable, and its answers move with the clinic.** A later staff edit can
-change 5, 6, 10, 11 and 12 honestly: a linked document soft deleted from Documentos FAILs 5,
-and a signed registo FAILs 7 and 8. Read a later FAIL against the audit row's time before
-calling it a defect of the op.
+change 5, 6, 10, 11 and 12 honestly: a linked document soft deleted from Documentos FAILs 5. A
+later patient merge (`merge_patients`, which writes its own `patient.merge` audit row)
+re-points a target registo, its episode and its documents to the surviving patient: that FAILs
+5, 8 and 11 and leaves 6 holding, and it is the one update the immutability trigger lets
+through on a locked registo. **Verdict 7 never moves honestly, and 8 moves only with a merge.**
+Every target registo is locked (R07), and `enforce_clinical_record_immutability`
+(`0001_rls.sql`, relaxed in `0005` for a merge's `patient_id` alone) refuses every other
+update of a locked row, a signature included. So a FAIL on 7, or on 8 with no `patient.merge`
+row for that registo's patient since the op, is never a staff edit: the trigger was bypassed, or
+the audit row stage 3 reads is not the one stage 2 wrote. Report it as an integrity breach. Read
+any other later FAIL against the audit row's time before calling it a defect of the op.
 
 ## Rehearsal
 
@@ -475,10 +491,10 @@ row. Each refusal adds its own shape by an arm, so the other arms keep theirs.
 |---|---|
 | `b14-rehearsal/build-base.zsh` | `973273163578626d2410752243a4968127de40cfdf0b6229ac77f0b3f72dd99f` |
 | `b14-rehearsal/fixture.sql` | `15b83bd9990f5d289317cdf88dfd17199cd3072963c6d6381fc591897649d591` |
-| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `8ef6852f3ff3f810b7818fc28f6c16e9a0561666f4226ce04e0ef78e5fa4108b` |
-| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `1bd6d4ba94913ebd901dc4d4b8514697c6203d15e4db1d6ba5fdafe8e562c3fc` |
+| `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `351f0c5d297f24f45a363a774735abe581e364a4832071853bd0307256db8da2` |
+| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `1a5d06a827c781f903cbb60a258489d3406ce0bf160f763b768ec8227e7e53b6` |
 | `b14-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, unchanged but its header | `241840aed7091688976a019c4eab6cc687ce291e0ca8c9a6e573b2512cbcce7c` |
-| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `7d2bf25962aff798728d20270b44f3f3ae6a61191cdda0e715a442a7bd33b29b` |
+| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `ca0372937e3f8b8eca628f5844bd327e5ef5c9b8c0f2fb7b037896983b929bc4` |
 
 **How it ran.** Each block was extracted from this document at the commit under test (cloned
 from a local bare origin whose `main` is that commit; the clone's origin is asserted to be it
@@ -512,7 +528,8 @@ extractor refuses a block that still names production.
 **Every refusal, run for real.** For each arm: a new database, one mutation, stage 1 (must exit 1
 with REFUSE on the code), then the stage 1 mark forced so stage 2's SQL is reached (must exit 3,
 `STOP: <code> refuses`), then the database compared with its state after the mutation by one md5
-over attachments, audit rows, clinical records, episodes, staging rows and consultations.
+over attachments, audit rows, clinical records, episodes, staging rows and consultations. The
+last row is the shape R05 must let through, run as a sitting: stage 1 and stage 2 exit 0.
 
 | Code | Mutation | stage 1 | REFUSE on | stage 2 | database after |
 |---|---|---|---|---|---|
@@ -521,6 +538,8 @@ over attachments, audit rows, clinical records, episodes, staging rows and consu
 | R03 | a v2 audit row | 1 | R03 | 3, STOP R03 | unchanged |
 | R04 | a second locked registo of patient 1 whose cell names exame-1.pdf too | 1 | R04 | 3, STOP R04 | unchanged |
 | R05 | a second live, unlinked document row at exame-1.pdf's path | 1 | R05 | 3, STOP R05 | unchanged |
+| R05 | a second live row at exame-1.pdf's path, already on the registo that names it, so a link would show the file twice there | 1 | R05 | 3, STOP R05 | unchanged |
+| R05 | a second live row at exame-1.pdf's path, on another registo of the same patient, so a link would put the file on two registos | 1 | R05 | 3, STOP R05 | unchanged |
 | R06 | exame-1.pdf belongs to patient 2, its registo to patient 1 | 1 | R06 | 3, STOP R06 | unchanged |
 | R06 | exame-1.pdf has no patient at all | 1 | R06 | 3, STOP R06 | unchanged |
 | R07 | a DRAFT registo of patient 1 whose staging row names a file with a live document | 1 | R07 | 3, STOP R07 | unchanged |
@@ -528,6 +547,7 @@ over attachments, audit rows, clinical records, episodes, staging rows and consu
 | R09 | every link done by hand already, so the link set is empty | 1 | R09 | 3, STOP R09 | unchanged |
 | R12 | a no-op AFTER UPDATE trigger the system did not create, on attachments | 1 | R12 | 3, STOP R12 | unchanged |
 | R12 | the same, on audit_log | 1 | R12 | 3, STOP R12 | unchanged |
+| R05 | a second row at exame-1.pdf's path that staff soft deleted, which Q1 leaves alone: not a refusal | 0 | none | 0, `COMMITTED` | the live row linked, the soft-deleted twin still unlinked and deleted |
 
 **The file-name read and the partition, proved on seeded wrong copies.** Each copy differs from
 its file by one line, the same line in stage 1 and stage 2, and runs through this document's own
@@ -581,6 +601,8 @@ both counted), so the block's own checks decide the exit.
 | a second v2 audit row | 1 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 | `0 OK / 0 VACUOUS / 12 FAIL` |
 | the original op's audit row | 1 | 2 | `11 OK / 0 VACUOUS / 1 FAIL` |
 | a linked document soft deleted from Documentos | 1 | 5 | `11 OK / 0 VACUOUS / 1 FAIL` |
+| patient 1 merged into patient 9 by merge_patients, the one update the immutability trigger lets through on a locked registo | 1 | 5, 8, 11 | `9 OK / 0 VACUOUS / 3 FAIL` |
+| a target registo signed, which the immutability trigger refuses: its UPDATE exits 3, the database unchanged | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
 | none: a fresh copy of the written database | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
 | a copy of stage 3 whose less-one digest drops nothing (verdict 4's control made blind) | 1 | 4 | |
 | before the op: no named document left alone, no episode on a target registo; stages 1, 2 and 3 all exit 0 | 0 | none; VACUOUS on 10 and 11, which the block allows | `10 OK / 2 VACUOUS / 0 FAIL` |
@@ -596,7 +618,7 @@ carries. This is the evidence for the section "What changed from the original op
 | after O3 | | the soft-deleted document linked: true; the two names after a no-break space and a tab linked: 0 of 2 |
 
 **The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
-and `prove-red.mjs` ran it against 77 seeded wrong copies of the committed tree, each
+and `prove-red.mjs` ran it against 94 seeded wrong copies of the committed tree, each
 re-pinned so only its target property is wrong: every copy turned its target test red, and the
 green control (DELETE, DROP and TRUNCATE only inside comments, a string and an echo) kept every
 test green. Every test has at least one copy.
@@ -609,6 +631,17 @@ pin too loose: the stale-carry test matched `-mmin -600` as `-mmin -60`, so a st
 hours old would have passed it; the pin now ends at the number. And the whitespace JavaScript's
 trim strips had been written into the first commit as literal invisible characters; every one is
 an escape inside an E-string now, and no byte this op adds is outside ASCII.
+
+**What review round 1 caught,** each fixed on the commit that carries this section. Two unit
+test pins could not fail: P4's slice began at R12's read of the same catalog inside the SETS
+block, and three of stage 2's checks after the write (each document's registo, the audit row
+written once, its time) had no pin; both now have seeded wrong copies. R05 was narrower than
+D2: it counted only the link set, so a second live row already on the registo, or on another,
+let the link through; the two new R05 arms above now refuse, and the soft-deleted twin still
+links. And two sentences of this document were false: the DUR-01 section said the op reads
+`audit_log` only by its own two actions, and three tenant-wide controls read every row; the
+re-issuable paragraph said a signed registo FAILs 7 and 8, and the immutability trigger refuses
+the signature, as the stage 3 arms above show.
 
 ## Undoing it
 
@@ -626,8 +659,8 @@ here deletes a row, so there is nothing else to restore.
   `patient_id`, and the Documentos read keeps every imported original, linked or not
   (verdict 12).
 - **It touches no Storage object** and no other column pointing into storage.
-- **It guesses nothing.** A document named by two registos, a file with two document rows, a
-  patient mismatch, a registo that is not locked or one in another tenant each refuse the whole
-  sitting.
+- **It guesses nothing.** A document named by two registos, a file with two live document
+  rows, a patient mismatch, a registo that is not locked or one in another tenant each refuse
+  the whole sitting.
 - **It sends nothing** and writes no staff notification.
 - **No stage file holds a DELETE, DROP or TRUNCATE statement.**

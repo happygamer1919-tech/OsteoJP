@@ -352,9 +352,25 @@ test("a trigger the system did not create refuses, on exactly the tables stage 2
   const r12 = between(SETS, "'R12'", END, "R12");
   assert.equal(r12.split(tables).length - 1, 2, "R12 does not read exactly the tables stage 2 writes, for n and for control");
   assert.match(r12, /AND NOT t\.tgisinternal\)::int,/, "R12 counts the system's own triggers");
-  const p4 = between(code(S2), "FROM pg_catalog.pg_trigger t", "RAISE NOTICE 'P4", "P4");
-  assert.ok(p4.includes(tables) && p4.includes("AND NOT t.tgisinternal"), "P4 does not read the same catalog");
-  assert.match(S2, /RAISE EXCEPTION 'STOP: P4 found a trigger the system did not create/, "P4 does not stop");
+  // P4 is read AFTER the SETS block: R12 inside it reads the same catalog, so a slice
+  // from the file's first read of pg_trigger would be R12's and could never fail on P4.
+  const afterSets = code(S2.slice(S2.indexOf(END) + END.length));
+  assert.equal(afterSets.split("FROM pg_catalog.pg_trigger t").length - 1, 1, "stage 2 reads the trigger catalog more than once after its SETS afterSets, so this test cannot tell which read is P4");
+  const p4 = between(afterSets, "SELECT string_agg(t.tgrelid::regclass::text", "END IF;", "P4");
+  assert.match(p4, new RegExp(`\\n\\s+INTO v_want\\n\\s+FROM pg_catalog\\.pg_trigger t\\n\\s+WHERE t\\.tgrelid IN \\(${esc(tables)}\\)\\n\\s+AND NOT t\\.tgisinternal;\\n`), "P4 does not read exactly R12's catalog: every trigger the system did not create, on exactly the tables stage 2 writes");
+  assert.match(p4, /\n\s+RAISE NOTICE 'P4 [^\n]*\n\s+IF v_want IS NOT NULL THEN\n\s+RAISE EXCEPTION 'STOP: P4 found a trigger the system did not create/, "P4 does not stop on every trigger it finds");
+  assert.ok(afterSets.indexOf("SELECT string_agg(t.tgrelid::regclass::text") < afterSets.indexOf("UPDATE public.attachments SET"), "P4 does not read the catalog before the write");
+});
+
+test("a named file to link that resolves to more than one live document row refuses (R05), whether the other row is linked or not, and a soft-deleted row does not count", () => {
+  const r05 = between(SETS, "'R05'", "'R06'", "R05");
+  assert.match(r05, /\(SELECT count\(\*\) FROM \(SELECT c\.storage_path FROM cls c\n\s+WHERE c\.storage_path IN \(SELECT l\.storage_path FROM lnk l\)\n\s+AND c\.attachment_id IS NOT NULL AND c\.att_deleted IS NULL\n\s+GROUP BY c\.storage_path\n\s+HAVING count\(DISTINCT c\.attachment_id\) > 1\) x\)::int,\n/, "R05 does not count every live document row, linked or not, at a path the link set would link");
+  assert.match(r05, /\n\s+\(SELECT count\(DISTINCT l\.storage_path\) FROM lnk l\)::int\n/, "R05's control is not the paths the link set would link");
+  for (const [label, text] of [["D2", DOC.match(/^\| D2 \| [^\n]*$/m)?.[0]], ["the refusal table", DOC.match(/^\| R05 \| [^\n]*$/m)?.[0]]]) {
+    assert.ok(text, `the doc has no ${label} row`);
+    assert.match(text, /more than one live document row/, `the doc's ${label} row does not state the rule R05 enforces`);
+    assert.match(text, /soft-deleted row/, `the doc's ${label} row does not say a soft-deleted row does not count`);
+  }
 });
 
 /* ---- the md5 families and the audit row ---------------------------------- */
@@ -424,6 +440,27 @@ test("the exact deltas: the total holds, linked and unlinked move by exactly the
   assert.match(a, /IF v_a_linked <> v_b_linked \+ cardinality\(v_att\) OR v_a_unlinked <> v_b_unlinked - cardinality\(v_att\) THEN/);
   assert.match(a, /IF v_a_with_patient <> v_b_with_patient THEN/);
   assert.match(a, /IF v_digest IS DISTINCT FROM \(v_car ->> 'anexo_v2_digest'\) THEN/, "the rows as written are not held to the carried digest");
+});
+
+test("every check stage 2 makes after the write is armed: each document carries the registo that named it, patients match, registos stay locked, no other original gained a registo, and the audit row is written once, at this transaction's time", () => {
+  const c = code(S2);
+  const write = c.indexOf("UPDATE public.attachments SET");
+  const insert = c.indexOf("INSERT INTO public.audit_log");
+  const done = c.indexOf("RAISE NOTICE 'ANEXO LINK V2 STAGE 2 DONE");
+  assert.ok(write > 0 && write < insert && insert < done, "the write, the audit insert and the DONE line are not in that order");
+  const after = c.slice(write, insert);
+  const audit = c.slice(insert, done);
+  const armed = (src, re, what) => assert.match(src, re, `${what} is not asserted, or not armed, after the write`);
+  armed(after, /\n\s+SELECT count\(\*\)::int INTO v_n\n\s+FROM jsonb_array_elements\(v_lnk\) e\n\s+JOIN public\.attachments a ON a\.id = \(e ->> 'a'\)::uuid AND a\.clinical_record_id = \(e ->> 'r'\)::uuid;\n\s+IF v_n <> cardinality\(v_att\) THEN\n\s+RAISE EXCEPTION 'STOP: /, "every linked document carrying the registo that named it");
+  armed(after, /\n\s+WHERE a\.id = ANY\(v_att\) AND a\.patient_id IS DISTINCT FROM cr\.patient_id;\n\s+IF v_n <> 0 THEN\n\s+RAISE EXCEPTION 'STOP: /, "every linked document belonging to its registo's patient");
+  armed(after, /\n\s+SELECT count\(\*\)::int INTO v_n FROM public\.clinical_records cr WHERE cr\.id = ANY\(v_regs\) AND cr\.status = 'locked';\n\s+IF v_n <> cardinality\(v_regs\) THEN\n\s+RAISE EXCEPTION 'STOP: /, "every target registo still locked");
+  armed(after, /\n\s+AND NOT \(a\.id = ANY\(v_pre\)\) AND NOT \(a\.id = ANY\(v_att\)\);\n\s+IF v_n <> 0 THEN\n\s+RAISE EXCEPTION 'STOP: /, "no imported original gaining a registo outside the link set");
+  armed(audit, /^INSERT INTO public\.audit_log \(tenant_id, actor_user_id, action, entity_type, entity_id, metadata\)\n\s+VALUES \(v_tenant, NULL, c_action, /, "the audit row's action");
+  armed(audit, /\n\s+GET DIAGNOSTICS v_n = ROW_COUNT;\n\s+IF v_n <> 1 OR \(SELECT count\(\*\) FROM public\.audit_log al WHERE al\.action = c_action\) <> 1 THEN\n\s+RAISE EXCEPTION 'STOP: /, "the audit row written exactly once");
+  armed(audit, /\n\s+IF \(SELECT count\(\*\) FROM public\.audit_log al WHERE al\.action = c_action AND al\.created_at = now\(\)\) <> 1 THEN\n\s+RAISE EXCEPTION 'STOP: /, "the audit row's created_at being this transaction's time");
+  // Every STOP between the write and the DONE line: the ROW_COUNT, the deltas, the
+  // checks above, the digest and the md5 families. One fewer is a check removed.
+  assert.equal((c.slice(write, done).match(/RAISE EXCEPTION 'STOP:/g) ?? []).length, 17, "the number of STOPs after the write moved: a check was removed or added without this test");
 });
 
 test("the carries: the link set's count and digest, lifted in plain SQL, compared in the block, and passed by the document", () => {
@@ -670,11 +707,63 @@ test("the original ANEXO LINK files are byte-identical to what their own doc pin
   }
 });
 
-test("the order after DUR-01 is stated in the document and not coupled in SQL: no stage reads DUR-01's rows or its audit row", () => {
+/**
+ * Every read of public.audit_log in a stage file, as the text of the subquery or
+ * statement that holds it. The parentheses are matched on the lexed SQL, whose
+ * strings and comments are blanked at the same positions, so a quoted
+ * 'public.audit_log'::regclass is not a read and a parenthesis inside a string
+ * cannot move a bound, and a psql line (an \echo) is dropped from the text, so it
+ * can neither fake nor hide a key. The INSERT is the write, not a read.
+ */
+function auditReads(sql) {
+  const lexed = lexSql(sql).code;
+  const reads = [];
+  for (const m of lexed.matchAll(/public\.audit_log\b/g)) {
+    if (/INSERT\s+INTO\s+$/i.test(lexed.slice(Math.max(0, m.index - 24), m.index))) continue;
+    let from = 0;
+    for (let i = m.index - 1, depth = 0; i >= 0; i--) {
+      if (lexed[i] === ")") depth++;
+      else if (lexed[i] === "(" && depth-- === 0) { from = i + 1; break; } else if (lexed[i] === ";" && depth === 0) { from = i + 1; break; }
+    }
+    let to = lexed.length;
+    for (let i = m.index, depth = 0; i < lexed.length; i++) {
+      if (lexed[i] === "(") depth++;
+      else if (lexed[i] === ")" && depth-- === 0) { to = i; break; } else if (lexed[i] === ";" && depth === 0) { to = i; break; }
+    }
+    reads.push(code(sql.slice(from, to)).replace(/^\\.*$/gm, "").replace(/\s+/g, " ").trim());
+  }
+  return reads;
+}
+const OWN_ACTION = new RegExp(`\\b[a-z]+\\.action (?:= '${esc(ACTION)}'|= '${esc(OLD_ACTION)}'|= c_action\\b|IN \\('${esc(OLD_ACTION)}', '${esc(ACTION)}'\\))`);
+const TENANT_CONTROLS = {
+  "stage 1": ["SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant", 2],
+  "stage 2": ["SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant", 2],
+  "stage 3": ["SELECT count(*) FROM public.audit_log x, al WHERE x.tenant_id = al.tenant", 1],
+};
+
+test("the order after DUR-01 is stated in the document and not coupled in SQL: no stage reads appointments, every audit_log read is keyed on this op's two actions but the tenant-wide controls, and the document names them", () => {
   assert.match(DOC, /^\| Order \| \*\*After DUR-01\*\*, by the owner's order\. Not coupled in SQL/m, "the facts table does not state the order after DUR-01");
   assert.match(DOC, /^## The order with DUR-01$/m, "the document does not explain why the order is not coupled");
   for (const [label, sql] of STAGES) {
     assert.doesNotMatch(code(sql), /dur01|dur-01|public\.appointments/i, `${label} reads DUR-01's rows or its audit row`);
+    const reads = auditReads(sql);
+    assert.ok(reads.length > 0, `${label}: no audit_log read found, so this read nothing`);
+    const [control, n] = TENANT_CONTROLS[label];
+    for (const r of reads) {
+      assert.ok(OWN_ACTION.test(r) || r === control, `${label} reads audit_log neither by this op's two actions nor as the tenant-wide control: ${r.slice(0, 160)}`);
+    }
+    assert.equal(reads.filter((r) => r === control).length, n, `${label} counts the tenant's audit rows ${reads.filter((r) => r === control).length} times, not ${n}`);
+  }
+  // Where the controls sit: R02's and R03's control column, and verdict 1's.
+  for (const c of ["R02", "R03"]) {
+    const row = between(SETS, `'${c}'`, `'R0${Number(c[2]) + 1}'`, c);
+    assert.match(row, new RegExp(`\\n\\s+\\(${esc(TENANT_CONTROLS["stage 1"][0])}\\)::int\\n\\s+UNION ALL\\n\\s+SELECT $`), `${c}'s control is not the tenant-wide count`);
+  }
+  assert.equal((S3.match(/\btenant_audit_rows\b/g) ?? []).length, 3, "the tenant-wide count in stage 3 is read by more than verdict 1");
+  assert.match(verdictRows()[0], /v\.tenant_audit_rows::text[\s\S]*v\.tenant_audit_rows > 0/, "verdict 1 does not read the tenant-wide count as its control");
+  const section = between(DOC, "## The order with DUR-01\n", "\n## ", "the DUR-01 section").replace(/\s+/g, " ");
+  for (const want of ["the controls of R02 and R03", "verdict 1's", "DUR-01's audit row is one of the rows those controls count"]) {
+    assert.ok(section.includes(want), `the DUR-01 section does not say: ${want}`);
   }
 });
 

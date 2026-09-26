@@ -193,9 +193,16 @@ ref AS (
                                  HAVING count(DISTINCT l.record_id) > 1) x)::int,
          (SELECT count(DISTINCT l.attachment_id) FROM lnk l)::int
   UNION ALL
-  SELECT 'R05', 'a named file resolves to more than one document row to link, so which row it names is a guess',
-         (SELECT count(*) FROM (SELECT l.storage_path FROM lnk l GROUP BY l.storage_path
-                                 HAVING count(DISTINCT l.attachment_id) > 1) x)::int,
+  -- Every live document row at a path the link set would link counts, linked or
+  -- not: a second row already on that registo would show the file twice there,
+  -- and one on another registo would put it on two. A soft-deleted row does not
+  -- count; it is left alone (the soft_deleted class) and the live row is linked.
+  SELECT 'R05', 'a named file to link resolves to more than one live document row, linked or not, so which row it names is a guess',
+         (SELECT count(*) FROM (SELECT c.storage_path FROM cls c
+                                 WHERE c.storage_path IN (SELECT l.storage_path FROM lnk l)
+                                   AND c.attachment_id IS NOT NULL AND c.att_deleted IS NULL
+                                 GROUP BY c.storage_path
+                                HAVING count(DISTINCT c.attachment_id) > 1) x)::int,
          (SELECT count(DISTINCT l.storage_path) FROM lnk l)::int
   UNION ALL
   SELECT 'R06', 'a document to link belongs to a different patient than its registo, or to none',
