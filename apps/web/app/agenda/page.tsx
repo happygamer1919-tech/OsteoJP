@@ -3,6 +3,7 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { scopedLocationId } from "@/lib/auth/location-choice";
 import { resolveViewerLocationIds, viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { getPatient } from "@/lib/patients/queries";
+import { servicesAtClinics } from "@/lib/scheduling/agenda-service-filter";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import { sharedResourcesForViewer } from "@/lib/scheduling/shared-resource-guard";
 import { listSharedResources } from "@/lib/scheduling/shared-resources";
@@ -284,6 +285,14 @@ export default async function AgendaPage({
     selfId: actor.userId,
   });
 
+  // AGENDA-FILTER-SERVICE: the service chips are the ACTIVE services offered at
+  // the VIEWER's clinics (`viewerClinicIds`: every active clinic for the owner
+  // and an unassigned staffer, their staff_locations otherwise), in the order
+  // getAgendaOptions lists them. Not narrowed by the toolbar's clinic: the
+  // selection is one list per device, and a chip that came and went with the
+  // clinic select would drop a stored choice every time the clinic changed.
+  const serviceChips = servicesAtClinics(options.services, options.viewerClinicIds);
+
   return (
     <AgendaViewClient
       view={view}
@@ -296,6 +305,7 @@ export default async function AgendaPage({
       viewer={{ role: actor.role, userId: actor.userId }}
       options={{ ...options, ...staff }}
       appointments={appointments}
+      serviceChips={serviceChips}
       blocks={blockSpans}
       dayWindow={dayWindow}
       clinicWindow={clinicWindow}
