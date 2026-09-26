@@ -9,6 +9,7 @@ import {
   lisbonMinutesFromMidnight,
   lisbonParts,
   rangeForView,
+  readRangeForView,
   slotLabel,
   startOfWeekMonday,
   viewDates,
@@ -104,6 +105,28 @@ describe("rangeForView", () => {
     // Lisbon (exclusive), so the range now covers Saturday 2026-04-18.
     expect(startUtc.toISOString()).toBe("2026-04-12T23:00:00.000Z");
     expect(endUtc.toISOString()).toBe("2026-04-18T23:00:00.000Z");
+  });
+});
+
+describe("readRangeForView (AGENDA-MOBILE-WEEK)", () => {
+  it("READS Monday to the next Monday for the week, one day wider than it draws", () => {
+    // The phone grid shows Dom when a Sunday holds a booking, so the page has
+    // to read Sunday; every desktop surface still draws Mon-Sat (viewDates).
+    const { startUtc, endUtc } = readRangeForView("week", "2026-04-15");
+    expect(startUtc.toISOString()).toBe("2026-04-12T23:00:00.000Z");
+    expect(endUtc.toISOString()).toBe("2026-04-19T23:00:00.000Z");
+    // CONTROL: the DRAWN range is still six days, and ends a day earlier.
+    expect(rangeForView("week", "2026-04-15").endUtc.toISOString()).toBe("2026-04-18T23:00:00.000Z");
+  });
+
+  it("on a Sunday anchor reads the week that just ended, including that Sunday", () => {
+    const { startUtc, endUtc } = readRangeForView("week", "2026-04-19");
+    expect(startUtc.toISOString()).toBe("2026-04-12T23:00:00.000Z");
+    expect(endUtc.toISOString()).toBe("2026-04-19T23:00:00.000Z");
+  });
+
+  it("leaves the day view exactly as rangeForView has it", () => {
+    expect(readRangeForView("day", "2026-04-15")).toEqual(rangeForView("day", "2026-04-15"));
   });
 });
 
