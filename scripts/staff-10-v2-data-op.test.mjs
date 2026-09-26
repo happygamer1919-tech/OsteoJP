@@ -1,0 +1,891 @@
+// staff-10-v2-data-op.test.mjs - the STAFF-10 v2 held data op: properties of its
+// FILES, which is the half a machine can hold without a database. The behaviour
+// is rehearsed on a throwaway and recorded in docs/data-op-staff-10-v2.md.
+//
+// Nothing here asserts a production count, and nothing here may: the op's sets
+// are derived at run time, so any number in this file would be a claim about
+// data that moves.
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const read = (p) => readFileSync(join(ROOT, p), "utf8");
+const sha256 = (p) => createHash("sha256").update(readFileSync(join(ROOT, p))).digest("hex");
+
+const F1 = "scripts/data/staff-10-v2-1-read.sql";
+const F2 = "scripts/data/staff-10-v2-2-write.sql";
+const F3 = "scripts/data/staff-10-v2-3-verify.sql";
+const GUARD = "scripts/assert-production-target.mjs";
+const DOCF = "docs/data-op-staff-10-v2.md";
+const S1 = read(F1);
+const S2 = read(F2);
+const S3 = read(F3);
+const DOC = read(DOCF);
+const STAFF10 = read("packages/db/scripts/staff-10-jp-split-lv.mjs");
+const STAFF11 = read("packages/db/scripts/staff-11-jp-one-clinic-check.mjs");
+const NESA1 = read("scripts/data/nesa-split-1-move.sql");
+
+/** SQL with line comments stripped, so a word in a comment never passes for code. */
+const code = (s) => s.replace(/--.*$/gm, "");
+/** A string made safe to sit inside a RegExp. */
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const STAGES = [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]];
+
+/**
+ * The text of `src` from the anchor `from` up to the first anchor `to` after it.
+ * An anchor that is not found FAILS the test: an indexOf of -1 must never widen
+ * the slice to the end of the file, or empty it so a doesNotMatch passes.
+ */
+function between(src, from, to, label = "a slice") {
+  const a = src.indexOf(from);
+  assert.ok(a >= 0, `${label}: the start anchor ${JSON.stringify(from)} is not found`);
+  const b = src.indexOf(to, a + from.length);
+  assert.ok(b >= 0, `${label}: the end anchor ${JSON.stringify(to)} is not found after ${JSON.stringify(from)}`);
+  return src.slice(a, b);
+}
+
+/** The fenced block under the "## <heading>" whose text starts with `prefix`. */
+function block(prefix) {
+  const lines = DOC.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("## ") && l.slice(3).startsWith(prefix));
+  assert.ok(at >= 0, `no heading starting "${prefix}"`);
+  const open = lines.findIndex((l, i) => i > at && l === "```");
+  assert.ok(open > at, `no fenced block opens under the heading "${prefix}"`);
+  const close = lines.findIndex((l, i) => i > open && l === "```");
+  assert.ok(close > open, `the fenced block under "${prefix}" never closes`);
+  return lines.slice(open + 1, close).join("\n");
+}
+
+const BEGIN = "-- >>> STAFF-10 V2 SETS BEGIN";
+const END = "-- <<< STAFF-10 V2 SETS END";
+function sets(sql, label) {
+  const a = sql.indexOf(BEGIN);
+  const b = sql.indexOf(END);
+  assert.ok(a >= 0 && b > a, `${label} has no SETS block`);
+  assert.equal(sql.indexOf(BEGIN, a + 1), -1, `${label} has two SETS blocks`);
+  return sql.slice(a, b + END.length);
+}
+const SETS = sets(S1, "stage 1");
+
+const IDS = {
+  JP_CB: "54d486e0-a9c3-4c82-acac-8b909ce5a2d0",
+  JP_LV: "0c1a0000-0000-4000-8000-000000000001",
+  LV: "de000002-0000-0000-0000-000000000001",
+  CB: "de000002-0000-0000-0000-000000000002",
+};
+const NESA = { c_cb_row: "0c1a0000-0000-4000-8000-000000000002", c_lv_row: "bdc466d7-f81f-4f8c-aa2e-b85194d73e1a" };
+const ACTION = "staff.staff10_v2.apply";
+
+test("a slice anchor that is not found fails the test: it never widens the slice to the end of the file or empties it", () => {
+  assert.equal(between("a), sat AS (x), b30 AS (y", "), sat AS (", "), b30 AS (", "control"), "), sat AS (x");
+  assert.throws(() => between("a), sat AS (x), b30 AS (y", "), sat AS (", "), blk AS (", "control"), /the end anchor/, "a missing end anchor widened the slice");
+  assert.throws(() => between("a), sat AS (x), b30 AS (y", "), day AS (", "), b30 AS (", "control"), /the start anchor/, "a missing start anchor emptied or shifted the slice");
+  assert.throws(() => between("b30 then sat", "sat", "b30", "control"), /the end anchor/, "an end anchor found only before the start was used");
+});
+
+/* ---- the ids ------------------------------------------------------------- */
+
+test("the JP and clinic ids are STAFF-10's and STAFF-11's, and the NESA ids are NESA-SPLIT's", () => {
+  for (const [name, value] of Object.entries(IDS)) {
+    const pick = (src) => src.match(new RegExp(`const ${name} = "([^"]+)"`))?.[1];
+    assert.equal(pick(STAFF10), value, `${name} differs from the STAFF-10 script`);
+    assert.equal(pick(STAFF11), value, `${name} differs from the STAFF-11 check`);
+    for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3], ["the doc", DOC]]) {
+      assert.ok(sql.includes(value), `${name} is missing from ${label}`);
+    }
+  }
+  for (const [name, value] of Object.entries(NESA)) {
+    assert.match(NESA1, new RegExp(`${name}\\s+constant uuid := '${value}'`), `${name} differs from NESA-SPLIT`);
+    for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3], ["the doc", DOC]]) {
+      assert.ok(sql.includes(value), `${name} is missing from ${label}`);
+    }
+  }
+});
+
+/* ---- what each stage may write ------------------------------------------- */
+
+const ANY_WRITE = /\b(insert\s+into|update\s+[a-z_.]+(\s+[a-z_]+)?\s+set|delete\s+from|truncate|alter\s+table|drop\s+|create\s+(table|function|trigger|index|view|policy))/i;
+
+test("stage 1 and stage 3 write nothing, and each runs in a READ ONLY transaction it rolls back", () => {
+  for (const [label, sql] of [["stage 1", S1], ["stage 3", S3]]) {
+    assert.doesNotMatch(code(sql), ANY_WRITE, `${label} contains a write statement`);
+    assert.match(code(sql), /BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY;/, `${label} is not READ ONLY`);
+    assert.match(code(sql), /\nROLLBACK;\n/, `${label} does not roll back`);
+    assert.doesNotMatch(code(sql), /\bCOMMIT\b/, `${label} commits`);
+  }
+});
+
+test("stage 2's writes are exactly the whitelist, nothing more", () => {
+  const found = [...code(S2).matchAll(/\b(update\s+public\.[a-z_]+\s+set\s+[a-z_0-9]+|delete\s+from\s+public\.[a-z_]+|insert\s+into\s+public\.[a-z_]+)/gi)]
+    .map((m) => m[1].replace(/\s+/g, " ").toLowerCase());
+  assert.deepEqual(found, [
+    "update public.availability_templates set is_active",
+    "update public.availability_templates set user_id",
+    "update public.appointments set practitioner_id",
+    "update public.appointments set practitioner_id",
+    "update public.appointments set practitioner_2_id",
+    "update public.appointments set status",
+    "insert into public.audit_log",
+  ]);
+  const everyWrite = [...code(S2).matchAll(new RegExp(ANY_WRITE.source, "gi"))];
+  assert.equal(everyWrite.length, found.length, `stage 2 has a write outside the whitelist: ${everyWrite.map((m) => m[0]).join(" | ")}`);
+  for (const t of ["time_off", "clinical_records", "clinical_episodes", "attachments", "invoices", "users", "staff_locations"]) {
+    assert.doesNotMatch(code(S2), new RegExp(`(insert\\s+into|update|delete\\s+from)\\s+public\\.${t}\\b`, "i"), `stage 2 writes ${t}`);
+  }
+});
+
+test("every appointment update sets updated_at, and every write is followed by its ROW_COUNT", () => {
+  const c = code(S2);
+  const updates = [...c.matchAll(/UPDATE public\.appointments SET [^;]*;/g)].map((m) => m[0]);
+  assert.equal(updates.length, 4);
+  for (const u of updates) assert.match(u, /updated_at = now\(\)/, `an appointment update does not set updated_at: ${u.slice(0, 80)}`);
+  const writes = [...c.matchAll(/\b(UPDATE public\.|DELETE FROM public\.|INSERT INTO public\.)/g)].map((m) => m.index);
+  writes.forEach((at, i) => {
+    const next = writes[i + 1] ?? c.length;
+    const diag = c.indexOf("GET DIAGNOSTICS v_n = ROW_COUNT;", at);
+    assert.ok(diag > at && diag < next, `write ${i + 1} is not followed by its ROW_COUNT before the next write`);
+  });
+});
+
+test("stage 2 is ONE DO block inside ONE REPEATABLE READ transaction", () => {
+  assert.equal((S2.match(/\bDO \$/g) ?? []).length, 1, "stage 2 is not exactly one DO block");
+  assert.equal((S2.match(/^END \$s10v2\$;$/gm) ?? []).length, 1);
+  const c = code(S2);
+  const begin = c.indexOf("BEGIN ISOLATION LEVEL REPEATABLE READ;");
+  const doAt = c.indexOf("DO $s10v2$");
+  const commit = c.indexOf("\nCOMMIT;\n");
+  assert.ok(begin >= 0 && begin < doAt && doAt < commit, "the DO block is not between BEGIN and COMMIT");
+  for (const s of [S1, S3]) assert.equal((s.match(/\bDO \$/g) ?? []).length, 0);
+});
+
+/* ---- no DELETE, DROP or TRUNCATE: read by a lexer, not by a substring ---- */
+
+/**
+ * The SQL a stage file hands the server, lexed the way psql and Postgres read
+ * it. Line and block comments and every quoted literal (E-strings with their
+ * backslash escapes, and quoted identifiers) are blanked; a psql meta-command
+ * line is collected apart, because psql, not the server, runs it; and a
+ * dollar-quoted body is kept as CODE and lexed again, because in these files it
+ * is a DO block the server executes. So a word in a comment or a string can
+ * neither fake nor break a check on the code, and a statement inside the DO
+ * body or inside a CTE is still seen. Newlines are kept, so positions hold.
+ */
+function lexSql(src, top = true) {
+  let out = "";
+  const metas = [];
+  const blank = (t) => t.replace(/[^\n]/g, " ");
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (top && c === "\\") {
+      const e = src.indexOf("\n", i) < 0 ? src.length : src.indexOf("\n", i);
+      metas.push(src.slice(i + 1, e).match(/^[A-Za-z!?]*/)[0]);
+      out += blank(src.slice(i, e));
+      i = e;
+      continue;
+    }
+    if (src.startsWith("--", i)) {
+      const e = src.indexOf("\n", i) < 0 ? src.length : src.indexOf("\n", i);
+      out += blank(src.slice(i, e));
+      i = e;
+      continue;
+    }
+    if (src.startsWith("/*", i)) {
+      let depth = 0;
+      let j = i;
+      do {
+        if (src.startsWith("/*", j)) { depth++; j += 2; } else if (src.startsWith("*/", j)) { depth--; j += 2; } else j++;
+      } while (depth > 0 && j < src.length);
+      out += blank(src.slice(i, j));
+      i = j;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      const eString = c === "'" && /(^|[^A-Za-z0-9_])[Ee]$/.test(out);
+      let j = i + 1;
+      while (j < src.length) {
+        if (eString && src[j] === "\\") { j += 2; continue; }
+        if (src[j] === c) { if (src[j + 1] === c) { j += 2; continue; } break; }
+        j++;
+      }
+      out += blank(src.slice(i, j + 1));
+      i = j + 1;
+      continue;
+    }
+    const dollar = c === "$" && !/[A-Za-z0-9_]$/.test(out) ? src.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/) : null;
+    if (dollar) {
+      const tag = dollar[0];
+      const close = src.indexOf(tag, i + tag.length);
+      assert.ok(close > 0, "an unclosed dollar quote");
+      const inner = lexSql(src.slice(i + tag.length, close), false);
+      out += blank(tag) + inner.code + blank(tag);
+      metas.push(...inner.metas);
+      i = close + tag.length;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return { code: out, metas };
+}
+const FORBIDDEN = /\b(DELETE|DROP|TRUNCATE)\b/i;
+
+test("no stage file carries a DELETE, DROP or TRUNCATE statement: the SQL is lexed, so a comment or a string can neither hide nor fake one", () => {
+  // The lexer, on the shapes it must read right both ways, first.
+  const seen = (sql) => FORBIDDEN.test(lexSql(sql).code);
+  assert.equal(seen("-- DELETE FROM public.time_off\nSELECT 1;\n"), false, "a line comment reads as a statement");
+  assert.equal(seen("/* DROP /* nested */ TABLE x */ SELECT 'TRUNCATE x', E'it''s \\' DELETE', \"drop\";\n"), false, "a string, a quoted name or a block comment reads as a statement");
+  assert.equal(seen("\\echo 'DELETE FROM x'\nSELECT 1;\n"), false, "a psql echo reads as a statement");
+  assert.equal(seen("DO $b$\nBEGIN\n  DELETE FROM public.time_off WHERE false;\nEND $b$;\n"), true, "a DELETE inside a DO body is missed");
+  assert.equal(seen("WITH d AS (DELETE FROM public.time_off RETURNING id) SELECT 1;\n"), true, "a DELETE inside a CTE is missed");
+  assert.equal(seen("SELECT 1; truncate public.time_off;\n"), true, "a lower-case TRUNCATE is missed");
+  assert.equal(seen("SELECT 'a'; DROP TABLE x; -- 'b'\n"), true, "a DROP between two strings is missed");
+  for (const [label, sql] of STAGES) {
+    const { code: c, metas } = lexSql(sql);
+    for (const st of c.split(";")) {
+      assert.doesNotMatch(st, FORBIDDEN, `${label} carries a ${st.match(FORBIDDEN)?.[1]} statement: ${st.replace(/\s+/g, " ").trim().slice(0, 120)}`);
+    }
+    // A string the server runs (EXECUTE) or a result psql runs as SQL (\gexec, \i) would carry a
+    // statement past the lexer, so neither is allowed, and psql runs only these four commands.
+    assert.doesNotMatch(c, /\bEXECUTE\b/i, `${label} runs dynamic SQL`);
+    for (const m of metas) assert.ok(["pset", "timing", "echo", "gset"].includes(m), `${label} runs the psql command \\${m}`);
+    assert.ok(metas.includes("echo"), `${label}: the lexer collected no psql command at all, so it read nothing`);
+  }
+});
+
+/* ---- the sets and their defects ------------------------------------------ */
+
+test("stage 1 and stage 2 compute every set with the SAME bytes", () => {
+  assert.equal(sets(S2, "stage 2"), SETS, "the SETS block drifted between stage 1 and stage 2");
+});
+
+test("is_dated has ONE definition, NULL-safe, and every dated test in every file is guarded", () => {
+  const defs = SETS.match(/AS is_dated/g) ?? [];
+  assert.equal(defs.length, 1, "is_dated is defined more than once");
+  assert.ok(
+    SETS.includes("(av.valid_from IS NOT NULL AND av.valid_until IS NOT NULL AND av.valid_from = av.valid_until) AS is_dated"),
+    "is_dated is not the NULL-safe form",
+  );
+  for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]]) {
+    for (const m of code(sql).matchAll(/([a-z0-9_]+)\.valid_from\s*=\s*([a-z0-9_]+)\.valid_until/g)) {
+      if (m[1] !== m[2]) continue;
+      const guard = `${m[1]}.valid_from IS NOT NULL AND ${m[1]}.valid_until IS NOT NULL AND ${m[0]}`;
+      const lead = code(sql).slice(Math.max(0, m.index - guard.length + m[0].length), m.index + m[0].length);
+      assert.equal(lead, guard, `${label}: an unguarded dated test: ${m[0]}`);
+    }
+  }
+});
+
+test("the move set requires the DATE to be a Saturday, not only the weekday column", () => {
+  const move = SETS.match(/\) AS f_move/)?.index;
+  assert.ok(move > 0);
+  const from = SETS.lastIndexOf("(NOT (c.is_dated", move);
+  assert.ok(from >= 0, "the move class has no (NOT (c.is_dated anchor before f_move");
+  const def = SETS.slice(from, move);
+  assert.match(def, /c\.weekday = 6 AND extract\(dow FROM c\.valid_from\)::int = 6/);
+  assert.match(def, /c\.is_dated/);
+});
+
+test("the classes are six, and UNCLASSIFIED refuses", () => {
+  for (const f of ["f_cov", "f_past", "f_move", "f_phan", "f_win", "f_unc"]) assert.ok(SETS.includes(`AS ${f}`), `class ${f} is missing`);
+  assert.match(SETS, /'R09', 'an active JP\(cb\) Linda-a-Velha row is UNCLASSIFIED/);
+  assert.match(SETS, /c\.f_cov::int \+ c\.f_past::int \+ c\.f_move::int \+ c\.f_phan::int \+ c\.f_win::int \+ c\.f_unc::int\) <> 1/);
+});
+
+/** The body of the b30 CTE, the 30 September read, in a file that must hold exactly one. */
+function b30(sql, label) {
+  const at = sql.indexOf("b30 AS (\n");
+  assert.ok(at >= 0, `${label} has no 30 September read`);
+  assert.equal(sql.indexOf("b30 AS (\n", at + 1), -1, `${label} has two 30 September reads`);
+  const open = at + "b30 AS (\n".length;
+  const close = sql.indexOf("\n)", open);
+  assert.ok(close >= 0, `${label}'s 30 September read never closes`);
+  return sql.slice(open, close);
+}
+const WINDOW = [
+  "(DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from",
+  "(DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to",
+  "(DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from",
+  "(DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to",
+  "(DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from",
+  "(DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to",
+];
+
+test("the 30 September read is ONE tstzrange overlap with the Lisbon day over time_off and two synthetic JP(cb) blocks, the same bytes in all three stages", () => {
+  const body = b30(SETS, "the SETS block");
+  assert.equal(b30(S3, "stage 3"), body, "stage 3's 30 September read is not stage 1's, byte for byte");
+  assert.match(body, /\n   WHERE s\.user_id = k\.jp_cb AND tstzrange\(s\.starts_at, s\.ends_at\) && tstzrange\(k\.blk_from, k\.blk_to\)$/, "the predicate is not the tstzrange overlap with the Lisbon day, applied once to every source");
+  assert.equal((body.match(/tstzrange\(/g) ?? []).length, 2, "the overlap is written more than once, so the controls could read another predicate");
+  assert.match(body, /SELECT 'real' AS src, t\.id, t\.user_id, t\.starts_at, t\.ends_at, t\.reason::text AS reason\n            FROM public\.time_off t\n/, "the real source is not every time_off row, filtered only by the one predicate");
+  assert.match(body, /SELECT 'control', NULL::uuid, k0\.jp_cb, k0\.ctl30_from, k0\.ctl30_to, /, "the synthetic JP(cb) block inside the day is missing");
+  assert.match(body, /SELECT 'control', NULL::uuid, k0\.jp_cb, k0\.ctl30x_from, k0\.ctl30x_to, /, "the synthetic JP(cb) block across the day is missing");
+  for (const w of WINDOW) {
+    assert.ok(SETS.includes(w), `the SETS block does not define ${w}`);
+    assert.ok(S3.includes(w), `stage 3 does not define ${w}`);
+  }
+  for (const [label, sql] of STAGES) {
+    assert.doesNotMatch(sql, /::date\s*<=\s*DATE '2026-09-30'/, `${label} still carries the old date-cast predicate`);
+  }
+});
+
+test("R06 refuses while any JP(cb) block overlaps the Lisbon day 30 September, R26 refuses a read that misses a synthetic block, stage 1 names each block, stage 2 raises both before any write", () => {
+  const r06 = between(SETS, "'R06'", "'R07'", "R06");
+  assert.match(r06, /\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'real'\)::int,\s+\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'control'\)::int\s+UNION ALL/, "R06 is not n = every real block overlapping the day, control = the synthetic blocks matched");
+  const r26 = between(SETS, "'R26'", "'R27'", "R26");
+  assert.match(r26, /\(2 - \(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'control'\)\)::int,\s+2\s+UNION ALL/, "R26 does not refuse a read that misses a synthetic block");
+  assert.match(S1, /'blocks_30', \(SELECT coalesce\(jsonb_agg\(jsonb_build_object\(\s+'id', b\.id::text,\s+'starts_lisbon', \(b\.starts_at AT TIME ZONE 'Europe\/Lisbon'\)::text,\s+'ends_lisbon', \(b\.ends_at AT TIME ZONE 'Europe\/Lisbon'\)::text,\s+'reason', b\.reason\)/, "stage 1 does not carry each block's id, Lisbon start and end, and reason");
+  assert.match(S1, /FROM b30 b WHERE b\.src = 'real'\),/, "stage 1's listing is not the real blocks R06 counts");
+  const sec = between(S1, "=== 2c.", "=== 3.", "stage 1 section 2c");
+  assert.match(sec, /SELECT e ->> 'id' AS id, e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'ends_lisbon' AS ends_lisbon,\s+e ->> 'reason' AS reason\s+FROM jsonb_array_elements\(:'s10v2_json'::jsonb -> 'blocks_30'\) e;/, "section 2c does not print each offending block by id, Lisbon times and reason");
+  const raise = S2.indexOf("RAISE EXCEPTION 'STOP: % refuses");
+  assert.ok(S2.indexOf("-- W1.") >= 0, "stage 2 has no -- W1. anchor");
+  assert.ok(raise > 0 && raise < S2.indexOf("-- W1."), "stage 2 does not raise the refusals before its first write");
+});
+
+test("the collision refusal counts the MOVE set only", () => {
+  const r05 = between(SETS, "'R05'", "'R06'", "R05");
+  assert.match(r05, /WHERE c\.f_move/);
+  assert.doesNotMatch(r05, /c\.f_cov/);
+});
+
+test("the pedido and the conflict rule are INLINE: no stage calls the jwt-scoped functions", () => {
+  for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]]) {
+    assert.doesNotMatch(code(sql), /public\.is_unconfirmed_pedido\s*\(/, `${label} calls is_unconfirmed_pedido`);
+    assert.doesNotMatch(code(sql), /public\.appointment_conflicts\s*\(/, `${label} calls appointment_conflicts`);
+    assert.doesNotMatch(code(sql), /jwt_tenant_id\s*\(/, `${label} reads jwt_tenant_id`);
+  }
+  for (const [label, sql] of [["SETS", SETS], ["stage 2", S2], ["stage 3", S3]]) {
+    assert.match(sql, /a\.origin = 'patient_portal'/, `${label} has no inline pedido test`);
+    assert.match(sql, /sn\.kind = 'appointment_request'/, `${label} has no inline pedido test`);
+  }
+});
+
+test("a past pair ruling (b) moves must sit at one clinic, and section 6 prints both clinics", () => {
+  const r29 = between(SETS, "'R29'", "'R30'", "R29");
+  assert.match(r29, /tw\.is_past AND tw\.n_id IN \(SELECT x\.id FROM x\)\s+AND tw\.p_loc IS DISTINCT FROM tw\.n_loc/, "R29 does not refuse a two-clinic pair ruling (b) moves");
+  assert.match(S1, /'person_clinic', lp\.name/, "section 6 does not carry the person row's clinic");
+  assert.match(S1, /e ->> 'person_clinic' AS person_row_clinic/, "section 6 does not print the person row's clinic");
+  assert.match(S1, /e ->> 'two_clinics' AS two_clinics/, "section 6 does not print the two-clinic flag");
+});
+
+test("a trigger the system did not create refuses, on exactly the tables stage 2 writes, in stage 1 and again in P4", () => {
+  const written = [...new Set([...code(S2).matchAll(/\b(?:UPDATE|DELETE FROM|INSERT INTO) public\.([a-z_]+)/g)].map((m) => m[1]))].sort();
+  const r30 = between(SETS, "'R30'", END, "R30");
+  const onTables = (txt) => [...new Set([...txt.matchAll(/'public\.([a-z_]+)'::regclass/g)].map((m) => m[1]))].sort();
+  assert.deepEqual(onTables(r30), written, "R30 does not read exactly the tables stage 2 writes");
+  assert.match(r30, /FROM pg_catalog\.pg_trigger t[\s\S]*AND NOT t\.tgisinternal\)::int,/, "R30 does not count the non-internal triggers");
+  const p4 = between(S2, "-- P4.", "-- P5.", "stage 2 P4");
+  assert.deepEqual(onTables(p4), written, "P4 does not read exactly the tables stage 2 writes");
+  assert.match(p4, /IF v_want IS NOT NULL THEN\s+RAISE EXCEPTION 'STOP: P4/, "P4 prints a trigger but does not stop on it");
+  assert.ok(S2.indexOf("-- P4.") < S2.indexOf("-- W1."), "P4 does not run before the first write");
+  assert.match(S1, /'triggers', \(SELECT/, "stage 1 does not list the triggers it found");
+});
+
+test("stage 2 cannot hide its DONE line, the block marks the write as soon as psql exits 0, and a STOP after the write stops the sitting", () => {
+  const c = code(S2);
+  const pin = c.indexOf("SET client_min_messages = notice;");
+  assert.ok(pin >= 0 && pin < c.indexOf("DO $s10v2$"), "stage 2 does not pin client_min_messages before the block");
+  assert.match(S2, /RAISE NOTICE 'STAFF-10 V2 STAGE 2 DONE/, "the DONE line is not the NOTICE the block greps for");
+  const b = block("STAGE 2");
+  const psql = b.indexOf("-f scripts/data/staff-10-v2-2-write.sql");
+  const touch = b.indexOf("touch /tmp/staff10v2-written.ok");
+  const done = b.indexOf("grep -q 'STAFF-10 V2 STAGE 2 DONE'");
+  assert.ok(psql > 0 && psql < touch && touch < done, "the written marker is not touched between psql and the transcript checks");
+  const after = b.split("\n").slice(b.slice(0, touch).split("\n").length);
+  const stops = after.filter((line) => line.includes("STOP:"));
+  assert.deepEqual(stops.map((l) => l.match(/^grep -q '([^']+)'/)?.[1]), ["STAFF-10 V2 STAGE 2 DONE", "STAFF-10 V2 STAGE 2 COMMITTED"], "the block does not print exactly two STOP lines after the write, the DONE check and the COMMITTED check");
+  // The owner's rule: a refusal or a STOP stops the sitting. A STOP after the COMMIT says
+  // the write stands, stops the sitting, and leaves stage 3 to the owner's or the lead's word.
+  for (const line of stops) {
+    const says = (re, what) => assert.match(line, re, `a STOP after the write does not say ${what}: ${line.slice(0, 90)}`);
+    says(/"STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its (DONE|COMMITTED) line is missing\./, "that psql exited 0, so the COMMIT ran and the write stands");
+    says(/ The sitting stops here\./, "that the sitting stops here");
+    says(/ Never run stage 0, 1 or 2 again\./, "never to run stage 0, 1 or 2 again");
+    says(/ GREEN reports this whole output/, "that GREEN reports the whole output");
+    says(/stage 3 \(READ ONLY\) runs only when the owner or the lead says so"; exit 1; \}$/, "that stage 3 runs only when the owner or the lead says so");
+    assert.doesNotMatch(line, /paste stage 3|stage 3 only|go on to stage 3/i, `a STOP after the write sends the runner on to stage 3: ${line.slice(0, 90)}`);
+  }
+  // The success path is unchanged: after both transcript checks, exit 0 with DONE and COMMITTED goes on to stage 3.
+  const onward = after.filter((l) => /stage 3/i.test(l) && !l.includes("STOP:"));
+  assert.deepEqual(onward, ['echo "STAFF-10 V2 WRITTEN. Paste stage 3 now."'], "the only line sending the runner on to stage 3 is not the WRITTEN line");
+  assert.ok(after.indexOf(onward[0]) > after.indexOf(stops[1]), "the WRITTEN line comes before a transcript check");
+  assert.doesNotMatch(DOC, /A `STOP:` line therefore always means/, "the doc still claims every STOP means nothing was written");
+});
+
+test("no file claims the op leaves every JP(cb) Castelo Branco row alone: ruling (c) can write a future one", () => {
+  for (const [label, text] of [["stage 2", S2], ["the doc", DOC]]) {
+    assert.doesNotMatch(text.replace(/\s+/g, " "), /every JP\(cb\) row at Castelo Branco/, `${label} overstates what the op leaves alone`);
+  }
+});
+
+test("question Q3's default: a NESA row whose past pair has its person row in ruling (a) stays, and is listed and kept", () => {
+  const x = between(SETS, "\nx AS (", "\n),", "set X");
+  assert.match(x, /WHERE tw\.is_past AND NOT tw\.n_home\s+AND NOT EXISTS \(SELECT 1 FROM tw t2\s+WHERE t2\.is_past AND t2\.n_id = tw\.n_id\s+AND t2\.p_id IN \(SELECT h\.id FROM h\)\)/, "set X still takes a NESA row whose past pair has its person row in H");
+  assert.match(SETS, /\npp AS \(\n  SELECT tw\.\* FROM tw WHERE tw\.is_past AND tw\.n_id NOT IN \(SELECT x\.id FROM x\)\n\)/, "set P is not every past pair whose NESA row X does not move");
+  assert.match(SETS, /WHERE s\.id NOT IN \(SELECT h\.id FROM h\) AND s\.id NOT IN \(SELECT x\.id FROM x\)/, "tw_keep is not every past twin row outside H and X");
+  assert.match(S1, /'nesa_installed_there', pp\.n_home::text/, "section 8 does not say whether the listed NESA row is installed at its clinic");
+  assert.doesNotMatch(between(S1, "  'x', (SELECT", "  'f', (SELECT", "stage 1 section 6"), /person_row_in_h/, "section 6 still carries a person row in H");
+  const q3 = DOC.split("\n").find((l) => l.startsWith("| Q3 |"));
+  assert.ok(q3, "the doc answers no question Q3");
+  assert.doesNotMatch(q3, /OWNER TO CONFIRM|departs/i, "the doc's answer to question Q3 still describes a departure from the written default");
+});
+
+test("R14 and R15 take as control the confirmed rows that MOVE, so no confirmed mover reads VACUOUS", () => {
+  const r14 = between(SETS, "'R14'", "'R15'", "R14");
+  const r15 = between(SETS, "'R15'", "'R16'", "R15");
+  assert.match(r14, /\(SELECT count\(\*\) FROM h_after WHERE h_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R14's control is not the confirmed movers");
+  assert.match(r15, /\(SELECT count\(\*\) FROM x_after WHERE x_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R15's control is not the confirmed movers");
+});
+
+/** Verdict 8's JP(lv) arm: the count subquery that ends in AS roster_lv_at_sat. */
+function rosterLv() {
+  const end = S3.indexOf("AS roster_lv_at_sat");
+  assert.ok(end >= 0, "stage 3 has no roster_lv_at_sat anchor");
+  const from = S3.lastIndexOf("(SELECT count(*)", end);
+  assert.ok(from >= 0, "stage 3 has no (SELECT count(*) before roster_lv_at_sat");
+  return S3.slice(from, end);
+}
+/** Stage 3's sat CTE, up to b30, the CTE that follows it. */
+const satCte = () => between(S3, "), sat AS (", "), b30 AS (", "stage 3's sat CTE");
+
+test("R02 and verdict 8 read the roster's own user predicate: active, bookable, not a shared resource", () => {
+  const store = read("apps/api/lib/appointments/store.ts");
+  assert.match(store, /and u\.is_active = true\s+and u\.is_bookable = true\s+\$\{notShared\}/, "the roster predicate moved; re-read it before trusting R02 and verdict 8");
+  assert.match(store, /sql`and u\.is_shared_resource = false`/, "the shared-resource exclusion moved");
+  assert.match(SETS, /SELECT u\.id, u\.tenant_id, u\.is_active, u\.is_bookable, u\.is_shared_resource\n/, "the JP rows do not carry the roster's user flags");
+  const r02 = between(SETS, "'R02'", "'R03'", "R02");
+  assert.match(r02, /jp\.is_active IS NOT TRUE OR jp\.is_bookable IS NOT TRUE OR jp\.is_shared_resource IS NOT FALSE/, "R02 does not refuse a JP(lv) the roster would not list");
+  const lv = rosterLv();
+  assert.match(lv, /JOIN public\.users u ON u\.id = av\.user_id AND u\.tenant_id = av\.tenant_id/, "verdict 8's JP(lv) arm does not join the user row");
+  assert.match(lv, /u\.is_active IS TRUE AND u\.is_bookable IS TRUE AND u\.is_shared_resource IS FALSE/, "verdict 8's JP(lv) arm does not apply the roster's user predicate");
+});
+
+test("R28 and verdict 8 read the weekday column the slot query reads: a real Saturday row has weekday 6", () => {
+  const store = read("apps/api/lib/appointments/store.ts");
+  assert.match(store, /and av\.weekday = extract\(dow from \(\$\{s\} at time zone \$\{LISBON\}\)\)::int/, "the confirm guard's weekday predicate moved; re-read it before trusting R28 and verdict 8");
+  assert.match(store, /and av\.weekday = extract\(dow from d\.day\)::int/, "the slot grid's weekday predicate moved; re-read it before trusting R28 and verdict 8");
+  const r28 = between(SETS, "'R28'", "'R29'", "R28");
+  assert.match(r28, /extract\(dow FROM o\.valid_from\)::int = 6 AND o\.weekday = 6\)/, "R28 counts a dated Saturday whose weekday column is not 6, which the app never offers");
+  const sat = satCte();
+  assert.match(sat, /extract\(dow FROM av\.valid_from\)::int = 6 AND av\.weekday = 6\n/, "verdict 8's Saturday can be a row the app never offers on that day");
+  const lv = rosterLv();
+  assert.match(lv, /AND av\.weekday = extract\(dow FROM sat\.d\)::int\n/, "verdict 8's JP(lv) arm does not apply the weekday predicate");
+});
+
+/** The verdict rows of stage 3, one string per verdict, in order. */
+const verdictRows = () => between(S3, "), r AS (", "SELECT r.n, r.\"check\"", "stage 3's verdict rows").split(/\nUNION ALL SELECT /);
+
+test("stage 3 verdict 11: FAIL on any JP(cb) block overlapping the Lisbon day 30 September or on a read that misses a synthetic block, VACUOUS when time_off shows JP(cb) nothing", () => {
+  const eleven = verdictRows()[10];
+  assert.match(eleven, /^11, 'no JP\(cb\) block overlaps the Lisbon day 30 September/);
+  assert.match(eleven, /CASE WHEN v\.b30_real <> 0 OR v\.b30_ctl <> 2 THEN 'FAIL'\s+WHEN v\.jpcb_blocks_now = 0 THEN 'VACUOUS' ELSE 'OK' END/, "verdict 11 is not FAIL on a block or a blind read, VACUOUS on an empty one");
+  assert.match(S3, /\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'real'\)::int AS b30_real,/);
+  assert.match(S3, /\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'control'\)::int AS b30_ctl,/);
+  assert.match(S3, /\(SELECT count\(\*\) FROM public\.time_off t, k WHERE t\.user_id = k\.jp_cb\)::int AS jpcb_blocks_now,/);
+});
+
+const TO_MD5 = "md5(coalesce(string_agg((t.*)::text, E'\\n' ORDER BY t.id), ''))";
+
+test("stage 3 verdict 12: time_off is unchanged by the op, count and md5 of every block of the tenant against stage 2's baseline, and its control fails when the digest cannot see a block go", () => {
+  assert.match(S2, new RegExp(`SELECT count\\(\\*\\)::int, ${esc(TO_MD5)} INTO v_bn_to, v_b_md5_to\\n    FROM public\\.time_off t WHERE t\\.tenant_id = v_tenant;`), "stage 2's baseline is not every block of the tenant");
+  assert.match(S2, new RegExp(`OR \\(SELECT ${esc(TO_MD5)}\\n           FROM public\\.time_off t WHERE t\\.tenant_id = v_tenant\\)\\n        IS DISTINCT FROM v_b_md5_to THEN`), "stage 2 does not compare time_off after its writes");
+  assert.ok(S2.indexOf("-- W6.") >= 0, "stage 2 has no -- W6. anchor");
+  assert.ok(S2.indexOf("IS DISTINCT FROM v_b_md5_to THEN") > S2.indexOf("-- W6."), "stage 2 compares time_off before its last write");
+  assert.match(S2, /'time_off', v_b_timeoff,/, "the audit row does not carry the time_off count");
+  assert.match(S2, /'to', v_b_md5_to,/, "the audit row does not carry the time_off md5");
+  assert.ok(S3.includes(`(SELECT ${TO_MD5}\n       FROM public.time_off t, al WHERE t.tenant_id = al.tenant) AS to_md5_now,`), "stage 3 does not recompute stage 2's time_off md5 over the same rows");
+  assert.ok(S3.includes(`(SELECT ${TO_MD5}\n       FROM public.time_off t, al\n      WHERE t.tenant_id = al.tenant\n        AND t.id <> (SELECT t1.id FROM public.time_off t1 WHERE t1.tenant_id = al.tenant ORDER BY t1.id LIMIT 1)) AS to_md5_less_one,`), "stage 3's control is not the same md5 less one block");
+  const twelve = verdictRows()[11];
+  assert.match(twelve, /^12, 'time_off is unchanged by the op/);
+  assert.match(twelve, /CASE WHEN v\.to_md5_now IS DISTINCT FROM \(v\.m -> 'md5' ->> 'to'\)\s+OR v\.to_n_now IS DISTINCT FROM \(v\.m -> 'before' ->> 'time_off'\)::int\s+OR \(v\.to_n_now > 0 AND v\.to_md5_less_one IS NOT DISTINCT FROM \(v\.m -> 'md5' ->> 'to'\)\) THEN 'FAIL'\s+WHEN \(v\.m -> 'before' ->> 'time_off'\)::int = 0 THEN 'VACUOUS' ELSE 'OK' END/, "verdict 12 is not FAIL on a moved md5 or count or a blind control, VACUOUS on no block");
+});
+
+test("nothing is left of the removed block write: no carry, audit key, variable or verdict for it in any stage file", () => {
+  for (const [label, sql] of STAGES) {
+    for (const gone of ["dblk", "deleted_blocks", "to_rest", "blk_win", "ctl_blk_", "v_blk", "blk AS (", "deleted_by_stage_2"]) {
+      assert.ok(!sql.includes(gone), `${label} still carries ${gone}`);
+    }
+  }
+});
+
+test("the audit row lists every future pair's kept person row and cancelled NESA row, and verdicts 26 and 27 prove the lists exact, finding the written rows by the op's own stamp", () => {
+  assert.match(S2, /coalesce\(\(SELECT jsonb_agg\(jsonb_build_object\('p', f\.p_id, 'n', f\.n_id, 'r', f\.n_user,/, "f_pairs does not carry each pair's kept person row and cancelled NESA row");
+  assert.match(S2, /\n    'f_pairs', v_f,\n/, "the audit row does not carry f_pairs");
+  assert.match(S2, /AND al\.created_at = now\(\)\) <> 1 THEN\n    RAISE EXCEPTION 'STOP: the audit row does not carry/, "stage 2 does not hold the audit row's created_at to its transaction time");
+  assert.equal((code(S2).match(/UPDATE public\.appointments SET [^;]*updated_at = now\(\)/g) ?? []).length, 4, "not every appointment write stamps updated_at with the transaction time");
+  const stamped = code(between(S3, "), stamped AS (", "), can AS (", "stage 3's stamped CTE"));
+  assert.match(stamped, /WHERE a\.tenant_id = al\.tenant AND a\.updated_at = al\.at\n/, "stage 3 does not find the written rows by the op's stamp");
+  assert.doesNotMatch(stamped, /\b(fp|ids|xp)\b/, "the stamped set reads the audit row's lists, so it could never disagree with them");
+  const can = code(between(S3, "), can AS (", "), t2 AS (", "stage 3's can CTE"));
+  assert.match(can, /st\.status = 'cancelled'/);
+  assert.match(S3, /\(SELECT count\(\*\) FROM \(SELECT can\.id FROM can EXCEPT SELECT fp\.n FROM fp\) d\)\s+\+ \(SELECT count\(\*\) FROM \(SELECT fp\.n FROM fp EXCEPT SELECT can\.id FROM can\) d\)\)::int AS can_diff/, "verdict 26 is not a difference taken both ways");
+  assert.match(S3, /\(SELECT count\(\*\) FROM \(SELECT t2\.id FROM t2 EXCEPT SELECT fp\.p FROM fp\) d\)\s+\+ \(SELECT count\(\*\) FROM \(SELECT fp\.p FROM fp EXCEPT SELECT t2\.id FROM t2\) d\)\s+\+ \(SELECT count\(\*\) FROM fp JOIN t2 ON t2\.id = fp\.p WHERE t2\.practitioner_2_id IS DISTINCT FROM fp\.r\)\)::int AS t2_diff/, "verdict 27 is not a difference taken both ways, each with its NESA");
+  const rows = verdictRows();
+  assert.match(rows[25], /^26, 'ruling \(c\): the NESA rows the audit row lists are exactly the rows the op cancelled/);
+  assert.match(rows[25], /CASE WHEN v\.can_diff <> 0 THEN 'FAIL' WHEN v\.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END/);
+  assert.match(rows[26], /^27, 'ruling \(c\): the person rows the audit row lists are exactly the rows the op gave a practitioner_2/);
+  assert.match(rows[26], /CASE WHEN v\.t2_diff <> 0 THEN 'FAIL' WHEN v\.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END/);
+});
+
+/* The columns of public.appointments, twice: from the drizzle table and from the
+   migrations' own DDL, which must agree, so a column added by either lands here. */
+const stripSql = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--.*$/gm, "");
+function appointmentColumnsFromSchema() {
+  const src = read("packages/db/src/schema.ts");
+  const at = src.indexOf("export const appointments = pgTable(");
+  assert.ok(at >= 0, "schema.ts has no appointments table");
+  const open = src.indexOf("{", at);
+  const close = src.indexOf("\n  },\n", open);
+  assert.ok(open > at && close > open, "schema.ts's appointments column block did not parse");
+  const body = src.slice(open, close).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  return [...body.matchAll(/^\s+[a-zA-Z0-9]+: [a-zA-Z0-9]+\("([a-z_0-9]+)"/gm)].map((m) => m[1]);
+}
+/** The index of a column the migrations already added: -1 must fail, never splice the last column away. */
+function known(cols, col, tag) {
+  const i = cols.indexOf(col);
+  assert.ok(i >= 0, `${tag} drops or renames the appointments column ${col}, which no earlier migration added`);
+  return i;
+}
+function appointmentColumnsFromMigrations() {
+  const journal = JSON.parse(read("packages/db/migrations/meta/_journal.json"));
+  const cols = [];
+  const TABLE = String.raw`(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:ONLY\s+)?(?:"?public"?\.)?"?appointments"?`;
+  for (const e of journal.entries) {
+    const sql = stripSql(read(`packages/db/migrations/${e.tag}.sql`));
+    for (const m of sql.matchAll(new RegExp(String.raw`CREATE TABLE ${TABLE} \(([\s\S]*?)\n\);`, "gi"))) {
+      for (const c of m[1].matchAll(/^\s*"?([a-z_0-9]+)"?\s+/gm)) {
+        if (!/^(constraint|primary|unique|check|foreign|exclude)$/i.test(c[1])) cols.push(c[1]);
+      }
+    }
+    for (const stmt of sql.split(";")) {
+      if (!new RegExp(String.raw`^\s*ALTER TABLE ${TABLE}\s`, "i").test(stmt)) continue;
+      for (const m of stmt.matchAll(/ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_0-9]+)"?/gi)) if (!cols.includes(m[1])) cols.push(m[1]);
+      for (const m of stmt.matchAll(/DROP COLUMN\s+(?:IF EXISTS\s+)?"?([a-z_0-9]+)"?/gi)) cols.splice(known(cols, m[1], e.tag), 1);
+      for (const m of stmt.matchAll(/RENAME COLUMN\s+"?([a-z_0-9]+)"?\s+TO\s+"?([a-z_0-9]+)"?/gi)) cols.splice(known(cols, m[1], e.tag), 1, m[2]);
+    }
+  }
+  return cols;
+}
+/** Every appointments column stage 2 assigns in an UPDATE ... SET. */
+function writtenAppointmentColumns(s2) {
+  const cols = new Set();
+  for (const m of code(s2).matchAll(/UPDATE public\.appointments SET ([\s\S]*?)\n\s*(?:WHERE|FROM)\b/g)) {
+    for (const c of m[1].matchAll(/(?:^|,)\s*([a-z_0-9]+)\s*=/g)) cols.add(c[1]);
+  }
+  return [...cols].sort();
+}
+/** The column lists of the w_fixed fingerprint: the baseline, then the check after the writes. */
+function fixedFingerprints(s2) {
+  const c = code(s2);
+  return ["INTO v_bn_w_fixed, v_b_md5_w_fixed", "IS DISTINCT FROM v_b_md5_w_fixed"].map((anchor) => {
+    const at = c.indexOf(anchor);
+    assert.ok(at > 0, `stage 2 has no "${anchor}"`);
+    const row = c.lastIndexOf("ROW(", at);
+    const end = c.indexOf(")::text", row);
+    assert.ok(row > 0 && end > row && end < at, `the w_fixed ROW() before "${anchor}" did not parse`);
+    return [...c.slice(row + 4, end).matchAll(/\ba\.([a-z_0-9]+)/g)].map((m) => m[1]);
+  });
+}
+/** What each w_fixed list lacks, or holds beyond, the columns the op does not write. */
+function fixedGap(s2, columns, written) {
+  const want = columns.filter((col) => !written.includes(col));
+  return fixedFingerprints(s2).map((list) => ({
+    missing: want.filter((col) => !list.includes(col)),
+    extra: list.filter((col) => !want.includes(col)),
+  }));
+}
+
+test("the written-row fingerprint covers EVERY appointments column the op does not write, from schema.ts and the migrations", () => {
+  const schema = appointmentColumnsFromSchema();
+  const migrated = appointmentColumnsFromMigrations();
+  assert.ok(schema.length > 0 && new Set(schema).size === schema.length, "schema.ts's appointments columns did not parse");
+  assert.deepEqual([...migrated].sort(), [...schema].sort(), "schema.ts and the migrations disagree on the appointments columns");
+  for (const col of ["confirmation_received_at", "confirmation_channel", "confirmation_state", "origin", "pack_instance_id"]) {
+    assert.ok(schema.includes(col), `the column parse missed ${col}`);
+  }
+  const written = writtenAppointmentColumns(S2);
+  assert.deepEqual(written, ["practitioner_2_id", "practitioner_id", "status", "updated_at"], "stage 2 writes an appointments column the fingerprint was not built around");
+  const [before, after] = fixedFingerprints(S2);
+  assert.deepEqual(after, before, "the w_fixed check after the writes is not the baseline's list");
+  for (const [i, g] of fixedGap(S2, schema, written).entries()) {
+    const which = i === 0 ? "the baseline" : "the check after the writes";
+    assert.deepEqual(g.missing, [], `${which} of w_fixed leaves out a column the op does not write: ${g.missing.join(", ")}`);
+    assert.deepEqual(g.extra, [], `${which} of w_fixed names a column the op writes, or none at all: ${g.extra.join(", ")}`);
+  }
+  // The assertion can fail: round 2's list, without the two confirmation columns, is caught.
+  const round2 = S2.replaceAll("a.confirmation_received_at, a.confirmation_channel, ", "");
+  assert.notEqual(round2, S2);
+  for (const g of fixedGap(round2, schema, written)) {
+    assert.deepEqual(g.missing, ["confirmation_received_at", "confirmation_channel"], "the gap check does not see a missing column");
+  }
+});
+
+test("every md5 baseline stage 2 compares is in the audit row with its row count, and a guaranteed family stops when empty", () => {
+  const c = code(S2);
+  const declared = [...new Set([...c.matchAll(/\bv_b_md5_([a-z_]+) text/g)].map((m) => m[1]))].sort();
+  assert.ok(declared.length > 0);
+  const md5Obj = between(c, "'md5', jsonb_build_object(", "'md5_rows', v_md5_rows", "the audit row's md5 object");
+  const recorded = [...md5Obj.matchAll(/'([a-z_]+)', v_b_md5_\1\b/g)].map((m) => m[1]).sort();
+  assert.deepEqual(recorded, declared, "the audit row's md5 object is not every baseline stage 2 takes");
+  const rows = between(c, "v_md5_rows := jsonb_build_object(", ");", "the md5_rows object");
+  const counted = [...rows.matchAll(/'([a-z_]+)', v_(?:bn|b_n)_\1\b/g)].map((m) => m[1]).sort();
+  assert.deepEqual(counted, declared, "the md5_rows object does not count every md5 family");
+  for (const f of declared) {
+    assert.match(c, new RegExp(`INTO v_(?:bn|b_n)_${f}, v_b_md5_${f}\\b`), `family ${f} takes its md5 without its row count`);
+  }
+  const guard = between(c, "FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e", "END LOOP;", "the empty-family guard");
+  assert.match(guard, /AND e\.value::int = 0/);
+  assert.match(guard, /RAISE EXCEPTION 'STOP: the md5 family % is empty/);
+  const guaranteed = guard.match(/e\.key IN \(([^)]*)\)/)?.[1].match(/'([a-z_]+)'/g).map((q) => q.slice(1, -1)).sort();
+  assert.deepEqual(guaranteed, ["appt_rest", "av_rest", "cb_past", "cb_sched", "cr_all", "cr_att", "keep", "sl", "users", "w_fixed"], "the families a refusal guarantees moved");
+  for (const f of guaranteed) assert.ok(declared.includes(f), `the guard names ${f}, which is not a family`);
+  const at = S2.indexOf("FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e");
+  assert.ok(at > 0 && at < S2.indexOf("-- W1."), "the empty-family guard does not run before the first write");
+  assert.match(c, /RAISE NOTICE 'P5 md5 families and the rows each compares: %'/, "stage 2 does not print the md5 family profile");
+});
+
+/* ---- the handshake ------------------------------------------------------- */
+
+const CODES = [...SETS.matchAll(/\((\d+), '([a-z0-9]+)'\)/g)].map((m) => m[2]);
+const CARRIES = ["s10v2_run_day", ...CODES.flatMap((c) => [`s10v2_count_${c}`, `s10v2_digest_${c}`])];
+
+test("the carries: one per action for count and digest, plus the run day, and no name inside another", () => {
+  assert.equal(new Set(CODES).size, CODES.length, "an action code repeats");
+  assert.deepEqual(CODES, ["rcov", "rpast", "msat", "rphan", "rwin", "hjp", "xnesa", "ft2", "fcan"], "the action codes are not the nine the op carries (no block is written, so none carries a block)");
+  for (const a of CARRIES) for (const b of CARRIES) if (a !== b) assert.ok(!b.includes(a), `carry ${a} is inside ${b}`);
+  for (const c of CARRIES) {
+    assert.match(S2, new RegExp(`set_config\\('s10v2\\.${c}',\\s+:'${c}',\\s+false\\)`), `stage 2 does not lift ${c}`);
+  }
+  assert.match(S2, new RegExp(`IF v_n <> ${CARRIES.length} THEN`), "stage 2 does not assert the carry count");
+  const names = block("STAGE 2").match(/NAMES=\(\n([\s\S]*?)\n\)/)?.[1].split(/\s+/).filter(Boolean);
+  assert.deepEqual(names, CARRIES, "the doc's stage 2 block does not pass exactly these carries, in order");
+  assert.match(SETS, /coalesce\(md5\(string_agg\(t\.key, ',' ORDER BY t\.key\)\), 'empty'\)/, "the digest expression moved");
+});
+
+test("stage 2 refuses on stale or foreign carries: under an hour, same Lisbon day", () => {
+  const b = block("STAGE 2");
+  assert.match(b, /find \/tmp\/staff10v2-stage1\.ok -mmin -60/);
+  assert.match(b, /find \/tmp\/staff10v2-stage1\.out -mmin -60/);
+  assert.match(b, /\$\(TZ=Europe\/Lisbon date \+%Y-%m-%d\)/);
+  assert.match(S2, /current_setting\('s10v2\.s10v2_run_day', true\) IS DISTINCT FROM v_today::text/);
+});
+
+test("every refusal stage 1 prints is a refusal stage 2 raises, and the doc counts them", () => {
+  const codes = [...SETS.matchAll(/'(R\d{2})'(?: AS code)?,/g)].map((m) => m[1]);
+  const want = Array.from({ length: codes.length }, (_, i) => `R${String(i + 1).padStart(2, "0")}`);
+  assert.deepEqual(codes, want, "the refusal codes are not contiguous from R01");
+  assert.match(S2, /WHERE \(e ->> 'n'\)::int > 0 ORDER BY 1\s+LOOP\s+RAISE EXCEPTION 'STOP: % refuses/);
+  assert.ok(block("STAGE 1").includes(`[ "\${RN}" = ${codes.length} ]`), "stage 1's block does not count every refusal line");
+});
+
+/* ---- the verify ---------------------------------------------------------- */
+
+test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the doc counts them", () => {
+  const ns = [...S3.matchAll(/^(?:SELECT|UNION ALL SELECT) (\d+)(?: AS n)?, '/gm)].map((m) => Number(m[1]));
+  const verdicts = ns.filter((n) => n !== 99);
+  assert.deepEqual(verdicts, Array.from({ length: verdicts.length }, (_, i) => i + 1));
+  const rows = verdictRows();
+  assert.equal(rows.length, verdicts.length, "the verdict rows did not split one per verdict");
+  rows.forEach((r, i) => assert.match(r, /THEN 'FAIL'/, `verdict ${i + 1} cannot FAIL`));
+  const b = block("STAGE 3");
+  assert.ok(b.includes(`[ "\${NV}" = ${verdicts.length} ]`), "the doc's stage 3 block counts a different number");
+  const allowed = b.match(/grep -vxE '([0-9|]+)'/)?.[1].split("|").map(Number);
+  assert.ok(allowed?.length > 0);
+  for (const n of allowed) assert.ok(verdicts.includes(n), `the allowed-VACUOUS list names ${n}, which does not exist`);
+  for (const n of [1, 7, 8, 9, 19, 20, 21, 22]) assert.ok(!allowed.includes(n), `verdict ${n} must never be allowed VACUOUS`);
+});
+
+test("an empty comparand never reads OK: every verdict but 1, 7 and 22 has a VACUOUS branch, and 7 FAILs on a zero control", () => {
+  const rows = verdictRows();
+  rows.forEach((r, i) => {
+    const n = i + 1;
+    if ([1, 7, 22].includes(n)) return;
+    assert.match(r, /THEN 'VACUOUS'/, `verdict ${n} has no VACUOUS branch, so an empty set could read OK`);
+  });
+  assert.match(rows[6], /OR v\.lv_lv_future = 0 THEN 'FAIL'/, "verdict 7's control does not FAIL at zero");
+  const ten = rows[9];
+  assert.match(ten, /\+ v\.n_rcov \+ v\.n_rpast \+ v\.n_rphan \+ v\.n_rwin\) = 0\s+THEN 'VACUOUS'/, "verdict 10 is not VACUOUS on an empty comparand");
+  assert.ok(ten.indexOf("THEN 'FAIL'") >= 0 && ten.indexOf("THEN 'FAIL'") < ten.indexOf("THEN 'VACUOUS'"), "verdict 10 must test FAIL before VACUOUS");
+});
+
+test("every untouched set stage 3 compares by md5 must be non-empty, and stage 1 refuses an empty one before the write", () => {
+  const md5Verdicts = [...S3.matchAll(/UNION ALL SELECT (\d+), '[^']*\(md5\)'/g)].map((m) => Number(m[1]));
+  assert.deepEqual(md5Verdicts, [9, 19, 20, 21], "the md5 comparison verdicts moved");
+  const r25 = between(SETS, "'R25'", "'R26'", "R25");
+  assert.match(r25, /a\.practitioner_id = k\.jp_cb AND a\.location_id = k\.cb_loc AND a\.starts_at < k\.day0\) = 0/, "R25 does not refuse an empty JP(cb) past Castelo Branco set");
+  assert.match(r25, /av\.user_id = k\.jp_cb AND av\.location_id = k\.cb_loc\) = 0/, "R25 does not refuse an empty JP(cb) Castelo Branco schedule");
+  const r27 = between(SETS, "'R27'", "'R28'", "R27");
+  assert.match(r27, /FROM public\.clinical_records cr\s+WHERE cr\.appointment_id IN \(SELECT h\.id FROM h UNION SELECT x\.id FROM x\s+UNION SELECT f\.p_id FROM f UNION SELECT f\.n_id FROM f\)\) = 0/, "R27 does not refuse an empty clinical record set on the written rows");
+  assert.match(r27, /\(SELECT count\(\*\) FROM tw_keep\) = 0/, "R27 does not refuse an empty kept past twin set");
+});
+
+test("the roster check always has a real Saturday to read: R28 refuses before the write when it would not", () => {
+  const r28 = between(SETS, "'R28'", END, "R28");
+  assert.match(r28, /o\.user_id = k\.jp_lv AND o\.location_id = k\.lv_loc AND o\.is_active IS TRUE/);
+  assert.match(r28, /o\.valid_from >= k\.today AND extract\(dow FROM o\.valid_from\)::int = 6/, "R28 does not look for a real Saturday from today");
+  assert.match(r28, /\+ \(SELECT count\(\*\) FROM cls c WHERE c\.f_move\) = 0/, "R28 does not count the Saturdays that move");
+  const sat = satCte();
+  assert.match(sat, /av\.valid_from >= k\.today AND extract\(dow FROM av\.valid_from\)::int = 6/, "stage 3's Saturday is not the one R28 guarantees");
+});
+
+test("stage 3 reads back only what stage 2 records, and the audit action agrees everywhere", () => {
+  assert.ok(S2.includes(`c_action   constant text := '${ACTION}'`));
+  assert.ok(SETS.includes(`al.action = '${ACTION}'`));
+  assert.ok(S3.includes(`a.action = '${ACTION}'`));
+  const top = [...S3.matchAll(/m -> '([a-z_0-9]+)'/g)].map((m) => m[1]);
+  const nested = [...S3.matchAll(/m -> '(before|md5)' ->> '([a-z_0-9]+)'/g)].map((m) => `${m[1]}.${m[2]}`);
+  for (const k of new Set(top)) assert.ok(S2.includes(`'${k}', `), `stage 3 reads ${k}, which stage 2 never writes`);
+  for (const k of new Set(nested)) assert.ok(S2.includes(`'${k.split(".")[1]}', v_`), `stage 3 reads ${k}, which stage 2 never writes`);
+});
+
+test("the md5 fingerprints stage 3 recomputes are the exact expressions stage 2 recorded", () => {
+  const keep = "ROW(a.id, a.practitioner_id, a.practitioner_2_id, a.location_id, a.starts_at,";
+  const cr = "string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id)::text, E'\\n' ORDER BY cr.id)";
+  for (const s of [S2, S3]) {
+    assert.ok(s.includes(keep), "the kept-row fingerprint differs");
+    assert.ok(s.includes(cr), "the clinical record fingerprint differs");
+    assert.ok(s.includes(TO_MD5), "the time_off fingerprint differs");
+    assert.match(s, /SET TIME ZONE 'UTC';\nSET datestyle = 'ISO, YMD';/, "a fingerprint file does not fix the text rendering");
+  }
+});
+
+/* ---- the document: run from main, the head checked by the machine ------- */
+
+const STAGE_BLOCKS = () => [0, 1, 2, 3].map((n) => [`stage ${n}`, block(`STAGE ${n}`)]);
+
+test("the document runs from origin/main: stage 0 records the sha, stages 1 and 2 HALT on a moved main before any database, every stage checks out the recorded sha, and no block names the branch", () => {
+  for (const [label, b] of STAGE_BLOCKS()) {
+    assert.ok(!b.includes("origin/data/"), `${label} derives its head from a branch`);
+    assert.ok(!b.includes("STAFF-10-v2-one-held-op"), `${label} names the op's branch`);
+    assert.doesNotMatch(b, /^BRANCH=/m, `${label} sets a branch`);
+    const checkouts = b.split("\n").filter((x) => /\bgit checkout\b/.test(x));
+    assert.equal(checkouts.length, 1, `${label} checks out ${checkouts.length} times`);
+    assert.equal(checkouts[0], label === "stage 0" ? "git checkout -q --detach ${MAIN}" : "git checkout -q --detach ${REC}", `${label} checks out something other than the recorded head`);
+  }
+  const s0 = block("STAGE 0").split("\n");
+  const fetch = s0.indexOf("git fetch origin --prune");
+  const main = s0.indexOf("MAIN=$(git rev-parse origin/main)");
+  const co = s0.indexOf("git checkout -q --detach ${MAIN}");
+  const side = s0.indexOf('shasum -a 256 -c ${DOCPIN} || { echo "STOP: this document is not the approved one"; exit 1; }');
+  const lastPin = Math.max(...s0.map((l, i) => (l.startsWith('[ "$(shasum -a 256 ') ? i : -1)));
+  const rec = s0.indexOf('echo "${MAIN}" > /tmp/staff10v2-main.sha');
+  const written = s0.findIndex((l) => l.includes("/tmp/staff10v2-written.ok"));
+  assert.ok(written >= 0 && written < fetch, "stage 0 does not refuse once stage 2 has written, so a new head could replace the recorded one");
+  assert.ok(fetch >= 0 && fetch < main && main < co && co < side && side < lastPin && lastPin < rec, "stage 0 does not fetch, resolve origin/main, check it out, verify the sidecar and every pin, and only then record the sha");
+  for (const n of [1, 2]) {
+    const l = block(`STAGE ${n}`).split("\n");
+    const readRec = l.indexOf("REC=$(cat /tmp/staff10v2-main.sha)");
+    const f = l.indexOf("git fetch origin --prune");
+    const now = l.indexOf("NOW=$(git rev-parse origin/main)");
+    const halt = l.findIndex((x) => x.startsWith('[ "${NOW}" = "${REC}" ] || { echo "STOP: main moved since stage 0, the merge freeze was broken.'));
+    const co2 = l.indexOf("git checkout -q --detach ${REC}");
+    const env = l.findIndex((x) => x.includes("osteojp-secrets"));
+    const psql = l.findIndex((x) => x.startsWith("psql "));
+    assert.ok(readRec >= 0 && readRec < f && f < now && now < halt && halt < co2 && co2 < env && env < psql, `stage ${n}'s HEAD CHECK does not read the recorded sha, fetch, compare and halt before it checks out, loads the environment and runs psql`);
+    assert.match(l[halt], /nothing is written.*exit 1; \}$/, `stage ${n}'s HEAD CHECK does not halt with nothing written`);
+  }
+  const s2 = block("STAGE 2").split("\n");
+  assert.ok(s2.some((l) => l.startsWith('[ "$(cat /tmp/staff10v2-stage1.ok)" = "${REC}" ] || {')), "stage 2 does not hold stage 1's pass to the recorded sha");
+  const s1 = block("STAGE 1").split("\n");
+  assert.ok(s1.includes('echo "${REC}" > /tmp/staff10v2-stage1.ok'), "stage 1 does not mark its pass with the recorded sha");
+  const s3 = block("STAGE 3").split("\n");
+  assert.ok(s3.includes("REC=$(cat /tmp/staff10v2-main.sha)"), "stage 3 does not run from the recorded sha");
+  assert.ok(!s3.some((l) => l.includes('"${NOW}" = "${REC}"') && /exit [1-9]/.test(l)), "stage 3 stops on a moved main, but after the write only it may still run");
+  assert.ok(s3.some((l) => l.includes("MAIN MOVED since stage 0")), "stage 3 does not report a moved main");
+});
+
+test("every script a block runs is pinned by sha256 in that block and checked before it runs, and stage 0 checks all four", () => {
+  for (const [label, b] of STAGE_BLOCKS()) {
+    const l = b.split("\n");
+    const runs = [];
+    l.forEach((x, i) => {
+      const pq = x.match(/^psql .* -f (scripts\/\S+\.sql)(?=\s|$)/);
+      if (pq) runs.push([pq[1], i]);
+      if (/(?:^|[;&|(`]\s*)psql\s/.test(x)) assert.ok(pq, `${label} runs psql in a shape this test does not read: ${x}`);
+      const nd = x.match(/^node (scripts\/\S+\.mjs)$/);
+      if (nd) runs.push([nd[1], i]);
+      assert.doesNotMatch(x, /(?:^|[\s;|&(])(?:bash|sh|zsh|source|eval)\s|(?:^|[\s;|&])\.\s+(?!\/Users\/ivan\/osteojp-secrets\/new-prod\.env)/, `${label} runs a program by a route this test does not pin: ${x}`);
+    });
+    assert.equal(runs.length, label === "stage 0" ? 0 : 2, `${label} runs ${runs.map((r) => r[0]).join(", ")}`);
+    for (const [file, at] of runs) {
+      const check = l.findIndex((x) => new RegExp(`^\\[ "\\$\\(shasum -a 256 ${esc(file)} \\| cut -d' ' -f1\\)" = "\\$\\{(SHA[A-Z0-9]*)\\}" \\] \\|\\| \\{ echo "STOP: [^"]*"; exit 1; \\}$`).test(x));
+      assert.ok(check >= 0 && check < at, `${label} runs ${file} without checking its pin first`);
+      const v = l[check].match(/\$\{(SHA[A-Z0-9]*)\}/)[1];
+      assert.equal(l.find((x) => x.startsWith(`${v}=`)), `${v}=${sha256(file)}`, `${label}'s ${v} is not the sha256 of ${file}`);
+    }
+  }
+  const s0 = block("STAGE 0");
+  for (const f of [F1, F2, F3, GUARD]) assert.ok(s0.includes(`[ "$(shasum -a 256 ${f} | cut -d' ' -f1)" = `), `stage 0 does not check ${f}`);
+});
+
+test("the document says a refusal or a STOP stops the sitting, no block or stage file tells anyone to run stage 1 again, and no STOP sends the runner on to stage 3", () => {
+  assert.ok(DOC.includes("A refusal or a STOP stops the sitting, and nothing continues to the next block."), "the document does not say that a refusal or a STOP stops the sitting");
+  for (const [label, b] of STAGE_BLOCKS()) assert.doesNotMatch(b, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
+  for (const [label, sql] of STAGES) assert.doesNotMatch(sql, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
+  // After a STOP, stage 3 runs only on the owner's or the lead's word, in every block and in the prose.
+  let stops = 0;
+  const written = [];
+  for (const [label, b] of STAGE_BLOCKS()) {
+    for (const line of b.split("\n").filter((l) => l.includes("STOP:"))) {
+      stops++;
+      assert.doesNotMatch(line, /paste stage 3|stage 3 only|go on to stage 3/i, `${label}: a STOP sends the runner on to stage 3: ${line.slice(0, 100)}`);
+      if (/ALREADY WRITTEN/.test(line)) written.push(label);
+      if (/ALREADY WRITTEN/.test(line)) assert.ok(line.endsWith(` The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }`), `${label}: the ALREADY WRITTEN STOP does not stop the sitting and leave stage 3 to the owner or the lead: ${line.slice(0, 100)}`);
+    }
+  }
+  assert.ok(stops > 0, "no block prints a STOP line, so this read nothing");
+  assert.deepEqual(written, ["stage 0", "stage 1", "stage 2"], "stages 0, 1 and 2 do not each refuse once stage 2 has written");
+  assert.doesNotMatch(DOC, /paste stage 3 and report/i, "the document still tells the runner to paste stage 3 after a STOP");
+  const prose = between(DOC, "## STAGE 2", "## STAGE 3", "the stage 2 section").split("\n```\n").at(-1);
+  for (const want of ["Either one stops the sitting like every other `STOP:`", "stage 3, READ ONLY, runs only when the owner or the lead says so", "**Every other exit stops the sitting, with nothing else pasted.**"]) {
+    assert.ok(prose.replace(/\s+/g, " ").includes(want), `the prose under the stage 2 block does not say: ${want}`);
+  }
+});
+
+test("every block survives an interactive zsh paste: no # line, no backslash continuation, no ! outside test !", () => {
+  for (const [label, b] of STAGE_BLOCKS()) {
+    b.split("\n").forEach((x, i) => {
+      assert.doesNotMatch(x, /^\s*#/, `${label}:${i + 1} starts with #`);
+      assert.doesNotMatch(x, /\\$/, `${label}:${i + 1} ends in a backslash`);
+      assert.doesNotMatch(x.replace(/test !/g, ""), /!/, `${label}:${i + 1} carries a !, which zsh expands from history`);
+    });
+  }
+});
+
+/* ---- the pins and the public bytes --------------------------------------- */
+
+test("the doc pins each file by its sha256, and the sidecar pins the doc", () => {
+  const pins = { SHA1: F1, SHA2: F2, SHA3: F3, SHAGUARD: GUARD };
+  for (const [name, file] of Object.entries(pins)) {
+    const want = sha256(file);
+    const set = [...DOC.matchAll(new RegExp(`^${name}=([0-9a-f]{64})$`, "gm"))].map((m) => m[1]);
+    assert.ok(set.length > 0, `no block sets ${name}`);
+    for (const v of set) assert.equal(v, want, `${name} in the doc is not the sha256 of ${file}`);
+    assert.ok(DOC.includes(`\`${file}\`, `) && DOC.includes(want), `the facts table does not pin ${file}`);
+  }
+  const side = read("docs/data-op-staff-10-v2.sha256");
+  assert.equal(side, `${sha256(DOCF)}  ${DOCF}\n`, "the sidecar does not pin the doc");
+});
+
+test("the original STAFF-10 SQL files are byte-identical to what their own doc pinned", () => {
+  const old = read("docs/data-op-staff-10.md");
+  assert.match(old, /SUPERSEDED on 2026-09-24/);
+  for (const f of ["staff-10-1-preview.sql", "staff-10-2-apply.sql", "staff-10-3-postcheck.sql"]) {
+    const pinned = old.match(new RegExp(`scripts/data/${f.replace(/\./g, "\\.")}\`, sha256 \`([0-9a-f]{64})\``))?.[1];
+    assert.equal(sha256(`scripts/data/${f}`), pinned, `${f} moved`);
+  }
+});
+
+test("no public byte of the op carries a count next to a counted noun, or a dash", () => {
+  const noun = /\b\d[\d,.]*\s*(?:future |past |live |twin |nesa |person )?(?:pairs?|rows?|twins?|patients?|appointments?|bookings?|thousand)\b/i;
+  for (const [label, text] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3], ["the doc", DOC]]) {
+    text.split("\n").forEach((line, i) => {
+      assert.doesNotMatch(line, noun, `${label}:${i + 1} reads like a count: ${line.trim().slice(0, 100)}`);
+      assert.doesNotMatch(line, /[\u2013\u2014]/, `${label}:${i + 1} carries an en or em dash`);
+    });
+  }
+});
