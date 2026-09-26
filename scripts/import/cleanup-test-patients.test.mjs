@@ -213,11 +213,18 @@ const CREATED = new Set(
  * ENTRIES ALLOWED TO RUN AHEAD OF THEIR MIGRATION, BY NAME. Under the gate
  * freeze this file changes only in a GATE-CHANGE PR, and the migration that adds
  * a child of patients arrives in an ordinary PR, so one of the two must merge
- * first. This one lands first. Once the migration is promoted onto main the
- * table is in CREATED and its entry here is inert; delete it in the next
- * GATE-CHANGE that touches this file.
+ * first. When this file lands first, the new table is named here. Once the
+ * migration is promoted onto main the table is in CREATED and its entry is
+ * inert; delete it in the next GATE-CHANGE that touches this file.
+ *
+ * EMPTY, AND IT HAS HELD ONE ENTRY: patient_rgpd_acceptances, added by the
+ * GATE-CHANGE #1436 so the cleanup could list RGPD-01's table before
+ * 0093_patient_rgpd_acceptances.sql reached main. #1399 promoted that migration
+ * on 2026-09-23, the entry went inert, and it was removed in the GATE-CHANGE
+ * the owner ruled on 2026-09-24, after 0093's apply to production. With the set
+ * empty, every table in DELETE_ORDER must be created by a numbered migration.
  */
-const AHEAD_OF_MIGRATION = new Set(["patient_rgpd_acceptances"]);
+const AHEAD_OF_MIGRATION = new Set([]);
 
 test("every table it deletes from still exists in schema.ts", () => {
   // A renamed or dropped table lands here as a red test rather than as a failed
@@ -275,9 +282,17 @@ test("every table with an FK path to patients is covered", () => {
   };
   walk("patients");
 
-  // 18 until 0091 (CARE-01) added patient_care_team on 2026-09-21; 20 once 0093
-  // (RGPD-01) adds patient_rgpd_acceptances.
-  assert.ok(reached.size >= 19, `expected at least 19 patient-rooted tables, found ${reached.size}`);
+  // THE FLOOR IS THE EXACT COUNT ON MAIN, and it moves with every new child of
+  // patients. Counted with this walk over each migration prefix: 18 tables
+  // through 0079; 19 once 0080 (#1195, 2026-09-06) added
+  // appointment_reschedule_requests; 20 once 0091 (CARE-01, #1374, 2026-09-21)
+  // added patient_care_team; 21 once 0093 (RGPD-01, #1399, 2026-09-23) added
+  // patient_rgpd_acceptances. The floor was not raised at 0080, and its old
+  // comment skipped that step, so it read 19 while the true count was 21 and a
+  // lost patients edge on 0093 stayed green. At 21 a floor of 22 fails with
+  // "found 21". Raise it in the same GATE-CHANGE that adds the next child of
+  // patients to DELETE_ORDER.
+  assert.ok(reached.size >= 21, `expected at least 21 patient-rooted tables, found ${reached.size}`);
   const covered = new Set(DELETE_ORDER);
   for (const t of reached) {
     assert.ok(covered.has(t), `${t} has an FK path to patients but the script never deletes from it`);

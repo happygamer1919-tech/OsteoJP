@@ -3,7 +3,14 @@
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { Ban, ChevronLeft, ChevronRight, MapPin, Plus, RotateCw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition, type CSSProperties } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+  type CSSProperties,
+} from "react";
 
 import type { Role } from "@osteojp/auth";
 
@@ -17,17 +24,36 @@ import {
   type AgendaView as View,
 } from "@/lib/scheduling/time";
 import type { BlockSpan } from "@/lib/scheduling/blocked-time-core";
+import {
+  browserViewStorage,
+  preferredViewRedirect,
+  readViewPreference,
+  writeViewPreference,
+} from "@/lib/scheduling/agenda-view-preference";
+import {
+  clientStoredServiceFilter,
+  filterByService,
+  parseServiceFilter,
+  sanitizeServiceSelection,
+  serverStoredServiceFilter,
+  subscribeNothing,
+  toggleServiceSelection,
+  writeServiceFilter,
+} from "@/lib/scheduling/agenda-service-filter";
 import { withSharedResourceOptions } from "@/lib/scheduling/shared-resource-guard";
 import type {
   AgendaAppointment,
   AgendaFilters,
   AgendaOptions,
+  Option,
 } from "@/lib/scheduling/types";
 
 import { AgendaGrid } from "./agenda-grid";
+import { AgendaWeekCompact } from "./agenda-week-compact";
 import { AgendaWeekList } from "./agenda-week-list";
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 import { BlockTimeDialog } from "./block-time-dialog";
+import { ServiceFilterPanel, ServiceFilterToggle } from "./service-filter";
 
 // v2 glass toolbar controls (SPEC-v2-foundation §7 nav-button idiom): no opaque
 // border/fill, neutral hover tint, the global focus ring. Mirrors the shell's
@@ -43,6 +69,7 @@ export function AgendaView({
   viewer,
   options,
   appointments,
+  serviceChips = [],
   blocks,
   dayWindow,
   clinicWindow,
@@ -65,6 +92,10 @@ export function AgendaView({
   viewer: { role: Role; userId: string };
   options: AgendaOptions;
   appointments: AgendaAppointment[];
+  /** AGENDA-FILTER-SERVICE: the services offered as filter chips, already
+   *  scoped by page.tsx to the viewer's clinics, in the app's service order.
+   *  Empty (or absent) renders no service filter at all. */
+  serviceChips?: Option[];
   /** W9-04: time_off spans for the visible range. Non-empty ONLY when the agenda
    *  is scoped to one therapist - see page.tsx for why. */
   blocks: BlockSpan[];
@@ -130,6 +161,34 @@ export function AgendaView({
   // not have chosen. The date rides the agenda's existing `date` param, which
   // already anchors both the grid and the drawer's default day.
   const deepLinkOpened = useRef(false);
+
+  /* AGENDA-MOBILE-WEEK - THE DIA/SEMANA CHOICE IS REMEMBERED PER DEVICE.
+   *
+   * Only a BARE /agenda consults it: an explicit `?view=` always wins, and
+   * every press of the toolbar writes one, so this decides exactly one case,
+   * the sidebar link and the dashboard's "Ver agenda" tile. localStorage only,
+   * each access in try/catch (agenda-view-preference.ts); a refusal means "no
+   * preference" and the page renders exactly as it did before this card.
+   *
+   * DECLARED BEFORE the deep-link effect below, deliberately: effects run in
+   * declaration order, and that effect strips `novaMarcacaoPaciente` from the
+   * URL. Reading the search first means a patient deep link is recognised and
+   * left alone rather than redirected underneath its own drawer.
+   *
+   * KEYED ON `renderedAtIso`, which is new on every server render. So the check
+   * runs after each navigation (including a same-route sidebar click to a bare
+   * /agenda, where no other prop need change), and it is idempotent: once the
+   * URL carries `view`, it does nothing. */
+  useEffect(() => {
+    if (lockedPatient) return;
+    const target = preferredViewRedirect(
+      window.location.search,
+      view,
+      readViewPreference(browserViewStorage()),
+    );
+    if (target) router.replace(target);
+  }, [renderedAtIso, lockedPatient, router, view]);
+
   useEffect(() => {
     if (!lockedPatient || deepLinkOpened.current) return;
     deepLinkOpened.current = true;
@@ -239,6 +298,42 @@ export function AgendaView({
 
   const step = view === "week" ? 7 : 1;
 
+  /* AGENDA-FILTER-SERVICE - WHICH BOOKINGS ARE ON SCREEN.
+   *
+   * The server has already applied the therapist and clinic filters; this
+   * applies the service chips over exactly what it returned, so a booking shows
+   * only if it passes BOTH. Blocks are not bookings and are never filtered.
+   *
+   * THE SELECTION, and why it is two values. `storedServices` is the device's
+   * localStorage, read through useSyncExternalStore so the server render and
+   * the hydrating render both read nothing (serverStoredServiceFilter) and the
+   * stored value arrives one render later without a hydration mismatch and
+   * without a setState in an effect. `pickedServices` is what was pressed on
+   * this page, and wins once there is one: a storage that refuses the write
+   * (blocked, full, private) must still leave the filter working for this
+   * visit, merely not remembered. Every access is guarded in
+   * lib/scheduling/agenda-service-filter.ts.
+   *
+   * Both are cleaned against the chips on offer, so an id that is no longer
+   * offered filters nothing and shows on no badge. */
+  const offeredServiceIds = serviceChips.map((c) => c.id);
+  const storedServices = useSyncExternalStore(
+    subscribeNothing,
+    clientStoredServiceFilter,
+    serverStoredServiceFilter,
+  );
+  const [pickedServices, setPickedServices] = useState<string[] | null>(null);
+  const selectedServices = pickedServices
+    ? sanitizeServiceSelection(pickedServices, offeredServiceIds)
+    : parseServiceFilter(storedServices, offeredServiceIds);
+  const [servicePanelOpen, setServicePanelOpen] = useState(false);
+  function chooseServices(next: string[]) {
+    setPickedServices(next);
+    writeServiceFilter(browserViewStorage(), next);
+  }
+  // THE ONE LIST every surface below draws from, and the count reads.
+  const shownAppointments = filterByService(appointments, selectedServices);
+
   // W4-17 — live appointment count for the VISIBLE range. Computed exactly as the
   // grid decides visibility (an appointment whose Lisbon calendar day falls in
   // viewDates(view, anchor)), so it matches the grid AND the phone list on every
@@ -246,7 +341,9 @@ export function AgendaView({
   // with navigation + filters
   // (the `appointments` prop is refetched server-side for the range + filters).
   const visibleDates = new Set(viewDates(view, anchor));
-  const visibleCount = appointments.filter((a) =>
+  // AGENDA-FILTER-SERVICE: counts what is SHOWN, so the chip and the grid
+  // never disagree while a service filter is on.
+  const visibleCount = shownAppointments.filter((a) =>
     visibleDates.has(lisbonParts(new Date(a.startsAt)).date),
   ).length;
   const countLabel = visibleCount === 1 ? s["agenda.apptCountOne"] : s["agenda.apptCountMany"];
@@ -386,6 +483,19 @@ export function AgendaView({
                 </Select>
               </div>
             )}
+            {/* AGENDA-FILTER-SERVICE, desktop copy: a filter, so it sits on the
+                filters' line. At 1280 the control row below has ~78px spare
+                and a labelled toggle there would wrap it (AGENDA-02's
+                ceiling). Displayed from `md`; the phone copy is on line 2. */}
+            {serviceChips.length > 0 && (
+              <ServiceFilterToggle
+                testId="agenda-service-filter-toggle"
+                className="hidden md:inline-flex"
+                count={selectedServices.length}
+                expanded={servicePanelOpen}
+                onToggle={() => setServicePanelOpen((o) => !o)}
+              />
+            )}
           </div>
         </div>
 
@@ -440,13 +550,36 @@ export function AgendaView({
             <SegmentedControl
               aria-label={s["agenda.title"]}
               value={view}
-              onValueChange={(v) => navigate({ view: v as View })}
+              // AGENDA-MOBILE-WEEK: the toggle is the ONE control that records
+              // the device's preference. A day-header tap on the phone grid is a
+              // drill-down and does not.
+              onValueChange={(v) => {
+                writeViewPreference(browserViewStorage(), v as View);
+                navigate({ view: v as View });
+              }}
               items={[
                 { value: "day", label: s["agenda.viewDay"] },
                 { value: "week", label: s["agenda.viewWeek"] },
               ]}
             />
           </div>
+
+          {/* AGENDA-FILTER-SERVICE, phone copy. Under `md` this group is
+              `display: contents`, so this button is a direct item of the
+              wrapping bar and shares the Dia/Semana row: about 210px spare
+              at 390 and 180 at 360 beside the ~120px toggle, for a toggle of
+              about 85px (110 with its badge). No new row. Line 1 would have
+              squeezed each select to ~70px. `md:hidden`, so from `md` up the
+              group is exactly what it was. */}
+          {serviceChips.length > 0 && (
+            <ServiceFilterToggle
+              testId="agenda-service-filter-toggle-phone"
+              className="inline-flex md:hidden"
+              count={selectedServices.length}
+              expanded={servicePanelOpen}
+              onToggle={() => setServicePanelOpen((o) => !o)}
+            />
+          )}
 
           <div className="flex flex-none items-center gap-1">
             <button
@@ -490,8 +623,27 @@ export function AgendaView({
           {/* Group 2: WHAT YOU DO. One flex-none unit, ordered last, so a wrap
               carries all three together and never orphans the primary action.
               `ml-auto` right-aligns it when both groups share a line and is
-              inert once they do not. */}
-          <div className="flex flex-none items-center gap-2 sm:ml-auto">
+              inert once they do not.
+
+              AGENDA-MOBILE-WEEK (the toolbar overflow at 390): measured on a
+              local stack this group was 386px (112 + 92 + 166 + two gaps) in a
+              342px content box at 390, and 312px at 360, so Nova marcação ran off
+              the screen. Below `sm`, Bloquear and Nova marcação drop their
+              DECORATIVE icons (each has a word beside it), the three trim their
+              padding and the gaps shrink. Atualizar KEEPS its refresh icon: its
+              visible text is the time, a reading and not a verb, so the icon is
+              the only visible sign that it refreshes (a title tooltip does not
+              exist on touch). Every visible text label stays (AGENDA-02's
+              condition), the three stay on one line together, and the
+              accessible names do not change. The e2e measures it at 390 and
+              360. Default Q-B6-10.
+
+              ROUND 10: the side padding is 8px, not 10. At 10 the group was
+              about 304px locally, 7px inside the 312px content box at 360, and
+              CI's Linux Chromium drew it about 8px wider (its semibold "Nova
+              marcação" alone about 7px wider), so Nova marcação ended 1px into
+              the gutter there. At 8px it is about 292px locally, 19px inside. */}
+          <div className="flex flex-none items-center gap-2 max-sm:gap-1.5 sm:ml-auto">
             {/* W12-28: "Bloquear horário" writes a time_off block via the existing
                 model (settings:manage-gated), replacing the informal "Não Marcar"
                 fake-appointment hack. Shown only to roles that can manage blocks
@@ -508,9 +660,9 @@ export function AgendaView({
                 // depending on the viewport.
                 aria-label={s["agenda.blockTime"]}
                 title={s["agenda.blockTime"]}
-                className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
               >
-                <Ban size={18} strokeWidth={1.75} aria-hidden="true" className="flex-none" />
+                <Ban size={18} strokeWidth={1.75} aria-hidden="true" className="flex-none max-sm:hidden" />
                 {/* SHORTER WORD, NOT AN ICON: the control keeps a visible text
                     label at every width, which is the card's condition. The
                     accessible name is pinned by the aria-label above, so the
@@ -559,9 +711,18 @@ export function AgendaView({
               title={`${s["agenda.refresh"]} · ${s["agenda.lastUpdated"]} ${renderedAt}`}
               disabled={refreshing}
               onClick={() => startTransition(() => router.refresh())}
-              className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              className="inline-flex h-10 flex-none items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:gap-1.5 max-sm:px-2"
             >
-              <RotateCw size={18} strokeWidth={1.75} aria-hidden="true" className="flex-none" />
+              {/* NOT decorative, so NOT hidden below sm: the visible text is a
+                  time, and this icon is what says the time is a button that
+                  refreshes. 16px there, to fit 360 (see the group above). */}
+              <RotateCw
+                data-testid="agenda-refresh-icon"
+                size={18}
+                strokeWidth={1.75}
+                aria-hidden="true"
+                className="flex-none max-sm:size-4"
+              />
               <span
                 data-testid="agenda-freshness"
                 className="whitespace-nowrap text-sm font-normal text-v2-text-secondary"
@@ -586,13 +747,28 @@ export function AgendaView({
             <button
               type="button"
               onClick={() => setModal({ mode: "create" })}
-              className="inline-flex h-10 flex-none items-center gap-2 whitespace-nowrap rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              className="inline-flex h-10 flex-none items-center gap-2 whitespace-nowrap rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
             >
-              <Plus size={20} strokeWidth={1.75} aria-hidden="true" className="flex-none" />
+              <Plus size={20} strokeWidth={1.75} aria-hidden="true" className="flex-none max-sm:hidden" />
               {s["agenda.newAppointment"]}
             </button>
           </div>
         </div>
+
+        {/* AGENDA-FILTER-SERVICE - the chips, a row of the toolbar while open.
+            In the flow rather than floating, so it wraps inside the toolbar's
+            content box and cannot widen the page at any width; the toolbar's
+            ResizeObserver moves the pinned weekday row down with it. Rendered
+            only while open, so a closed toolbar has exactly the controls it
+            had before this card. */}
+        {servicePanelOpen && serviceChips.length > 0 && (
+          <ServiceFilterPanel
+            services={serviceChips}
+            selected={selectedServices}
+            onToggle={(id) => chooseServices(toggleServiceSelection(selectedServices, id, offeredServiceIds))}
+            onClear={() => chooseServices([])}
+          />
+        )}
       </div>
 
       {/* No empty-period banner: the agenda grid (empty time columns) is its
@@ -610,7 +786,7 @@ export function AgendaView({
       <AgendaGrid
         view={view}
         anchor={anchor}
-        appointments={appointments}
+        appointments={shownAppointments}
         blocks={blocks}
         dayWindow={dayWindow}
         clinicWindow={clinicWindow}
@@ -645,11 +821,15 @@ export function AgendaView({
           and never a second opinion about what is on a day. It renders in the
           DOM at every width and is hidden by CSS above `md`, which is what lets
           the 767/768 threshold be asserted both ways in one e2e run. */}
+      {/* AGENDA-MOBILE-WEEK: below 640 the WEEK is the compact grid further
+          down, so for Semana this list is 640-767 only (Q-B6-2: the ruling is
+          about phones; 640-767 keeps the list it has today). For Dia it is
+          unchanged at every width under 768: on a phone, Dia keeps this list. */}
       <AgendaWeekList
-        className="md:hidden"
+        className={view === "week" ? "max-sm:hidden md:hidden" : "md:hidden"}
         view={view}
         anchor={anchor}
-        appointments={appointments}
+        appointments={shownAppointments}
         blocks={blocks}
         closure={closure}
         dayWindow={dayWindow}
@@ -663,6 +843,26 @@ export function AgendaView({
             : undefined
         }
       />
+
+      {/* AGENDA-MOBILE-WEEK - the phone's Semana: the week grid, compressed.
+          Same props, never a second fetch. Mounted for the WEEK only (Dia keeps
+          the list above) and displayed only under `sm`. It sits AFTER the grid
+          and the list in the DOM so no desktop `.first()` text locator can land
+          on it, and every handle in it is prefixed (agenda-week-compact.tsx).
+          The day header opens Dia for that date through the same navigate()
+          every other control uses; it does not store a preference. */}
+      {view === "week" && (
+        <AgendaWeekCompact
+          className="sm:hidden"
+          anchor={anchor}
+          appointments={shownAppointments}
+          blocks={blocks}
+          closure={closure}
+          sharedResourceIds={new Set((options.sharedResources ?? []).map((r) => r.id))}
+          onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
+          onSelectDay={(date) => navigate({ view: "day", date })}
+        />
+      )}
 
       {modal && (
         <AppointmentDrawer
