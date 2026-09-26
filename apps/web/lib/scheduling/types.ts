@@ -113,6 +113,13 @@ export type ServiceOption = Option & {
   durationMin: number;
   // NESA contraindication sensitivity (0031) — drives the soft booking warning.
   contraindicationSensitive: boolean;
+  /**
+   * AGENDA-FILTER-SERVICE: the clinic this service is offered at, NULL for every
+   * clinic (services.location_id). Scopes the agenda's service chips to the
+   * viewer's clinics. Optional so existing option mocks keep type-checking;
+   * absent is read as "every clinic" (servicesAtClinics).
+   */
+  locationId?: string | null;
 };
 
 // W8-01c — an active pack offered as a bookable type in the create drawer. The
