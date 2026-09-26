@@ -79,6 +79,7 @@
     "scripts/ingestion-sign.test.mjs": "c6ba1b8cf42878ccb91d3f829e676c280e7b59ea8d82387e5b7bbe6ae2b40e2e",
     "scripts/lane-stack.test.mjs": "2bcc1f73267c7567c59e89b67bb1d077d3fc81342abcfa1a312ed75d62c51296",
     "scripts/local-target.test.mjs": "a7cfe74aea60206f5b0e2c3215526e9b59d48f31acc565550e331bf23c161f5c",
+    "scripts/merge-on-green-arms.test.mjs": "60160fd32fac08b3910e42d264611fe0b28732a5e1c8798a213f5428d65ad565",
     "scripts/obs-05-backfill-emit.test.mjs": "4004068875a0f56d4fd3149137fc0a672337e25114f359233ceeced9bb57e2a1",
     "scripts/owner-blocks-survive-zsh.test.mjs": "0a0d6e3446e0f14f0b77677bfb457864b14497b43ed6e6ca41b31813cf34396e",
     "scripts/pack-sessions-remaining-is-frozen.test.mjs": "134ffd78357fab5c143877e1ca68c7b6d24d1a69cc51341754e015c3b01c7b15",
