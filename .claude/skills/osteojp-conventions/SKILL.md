@@ -25,12 +25,34 @@ If this file drifts from them, they win.
 
 - Gates, from repo root, in order: `pnpm lint`, `pnpm typecheck`, `pnpm test`,
   `pnpm build`, and `pnpm test:e2e` for any user-facing change.
-- **Read required checks from the CHECKS API, never the PR banner.** GREEN
-  self-merge only when EVERY required check (DB-gated tests, Lint+typecheck+test,
-  Playwright E2E) AND all three Vercel deploys (osteojp-api, osteojp-platform,
-  osteojp-portal) are green. **Never `--admin`, never the bypass box.** A refused
+- **Read required checks from the CHECKS API, never the PR banner.** Branch
+  protection decides which checks are required, and a GREEN self-merge lands
+  only when every one of them passes. This file does not copy the list: a copied
+  list drifts (it named three while branch protection required four).
+  **Never `--admin`, never the bypass box.** A refused
   merge is a HALT, not a workaround. A flaky unrelated check is re-run, not merged
   around; never present a red required check as done.
+- **A GREEN self-merge is done by ARMING, at open (CLAUDE.md, rule R2).** Right
+  after the PR opens, run `scripts/merge-on-green.sh <PR>` (the /ship step 4). It
+  arms the PR with `gh pr merge <PR> --auto --squash` and confirms by re-reading
+  the PR; GitHub is the watcher and squash-merges once every check branch
+  protection requires is green. Never poll checks in a loop, and never wait for
+  green before arming: once the CI-minutes change (#1446) is merged, the
+  required E2E check reads red on an unarmed PR until it is armed, because arming
+  is what starts the suite. Auto-merge waits only on branch protection's
+  required checks. The Vercel deploys (osteojp-api, osteojp-platform,
+  osteojp-portal) are not among them, so they do not gate the merge.
+- **Two kinds of PR go to the owner UNARMED, and the script refuses both with no
+  merge call:** a PR labelled `held-for-apply` (exit 6: it arms only after its
+  apply is proven and the label comes off, per CLAUDE.md), and a PR whose title
+  starts with `GATE-CHANGE` (exit 7: the owner merges gate changes by hand). A
+  refusal is the answer; never route around it with a hand `gh pr merge`. If
+  either kind is armed ALREADY, the script exits 8 and says
+  `REFUSED, AND ALREADY ARMED`: labels do not stop auto-merge, so disarm it at
+  once with `gh pr merge <PR> --disable-auto`, confirm it reads unarmed, and
+  report it.
+  Exit 9 (`UNKNOWN`) means the re-read after the arm call failed: the PR may be
+  armed, so read it before reporting anything.
 - **Merge classes:** (a) GREEN self-merge - the default for a migration-free loop;
   (b) OWNER VISUAL GATE - visual-heavy loops: all checks green is necessary but NOT
   sufficient; push, paste the platform PREVIEW URL + the surfaces to inspect, and
