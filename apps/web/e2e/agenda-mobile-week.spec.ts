@@ -990,6 +990,12 @@ test.describe("the agenda week on a phone (AGMOB-01, AGENDA-MOBILE-WEEK)", () =>
         // keep their 40px, and the field still shows the whole date.
         if (path === "/dashboard") {
           const row = page.getByTestId("dashboard-date-nav");
+          // WAIT FOR THE PAGE'S OWN CONTENT FIRST. The header is the layout's
+          // and paints at once, but /dashboard streams behind its loading
+          // skeleton, and boundingBox() does not wait: at 360 on CI the read
+          // landed on the skeleton and returned null (the row was not there
+          // yet), three tries out of three on one run.
+          await expect(row, `${where}: the date row is shown`).toBeVisible();
           const rb = await box(row, `${where}: the date row`);
           expect(rb.x + rb.width, `${where}: the date row ends on screen`).toBeLessThanOrEqual(vp.width + 0.5);
           for (const name of ["Dia anterior", "Dia seguinte"]) {
