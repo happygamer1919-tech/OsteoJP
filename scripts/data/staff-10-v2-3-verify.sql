@@ -8,19 +8,20 @@
 -- audit row; this file reads them back and recomputes each against the
 -- database. A VACUOUS verdict means the arm ran over an empty set and could not
 -- have failed; the stage 3 block in the doc allows VACUOUS only on the arms it
--- names, and never on 1, 7, 8, 9, 19, 20, 21 or 22. Stages 1 and 2 refuse
--- an empty md5 comparison set before the write (R25, R27), so 9, 19, 20 and 21
+-- names, and never on 1, 7, 8, 9, 18, 20, 21 or 22. Stages 1 and 2 refuse
+-- an empty md5 comparison set before the write (R24, R25), so 9, 18, 20 and 21
 -- always compare something. Verdict 10 is VACUOUS exactly when JP(cb) had no
 -- inactive row and nothing was retired, a day on which 2 to 5 are VACUOUS too.
--- Verdict 11 reads the 30 September block with stage 1's own CTE, byte for
--- byte: it FAILs on any JP(cb) block overlapping that Lisbon day, and on a read
--- that misses either of its two synthetic blocks; it is VACUOUS when time_off
--- shows JP(cb) no block at all, so a read that sees nothing never prints OK.
--- Verdict 12 compares the tenant's time_off, count and md5, with the baseline
--- stage 2 recorded: this op writes no block. Verdicts 26 and 27 find the rows
--- stage 2 wrote by the stamp it put on them, not by the audit row's lists, and
--- FAIL unless those lists are exactly the rows it cancelled and the rows it gave
--- a practitioner_2.
+-- Verdict 11 compares the tenant's time_off, count and md5, with the baseline
+-- stage 2 recorded: this op writes no block, and JP(cb)'s 30 September block,
+-- which stays by the owner's ruling, is one of the rows it compares. Verdict 18
+-- compares the tenant's whole clinical_records table, count and md5, with the
+-- baseline stage 2 recorded, and its control FAILs when the digest cannot see a
+-- record go; it is the control of verdict 19, the records on the rows the op
+-- wrote, which is VACUOUS when there are none (owner ruling of 2026-09-26,
+-- paraphrased). Verdicts 26 and 27 find the rows stage 2 wrote by the stamp it
+-- put on them, not by the audit row's lists, and FAIL unless those lists are
+-- exactly the rows it cancelled and the rows it gave a practitioner_2.
 --
 -- The rows printed after the SUMMARY are the future pairs as they stand after
 -- the write, ids only: the owner-only reception note points at that section.
@@ -45,12 +46,6 @@ WITH k AS (
          'de000002-0000-0000-0000-000000000002'::uuid AS cb_loc,
          '0c1a0000-0000-4000-8000-000000000002'::uuid AS nesa_cb,
          'bdc466d7-f81f-4f8c-aa2e-b85194d73e1a'::uuid AS nesa_lv,
-         (DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from,
-         (DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to,
-         (DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from,
-         (DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to,
-         (DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from,
-         (DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to,
          '2000-01-01 03:00:00+00'::timestamptz AS ctl_from,
          '2000-01-01 03:01:00+00'::timestamptz AS ctl_to,
          (now() AT TIME ZONE 'Europe/Lisbon')::date AS today
@@ -85,7 +80,7 @@ WITH k AS (
   -- AND the weekday column is 6, because the slot grid and the confirm guard
   -- (apps/api/lib/appointments/store.ts, the slot query and
   -- availabilityCoversExists) both require av.weekday to equal the day's weekday.
-  -- R28 refuses before the write when no such row would exist. Picked from
+  -- R26 refuses before the write when no such row would exist. Picked from
   -- JP(lv)'s own rows, so the schedule half of verdict 8's positive control
   -- holds by construction; the user half does not: the JP(lv) arm applies the
   -- roster's user predicate (active, bookable, not a shared resource), so a
@@ -95,15 +90,6 @@ WITH k AS (
    WHERE av.user_id = k.jp_lv AND av.location_id = k.lv_loc AND av.is_active IS TRUE
      AND av.valid_from IS NOT NULL AND av.valid_until IS NOT NULL AND av.valid_from = av.valid_until
      AND av.valid_from >= k.today AND extract(dow FROM av.valid_from)::int = 6 AND av.weekday = 6
-), b30 AS (
-  SELECT s.src, s.id, s.starts_at, s.ends_at, s.reason
-    FROM (SELECT 'real' AS src, t.id, t.user_id, t.starts_at, t.ends_at, t.reason::text AS reason
-            FROM public.time_off t
-          UNION ALL
-          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30_from, k0.ctl30_to, 'synthetic, inside the day' FROM k k0
-          UNION ALL
-          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30x_from, k0.ctl30x_to, 'synthetic, across the day' FROM k k0) s, k
-   WHERE s.user_id = k.jp_cb AND tstzrange(s.starts_at, s.ends_at) && tstzrange(k.blk_from, k.blk_to)
 ), stamped AS (
   -- Every appointment stage 2 wrote carries its transaction time in updated_at,
   -- and stage 2 asserts the audit row's created_at is that same time. So this
@@ -174,9 +160,6 @@ WITH k AS (
       WHERE av.user_id = k.jp_cb AND av.location_id = k.cb_loc) AS md5_cb_sched_now,
     (SELECT count(*) FROM public.availability_templates av, k
       WHERE av.user_id = k.jp_cb AND av.is_active IS NOT TRUE)::int AS cb_inactive_now,
-    (SELECT count(*) FROM b30 WHERE b30.src = 'real')::int AS b30_real,
-    (SELECT count(*) FROM b30 WHERE b30.src = 'control')::int AS b30_ctl,
-    (SELECT count(*) FROM public.time_off t, k WHERE t.user_id = k.jp_cb)::int AS jpcb_blocks_now,
     (SELECT count(*) FROM public.time_off t, al WHERE t.tenant_id = al.tenant)::int AS to_n_now,
     (SELECT md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), ''))
        FROM public.time_off t, al WHERE t.tenant_id = al.tenant) AS to_md5_now,
@@ -225,6 +208,21 @@ WITH k AS (
                  AND (a.origin = 'patient_portal'
                       OR EXISTS (SELECT 1 FROM public.staff_notifications sn
                                   WHERE sn.appointment_id = a.id AND sn.kind = 'appointment_request'))))::int AS th_held,
+    -- The tenant's whole clinical_records table, by the expression stage 2
+    -- recorded (md5 cr_all, md5_rows cr_all), the same md5 less one record as its
+    -- control, and how many records carry a time after the op's, created or
+    -- edited since: a clinician's save FAILs 18 honestly, and that count says so.
+    (SELECT count(*) FROM public.clinical_records cr, al WHERE cr.tenant_id = al.tenant)::int AS cr_n_now,
+    (SELECT md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
+                                        cr.version, cr.updated_at)::text, E'\n' ORDER BY cr.id), ''))
+       FROM public.clinical_records cr, al WHERE cr.tenant_id = al.tenant) AS cr_md5_now,
+    (SELECT md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
+                                        cr.version, cr.updated_at)::text, E'\n' ORDER BY cr.id), ''))
+       FROM public.clinical_records cr, al
+      WHERE cr.tenant_id = al.tenant
+        AND cr.id <> (SELECT c1.id FROM public.clinical_records c1 WHERE c1.tenant_id = al.tenant ORDER BY c1.id LIMIT 1)) AS cr_md5_less_one,
+    (SELECT count(*) FROM public.clinical_records cr, al
+      WHERE cr.tenant_id = al.tenant AND (cr.created_at > al.at OR cr.updated_at > al.at))::int AS cr_since,
     (SELECT (al.m -> 'before' ->> 'n_cr_att')::int FROM al) AS n_cr_att,
     (SELECT count(*)::int FROM public.clinical_records cr WHERE cr.appointment_id IN (SELECT id FROM written)) AS n_cr_att_now,
     (SELECT md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id)::text, E'\n' ORDER BY cr.id), ''))
@@ -306,12 +304,7 @@ UNION ALL SELECT 10, 'no previously inactive JP(cb) row was reactivated',
             THEN 'FAIL'
             WHEN ((v.m -> 'before' ->> 'cb_inactive')::int + v.n_rcov + v.n_rpast + v.n_rphan + v.n_rwin) = 0
             THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 11, 'no JP(cb) block overlaps the Lisbon day 30 September; control: the same read matches both synthetic blocks, and JP(cb) blocks read now at any date',
-       v.b30_real::text || ' / control ' || v.b30_ctl::text || ' of 2 synthetic, ' || v.jpcb_blocks_now::text || ' read now',
-       '0 / control 2 of 2 synthetic, above 0 read now',
-       CASE WHEN v.b30_real <> 0 OR v.b30_ctl <> 2 THEN 'FAIL'
-            WHEN v.jpcb_blocks_now = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 12, 'time_off is unchanged by the op: the blocks of the tenant, count and md5, equal the stage 2 baseline; control: the same md5 less one block differs from it',
+UNION ALL SELECT 11, 'time_off is unchanged by the op: the blocks of the tenant, count and md5, equal the stage 2 baseline; control: the same md5 less one block differs from it',
        v.to_n_now::text || ' ' || left(v.to_md5_now, 8) || ' / control '
          || CASE WHEN v.to_md5_less_one IS DISTINCT FROM (v.m -> 'md5' ->> 'to') THEN 'differs' ELSE 'EQUAL' END,
        (v.m -> 'before' ->> 'time_off') || ' ' || left(v.m -> 'md5' ->> 'to', 8) || ' / control differs',
@@ -319,25 +312,34 @@ UNION ALL SELECT 12, 'time_off is unchanged by the op: the blocks of the tenant,
               OR v.to_n_now IS DISTINCT FROM (v.m -> 'before' ->> 'time_off')::int
               OR (v.to_n_now > 0 AND v.to_md5_less_one IS NOT DISTINCT FROM (v.m -> 'md5' ->> 'to')) THEN 'FAIL'
             WHEN (v.m -> 'before' ->> 'time_off')::int = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 13, 'ruling (a): every recorded row is on JP(lv), at Linda-a-Velha, before the run day',
+UNION ALL SELECT 12, 'ruling (a): every recorded row is on JP(lv), at Linda-a-Velha, before the run day',
        v.h_ok::text, v.n_h::text,
        CASE WHEN v.h_ok <> v.n_h THEN 'FAIL' WHEN v.n_h = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 14, 'ruling (b): every recorded NESA row is on its target, installed at its clinic',
+UNION ALL SELECT 13, 'ruling (b): every recorded NESA row is on its target, installed at its clinic',
        v.x_ok::text, v.n_x::text,
        CASE WHEN v.x_ok <> v.n_x THEN 'FAIL' WHEN v.n_x = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 15, 'ruling (c): every person row names its NESA as practitioner_2, is live and covers the window',
+UNION ALL SELECT 14, 'ruling (c): every person row names its NESA as practitioner_2, is live and covers the window',
        v.fp_ok::text, v.n_f::text,
        CASE WHEN v.fp_ok <> v.n_f THEN 'FAIL' WHEN v.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 16, 'ruling (c): every future NESA row is cancelled',
+UNION ALL SELECT 15, 'ruling (c): every future NESA row is cancelled',
        v.fn_ok::text, v.n_f::text,
        CASE WHEN v.fn_ok <> v.n_f THEN 'FAIL' WHEN v.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 17, 'the machine hour: another live row holds each NESA over its whole window; control window 0',
+UNION ALL SELECT 16, 'the machine hour: another live row holds each NESA over its whole window; control window 0',
        v.mh_held::text || ' / control ' || v.mh_ctl::text, v.n_f::text || ' / control 0',
        CASE WHEN v.mh_held <> v.n_f OR v.mh_ctl <> 0 THEN 'FAIL' WHEN v.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 18, 'the therapist hour: every future person row still holds its own practitioner',
+UNION ALL SELECT 17, 'the therapist hour: every future person row still holds its own practitioner',
        v.th_held::text, v.n_f::text,
        CASE WHEN v.th_held <> v.n_f THEN 'FAIL' WHEN v.n_f = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
-UNION ALL SELECT 19, 'clinical authorship: records on the written rows are unchanged (md5)',
+UNION ALL SELECT 18, 'clinical records, the whole table of the tenant, are unchanged, count and md5 against the stage 2 baseline; control: the same md5 less one record differs (md5)',
+       v.cr_n_now::text || ' ' || left(v.cr_md5_now, 8) || ' / control '
+         || CASE WHEN v.cr_md5_less_one IS DISTINCT FROM (v.m -> 'md5' ->> 'cr_all') THEN 'differs' ELSE 'EQUAL' END
+         || ' / ' || v.cr_since::text || ' created or edited after the op',
+       (v.m -> 'md5_rows' ->> 'cr_all') || ' ' || left(v.m -> 'md5' ->> 'cr_all', 8) || ' / control differs / 0 after the op',
+       CASE WHEN v.cr_md5_now IS DISTINCT FROM (v.m -> 'md5' ->> 'cr_all')
+              OR v.cr_n_now IS DISTINCT FROM (v.m -> 'md5_rows' ->> 'cr_all')::int
+              OR (v.cr_n_now > 0 AND v.cr_md5_less_one IS NOT DISTINCT FROM (v.m -> 'md5' ->> 'cr_all')) THEN 'FAIL'
+            WHEN (v.m -> 'md5_rows' ->> 'cr_all')::int = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v
+UNION ALL SELECT 19, 'clinical authorship: records on the written rows are unchanged, VACUOUS when none, with verdict 18 as control (md5)',
        v.n_cr_att_now::text || ' ' || left(v.md5_cr_att_now, 8),
        v.n_cr_att::text || ' ' || left(v.m -> 'md5' ->> 'cr_att', 8),
        CASE WHEN v.md5_cr_att_now IS DISTINCT FROM (v.m -> 'md5' ->> 'cr_att') THEN 'FAIL'

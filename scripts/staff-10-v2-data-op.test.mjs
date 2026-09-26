@@ -29,6 +29,29 @@ const STAFF10 = read("packages/db/scripts/staff-10-jp-split-lv.mjs");
 const STAFF11 = read("packages/db/scripts/staff-11-jp-one-clinic-check.mjs");
 const NESA1 = read("scripts/data/nesa-split-1-move.sql");
 
+/**
+ * The halt rule, in the exact words the document states it (owner ruling of
+ * 2026-09-26, paraphrased: the document and GREEN's dispatch state it
+ * identically). The dispatch is checked against these bytes by the lead, not
+ * here: it is not a committed file.
+ */
+const HALT_RULE = [
+  "THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any",
+  "STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and",
+  "nothing continues to the next block. After stage 2 has committed, a post-commit STOP",
+  "still stops the sitting: the write stands, and stage 3 (READ ONLY) runs only on the",
+  "owner's or the lead's word. The only onward path from stage 2 to stage 3 is exit 0",
+  "with the line \"STAFF-10 V2 WRITTEN. Paste stage 3 now.\" No block, and no dispatch",
+  "step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:",
+  "no closing read and no journal read. Whether and when a halted sitting starts again",
+  "is the lead's call, never the runner's.",
+].join("\n");
+
+/** Whitespace collapsed, so an expression wrapped at another column still compares. */
+const norm = (s) => s.replace(/\s+/g, " ");
+/** The whole-table clinical records fingerprint, stage 2's cr_all, which stage 3 verdict 18 recomputes. */
+const CR_ALL = "string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status, cr.version, cr.updated_at)::text, E'\\n' ORDER BY cr.id)";
+
 /** SQL with line comments stripped, so a word in a comment never passes for code. */
 const code = (s) => s.replace(/--.*$/gm, "");
 /** A string made safe to sit inside a RegExp. */
@@ -292,58 +315,122 @@ test("the move set requires the DATE to be a Saturday, not only the weekday colu
 
 test("the classes are six, and UNCLASSIFIED refuses", () => {
   for (const f of ["f_cov", "f_past", "f_move", "f_phan", "f_win", "f_unc"]) assert.ok(SETS.includes(`AS ${f}`), `class ${f} is missing`);
-  assert.match(SETS, /'R09', 'an active JP\(cb\) Linda-a-Velha row is UNCLASSIFIED/);
+  assert.match(SETS, /'R08', 'an active JP\(cb\) Linda-a-Velha row is UNCLASSIFIED/);
   assert.match(SETS, /c\.f_cov::int \+ c\.f_past::int \+ c\.f_move::int \+ c\.f_phan::int \+ c\.f_win::int \+ c\.f_unc::int\) <> 1/);
 });
 
-/** The body of the b30 CTE, the 30 September read, in a file that must hold exactly one. */
-function b30(sql, label) {
-  const at = sql.indexOf("b30 AS (\n");
-  assert.ok(at >= 0, `${label} has no 30 September read`);
-  assert.equal(sql.indexOf("b30 AS (\n", at + 1), -1, `${label} has two 30 September reads`);
-  const open = at + "b30 AS (\n".length;
-  const close = sql.indexOf("\n)", open);
-  assert.ok(close >= 0, `${label}'s 30 September read never closes`);
-  return sql.slice(open, close);
-}
-const WINDOW = [
-  "(DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from",
-  "(DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to",
-  "(DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from",
-  "(DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to",
-  "(DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from",
-  "(DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to",
-];
+/* ---- the owner's rulings of 2026-09-26 ----------------------------------- */
 
-test("the 30 September read is ONE tstzrange overlap with the Lisbon day over time_off and two synthetic JP(cb) blocks, the same bytes in all three stages", () => {
-  const body = b30(SETS, "the SETS block");
-  assert.equal(b30(S3, "stage 3"), body, "stage 3's 30 September read is not stage 1's, byte for byte");
-  assert.match(body, /\n   WHERE s\.user_id = k\.jp_cb AND tstzrange\(s\.starts_at, s\.ends_at\) && tstzrange\(k\.blk_from, k\.blk_to\)$/, "the predicate is not the tstzrange overlap with the Lisbon day, applied once to every source");
-  assert.equal((body.match(/tstzrange\(/g) ?? []).length, 2, "the overlap is written more than once, so the controls could read another predicate");
-  assert.match(body, /SELECT 'real' AS src, t\.id, t\.user_id, t\.starts_at, t\.ends_at, t\.reason::text AS reason\n            FROM public\.time_off t\n/, "the real source is not every time_off row, filtered only by the one predicate");
-  assert.match(body, /SELECT 'control', NULL::uuid, k0\.jp_cb, k0\.ctl30_from, k0\.ctl30_to, /, "the synthetic JP(cb) block inside the day is missing");
-  assert.match(body, /SELECT 'control', NULL::uuid, k0\.jp_cb, k0\.ctl30x_from, k0\.ctl30x_to, /, "the synthetic JP(cb) block across the day is missing");
-  for (const w of WINDOW) {
-    assert.ok(SETS.includes(w), `the SETS block does not define ${w}`);
-    assert.ok(S3.includes(w), `stage 3 does not define ${w}`);
-  }
+/** Every refusal of the SETS block, one string per code, in order. */
+const refusalRows = () => between(SETS, "\nref AS (\n", END, "the refusal CTE").split(/\n  UNION ALL\n/);
+
+test("ruling 2 (2026-09-26): the 30 September block stays and nothing depends on it: no refusal reads a block, no stage reads that day, and stage 2 still raises every refusal before its first write", () => {
+  const refs = refusalRows();
+  assert.equal(refs.length, [...SETS.matchAll(/'(R\d{2})'(?: AS code)?,/g)].length, "the refusal CTE did not split one per code");
+  for (const r of refs) assert.doesNotMatch(code(r), /time_off/, `a refusal reads time_off: ${r.trim().slice(0, 80)}`);
+  assert.doesNotMatch(code(SETS), /time_off/, "the SETS block reads time_off, so a stage 1 or stage 2 decision could depend on a block");
   for (const [label, sql] of STAGES) {
-    assert.doesNotMatch(sql, /::date\s*<=\s*DATE '2026-09-30'/, `${label} still carries the old date-cast predicate`);
+    const c = code(sql);
+    for (const gone of ["b30", "blocks_30", "blk_from", "blk_to", "ctl30", "2026-09-30", "2026-10-01", "2026-09-29"]) {
+      assert.ok(!c.includes(gone), `${label} still carries ${gone}, a read of the 30 September block`);
+    }
   }
-});
-
-test("R06 refuses while any JP(cb) block overlaps the Lisbon day 30 September, R26 refuses a read that misses a synthetic block, stage 1 names each block, stage 2 raises both before any write", () => {
-  const r06 = between(SETS, "'R06'", "'R07'", "R06");
-  assert.match(r06, /\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'real'\)::int,\s+\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'control'\)::int\s+UNION ALL/, "R06 is not n = every real block overlapping the day, control = the synthetic blocks matched");
-  const r26 = between(SETS, "'R26'", "'R27'", "R26");
-  assert.match(r26, /\(2 - \(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'control'\)\)::int,\s+2\s+UNION ALL/, "R26 does not refuse a read that misses a synthetic block");
-  assert.match(S1, /'blocks_30', \(SELECT coalesce\(jsonb_agg\(jsonb_build_object\(\s+'id', b\.id::text,\s+'starts_lisbon', \(b\.starts_at AT TIME ZONE 'Europe\/Lisbon'\)::text,\s+'ends_lisbon', \(b\.ends_at AT TIME ZONE 'Europe\/Lisbon'\)::text,\s+'reason', b\.reason\)/, "stage 1 does not carry each block's id, Lisbon start and end, and reason");
-  assert.match(S1, /FROM b30 b WHERE b\.src = 'real'\),/, "stage 1's listing is not the real blocks R06 counts");
-  const sec = between(S1, "=== 2c.", "=== 3.", "stage 1 section 2c");
-  assert.match(sec, /SELECT e ->> 'id' AS id, e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'ends_lisbon' AS ends_lisbon,\s+e ->> 'reason' AS reason\s+FROM jsonb_array_elements\(:'s10v2_json'::jsonb -> 'blocks_30'\) e;/, "section 2c does not print each offending block by id, Lisbon times and reason");
+  assert.doesNotMatch(S1, /=== 2c\./, "stage 1 still prints a section 2c");
+  assert.doesNotMatch(block("STAGE 1"), /sections[^"]*\b2c\b/, "the stage 1 block still sends the reader to section 2c");
   const raise = S2.indexOf("RAISE EXCEPTION 'STOP: % refuses");
   assert.ok(S2.indexOf("-- W1.") >= 0, "stage 2 has no -- W1. anchor");
   assert.ok(raise > 0 && raise < S2.indexOf("-- W1."), "stage 2 does not raise the refusals before its first write");
+});
+
+test("ruling 2 (2026-09-26): the document says no owner click is required before the sitting and gives no owner-click instruction", () => {
+  const flat = DOC.replace(/\s+/g, " ");
+  assert.ok(flat.includes("**No owner click is required before the sitting.**"), "the status paragraph does not say that no owner click is required before the sitting");
+  for (const re of [/\bin the app\b/i, /\bowner removes?\b/i, /removes? (it|that block|the 30 September block) by hand/i, /refuses? while (it|the block) is (still )?there/i, /\bthe owner's removal\b/i]) {
+    assert.doesNotMatch(flat, re, `the document still carries an owner-click instruction: ${flat.match(re)?.[0]}`);
+  }
+  const click = [...flat.matchAll(/[^.|]*\bclick\b[^.|]*/gi)].map((m) => m[0].trim());
+  assert.ok(click.length > 0, "the document names no click at all, so this read nothing");
+  for (const s of click) assert.match(s, /no owner click is required before the sitting/i, `a sentence about a click is not the no-click sentence: ${s.slice(0, 100)}`);
+});
+
+test("ruling 1 (2026-09-26): no refusal reads the clinical records on the rows the op writes; R25 refuses an empty clinical_records table instead, and stage 1 section 4c prints the per-row set as OK or VACUOUS", () => {
+  const perRow = /cr\.appointment_id IN \(SELECT h\.id FROM h UNION SELECT x\.id FROM x\s+UNION SELECT f\.p_id FROM f UNION SELECT f\.n_id FROM f\)/;
+  for (const r of refusalRows()) assert.doesNotMatch(r, perRow, `a refusal reads the clinical records on the rows the op writes: ${r.trim().slice(0, 90)}`);
+  const r25 = between(SETS, "'R25'", "'R26'", "R25");
+  assert.match(r25, /'R25', 'an untouched comparison set is empty: the tenant holds no clinical record \(the whole table\)/, "R25 is not the whole-table refusal");
+  assert.match(r25, /\(CASE WHEN \(SELECT count\(\*\) FROM public\.clinical_records cr, k WHERE cr\.tenant_id = k\.tenant\) = 0\s+THEN 1 ELSE 0 END\)/, "R25 does not count every clinical record of the tenant");
+  const untouched = between(S1, "  'untouched', (SELECT", "  'h_summary', (SELECT", "stage 1's untouched listing");
+  assert.match(untouched, /'verdict', CASE WHEN u\.n > 0 THEN 'OK' ELSE 'VACUOUS' END/, "section 4c does not print OK or VACUOUS by the rows each set holds");
+  assert.match(untouched, perRow, "section 4c does not count the clinical records on the rows the op writes");
+  assert.deepEqual([...untouched.matchAll(/\(verdict (\d+)\)/g)].map((m) => Number(m[1])), [9, 18, 19, 20, 21], "section 4c does not name the five md5 verdicts of stage 3");
+  const rows = verdictRows();
+  assert.match(rows[17], /^18, 'clinical records, the whole table of the tenant/, "verdict 18 is not the whole-table compare");
+  assert.match(rows[18], /^19, 'clinical authorship: records on the written rows/, "verdict 19 is not the per-row compare");
+  assert.match(S1, /FROM jsonb_array_elements\(:'s10v2_json'::jsonb -> 'untouched'\) e\n ORDER BY \(e ->> 'ord'\)::int;/, "stage 1 does not print section 4c");
+  assert.ok(block("STAGE 1").includes("Read sections 2, 2b, 4, 4b, 4c, 6, 7 and 8 before stage 2."), "the stage 1 block does not send the reader to section 4c");
+});
+
+test("ruling 1 (2026-09-26): stage 2 holds the tenant's whole clinical_records table, count and md5, through its writes and stops on any difference, while the per-row set may be empty", () => {
+  const n2 = norm(S2);
+  assert.ok(n2.includes(`SELECT count(*)::int, md5(coalesce(${CR_ALL}, '')) INTO v_bn_cr_all, v_b_md5_cr_all FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant;`), "the baseline is not every clinical record of the tenant, count and md5");
+  const check = `IF (SELECT count(*) FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant) <> v_bn_cr_all OR (SELECT md5(coalesce(${CR_ALL}, '')) FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant) IS DISTINCT FROM v_b_md5_cr_all THEN RAISE EXCEPTION 'STOP: the tenant''s clinical_records changed inside this transaction`;
+  const at = n2.indexOf(check);
+  assert.ok(at > 0, "stage 2 does not compare the whole clinical_records table, count and md5, after its writes and stop on a difference");
+  assert.ok(at > n2.indexOf("-- W6."), "stage 2 compares clinical_records before its last write");
+  assert.ok(at < n2.indexOf("INSERT INTO public.audit_log"), "stage 2 compares clinical_records after the audit row, too late to roll back cleanly");
+  assert.match(S2, /'cr_all', v_bn_cr_all/, "the audit row's md5_rows does not carry the whole-table count");
+  assert.match(S2, /'cr_all', v_b_md5_cr_all/, "the audit row's md5 does not carry the whole-table digest");
+});
+
+test("ruling 1 (2026-09-26): stage 3 verdict 18 compares the whole table with the audit row's baseline and has a control that FAILs; verdict 19, the per-row arm, is VACUOUS when empty", () => {
+  const n3 = norm(S3);
+  assert.ok(n3.includes("(SELECT count(*) FROM public.clinical_records cr, al WHERE cr.tenant_id = al.tenant)::int AS cr_n_now,"), "stage 3 does not count every clinical record of the tenant");
+  assert.ok(n3.includes(`(SELECT md5(coalesce(${CR_ALL}, '')) FROM public.clinical_records cr, al WHERE cr.tenant_id = al.tenant) AS cr_md5_now,`), "stage 3 does not recompute stage 2's whole-table md5 over the same rows");
+  assert.ok(n3.includes(`(SELECT md5(coalesce(${CR_ALL}, '')) FROM public.clinical_records cr, al WHERE cr.tenant_id = al.tenant AND cr.id <> (SELECT c1.id FROM public.clinical_records c1 WHERE c1.tenant_id = al.tenant ORDER BY c1.id LIMIT 1)) AS cr_md5_less_one,`), "stage 3's control is not the same md5 less one record");
+  assert.ok(n3.includes("(SELECT count(*) FROM public.clinical_records cr, al WHERE cr.tenant_id = al.tenant AND (cr.created_at > al.at OR cr.updated_at > al.at))::int AS cr_since,"), "stage 3 does not count the records created or edited after the op");
+  const rows = verdictRows();
+  assert.match(norm(rows[17]), /CASE WHEN v\.cr_md5_now IS DISTINCT FROM \(v\.m -> 'md5' ->> 'cr_all'\) OR v\.cr_n_now IS DISTINCT FROM \(v\.m -> 'md5_rows' ->> 'cr_all'\)::int OR \(v\.cr_n_now > 0 AND v\.cr_md5_less_one IS NOT DISTINCT FROM \(v\.m -> 'md5' ->> 'cr_all'\)\) THEN 'FAIL' WHEN \(v\.m -> 'md5_rows' ->> 'cr_all'\)::int = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v$/, "verdict 18 is not FAIL on a moved count or md5 or a blind control");
+  assert.match(norm(rows[18]), /CASE WHEN v\.md5_cr_att_now IS DISTINCT FROM \(v\.m -> 'md5' ->> 'cr_att'\) THEN 'FAIL' WHEN v\.n_cr_att = 0 THEN 'VACUOUS' ELSE 'OK' END FROM v$/, "verdict 19 is not FAIL on a moved md5, VACUOUS when no written row carries a record");
+});
+
+test("ruling 3 (2026-09-26): nothing in the op fixes a count: a stage file compares a number it writes down only with 0 or 1, a weekday column with 6, or stage 2's carry count with the carry list", () => {
+  const nCarries = 1 + 2 * [...SETS.matchAll(/\((\d+), '([a-z0-9]+)'\)/g)].length;
+  const typed = (sql, label) => {
+    const c = lexSql(sql).code;
+    const bad = [];
+    let seen = 0;
+    for (const m of c.matchAll(/(<>|!=|<=|>=|=|<|>)\s*(\d+)(?![\d.])|(?<![\w.])(\d+)\s*(<>|!=|<=|>=|=|<|>)(?![=>])/g)) {
+      seen++;
+      const n = Number(m[2] ?? m[3]);
+      const lead = c.slice(Math.max(0, m.index - 60), m.index);
+      if (n === 0 || n === 1) continue;
+      if (n === 6 && /(weekday|extract\(dow FROM [a-z0-9_.]+\)::int)\s*$/.test(lead)) continue;
+      if (n === nCarries && label === "stage 2" && /IF v_n\s*$/.test(lead)) continue;
+      bad.push(`${n}: ${c.slice(Math.max(0, m.index - 50), m.index + 8).replace(/\s+/g, " ").trim()}`);
+    }
+    return { seen, bad };
+  };
+  for (const [label, sql] of STAGES) {
+    const { seen, bad } = typed(sql, label);
+    assert.ok(seen > 10, `${label}: the comparison scan found almost nothing, so it read nothing`);
+    assert.deepEqual(bad, [], `${label} compares with a number that reads like a count typed into the op`);
+  }
+  const seeded = S2.replace("IF v_b_mh_n <> jsonb_array_length(v_f) THEN", "IF jsonb_array_length(v_f) <> 11 THEN");
+  assert.notEqual(seeded, S2);
+  assert.equal(typed(seeded, "stage 2").bad.length, 1, "the scan does not see a pair count typed into stage 2");
+});
+
+test("ruling 4 (2026-09-26): the document states the halt rule once, word for word, and every STOP a block prints exits at once, running nothing after it", () => {
+  assert.equal(DOC.split(HALT_RULE).length - 1, 1, "the document does not state the halt rule exactly once, word for word");
+  assert.ok(DOC.indexOf(HALT_RULE) < DOC.indexOf("| Fact | Value |"), "the halt rule is not stated before the facts table, at the head of the document");
+  let stops = 0;
+  for (const [label, b] of STAGE_BLOCKS()) {
+    for (const line of b.split("\n").filter((l) => l.includes("STOP:"))) {
+      stops++;
+      assert.match(line, /(\|\||&&) \{ echo "STOP: [^"]*"; (echo "\$\{STRAY\}"; )?exit 1; \}/, `${label}: a STOP does not exit at once: ${line.slice(0, 100)}`);
+    }
+  }
+  assert.ok(stops > 20, "the blocks print almost no STOP, so this read nothing");
 });
 
 test("the collision refusal counts the MOVE set only", () => {
@@ -365,8 +452,8 @@ test("the pedido and the conflict rule are INLINE: no stage calls the jwt-scoped
 });
 
 test("a past pair ruling (b) moves must sit at one clinic, and section 6 prints both clinics", () => {
-  const r29 = between(SETS, "'R29'", "'R30'", "R29");
-  assert.match(r29, /tw\.is_past AND tw\.n_id IN \(SELECT x\.id FROM x\)\s+AND tw\.p_loc IS DISTINCT FROM tw\.n_loc/, "R29 does not refuse a two-clinic pair ruling (b) moves");
+  const r27 = between(SETS, "'R27'", "'R28'", "R27");
+  assert.match(r27, /tw\.is_past AND tw\.n_id IN \(SELECT x\.id FROM x\)\s+AND tw\.p_loc IS DISTINCT FROM tw\.n_loc/, "R27 does not refuse a two-clinic pair ruling (b) moves");
   assert.match(S1, /'person_clinic', lp\.name/, "section 6 does not carry the person row's clinic");
   assert.match(S1, /e ->> 'person_clinic' AS person_row_clinic/, "section 6 does not print the person row's clinic");
   assert.match(S1, /e ->> 'two_clinics' AS two_clinics/, "section 6 does not print the two-clinic flag");
@@ -374,10 +461,10 @@ test("a past pair ruling (b) moves must sit at one clinic, and section 6 prints 
 
 test("a trigger the system did not create refuses, on exactly the tables stage 2 writes, in stage 1 and again in P4", () => {
   const written = [...new Set([...code(S2).matchAll(/\b(?:UPDATE|DELETE FROM|INSERT INTO) public\.([a-z_]+)/g)].map((m) => m[1]))].sort();
-  const r30 = between(SETS, "'R30'", END, "R30");
+  const r28 = between(SETS, "'R28'", END, "R28");
   const onTables = (txt) => [...new Set([...txt.matchAll(/'public\.([a-z_]+)'::regclass/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(onTables(r30), written, "R30 does not read exactly the tables stage 2 writes");
-  assert.match(r30, /FROM pg_catalog\.pg_trigger t[\s\S]*AND NOT t\.tgisinternal\)::int,/, "R30 does not count the non-internal triggers");
+  assert.deepEqual(onTables(r28), written, "R28 does not read exactly the tables stage 2 writes");
+  assert.match(r28, /FROM pg_catalog\.pg_trigger t[\s\S]*AND NOT t\.tgisinternal\)::int,/, "R28 does not count the non-internal triggers");
   const p4 = between(S2, "-- P4.", "-- P5.", "stage 2 P4");
   assert.deepEqual(onTables(p4), written, "P4 does not read exactly the tables stage 2 writes");
   assert.match(p4, /IF v_want IS NOT NULL THEN\s+RAISE EXCEPTION 'STOP: P4/, "P4 prints a trigger but does not stop on it");
@@ -406,7 +493,7 @@ test("stage 2 cannot hide its DONE line, the block marks the write as soon as ps
     says(/ The sitting stops here\./, "that the sitting stops here");
     says(/ Never run stage 0, 1 or 2 again\./, "never to run stage 0, 1 or 2 again");
     says(/ GREEN reports this whole output/, "that GREEN reports the whole output");
-    says(/stage 3 \(READ ONLY\) runs only when the owner or the lead says so"; exit 1; \}$/, "that stage 3 runs only when the owner or the lead says so");
+    says(/stage 3 \(READ ONLY\) runs only on the owner's or the lead's word"; exit 1; \}$/, "that stage 3 runs only on the owner's or the lead's word");
     assert.doesNotMatch(line, /paste stage 3|stage 3 only|go on to stage 3/i, `a STOP after the write sends the runner on to stage 3: ${line.slice(0, 90)}`);
   }
   // The success path is unchanged: after both transcript checks, exit 0 with DONE and COMMITTED goes on to stage 3.
@@ -434,11 +521,11 @@ test("question Q3's default: a NESA row whose past pair has its person row in ru
   assert.doesNotMatch(q3, /OWNER TO CONFIRM|departs/i, "the doc's answer to question Q3 still describes a departure from the written default");
 });
 
-test("R14 and R15 take as control the confirmed rows that MOVE, so no confirmed mover reads VACUOUS", () => {
+test("R13 and R14 take as control the confirmed rows that MOVE, so no confirmed mover reads VACUOUS", () => {
+  const r13 = between(SETS, "'R13'", "'R14'", "R13");
   const r14 = between(SETS, "'R14'", "'R15'", "R14");
-  const r15 = between(SETS, "'R15'", "'R16'", "R15");
-  assert.match(r14, /\(SELECT count\(\*\) FROM h_after WHERE h_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R14's control is not the confirmed movers");
-  assert.match(r15, /\(SELECT count\(\*\) FROM x_after WHERE x_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R15's control is not the confirmed movers");
+  assert.match(r13, /\(SELECT count\(\*\) FROM h_after WHERE h_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R13's control is not the confirmed movers");
+  assert.match(r14, /\(SELECT count\(\*\) FROM x_after WHERE x_after\.moving\)::int\s+UNION ALL\s+SELECT\s*$/, "R14's control is not the confirmed movers");
 });
 
 /** Verdict 8's JP(lv) arm: the count subquery that ends in AS roster_lv_at_sat. */
@@ -449,8 +536,8 @@ function rosterLv() {
   assert.ok(from >= 0, "stage 3 has no (SELECT count(*) before roster_lv_at_sat");
   return S3.slice(from, end);
 }
-/** Stage 3's sat CTE, up to b30, the CTE that follows it. */
-const satCte = () => between(S3, "), sat AS (", "), b30 AS (", "stage 3's sat CTE");
+/** Stage 3's sat CTE, up to stamped, the CTE that follows it. */
+const satCte = () => between(S3, "), sat AS (", "), stamped AS (", "stage 3's sat CTE");
 
 test("R02 and verdict 8 read the roster's own user predicate: active, bookable, not a shared resource", () => {
   const store = read("apps/api/lib/appointments/store.ts");
@@ -464,12 +551,12 @@ test("R02 and verdict 8 read the roster's own user predicate: active, bookable, 
   assert.match(lv, /u\.is_active IS TRUE AND u\.is_bookable IS TRUE AND u\.is_shared_resource IS FALSE/, "verdict 8's JP(lv) arm does not apply the roster's user predicate");
 });
 
-test("R28 and verdict 8 read the weekday column the slot query reads: a real Saturday row has weekday 6", () => {
+test("R26 and verdict 8 read the weekday column the slot query reads: a real Saturday row has weekday 6", () => {
   const store = read("apps/api/lib/appointments/store.ts");
-  assert.match(store, /and av\.weekday = extract\(dow from \(\$\{s\} at time zone \$\{LISBON\}\)\)::int/, "the confirm guard's weekday predicate moved; re-read it before trusting R28 and verdict 8");
-  assert.match(store, /and av\.weekday = extract\(dow from d\.day\)::int/, "the slot grid's weekday predicate moved; re-read it before trusting R28 and verdict 8");
-  const r28 = between(SETS, "'R28'", "'R29'", "R28");
-  assert.match(r28, /extract\(dow FROM o\.valid_from\)::int = 6 AND o\.weekday = 6\)/, "R28 counts a dated Saturday whose weekday column is not 6, which the app never offers");
+  assert.match(store, /and av\.weekday = extract\(dow from \(\$\{s\} at time zone \$\{LISBON\}\)\)::int/, "the confirm guard's weekday predicate moved; re-read it before trusting R26 and verdict 8");
+  assert.match(store, /and av\.weekday = extract\(dow from d\.day\)::int/, "the slot grid's weekday predicate moved; re-read it before trusting R26 and verdict 8");
+  const r26 = between(SETS, "'R26'", "'R27'", "R26");
+  assert.match(r26, /extract\(dow FROM o\.valid_from\)::int = 6 AND o\.weekday = 6\)/, "R26 counts a dated Saturday whose weekday column is not 6, which the app never offers");
   const sat = satCte();
   assert.match(sat, /extract\(dow FROM av\.valid_from\)::int = 6 AND av\.weekday = 6\n/, "verdict 8's Saturday can be a row the app never offers on that day");
   const lv = rosterLv();
@@ -479,18 +566,9 @@ test("R28 and verdict 8 read the weekday column the slot query reads: a real Sat
 /** The verdict rows of stage 3, one string per verdict, in order. */
 const verdictRows = () => between(S3, "), r AS (", "SELECT r.n, r.\"check\"", "stage 3's verdict rows").split(/\nUNION ALL SELECT /);
 
-test("stage 3 verdict 11: FAIL on any JP(cb) block overlapping the Lisbon day 30 September or on a read that misses a synthetic block, VACUOUS when time_off shows JP(cb) nothing", () => {
-  const eleven = verdictRows()[10];
-  assert.match(eleven, /^11, 'no JP\(cb\) block overlaps the Lisbon day 30 September/);
-  assert.match(eleven, /CASE WHEN v\.b30_real <> 0 OR v\.b30_ctl <> 2 THEN 'FAIL'\s+WHEN v\.jpcb_blocks_now = 0 THEN 'VACUOUS' ELSE 'OK' END/, "verdict 11 is not FAIL on a block or a blind read, VACUOUS on an empty one");
-  assert.match(S3, /\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'real'\)::int AS b30_real,/);
-  assert.match(S3, /\(SELECT count\(\*\) FROM b30 WHERE b30\.src = 'control'\)::int AS b30_ctl,/);
-  assert.match(S3, /\(SELECT count\(\*\) FROM public\.time_off t, k WHERE t\.user_id = k\.jp_cb\)::int AS jpcb_blocks_now,/);
-});
-
 const TO_MD5 = "md5(coalesce(string_agg((t.*)::text, E'\\n' ORDER BY t.id), ''))";
 
-test("stage 3 verdict 12: time_off is unchanged by the op, count and md5 of every block of the tenant against stage 2's baseline, and its control fails when the digest cannot see a block go", () => {
+test("stage 3 verdict 11: time_off is unchanged by the op, count and md5 of every block of the tenant against stage 2's baseline, and its control fails when the digest cannot see a block go", () => {
   assert.match(S2, new RegExp(`SELECT count\\(\\*\\)::int, ${esc(TO_MD5)} INTO v_bn_to, v_b_md5_to\\n    FROM public\\.time_off t WHERE t\\.tenant_id = v_tenant;`), "stage 2's baseline is not every block of the tenant");
   assert.match(S2, new RegExp(`OR \\(SELECT ${esc(TO_MD5)}\\n           FROM public\\.time_off t WHERE t\\.tenant_id = v_tenant\\)\\n        IS DISTINCT FROM v_b_md5_to THEN`), "stage 2 does not compare time_off after its writes");
   assert.ok(S2.indexOf("-- W6.") >= 0, "stage 2 has no -- W6. anchor");
@@ -499,14 +577,14 @@ test("stage 3 verdict 12: time_off is unchanged by the op, count and md5 of ever
   assert.match(S2, /'to', v_b_md5_to,/, "the audit row does not carry the time_off md5");
   assert.ok(S3.includes(`(SELECT ${TO_MD5}\n       FROM public.time_off t, al WHERE t.tenant_id = al.tenant) AS to_md5_now,`), "stage 3 does not recompute stage 2's time_off md5 over the same rows");
   assert.ok(S3.includes(`(SELECT ${TO_MD5}\n       FROM public.time_off t, al\n      WHERE t.tenant_id = al.tenant\n        AND t.id <> (SELECT t1.id FROM public.time_off t1 WHERE t1.tenant_id = al.tenant ORDER BY t1.id LIMIT 1)) AS to_md5_less_one,`), "stage 3's control is not the same md5 less one block");
-  const twelve = verdictRows()[11];
-  assert.match(twelve, /^12, 'time_off is unchanged by the op/);
-  assert.match(twelve, /CASE WHEN v\.to_md5_now IS DISTINCT FROM \(v\.m -> 'md5' ->> 'to'\)\s+OR v\.to_n_now IS DISTINCT FROM \(v\.m -> 'before' ->> 'time_off'\)::int\s+OR \(v\.to_n_now > 0 AND v\.to_md5_less_one IS NOT DISTINCT FROM \(v\.m -> 'md5' ->> 'to'\)\) THEN 'FAIL'\s+WHEN \(v\.m -> 'before' ->> 'time_off'\)::int = 0 THEN 'VACUOUS' ELSE 'OK' END/, "verdict 12 is not FAIL on a moved md5 or count or a blind control, VACUOUS on no block");
+  const eleven = verdictRows()[10];
+  assert.match(eleven, /^11, 'time_off is unchanged by the op/);
+  assert.match(eleven, /CASE WHEN v\.to_md5_now IS DISTINCT FROM \(v\.m -> 'md5' ->> 'to'\)\s+OR v\.to_n_now IS DISTINCT FROM \(v\.m -> 'before' ->> 'time_off'\)::int\s+OR \(v\.to_n_now > 0 AND v\.to_md5_less_one IS NOT DISTINCT FROM \(v\.m -> 'md5' ->> 'to'\)\) THEN 'FAIL'\s+WHEN \(v\.m -> 'before' ->> 'time_off'\)::int = 0 THEN 'VACUOUS' ELSE 'OK' END/, "verdict 11 is not FAIL on a moved md5 or count or a blind control, VACUOUS on no block");
 });
 
-test("nothing is left of the removed block write: no carry, audit key, variable or verdict for it in any stage file", () => {
+test("nothing is left of the removed block write or of the 30 September read: no carry, audit key, variable, refusal or verdict for either in any stage file", () => {
   for (const [label, sql] of STAGES) {
-    for (const gone of ["dblk", "deleted_blocks", "to_rest", "blk_win", "ctl_blk_", "v_blk", "blk AS (", "deleted_by_stage_2"]) {
+    for (const gone of ["dblk", "deleted_blocks", "to_rest", "blk_win", "ctl_blk_", "v_blk", "blk AS (", "deleted_by_stage_2", "b30", "blocks_30", "jpcb_blocks_now", "synthetic"]) {
       assert.ok(!sql.includes(gone), `${label} still carries ${gone}`);
     }
   }
@@ -641,7 +719,10 @@ test("every md5 baseline stage 2 compares is in the audit row with its row count
   assert.match(guard, /AND e\.value::int = 0/);
   assert.match(guard, /RAISE EXCEPTION 'STOP: the md5 family % is empty/);
   const guaranteed = guard.match(/e\.key IN \(([^)]*)\)/)?.[1].match(/'([a-z_]+)'/g).map((q) => q.slice(1, -1)).sort();
-  assert.deepEqual(guaranteed, ["appt_rest", "av_rest", "cb_past", "cb_sched", "cr_all", "cr_att", "keep", "sl", "users", "w_fixed"], "the families a refusal guarantees moved");
+  assert.deepEqual(guaranteed, ["appt_rest", "av_rest", "cb_past", "cb_sched", "cr_all", "keep", "sl", "users"], "the families a refusal guarantees moved");
+  // Ruling 1 (2026-09-26): the per-row clinical records may be none, so cr_att is not guaranteed; nor is
+  // w_fixed, which only the old per-row refusal guaranteed. cr_all, the whole table, is, by R25.
+  for (const f of ["cr_att", "w_fixed"]) assert.ok(declared.includes(f) && !guaranteed.includes(f), `${f} must be a family that may print VACUOUS`);
   for (const f of guaranteed) assert.ok(declared.includes(f), `the guard names ${f}, which is not a family`);
   const at = S2.indexOf("FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e");
   assert.ok(at > 0 && at < S2.indexOf("-- W1."), "the empty-family guard does not run before the first write");
@@ -696,7 +777,10 @@ test("stage 3 prints a contiguous set of verdicts, each able to FAIL, and the do
   const allowed = b.match(/grep -vxE '([0-9|]+)'/)?.[1].split("|").map(Number);
   assert.ok(allowed?.length > 0);
   for (const n of allowed) assert.ok(verdicts.includes(n), `the allowed-VACUOUS list names ${n}, which does not exist`);
-  for (const n of [1, 7, 8, 9, 19, 20, 21, 22]) assert.ok(!allowed.includes(n), `verdict ${n} must never be allowed VACUOUS`);
+  for (const n of [1, 7, 8, 9, 18, 20, 21, 22]) assert.ok(!allowed.includes(n), `verdict ${n} must never be allowed VACUOUS`);
+  // Ruling 1 (2026-09-26): the per-row clinical records arm may read VACUOUS; its control, the whole table, may not.
+  assert.ok(allowed.includes(19), "verdict 19, the clinical records on the written rows, is not allowed VACUOUS");
+  assert.deepEqual([...allowed].sort((x, y) => x - y), [2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 19, 23, 24, 25, 26, 27], "the allowed-VACUOUS list moved");
 });
 
 test("an empty comparand never reads OK: every verdict but 1, 7 and 22 has a VACUOUS branch, and 7 FAILs on a zero control", () => {
@@ -714,20 +798,20 @@ test("an empty comparand never reads OK: every verdict but 1, 7 and 22 has a VAC
 
 test("every untouched set stage 3 compares by md5 must be non-empty, and stage 1 refuses an empty one before the write", () => {
   const md5Verdicts = [...S3.matchAll(/UNION ALL SELECT (\d+), '[^']*\(md5\)'/g)].map((m) => Number(m[1]));
-  assert.deepEqual(md5Verdicts, [9, 19, 20, 21], "the md5 comparison verdicts moved");
+  assert.deepEqual(md5Verdicts, [9, 18, 19, 20, 21], "the md5 comparison verdicts moved");
+  const r24 = between(SETS, "'R24'", "'R25'", "R24");
+  assert.match(r24, /a\.practitioner_id = k\.jp_cb AND a\.location_id = k\.cb_loc AND a\.starts_at < k\.day0\) = 0/, "R24 does not refuse an empty JP(cb) past Castelo Branco set");
+  assert.match(r24, /av\.user_id = k\.jp_cb AND av\.location_id = k\.cb_loc\) = 0/, "R24 does not refuse an empty JP(cb) Castelo Branco schedule");
   const r25 = between(SETS, "'R25'", "'R26'", "R25");
-  assert.match(r25, /a\.practitioner_id = k\.jp_cb AND a\.location_id = k\.cb_loc AND a\.starts_at < k\.day0\) = 0/, "R25 does not refuse an empty JP(cb) past Castelo Branco set");
-  assert.match(r25, /av\.user_id = k\.jp_cb AND av\.location_id = k\.cb_loc\) = 0/, "R25 does not refuse an empty JP(cb) Castelo Branco schedule");
-  const r27 = between(SETS, "'R27'", "'R28'", "R27");
-  assert.match(r27, /FROM public\.clinical_records cr\s+WHERE cr\.appointment_id IN \(SELECT h\.id FROM h UNION SELECT x\.id FROM x\s+UNION SELECT f\.p_id FROM f UNION SELECT f\.n_id FROM f\)\) = 0/, "R27 does not refuse an empty clinical record set on the written rows");
-  assert.match(r27, /\(SELECT count\(\*\) FROM tw_keep\) = 0/, "R27 does not refuse an empty kept past twin set");
+  assert.match(r25, /\(CASE WHEN \(SELECT count\(\*\) FROM public\.clinical_records cr, k WHERE cr\.tenant_id = k\.tenant\) = 0/, "R25 does not refuse an empty clinical_records table, the whole-table control");
+  assert.match(r25, /\(SELECT count\(\*\) FROM tw_keep\) = 0/, "R25 does not refuse an empty kept past twin set");
 });
 
-test("the roster check always has a real Saturday to read: R28 refuses before the write when it would not", () => {
-  const r28 = between(SETS, "'R28'", END, "R28");
-  assert.match(r28, /o\.user_id = k\.jp_lv AND o\.location_id = k\.lv_loc AND o\.is_active IS TRUE/);
-  assert.match(r28, /o\.valid_from >= k\.today AND extract\(dow FROM o\.valid_from\)::int = 6/, "R28 does not look for a real Saturday from today");
-  assert.match(r28, /\+ \(SELECT count\(\*\) FROM cls c WHERE c\.f_move\) = 0/, "R28 does not count the Saturdays that move");
+test("the roster check always has a real Saturday to read: R26 refuses before the write when it would not", () => {
+  const r26 = between(SETS, "'R26'", "'R27'", "R26");
+  assert.match(r26, /o\.user_id = k\.jp_lv AND o\.location_id = k\.lv_loc AND o\.is_active IS TRUE/);
+  assert.match(r26, /o\.valid_from >= k\.today AND extract\(dow FROM o\.valid_from\)::int = 6/, "R26 does not look for a real Saturday from today");
+  assert.match(r26, /\+ \(SELECT count\(\*\) FROM cls c WHERE c\.f_move\) = 0/, "R26 does not count the Saturdays that move");
   const sat = satCte();
   assert.match(sat, /av\.valid_from >= k\.today AND extract\(dow FROM av\.valid_from\)::int = 6/, "stage 3's Saturday is not the one R28 guarantees");
 });
@@ -737,9 +821,12 @@ test("stage 3 reads back only what stage 2 records, and the audit action agrees 
   assert.ok(SETS.includes(`al.action = '${ACTION}'`));
   assert.ok(S3.includes(`a.action = '${ACTION}'`));
   const top = [...S3.matchAll(/m -> '([a-z_0-9]+)'/g)].map((m) => m[1]);
-  const nested = [...S3.matchAll(/m -> '(before|md5)' ->> '([a-z_0-9]+)'/g)].map((m) => `${m[1]}.${m[2]}`);
+  const nested = [...S3.matchAll(/m -> '(before|md5|md5_rows)' ->> '([a-z_0-9]+)'/g)].map((m) => `${m[1]}.${m[2]}`);
   for (const k of new Set(top)) assert.ok(S2.includes(`'${k}', `), `stage 3 reads ${k}, which stage 2 never writes`);
   for (const k of new Set(nested)) assert.ok(S2.includes(`'${k.split(".")[1]}', v_`), `stage 3 reads ${k}, which stage 2 never writes`);
+  const rowsObj = between(code(S2), "v_md5_rows := jsonb_build_object(", ");", "the md5_rows object");
+  for (const k of new Set(nested.filter((x) => x.startsWith("md5_rows.")))) assert.ok(rowsObj.includes(`'${k.split(".")[1]}', v_`), `stage 3 reads ${k}, which the md5_rows object does not carry`);
+  assert.ok(nested.includes("md5_rows.cr_all") && nested.includes("md5.cr_all"), "stage 3 does not read the whole-table clinical records baseline, count and md5");
 });
 
 test("the md5 fingerprints stage 3 recomputes are the exact expressions stage 2 recorded", () => {
@@ -748,6 +835,7 @@ test("the md5 fingerprints stage 3 recomputes are the exact expressions stage 2 
   for (const s of [S2, S3]) {
     assert.ok(s.includes(keep), "the kept-row fingerprint differs");
     assert.ok(s.includes(cr), "the clinical record fingerprint differs");
+    assert.ok(norm(s).includes(CR_ALL), "the whole-table clinical records fingerprint differs");
     assert.ok(s.includes(TO_MD5), "the time_off fingerprint differs");
     assert.match(s, /SET TIME ZONE 'UTC';\nSET datestyle = 'ISO, YMD';/, "a fingerprint file does not fix the text rendering");
   }
@@ -822,8 +910,8 @@ test("every script a block runs is pinned by sha256 in that block and checked be
   for (const f of [F1, F2, F3, GUARD]) assert.ok(s0.includes(`[ "$(shasum -a 256 ${f} | cut -d' ' -f1)" = `), `stage 0 does not check ${f}`);
 });
 
-test("the document says a refusal or a STOP stops the sitting, no block or stage file tells anyone to run stage 1 again, and no STOP sends the runner on to stage 3", () => {
-  assert.ok(DOC.includes("A refusal or a STOP stops the sitting, and nothing continues to the next block."), "the document does not say that a refusal or a STOP stops the sitting");
+test("the document states the halt rule, no block or stage file tells anyone to run stage 1 again, and no STOP sends the runner on to stage 3", () => {
+  assert.ok(DOC.includes(HALT_RULE), "the document does not state the halt rule in its exact words");
   for (const [label, b] of STAGE_BLOCKS()) assert.doesNotMatch(b, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
   for (const [label, sql] of STAGES) assert.doesNotMatch(sql, /run stage 1 again/i, `${label} tells the reader to run stage 1 again`);
   // After a STOP, stage 3 runs only on the owner's or the lead's word, in every block and in the prose.
@@ -834,14 +922,14 @@ test("the document says a refusal or a STOP stops the sitting, no block or stage
       stops++;
       assert.doesNotMatch(line, /paste stage 3|stage 3 only|go on to stage 3/i, `${label}: a STOP sends the runner on to stage 3: ${line.slice(0, 100)}`);
       if (/ALREADY WRITTEN/.test(line)) written.push(label);
-      if (/ALREADY WRITTEN/.test(line)) assert.ok(line.endsWith(` The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }`), `${label}: the ALREADY WRITTEN STOP does not stop the sitting and leave stage 3 to the owner or the lead: ${line.slice(0, 100)}`);
+      if (/ALREADY WRITTEN/.test(line)) assert.ok(line.endsWith(` The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }`), `${label}: the ALREADY WRITTEN STOP does not stop the sitting and leave stage 3 to the owner or the lead: ${line.slice(0, 100)}`);
     }
   }
   assert.ok(stops > 0, "no block prints a STOP line, so this read nothing");
   assert.deepEqual(written, ["stage 0", "stage 1", "stage 2"], "stages 0, 1 and 2 do not each refuse once stage 2 has written");
   assert.doesNotMatch(DOC, /paste stage 3 and report/i, "the document still tells the runner to paste stage 3 after a STOP");
   const prose = between(DOC, "## STAGE 2", "## STAGE 3", "the stage 2 section").split("\n```\n").at(-1);
-  for (const want of ["Either one stops the sitting like every other `STOP:`", "stage 3, READ ONLY, runs only when the owner or the lead says so", "**Every other exit stops the sitting, with nothing else pasted.**"]) {
+  for (const want of ["Either one stops the sitting like every other `STOP:`", "stage 3, READ ONLY, runs only on the owner's or the lead's word", "**Every other exit stops the sitting, with nothing else pasted.**"]) {
     assert.ok(prose.replace(/\s+/g, " ").includes(want), `the prose under the stage 2 block does not say: ${want}`);
   }
 });

@@ -20,12 +20,12 @@
 --                                                     before-count and every md5
 --
 -- WHAT IT NEVER TOUCHES, asserted inside the transaction rather than promised:
--- time_off (it writes no block: the owner removes the 30 September block in the
--- app before the sitting, and R06 refuses here, in the database, while any
--- JP(cb) block overlaps that Lisbon day), clinical_records (authorship
--- included), invoices, users, staff_locations, every appointment outside the
--- four sets, JP(cb)'s PAST Castelo Branco appointments and JP(cb)'s Castelo
--- Branco schedule rows. Each is compared by md5 before and after. A FUTURE
+-- time_off (it writes no block, and no refusal reads one: JP(cb)'s 30 September
+-- block stays, by the owner's ruling of 2026-09-26, paraphrased, never deleted
+-- by anyone), clinical_records (the tenant's whole table, authorship included),
+-- invoices, users, staff_locations, every appointment outside the four sets,
+-- JP(cb)'s PAST Castelo Branco appointments and JP(cb)'s Castelo Branco schedule
+-- rows. Each is compared by md5 before and after. A FUTURE
 -- JP(cb) Castelo Branco appointment is not in that list: when it is the person
 -- row of a future NESA pair, ruling (c) writes its practitioner_2_id and
 -- updated_at, as it does for every such person row.
@@ -159,13 +159,7 @@ k AS (
          now() AS t_now,
          now() + interval '2 hours' AS sitting_end,
          (now() AT TIME ZONE 'Europe/Lisbon')::date AS today,
-         ((now() AT TIME ZONE 'Europe/Lisbon')::date)::timestamp AT TIME ZONE 'Europe/Lisbon' AS day0,
-         (DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from,
-         (DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to,
-         (DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from,
-         (DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to,
-         (DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from,
-         (DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to
+         ((now() AT TIME ZONE 'Europe/Lisbon')::date)::timestamp AT TIME ZONE 'Europe/Lisbon' AS day0
 ),
 -- The two JP rows, as found, with the three user flags the Linda-a-Velha roster
 -- reads (apps/api/lib/appointments/store.ts): active, bookable, not shared.
@@ -176,7 +170,7 @@ jp AS (
 ),
 -- Every shared resource in the tenant, active or not, and where each ACTIVE one
 -- is installed. A clinic's NESA is DERIVED here, never assumed: ruling (b)
--- targets the one NESA installed at the booking clinic, and R11 refuses a
+-- targets the one NESA installed at the booking clinic, and R10 refuses a
 -- clinic with none or with more than one.
 res AS (
   SELECT u.id, u.is_active
@@ -219,7 +213,7 @@ cls0 AS (
     FROM cb_lv c, k
 ),
 -- Five classes plus UNCLASSIFIED, each written out as its own predicate and
--- mutually exclusive by construction; R09 proves every row sets exactly one.
+-- mutually exclusive by construction; R08 proves every row sets exactly one.
 cls1 AS (
   SELECT c.*,
          (c.is_dated AND c.lv_same) AS f_cov,
@@ -240,25 +234,6 @@ cls AS (
               WHEN c.f_win  THEN 'retire_sat_window'
               ELSE 'UNCLASSIFIED' END AS label
     FROM cls1 c
-),
--- ---------------------------------------------------------------------------
--- THE 30 SEPTEMBER BLOCK. No stage writes it: the owner removes it in the app
--- before the sitting, and R06 refuses while any JP(cb) block overlaps the Lisbon
--- day 30 September. ONE predicate, tstzrange overlap with that day, reads two
--- sources: every time_off row, and two synthetic JP(cb) blocks it must match,
--- one inside the day (09:00 to 20:00) and one across it (20:00 the day before
--- to 09:00 the day after). A read that misses either is broken, and R26 refuses
--- it. Stage 3 carries this CTE byte for byte (verdict 11).
--- ---------------------------------------------------------------------------
-b30 AS (
-  SELECT s.src, s.id, s.starts_at, s.ends_at, s.reason
-    FROM (SELECT 'real' AS src, t.id, t.user_id, t.starts_at, t.ends_at, t.reason::text AS reason
-            FROM public.time_off t
-          UNION ALL
-          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30_from, k0.ctl30_to, 'synthetic, inside the day' FROM k k0
-          UNION ALL
-          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30x_from, k0.ctl30x_to, 'synthetic, across the day' FROM k k0) s, k
-   WHERE s.user_id = k.jp_cb AND tstzrange(s.starts_at, s.ends_at) && tstzrange(k.blk_from, k.blk_to)
 ),
 -- ---------------------------------------------------------------------------
 -- RULING (a), SET H: JP(cb)'s Linda-a-Velha appointments that start before the
@@ -386,7 +361,7 @@ car AS (
 -- THE CONFIRMED-OVERLAP RULE, appointments_no_double_confirmed (0061): EXCLUDE
 -- on (practitioner_id, tstzrange(starts_at, ends_at)) WHERE status = confirmed,
 -- with no tenant, clinic or date in it. Each set below is every confirmed row a
--- target would hold after its re-attribution. R14 and R15 take as control the
+-- target would hold after its re-attribution. R13 and R14 take as control the
 -- confirmed rows that MOVE: with none, no collision is possible, so a 0 there
 -- prints VACUOUS rather than OK.
 -- ---------------------------------------------------------------------------
@@ -440,93 +415,89 @@ ref AS (
                             AND o.valid_until IS NOT DISTINCT FROM c.valid_until))::int,
          (SELECT count(*) FROM cls c WHERE c.f_move)::int
   UNION ALL
-  SELECT 'R06', 'a JP(cb) block overlaps the Lisbon day 30 September; the owner removes it in the app before the sitting, and section 2c names it',
-         (SELECT count(*) FROM b30 WHERE b30.src = 'real')::int,
-         (SELECT count(*) FROM b30 WHERE b30.src = 'control')::int
-  UNION ALL
-  SELECT 'R07', 'the original STAFF-10 write has already run (its audit row)',
+  SELECT 'R06', 'the original STAFF-10 write has already run (its audit row)',
          (SELECT count(*) FROM public.audit_log al WHERE al.action = 'staff.jp_lv_schedule_rows.retire')::int,
          (SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant)::int
   UNION ALL
-  SELECT 'R08', 'this v2 write has already run (its audit row)',
+  SELECT 'R07', 'this v2 write has already run (its audit row)',
          (SELECT count(*) FROM public.audit_log al WHERE al.action = 'staff.staff10_v2.apply')::int,
          (SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant)::int
   UNION ALL
-  SELECT 'R09', 'an active JP(cb) Linda-a-Velha row is UNCLASSIFIED, or sits in other than exactly one class',
+  SELECT 'R08', 'an active JP(cb) Linda-a-Velha row is UNCLASSIFIED, or sits in other than exactly one class',
          (SELECT count(*) FROM cls c
            WHERE c.f_unc
               OR (c.f_cov::int + c.f_past::int + c.f_move::int + c.f_phan::int + c.f_win::int + c.f_unc::int) <> 1)::int,
          (SELECT count(*) FROM cls)::int
   UNION ALL
-  SELECT 'R10', 'the shared resources are not exactly the two NESA rows, both active',
+  SELECT 'R09', 'the shared resources are not exactly the two NESA rows, both active',
          ((SELECT count(*) FROM res r, k WHERE r.id NOT IN (k.nesa_cb, k.nesa_lv) OR r.is_active IS NOT TRUE)
           + 2 - (SELECT count(*) FROM res r, k WHERE r.id IN (k.nesa_cb, k.nesa_lv)))::int,
          (SELECT count(*) FROM res)::int
   UNION ALL
-  SELECT 'R11', 'a booking clinic of a past or future pair has no installed NESA, or more than one',
+  SELECT 'R10', 'a booking clinic of a past or future pair has no installed NESA, or more than one',
          ((SELECT count(*) FROM x WHERE x.installed_here <> 1)
           + (SELECT count(*) FROM f WHERE f.installed_here <> 1))::int,
          ((SELECT count(*) FROM x) + (SELECT count(*) FROM f))::int
   UNION ALL
-  SELECT 'R12', 'an appointment at Linda-a-Velha names JP(cb) as practitioner_2, which no ruling covers',
+  SELECT 'R11', 'an appointment at Linda-a-Velha names JP(cb) as practitioner_2, which no ruling covers',
          (SELECT count(*) FROM public.appointments a, k
            WHERE a.tenant_id = k.tenant AND a.location_id = k.lv_loc AND a.practitioner_2_id = k.jp_cb)::int,
          (SELECT count(*) FROM public.appointments a, k
            WHERE a.tenant_id = k.tenant AND a.location_id = k.lv_loc AND a.practitioner_2_id IS NOT NULL)::int
   UNION ALL
-  SELECT 'R13', 'a ruling (a) row already names JP(lv) as practitioner_2, so it would hold JP(lv) in both slots',
+  SELECT 'R12', 'a ruling (a) row already names JP(lv) as practitioner_2, so it would hold JP(lv) in both slots',
          (SELECT count(*) FROM h, k WHERE h.practitioner_2_id = k.jp_lv)::int,
          (SELECT count(*) FROM h)::int
   UNION ALL
-  SELECT 'R14', 'a ruling (a) re-attribution would put two overlapping confirmed rows on JP(lv)',
+  SELECT 'R13', 'a ruling (a) re-attribution would put two overlapping confirmed rows on JP(lv)',
          (SELECT count(*) FROM h_after a1 JOIN h_after a2
              ON a1.id < a2.id AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
          (SELECT count(*) FROM h_after WHERE h_after.moving)::int
   UNION ALL
-  SELECT 'R15', 'a ruling (b) re-attribution would put two overlapping confirmed rows on one NESA row',
+  SELECT 'R14', 'a ruling (b) re-attribution would put two overlapping confirmed rows on one NESA row',
          (SELECT count(*) FROM x_after a1 JOIN x_after a2
              ON a1.id < a2.id AND a1.holder = a2.holder AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
          (SELECT count(*) FROM x_after WHERE x_after.moving)::int
   UNION ALL
-  SELECT 'R16', 'a future pair: the person row already has a practitioner_2',
+  SELECT 'R15', 'a future pair: the person row already has a practitioner_2',
          (SELECT count(*) FROM f WHERE f.p_t2 IS NOT NULL)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R17', 'a future pair: the person window does not cover the NESA window',
+  SELECT 'R16', 'a future pair: the person window does not cover the NESA window',
          (SELECT count(*) FROM f WHERE NOT (f.p_starts <= f.starts_at AND f.p_ends >= f.n_ends))::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R18', 'a future pair: the NESA row is not shared, active and installed at the booking clinic, or the two rows sit at two clinics',
+  SELECT 'R17', 'a future pair: the NESA row is not shared, active and installed at the booking clinic, or the two rows sit at two clinics',
          (SELECT count(*) FROM f WHERE NOT f.n_ok_at_booking OR f.n_loc <> f.p_loc)::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R19', 'a future pair: the person row is an unconfirmed pedido, which holds no hour',
+  SELECT 'R18', 'a future pair: the person row is an unconfirmed pedido, which holds no hour',
          (SELECT count(*) FROM f WHERE f.p_pedido)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R20', 'a future pair: the NESA row has a clinical record, an invoice or a pack session',
+  SELECT 'R19', 'a future pair: the NESA row has a clinical record, an invoice or a pack session',
          (SELECT count(*) FROM f WHERE f.n_has_record OR f.n_has_invoice OR f.n_pack IS NOT NULL)::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R21', 'a future pair starts within the sitting (before now plus two hours)',
+  SELECT 'R20', 'a future pair starts within the sitting (before now plus two hours)',
          (SELECT count(*) FROM f, k WHERE f.starts_at < k.sitting_end)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R22', 'a future row sits in more than one live pair, so which row keeps is ambiguous',
+  SELECT 'R21', 'a future row sits in more than one live pair, so which row keeps is ambiguous',
          (SELECT count(*) FROM f
            WHERE (SELECT count(*) FROM f f2 WHERE f2.n_id = f.n_id) > 1
               OR (SELECT count(*) FROM f f2 WHERE f2.p_id = f.p_id) > 1)::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R23', 'a future pair: the NESA row is an unconfirmed pedido, so it holds no machine hour today',
+  SELECT 'R22', 'a future pair: the NESA row is an unconfirmed pedido, so it holds no machine hour today',
          (SELECT count(*) FROM f WHERE f.n_pedido)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R24', 'there is nothing to do: every action set is empty',
+  SELECT 'R23', 'there is nothing to do: every action set is empty',
          (CASE WHEN (SELECT count(*) FROM tgt) = 0 THEN 1 ELSE 0 END)::int,
          (SELECT count(*) FROM tgt)::int
   UNION ALL
   -- Two of the untouched sets stage 3 compares by md5, JP(cb)'s Castelo Branco
   -- rows: empty, the comparison would prove nothing, so refuse before writing.
-  SELECT 'R25', 'an untouched comparison set is empty: JP(cb) has no past Castelo Branco appointment or no Castelo Branco schedule row',
+  SELECT 'R24', 'an untouched comparison set is empty: JP(cb) has no past Castelo Branco appointment or no Castelo Branco schedule row',
          ((CASE WHEN (SELECT count(*) FROM public.appointments a, k
                        WHERE a.practitioner_id = k.jp_cb AND a.location_id = k.cb_loc AND a.starts_at < k.day0) = 0
                 THEN 1 ELSE 0 END)
@@ -535,24 +506,19 @@ ref AS (
                   THEN 1 ELSE 0 END))::int,
          (SELECT count(*) FROM public.appointments a, k WHERE a.practitioner_id = k.jp_cb)::int
   UNION ALL
-  -- R06's read proves itself: the same predicate must match both synthetic
-  -- JP(cb) blocks, one inside the Lisbon day and one across it. A read that
-  -- misses either would miss a real block too, and R06 could then read 0 over a
-  -- block that is there. The control is the two synthetic blocks offered.
-  SELECT 'R26', 'the 30 September read missed a synthetic JP(cb) block it must match (inside the day, or across it), so R06 cannot be trusted',
-         (2 - (SELECT count(*) FROM b30 WHERE b30.src = 'control'))::int,
-         2
-  UNION ALL
-  -- The other two untouched sets stage 3 compares by md5: the clinical records
-  -- on the rows the op writes, and the past twin rows it leaves alone. Empty,
-  -- either comparison proves nothing, so the op refuses before writing.
-  SELECT 'R27', 'an untouched comparison set is empty: no row the op writes carries a clinical record, or no past twin row is left untouched',
-         ((CASE WHEN (SELECT count(*) FROM public.clinical_records cr
-                       WHERE cr.appointment_id IN (SELECT h.id FROM h UNION SELECT x.id FROM x
-                                                   UNION SELECT f.p_id FROM f UNION SELECT f.n_id FROM f)) = 0
+  -- Two more untouched sets stage 3 compares by md5: the tenant's clinical
+  -- records, the WHOLE table, and the past twin rows the op leaves alone. Empty,
+  -- either comparison proves nothing, so the op refuses before writing. The
+  -- clinical records on the rows the op WRITES are not refused on (owner ruling
+  -- of 2026-09-26, paraphrased): that per-row set may be empty, it prints
+  -- VACUOUS in section 4c, in stage 2 and in stage 3, and the whole table is its
+  -- control.
+  SELECT 'R25', 'an untouched comparison set is empty: the tenant holds no clinical record (the whole table), or no past twin row is left untouched',
+         ((CASE WHEN (SELECT count(*) FROM public.clinical_records cr, k WHERE cr.tenant_id = k.tenant) = 0
                 THEN 1 ELSE 0 END)
           + (CASE WHEN (SELECT count(*) FROM tw_keep) = 0 THEN 1 ELSE 0 END))::int,
-         ((SELECT count(*) FROM h) + (SELECT count(*) FROM tw WHERE tw.is_past))::int
+         ((SELECT count(*) FROM public.clinical_records cr, k WHERE cr.tenant_id = k.tenant)
+          + (SELECT count(*) FROM tw_keep))::int
   UNION ALL
   -- Stage 3 checks the Linda-a-Velha roster on the next real Saturday JP(lv)
   -- holds as a dated row. After the write those are JP(lv)'s own and the moved
@@ -562,7 +528,7 @@ ref AS (
   -- column both compare with the day (apps/api/lib/appointments/store.ts). A
   -- dated Saturday carrying another weekday column is never offered, so it does
   -- not count; f_move already requires both.
-  SELECT 'R28', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today with weekday column 6, and none moves',
+  SELECT 'R26', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today with weekday column 6, and none moves',
          (CASE WHEN (SELECT count(*) FROM public.availability_templates o, k
                       WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE
                         AND o.valid_from IS NOT NULL AND o.valid_until IS NOT NULL AND o.valid_from = o.valid_until
@@ -574,9 +540,9 @@ ref AS (
   UNION ALL
   -- Ruling (b) moves a past NESA row to the NESA installed at the booking clinic.
   -- With the two rows of its pair at two clinics, which clinic booked the session
-  -- is a guess, and no ruling makes it, so the op refuses, as R18 does for a
+  -- is a guess, and no ruling makes it, so the op refuses, as R17 does for a
   -- future pair. The control is every past pair ruling (b) would act on.
-  SELECT 'R29', 'a past pair ruling (b) would move has its two rows at two clinics, so its booking clinic is ambiguous',
+  SELECT 'R27', 'a past pair ruling (b) would move has its two rows at two clinics, so its booking clinic is ambiguous',
          (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x)
              AND tw.p_loc IS DISTINCT FROM tw.n_loc)::int,
          (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x))::int
@@ -588,7 +554,7 @@ ref AS (
   -- trusting that. The control is every trigger on those tables, the constraint
   -- triggers the system creates for each foreign key included, so a 0 that read
   -- nothing prints VACUOUS.
-  SELECT 'R30', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
+  SELECT 'R28', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
          (SELECT count(*) FROM pg_catalog.pg_trigger t
            WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
                                'public.audit_log'::regclass)
@@ -673,7 +639,7 @@ ref AS (
   RAISE NOTICE 'P3 the run day and all 19 carries match stage 1';
 
   -- ==========================================================================
-  -- P4. WHAT ELSE RUNS ON A WRITE TO THESE TABLES. R30 has already refused any
+  -- P4. WHAT ELSE RUNS ON A WRITE TO THESE TABLES. R28 has already refused any
   --     trigger the system did not create; P4 reads the catalog again, prints
   --     what it finds, and STOPS on any, so no write below can run code the
   --     whitelist does not name. Every piece is cast, because text || "char"
@@ -739,11 +705,16 @@ ref AS (
                                      av.valid_from, av.valid_until, av.created_at)::text, E'\n' ORDER BY av.id), ''))
     INTO v_bn_av_w, v_b_md5_av_w
     FROM public.availability_templates av WHERE av.id IN (SELECT w.id FROM unnest(v_sched) w(id));
-  -- to: EVERY time_off row of the tenant. This op writes none, so the count and
-  -- this md5 must read the same after the writes, and stage 3 verdict 12 reads
-  -- them again against the audit row.
+  -- to: EVERY time_off row of the tenant, JP(cb)'s 30 September block among
+  -- them. This op writes none, so the count and this md5 must read the same after
+  -- the writes, and stage 3 verdict 11 reads them again against the audit row.
   SELECT count(*)::int, md5(coalesce(string_agg((t.*)::text, E'\n' ORDER BY t.id), '')) INTO v_bn_to, v_b_md5_to
     FROM public.time_off t WHERE t.tenant_id = v_tenant;
+  -- cr_all: EVERY clinical record of the tenant, the WHOLE table. It is the
+  -- control of the per-row set below (cr_att), which may be empty: this op
+  -- writes no clinical record, so the count and this md5 must read the same after
+  -- the writes, R25 has refused an empty table, and stage 3 verdict 18 reads both
+  -- again against the audit row.
   SELECT count(*)::int, md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
                                      cr.version, cr.updated_at)::text, E'\n' ORDER BY cr.id), ''))
     INTO v_bn_cr_all, v_b_md5_cr_all FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant;
@@ -757,6 +728,9 @@ ref AS (
     INTO v_bn_sl, v_b_md5_sl FROM public.staff_locations sl WHERE sl.tenant_id = v_tenant;
 
   -- Recorded in the audit row, and recomputed by stage 3 with the same text.
+  -- cr_att, the per-row set: the clinical records on the rows this op writes. It
+  -- may be empty (owner ruling of 2026-09-26, paraphrased): then it prints
+  -- VACUOUS here and in stage 3 verdict 19, and cr_all above is its control.
   SELECT count(*)::int,
          md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id)::text, E'\n' ORDER BY cr.id), ''))
     INTO v_b_n_cr_att, v_b_md5_cr_att
@@ -778,19 +752,21 @@ ref AS (
 
   RAISE NOTICE 'P5 baseline: appointments % (JP(cb) %, JP(lv) %, NESA(cb) %, NESA(lv) %), cancelled %, with practitioner_2 %',
     v_b_appt, v_b_cb, v_b_lv, v_b_ncb, v_b_nlv, v_b_cancel, v_b_t2;
-  RAISE NOTICE 'P5 untouched sets: clinical records on written rows %, past twin rows kept %, JP(cb) past CB appointments %, JP(cb) CB schedule rows %',
-    v_b_n_cr_att, v_b_n_keep, v_b_n_cb_past, v_b_n_cb_sched;
+  RAISE NOTICE 'P5 untouched sets: clinical records on written rows % (may be none), the tenant''s clinical records, whole table %, past twin rows kept %, JP(cb) past CB appointments %, JP(cb) CB schedule rows %',
+    v_b_n_cr_att, v_bn_cr_all, v_b_n_keep, v_b_n_cb_past, v_b_n_cb_sched;
 
   -- Every md5 family this block compares, with the rows it compares. All go
   -- into the audit row. A family that a refusal already guarantees non-empty
-  -- (appt_rest and cb_past by R25, av_rest and cb_sched by R25, w_fixed and
-  -- cr_att and cr_all by R27, keep by R27, users by R01, sl by R03 and R04) STOPS
-  -- here if it reads empty: the refusal and the baseline would disagree. The
-  -- others can be empty on a real day and print VACUOUS: h, x, fp, fn and av_w
-  -- are the written sets of a ruling or a schedule action with nothing to do,
+  -- (appt_rest and cb_past by R24, av_rest and cb_sched by R24, cr_all and keep
+  -- by R25, users by R01, sl by R03 and R04) STOPS here if it reads empty: the
+  -- refusal and the baseline would disagree. The others can be empty on a real
+  -- day and print VACUOUS: h, x, fp, fn and av_w are the written sets of a ruling
+  -- or a schedule action with nothing to do, w_fixed is every written
+  -- appointment, empty when no ruling writes one, cr_att is the clinical records
+  -- on those rows, which may be none (its control is cr_all, the whole table),
   -- and to and inv are the tenant's blocks and its invoices, which no ruling
-  -- promises exist. Each of those is a whole tenant table, so even empty its md5
-  -- still changes on the one write it could suffer, a new row.
+  -- promises exist. Each of those two is a whole tenant table, so even empty its
+  -- md5 still changes on the one write it could suffer, a new row.
   v_md5_rows := jsonb_build_object(
     'appt_rest', v_bn_appt_rest, 'w_fixed', v_bn_w_fixed, 'h', v_bn_h, 'x', v_bn_x, 'fp', v_bn_fp, 'fn', v_bn_fn,
     'av_rest', v_bn_av_rest, 'av_w', v_bn_av_w, 'to', v_bn_to, 'cr_all', v_bn_cr_all, 'inv', v_bn_inv,
@@ -801,8 +777,8 @@ ref AS (
     INTO v_want FROM jsonb_each_text(v_md5_rows) e;
   RAISE NOTICE 'P5 md5 families and the rows each compares: %', v_want;
   FOR v_row IN SELECT e.key FROM jsonb_each_text(v_md5_rows) e
-                WHERE e.key IN ('appt_rest', 'w_fixed', 'av_rest', 'cr_all', 'users', 'sl',
-                                'cr_att', 'keep', 'cb_past', 'cb_sched')
+                WHERE e.key IN ('appt_rest', 'av_rest', 'cr_all', 'users', 'sl',
+                                'keep', 'cb_past', 'cb_sched')
                   AND e.value::int = 0
                 ORDER BY 1
   LOOP
@@ -1030,18 +1006,24 @@ ref AS (
     RAISE EXCEPTION 'STOP: time_off changed inside this transaction, and this op writes no time_off row';
   END IF;
 
-  IF (SELECT md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
-                                         cr.version, cr.updated_at)::text, E'\n' ORDER BY cr.id), ''))
-        FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant) IS DISTINCT FROM v_b_md5_cr_all
-     OR (SELECT md5(coalesce(string_agg(ROW(iv.id, iv.appointment_id, iv.patient_id, iv.amount_cents, iv.status,
-                                            iv.updated_at)::text, E'\n' ORDER BY iv.id), ''))
-           FROM public.invoices iv WHERE iv.tenant_id = v_tenant) IS DISTINCT FROM v_b_md5_inv
+  -- The whole clinical_records table of the tenant, count and md5: the control of
+  -- the per-row set, which may be empty. It holds rows (R25), and it must read
+  -- exactly as it did before the writes.
+  IF (SELECT count(*) FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant) <> v_bn_cr_all
+     OR (SELECT md5(coalesce(string_agg(ROW(cr.id, cr.practitioner_id, cr.appointment_id, cr.patient_id, cr.status,
+                                            cr.version, cr.updated_at)::text, E'\n' ORDER BY cr.id), ''))
+           FROM public.clinical_records cr WHERE cr.tenant_id = v_tenant) IS DISTINCT FROM v_b_md5_cr_all THEN
+    RAISE EXCEPTION 'STOP: the tenant''s clinical_records changed inside this transaction (the whole table, count or md5), and this op writes no clinical record';
+  END IF;
+  IF (SELECT md5(coalesce(string_agg(ROW(iv.id, iv.appointment_id, iv.patient_id, iv.amount_cents, iv.status,
+                                         iv.updated_at)::text, E'\n' ORDER BY iv.id), ''))
+        FROM public.invoices iv WHERE iv.tenant_id = v_tenant) IS DISTINCT FROM v_b_md5_inv
      OR (SELECT md5(coalesce(string_agg(ROW(u.id, u.is_active, u.is_bookable, u.is_shared_resource, u.role_id,
                                             u.updated_at)::text, E'\n' ORDER BY u.id), ''))
            FROM public.users u WHERE u.tenant_id = v_tenant) IS DISTINCT FROM v_b_md5_users
      OR (SELECT md5(coalesce(string_agg(ROW(sl.id, sl.user_id, sl.location_id)::text, E'\n' ORDER BY sl.id), ''))
            FROM public.staff_locations sl WHERE sl.tenant_id = v_tenant) IS DISTINCT FROM v_b_md5_sl THEN
-    RAISE EXCEPTION 'STOP: clinical_records, invoices, users or staff_locations changed; this op writes none of them';
+    RAISE EXCEPTION 'STOP: invoices, users or staff_locations changed; this op writes none of them';
   END IF;
 
   -- ==========================================================================

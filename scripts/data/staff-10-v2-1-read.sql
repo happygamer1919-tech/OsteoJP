@@ -14,9 +14,17 @@
 --   (d) every other past twin is listed here and never changed;
 --   (e) the original schedule-row actions carry forward, defects fixed.
 --
--- NO STAGE WRITES A time_off ROW. The owner removes the 30 September block in
--- the app before the sitting; R06 refuses while any JP(cb) block overlaps the
--- Lisbon day 30 September, and section 2c names each one by id.
+-- NO STAGE WRITES A time_off ROW, AND NO REFUSAL READS ONE. JP(cb)'s 30
+-- September block stays (owner ruling of 2026-09-26, paraphrased: it is never
+-- deleted, by anyone), and the op does not depend on it or on any other block.
+-- Stage 2 compares every block of the tenant, count and md5, inside its
+-- transaction, and stage 3 compares them with the audit row (verdict 11).
+--
+-- THE CLINICAL RECORDS ON THE ROWS THE OP WRITES MAY BE NONE (owner ruling of
+-- 2026-09-26, paraphrased): that per-row set prints VACUOUS here (section 4c),
+-- in stage 2 and in stage 3, and is never refused on. Its control is the
+-- tenant's whole clinical_records table, which R25 requires to be non-empty and
+-- which stages 2 and 3 compare by count and md5.
 --
 -- EVERY SET IS DERIVED FROM THE DATABASE AT RUN TIME, by the block between the
 -- SETS BEGIN and SETS END markers, which stage 2 carries byte for byte. No
@@ -60,13 +68,7 @@ k AS (
          now() AS t_now,
          now() + interval '2 hours' AS sitting_end,
          (now() AT TIME ZONE 'Europe/Lisbon')::date AS today,
-         ((now() AT TIME ZONE 'Europe/Lisbon')::date)::timestamp AT TIME ZONE 'Europe/Lisbon' AS day0,
-         (DATE '2026-09-30')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_from,
-         (DATE '2026-10-01')::timestamp AT TIME ZONE 'Europe/Lisbon' AS blk_to,
-         (DATE '2026-09-30' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_from,
-         (DATE '2026-09-30' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30_to,
-         (DATE '2026-09-29' + time '20:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_from,
-         (DATE '2026-10-01' + time '09:00')::timestamp AT TIME ZONE 'Europe/Lisbon' AS ctl30x_to
+         ((now() AT TIME ZONE 'Europe/Lisbon')::date)::timestamp AT TIME ZONE 'Europe/Lisbon' AS day0
 ),
 -- The two JP rows, as found, with the three user flags the Linda-a-Velha roster
 -- reads (apps/api/lib/appointments/store.ts): active, bookable, not shared.
@@ -77,7 +79,7 @@ jp AS (
 ),
 -- Every shared resource in the tenant, active or not, and where each ACTIVE one
 -- is installed. A clinic's NESA is DERIVED here, never assumed: ruling (b)
--- targets the one NESA installed at the booking clinic, and R11 refuses a
+-- targets the one NESA installed at the booking clinic, and R10 refuses a
 -- clinic with none or with more than one.
 res AS (
   SELECT u.id, u.is_active
@@ -120,7 +122,7 @@ cls0 AS (
     FROM cb_lv c, k
 ),
 -- Five classes plus UNCLASSIFIED, each written out as its own predicate and
--- mutually exclusive by construction; R09 proves every row sets exactly one.
+-- mutually exclusive by construction; R08 proves every row sets exactly one.
 cls1 AS (
   SELECT c.*,
          (c.is_dated AND c.lv_same) AS f_cov,
@@ -141,25 +143,6 @@ cls AS (
               WHEN c.f_win  THEN 'retire_sat_window'
               ELSE 'UNCLASSIFIED' END AS label
     FROM cls1 c
-),
--- ---------------------------------------------------------------------------
--- THE 30 SEPTEMBER BLOCK. No stage writes it: the owner removes it in the app
--- before the sitting, and R06 refuses while any JP(cb) block overlaps the Lisbon
--- day 30 September. ONE predicate, tstzrange overlap with that day, reads two
--- sources: every time_off row, and two synthetic JP(cb) blocks it must match,
--- one inside the day (09:00 to 20:00) and one across it (20:00 the day before
--- to 09:00 the day after). A read that misses either is broken, and R26 refuses
--- it. Stage 3 carries this CTE byte for byte (verdict 11).
--- ---------------------------------------------------------------------------
-b30 AS (
-  SELECT s.src, s.id, s.starts_at, s.ends_at, s.reason
-    FROM (SELECT 'real' AS src, t.id, t.user_id, t.starts_at, t.ends_at, t.reason::text AS reason
-            FROM public.time_off t
-          UNION ALL
-          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30_from, k0.ctl30_to, 'synthetic, inside the day' FROM k k0
-          UNION ALL
-          SELECT 'control', NULL::uuid, k0.jp_cb, k0.ctl30x_from, k0.ctl30x_to, 'synthetic, across the day' FROM k k0) s, k
-   WHERE s.user_id = k.jp_cb AND tstzrange(s.starts_at, s.ends_at) && tstzrange(k.blk_from, k.blk_to)
 ),
 -- ---------------------------------------------------------------------------
 -- RULING (a), SET H: JP(cb)'s Linda-a-Velha appointments that start before the
@@ -287,7 +270,7 @@ car AS (
 -- THE CONFIRMED-OVERLAP RULE, appointments_no_double_confirmed (0061): EXCLUDE
 -- on (practitioner_id, tstzrange(starts_at, ends_at)) WHERE status = confirmed,
 -- with no tenant, clinic or date in it. Each set below is every confirmed row a
--- target would hold after its re-attribution. R14 and R15 take as control the
+-- target would hold after its re-attribution. R13 and R14 take as control the
 -- confirmed rows that MOVE: with none, no collision is possible, so a 0 there
 -- prints VACUOUS rather than OK.
 -- ---------------------------------------------------------------------------
@@ -341,93 +324,89 @@ ref AS (
                             AND o.valid_until IS NOT DISTINCT FROM c.valid_until))::int,
          (SELECT count(*) FROM cls c WHERE c.f_move)::int
   UNION ALL
-  SELECT 'R06', 'a JP(cb) block overlaps the Lisbon day 30 September; the owner removes it in the app before the sitting, and section 2c names it',
-         (SELECT count(*) FROM b30 WHERE b30.src = 'real')::int,
-         (SELECT count(*) FROM b30 WHERE b30.src = 'control')::int
-  UNION ALL
-  SELECT 'R07', 'the original STAFF-10 write has already run (its audit row)',
+  SELECT 'R06', 'the original STAFF-10 write has already run (its audit row)',
          (SELECT count(*) FROM public.audit_log al WHERE al.action = 'staff.jp_lv_schedule_rows.retire')::int,
          (SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant)::int
   UNION ALL
-  SELECT 'R08', 'this v2 write has already run (its audit row)',
+  SELECT 'R07', 'this v2 write has already run (its audit row)',
          (SELECT count(*) FROM public.audit_log al WHERE al.action = 'staff.staff10_v2.apply')::int,
          (SELECT count(*) FROM public.audit_log al, k WHERE al.tenant_id = k.tenant)::int
   UNION ALL
-  SELECT 'R09', 'an active JP(cb) Linda-a-Velha row is UNCLASSIFIED, or sits in other than exactly one class',
+  SELECT 'R08', 'an active JP(cb) Linda-a-Velha row is UNCLASSIFIED, or sits in other than exactly one class',
          (SELECT count(*) FROM cls c
            WHERE c.f_unc
               OR (c.f_cov::int + c.f_past::int + c.f_move::int + c.f_phan::int + c.f_win::int + c.f_unc::int) <> 1)::int,
          (SELECT count(*) FROM cls)::int
   UNION ALL
-  SELECT 'R10', 'the shared resources are not exactly the two NESA rows, both active',
+  SELECT 'R09', 'the shared resources are not exactly the two NESA rows, both active',
          ((SELECT count(*) FROM res r, k WHERE r.id NOT IN (k.nesa_cb, k.nesa_lv) OR r.is_active IS NOT TRUE)
           + 2 - (SELECT count(*) FROM res r, k WHERE r.id IN (k.nesa_cb, k.nesa_lv)))::int,
          (SELECT count(*) FROM res)::int
   UNION ALL
-  SELECT 'R11', 'a booking clinic of a past or future pair has no installed NESA, or more than one',
+  SELECT 'R10', 'a booking clinic of a past or future pair has no installed NESA, or more than one',
          ((SELECT count(*) FROM x WHERE x.installed_here <> 1)
           + (SELECT count(*) FROM f WHERE f.installed_here <> 1))::int,
          ((SELECT count(*) FROM x) + (SELECT count(*) FROM f))::int
   UNION ALL
-  SELECT 'R12', 'an appointment at Linda-a-Velha names JP(cb) as practitioner_2, which no ruling covers',
+  SELECT 'R11', 'an appointment at Linda-a-Velha names JP(cb) as practitioner_2, which no ruling covers',
          (SELECT count(*) FROM public.appointments a, k
            WHERE a.tenant_id = k.tenant AND a.location_id = k.lv_loc AND a.practitioner_2_id = k.jp_cb)::int,
          (SELECT count(*) FROM public.appointments a, k
            WHERE a.tenant_id = k.tenant AND a.location_id = k.lv_loc AND a.practitioner_2_id IS NOT NULL)::int
   UNION ALL
-  SELECT 'R13', 'a ruling (a) row already names JP(lv) as practitioner_2, so it would hold JP(lv) in both slots',
+  SELECT 'R12', 'a ruling (a) row already names JP(lv) as practitioner_2, so it would hold JP(lv) in both slots',
          (SELECT count(*) FROM h, k WHERE h.practitioner_2_id = k.jp_lv)::int,
          (SELECT count(*) FROM h)::int
   UNION ALL
-  SELECT 'R14', 'a ruling (a) re-attribution would put two overlapping confirmed rows on JP(lv)',
+  SELECT 'R13', 'a ruling (a) re-attribution would put two overlapping confirmed rows on JP(lv)',
          (SELECT count(*) FROM h_after a1 JOIN h_after a2
              ON a1.id < a2.id AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
          (SELECT count(*) FROM h_after WHERE h_after.moving)::int
   UNION ALL
-  SELECT 'R15', 'a ruling (b) re-attribution would put two overlapping confirmed rows on one NESA row',
+  SELECT 'R14', 'a ruling (b) re-attribution would put two overlapping confirmed rows on one NESA row',
          (SELECT count(*) FROM x_after a1 JOIN x_after a2
              ON a1.id < a2.id AND a1.holder = a2.holder AND (a1.moving OR a2.moving)
             AND tstzrange(a1.starts_at, a1.ends_at) && tstzrange(a2.starts_at, a2.ends_at))::int,
          (SELECT count(*) FROM x_after WHERE x_after.moving)::int
   UNION ALL
-  SELECT 'R16', 'a future pair: the person row already has a practitioner_2',
+  SELECT 'R15', 'a future pair: the person row already has a practitioner_2',
          (SELECT count(*) FROM f WHERE f.p_t2 IS NOT NULL)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R17', 'a future pair: the person window does not cover the NESA window',
+  SELECT 'R16', 'a future pair: the person window does not cover the NESA window',
          (SELECT count(*) FROM f WHERE NOT (f.p_starts <= f.starts_at AND f.p_ends >= f.n_ends))::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R18', 'a future pair: the NESA row is not shared, active and installed at the booking clinic, or the two rows sit at two clinics',
+  SELECT 'R17', 'a future pair: the NESA row is not shared, active and installed at the booking clinic, or the two rows sit at two clinics',
          (SELECT count(*) FROM f WHERE NOT f.n_ok_at_booking OR f.n_loc <> f.p_loc)::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R19', 'a future pair: the person row is an unconfirmed pedido, which holds no hour',
+  SELECT 'R18', 'a future pair: the person row is an unconfirmed pedido, which holds no hour',
          (SELECT count(*) FROM f WHERE f.p_pedido)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R20', 'a future pair: the NESA row has a clinical record, an invoice or a pack session',
+  SELECT 'R19', 'a future pair: the NESA row has a clinical record, an invoice or a pack session',
          (SELECT count(*) FROM f WHERE f.n_has_record OR f.n_has_invoice OR f.n_pack IS NOT NULL)::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R21', 'a future pair starts within the sitting (before now plus two hours)',
+  SELECT 'R20', 'a future pair starts within the sitting (before now plus two hours)',
          (SELECT count(*) FROM f, k WHERE f.starts_at < k.sitting_end)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R22', 'a future row sits in more than one live pair, so which row keeps is ambiguous',
+  SELECT 'R21', 'a future row sits in more than one live pair, so which row keeps is ambiguous',
          (SELECT count(*) FROM f
            WHERE (SELECT count(*) FROM f f2 WHERE f2.n_id = f.n_id) > 1
               OR (SELECT count(*) FROM f f2 WHERE f2.p_id = f.p_id) > 1)::int,
          (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R23', 'a future pair: the NESA row is an unconfirmed pedido, so it holds no machine hour today',
+  SELECT 'R22', 'a future pair: the NESA row is an unconfirmed pedido, so it holds no machine hour today',
          (SELECT count(*) FROM f WHERE f.n_pedido)::int, (SELECT count(*) FROM f)::int
   UNION ALL
-  SELECT 'R24', 'there is nothing to do: every action set is empty',
+  SELECT 'R23', 'there is nothing to do: every action set is empty',
          (CASE WHEN (SELECT count(*) FROM tgt) = 0 THEN 1 ELSE 0 END)::int,
          (SELECT count(*) FROM tgt)::int
   UNION ALL
   -- Two of the untouched sets stage 3 compares by md5, JP(cb)'s Castelo Branco
   -- rows: empty, the comparison would prove nothing, so refuse before writing.
-  SELECT 'R25', 'an untouched comparison set is empty: JP(cb) has no past Castelo Branco appointment or no Castelo Branco schedule row',
+  SELECT 'R24', 'an untouched comparison set is empty: JP(cb) has no past Castelo Branco appointment or no Castelo Branco schedule row',
          ((CASE WHEN (SELECT count(*) FROM public.appointments a, k
                        WHERE a.practitioner_id = k.jp_cb AND a.location_id = k.cb_loc AND a.starts_at < k.day0) = 0
                 THEN 1 ELSE 0 END)
@@ -436,24 +415,19 @@ ref AS (
                   THEN 1 ELSE 0 END))::int,
          (SELECT count(*) FROM public.appointments a, k WHERE a.practitioner_id = k.jp_cb)::int
   UNION ALL
-  -- R06's read proves itself: the same predicate must match both synthetic
-  -- JP(cb) blocks, one inside the Lisbon day and one across it. A read that
-  -- misses either would miss a real block too, and R06 could then read 0 over a
-  -- block that is there. The control is the two synthetic blocks offered.
-  SELECT 'R26', 'the 30 September read missed a synthetic JP(cb) block it must match (inside the day, or across it), so R06 cannot be trusted',
-         (2 - (SELECT count(*) FROM b30 WHERE b30.src = 'control'))::int,
-         2
-  UNION ALL
-  -- The other two untouched sets stage 3 compares by md5: the clinical records
-  -- on the rows the op writes, and the past twin rows it leaves alone. Empty,
-  -- either comparison proves nothing, so the op refuses before writing.
-  SELECT 'R27', 'an untouched comparison set is empty: no row the op writes carries a clinical record, or no past twin row is left untouched',
-         ((CASE WHEN (SELECT count(*) FROM public.clinical_records cr
-                       WHERE cr.appointment_id IN (SELECT h.id FROM h UNION SELECT x.id FROM x
-                                                   UNION SELECT f.p_id FROM f UNION SELECT f.n_id FROM f)) = 0
+  -- Two more untouched sets stage 3 compares by md5: the tenant's clinical
+  -- records, the WHOLE table, and the past twin rows the op leaves alone. Empty,
+  -- either comparison proves nothing, so the op refuses before writing. The
+  -- clinical records on the rows the op WRITES are not refused on (owner ruling
+  -- of 2026-09-26, paraphrased): that per-row set may be empty, it prints
+  -- VACUOUS in section 4c, in stage 2 and in stage 3, and the whole table is its
+  -- control.
+  SELECT 'R25', 'an untouched comparison set is empty: the tenant holds no clinical record (the whole table), or no past twin row is left untouched',
+         ((CASE WHEN (SELECT count(*) FROM public.clinical_records cr, k WHERE cr.tenant_id = k.tenant) = 0
                 THEN 1 ELSE 0 END)
           + (CASE WHEN (SELECT count(*) FROM tw_keep) = 0 THEN 1 ELSE 0 END))::int,
-         ((SELECT count(*) FROM h) + (SELECT count(*) FROM tw WHERE tw.is_past))::int
+         ((SELECT count(*) FROM public.clinical_records cr, k WHERE cr.tenant_id = k.tenant)
+          + (SELECT count(*) FROM tw_keep))::int
   UNION ALL
   -- Stage 3 checks the Linda-a-Velha roster on the next real Saturday JP(lv)
   -- holds as a dated row. After the write those are JP(lv)'s own and the moved
@@ -463,7 +437,7 @@ ref AS (
   -- column both compare with the day (apps/api/lib/appointments/store.ts). A
   -- dated Saturday carrying another weekday column is never offered, so it does
   -- not count; f_move already requires both.
-  SELECT 'R28', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today with weekday column 6, and none moves',
+  SELECT 'R26', 'the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha Saturday from today with weekday column 6, and none moves',
          (CASE WHEN (SELECT count(*) FROM public.availability_templates o, k
                       WHERE o.user_id = k.jp_lv AND o.location_id = k.lv_loc AND o.is_active IS TRUE
                         AND o.valid_from IS NOT NULL AND o.valid_until IS NOT NULL AND o.valid_from = o.valid_until
@@ -475,9 +449,9 @@ ref AS (
   UNION ALL
   -- Ruling (b) moves a past NESA row to the NESA installed at the booking clinic.
   -- With the two rows of its pair at two clinics, which clinic booked the session
-  -- is a guess, and no ruling makes it, so the op refuses, as R18 does for a
+  -- is a guess, and no ruling makes it, so the op refuses, as R17 does for a
   -- future pair. The control is every past pair ruling (b) would act on.
-  SELECT 'R29', 'a past pair ruling (b) would move has its two rows at two clinics, so its booking clinic is ambiguous',
+  SELECT 'R27', 'a past pair ruling (b) would move has its two rows at two clinics, so its booking clinic is ambiguous',
          (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x)
              AND tw.p_loc IS DISTINCT FROM tw.n_loc)::int,
          (SELECT count(*) FROM tw WHERE tw.is_past AND tw.n_id IN (SELECT x.id FROM x))::int
@@ -489,7 +463,7 @@ ref AS (
   -- trusting that. The control is every trigger on those tables, the constraint
   -- triggers the system creates for each foreign key included, so a 0 that read
   -- nothing prints VACUOUS.
-  SELECT 'R30', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
+  SELECT 'R28', 'a trigger the system did not create sits on a table stage 2 writes, so a write would run code outside the whitelist',
          (SELECT count(*) FROM pg_catalog.pg_trigger t
            WHERE t.tgrelid IN ('public.appointments'::regclass, 'public.availability_templates'::regclass,
                                'public.audit_log'::regclass)
@@ -558,19 +532,40 @@ SELECT jsonb_build_object(
                                                      AND (c.label = 'retire_sat_window') = c.f_win
                                                      AND (c.label = 'UNCLASSIFIED') = c.f_unc))
                   FROM cls c),
-  'blocks_30', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-                  'id', b.id::text,
-                  'starts_lisbon', (b.starts_at AT TIME ZONE 'Europe/Lisbon')::text,
-                  'ends_lisbon', (b.ends_at AT TIME ZONE 'Europe/Lisbon')::text,
-                  'reason', b.reason)
-                  ORDER BY b.starts_at, b.id), '[]'::jsonb)
-                  FROM b30 b WHERE b.src = 'real'),
   'carries', (SELECT jsonb_agg(jsonb_build_object('ord', c.ord, 'carry', c.carry, 'value', c.value) ORDER BY c.ord)
                 FROM car c),
   'refusals', (SELECT jsonb_agg(jsonb_build_object(
                  'code', r.code, 'label', r.label, 'n', r.n, 'control', r.control,
                  'verdict', CASE WHEN r.n > 0 THEN 'REFUSE' WHEN r.control = 0 THEN 'VACUOUS' ELSE 'OK' END)
                  ORDER BY r.code) FROM ref r),
+  'untouched', (SELECT jsonb_agg(jsonb_build_object(
+                  'ord', u.ord, 'set', u.set_name, 'rows', u.n,
+                  'verdict', CASE WHEN u.n > 0 THEN 'OK' ELSE 'VACUOUS' END,
+                  'if_empty', u.if_empty)
+                  ORDER BY u.ord)
+                  FROM (SELECT 1 AS ord, 'JP(cb) Castelo Branco schedule rows (verdict 9)' AS set_name,
+                               (SELECT count(*) FROM public.availability_templates av, k
+                                 WHERE av.user_id = k.jp_cb AND av.location_id = k.cb_loc)::int AS n,
+                               'R24 refuses' AS if_empty
+                        UNION ALL
+                        SELECT 2, 'the tenant''s clinical records, the whole table (verdict 18)',
+                               (SELECT count(*) FROM public.clinical_records cr, k WHERE cr.tenant_id = k.tenant)::int,
+                               'R25 refuses'
+                        UNION ALL
+                        SELECT 3, 'clinical records on the rows the op writes (verdict 19)',
+                               (SELECT count(*) FROM public.clinical_records cr
+                                 WHERE cr.appointment_id IN (SELECT h.id FROM h UNION SELECT x.id FROM x
+                                                             UNION SELECT f.p_id FROM f UNION SELECT f.n_id FROM f))::int,
+                               'allowed: the whole table is its control'
+                        UNION ALL
+                        SELECT 4, 'past twin rows no write touches (verdict 20)',
+                               (SELECT count(*) FROM tw_keep)::int,
+                               'R25 refuses'
+                        UNION ALL
+                        SELECT 5, 'JP(cb) past Castelo Branco appointments (verdict 21)',
+                               (SELECT count(*) FROM public.appointments a, k
+                                 WHERE a.practitioner_id = k.jp_cb AND a.location_id = k.cb_loc AND a.starts_at < k.day0)::int,
+                               'R24 refuses') u),
   'h_summary', (SELECT coalesce(jsonb_agg(jsonb_build_object(
                   'status', s.status, 'rows', s.n, 'first_lisbon', s.first_start, 'last_lisbon', s.last_start,
                   'with_clinical_record', s.with_record)
@@ -675,7 +670,7 @@ SELECT e ->> 'row' AS staff_row, e ->> 'id' AS id, e ->> 'active' AS active, e -
  ORDER BY e ->> 'row', e ->> 'id';
 SELECT :'s10v2_json'::jsonb ->> 'nesa_split_audit' AS nesa_split_stage_1_audit_rows;
 \echo '    NESA-SPLIT is READ here, not assumed: the NESA rows must both be active shared'
-\echo '    resources (R10), and each booking clinic must have exactly one installed (R11).'
+\echo '    resources (R09), and each booking clinic must have exactly one installed (R10).'
 
 -- ---------------------------------------------------------------------------
 -- 2. THE SCHEDULE ROWS, every active JP(cb) Linda-a-Velha row, and its class.
@@ -691,7 +686,7 @@ SELECT e ->> 'class' AS what_stage_2_does, e ->> 'id' AS id, e ->> 'weekday' AS 
 \echo '    before today. move_saturday: dated, weekday 6 AND the date is a Saturday, today or'
 \echo '    later. retire_phantom: dated, the weekday column is not the date''s weekday.'
 \echo '    retire_sat_window: an undated weekday 6 window, open-ended included. UNCLASSIFIED'
-\echo '    refuses (R09).'
+\echo '    refuses (R08).'
 \echo ''
 \echo '=== 2b. THE PARTITION: every active row lands in exactly one class ==='
 SELECT (p ->> 'active_rows')::int AS active_rows,
@@ -704,21 +699,8 @@ SELECT (p ->> 'active_rows')::int AS active_rows,
              AND (p ->> 'unclassified')::int = 0
              AND (p ->> 'active_rows')::int = (p ->> 'retire_covered')::int + (p ->> 'retire_past')::int
                  + (p ->> 'move_saturday')::int + (p ->> 'retire_phantom')::int + (p ->> 'retire_sat_window')::int
-            THEN 'partition holds' ELSE 'PARTITION BROKEN, R09 refuses' END AS partition
+            THEN 'partition holds' ELSE 'PARTITION BROKEN, R08 refuses' END AS partition
   FROM (SELECT :'s10v2_json'::jsonb -> 'partition' AS p) s;
-
--- ---------------------------------------------------------------------------
--- 2c. Every JP(cb) block that overlaps the Lisbon day 30 September, by id. The
---     owner removes that block in the app before the sitting, so this lists
---     nothing; R06 refuses any row here. No note text is printed.
--- ---------------------------------------------------------------------------
-\echo ''
-\echo '=== 2c. JP(cb) BLOCKS OVERLAPPING THE LISBON DAY 30 SEPTEMBER. Must list nothing: R06 refuses any row here ==='
-SELECT e ->> 'id' AS id, e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'ends_lisbon' AS ends_lisbon,
-       e ->> 'reason' AS reason
-  FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'blocks_30') e;
-\echo '    The owner removes the 30 September block in the app before the sitting. No stage writes a'
-\echo '    block. R26 proves this read: the same predicate must match two synthetic JP(cb) blocks.'
 
 -- ---------------------------------------------------------------------------
 -- 3. THE CARRIES. Stage 2 is handed every one and refuses if any has moved.
@@ -741,12 +723,21 @@ SELECT e ->> 'code' AS code, e ->> 'label' AS refuses_when, (e ->> 'n')::int AS 
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'refusals') e
  ORDER BY e ->> 'code';
 \echo ''
-\echo '=== 4b. WHAT ELSE WOULD RUN ON A WRITE: every trigger the system did not create, on a table stage 2 writes. R30 refuses any ==='
+\echo '=== 4b. WHAT ELSE WOULD RUN ON A WRITE: every trigger the system did not create, on a table stage 2 writes. R28 refuses any ==='
 SELECT e ->> 'on_table' AS on_table, e ->> 'trigger' AS trigger_name, e ->> 'enabled' AS enabled,
        e ->> 'function' AS runs_function
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'triggers') e;
-\echo '    An empty listing is the expected answer; R30 control counts every trigger read, the'
+\echo '    An empty listing is the expected answer; R28 control counts every trigger read, the'
 \echo '    system constraint triggers included, so an empty listing that read nothing prints VACUOUS.'
+\echo ''
+\echo '=== 4c. THE UNTOUCHED SETS stage 3 compares by md5. Each must hold a row, or R24 or R25 refuses, but for the clinical records on the rows the op writes ==='
+SELECT e ->> 'set' AS untouched_set, (e ->> 'rows')::int AS rows, e ->> 'verdict' AS verdict,
+       e ->> 'if_empty' AS when_empty
+  FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'untouched') e
+ ORDER BY (e ->> 'ord')::int;
+\echo '    VACUOUS on the clinical records on the rows the op writes is allowed and is not a refusal:'
+\echo '    no stage writes a clinical record, and stages 2 and 3 compare the tenant''s whole'
+\echo '    clinical_records table by count and md5, which R25 keeps from being empty.'
 
 -- ---------------------------------------------------------------------------
 -- 5. RULING (a): JP(cb)'s past Linda-a-Velha appointments, summarised. Every id
@@ -765,7 +756,7 @@ SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'cb_row_appointment' AS cb_
        e ->> 'cb_row_status' AS cb_row_status, e ->> 'lv_row_appointment' AS lv_row_appointment,
        e ->> 'lv_row_status' AS lv_row_status
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'h_list_a') e;
-\echo '    A pair that would put two overlapping CONFIRMED rows on JP(lv) is refused by R14.'
+\echo '    A pair that would put two overlapping CONFIRMED rows on JP(lv) is refused by R13.'
 
 -- ---------------------------------------------------------------------------
 -- 6. RULING (b): the past pairs whose NESA row is not installed at the booking
@@ -779,7 +770,7 @@ SELECT e ->> 'starts_lisbon' AS starts_lisbon, e ->> 'nesa_row' AS nesa_row, e -
        e ->> 'nesa_status' AS nesa_status, e ->> 'person_status' AS person_status
   FROM jsonb_array_elements(:'s10v2_json'::jsonb -> 'x') e;
 \echo '    booking_clinic is the NESA row''s clinic. two_clinics = true means the person row sits at'
-\echo '    another clinic, and R29 refuses it. No pair here has its person row in ruling (a): that'
+\echo '    another clinic, and R27 refuses it. No pair here has its person row in ruling (a): that'
 \echo '    pair''s NESA row is left alone and listed in section 8 (question Q3 in the doc).'
 
 -- ---------------------------------------------------------------------------

@@ -2,13 +2,19 @@
 
 **Status: NOT RUN.** A DATA operation, not a migration: no schema change, no journal
 entry. Four blocks, each pasted whole, on its own and in order: stage 0 (the files and
-the head it runs from), stage 1 (read), stage 2 (write) and stage 3 (verify). Any
-`STOP:` line, any REFUSE, any `FAIL` verdict, any `ERROR` and any non-zero exit halts
-the sitting:
+the head it runs from), stage 1 (read), stage 2 (write) and stage 3 (verify). **No owner
+click is required before the sitting.** One rule governs every halt, in these words
+here and in GREEN's dispatch:
 
-A refusal or a STOP stops the sitting, and nothing continues to the next block.
-
-Whether and when a halted sitting starts again is the lead's call, never the runner's.
+THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any
+STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and
+nothing continues to the next block. After stage 2 has committed, a post-commit STOP
+still stops the sitting: the write stands, and stage 3 (READ ONLY) runs only on the
+owner's or the lead's word. The only onward path from stage 2 to stage 3 is exit 0
+with the line "STAFF-10 V2 WRITTEN. Paste stage 3 now." No block, and no dispatch
+step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:
+no closing read and no journal read. Whether and when a halted sitting starts again
+is the lead's call, never the runner's.
 
 **Authored by SOLO. Run by GREEN,** a fresh session launched with the apply settings,
 on the owner's dispatch naming the three files below by filename (`CLAUDE.md`, "Who
@@ -21,7 +27,8 @@ bytes.
 | Card | `STAFF-10`, a ruled Tier C item |
 | Replaces | PR #1433 (branch `data/STAFF-10-list-c-nesa-twins`, kept, not merged) and the original STAFF-10 write in `docs/data-op-staff-10.md`, which carries a SUPERSEDED banner and must not be run |
 | Rulings, owner, 2026-09-24, paraphrased | (a) JP(cb)'s Linda-a-Velha appointments from before the start of the Lisbon run day move to JP(lv); (b) a past NESA twin pair whose NESA row is not installed at the booking clinic has that row moved to the NESA installed there; (c) a future NESA twin pair takes option a: the person row keeps, takes the NESA as practitioner_2, and the NESA row is cancelled, with a proof that the machine hour stays held; (d) every other past twin is listed and never changed; (e) the original schedule-row actions carry forward with their defects fixed |
-| Rulings, owner, on this restructure, paraphrased | the op contains no DELETE, DROP or TRUNCATE and writes no `time_off` row; the owner removes the 30 September block in the app before the sitting, and stage 1 refuses while it is there; the op runs from `origin/main` after its PR merges, and main is frozen for the sitting; the audit row carries the ids of every future pair ruling (c) acts on |
+| Rulings, owner, on this restructure, paraphrased | the op contains no DELETE, DROP or TRUNCATE and writes no `time_off` row; the op runs from `origin/main` after its PR merges, and main is frozen for the sitting; the audit row carries the ids of every future pair ruling (c) acts on |
+| Rulings, owner, 2026-09-26, paraphrased | (1) the clinical records comparison takes the tenant's WHOLE `clinical_records` table, by count and md5, as its control, and its per-row arm (the records on the rows the op writes) reads VACUOUS when there are none, where it used to refuse; (2) JP(cb)'s 30 September block is never deleted, by anyone, so the op must not depend on it: the refusal while it exists, that refusal's control and the verdict that it is gone are dropped, and no owner click is required before the sitting; (3) nothing in the op fixes the number of future pairs; (4) one halt rule, in the same words here and in GREEN's dispatch |
 | JP(cb) | `54d486e0-a9c3-4c82-acac-8b909ce5a2d0` (the Castelo Branco row) |
 | JP(lv) | `0c1a0000-0000-4000-8000-000000000001` (the Linda-a-Velha row) |
 | NESA(cb) | `0c1a0000-0000-4000-8000-000000000002` (installed at Castelo Branco) |
@@ -29,15 +36,15 @@ bytes.
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001` |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002` |
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/staff10v2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
-| Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `095ffe9185b3bace41da43b39b9f46096a8a16af68ab057d0d52310c445fe15b` |
-| Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `a0929941d340303660eeb07e7fe1861d57ee3b6a3986781543b5266f49c5b422` |
-| Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 27 verdicts and a SUMMARY row, sha256 `857ea80004f0227c931b2874adc155206bb42a548a51dee3045dbaf9c78f1991` |
+| Stage 1 | `scripts/data/staff-10-v2-1-read.sql`, READ ONLY, sha256 `5a71020e56e4a10e5fed1d5f5ee3c648bbe85f03ecbe1e4201f0b75c3720f27f` |
+| Stage 2 | `scripts/data/staff-10-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `55b1f2f8a67b106ce218509bb4f02d915b6055bafec03316ba199d3f518b317c` |
+| Stage 3 | `scripts/data/staff-10-v2-3-verify.sql`, READ ONLY, 27 verdicts and a SUMMARY row, sha256 `cf736756a981dce75dde8c2de97735ed8c8f6f5bede8046bf840116c23c3172c` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
 | This document | `docs/data-op-staff-10-v2.md`, pinned by `docs/data-op-staff-10-v2.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
 | What stage 2 writes | `availability_templates.is_active` false (four retire classes); `availability_templates.user_id` to JP(lv) (the moved Saturdays); `appointments.practitioner_id` (rulings a and b); `appointments.practitioner_2_id` and `appointments.status` = cancelled (ruling c); `appointments.updated_at` on every appointment it writes; ONE `audit_log` row, action `staff.staff10_v2.apply`. **No `time_off` row. No stage file holds a DELETE, DROP or TRUNCATE statement** |
-| The 30 September block | JP(cb)'s block on the Lisbon day 30 September is ruled wrong, and the owner removes it by hand in the app **before the sitting**. No stage writes it. Stage 1 refuses while any JP(cb) block overlaps that day (R06) and names each one in section 2c by id, Lisbon start and end, and reason; stage 2 raises the same refusal in the database before any write; stage 3 verdict 11 reads it again |
-| What no stage touches | `time_off` (stage 2 compares every block of the tenant by count and md5 inside its transaction, and stage 3 verdict 12 compares them with the audit row), `clinical_records` (authorship included), `invoices`, `users`, `staff_locations`, every appointment outside the four sets, JP(cb)'s PAST Castelo Branco appointments and JP(cb)'s Castelo Branco schedule rows. Stage 2 compares each by md5 inside its own transaction. A FUTURE JP(cb) Castelo Branco appointment is not in this list: when it is the person row of a future NESA pair (stage 1 section 7), ruling (c) writes its `practitioner_2_id` and `updated_at`, as for every such person row |
+| The 30 September block | JP(cb)'s block on the Lisbon day 30 September **stays**: by the owner's ruling of 2026-09-26 it is never deleted, by anyone. The op does not depend on it: no refusal reads `time_off`, no stage writes it, and **no owner click is required before the sitting**. It is one of the tenant's blocks, so stage 2 compares it with every other block, count and md5, inside its transaction, and stage 3 verdict 11 compares them with the audit row |
+| What no stage touches | `time_off` (stage 2 compares every block of the tenant by count and md5 inside its transaction, and stage 3 verdict 11 compares them with the audit row), `clinical_records` (authorship included: stage 2 compares the tenant's whole table by count and md5 inside its transaction, and stage 3 verdict 18 compares it with the audit row), `invoices`, `users`, `staff_locations`, every appointment outside the four sets, JP(cb)'s PAST Castelo Branco appointments and JP(cb)'s Castelo Branco schedule rows. Stage 2 compares each by md5 inside its own transaction. A FUTURE JP(cb) Castelo Branco appointment is not in this list: when it is the person row of a future NESA pair (stage 1 section 7), ruling (c) writes its `practitioner_2_id` and `updated_at`, as for every such person row |
 
 **THIS DOCUMENT PINS ITSELF, and the sidecar is why.** A document cannot contain its
 own sha256, so the digest lives in `docs/data-op-staff-10-v2.sha256` and every stage
@@ -61,8 +68,9 @@ schedule row, moves JP(cb)'s past Linda-a-Velha appointments to JP(lv), moves ea
 past NESA row booked at a clinic its NESA is not installed at to the NESA that is
 (unless its person row is one of those JP(cb) rows, question Q3), and resolves each
 future NESA twin into one row that holds both the therapist's hour and the machine's.
-The wrong 30 September block is not the op's to write: the owner removes it in the app
-before the sitting, and the op refuses while it is there.
+It writes no block and depends on none: JP(cb)'s 30 September block stays, by the
+owner's ruling, no refusal reads a block, and stages 2 and 3 only compare every block
+of the tenant, that one included, to prove that none changed.
 
 ## The owner questions, and the default this op is built to
 
@@ -71,40 +79,40 @@ changes the files, their pins and the rehearsal.
 
 | # | Question | Default built |
 |---|---|---|
-| Q1 | What does ruling (a) cover? | Appointments only, past only: `starts_at` before 00:00 Lisbon on the run day. JP(cb)'s future Linda-a-Velha appointments stay on JP(cb); they are reception's list. An appointment at Linda-a-Velha naming JP(cb) as practitioner_2 refuses (R12) |
-| Q2 | Past list A pairs (JP(cb) and JP(lv) booked for one patient at one start) | Moved like any other past row, so both end on JP(lv). Stage 1 section 5b lists them; R14 refuses a move that would put two overlapping confirmed rows on JP(lv) |
+| Q1 | What does ruling (a) cover? | Appointments only, past only: `starts_at` before 00:00 Lisbon on the run day. JP(cb)'s future Linda-a-Velha appointments stay on JP(cb); they are reception's list. An appointment at Linda-a-Velha naming JP(cb) as practitioner_2 refuses (R11) |
+| Q2 | Past list A pairs (JP(cb) and JP(lv) booked for one patient at one start) | Moved like any other past row, so both end on JP(lv). Stage 1 section 5b lists them; R13 refuses a move that would put two overlapping confirmed rows on JP(lv) |
 | Q3 | A past twin whose person row is JP(cb) at Linda-a-Velha | Ruling (a) moves the person row to JP(lv); the NESA row is left alone and listed, whether or not its NESA is installed at its clinic. So set X never takes a NESA row that sits in any past pair whose person row is in set H: that row is listed in stage 1 section 8 (`person_row_moved_by_a = true`, and `nesa_installed_there` says whether it is booked at a clinic its NESA is not installed at), goes into `p_pairs` and `keep_ids`, and stage 3 verdict 20 proves it unchanged. The rehearsal runs the shape (arm Q3). A ruling that ruling (b) should also move such a NESA row changes the files, their pins and the rehearsal |
-| Q4 | Ruling (b)'s target | Exactly one active shared resource installed at the booking clinic; none or more than one refuses (R11) |
-| Q5 | A future pair whose person window does not cover the NESA window | Refuses (R17). The op never extends a window |
-| Q6 | A future NESA row with a pack session, a clinical record or an invoice | Refuses (R20): cancelling it would give a pack session back or orphan a record |
+| Q4 | Ruling (b)'s target | Exactly one active shared resource installed at the booking clinic; none or more than one refuses (R10) |
+| Q5 | A future pair whose person window does not cover the NESA window | Refuses (R16). The op never extends a window |
+| Q6 | A future NESA row with a pack session, a clinical record or an invoice | Refuses (R19): cancelling it would give a pack session back or orphan a record |
 | Q7 | The raw cancel writes no per-row cancel audit entry and sends no staff notification | The op's one audit row stands in for both, carrying every id; `updated_at` is set on every appointment written. For every future pair ruling (c) acts on, its `f_pairs` names the kept person row (`p`) and the cancelled NESA row (`n`), with the NESA (`r`) and the NESA window (`s`, `e`), and stage 3 verdicts 26 and 27 prove those lists are exactly the rows the op cancelled and the rows it gave a practitioner_2 (D20) |
 | Q8 | What is the provenance record of ruling (d)? | Stage 1 section 8 plus the `p_pairs` and `keep_ids` arrays in the audit row. No new database table |
-| Q9 | What counts as a real Saturday, and where? | Both: the move set requires the date itself to be a Saturday, and stage 3 checks the Linda-a-Velha roster on the next real Saturday JP(lv) holds. Everywhere a real Saturday row is the date a Saturday AND the weekday column 6: the slot query and the confirm guard (`apps/api/lib/appointments/store.ts`) compare that column with the day, so a dated Saturday carrying another weekday is never offered, and R28 and verdict 8 do not count it |
+| Q9 | What counts as a real Saturday, and where? | Both: the move set requires the date itself to be a Saturday, and stage 3 checks the Linda-a-Velha roster on the next real Saturday JP(lv) holds. Everywhere a real Saturday row is the date a Saturday AND the weekday column 6: the slot query and the confirm guard (`apps/api/lib/appointments/store.ts`) compare that column with the day, so a dated Saturday carrying another weekday is never offered, and R26 and verdict 8 do not count it |
 | Q10 | A phantom row (the weekday column differs from the date's weekday) | Retired (`retire_phantom`) |
 | Q11 | The open-ended Saturday window `e37ba817` | Classified by the NULL-safe rule, so it is a `retire_sat_window`. Stage 1 section 2 prints, for every Saturday window, how many JP(lv) Saturday rows exist from its start |
 | Q12 | A dated real Saturday JP(lv) does not already hold | Moves to JP(lv), whatever the cadence |
-| Q13 | When must this run? | READY-TO-APPLY by Friday 25 September. It must run before the first future pair's date: on or after that date the pair is a past twin, which changes what the op does to it |
+| Q13 | When must this run? | Before the first future pair's date: on or after that date the pair is a past twin, which changes what the op does to it. GREEN's dispatch names the sitting's date, and stage 1 section 7 prints every future pair's |
 | Q14 | New v2 files or a rewrite in place? | New v2 files. The original files and the frozen `scripts/staff-10-data-op.test.mjs` stay byte-identical |
 | Q15 | The figures already on main and in #1433's history | Left as they are: the owner's call |
 | Q16 | Who fills in the reception list for the future pairs? | An owner-only template, written now and never committed; stage 3 prints the ids on the run day |
-| D1 | Added: what if NESA-SPLIT has not run, so the NESA rows are not flagged? | Refuses (R10): the shared resources must be exactly the two NESA rows, both active. Without the flag no twin is visible and ruling (c) would silently do nothing |
-| D2 | Added: a future row in more than one live pair | Refuses (R22): which row keeps would be a guess |
-| D3 | Added: when does a future pair start within the sitting? | A future pair starting before now plus two hours refuses (R21). Stage 2 must follow stage 1 within the hour |
-| D4 | Added: a future pair whose two rows sit at two clinics | Refuses (R18): the booking clinic would be ambiguous |
+| D1 | Added: what if NESA-SPLIT has not run, so the NESA rows are not flagged? | Refuses (R09): the shared resources must be exactly the two NESA rows, both active. Without the flag no twin is visible and ruling (c) would silently do nothing |
+| D2 | Added: a future row in more than one live pair | Refuses (R21): which row keeps would be a guess |
+| D3 | Added: when does a future pair start within the sitting? | A future pair starting before now plus two hours refuses (R20). Stage 2 must follow stage 1 within the hour |
+| D4 | Added: a future pair whose two rows sit at two clinics | Refuses (R17): the booking clinic would be ambiguous |
 | D5 | Added: which rows are `retire_past`? | Every active row whose window ended before the run day, dated or not. The original op retired dated past rows only and left an expired undated window standing |
-| D6 | Added: a future NESA row that is itself an unconfirmed pedido | Refuses (R23): it holds no machine hour today, so the before-proof has nothing to prove |
-| D7 | Added: the original STAFF-10 write has already run | Refuses (R07): the schedule it would meet is not the one ruled on |
+| D6 | Added: a future NESA row that is itself an unconfirmed pedido | Refuses (R22): it holds no machine hour today, so the before-proof has nothing to prove |
+| D7 | Added: the original STAFF-10 write has already run | Refuses (R06): the schedule it would meet is not the one ruled on |
 | D8 | Added: stage 2 isolation | REPEATABLE READ, so every comparison inside it reads one snapshot and a concurrent write to a row it updates aborts it rather than racing it |
-| D9 | Added: what if the 30 September block is still there when the sitting starts? | Refuses (R06), in stage 1 and again in the database in stage 2 before any write: any JP(cb) block whose `[starts_at, ends_at)` overlaps the Lisbon day 30 September, whether it starts and ends that day, starts the day before, or covers it among other days. Section 2c names each by id. The read is ONE tstzrange overlap with the day, and R26 proves it on two synthetic JP(cb) blocks, one inside the day and one across it: a read that misses either refuses. The op writes no block, by the owner's ruling: the removal is his, by hand in the app |
-| D10 | Added: which sets must be non-empty? | The four untouched sets stage 3 compares by md5: JP(cb)'s Castelo Branco schedule rows and past Castelo Branco appointments (R25), the clinical records on the rows the op writes, and the past twin rows it leaves alone (R27). An empty one refuses before the write. Stage 1 section 5 prints how many ruling (a) rows carry a clinical record, so a refusal here is visible before stage 2 |
-| D11 | Added: what is the booking clinic of a past pair under ruling (b)? | The NESA row's own clinic (`location_id`), and the person row must sit at the same clinic. A pair to move whose two rows sit at two clinics refuses (R29), as a future one does (R18, D4): which clinic booked the session would be a guess. Section 6 prints both clinics and a `two_clinics` flag |
-| D12 | Added: what if stage 3's roster check would find no real Saturday to check? | Refuses (R28) before the write, for the same reason as D10. A dated Saturday JP(lv) holds with a weekday column other than 6 is not one (Q9) |
-| D13 | Added: what if a table stage 2 writes carries a trigger the system did not create? | Refuses (R30), and stage 2's P4 reads the catalog again and stops too. The tables are the three stage 2 writes: `appointments`, `availability_templates` and `audit_log`. Main has none, but production has run ahead of main before, and such a trigger would write outside the whitelist inside the committed transaction with no row count checked. Stage 1 section 4b lists any it finds |
+| D9 | Added: and the 30 September block? | It stays, by the owner's ruling of 2026-09-26: it is never deleted, by anyone, and the op does not depend on it. No refusal reads `time_off`, no stage writes it, and no owner click is required before the sitting. The op never touches `time_off`, which stage 2 proves inside its transaction (every block of the tenant, count and md5, before and after the writes) and stage 3 verdict 11 proves against the audit row. The refusal that read the block, that refusal's control and the verdict that the block was gone are dropped, and the refusals and verdicts after them are renumbered, so the old R06, R26 and verdict 11 are not the ones below |
+| D10 | Added: which sets must be non-empty? | Four of the five untouched sets stage 3 compares by md5: JP(cb)'s Castelo Branco schedule rows and past Castelo Branco appointments (R24), the tenant's whole `clinical_records` table and the past twin rows the op leaves alone (R25). An empty one refuses before the write. The fifth, the clinical records on the rows the op writes, may be empty, by the owner's ruling of 2026-09-26: it reads VACUOUS in stage 1 section 4c, in stage 2's P5 and in stage 3 verdict 19, and the whole table is its control (verdict 18, D18). Section 4c prints all five before stage 2 |
+| D11 | Added: what is the booking clinic of a past pair under ruling (b)? | The NESA row's own clinic (`location_id`), and the person row must sit at the same clinic. A pair to move whose two rows sit at two clinics refuses (R27), as a future one does (R17, D4): which clinic booked the session would be a guess. Section 6 prints both clinics and a `two_clinics` flag |
+| D12 | Added: what if stage 3's roster check would find no real Saturday to check? | Refuses (R26) before the write, for the same reason as D10. A dated Saturday JP(lv) holds with a weekday column other than 6 is not one (Q9) |
+| D13 | Added: what if a table stage 2 writes carries a trigger the system did not create? | Refuses (R28), and stage 2's P4 reads the catalog again and stops too. The tables are the three stage 2 writes: `appointments`, `availability_templates` and `audit_log`. Main has none, but production has run ahead of main before, and such a trigger would write outside the whitelist inside the committed transaction with no row count checked. Stage 1 section 4b lists any it finds |
 | D14 | Added: verdict 10 on a day with nothing to retire | VACUOUS, and allowed: with no JP(cb) row inactive before the op and none retired by it, there is nothing a reactivation could be read against. Verdicts 2 to 5 are VACUOUS on that day too |
-| D15 | Added: the md5 families stage 2 compares inside its own transaction | Every one goes into the audit row, digest (`md5`) and row count (`md5_rows`), and P5 prints each with OK or VACUOUS. A family a refusal already guarantees non-empty STOPS before the write if it reads empty: the appointments and schedule rows outside the op's sets and JP(cb)'s Castelo Branco rows (R25), the written appointments, their clinical records, the tenant's clinical records and the kept twin rows (R27), the tenant's users (R01), its staff installs (R03, R04). The rest may be empty on a real day and print VACUOUS without stopping: the per-ruling written sets (`h`, `x`, `fp`, `fn`) and the written schedule rows (`av_w`), empty when that action has nothing to do, and the tenant's blocks (`to`) and invoices (`inv`), which no ruling promises exist. Each of those two is a whole tenant table, so even empty its md5 still changes on the one write it could suffer, a new row |
+| D15 | Added: the md5 families stage 2 compares inside its own transaction | Every one goes into the audit row, digest (`md5`) and row count (`md5_rows`), and P5 prints each with OK or VACUOUS. A family a refusal already guarantees non-empty STOPS before the write if it reads empty: the appointments and schedule rows outside the op's sets and JP(cb)'s Castelo Branco rows (R24), the tenant's clinical records, the whole table, and the kept twin rows (R25), the tenant's users (R01), its staff installs (R03, R04). The rest may be empty on a real day and print VACUOUS without stopping: the per-ruling written sets (`h`, `x`, `fp`, `fn`), every written appointment (`w_fixed`) and the written schedule rows (`av_w`), empty when that action has nothing to do; the clinical records on the written rows (`cr_att`), which may be none by the owner's ruling of 2026-09-26, with the whole table (`cr_all`) as their control; and the tenant's blocks (`to`) and invoices (`inv`), which no ruling promises exist. Each of those two is a whole tenant table, so even empty its md5 still changes on the one write it could suffer, a new row |
 | D16 | Added: what if JP(lv) is active but not bookable, or flagged a shared resource? | Refuses (R02). The Linda-a-Velha roster lists a practitioner only when active, bookable and not a shared resource (`apps/api/lib/appointments/store.ts`), so the moved Saturdays would never be offered and verdict 8 would FAIL after the write |
 | D17 | Added: which columns of a written appointment does stage 2 hold still? | Every `appointments` column but the four the op writes (`practitioner_id`, `practitioner_2_id`, `status`, `updated_at`), `confirmation_received_at` and `confirmation_channel` included: the written-row fingerprint (`w_fixed`) is taken before the writes and compared after them, and a difference STOPS the op with nothing written. The unit test derives the column list from `packages/db/src/schema.ts` and from the migrations, which must agree, and fails when a column the op does not write is missing from either copy of that fingerprint |
-| D18 | Added: can verdict 11 read 0 because its own read is wrong? | No. It is stage 1's 30 September read, byte for byte (the unit test holds all three stages to one text): ONE tstzrange overlap with the Lisbon day over `time_off` and two synthetic JP(cb) blocks. A wrong user id, a wrong day or the containment form misses a synthetic block, and 11 FAILs. JP(cb)'s blocks at any date, read now, are its second control: with none, the read has nothing to show that it sees rows, and 11 reads VACUOUS, never OK. 11 stays on the allowed-VACUOUS list, because a JP(cb) with no block at all is a real day that no ruling rules out |
+| D18 | Added: how is clinical authorship proven when no row the op writes carries a clinical record? | By the whole table, the owner's ruling of 2026-09-26. Stage 2 takes the count and md5 of every clinical record of the tenant before its writes, requires rows (R25; P5 stops on an empty family), reads both again after the writes inside the same transaction and stops on any difference, and records both in the audit row (`md5.cr_all`, `md5_rows.cr_all`). Stage 3 verdict 18 recomputes them with the same expression and FAILs on a different count or md5, and FAILs when the same md5 less one record still equals the baseline: that control proves the digest sees a record go. Beside them it prints how many records were created or edited after the op, so a clinician's save between the write and the verify reads for what it is when the lead reads the FAIL. Verdict 19, the records on the written rows, reads VACUOUS when there are none, which the block allows; 18 never may |
 | D19 | Added: what if main moves during the sitting? | The owner freezes merges to main for the sitting, and the blocks check that the freeze held. Stages 1 and 2 HALT on a moved main before they load the environment or run psql (the HEAD CHECK), so before the write a moved main writes nothing and ends the sitting. After the write, stage 3 still runs, READ ONLY, from the recorded sha, and prints both shas |
 | D20 | Added: how does stage 3 know the audit row's ruling (c) lists are exact (Q7)? | Stage 2 sets `updated_at` to its transaction time on every appointment it writes, and asserts that the audit row's `created_at` is that same time. Verdicts 26 and 27 find the rows by that stamp, without the lists, and FAIL unless the rows the op cancelled are exactly the listed NESA rows and the rows it gave a practitioner_2 are exactly the listed person rows, each naming its NESA. Rulings (a) and (b) rows are set aside by their own recorded ids, because they keep whatever status and practitioner_2 they had |
 
@@ -130,7 +138,7 @@ with the tenant taken from JP(cb)'s row).
 NESA over its own window (stage 2 P6 asserts it for every pair). After it the NESA row
 is cancelled and no longer holds anything, and the person row, still live and not a
 pedido, names the NESA as practitioner_2 over a window that covers the NESA window
-(stage 2 A2 and stage 3 verdicts 15 to 18). A fixed window in the year 2000 is the
+(stage 2 A2 and stage 3 verdicts 14 to 17). A fixed window in the year 2000 is the
 control: it must read 0 before and after, or the rule is not discriminating.
 
 ## The HEAD CHECK, and running from main
@@ -152,7 +160,7 @@ to paste: the machine runs it inside the blocks, and halts on it.
 - **Stage 1 marks its pass with the recorded sha,** and stage 2 refuses unless that
   mark names the sha it is about to run from.
 - **After stage 2 has written: NEVER run stage 0, 1 or 2 again.** Each refuses once the
-  written marker exists, and R08 refuses in the database regardless. **Stage 3 is READ
+  written marker exists, and R07 refuses in the database regardless. **Stage 3 is READ
   ONLY** and runs from the recorded sha whatever main has done since: it prints whether
   main moved, with both shas, and never stops on it.
 - **A moved main before the write ends the sitting.** Nothing is written, both shas go
@@ -165,13 +173,13 @@ to paste: the machine runs it inside the blocks, and halts on it.
 (
 set -eo pipefail
 DOCPIN=docs/data-op-staff-10-v2.sha256
-SHA1=095ffe9185b3bace41da43b39b9f46096a8a16af68ab057d0d52310c445fe15b
-SHA2=a0929941d340303660eeb07e7fe1861d57ee3b6a3986781543b5266f49c5b422
-SHA3=857ea80004f0227c931b2874adc155206bb42a548a51dee3045dbaf9c78f1991
+SHA1=5a71020e56e4a10e5fed1d5f5ee3c648bbe85f03ecbe1e4201f0b75c3720f27f
+SHA2=55b1f2f8a67b106ce218509bb4f02d915b6055bafec03316ba199d3f518b317c
+SHA3=cf736756a981dce75dde8c2de97735ed8c8f6f5bede8046bf840116c23c3172c
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
 rm -f /tmp/staff10v2-main.sha /tmp/staff10v2-stage1.out /tmp/staff10v2-stage1.ok
@@ -206,11 +214,11 @@ every later stage runs from.
 ```
 (
 set -eo pipefail
-SHA1=095ffe9185b3bace41da43b39b9f46096a8a16af68ab057d0d52310c445fe15b
+SHA1=5a71020e56e4a10e5fed1d5f5ee3c648bbe85f03ecbe1e4201f0b75c3720f27f
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 rm -f /tmp/staff10v2-stage1.out /tmp/staff10v2-stage1.ok
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
@@ -237,30 +245,34 @@ node scripts/assert-production-target.mjs
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f scripts/data/staff-10-v2-1-read.sql 2>&1 | tee /tmp/staff10v2-stage1.out
 grep -q 'STAFF-10 V2 STAGE 1 COMPLETE' /tmp/staff10v2-stage1.out || { echo "STOP: stage 1 did not print its COMPLETE line"; exit 1; }
 RN=$(grep -cE '^[[:space:]]*R[0-9]{2}[[:space:]]*\|' /tmp/staff10v2-stage1.out || true)
-[ "${RN}" = 30 ] || { echo "STOP: stage 1 printed ${RN} refusal lines, not 30"; exit 1; }
+[ "${RN}" = 28 ] || { echo "STOP: stage 1 printed ${RN} refusal lines, not 28"; exit 1; }
 REF=$(grep -E '^[[:space:]]*R[0-9]{2}[[:space:]]*\|.*\|[[:space:]]*REFUSE[[:space:]]*$' /tmp/staff10v2-stage1.out | sed -E 's/^[[:space:]]*(R[0-9]{2}).*/\1/' | tr '\n' ' ' || true)
 [ -z "${REF}" ] || { echo "STOP: stage 1 printed REFUSE on ${REF}. The sitting stops here, and stage 2 would refuse on the same lines. Report them"; exit 1; }
 RD=$(awk -F'|' 'index($1,"s10v2_run_day")>0 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' /tmp/staff10v2-stage1.out)
 [ "${RD}" = "$(TZ=Europe/Lisbon date +%Y-%m-%d)" ] || { echo "STOP: stage 1 read the Lisbon day as ${RD}, and this machine's Lisbon clock disagrees"; exit 1; }
 echo "${REC}" > /tmp/staff10v2-stage1.ok
-echo "STAGE 1 READ, NO REFUSAL. Read sections 2, 2b, 2c, 4, 4b, 6, 7 and 8 before stage 2."
+echo "STAGE 1 READ, NO REFUSAL. Read sections 2, 2b, 4, 4b, 4c, 6, 7 and 8 before stage 2."
 )
 ```
 
 **Read the output before pasting stage 2.** The HEAD CHECK prints both shas, and they
-are equal or the block has already halted. Section 4 prints 30 refusals, `R01` to
-`R30`; the block has already stopped if any reads REFUSE. Section 2c must list nothing:
-the 30 September block is gone. Section 4b must be empty. A refusal that reads
-`VACUOUS` read an empty population: that is not a refusal, and the sections above it
-say which population it was. Section 2b must read `partition holds`. Sections 6, 7 and
-8 are the pairs rulings (b), (c) and (d) act on, by id.
+are equal or the block has already halted. Section 4 prints 28 refusals, `R01` to
+`R28`; the block has already stopped if any reads REFUSE. Section 4b must be empty. A
+refusal that reads `VACUOUS` read an empty population: that is not a refusal, and the
+sections above it say which population it was. Section 4c prints the five untouched
+sets stage 3 compares by md5, each with its rows and OK or VACUOUS: four of them hold
+rows or R24 or R25 has already refused, and the fifth, the clinical records on the rows
+the op writes, may read VACUOUS, which is not a refusal (D10, D18). Section 2b must
+read `partition holds`. Sections 6, 7 and 8 are the pairs rulings (b), (c) and (d) act
+on, by id. Stage 1 reads no block: JP(cb)'s 30 September block stays, and nothing here
+depends on it (D9).
 
 ## STAGE 2: the write
 
 ```
 (
 set -eo pipefail
-SHA2=a0929941d340303660eeb07e7fe1861d57ee3b6a3986781543b5266f49c5b422
+SHA2=55b1f2f8a67b106ce218509bb4f02d915b6055bafec03316ba199d3f518b317c
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 NAMES=(
 s10v2_run_day
@@ -276,7 +288,7 @@ s10v2_count_fcan s10v2_digest_fcan
 )
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+[ -z "$(find /tmp/staff10v2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 [ -n "$(find /tmp/staff10v2-stage1.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not pass in this sitting, or passed over an hour ago. The sitting stops"; exit 1; }
 test -f /tmp/staff10v2-stage1.out || { echo "STOP: stage 1 left no transcript. The sitting stops"; exit 1; }
 [ -n "$(find /tmp/staff10v2-stage1.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's"; exit 1; }
@@ -313,8 +325,8 @@ node scripts/assert-production-target.mjs
 rm -f /tmp/staff10v2-stage2.out
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "${ARGS[@]}" -f scripts/data/staff-10-v2-2-write.sql 2>&1 | tee /tmp/staff10v2-stage2.out
 touch /tmp/staff10v2-written.ok
-grep -q 'STAFF-10 V2 STAGE 2 DONE' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
-grep -q 'STAFF-10 V2 STAGE 2 COMMITTED' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only when the owner or the lead says so"; exit 1; }
+grep -q 'STAFF-10 V2 STAGE 2 DONE' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
+grep -q 'STAFF-10 V2 STAGE 2 COMMITTED' /tmp/staff10v2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 echo "STAFF-10 V2 WRITTEN. Paste stage 3 now."
 )
 ```
@@ -327,8 +339,8 @@ runs, the HEAD CHECK's included. **psql exit 0 means the COMMIT ran and the writ
 stands:** the block touches the written marker at once, before it reads the
 transcript, and the two `STOP:` lines it can print after that point say so in their
 own words. Either one stops the sitting like every other `STOP:`: GREEN reports the
-whole output, never runs stage 0, 1 or 2 again, and stage 3, READ ONLY, runs only when
-the owner or the lead says so. The file pins `client_min_messages = notice`, so a
+whole output, never runs stage 0, 1 or 2 again, and stage 3, READ ONLY, runs only on
+the owner's or the lead's word. The file pins `client_min_messages = notice`, so a
 quieter role or database default cannot hide the step lines. The NOTICE lines name
 each step: `P1` the sets, `P2` each refusal with its control, `P3` the run day and the
 carries, `P4` the triggers the system did not create (none, or it stops), `P5` the
@@ -344,15 +356,15 @@ statement, also with exit 3. A `STOP:` the block prints exits 1: before psql not
 was written, and after it (the two lines above) the write stands. Any other exit (psql
 exits 2 on a lost connection, possibly during the COMMIT) leaves open whether the write
 stands. In every case GREEN reports the exit code and the whole output, and stage 3,
-READ ONLY, runs only when the owner or the lead says so; its verdict 1 answers whether
-the write stands. R08 refuses a second write regardless.
+READ ONLY, runs only on the owner's or the lead's word; its verdict 1 answers whether
+the write stands. R07 refuses a second write regardless.
 
-## STAGE 3: the verify. READ ONLY, re-issuable
+## STAGE 3: the verify. READ ONLY
 
 ```
 (
 set -eo pipefail
-SHA3=857ea80004f0227c931b2874adc155206bb42a548a51dee3045dbaf9c78f1991
+SHA3=cf736756a981dce75dde8c2de97735ed8c8f6f5bede8046bf840116c23c3172c
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -381,7 +393,7 @@ grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/staff10v2-stage3.out || { echo "ST
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/staff10v2-stage3.out && { echo "STOP: a stage 3 verdict read FAIL"; exit 1; }
 NV=$(grep -cE '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*(OK|VACUOUS|FAIL)[[:space:]]*$' /tmp/staff10v2-stage3.out || true)
 [ "${NV}" = 27 ] || { echo "STOP: stage 3 printed ${NV} verdicts, not 27"; exit 1; }
-BAD=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/staff10v2-stage3.out | sed -E 's/^[[:space:]]*([0-9]+)[[:space:]]*\|.*/\1/' | grep -vxE '2|3|4|5|6|10|11|12|13|14|15|16|17|18|23|24|25|26|27' | tr '\n' ' ' || true)
+BAD=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/staff10v2-stage3.out | sed -E 's/^[[:space:]]*([0-9]+)[[:space:]]*\|.*/\1/' | grep -vxE '2|3|4|5|6|10|11|12|13|14|15|16|17|19|23|24|25|26|27' | tr '\n' ' ' || true)
 [ -z "${BAD}" ] || { echo "STOP: VACUOUS on ${BAD}, which the op never allows to be vacuous"; exit 1; }
 PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/staff10v2-stage3.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
 echo "STAFF-10 V2 VERIFIED: ${PROFILE}. The RECEPTION section above lists each future pair by id."
@@ -391,22 +403,26 @@ echo "STAFF-10 V2 VERIFIED: ${PROFILE}. The RECEPTION section above lists each f
 **EXPECT: `verifying from the recorded sha <sha>`, whether main moved, no FAIL, 27
 verdicts, a SUMMARY row, and VACUOUS only on arms whose set can legitimately be empty
 on the day**, which the block enforces: 2 to 6 (a schedule class with nothing in it),
-10 (nothing retired and no JP(cb) row inactive before, D14), 11 (JP(cb) holds no block
-at all, so the read has nothing to show it sees rows, D18), 12 (the tenant holds no
-block), 13 to 18 (a ruling with nothing to do), 23 (nothing written), 24 and 25 (no
+10 (nothing retired and no JP(cb) row inactive before, D14), 11 (the tenant holds no
+block), 12 to 17 (a ruling with nothing to do), 19 (no written row carries a clinical
+record: verdict 18 is its control, D18), 23 (nothing written), 24 and 25 (no
 practitioner_2 or no confirmed row to compare), 26 and 27 (no future pair). **Never
-VACUOUS: 1, 7, 8, 9, 19, 20, 21, 22.** The four md5 comparisons (9, 19, 20, 21) are
-the untouched sets, and an empty one refuses before the write (R25, R27), so after it
-each of them always compares something; verdict 8's Saturday is guaranteed the same
-way (R28), and its JP(lv) listing by R02. The block prints the profile; the profile
-moves with the data, so no exact profile is asserted for production. After the
+VACUOUS: 1, 7, 8, 9, 18, 20, 21, 22.** Those four md5 comparisons (9, 18, 20, 21) read
+untouched sets, and an empty one refuses before the write (R24, R25), so after it each
+of them always compares something; verdict 8's Saturday is guaranteed the same way
+(R26), and its JP(lv) listing by R02. Verdict 18 also prints how many clinical records
+were created or edited after the op: a clinician's save between the write and this
+read FAILs 18 honestly, and that count is what the lead reads it against (D18). The
+block prints the profile; the profile moves with the data, so no exact profile is
+asserted for production. After the
 SUMMARY, stage 3 prints the RECEPTION section: each future pair after the write, ids
 only, which stays in `/tmp/staff10v2-stage3.out` until stage 3 is pasted again.
 
 ## What every refusal and every verdict means
 
-**Stage 1 section 4 and stage 2 P2, the same 30 lines.** `n` must be 0. `control` is
-the population the predicate read, so a 0 that saw nothing prints VACUOUS:
+**Stage 1 section 4 and stage 2 P2, the same 28 lines.** `n` must be 0. `control` is
+the population the predicate read, so a 0 that saw nothing prints VACUOUS. No refusal
+reads `time_off` (D9):
 
 | Code | Refuses when |
 |---|---|
@@ -415,37 +431,35 @@ the population the predicate read, so a 0 that saw nothing prints VACUOUS:
 | R03 | JP(cb) is not installed at Castelo Branco |
 | R04 | JP(lv) is not installed at Linda-a-Velha |
 | R05 | a Saturday to move already exists identically on JP(lv), active or not (`availability_templates_dedupe_uq`, NULLS NOT DISTINCT). Counted over the MOVE set only, so a covered Saturday no longer refuses |
-| R06 | a JP(cb) block overlaps the Lisbon day 30 September. The owner removes that block in the app before the sitting, so this refuses while it is still there, whether it starts and ends on the day, starts the day before, or covers it among other days. The predicate is ONE tstzrange overlap of `[starts_at, ends_at)` with the Lisbon day, Lisbon midnight to the next Lisbon midnight. Section 2c names each block by id, Lisbon start and end, and reason. Its control is the two synthetic JP(cb) blocks the same read matches (R26) |
-| R07 | the original STAFF-10 write has already run |
-| R08 | this v2 write has already run |
-| R09 | an active JP(cb) Linda-a-Velha row is UNCLASSIFIED, or sits in other than exactly one class. Section 2b is the partition line |
-| R10 | the shared resources are not exactly the two NESA rows, both active |
-| R11 | a booking clinic of a past pair to move, or of a future pair, has no installed NESA or more than one |
-| R12 | an appointment at Linda-a-Velha names JP(cb) as practitioner_2 |
-| R13 | a ruling (a) row already names JP(lv) as practitioner_2 |
-| R14 | ruling (a) would put two overlapping confirmed rows on JP(lv) (`appointments_no_double_confirmed`, 0061). Its control is the confirmed rows ruling (a) moves: with none no collision is possible, and the line prints VACUOUS |
-| R15 | ruling (b) would put two overlapping confirmed rows on one NESA row. Its control is the confirmed rows ruling (b) moves, VACUOUS as for R14 |
-| R16 | a future pair's person row already has a practitioner_2 |
-| R17 | a future pair's person window does not cover its NESA window |
-| R18 | a future pair's NESA row is not shared, active and installed at the booking clinic, or the two rows sit at two clinics |
-| R19 | a future pair's person row is an unconfirmed pedido |
-| R20 | a future pair's NESA row has a clinical record, an invoice or a `pack_instance_id` |
-| R21 | a future pair starts before now plus two hours |
-| R22 | a future row sits in more than one live pair |
-| R23 | a future pair's NESA row is an unconfirmed pedido |
-| R24 | every action set is empty |
-| R25 | an untouched set stage 3 compares by md5 is empty: JP(cb) has no past Castelo Branco appointment, or no Castelo Branco schedule row. Refused before the write, so verdicts 9 and 21 can never be vacuous after it |
-| R26 | the 30 September read missed a synthetic JP(cb) block it must match: one from 09:00 to 20:00 on the day, one from 20:00 the day before to 09:00 the day after. A read that misses either (a wrong user id, a wrong day, the containment form) would miss a real block too, and R06 would read 0 over it. Its control is the two synthetic blocks offered |
-| R27 | an untouched set stage 3 compares by md5 is empty: no row the op writes carries a clinical record, or no past twin row is left untouched. Refused before the write, so verdicts 19 and 20 can never be vacuous after it |
-| R28 | the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha real Saturday from today (the date a Saturday and the weekday column 6, Q9) and no Saturday moves to it, so verdict 8 could not run. Refused before the write |
-| R29 | a past pair ruling (b) would move has its two rows at two clinics, so which clinic booked it is a guess (D11). Its control is every past pair ruling (b) acts on |
-| R30 | a table stage 2 writes (`appointments`, `availability_templates`, `audit_log`) carries a trigger the system did not create (D13). Its control is every trigger on those tables, the constraint triggers of each foreign key included, so an empty catalog read prints VACUOUS. Section 4b lists what it found |
+| R06 | the original STAFF-10 write has already run |
+| R07 | this v2 write has already run |
+| R08 | an active JP(cb) Linda-a-Velha row is UNCLASSIFIED, or sits in other than exactly one class. Section 2b is the partition line |
+| R09 | the shared resources are not exactly the two NESA rows, both active |
+| R10 | a booking clinic of a past pair to move, or of a future pair, has no installed NESA or more than one |
+| R11 | an appointment at Linda-a-Velha names JP(cb) as practitioner_2 |
+| R12 | a ruling (a) row already names JP(lv) as practitioner_2 |
+| R13 | ruling (a) would put two overlapping confirmed rows on JP(lv) (`appointments_no_double_confirmed`, 0061). Its control is the confirmed rows ruling (a) moves: with none no collision is possible, and the line prints VACUOUS |
+| R14 | ruling (b) would put two overlapping confirmed rows on one NESA row. Its control is the confirmed rows ruling (b) moves, VACUOUS as for R13 |
+| R15 | a future pair's person row already has a practitioner_2 |
+| R16 | a future pair's person window does not cover its NESA window |
+| R17 | a future pair's NESA row is not shared, active and installed at the booking clinic, or the two rows sit at two clinics |
+| R18 | a future pair's person row is an unconfirmed pedido |
+| R19 | a future pair's NESA row has a clinical record, an invoice or a `pack_instance_id` |
+| R20 | a future pair starts before now plus two hours |
+| R21 | a future row sits in more than one live pair |
+| R22 | a future pair's NESA row is an unconfirmed pedido |
+| R23 | every action set is empty |
+| R24 | an untouched set stage 3 compares by md5 is empty: JP(cb) has no past Castelo Branco appointment, or no Castelo Branco schedule row. Refused before the write, so verdicts 9 and 21 can never be vacuous after it |
+| R25 | an untouched set stage 3 compares by md5 is empty: the tenant holds no clinical record at all (the whole table, the control of the per-row compare, D18), or no past twin row is left untouched. Refused before the write, so verdicts 18 and 20 can never be vacuous after it. The clinical records on the rows the op writes are NOT refused on: that set may be empty, by the owner's ruling of 2026-09-26, and prints VACUOUS in stage 1 section 4c, in stage 2's P5 and in verdict 19 |
+| R26 | the roster check would have no real Saturday: JP(lv) holds no dated Linda-a-Velha real Saturday from today (the date a Saturday and the weekday column 6, Q9) and no Saturday moves to it, so verdict 8 could not run. Refused before the write |
+| R27 | a past pair ruling (b) would move has its two rows at two clinics, so which clinic booked it is a guess (D11). Its control is every past pair ruling (b) acts on |
+| R28 | a table stage 2 writes (`appointments`, `availability_templates`, `audit_log`) carries a trigger the system did not create (D13). Its control is every trigger on those tables, the constraint triggers of each foreign key included, so an empty catalog read prints VACUOUS. Section 4b lists what it found |
 
 **The classes (stage 1 section 2).** `is_dated` has one definition in every file:
 `valid_from IS NOT NULL AND valid_until IS NOT NULL AND valid_from = valid_until`. It
 is never NULL, so no row falls out of a class through a NULL bound; that is the defect
 that made the original P5b stop on `e37ba817` while the original R8 read 0. The classes
-are written as separate predicates, mutually exclusive by construction, and R09 proves
+are written as separate predicates, mutually exclusive by construction, and R08 proves
 each row sets exactly one:
 
 - `retire_covered`: dated, and JP(lv) holds an identical active row;
@@ -471,14 +485,14 @@ names a block: the op writes none.
 8. on the next real Saturday JP(lv) holds a dated Linda-a-Velha row (the date a Saturday and the weekday column 6), the app's own predicates (`apps/api/lib/appointments/store.ts`: the user active, bookable and not a shared resource, as the roster reads it; the schedule row active, its weekday column the day's weekday and its window covering the day, as the slot query and the confirm guard read it) list JP(lv) (the positive control) and JP(cb) holds no active row covering that day, whatever its weekday column. The day is picked from JP(lv)'s own rows, so the schedule half of the control holds by construction; the user half does not, and a JP(lv) the roster would not list FAILs here;
 9. JP(cb)'s Castelo Branco schedule rows unchanged by md5;
 10. JP(cb)'s inactive rows are exactly the ones before plus the retired ones (VACUOUS when both are none, D14);
-11. no JP(cb) block overlaps the Lisbon day 30 September: the owner's removal held. It is R06's read, byte for byte, with its controls: both synthetic blocks match (FAIL if not), and JP(cb)'s blocks at any date read now are above 0 (VACUOUS if not, D18);
-12. `time_off` is unchanged by the op: every block of the tenant, count and md5, equals the baseline stage 2 recorded in the audit row (FAIL if not), and the same md5 less one block differs from that baseline, so the digest sees a block go (FAIL if not); VACUOUS when the tenant held no block;
-13. every ruling (a) id is on JP(lv), at Linda-a-Velha, before the run day;
-14. every ruling (b) id is on its recorded target, installed at its clinic;
-15. and 16. every future person row names its NESA as practitioner_2, is live and covers the window; every future NESA row is cancelled;
-17. the machine hour: for every future pair a live row other than the cancelled NESA row holds that NESA over the whole NESA window; the control window reads 0;
-18. the therapist hour: every future person row is still live and not a pedido;
-19. the clinical records on every written appointment are unchanged by md5;
+11. `time_off` is unchanged by the op: every block of the tenant, JP(cb)'s 30 September block among them, count and md5, equals the baseline stage 2 recorded in the audit row (FAIL if not), and the same md5 less one block differs from that baseline, so the digest sees a block go (FAIL if not); VACUOUS when the tenant held no block. This is the check that the op never touches a block (D9);
+12. every ruling (a) id is on JP(lv), at Linda-a-Velha, before the run day;
+13. every ruling (b) id is on its recorded target, installed at its clinic;
+14. and 15. every future person row names its NESA as practitioner_2, is live and covers the window; every future NESA row is cancelled;
+16. the machine hour: for every future pair a live row other than the cancelled NESA row holds that NESA over the whole NESA window; the control window reads 0;
+17. the therapist hour: every future person row is still live and not a pedido;
+18. the tenant's clinical records, the whole table, count and md5, equal the baseline stage 2 recorded in the audit row (FAIL if not), and the same md5 less one record differs from that baseline, so the digest sees a record go (FAIL if not). Never VACUOUS: R25 refused an empty table before the write. The observed column also counts the records created or edited after the op (D18);
+19. the clinical records on every written appointment are unchanged by md5; VACUOUS when no written appointment carries one, which the block allows, with verdict 18 as their control;
 20. the past twin rows no write touched are unchanged by md5;
 21. JP(cb)'s past Castelo Branco appointments are unchanged by md5;
 22. the appointment total, counting rows created up to the op, equals the op's before-count;
@@ -488,60 +502,25 @@ names a block: the op writes none.
 26. ruling (c): the NESA rows the audit row's `f_pairs` lists are exactly the rows the op cancelled, found by the op's stamp and not by the list (D20);
 27. ruling (c): the person rows it lists are exactly the rows the op gave a practitioner_2, each naming its NESA, found the same way.
 
-**Stage 3 is re-issuable, and its answers move with the clinic.** A reception edit
-after the sitting can change 12, 15 to 23, 26 and 27 honestly: a future person row
-cancelled later FAILs 15, 17 and 18, and 26 or 27 with them; a block the clinic adds or
-edits FAILs 12, and a JP(cb) block added on 30 September FAILs 11 too. Read a later
-FAIL against the audit row's time before calling it a defect of the op.
+**Stage 3 writes nothing, and its answers move with the clinic.** Pasting it again
+is the owner's or the lead's call, never the runner's (the halt rule). An edit after
+the sitting can change 11, 14 to 23, 26 and 27 honestly: a future person row cancelled
+later FAILs 14, 16 and 17, and 26 or 27 with them; a block the clinic adds or edits
+FAILs 11; a clinical record created or saved after the write FAILs 18, and its observed
+column counts those records. Read a later FAIL against the audit row's time before
+calling it a defect of the op.
 
 ## Rehearsal
 
 ### These files: NOT RUN YET
 
-**PLACEHOLDER, TO BE REPLACED BY THE RE-RUN. The database rehearsal has not run on
-the files this document pins, and until it has, this op is not READY-TO-APPLY.** The
-throwaway container was not available to the authoring lane when these files were
-written, so nothing that reads or writes a database has run on them. What has run on
-these bytes: the unit test, `scripts/staff-10-v2-data-op.test.mjs`, which holds their
-properties and was run red against a seeded wrong copy for each new one; and the
-kit's 21 arms that need no database (stage 0 and its pins, the HEAD CHECK halts in
-stages 1 and 2, the refusals on a missing or foreign stage 1 mark, the written marker,
-a missing recorded sha, and stage 3's report of a moved main before its psql), run
-under `zsh -f` on the commit that carries this sentence, the review pass fix whose
-subject begins `STAFF-10 v2: fix the review pass`, every one exiting as wanted.
-
-The kit for the re-run is ready in the authoring lane's scratchpad, `b7-rehearsal/`
-(not committed, as for 0090 to 0093): a fixture with no 30 September block, the state
-after the owner's removal; the earlier arms that still apply; a new arm for every shape
-in the table below; and one runner that makes a new database per run and a simulated
-origin whose `main` carries the commit under test, extracts every block from this
-document, and substitutes exactly four things per block (`/tmp/`, the `cd`, the
-environment line and the target guard's invocation), each counted. The re-run replaces
-this placeholder with the kit's sha256s, the substitution counts, each arm's exit
-against the one wanted, the happy path's stage 3 profile, and the commit it ran on.
-
-| New arm, on the restructured files | Wanted |
-|---|---|
-| a JP(cb) block that starts and ends on 30 September | stage 1 exit 1, REFUSE on R06; stage 2 with the stage 1 mark forced, exit 3, `STOP: R06 refuses`; database unchanged |
-| a JP(cb) block from 29 September 20:00 to 30 September 10:00 | the same, on R06 |
-| a JP(cb) block across several days that covers 30 September | the same, on R06 |
-| a JP(cb) block on 29 September ending 23:59 Lisbon | stage 1 exit 0, no REFUSE |
-| a JP(cb) block from Lisbon midnight to Lisbon midnight on 29 September | stage 1 exit 0: the block ends where the day begins, and a range's end is exclusive |
-| a JP(lv) block on 30 September | stages 1, 2 and 3 exit 0; verdict 12 OK |
-| a copy of stage 1 whose 30 September read names JP(lv), then a copy with the containment form | stage 1 exit 1, REFUSE on R26; stage 2 from the same copy, exit 3, `STOP: R26 refuses` |
-| the happy path, no block, pasted as an interactive zsh reads it | stages 0 to 3 exit 0; the fixture's blocks equal by md5 before and after; stage 3 every verdict OK |
-| main moved between stage 0 and stage 1 | stage 1 exit 1, `STOP: main moved since stage 0`, before psql; database untouched |
-| main moved between stage 1 and stage 2 | stage 2 exit 1, the same STOP, before psql; nothing written |
-| main moved after stage 2 | stage 3 exit 0 from the recorded sha, `MAIN MOVED since stage 0` with both shas |
-| main carries a stage file that is not its pin | stage 0 exit 1, `STOP: stage 1 on disk is not the approved file`; no sha recorded |
-| the worktree's copy of a pinned file edited after stage 0 | stage 1 exit 1, `STOP: the apply worktree is not clean` |
-| stage 1 passed on another recorded sha | stage 2 exit 1, `STOP: stage 1 did not pass on the recorded sha` |
-| stage 0 again after the write | exit 1, `STOP: stage 2 has ALREADY WRITTEN` |
-| after the write, a JP(cb) block added on 30 September | stage 3 exit 1, FAIL on 11 and 12 |
-| after the write, a block of the tenant edited | stage 3 exit 1, FAIL on 12 |
-| after the write, a live appointment cancelled with the op's stamp | stage 3 exit 1, FAIL on 26 |
-| after the write, a row given a practitioner_2 with the op's stamp | stage 3 exit 1, FAIL on 27 |
-| JP(cb) holds no block at all | stages 1, 2 and 3 exit 0, verdict 11 VACUOUS, which the block allows |
+**PLACEHOLDER, REPLACED BY THE RECORD OF THE FULL RUN. The database rehearsal has not
+run on the files this document pins.** The kit, `b7-rehearsal/` in the authoring lane's
+scratchpad (not committed, as for 0090 to 0093), is being adapted to the owner's rulings
+of 2026-09-26: a fixture that keeps JP(cb)'s 30 September block, as production will on
+the day; the refusal arms renumbered, the arms of the dropped refusals and verdict
+retired; and new arms for the empty per-row clinical record set, the whole-table
+clinical records control, and the 30 September block present and untouched.
 
 The DB-gated suite `apps/web/lib/scheduling/staff-10-v2-option-a-conflict.db.test.ts`
 is unchanged but for its comments: the op is no longer called held, and the two ruling
@@ -549,12 +528,15 @@ is unchanged but for its comments: the op is no longer called held, and the two 
 
 ### The previous files, at `8e65d777`, kept as history
 
-**Not evidence for these files.** Everything below was measured on the op as it stood
-at `8e65d777`: its stage 2 removed the 30 September block itself (its write `W3`, so its
-later writes were `W4` to `W7`, now `W3` to `W6`) and refused a longer one (the old
-R26); it carried a `dblk` carry and copied the block into the audit row (the old
-verdicts 11 and 12); and every block took its head from the op's branch. It stays as the
-record of the arms the re-run carries forward for the shapes that did not change.
+**Not evidence for these files, and its refusal and verdict numbers are that head's
+own, not the ones above.** The block removal it rehearsed is ruled out: by the owner's
+ruling of 2026-09-26 the 30 September block is never deleted, by anyone. Everything
+below was measured on the op as it stood at `8e65d777`: its stage 2 removed the 30
+September block itself (its write `W3`, so its later writes were `W4` to `W7`, now
+`W3` to `W6`) and refused a longer one (that head's R26); it carried a `dblk` carry and
+copied the block into the audit row (that head's verdicts 11 and 12); and every block
+took its head from the op's branch. It stays as the record of the arms the re-run
+carries forward for the shapes that did not change.
 
 **Where it ran.** The throwaway container `supabase_db_OsteoJP-solo-rehearsal`
 (Postgres 17, `127.0.0.1:55522`), never an existing database: each run makes a NEW one,
@@ -790,22 +772,22 @@ included.
 Not authored here, and exact if it is ever wanted: the audit row carries every retired
 and moved schedule id, every ruling (a) id, every ruling (b) id with its from and to
 NESA, and every ruling (c) pair with its NESA. The op writes no `time_off` row, so it
-leaves no block to restore: the 30 September block was removed by the owner in the app
-before the sitting, and putting it back would be his own edit there. An undo would
-need its own authoring, rehearsal and ruling.
+leaves no block to restore, and JP(cb)'s 30 September block stays where it is. An undo
+would need its own authoring, rehearsal and ruling.
 
 ## What this does NOT do
 
-- **It writes no clinical record and moves no authorship.** `clinical_records` is
-  compared by md5 inside stage 2 and again by stage 3.
+- **It writes no clinical record and moves no authorship.** The tenant's whole
+  `clinical_records` table is compared by count and md5 inside stage 2 and again by
+  stage 3 (verdict 18), and the records on the rows it writes by md5 (verdict 19).
 - **It sends nothing.** A raw status write emits no staff notification and no patient
   message, and the reminder dispatcher sends only for `scheduled` or `confirmed`
   (`REMINDABLE_STATUSES`, `apps/web/lib/reminders/dispatch.ts`), so a reminder already
   queued for a cancelled NESA row is dropped when it wakes.
 - **It does not touch JP(cb)'s future Linda-a-Velha appointments.** They stay on
   JP(cb) and are reception's.
-- **It writes no block.** No stage writes `time_off`, and no stage file holds a DELETE,
-  DROP or TRUNCATE statement. The 30 September block is the owner's to remove in the
-  app before the sitting; the op refuses while it is there and leaves every other
-  JP(cb) block as it is.
+- **It writes no block, and depends on none.** No stage writes `time_off`, no refusal
+  reads it, and no stage file holds a DELETE, DROP or TRUNCATE statement. JP(cb)'s 30
+  September block stays, by the owner's ruling, and the op leaves it and every other
+  block as it is. No owner click is required before the sitting.
 - **It does not add a database table** for provenance: the listing and the audit row are it.
