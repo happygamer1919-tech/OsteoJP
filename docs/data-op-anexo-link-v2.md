@@ -24,8 +24,8 @@ nothing else; the section "Rehearsal" says what has run on these exact bytes.
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001`. The op links in the tenant that owns this row, and no other |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002`. R01 refuses unless it sits in the same tenant |
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/anexo2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
-| Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `eb1d905b75bb013534cb5fdc793c6839035b6d67b6a386e4165327e8f3f68740` |
-| Stage 2 | `scripts/data/anexo-link-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `c030d13d095c6b0254c453243e86024cf88f5435291015f6126a740a74e525ff` |
+| Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50` |
+| Stage 2 | `scripts/data/anexo-link-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5` |
 | Stage 3 | `scripts/data/anexo-link-v2-3-verify.sql`, READ ONLY, 12 verdicts and a SUMMARY row, sha256 `80b6ab24d899bfe02f5578f5a3ae31a3533ad752efb851ed3e8fe99469f4cb89` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
 | This document | `docs/data-op-anexo-link-v2.md`, pinned by `docs/data-op-anexo-link-v2.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
@@ -118,7 +118,7 @@ the files, their pins and the rehearsal.
 | Q2 | May GREEN run it at all? The owner ruled the scope on 2026-09-13, before the tiers, and the op is on no ruled Tier C list | **Held.** Nothing runs until the owner rules it onto the Tier C list and his dispatch names these three files and this document's sha256, after DUR-01. Recommended first sitting: stage 0 and stage 1 alone, READ ONLY, so section 2 shows the link set and every class it leaves alone before anyone rules on stage 2 |
 | D1 | Added: which tenant? | The tenant that owns the Linda-a-Velha row, and R01 refuses unless the Castelo Branco row sits in it. The original files took whatever tenant the candidates were in and refused more than one; here another tenant's named documents are class `other_tenant`, listed, never linked, and compared by md5 |
 | D2 | Added: a named file to link that resolves to more than one live document row? | Refuses (R05), whether the other row is unlinked, already on that registo or on another: which row the cell names would be a guess, and a link would show the file twice on one registo or put it on two. A soft-deleted row at the same path does not count: Q1 leaves it alone, and the live row is linked |
-| D3 | Added: a staging row whose registo is not there? | Class `no_registo`, listed, never linked. The original files dropped it silently in an inner join |
+| D3 | Added: a staging row whose registo is not there? | Class `no_registo`, listed, never linked. A document its file names is left alone like every named document outside the link set: recorded in the audit row and compared by md5 (verdict 10). The original files dropped it silently in an inner join |
 | D4 | Added: a registo in another tenant than its staging row? | Refuses (R08) |
 | D5 | Added: what if there is nothing to link? | Refuses (R09), so every stage 3 verdict but two always compares something, and no audit row is written for a no-op, as the original stage 2 already refused |
 | D6 | Added: what if a table stage 2 writes carries a trigger the system did not create? | Refuses (R12), and stage 2's P4 reads the catalog again and stops too. Main has none on `attachments` or `audit_log`; production has run ahead of main before |
@@ -159,8 +159,8 @@ machine runs it inside the blocks, and halts on it.
 (
 set -eo pipefail
 DOCPIN=docs/data-op-anexo-link-v2.sha256
-SHA1=eb1d905b75bb013534cb5fdc793c6839035b6d67b6a386e4165327e8f3f68740
-SHA2=c030d13d095c6b0254c453243e86024cf88f5435291015f6126a740a74e525ff
+SHA1=d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50
+SHA2=926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5
 SHA3=80b6ab24d899bfe02f5578f5a3ae31a3533ad752efb851ed3e8fe99469f4cb89
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
@@ -200,7 +200,7 @@ later stage runs from.
 ```
 (
 set -eo pipefail
-SHA1=eb1d905b75bb013534cb5fdc793c6839035b6d67b6a386e4165327e8f3f68740
+SHA1=d0f79bd2ae7c0f5646728d352d32ec98d60296409921fae253d70fbd6c15bc50
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -254,7 +254,7 @@ leaves alone by id. Section 3 holds the two carries stage 2 consumes; nobody typ
 ```
 (
 set -eo pipefail
-SHA2=c030d13d095c6b0254c453243e86024cf88f5435291015f6126a740a74e525ff
+SHA2=926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 NAMES=(
 anexo_v2_count
@@ -419,7 +419,8 @@ from one with a member swapped; the digest can.
 
 **The md5 families stage 2 compares inside its transaction,** each recorded in the audit row
 with its row count: `w_fixed` (every column of a linked document but `clinical_record_id`),
-`att_rest` (every other attachment, every tenant), `excl` (the named documents left alone),
+`att_rest` (every other attachment, every tenant), `excl` (the named documents left alone: every
+named document outside the link set, whatever its class),
 `cr_all` and `cr_t` (every clinical record, and the target registos), `ep_all` and `ep_t`
 (every episode, and the target registos' episodes), `stg` (every staging row) and `cons`
 (every consultation). `w_fixed`, `cr_t`, `cr_all` and `stg` STOP the op when empty, because
@@ -441,18 +442,24 @@ empty table's md5 changes on the one write it could suffer, a new row.
 11. the target registos' episodes are unchanged by md5, with those read now as the control (VACUOUS when they have none);
 12. every linked document still shows on its patient's Documentos tab: it has a patient and its path is under the tenant's imported prefix, the rule `documentosRowSql` reads (`apps/web/lib/patients/documents.ts`, #1310).
 
-**Stage 3 is re-issuable, and its answers move with the clinic.** A later staff edit can
-change 5, 6, 10, 11 and 12 honestly: a linked document soft deleted from Documentos FAILs 5. A
-later patient merge (`merge_patients`, which writes its own `patient.merge` audit row)
-re-points a target registo, its episode and its documents to the surviving patient: that FAILs
-5, 8 and 11 and leaves 6 holding, and it is the one update the immutability trigger lets
-through on a locked registo. **Verdict 7 never moves honestly, and 8 moves only with a merge.**
-Every target registo is locked (R07), and `enforce_clinical_record_immutability`
-(`0001_rls.sql`, relaxed in `0005` for a merge's `patient_id` alone) refuses every other
-update of a locked row, a signature included. So a FAIL on 7, or on 8 with no `patient.merge`
-row for that registo's patient since the op, is never a staff edit: the trigger was bypassed, or
-the audit row stage 3 reads is not the one stage 2 wrote. Report it as an integrity breach. Read
-any other later FAIL against the audit row's time before calling it a defect of the op.
+**Stage 3 is re-issuable, and its answers move with the clinic and with the schema.** A later
+staff edit can change 5, 6, 10, 11 and 12 honestly: a linked document soft deleted from
+Documentos FAILs 5. A later patient merge (`merge_patients`, which writes its own
+`patient.merge` audit row) re-points every registo, episode and document of the merged patient
+to the surviving patient: when that patient owns a target registo it FAILs 5 and 8, and 11 when
+that registo has an episode; when it owns a named document the op left alone it FAILs 10; and it
+leaves 6 holding. It is the one update the immutability trigger lets through on a locked
+registo. A later migration can FAIL 8, 10 and 11 with no row written at all: their md5s are over
+whole rows, so a column added to, dropped from or retyped in `clinical_records`, `attachments`
+or `clinical_episodes` moves them. **Verdict 7 never moves honestly, and 8 moves only with a
+merge or a migration.** Every target registo is locked (R07), and
+`enforce_clinical_record_immutability` (`0001_rls.sql`, relaxed in `0005` for a merge's
+`patient_id` alone) refuses every other update of a locked row, a signature included. So a FAIL
+on 7, or on 8 with neither a `patient.merge` row for that registo's patient nor a migration that
+changed the columns of `clinical_records` since the op, is never a staff edit: the trigger was
+bypassed, or the audit row stage 3 reads is not the one stage 2 wrote. Report it as an integrity
+breach. Read any other later FAIL against the audit row's time before calling it a defect of the
+op.
 
 ## Rehearsal
 

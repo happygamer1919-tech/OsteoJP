@@ -205,13 +205,16 @@ lnk AS (
     FROM cls c
    WHERE c.f_link
 ),
--- THE DOCUMENTS THE OP LEAVES ALONE, by class: named, but already linked here,
--- linked to another registo, soft deleted, or in another tenant. Stage 2 records
--- their ids and an md5 of their rows, and stage 3 verdict 10 compares it.
+-- THE DOCUMENTS THE OP LEAVES ALONE: every named document outside the link set,
+-- whatever its class (already linked here, linked to another registo, soft
+-- deleted, in another tenant, or named by a registo that is not there). The
+-- complement of the link class, not a list of classes, so no class that names a
+-- document can drop out of it. Stage 2 records their ids and an md5 of their
+-- rows, and stage 3 verdict 10 compares it.
 excl AS (
   SELECT DISTINCT c.label, c.attachment_id
     FROM cls c
-   WHERE (c.f_here OR c.f_else OR c.f_del OR c.f_other) AND c.attachment_id IS NOT NULL
+   WHERE NOT c.f_link AND c.attachment_id IS NOT NULL
      AND c.attachment_id NOT IN (SELECT l.attachment_id FROM lnk l)
 ),
 -- ---------------------------------------------------------------------------

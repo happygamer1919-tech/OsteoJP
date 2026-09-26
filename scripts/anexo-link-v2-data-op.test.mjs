@@ -116,8 +116,43 @@ test("stage 1 and stage 3 write nothing, and each runs in a READ ONLY transactio
   }
 });
 
+/**
+ * The columns every UPDATE in lexed SQL sets, as [table, [target, ...]]. The SET
+ * list is read to its end: until FROM, WHERE or RETURNING at depth 0, a closing
+ * parenthesis that ends a CTE, or the statement's semicolon, and split on the
+ * commas at depth 0. So a second column on a continuation line, or a row
+ * constructor SET (a, b) = (...), is seen, and a subquery inside a value neither
+ * ends the list nor splits it. Strings are already blanked by lexSql.
+ */
+function updateTargets(lexed) {
+  const out = [];
+  for (const m of lexed.matchAll(/\bupdate\s+([a-z_.]+)(?:\s+(?!set\b)[a-z_]+)?\s+set\b/gi)) {
+    const parts = [];
+    let cur = "";
+    for (let i = m.index + m[0].length, depth = 0; i < lexed.length; i++) {
+      const ch = lexed[i];
+      if (depth === 0 && (ch === ";" || (/^(from|where|returning)\b/i.test(lexed.slice(i, i + 10)) && /[^A-Za-z0-9_]/.test(lexed[i - 1])))) break;
+      if (ch === "(") depth++;
+      else if (ch === ")" && depth-- === 0) break;
+      if (ch === "," && depth === 0) { parts.push(cur); cur = ""; continue; }
+      cur += ch;
+    }
+    parts.push(cur);
+    out.push([m[1].toLowerCase(), parts.map((p) => p.split("=")[0].replace(/\s+/g, " ").trim().toLowerCase())]);
+  }
+  return out;
+}
+
 test("stage 2's writes are exactly the whitelist: one column of attachments and one audit row", () => {
+  // The SET reader, on the shapes it must read right both ways, first.
+  const targets = (sql) => updateTargets(lexSql(sql).code);
+  assert.deepEqual(targets("UPDATE public.a SET x = t.r\n    FROM (SELECT 1 AS r) t WHERE true;\n"), [["public.a", ["x"]]], "the SET reader misreads one column");
+  assert.deepEqual(targets("UPDATE public.a SET x = t.r\n    , y = 'x, z = 1'\n    FROM t;\n"), [["public.a", ["x", "y"]]], "a second column on a continuation line is missed, or a comma in a string splits the list");
+  assert.deepEqual(targets("UPDATE public.a SET (x, y) = (1, 2) WHERE true;\n"), [["public.a", ["(x, y)"]]], "a row-constructor SET reads as one column");
+  assert.deepEqual(targets("UPDATE public.a SET x = (SELECT b.v FROM b WHERE b.k = 1), y = 2 WHERE true;\n"), [["public.a", ["x", "y"]]], "a subquery inside a value cut the SET list short");
+  assert.deepEqual(targets("WITH u AS (UPDATE public.a a SET x = 1 RETURNING 1) SELECT 1;\n"), [["public.a", ["x"]]], "an aliased UPDATE inside a CTE is missed");
   const lexed = lexSql(S2).code;
+  assert.deepEqual(updateTargets(lexed), [["public.attachments", ["clinical_record_id"]]], "stage 2 sets something besides attachments.clinical_record_id");
   const found = [...lexed.matchAll(/\b(update\s+public\.[a-z_]+\s+set\s+[a-z_0-9]+|delete\s+from\s+public\.[a-z_]+|insert\s+into\s+public\.[a-z_]+)/gi)]
     .map((m) => m[1].replace(/\s+/g, " ").toLowerCase());
   assert.deepEqual(found, ["update public.attachments set clinical_record_id", "insert into public.audit_log"]);
@@ -131,7 +166,9 @@ test("stage 2's writes are exactly the whitelist: one column of attachments and 
 test("the write sets one column on the link set only, each row still unlinked and not soft deleted, and is followed by its ROW_COUNT", () => {
   const c = code(S2);
   const w = between(c, "UPDATE public.attachments SET", "GET DIAGNOSTICS v_n = ROW_COUNT;", "the write");
-  assert.match(w, /^UPDATE public\.attachments SET clinical_record_id = t\.r\n/, "the write sets something besides clinical_record_id");
+  const from = w.search(/\n\s+FROM \(SELECT \(e ->> 'a'\)::uuid AS a, /);
+  assert.ok(from > 0, "the write does not read its pairs FROM the link set");
+  assert.equal(w.slice(0, from).replace(/\s+/g, " "), "UPDATE public.attachments SET clinical_record_id = t.r", "the write sets something besides clinical_record_id: its whole SET list, continuation lines included, is not that one column");
   for (const guard of ["attachments.id = t.a", "attachments.tenant_id = v_tenant", "attachments.clinical_record_id IS NULL", "attachments.deleted_at IS NULL"]) {
     assert.ok(w.includes(guard), `the write does not re-check ${guard}`);
   }
@@ -347,6 +384,16 @@ test("the classes are seven, each its own predicate; only a live, unlinked docum
   assert.match(SETS, /\(SELECT l\.tenant_id FROM public\.locations l\n\s+WHERE l\.id = 'de000002-0000-0000-0000-000000000001'::uuid\) AS tenant/, "the tenant is not the Linda-a-Velha row's");
 });
 
+test("every named document outside the link set is left alone AND watched: excl is the complement of the link class, stage 1 lists the same pairs, stage 2 records it and verdict 10 reads it back", () => {
+  const excl = code(between(SETS, "\nexcl AS (", "\ncar AS (", "excl"));
+  assert.match(excl, /\n\s+FROM cls c\n\s+WHERE NOT c\.f_link AND c\.attachment_id IS NOT NULL\n\s+AND c\.attachment_id NOT IN \(SELECT l\.attachment_id FROM lnk l\)\n\)/, "excl is not every named document outside the link set, whatever its class");
+  assert.doesNotMatch(excl, /c\.f_(other|noreg|nodoc|here|else|del|unc)\b/, "excl names classes one by one, so a class that names a document can drop out of it");
+  assert.match(S1, /\n\s+FROM cls c WHERE NOT c\.f_link\),\n/, "stage 1 section 2d does not list every pair outside the link class");
+  assert.ok(S2.includes("coalesce((SELECT array_agg(DISTINCT x.attachment_id ORDER BY x.attachment_id) FROM excl x), '{}'::uuid[])"), "stage 2 does not record every left-alone document");
+  assert.ok(S2.includes("'excluded_ids', to_jsonb(v_excl_ids)"), "the audit row does not carry the left-alone ids");
+  assert.match(S3, /\bex AS \(\n\s+SELECT \(x\.v\)::uuid AS id FROM al CROSS JOIN LATERAL jsonb_array_elements_text\(al\.m -> 'excluded_ids'\) x\(v\)\n/, "verdict 10 does not read the left-alone ids back");
+});
+
 test("a trigger the system did not create refuses, on exactly the tables stage 2 writes, in stage 1 and again in P4", () => {
   const tables = "'public.attachments'::regclass, 'public.audit_log'::regclass";
   const r12 = between(SETS, "'R12'", END, "R12");
@@ -556,6 +603,20 @@ test("the md5 fingerprints stage 3 recomputes are the exact expressions stage 2 
     assert.match(s, /SET TIME ZONE 'UTC';\nSET datestyle = 'ISO, YMD';/, `${label} does not fix the text rendering`);
   }
   assert.match(S1, /SET TIME ZONE 'UTC';\nSET datestyle = 'ISO, YMD';/, "stage 1 does not fix the text rendering");
+});
+
+test("the re-issuable paragraph names what a later migration and a later merge move: every verdict whose md5 is over whole rows, and 10 when a merge re-points a document the op left alone", () => {
+  const v = between(S3, "), v AS (\n", "\n), r AS (\n", "the v CTE");
+  const md5s = [...v.matchAll(/\(SELECT md5\(coalesce\(string_agg\(([^\n]*)[\s\S]*?\) AS (md5_[a-z_]+_now),?\n/g)];
+  assert.ok(md5s.length >= 4, "stage 3's md5 reads were not found, so this read nothing");
+  const whole = md5s.filter((m) => /\([a-z]+\.\*\)::text/.test(m[1])).map((m) => m[2]);
+  const moved = verdictRows().map((r, i) => [i + 1, r]).filter(([, r]) => whole.some((c) => r.includes(`v.${c}`))).map(([n]) => n);
+  assert.ok(moved.includes(8), "verdict 8 no longer reads a whole-row md5, so this test's premise moved");
+  const list = moved.join(", ").replace(/, (\d+)$/, " and $1");
+  const para = between(DOC, "**Stage 3 is re-issuable", "\n\n", "the re-issuable paragraph").replace(/\s+/g, " ");
+  assert.ok(para.includes(`A later migration can FAIL ${list} with no row written at all`), `the re-issuable paragraph does not say a migration can move ${list}, the verdicts whose md5 is over whole rows`);
+  assert.ok(para.includes("8 moves only with a merge or a migration"), "the re-issuable paragraph calls a FAIL on 8 after a migration an integrity breach");
+  assert.ok(para.includes("when it owns a named document the op left alone it FAILs 10"), "the re-issuable paragraph does not say a merge moves 10 when it re-points a document the op left alone");
 });
 
 /* ---- the document: run from main, the head checked by the machine ------- */
