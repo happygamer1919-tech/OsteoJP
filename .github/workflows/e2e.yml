@@ -1,6 +1,13 @@
 name: E2E
 
-# Two jobs, and the distinction between them is the whole design:
+# Three jobs. The distinction between the last two is the whole design, and
+# the first decides whether the second runs at all:
+#
+#   "E2E eligibility"          : the decision. Reads the PR's live state and
+#                                says whether the suite runs (armed, GATE-CHANGE
+#                                or held-for-apply; see "E2E RUNS ONLY WHEN THE
+#                                PR IS ARMED" below). NOT wired to branch
+#                                protection.
 #
 #   "E2E shard (1|2|3)"        — the work. Three runners, each with its OWN
 #                                Supabase stack, each running one third of the
@@ -9,17 +16,19 @@ name: E2E
 #
 #   "Playwright E2E (seeded DB)" — REQUIRED gate. Does no testing itself: it
 #                                depends on all three shards and fails unless
-#                                every one of them succeeded. This job exists so
-#                                the required check NAME is unchanged by
-#                                sharding, and branch protection needs no edit.
+#                                the suite was meant to run AND every one of
+#                                them succeeded. This job exists so the
+#                                required check NAME is unchanged by sharding,
+#                                and branch protection needs no edit.
 #
-# WHY THE NAME MATTERS. Branch protection pins three contexts by exact string:
-# "Lint + typecheck + test", "DB-gated tests (RLS isolation, seeded DB)" and
-# "Playwright E2E (seeded DB)". A check context IS the job's `name`. Sharding the
-# old job directly would have renamed it to "Playwright E2E (seeded DB) (1)" and
-# friends, the required context would never report, and every PR would hang
-# forever waiting for a check that no longer exists. The aggregate job carries
-# the old name so that cannot happen.
+# WHY THE NAME MATTERS. Branch protection pins four contexts by exact string:
+# "Lint + typecheck + test", "DB-gated tests (RLS isolation, seeded DB)",
+# "Validate spec + drift check" and "Playwright E2E (seeded DB)", the same four
+# scripts/e2e-runs-only-when-armed.test.mjs lists as REQUIRED_CONTEXTS. A check
+# context IS the job's `name`. Sharding the old job directly would have renamed
+# it to "Playwright E2E (seeded DB) (1)" and friends, the required context would
+# never report, and every PR would hang forever waiting for a check that no
+# longer exists. The aggregate job carries the old name so that cannot happen.
 #
 # WHY SHARDING PAYS. The suite is deliberately serial — playwright.config.ts sets
 # fullyParallel:false and workers:1 because concurrent logins churn the dev
@@ -49,15 +58,94 @@ name: E2E
 # proving-run inputs behave exactly as PL-30 built them.
 #
 # Each shard detects docs-only PRs and skips its own Supabase stack, exactly as
-# the single job did. Skip semantics are unchanged on purpose: shards always RUN
-# and always report success, so the aggregate can demand a strict `success` and
-# treat anything else — including `skipped` — as red. An aggregate that accepted
-# `skipped` would go green if a future edit ever skipped the shards for the wrong
-# reason, which is the failure mode this repo has already been bitten by.
+# the single job did. When the shards run they report success on that path, so
+# the aggregate can demand a strict `success` and treat anything else, `skipped`
+# included, as red. The shards DO carry a job-level `if:` now (the eligibility
+# decision below), and that is exactly why the aggregate must go on refusing
+# `skipped`: an aggregate that accepted it would go green on every PR the
+# eligibility job turned away, which is the silent pass this repo has already
+# been bitten by.
+#
+# ========================================================================= #
+# E2E RUNS ONLY WHEN THE PR IS ARMED, AND AN UNARMED PR IS RED, NEVER GREEN.
+# ========================================================================= #
+# Owner ruling 2026-09-24 (the Actions minutes cuts). A third job, "E2E
+# eligibility", reads the PR's LIVE state with `gh pr view` and decides
+# whether the three shards run at all:
+#
+#   runs   the PR is armed (auto-merge enabled);
+#   runs   its title starts with GATE-CHANGE. Those are never armed (ci.yml
+#          fails one that is), and a workflow_dispatch run cannot satisfy a
+#          required check, so without this exemption one could never go green;
+#   runs   it carries the held-for-apply label, so a held migration or data op
+#          keeps its E2E evidence BEFORE its apply;
+#   runs   the event is not a pull_request (workflow_dispatch proving runs);
+#   runs   the state cannot be read, including a read that does not answer
+#          within 60 seconds. A failed read is not evidence that a PR is
+#          unarmed, so doubt costs minutes and never coverage;
+#   runs   arming started this run (`auto_merge_enabled`) and yet the read
+#          says unarmed: API lag right after the arm, or a disarm racing it.
+#          No other event would start a run on that head, so a skip would
+#          leave an armed PR red until someone re-ran it. It runs, with a
+#          warning;
+#   skips  only when all three reads come back as a clean `false` on a run
+#          that arming did not start.
+#
+# THE REQUIRED JOB NEVER SKIPS. GitHub reports a job skipped by `if:` as
+# "Success", and that holds for a required check too, so a job-level `if:` on
+# "Playwright E2E (seeded DB)" would be a silent pass. It keeps `if: always()`,
+# and on an unarmed PR it goes RED with "E2E did not run: arm the PR and the
+# suite starts". Arming fires `auto_merge_enabled`, which is in `types:` below,
+# so the real run starts on its own. A push to an armed PR (`synchronize`) runs
+# the full suite on the new head, as before.
+#
+# THE SAME HOLDS ONE LEVEL DOWN. A job whose only step is skipped by a
+# step-level `if:` also concludes "Success", and `continue-on-error: true`
+# turns a red step, or a red job, into a green one. Any of those would make
+# the everyday red on an unarmed PR go away without running a spec. So the
+# required job has EXACTLY ONE step, with no `if:` and no `continue-on-error`,
+# and no job in this file sets `continue-on-error`. The one step-level
+# `continue-on-error` in the file, on the shards' "Set up Supabase CLI", is
+# followed by a fallback that fails loud, and it is the only one allowed. The
+# in-job negative control lives inside the required step, so it cannot catch a
+# skip of that step itself; the structure pins in the test do.
+#
+# WHY A LIVE READ AND NOT THE EVENT PAYLOAD. A PR armed at open fires `opened`
+# and `auto_merge_enabled` seconds apart, and the two runs are not guaranteed
+# to be created in that order; the concurrency block below cancels the older.
+# Whichever survives reads the PR as it is NOW, so it sees the arm either way.
+# If the survivor is the arming run and its read still lags the arm, it runs
+# anyway (the `auto_merge_enabled` rule above), so a slow read cannot leave an
+# armed PR red. A re-run keeps its event's action, so re-running an arming run
+# always runs the suite; that costs minutes, never coverage.
+# "Re-run all jobs" re-reads too, which is the remedy after a label or a
+# GATE-CHANGE title is added to a PR that already ran: those are not trigger
+# types (a label or an edited body would otherwise restart a full armed run).
+# "Re-run failed jobs" does NOT re-read: it reuses the old decision.
+#
+# ========================================================================= #
+# SUPERSEDED RUNS ARE CANCELLED (the `concurrency:` block below).
+# ========================================================================= #
+# One group per PR, and cancel-in-progress only on pull_request events. Any
+# other run (workflow_dispatch) is grouped by its own run id, so it is alone in
+# its group and nothing can cancel it. The fallback has to be unique, because
+# GitHub cancels a PENDING run that shares a group even without
+# cancel-in-progress. A cancelled run's `always()` aggregate can still report:
+# green only if every shard had already passed on that head (the suite ran, so
+# that green is earned), otherwise red. Either way the newer run's verdict
+# replaces it. Never re-run a superseded run: it rejoins its PR's group and
+# cancels the live one.
+#
+# scripts/e2e-runs-only-when-armed.test.mjs runs the shipped eligibility and
+# verdict blocks against a stub `gh` and seeded failures, and pins this shape.
 
 on:
   pull_request:
     branches: [main]
+    # The three defaults, plus arming. Declaring `types:` REPLACES the defaults,
+    # so all four are listed; dropping `synchronize` would stop running the
+    # suite on a new head.
+    types: [opened, synchronize, reopened, auto_merge_enabled]
   # PL-30: manual proving runs. A quarantined test can only be un-quarantined on
   # evidence (#739: two consecutive green runs at --retries=0), and that evidence
   # was impossible to gather while the skip was unconditional and the gate ran
@@ -78,12 +166,132 @@ on:
         required: false
         default: ""
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # -------------------------------------------------------------------------
+  # THE DECISION: does the suite run on this PR? Not a required check.
+  # -------------------------------------------------------------------------
+  eligibility:
+    name: E2E eligibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # No checkout: the only thing this job reads is the PR, through the API.
+    permissions:
+      pull-requests: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      why: ${{ steps.decide.outputs.why }}
+    steps:
+      # EVERY INPUT ARRIVES THROUGH `env:`, none through `${{ }}` inside the
+      # script, so the test can run this exact block with a stub `gh`.
+      - name: Decide whether the E2E suite runs (live read of the PR)
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          # The live read's own ceiling, in seconds. Well inside the job's
+          # timeout-minutes: 3, so a hung read ends HERE, as exit 124, and
+          # reaches the fall-through (the suite runs) instead of the job
+          # timing out with no decision (a red "eligibility did not succeed").
+          GH_READ_TIMEOUT_S: "60"
+        run: |
+          set -uo pipefail
+          # The runner adds `-e`. Every call that may fail sits behind
+          # `|| rc=$?`, so a failure reaches the fall-through below instead of
+          # killing the step.
+
+          decide() {
+            # $1 = true | false, $2 = the reason, in words. Ends the step.
+            echo "run=$1" >> "$GITHUB_OUTPUT"
+            echo "why=$2" >> "$GITHUB_OUTPUT"
+            echo "E2E eligibility: run=$1 ($2)"
+            {
+              echo "### E2E eligibility: run=$1"
+              echo
+              echo "- event: ${EVENT:-unset}, action: ${ACTION:-none}, PR: ${PR:-none}"
+              echo "- reason: $2"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+
+          # FAIL TOWARD RUNNING. The opposite direction from ci.yml's "never
+          # armed" step, on purpose: there an unread state passes a check, here
+          # it would skip a suite, and a skipped suite is the dangerous side.
+          run_anyway() {
+            echo "::warning title=E2E eligibility unread, the suite runs::$1 The suite runs, because a failed read is not evidence that this PR is unarmed."
+            decide true "state could not be read, so the suite runs. $1"
+          }
+
+          if [ "${EVENT:-}" != "pull_request" ]; then
+            decide true "a ${EVENT:-unset} run is not a pull_request, and only PR runs are gated"
+          fi
+
+          case "${PR:-}" in
+            ''|*[!0-9]*) run_anyway "No usable PR number in the event." ;;
+          esac
+
+          # One line, three words: armed, GATE-CHANGE title, held-for-apply
+          # label. "unreadable" if the answer is not the shape asked for. The
+          # title match ignores case and leading space: an exemption that is
+          # too WIDE runs the suite, which is the safe side. `timeout` (GNU
+          # coreutils, on every ubuntu runner) bounds a read that hangs: it
+          # exits 124, and 124 is a failed read like any other, so it runs the
+          # suite. A missing `timeout` exits 127, which runs it too.
+          rc=0
+          STATE="$(timeout "${GH_READ_TIMEOUT_S:-60}" gh pr view "$PR" -R "$REPO" --json autoMergeRequest,title,labels --jq '
+            if (type == "object") and has("autoMergeRequest")
+               and ((.title | type) == "string") and ((.labels | type) == "array")
+            then "\(.autoMergeRequest != null) \(.title | ascii_upcase | test("^\\s*GATE-CHANGE")) \(any(.labels[]; ((.name // "") | ascii_downcase) == "held-for-apply"))"
+            else "unreadable" end')" || rc=$?
+          ONE_LINE="$(printf '%s' "$STATE" | tr '\r\n' '  ' | cut -c1-120)"
+          if [ "$rc" -eq 124 ]; then run_anyway "gh pr view #$PR did not answer within ${GH_READ_TIMEOUT_S:-60}s (exit 124)."; fi
+          if [ "$rc" -ne 0 ]; then run_anyway "gh pr view #$PR exited $rc."; fi
+          echo "live read of #$PR (armed, GATE-CHANGE title, held-for-apply label): $ONE_LINE"
+
+          ARMED="" GATE="" HELD="" EXTRA=""
+          read -r ARMED GATE HELD EXTRA <<< "$STATE" || true
+          # EXACTLY "x y z", each true or false: a second line, a fourth word
+          # or an empty answer is not a clean read, and only a clean read skips.
+          if [ "$STATE" != "$ARMED $GATE $HELD" ] || [ -n "$EXTRA" ]; then
+            run_anyway "Unexpected answer '$ONE_LINE'."
+          fi
+          for v in "$ARMED" "$GATE" "$HELD"; do
+            case "$v" in
+              true|false) ;;
+              *) run_anyway "Unexpected answer '$ONE_LINE'." ;;
+            esac
+          done
+
+          if [ "$ARMED" = "true" ]; then decide true "armed: auto-merge is enabled"; fi
+          if [ "$GATE" = "true" ]; then decide true "GATE-CHANGE title: never armed, and a dispatch run cannot satisfy a required check"; fi
+          if [ "$HELD" = "true" ]; then decide true "labelled held-for-apply: it keeps its E2E evidence before its apply"; fi
+          # ARMED BY THIS VERY EVENT, READ AS UNARMED. The read can lag the arm
+          # that fired it, or a disarm can race it. A skip here would be the
+          # last word on this head (no later event starts a run), so an armed
+          # PR would sit red until someone chose "Re-run all jobs". Doubt runs.
+          if [ "${ACTION:-}" = "auto_merge_enabled" ]; then
+            echo "::warning title=E2E eligibility: started by arming, read as unarmed, the suite runs::Arming started this run, but the live read of #$PR says auto-merge is off (API lag after the arm, or a disarm racing it). The suite runs rather than leave an armed PR red."
+            decide true "started by auto_merge_enabled although the live read says unarmed (read lag, or a disarm racing the arm)"
+          fi
+          decide false "not armed, not titled GATE-CHANGE, not labelled held-for-apply"
+
   # -------------------------------------------------------------------------
   # THE WORK — three shards, three Supabase stacks. Not a required check.
   # -------------------------------------------------------------------------
   shard:
     name: E2E shard
+    needs: [eligibility]
+    # THE ONLY JOB-LEVEL `if:` IN THIS FILE OTHER THAN THE AGGREGATE'S
+    # `always()`, and on a job branch protection does NOT require. When it is
+    # false the shards are skipped, and the aggregate below turns that into a
+    # RED required check, never a green one.
+    if: needs.eligibility.outputs.run == 'true'
     runs-on: ubuntu-latest
     # ================================================================= //
     # THE JOB CEILING IS A BACKSTOP, NOT THE MECHANISM. Raised 25 -> 35 on
@@ -639,28 +847,101 @@ jobs:
   # -------------------------------------------------------------------------
   playwright:
     name: Playwright E2E (seeded DB)
-    needs: [shard]
-    # always() is load-bearing. Without it this job is SKIPPED the moment any
-    # shard fails, the required context never reports a conclusion, and the PR
-    # waits forever on a check that will never arrive. With it, a failed shard
-    # produces a RED required check, which is the point.
+    needs: [eligibility, shard]
+    # always() is load-bearing, twice over. Without it this job is SKIPPED the
+    # moment any shard fails or the eligibility job turns the shards away, and
+    # a skipped job reports "Success" to branch protection: an unarmed PR would
+    # read green having run nothing. With it, both cases are a RED required
+    # check, which is the point. No other `if:` may ever go here, and no
+    # `continue-on-error`, here or on the step below; that step stays the
+    # job's only step and carries no `if:` (see "THE SAME HOLDS ONE LEVEL
+    # DOWN" in the header).
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Verify every shard passed
+      # Inputs through `env:` only, so the test runs this exact block.
+      - name: Verify the suite ran and every shard passed
+        env:
+          ELIGIBILITY: ${{ needs.eligibility.result }}
+          RUN: ${{ needs.eligibility.outputs.run }}
+          WHY: ${{ needs.eligibility.outputs.why }}
+          SHARDS: ${{ needs.shard.result }}
         run: |
-          # `needs.shard.result` is the matrix's AGGREGATE result: "success" only
-          # when all three legs succeeded. Anything else - failure, cancelled, or
-          # skipped - is red. Skipped is deliberately NOT treated as success: the
-          # shards have no job-level `if`, so a skip would mean something changed
-          # that nobody reasoned about, and a gate that goes green on an
-          # unexplained skip is not a gate.
-          RESULT="${{ needs.shard.result }}"
-          echo "Aggregate result of the three E2E shards: $RESULT"
-          if [ "$RESULT" != "success" ]; then
-            echo "::error::E2E gate RED - shard aggregate result is '$RESULT', expected 'success'. Open the red 'E2E shard (N)' job and read its playwright-report-chromium-shard-N artifact before anything else."
+          set -uo pipefail
+
+          # THE VERDICT, as one function, so the negative control below runs
+          # the same code as the real verdict. 0 only when the suite was meant
+          # to run AND all three shards succeeded.
+          #
+          # `$3` is the matrix's AGGREGATE result: "success" only when all three
+          # legs succeeded. Anything else (failure, cancelled, skipped) is red.
+          # Skipped is deliberately NOT success: with run=true the shards were
+          # meant to run, so a skip means something changed that nobody
+          # reasoned about, and a gate that goes green on an unexplained skip is
+          # not a gate.
+          verdict() {
+            # $1 = eligibility job result, $2 = its run output, $3 = shard aggregate result
+            if [ "$1" != "success" ]; then
+              echo "::error title=E2E gate RED::The E2E eligibility job did not succeed (result '$1'), so nothing decided whether the suite should run. Failing closed. Re-run all jobs."
+              return 1
+            fi
+            case "$2" in
+              true) ;;
+              false)
+                echo "::notice title=E2E DID NOT RUN::This PR is not armed, not titled GATE-CHANGE and not labelled held-for-apply, so no Playwright spec ran."
+                echo "::error title=E2E did not run::E2E did not run: arm the PR and the suite starts. This check is red on purpose, because a skipped E2E must never read as a pass."
+                return 1
+                ;;
+              *)
+                echo "::error title=E2E gate RED::The eligibility job gave no decision (run='$2'). Failing closed."
+                return 1
+                ;;
+            esac
+            if [ "$3" != "success" ]; then
+              echo "::error::E2E gate RED - shard aggregate result is '$3', expected 'success'. Open the red 'E2E shard (N)' job and read its playwright-report-chromium-shard-N artifact before anything else."
+              return 1
+            fi
+            return 0
+          }
+
+          # NEGATIVE CONTROL, IN THE JOB, ON EVERY RUN. Before the real verdict,
+          # run the same function on seeded inputs and fail the check if a
+          # seeded failure passes, or if a seeded pass fails. The control's own
+          # output is quoted with a prefix, so its lines are not annotations.
+          control() {
+            # $1 = label, $2 = wanted exit (0 or 1), then the three verdict inputs
+            label="$1"; want="$2"; shift 2
+            got=0
+            out="$(verdict "$@" 2>&1)" || got=$?
+            if [ -n "$out" ]; then printf '%s\n' "$out" | sed 's/^/    | /'; fi
+            if [ "$got" -ne "$want" ]; then
+              echo "::error title=NEGATIVE CONTROL FAILED::verdict($*) for '$label' exited $got, wanted $want. The gate cannot be trusted to tell a real failure from a pass; its own verdict below is not run."
+              exit 1
+            fi
+            echo "negative control OK: '$label' -> exit $got (wanted $want)"
+          }
+          control "unarmed PR, shards skipped" 1 success false skipped
+          control "armed PR, a shard failed" 1 success true failure
+          control "meant to run, shards skipped" 1 success true skipped
+          control "eligibility job failed" 1 failure "" skipped
+          control "eligibility gave no decision" 1 success "" success
+          control "armed PR, all shards green" 0 success true success
+
+          echo "eligibility: result=${ELIGIBILITY:-} run=${RUN:-} (${WHY:-no reason given}); shards: ${SHARDS:-}"
+          rc=0
+          verdict "${ELIGIBILITY:-}" "${RUN:-}" "${SHARDS:-}" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            if [ "${RUN:-}" = "false" ]; then
+              {
+                echo "### Playwright E2E: DID NOT RUN, and this check is red on purpose"
+                echo
+                echo "This PR is not armed, so no browser was started and no spec ran."
+                echo "Arm it (gh pr merge --auto --squash) and the suite starts on its own."
+                echo "A PR titled GATE-CHANGE, or labelled held-for-apply, runs without arming."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
             exit 1
           fi
           echo "All three E2E shards succeeded."
