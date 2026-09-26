@@ -240,6 +240,9 @@ export const SERVICE = { id: "00000000-0000-0000-0000-00000000a201", name: "Oste
 // Serviço Select must still offer it (preselection, not restriction). Seeded in
 // seed-e2e.mjs and deliberately left out of ensureTherapistServices.
 export const SERVICE_UNMAPPED = { id: "00000000-0000-0000-0000-00000000a203", name: "Drenagem Linfática" } as const;
+/** The seeded NESA service (seed-e2e.mjs SERVICE_NESA): contraindication
+ *  sensitive, at Linda-a-Velha, and named with its "(sensível)" suffix. */
+export const SERVICE_NESA = { id: "00000000-0000-0000-0000-00000000a202", name: "NESA (sensível)" } as const;
 export const THERAPIST_NAME = "E2E Therapist";
 // W4-12 location auto-fill fixtures. `THERAPIST_ONE_LOCATION` is seeded with
 // availability at exactly LOCATION_A (Linda-a-Velha) + the Osteopatia service, so
