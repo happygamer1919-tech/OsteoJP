@@ -225,17 +225,17 @@ hit_patient AS (
    WHERE o.patient_id IN (c.patient_id, c.patient_2_id)
       OR o.patient_2_id IN (c.patient_id, c.patient_2_id)
 ),
--- THE NESA HOUR A LIVE TWIN WILL MOVE. Not in the app's rule today; the op adds
--- it, so the answer does not depend on the order it runs in with STAFF-10 v2
--- (#1444). That op resolves every future twin whose two rows are both live by
--- its ruling (c): the person row takes the NESA as Terapeuta 2 and the NESA row
--- is cancelled, so from then on the NESA is held over the PERSON window, which
--- its R17 lets be longer than the NESA window. Before it runs, the app's rule
--- reads only the NESA row. So the person row of every such twin (live, on a
--- person, with a row of the same patient, start and service, NULL-safe, on a
--- shared resource and not cancelled or no-show) is read here as holding that
--- NESA over its own window, whether or not STAFF-10 v2 has run: after it has,
--- no such pair is left, and the resource arm above reads the same hold through
+-- THE NESA HOUR A LIVE TWIN HOLDS. Not in the app's rule today; the op adds it.
+-- STAFF-10 v2 (#1444), which runs before this op by the owner's ruling,
+-- resolves every future twin whose two rows are both live by its ruling (c):
+-- the person row takes the NESA as Terapeuta 2 and the NESA row is cancelled,
+-- so from then on the NESA is held over the PERSON window, which STAFF-10 v2
+-- lets be longer than the NESA window. A twin booked after it ran is two live
+-- rows again, and the app's rule reads only its NESA row. So the person row of
+-- every such twin (live, on a person, with a row of the same patient, start and
+-- service, NULL-safe, on a shared resource and not cancelled or no-show) is
+-- read here as holding that NESA over its own window, unconditionally; for a
+-- pair STAFF-10 v2 resolved, the resource arm above reads the same hold through
 -- practitioner_2. A candidate naming that NESA in either slot is held by it,
 -- unless the candidate is that twin's own NESA row, whose hour it is.
 twin_hold AS (
@@ -274,11 +274,11 @@ res_away AS (
 -- ONE PERSON'S ROW AT THE OTHER CLINIC. Not in the app's rule; the op adds it. A
 -- row booked on one of the two staff rows of one_person at a clinic that is not
 -- that row's own: JP(cb) at Linda-a-Velha, or JP(lv) at Castelo Branco.
--- STAFF-10 v2 hands JP(cb)'s future Linda-a-Velha rows to reception (its Q1),
--- retires JP(cb)'s hours there (its W1 and W2), and moves every JP(cb) row there
--- that starts before its own run day to JP(lv) in any status (its W4). So the
--- hours that would hold such a row, and the staff row it sits on, change with
--- the order the two ops run in. Held outright, whatever the order.
+-- STAFF-10 v2, which runs first, retires JP(cb)'s hours at Linda-a-Velha, moves
+-- every JP(cb) row there that starts before its own run day to JP(lv) in any
+-- status (its ruling a), and leaves the later ones on JP(cb) for reception (its
+-- Q1). So a JP(cb) row there that this op meets is reception's, and a JP(lv)
+-- row at Castelo Branco is too. Held outright.
 person_away AS (
   SELECT c.id AS cand_id, c.practitioner_id AS user_id
     FROM cand c
