@@ -15,6 +15,10 @@
  * THE VERDICTS
  *   writes        the function passes its own transaction to
  *                 addBookedTherapistsToCareTeam and notifies after commit.
+ *                 Both halves are measured against the runScoped call's own
+ *                 span: the write INSIDE it, the notice AFTER it closes. A
+ *                 notice sent from inside the callback would go out for a
+ *                 booking that then rolls back.
  *   by_design     the importer and the dev seed: historical rows and fixtures,
  *                 not bookings. Whether imported history should populate care
  *                 teams is carried to the owner as a question.
@@ -143,6 +147,61 @@ function functionBody(relFile: string, fn: string): string {
     .join("\n");
 }
 
+/**
+ * Where the transaction is, in a function body: from `runScoped` to the `)` that
+ * closes its call. Parentheses are counted outside string and template literals
+ * and outside trailing comments, so a "(" in a message or a note cannot move the
+ * end. Everything between `start` and `end` runs inside the callback, before the
+ * commit; everything after `end` runs once runScoped has returned, which is after
+ * the commit. Null when the body opens no transaction or the count never closes.
+ */
+function txSpan(body: string): { start: number; end: number } | null {
+  const start = body.search(/\brunScoped\b/);
+  if (start === -1) return null;
+  const open = body.indexOf("(", start);
+  if (open === -1) return null;
+  let depth = 0;
+  for (let i = open; i < body.length; i++) {
+    const c = body[i]!;
+    if (c === '"' || c === "'" || c === "`") {
+      for (i++; i < body.length && body[i] !== c; i++) if (body[i] === "\\") i++;
+      continue;
+    }
+    if (c === "/" && body[i + 1] === "/") {
+      while (i < body.length && body[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && body[i + 1] === "*") {
+      const close = body.indexOf("*/", i + 2);
+      i = close === -1 ? body.length : close + 1;
+      continue;
+    }
+    if (c === "(") depth++;
+    else if (c === ")" && --depth === 0) return { start, end: i };
+  }
+  return null;
+}
+
+/** The ordering faults of one "writes" function, empty when it is right. */
+function txOrderFaults(key: string, body: string, notifyRe: RegExp): string[] {
+  const span = txSpan(body);
+  if (span === null) return [`${key}: no runScoped transaction found`];
+  const faults: string[] = [];
+  const writeAt = body.search(/addBookedTherapistsToCareTeam\(/);
+  if (writeAt === -1 || writeAt < span.start || writeAt > span.end) {
+    faults.push(`${key}: the care-team write is not inside the runScoped transaction`);
+  }
+  const notifies = [...body.matchAll(new RegExp(notifyRe.source, "g"))].map((m) => m.index!);
+  if (notifies.length === 0) {
+    faults.push(`${key}: no longer notifies the added therapists after commit`);
+  } else if (notifies.some((at) => at < span.end)) {
+    faults.push(`${key}: notifies the added therapists BEFORE the commit (inside or ahead of runScoped)`);
+  }
+  return faults;
+}
+
+const NOTIFY_RE = /emitCareTeamNotices\(|emitCareTeamAddedNotifications\(/;
+
 describe("CARE-02c: every appointment insert has a care-team verdict", () => {
   const sites = insertSites();
 
@@ -184,9 +243,8 @@ describe("CARE-02c: every appointment insert has a care-team verdict", () => {
       if (!/addBookedTherapistsToCareTeam\(\s*tx,/.test(body)) {
         broken.push(`${key}: no longer calls addBookedTherapistsToCareTeam(tx, ...)`);
       }
-      if (!/emitCareTeamNotices\(|emitCareTeamAddedNotifications\(/.test(body)) {
-        broken.push(`${key}: no longer notifies the added therapists after commit`);
-      }
+      // The write inside the transaction, every notice after it has closed.
+      broken.push(...txOrderFaults(key, body, NOTIFY_RE));
       // The write must come after the insert it follows, or it reads no rows.
       const insertAt = body.search(INSERT_RE);
       const writeAt = body.search(/addBookedTherapistsToCareTeam\(/);
@@ -197,12 +255,45 @@ describe("CARE-02c: every appointment insert has a care-team verdict", () => {
     expect(broken).toEqual([]);
   });
 
+  it("the ordering check itself: a notice inside the callback fails, one after it passes", () => {
+    const shape = (inside: string, after: string): string =>
+      [
+        "async function f() {",
+        "  const r = await runScoped(actor, async (tx) => {",
+        '    log("a stray ( in a string");',
+        "    await tx.insert(appointments).values(v); // and one ( in a note",
+        "    added = await addBookedTherapistsToCareTeam(tx, actor, ids);",
+        inside,
+        "    return out;",
+        "  });",
+        after,
+        "}",
+      ].join("\n");
+    const notice = "    await emitCareTeamNotices(actor, added);";
+    expect(txOrderFaults("good", shape("", notice), NOTIFY_RE)).toEqual([]);
+    expect(txOrderFaults("inside", shape(notice, ""), NOTIFY_RE)).toEqual([
+      "inside: notifies the added therapists BEFORE the commit (inside or ahead of runScoped)",
+    ]);
+    expect(txOrderFaults("none", shape("", ""), NOTIFY_RE)).toEqual([
+      "none: no longer notifies the added therapists after commit",
+    ]);
+    const outside = shape("", notice).replace(
+      "    added = await addBookedTherapistsToCareTeam(tx, actor, ids);\n",
+      "",
+    ) + "\nadded = await addBookedTherapistsToCareTeam(tx, actor, ids);";
+    expect(txOrderFaults("outside", outside, NOTIFY_RE)).toEqual([
+      "outside: the care-team write is not inside the runScoped transaction",
+    ]);
+  });
+
   it("A RESCHEDULE TO A NEW TERAPEUTA writes too: only the moved rows, only the Terapeuta slot", () => {
     const body = functionBody("apps/web/lib/scheduling/actions.ts", "rescheduleAppointment");
     expect(body.length).toBeGreaterThan(2000);
     expect(body).toMatch(/a\.practitionerId !== input\.practitionerId/);
     expect(body).toMatch(/addBookedTherapistsToCareTeam\(tx, actor, movedToNewTherapist, \{\s*slots: "primary",?\s*\}\)/);
     expect(body).toContain("emitCareTeamNotices(actor, careTeamAdded)");
+    // The notice after the commit, the write inside the transaction.
+    expect(txOrderFaults("rescheduleAppointment", body, NOTIFY_RE)).toEqual([]);
     // After the UPDATE, so the read-back sees the new Terapeuta.
     expect(body.indexOf("addBookedTherapistsToCareTeam(")).toBeGreaterThan(
       body.indexOf(".update(appointments)"),

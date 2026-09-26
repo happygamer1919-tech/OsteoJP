@@ -2,9 +2,10 @@
  * CARE-02b and CARE-02c: the pure rules behind "booking a therapist puts them on
  * the care team once, with a notice". The database half (the INSERT, its
  * conflict target, RLS) is measured against a real Postgres in
- * care-team-auto.db.test.ts; this file pins the decisions that need none.
+ * apps/web/lib/scheduling/care-team-booking.db.test.ts; this file pins the
+ * decisions that need none.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ROLES } from "@osteojp/auth";
@@ -174,5 +175,19 @@ describe("canWriteCareTeamUnderCurrentPolicy agrees with 0091's insert policy", 
   it("a therapist's own booking and an admin's booking skip the write (the reported gap)", () => {
     expect(canWriteCareTeamUnderCurrentPolicy("therapist")).toBe(false);
     expect(canWriteCareTeamUnderCurrentPolicy("admin")).toBe(false);
+  });
+});
+
+describe("the headers point at the DB test that exists", () => {
+  it("every *.db.test.ts the care-team unit headers name is a real file", () => {
+    const repo = join(__dirname, "..", "..", "..", "..");
+    const missing: string[] = [];
+    for (const f of ["care-team-core.test.ts", "care-team-auto.test.ts"]) {
+      const header = readFileSync(join(__dirname, f), "utf8").split("*/")[0]!;
+      const named = header.match(/[\w./-]+\.db\.test\.ts/g) ?? [];
+      if (named.length === 0) missing.push(`${f}: names no DB test`);
+      for (const n of named) if (!existsSync(join(repo, n))) missing.push(`${f}: ${n}`);
+    }
+    expect(missing).toEqual([]);
   });
 });

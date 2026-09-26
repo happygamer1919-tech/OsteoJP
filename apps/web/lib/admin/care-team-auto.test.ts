@@ -5,7 +5,7 @@
  * show on demand: a failure inside the care-team write never escapes into the
  * booking, and a role the policy refuses never reaches the database at all. The
  * real INSERT, its conflict target and RLS are measured in
- * care-team-auto.db.test.ts.
+ * apps/web/lib/scheduling/care-team-booking.db.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
