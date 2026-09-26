@@ -31,9 +31,9 @@ says what has run on these exact bytes.
 | Ruling, owner, 2026-09-24, paraphrased | a new data op: measure the future appointments the Fisiozero importer wrote with a one-minute duration, then author the write that gives them their service's default duration |
 | Rulings, owner, 2026-09-26, paraphrased | (1) write the WRITE set at each service's default duration; (2) the NESA twins are STAFF-10 v2's, and this op does not write them; (3) the rows outside the therapist's hours and the rows over a block go to reception, and this op does not write them; (4) the rows that are not live stay untouched; (5) this op runs after STAFF-10 v2, with a fresh stage 1 on its own run day, and stage 1 and stage 2 refuse while STAFF-10 v2 has not run, with a control; (6) stage 3 proves the durations, and proves that no other column moved by one md5 over the written rows' untouched columns and one md5 over every other appointment of the tenant, each against the baseline stage 2 records, each with a control that can fail; (7) it runs from `origin/main` after its PR merges, the way STAFF-10 v2 does |
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/dur01-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
-| Stage 1 | `scripts/data/dur-01-1-measure.sql`, READ ONLY, sha256 `fc6810494bff001ad57163eb4fab0d16c375853e1edc58c6af7bec73cfdad84f` |
-| Stage 2 | `scripts/data/dur-01-2-write.sql`, ONE DO block in ONE transaction, sha256 `9cbb6311c7162883090abbf8b46aa25fea2bbd8ac55022b86e474380903ad5e4` |
-| Stage 3 | `scripts/data/dur-01-3-verify.sql`, READ ONLY, 23 verdicts and a SUMMARY row, sha256 `70d80146334ee5904a3f8a32bec2a2e4776403597d444a7a9f6402d9d4faf911` |
+| Stage 1 | `scripts/data/dur-01-1-measure.sql`, READ ONLY, sha256 `fd09f7d4c2cd3b26847df628193da77a2449a261b2050a9747988b8e8351d93f` |
+| Stage 2 | `scripts/data/dur-01-2-write.sql`, ONE DO block in ONE transaction, sha256 `1b78d363d7ea022df61d11f0d1599099d13481c917fe180057f2669fe9c43a14` |
+| Stage 3 | `scripts/data/dur-01-3-verify.sql`, READ ONLY, 23 verdicts and a SUMMARY row, sha256 `377bcbccbef16b1db5018a50d0ed25ce82c284803c6061bb5ec88fd7d2ccffbe` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`, the only other program a block runs; it imports nothing |
 | This document | `docs/data-op-dur-01.md`, pinned by `docs/data-op-dur-01.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
 | What stage 1 writes | **nothing.** One READ ONLY, REPEATABLE READ transaction |
@@ -162,8 +162,11 @@ Its own document is the authority for its step and refusal numbers, which its he
 | STAFF-10 v2's write landing between this op's stage 1 and stage 2 | stage 2 STOPS on the fourth carry |
 
 Section 1c prints STAFF-10 v2's audit rows, section 1d the live future pairs still
-standing (none of the pairs it resolved) and how many of them STAFF-10 v2 would refuse,
-and section 1e JP's two rows.
+standing (none of the pairs it resolved) and how many of them have a person window that
+does not cover the NESA window. That is one of the shapes STAFF-10 v2 refuses, not every
+one: its own document lists the others (a pedido, a clinical record, an invoice or a
+pack on the NESA row, a start within two hours, among them), so a 0 there does not say
+STAFF-10 v2 would take the pair. Section 1e prints JP's two rows.
 
 ## A measurement sitting: stage 0 and stage 1 alone
 
@@ -223,9 +226,9 @@ to paste: the machine runs it inside the blocks, and halts on it.
 (
 set -eo pipefail
 DOCPIN=docs/data-op-dur-01.sha256
-SHA1=fc6810494bff001ad57163eb4fab0d16c375853e1edc58c6af7bec73cfdad84f
-SHA2=9cbb6311c7162883090abbf8b46aa25fea2bbd8ac55022b86e474380903ad5e4
-SHA3=70d80146334ee5904a3f8a32bec2a2e4776403597d444a7a9f6402d9d4faf911
+SHA1=fd09f7d4c2cd3b26847df628193da77a2449a261b2050a9747988b8e8351d93f
+SHA2=1b78d363d7ea022df61d11f0d1599099d13481c917fe180057f2669fe9c43a14
+SHA3=377bcbccbef16b1db5018a50d0ed25ce82c284803c6061bb5ec88fd7d2ccffbe
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -264,7 +267,7 @@ later stage runs from.
 ```
 (
 set -eo pipefail
-SHA1=fc6810494bff001ad57163eb4fab0d16c375853e1edc58c6af7bec73cfdad84f
+SHA1=fd09f7d4c2cd3b26847df628193da77a2449a261b2050a9747988b8e8351d93f
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -323,7 +326,7 @@ day.
 ```
 (
 set -eo pipefail
-SHA2=9cbb6311c7162883090abbf8b46aa25fea2bbd8ac55022b86e474380903ad5e4
+SHA2=1b78d363d7ea022df61d11f0d1599099d13481c917fe180057f2669fe9c43a14
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 NAMES=(
 dur01_run_day
@@ -411,7 +414,7 @@ regardless.
 ```
 (
 set -eo pipefail
-SHA3=70d80146334ee5904a3f8a32bec2a2e4776403597d444a7a9f6402d9d4faf911
+SHA3=377bcbccbef16b1db5018a50d0ed25ce82c284803c6061bb5ec88fd7d2ccffbe
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -689,7 +692,7 @@ ran**, which it never saw, with a NESA stub of another patient inside its person
 | `b8-rehearsal/evidence.sql`, section 9's shapes | `fcb73e0c9188aa195c6144c90352285d498db8f4798eabb7275f96a0cc32cf5f` |
 | `b8-rehearsal/reset.sql`, the reset by id, clinical records and status events included | `8fb04712932363a605bd21b3dadb8bd20490c0b5d35f3a1bb007b47c6d0a3efb` |
 | `b8-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `ab4e9cd71c6aabcc7d10201e6c3590760eba2a33c8a9e1a00e9a23b9d9143646` |
-| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `733972ec870ead8d3ec333856dd2b33b276b92b66af7e97ee7884c350f405d95` |
+| `b8-rehearsal/run-dur01-arms.zsh`, the arms runner | `96e1073fa05658ac1df5223b662a64ddd589ac7a719c55d087f6e05258eef244` |
 | `b8-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, byte for byte: origin/main allowed, a branch head refused | `bb1fc378bb6d550e3e13614d5cd1046d14f7a2b6f2cd70d2d68642c372dd89b7` |
 
 **How it ran.** A simulated origin, a local bare repository whose `main` is the commit
@@ -710,8 +713,8 @@ still names production or a branch head.
 
 **Every arm, and what it showed.** The runner counts an arm's exit against the one
 wanted and every check it makes, and exits 0 only when all of them hold. Its last full
-run, `b8_run_b` on the commit that carries this section: **164 arms and 172
-checks, every one as wanted.**
+run, `b8r1_run_a` on the commit that carries this section (review round 1): **169 arms
+and 182 checks, every one as wanted.**
 
 **The head and the files, before any database** (the HEAD CHECK of the section above):
 
@@ -858,12 +861,20 @@ fails: `cannot execute CREATE TABLE in a read-only transaction`.
 
 **The unit test can fail.** Each property was broken on a copy of the commit under test
 and the test run there: a byte of stage 2's BASE, a third key of `raw` read in the ledger, the UPDATE also setting `status`, a column dropped from stage 3's frozen lists, the twin filtered on its partner's status, a `jwt_tenant_id()` call in stage 3, the live twin's hold gated on STAFF-10 v2's audit row, verdict 19 counting the live table, the `same_person` arm switched off, verdict 16's VACUOUS branch dropped, the pedido verdict switched off, a stage block taking its head from a branch, verdict 14's VACUOUS branch dropped, the no-break space taken out of `c_room`'s set, the pair's room arm put back to `btrim`'s default; and, new this round, R11 reading another action, verdict 23's control made blind, section 9 reading a patient's name, section 9 printing a block's note, a STOP after the write sending the runner on to stage 3, the HEAD CHECK's halt on a moved main removed, R11 left out of the document's table, the halt rule altered by one clause. Each exited 1 on its own test (and on the pin test
-where the file moved); the unmutated copy passes all.
+where the file moved); the unmutated copy passes all. **Review round 1 added five,
+each run with every pin and the sidecar recomputed after the mutation, so the pin
+test passes and the arm shows the property's own test failing alone:** the stage 1
+block's REFUSE grep reading `REFUSED`, the stage 3 block's FAIL grep reading `FAILED`,
+the rule's comment naming a refusal of STAFF-10 v2 by its number again, stage 3's
+header saying it may run again at any time, and section 1d's count named as if it were
+every pair STAFF-10 v2 refuses. Each exited 1 on exactly one test, its own. Before this
+round's tests existed, the first two passed every test, sidecar re-pinned.
 
 **The app's own checks, on a real database.**
 `apps/web/lib/scheduling/dur-01-classification.db.test.ts`, unchanged this round, run
 against a new throwaway cloned from `s10v2_schema` and this head's stage 1, whose BASE
-gained R11 and whose rule's comments changed: **5 passed**, in 13 seconds on a machine under load. The control arm first proves the
+gained R11 and whose rule's comments changed (again in review round 1, one comment
+only): **5 passed**, in 18 seconds on a machine under load. The control arm first proves the
 seed makes the app say what each arm expects; stage 1's BASE then agrees with
 `findConflictsForWindow` plus `blockingConflicts`, `checkAvailability`,
 `checkClinicClosure`, `checkClinicWindow` and SCHED-17 on every flag of every stub; the
@@ -881,6 +892,22 @@ read the Thursday there. The check now anchors on a 9f row, and 9f was right bot
 times. The round also followed STAFF-10 v2's head as it moved: the halt rule, its STOP
 wording and its renumbered refusals and steps, which the rule's comments now name by
 what they do.
+
+**Review round 1 of these files found six minor defects.** Each is fixed, and each that
+a committed file can hold is held by the unit test and shown failing it by one of the
+five unit-mutation arms above. The unit test did not hold the greps behind two halts, the stage 1 block's stop
+on a REFUSE line and the stage 3 block's stop on a FAIL verdict: a copy whose grep read
+`REFUSED` or `FAILED`, its sidecar re-pinned, passed every test. It now holds both
+lines, their order before the pass line, and each pattern read against a line as psql
+prints it. The rule's comment named STAFF-10 v2's JP(lv) guard by a number its head has
+since given to another refusal; the comment now says what the guard does, and the unit
+test refuses any refusal number in the stage files that is not this op's own. Stage 3's
+header still said it could run again at any time; it now says it runs after stage 2's
+WRITTEN line and otherwise only on the owner's or the lead's word. Section 1d's count
+was named as if it were every pair STAFF-10 v2 refuses, while it counts only the pairs
+whose person window does not cover the NESA window; it is now named by what it counts,
+and the section "The order with STAFF-10 v2" says what a 0 there does not mean. The
+other two defects sat outside the committed files and are fixed where they live.
 
 **The pushed tree is the rehearsed tree.** The last full run of the arms runner
 extracted every block from the commit that carries this section, sidecar included.

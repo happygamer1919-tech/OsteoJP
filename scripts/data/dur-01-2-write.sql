@@ -241,7 +241,8 @@ c_room AS (
 -- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
 -- and the unit test holds them equal. The app reads each row as its own
 -- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
--- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- the same gap for its own moves: it refuses a move that would put two
+-- overlapping confirmed rows on JP(lv). The op reads a booking or a block on
 -- either row as holding the person (arm same_person below, and the second block
 -- arm), and holds outright a row booked on one of the two at a clinic that is
 -- not that row's own (person_away, verdict 18). R10 refuses when the pair does
@@ -910,7 +911,8 @@ c_room AS (
 -- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
 -- and the unit test holds them equal. The app reads each row as its own
 -- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
--- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- the same gap for its own moves: it refuses a move that would put two
+-- overlapping confirmed rows on JP(lv). The op reads a booking or a block on
 -- either row as holding the person (arm same_person below, and the second block
 -- arm), and holds outright a row booked on one of the two at a clinic that is
 -- not that row's own (person_away, verdict 18). R10 refuses when the pair does

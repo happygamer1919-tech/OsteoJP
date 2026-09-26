@@ -164,7 +164,8 @@ c_room AS (
 -- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
 -- and the unit test holds them equal. The app reads each row as its own
 -- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
--- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- the same gap for its own moves: it refuses a move that would put two
+-- overlapping confirmed rows on JP(lv). The op reads a booking or a block on
 -- either row as holding the person (arm same_person below, and the second block
 -- arm), and holds outright a row booked on one of the two at a clinic that is
 -- not that row's own (person_away, verdict 18). R10 refuses when the pair does
@@ -653,8 +654,8 @@ reasons AS (
 -- THE LIVE FUTURE NESA TWINS, as STAFF-10 v2's ruling (c) set reads them: a row
 -- on a shared resource and a row on a person, same tenant, patient, start and
 -- service (NULL-safe), both live, starting from 00:00 Lisbon today. covers is
--- STAFF-10 v2's own refusal: the person window must cover the NESA window, or
--- its whole transaction stops.
+-- one of STAFF-10 v2's own refusals, not every one: the person window must
+-- cover the NESA window, or its whole transaction stops.
 live_twin AS (
   SELECT p.id AS p_id, n.id AS n_id, p.location_id,
          (p.starts_at <= n.starts_at AND p.ends_at >= n.ends_at) AS covers,
@@ -1142,9 +1143,9 @@ SELECT e ->> 'action' AS action, (e ->> 'audit_rows')::int AS audit_rows, e ->> 
 \echo '    DUR-01 runs AFTER STAFF-10 v2 (owner ruling of 2026-09-26): R11 refuses until its row above'
 \echo '    reads at least 1, and a STAFF-10 v2 row landing between this stage and stage 2 refuses there.'
 \echo ''
-\echo '=== 1d. THE LIVE FUTURE NESA TWINS STILL STANDING, and how many of them STAFF-10 v2 would refuse ==='
+\echo '=== 1d. THE LIVE FUTURE NESA TWINS STILL STANDING, and how many of them have a person window that does not cover the NESA window ==='
 SELECT e ->> 'clinic' AS clinic, (e ->> 'pairs')::int AS live_future_pairs,
-       (e ->> 'covers')::int AS person_window_covers_nesa, (e ->> 'shorter')::int AS refused_by_staff10_v2,
+       (e ->> 'covers')::int AS person_window_covers_nesa, (e ->> 'shorter')::int AS person_window_does_not_cover_nesa,
        (e ->> 'stub')::int AS person_half_is_an_importer_minute,
        (e ->> 'stub_short')::int AS of_which_nesa_row_longer, (e ->> 'both_stubs')::int AS of_which_both_halves_a_minute,
        (e ->> 'stub_other')::int AS of_which_other

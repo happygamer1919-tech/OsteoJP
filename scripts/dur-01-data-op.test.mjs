@@ -878,6 +878,73 @@ test("section 9 is READ ONLY evidence: it reads no patient name and no raw row, 
   assert.ok(DOC.includes("## Section 9: what the code cannot answer"), "the doc does not describe section 9");
 });
 
+/* ---- review round 1 of the files of 2026-09-26 ---------------------------- */
+
+/** A block's grep -E pattern, read as a JavaScript regular expression. */
+const ere = (p) => new RegExp(p.replaceAll("[[:space:]]", "\\s"));
+/** SQL with its comment lines joined, so a phrase a line break splits is read whole. */
+const flat = (s) => s.replace(/\n--\s*/g, " ");
+
+test("the blocks halt on the words the stage files print: stage 1 on any REFUSE line before it marks its pass, stage 3 on any FAIL verdict before its VERIFIED line", () => {
+  // Stage 1: section 8 prints REFUSE, VACUOUS or OK in each refusal line's last column.
+  const word = S1.match(/'verdict', CASE WHEN r\.n > 0 THEN '([A-Z]+)' WHEN r\.control = 0 THEN 'VACUOUS' ELSE 'OK' END\)/)?.[1];
+  assert.equal(word, "REFUSE", "stage 1 no longer prints REFUSE on a refusal line; re-read the block's grep");
+  const s1 = block("STAGE 1").split("\n");
+  const ref = s1.indexOf(String.raw`REF=$(grep -E '^[[:space:]]*R[0-9]{2}[[:space:]]*\|.*\|[[:space:]]*REFUSE[[:space:]]*$' /tmp/dur01-stage1.out | sed -E 's/^[[:space:]]*(R[0-9]{2}).*/\1/' | tr '\n' ' ' || true)`);
+  assert.ok(ref >= 0, "stage 1's block does not collect section 8's REFUSE lines with the grep this test holds");
+  assert.equal(s1[ref + 1], '[ -z "${REF}" ] || { echo "STOP: stage 1 printed REFUSE on ${REF}. The sitting stops here, and stage 2 would refuse on the same lines. Report them"; exit 1; }', "stage 1's block does not stop at once on a REFUSE line");
+  const psql1 = s1.findIndex((l) => l.startsWith("psql "));
+  const mark = s1.indexOf('echo "${REC}" > /tmp/dur01-stage1.ok');
+  const pass = s1.findIndex((l) => l.startsWith('echo "STAGE 1 READ, NO REFUSAL.'));
+  assert.ok(psql1 >= 0 && psql1 < ref && ref + 1 < mark && mark < pass, "stage 1's block does not read the whole transcript, then stop on a REFUSE before it marks its pass");
+  const refuse = ere(s1[ref].match(/grep -E '([^']+)'/)[1]);
+  const refusal = (v) => ` R11  | a refusal label | 1 |       0 | ${v}`;
+  assert.match(refusal(word), refuse, "the grep does not read a REFUSE line as psql prints it");
+  for (const v of ["OK", "VACUOUS"]) assert.doesNotMatch(refusal(v), refuse, `the grep reads a line that says ${v}`);
+  // Stage 3: each verdict row ends in OK, VACUOUS or FAIL; the SUMMARY row counts FAIL in its middle.
+  assert.match(S3, /THEN 'FAIL'/, "stage 3 no longer prints FAIL; re-read the block's grep");
+  const s3 = block("STAGE 3").split("\n");
+  const fail = s3.indexOf(String.raw`grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/dur01-stage3.out && { echo "STOP: a stage 3 verdict read FAIL"; exit 1; }`);
+  assert.ok(fail >= 0, "stage 3's block does not stop on a FAIL verdict with the grep this test holds");
+  const psql3 = s3.findIndex((l) => l.startsWith("psql "));
+  const verified = s3.findIndex((l) => l.startsWith('echo "DUR-01 VERIFIED:'));
+  assert.ok(psql3 >= 0 && psql3 < fail && fail < verified, "stage 3's block does not stop on a FAIL before its VERIFIED line");
+  const failed = ere(s3[fail].match(/grep -qE '([^']+)'/)[1]);
+  const verdict = (v) => ` 10 | a check | an observed value | an expected value | ${v}`;
+  assert.match(verdict("FAIL"), failed, "the grep does not read a FAIL verdict as psql prints it");
+  for (const v of ["OK", "VACUOUS"]) assert.doesNotMatch(verdict(v), failed, `the grep reads a verdict that says ${v}`);
+  assert.doesNotMatch(" 99 | SUMMARY | 22 OK / 0 VACUOUS / 1 FAIL | 23 verdicts | SUMMARY", failed, "the grep reads the SUMMARY row, so every run would stop");
+});
+
+test("the stage files name no refusal but this op's own: another op's refusals are named by what they do, since its head renumbers them", () => {
+  const own = new Set([...BASE.matchAll(/'(R\d{2})'(?: AS code)?,/g)].map((m) => m[1]));
+  assert.ok(own.has("R01") && own.has("R11"), "this op's refusal codes did not parse");
+  for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]]) {
+    for (const [r] of sql.matchAll(/\bR\d{2}\b/g)) assert.ok(own.has(r), `${label} names ${r}, which is not one of this op's refusals`);
+    assert.doesNotMatch(flat(sql), /\b(?:its|STAFF-10 v2's|STAFF-10's) R\d{2}\b/, `${label} names another op's refusal by its number`);
+  }
+  assert.ok(flat(copies(S1, "RULE")[0]).includes("STAFF-10 v2 guards the same gap for its own moves: it refuses a move that would put two overlapping confirmed rows on JP(lv)."), "the rule's comment does not say what STAFF-10 v2's JP(lv) guard does");
+});
+
+test("stage 3 runs again only on the owner's or the lead's word: its header says so, and nothing calls it re-issuable", () => {
+  for (const [label, sql] of [["stage 1", S1], ["stage 2", S2], ["stage 3", S3]]) {
+    assert.doesNotMatch(flat(sql), /re-?issu|at any time/i, `${label} says stage 3 may run again at any time`);
+  }
+  const head = flat(S3.slice(0, S3.indexOf("\\pset pager off")));
+  assert.ok(head.includes(`It runs after stage 2 exits 0 with the line "DUR-01 WRITTEN. Paste stage 3 now.", and otherwise only on the owner's or the lead's word, never on the runner's`), "stage 3's header does not say when it runs");
+  assert.doesNotMatch(CURRENT(), /re-?issu/i, "the document calls stage 3 re-issuable outside the history");
+});
+
+test("section 1d names its count by what it counts, the pairs whose person window does not cover the NESA window, never as every pair STAFF-10 v2 would refuse", () => {
+  assert.ok(S1.includes("count(*) FILTER (WHERE NOT lt.covers) AS n_short,") && S1.includes("'shorter', q.n_short"), "section 1d's shorter is not the pairs whose person window does not cover the NESA window");
+  assert.ok(S1.includes("(e ->> 'shorter')::int AS person_window_does_not_cover_nesa,"), "section 1d does not name that count by what it counts");
+  assert.ok(S1.includes("\\echo '=== 1d. THE LIVE FUTURE NESA TWINS STILL STANDING, and how many of them have a person window that does not cover the NESA window ==='"), "section 1d's heading does not say what it counts");
+  for (const [label, text] of [["stage 1", flat(S1)], ["the document", CURRENT()]]) {
+    assert.doesNotMatch(text.replace(/\s+/g, " "), /STAFF-10 v2 would refuse|refused_by_staff10_v2|its_r\d+_refuses/i, `${label} reads section 1d's count as the pairs STAFF-10 v2 would refuse`);
+  }
+  assert.ok(DOC.replace(/\s+/g, " ").includes("how many of them have a person window that does not cover the NESA window"), "the document does not say what section 1d counts");
+});
+
 test("no public byte of the op carries a count next to a counted noun, or a dash", () => {
   const noun = /\b\d[\d,.]*\s*(?:future |past |live |twin |nesa |person |one-minute |held |written )?(?:pairs?|rows?|twins?|patients?|appointments?|bookings?|stubs?|thousand)\b/i;
   const self = readFileSync(fileURLToPath(import.meta.url), "utf8");

@@ -1,8 +1,10 @@
 -- ============================================================================
 -- DUR-01, STAGE 3 of 3: THE VERIFY. READ ONLY. Verdicts OK / VACUOUS / FAIL.
 --
--- Card DUR-01 (docs/data-op-dur-01.md). Run after stage 2, and re-issuable at
--- any time: it writes nothing.
+-- Card DUR-01 (docs/data-op-dur-01.md). It writes nothing. It runs after stage
+-- 2 exits 0 with the line "DUR-01 WRITTEN. Paste stage 3 now.", and otherwise
+-- only on the owner's or the lead's word, never on the runner's (the halt rule,
+-- and D10 of the document).
 --
 -- NO NUMBER IS TYPED. Stage 2 wrote every id, its before and after end, the
 -- excluded ids by verdict, the carries and the md5s into its one audit row;
@@ -38,7 +40,7 @@
 -- the same transaction, and verdict 19 compares the two it recorded.
 --
 -- The rows printed after the SUMMARY are every row stage 2 did not write, as
--- it stands now, ids only: reception's list, re-issuable.
+-- it stands now, ids only: reception's list.
 --
 -- Run:
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f scripts/data/dur-01-3-verify.sql
@@ -140,7 +142,8 @@ c_room AS (
 -- JP_LV, CB and LV of packages/db/scripts/staff-11-jp-one-clinic-check.mjs,
 -- and the unit test holds them equal. The app reads each row as its own
 -- therapist, so its rule never compares one with the other; STAFF-10 v2 guards
--- the same gap for its own moves (its R14). The op reads a booking or a block on
+-- the same gap for its own moves: it refuses a move that would put two
+-- overlapping confirmed rows on JP(lv). The op reads a booking or a block on
 -- either row as holding the person (arm same_person below, and the second block
 -- arm), and holds outright a row booked on one of the two at a clinic that is
 -- not that row's own (person_away, verdict 18). R10 refuses when the pair does
