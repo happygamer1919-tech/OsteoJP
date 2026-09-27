@@ -4,6 +4,14 @@ on:
   pull_request:
     branches: [main]
 
+# A NEW PUSH CANCELS THE RUN IT SUPERSEDES. One group per PR, cancel only on
+# pull_request events; any other run is grouped by its own run id, alone in its
+# group, so nothing can cancel it. Same block in db-tests.yml, e2e.yml and
+# openapi-drift.yml; the reasoning is in e2e.yml's header.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   quality:
     name: Lint + typecheck + test
