@@ -22,6 +22,11 @@ export const COMMS_SECTIONS: readonly CommsSection[] = [
   // COMMS-01. Owner, admin and reception until a scoped therapist policy exists
   // (docs/QUESTIONS.md > Q-COMMS-01-1).
   { href: "/comunicacoes/lembretes-sms", label: s["remindersLog.nav"], capability: "reminders:log_read" },
+  // T5 F4 (guide finding, #1462): the SMS reply review queue. Reception, admin
+  // and owner hold `sms_replies:read` and could open the page, but nothing
+  // linked to it. It keeps its original URL, like Recuperação: the page and its
+  // tests name it. A therapist does not hold the capability and gets no tab.
+  { href: "/reminders/review", label: s["remindersReview.nav"], capability: "sms_replies:read" },
 ];
 
 /** The sections this role may open, in group order. */

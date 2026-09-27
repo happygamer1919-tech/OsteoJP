@@ -5,8 +5,8 @@
  *
  * Assertions:
  *   1. /invoicing renders the "Faturação" heading for admin and reception.
- *   2. "Nova fatura" button is absent — INVOICEXPRESS creds are never set in
- *      the e2e environment, so credentialsConfigured() always returns false.
+ *   2. "Nova fatura" button is absent. T5 F2 removed it for every environment:
+ *      it had no click handler, and issuing an invoice is not wired to a screen.
  *   3. Empty state shows when no invoices exist in the date range (seed has none).
  *   4. Reception also has invoices:read — verified to see the page.
  *   5. Therapist also has invoices:read (read-only) — can access the page.
@@ -42,8 +42,8 @@ test.describe("/invoicing — admin", () => {
       page.getByText(/Sem faturas no período selecionado/i),
     ).toBeVisible();
 
-    // "Nova fatura" button must be hidden because INVOICEXPRESS creds are not
-    // set in the e2e environment (credentialsConfigured() returns false).
+    // T5 F2: there is no "Nova fatura" button in any environment. It used to
+    // render (with no handler) when InvoiceXpress credentials were configured.
     await expect(
       page.getByRole("button", { name: /Nova fatura/i }),
     ).toHaveCount(0);

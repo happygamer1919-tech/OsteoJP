@@ -1,6 +1,6 @@
 # Proprietário
 
-O Proprietário vê e gere a clínica inteira: a agenda de toda a equipa em todos os locais, todos os pacientes, a faturação, as estatísticas e a administração (equipa, serviços, locais e definições). O menu lateral tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Faturação**, **Revisão Consulta**, **Estatísticas**, **Horários** e **Administração**; no telemóvel, o menu abre-se com o botão de três linhas no canto superior esquerdo. No topo das páginas (exceto em Recuperação) ficam o sino das Notificações, **O meu perfil** e **Terminar sessão**.
+O Proprietário vê e gere a clínica inteira: a agenda de toda a equipa em todos os locais, todos os pacientes, a faturação, as estatísticas e a administração (equipa, serviços, locais e definições). O menu lateral tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Faturação**, **Revisão Consulta**, **Estatísticas**, **Horários** e **Administração**; no telemóvel, o menu abre-se com o botão de três linhas no canto superior esquerdo. No topo de todas as páginas ficam o sino das Notificações, **O meu perfil** e **Terminar sessão**.
 
 O Proprietário também abre os ecrãs Nova ficha clínica e Iniciar consulta. Estão descritos no guia do Terapeuta e no guia completo, e não se repetem aqui.
 
@@ -130,7 +130,7 @@ Nota: a lista mostra no máximo 92 dias a contar da data de início. Para um per
 
 ## Comunicações: Recuperação
 
-Em **Comunicações**, o separador **Recuperação** lista os pacientes que estiveram em tratamento e não têm marcação futura: quem veio desde o início do mês passado até há 7 dias, primeiro os que estão há mais tempo sem voltar. Cada cartão mostra a **Última consulta**, o **Terapeuta**, o telefone, a última nota e a ligação **Abrir ficha**. Mais abaixo fica a lista **Adiados**.
+**Comunicações** tem três separadores: **Recuperação**, **Lembretes SMS** e **Respostas SMS**, e abre sempre em **Recuperação**. O separador **Recuperação** lista os pacientes que estiveram em tratamento e não têm marcação futura: quem veio desde o início do mês passado até há 7 dias, primeiro os que estão há mais tempo sem voltar. Cada cartão mostra a **Última consulta**, o **Terapeuta**, o telefone, a última nota e a ligação **Abrir ficha**. Mais abaixo fica a lista **Adiados**.
 
 ### Como fazer: contactar um paciente
 
@@ -147,8 +147,6 @@ Em **Comunicações**, o separador **Recuperação** lista os pacientes que esti
 ![Recuperação no computador](../screens/proprietario/recuperacao-desktop.png)
 
 Nota: a marca de contacto só regista que alguém abriu o contacto neste computador; não confirma que a mensagem foi enviada nem entregue. Um número fixo não recebe WhatsApp nem SMS, e o cartão avisa disso. Para procurar alguém na lista, use **Filtrar por nome ou telemóvel**.
-
-Nota: o separador **Recuperação** abre sem o menu lateral e sem a barra de topo. Para sair, clique em **Lembretes SMS** (que tem o menu) ou use o botão de retroceder do navegador.
 
 ## Comunicações: Lembretes SMS
 
@@ -168,6 +166,17 @@ O separador **Lembretes SMS** mostra cada tentativa de enviar um SMS a um pacien
 
 Nota: só aparecem os SMS que chegaram à fase de envio; um lembrete agendado que ainda não chegou a essa fase não está na lista. A coluna **Telefone atual do paciente** mostra o número de hoje, que pode não ser o usado no envio.
 
+## Comunicações: Respostas SMS
+
+O separador **Respostas SMS** abre **Respostas por rever**: as respostas de pacientes aos SMS da clínica que não correspondem a uma palavra-chave, para alguém ler e decidir. Cada resposta mostra o paciente (ou **Paciente não identificado**), **Recebida em**, a consulta associada (ou **Sem consulta associada**), o texto e os botões **Marcar como confirmada**, **Marcar como cancelada** e **Marcar como lida**. É o mesmo ecrã que a receção usa.
+
+### Como fazer: tratar uma resposta
+
+1. Leia a mensagem e veja a consulta associada.
+2. Clique em **Marcar como confirmada** ou **Marcar como cancelada** para mudar a consulta, ou em **Marcar como lida** para a deixar como está. Em qualquer dos casos a resposta fica tratada.
+
+Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta ainda **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar. Enquanto a receção de respostas por SMS não estiver ativada, o ecrã mostra apenas **Respostas por rever indisponível**.
+
 ## Faturação
 
 Faturação lista as faturas da clínica e abre no mês corrente, do dia 1 até hoje. A tabela mostra **Nº**, **Paciente**, **Data**, **Valor** e **Estado** (**Rascunho**, **Emitida**, **Paga** ou **Anulada**). No fundo, **Pago** soma as faturas pagas e **Pendente** as emitidas ainda por pagar.
@@ -185,7 +194,7 @@ Faturação lista as faturas da clínica e abre no mês corrente, do dia 1 até 
 ![Faturação no telemóvel](../screens/proprietario/faturacao-390.png)
 ![Faturação no computador](../screens/proprietario/faturacao-desktop.png)
 
-Nota: este ecrã serve para consultar faturas; não tem formulário para emitir uma fatura nova. Se aparecer um botão **Nova fatura**, este ainda não abre nada. As faturas de um só paciente estão também no separador **Faturação** da ficha.
+Nota: este ecrã serve para consultar faturas; não tem botão nem formulário para emitir uma fatura nova. As faturas de um só paciente estão também no separador **Faturação** da ficha.
 
 ## Revisão Consulta
 

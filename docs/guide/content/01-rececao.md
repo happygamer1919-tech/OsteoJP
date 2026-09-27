@@ -1,6 +1,6 @@
 # Receção
 
-A receção gere o dia a dia da clínica na plataforma: marca, muda e cancela consultas, regista pacientes novos, contacta quem não voltou, gere os horários dos terapeutas e consulta as faturas. O menu lateral tem, por esta ordem, Início, Agenda, Pacientes, Marcações, Comunicações, Faturação e Horários; no telemóvel, o menu abre-se com o botão de três linhas no canto superior esquerdo. No topo das páginas (exceto em Recuperação) ficam o sino das Notificações, **O meu perfil** e **Terminar sessão**.
+A receção gere o dia a dia da clínica na plataforma: marca, muda e cancela consultas, regista pacientes novos, contacta quem não voltou, gere os horários dos terapeutas e consulta as faturas. O menu lateral tem, por esta ordem, Início, Agenda, Pacientes, Marcações, Comunicações, Faturação e Horários; no telemóvel, o menu abre-se com o botão de três linhas no canto superior esquerdo. No topo de todas as páginas ficam o sino das Notificações, **O meu perfil** e **Terminar sessão**.
 
 ## Início
 
@@ -160,7 +160,7 @@ Nota: o intervalo de datas tem no máximo 92 dias. Se escolher um intervalo maio
 
 ## Comunicações: Recuperação
 
-Em **Comunicações**, o separador **Recuperação** mostra a lista **Recuperação de utentes**: pacientes que estiveram em tratamento recentemente e não têm marcação futura. A lista mostra quem esteve na clínica desde o início do mês passado até há 7 dias, a começar pelos que estão há mais tempo sem voltar. Cada paciente aparece com a **Última consulta**, o **Terapeuta**, o telefone, a última nota (quando existe) e os botões **WhatsApp**, **SMS**, **Email**, **Adiar**, **Abrir ficha** e, quando o paciente tem notas, **Notas**. Mais abaixo fica a secção **Adiados**.
+**Comunicações** tem três separadores: **Recuperação**, **Lembretes SMS** e **Respostas SMS**, e abre sempre em **Recuperação**. O separador **Recuperação** mostra a lista **Recuperação de utentes**: pacientes que estiveram em tratamento recentemente e não têm marcação futura. A lista mostra quem esteve na clínica desde o início do mês passado até há 7 dias, a começar pelos que estão há mais tempo sem voltar. Cada paciente aparece com a **Última consulta**, o **Terapeuta**, o telefone, a última nota (quando existe) e os botões **WhatsApp**, **SMS**, **Email**, **Adiar**, **Abrir ficha** e, quando o paciente tem notas, **Notas**. Mais abaixo fica a secção **Adiados**.
 
 ### Como fazer: contactar um paciente
 
@@ -181,8 +181,6 @@ Nota: a indicação de contacto regista apenas que alguém abriu o contacto ness
 
 Nota: quando o número é um telefone fixo, não aparecem os botões **WhatsApp** e **SMS**. Ligue ao paciente e peça um telemóvel. Para encontrar alguém depressa, use **Filtrar por nome ou telemóvel**.
 
-Nota: o separador **Recuperação** abre sem o menu lateral e sem a barra de topo. Para sair, clique em **Lembretes SMS** (que tem o menu) ou use o botão de retroceder do navegador.
-
 ## Comunicações: Lembretes SMS
 
 O separador **Lembretes SMS** mostra cada tentativa de enviar um SMS a um paciente: lembretes, confirmações de marcação e mensagens depois da consulta ou de uma falta, a mais recente primeiro. As colunas são **Paciente**, **Marcação**, **Canal**, **Tipo**, **Previsto para (calculado)**, **Enviado**, **Estado**, **Código de erro** e **Telefone atual do paciente**. O **Estado** pode ser **Enviado**, **Entregue**, **Não entregue**, **Falhou no fornecedor** ou **Não enviado** com o motivo.
@@ -202,6 +200,18 @@ O separador **Lembretes SMS** mostra cada tentativa de enviar um SMS a um pacien
 
 Nota: este ecrã só mostra o que aconteceu e não reenvia mensagens. Um lembrete agendado que ainda não chegou à fase de envio não aparece, e o telefone mostrado é o atual, que pode não ser o do envio se foi alterado depois.
 
+## Comunicações: Respostas SMS
+
+O separador **Respostas SMS** abre o ecrã **Respostas por rever**: as respostas de pacientes aos SMS da clínica que não correspondem a uma palavra-chave e que, por isso, alguém da receção tem de ler. Cada resposta mostra o paciente (ou **Paciente não identificado**), a data em que chegou (**Recebida em**), a consulta a que foi associada (ou **Sem consulta associada**), o texto da mensagem e os botões **Marcar como confirmada**, **Marcar como cancelada** e **Marcar como lida**.
+
+### Como fazer: tratar uma resposta
+
+1. Leia a mensagem e veja a consulta associada.
+2. Se o paciente confirma, clique em **Marcar como confirmada**; se desmarca, clique em **Marcar como cancelada**. A consulta passa a **Confirmada** ou **Cancelada** e a resposta fica tratada.
+3. Se a mensagem não pede nenhuma alteração, clique em **Marcar como lida**. A resposta fica tratada e a consulta não muda.
+
+Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta que ainda está **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, a resposta fica tratada e aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar. Enquanto a receção de respostas por SMS não estiver ativada na clínica, o ecrã mostra apenas **Respostas por rever indisponível**.
+
 ## Faturação
 
 A Faturação mostra as faturas da clínica num período. Por omissão, mostra do dia 1 do mês atual até hoje. A tabela tem as colunas **Nº**, **Paciente**, **Data**, **Valor** e **Estado** (**Rascunho**, **Emitida**, **Paga** ou **Anulada**), e um botão **Abrir** em cada linha. No fundo da tabela aparecem os totais **Pago** e **Pendente** (as faturas emitidas e ainda não pagas).
@@ -220,7 +230,7 @@ A Faturação mostra as faturas da clínica num período. Por omissão, mostra d
 ![Faturação no telemóvel](../screens/rececao/faturacao-390.png)
 ![Faturação no computador](../screens/rececao/faturacao-desktop.png)
 
-Nota: nesta versão, a Faturação serve para consultar: não há aqui um formulário para emitir faturas. Mesmo que apareça o botão **Nova fatura**, este não abre nenhum formulário.
+Nota: nesta versão, a Faturação serve só para consultar: não há botão nem formulário para emitir faturas.
 
 ## Horários
 

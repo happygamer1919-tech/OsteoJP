@@ -9,8 +9,8 @@ export type NavItem = {
   /**
    * COMMS-01: other URL prefixes that light this entry as active. Used by a
    * GROUP entry whose sections keep their own routes (Comunicações holds
-   * /recuperacao, which predates the group and is named by links, revalidatePath
-   * and e2e specs). Absent for every ordinary entry.
+   * /recuperacao and /reminders/review, which predate the group and are named by
+   * links, revalidatePath and e2e specs). Absent for every ordinary entry.
    */
   activePrefixes?: string[];
 };
@@ -74,8 +74,10 @@ const ALL: (NavItem & { capability?: Capability | readonly Capability[] })[] = [
   // they may not open; it is not what stops them opening it.
   //
   // COMMS-01 (owner dispatch 2026-09-14, BL-2): THE ENTRY IS NOW THE GROUP.
-  // "Comunicações" holds two sections, Recuperação and Lembretes SMS, and sits in
-  // Recuperação's old slot for the NAV-01 reason above. The sidebar shell has no
+  // "Comunicações" holds its sections (Recuperação, Lembretes SMS and, since T5
+  // F4, Respostas SMS at /reminders/review; the list is COMMS_SECTIONS in
+  // comms-sections.ts) and sits in Recuperação's old slot for the NAV-01 reason
+  // above. The sidebar shell has no
   // nested items, so the group is ONE entry whose sections share a tab bar
   // (app/comunicacoes/comms-nav.client.tsx); /comunicacoes redirects to the first
   // section the role may open. The entry shows when the role may open ANY

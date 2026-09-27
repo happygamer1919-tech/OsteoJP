@@ -5,6 +5,8 @@ import { assertCan, ForbiddenError } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { s } from "@/lib/i18n";
+import { commsSectionsForRole } from "@/lib/nav/comms-sections";
+import { CommsNav } from "@/app/comunicacoes/comms-nav.client";
 import { remindersInboundEnabled } from "@/lib/reminders/inbound-config";
 import {
   listReviewQueue,
@@ -37,6 +39,10 @@ export const metadata = { title: s["remindersReview.title"] };
  *
  * Still gated behind REMINDERS_INBOUND, which is OFF: the webhook that fills
  * this table is not armed and no Twilio number points at it yet.
+ *
+ * T5 F4 (guide finding, #1462): a section of the Comunicações group now, so it
+ * carries the group's tab bar (COMMS_SECTIONS) and renders inside the shell
+ * (app/reminders/layout.tsx). Before this, nothing in the app linked here.
  */
 export default async function InboundReviewPage() {
   const actor = await requireRequestContext();
@@ -54,8 +60,19 @@ export default async function InboundReviewPage() {
     throw e;
   }
 
+  // COMMS-01's tab bar, exactly as Recuperação and Lembretes SMS render it: the
+  // sections this viewer may open, shown only when there is another to switch to.
+  const commsSections = commsSectionsForRole(actor.role);
+  const tabs =
+    commsSections.length > 1 ? (
+      <CommsNav
+        items={commsSections.map(({ href, label }) => ({ href, label }))}
+        label={s["comms.sectionsLabel"]}
+      />
+    ) : null;
+
   const header = (
-    <header className="mb-6 flex flex-col gap-1">
+    <header className="flex flex-col gap-1">
       <h1 className="text-lg font-semibold text-v2-text-primary">
         {s["remindersReview.title"]}
       </h1>
@@ -65,7 +82,8 @@ export default async function InboundReviewPage() {
 
   if (!remindersInboundEnabled()) {
     return (
-      <main className="min-h-dvh p-8">
+      <main className="flex flex-col gap-6 p-6">
+        {tabs}
         {header}
         <EmptyState
           icon={MailWarning}
@@ -93,7 +111,8 @@ export default async function InboundReviewPage() {
   }
 
   return (
-    <main className="min-h-dvh p-8">
+    <main className="flex flex-col gap-6 p-6">
+      {tabs}
       {header}
       <InboundReviewList items={items} onResolve={onResolve} />
     </main>
