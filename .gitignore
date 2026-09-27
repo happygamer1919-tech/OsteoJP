@@ -11,6 +11,10 @@ node_modules/
 dist/
 build/
 out/
+# docs/guide/build is the guide's builder (source), not an output; only the
+# PDFs it prints there are.
+!docs/guide/build/
+docs/guide/build/*.pdf
 
 # Environment
 .env
