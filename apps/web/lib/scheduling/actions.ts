@@ -54,9 +54,12 @@ import { listSharedResources, listSharedResourcesTx } from "./shared-resources";
 import { secondParticipantCheck } from "./second-participant";
 import {
   emitCancelledNotification,
+  emitCareTeamAddedNotifications,
   emitConfirmedNotification,
   emitRescheduledNotification,
 } from "@/lib/notifications/centre";
+import { addBookedTherapistsToCareTeam } from "@/lib/admin/care-team-auto";
+import { careTeamNotices, type CareTeamAddition } from "@/lib/admin/care-team-core";
 import { getTherapistAvailability, type DayAvailability } from "./day-availability";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
@@ -210,6 +213,27 @@ async function afterCommit(step: string, run: () => void | Promise<void>): Promi
   }
 }
 
+
+/**
+ * CARE-02c. Tell each therapist a booking has just put on a patient's care team
+ * for the first time. Runs after commit, in its own `afterCommit` step at every
+ * caller, so a reminder enqueue that throws cannot swallow it. The additions are
+ * the rows the INSERT really wrote (care-team-auto.ts), which is what makes it
+ * first time only; `careTeamNotices` drops the actor and folds one booking into
+ * one notice per therapist.
+ */
+async function emitCareTeamNotices(
+  actor: RequestContext,
+  additions: readonly CareTeamAddition[],
+): Promise<void> {
+  if (additions.length === 0) return;
+  await emitCareTeamAddedNotifications({
+    tenantId: actor.tenantId,
+    actorUserId: actor.userId,
+    notices: careTeamNotices(additions, actor.userId),
+    occurredAt: new Date(),
+  });
+}
 
 type Authorized = { actor: RequestContext };
 type Denied = Extract<ActionResult<never>, { ok: false }>;
@@ -703,6 +727,8 @@ export async function createAppointment(
   const ip = await clientIp();
   // Captured inside the tx, enqueued AFTER commit (network out of the tx).
   let reminderTargets: ReminderEnqueueTarget[] = [];
+  // CARE-02c: the care-team rows this booking wrote, notified AFTER commit.
+  let careTeamAdded: CareTeamAddition[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -954,6 +980,17 @@ export async function createAppointment(
           });
         }
 
+        // CARE-02c (sites 2 and 3, the first occurrence and the recurrence
+        // children): every therapist on these rows joins every patient on them,
+        // first time only, in THIS transaction and under THIS actor. Owner and
+        // reception only, which is who 0091's insert policy admits; it never
+        // fails the booking (care-team-auto.ts).
+        careTeamAdded = await addBookedTherapistsToCareTeam(
+          tx,
+          actor,
+          created.map((c) => c.id),
+        );
+
         reminderTargets = created.map((c) => ({
           appointmentId: c.id,
           startsAt: c.startsAt,
@@ -968,6 +1005,7 @@ export async function createAppointment(
         revalidateAppointmentSurfaces();
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
       });
+      await afterCommit("createCareTeam", () => emitCareTeamNotices(actor, careTeamAdded));
     }
     return result;
   } catch (e) {
@@ -1140,6 +1178,8 @@ export async function cloneAppointment(
   const ip = await clientIp();
   // Captured inside the tx, enqueued AFTER commit (network out of the tx).
   let reminderTargets: ReminderEnqueueTarget[] = [];
+  // CARE-02c: the care-team rows this clone wrote, notified AFTER commit.
+  let careTeamAdded: CareTeamAddition[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1339,6 +1379,12 @@ export async function cloneAppointment(
           ip,
         });
 
+        // CARE-02c (site 4, Marcar novamente): the clone is a real booking, so
+        // its therapists join its patients' care teams exactly as a fresh
+        // booking's do. Usually a no-op, since the source's booking already
+        // added them; it is not one for a source older than this feature.
+        careTeamAdded = await addBookedTherapistsToCareTeam(tx, actor, [created.id]);
+
         reminderTargets = [{ appointmentId: created.id, startsAt: values.startsAt }];
         return { ok: true, data: { id: created.id } };
       },
@@ -1350,6 +1396,7 @@ export async function cloneAppointment(
         revalidateAppointmentSurfaces();
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
       });
+      await afterCommit("cloneCareTeam", () => emitCareTeamNotices(actor, careTeamAdded));
     }
     return result;
   } catch (e) {
@@ -1934,6 +1981,8 @@ export async function rescheduleAppointment(
   // Captured inside the tx, enqueued AFTER commit (network out of the tx).
   let reminderTargets: ReminderEnqueueTarget[] = [];
   let rescheduleFanOut: Array<StaffTransitionFanOut & { newStartsAt: Date }> = [];
+  // CARE-02c: care-team rows written because the Terapeuta changed.
+  let careTeamAdded: CareTeamAddition[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -2111,6 +2160,19 @@ export async function rescheduleAppointment(
             ip,
           });
         }
+        // CARE-02c: A RESCHEDULE TO A NEW TERAPEUTA puts that therapist on the
+        // care team, first time only, in this transaction. Only the rows whose
+        // Terapeuta actually changed (`affected` holds the PRE-update value),
+        // and only the Terapeuta slot, because a reschedule never moves the
+        // Terapeuta 2. A move in time alone adds nobody.
+        const movedToNewTherapist = affected
+          .filter((a) => targets.some((t) => t.id === a.id))
+          .filter((a) => a.practitionerId !== input.practitionerId)
+          .map((a) => a.id);
+        careTeamAdded = await addBookedTherapistsToCareTeam(tx, actor, movedToNewTherapist, {
+          slots: "primary",
+        });
+
         reminderTargets = targets.map((t) => ({
           appointmentId: t.id,
           startsAt: t.startsAt,
@@ -2154,6 +2216,9 @@ export async function rescheduleAppointment(
           });
         }
       });
+      // The fan-out above reads the PRE-update practitioners, so the NEW
+      // Terapeuta is not among its recipients. This is the one notice they get.
+      await afterCommit("rescheduleCareTeam", () => emitCareTeamNotices(actor, careTeamAdded));
     }
     return result;
   } catch (e) {

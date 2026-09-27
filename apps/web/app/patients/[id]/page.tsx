@@ -283,6 +283,15 @@ export default async function PatientProfilePage({
   // reading who else follows their patient, which is not what the ruling grants
   // them. What it grants them is the appointment history, and that arrives
   // through RLS without any screen.
+  //
+  // CARE-02b (a read-only card for the therapist) IS BLOCKED ON THE DATABASE,
+  // not on this page. `patient_care_team_select` (0091) admits owner and
+  // reception only, so a therapist's read of the table returns no rows, and a
+  // card built from that would tell them nobody is assigned. The card has its
+  // read-only mode (CareTeamCard `readOnly`); it is wired here once a read path
+  // for therapists exists, which is a policy or a SECURITY DEFINER reader and
+  // therefore Tier C. The same reasoning keeps `reminders:log_read` from the
+  // therapist in packages/auth/permissions.ts.
   const canManageCareTeam = can(ctx.role, "care_team:manage");
   const careTeam =
     tab === "resumo" && canManageCareTeam ? await listCareTeam(ctx, patient.id) : [];
@@ -291,7 +300,14 @@ export default async function PatientProfilePage({
   // NESA-SCOPE: members and picker are named as one list (labelCareTeamCard),
   // so two same-named machines on this card always read apart. Labels only.
   const careTeamLabels = careTeamOptions ? staffLabelContext(careTeamOptions) : null;
-  const careTeamMembersRaw = careTeam.map((m) => ({ userId: m.userId, fullName: m.fullName }));
+  // CARE-02c: each member carries how it got there and when, so the card can
+  // label it and offer Remover on a manual entry only.
+  const careTeamMembersRaw = careTeam.map((m) => ({
+    userId: m.userId,
+    fullName: m.fullName,
+    source: m.source,
+    assignedAt: m.assignedAt,
+  }));
   const { candidates: careTeamCandidates, members: careTeamMembers } =
     careTeamLabels && careTeamOptions
       ? labelCareTeamCard(

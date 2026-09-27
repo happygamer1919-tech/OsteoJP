@@ -839,6 +839,14 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
       if (guard[0]?.clinic_closed) throw new AppointmentError("clinic_closed");
       if (guard[0]?.conflict) throw new AppointmentError("no_slot");
 
+      // CARE-02c: THIS INSERT WRITES NO CARE-TEAM ROW, and that is deliberate.
+      // A portal booking is a pedido the clinic has not accepted yet (the same
+      // reason its reminders wait for acceptance), it runs as the service role
+      // with no staff actor for 0091's insert policy to judge, and the therapist
+      // is already told about the pedido. Whether ACCEPTING a pedido should add
+      // the therapist is carried to the owner as a question. The register of
+      // every appointment insert and its care-team verdict is
+      // apps/web/lib/scheduling/creation-paths-write-care-team.test.ts.
       const inserted = await tx
         .insert(appointments)
         .values({
