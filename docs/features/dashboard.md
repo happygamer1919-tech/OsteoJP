@@ -10,15 +10,17 @@ The dashboard is a server-rendered Next.js page (`apps/web/app/dashboard/page.ts
 
 | Widget | owner | admin | therapist | reception |
 |---|---|---|---|---|
-| KPI — Pacientes ativos | ✅ | ✅ | ✅ | ✅ |
-| KPI — Marcações hoje | ✅ | ✅ | ✅ | ✅ |
-| KPI — Novas fichas (esta semana) | ✅ | ✅ | ✅ | — |
-| KPI — Receita (mês) | ✅ | ✅ | ✅ | ✅ |
+| KPI: Pacientes ativos | ✅ | ✅ | ✅ | ✅ |
+| KPI: Marcações hoje | ✅ | ✅ | ✅ | ✅ |
+| KPI: Novas fichas (esta semana) | ✅ | ✅ | ✅ | ✗ |
+| KPI: Receita (mês) | ✅ | ✅ | ✗ | ✅ |
 | Próximas marcações panel | ✅ | ✅ | ✅ | ✅ |
 | Resumo semanal chart | ✅ | ✅ | ✅ | ✅ |
 | Notas rápidas | ✅ | ✅ | ✅ | ✅ |
 
-The KPI — Novas fichas card is the only widget gated on `clinical_records:read`; reception does not hold that capability.
+The KPI: Novas fichas card is the only widget gated on `clinical_records:read`; reception does not hold that capability.
+
+The KPI: Receita (mês) card is gated on `invoices:issue`, which the therapist does not hold (DASH-THERAPIST-REVENUE; see section 2). The therapist's KPI row therefore has three tiles, laid out in three columns at `xl` with the third tile spanning the row at `md` and `lg`, so it has no empty column. Owner, admin and reception keep the row they had: `md:grid-cols-2 xl:grid-cols-4` with no tile spanning, which for reception's three tiles still leaves an empty quarter at `xl`.
 
 ---
 
@@ -52,13 +54,15 @@ The 7-element counts array is derived client-side from the result: for each of t
 ## 2. Receita (mês)
 
 **Label (PT):** "Receita (mês)"
-**Component:** `<GlassKpiCard accent="gold">` — KPI card, fourth in the row
+**Component:** `<GlassKpiCard accent="gold">`, the last KPI card in the row (fourth for owner and admin, third for reception; not rendered for the therapist)
 
 ### What it does
 
 Displays the total invoiced revenue for the **current calendar month**, expressed as a PT-locale EUR string (e.g. `"1.245,00 €"`). The value is a read-only summary; there is no link or action attached to the card.
 
-> **Note:** As of the current implementation the card is not gated by any role capability check — it is always rendered for all authenticated staff. This is intentional: the card shows an aggregate figure without exposing individual invoice records.
+> **Gated on `invoices:issue` (DASH-THERAPIST-REVENUE).** Owner, admin and reception see the card; the therapist does not. Until this card the tile was rendered for every role, and the guide writers found a therapist's Início showing the whole clinic's monthly revenue. The gate is enforced on the server twice: the page does not call `getMonthlyRevenue` for a role without the capability (no tile, no "Sem dados"), and `getMonthlyRevenue` itself throws `ForbiddenError` before any read, so no other caller can leak the figure.
+>
+> The gate is `invoices:issue`, not `invoices:read`. Every role holds `invoices:read` (the therapist keeps it for the Faturação tab on a patient's page), so a gate on it would pass the therapist. `invoices:issue` is held by owner, admin and reception only, and is the capability W10-04 already uses to keep the therapist out of Faturação (`/invoicing` and its nav entry). The constant is `MONTHLY_REVENUE_CAPABILITY` in `apps/web/lib/invoices/queries.ts`, shared by the page's gate and the function's assertion.
 
 ### Data source
 
@@ -84,7 +88,7 @@ Month boundaries are calculated as:
 
 ### Scoping
 
-`runScoped(ctx, …)` → RLS on the `invoices` table restricts the sum to the caller's tenant. No per-user filter; the value reflects all invoiced revenue across the whole clinic for the month.
+`getMonthlyRevenue` first asserts `invoices:issue` (above), then reads through `runScoped(ctx, …)`: RLS on the `invoices` table restricts the sum to the caller's tenant. There is no per-user and no per-location filter; the value reflects all invoiced revenue across every clinic of the tenant for the month.
 
 ---
 
