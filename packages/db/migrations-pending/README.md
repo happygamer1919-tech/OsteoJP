@@ -33,21 +33,22 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0093_users_tenants_roles_policy_split.sql` | `0093` | 2026-09-26 | `db/0094-users-tenants-role-policy-split-r6`, held (Tier C, ruled `0094`). Its checks are `scripts/db/precheck-users-tenants-roles.sql`, `postcheck-users-tenants-roles.sql` and `behaviour-users-tenants-roles-readonly.sql`; the pre-check pins this file's sha256, so the promotion must not change a byte |
+| (none on this branch) | | | |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
 was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 `NEXT-AFTER-0089_care_team.sql` was promoted second, on
 `care/CARE-01-assigned-therapists` (PR #1374), and took **`0091`** — see the Promoted
-table below. Those two promotions emptied the table above; the one row in it now is
-the `0094` file, parked later.
+table below. Those two promotions emptied the table above. The `0094` file was parked
+there later and has since been promoted too (see the Promoted table), so the table is
+empty again.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22.** It is
 **`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (applied and merged) ·
-`0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, promoted, held
-for the apply) · `0094` the users/tenants role fix (parked above, held) · `0095` the
-grants revoke (#1397) · `0096` the conflict check's patient name**.
+`0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, applied and
+merged) · `0094` the users/tenants role fix (#1459, promoted, held for the apply) ·
+`0095` the grants revoke (#1397) · `0096` the conflict check's patient name**.
 
 **THIS IS THE SECOND RENUMBERING OF THAT QUEUE, and the earlier ones were real.**
 The order first recorded here was 0090 NESA, 0091 care-team, 0092 RGPD-01,
@@ -60,7 +61,7 @@ it stood, so a PR description, comment or note still naming `0092` for care-team
 table lives in `CLAUDE.md` under "SOLO's record"; read it, not a number remembered
 from a branch name.
 
-**ONE MIGRATION IS IN FLIGHT AT A TIME.** `0094` is not promoted until `0093` is
+**ONE MIGRATION IS IN FLIGHT AT A TIME.** `0095` is not promoted until `0094` is
 applied to production and merged.
 
 ## Promoted
@@ -72,3 +73,4 @@ applied to production and merged.
 | `NEXT-AFTER-0089_nesa_patient_name_for_therapists.sql` | `packages/db/migrations/0090_nesa_patient_name_for_therapists.sql`, bytes unchanged (sha256 `cbff20cb90f5bb27b607055a4bf46d4b7ed5992aebe1c894d0fe559868b5c642`), journal `idx 87`, `when 1788401200000` | 2026-09-18, branch `sched/B8-nesa-names-to-therapists`. Promoted after #1338 put 0089 on main; applied to production from `docs/migration-apply-0090.md` (production journal id 88), merged in #1390 on 2026-09-21 |
 | `NEXT-AFTER-0089_care_team.sql` | `packages/db/migrations/0091_care_team.sql`, bytes unchanged (sha256 `bd207cdc8c39099ac213f087e42fbd7cc332158590c5248dcbfe3928bf5a972f`), journal `idx 88`, `when 1788501200000` | 2026-09-21, branch `care/CARE-01-assigned-therapists` (PR #1374). Promoted after 0090 was applied and merged, under the owner's re-ruling of 2026-09-21 that put CARE-01 at `0091`; **authored, NOT yet applied** — the apply runs from `docs/migration-apply-0091.md`, which is staged in **this same commit** together with its sha256 sidecar and the three pinned check scripts. **The promoted file's own header still reads "NO NUMBER YET, BY CONSTRUCTION" and says it must follow an unapplied 0089.** That sentence is stale, and it is left stale on purpose: a promotion moves the file and does not touch one byte of it, which is the only reason the sha256 in this row can pin anything. Read the header as a record of when the file was authored, and this table for where it now sits. |
 | `NEXT-AFTER-0089_patient_rgpd_acceptances.sql` | `packages/db/migrations/0093_patient_rgpd_acceptances.sql`, bytes unchanged (sha256 `7a769298c43f982cdc27dc71cbec403a53861dbfc2c24b72c62c2203d370c454`), journal `idx 90`, `when 1788501400000` | 2026-09-23, branch `patients/RGPD-01-consent-at-creation` (PR #1399). Promoted after 0092 was applied and merged, under the owner's ruling of 2026-09-22 that put RGPD-01 at `0093`; **authored, NOT yet applied**. The apply runs from `docs/migration-apply-0093.md`, staged in the same commit with its sha256 sidecar and the three pinned check scripts, and it replaces `docs/migration-apply-RGPD-01.md`. **The promoted file's own header still reads "PARKED, NOT NUMBERED".** Stale on purpose, for the same reason as 0091's row above. |
+| `NEXT-AFTER-0093_users_tenants_roles_policy_split.sql` | `packages/db/migrations/0094_users_tenants_roles_policy_split.sql`, bytes unchanged (sha256 `439cb53eab62803026a74e1148dbe3f5af1b7f95f0fc8e486d55eb7d62836a6c`), journal `idx 91`, `when 1788501500000` | 2026-09-28, branch `db/0094-users-tenants-role-policy-split-r6` (PR #1459). Promoted after 0093 was applied and merged, under the owner's ruling of 2026-09-22 that put the users/tenants role fix at `0094`; **authored, NOT yet applied**. By the owner's ruling of 2026-09-27 the PR merges first and GREEN applies it from `origin/main`, from `docs/migration-apply-0094.md`, which is not part of this promotion commit. The pre-check pins this sha256 as a literal (`scripts/db/precheck-users-tenants-roles.sql`, verdict 10), so it needed no edit. **The promoted file's own header still reads "NO NUMBER IN THIS FILE NAME YET, BY CONSTRUCTION".** Stale on purpose, for the same reason as 0091's row above. |
