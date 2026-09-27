@@ -293,12 +293,15 @@ export function relabelStaffRows<R extends { id: string | null; name: string }>(
  * nothing to collide with takes the viewer's roster label (`known`). Labels
  * only: no member and no candidate is dropped.
  */
-export function labelCareTeamCard<C extends StaffOption>(
+export function labelCareTeamCard<
+  C extends StaffOption,
+  M extends { userId: string; fullName: string } = { userId: string; fullName: string },
+>(
   candidates: readonly C[],
-  members: readonly { userId: string; fullName: string }[],
+  members: readonly M[],
   ctx: Omit<StaffLabelContext, "keepId">,
   known: readonly StaffOption[] = [],
-): { candidates: C[]; members: { userId: string; fullName: string }[] } {
+): { candidates: C[]; members: M[] } {
   const listed = new Set(candidates.map((c) => c.id));
   const union = [
     ...candidates.map((c) => ({ id: c.id, name: c.label })),
@@ -310,7 +313,9 @@ export function labelCareTeamCard<C extends StaffOption>(
       const label = byId.get(c.id);
       return label === undefined || label === c.label ? c : { ...c, label };
     }),
-    members: members.map((m) => ({ userId: m.userId, fullName: byId.get(m.userId) ?? m.fullName })),
+    // CARE-02c: every other field on a member (its source, its date) rides
+    // through untouched. Only the name is relabelled.
+    members: members.map((m) => ({ ...m, fullName: byId.get(m.userId) ?? m.fullName })),
   };
 }
 

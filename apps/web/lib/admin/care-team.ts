@@ -1,9 +1,15 @@
 import "server-only";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { patientCareTeam, users } from "@osteojp/db";
+import { auditLog, patientCareTeam, users, type DbTx } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
+import {
+  CARE_TEAM_AUTO_ACTION,
+  CARE_TEAM_ENTITY_TYPE,
+  careTeamSource,
+  type CareTeamSource,
+} from "./care-team-core";
 import { AdminError } from "./errors";
 
 /**
@@ -40,9 +46,37 @@ export type CareTeamMember = {
   userId: string;
   fullName: string;
   assignedAt: Date;
+  /**
+   * CARE-02c. "automatic" when a booking wrote the row, "manual" when reception
+   * or the owner pressed Atribuir. Every row from before CARE-02c is manual.
+   */
+  source: CareTeamSource;
 };
 
-/** The patient's CURRENT care team, oldest assignment first. */
+/**
+ * The care-team rows among `rowIds` that a booking wrote.
+ *
+ * Read from audit_log under the caller's RLS (tenant-scoped SELECT, 0001). The
+ * match is the audit row's entity_id against the care-team row's primary key,
+ * so it is exact; care-team-core.ts explains why the discriminator is an audit
+ * row rather than a column.
+ */
+async function automaticRowIds(tx: DbTx, rowIds: readonly string[]): Promise<Set<string>> {
+  if (rowIds.length === 0) return new Set();
+  const rows = await tx
+    .select({ id: auditLog.entityId })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.entityType, CARE_TEAM_ENTITY_TYPE),
+        eq(auditLog.action, CARE_TEAM_AUTO_ACTION),
+        inArray(auditLog.entityId, [...rowIds]),
+      ),
+    );
+  return new Set(rows.map((r) => r.id).filter((id): id is string => id !== null));
+}
+
+/** The patient's CURRENT care team, oldest assignment first, each with its source. */
 export async function listCareTeam(
   actor: RequestContext,
   patientId: string,
@@ -52,6 +86,7 @@ export async function listCareTeam(
   return runScoped(actor, async (tx) => {
     const rows = await tx
       .select({
+        id: patientCareTeam.id,
         userId: patientCareTeam.userId,
         fullName: users.fullName,
         assignedAt: patientCareTeam.assignedAt,
@@ -62,10 +97,15 @@ export async function listCareTeam(
         and(eq(patientCareTeam.patientId, patientId), isNull(patientCareTeam.removedAt)),
       )
       .orderBy(asc(patientCareTeam.assignedAt));
+    const automatic = await automaticRowIds(
+      tx,
+      rows.map((r) => r.id),
+    );
     return rows.map((r) => ({
       userId: r.userId,
       fullName: r.fullName,
       assignedAt: r.assignedAt,
+      source: careTeamSource(r.id, automatic),
     }));
   });
 }
@@ -133,6 +173,12 @@ export async function assignTherapist(
  * this patient keeps the history through the ruling's second arm. Removal ends
  * the ASSIGNMENT, not the treatment relationship, and the RLS test pins exactly
  * that distinction.
+ *
+ * CARE-02c: AN AUTOMATIC ENTRY IS NOT REMOVABLE. The panel offers Remover on
+ * manual entries only; this is the same rule where it cannot be bypassed by a
+ * stale tab or a hand-built form post. An automatic entry records that a booking
+ * put the therapist there, and a removal would be undone by their next booking
+ * anyway. Refused as `forbidden`, before any write.
  */
 export async function removeTherapist(
   actor: RequestContext,
@@ -143,6 +189,26 @@ export async function removeTherapist(
   if (!patientId || !userId) throw new AdminError("invalid");
 
   await runScoped(actor, async (tx) => {
+    const live = await tx
+      .select({ id: patientCareTeam.id })
+      .from(patientCareTeam)
+      .where(
+        and(
+          eq(patientCareTeam.patientId, patientId),
+          eq(patientCareTeam.userId, userId),
+          isNull(patientCareTeam.removedAt),
+        ),
+      )
+      .limit(1);
+    if (live.length === 0) return; // nothing live to remove: no audit
+    const automatic = await automaticRowIds(
+      tx,
+      live.map((l) => l.id),
+    );
+    if (careTeamSource(live[0]!.id, automatic) === "automatic") {
+      throw new AdminError("forbidden");
+    }
+
     const updated = await tx
       .update(patientCareTeam)
       .set({ removedAt: new Date() })
