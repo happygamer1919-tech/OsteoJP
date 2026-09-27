@@ -95,6 +95,6 @@
     "scripts/staff-11-jp-one-clinic-check.test.mjs": "913fbc28904e1febaa79e650f9bc0ba48ad5f6361ca254d937785d6150623a70",
     "scripts/sync-supabase-migrations.mjs": "d11db8715e2dfeade01cfef368e379a8b0e3f45eb9217acd86f8208246d17ad9",
     "scripts/verified-migrate.test.mjs": "fb442f64b4dd16bcc415a191dd32115c64a6218582551b453ecb3271d6fbe79b",
-    "turbo.json": "d6afcf574e7e094ed4b1d13ca9b0973ba3c471ae609bbcde579782b92f747f5f"
+    "turbo.json": "a08c724210d166922799ce4e08d1662af4b0511603982943a4b650b7b6f8920e"
   }
 }
