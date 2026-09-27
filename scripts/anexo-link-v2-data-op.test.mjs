@@ -563,6 +563,24 @@ const P5_TO = "RAISE NOTICE 'P5 baseline";
 const A_FROM = "SELECT count(*)::int INTO v_a_total";
 const A_TO = "RAISE NOTICE 'A the deltas";
 
+/**
+ * Every variable a PL/pgSQL text assigns, once per assignment: `:=`, a plain `=`,
+ * SELECT or RETURNING INTO, GET DIAGNOSTICS, and a FOR or FOREACH loop variable, a
+ * subscripted target (`v_x[1] :=`) included. `lexed` has its comments and strings
+ * blanked (lexSql), so a name inside either never counts.
+ */
+function assignedNames(lexed) {
+  const V = "(v_[a-z_0-9]+)(?:\\s*\\[[^\\]]*\\])*";
+  const LIST = "((?:v_[a-z_0-9]+\\s*,\\s*)*v_[a-z_0-9]+)";
+  return [
+    ...[...lexed.matchAll(new RegExp(`\\b${V}\\s*:=`, "g"))].map((m) => m[1]),
+    ...[...lexed.matchAll(new RegExp(`(?:^|;|\\bTHEN|\\bELSE|\\bLOOP|\\bBEGIN)\\s*${V}\\s*=(?!=)`, "gim"))].map((m) => m[1]),
+    ...[...lexed.matchAll(new RegExp(`\\bINTO\\s+(?:STRICT\\s+)?${LIST}`, "gi"))].flatMap((m) => m[1].split(/\s*,\s*/)),
+    ...[...lexed.matchAll(new RegExp(`\\bGET\\s+DIAGNOSTICS\\s+${V}\\s*:?=`, "gi"))].map((m) => m[1]),
+    ...[...lexed.matchAll(new RegExp(`\\bFOR(?:EACH)?\\s+${LIST}\\s+(?:SLICE\\s+\\d+\\s+)?IN\\b`, "gi"))].flatMap((m) => m[1].split(/\s*,\s*/)),
+  ];
+}
+
 test("every check stage 2 makes after the write compares real reads: P5's baselines and v_pre before the write, section A's reads after it, each pinned whole, assigned nowhere else, and v_pre recorded as prelinked_ids", () => {
   const c = code(S2);
   const fold = (s) => s.replace(/\s+/g, " ").trim();
@@ -578,16 +596,71 @@ test("every check stage 2 makes after the write compares real reads: P5's baseli
   // with itself, and every line above would still match.
   const outside = lexSql(c.slice(0, p5) + c.slice(c.indexOf(P5_TO, p5), a) + c.slice(c.indexOf(A_TO, a)), false).code;
   const guarded = /^(?:v_b_[a-z_0-9]+|v_bn_[a-z_0-9]+|v_a_[a-z_0-9]+|v_pre|v_digest)$/;
-  const assigned = [
-    ...[...outside.matchAll(/\b(v_[a-z_0-9]+)\s*:=/g)].map((m) => m[1]),
-    ...[...outside.matchAll(/(?:^|;|\bTHEN|\bELSE|\bLOOP|\bBEGIN)\s*(v_[a-z_0-9]+)\s*=(?!=)/gim)].map((m) => m[1]),
-    ...[...outside.matchAll(/\bINTO\s+(?:STRICT\s+)?((?:v_[a-z_0-9]+\s*,\s*)*v_[a-z_0-9]+)/gi)].flatMap((m) => m[1].split(/\s*,\s*/)),
-    ...[...outside.matchAll(/\bGET\s+DIAGNOSTICS\s+(v_[a-z_0-9]+)\s*:?=/gi)].map((m) => m[1]),
-  ];
+  const assigned = assignedNames(outside);
   assert.ok(assigned.includes("v_att") && assigned.includes("v_n"), "the assignment reader found none of the block's own assignments, so it read nothing");
   const stray = assigned.filter((v) => guarded.test(v));
   assert.deepEqual(stray, [], `stage 2 assigns ${stray.join(", ")} outside P5 and section A`);
   assert.ok(between(S2, "INSERT INTO public.audit_log", "GET DIAGNOSTICS v_n = ROW_COUNT;", "the audit row").includes("\n    'prelinked_ids', to_jsonb(v_pre),\n"), "the audit row does not record v_pre as prelinked_ids, which verdict 9 reads");
+});
+
+// The audit row is the op's only undo record (the section "Undoing it") and the record
+// Q1 cites for the left-alone documents by class, and no check reads its values back
+// before COMMIT. So the set read that computes what it records and the INSERT are each
+// pinned whole (comments dropped, whitespace folded), its card is the document's, and
+// every variable it records is assigned exactly once, in one DECLARE, so no later line
+// and no inner block can change what it writes. A key kept with a wrong value (the
+// pairs less one, the classes emptied, the registos counted as documents) kept every
+// other pin green (review round 7).
+const SET_READ_FROM = "SELECT (SELECT k.tenant FROM k),";
+const SET_READ = [
+  "SELECT (SELECT k.tenant FROM k),",
+  "coalesce((SELECT jsonb_agg(jsonb_build_object('a', l.attachment_id, 'r', l.record_id) ORDER BY l.attachment_id, l.record_id) FROM lnk l), '[]'::jsonb),",
+  "coalesce((SELECT array_agg(DISTINCT l.record_id ORDER BY l.record_id) FROM lnk l), '{}'::uuid[]),",
+  "coalesce((SELECT jsonb_object_agg(e.label, e.ids) FROM (SELECT x.label, jsonb_agg(x.attachment_id ORDER BY x.attachment_id) AS ids FROM excl x GROUP BY x.label) e), '{}'::jsonb),",
+  "coalesce((SELECT array_agg(DISTINCT x.attachment_id ORDER BY x.attachment_id) FROM excl x), '{}'::uuid[]),",
+  "(SELECT jsonb_agg(jsonb_build_object('code', r.code, 'label', r.label, 'n', r.n, 'control', r.control) ORDER BY r.code) FROM ref r),",
+  "(SELECT jsonb_object_agg(c.carry, c.value) FROM car c)",
+  "INTO v_tenant, v_lnk, v_regs, v_excl, v_excl_ids, v_ref, v_car;",
+  "v_att := ARRAY(SELECT (e ->> 'a')::uuid FROM jsonb_array_elements(v_lnk) e ORDER BY 1);",
+].join(" ");
+const AUDIT_INSERT = [
+  "INSERT INTO public.audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)",
+  "VALUES (v_tenant, NULL, c_action, 'attachment', NULL, jsonb_build_object(",
+  "'card', c_card,",
+  "'source', 'data_op_anexo_link_v2',",
+  "'ruling', '2026-09-13 (a)',",
+  "'op_at', now(),",
+  "'carries', v_car,",
+  "'linked_count', cardinality(v_att),",
+  "'registos_touched', cardinality(v_regs),",
+  "'digest', v_digest,",
+  "'pairs', v_lnk,",
+  "'registos', to_jsonb(v_regs),",
+  "'excluded', v_excl,",
+  "'excluded_ids', to_jsonb(v_excl_ids),",
+  "'prelinked_ids', to_jsonb(v_pre),",
+  "'before', jsonb_build_object( 'attachments', v_b_total, 'linked', v_b_linked, 'unlinked', v_b_unlinked, 'with_patient', v_b_with_patient),",
+  "'after', jsonb_build_object( 'attachments', v_a_total, 'linked', v_a_linked, 'unlinked', v_a_unlinked, 'with_patient', v_a_with_patient),",
+  "'md5', jsonb_build_object( 'w_fixed', v_b_md5_w_fixed, 'att_rest', v_b_md5_att_rest, 'excl', v_b_md5_excl, 'cr_all', v_b_md5_cr_all, 'cr_t', v_b_md5_cr_t, 'ep_all', v_b_md5_ep_all, 'ep_t', v_b_md5_ep_t, 'stg', v_b_md5_stg, 'cons', v_b_md5_cons),",
+  "'md5_rows', v_md5_rows",
+  "));",
+].join(" ");
+const AUDIT_FROM = "INSERT INTO public.audit_log";
+const RECORDED = ["v_tenant", "v_lnk", "v_att", "v_regs", "v_excl", "v_excl_ids", "v_car", "v_md5_rows"];
+
+test("the audit row, the only undo record, records exactly what stage 2 read and wrote: the set read and the INSERT pinned whole, the card the document's, and each recorded variable assigned once", () => {
+  const c = code(S2);
+  const fold = (s) => s.replace(/\s+/g, " ").trim();
+  for (const anchor of [SET_READ_FROM, AUDIT_FROM]) assert.equal(c.split(anchor).length - 1, 1, `stage 2 carries ${anchor} other than once, so this test cannot tell which one it pins`);
+  assert.equal(fold(between(c, SET_READ_FROM, "RAISE NOTICE 'P1 tenant", "the set read")), SET_READ, "stage 2 records sets it did not compute from the SETS block: the pairs, the registos, the left-alone documents by class or by id, or the carries");
+  assert.equal(fold(between(c, AUDIT_FROM, "GET DIAGNOSTICS v_n = ROW_COUNT;", "the audit row")), AUDIT_INSERT, "the audit row records a value other than the one stage 2 read or wrote: the undo record, a count, a class list or a fingerprint is wrong");
+  const card = DOC.match(/^\| Card \| `([^`]+)`, ruling \(a\) \|$/m)?.[1];
+  assert.ok(card, "the facts table names no card");
+  assert.ok(S2.includes(`  c_card       constant text := '${card}';\n`), "the audit row records another card than the document's");
+  const lexed = lexSql(c, false).code;
+  assert.equal((lexed.match(/\bDECLARE\b/gi) ?? []).length, 1, "stage 2 declares variables in more than one block, so an inner block can shadow what the audit row records");
+  const assigned = assignedNames(lexed);
+  for (const v of RECORDED) assert.equal(assigned.filter((x) => x === v).length, 1, `stage 2 assigns ${v}, which the audit row records, other than once`);
 });
 
 test("every check stage 2 makes after the write is armed: each document carries the registo that named it, patients match, registos stay locked, no other original gained a registo, and the audit row is written once, at this transaction's time", () => {

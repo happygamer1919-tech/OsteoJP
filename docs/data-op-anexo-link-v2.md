@@ -508,9 +508,9 @@ row. Each refusal adds its own shape by an arm, so the other arms keep theirs.
 | `b14-rehearsal/build-base.zsh` | `973273163578626d2410752243a4968127de40cfdf0b6229ac77f0b3f72dd99f` |
 | `b14-rehearsal/fixture.sql` | `15b83bd9990f5d289317cdf88dfd17199cd3072963c6d6381fc591897649d591` |
 | `b14-rehearsal/arms/*.sql`, one mutation per arm, concatenated in name order | `19456b31651c0d05aa380eb58e43824e254a89fcf0414a345a696b99ea5ff673` |
-| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `5e84f5a8a7141cefd1fd47818ef14770cfaf7849c837c18b882828bd6432bacf` |
+| `b14-rehearsal/run-anexo2-arms.zsh`, the runner | `71c045df6e668aaafbb1b605dbfdebbe679c44a1495628af2a4ac90d7e337aba` |
 | `b14-rehearsal/extract-stage.mjs`, the STAFF-10 v2 kit's extractor, unchanged but its header | `241840aed7091688976a019c4eab6cc687ce291e0ca8c9a6e573b2512cbcce7c` |
-| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `2b3f0476bdfb8eedfc6645ff33add087b2bc55519b9c14e5f565a8e6f2a45e7c` |
+| `b14-rehearsal/prove-red.mjs`, the seeded wrong copies of the unit test | `2dde4c28c4e57107aad6b51be2622017ee56bee76986348d51201fef59d59c38` |
 | `b14-rehearsal/smuggle.mjs`, the review round 6 copies of stage 2 | `8a1d781334c737090c4a78f51b4e32188046018c7bad0a2cc3706ba93c68eee5` |
 
 **How it ran.** Each block was extracted from this document at the commit under test (cloned
@@ -536,7 +536,7 @@ extractor refuses a block that still names production.
 | stage 1 | 0 | every refusal OK, none VACUOUS; `partition holds`; classes link, already_linked, linked_elsewhere, soft_deleted, no_document, no_registo and other_tenant each present; the count carry `5` and its digest |
 | stage 2 | 0 | P3 both carries match; P4 no trigger the system did not create; P5 every md5 family OK, none empty; W1 linked the link set exactly; A the deltas exact and every family unchanged; `DONE`, `COMMITTED` |
 | stage 3 | 0 | `12 OK / 0 VACUOUS / 0 FAIL` |
-| database after | | the five link pairs carry their registos; every other attachment row unchanged by md5; `clinical_records` unchanged by md5; the soft-deleted document still unlinked and deleted; the other tenant's document still unlinked; one v2 audit row, which records the no_registo class's document among the ids verdict 10 reads |
+| database after | | the five link pairs carry their registos; every other attachment row unchanged by md5; `clinical_records` unchanged by md5; the soft-deleted document still unlinked and deleted; the other tenant's document still unlinked; one v2 audit row, whose undo record is the five link pairs with their count and the three registos, and which lists every left-alone document by class, the soft-deleted one under `soft_deleted`, the classes holding exactly the ids verdict 10 reads, the no_registo class's document among them |
 | stage 0, then 1, then 2 again | 1, 1, 1 | `STOP: stage 2 has ALREADY WRITTEN in this sitting` |
 | stage 1 with the markers removed | 1 | REFUSE on R03 and R09 (its consequence: nothing is left to link) |
 | stage 2 with its mark forced | 3 | `STOP: R03 refuses`; still one audit row, the database unchanged by md5, no written marker |
@@ -670,6 +670,19 @@ digest first.
 | the staff patient document's patient cleared | 3, `STOP: the documents with a patient moved 13 -> 12` | the linked, unlinked and with-patient counts after the write taken from the baselines | 3, `STOP: an attachment outside the link set changed`: a later check, the recomputation over every other attachment, still caught it | unchanged, no written marker |
 | an imported original already on its registo unlinked, and one no cell names linked, so every count holds | 3, `STOP: 1 imported original(s) carry a registo that neither this op nor anything before it gave them` | `v_pre` taken over every imported original, linked or not | 3, `STOP: an attachment outside the link set changed`: a later check, the recomputation over every other attachment, still caught it | unchanged, no written marker |
 
+**Review round 7, run for real.** The review's three copies of stage 2, each with one value of
+the audit row changed, run through this document's own stage 2 block with only its file and
+that file's pin swapped, then stage 3 through its own block. Each commits the link itself
+exactly as the op does, with the wrong record beside it: its exit is the defect the unit test's
+new pins hold off, not the op's. The file as committed records what the happy path above
+checks.
+
+| The review's copy of stage 2 | Stages 1 and 2 | The audit row it committed | Stage 3 | FAIL on | Profile |
+|---|---|---|---|---|---|
+| `'pairs', v_lnk - 0`: the undo record less its first pair (the review's copy a) | 0, 0, `COMMITTED` | four pairs recorded for the five documents the op linked, so an undo from it would leave the first one on its registo | 1 | 3, 4, 5, 6, 9, 12 | `6 OK / 0 VACUOUS / 6 FAIL` |
+| `'excluded', '{}'::jsonb`: no left-alone document by class (the review's copy b) | 0, 0, `COMMITTED` | `excluded` empty, so Q1's `excluded.soft_deleted` names nothing, while `excluded_ids` still lists all five left-alone documents, the soft-deleted one among them | 0 | none | `12 OK / 0 VACUOUS / 0 FAIL` |
+| `'linked_count', cardinality(v_regs)`: the registos counted as the linked documents (the review's copy c) | 0, 0, `COMMITTED` | `linked_count` three, beside five pairs recorded | 1 | 3, 5, 6, 12 | `8 OK / 0 VACUOUS / 4 FAIL` |
+
 **The original files, on the same fixture** (never on production), run directly with their own
 carries. This is the evidence for the section "What changed from the original op, and why":
 
@@ -681,11 +694,12 @@ carries. This is the evidence for the section "What changed from the original op
 | after O3 | | the soft-deleted document linked: true; the two names after a no-break space and a tab linked: 0 of 2 |
 
 **The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
-and `prove-red.mjs` ran it against 212 seeded wrong copies of the committed tree, each
+and `prove-red.mjs` ran it against 228 seeded wrong copies of the committed tree, each
 re-pinned so only its target property is wrong: every copy turned its target test red, and the
 green controls (DELETE, DROP and TRUNCATE only inside comments, a string and an echo; an
-assignment to a guarded name only inside a comment and a string; a heading of this document
-quoted in its prose) kept every test green. Every test has at least one copy.
+assignment to a guarded or a recorded name only inside a comment and a string; a comment inside
+the audit row and a value set further from its key; a heading of this document quoted in its
+prose) kept every test green. Every test has at least one copy.
 
 **What the rehearsal caught.** The first full run passed every arm but one check: the R08 arm's
 document also belonged to another patient than its registo, so stage 2 stopped on R06, the
@@ -764,7 +778,7 @@ seeded copies of the first two findings, and their siblings, stayed green on the
 and turned their target test red on that one; that round's unit test, run on the commit before
 it, went red on exactly the tests of the last two.
 
-**What review round 6 caught,** fixed on the commit that carries this section; no stage file
+**What review round 6 caught,** each fixed in that round; no stage file
 changed. Two properties had no pin that could fail. The unit test pinned only the IF lines of
 stage 2's checks after the write, not the reads they compare: a recomputation replaced by its
 own baseline, the `w_fixed` check disarmed with `AND false`, the counts after the write taken
@@ -780,7 +794,21 @@ questions to their paraphrased label, refuses a phrase that presents words as th
 names every double-quoted span of this document's prose and of the stage files' comments as
 what it is. The review's seeded copies stayed green on the commit before, and so did their
 siblings but two an older pin already caught (the total after the write taken from its baseline,
-and the digest read with its own text gone); every one turns its target test red on this one.
+and the digest read with its own text gone); every one turned its target test red on that one.
+
+**What review round 7 caught,** fixed on the commit that carries this section; no stage file
+changed. The audit row is the op's only undo record (the section "Undoing it") and the record
+Q1 cites for the left-alone documents by class, and nothing pinned its values: the unit test
+asked only that each key stage 3 reads be in stage 2's text, and stage 2 reads none of the
+values back before COMMIT. The pairs less one, `excluded` emptied, or the registos counted as
+the linked documents each kept every test green; the round 7 table above shows what each
+commits, and the one that empties `excluded` reads all OK, because no stage reads it. The unit
+test now pins the INSERT whole, every value in it, and the set read behind it (the pairs, the
+registos, the left-alone documents by class and by id, and the carries); holds its card to the
+document's; and holds every variable the audit row records to one assignment in one DECLARE,
+so no later `:=`, `SELECT INTO`, subscript, loop or inner block can change what it writes.
+The review's seeded copies, and their siblings, each stayed green on the commit before and turn
+their target test red on this one.
 
 ## Undoing it
 
