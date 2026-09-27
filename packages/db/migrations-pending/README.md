@@ -33,19 +33,20 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none on this branch) | | | |
+| `NEXT-AFTER-0093_users_tenants_roles_policy_split.sql` | `0093` | 2026-09-26 | `db/0094-users-tenants-role-policy-split-r6`, held (Tier C, ruled `0094`). Its checks are `scripts/db/precheck-users-tenants-roles.sql`, `postcheck-users-tenants-roles.sql` and `behaviour-users-tenants-roles-readonly.sql`; the pre-check pins this file's sha256, so the promotion must not change a byte |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
 was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 `NEXT-AFTER-0089_care_team.sql` was promoted second, on
 `care/CARE-01-assigned-therapists` (PR #1374), and took **`0091`** — see the Promoted
-table below. That is why the table above is empty again.
+table below. Those two promotions emptied the table above; the one row in it now is
+the `0094` file, parked later.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22.** It is
 **`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (applied and merged) ·
 `0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, promoted, held
-for the apply) · `0094` the users/tenants role fix (not yet opened) · `0095` the
+for the apply) · `0094` the users/tenants role fix (parked above, held) · `0095` the
 grants revoke (#1397) · `0096` the conflict check's patient name**.
 
 **THIS IS THE SECOND RENUMBERING OF THAT QUEUE, and the earlier ones were real.**
