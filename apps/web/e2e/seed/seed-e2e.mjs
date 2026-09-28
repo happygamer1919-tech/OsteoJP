@@ -68,7 +68,7 @@ const USERS = [
     email: "e2e-admin-receita-lv@osteojp.test",
     fullName: "E2E Admin Receita LV",
   },
-  // A SECOND therapist with ZERO therapist_services (Catarina-Vieira case, W4-01):
+  // A SECOND therapist with ZERO therapist_services (the W4-01 zero-mapping case):
   // `roleSlug` is the real role; `slug` is only the unique key for idBySlug.
   {
     slug: "therapist2",
