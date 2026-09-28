@@ -3,7 +3,7 @@ id: pacientes.marcacoes-na-ficha
 title: Marcar, cancelar ou corrigir um estado a partir da ficha
 goal: Gerir as marcações de um paciente sem passar pela agenda.
 roles: rececao, terapeuta, proprietario
-order: rececao 3, terapeuta 3, proprietario 5
+order: rececao 3, terapeuta 3, proprietario 6
 capability: appointments:write
 screens: ficha-paciente
 ---

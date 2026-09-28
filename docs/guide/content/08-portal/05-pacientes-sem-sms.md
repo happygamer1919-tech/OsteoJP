@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 4, terapeuta 2, proprietario 5
 capability: patients:write
 screens: notificacoes
+review: CARE-02a
 ---
 ## Pacientes sem SMS possível
 

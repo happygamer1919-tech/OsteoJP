@@ -3,7 +3,7 @@ id: pacientes.juntar-ficha-duplicada
 title: Juntar uma ficha duplicada
 goal: Passar o histórico para a ficha que fica.
 roles: proprietario
-order: proprietario 8
+order: proprietario 9
 capability: patients:delete
 screens: ficha-paciente
 ---

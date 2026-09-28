@@ -3,7 +3,7 @@ id: pacientes.ficha-do-paciente
 title: A ficha do paciente
 goal: Saber o que está em cada separador e o que dizem os avisos.
 roles: rececao, terapeuta, proprietario
-order: rececao 7, terapeuta 2, proprietario 3
+order: rececao 8, terapeuta 2, proprietario 3
 capability: patients:read
 screens: ficha-paciente
 review: CARE-02a
@@ -19,7 +19,7 @@ No topo da ficha estão o nome, o NIF, os contactos e o botão **Nova marcação
 * **Faturação**: as faturas do paciente, só para consulta.
 
 ::: terapeuta proprietario
-Há também o separador **Registos clínicos** e o botão **Novo episódio** no topo.
+Há também o separador **Registos clínicos**. Quem escreve registos clínicos tem ainda o botão **Novo episódio** no topo.
 :::
 
 ::: proprietario

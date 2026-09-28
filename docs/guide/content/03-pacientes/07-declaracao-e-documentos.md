@@ -3,7 +3,7 @@ id: pacientes.declaracao-e-documentos
 title: Declaração de presença e documentos
 goal: Imprimir uma declaração e carregar ou retirar um documento.
 roles: rececao, terapeuta, proprietario
-order: rececao 5, terapeuta 4, proprietario 6
+order: rececao 6, terapeuta 4, proprietario 7
 capability: patients:write
 screens: ficha-paciente
 ---
