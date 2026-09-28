@@ -545,14 +545,17 @@ tests FAIL first, then VACUOUS, then OK:
   tenant's role (`foreign_role_possible` false): one tenant, or other tenants that hold
   no user and no role. A second tenant that holds either makes it OK or FAIL;
 - **arm 12 as well, for the manager run only when the manager is an owner** (no
-  admin qualified) and the database holds one tenant: an owner may give any of its
-  tenant's roles, so no candidate of its own tenant is refused.
+  admin qualified): it is VACUOUS only when the rule refuses no candidate of the
+  owner's own tenant (`r_chk_n = own_cands`). An owner may give any of its tenant's
+  roles, so that is when no other tenant holds a role: one tenant, or other tenants
+  that hold no role.
 
 **The block does not also count tenants, on purpose.** A tenant count would misjudge
-arm 10: a second tenant with no staff and no roles leaves arm 10 legitimately VACUOUS
-while arm 3 reads OK (measured under "Review round 1", below). And if the connecting
-role's counts ever read nothing where rows exist, arm 2, which is never VACUOUS, FAILs,
-because it needs the actor's own tenant to hold users and roles.
+arms 10 and 12: a second tenant with no staff and no roles leaves arm 10 legitimately
+VACUOUS for every actor, and arm 12 for an owner, while arm 3 reads OK (measured under
+"Review round 1", below). And if the connecting role's counts ever read nothing where
+rows exist, arm 2, which is never VACUOUS, FAILs, because it needs the actor's own
+tenant to hold users and roles.
 
 **Never VACUOUS: 0, 1, 2, 4, 5, 6, 7, 8, 9, 11, 13,** and 12 for the narrowing actor and
 for an admin. Arms 5 and 6 would be vacuous only in a tenant with fewer than two staff
@@ -560,8 +563,8 @@ rows, and stage 1's choice of two actors in one tenant rules that out. **Arm 13 
 arm that tests every write policy's tenant predicate on a one-tenant database;** it has
 no vacuous branch.
 
-**The profile is printed, not asserted exactly,** because it moves with the data (the
-tenant count). On the rehearsal, with 0094 applied: **`12 OK / 2 VACUOUS / 0 FAIL`** (3
+**The profile is printed, not asserted exactly,** because it moves with the data (which
+tenants exist, and which staff and roles each holds). On the rehearsal, with 0094 applied: **`12 OK / 2 VACUOUS / 0 FAIL`** (3
 and 10) for reception, therapist and admin actors with one tenant, **`14 OK / 0 VACUOUS / 0 FAIL`**
 with two, and **`11 OK / 3 VACUOUS / 0 FAIL`** (3, 10 and 12) for an owner with one.
 Only a pass writes `/tmp/0094-stage3.ok`, the recorded sha, just before the last line;
@@ -680,9 +683,9 @@ that adds a policy or a function moves them. It is an assertion about this apply
 | 7 | `tenants`: UPDATE admits the own row for owner or admin only, both sides; INSERT and DELETE admit nothing | OK | OK |
 | 8 | `roles`: INSERT, UPDATE (both sides) and DELETE admit nothing | OK | OK |
 | 9 | the column guard trigger is there, fires on every UPDATE of every column, SECURITY INVOKER, body pinned | OK | OK |
-| 10 | no staff row in any tenant names a role of another tenant | VACUOUS with one tenant, else OK | the same |
+| 10 | no staff row in any tenant names a role of another tenant | VACUOUS when no other tenant holds a user or a role (one tenant among them), else OK | the same |
 | 11 | login still resolves: the token hook returns the actor's tenant and role | OK | OK |
-| 12 | `users` UPDATE WITH CHECK admits exactly the rule's candidate new rows | OK | OK for an admin; VACUOUS for an owner with one tenant |
+| 12 | `users` UPDATE WITH CHECK admits exactly the rule's candidate new rows | OK | OK for an admin; VACUOUS for an owner when no other tenant holds a role (one tenant among them) |
 | 13 | no write on the three tables admits a row of a tenant that does not exist | OK | OK |
 
 ### Which acceptance check this sitting discharges, and which it does not
@@ -875,7 +878,103 @@ The clock arms put a `date` on the `PATH` that prints one fixed instant; the blo
 committed, the whole sitting ran once more from that commit as the stand-in `main`, with
 the dispatch's document sha256 refilled to this document's (one more counted
 substitution, in BEFORE YOU START only): every block exit 0, reception and admin
-`12 OK / 2 VACUOUS / 0 FAIL`, the closing read 92.
+`12 OK / 2 VACUOUS / 0 FAIL`, the closing read 92. **That refill was a substitution in
+the rehearsal's extracted copy only;** the dispatch file itself kept `f7bc4e0e…` until
+review round 1, below, refilled it.
+
+### Review round 1, 2026-09-28: what changed, and the runs that measured it
+
+**No byte of any block changed.** Each block's sha256 between its fences is still the
+one in the table above. What changed:
+
+- **the branch carries `origin/main` at `b8c62fd5`** (#1466, the owner's fourth
+  renumbering). The one conflict, `packages/db/migrations-pending/README.md`, resolves
+  to main's ruled queue with `0094` promoted and held for the apply, and keeps the
+  Promoted row. No migration, check file or pinned program changed; `pnpm
+  db:check-journal` reads 92 files and 92 journal entries, and the `test:scripts` suite
+  passes 1053 of 1053;
+- **this document's prose, on two points:** what closes a main that moves before stage 0
+  fetches (under "THIS DOCUMENT PINS ITSELF"), and where arms 3, 10 and 12 decide
+  VACUOUS (stage 3's EXPECT and the arm table);
+- **GREEN's dispatch.** BEFORE YOU START removes, and on a pass records, the main head it
+  checked in `/tmp/0094-start-main.sha`. The CLOCK CHECK halts before stage 1 unless
+  stage 0 recorded that same head and the document at it hashes to the dispatch's pin.
+  Both refuse a start at 02:30 Lisbon or later on Monday, so stage 1 starts by 02:29 and
+  the READ ONLY stages end before 03:00. The dispatch's document sha256 is refilled, and
+  `<MERGED_SHA>` is its only placeholder.
+
+**Where it ran.** `t3_fix_prod91` on the rehearsal container, built as `t3_0094_prod`
+was (from `template0`, the `auth` schema copied schema-only, main's 91 migrations in
+journal order with `psql -1`, drizzle's journal seeded by file sha256), with the same
+synthetic one-tenant fixture; each run on its own copy. The blocks ran from a new
+detached worktree of the commit under test, `040f2af9` (this document at sha256
+`fa4bf04d…659d`, the dispatch pinning that same sha256), with its own offline
+frozen-lockfile install, and a scratch bare repository whose `main` is that commit stood
+in for `origin`. The substitutions are the ones above; the dispatch's two blocks counted
+tmp 4, cd 1, fetch 1, rev-parse 1, reader 1 and merged 1 (BEFORE YOU START), and tmp 5
+and cd 1 (the CLOCK CHECK). Both read a fixed clock, a `date` on the `PATH`.
+
+| Block, happy path at Lisbon Monday 01:30 | Exit | What it printed |
+|---|---|---|
+| BEFORE YOU START | 0 | every pin as the EXPECT lists it, `journal rows on production: 91`, `main head recorded for the CLOCK CHECK: 040f2af9…`, the last line |
+| stage 0 | 0 | `running from origin/main 040f2af9…`, `0094 PROMOTION, NUMBER AND FILES VERIFIED` |
+| CLOCK CHECK | 0 | the same sha twice, `document at the recorded sha: fa4bf04d…659d`, `Lisbon now: 2026-09-28 01:30`, the last line |
+| stage 1 | 0 | the same sha twice; pre-check **21 OK**; the active reception and admin; `pending    1`; drizzle `exit: 0`; `journal    91 -> 92  (delta 1)`; `0094 APPLIED. Paste stage 2 now.` |
+| stage 2 | 0 | post-check **18 OK**; `journal rows before=91 after=92, 0094 present by hash`; the last line |
+| stage 3 | 0 | reception and admin **`12 OK / 2 VACUOUS / 0 FAIL`**, VACUOUS on 3 and 10 only |
+| closing read | 0 | `journal rows on production: 92`, 92 files `APPLIED` with 0094 last, `pending on this ref: 0`, `CLOSING READ: ...` |
+
+BEFORE YOU START, stage 0 and the CLOCK CHECK were also pasted into an interactive
+`zsh -f -i`: exit 0 each, and the CLOCK CHECK pasted at Monday 02:30 exit 1 on its STOP.
+
+| Arm | Exit | Halted on |
+|---|---|---|
+| main moved between BEFORE YOU START and stage 0, the document unchanged (one byte appended to the pending README) | BEFORE YOU START 0, stage 0 0, CLOCK CHECK 1 | `STOP: main moved between BEFORE YOU START and stage 0, the merge freeze was broken.` with both shas |
+| main moved between BEFORE YOU START and stage 0 to a new document AND a sidecar re-pinned to it, in one commit | BEFORE YOU START 0, **stage 0 0** (`docs/migration-apply-0094.md: OK` on the new pair: the gap this round closes), CLOCK CHECK 1 | the same STOP |
+| both records naming that foreign head, written by hand | CLOCK CHECK 1 | `document at the recorded sha: d0c45244…`, then `STOP: the document at the recorded sha is not the approved one` |
+| stage 0 run, BEFORE YOU START never run | CLOCK CHECK 1 | `STOP: BEFORE YOU START recorded no main head in this sitting` |
+| BEFORE YOU START's record three hours old | CLOCK CHECK 1 | `STOP: BEFORE YOU START's record is over two hours old` |
+| BEFORE YOU START passed, stage 0 never run | CLOCK CHECK 1 | `STOP: stage 0 recorded no sha in this sitting` |
+| an earlier record in place, then BEFORE YOU START with `<MERGED_SHA>` unfilled, then stage 0 | BEFORE YOU START 1, stage 0 0, CLOCK CHECK 1 | the unfilled MERGED STOP; the earlier record gone; `recorded no main head` |
+| the CLOCK CHECK at Lisbon Sunday 21:00 and 23:59, Monday 00:09, 01:08, 01:30, 02:29 and 02:29:59 | 0 each | its last line |
+| the CLOCK CHECK at Lisbon Sunday 20:59, Monday 02:30 and 03:00, Tuesday 01:00 | 1 each | the matching STOP |
+| BEFORE YOU START at Lisbon Sunday 21:00, Monday 00:09 and 02:29 | 0 each | its last line, the head recorded |
+| BEFORE YOU START at Lisbon Sunday 20:59 and Monday 02:30 | 1 each | the matching STOP; no journal transcript and no head recorded |
+
+**Arms 3, 10 and 12 with a second tenant that holds no staff and no roles:** one tenant
+row inserted into a copy of the happy path's database after its sitting, and the behaviour
+file run on it directly, once per actor.
+
+| Actor | Arm 3 | Arm 10 | Arm 12 | SUMMARY |
+|---|---|---|---|---|
+| reception | OK, `0 read of 1 that exist` | VACUOUS | OK | `13 OK / 1 VACUOUS / 0 FAIL` |
+| admin | OK | VACUOUS | OK | `13 OK / 1 VACUOUS / 0 FAIL` |
+| owner | OK | VACUOUS | VACUOUS | `12 OK / 2 VACUOUS / 0 FAIL` |
+
+**packages/db on the merged tree,** on databases built the same way, at the 92
+migrations and, as the control, at main's 91: the two flipped suites pass **121 of 121**
+at 92. The whole suite, serial, passes 1332 of 1363 at 92 and 1330 at 91. The 31 that
+fail at 92 fail identically at 91, and the only two more at 91 are exactly the two
+assertions the flip added. Those 31 are this builder's environment, the same with and
+without 0094: `permission denied for table tenants` and its kind (a database built from
+`template0` has no Supabase default privileges) and a missing `storage` schema (no
+storage-api). **They are not evidence about 0094, and CI, whose database has both, is
+the gate:** #1459 read CONFLICTING until this merge, so no CI run has yet seen the
+promoted journal or the two flipped suites.
+
+| File, in the scratchpad (not committed) | sha256 |
+|---|---|
+| `build.zsh`, the database at a given migrations tree | `934b8a7efbbf70ef332526a40467ee20f68eaf24ccc864aaa5aeb1c05eebc19f` |
+| `fixture-one-tenant.sql`, the same synthetic staff | `bbfdeb2dd5666da5c9e24a9b5b86367f044d2087c485abe6315ddda0ae022226` |
+| `extract.mjs`, the extractor, pointed at this round's worktree | `cb6fe3d32c477ebef09fea9422966b73cd29497eaa3a6306fdc164eab695cbda` |
+| `run.zsh`, one block under `zsh -f` | `61a6c99b335277c790bc4617d5568a868590caa1c00e67b34671dd5af63130d3` |
+| `run-i.zsh`, one block pasted into `zsh -f -i`, the fixed clock passed through | `10aa89a9ac33d95d86867e13f7f670f7442c020f6376a01ea0c54e273498c729` |
+| `tamper.zsh`, a stand-in main with one byte appended, the sidecar re-pinned on request | `5017c087e7838133cb71827ea1e77441b62097344e2d61d6ace843006c7b04fd` |
+| `fakeclock/date`, the fixed clock | `e307c7f1b8a7f62913c590c6ecec1921e85f9f9d92b398269002f50e1b0f1cb7` |
+
+This subsection, the arm 12 wording and the arm table were written after these runs,
+and none of them is a byte of a block. They move this document's sha256 away from
+`fa4bf04d…659d`, and the dispatch carries the committed one.
 
 ## What this does NOT do
 
