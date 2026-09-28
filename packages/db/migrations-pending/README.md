@@ -44,20 +44,17 @@ table below. Those two promotions emptied the table above; the one row in it on 
 branch is the `0097` file, parked later. Other branches hold their own pending files,
 which this table does not list: it is only accurate for the branch you read it on.
 
-**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22 AND EXTENDED ON 2026-09-27.** It is
-**`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (applied and merged) ·
-`0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, merged on
-2026-09-23, applied on 2026-09-24) · `0094` the users/tenants role fix (#1459, held) ·
-`0095` the grants revoke (#1397, held) · `0096` the conflict check's patient name
-(#1438, held) · `0097` the staging index (the one file in the table above, held) ·
-`0098` CARE-02a, the care team reading the ficha and the registos (held, on its own
-branch)**. The states in brackets were read on 2026-09-27: each PR's state from
-GitHub, and `0093`'s apply from its board card `MIG-0093-patient-rgpd-acceptances` on
-`origin/main`. A state that changes after that date does not change this line; read
-the PR or the card. The last two are the owner's ruling of 2026-09-27, "0097 and 0098
-authored now": both are held, GREEN applies them later, and `0097` follows `0096`
-(`CLAUDE.md` on `origin/main`, line 127). That ruling added two items and moved no
-number.
+**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-27 (the fourth time).** It is
+**`0090` NESA names · `0091` CARE-01 · `0092` CARE-LOC · `0093` RGPD-01 (all four
+applied and merged) · `0094` the users/tenants role fix (#1459, held) · `0095` the
+conflict check's patient name (#1438, held; was `0096`) · `0096` the grants revoke
+(#1397, held; was `0095`) · `0097` the staging index (held) · `0098` CARE-02a (held) ·
+`0099` the registo write fix · `0100` onward SAT-01**. A pending file's `NEXT-AFTER-`
+name follows this queue: the conflict check follows `0094`, the grants revoke follows
+`0095`. The binding table is in `CLAUDE.md` under "SOLO's record".
+
+The 2026-09-22 queue, superseded: `0094` the users/tenants role fix · `0095` the grants
+revoke (#1397) · `0096` the conflict check's patient name.
 
 **THIS IS THE SECOND RENUMBERING OF THAT QUEUE, and the earlier ones were real.**
 The order first recorded here was 0090 NESA, 0091 care-team, 0092 RGPD-01,
