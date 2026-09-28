@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 2, terapeuta 2, proprietario 1
 capability: schedule:read
 screens: horarios
+shots: equipa-e-horarios.inspetor-de-horarios
 ---
 ## Ver onde e quando um terapeuta trabalha
 
@@ -26,3 +27,6 @@ O ecrã chama-se **O meu horário**: a sua conta só vê e altera o seu próprio
 :::
 
 Quando a agenda não deixa marcar num dia, o motivo indicado no inspetor diz porquê.
+
+![Ver onde e quando um terapeuta trabalha no telemóvel](../../../../apps/web/public/ajuda/equipa-e-horarios/inspetor-de-horarios-390.png)
+![Ver onde e quando um terapeuta trabalha no computador](../../../../apps/web/public/ajuda/equipa-e-horarios/inspetor-de-horarios-desktop.png)

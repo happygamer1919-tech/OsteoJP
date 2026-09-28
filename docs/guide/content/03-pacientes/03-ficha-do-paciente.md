@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 7, terapeuta 2, proprietario 3
 capability: patients:read
 screens: ficha-paciente
+shots: pacientes.ficha-do-paciente
 review: CARE-02a
 ---
 ## A ficha do paciente
@@ -31,3 +32,6 @@ Por cima dos separadores podem aparecer avisos: **Ficha incompleta: falta o NIF.
 ::: terapeuta
 Pacientes visíveis: só abre a ficha dos pacientes da sua lista **Pacientes**. Em **Registos clínicos** vê todos os registos do paciente, incluindo os de colegas.
 :::
+
+![A ficha do paciente no telemóvel](../../../../apps/web/public/ajuda/pacientes/ficha-do-paciente-390.png)
+![A ficha do paciente no computador](../../../../apps/web/public/ajuda/pacientes/ficha-do-paciente-desktop.png)

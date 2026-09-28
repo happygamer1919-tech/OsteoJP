@@ -1,0 +1,52 @@
+sha256 29a7a7a01bb4d813710fb2318c467047de120f61dc41f5c1a4d513ca101d5633
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Horários da equipa
+
+Defina os horários de trabalho e ausências dos terapeutas da sua unidade.
+
+Inspetor de horários
+
+O que a agenda resolve, dia a dia, para cada terapeuta.
+
+Terapeuta
+Escolha um terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Período
+Esta semana
+Duas semanas
+Este mês
+
+Escolha um terapeuta para ver o horário que a agenda resolve. Nada é mostrado até escolher.
+
+Bruno Fictício
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Carla Modelo
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Duarte Inventado
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários

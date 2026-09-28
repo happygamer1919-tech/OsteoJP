@@ -1,0 +1,33 @@
+{
+  "id": "equipa-e-horarios.horario-semanal",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/horarios",
+      "do": [
+        {
+          "scroll": {
+            "css": "[data-testid=\"edit-schedule-toggle\"] >> nth=0"
+          }
+        }
+      ],
+      "ready": {
+        "css": "[data-testid=\"schedule-card\"]"
+      },
+      "annotate": [
+        {
+          "kind": "arrow",
+          "n": 1,
+          "target": {
+            "css": "[data-testid=\"edit-schedule-toggle\"] > :first-child >> nth=0"
+          },
+          "from": "below-right"
+        }
+      ]
+    }
+  ]
+}

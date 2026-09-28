@@ -1,0 +1,21 @@
+sha256 1631ec275590202446f9e8edaaa11893bac74550c1e5af2e3b66eaee5966d82e
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Perfil
+
+Faça a gestão da sua conta.
+
+Dados pessoais
+Nome
+Email
+O email é o seu identificador de acesso e não pode ser alterado aqui.
+Guardar
+Palavra-passe
+Nova palavra-passe
+Confirmar palavra-passe
+
+Mínimo 8 caracteres, com pelo menos uma letra e um número.
+
+Alterar palavra-passe

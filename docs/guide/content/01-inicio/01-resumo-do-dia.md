@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 1, terapeuta 1, proprietario 1
 capability: appointments:read
 screens: inicio
+shots: inicio.resumo-do-dia
 review: CARE-02a
 ---
 ## O resumo do dia
@@ -33,3 +34,6 @@ Só o Proprietário, e só com mais de um local ativo, tem a lista **Todas as cl
 ::: terapeuta
 Pacientes visíveis: os números e as listas contam só as marcações em que participa ou que criou, as do equipamento partilhado da sua clínica e as de colegas com pacientes que já tratou ou que lhe foram atribuídos.
 :::
+
+![O resumo do dia no telemóvel](../../../../apps/web/public/ajuda/inicio/resumo-do-dia-390.png)
+![O resumo do dia no computador](../../../../apps/web/public/ajuda/inicio/resumo-do-dia-desktop.png)

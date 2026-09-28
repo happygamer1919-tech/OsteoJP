@@ -1,0 +1,199 @@
+sha256 6e1ffb167d33870408bb245aca8c51b33d8352e5015bb797cc9cff16787289d6
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Agenda
+6 de outubro de 2026
+·
+12 marcações
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Serviços
+Dia
+Semana
+Hoje
+Bloquear
+Nova marcação
+Terça 6
+08:00
+09:00
+10:00
+11:00
+12:00
+13:00
+14:00
+15:00
+16:00
+17:00
+18:00
+19:00
+20:00
+Beatriz Exemplo
+Hugo Fictício
+Gonçalo Modelo
+Teresa Modelo
+Filipe Inventado
+Clara Amostra
+Marta Exemplo
+Sofia Amostra
+Tiago Fictício
+Miguel Exemplo
+Paulo Exemplo
+Nuno Amostra
+## frame 2
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Agenda
+6 de outubro de 2026
+·
+12 marcações
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Serviços
+Dia
+Semana
+Hoje
+Bloquear
+Nova marcação
+Terça 6
+08:00
+09:00
+10:00
+11:00
+12:00
+13:00
+14:00
+15:00
+16:00
+17:00
+18:00
+19:00
+20:00
+Beatriz Exemplo
+Hugo Fictício
+Gonçalo Modelo
+Teresa Modelo
+Filipe Inventado
+Clara Amostra
+Marta Exemplo
+Sofia Amostra
+Tiago Fictício
+Miguel Exemplo
+Paulo Exemplo
+Nuno Amostra
+Editar marcação
+Paciente *
+Terapeuta *
+Selecionar terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Serviço
+Selecionar serviço
+Fisioterapia
+Osteopatia
+Reavaliação
+Sala
+Localização *
+Selecionar localização
+Polo Exemplo
+Sede Exemplo
+Data *
+Hora *
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Duração
+30 min
+45 min
+60 min
+90 min
+Disponibilidade
+Horário:
+09:00-13:00, 14:00-19:00
+Ocupado:
+09:00-10:00, 10:30-11:30, 12:00-12:30, 15:00-16:00, 17:00-18:00
+14:00
+16:00
+18:00
+Estado
+Pendente
+Confirmada
+Concluída
+Cancelada
+Falta
+Confirmação
+Confirmação recebida
+Associar a um pacote
+
+O utente não tem pacotes com sessões disponíveis para este serviço.
+
+Criado por: Rita Exemplo · 01/09/2026, 09:00:00
+
+ID da consulta: 00000000-0000-0000-0000-0000000c402a
+
+Notas
+Adicionar nota
+
+Ainda sem notas.
+
+Marcar novamente
+Ficha do paciente
+Cancelar
+Guardar

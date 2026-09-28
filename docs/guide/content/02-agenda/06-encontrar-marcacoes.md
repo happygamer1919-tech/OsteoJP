@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 7, terapeuta 6, proprietario 6
 capability: appointments:read
 screens: marcacoes
+shots: agenda.encontrar-marcacoes
 review: CARE-02a
 ---
 ## Encontrar marcações na lista
@@ -26,3 +27,6 @@ A lista mostra só as marcações em que é o terapeuta principal. As marcaçõe
 :::
 
 O período tem no máximo 92 dias. Se escolher um período maior, a lista termina ao fim de 92 dias a contar da data de início.
+
+![Encontrar marcações na lista no telemóvel](../../../../apps/web/public/ajuda/agenda/encontrar-marcacoes-390.png)
+![Encontrar marcações na lista no computador](../../../../apps/web/public/ajuda/agenda/encontrar-marcacoes-desktop.png)

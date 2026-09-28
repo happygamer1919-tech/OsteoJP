@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 5, terapeuta 4, proprietario 6
 capability: patients:write
 screens: ficha-paciente
+shots: pacientes.declaracao-e-documentos
 ---
 ## Declaração de presença e documentos
 
@@ -26,3 +27,6 @@ Retirar um documento:
 2. Escreva o **Motivo (obrigatório)** e confirme em **Eliminar documento**.
 
 O ficheiro não é apagado: deixa só de aparecer na ficha.
+
+![Declaração de presença e documentos no telemóvel](../../../../apps/web/public/ajuda/pacientes/declaracao-e-documentos-390.png)
+![Declaração de presença e documentos no computador](../../../../apps/web/public/ajuda/pacientes/declaracao-e-documentos-desktop.png)

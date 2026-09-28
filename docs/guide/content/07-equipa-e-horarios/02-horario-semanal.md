@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 3, terapeuta 3, proprietario 2
 capability: schedule:manage
 screens: horarios
+shots: equipa-e-horarios.horario-semanal
 ---
 ## Alterar o horário semanal habitual
 
@@ -21,3 +22,6 @@ Em **O meu horário** só aparece o seu cartão, por isso só altera o seu próp
 :::
 
 Nota: para umas semanas fora do habitual, não mude o horário semanal; use **Definir semanas alternadas** ou **Definir dia a dia**.
+
+![Alterar o horário semanal habitual no telemóvel](../../../../apps/web/public/ajuda/equipa-e-horarios/horario-semanal-390.png)
+![Alterar o horário semanal habitual no computador](../../../../apps/web/public/ajuda/equipa-e-horarios/horario-semanal-desktop.png)

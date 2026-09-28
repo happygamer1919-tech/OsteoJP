@@ -1,0 +1,18 @@
+{
+  "id": "inicio.nota-rapida",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "stabilize": [{ "css": "main h1", "text": "Bom dia, Rita" }],
+  "frames": [
+    {
+      "goto": "/dashboard?date=2026-10-06",
+      "do": [{ "scroll": { "role": "button", "nameKey": "common.save" } }],
+      "ready": { "css": "[data-testid=\"note-appointment-selector\"]" },
+      "annotate": [
+        { "kind": "box", "n": 1, "target": { "labelKey": "dashboard.quickNotePatient" } },
+        { "kind": "box", "n": 2, "target": { "css": "[data-testid=\"note-appointment-selector\"]" } },
+        { "kind": "arrow", "n": 3, "target": { "role": "button", "nameKey": "common.save" }, "from": "left" }
+      ]
+    }
+  ]
+}

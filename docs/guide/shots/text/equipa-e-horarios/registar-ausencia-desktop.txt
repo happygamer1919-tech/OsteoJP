@@ -1,0 +1,177 @@
+sha256 66348d11b76608ed4a667c147fa4528b0e257a7161501ed649a32ef3c3b74d83
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Horários da equipa
+
+Defina os horários de trabalho e ausências dos terapeutas da sua unidade.
+
+Inspetor de horários
+
+O que a agenda resolve, dia a dia, para cada terapeuta.
+
+Terapeuta
+Escolha um terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Período
+Esta semana
+Duas semanas
+Este mês
+
+Escolha um terapeuta para ver o horário que a agenda resolve. Nada é mostrado até escolher.
+
+Bruno Fictício
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Carla Modelo
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Duarte Inventado
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+## frame 2
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Horários da equipa
+
+Defina os horários de trabalho e ausências dos terapeutas da sua unidade.
+
+Inspetor de horários
+
+O que a agenda resolve, dia a dia, para cada terapeuta.
+
+Terapeuta
+Escolha um terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Período
+Esta semana
+Duas semanas
+Este mês
+
+Escolha um terapeuta para ver o horário que a agenda resolve. Nada é mostrado até escolher.
+
+Bruno Fictício
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Bloqueios de Bruno Fictício
+
+Sem bloqueios
+
+Adicionar bloqueio
+
+Tipo
+Bloqueio pontual
+Ausência prolongada
+Bloqueio repetido
+Data
+Início
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Fim
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Nota *
+Guardar
+Fechar
+Editar horários
+Carla Modelo
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Duarte Inventado
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários

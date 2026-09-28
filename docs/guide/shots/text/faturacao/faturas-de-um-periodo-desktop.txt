@@ -1,0 +1,29 @@
+sha256 b22f3a109b8640f276c1cf4ed134830317eb239d50666a91273be28d218e7227
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Faturação
+—
+Todos os estados
+Rascunho
+Emitida
+Paga
+Anulada
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Sem faturas no período selecionado
+
+Ajuste o período selecionado.
+
+Emissão via InvoiceXpress · pagamento via IfThenPay/Stripe

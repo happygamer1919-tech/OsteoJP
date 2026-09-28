@@ -60,3 +60,61 @@ node docs/guide/build/gen-guide-data.mjs
 ```
 
 The JSON is committed. `apps/web/lib/guide/guide-data.test.ts` regenerates it and fails when it differs, so run the command above in the same PR as any lesson change. `guide-roles.test.ts` holds each role to its exact lesson list (an administrator reads the Proprietário lessons whose capability it holds), and `guide-lessons.test.ts` holds every lesson to the word limit, its capture pair, no dashes, and bold terms that quote `packages/i18n/src/strings.pt.json`.
+
+## The screenshots (Suporte e Guia)
+
+Every lesson capture is an annotated screenshot of the real staff platform, taken on a LOCAL stack that holds only invented people. Four pieces:
+
+* `seed-guide.mjs` writes the guide's own clinic, "Clínica Exemplo", as a tenant of its own beside the e2e fixture: six staff accounts, two locations, three services and a pack with prices, working hours, sixteen patients with past visits, and the week of 5 to 10 October 2026 in the agenda. Every name is invented ("Marta Exemplo", "Bruno Fictício", "Rita Exemplo"). It refuses any target that is not local (`scripts/local-target.mjs`) and is safe to run again.
+* `docs/guide/shots/<lesson id>.shots.json` is one capture spec per lesson: the profile that logs in, the frames, what each frame clicks, and what it annotates. Targets are a CSS selector, a role plus an i18n KEY, a label KEY or a whole form field KEY, never Portuguese copy, and each must match exactly one visible element or the run stops. `capture-guide.mjs` documents the format at its top.
+* `capture-guide.mjs` runs the specs. It refuses a base URL whose host is not `localhost` or `127.0.0.1`. Per lesson it writes `apps/web/public/ajuda/<section>/<slug>-390.png` (390 x 844 at scale 2) and `<slug>-desktop.png` (1440 x 900), each the frames side by side, drawn in the `accent-1-700` token with numbers matching the lesson's steps, plus a text record per image.
+* The text record, `docs/guide/shots/text/<section>/<slug>-<size>.txt`: first line `sha256 <hex of the PNG>`, then each frame's visible page text at capture time. It is how CI knows what an image shows without reading pixels.
+
+A capture run, from the repository root:
+
+```sh
+node scripts/lane-stack.mjs up --lane amber
+node docs/guide/build/seed-guide.mjs --lane amber
+# start apps/web on the lane's port (3040 for amber) with the lane's env, in UTC as in production, then:
+node docs/guide/build/capture-guide.mjs --base-url http://localhost:3040
+node docs/guide/build/gen-guide-data.mjs
+```
+
+Use `http://localhost`, never `127.0.0.1`: the Next 16 dev server does not hydrate there. `--only <id>,<id>` runs some specs; `--frames <dir>` also writes each frame alone. A lesson gains its capture by adding `shots: <id>` to its front matter and its two image lines at the end of its body; a lesson with no capture shows a "sem imagem" card on `/ajuda`, never a broken image.
+
+Byte stability: the seed writes fixed dates and fixed creation times, a spec opens the agenda and Início on a fixed day (`?date=2026-10-06`), and a spec's `stabilize` list hides a clock or fixes a greeting, so a second run over an unchanged platform rewrites the same bytes and `git diff` shows only what changed. Início follows the real clock in two places the date parameter does not reach (the week chart and the month's revenue), so its captures change with the week.
+
+## The names check
+
+The repository is public. `apps/web/lib/guide/guide-names.test.ts` (in `pnpm test`, CI job "Lint + typecheck + test") holds the guide's committed files to having no production name in them:
+
+* every PNG under `apps/web/public/ajuda` has its text record, and the record's `sha256` line is that PNG's;
+* the text records, `docs/guide/content`, `docs/guide/shots`, `seed-guide.mjs`, `apps/web/lib/guide/guide-data.json` and `apps/web/e2e/seed` are scanned against the production names list in the environment variable `GUIDE_FORBIDDEN_NAMES`. A hit fails with the file and line only, never the words;
+* with `GUIDE_FORBIDDEN_NAMES` empty the scan cannot run: it fails when `GUIDE_NAMES_REQUIRED` is `1`, and otherwise passes with a console line saying the check is not wired yet;
+* seeded arms prove it both ways on a synthetic list.
+
+The legacy captures under `docs/guide/screens` have no text records; the test lists them and they retire when the PDFs move to the lesson source.
+
+**The list holds no name.** `guide-names.mjs` normalizes a name (NFKD, no accents, lower case, letters and digits only, single spaces), keeps its first four words (a candidate in a text is a run of 2 to 4 words, so a longer name is found by its first four; a one word name is left out, it could never be found), and keeps the first 4 bytes of its sha256. The list is those numbers sorted, written as gaps in LEB128, compressed with deflate and written in base64 after `v1:`. Measured on 15 000 synthetic names: 55 755 bytes, OVER the 49 152 bytes of one Actions secret; one secret holds about 13 000 names. `encode-guide-names.mjs` refuses a list that does not fit and says how many parts to split it into; `--part k/N` writes one part (by hash range), and the test reads several parts from one variable, separated by spaces.
+
+A 32 bit hash can collide: with N names and U distinct candidate runs in the scanned files, about U x N / 4 294 967 296 runs match by chance. Today U is about 60 000; at 13 000 names that is about 0.2 chance hits, so a first red on wiring may be a collision rather than a name. A hit names the file and line, and the words on that line are either a real name (replace it) or not.
+
+### Building the list: OWNER-RUN, never by an agent
+
+Run by the owner, in zsh, from the root of a checkout of `main`, in one paste. The names go from `psql` straight into the encoder and leave it as hashes; no terminal and no file sees a name. It reads production read only (`guide-names.sql`: `patients.full_name` and `users.full_name`), refuses unless the target guard confirms production, refuses to set an empty list, and prints only the list's size in bytes.
+
+```sh
+(
+set -o pipefail
+set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
+node scripts/assert-production-target.mjs || { echo "STOP: not the production target; nothing was read"; exit 1; }
+LIST=$(PGOPTIONS='-c default_transaction_read_only=on' psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -f docs/guide/build/guide-names.sql | node docs/guide/build/encode-guide-names.mjs) || { echo "STOP: the list was not built (read the line above); the secret is unchanged"; exit 1; }
+echo "encoded list: ${#LIST} bytes"
+printf '%s' "${LIST}" | gh secret set GUIDE_FORBIDDEN_NAMES --repo happygamer1919-tech/OsteoJP
+)
+gh secret list --repo happygamer1919-tech/OsteoJP | grep GUIDE_FORBIDDEN_NAMES
+```
+
+If the encoder answers that the list is over one secret, run the block once per part, with `--part 1/2` (then `--part 2/2`) after `encode-guide-names.mjs` and the secret names `GUIDE_FORBIDDEN_NAMES` and `GUIDE_FORBIDDEN_NAMES_2`; the CI step then passes both, joined by a space, in `GUIDE_FORBIDDEN_NAMES`.
+
+Wiring it into CI is a GATE-CHANGE (PR 5, the owner merges): the "Lint + typecheck + test" step gets `GUIDE_FORBIDDEN_NAMES` from the secret and `GUIDE_NAMES_REQUIRED: "1"`, and `turbo.json`'s `test` task must list both variables in `env`, because turbo's strict environment mode hides every variable a task does not declare: without that the test sees neither, and passes as "not wired yet".

@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 3, terapeuta 3, proprietario 5
 capability: appointments:write
 screens: ficha-paciente
+shots: pacientes.marcacoes-na-ficha
 ---
 ## Marcar, cancelar ou corrigir um estado a partir da ficha
 
@@ -28,3 +29,6 @@ Só pode cancelar marcações em que é **Terapeuta** ou **Terapeuta 2**.
 ::: rececao proprietario
 Se uma consulta ficou com o estado final errado (por exemplo **Falta** em vez de **Concluída**), em **Gerir marcação** escolha o estado certo em **Corrigir estado** e clique em **Corrigir**. A correção fica no registo de auditoria.
 :::
+
+![Marcar, cancelar ou corrigir um estado a partir da ficha no telemóvel](../../../../apps/web/public/ajuda/pacientes/marcacoes-na-ficha-390.png)
+![Marcar, cancelar ou corrigir um estado a partir da ficha no computador](../../../../apps/web/public/ajuda/pacientes/marcacoes-na-ficha-desktop.png)

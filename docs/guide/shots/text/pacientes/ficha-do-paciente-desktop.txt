@@ -1,0 +1,56 @@
+sha256 c966a06d3f73e0f90b9f50c398d169a44d54d8edfe633d6ef4711d0c4585283e
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Voltar
+ME
+Marta Exemplo
+RGPD em falta
+
+42 anos · Não especificado · NIF 999000001
+
++351 910 000 101 · marta.exemplo@exemplo.test
+
+Nova marcação
+Resumo
+Marcações
+Notas
+Documentos
+Faturação
+Dados pessoais
+Editar dados
+Data de nascimento
+12/03/1984
+Sexo
+Não especificado
+NIF
+999000001
+N.º de paciente
+0001
+Telemóvel
++351 910 000 101
+Email
+marta.exemplo@exemplo.test
+Terapeutas atribuídos
+
+Os terapeutas atribuídos veem todo o histórico de consultas deste paciente, incluindo as consultas com colegas.
+
+As entradas adicionadas automaticamente vêm de uma marcação e não podem ser removidas.
+
+Bruno Fictício
+Atribuído manualmente em 01/09/2026
+Remover
+Terapeuta
+Carla Modelo
+Duarte Inventado
+Atribuir

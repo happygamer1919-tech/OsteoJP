@@ -1,0 +1,46 @@
+sha256 c3817f1f23c3563dc2c2436dd6661549c5f457cc5dfa79df63b0fef850ed6486
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Bom dia, Rita
+
+Aqui está o resumo do dia na clínica.
+
+Hoje
+Pacientes ativos
+16
+Marcações hoje
+0
+Receita (mês)
+0,00 €
+Acessos rápidos
+Nova marcação
+Novo paciente
+Ver agenda
+Resumo semanal
+Segunda
+Terça
+Quarta
+Quinta
+Sexta
+Sábado
+Domingo
+Próximas marcações
+
+Sem marcações para hoje.
+
+Notas rápidas
+Paciente
+Consulta (opcional)
+Nota geral do paciente (sem consulta)
+Guardar
