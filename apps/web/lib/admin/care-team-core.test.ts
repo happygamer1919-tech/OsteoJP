@@ -5,7 +5,7 @@
  * apps/web/lib/scheduling/care-team-booking.db.test.ts; this file pins the
  * decisions that need none.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ROLES } from "@osteojp/auth";
@@ -13,10 +13,10 @@ import { ROLES } from "@osteojp/auth";
 import {
   CARE_TEAM_AUTO_ACTION,
   CARE_TEAM_ENTITY_TYPE,
-  canWriteCareTeamUnderCurrentPolicy,
   careTeamCandidates,
   careTeamNotices,
   careTeamSource,
+  careTeamWriteReach,
   type BookedAppointment,
   type CareTeamAddition,
 } from "./care-team-core";
@@ -143,38 +143,93 @@ describe("careTeamNotices: first time only, never the actor, one per booking", (
   });
 });
 
-describe("canWriteCareTeamUnderCurrentPolicy agrees with 0091's insert policy", () => {
-  /**
-   * The roles `patient_care_team_insert` admits, READ FROM THE MIGRATION rather
-   * than restated here. If the policy or the capability moves without the other,
-   * this reddens: the alternative is an RLS refusal inside a booking (a role
-   * the app thinks may write) or a silent skip (a role the policy would admit).
-   */
-  function insertPolicyRoles(): string[] {
-    const file = readFileSync(
-      join(__dirname, "..", "..", "..", "..", "packages", "db", "migrations", "0091_care_team.sql"),
-      "utf8",
-    );
-    const start = file.indexOf('CREATE POLICY "patient_care_team_insert"');
-    expect(start).toBeGreaterThan(-1);
-    const body = file.slice(start, file.indexOf(";", start));
-    const arr = body.match(/ARRAY\[([^\]]+)\]/);
+describe("careTeamWriteReach agrees with 0091's and 0098's insert policies", () => {
+  const REPO = join(__dirname, "..", "..", "..", "..");
+
+  /** The statement that sets `patient_care_team_insert`'s check, whitespace folded. */
+  function insertPolicyStatement(file: string, verb: "CREATE" | "ALTER"): string {
+    const text = readFileSync(file, "utf8");
+    const start = text.indexOf(`${verb} POLICY "patient_care_team_insert"`);
+    expect(start, `${file} sets no patient_care_team_insert`).toBeGreaterThan(-1);
+    return text.slice(start, text.indexOf(";", start)).replace(/\s+/g, " ");
+  }
+
+  /** The roles named inside `ARRAY[...]`: the policy's unconditional arm. */
+  function anyRowRoles(statement: string): string[] {
+    const arr = statement.match(/ARRAY\[([^\]]+)\]/);
     expect(arr).not.toBeNull();
     return [...arr![1]!.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]!).sort();
   }
 
-  it("the migration's insert policy admits exactly owner and reception (the reader itself works)", () => {
-    expect(insertPolicyRoles()).toEqual(["owner", "reception"]);
+  /**
+   * The roles named by a single `jwt_role() ) = '<role>'::text` equality: the
+   * own-row arm. Each must sit beside the three conjuncts that make a row the
+   * caller's own booking's, or the reader refuses to call it an own-row arm.
+   */
+  function ownRowRoles(statement: string): string[] {
+    const roles = [...statement.matchAll(/jwt_role\(\) \) = '([a-z_]+)'::text/g)].map((m) => m[1]!);
+    if (roles.length > 0) {
+      expect(statement).toContain("(user_id = ( SELECT auth.uid() ))");
+      expect(statement).toContain("(assigned_by = ( SELECT auth.uid() ))");
+      expect(statement).toContain(
+        "(patient_id = ANY (coalesce(( SELECT public.viewer_treated_patient_ids() ), '{}'::uuid[])))",
+      );
+    }
+    return roles.sort();
+  }
+
+  /**
+   * 0098, WHEREVER IT IS. Held, it is the pending file; promoted, it is
+   * migrations/0098_*. The promotion changes no byte, so the same reader reads
+   * both, and exactly one of the two must exist.
+   */
+  function file0098(): string {
+    const found = [
+      ...readdirSync(join(REPO, "packages", "db", "migrations-pending"))
+        .filter((f) => f.endsWith("_care02a_care_team_reads.sql"))
+        .map((f) => join(REPO, "packages", "db", "migrations-pending", f)),
+      ...readdirSync(join(REPO, "packages", "db", "migrations"))
+        .filter((f) => f.endsWith("_care02a_care_team_reads.sql"))
+        .map((f) => join(REPO, "packages", "db", "migrations", f)),
+    ];
+    expect(found, "0098 (care02a_care_team_reads) must exist exactly once").toHaveLength(1);
+    return found[0]!;
+  }
+
+  const file0091 = () => join(REPO, "packages", "db", "migrations", "0091_care_team.sql");
+
+  it("0091's insert policy admits exactly owner and reception, with no own-row arm (the reader itself works)", () => {
+    const st = insertPolicyStatement(file0091(), "CREATE");
+    expect(anyRowRoles(st)).toEqual(["owner", "reception"]);
+    expect(ownRowRoles(st)).toEqual([]);
   });
 
-  it("the app writes for exactly the roles the policy admits, and skips every other role", () => {
-    const writes = ROLES.filter((r) => canWriteCareTeamUnderCurrentPolicy(r)).sort();
-    expect(writes).toEqual(insertPolicyRoles());
+  it("0098 keeps owner and reception on the any-row arm and adds the therapist on an own-row arm", () => {
+    const st = insertPolicyStatement(file0098(), "ALTER");
+    expect(anyRowRoles(st)).toEqual(["owner", "reception"]);
+    expect(ownRowRoles(st)).toEqual(["therapist"]);
   });
 
-  it("a therapist's own booking and an admin's booking skip the write (the reported gap)", () => {
-    expect(canWriteCareTeamUnderCurrentPolicy("therapist")).toBe(false);
-    expect(canWriteCareTeamUnderCurrentPolicy("admin")).toBe(false);
+  it("the app writes ANY row for exactly the any-row roles of BOTH migrations", () => {
+    const any = ROLES.filter((r) => careTeamWriteReach(r) === "any").sort();
+    expect(any).toEqual(anyRowRoles(insertPolicyStatement(file0091(), "CREATE")));
+    expect(any).toEqual(anyRowRoles(insertPolicyStatement(file0098(), "ALTER")));
+  });
+
+  it("the app writes an OWN row for exactly 0098's own-row roles", () => {
+    const own = ROLES.filter((r) => careTeamWriteReach(r) === "own").sort();
+    expect(own).toEqual(ownRowRoles(insertPolicyStatement(file0098(), "ALTER")));
+  });
+
+  it("every other role writes nothing: admin stays excluded, as both migrations rule", () => {
+    expect(careTeamWriteReach("admin")).toBe("none");
+    const named = new Set([
+      ...anyRowRoles(insertPolicyStatement(file0098(), "ALTER")),
+      ...ownRowRoles(insertPolicyStatement(file0098(), "ALTER")),
+    ]);
+    for (const r of ROLES) {
+      if (!named.has(r)) expect(careTeamWriteReach(r), r).toBe("none");
+    }
   });
 });
 

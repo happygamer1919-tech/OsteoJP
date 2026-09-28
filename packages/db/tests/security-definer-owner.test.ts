@@ -76,6 +76,14 @@ const EXPECTED_FUNCTIONS = [
   // the reason 0073/0074/0078 are: a per-row call on `appointments` is the
   // 4,691 ms defect 0078 removed. EXECUTE is granted to `authenticated` only.
   "viewer_care_team_patient_ids",
+  // NOT YET LISTED, ON PURPOSE: 0098 (CARE-02a, held as
+  // migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql) creates
+  // `viewer_care_team_patient_ids_at_my_clinics`, the 27th, with its own
+  // owner-pin. It joins this list AT PROMOTION, in the commit that renames the
+  // file into packages/db/migrations: the owner-pin scan below reads only that
+  // directory, so listing it earlier reddens this file. EXPECTED_COUNT in
+  // check-security-definer-owner.mjs moves 26 -> 27 in its own GATE-CHANGE
+  // (a frozen gate); the migration's section 8 carries the order.
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {

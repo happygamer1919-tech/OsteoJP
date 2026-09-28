@@ -7,10 +7,23 @@
  * staff_notifications (0055); the panel tells automatic from manual and offers
  * Remover on manual entries only.
  *
- * runScoped is REAL, so `patient_care_team`'s RLS (0091), appointments_rls and
- * the audit_log policies run as on production, and the INSERT's ON CONFLICT
- * target is resolved against 0091's actual partial index. Only the request
- * context, the client IP and the reminder send are mocked.
+ * runScoped is REAL, so `patient_care_team`'s RLS (0091, as 0098 amends it),
+ * appointments_rls and the audit_log policies run as on production, and the
+ * INSERT's ON CONFLICT target is resolved against 0091's actual partial index.
+ * Only the request context, the client IP and the reminder send are mocked.
+ *
+ * CARE-02a (0098): A THERAPIST'S OWN BOOKING NOW WRITES THEIR OWN ROW, and a
+ * therapist on the team reads the team (at their own clinics, the owner's
+ * ruling of 2026-09-27; every booking here is at the one test clinic). The
+ * arms that say so are marked "0098:" and assert WHICHEVER profile the
+ * database owes, read from the catalogue by `care0098State`
+ * (lib/patients/care-team-0098-state.ts): 0098's when it is applied, and
+ * without it what main does today (0091's policies refuse both, and the
+ * booking still stands). 0098 is held in migrations-pending and CI builds from
+ * supabase/migrations, so on the held PR these arms assert the pre-0098 answer,
+ * and the first test says so; a half-applied database, or an unapplied one
+ * once 0098 is promoted into packages/db/migrations, fails every arm. On the
+ * rehearsal database with 0098 applied they prove 0098.
  */
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
@@ -41,6 +54,8 @@ d("CARE-02c: booking a therapist puts them on the care team, once, with a notice
   let sql: Awaited<ReturnType<typeof import("@osteojp/db").getDbAdmin>>;
   let actions: typeof import("./actions");
   let careTeam: typeof import("@/lib/admin/care-team");
+  /** Which 0098 this database has; every "0098:" arm asserts what it owes. */
+  let state: import("@/lib/patients/care-team-0098-state").Care0098State;
 
   let tenantId: string;
   let loc: string;
@@ -107,6 +122,14 @@ d("CARE-02c: booking a therapist puts them on the care team, once, with a notice
 
     serviceId = randomUUID();
     await sql.execute(raw`insert into services (id, tenant_id, name) values (${serviceId}, ${tenantId}, 'Osteopatia')`);
+
+    state = await (await import("@/lib/patients/care-team-0098-state")).care0098State(sql);
+    console.warn(`[care-team-booking.db.test] ${state.detail}`);
+  });
+
+  it("REPORTS WHICH 0098 THIS DATABASE HAS, read from the catalogue; never half, never unapplied once promoted", async ({ annotate }) => {
+    await annotate(state.detail, state.applied ? "notice" : "warning");
+    expect(state.applied || !state.promoted).toBe(true);
   });
 
   const clean = async () => {
@@ -274,16 +297,53 @@ d("CARE-02c: booking a therapist puts them on the care team, once, with a notice
     expect(await team(pA)).toEqual([]);
   });
 
-  it("A THERAPIST'S OWN BOOKING still books, and writes no care-team row (0091's insert policy refuses them)", async () => {
+  it("0098: A THERAPIST BOOKING THEMSELVES joins the team (their own row, audited automatic) and is not notified (without 0098: books, no row, no audit)", async () => {
     const pB = await patient("Paciente B");
     as("therapist", t3);
     const r = await book({ patientId: pB, practitionerId: t3, start: at(WED, 11) });
     expect(r).toMatchObject({ ok: true });
-    expect(await team(pB)).toEqual([]);
-    expect(await autoAudits()).toEqual([]);
+    if (!r.ok) return;
+    const rowsB = await team(pB);
+    const audits = await autoAudits();
+    if (state.applied) {
+      expect(rowsB).toEqual([{ id: expect.any(String), user_id: t3, assigned_by: t3 }]);
+      expect(audits).toHaveLength(1);
+      expect(audits[0]!.entity_id).toBe(rowsB[0]!.id);
+      expect(audits[0]!.metadata).toEqual({ patientId: pB, therapistId: t3, appointmentId: r.data.id });
+    } else {
+      // 0091's insert policy refuses the therapist's own row; the savepoint
+      // confines the refusal to the care-team write and the booking stands.
+      expect(rowsB).toEqual([]);
+      expect(audits).toEqual([]);
+    }
+    // Like the owner booking themselves: nobody is told about their own click.
     expect(await notices(t3)).toEqual([]);
     const [a] = await rows(raw`select count(*)::int as n from appointments where tenant_id = ${tenantId} and patient_id = ${pB}`);
     expect(a!.n).toBe(1);
+  });
+
+  it("0098: a therapist's SECOND booking of the same patient writes no second row and no second audit (without 0098: none at all)", async () => {
+    const pB = await patient("Paciente B");
+    as("therapist", t3);
+    expect(await book({ patientId: pB, practitionerId: t3, start: at(WED, 11) })).toMatchObject({ ok: true });
+    expect(await book({ patientId: pB, practitionerId: t3, start: at(WED + 7, 11) })).toMatchObject({ ok: true });
+    expect(await team(pB)).toHaveLength(state.applied ? 1 : 0);
+    expect(await autoAudits()).toHaveLength(state.applied ? 1 : 0);
+  });
+
+  it("0098: a therapist booking themselves with NESA as Terapeuta 2 joins the team (without 0098: nobody does); NESA never does", async () => {
+    // SCHED-29 makes a therapist's Terapeuta 2 a shared resource and never a
+    // person, so NESA is the only second participant a therapist's booking can
+    // carry. The own-row filter for a colleague in that slot (a path this
+    // action refuses at the door) is pinned on the writer in
+    // care-team-auto.test.ts.
+    const pC = await patient("Paciente C");
+    as("therapist", t3);
+    expect(
+      await book({ patientId: pC, practitionerId: t3, practitionerTwoId: nesa, start: at(WED, 13) }),
+    ).toMatchObject({ ok: true });
+    expect((await team(pC)).map((m) => m.user_id)).toEqual(state.applied ? [t3] : []);
+    expect(await notices(t3)).toEqual([]);
   });
 
   it("A RECURRING SERIES is one row and one notice, naming the FIRST occurrence", async () => {
@@ -335,11 +395,16 @@ d("CARE-02c: booking a therapist puts them on the care team, once, with a notice
     expect(await notices(owner)).toEqual([]);
   });
 
-  it("MARCAR NOVAMENTE (clone): a therapist-booked source had no row; reception's clone adds it", async () => {
+  it("MARCAR NOVAMENTE (clone): a source with no care-team row gets one from reception's clone", async () => {
     const pD = await patient("Paciente D");
     as("therapist", t3);
     const src = await book({ patientId: pD, practitionerId: t3, start: at(WED, 8) });
     if (!src.ok) throw new Error("setup booking failed");
+    // Since 0098 the therapist's own booking writes their row. A source that
+    // predates CARE-02c (or 0098) has none, and that is the case the clone
+    // must still repair, so the row is taken away here.
+    await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from patient_care_team where tenant_id = ${tenantId}`);
     expect(await team(pD)).toEqual([]);
 
     as("reception", reception);
@@ -398,26 +463,29 @@ d("CARE-02c: booking a therapist puts them on the care team, once, with a notice
   });
 
   /**
-   * CARE-02b, MEASURED RATHER THAN ASSUMED: why the therapist's read-only card
-   * is not rendered. `patient_care_team_select` (0091) admits owner and
-   * reception only, so a therapist who IS on the team, reading their own
-   * patient's team under their own JWT, gets zero rows. When a read path for
-   * therapists lands (a policy or a SECURITY DEFINER reader, Tier C), this arm
-   * is the one expected to change, and the card can then be wired.
+   * CARE-02b, WIRED BY CARE-02a. Until 0098 this arm pinned the gap: a therapist
+   * on the team read ZERO care-team rows, which is why the read-only card was
+   * not rendered. 0098's `patient_care_team_select` admits a therapist to the
+   * teams they are on, so the same read now returns the whole live team, a
+   * colleague included, and one not on the team still reads nothing.
    */
-  it("CARE-02b GAP: a therapist on the team reads ZERO care-team rows under the current policy", async () => {
+  it("0098: CARE-02b: a therapist on the team reads the whole team (without 0098: zero rows); one not on it reads zero rows", async () => {
     const pA = await patient("Paciente A");
     as("reception", reception);
-    expect(await book({ patientId: pA, practitionerId: t1, start: at(WED, 10) })).toMatchObject({ ok: true });
-    expect(await team(pA)).toHaveLength(1);
+    expect(
+      await book({ patientId: pA, practitionerId: t1, practitionerTwoId: t2, start: at(WED, 10) }),
+    ).toMatchObject({ ok: true });
+    expect(await team(pA)).toHaveLength(2);
 
     const { runScoped } = await import("@/lib/auth/context");
     const { patientCareTeam } = await import("@osteojp/db");
     const { eq } = await import("drizzle-orm");
-    const seen = await runScoped({ tenantId, role: "therapist", userId: t1 }, (tx) =>
-      tx.select({ id: patientCareTeam.id }).from(patientCareTeam).where(eq(patientCareTeam.patientId, pA)),
-    );
-    expect(seen).toEqual([]);
+    const read = (userId: string) =>
+      runScoped({ tenantId, role: "therapist", userId }, (tx) =>
+        tx.select({ userId: patientCareTeam.userId }).from(patientCareTeam).where(eq(patientCareTeam.patientId, pA)),
+      );
+    expect((await read(t1)).map((r) => r.userId).sort()).toEqual(state.applied ? [t1, t2].sort() : []);
+    expect(await read(t3)).toEqual([]);
   });
 
   /**

@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none on this branch) | | | |
+| `NEXT-AFTER-0097_care02a_care_team_reads.sql` | `0097`. Ruled **`0098`** by the owner on 2026-09-27 (CARE-02a), **v2**, with the owner's ruling of the same day on the clinic ("limit to their clinic only"): a therapist on a patient's live care team reads the ficha (`patients_select`) and the registos (`clinical_records_select`, SELECT only) only when the patient is linked to one of the therapist's own clinics, on 0045's admin basis (`clinical_admin_sees_patient`) with the clinics read through `viewer_location_ids()`; a therapist writes their own booking's `patient_care_team` row and reads their own rows and the teams they are on at their own clinics. One new nullary SECURITY DEFINER helper, `viewer_care_team_patient_ids_at_my_clinics()`, and four `ALTER POLICY` statements, the policy count flat. sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45`, which `scripts/db/precheck-0098-care02a.sql` pins. At promotion its journal `when` must be strictly greater than `0097`'s, and the SECURITY DEFINER count moves 26 to 27 (section 8 of the file: `EXPECTED_COUNT` is in a frozen gate file, so that half is a GATE-CHANGE) | 2026-09-27 | `care/0098-CARE-02a-care-team-reads`, Tier C, **HELD**: authored now and applied later by GREEN, never by this lane, after `0094` to `0097` are promoted, applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES

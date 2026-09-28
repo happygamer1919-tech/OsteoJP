@@ -764,7 +764,9 @@ export async function getAppointmentNotesAction(
     return appt?.patientId ?? null;
   });
   if (!patientId) return { ok: false, notes: [] };
-  const patient = await getPatient(patientId, { includeDeleted: true });
+  // CARE-02a: a READ, so the care team's read scope (the Notas tab of the ficha
+  // shows the same notes). The four note WRITERS below keep the default.
+  const patient = await getPatient(patientId, { includeDeleted: true, access: "read" });
   if (!patient) return { ok: false, notes: [] };
   return { ok: true, notes: await listAppointmentNotes(ctx, appointmentId) };
 }
@@ -797,7 +799,8 @@ export async function getPatientNotesAction(
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:read");
   if (!patientId) return { ok: false, notes: [] };
-  const patient = await getPatient(patientId, { includeDeleted: true });
+  // CARE-02a: a READ, like getAppointmentNotesAction above.
+  const patient = await getPatient(patientId, { includeDeleted: true, access: "read" });
   if (!patient) return { ok: false, notes: [] };
   return { ok: true, notes: await listPatientNotes(ctx, patientId) };
 }
