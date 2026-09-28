@@ -10188,9 +10188,9 @@
       "owner_terminal": "solo",
       "last_checkpoint": "2026-09-28",
       "evidence": {
-        "kind": "pr",
+        "kind": "journal",
         "at": "2026-09-28",
-        "ref": "#1482 at 89064d79 (R4 round 2 fix): the refusal arms use .invalid hosts and no browser path"
+        "ref": "2026-09-28 16:36 to 16:39 UTC, this Mac: one headless page load of the production portal address, redirected to /auth/login (one-time-code screen, no email or password field); the login step waited and the spawn was killed at 60 s. The unsafe test was never committed; the committed refusal arms (G1 PR 2 at 89064d79) use .invalid hosts and an empty browser path."
       },
       "notes": "=== 2026-09-28 (SOLO) === At 17:36 to 17:39 Lisbon a round-2 fix on G1 PR 2 (#1482) wrote a test proving the capture tool refuses a non-local host, and named the production portal address as that host. A mutation sweep removed the host guard, so one headless browser opened the address. The portal has no /login route: the request was redirected to /auth/login, the one-time-code screen, which has no email or password field, so the tool's login step waited and was killed at 60 s. No credential was typed or submitted, nothing was read and nothing was written. Fixed in the same PR before its commit: guard tests use reserved .invalid hosts and an empty browser path, and the same mutations now fail in about 300 ms with no browser. Reported to the owner."
     }
