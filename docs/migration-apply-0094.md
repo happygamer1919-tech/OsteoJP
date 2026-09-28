@@ -35,7 +35,7 @@ migrations"). The lane that wrote this document never runs it.
 | Migration | `packages/db/migrations/0094_users_tenants_roles_policy_split.sql`, sha256 `439cb53eab62803026a74e1148dbe3f5af1b7f95f0fc8e486d55eb7d62836a6c` |
 | Promoted from | `packages/db/migrations-pending/NEXT-AFTER-0093_users_tenants_roles_policy_split.sql`, **bytes unchanged**, on 2026-09-28 (`git mv`, 100% similarity) |
 | Journal | `idx 91`, `when 1788501500000`, tag `0094_users_tenants_roles_policy_split`; `when` strictly above 0093's `1788501400000` |
-| Mirror | `supabase/migrations/0094_users_tenants_roles_policy_split.sql`, written by `scripts/sync-supabase-migrations.mjs` with its fixed header; checked by content by `scripts/check-journal.mjs` (`pnpm db:check-journal`), which stage 0 runs with `node` directly so that no pnpm dependency check stands between it and the answer |
+| Mirror | `supabase/migrations/0094_users_tenants_roles_policy_split.sql`, written by `scripts/sync-supabase-migrations.mjs` with its fixed header; checked by content by `scripts/check-journal.mjs` (`pnpm db:check-journal`), which stage 0 runs with `node` directly, after asserting its sha256, so that no pnpm dependency check stands between it and the answer |
 | Must follow | `0093_patient_rgpd_acceptances`: applied to production (journal 90 to 91, sha256 `7a769298…c454`), merged in #1399 |
 | PR | #1459, branch `db/0094-users-tenants-role-policy-split-r6`, labelled `held-for-apply` until the owner takes it off and merges |
 | Runs from | `origin/main`, after #1459 has merged. Stage 0 records the sha `origin/main` resolves to in `/tmp/0094-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stage 1 HALTS if `origin/main` has moved since (the HEAD CHECK, below) |
@@ -44,6 +44,9 @@ migrations"). The lane that wrote this document never runs it.
 | Post-check | `scripts/db/postcheck-users-tenants-roles.sql`, READ ONLY, 18 verdicts, six carries in, sha256 `4c62a07c08afe20aa309a4871006861334d6623f74932d87474f34ec2d3ff729` |
 | Behaviour check | `scripts/db/behaviour-users-tenants-roles-readonly.sql`, READ ONLY, 14 arms and a SUMMARY row, `-v actor_id` required, sha256 `79c135fca96216baaeef03ea825c4a202b0eb6b4eac82329f61c8721160c5852`. Run TWICE in stage 3, as two actors stage 1 chooses READ ONLY |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `867e2823130b1ec1a9f7790522968924ecd872452c48322884c3e22efb5704d1`. All three byte-identical to `origin/main` at `b8c62fd5`, all pinned in every block that runs them |
+| The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59`, byte-identical to `origin/main` at `b8c62fd5`. It imports nothing but `node:` builtins, so its pin covers everything it runs. Pinned in stage 0 and in GREEN's BEFORE YOU START |
+| Not pinned, and why | what the pinned programs load in turn: drizzle-kit and the rest of `node_modules`, and `packages/db/drizzle.config.ts`, which drizzle-kit loads through `verified-migrate.mjs` (the runbook and 0093 do not pin them either; the config is byte-identical to `b8c62fd5`). Their tree is fixed instead: GREEN's BEFORE YOU START requires `origin/main` to BE #1459's merge commit, not merely to contain it, and the CLOCK CHECK and the HEAD CHECK halt on any other head before the apply |
+| Run window | named by GREEN's dispatch, never here: its CLOCK CHECK records it in `/tmp/0094-window.ok` with the sha stage 0 recorded, as three Lisbon times `YYYYMMDDHHMM` (opens, the last minute stage 1 may start, ends). Stage 1 refuses to start outside it and checks again just before the apply; stages 2, 3 and the closing read refuse at or after its end. Stage 0 removes the record, so only a CLOCK CHECK pasted after stage 0 can write it |
 | What it changes | DROPS the three `FOR ALL` policies 0001 made (`tenants_tenant_isolation`, `roles_tenant_isolation`, `users_tenant_isolation`) and CREATES eight: a tenant SELECT on each table with the old expression verbatim, `tenants_manager_update`, `users_manager_insert`, `users_manager_update`, `users_self_update`, `users_manager_delete`. Adds ONE SECURITY INVOKER function, `public.users_self_service_columns()`, EXECUTE revoked from PUBLIC, `anon`, `authenticated`, `service_role` and `patient`, and its BEFORE UPDATE trigger on `users` |
 | What it never touches | every other policy (the two token-hook reads `auth_admin_read_users` and `auth_admin_read_roles` included), every table grant, every existing function (the token hook's body included) and the SECURITY DEFINER count. The post-check proves each |
 
@@ -177,9 +180,16 @@ merges to main for the sitting. No block reads a branch, and there is no separat
 CHECK to paste: the machine runs it inside the blocks.
 
 - **Stage 0** refuses once stage 1 has applied, checks that the apply worktree is
-  clean, fetches, resolves `origin/main`, checks that sha out detached, verifies the
-  sidecar, the promotion, the journal and every pin, and only then records the sha in
-  `/tmp/0094-main.sha` and prints `running from origin/main <sha>`.
+  clean, removes the previous sha and run window records, fetches, resolves
+  `origin/main`, checks that sha out detached, verifies the sidecar, the promotion, the
+  journal and every pin (check-journal's before it runs it), and only then records the
+  sha in `/tmp/0094-main.sha` and prints `running from origin/main <sha>`.
+- **The run window is checked by machine in every block from stage 1 on,** from the
+  record GREEN's CLOCK CHECK writes after stage 0. Stage 1 refuses to start before the
+  window opens or after the last minute it may start, and checks again after the
+  pre-check, just before the apply; stages 2 and 3 and the closing read refuse at or
+  after the window's end. A missing record, or one written for another sha, is a
+  `STOP:` in each.
 - **Stage 1 begins with the HEAD CHECK:** read the recorded sha, fetch, resolve
   `origin/main` again, print both, and HALT on any difference with
   `STOP: main moved since stage 0, the merge freeze was broken.` It runs before the
@@ -211,12 +221,13 @@ SHABEHAVIOUR=79c135fca96216baaeef03ea825c4a202b0eb6b4eac82329f61c8721160c5852
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 SHAREADER=867e2823130b1ec1a9f7790522968924ecd872452c48322884c3e22efb5704d1
+SHACJ=7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 [ -z "$(find /tmp/0094-applied.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 1 has ALREADY APPLIED 0094 in this sitting. The sitting stops here. Never run stage 0 or 1 again. GREEN reports this whole output, and stages 2 and 3 (READ ONLY) run only on the owner's or the lead's word"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
-rm -f /tmp/0094-main.sha
+rm -f /tmp/0094-main.sha /tmp/0094-window.ok
 git fetch origin --prune
 MAIN=$(git rev-parse origin/main)
 [ "$(git cat-file -t ${MAIN})" = commit ] || { echo "STOP: origin/main does not resolve to a commit"; exit 1; }
@@ -234,6 +245,7 @@ test -f scripts/db/behaviour-users-tenants-roles-readonly.sql || { echo "STOP: t
 test -f packages/db/scripts/verified-migrate.mjs || { echo "STOP: verified-migrate is not on disk"; exit 1; }
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
 test -f packages/db/scripts/read-applied-migrations.mjs || { echo "STOP: the migration reader is not on disk"; exit 1; }
+test -f scripts/check-journal.mjs || { echo "STOP: check-journal is not on disk"; exit 1; }
 [ "$(shasum -a 256 ${MIG} | cut -d' ' -f1)" = "${SHA0094}" ] || { echo "STOP: 0094 on disk is not the approved body"; exit 1; }
 [ "$(shasum -a 256 scripts/db/precheck-users-tenants-roles.sql | cut -d' ' -f1)" = "${SHAPRE}" ] || { echo "STOP: the pre-check on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/db/postcheck-users-tenants-roles.sql | cut -d' ' -f1)" = "${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
@@ -241,6 +253,7 @@ test -f packages/db/scripts/read-applied-migrations.mjs || { echo "STOP: the mig
 [ "$(shasum -a 256 packages/db/scripts/verified-migrate.mjs | cut -d' ' -f1)" = "${SHAVM}" ] || { echo "STOP: verified-migrate on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 packages/db/scripts/read-applied-migrations.mjs | cut -d' ' -f1)" = "${SHAREADER}" ] || { echo "STOP: the migration reader on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/check-journal.mjs | cut -d' ' -f1)" = "${SHACJ}" ] || { echo "STOP: check-journal on disk is not the approved file"; exit 1; }
 
 node -e "const j=JSON.parse(require('fs').readFileSync('packages/db/migrations/meta/_journal.json','utf8'));const e=j.entries[j.entries.length-1];console.log('newest journal entry: idx '+e.idx+', when '+e.when+', tag '+e.tag+', of '+j.entries.length);process.exit(j.entries.length===92&&e.idx===91&&e.when===1788501500000&&e.tag==='0094_users_tenants_roles_policy_split'?0:1)" || { echo "STOP: the newest journal entry is not idx 91, when 1788501500000, tag 0094_users_tenants_roles_policy_split, of 92"; exit 1; }
 node scripts/check-journal.mjs 2>&1 | tee /tmp/0094-check-journal.out
@@ -298,6 +311,19 @@ N94=$(find packages/db/migrations -maxdepth 1 -name '0094_*.sql' | wc -l | tr -d
 [ "$(shasum -a 256 packages/db/scripts/verified-migrate.mjs | cut -d' ' -f1)" = "${SHAVM}" ] || { echo "STOP: verified-migrate on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
+echo "--- THE RUN WINDOW: GREEN's dispatch names it and its CLOCK CHECK recorded it. Stage 1 starts inside it or not at all"
+test -f /tmp/0094-window.ok || { echo "STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0. Nothing was applied"; exit 1; }
+WREC=$(cut -d' ' -f1 /tmp/0094-window.ok)
+WOPEN=$(cut -d' ' -f2 /tmp/0094-window.ok)
+WSTART=$(cut -d' ' -f3 /tmp/0094-window.ok)
+WEND=$(cut -d' ' -f4 /tmp/0094-window.ok)
+[ "${WREC}" = "${REC}" ] || { echo "STOP: the run window was recorded for ${WREC}, not for the sha stage 0 recorded. Nothing was applied"; exit 1; }
+echo "${WOPEN} ${WSTART} ${WEND}" | grep -qxE '[0-9]{12} [0-9]{12} [0-9]{12}' || { echo "STOP: the recorded run window did not parse. Nothing was applied"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: opens ${WOPEN}, stage 1 starts by ${WSTART}, everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -ge "${WOPEN}" ] || { echo "STOP: Lisbon ${NOWL} is before the run window opens at ${WOPEN}. Nothing was applied"; exit 1; }
+[ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART}, the last minute the run window lets stage 1 start. Nothing was applied"; exit 1; }
+
 echo "--- the production target, asserted by the guard, not by the prompt"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
@@ -322,6 +348,10 @@ echo "${MSLUG}" | grep -qxE 'admin|owner' || { echo "STOP: the manager actor's r
 echo "${NARROW} ${NSLUG} ${MANAGER} ${MSLUG}" > /tmp/0094-actors.new
 echo "behaviour actors: narrowing ${NARROW} (${NSLUG}), manager ${MANAGER} (${MSLUG})"
 
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, again before the apply: now ${NOWL}, stage 1 starts by ${WSTART}"
+[ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART} after the pre-check, so the apply does not start. Nothing was applied"; exit 1; }
+
 echo "--- only now, with a passing pre-check and both subjects in hand, does the previous sitting's state go"
 rm -f /tmp/0094-postcheck.out /tmp/0094-stage2.ok /tmp/0094-behaviour-narrow.out /tmp/0094-behaviour-manager.out /tmp/0094-stage3.ok /tmp/0094-journal-after.out
 mv /tmp/0094-precheck.new /tmp/0094-precheck.out
@@ -337,10 +367,13 @@ echo "0094 APPLIED. Paste stage 2 now."
 **EXPECT, and these are what stage 1 is read for:**
 
 - **`--- THE HEAD CHECK`, then `recorded by stage 0: <sha>` and `origin/main now: <sha>`,
-  the same sha twice** (the block halts otherwise), then `docs/migration-apply-0094.md: OK`
-  and the target guard;
+  the same sha twice** (the block halts otherwise), then `docs/migration-apply-0094.md: OK`;
+- **`run window, Lisbon YYYYMMDDHHMM: opens <t>, stage 1 starts by <t>, everything ends before <t>; now <t>`,**
+  with now inside it (the block halts otherwise), then the target guard;
 - **the pre-check prints `21` OK verdicts and no FAIL;**
 - **`behaviour actors: narrowing <uuid> (reception or therapist), manager <uuid> (admin or owner)`;**
+- **`run window, again before the apply: now <t>, stage 1 starts by <t>`,** now no later
+  than that minute (the block halts otherwise);
 - **`pending    1  [0094_users_tenants_roles_policy_split]`.** Exactly one.
 
 It then prints `journal    91 -> 92  (delta 1)`,
@@ -376,7 +409,7 @@ not match its lockfile it tries to reinstall and, with no terminal, aborts
 nothing was applied. The halt rule governs it all the same.
 
 **Every `STOP:` this block prints before the `--- the apply` line means nothing was
-applied,** the HEAD CHECK's and the missing subject's included, and the previous
+applied,** the HEAD CHECK's, the run window's and the missing subject's included, and the previous
 sitting's transcripts are untouched: the failed run's output stays in the `.new` files.
 
 ## STAGE 2: the post-check, carries from stage 1. READ ONLY
@@ -409,6 +442,15 @@ test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard i
 
 echo "--- stage 1 must have APPLIED, in this sitting, not merely run"
 [ -n "$(find /tmp/0094-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not complete an apply in this sitting, or completed it over an hour ago"; exit 1; }
+
+echo "--- THE RUN WINDOW: nothing runs at or after its end"
+test -f /tmp/0094-window.ok || { echo "STOP: no run window is recorded for this sitting. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+[ "$(cut -d' ' -f1 /tmp/0094-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+WEND=$(cut -d' ' -f4 /tmp/0094-window.ok)
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
 
 echo "--- SR-59: the carries come out of THIS SITTING's pre-check transcript"
 test -f /tmp/0094-precheck.out || { echo "STOP: stage 1's pre-check transcript is missing"; exit 1; }
@@ -450,7 +492,9 @@ echo "0094 POST-CHECK PASSED. 21/21 pre-check OK, 18/18 post-check OK, journal $
 )
 ```
 
-**EXPECT:** `checking from the recorded sha <sha>` and whether main moved; the carry
+**EXPECT:** `checking from the recorded sha <sha>` and whether main moved;
+`run window, Lisbon YYYYMMDDHHMM: everything ends before <t>; now <t>`, with now before
+the end (the block halts otherwise, and the write stands); the carry
 line reads `journal_before=91`; the post-check prints `18` OK verdicts and no FAIL,
 then its FOR THE RECORD table (ten policies on the three tables); the journal reads `91`
 before and `92` after, with 0094's sha256 in it **exactly once**; the last line reads
@@ -482,6 +526,21 @@ test -f scripts/db/behaviour-users-tenants-roles-readonly.sql || { echo "STOP: t
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
 [ "$(shasum -a 256 scripts/db/behaviour-users-tenants-roles-readonly.sql | cut -d' ' -f1)" = "${SHABEHAVIOUR}" ] || { echo "STOP: the behaviour check on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
+
+echo "--- stage 2 must have PASSED on the recorded sha, after this sitting's apply"
+test -f /tmp/0094-applied.ok || { echo "STOP: stage 1 left no applied marker. Stage 3 has not run"; exit 1; }
+test -f /tmp/0094-stage2.ok || { echo "STOP: stage 2 left no pass mark, so it did not pass. Stage 3 has not run"; exit 1; }
+[ "$(cat /tmp/0094-stage2.ok)" = "${REC}" ] || { echo "STOP: stage 2's pass mark does not name the sha stage 0 recorded. Stage 3 has not run"; exit 1; }
+[ -n "$(find /tmp/0094-stage2.ok -newer /tmp/0094-applied.ok)" ] || { echo "STOP: stage 2's pass mark is older than the apply. Stage 3 has not run"; exit 1; }
+
+echo "--- THE RUN WINDOW: nothing runs at or after its end"
+test -f /tmp/0094-window.ok || { echo "STOP: no run window is recorded for this sitting. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
+[ "$(cut -d' ' -f1 /tmp/0094-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
+WEND=$(cut -d' ' -f4 /tmp/0094-window.ok)
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
 
 echo "--- the two actors stage 1 chose, READ ONLY, before the apply"
 test -f /tmp/0094-actors.out || { echo "STOP: stage 1 recorded no behaviour actors in this sitting. A missing subject is a FAIL"; exit 1; }
@@ -529,8 +588,11 @@ echo "0094 VERIFIED AT THE RLS LAYER: ${NSLUG} ${PN}; ${MSLUG} ${PM}. The column
 )
 ```
 
-**EXPECT: `verifying from the recorded sha <sha>`, whether main moved, the two actors
-stage 1 recorded, and for EACH run: its `ACTOR` line naming that actor and role, 14
+**EXPECT: `verifying from the recorded sha <sha>`, whether main moved, then a halt
+unless stage 1's applied marker exists and stage 2's pass mark names the recorded sha
+and is newer than that marker (so a stage 3 pasted after a stage 2 that halted stops
+here, before any connection), then the run window line with now before its end, the
+two actors stage 1 recorded, and for EACH run: its `ACTOR` line naming that actor and role, 14
 verdicts, a SUMMARY row, no FAIL, and VACUOUS only on arms whose comparand a real
 database can legitimately leave empty.** The block admits VACUOUS on the arms below
 and on no other. **Whether each of them IS empty is decided by the behaviour file, not
@@ -576,7 +638,8 @@ the closing read runs only on it.
 Paste this on its own, and **only** after stage 3 exited 0 with its last line
 `0094 VERIFIED AT THE RLS LAYER: ...`. Before the read runs it checks by machine that
 the worktree is on the sha stage 0 recorded, that stage 1 applied, that stage 2 and the
-last paste of stage 3 passed on that sha after the apply, and that the reader is the
+last paste of stage 3 passed on that sha after the apply, that the Lisbon clock is
+before the end of the run window recorded for that sha, and that the reader is the
 pinned file. A check that fails prints a `STOP:` line and exits 1, and the read does not
 run.
 
@@ -595,6 +658,13 @@ test -f /tmp/0094-stage2.ok || { echo "STOP: stage 2 left no pass mark. The jour
 test -f /tmp/0094-stage3.ok || { echo "STOP: stage 3 left no pass mark, so its last paste did not pass. The journal read has not run"; exit 1; }
 [ "$(cat /tmp/0094-stage3.ok)" = "${REC}" ] || { echo "STOP: stage 3's pass mark does not name the sha stage 0 recorded. The journal read has not run"; exit 1; }
 [ -n "$(find /tmp/0094-stage3.ok -newer /tmp/0094-applied.ok)" ] || { echo "STOP: stage 3's pass mark is older than the apply. The journal read has not run"; exit 1; }
+test -f /tmp/0094-window.ok || { echo "STOP: no run window is recorded for this sitting. The journal read has not run"; exit 1; }
+[ "$(cut -d' ' -f1 /tmp/0094-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The journal read has not run"; exit 1; }
+WEND=$(cut -d' ' -f4 /tmp/0094-window.ok)
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The journal read has not run"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The journal read has not run"; exit 1; }
 RW=$(shasum -a 256 ${READER} | cut -d' ' -f1)
 echo "reader: ${RW} (at the recorded sha ${REC})"
 [ "${RW}" = "${SHAREADER}" ] || { echo "STOP: the migration reader at the recorded sha is not the pinned file. The journal read has not run"; exit 1; }
@@ -607,7 +677,7 @@ echo "CLOSING READ: the journal reads 92, 0094 is APPLIED, and nothing is pendin
 )
 ```
 
-**EXPECT:** the reader's sha256 line, then the read printed IN FULL through `tee`:
+**EXPECT:** the run window line with now before its end, the reader's sha256 line, then the read printed IN FULL through `tee`:
 `journal rows on production: 92`, every migration file on the recorded sha listed
 `APPLIED`, 0094 last, `pending on this ref: 0`,
 `journal rows with no matching file on this ref: 0`, and the last line, exactly,
@@ -884,8 +954,8 @@ review round 1, below, refilled it.
 
 ### Review round 1, 2026-09-28: what changed, and the runs that measured it
 
-**No byte of any block changed.** Each block's sha256 between its fences is still the
-one in the table above. What changed:
+**No byte of any block changed in round 1.** Each block's sha256 between its fences was
+still the one in the table above; round 2, below, changed four blocks. What round 1 changed:
 
 - **the branch carries `origin/main` at `b8c62fd5`** (#1466, the owner's fourth
   renumbering). The one conflict, `packages/db/migrations-pending/README.md`, resolves
