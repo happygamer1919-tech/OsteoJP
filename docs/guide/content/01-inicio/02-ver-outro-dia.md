@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 2, terapeuta 3, proprietario 2
 capability: appointments:read
 screens: inicio
+shots: inicio.ver-outro-dia
 ---
 ## Ver outro dia
 
@@ -23,3 +24,6 @@ O **Resumo semanal** mostra sempre a semana atual, seja qual for o dia escolhido
 ::: proprietario
 Se escolheu um local em **Todas as clínicas**, a escolha mantém-se ao mudar de dia.
 :::
+
+![Ver outro dia no telemóvel](../../../../apps/web/public/ajuda/inicio/ver-outro-dia-390.png)
+![Ver outro dia no computador](../../../../apps/web/public/ajuda/inicio/ver-outro-dia-desktop.png)

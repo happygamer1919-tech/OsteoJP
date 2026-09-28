@@ -15,3 +15,6 @@ see: pacotes.atribuir-pacote, pacotes.marcar-com-pacote, pacotes.saldo-de-sessoe
 4. Clique em **Guardar**.
 
 Se o paciente já tem sessões por usar, a janela avisa com **Este utente tem sessões por usar**: clique em **Marcar com este pacote** no pacote certo.
+
+![Atribuir um pacote e marcar as sessões no telemóvel](../../../../apps/web/public/ajuda/pacotes/atribuir-pacote-390.png)
+![Atribuir um pacote e marcar as sessões no computador](../../../../apps/web/public/ajuda/pacotes/atribuir-pacote-desktop.png)

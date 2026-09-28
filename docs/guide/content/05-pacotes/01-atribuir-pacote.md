@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 1, terapeuta 2, proprietario 2
 capability: appointments:write
 screens: agenda
+shots: pacotes.atribuir-pacote
 faq: atribuir-pacote
 ---
 ## Atribuir um pacote e marcar as sessões
@@ -23,3 +24,6 @@ As datas não são geradas, porque a distância entre sessões decide-se para ca
 O campo **Pacote** só aparece numa marcação nova, com os pacotes oferecidos na **Localização** escolhida.
 
 A marcação só é guardada com a data e a hora de todas as linhas preenchidas.
+
+![Atribuir um pacote e marcar as sessões no telemóvel](../../../../apps/web/public/ajuda/pacotes/atribuir-pacote-390.png)
+![Atribuir um pacote e marcar as sessões no computador](../../../../apps/web/public/ajuda/pacotes/atribuir-pacote-desktop.png)

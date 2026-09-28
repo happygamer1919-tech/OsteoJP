@@ -1,0 +1,14 @@
+{
+  "id": "agenda.nota-na-marcacao",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "frames": [
+    {
+      "goto": "/marcacoes?from=2026-10-05&to=2026-10-05",
+      "ready": { "css": "[data-testid=\"marcacoes-notes-button\"]" },
+      "annotate": [
+        { "kind": "arrow", "n": 1, "target": { "css": "[data-testid=\"marcacoes-notes-button\"]:is([aria-label$=\"Marta Exemplo\"])" }, "from": "below-left" }
+      ]
+    }
+  ]
+}

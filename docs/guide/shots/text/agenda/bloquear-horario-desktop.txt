@@ -1,0 +1,265 @@
+sha256 c3227b99306cd2ee5172de4ebdf1622598647debcab8355cf847507c0759aad2
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Agenda
+5 a 10 de outubro de 2026
+·
+42 marcações
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Serviços
+Dia
+Semana
+Hoje
+Bloquear
+Nova marcação
+Segunda 5
+Terça 6
+Quarta 7
+Quinta 8
+Sexta 9
+Sábado 10
+08:00
+09:00
+10:00
+11:00
+12:00
+13:00
+14:00
+15:00
+16:00
+17:00
+18:00
+19:00
+20:00
+Marta Exemplo
+Sofia Amostra
+Rui Inventado
+Tiago Fictício
+Paulo Exemplo
+Inês Modelo
+Nuno Amostra
+Vera Inventada
+Lara Fictícia
+Beatriz Exemplo
+Hugo Fictício
+Gonçalo Modelo
+Teresa Modelo
+Filipe Inventado
+Clara Amostra
+Marta Exemplo
+Sofia Amostra
+Tiago Fictício
+Miguel Exemplo
+Paulo Exemplo
+Nuno Amostra
+Inês Modelo
+Rui Inventado
+Vera Inventada
+Beatriz Exemplo
+Filipe Inventado
+Lara Fictícia
+Hugo Fictício
+Teresa Modelo
+Marta Exemplo
+Tiago Fictício
+Sofia Amostra
+Gonçalo Modelo
+Nuno Amostra
+Filipe Inventado
+Paulo Exemplo
+Inês Modelo
+Clara Amostra
+Beatriz Exemplo
+Vera Inventada
+Hugo Fictício
+Teresa Modelo
+## frame 1 form values
+Todos os terapeutas
+Todas as localizações
+06/10/2026
+## frame 2
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Agenda
+5 a 10 de outubro de 2026
+·
+42 marcações
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Serviços
+Dia
+Semana
+Hoje
+Bloquear
+Nova marcação
+Segunda 5
+Terça 6
+Quarta 7
+Quinta 8
+Sexta 9
+Sábado 10
+08:00
+09:00
+10:00
+11:00
+12:00
+13:00
+14:00
+15:00
+16:00
+17:00
+18:00
+19:00
+20:00
+Marta Exemplo
+Sofia Amostra
+Rui Inventado
+Tiago Fictício
+Paulo Exemplo
+Inês Modelo
+Nuno Amostra
+Vera Inventada
+Lara Fictícia
+Beatriz Exemplo
+Hugo Fictício
+Gonçalo Modelo
+Teresa Modelo
+Filipe Inventado
+Clara Amostra
+Marta Exemplo
+Sofia Amostra
+Tiago Fictício
+Miguel Exemplo
+Paulo Exemplo
+Nuno Amostra
+Inês Modelo
+Rui Inventado
+Vera Inventada
+Beatriz Exemplo
+Filipe Inventado
+Lara Fictícia
+Hugo Fictício
+Teresa Modelo
+Marta Exemplo
+Tiago Fictício
+Sofia Amostra
+Gonçalo Modelo
+Nuno Amostra
+Filipe Inventado
+Paulo Exemplo
+Inês Modelo
+Clara Amostra
+Beatriz Exemplo
+Vera Inventada
+Hugo Fictício
+Teresa Modelo
+Bloquear horário
+Terapeuta *
+Selecionar terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Data
+Início
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Fim
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Nota (obrigatória)
+Repetir bloqueio
+Cancelar
+Bloquear
+## frame 2 form values
+Todos os terapeutas
+Todas as localizações
+06/10/2026
+Selecionar terapeuta
+dd/mm/aaaa
+Porquê? Ex.: formação, consulta externa, atende em LV
