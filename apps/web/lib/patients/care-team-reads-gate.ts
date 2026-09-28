@@ -87,9 +87,26 @@ export async function probeCareTeamClinicHelper(db: SqlExecutor): Promise<boolea
  * other role.
  */
 export async function careTeamClinicHelperPresent(ctx: RequestContext): Promise<boolean> {
+  return careTeamClinicHelperPresentOn(null, ctx);
+}
+
+/**
+ * The same cached question, asked on a transaction the caller already holds
+ * (the booking writer), so it takes no second connection from the pool. With
+ * `db` null it opens its own scoped read, as `careTeamClinicHelperPresent` does.
+ * 0098 creates the helper and the insert policy that admits a therapist's own
+ * row together, so "the helper is present" is also "a therapist may write their
+ * own row".
+ */
+export async function careTeamClinicHelperPresentOn(
+  db: SqlExecutor | null,
+  ctx?: RequestContext,
+): Promise<boolean> {
   if (present) return true;
   if (Date.now() - absentCheckedAt < ABSENT_RECHECK_MS) return false;
-  const found = await runScoped(ctx, (tx) => probeCareTeamClinicHelper(tx));
+  const found = db
+    ? await probeCareTeamClinicHelper(db)
+    : await runScoped(ctx as RequestContext, (tx) => probeCareTeamClinicHelper(tx));
   if (found) {
     present = true;
     return true;

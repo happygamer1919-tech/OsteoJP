@@ -33,6 +33,16 @@ vi.mock("@/lib/scheduling/shared-resources", () => ({
   listSharedResourcesTx: async () => h.shared,
 }));
 
+// 0098's helper decides whether a therapist's OWN row is attempted at all
+// (care-team-auto.ts). Present by default here; one arm below turns it off.
+const helper = vi.hoisted(() => ({ present: true, calls: 0 }));
+vi.mock("../patients/care-team-reads-gate", () => ({
+  careTeamClinicHelperPresentOn: vi.fn(async () => {
+    helper.calls += 1;
+    return helper.present;
+  }),
+}));
+
 import { addBookedTherapistsToCareTeam } from "./care-team-auto";
 
 const sp = {
@@ -135,6 +145,27 @@ describe("addBookedTherapistsToCareTeam", () => {
     h.written = [{ id: "ct-own", patientId: "pA", userId: "actor-1" }];
     await addBookedTherapistsToCareTeam(tx, actor("therapist"), ["a1"]);
     expect(h.valuesSeen[0]!.map((v) => v.userId)).toEqual(["actor-1"]);
+  });
+
+  it("CARE-02a: before 0098 is applied a therapist's self-booking attempts NO own row (the insert policy would refuse it); owner and reception never ask", async () => {
+    helper.present = false;
+    try {
+      h.rows[0]!.practitionerId = "actor-1";
+      h.written = [{ id: "ct-own", patientId: "pA", userId: "actor-1" }];
+      const callsBefore = helper.calls;
+      const out = await addBookedTherapistsToCareTeam(tx, actor("therapist"), ["a1"]);
+      expect(out).toEqual([]);
+      expect(h.valuesSeen).toEqual([]);
+      expect(h.audits).toEqual([]);
+      expect(helper.calls).toBe(callsBefore + 1);
+      // reception's reach is "any": it writes as before and never asks.
+      h.written = [{ id: "ct-r", patientId: "pA", userId: "actor-1" }];
+      await addBookedTherapistsToCareTeam(tx, actor("reception"), ["a1"]);
+      expect(helper.calls).toBe(callsBefore + 1);
+      expect(h.valuesSeen.length).toBe(1);
+    } finally {
+      helper.present = true;
+    }
   });
 
   it("CARE-02a: a therapist's booking that does not name them writes nothing at all", async () => {
