@@ -21,11 +21,23 @@ import type { Role } from "@osteojp/auth";
  *     (lib/auth/viewer-locations.ts), `/invoicing` (which lists every invoice
  *     for them) and the appointments RLS itself (0078: `NOT
  *     viewer_has_location_assignment() OR location_id = ANY
- *     (viewer_location_ids())`). A figure narrower than the invoices the same
- *     person can list on Faturacao would be the inconsistency.
+ *     (viewer_location_ids())`).
  *   - any other role (the therapist): `[]`, no clinic at all. getMonthlyRevenue
  *     refuses the therapist before it gets here; this is the second fence, and
  *     it fails closed rather than falling through to "the whole tenant".
+ *
+ * AGAINST /invoicing, THIS FIGURE AGREES FOR TWO OF THE THREE ADMIN AND
+ * RECEPTION CASES, NOT ALL THREE. With ONE clinic, /invoicing pins that clinic
+ * (`scopedLocationId`, lib/auth/location-choice.ts) and lists the same invoices
+ * this figure sums. With NO assignment, both are the whole tenant. With TWO OR
+ * MORE clinics they differ: this figure is exactly those clinics, which is what
+ * T5b asks for (`viewer_location_ids()`), while /invoicing's "Todas as
+ * localizacoes" resolves to no location at all, `listInvoices` then adds no
+ * location condition, and the list holds every invoice of the tenant in the
+ * period, including the invoices with no marcacao. So for that viewer the
+ * Inicio figure can be LOWER than the same month's issued and paid invoices on
+ * their /invoicing "Todas" list. The /invoicing side predates T5b and is not
+ * changed here, and this figure is deliberately not widened to match it.
  */
 export type RevenueLocations = readonly string[] | null;
 

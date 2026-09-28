@@ -99,10 +99,12 @@ Month boundaries are calculated as:
 | owner, no choice (default) | every clinic, and invoices with no marcação |
 | owner, `?location=<id>` | that clinic only |
 | admin or reception with `staff_locations` rows | exactly those clinics; `?location=` is ignored |
-| admin or reception with no assignment | every clinic (the PL-09 fallback that `viewerLocationScope`, `/invoicing` and the appointments RLS already apply to this viewer) |
+| admin or reception with no assignment | every clinic, and invoices with no marcação (the PL-09 fallback that `viewerLocationScope`, `/invoicing` and the appointments RLS already apply to this viewer) |
 | therapist | refused before any read (DASH-THERAPIST-REVENUE) |
 
 An invoice's clinic is the clinic of its marcação (`invoices.appointment_id` → `appointments.location_id`), the same link the `/invoicing` location filter and Estatísticas (`getStatistics`) use. An invoice with no marcação has no clinic: it counts in the whole-tenant figure and in no clinic's figure. The appointments RLS also runs inside the join, as defense in depth; the explicit `location_id` condition is what excludes a marcação at another clinic that an admin created themselves.
+
+**Against `/invoicing`: the same answer for two of the three admin and reception cases.** With one clinic, `/invoicing` pins that clinic (`scopedLocationId`) and lists the invoices this figure sums. With no assignment, both are the whole tenant. With two or more clinics they differ: this figure is exactly those clinics, as T5b asks (`viewer_location_ids()`), while `/invoicing`'s "Todas as localizações" resolves to no location, `listInvoices` adds no location condition, and the list holds every invoice of the tenant in the period, including the invoices with no marcação. So a two-clinic admin's Início figure can be lower than the same month's issued and paid invoices on their `/invoicing` "Todas" list. That `/invoicing` behaviour predates T5b and is not changed here; this figure is not widened to match it.
 
 **The owner's toggle.** A `Select` from `@osteojp/ui` (`RevenueLocationToggle`, `app/dashboard/revenue-location.tsx`) under the figure, labelled "Localização da receita", first entry "Todas as localizações", then the tenant's active clinics (`listActiveLocations`, as on `/invoicing`). Choosing writes `?location=` (keeping `?date=`), and the day navigation links keep it. The page honours the id only when it is one of those active clinics, so the control and the figure always name the same thing; anything else falls back to every clinic. With a single active clinic there is nothing to choose and no toggle (PL-14). No other role sees the toggle, and `getMonthlyRevenue` ignores `?location=` for them.
 
