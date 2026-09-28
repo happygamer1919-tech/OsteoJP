@@ -6,9 +6,15 @@
  * WHAT IS PINNED WHERE. The ORDER of each role's lessons is written out by hand
  * in lib/guide/guide-roles.test.ts, against the helper. This file proves the
  * PAGES draw exactly that list: every lesson link on the index, in order, is
- * the helper's list for that role, the counts are the ruled ones (36, 37, 47,
- * 56), the section order per role is written out by hand below, and the named
- * cases the owner's spec asks for are asserted by id.
+ * the helper's list for that role, the counts are the ruled ones (reception
+ * 37, therapist 37, admin 48, owner 57), the section order per role is written
+ * out by hand below, and the named cases the owner's spec asks for are
+ * asserted by id.
+ *
+ * AN ABSENCE PROVES SOMETHING ONLY FOR A LESSON THAT EXISTS. Every "this role
+ * does not get lesson X" below first checks that X is a published lesson (the
+ * owner opens it), so renaming or splitting X in the lesson source turns the
+ * assertion red instead of leaving it true of nothing.
  *
  * NOT FOUND IS A THROW. notFound() and redirect() throw in Next, and they are
  * stubbed to throw here too, so a page that went on to render after them
@@ -39,12 +45,12 @@ vi.mock("@/lib/auth/context", () => ({
   getRequestContext: async () => h.ctx,
 }));
 
-import { GUIDE_DATA, guideLessonsFor, type GuideLesson } from "@/lib/guide/guide";
+import { GUIDE_DATA, guideLessonsFor, type GuideBlock, type GuideLesson, type GuideViewLesson } from "@/lib/guide/guide";
 import { lessonHref, lessonSlug } from "@/lib/guide/guide-routes";
 
 import AjudaLicaoPage, { metadata as licaoMetadata } from "./[seccao]/[licao]/page";
 import AjudaSeccaoPage, { metadata as seccaoMetadata } from "./[seccao]/page";
-import { GuideBody } from "./guide-blocks";
+import { GuideBody, GuideText } from "./guide-blocks";
 import AjudaPage, { metadata as indexMetadata } from "./page";
 
 const pt = getStrings("pt");
@@ -88,22 +94,54 @@ function relHref(html: string, rel: "prev" | "next"): string | null {
   return tags[0]!.match(/ href="([^"]*)"/)?.[1] ?? null;
 }
 
-const hrefs = (lessons: GuideLesson[]) => lessons.map(lessonHref);
+const hrefs = (lessons: Pick<GuideLesson, "id" | "section">[]) => lessons.map(lessonHref);
 const lessonById = (id: string) => {
   const lesson = GUIDE_DATA.lessons.find((l) => l.id === id);
   if (!lesson) throw new Error(`no lesson ${id} in guide-data.json`);
   return lesson;
 };
 
+/** The address of every published lesson: what the owner's guide links. */
+const PUBLISHED = new Set(hrefs(GUIDE_DATA.lessons));
+
+/** `href` is a published lesson, and it is not among `links`. */
+function absentButPublished(links: string[], href: string) {
+  expect(PUBLISHED.has(href), `${href} is a published lesson`).toBe(true);
+  expect(links).not.toContain(href);
+}
+
+/** The lesson at /ajuda/<seccao>/<licao> renders for the owner, so it exists, and is not found for `role`. */
+async function refusedButReal(role: Role, seccao: string, licao: string) {
+  await expect(lessonHtml("owner", seccao, licao), `the owner opens ${seccao}/${licao}`).resolves.toContain("<h1");
+  await expect(lessonHtml(role, seccao, licao), `${role} opens ${seccao}/${licao}`).rejects.toThrow("NOT_FOUND");
+}
+
+/** The heading levels on a page, in document order. */
+function headingLevels(html: string): number[] {
+  return [...html.matchAll(/<h([1-6])[\s>]/g)].map((m) => Number(m[1]));
+}
+
+/** What is wrong with a page's heading outline: it must open with its one h1 and never skip a level going down. */
+function headingProblems(html: string): string[] {
+  const levels = headingLevels(html);
+  const out: string[] = [];
+  if (levels[0] !== 1) out.push(`opens with h${levels[0]}`);
+  if (levels.filter((level) => level === 1).length !== 1) out.push("has not exactly one h1");
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i]! > levels[i - 1]! + 1) out.push(`h${levels[i - 1]} then h${levels[i]}`);
+  }
+  return out;
+}
+
 beforeEach(() => {
   as(null);
 });
 
 describe("the index lists exactly the viewer's lessons, in the viewer's order (G1-3, one test per role)", () => {
-  it("reception: its 36 lessons in order, and nothing from Registos", async () => {
+  it("reception: its 37 lessons in order, and nothing from Registos", async () => {
     const html = await indexHtml("reception");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("reception")));
-    expect(lessonLinks(html)).toHaveLength(36);
+    expect(lessonLinks(html)).toHaveLength(37);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -114,10 +152,14 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
       "faturacao",
       "equipa-e-horarios",
     ]);
+    expect(GUIDE_DATA.sections.map((section) => section.id)).toContain("registos");
     expect(html).not.toContain("/ajuda/registos");
     expect(html).not.toContain(">Registos<");
     // Receção opens its guide with Início, then Agenda's first lesson for it: Marcar uma consulta.
     expect(lessonLinks(html)[5]).toBe("/ajuda/agenda/marcar-consulta");
+    // Both halves of P4: reception holds patients:write and care_team:manage.
+    expect(lessonLinks(html)).toContain("/ajuda/pacientes/atualizar-dados");
+    expect(lessonLinks(html)).toContain("/ajuda/pacientes/atribuir-terapeutas");
   });
 
   it("therapist: its 37 lessons in order, with F2 (faturas de um paciente) and not F1 (faturas de um período)", async () => {
@@ -135,14 +177,17 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
       "faturacao",
     ]);
     expect(lessonLinks(html)).toContain("/ajuda/faturacao/faturas-de-um-paciente");
-    expect(lessonLinks(html)).not.toContain("/ajuda/faturacao/faturas-de-um-periodo");
+    absentButPublished(lessonLinks(html), "/ajuda/faturacao/faturas-de-um-periodo");
     expect(html).not.toContain("/ajuda/marcacao-online");
+    // Neither half of P4 is written for the Terapeuta guide.
+    absentButPublished(lessonLinks(html), "/ajuda/pacientes/atualizar-dados");
+    absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
   });
 
-  it("admin: the 47 Proprietário lessons whose capability the admin role holds, and no Registos", async () => {
+  it("admin: the 48 Proprietário lessons whose capability the admin role holds, and no Registos", async () => {
     const html = await indexHtml("admin");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("admin")));
-    expect(lessonLinks(html)).toHaveLength(47);
+    expect(lessonLinks(html)).toHaveLength(48);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -154,15 +199,18 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
       "marcacao-online",
     ]);
     expect(html).not.toContain("/ajuda/registos");
-    expect(lessonLinks(html)).not.toContain("/ajuda/pacientes/pacientes-eliminados");
-    expect(lessonLinks(html)).not.toContain("/ajuda/pacientes/atualizar-dados-e-terapeutas");
-    expect(lessonLinks(html)).not.toContain("/ajuda/portal/mensagem-de-teste");
+    absentButPublished(lessonLinks(html), "/ajuda/pacientes/pacientes-eliminados");
+    absentButPublished(lessonLinks(html), "/ajuda/portal/mensagem-de-teste");
+    // P4 split in two: admin holds patients:write and reads Atualizar os dados,
+    // and lacks care_team:manage, so it does not get Atribuir terapeutas.
+    expect(lessonLinks(html)).toContain("/ajuda/pacientes/atualizar-dados");
+    absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
   });
 
-  it("owner: every published lesson (56), in the Proprietário order, and not the held one", async () => {
+  it("owner: every published lesson (57), in the Proprietário order, and not the held one", async () => {
     const html = await indexHtml("owner");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("owner")));
-    expect(lessonLinks(html)).toHaveLength(56);
+    expect(lessonLinks(html)).toHaveLength(57);
     expect([...lessonLinks(html)].sort()).toEqual(hrefs(GUIDE_DATA.lessons).sort());
     expect(sectionLinks(html)).toEqual([
       "inicio",
@@ -176,6 +224,15 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
       "registos",
     ]);
     expect(html).not.toContain("pedido-de-cliente-novo");
+  });
+
+  it("an absence is asserted only of a published lesson: the pre-split P4 address now fails the helpers", async () => {
+    // P4 was one lesson, pacientes.atualizar-dados-e-terapeutas, until PR 1
+    // split it. A bare not.toContain of its address stayed true of nothing.
+    const gone = "/ajuda/pacientes/atualizar-dados-e-terapeutas";
+    expect(PUBLISHED.has(gone)).toBe(false);
+    expect(() => absentButPublished([], gone)).toThrow();
+    await expect(refusedButReal("admin", "pacientes", "atualizar-dados-e-terapeutas")).rejects.toThrow();
   });
 
   it("each lesson link appears once on the index", async () => {
@@ -230,7 +287,7 @@ describe("Perguntas frequentes (G1-2): empty until its own PR writes the entries
 
   it("an unknown ?tab= opens the guide", async () => {
     const html = await indexHtml("owner", "outra");
-    expect(lessonLinks(html)).toHaveLength(56);
+    expect(lessonLinks(html)).toHaveLength(57);
     expect(html).not.toContain(pt["guide.faqEmptyTitle"]);
   });
 });
@@ -281,21 +338,28 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
   });
 
   it("reception opening a Registos lesson is not found", async () => {
-    await expect(lessonHtml("reception", "registos", "criar-registo")).rejects.toThrow("NOT_FOUND");
+    await refusedButReal("reception", "registos", "criar-registo");
   });
 
   it("a therapist opening F1 (faturas de um período) is not found, and F2 renders", async () => {
-    await expect(lessonHtml("therapist", "faturacao", "faturas-de-um-periodo")).rejects.toThrow("NOT_FOUND");
+    await refusedButReal("therapist", "faturacao", "faturas-de-um-periodo");
     const html = await lessonHtml("therapist", "faturacao", "faturas-de-um-paciente");
     expect(html).toContain(lessonById("faturacao.faturas-de-um-paciente").title);
   });
 
+  it("a therapist opening either half of P4 is not found", async () => {
+    await refusedButReal("therapist", "pacientes", "atualizar-dados");
+    await refusedButReal("therapist", "pacientes", "atribuir-terapeutas");
+  });
+
   it("admin opening a lesson whose capability it lacks is not found", async () => {
-    await expect(lessonHtml("admin", "registos", "assinar-registo")).rejects.toThrow("NOT_FOUND");
-    await expect(lessonHtml("admin", "pacientes", "pacientes-eliminados")).rejects.toThrow("NOT_FOUND");
-    // The owner reads both.
-    await expect(lessonHtml("owner", "registos", "assinar-registo")).resolves.toContain("<h1");
-    await expect(lessonHtml("owner", "pacientes", "pacientes-eliminados")).resolves.toContain("<h1");
+    await refusedButReal("admin", "registos", "assinar-registo");
+    await refusedButReal("admin", "pacientes", "pacientes-eliminados");
+    // care_team:manage: the admin role does not hold it, reception does.
+    await refusedButReal("admin", "pacientes", "atribuir-terapeutas");
+    await expect(lessonHtml("reception", "pacientes", "atribuir-terapeutas")).resolves.toContain("<h1");
+    // patients:write: the other half of P4 is the admin's.
+    await expect(lessonHtml("admin", "pacientes", "atualizar-dados")).resolves.toContain("<h1");
   });
 
   it("the held lesson (M1, GUEST-05) is not found, even for the owner", async () => {
@@ -368,6 +432,54 @@ describe("role blocks: each viewer reads only its own", () => {
   });
 });
 
+describe("the heading outline never skips a level", () => {
+  it("the index, for every role: h1, then each section an h2, then each lesson an h3", async () => {
+    for (const role of ROLES) {
+      const guide = await indexHtml(role);
+      expect(headingProblems(guide), role).toEqual([]);
+      expect(headingLevels(guide).slice(0, 3), role).toEqual([1, 2, 3]);
+    }
+  });
+
+  it("the empty Perguntas frequentes tab: the h1, then the platform EmptyState's own h3", async () => {
+    // EmptyState (packages/ui, SPEC-foundation 4.10) draws its title as an h3
+    // on every screen of the platform, and /ajuda does not fork it. That one
+    // skip lasts until PR 4 writes the entries, each drawn as an h2.
+    for (const role of ROLES) {
+      expect(headingLevels(await indexHtml(role, "perguntas")), role).toEqual([1, 3]);
+    }
+  });
+
+  it("every section page of every role: the section title is the h1 and each lesson card an h2", async () => {
+    for (const role of ROLES) {
+      const course = guideLessonsFor(role);
+      for (const seccao of new Set(course.map((lesson) => lesson.section))) {
+        const html = await sectionHtml(role, seccao);
+        const where = `${role} ${seccao}`;
+        expect(headingProblems(html), where).toEqual([]);
+        const cards = [...html.matchAll(/<h([1-6]) [^>]*><a [^>]*data-guide-lesson="([^"]+)"/g)];
+        expect(cards.map((m) => m[2]), where).toEqual(course.filter((l) => l.section === seccao).map((l) => l.id));
+        expect(new Set(cards.map((m) => m[1])), where).toEqual(new Set(["2"]));
+      }
+    }
+  });
+
+  it("every lesson page of every role", async () => {
+    for (const role of ROLES) {
+      for (const lesson of guideLessonsFor(role)) {
+        expect(headingProblems(await lessonHtml(role, lesson.section, lessonSlug(lesson))), `${role} ${lesson.id}`).toEqual([]);
+      }
+    }
+  });
+
+  it("the check itself, on seeded markup", () => {
+    expect(headingProblems("<h1>a</h1><h2>b</h2><h3>c</h3><h2>d</h2>")).toEqual([]);
+    expect(headingProblems("<h1>a</h1><h3>b</h3>")).toEqual(["h1 then h3"]);
+    expect(headingProblems("<h2>a</h2>")).toEqual(["opens with h2", "has not exactly one h1"]);
+    expect(headingProblems("<h1>a</h1><h1 class=\"x\">b</h1>")).toEqual(["has not exactly one h1"]);
+  });
+});
+
 describe("a lesson without a capture shows Sem imagem, never a broken image (G1-7)", () => {
   it("every published lesson has no capture yet, and every one renders the Sem imagem card and no <img>", async () => {
     expect(GUIDE_DATA.lessons.every((lesson) => lesson.images === null)).toBe(true);
@@ -383,14 +495,14 @@ describe("a lesson without a capture shows Sem imagem, never a broken image (G1-
 });
 
 describe("the lesson renderer (seeded lessons, invented text)", () => {
-  const seeded = (over: Partial<GuideLesson>): Pick<GuideLesson, "title" | "images" | "blocks"> => ({
+  const seeded = (over: Partial<GuideViewLesson>): Pick<GuideViewLesson, "title" | "images" | "blocks"> => ({
     title: "Uma lição de exemplo",
     images: null,
     blocks: [{ type: "para", spans: [{ text: "Clique em " }, { strong: "Guardar" }, { text: "." }] }],
     ...over,
   });
-  const render = (lesson: Pick<GuideLesson, "title" | "images" | "blocks">, profile: "rececao" | "terapeuta" | "proprietario" = "rececao") =>
-    renderToStaticMarkup(<GuideBody lesson={lesson} profile={profile} />);
+  const render = (lesson: Pick<GuideViewLesson, "title" | "images" | "blocks">) =>
+    renderToStaticMarkup(<GuideBody lesson={lesson} />);
 
   const IMAGES = {
     phone: { src: "/ajuda/agenda/exemplo-390.png", alt: "Exemplo no telemóvel" },
@@ -437,12 +549,21 @@ describe("the lesson renderer (seeded lessons, invented text)", () => {
     expect(html).toMatch(/<ul [^>]*><li>Três<\/li><\/ul>/);
   });
 
-  it("a role block is drawn only for its roles", () => {
-    const lesson = seeded({
-      blocks: [{ type: "role", roles: ["terapeuta", "proprietario"], blocks: [{ type: "para", spans: [{ text: "Só para alguns." }] }] }],
-    });
-    expect(render(lesson, "terapeuta")).toContain("Só para alguns.");
-    expect(render(lesson, "proprietario")).toContain("Só para alguns.");
-    expect(render(lesson, "rececao")).not.toContain("Só para alguns.");
+  it("takes resolved blocks only: raw blocks with a role block do not type-check, and the role block draws nothing", () => {
+    // lib/guide resolves role blocks for the viewer before a page gets them
+    // (blocksFor); ajuda-section-roles.test.tsx and the role block tests above
+    // prove that per role. Here: the renderer cannot be handed the raw ones.
+    const raw: GuideBlock[] = [
+      { type: "para", spans: [{ text: "Para todos." }] },
+      { type: "role", roles: ["rececao", "terapeuta", "proprietario"], blocks: [{ type: "para", spans: [{ text: "Só para alguns." }] }] },
+    ];
+    // @ts-expect-error raw blocks must go through blocksFor before a page draws them
+    const text = renderToStaticMarkup(<GuideText blocks={raw} />);
+    // @ts-expect-error the same for a lesson body
+    const body = renderToStaticMarkup(<GuideBody lesson={{ title: "Uma lição de exemplo", images: null, blocks: raw }} />);
+    for (const html of [text, body]) {
+      expect(html).toContain("Para todos.");
+      expect(html).not.toContain("Só para alguns.");
+    }
   });
 });

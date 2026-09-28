@@ -3,7 +3,7 @@ import { type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { GlassCard } from "@osteojp/ui";
 
-import type { GuideLesson } from "@/lib/guide/guide";
+import type { GuideViewLesson } from "@/lib/guide/guide";
 import { lessonHref } from "@/lib/guide/guide-routes";
 import { s } from "@/lib/i18n";
 
@@ -56,27 +56,47 @@ export function GuideBreadcrumb({ trail }: { trail: { href: string; label: strin
   );
 }
 
+/**
+ * The heading level of a lesson card: one below the heading it sits under, so
+ * no level is skipped. On /ajuda a card sits under its section's h2 (h3); on a
+ * section page, under the section title, the page's h1 (h2).
+ */
+export type LessonHeadingLevel = 2 | 3;
+
 /** A lesson as a card in a list: its title as the link, and its goal. */
-export function LessonCard({ lesson }: { lesson: GuideLesson }): ReactNode {
+export function LessonCard({
+  lesson,
+  headingLevel,
+}: {
+  lesson: GuideViewLesson;
+  headingLevel: LessonHeadingLevel;
+}): ReactNode {
+  const Heading = headingLevel === 2 ? "h2" : "h3";
   return (
     <GlassCard className="h-full">
-      <h3 className="text-sm font-semibold">
+      <Heading className="text-sm font-semibold">
         <Link href={lessonHref(lesson)} className={LINK} data-guide-lesson={lesson.id}>
           {lesson.title}
         </Link>
-      </h3>
+      </Heading>
       {lesson.goal ? <p className="mt-1 text-sm text-v2-text-secondary">{lesson.goal}</p> : null}
     </GlassCard>
   );
 }
 
 /** A role's lessons as a list of cards, in order. */
-export function LessonList({ lessons }: { lessons: GuideLesson[] }): ReactNode {
+export function LessonList({
+  lessons,
+  headingLevel,
+}: {
+  lessons: GuideViewLesson[];
+  headingLevel: LessonHeadingLevel;
+}): ReactNode {
   return (
     <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {lessons.map((lesson) => (
         <li key={lesson.id}>
-          <LessonCard lesson={lesson} />
+          <LessonCard lesson={lesson} headingLevel={headingLevel} />
         </li>
       ))}
     </ol>

@@ -3,7 +3,6 @@ import { GlassPanel } from "@osteojp/ui";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { AJUDA_PATH } from "@/lib/guide/ajuda-tab";
-import { PROFILE_OF_ROLE } from "@/lib/guide/guide";
 import { sectionFor, sectionHref } from "@/lib/guide/guide-routes";
 import { s } from "@/lib/i18n";
 
@@ -21,6 +20,9 @@ export const metadata = { title: s["guide.title"] };
  * not an empty page. It protects nothing (the guide is public in the
  * repository); it keeps a stale link from showing a role a section it cannot
  * use.
+ *
+ * The section's own text comes from sectionFor already resolved for the
+ * viewer's role, like its lessons.
  */
 export default async function AjudaSeccaoPage({ params }: { params: Promise<{ seccao: string }> }) {
   const ctx = await getRequestContext();
@@ -42,9 +44,10 @@ export default async function AjudaSeccaoPage({ params }: { params: Promise<{ se
       <GuideHeader title={section.title} subtitle={section.goal} />
       <GlassPanel>
         <div className="flex flex-col gap-4">
-          <GuideText blocks={section.blocks} profile={PROFILE_OF_ROLE[ctx.role]} />
+          <GuideText blocks={section.blocks} />
           <p className="text-sm text-v2-text-secondary">{lessonCount(lessons.length)}</p>
-          <LessonList lessons={lessons} />
+          {/* The section title is this page's h1, so each lesson card is an h2. */}
+          <LessonList lessons={lessons} headingLevel={2} />
         </div>
       </GlassPanel>
     </div>

@@ -5,7 +5,6 @@ import { GlassPanel } from "@osteojp/ui";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { AJUDA_PATH } from "@/lib/guide/ajuda-tab";
-import { PROFILE_OF_ROLE } from "@/lib/guide/guide";
 import { lessonFor, lessonHref, sectionHref } from "@/lib/guide/guide-routes";
 import { s } from "@/lib/i18n";
 
@@ -17,7 +16,8 @@ export const metadata = { title: s["guide.title"] };
 /**
  * G1: one lesson of Guia da plataforma, for the viewer's role.
  *
- * The body shows only the viewer's role blocks, and its capture pair (or the
+ * The body shows only the viewer's role blocks (lessonFor hands the lesson
+ * over already resolved for the role), and its capture pair (or the
  * "Sem imagem" card while it has none). Under it, the lesson before and the
  * lesson after this one in the role's own course, across sections.
  *
@@ -51,7 +51,7 @@ export default async function AjudaLicaoPage({
       <GuideHeader title={lesson.title} subtitle={lesson.goal} />
       <GlassPanel>
         <article className="max-w-3xl">
-          <GuideBody lesson={lesson} profile={PROFILE_OF_ROLE[ctx.role]} />
+          <GuideBody lesson={lesson} />
         </article>
       </GlassPanel>
       {(previous || next) && (

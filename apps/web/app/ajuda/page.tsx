@@ -6,7 +6,7 @@ import { EmptyState, GlassPanel } from "@osteojp/ui";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { ajudaTab } from "@/lib/guide/ajuda-tab";
-import { PROFILE_OF_ROLE, guideFaqFor, guideSectionsFor, type GuideProfile } from "@/lib/guide/guide";
+import { guideFaqFor, guideSectionsFor } from "@/lib/guide/guide";
 import { sectionHref } from "@/lib/guide/guide-routes";
 import { s } from "@/lib/i18n";
 
@@ -45,7 +45,6 @@ export default async function AjudaPage({
   if (!ctx) redirect("/login");
 
   const tab = ajudaTab((await searchParams).tab);
-  const profile = PROFILE_OF_ROLE[ctx.role];
   const tabs = [
     { value: "guia" as const, label: s["guide.tabGuide"] },
     { value: "perguntas" as const, label: s["guide.tabFaq"] },
@@ -57,7 +56,7 @@ export default async function AjudaPage({
       <GuideHeader title={s["guide.title"]} subtitle={s["guide.subtitle"]} />
       <AjudaTabs current={tab} items={tabs} label={s["guide.tabsLabel"]} panelId={PANEL_ID} />
       <div id={PANEL_ID} role="tabpanel" aria-label={activeLabel} className="flex flex-col gap-6">
-        {tab === "guia" ? <GuidePart role={ctx.role} /> : <FaqPart role={ctx.role} profile={profile} />}
+        {tab === "guia" ? <GuidePart role={ctx.role} /> : <FaqPart role={ctx.role} />}
       </div>
     </div>
   );
@@ -85,7 +84,7 @@ function GuidePart({ role }: { role: Role }) {
             {lessonCount(lessons.length)}
           </p>
         </div>
-        <LessonList lessons={lessons} />
+        <LessonList lessons={lessons} headingLevel={3} />
       </div>
     </GlassPanel>
   ));
@@ -94,9 +93,9 @@ function GuidePart({ role }: { role: Role }) {
 /**
  * Perguntas frequentes. The entries are written in their own PR; until then
  * every role sees the empty state. An entry, once written, shows its question
- * and its answer for this role.
+ * and its answer for this role (guideFaqFor resolves its role blocks).
  */
-function FaqPart({ role, profile }: { role: Role; profile: GuideProfile }) {
+function FaqPart({ role }: { role: Role }) {
   const entries = guideFaqFor(role);
   if (entries.length === 0) {
     return (
@@ -111,7 +110,7 @@ function FaqPart({ role, profile }: { role: Role; profile: GuideProfile }) {
     <GlassPanel key={entry.id}>
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-v2-text-primary">{entry.question ?? entry.title}</h2>
-        <GuideText blocks={entry.blocks} profile={profile} />
+        <GuideText blocks={entry.blocks} />
       </div>
     </GlassPanel>
   ));

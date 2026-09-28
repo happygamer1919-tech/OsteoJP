@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { ImageOff } from "lucide-react";
 import { GlassCard } from "@osteojp/ui";
 
-import type { GuideBlock, GuideLesson, GuideProfile, GuideSpan } from "@/lib/guide/guide";
+import type { GuideSpan, GuideViewBlock, GuideViewLesson } from "@/lib/guide/guide";
 import { s } from "@/lib/i18n";
 
 /**
@@ -15,10 +15,14 @@ import { s } from "@/lib/i18n";
  * Nothing on /ajuda injects raw HTML, and ajuda-stores-nothing.test.ts holds
  * that (it refuses the React prop for raw HTML by name, even in a comment).
  *
- * ROLE BLOCKS: a block written for some roles (a "::: terapeuta" block in the
- * lesson source) is drawn only when the viewer's guide profile is one of them.
- * The owner and the admin read the Proprietario profile, so they see its
- * blocks and not the others.
+ * RESOLVED BLOCKS ONLY. A block written for some roles (a "::: terapeuta"
+ * block in the lesson source) never reaches this file: lib/guide resolves every
+ * lesson, FAQ entry and section for the viewer before the page gets it
+ * (guide.ts for lessons and FAQ entries, guide-routes.ts for a section's text),
+ * so what arrives here is already that viewer's text. The types hold it: this
+ * renderer takes GuideViewBlock, which has no role block, so passing raw
+ * blocks from guide-data.json does not compile. An unresolved role block that
+ * got here anyway would draw nothing.
  *
  * THE CAPTURE PAIR: a <picture> with the desktop capture from 768 px up and the
  * phone capture (390) below it. A lesson with no capture yet (images is null)
@@ -40,7 +44,7 @@ function Spans({ spans }: { spans: GuideSpan[] }): ReactNode {
   );
 }
 
-function renderBlock(block: GuideBlock, key: number, profile: GuideProfile, figure: ReactNode): ReactNode {
+function renderBlock(block: GuideViewBlock, key: number, figure: ReactNode): ReactNode {
   switch (block.type) {
     case "heading":
       // The lesson title is the page's h1, so the body's "###" is an h2.
@@ -77,13 +81,10 @@ function renderBlock(block: GuideBlock, key: number, profile: GuideProfile, figu
     }
     case "figure":
       return <Fragment key={key}>{figure}</Fragment>;
-    case "role":
-      if (!block.roles.includes(profile)) return null;
-      return (
-        <div key={key} data-guide-role={block.roles.join(" ")} className="flex flex-col gap-3">
-          {block.blocks.map((inner, i) => renderBlock(inner, i, profile, figure))}
-        </div>
-      );
+    default:
+      // No other block type type-checks here; at run time, a block this file
+      // does not know (an unresolved role block among them) draws nothing.
+      return null;
   }
 }
 
@@ -105,7 +106,7 @@ export function NoImageCard(): ReactNode {
 }
 
 /** The lesson's capture pair, or the "Sem imagem" card when it has none. */
-export function GuideFigure({ lesson }: { lesson: Pick<GuideLesson, "title" | "images"> }): ReactNode {
+export function GuideFigure({ lesson }: { lesson: Pick<GuideViewLesson, "title" | "images"> }): ReactNode {
   const images = lesson.images;
   if (images === null) return <NoImageCard />;
   // The alt is the lesson title: one <img> serves both captures, so the
@@ -128,31 +129,22 @@ export function GuideFigure({ lesson }: { lesson: Pick<GuideLesson, "title" | "i
 }
 
 /**
- * A lesson body for one guide profile. The capture pair sits where the lesson
- * source put it (its "figure" block); a lesson without one gets it at the end.
+ * A lesson body, already resolved for its viewer. The capture pair sits where
+ * the lesson source put it (its "figure" block); a lesson without one gets it
+ * at the end.
  */
-export function GuideBody({
-  lesson,
-  profile,
-}: {
-  lesson: Pick<GuideLesson, "title" | "images" | "blocks">;
-  profile: GuideProfile;
-}): ReactNode {
+export function GuideBody({ lesson }: { lesson: Pick<GuideViewLesson, "title" | "images" | "blocks"> }): ReactNode {
   const figure = <GuideFigure lesson={lesson} />;
   const placed = lesson.blocks.some((block) => block.type === "figure");
   return (
     <div className="flex flex-col gap-4">
-      {lesson.blocks.map((block, i) => renderBlock(block, i, profile, figure))}
+      {lesson.blocks.map((block, i) => renderBlock(block, i, figure))}
       {!placed && figure}
     </div>
   );
 }
 
-/** Section or FAQ text (no capture): the blocks for one guide profile. */
-export function GuideText({ blocks, profile }: { blocks: GuideBlock[]; profile: GuideProfile }): ReactNode {
-  return (
-    <div className="flex flex-col gap-3">
-      {blocks.map((block, i) => renderBlock(block, i, profile, null))}
-    </div>
-  );
+/** Section or FAQ text (no capture), already resolved for its viewer. */
+export function GuideText({ blocks }: { blocks: GuideViewBlock[] }): ReactNode {
+  return <div className="flex flex-col gap-3">{blocks.map((block, i) => renderBlock(block, i, null))}</div>;
 }
