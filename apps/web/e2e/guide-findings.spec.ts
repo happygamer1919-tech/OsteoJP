@@ -55,8 +55,12 @@ test.describe("reception", () => {
     await tabs.getByRole("link", { name: "Respostas SMS" }).click();
     await expect(page).toHaveURL(/\/reminders\/review$/);
 
-    // The page itself, not a refusal: reception holds sms_replies:read.
-    await expect(page.getByRole("heading", { name: "Respostas por rever" })).toBeVisible();
+    // The page itself, not a refusal: reception holds sms_replies:read. EXACT and
+    // level 1: with inbound replies off (the local stack, and production today)
+    // the page also renders the heading "Respostas por rever indisponível".
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Respostas por rever", exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Não tem permissão para esta ação.")).toHaveCount(0);
 
     // It is a Comunicações section in every sense: the shell, the lit sidebar
