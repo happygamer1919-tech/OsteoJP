@@ -3,6 +3,7 @@
 import { type MouseEvent, useState } from "react";
 import { Button, DatePicker, Input, TimeField, useAnimatedDialog } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
+import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import {
   applyRebook,
@@ -25,8 +26,12 @@ export function BatchFailureDialog({
 }: {
   bookedCount: number;
   failures: BatchFailure[];
-  /** Re-attempt ONE slot at the edited Lisbon date/time; resolves booked or the new failure. */
-  onRebook: (date: string, hhmm: string) => Promise<RebookOutcome>;
+  /**
+   * Re-attempt ONE slot at the edited Lisbon date/time; resolves booked or the
+   * new failure. SKEW-01: `retry` is this row's own handler, offered by the
+   * server-action wrapper as "Tentar novamente" when the request never landed.
+   */
+  onRebook: (date: string, hhmm: string, retry: () => void) => Promise<RebookOutcome>;
   onClose: () => void;
 }) {
   const [rows, setRows] = useState(() => initFailureRows(failures));
@@ -45,12 +50,15 @@ export function BatchFailureDialog({
     if (e.target === e.currentTarget) onClose();
   };
 
+  // The retry reads the row as it is when pressed, not as it was.
+  const retryRebook = useLatestCallback((key: string) => void rebook(key));
+
   async function rebook(key: string): Promise<void> {
     const row = rows.find((r) => r.key === key);
     if (!row) return;
     setPendingKey(key);
     try {
-      const outcome = await onRebook(row.date, row.hhmm);
+      const outcome = await onRebook(row.date, row.hhmm, () => retryRebook(key));
       if (outcome.booked) setBooked((b) => b + 1);
       setRows((rs) => applyRebook(rs, key, outcome));
     } finally {

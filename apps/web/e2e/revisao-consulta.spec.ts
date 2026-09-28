@@ -16,9 +16,19 @@
  * Locator discipline (the flakiness class we keep hitting): scope to #record-form
  * / the exact review row; use exact:true for buttons whose name prefixes another
  * ("Guardar" vs "Guardar assinatura"); fill required fields before saving.
+ *
+ * SIGN-CONFIRM-AND-SAVE-FIRST. Finalizar used to finalize on one press, from a
+ * form of its own, so an edit typed and not saved was left out of the signed
+ * record for good. It now opens a confirmation and saves unsaved edits first.
+ * The seed offers ONE reviewable item per run (AI_REVIEW_DRAFT), and this spec
+ * consumes it, so the Finalizar half of sign-confirm-save-first.spec.ts lives
+ * HERE rather than in a second spec racing this one for the same row: after the
+ * saved edit, a second edit is typed and NOT saved, Finalizar is cancelled
+ * (nothing changes), then confirmed, and the signed record carries both edits.
  */
 import { test, expect } from "@playwright/test";
 import { AI_REVIEW_DRAFT, PATIENTS, STORAGE } from "./fixtures";
+import { FINALIZE_LABEL, SIGN_LABEL, signButton, signDialog } from "./helpers/sign-confirm";
 
 test.describe("Revisão Consulta — Assumir opens the Ficha Médica editor (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
@@ -86,16 +96,41 @@ test.describe("Revisão Consulta — Assumir opens the Ficha Médica editor (the
       timeout: 12_000,
     });
 
-    // --- Finalizar: sign + approve (record_status → signed, ai_review_state →
+    // --- SIGN-CONFIRM-AND-SAVE-FIRST: a second edit, typed and NOT saved. ---
+    const unsaved = "Revisto: observacao escrita e nao guardada.";
+    await observacoes.fill(unsaved);
+
+    // --- Finalizar opens a confirmation; Cancelar changes nothing. ---
+    await signButton(page, FINALIZE_LABEL).click();
+    const dialog = signDialog(page, FINALIZE_LABEL);
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("bloqueada de forma permanente e não poderá ser alterada");
+    await expect(dialog.getByTestId("sign-saves-first")).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/\/clinical\/review\/[0-9a-f-]{36}$/);
+    await expect(observacoes).toHaveValue(unsaved);
+    await expect(observacoes).toBeEditable();
+
+    // --- Finalizar again, confirmed: the unsaved edit is SAVED FIRST, then the
+    //     record is signed + approved (record_status → signed, ai_review_state →
     //     approved). It redirects to the normal clinical viewer. ---
-    await page.getByRole("button", { name: "Finalizar (assinar e bloquear)" }).click();
+    await signButton(page, FINALIZE_LABEL).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: FINALIZE_LABEL, exact: true }).click();
     await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}(\?.*)?$/, { timeout: 15_000 });
     // record_status axis: the finalized record is Assinada + immutable (no sign
     // action, form read-only). Immutability guardrail.
     await expect(page.getByText("Assinada").first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole("button", { name: "Assinar e bloquear" })).toHaveCount(0);
-    // The edited AI value persisted through claim → save → finalize.
+    await expect(signButton(page, SIGN_LABEL)).toHaveCount(0);
+    // The edited AI value persisted through claim → save → finalize...
     await expect(page.getByText(edited, { exact: false }).first()).toBeVisible();
+    // ...and so did the edit that was never saved by hand: Finalizar saved it
+    // first. Read from a fresh load, so it is the stored record, not the form.
+    await page.goto(`/clinical/${AI_REVIEW_DRAFT.id}`);
+    await expect(
+      page.locator("#record-form").getByLabel(/^Observações$/i).first(),
+    ).toHaveValue(unsaved);
 
     // --- The signed record appears in the patient's Registos clínicos tab. ---
     await page.goto(`/patients/${PATIENTS.joao.id}?tab=registos`);

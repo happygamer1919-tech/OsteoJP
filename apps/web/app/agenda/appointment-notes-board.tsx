@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
+import { useActionOwner } from "@/lib/actions/use-action-owner";
+import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import {
   appendAppointmentNoteAction,
   getAppointmentNotesAction,
@@ -41,23 +44,42 @@ export function AppointmentNotesBoard({ appointmentId }: { appointmentId: string
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // SKEW-01: every read and write below goes through runAction, which never
+  // rejects, so none of them can reach the agenda's error boundary any more.
   const reload = useCallback(async () => {
-    const r = await getAppointmentNotesAction(appointmentId);
-    setNotes(r.notes);
+    async function load(): Promise<void> {
+      const out = await runAction(() => getAppointmentNotesAction(appointmentId), {
+        kind: "read",
+        retry: () => void load(),
+      });
+      if (!out.failed) setNotes(out.value.notes);
+    }
+    await load();
   }, [appointmentId]);
 
   useEffect(() => {
     let alive = true;
-    void getAppointmentNotesAction(appointmentId).then((r) => {
-      if (alive) setNotes(r.notes);
-    });
+    function load() {
+      void runAction(() => getAppointmentNotesAction(appointmentId), {
+        kind: "read",
+        retry: () => { if (alive) load(); },
+      }).then((out) => {
+        if (alive && !out.failed) setNotes(out.value.notes);
+      });
+    }
+    load();
     return () => {
       alive = false;
     };
   }, [appointmentId]);
 
-  function onAdd(e: React.FormEvent) {
-    e.preventDefault();
+  const retryAdd = useLatestCallback(() => onAdd());
+  // The board lives in the drawer: a failed note's toast closes with it
+  // (lib/actions/use-action-owner.ts).
+  const actionOwner = useActionOwner();
+
+  function onAdd(e?: React.FormEvent) {
+    e?.preventDefault();
     setError(null);
     const content = text.trim();
     if (!content) {
@@ -65,7 +87,13 @@ export function AppointmentNotesBoard({ appointmentId }: { appointmentId: string
       return;
     }
     startTransition(async () => {
-      const r = await appendAppointmentNoteAction(appointmentId, content);
+      const out = await runAction(() => appendAppointmentNoteAction(appointmentId, content), {
+        kind: "write",
+        retry: retryAdd,
+        owner: actionOwner,
+      });
+      if (out.failed) return;
+      const r = out.value;
       if (!r.ok) {
         setError(s["errors.generic"]);
         return;

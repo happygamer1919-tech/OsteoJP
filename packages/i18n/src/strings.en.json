@@ -809,7 +809,10 @@
   "clinical.redFlagPromptAction": "Go to Reason for Consultation",
   "clinical.saved": "Record saved.",
   "clinical.signLock": "Sign and lock",
-  "clinical.signLockConfirm": "Signing locks the record permanently. Continue?",
+  "clinical.signLockConfirm": "Signing locks the record permanently; it cannot be changed afterwards. Continue?",
+  "clinical.signSavesFirst": "Unsaved changes are saved first; the record is signed only once they are saved.",
+  "clinical.signSaveFailed": "The changes could not be saved, so the record was not signed.",
+  "clinical.signStale": "The record was changed in the meantime. Nothing was signed: review the current version and sign again.",
   "clinical.signedBy": "Signed by",
   "clinical.signedAt": "Signed at",
   "clinical.newVersion": "New version (addendum)",
@@ -998,7 +1001,7 @@
   "review.save": "Save narrative",
   "review.saved": "Narrative saved.",
   "review.finalize": "Finalize (sign and lock)",
-  "review.finalizeConfirm": "Finalizing signs and permanently locks the record. Continue?",
+  "review.finalizeConfirm": "Finalizing signs and permanently locks the record; it cannot be changed afterwards. Continue?",
   "review.notNarrative": "The edit touched non-narrative fields (coded or safety). Those fields must be entered manually.",
   "review.invalidJson": "Invalid narrative (JSON).",
   "review.error": "The operation failed.",
@@ -1309,6 +1312,7 @@
   "agenda.pickDate": "Choose date",
   "appointment.recurringCheckbox": "Recurring appointment",
   "appointment.movedButDetailsNotSaved": "The appointment WAS moved to the new time. The remaining changes (service, room, notes, status) were not saved because of the conflict above. Fix it and save again.",
+  "appointment.movedButDetailsNotSent": "The appointment WAS moved to the new time, but the remaining changes (service, room, notes, status) were not saved. Save again.",
   "appointment.saved": "Appointment saved",
   "appointment.patientRecordLink": "Patient record",
   "appointment.patientTwoRecordLink": "Patient 2 record",
@@ -1796,5 +1800,7 @@
   "reschedule.queue.markHandled": "Mark as handled",
   "reschedule.queue.marking": "Marking…",
   "reschedule.queue.markFailed": "Could not mark this request. Refresh the page.",
-  "reschedule.queue.note": "Marking as handled does not change the appointment. Reschedule in the agenda as usual."
+  "reschedule.queue.note": "Marking as handled does not change the appointment. Reschedule in the agenda as usual.",
+  "actions.skewReload": "New version available, refreshing...",
+  "actions.networkError": "Could not reach the server. Check your internet connection."
 }

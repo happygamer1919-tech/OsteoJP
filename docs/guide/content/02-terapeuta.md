@@ -4,7 +4,7 @@ Como terapeuta, usa a plataforma para gerir a sua agenda, consultar e atualizar 
 
 ## Início
 
-O **Início** é a página que se abre depois de entrar. Mostra quatro números no topo (**Pacientes ativos**, **Marcações hoje**, **Novas fichas** e **Receita (mês)**), os **Acessos rápidos**, o gráfico **Resumo semanal** com o número de marcações de cada dia da semana atual, a lista **Próximas marcações** e o quadro **Notas rápidas**. **Novas fichas** conta os registos clínicos criados esta semana e **Receita (mês)** soma as faturas emitidas ou pagas no mês corrente, em toda a clínica.
+O **Início** é a página que se abre depois de entrar. Mostra três números no topo (**Pacientes ativos**, **Marcações hoje** e **Novas fichas**), os **Acessos rápidos**, o gráfico **Resumo semanal** com o número de marcações de cada dia da semana atual, a lista **Próximas marcações** e o quadro **Notas rápidas**. **Novas fichas** conta os registos clínicos criados esta semana.
 
 Pacientes visíveis: os números e as listas contam apenas o que a sua conta pode ver. **Marcações hoje** e **Próximas marcações** incluem as marcações em que participa ou que criou, as do equipamento partilhado da sua clínica e, nas clínicas onde trabalha, as marcações de colegas com pacientes que já tratou ou que lhe foram atribuídos. Por isso, cada linha de **Próximas marcações** mostra também o nome do terapeuta.
 

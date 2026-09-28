@@ -105,9 +105,15 @@ Standing nevers: clinical authorship never moves; clinical_records_enforce_immut
   | `0091` | CARE-01's care-team migration (applied to production, merged) | #1374 |
   | `0092` | CARE-LOC: the patient-following view stops at the therapist's own clinic (applied to production, merged) | #1426 |
   | `0093` | RGPD-01's consent table | #1399 |
-  | `0094` | the users/tenants/roles policy split (Tier C) | not yet opened |
-  | `0095` | the TRUNCATE, TRIGGER, REFERENCES revoke | #1397 |
-  | `0096` | the conflict check returns a patient's name only where the caller's own reads would show it | not yet opened |
+  | `0094` | the users/tenants/roles policy split (Tier C) | #1459 |
+  | `0095` | the conflict check returns a patient's name only where the caller's own reads would show it (**re-ruled 2026-09-27**, was `0096`) | #1438 |
+  | `0096` | the TRUNCATE, TRIGGER, REFERENCES revoke (**re-ruled 2026-09-27**, was `0095`) | #1397 |
+  | `0097` | the index on `migration_staging_rows.imported_entity_id` (the "staging index") | held, not yet opened |
+  | `0098` | CARE-02a: the care team reads the ficha and the registos, at the therapist's own clinics | held, not yet opened |
+  | `0099` | the registo write fix (ruled onto Tier C 2026-09-27; its detail is private until fixed) | not yet authored |
+  | `0100` onward | SAT-01's migrations | not yet authored |
+
+  **2026-09-27 IS THE FOURTH RENUMBERING.** The owner's words: "Renumber: #1438 = 0095, #1397 = 0096. 0099 registo fix, SAT-01 from 0100." The conflict-name check and the grants revoke swap places; nothing else moves. A PR description, comment or file name still naming `0096` for the conflict check or `0095` for the grants revoke is stale, and is corrected rather than argued with.
 
   **2026-09-22 IS THE THIRD RENUMBERING, AND IT ADDED AN ITEM.** CARE-LOC takes `0092`; RGPD-01 moves to `0093`, the role fix to `0094`, the grants revoke to `0095`. A PR description or comment naming `0092` for RGPD-01, `0093` for the role fix or `0094` for the grants revoke is stale by exactly the reasoning below, and is corrected rather than argued with.
 
@@ -125,6 +131,7 @@ The owner's words from his dispatch of 2026-09-27 are in quotation marks, charac
 - **No sandbox bypass in any agent prompt.** "dangerouslyDisableSandbox forbidden in prompts, written into CLAUDE.md". No prompt SOLO writes for a subagent or a workflow asks for, suggests or permits `dangerouslyDisableSandbox`, and no subagent uses it. A step that needs it is a step the harness has not allowed: it stops and is reported under R5.
 - **Sittings only while the clinics are closed.** "Sittings only while the clinics are closed." Every GREEN dispatch SOLO prepares for a production write names a run window that falls outside both clinics' opening hours, and its first block checks the Lisbon clock by machine. Nothing in an op file carries the date: the dispatch names it, and the op reads the run day from the clock.
 - **The ruled Tier C list grows by four, by the same dispatch.** "B14 on the Tier C list, option (a)": ANEXO-LINK v2, the held data op of #1458. "0097 and 0098 authored now": `0097` is the index on `migration_staging_rows.imported_entity_id` (the "staging index" the owner numbered `0097` on 2026-09-24, held, after `0096`), and `0098` is CARE-02a, the care team reading the ficha and the registos, held. SAT-01's migrations are "numbered after 0098, held". The closed-list bullet above is the record as of 2026-09-22; read this bullet with it.
+- **The fourth renumbering and a tenth Tier C item.** "Renumber: #1438 = 0095, #1397 = 0096. 0099 registo fix, SAT-01 from 0100." The registo write fix was ruled onto the Tier C list the same night (the owner's "yes" to putting it there); it takes `0099`, and its detail stays private until it is fixed because the repository is public. The binding number table is the one under "SOLO's record" above.
 - **The owner takes `held-for-apply` off.** On 2026-09-26 the harness refused a SOLO call that removed the label from a held PR together with a title and body edit, and under R5 it was not retried. From then on, removing the label from a held PR and merging it are the owner's two clicks, listed under OWNER CLICKS in the report. SOLO never puts a label change in the same command as any other edit: a refused call takes the harmless part down with it.
 
 ## Stack
