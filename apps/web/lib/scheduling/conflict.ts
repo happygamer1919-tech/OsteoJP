@@ -200,7 +200,7 @@ async function appointmentConflicts(
   `);
   const rows = result as unknown as Array<{
     id: string;
-    // NULL where the caller's own reads do not show the patient (ruled 0096);
+    // NULL where the caller's own reads do not show the patient (ruled 0095);
     // the UI renders it with conflictPatientLabel.
     patient_name: string | null;
     starts_at: string | Date;

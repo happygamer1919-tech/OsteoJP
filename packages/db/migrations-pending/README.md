@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0095_conflict_name_visibility.sql` | `0095` (the grants revoke). Ruled **`0096`** by the owner on 2026-09-22: the conflict check returns a patient's name only where the caller's own reads would show it. At promotion its journal `when` must be strictly greater than `0095`'s | 2026-09-22 | `sched/0096-conflict-name-visibility`, Tier C, held until `0093` to `0095` are promoted, applied and merged |
+| `NEXT-AFTER-0094_conflict_name_visibility.sql` | `0094` (the users/tenants role fix, #1459). Ruled **`0095`** by the owner on 2026-09-27 (the fourth renumbering; ruled `0096` on 2026-09-22 and held as `NEXT-AFTER-0095` until then): the conflict check returns a patient's name only where the caller's own reads would show it. At promotion its journal `when` must be strictly greater than `0094`'s. **The file's own header and its two COMMENT strings still say `0096` and that `0095` is the grants revoke.** Stale on purpose: the rename is the only edit, so the body and its sha256 (`cfdfffff71a6c847a791ce17c71bbc6e05b75a367e9c8f03dfcb0cfc638f5806`) are the ones reviewed under `0096` | 2026-09-22 | `sched/0096-conflict-names-follow-caller-reads` (#1438; the branch name keeps the old number), Tier C, held until `0094` is promoted, applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES

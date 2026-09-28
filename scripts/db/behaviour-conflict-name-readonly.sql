@@ -1,6 +1,8 @@
--- CONFLICT NAMES (ruled 0096) BEHAVIOUR CHECK. READ ONLY. Run AFTER the
--- ruled-0096 migration is applied (while pending it is
--- packages/db/migrations-pending/NEXT-AFTER-0095_conflict_name_visibility.sql).
+-- CONFLICT NAMES (ruled 0095) BEHAVIOUR CHECK. READ ONLY. Run AFTER the
+-- ruled-0095 migration is applied (while pending it is
+-- packages/db/migrations-pending/NEXT-AFTER-0094_conflict_name_visibility.sql).
+-- Ruled 0096 on 2026-09-22 and re-ruled 0095 by the owner on 2026-09-27;
+-- the migration body still says 0096, unchanged on purpose (its sha256 is pinned at promotion).
 --
 -- The ruling, owner 2026-09-22: the conflict check returns a patient's name
 -- only when the caller's SELECT policy on appointments returns the row, else
@@ -139,7 +141,7 @@
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 
 \echo ''
-\echo '=== CONFLICT NAMES (ruled 0096) BEHAVIOUR CHECK. READ ONLY. 14 arms, profile printed last ==='
+\echo '=== CONFLICT NAMES (ruled 0095) BEHAVIOUR CHECK. READ ONLY. 14 arms, profile printed last ==='
 
 /* THE MIGRATION IS APPLIED, OR NOTHING BELOW MEANS ANYTHING. */
 SELECT (to_regprocedure('public.appointment_conflict_rows(uuid,uuid,text,timestamptz,timestamptz,uuid[])') IS NOT NULL
@@ -148,7 +150,7 @@ SELECT (to_regprocedure('public.appointment_conflict_rows(uuid,uuid,text,timesta
 \if :fns_present
 \else
   DO $stop$ BEGIN
-    RAISE EXCEPTION 'STOP: appointment_conflict_rows, appointment_conflicts or shared_resource_appointment_patient_names is missing. The ruled-0096 migration is not applied here. Nothing was checked.';
+    RAISE EXCEPTION 'STOP: appointment_conflict_rows, appointment_conflicts or shared_resource_appointment_patient_names is missing. The ruled-0095 migration is not applied here. Nothing was checked.';
   END $stop$;
 \endif
 

@@ -48,7 +48,7 @@ export function patientLabel(patientName: string | null): string {
  *
  * A THERAPIST or ROOM conflict is another booking, so a NULL name on it reads
  * as one: `patientLabel(null)`. The conflict check returns NULL there when the
- * caller's own reads do not show that patient (ruled migration 0096, and the
+ * caller's own reads do not show that patient (ruled migration 0095, and the
  * second-participant read in conflict.ts already does), and a line that
  * printed only a time would not say the slot is taken.
  *
