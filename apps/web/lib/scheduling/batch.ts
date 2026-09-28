@@ -4,6 +4,9 @@ import type { RequestContext } from "@osteojp/auth";
 import { appointments, packBatchIsOverbooked } from "@osteojp/db";
 import { bookPackSessionTx } from "@/lib/packs/instances";
 import { runScoped } from "@/lib/auth/context";
+import { addBookedTherapistsToCareTeam } from "@/lib/admin/care-team-auto";
+import { careTeamNotices, type CareTeamAddition } from "@/lib/admin/care-team-core";
+import { emitCareTeamAddedNotifications } from "@/lib/notifications/centre";
 import { writeAppointmentAudit } from "./audit";
 import { checkClinicWindow } from "./clinic-closure-enforcement";
 import { getTherapistAvailability } from "./day-availability";
@@ -168,6 +171,8 @@ export async function batchSchedule(
    * happen to be free, and it must be told to the person who asked.
    */
   const packId = isExplicitSlots(input) ? (input.packId ?? null) : null;
+  // CARE-02c: the care-team rows this batch wrote, notified after commit.
+  let careTeamAdded: CareTeamAddition[] = [];
 
   if (toBook.length > 0 || packId) {
     booked = await runScoped(ctx, async (tx) => {
@@ -304,7 +309,30 @@ export async function batchSchedule(
           ip: null,
         });
       }
+
+      // CARE-02c (site 5, Agendar lote and Marcacao recorrente): the batch's
+      // therapist joins the patient's care team once for the whole batch, in
+      // this transaction and under this actor. Never fails the batch
+      // (care-team-auto.ts); owner and reception only.
+      careTeamAdded = await addBookedTherapistsToCareTeam(
+        tx,
+        ctx,
+        out.map((b) => b.appointmentId),
+      );
       return out;
+    });
+  }
+
+  // After the commit above, and it cannot throw: emitCareTeamAddedNotifications
+  // is best-effort by contract. It is sent from here rather than from the server
+  // action because the additions are this engine's to know, and widening
+  // BatchScheduleResult would send them to the client.
+  if (careTeamAdded.length > 0) {
+    await emitCareTeamAddedNotifications({
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.userId,
+      notices: careTeamNotices(careTeamAdded, ctx.userId),
+      occurredAt: new Date(),
     });
   }
 

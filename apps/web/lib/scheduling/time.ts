@@ -166,6 +166,32 @@ export function rangeForView(
 }
 
 /**
+ * AGENDA-MOBILE-WEEK - the range the agenda page READS, which for the week is
+ * one day wider than the range it DRAWS on a desktop.
+ *
+ * Mon-Sat (`rangeForView`) plus that week's Sunday, so the phone grid can show
+ * a Dom column when that Sunday holds a booking, as the card's acceptance asks.
+ * A READ change only: no write path, no constraint and no
+ * policy moves, and every desktop surface still draws `viewDates` (six days,
+ * W3-08) and ignores a Sunday row. The day view is unchanged.
+ *
+ * A separate function rather than a change to `rangeForView` or `WEEK_DAYS`,
+ * because the desktop grid, the toolbar count, the phone list and /marcacoes
+ * all rely on six days, and the one caller that needs seven is page.tsx.
+ */
+export function readRangeForView(
+  view: AgendaView,
+  anchor: string,
+): { startUtc: Date; endUtc: Date } {
+  if (view === "day") return rangeForView(view, anchor);
+  const monday = startOfWeekMonday(anchor);
+  return {
+    startUtc: lisbonMidnightUtc(monday),
+    endUtc: lisbonMidnightUtc(addDays(monday, 7)),
+  };
+}
+
+/**
  * Combine a Lisbon calendar date + "HH:mm" into a UTC instant.
  *
  * INC-dst-sunday-times-shift-an-hour: the offset is taken AT THE TARGET

@@ -12,6 +12,7 @@ import {
 import { getFichaMedicaTemplate } from "@/lib/clinical/records";
 import { parseTemplateSchema } from "@/lib/clinical/form-template";
 import { isClinicalError } from "@/lib/clinical/errors";
+import { isDataHash } from "@/lib/clinical/sign-sequence";
 import type { ReviewSaveState } from "./[recordId]/ReviewEditor";
 import type { SaveState } from "@/app/clinical/[id]/RecordForm";
 
@@ -59,8 +60,9 @@ export async function saveNarrativeAction(
   } catch {
     return { ok: false, code: "invalidJson" };
   }
+  let dataHash: string;
   try {
-    await editReviewNarrative(ctx, recordId, edit);
+    ({ dataHash } = await editReviewNarrative(ctx, recordId, edit));
   } catch (e) {
     if (isClinicalError(e)) {
       if (e.code === "not_narrative_field") {
@@ -71,7 +73,7 @@ export async function saveNarrativeAction(
     return { ok: false, code: "error" };
   }
   revalidatePath(`/clinical/review/${recordId}`);
-  return { ok: true };
+  return { ok: true, dataHash };
 }
 
 /**
@@ -102,8 +104,9 @@ export async function saveFichaReviewAction(
   // finalized record has no schema and the clinical viewer renders no fields).
   const ficha = await getFichaMedicaTemplate(ctx);
   const schema = parseTemplateSchema(ficha?.schema ?? null);
+  let dataHash: string;
   try {
-    await saveReviewFicha(ctx, recordId, data, schema, ficha?.id ?? null);
+    ({ dataHash } = await saveReviewFicha(ctx, recordId, data, schema, ficha?.id ?? null));
   } catch (e) {
     if (isClinicalError(e)) {
       return { ok: false, code: e.code, errors: e.fieldErrors };
@@ -111,18 +114,30 @@ export async function saveFichaReviewAction(
     return { ok: false, code: "error" };
   }
   revalidatePath(`/clinical/review/${recordId}`);
-  return { ok: true };
+  return { ok: true, dataHash };
 }
 
-/** Finalize: sign + lock the draft and approve the review. */
-export async function finalizeAction(recordId: string): Promise<void> {
+/**
+ * Finalize: sign + lock the draft and approve the review.
+ *
+ * SIGN-CONFIRM-AND-SAVE-FIRST: called from the confirmation dialog (SignConfirm)
+ * after any unsaved edits were saved, with the fingerprint of the content the
+ * reviewer's form last loaded or saved. Content that moved since then is
+ * refused (`?m=stale`), never signed unseen. A refusal lands back on the review
+ * screen, which now shows it.
+ */
+export async function finalizeAction(recordId: string, expectedDataHash: string): Promise<void> {
   const ctx = await requireRequestContext();
   let target = `/clinical/${recordId}`;
-  try {
-    await finalizeReview(ctx, recordId);
-  } catch (e) {
-    const code = isClinicalError(e) ? e.code : "err";
-    target = `/clinical/review/${recordId}?m=${code}`;
+  if (!isDataHash(expectedDataHash)) {
+    target = `/clinical/review/${recordId}?m=invalid`;
+  } else {
+    try {
+      await finalizeReview(ctx, recordId, expectedDataHash);
+    } catch (e) {
+      const code = isClinicalError(e) ? e.code : "err";
+      target = `/clinical/review/${recordId}?m=${code}`;
+    }
   }
   revalidatePath("/clinical/review");
   redirect(target);

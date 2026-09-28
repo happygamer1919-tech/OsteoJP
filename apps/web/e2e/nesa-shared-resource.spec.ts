@@ -24,6 +24,8 @@
  *   2. A therapist assigned to BOTH clinics picks NESA and LV, and is REFUSED with
  *      the shared-resource sentence; no row is written. LV is one of their
  *      clinics, so this is the refusal the app layer adds and RLS does not make.
+ *   3. NESA-SCOPE, at the end: a second row with the SAME name at LV, the
+ *      two-row shape the card targets. Asserted by option value.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -35,6 +37,8 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const NESA_ID = "00000000-0000-4000-8000-00000000e5a0";
 const NESA_NAME = "NESA (E2E)";
+// NESA-SCOPE: the LV twin, same name, built and removed by its own describe below.
+const NESA_TWIN_ID = "00000000-0000-4000-8000-00000000e5a3";
 const CB_ONLY_EMAIL = "e2e-therapist-loc-one@osteojp.test";
 const BOTH_EMAIL = "e2e-therapist-loc-multi@osteojp.test";
 const PATIENT_CB_ONLY = { id: "00000000-0000-4000-8000-00000000e5a1", name: "Paciente NESA Um" };
@@ -85,10 +89,20 @@ async function cleanUp(): Promise<void> {
     await db.from("staff_locations").delete().in("id", addedStaffLocationIds);
   }
   await db.from("patients").delete().in("id", [PATIENT_CB_ONLY.id, PATIENT_BOTH.id]);
+  await removeTwin();
   const gone = await db.from("users").delete().eq("id", NESA_ID);
   // A users row something still references cannot be deleted; retire it instead,
   // so it can neither be booked nor reappear in any list.
   if (gone.error) await db.from("users").update({ is_active: false, is_bookable: false }).eq("id", NESA_ID);
+}
+
+/** NESA-SCOPE: the LV twin never books anything, so its row always deletes. */
+async function removeTwin(): Promise<void> {
+  await db.from("staff_locations").delete().eq("tenant_id", TENANT_A).eq("user_id", NESA_TWIN_ID);
+  const gone = await db.from("users").delete().eq("id", NESA_TWIN_ID);
+  if (gone.error) {
+    await db.from("users").update({ is_active: false, is_bookable: false }).eq("id", NESA_TWIN_ID);
+  }
 }
 
 test.beforeAll(async () => {
@@ -258,8 +272,15 @@ test("a therapist at BOTH clinics is refused NESA at LV, and nothing is written"
   await login(page, BOTH_EMAIL);
   const dialog = await openNewAppointment(page, DAY);
 
-  await dialog.getByLabel(/Terapeuta/i).first().selectOption({ label: NESA_NAME });
+  // NESA-SCOPE: NESA is offered only where it is installed, and the form opens
+  // at CB (the first bookable clinic by name), where it is. Chosen by value,
+  // because a same-named twin would suffix the label.
+  const therapist = dialog.getByLabel(/Terapeuta/i).first();
+  await therapist.selectOption(NESA_ID);
   await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
+  // The machine already chosen stays the painted value at LV (STAFF-01), so the
+  // form submits exactly what it shows, and the server refuses it.
+  await expect(therapist).toHaveValue(NESA_ID);
   await pickPatient(dialog, PATIENT_BOTH.name);
   await fillDate(dateField(dialog), DAY);
   await fillTime(dialog, "15:00");
@@ -488,4 +509,102 @@ test("SCHED-29.4: reception's Terapeuta 2 offers NESA at CB and not at LV, and t
   expect(rows).toHaveLength(1);
   expect(rows[0]!.practitioner_id).toBe(cbOnlyId);
   expect(rows[0]!.location_id).toBe(LOCATION_B.id);
+});
+
+/**
+ * NESA-SCOPE - ONE MACHINE PER CLINIC UNDER ONE NAME, the two-row shape the
+ * card targets.
+ *
+ * A second users row named exactly NESA_NAME, installed at LV, exists only for
+ * this block. NOT bookable, like the first, so both reach the lists through the
+ * per-request machine read: flipping is_bookable would go through the 60-second
+ * roster cache and need a wait. The bookable variant, and every role x surface
+ * pair, is pinned in lib/scheduling/nesa-scope-matrix.test.ts.
+ *
+ * ASSERTED BY OPTION VALUE (the row ids). The suffix is a clinic code taken from
+ * the clinic's name, and these clinics are "Consultório B (E2E)" and
+ * "Linda-a-Velha", so a suffixed label reads "NESA (E2E) (E2E)"; labels are only
+ * checked for being different from each other, or for carrying no suffix.
+ */
+test.describe("NESA-SCOPE: one machine per clinic under one name", () => {
+  test.beforeAll(async () => {
+    if (skipReason !== null) return;
+    const role = must(
+      await db.from("roles").select("id").eq("tenant_id", TENANT_A).eq("slug", "therapist").single(),
+      "therapist role",
+    ) as { id: string };
+    await removeTwin();
+    must(
+      await db.from("users").upsert({
+        id: NESA_TWIN_ID,
+        tenant_id: TENANT_A,
+        role_id: role.id,
+        email: "e2e-nesa-lv@osteojp.test",
+        full_name: NESA_NAME,
+        is_bookable: false,
+        is_active: true,
+        is_shared_resource: true,
+      }),
+      "the LV twin",
+    );
+    must(
+      await db.from("staff_locations").insert({ tenant_id: TENANT_A, user_id: NESA_TWIN_ID, location_id: LOCATION.id }),
+      "the LV twin at LV",
+    );
+  });
+
+  test.afterAll(async () => {
+    if (skipReason === null && db) await removeTwin();
+  });
+
+  test("a CB-only therapist is offered CB's row only, with no suffix", async ({ page }) => {
+    test.skip(skipReason !== null, skipReason ?? "");
+    await login(page, CB_ONLY_EMAIL);
+    const dialog = await openNewAppointment(page, DAY);
+    const therapist = dialog.getByLabel(/Terapeuta/i).first();
+
+    await expect(therapist.locator(`option[value="${NESA_ID}"]`)).toHaveText(NESA_NAME);
+    await expect(therapist.locator(`option[value="${NESA_TWIN_ID}"]`)).toHaveCount(0);
+  });
+
+  test("a two-clinic therapist is offered, at each clinic, only the row installed there", async ({ page }) => {
+    test.skip(skipReason !== null, skipReason ?? "");
+    await login(page, BOTH_EMAIL);
+    const dialog = await openNewAppointment(page, DAY);
+    const location = dialog.getByLabel(/Localização/i);
+
+    // Opens at CB.
+    await expect(dialog.locator(`option[value="${NESA_ID}"]`)).toHaveCount(1);
+    await expect(dialog.locator(`option[value="${NESA_TWIN_ID}"]`)).toHaveCount(0);
+    const atCb = await dialog.locator(`option[value="${NESA_ID}"]`).textContent();
+
+    await location.selectOption({ label: LOCATION.name });
+    await expect(dialog.locator(`option[value="${NESA_TWIN_ID}"]`)).toHaveCount(1);
+    await expect(dialog.locator(`option[value="${NESA_ID}"]`)).toHaveCount(0);
+    const atLv = await dialog.locator(`option[value="${NESA_TWIN_ID}"]`).textContent();
+
+    // Both clinics are theirs, so each row carries its clinic and they differ.
+    expect(atCb).not.toBe(atLv);
+    expect(atCb).not.toBe(NESA_NAME);
+  });
+
+  test("reception at both clinics finds both rows in the Terapeutas filter, labelled apart, each at its clinic", async ({ page }) => {
+    test.skip(skipReason !== null, skipReason ?? "");
+    await receptionAtBothClinics();
+    await login(page, RECEPTION_EMAIL);
+    const filter = page.getByLabel("Terapeutas", { exact: true });
+    const cbRow = filter.locator(`option[value="${NESA_ID}"]`);
+    const lvRow = filter.locator(`option[value="${NESA_TWIN_ID}"]`);
+
+    await page.goto(`/agenda?view=day&date=${DAY}`);
+    await expect(filter).toBeVisible();
+    await expect(cbRow).toHaveCount(1);
+    await expect(lvRow).toHaveCount(1);
+    expect(await cbRow.textContent()).not.toBe(await lvRow.textContent());
+
+    await page.goto(`/agenda?view=day&date=${DAY}&location=${LOCATION.id}`);
+    await expect(filter).toBeVisible();
+    await expect(lvRow).toHaveCount(1);
+    await expect(cbRow).toHaveCount(0);
+  });
 });

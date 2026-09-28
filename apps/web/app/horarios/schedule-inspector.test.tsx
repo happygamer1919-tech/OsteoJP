@@ -401,6 +401,29 @@ describe("the panel states whose week it is showing (LE-inspector-and-editor)", 
     expect(html).not.toContain(s["inspector.noneChosen"]);
   });
 
+  it("NESA-SCOPE: two same-named machines arrive labelled apart, and the answer names the chosen one", () => {
+    // Horarios lists getAgendaOptions' roster, which labels a same-name pair
+    // with each row's clinic for a viewer who sees both. The inspector renders
+    // the labels it is given, one option per id.
+    const html = renderToStaticMarkup(
+      createElement(ScheduleInspector, {
+        days: [day()],
+        therapists: [
+          { id: "nesa-cb", label: "NESA (CB)" },
+          { id: "nesa-lv", label: "NESA (LV)" },
+        ],
+        therapistId: "nesa-lv",
+        period: "week",
+        onTherapistChange: vi.fn(),
+        onPeriodChange: vi.fn(),
+      }),
+    );
+    expect(html).toContain('<option value="nesa-cb">NESA (CB)</option>');
+    expect(html).toContain('<option value="nesa-lv">NESA (LV)</option>');
+    expect(answerOnly(html)).toContain("NESA (LV)");
+    expect(answerOnly(html)).not.toContain("NESA (CB)");
+  });
+
   it("a ?t= naming somebody OFF this roster shows nothing, never a borrowed name", () => {
     // A stale link, a hand-edited URL, or a therapist who left the location
     // between one page load and the next. The rows would be somebody else's -

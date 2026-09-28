@@ -16,6 +16,9 @@ export function DateJump({ date, label }: { date: string; label: string }) {
   const router = useRouter();
   return (
     <DatePicker
+      // Below `sm` the field may narrow below its text input's default width,
+      // so the dashboard's date row fits a phone (the row's comment has why).
+      className="max-sm:min-w-0"
       value={date === "" ? null : date}
       triggerLabel={label}
       onChange={(v) => {

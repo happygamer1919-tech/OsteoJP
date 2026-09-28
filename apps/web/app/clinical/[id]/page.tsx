@@ -4,15 +4,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireRequestContext } from "@/lib/auth/context";
+import { summariseAiRecordingDraft } from "@/lib/clinical/ai-recording-draft";
 import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
-import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import { getFichaMedicaTemplate, getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import { isImporterSourcedRecord } from "@/lib/clinical/record-origin";
 import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
 import { listImportedPatientDocuments } from "@/lib/patients/documents";
 
+import { AiRecordingDraft } from "./ai-recording-draft";
 import { Attachments } from "./Attachments";
 import { ImportedPatientDocuments } from "./ImportedPatientDocuments";
 import { ImportedRecordPreview } from "./imported-record-preview";
+import { chooseRecordView } from "./record-view";
+import { StoredRecordContent } from "./stored-record-content";
 import { DownloadReportButton } from "./DownloadReportButton";
 import { fieldAnchorId } from "./anchors";
 import { HIDDEN_FIELD_KEYS, sectionLabel } from "./field-display";
@@ -31,6 +36,18 @@ const RECORD_TONE: Record<RecordStatus, StatusTone> = {
   locked: "info",
   signed: "success",
 };
+
+/**
+ * The message for a sign that did not happen (`signRecordAction` redirects with
+ * `?m=err:<code>`). Only `err:finalized` had a message before; every other code
+ * showed nothing, so a refused sign looked like a page that did not react.
+ */
+function signErrorText(m: string | undefined): string | null {
+  if (!m || !m.startsWith("err")) return null;
+  if (m === "err:finalized") return s["clinical.finalized"];
+  if (m === "err:stale") return s["clinical.signStale"];
+  return s["clinical.error"];
+}
 
 export default async function RecordDetailPage({
   params,
@@ -52,14 +69,41 @@ export default async function RecordDetailPage({
   const existingTermsAcceptance = await getLatestTermsAcceptance(ctx, record.patientId);
 
   const schema = record.template ? parseTemplateSchema(record.template.schema) : null;
-  // G-D: only the no-template branch (imported registos) lists the patient's
-  // imported originals. Read under the same patients:read gate the Documentos
-  // tab and its download action use.
+  // FICHA-IMPORTED-VIEW: a missing template is NOT evidence of an import. An AI
+  // ingestion draft and a patient submission have none either. So a record with
+  // no schema asks the importer's ledger (one read, in this request's context)
+  // and the body is chosen from that answer and the record's source. A record
+  // with a schema never spends the read.
+  const importerSourced = schema ? false : await isImporterSourcedRecord(ctx, id);
+  const view = chooseRecordView({
+    hasSchema: schema !== null,
+    importerSourced,
+    source: record.source,
+    status: record.status,
+  });
+  // G-D: only an imported registo lists the patient's imported originals. Read
+  // under the same patients:read gate the Documentos tab and its download
+  // action use.
   const importedDocuments =
-    !schema && can(ctx.role, "patients:read")
+    view === "imported" && can(ctx.role, "patients:read")
       ? await listImportedPatientDocuments(ctx, record.patientId, id)
       : [];
-  const readOnly = record.status !== "draft" || !can(ctx.role, "clinical_records:author");
+  // FICHA-IMPORTED-VIEW: an AI recording draft lists what the recording filled
+  // under the Ficha Medica template's own field labels. The draft has no
+  // template of its own until it is claimed, so the CURRENT Ficha Medica (the
+  // one the claim binds, review.ts) is read, and only when there is a filled
+  // field to label: an empty extraction spends no read.
+  const aiSummary = view === "ai_recording" ? summariseAiRecordingDraft(record.data) : null;
+  const aiFichaTemplate =
+    aiSummary && aiSummary.filled.length > 0 ? await getFichaMedicaTemplate(ctx) : null;
+  const aiFichaSchema = aiFichaTemplate ? parseTemplateSchema(aiFichaTemplate.schema) : null;
+  // Two different facts, kept apart. `readOnly` is whether THIS viewer may edit
+  // (a draft is read-only to a role that cannot author, such as admin);
+  // `finalized` is whether the RECORD is closed. The immutability banner states
+  // the second, so it follows `finalized`: a draft is never announced as
+  // "finalizada e imutavel", whoever is looking at it.
+  const finalized = record.status !== "draft";
+  const readOnly = finalized || !can(ctx.role, "clinical_records:author");
   const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign");
   const canVersion = readOnly && can(ctx.role, "clinical_records:author");
 
@@ -83,13 +127,20 @@ export default async function RecordDetailPage({
           <Button type="submit" variant="secondary">{s["clinical.newVersion"]}</Button>
         </form>
       )}
-      {canSign && (
-        <form action={signRecordAction.bind(null, id)}>
-          <Button type="submit">{s["clinical.signLock"]}</Button>
-        </form>
-      )}
     </>
   );
+
+  // SIGN-CONFIRM-AND-SAVE-FIRST: "Assinar e bloquear" is no longer a form of its
+  // own that signs on one press. RecordForm draws it behind a confirmation and
+  // saves unsaved edits first; the sign names the stored content's fingerprint.
+  const sign = canSign
+    ? {
+        action: signRecordAction.bind(null, id),
+        label: s["clinical.signLock"],
+        message: s["clinical.signLockConfirm"],
+        dataHash: record.dataHash,
+      }
+    : undefined;
 
   return (
     <main>
@@ -111,7 +162,9 @@ export default async function RecordDetailPage({
         </Link>
       </div>
 
-      {m === "err:finalized" && <p role="alert" className="mb-4 text-sm text-error">{s["clinical.finalized"]}</p>}
+      {signErrorText(m) && (
+        <p role="alert" className="mb-4 text-sm text-error">{signErrorText(m)}</p>
+      )}
       {m === "signed" && <p className="mb-4 text-sm text-success">{s["clinical.statusSigned"]}</p>}
 
       <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
@@ -137,7 +190,9 @@ export default async function RecordDetailPage({
 
           {/* Finalized records: a single info Banner stating immutability (the
               ai_review_state review banner is deferred — not in the query). */}
-          {readOnly && (
+          {/* Gated on the record's status, not on `readOnly`: an admin reading
+              a draft cannot edit it, but it is not finalized. */}
+          {finalized && (
             <Banner tone="info" className="mb-6 rounded-md">
               <span className="flex flex-col gap-1">
                 <span>{s["clinical.lockedNotice"]}</span>
@@ -151,7 +206,7 @@ export default async function RecordDetailPage({
             </Banner>
           )}
 
-          {schema ? (
+          {view === "form" && schema ? (
             <RecordForm
               schema={schema}
               initialData={record.data}
@@ -163,8 +218,9 @@ export default async function RecordDetailPage({
               patientId={record.patientId}
               recordId={id}
               existingTermsAcceptance={existingTermsAcceptance}
+              sign={sign}
             />
-          ) : (
+          ) : view === "imported" ? (
             /* B1 — NO TEMPLATE, SO NO FORM. Until now this branch drew a single
                em-dash, and every IMPORTED Fisiozero registo clínico lands in it:
                `clinicalRecordValues` never sets `form_template_id`, so
@@ -191,6 +247,38 @@ export default async function RecordDetailPage({
               <ImportedRecordPreview data={record.data} />
               <ImportedPatientDocuments items={importedDocuments} />
             </>
+          ) : view === "ai_recording" && aiSummary ? (
+            /* FICHA-IMPORTED-VIEW: an AI ingestion DRAFT with no template
+               (not yet claimed, or claimed when no Ficha Medica template
+               existed). It has no template because store.ts keeps only the raw
+               payload, and until this card it was drawn above as imported
+               content. It is a draft from a consultation recording, waiting
+               for review, and it says so; the way on is the review screen,
+               where AI drafts are edited and finalized (rule 4). No form, no
+               sign action, read-only. A FINALIZED template-less AI record is
+               not a draft and goes to the neutral view below. */
+            <AiRecordingDraft
+              recordId={id}
+              summary={aiSummary}
+              fichaSchema={aiFichaSchema}
+              status={record.status}
+              aiReviewState={record.aiReviewState}
+              canReview={can(ctx.role, "clinical_records:review")}
+            />
+          ) : (
+            /* FICHA-IMPORTED-VIEW: any other record without a template that
+               the importer did not write (a patient submission draft, a manual
+               record, an AI record finalized with no template). The stored
+               content, under the same rules as the imported preview, with a
+               heading that claims no origin. */
+            <StoredRecordContent
+              data={record.data}
+              title={s["clinical.recordContentTitle"]}
+              help={s["clinical.recordContentHelp"]}
+              emptyText={s["clinical.recordNoContent"]}
+              testId="record-content"
+              emptyTestId="record-content-empty"
+            />
           )}
 
           <div className="mt-6">

@@ -4915,3 +4915,243 @@ The lane database was reset afterwards (journal 0087, columns absent). Moving a 
 - **Storage objects with no `attachments` row: Q-H5-3**, carded rather than
   handled here. A delete against a private bucket holding patient data is
   owner-confirmable and does not ride along inside a fix.
+
+## 2026-09-23 - AGENDA-MOBILE-WEEK: below 640px Semana is the week grid, compressed; the earlier desktop rulings are amended below 640 only
+
+The owner ruled (paraphrased): on a phone, Semana renders the desktop week grid,
+compressed; Dia is unchanged; the Dia/Semana choice is remembered per device; the
+same work closes the toolbar overflow at 390px; no 3-day view this round. Built on
+branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
+
+- **Scoped amendment of W11-00 v3 and W3-08, BELOW 640px ONLY.** W11-00 v3 (the
+  desktop face is one line, the name never truncated, same-start rows stacked and
+  never side by side, colour by therapist) and W3-08 (the week is six days,
+  Mon-Sat) both still hold at 640px and up, unchanged, and their unit tests and
+  `agenda-cards.spec.ts` are untouched. Below 640 the phone week truncates the
+  first name, splits concurrent rows side by side, colours by service, and shows
+  Dom when that Sunday holds a booking. `agenda-mobile-week.spec.ts` pins the
+  boundary both ways: the same twin pair is side by side at 390 and stacked at
+  1440.
+- **A separate component, not a mode of the desktop grid.**
+  `app/agenda/agenda-week-compact.tsx` renders what the pure
+  `lib/scheduling/agenda-compact-core.ts` decides (days, window, lanes, chips,
+  bands, legend). `agenda-grid.tsx` has 0 lines changed. The compact tree is
+  mounted only for `view=week`, after the desktop grid and the phone list in the
+  DOM, and displayed only under `sm`; every handle is prefixed (`data-compact-*`,
+  `agenda-compact-*`) because a CSS-swapped tree is in the DOM at every width.
+  The four desktop specs that assert W3-08 page-wide (`getByText(/^sáb/i).first()`
+  visible, `getByText(/^dom/i)` counting zero) are unchanged: the compact day
+  header draws its labels as CSS generated content from `data-compact-label`,
+  which is not DOM text, so no text locator finds a hidden "Dom 27" there. Its
+  buttons are named by their aria-label.
+- **Read range, not write path.** The week now READS Monday to the next Monday
+  (`readRangeForView`, used only by `app/agenda/page.tsx`) so the phone can show
+  Dom. No write path, constraint or policy changes. The desktop still draws
+  Mon-Sat and ignores Sunday rows; its hour window is widened only by the days it
+  draws.
+- **Defaults shipped, each one an open owner question:**
+  - **Q-B6-1** a day column splits into at most two lanes of blocks, plus a
+    "+N" chip: the card's default. The cap is per MOMENT: where three or more
+    rows run at once, the rows in the two lanes are drawn and that moment's
+    other rows sit behind one "+N" chip, which opens Dia for that day. So three
+    rows at once read two blocks and "+1", and four rows at once read two
+    blocks and "+2". Rows around it that never run three at a time keep their
+    lanes, a twin pair included. At 390px a column is about 59px (51px with
+    Dom); four lanes would be about 14px each.
+    - **Where the chip goes.** It is a small dark pill, "+N" in 8px bold, on
+      the two blocks' status-glyph line, laid across the gap between them: from
+      1px after the left block's glyph to where the right block's text starts.
+      It covers the empty end of the left block's glyph line, the gap and the
+      foot of the right block's colour stripe, and no time, name or glyph of
+      either block. It is 10px tall and 18.7px wide at 390 without Dom, 14.4px
+      with Dom and 12.3px at 360 with Dom. That is under the 24px target; the
+      day header above the column (40px tall) opens the same Dia, which is the
+      equivalent-control exception of WCAG 2.5.8. The chip is placed from
+      where the hidden rows START: 22px below that moment, which is the glyph
+      line of two blocks that start with them. Where the two drawn blocks
+      started earlier, the chip sits lower in them or under them, at the
+      hidden row's time. Where a block in the left lane starts less than half
+      an hour after the hidden rows (bookings on :15 and :45 do this), the
+      chip moves down onto that block's glyph line, so it never lies across a
+      time or a name; two chips that would then overlap are one chip, with
+      the counts added.
+    - **The twin case.** A twin pair (a person row and a machine row of the
+      same patient, same start) takes both lanes before any other row is
+      placed (person left, machine right where the page knows the machine),
+      so the twin stays side by side whatever else runs then. Every other row starting at its minute goes
+      behind the chip (a longer row or a second twin pair included), and so
+      does a row that started earlier: a row that started earlier and still
+      runs when the pair starts goes behind the chip, for its whole span, and
+      its chip is at its own start like every hidden row's (with one block or
+      none beside it there). A row that ends by the pair's start keeps its
+      lane. The one thing that keeps a pair out is another pair that started
+      first and still holds a lane, since two lanes hold one pair at a time:
+      then the later pair is behind the chip whole, never split. The pair is
+      recognised by the patient and the start, not only by the machine flag:
+      the page knows as machines only the ones offered to the viewer (those at
+      the viewer's clinics), and a viewer can see a machine row outside that
+      list. Two rows of one patient at one minute therefore stay side by side
+      whatever they are, a double booking on two therapists included; where
+      the flag is known, the person row is on the left.
+    - **What the owner can pick instead.** The chip in the second lane (one
+      block and "+2" where three run), which keeps a 24px chip and hides one
+      more row; or the chip on the day header, which keeps both faces but no
+      longer shows when the hidden rows run; or, for a twin pair starting under
+      a row that started earlier, that row keeps its lane and the twin's
+      machine row goes behind the chip (the pair is split, the earlier row is
+      never hidden). A column split three ways (strips
+      of 18.8px at 390, 16.0px with Dom, 14.5px at 360 with Dom) holds no face.
+    - **What a half lane holds**, measured in Chromium with Inter:
+      - the start time is always whole. It is 9px where 9px fits and shrinks
+        with the lane where it does not: about 8.8px at 390 without Dom, 7.4px
+        at 390 with Dom, 6.6px at 360 with Dom ("15:00" at 9px semibold is
+        25.7px; a half lane has 25.7px of face without Dom at 390, 21.4px
+        with).
+      - the first name has a line of its own in EVERY half-lane block, at 9px,
+        clipped rather than ellipsised, and the status glyph has the line
+        below. For that a 30-minute row is 34px tall, so the shortest block
+        (33px) holds the three lines. With the 26px rows of an earlier draft,
+        a 30-minute half-lane block put the glyph before the name, which left
+        it none to two letters. Measured on the 49 half-lane blocks of an
+        earlier synthetic week (17 of them 30 minutes), with Dom shown: three
+        to six letters at 390 and three to five at 360. The line is 21.4px at 390 and
+        19.3px at 360, and "Gem" at 9px is 20.2px, so a name with a wide
+        letter early shows two at 360 (the e2e's "Gemeo" does). The cost is
+        height: 08:00 to 21:00 is 884px instead of 676px, so the first
+        390x844 screen shows about 7.7 hours of the grid instead of about 10
+        (the grid scrolls to now).
+      - as a tap target, a half lane is at least 24px wide from 334px up with
+        six columns and from 384px up with Dom shown. So at 390 every block is
+        at least 24 by 24 (the chip is not, see above), and at 375 and 360
+        with Dom shown a half lane is 23.4px and 22.3px. That is the
+        arithmetic of seven columns, not a choice.
+      If the owner wants more on a half-lane face, the options are a narrower
+      Dom column, fewer letters of the time (for example "15h"), or one lane
+      plus a chip from two concurrent rows up; each is his call.
+  - **Q-B6-2** Semana between 640 and 767px keeps the AGMOB-01 list.
+  - **Q-B6-3** service colour is a deterministic hue per service id (the same
+    FNV-1a as the therapist colour) over seven existing token families, -100 fill
+    and -600 stripe, with a legend of the week's services; the desktop keeps
+    colour by therapist. Every block names its service in its accessible name.
+  - **Q-B6-4** persistence is localStorage only, every access in try/catch,
+    applied at every width, and only a BARE `/agenda` consults it (an explicit
+    `?view=` always wins; a patient deep link is left alone). A bare `/agenda` on
+    a device that prefers Dia shows the week for one round trip first; removing
+    that flash needs a cookie mirror, which the ruling did not name. A day-header
+    tap does not store a preference.
+  - **Q-B6-5** the desktop week does not show Dom.
+  - **Q-B6-6** no marker on machine rows; the accessible name says whose row it
+    is. A twin lays out person left, machine right when the machine is among the
+    viewer's known shared resources.
+  - **Q-B6-7** tapping an empty slot on the phone grid does nothing.
+  - **Q-B6-8** blocked time and the midday closure are drawn as visual-only bands.
+  - **Q-B6-9** a cancelled row occupies a lane, and a Sunday holding only a
+    cancelled row still shows Dom.
+  - **Q-B6-10** below 640 the toolbar's three actions (Bloquear, Atualizar,
+    Nova marcação) stay together on one line, every visible text label stays
+    (AGENDA-02's condition), and the accessible names do not change. Bloquear
+    and Nova marcação drop their icons, which are decorative: each has its word
+    beside it. Atualizar KEEPS its refresh icon (16px there): its visible text
+    is the freshness time, a reading and not a verb, so the icon is the only
+    visible sign that the button refreshes, and a title tooltip does not exist
+    on touch. The three trim their side padding to 10px and the gaps to 6px.
+    Measured on a local stack the group went from 386px to about 304px; the
+    content box is 342px at 390 and 312px at 360. The alternative was an
+    icon-only Bloquear, which AGENDA-02's visible-label condition rules out.
+  - **Q-B6-11** below 640 the shell's name-and-role chip in the mobile header
+    is hidden. It, not the toolbar, set the page width on a phone: the header's
+    user area measured 368 to 383px in the ~271px it has at 390, so every staff
+    page scrolled sideways (470 to 486px). The toolbar's own right edge was
+    411px, so it cannot explain the 479px AGMOB-01 recorded in CI; the header
+    can (measured locally, not in CI). The chip links to the same page as the visible "O meu
+    perfil" beside it, which stays (W7-02). This touches the shared staff shell,
+    not only the agenda.
+  - **Q-B6-12** "sticky time axis, 30-minute rows" is read as: an axis that
+    never leaves the screen sideways, labels that scroll with their rows, a
+    label on each hour, and a rule on each hour only (no :30 rule, as on the
+    desktop). Detail in the next bullet.
+- **"Sticky time axis" is satisfied by construction.** The grid never scrolls
+  sideways, so the axis never leaves the screen horizontally, and its labels
+  travel with their rows vertically (the desktop grid's own reasoning). Whether
+  that reading is what the ruling meant is an open owner question, Q-B6-12: a
+  label pinned in place while the rows scroll would name whatever row is level
+  with it, not its own. The rows are 30 minutes (every
+  block is placed on that scale); the rules are drawn on the hour only, as on
+  the desktop since W13-B removed its faint :30 rule. The axis labels every
+  hour and also the window's end, on the bottom edge (21:00, or the later hour
+  a booking widens it to), so the last hour of the day is never unlabelled.
+- **Auto-scroll to now is decided once per week shown, at the first moment the
+  client knows the time, and only when the compact grid is the displayed tree**
+  (`getClientRects()` is empty for a `display: none` element), so no desktop
+  scroll-top measurement can move. A decision not to scroll is final for that
+  week: a phone opened at 07:50 is not moved when the clock reaches 08:00.
+  "Now" is read after mount, so the server render and hydration agree. The
+  pinned day header paints above the now line (z-30 over z-20 in one stacking
+  context), as the desktop grid's header does.
+
+## 2026-09-24 - AGENDA-MOBILE-WEEK round 10: Q-B6-11 answered, the phone header keeps the initials avatar; two CI-only overflows closed in the layout
+
+- **Q-B6-11, answered.** The owner accepted the default with one change
+  (paraphrased): below 640px the staff header hides the name and role but keeps
+  the initials avatar, which stays the /perfil link, on every staff page. The
+  bell, "O meu perfil" and "Terminar sessão" stay, and no staff page scrolls
+  sideways at 390 or 360.
+- **How it fits, below `sm` only.** `UserAreaCluster` (packages/ui) gains an
+  optional `textClassName` for its name-and-role column; omitted, it renders
+  exactly as before, which is what its other callers (the Storybook stories)
+  get. The shell passes `max-sm:hidden`. In the user area the gaps are 4px
+  instead of 16, "O meu perfil" and "Terminar sessão" trim their side padding
+  from 12px to 8px (they already wrapped onto two lines on a phone), and the
+  bell and the avatar link get `shrink-0`: both are fixed-size targets, and
+  before this round the bell was squeezed to 36px at 390 and 31px at 360 to give
+  the text room. After it the bell is 44px and the avatar 40px at both widths,
+  and the area's narrowest layout is 222.5px in the 241.2px the header leaves it
+  at 360. At 640 and up nothing changes; the e2e pins the breakpoint both ways,
+  the name and role hidden at 639 and shown at 640.
+- **The toolbar at 360, red on CI at dd2c6abf and 721ca10d.** Locally Nova
+  marcação ended 7.3px inside the toolbar's content box at 360; on CI it ended
+  1px past it. Read from CI's failure screenshot, Linux Chromium draws the three
+  actions about 8px wider in all: the semibold Nova marcação label about 7px
+  wider, Bloquear about 3px wider, the Atualizar time about 2px narrower. That is
+  more than the 0.5 to 1px first assumed, so a fix sized to that would not have
+  held. Fixed in the layout, not the tolerance: below `sm` the three trim their
+  side padding from 10px to 8px. Locally the group went from 303.7px to 291.7px
+  and Nova marcação's right edge from 328.7 to 316.7 in a content box ending at
+  336 (19.3px of slack); with CI's extra width it should end near 325.
+- **The start time in a half lane, red on CI in the same runs.** CI read a 22px
+  time in a 21px box at 390 with Dom shown. TIME_FONT had left every half-lane
+  time about 0.3px of room locally. Trimming padding and letter spacing was
+  chosen over shrinking the type: the time's line alone drops the face's 1px
+  left inset (a -1px margin, so it sits flush on the stripe) and its letter
+  spacing is -0.03em. TIME_FONT still reads the face's width, so the type size
+  is unchanged, and the name line, the glyph and the "+N" chip do not move.
+  Local slack, before and after: 390 with Dom 0.33 to 2.44px (box 21.42 to
+  22.42px, text 21.09 to 19.98px), 360 with Dom 0.31 to 2.30px (box 19.28 to
+  20.28px, text 18.97 to 17.98px), 390 without Dom 0.39 to 2.72px, 360 without
+  Dom 0.36 to 2.55px. The e2e assertion is unchanged.
+- **How this round measured.** In Chromium, on the real components rendered to
+  static markup with the app's compiled Tailwind CSS and the Inter files
+  next/font serves, at 390 and 360. Not on a running stack, and not on Linux:
+  the CI numbers above are read from CI's own artifacts.
+- **Q-B6-10's text** in docs/QUESTIONS.md now gives the 8px padding; the default
+  itself is unchanged.
+- **The dashboard's date row, red on CI at 0e9e082e (round 12).** Once the
+  header fitted, /dashboard still scrolled sideways: CI read the page 448px
+  wide at 390, and the widest element was the dashboard's own date row
+  (previous day, the date field, Hoje, next day), which does not wrap. The
+  date field is as wide as its text input's default width, and Linux Chromium
+  draws that about 44px wider than local Chromium (264 against 220px). Fixed in
+  the layout, below `sm` only: the row may shrink to its line and only the date
+  field gives way (`min-w-0` on both), and the three buttons get `shrink-0`,
+  without which the previous and next buttons were squeezed to about 28px at
+  360. Measured in local Chromium on the page, CSS and Inter files CI's trace
+  captured, with the input set to CI's width: before, the page 447px wide at
+  390; after, it fits at 390 and 360, the field's text box is 129px at 390 and
+  99px at 360 for a date about 80px wide, and 639 and 640 are unchanged. The
+  e2e now checks this row on /dashboard (it ends on screen, the two arrow
+  buttons keep 40px, the field shows the whole date). Its overflow pointer now
+  names the element's landmark, the path down from it and the nearest
+  data-testid, because the class alone also matched the shell header's left
+  group. /dashboard at 360 and /patients and /perfil at both widths had not run
+  on CI (the test stops at its first failure); this round read their layouts
+  in the code and did not measure them.

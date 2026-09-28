@@ -123,4 +123,21 @@ describe("getAgendaOptions opens ONE transaction for its reference data", () => 
     expect(options).toHaveProperty("therapists");
     expect(options).toHaveProperty("bookableLocations");
   });
+
+  it("NESA-SCOPE: the staff labels cost no transaction, and their inputs travel with the options", async () => {
+    // The collision labels are computed after the cached read, from data it
+    // already returned plus the booking scope; none of it may open a second
+    // transaction, and the drawer needs the viewer's clinics and every clinic's
+    // code to label an option it synthesises.
+    const tx = makeTx();
+    runScoped.mockReset();
+    runScoped.mockImplementation((async (_ctx: unknown, fn: (t: unknown) => unknown) =>
+      fn(tx)) as never);
+
+    const options = await getAgendaOptions(CTX as never, null, { keepStaffId: "someone" });
+
+    expect(runScoped).toHaveBeenCalledTimes(1);
+    expect(options.viewerClinicIds).toEqual([]);
+    expect(options.clinicCodes).toEqual({});
+  });
 });

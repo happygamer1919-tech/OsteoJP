@@ -4,6 +4,9 @@ import { useState, useTransition } from "react";
 import { DatePicker, Dialog, Field, Select, TimeField, useToast } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
+import { useActionOwner } from "@/lib/actions/use-action-owner";
+import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import type { Option } from "@/lib/scheduling/types";
 import { createAgendaBlockAction, createAgendaBlockBatchAction } from "./block-actions";
 import type { LoteEnd } from "@/lib/scheduling/lote";
@@ -73,6 +76,12 @@ export function BlockTimeDialog({
   const field =
     "rounded border border-border-strong px-3 py-1.5 text-sm focus:border-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
+  // SKEW-01: "Tentar novamente" re-runs this handler as it is now, so the
+  // form's own checks run again on what is on screen.
+  const retrySubmit = useLatestCallback(() => submit());
+  // ...and its toast closes with this dialog (lib/actions/use-action-owner.ts).
+  const actionOwner = useActionOwner();
+
   function submit() {
     if (!userId || !date || !startTime || !endTime) {
       setError(s["agenda.block.incomplete"]);
@@ -91,14 +100,17 @@ export function BlockTimeDialog({
     setError(null);
     startTransition(async () => {
       const base = { userId, date, startTime, endTime, note: note.trim() };
-      const r = repeat
-        ? await createAgendaBlockBatchAction({
+      const opts = { kind: "write", retry: retrySubmit, owner: actionOwner } as const;
+      const out = repeat
+        ? await runAction(() => createAgendaBlockBatchAction({
             ...base,
             weekdays,
             everyWeeks,
             end: endMode === "until" ? { kind: "until", date: until } : { kind: "count", count },
-          })
-        : await createAgendaBlockAction(base);
+          }), opts)
+        : await runAction(() => createAgendaBlockAction(base), opts);
+      if (out.failed) return;
+      const r = out.value;
       if (r.ok) {
         const overlapped = !!r.overlaps && r.overlaps > 0;
         toast({

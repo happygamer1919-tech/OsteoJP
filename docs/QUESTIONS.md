@@ -2070,3 +2070,232 @@ fix. The options, in increasing order of cost:
 
 **Recommended default: (1) now, (2) carded.** (1) is one dashboard setting;
 (2) is a separate item with its own tests.
+
+## 2026-09-24 - Q-B6-1: a phone week column holds at most two lanes of blocks plus a "+N" chip
+
+**OWNER. Does not block: built with the card's default, on branch
+`ui/AGENDA-MOBILE-WEEK-phone-week-grid` (AGENDA-MOBILE-WEEK). The measured detail
+is in docs/DECISIONS.md, AGENDA-MOBILE-WEEK, Q-B6-1.**
+
+Context. Below 640px Semana is the week grid, compressed, and concurrent rows
+split a day column side by side. At 390px a column is about 59px wide (about
+51px when Dom shows). Four lanes would be about 14px each, which holds neither
+a start time, nor a name, nor a 24px tap target.
+
+**Default shipped.** At most two lanes. Where three or more rows run at once,
+the rows in the two lanes are drawn and that moment's other rows sit behind one
+"+N" chip that opens Dia for that day: three at once read two blocks and "+1",
+four read two blocks and "+2". A twin pair (a person row and a machine row of
+the same patient, same start) takes both lanes before any other row, so it is
+always side by side (person left where the page knows the machine): the other rows starting then go behind the
+chip, and so does a row that started earlier and still runs when the pair
+starts (for its whole span, with its chip at its own start). Only another pair
+that started first and still holds a lane keeps a pair out, and then the later
+pair is behind the chip whole, never split. The pair is recognised by the patient and the start, so it
+holds even for a viewer whose page does not list that machine, and two person
+rows of one patient at one minute (a double booking) stay side by side the same
+way. The chip is a small dark pill, 10px tall and about 12 to 19px wide,
+on a block's status-glyph line, placed so that it covers no start time, name or
+glyph; the day header above the column (40px) opens the same Dia. Every
+half-lane block shows the whole start time (it shrinks to about 7.4px at 390
+with Dom shown), the first name on a line of its own, and the status glyph; for
+that a 30-minute row is 34px tall, so the first 390x844 screen shows about 7.7
+hours of the grid. A half lane is a 24px target from 384px up with Dom shown,
+and narrower below that.
+
+**Alternatives.** The chip in the second lane (one block and "+2" where three
+run: a 24px chip, one more row hidden). The chip on the day header (both faces
+kept, but it no longer shows when the hidden rows run). A twin pair that does
+not outrank the other rows at its minute, or a pair recognised only when the
+page knows the machine. A row that started earlier keeping its lane under a
+twin pair, which splits the pair (its machine row goes behind the chip) but
+never hides a row from its own start. More face per block through a
+narrower Dom column or a shorter time ("15h"). One lane plus a chip from two
+concurrent rows up. A column split three ways (strips of 14.5 to 18.8px) holds
+no face and was not built.
+
+## 2026-09-24 - Q-B6-2: Semana between 640 and 767px keeps the list
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. The compact week grid is the phone's Semana below 640px (the `sm`
+breakpoint). Between 640 and 767px, a large phone on its side or a small
+tablet, Semana showed the AGMOB-01 list before this card, and Dia shows the
+list at every width under 768.
+
+**Default shipped.** Between 640 and 767px Semana keeps the AGMOB-01 list.
+From 768 up the desktop grid is unchanged.
+
+**Alternative.** The compact grid up to 767px, where its columns are wider and
+each block has more face; or the desktop grid from 640px.
+
+## 2026-09-24 - Q-B6-3: the phone week colours blocks by service, from existing theme tokens
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. The card asks for a colour by SERVICE on the phone week. The desktop
+grid colours by therapist (W11-00 v3), and there is no stored colour per
+service.
+
+**Default shipped.** A deterministic hue per service id (the same hash as the
+therapist colour) over seven existing token families, a light fill and a
+darker stripe, with a small legend of the week's services under the grid. Each
+block also names its service in its accessible name, so colour is never the
+only cue. The desktop keeps colour by therapist.
+
+**Alternative.** A colour chosen per service by the clinic (a stored field and
+an admin control), or colour by therapist on the phone as on the desktop.
+
+## 2026-09-24 - Q-B6-4: the Dia/Semana choice is remembered in the browser only
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. The card asks for the Dia/Semana choice to be remembered per device.
+
+**Default shipped.** The choice is kept in the browser's localStorage, every
+access wrapped in try/catch, at every width. Only a bare `/agenda` reads it: an
+explicit `?view=` in the address always wins and a link from a patient's page
+is left alone. Tapping a day header to open Dia does not change the stored
+choice. On a device that prefers Dia, a bare `/agenda` shows the week for one
+round trip before it switches.
+
+**Alternative.** Mirror the choice in a cookie so the server renders the stored
+view directly, with no brief week first. That is a small server change the card
+did not name.
+
+## 2026-09-24 - Q-B6-5: the desktop week still does not show Sunday
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. The phone week shows Dom only when that Sunday holds a booking (the
+week now reads Monday to the next Monday to know). The desktop week is Monday
+to Saturday (W3-08).
+
+**Default shipped.** The desktop week is unchanged: Monday to Saturday, and a
+Sunday booking is not drawn there.
+
+**Alternative.** The desktop week also adds Dom when that Sunday holds a
+booking, as the phone does.
+
+## 2026-09-24 - Q-B6-6: machine rows carry no visual marker on the phone week
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. A shared-machine row is drawn like any other block, in its service's
+colour.
+
+**Default shipped.** No visual marker. The block's accessible name says whose
+row it is, and a twin pair lays out person left, machine right where the page
+knows the machine (the machines offered to the viewer).
+
+**Alternative.** A small machine icon or a patterned stripe on machine rows,
+which costs face width in a half lane that already clips the name.
+
+## 2026-09-24 - Q-B6-7: tapping an empty slot on the phone week does nothing
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. The desktop grid starts a booking from an empty slot. The card does
+not say what an empty slot does on the phone week.
+
+**Default shipped.** Nothing new: tapping an empty slot does nothing, and Nova
+marcação in the toolbar starts a booking.
+
+**Alternative.** A tap on an empty slot opens Nova marcação with that day and
+time filled in.
+
+## 2026-09-24 - Q-B6-8: blocked time and the midday closure are visual-only bands on the phone week
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. The phone list shows a therapist's blocked time and the clinic's
+midday closure as rows with words.
+
+**Default shipped.** On the phone week they are bands under the blocks: a
+hatched band for blocked time and a flat band for the closure. They cannot be
+tapped; Dia, which is the list, names them in words.
+
+**Alternative.** Bands that can be tapped to show what the block is, or bands
+with a short label where there is room.
+
+## 2026-09-24 - Q-B6-9: cancelled rows take a lane, and a Sunday with only a cancelled row shows Dom
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK).**
+
+Context. This is what the desktop grid and the phone list already do with
+cancelled rows.
+
+**Default shipped.** A cancelled row is drawn and takes a lane like any other
+row, and a Sunday whose only booking is cancelled still shows the Dom column.
+
+**Alternative.** Leave cancelled rows off the phone week, which frees lanes at
+busy moments, and ignore them when deciding whether Dom shows.
+
+## 2026-09-24 - Q-B6-10: below 640px the toolbar's actions drop their decorative icons to fit 390px
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK). The
+builder introduced this default; the card only asked that the toolbar fit.**
+
+Context. At 390px the toolbar's three actions (Bloquear, Atualizar, Nova
+marcação) were about 386px wide in a content box of 342px (312px at 360), so
+the page scrolled sideways.
+
+**Default shipped.** Below 640px Bloquear and Nova marcação drop their icons,
+which are decorative because each has its word. Atualizar keeps its refresh
+icon: its visible text is only the time of the last refresh, so the icon is
+the only visible sign that it refreshes. The three trim their side padding to
+10px and the gaps to 6px, about 304px in all. Every visible label and every
+accessible name is unchanged.
+
+Updated in round 10: the side padding is 8px, about 292px in all, because CI
+draws these labels about 8px wider than a Mac does and Nova marcação ran 1px
+past the toolbar's edge there at 360. The default itself is unchanged.
+
+**Alternative.** An icon-only Bloquear (ruled out by AGENDA-02's visible-label
+condition), or Bloquear moved into a menu.
+
+## 2026-09-24 - Q-B6-11: below 640px the staff header hides the name-and-role chip, on every staff page (ANSWERED 2026-09-24)
+
+**ANSWERED (owner, 2026-09-24): accepted with one change.** Below 640px the
+header hides the name and role but keeps the initials avatar, still the link to
+the profile, on every staff page. The bell, the visible profile link and the
+sign-out button stay, and no staff page scrolls sideways at 390 or 360. Built in
+round 10, and the dashboard's date row in round 12; how it fits is in
+docs/DECISIONS.md. The entry below is the question as it was asked.
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK). The
+builder introduced this default, and it changes the shared staff shell, not
+only the agenda.**
+
+Context. On a phone the staff header's user area measured 368 to 383px in the
+about 271px it has at 390 (a local measurement), so every staff page scrolled
+sideways, to 470 to 486px, and the agenda toolbar could not fit whatever it
+did.
+
+**Default shipped.** Below 640px the name-and-role chip is hidden. "O meu
+perfil", which opens the same page, and "Terminar sessão" stay.
+
+**Alternative.** Keep the chip and truncate the name, or move the name and role
+into a menu.
+
+## 2026-09-24 - Q-B6-12: the phone week's "sticky time axis" scrolls with its rows and has a rule on the hour only
+
+**OWNER. Does not block: built with the default below (AGENDA-MOBILE-WEEK). The
+card says "sticky time axis, 08:00 to 21:00 in 30-minute rows"; this is how the
+builder read it.**
+
+Context. The phone week fits the screen's width, so it never scrolls sideways;
+it scrolls only up and down, with the day header pinned under the toolbar. The
+desktop grid removed its faint :30 rule at the owner's request (W13-B).
+
+**Default shipped.** The time axis is the grid's left column and never leaves
+the screen sideways, because nothing scrolls sideways. Its labels scroll up and
+down with their rows, as on the desktop: a label pinned in place while the rows
+move would name whatever row happens to be level with it. Each row is 30
+minutes (34px) and every block is placed on that scale; there is a label and a
+rule on each hour and no rule at :30, as on the desktop. The last hour is also
+labelled on the grid's bottom edge (21:00, or later when a booking runs later).
+
+**Alternatives.** A faint rule at :30 on the phone only, or a small ":30" label
+between the hour labels. A pinned hour label at the top of the screen that
+names the hour showing under the day header as the grid scrolls.

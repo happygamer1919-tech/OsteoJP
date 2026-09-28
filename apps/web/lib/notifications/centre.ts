@@ -567,3 +567,82 @@ export async function emitRescheduledNotification(args: {
 }): Promise<{ delivered: boolean }> {
   return emitStaffTransitionNotification({ ...args, kind: "rescheduled" });
 }
+
+/**
+ * CARE-02c. A booking has just put these therapists on a patient's care team
+ * for the first time: tell each of them, once.
+ *
+ * `booked` ("Nova marcação") AND NOT A NEW KIND, because the kind list is pinned
+ * by 0061's CHECK constraint and a sixth value is a migration this card may not
+ * ship. It is also true from where the therapist sits: an appointment with a
+ * patient they were not following has just appeared on their agenda. The
+ * notification names the patient and the appointment's start, as every other
+ * entry in the centre does.
+ *
+ * FIRST TIME ONLY IS DECIDED UPSTREAM, not here. `notices` is built from the
+ * care-team rows the INSERT actually wrote (careTeamNotices), so a therapist
+ * already on the team is never in it. The actor is excluded there too.
+ *
+ * THE RECIPIENT ONLY. Unlike the staff-transition fan-out above, reception is
+ * not copied: the news is the therapist's own ("you are following a new
+ * patient"), and reception made the booking.
+ *
+ * getDbAdmin, POST-COMMIT, BEST-EFFORT, NEVER THROWS: the same contract and the
+ * same reason as emitStaffTransitionNotification. The booking and the care-team
+ * row have committed, so a lost notification must never read as a failed
+ * booking. Recipients are validated against the tenant rather than trusted.
+ */
+export async function emitCareTeamAddedNotifications(args: {
+  tenantId: string;
+  actorUserId: string;
+  notices: readonly {
+    recipientUserId: string;
+    appointmentId: string;
+    patientId: string;
+    startsAt: Date;
+  }[];
+  occurredAt: Date;
+}): Promise<{ delivered: boolean }> {
+  if (args.notices.length === 0) return { delivered: true };
+  try {
+    const db = getDbAdmin();
+    // The actor is dropped HERE, in the list, and not with a `ne(...)` in the
+    // query below: confirm-fanout.test.ts counts that predicate in the
+    // staff-transition fan-out above and this function is not part of it.
+    const recipientIds = [
+      ...new Set(
+        args.notices.map((n) => n.recipientUserId).filter((id) => id !== args.actorUserId),
+      ),
+    ];
+    if (recipientIds.length === 0) return { delivered: false };
+    const valid = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.tenantId, args.tenantId), inArray(users.id, recipientIds)));
+    const allowed = new Set(valid.map((v) => v.id));
+    const rows = args.notices
+      .filter((n) => allowed.has(n.recipientUserId))
+      .map((n) => ({
+        tenantId: args.tenantId,
+        recipientUserId: n.recipientUserId,
+        kind: "booked" satisfies StaffNotificationKind,
+        actorUserId: args.actorUserId,
+        appointmentId: n.appointmentId,
+        patientId: n.patientId,
+        // A booking moves nothing, so both instants are its start, the
+        // convention the confirm and cancel paths already follow.
+        previousStartsAt: n.startsAt,
+        newStartsAt: n.startsAt,
+        occurredAt: args.occurredAt,
+      }));
+    if (rows.length === 0) return { delivered: false };
+    await db.insert(staffNotifications).values(rows).onConflictDoNothing();
+    return { delivered: true };
+  } catch (err) {
+    console.error(
+      `[notifications] care-team fan-out FAILED tenant=${args.tenantId} count=${args.notices.length}`,
+      err instanceof Error ? err.name : "unknown",
+    );
+    return { delivered: false };
+  }
+}

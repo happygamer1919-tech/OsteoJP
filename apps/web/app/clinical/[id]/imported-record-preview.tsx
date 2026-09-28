@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
-
 import { s } from "@/lib/i18n";
 
+import { StoredRecordContent } from "./stored-record-content";
+
 /**
- * READ-ONLY PREVIEW FOR A RECORD THAT HAS NO FORM TEMPLATE.
+ * READ-ONLY PREVIEW FOR AN IMPORTED RECORD, WHICH HAS NO FORM TEMPLATE.
  *
  * ==========================================================================
  * WHY THIS EXISTS, AND WHY IT IS NOT "RESOLVE A TEMPLATE BY KEY"
@@ -46,53 +46,23 @@ import { s } from "@/lib/i18n";
  * immutable exactly as the trigger enforces.
  */
 
-/** A leaf we can print as text without interpreting it. */
-function isPrintable(v: unknown): v is string | number | boolean {
-  return typeof v === "string" || typeof v === "number" || typeof v === "boolean";
-}
-
-/** Nothing to show: the adapter omits empty cells, so this is genuine absence. */
-function isAbsent(v: unknown): boolean {
-  return v === null || v === undefined || (typeof v === "string" && v.trim() === "");
-}
-
-function renderValue(value: unknown): ReactNode {
-  if (isPrintable(value)) return String(value);
-  // Arrays and objects have no agreed presentation here and inventing one would
-  // be the same judgement the adapter refused. JSON keeps every byte visible.
-  return (
-    <span className="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(value, null, 2)}</span>
-  );
-}
-
+/**
+ * FICHA-IMPORTED-VIEW: the rendering rules above now live in
+ * `stored-record-content.tsx`, shared with the neutral view, so the two cannot
+ * drift. This component is the IMPORTED reading of them: the page draws it only
+ * for a record `isImporterSourcedRecord` (lib/clinical/record-origin.ts) says
+ * the importer wrote, which is the only case its heading is true for. Its test
+ * ids and strings are unchanged.
+ */
 export function ImportedRecordPreview({ data }: { data: Record<string, unknown> }) {
-  const entries = Object.entries(data).filter(([, v]) => !isAbsent(v));
-
-  if (entries.length === 0) {
-    // The row exists and carries no content. Said plainly, because "the viewer
-    // cannot draw it" and "there is nothing to draw" are different answers and
-    // the clinic needs to be able to tell them apart.
-    return (
-      <p className="text-sm text-text-secondary" data-testid="imported-record-empty">
-        {s["clinical.importedNoContent"]}
-      </p>
-    );
-  }
-
   return (
-    <section aria-label={s["clinical.importedPreviewTitle"]} data-testid="imported-record-preview">
-      <h2 className="mb-2 text-base font-semibold text-text-primary">
-        {s["clinical.importedPreviewTitle"]}
-      </h2>
-      <p className="mb-4 text-sm text-text-secondary">{s["clinical.importedPreviewHelp"]}</p>
-      <dl className="flex flex-col gap-4">
-        {entries.map(([key, value]) => (
-          <div key={key} className="flex flex-col gap-1">
-            <dt className="text-sm font-medium text-text-secondary">{key}</dt>
-            <dd className="whitespace-pre-wrap text-sm text-text-primary">{renderValue(value)}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+    <StoredRecordContent
+      data={data}
+      title={s["clinical.importedPreviewTitle"]}
+      help={s["clinical.importedPreviewHelp"]}
+      emptyText={s["clinical.importedNoContent"]}
+      testId="imported-record-preview"
+      emptyTestId="imported-record-empty"
+    />
   );
 }

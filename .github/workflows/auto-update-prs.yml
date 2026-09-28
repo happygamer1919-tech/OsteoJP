@@ -109,12 +109,28 @@ jobs:
           fi
 
           # Emit one compact JSON object per open, non-draft PR targeting main.
+          #
+          # A PR LABELLED held-for-apply IS NEVER UPDATED. Owner ruling 2026-09-22.
+          # A held migration PR is the branch an apply sitting runs from, detached
+          # at a head it has just verified; merging main into it moves that head
+          # under the sitting, and every such merge also spends a full CI cycle on
+          # a PR that is parked by design. The label is the field a machine reads.
+          # It goes on every held migration PR when it opens and comes off when
+          # the PR arms, so an armed PR is updated as before. `.labels // []`
+          # because a PR object without a labels array must mean "no label", not
+          # a jq error that silently empties the whole pass.
           printf '%s' "${list_body}" \
-            | jq -c '.[] | select(.draft == false) | select(.base.ref == "main") | {number, ref: .head.ref, label: .head.label}' \
+            | jq -c '.[] | select(.draft == false) | select(.base.ref == "main") | {number, ref: .head.ref, label: .head.label, held: (((.labels // []) | map(.name) | index("held-for-apply")) != null)}' \
             | while read -r pr; do
                 num=$(printf '%s' "${pr}" | jq -r '.number')
                 ref=$(printf '%s' "${pr}" | jq -r '.ref')
                 label=$(printf '%s' "${pr}" | jq -r '.label')
+                held=$(printf '%s' "${pr}" | jq -r '.held')
+
+                if [ "${held}" = "true" ]; then
+                  echo "PR #${num} (${ref}): labelled held-for-apply - not updated, by rule."
+                  continue
+                fi
 
                 # How far behind main is this PR's head?
                 cmp=$(api "https://api.github.com/repos/${REPO}/compare/main...${label}")

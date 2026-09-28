@@ -98,6 +98,28 @@ describe("the agenda toolbar states how old its data is", () => {
     expect(out).toContain('data-testid="agenda-refresh"');
     expect(out).toContain(s["agenda.refresh"]);
   });
+
+  it("keeps its refresh icon at EVERY width: the visible text is a time, so the icon is the only visible verb", () => {
+    // AGENDA-MOBILE-WEEK, Q-B6-10. Below `sm` the toolbar drops DECORATIVE
+    // icons to fit 390 and 360. This one is not decorative: the button's
+    // visible text is the freshness time ("14:32"), the "Última atualização"
+    // prefix shows only at 2xl, and a title tooltip does not exist on touch.
+    // Without the icon a phone shows a bare time between Bloquear and Nova
+    // marcação and nothing says it refreshes.
+    const out = render({ canBlockTime: true });
+    const button = out.match(/<button[^>]*data-testid="agenda-refresh"[^>]*>.*?<\/button>/)?.[0];
+    expect(button, "the refresh button renders").toBeTruthy();
+    const icon = button!.match(/<svg[^>]*data-testid="agenda-refresh-icon"[^>]*>/)?.[0];
+    expect(icon, "the refresh icon is inside the button").toBeTruthy();
+    const cls = icon!.match(/class="([^"]*)"/)![1]!.split(/\s+/);
+    expect(cls.filter((c) => /(^|:)hidden$/.test(c)), "no breakpoint hides it").toEqual([]);
+    // CONTROL: the parser does see a breakpoint-hidden icon where there is one.
+    // Bloquear's icon IS decorative (the word "Bloquear" is beside it) and is
+    // hidden below sm, so the same reading finds its `max-sm:hidden`.
+    const ban = out.match(/<svg[^>]*class="([^"]*\blucide-ban\b[^"]*)"/)?.[1];
+    expect(ban, "the Bloquear icon renders").toBeTruthy();
+    expect(ban!.split(/\s+/)).toContain("max-sm:hidden");
+  });
 });
 
 /**
