@@ -6,7 +6,8 @@
  *       app/recuperacao had no layout.tsx. The guide told staff to leave it with
  *       the browser's back button.
  *   F4  Reception may use the SMS reply review queue (/reminders/review) and
- *       nothing linked to it. It is now the Comunicações tab "Respostas SMS".
+ *       nothing linked to it. It is now the Comunicações tab "Respostas SMS",
+ *       whole on screen at phone widths too (390 and 360).
  *   F5  A therapist read "Horários da equipa" above their own single card, and a
  *       Marcações subtitle promising all their patients' bookings.
  *
@@ -22,7 +23,8 @@
  * THE SHELL IS ASSERTED BY ITS OWN LANDMARKS, not by a page heading: the
  * heading rendered before F1 too. The sidebar is the "Navegação principal"
  * navigation, and the top bar carries the Notificações bell, both from
- * components/app-shell.tsx. Desktop Chrome, so the sidebar is the desktop rail.
+ * components/app-shell.tsx. Desktop Chrome, so the sidebar is the desktop rail;
+ * the two phone-width F4 tests check the tab bar only, never the shell.
  */
 import { test, expect, type Page } from "@playwright/test";
 import { STORAGE } from "./fixtures";
@@ -78,6 +80,55 @@ test.describe("reception", () => {
       page.getByRole("navigation", { name: TABS }).getByRole("link", { name: "Respostas SMS" }),
     ).toHaveAttribute("aria-current", "page");
   });
+
+  /**
+   * F4 ON A PHONE. The two tests above run at the desktop size, where the tab
+   * bar has room. At 390px the three tabs did not fit: the bar scrolled
+   * sideways, the new tab showed as "Resp", and nothing said it scrolled
+   * (review round 3, the guide's own phone captures). The bar wraps now, so
+   * every tab is whole on screen. What is asserted is that, and not a class
+   * name: each tab's box lies inside the bar's box, and the bar has nothing
+   * hidden to scroll to (scrollWidth <= clientWidth). The bar that scrolled
+   * fails both.
+   */
+  for (const [name, viewport] of [
+    ["390", { width: 390, height: 844 }],
+    ["360", { width: 360, height: 780 }],
+  ] as const) {
+    test(`F4 at ${name}px: every Comunicações tab, Respostas SMS included, is whole on screen`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.goto("/recuperacao");
+      await expect(page.getByRole("heading", { name: "Recuperação de utentes" })).toBeVisible();
+
+      const tabs = page.getByRole("navigation", { name: TABS });
+      await expect(tabs).toBeVisible();
+      const bar = await tabs.boundingBox();
+      expect(bar, "the tab bar has a box").not.toBeNull();
+
+      for (const label of ["Recuperação", "Lembretes SMS", "Respostas SMS"]) {
+        const link = tabs.getByRole("link", { name: label, exact: true });
+        await expect(link).toBeVisible();
+        const box = await link.boundingBox();
+        expect(box, `${label} has a box`).not.toBeNull();
+        if (!bar || !box) continue;
+        expect(box.x, `${label} starts inside the bar`).toBeGreaterThanOrEqual(bar.x - 0.5);
+        expect(box.x + box.width, `${label} ends inside the bar`).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+        expect(box.x + box.width, `${label} ends inside the viewport`).toBeLessThanOrEqual(viewport.width + 0.5);
+      }
+
+      const fit = await tabs.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+      expect(fit.scroll, `the tab bar hides nothing sideways (${fit.scroll} vs ${fit.client})`).toBeLessThanOrEqual(
+        fit.client,
+      );
+      const doc = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }));
+      expect(doc.scroll, `the page does not scroll sideways (${doc.scroll} vs ${doc.client})`).toBeLessThanOrEqual(
+        doc.client,
+      );
+    });
+  }
 });
 
 test.describe("therapist", () => {

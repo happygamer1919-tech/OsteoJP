@@ -9,8 +9,9 @@ export type NavItem = {
   /**
    * COMMS-01: other URL prefixes that light this entry as active. Used by a
    * GROUP entry whose sections keep their own routes (Comunicações holds
-   * /recuperacao and /reminders/review, which predate the group and are named by
-   * links, revalidatePath and e2e specs). Absent for every ordinary entry.
+   * /recuperacao, which predates the group and is named by links, revalidatePath
+   * and e2e specs, and /reminders/review, which the page and its tests name).
+   * Absent for every ordinary entry.
    */
   activePrefixes?: string[];
 };
