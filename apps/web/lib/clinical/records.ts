@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   aiIngestionRequests,
@@ -93,9 +93,29 @@ export type RecordDetail = {
   signedAt: string | null;
   signedByName: string | null;
   updatedAt: string;
+  /** SIGN-CONFIRM: fingerprint of the stored `data` (see `recordDataHash`). */
+  dataHash: string;
   template: { title: Localized | null; schema: unknown } | null;
   attachments: AttachmentItem[];
 };
+
+/**
+ * SIGN-CONFIRM-AND-SAVE-FIRST: the fingerprint of a record's stored content,
+ * `md5(data::text)`. jsonb prints canonically (keys sorted, spacing fixed on the
+ * way in), so unchanged content always reads back with the same fingerprint.
+ *
+ * A sign carries the fingerprint of the content the signer's form last loaded or
+ * saved, and commits only while the row still has it (the predicate is in the
+ * UPDATE itself, so it holds under concurrent writers). That is what stops a
+ * save from another tab, or by another person, landing between the signer's
+ * save and their sign and being signed without being seen.
+ *
+ * A fresh expression per call: a query embeds it, and nothing is shared between
+ * queries.
+ */
+export function recordDataHash(): SQL<string> {
+  return sql<string>`md5(${clinicalRecords.data}::text)`;
+}
 
 export type TemplateOption = { id: string; key: string; title: Localized | null; version: number };
 export type PatientOption = { id: string; fullName: string };
@@ -201,6 +221,7 @@ export async function getRecordDetail(
         signedByName: signer.fullName,
         createdAt: clinicalRecords.createdAt,
         updatedAt: clinicalRecords.updatedAt,
+        dataHash: recordDataHash(),
         templateTitle: formTemplates.title,
         templateSchema: formTemplates.schema,
       })
@@ -252,6 +273,7 @@ export async function getRecordDetail(
       signedByName: r.signedByName,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
+      dataHash: r.dataHash,
       template: r.formTemplateId
         ? { title: (r.templateTitle as Localized | null) ?? null, schema: r.templateSchema }
         : null,
@@ -467,14 +489,18 @@ export async function createDraftRecord(
   });
 }
 
+/**
+ * Save a draft's `data`. Returns the fingerprint of the content as stored (with
+ * the episode_date stamp below applied), which a later sign must name.
+ */
 export async function updateRecordData(
   ctx: RequestContext,
   id: string,
   data: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ dataHash: string }> {
   assertCan(ctx.role, "clinical_records:author");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  return runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -515,7 +541,15 @@ export async function updateRecordData(
       if (!result.ok) throw new ClinicalError("validation", result.errors);
     }
 
-    await tx.update(clinicalRecords).set({ data: recordData }).where(eq(clinicalRecords.id, id));
+    const saved = await tx
+      .update(clinicalRecords)
+      .set({ data: recordData })
+      .where(eq(clinicalRecords.id, id))
+      .returning({ dataHash: recordDataHash() });
+    // The row was read above in this transaction; an UPDATE that returns
+    // nothing means it is gone or out of reach now, and nothing was saved.
+    const stored = saved[0];
+    if (!stored) throw new ClinicalError("not_found");
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
       actorUserId: ctx.userId,
@@ -525,6 +559,7 @@ export async function updateRecordData(
       metadata: { fields: Object.keys(recordData) },
       ip,
     });
+    return { dataHash: stored.dataHash };
   });
 }
 
@@ -581,13 +616,28 @@ export async function createAddendum(
   });
 }
 
-/** Sign and lock a draft: status → signed, immutable thereafter (DB trigger). */
-export async function signAndLockRecord(ctx: RequestContext, id: string): Promise<void> {
+/**
+ * Sign and lock a draft: status → signed, immutable thereafter (DB trigger).
+ *
+ * SIGN-CONFIRM-AND-SAVE-FIRST: `expectedDataHash` is the fingerprint of the
+ * content the signer's form last loaded or saved (`recordDataHash`). The sign
+ * commits only while the row is still a draft AND still holds that content, and
+ * both conditions sit in the UPDATE's own WHERE, so they hold against a
+ * concurrent writer, not only against the read above. An UPDATE that matched no
+ * row signed nothing and writes no audit row: before this the row count was not
+ * read, so a sign that lost a race to another sign could still write a second
+ * `clinical_record.sign` audit row and report "signed".
+ */
+export async function signAndLockRecord(
+  ctx: RequestContext,
+  id: string,
+  expectedDataHash: string,
+): Promise<void> {
   assertCan(ctx.role, "clinical_records:sign");
   const ip = await clientIp();
   await runScoped(ctx, async (tx) => {
     const rows = await tx
-      .select({ status: clinicalRecords.status })
+      .select({ status: clinicalRecords.status, dataHash: recordDataHash() })
       .from(clinicalRecords)
       // CARE-02a: a write, so its source row is read under the pre-0098 reach.
       .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
@@ -595,12 +645,23 @@ export async function signAndLockRecord(ctx: RequestContext, id: string): Promis
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
     if (row.status !== "draft") throw new ClinicalError("finalized");
+    if (row.dataHash !== expectedDataHash) throw new ClinicalError("stale");
 
     const signedAt = new Date();
-    await tx
+    const signed = await tx
       .update(clinicalRecords)
       .set({ status: "signed", signedBy: ctx.userId, signedAt })
-      .where(and(eq(clinicalRecords.id, id), eq(clinicalRecords.status, "draft")));
+      .where(
+        and(
+          eq(clinicalRecords.id, id),
+          eq(clinicalRecords.status, "draft"),
+          sql`${recordDataHash()} = ${expectedDataHash}`,
+        ),
+      )
+      .returning({ id: clinicalRecords.id });
+    // Something moved between the read and the write (another save, or
+    // another sign): nothing was signed.
+    if (signed.length === 0) throw new ClinicalError("stale");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,

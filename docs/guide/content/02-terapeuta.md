@@ -1,10 +1,10 @@
 # Terapeuta
 
-Como terapeuta, usa a plataforma para gerir a sua agenda, consultar e atualizar as fichas dos seus pacientes, escrever e assinar registos clínicos, gravar consultas e rever os registos que resultam dessas gravações. O menu lateral tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Revisão Consulta** e **Horários**; no telemóvel, o menu abre-se com o botão de três linhas no canto superior esquerdo. No topo de cada página (exceto em Recuperação) ficam o sino das notificações, o seu nome, **O meu perfil** e **Terminar sessão**; os ecrãs **Nova ficha clínica** e **Iniciar consulta** não estão no menu e abrem a partir do **Início** (a **Nova ficha clínica** também abre a partir da ficha do paciente).
+Como terapeuta, usa a plataforma para gerir a sua agenda, consultar e atualizar as fichas dos seus pacientes, escrever e assinar registos clínicos, gravar consultas e rever os registos que resultam dessas gravações. O menu lateral tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Revisão Consulta** e **Horários**; no telemóvel, o menu abre-se com o botão de três linhas no canto superior esquerdo. No topo de cada página ficam o sino das notificações, o seu nome, **O meu perfil** e **Terminar sessão**; os ecrãs **Nova ficha clínica** e **Iniciar consulta** não estão no menu e abrem a partir do **Início** (a **Nova ficha clínica** também abre a partir da ficha do paciente).
 
 ## Início
 
-O **Início** é a página que se abre depois de entrar. Mostra quatro números no topo (**Pacientes ativos**, **Marcações hoje**, **Novas fichas** e **Receita (mês)**), os **Acessos rápidos**, o gráfico **Resumo semanal** com o número de marcações de cada dia da semana atual, a lista **Próximas marcações** e o quadro **Notas rápidas**. **Novas fichas** conta os registos clínicos criados esta semana e **Receita (mês)** soma as faturas emitidas ou pagas no mês corrente, em toda a clínica.
+O **Início** é a página que se abre depois de entrar. Mostra três números no topo (**Pacientes ativos**, **Marcações hoje** e **Novas fichas**), os **Acessos rápidos**, o gráfico **Resumo semanal** com o número de marcações de cada dia da semana atual, a lista **Próximas marcações** e o quadro **Notas rápidas**. **Novas fichas** conta os registos clínicos criados esta semana.
 
 Pacientes visíveis: os números e as listas contam apenas o que a sua conta pode ver. **Marcações hoje** e **Próximas marcações** incluem as marcações em que participa ou que criou, as do equipamento partilhado da sua clínica e, nas clínicas onde trabalha, as marcações de colegas com pacientes que já tratou ou que lhe foram atribuídos. Por isso, cada linha de **Próximas marcações** mostra também o nome do terapeuta.
 
@@ -184,7 +184,7 @@ Nota: a gravação só funciona no Google Chrome; noutro navegador, o ecrã avis
 
 ## Marcações
 
-**Marcações** mostra as suas marcações em forma de lista, agrupadas por dia. Por omissão mostra a semana atual, de segunda a sábado. No topo estão as duas datas do período, a pesquisa **Pesquisar por paciente** e os filtros **Todos os estados** e **Todos os serviços**. Cada linha mostra a hora, o paciente, o serviço, a clínica, o terapeuta, quem criou a marcação e o estado, com a etiqueta **Sem nota** quando uma consulta concluída ainda não tem nota, e os botões **Notas** e **Abrir marcação**.
+**Marcações** mostra, em forma de lista e agrupadas por dia, as marcações em que é o terapeuta principal; o subtítulo do ecrã diz isso mesmo. Por omissão mostra a semana atual, de segunda a sábado. No topo estão as duas datas do período, a pesquisa **Pesquisar por paciente** e os filtros **Todos os estados** e **Todos os serviços**. Cada linha mostra a hora, o paciente, o serviço, a clínica, o terapeuta, quem criou a marcação e o estado, com a etiqueta **Sem nota** quando uma consulta concluída ainda não tem nota, e os botões **Notas** e **Abrir marcação**.
 
 Pacientes visíveis: a lista mostra só as marcações em que é o terapeuta principal (**Terapeuta**). As marcações em que é **Terapeuta 2** e as marcações dos seus pacientes com colegas não aparecem aqui; encontra essas no separador **Marcações** da ficha do paciente.
 
@@ -232,7 +232,7 @@ Tirar um paciente da lista por algum tempo:
 ![Recuperação no telemóvel](../screens/terapeuta/recuperacao-390.png)
 ![Recuperação no computador](../screens/terapeuta/recuperacao-desktop.png)
 
-Nota: a marca **Contactado por** só regista que alguém abriu o contacto; não confirma que a mensagem foi enviada nem entregue. **WhatsApp** e **SMS** só aparecem quando o paciente tem um telemóvel português registado, **Email** só aparece quando há email registado e **Notas** só aparece quando o paciente tem notas. Este ecrã abre sem o menu lateral e sem a barra de topo: para sair, use o botão de retroceder do navegador ou **Abrir ficha**.
+Nota: a marca **Contactado por** só regista que alguém abriu o contacto; não confirma que a mensagem foi enviada nem entregue. **WhatsApp** e **SMS** só aparecem quando o paciente tem um telemóvel português registado, **Email** só aparece quando há email registado e **Notas** só aparece quando o paciente tem notas.
 
 ## Revisão Consulta
 
@@ -262,7 +262,7 @@ Nota: **Finalizar (assinar e bloquear)** não pede confirmação e não guarda a
 
 ## Horários
 
-**Horários** mostra o seu horário de trabalho e as suas ausências. O título do ecrã é **Horários da equipa**, mas a sua conta só vê e altera o seu próprio horário. No topo está o **Inspetor de horários**, que mostra dia a dia o que a agenda usa, com o **Local** e o tipo de horário (**Base**, **Dia definido** ou **Exceção**). Por baixo está o seu cartão, com **Definir semanas alternadas**, **Definir dia a dia**, **Bloquear horário** e **Editar horários**.
+**Horários** mostra o seu horário de trabalho e as suas ausências. O título do ecrã é **O meu horário**: a sua conta só vê e altera o seu próprio horário. No topo está o **Inspetor de horários**, que mostra dia a dia o que a agenda usa, com o **Local** e o tipo de horário (**Base**, **Dia definido** ou **Exceção**). Por baixo está o seu cartão, com **Definir semanas alternadas**, **Definir dia a dia**, **Bloquear horário** e **Editar horários**.
 
 ### Como fazer
 

@@ -19,6 +19,7 @@ import { DayByDayPanel } from "./DayByDayPanel";
 import { RosterSearch } from "./RosterSearch";
 import { ScheduleInspectorPanel } from "./ScheduleInspectorPanel";
 import { CardHeading } from "./CardHeading";
+import { scheduleHeadingKeys } from "./heading";
 import { inspectSchedule } from "@/lib/scheduling/schedule-inspection";
 import { addDays } from "@/lib/scheduling/time";
 import {
@@ -82,6 +83,9 @@ export default async function HorariosPage({
       ? options.therapists.filter((t) => t.id === scheduleScope.userId)
       : options.therapists; // location-scoped; ITEM 1 keeps unassigned members visible here
   const locations = options.locations.map((l) => ({ id: l.id, name: l.label }));
+  // T5 F5: "Horários da equipa" only where the scope lists a team; a therapist's
+  // `self` scope renders one card, their own (heading.ts).
+  const heading = scheduleHeadingKeys(scheduleScope);
 
   // Up to TWO active templates per (therapist, weekday) since W13-A, so a split
   // shift survives a reload. SHARED with the Equipa surface deliberately: these
@@ -228,8 +232,8 @@ export default async function HorariosPage({
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold text-v2-text-primary">{s["schedule.title"]}</h1>
-        <p className="text-sm text-v2-text-secondary">{s["schedule.subtitle"]}</p>
+        <h1 className="text-2xl font-semibold text-v2-text-primary">{s[heading.title]}</h1>
+        <p className="text-sm text-v2-text-secondary">{s[heading.subtitle]}</p>
       </header>
 
       {banner && (
