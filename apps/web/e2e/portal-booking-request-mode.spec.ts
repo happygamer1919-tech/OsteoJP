@@ -17,9 +17,9 @@
  * a path that does not exist (the file is `apps/web/e2e/seed/seed-e2e.mjs`), and
  * the empty result was read as evidence of absence.
  *
- * THE SEED DOES CREATE ONE. `ensureDeclaracaoAppointment` gives Maria Exemplo a
+ * THE SEED DOES CREATE ONE. `ensureDeclaracaoAppointment` gives Maria Teste a
  * COMPLETED Osteopatia appointment (2022-03-15), and fixtures.ts:238 records that
- * "Maria Exemplo's patient row doubles as the portal test patient". So the portal
+ * "Maria Teste's patient row doubles as the portal test patient". So the portal
  * patient has exactly the history Decision C preselects from, and the positive
  * case is not only coverable, it is the DEFAULT state of the fixture.
  *
@@ -194,7 +194,7 @@ test("Decision C: the usual service is MARKED, and every other bookable service 
     "the portal catalog is EMPTY - no service has patient_bookable set in the E2E database",
   ).not.toHaveCount(0);
 
-  // PRESELECTION HAPPENED. The seeded portal patient (Maria Exemplo) has one
+  // PRESELECTION HAPPENED. The seeded portal patient (Maria Teste) has one
   // COMPLETED appointment, for Osteopatia, so that is her usual service.
   const badge = page.getByText("O seu serviço habitual");
   await expect(badge).toHaveCount(1); // exactly one, never several

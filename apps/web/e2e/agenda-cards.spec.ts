@@ -122,10 +122,10 @@ test("W11-00 v3: three same-slot appointments stack VERTICALLY (equal x, differe
   // This line used to say "dedicated day, no other spec books it". That was
   // TRUE about the DAY and irrelevant to the assertion, which is made in the
   // WEEK view - and the Mon-Sat week grid renders SIX days. RUN_DAY_BASE + 28
-  // (the test above, which deliberately leaves a CANCELLED Maria Exemplo behind
+  // (the test above, which deliberately leaves a CANCELLED Maria Teste behind
   // as its own assertion) and RUN_DAY_BASE + 33 are five days apart, so they
   // share a Mon-Sat window for 85 of the 300 values RUN_DAY_BASE can take -
-  // 28% of runs. On those runs the page held TWO Maria Exemplo lines and a strict
+  // 28% of runs. On those runs the page held TWO Maria Teste lines and a strict
   // page-wide locator resolved to 2.
   //
   // THE FIX IS THE LOCATOR'S SCOPE, NOT THE CALENDAR. Moving the offsets apart
