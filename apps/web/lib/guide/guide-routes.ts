@@ -73,8 +73,15 @@ export type LessonPage = {
   next: GuideViewLesson | null;
 };
 
-/** The lesson at /ajuda/<seccao>/<licao> if this role reads it, with its neighbours in the role's order; null otherwise. */
-export function lessonFor(
+/**
+ * The lesson at /ajuda/<seccao>/<licao> if this role reads it, with its
+ * neighbours in the role's order; null otherwise.
+ *
+ * NAMED lessonPageFor, NOT lessonFor: guide.ts already exports lessonFor(role,
+ * item), which resolves one lesson's role blocks. This one looks a lesson page
+ * up by its address, so it gets its own name.
+ */
+export function lessonPageFor(
   role: Role,
   seccao: string,
   licao: string,

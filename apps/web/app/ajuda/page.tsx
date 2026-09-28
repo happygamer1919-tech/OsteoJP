@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { BookOpen, MessageCircleQuestion } from "lucide-react";
 import type { Role } from "@osteojp/auth";
 import { EmptyState, GlassPanel } from "@osteojp/ui";
 
-import { getRequestContext } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { ajudaTab } from "@/lib/guide/ajuda-tab";
 import { guideFaqFor, guideSectionsFor } from "@/lib/guide/guide";
 import { sectionHref } from "@/lib/guide/guide-routes";
@@ -33,6 +32,11 @@ const PANEL_ID = "ajuda-painel";
  * know the role; app/ajuda/ajuda-stores-nothing.test.ts lists every mechanism
  * that rules out and holds each file here to it.
  *
+ * THE SESSION IS READ WITH requireRequestContext, THE RENDER PATH HELPER
+ * (OSTEOJP-WEB-8), on all three /ajuda pages: a visitor with no session is sent
+ * to /login, and an Auth outage is reported to Sentry and fails the render
+ * instead of passing for a logout.
+ *
  * NOT LINKED FROM ANYWHERE YET. The sidebar entry is its own PR; until then
  * the page is reachable by its address only.
  */
@@ -41,8 +45,7 @@ export default async function AjudaPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const ctx = await getRequestContext();
-  if (!ctx) redirect("/login");
+  const ctx = await requireRequestContext();
 
   const tab = ajudaTab((await searchParams).tab);
   const tabs = [

@@ -53,8 +53,14 @@ vi.mock("next/navigation", () => ({
     throw new Error("NOT_FOUND");
   }),
 }));
+// The page reads the session with requireRequestContext; every render here has
+// a viewer, so the stub hands it over. ajuda-pages.test.tsx runs the real
+// helper for the no-session and Auth outage cases.
 vi.mock("@/lib/auth/context", () => ({
-  getRequestContext: async () => h.ctx,
+  requireRequestContext: async () => {
+    if (!h.ctx) throw new Error("this file renders only with a viewer");
+    return h.ctx;
+  },
 }));
 
 import { GUIDE_DATA } from "@/lib/guide/guide";

@@ -19,6 +19,13 @@
  * NOT FOUND IS A THROW. notFound() and redirect() throw in Next, and they are
  * stubbed to throw here too, so a page that went on to render after them
  * would fail the "rejects" assertions.
+ *
+ * THE SESSION GOES THROUGH THE REAL HELPER. The pages call
+ * requireRequestContext (lib/auth/context, OSTEOJP-WEB-8), and it runs here
+ * unmocked: only Supabase's getClaims answer and Sentry are stubbed. So the
+ * redirect to /login for a visitor with no session, and the Auth outage that
+ * must NOT look like a logout, are both the helper's own behaviour on these
+ * pages, not a stub's.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,6 +37,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   ctx: null as null | { tenantId: string; role: string; userId: string },
+  /** When true, the Auth service is unreachable: getClaims rejects. */
+  authDown: false,
+  captureException: vi.fn(),
+  captureMessage: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -41,9 +52,25 @@ vi.mock("next/navigation", () => ({
   }),
   useRouter: () => ({ push: vi.fn() }),
 }));
-vi.mock("@/lib/auth/context", () => ({
-  getRequestContext: async () => h.ctx,
+vi.mock("server-only", () => ({}));
+// The claims a verified token would carry for h.ctx, or no claims at all.
+vi.mock("@/lib/supabase/server", () => ({
+  createSupabaseServerClient: async () => ({
+    auth: {
+      getClaims: async () => {
+        if (h.authDown) throw new Error("Auth de exemplo inacessível");
+        if (!h.ctx) return { data: { claims: null }, error: null };
+        return {
+          data: { claims: { tenant_id: h.ctx.tenantId, user_role: h.ctx.role, sub: h.ctx.userId } },
+          error: null,
+        };
+      },
+    },
+  }),
 }));
+vi.mock("@sentry/nextjs", () => ({ captureException: h.captureException, captureMessage: h.captureMessage }));
+
+import { redirect } from "next/navigation";
 
 import { GUIDE_DATA, guideLessonsFor, type GuideBlock, type GuideLesson, type GuideViewLesson } from "@/lib/guide/guide";
 import { lessonHref, lessonSlug } from "@/lib/guide/guide-routes";
@@ -135,6 +162,10 @@ function headingProblems(html: string): string[] {
 
 beforeEach(() => {
   as(null);
+  h.authDown = false;
+  vi.mocked(redirect).mockClear();
+  h.captureException.mockClear();
+  h.captureMessage.mockClear();
 });
 
 describe("the index lists exactly the viewer's lessons, in the viewer's order (G1-3, one test per role)", () => {
@@ -271,6 +302,20 @@ describe("the page itself (G1-1)", () => {
     await expect(
       AjudaLicaoPage({ params: Promise.resolve({ seccao: "agenda", licao: "marcar-consulta" }) }),
     ).rejects.toThrow("REDIRECT /login");
+    // An ordinary logout is not an incident: nothing reaches Sentry.
+    expect(h.captureException).not.toHaveBeenCalled();
+  });
+
+  it("an Auth outage is reported to Sentry and fails the render, it never passes for a logout (OSTEOJP-WEB-8)", async () => {
+    as("owner");
+    h.authDown = true;
+    await expect(AjudaPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("AUTH_UNAVAILABLE");
+    await expect(AjudaSeccaoPage({ params: Promise.resolve({ seccao: "agenda" }) })).rejects.toThrow("AUTH_UNAVAILABLE");
+    await expect(
+      AjudaLicaoPage({ params: Promise.resolve({ seccao: "agenda", licao: "marcar-consulta" }) }),
+    ).rejects.toThrow("AUTH_UNAVAILABLE");
+    expect(redirect).not.toHaveBeenCalled();
+    expect(h.captureException).toHaveBeenCalledTimes(3);
   });
 });
 

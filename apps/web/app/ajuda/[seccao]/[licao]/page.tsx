@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { GlassPanel } from "@osteojp/ui";
 
-import { getRequestContext } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { AJUDA_PATH } from "@/lib/guide/ajuda-tab";
-import { lessonFor, lessonHref, sectionHref } from "@/lib/guide/guide-routes";
+import { lessonHref, lessonPageFor, sectionHref } from "@/lib/guide/guide-routes";
 import { s } from "@/lib/i18n";
 
 import { GuideBody } from "../../guide-blocks";
@@ -16,7 +16,7 @@ export const metadata = { title: s["guide.title"] };
 /**
  * G1: one lesson of Guia da plataforma, for the viewer's role.
  *
- * The body shows only the viewer's role blocks (lessonFor hands the lesson
+ * The body shows only the viewer's role blocks (lessonPageFor hands the lesson
  * over already resolved for the role), and its capture pair (or the
  * "Sem imagem" card while it has none). Under it, the lesson before and the
  * lesson after this one in the role's own course, across sections.
@@ -31,11 +31,10 @@ export default async function AjudaLicaoPage({
 }: {
   params: Promise<{ seccao: string; licao: string }>;
 }) {
-  const ctx = await getRequestContext();
-  if (!ctx) redirect("/login");
+  const ctx = await requireRequestContext();
 
   const { seccao, licao } = await params;
-  const found = lessonFor(ctx.role, seccao, licao);
+  const found = lessonPageFor(ctx.role, seccao, licao);
   if (!found) notFound();
   const { lesson, section, previous, next } = found;
 

@@ -73,7 +73,8 @@ const ALLOWED_OUTSIDE: Readonly<Record<string, string>> = {
   "lucide-react": "Icons.",
   "@osteojp/ui": "The platform components (GlassPanel, GlassCard, EmptyState, Tabs).",
   "@osteojp/auth": "The role and capability names, and can(), a fixed table.",
-  "lib/auth/context": "Reads the viewer's session to learn the role, as every staff page does; it keeps nothing about the guide.",
+  "lib/auth/context":
+    "Reads the viewer's session to learn the role (requireRequestContext), as every staff page does; it keeps nothing about the guide, and reports to Sentry only an Auth outage.",
   "lib/i18n": "The interface strings.",
   "components/app-shell": "The staff shell every staff section renders (the layout); it is the same on every page and knows nothing of /ajuda.",
 };
@@ -230,7 +231,7 @@ describe("the guard itself, on seeded code", () => {
   it("passes code that stores nothing", () => {
     const clean = [
       `import { redirect } from "next/navigation";`,
-      `const ctx = await getRequestContext();`,
+      `const ctx = await requireRequestContext();`,
       `router.push(ajudaTabHref(value));`,
       `<Link href={lessonHref(lesson)}>{lesson.title}</Link>`,
       `const lessons = guideLessonsFor(role);`,

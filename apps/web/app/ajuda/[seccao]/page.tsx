@@ -1,7 +1,7 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { GlassPanel } from "@osteojp/ui";
 
-import { getRequestContext } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { AJUDA_PATH } from "@/lib/guide/ajuda-tab";
 import { sectionFor, sectionHref } from "@/lib/guide/guide-routes";
 import { s } from "@/lib/i18n";
@@ -25,8 +25,7 @@ export const metadata = { title: s["guide.title"] };
  * viewer's role, like its lessons.
  */
 export default async function AjudaSeccaoPage({ params }: { params: Promise<{ seccao: string }> }) {
-  const ctx = await getRequestContext();
-  if (!ctx) redirect("/login");
+  const ctx = await requireRequestContext();
 
   const { seccao } = await params;
   const found = sectionFor(ctx.role, seccao);
