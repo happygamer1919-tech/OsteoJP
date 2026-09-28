@@ -61,11 +61,15 @@ jobs:
       # owner in the repository settings; a pull request from a fork receives no
       # secrets and so fails here, which is the intended direction to fail.
       #
+      # A list over one secret's 48 KB is split in two (docs/guide/build/README.md);
+      # the second half lives in GUIDE_FORBIDDEN_NAMES_2 and is joined here with a
+      # space, which the decoder reads as a second list. Empty, it adds nothing.
+      #
       # turbo.json passes both variables through to the test task: turbo runs in
       # strict env mode and would otherwise hide them from vitest.
       - name: Test
         env:
-          GUIDE_FORBIDDEN_NAMES: ${{ secrets.GUIDE_FORBIDDEN_NAMES }}
+          GUIDE_FORBIDDEN_NAMES: "${{ secrets.GUIDE_FORBIDDEN_NAMES }} ${{ secrets.GUIDE_FORBIDDEN_NAMES_2 }}"
           GUIDE_NAMES_REQUIRED: "1"
         run: pnpm test
 

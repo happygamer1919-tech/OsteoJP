@@ -26,7 +26,7 @@
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
     ".github/scripts/assert-rls-executed.mjs": "c68a19c97815f024a2b83f9ea2cc549d1c57e6d66b51c3456dd32c71e0bddab1",
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
-    ".github/workflows/ci.yml": "c71e1bfc874e91016a6913e01ec961d11d4c930cfcbaef7434237220172b90c3",
+    ".github/workflows/ci.yml": "56ca4e11b16209094ab3d7ae82dfcaf3a22ad59e2fcb5ca3918cd69df5b32ccd",
     ".github/workflows/db-tests.yml": "33900efba45c91ea1c5337378aecad322edea9c1e2e2626aade1e03d78f24bc0",
     ".github/workflows/e2e.yml": "e4655dae440762161f7b96d95be1661ecf1349da3b16d5e43b04a5cd5d581c81",
     ".github/workflows/held-for-apply-blocks-merge.yml": "1874ed14cdbf61261e0d5da952a78f65828c3f81a179b7b309853054a0b57566",
