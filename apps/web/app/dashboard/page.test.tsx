@@ -29,6 +29,7 @@ const h = vi.hoisted(() => ({
     userId: string;
   },
   getMonthlyRevenue: vi.fn(),
+  listActiveLocations: vi.fn(),
   runScoped: vi.fn(),
   listAppointments: vi.fn(),
 }));
@@ -37,6 +38,8 @@ vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => {
     throw new Error("redirected");
   }),
+  // T5b: the owner's clinic toggle is a client component that navigates.
+  useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock("@/lib/auth/context", () => ({
   getRequestContext: async () => h.ctx,
@@ -51,6 +54,7 @@ vi.mock("@/lib/scheduling/data", () => ({ listAppointments: h.listAppointments }
 vi.mock("@/lib/invoices/queries", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/invoices/queries")>()),
   getMonthlyRevenue: h.getMonthlyRevenue,
+  listActiveLocations: h.listActiveLocations,
 }));
 vi.mock("./date-jump", () => ({ DateJump: () => null }));
 vi.mock("./notas-rapidas", () => ({ NotasRapidas: () => null }));
@@ -62,11 +66,18 @@ const pt = getStrings("pt");
 /** 124500 cents as the page formats it, NBSP and all. */
 const AMOUNT = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(1245);
 
-async function render(role: "owner" | "admin" | "therapist" | "reception"): Promise<string> {
+async function render(
+  role: "owner" | "admin" | "therapist" | "reception",
+  searchParams: Record<string, string> = {},
+): Promise<string> {
   h.ctx = { tenantId: "tenant-1", role, userId: `user-${role}` };
-  const page = await DashboardPage({ searchParams: Promise.resolve({}) });
+  const page = await DashboardPage({ searchParams: Promise.resolve(searchParams) });
   return renderToStaticMarkup(page);
 }
+
+/** T5b: the tenant's two active clinics, as listActiveLocations returns them. */
+const LV = { id: "00000000-0000-0000-0000-0000000000a1", name: "Linda-a-Velha" };
+const CB = { id: "00000000-0000-0000-0000-0000000000c2", name: "Castelo Branco" };
 
 /**
  * The KPI row: its grid class and the class of each tile inside it. The row
@@ -91,6 +102,8 @@ const TILE_BEFORE = "glass-card flex h-45 flex-col justify-between rounded-v2-kp
 beforeEach(() => {
   h.getMonthlyRevenue.mockReset();
   h.getMonthlyRevenue.mockResolvedValue(124500);
+  h.listActiveLocations.mockReset();
+  h.listActiveLocations.mockResolvedValue([CB, LV]);
   h.runScoped.mockReset();
   // The two runScoped reads: active patients (total, week) and new records (count).
   h.runScoped.mockResolvedValue([{ total: 7, week: 2, count: 3 }]);
@@ -158,5 +171,90 @@ describe("the KPI row is unchanged for every role shown the revenue tile", () =>
     expect(row.tiles).toBe(count);
     expect(row.className).toBe(ROW_BEFORE);
     expect(row.tileClasses).toEqual(Array.from({ length: count }, () => TILE_BEFORE));
+  });
+});
+
+/**
+ * T5b, REVENUE PER CLINIC: the owner's toggle on the revenue tile, per role.
+ *
+ * The page renders the toggle for the owner only, turns the owner's
+ * `?location=` into a clinic the toggle actually offers, and passes nothing of
+ * the kind for any other role. The scoping itself is getMonthlyRevenue's
+ * (lib/invoices/queries.test.ts and revenue.db.test.ts); these cases pin what
+ * the page asks it for and what the page shows.
+ */
+const TOGGLE = 'data-testid="dashboard-revenue-location"';
+const TOGGLE_LABEL = `aria-label="${pt["dashboard.revenueLocation"]}"`;
+
+describe("the revenue tile's clinic toggle (T5b)", () => {
+  it("is on the owner's revenue tile: every clinic by default, then each clinic", async () => {
+    const html = await render("owner");
+    expect(html).toContain(TOGGLE);
+    expect(html).toContain(TOGGLE_LABEL);
+    expect(html).toContain(`<option value="" selected="">${pt["dashboard.revenueAllLocations"]}</option>`);
+    expect(html).toContain(`<option value="${LV.id}">${LV.name}</option>`);
+    expect(html).toContain(`<option value="${CB.id}">${CB.name}</option>`);
+    // Inside the revenue tile, after its figure: the one tile carrying it.
+    const tile = html.slice(html.indexOf(pt["dashboard.kpiRevenue"]));
+    expect(tile.indexOf(AMOUNT)).toBeGreaterThan(0);
+    expect(tile.indexOf(TOGGLE)).toBeGreaterThan(tile.indexOf(AMOUNT));
+    // Every clinic: no location asked for.
+    expect(h.getMonthlyRevenue).toHaveBeenCalledOnce();
+    expect(h.getMonthlyRevenue.mock.calls[0]![3]).toEqual({ locationId: null });
+  });
+
+  it("follows the owner's ?location= when it names one of the clinics it offers", async () => {
+    const html = await render("owner", { location: LV.id });
+    expect(h.getMonthlyRevenue.mock.calls[0]![3]).toEqual({ locationId: LV.id });
+    expect(html).toContain(`<option value="${LV.id}" selected="">${LV.name}</option>`);
+    expect(html).toContain(`<option value="">${pt["dashboard.revenueAllLocations"]}</option>`);
+  });
+
+  it("keeps the owner's chosen clinic on the day navigation links", async () => {
+    const html = await render("owner", { location: CB.id, date: "2026-09-15" });
+    expect(html).toContain(`href="/dashboard?date=2026-09-14&amp;location=${CB.id}"`);
+    expect(html).toContain(`href="/dashboard?date=2026-09-16&amp;location=${CB.id}"`);
+  });
+
+  it("falls back to every clinic for an id the toggle does not offer, so control and figure agree", async () => {
+    for (const bad of ["00000000-0000-0000-0000-00000000dead", "not-a-uuid"]) {
+      h.getMonthlyRevenue.mockClear();
+      const html = await render("owner", { location: bad });
+      expect(h.getMonthlyRevenue.mock.calls[0]![3]).toEqual({ locationId: null });
+      expect(html).toContain(`<option value="" selected="">${pt["dashboard.revenueAllLocations"]}</option>`);
+      expect(html).not.toContain(bad);
+    }
+  });
+
+  it("is not offered to an owner with a single active clinic (PL-14), and the URL cannot narrow the figure", async () => {
+    h.listActiveLocations.mockResolvedValue([LV]);
+    const html = await render("owner", { location: LV.id });
+    expect(html).not.toContain(TOGGLE);
+    expect(html).toContain(AMOUNT);
+    expect(h.getMonthlyRevenue.mock.calls[0]).toHaveLength(3);
+  });
+
+  it.each(["admin", "reception"] as const)(
+    "is never shown to %s, who is not even asked for a clinic list, and ?location= is not passed on",
+    async (role) => {
+      const html = await render(role, { location: CB.id });
+      expect(html).not.toContain(TOGGLE);
+      expect(html).not.toContain(TOGGLE_LABEL);
+      expect(html).not.toContain(pt["dashboard.revenueAllLocations"]);
+      expect(html).not.toContain(CB.id);
+      // Their figure is still there; getMonthlyRevenue scopes it to their clinics.
+      expect(html).toContain(AMOUNT);
+      expect(h.listActiveLocations).not.toHaveBeenCalled();
+      expect(h.getMonthlyRevenue).toHaveBeenCalledOnce();
+      expect(h.getMonthlyRevenue.mock.calls[0]).toHaveLength(3);
+    },
+  );
+
+  it("changes nothing for the therapist: no tile, no toggle, no clinic list", async () => {
+    const html = await render("therapist", { location: CB.id });
+    expect(html).not.toContain(TOGGLE);
+    expect(html).not.toContain(pt["dashboard.kpiRevenue"]);
+    expect(h.listActiveLocations).not.toHaveBeenCalled();
+    expect(h.getMonthlyRevenue).not.toHaveBeenCalled();
   });
 });

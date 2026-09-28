@@ -6,7 +6,13 @@ O Proprietário também abre os ecrãs Nova ficha clínica e Iniciar consulta. E
 
 ## Início
 
-O Início é o resumo do dia na clínica. No topo há quatro números: **Pacientes ativos**, **Marcações hoje**, **Novas fichas** (criadas esta semana) e **Receita (mês)** (a soma das faturas emitidas e pagas no mês corrente). Por baixo ficam os **Acessos rápidos**, o gráfico **Resumo semanal** com as marcações de cada dia desta semana, a lista **Próximas marcações** e o quadro **Notas rápidas**.
+O Início é o resumo do dia na clínica. No topo há quatro números: **Pacientes ativos**, **Marcações hoje**, **Novas fichas** (criadas esta semana) e **Receita (mês)** (a soma das faturas emitidas e pagas no mês corrente, em todos os locais). Por baixo ficam os **Acessos rápidos**, o gráfico **Resumo semanal** com as marcações de cada dia desta semana, a lista **Próximas marcações** e o quadro **Notas rápidas**.
+
+### Como fazer: ver a receita de um só local
+
+1. No cartão **Receita (mês)**, abra a lista **Todas as localizações**, por baixo do valor, e escolha o local.
+2. O valor passa a somar só as faturas das marcações desse local, e a escolha mantém-se ao mudar de dia.
+3. Para voltar ao total da clínica, escolha **Todas as localizações**.
 
 ### Como fazer: ver outro dia
 
@@ -26,7 +32,7 @@ O Início é o resumo do dia na clínica. No topo há quatro números: **Pacient
 ![Início no telemóvel](../screens/proprietario/inicio-390.png)
 ![Início no computador](../screens/proprietario/inicio-desktop.png)
 
-Nota: **Marcações hoje** e **Próximas marcações** só cobrem hoje e os seis dias seguintes; num dia passado ou mais distante aparecem vazios. Para esses dias use a Agenda ou as Marcações. **Receita (mês)** e **Resumo semanal** mostram sempre o mês e a semana atuais, seja qual for o dia escolhido.
+Nota: **Marcações hoje** e **Próximas marcações** só cobrem hoje e os seis dias seguintes; num dia passado ou mais distante aparecem vazios. Para esses dias use a Agenda ou as Marcações. **Receita (mês)** e **Resumo semanal** mostram sempre o mês e a semana atuais, seja qual for o dia escolhido. Uma fatura sem marcação não pertence a nenhum local: conta em **Todas as localizações** e em nenhum local escolhido. Um administrador ou a receção vê, no seu Início, só a receita dos locais a que está atribuído, sem esta lista.
 
 ## Agenda
 
