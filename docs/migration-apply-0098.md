@@ -175,8 +175,10 @@ Checked by the operator before stage 0. None of these is a block.
    owner merges by hand, which may not carry the migration, so whichever of the two
    lands first reddens that step until the other lands. 0098 is the first held
    migration since the freeze to move this count; **the order is the owner's call**
-   (`NEXT-AFTER-0097_care02a_care_team_reads.sql:278-285`).
-4. **The PR reads all required checks green on the head being applied.** Held, it stays
+   (`NEXT-AFTER-0097_care02a_care_team_reads.sql:278-285`), and the order this document
+   follows is in "Order of merges".
+4. **The PR reads all required checks green on the head being applied**, except, once
+   it is promoted, the two count checks "Order of merges" names. Held, it stays
    green against main's migrations. **That is measured, not inferred** (review round 2):
    the without-0098 database of round 1 held 0094 to 0097, but CI's DB-gated job builds
    from `supabase/migrations`, main's 91 migrations only, and 0094 changes the `users`
@@ -243,6 +245,81 @@ above takes a registo id as its input; and the sitting runs while both clinics a
 closed. **The window closes when the production deployment of the merge commit is
 live, not at the merge click** (a merge to main is a production deploy). The report of
 the sitting names the apply time and the deploy time.
+
+## Order of merges
+
+**The owner ruled on 2026-09-27: "0098 app half as its own PR merging first."** CARE-02a
+ships as two PRs, in this order:
+
+1. **The app-half PR merges first**: branch `care/0098-app-half-care-team-reads`, the
+   `apps/web` code and its tests, no migration. Tier B: armed at open once its REVIEWER
+   returns PASS, and squash-merged on green.
+2. **GREEN applies 0098 from this document**, after 0094 to 0097 are promoted, applied
+   and merged ("Before the sitting").
+3. **This PR merges after the apply**, held until then with `held-for-apply`.
+
+**What merging the app half first changes for the sitting.** Measured on 2026-09-27 on a
+throwaway built as CI's `supabase db reset` builds its database (`supabase/migrations` of
+`origin/main` at `b8c62fd5` alone, then `supabase/seed.sql`): every `apps/web` DB-gated
+suite passes on the app half, 401 of 401, and the two care-team suites print "0098 NOT
+APPLIED ... This run proves nothing about 0098 itself". On production, from the app
+half's deploy to the apply:
+
+- **Reads keep the narrow scope.** The helper is asked about first and is absent, so no
+  statement names it; "absent" is asked again each minute, so the apply widens the read
+  scope within a minute of stage 1, with no redeploy.
+- **A therapist's own booking tries its care-team row and is refused.** That write is not
+  behind the helper question: 0091's insert policy refuses it, the writer's savepoint
+  confines the refusal, the booking stands, and one line is logged per such booking
+  ("care-team: the automatic care-team write failed and was rolled back to its
+  savepoint; the booking itself is unaffected"). Expected until the apply; it stops there.
+- **The apply window of the section above is closed before the apply.** That section was
+  written when one PR carried both halves. With the app half deployed, every registo
+  writer already reads its source under `therapistRegistoWriteScope` when 0098 lands.
+  That holds only if the app half's production deployment is live, so the operator reads
+  the commit status of the app half's merge commit on `main` before stage 0, and does not
+  sit without it. "Merge promptly after" still holds for this PR: production must not run
+  ahead of `main` for longer than the sitting.
+
+**This branch keeps the app half's files, byte for byte.** Every file under `apps/` here
+is identical to the app-half PR's head, so the two PRs cannot conflict: once the app half
+merges and `main` is merged in here, those files carry the same change on both sides and
+leave this PR's diff. Until then this branch passes on its own. If the app half changes in
+review before it merges, the same bytes are copied here.
+
+**The SECURITY DEFINER count: a GATE-CHANGE, merged together with this PR, just before
+it.** Promoting 0098 raises the count of SECURITY DEFINER functions in `public` from 26
+to 27. `EXPECTED_COUNT` is `packages/db/scripts/check-security-definer-owner.mjs:117`, a
+frozen gate (`.github/gate-manifest.json:10`), so it moves only in a PR titled
+`GATE-CHANGE` that changes the count and the manifest and nothing else, is never armed,
+and is merged by the owner by hand. Two required checks read it: the DB-gated job's
+count step (`.github/workflows/db-tests.yml:199`), which runs before every suite in that
+job, and the unit run's `packages/db/tests/security-definer-owner.test.ts`, whose arms at
+`:96` and `:207` hold `EXPECTED_FUNCTIONS` and the owner pins in `packages/db/migrations`
+to `EXPECTED_COUNT`. Whichever of the two PRs lands alone reddens both checks, on `main`
+and on every open PR, until the other lands. The order this document follows:
+
+1. **This PR is promoted** (the rename, the journal, the mirror, `EXPECTED_FUNCTIONS`).
+   From that commit it reads red on those two checks, on the count: the DB-gated job
+   prints `expected exactly 26 SECURITY DEFINER function(s) in public, found 27` and then
+   runs no suite, and the unit run fails the two count arms. **This qualifies "Before the
+   sitting" item 4**: on the promoted head, "all required checks green" means every
+   check but those two, each read off its log as a count failure and nothing else. The
+   suites' evidence for that head is the unpromoted head's CI run (the pre-0098 profile)
+   and the rehearsal (0098's).
+2. **GREEN applies 0098**, stages 0 to 3.
+3. **The owner merges the GATE-CHANGE** by hand. Its own run reads the same two checks
+   red the other way round (26 found, 27 expected), by construction.
+4. **`main` is merged into this PR** and every check runs again, green, the DB-gated
+   suites asserting 0098's profile on CI's own database for the first time.
+5. **The owner takes `held-for-apply` off and merges this PR.**
+
+`main` reads red on the count from step 3 to step 5, one CI run. The other two orders are
+refused. This PR first would merge a migration past a red required check whose job never
+ran a suite on the promoted head. The GATE-CHANGE before the apply would keep `main` red
+through the sitting, and for as long as a STOP holds it. **Step 3 merges a PR whose
+required checks read red, and so does every other order**: whether branch protection lets
+the owner do that is his setting, not read here.
 
 ## Undoing 0098: a new migration, policies first, the helper last
 
