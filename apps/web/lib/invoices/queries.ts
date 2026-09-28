@@ -1,20 +1,44 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
-import type { RequestContext } from "@osteojp/auth";
+import { assertCan, type Capability, type RequestContext } from "@osteojp/auth";
 import { appointments, invoices, locations, patients } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+
+/**
+ * DASH-THERAPIST-REVENUE: who may read the clinic's monthly revenue.
+ *
+ * `invoices:issue`, NOT `invoices:read`, and that is the whole fix. EVERY role
+ * holds `invoices:read` (packages/auth/permissions.ts: owner by ALL, admin,
+ * therapist and reception each list it), because a therapist keeps it for the
+ * Faturacao tab on a patient's page. Gating the figure on it gates nothing.
+ *
+ * The owner ruled on 2026-07-21 that Faturacao is therapist no-access, and
+ * W10-04 enforced that on `/invoicing` and its nav entry with `invoices:issue`,
+ * held by owner, admin and reception and NOT by the therapist
+ * (docs/design/DECISIONS.md, the W10-04 "Implemented" entry). This figure is the
+ * sum of that page's invoices, so it answers to the same capability. One
+ * constant, so the page's gate and this function's assertion cannot drift.
+ */
+export const MONTHLY_REVENUE_CAPABILITY = "invoices:issue" satisfies Capability;
 
 /**
  * Sum of amountCents for issued + paid invoices whose issuedAt falls inside
  * [monthStartUtc, monthEndUtc) for the caller's tenant. Returns 0 when there
  * are no matching invoices. Uses issuedAt (not createdAt) so draft invoices
  * that are later voided do not distort the monthly figure.
+ *
+ * Throws ForbiddenError for a role without MONTHLY_REVENUE_CAPABILITY, BEFORE
+ * any read. The invoices RLS is tenant-wide, so the database would hand a
+ * therapist the whole clinic's total; this assertion is the only thing between
+ * any caller and that figure, which is why it lives here and not only on the
+ * dashboard page.
  */
 export async function getMonthlyRevenue(
   ctx: RequestContext,
   monthStartUtc: Date,
   monthEndUtc: Date,
 ): Promise<number> {
+  assertCan(ctx.role, MONTHLY_REVENUE_CAPABILITY);
   const rows = await runScoped(ctx, (tx) =>
     tx
       .select({ total: sql<number>`coalesce(sum(${invoices.amountCents}), 0)::int` })
