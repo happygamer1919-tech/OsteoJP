@@ -1221,6 +1221,8 @@
   "dashboard.kpiThisWeek": "Esta semana",
   "dashboard.thisWeekLower": "esta semana",
   "dashboard.kpiNoData": "Sem dados",
+  "dashboard.revenueLocation": "Localização da receita",
+  "dashboard.revenueAllLocations": "Todas as clínicas",
   "dashboard.acessosRapidos": "Acessos rápidos",
   "dashboard.tile.newAppointment": "Nova marcação",
   "dashboard.tile.newPatient": "Novo paciente",

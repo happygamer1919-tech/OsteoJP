@@ -12,7 +12,16 @@ import { useRouter } from "next/navigation";
  * primitive, and section waves must not add packages/ui. A glass DatePicker is a
  * foundation follow-up; the native input keeps the date-scoping behaviour intact.
  */
-export function DateJump({ date, label }: { date: string; label: string }) {
+export function DateJump({
+  date,
+  label,
+  location = null,
+}: {
+  date: string;
+  label: string;
+  /** T5b: the owner's chosen clinic for the revenue tile, kept across the jump. */
+  location?: string | null;
+}) {
   const router = useRouter();
   return (
     <DatePicker
@@ -22,7 +31,13 @@ export function DateJump({ date, label }: { date: string; label: string }) {
       value={date === "" ? null : date}
       triggerLabel={label}
       onChange={(v) => {
-        if (v) router.push(`/dashboard?date=${v}`);
+        if (v) {
+          router.push(
+            location
+              ? `/dashboard?date=${v}&location=${encodeURIComponent(location)}`
+              : `/dashboard?date=${v}`,
+          );
+        }
       }}
     />
   );
