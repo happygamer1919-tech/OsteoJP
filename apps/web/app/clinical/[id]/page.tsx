@@ -37,6 +37,18 @@ const RECORD_TONE: Record<RecordStatus, StatusTone> = {
   signed: "success",
 };
 
+/**
+ * The message for a sign that did not happen (`signRecordAction` redirects with
+ * `?m=err:<code>`). Only `err:finalized` had a message before; every other code
+ * showed nothing, so a refused sign looked like a page that did not react.
+ */
+function signErrorText(m: string | undefined): string | null {
+  if (!m || !m.startsWith("err")) return null;
+  if (m === "err:finalized") return s["clinical.finalized"];
+  if (m === "err:stale") return s["clinical.signStale"];
+  return s["clinical.error"];
+}
+
 export default async function RecordDetailPage({
   params,
   searchParams,
@@ -115,13 +127,20 @@ export default async function RecordDetailPage({
           <Button type="submit" variant="secondary">{s["clinical.newVersion"]}</Button>
         </form>
       )}
-      {canSign && (
-        <form action={signRecordAction.bind(null, id)}>
-          <Button type="submit">{s["clinical.signLock"]}</Button>
-        </form>
-      )}
     </>
   );
+
+  // SIGN-CONFIRM-AND-SAVE-FIRST: "Assinar e bloquear" is no longer a form of its
+  // own that signs on one press. RecordForm draws it behind a confirmation and
+  // saves unsaved edits first; the sign names the stored content's fingerprint.
+  const sign = canSign
+    ? {
+        action: signRecordAction.bind(null, id),
+        label: s["clinical.signLock"],
+        message: s["clinical.signLockConfirm"],
+        dataHash: record.dataHash,
+      }
+    : undefined;
 
   return (
     <main>
@@ -143,7 +162,9 @@ export default async function RecordDetailPage({
         </Link>
       </div>
 
-      {m === "err:finalized" && <p role="alert" className="mb-4 text-sm text-error">{s["clinical.finalized"]}</p>}
+      {signErrorText(m) && (
+        <p role="alert" className="mb-4 text-sm text-error">{signErrorText(m)}</p>
+      )}
       {m === "signed" && <p className="mb-4 text-sm text-success">{s["clinical.statusSigned"]}</p>}
 
       <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
@@ -197,6 +218,7 @@ export default async function RecordDetailPage({
               patientId={record.patientId}
               recordId={id}
               existingTermsAcceptance={existingTermsAcceptance}
+              sign={sign}
             />
           ) : view === "imported" ? (
             /* B1 — NO TEMPLATE, SO NO FORM. Until now this branch drew a single
