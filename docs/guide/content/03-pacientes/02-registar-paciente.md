@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 2, terapeuta 5, proprietario 2
 capability: patients:write
 screens: pacientes, novo-paciente
+faq: adicionar-paciente
 ---
 ## Registar um paciente novo
 

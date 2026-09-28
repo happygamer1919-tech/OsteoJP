@@ -4,7 +4,7 @@ title: Consultar as faturas de um período
 goal: Filtrar por datas, estado e local e abrir uma fatura.
 roles: rececao, proprietario
 order: rececao 1, proprietario 1
-capability: invoices:read
+capability: invoices:issue
 screens: faturacao
 ---
 ## Consultar as faturas de um período

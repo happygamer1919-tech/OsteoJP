@@ -6,6 +6,7 @@ roles: terapeuta, proprietario
 order: terapeuta 2, proprietario 2
 capability: clinical_records:sign
 screens: nova-ficha
+faq: assinar-registo
 ---
 ## Assinar e bloquear um registo
 

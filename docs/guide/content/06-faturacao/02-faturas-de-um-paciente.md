@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 2, terapeuta 1, proprietario 4
 capability: invoices:read
 screens: ficha-paciente
+review: CARE-02a
 ---
 ## Ver as faturas de um paciente
 
