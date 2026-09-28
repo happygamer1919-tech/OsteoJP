@@ -6,6 +6,7 @@ roles: rececao, proprietario
 order: rececao 1, proprietario 1
 capability: invoices:issue
 screens: faturacao
+shots: faturacao.faturas-de-um-periodo
 ---
 ## Consultar as faturas de um período
 
@@ -17,3 +18,6 @@ A **Faturação** abre no mês corrente, do dia 1 até hoje. A tabela tem as col
 4. Clique em **Fechar** para voltar à lista.
 
 Nesta versão, este ecrã serve só para consultar: não há botão nem formulário para emitir uma fatura.
+
+![Consultar as faturas de um período no telemóvel](../../../../apps/web/public/ajuda/faturacao/faturas-de-um-periodo-390.png)
+![Consultar as faturas de um período no computador](../../../../apps/web/public/ajuda/faturacao/faturas-de-um-periodo-desktop.png)

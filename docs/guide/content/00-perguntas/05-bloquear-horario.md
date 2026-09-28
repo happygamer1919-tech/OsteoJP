@@ -18,3 +18,6 @@ O campo **Terapeuta** já traz o seu nome.
 :::
 
 Um bloqueio não cancela as marcações que já existem nesse período. Para dias inteiros de ausência, use **Horários**.
+
+![Bloquear um horário na agenda no telemóvel](../../../../apps/web/public/ajuda/agenda/bloquear-horario-390.png)
+![Bloquear um horário na agenda no computador](../../../../apps/web/public/ajuda/agenda/bloquear-horario-desktop.png)

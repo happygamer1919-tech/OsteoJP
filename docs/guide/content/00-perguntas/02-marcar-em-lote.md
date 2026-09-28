@@ -16,3 +16,6 @@ see: agenda.marcar-varias-sessoes, pacotes.atribuir-pacote
 Se aparecer **Algumas marcações não foram criadas**, marque à parte as sessões que ficaram por marcar.
 
 As sessões de um pacote não usam **Agendar lote**: cada sessão é escolhida à mão, nunca gerada.
+
+![Marcar várias sessões de uma vez no telemóvel](../../../../apps/web/public/ajuda/agenda/marcar-varias-sessoes-390.png)
+![Marcar várias sessões de uma vez no computador](../../../../apps/web/public/ajuda/agenda/marcar-varias-sessoes-desktop.png)

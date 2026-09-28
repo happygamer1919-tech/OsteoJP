@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 4, terapeuta 4, proprietario 5
 capability: appointments:write
 screens: agenda, marcacoes
+shots: pacotes.associar-a-pacote
 ---
 ## Associar uma marcação já feita a um pacote
 
@@ -23,3 +24,6 @@ O quadro explica quando não é possível associar:
 * a marcação já consome uma sessão, e o quadro mostra de que pacote.
 
 Depois de associada a um pacote, o serviço da marcação já não pode ser alterado.
+
+![Associar uma marcação já feita a um pacote no telemóvel](../../../../apps/web/public/ajuda/pacotes/associar-a-pacote-390.png)
+![Associar uma marcação já feita a um pacote no computador](../../../../apps/web/public/ajuda/pacotes/associar-a-pacote-desktop.png)

@@ -1,0 +1,49 @@
+{
+  "id": "faturacao.faturas-de-um-paciente",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/patients/00000000-0000-0000-0000-00000000c301",
+      "ready": {
+        "role": "tab",
+        "nameKey": "patients.tabInvoicing"
+      },
+      "annotate": [
+        {
+          "kind": "arrow",
+          "n": 2,
+          "target": {
+            "role": "tab",
+            "nameKey": "patients.tabInvoicing"
+          },
+          "from": "below-left"
+        }
+      ],
+      "do": [
+        {
+          "scroll": {
+            "role": "tab",
+            "nameKey": "patients.tabInvoicing"
+          }
+        }
+      ]
+    },
+    {
+      "do": [
+        {
+          "click": {
+            "role": "tab",
+            "nameKey": "patients.tabInvoicing"
+          }
+        }
+      ],
+      "ready": {
+        "css": "[role=\"tabpanel\"]"
+      }
+    }
+  ]
+}

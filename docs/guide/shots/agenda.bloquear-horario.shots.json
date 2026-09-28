@@ -1,0 +1,23 @@
+{
+  "id": "agenda.bloquear-horario",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "stabilize": ["[data-testid=\"agenda-freshness\"] time"],
+  "frames": [
+    {
+      "goto": "/agenda?date=2026-10-06",
+      "ready": { "role": "button", "nameKey": "agenda.blockTime" },
+      "annotate": [
+        { "kind": "arrow", "n": 1, "target": { "role": "button", "nameKey": "agenda.blockTime" }, "from": "below" }
+      ]
+    },
+    {
+      "do": [{ "click": { "role": "button", "nameKey": "agenda.blockTime" } }],
+      "ready": { "role": "dialog" },
+      "annotate": [
+        { "kind": "box", "n": 3, "target": { "fieldKey": "agenda.block.note", "in": { "role": "dialog" } } },
+        { "kind": "arrow", "n": 5, "target": { "role": "button", "nameKey": "agenda.block.confirm", "in": { "role": "dialog" } }, "from": "left" }
+      ]
+    }
+  ]
+}

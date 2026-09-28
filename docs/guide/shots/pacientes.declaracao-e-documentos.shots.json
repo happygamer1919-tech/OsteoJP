@@ -1,0 +1,18 @@
+{
+  "id": "pacientes.declaracao-e-documentos",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "frames": [
+    {
+      "goto": "/patients/00000000-0000-0000-0000-00000000c301",
+      "do": [
+        { "click": { "role": "tab", "nameKey": "patients.tabDocuments" } },
+        { "scroll": { "role": "button", "nameKey": "documents.declaracao.button" } }
+      ],
+      "ready": { "role": "button", "nameKey": "documents.declaracao.button" },
+      "annotate": [
+        { "kind": "arrow", "n": 1, "target": { "role": "button", "nameKey": "documents.declaracao.button" }, "from": "below-right" }
+      ]
+    }
+  ]
+}
