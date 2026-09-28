@@ -280,7 +280,7 @@ Steps:
 Expected result: Lista de faturas do período, ou o estado vazio "Sem faturas no período selecionado" se não existirem faturas nesse intervalo.
 Edge cases:
 - **Não existe botão "Nova fatura"**, em nenhum ambiente e para nenhuma função: foi retirado (T5 F2) porque não tinha ação associada, e nenhum ecrã chama a emissão de faturas. Emitir faturas a partir da plataforma espera decisão do proprietário. Não descrever "emitir fatura" como um fluxo disponível.
-- Função "terapeuta": vê a lista (tem `invoices:read`) e, como as outras funções, não vê nenhum botão para emitir faturas.
+- Função "terapeuta": não abre esta página (a rota exige `invoices:issue`, que o terapeuta não tem); vê as faturas no separador "Faturação" da ficha do paciente (tem `invoices:read`), também sem botão para emitir.
 - Separador "Faturação" no perfil de um paciente específico — mostra as faturas desse paciente isoladamente; mesmo estado vazio "Sem faturas" quando não existem.
 
 ---
