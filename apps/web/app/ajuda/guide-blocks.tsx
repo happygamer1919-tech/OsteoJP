@@ -144,7 +144,7 @@ export function GuideBody({ lesson }: { lesson: Pick<GuideViewLesson, "title" | 
   );
 }
 
-/** Section or FAQ text (no capture), already resolved for its viewer. */
+/** A section's own text (no capture), already resolved for its viewer. An FAQ entry is drawn with GuideBody, for its capture pair. */
 export function GuideText({ blocks }: { blocks: GuideViewBlock[] }): ReactNode {
   return <div className="flex flex-col gap-3">{blocks.map((block, i) => renderBlock(block, i, null))}</div>;
 }

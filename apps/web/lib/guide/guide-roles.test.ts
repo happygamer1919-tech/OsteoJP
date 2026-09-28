@@ -335,7 +335,8 @@ describe("a lesson is only ever written for a role that can open its screen", ()
 
   it("the source loads without errors", () => {
     expect(guide.errors).toEqual([]);
-    expect(all.length).toBe(58);
+    // 58 lessons and the seven FAQ entries: an entry is held to the same rule.
+    expect(all.length).toBe(65);
   });
 
   it("every capability named is a packages/auth capability", () => {
@@ -376,6 +377,165 @@ describe("a lesson is only ever written for a role that can open its screen", ()
     const held = GUIDE_DATA.held.map((item) => item.id);
     expect(held).toEqual(["marcacao-online.pedido-de-cliente-novo"]);
     for (const role of ROLES) expect(ids(role)).not.toContain(held[0]);
+  });
+});
+
+// G1-2 AND G1-3 FOR PERGUNTAS FREQUENTES: each role reads its own FAQ
+// entries, the seven base tasks in the order of their files, and each entry
+// links only lessons that role reads, its primary lesson first. Written out by
+// hand from the ruled proposal (its table "The seven FAQ entries": primary
+// lesson, "also" lessons, roles), not read back from the code.
+//
+// Two "also" links are for some readers only, as the table says: Criar e
+// preencher um registo clínico (G1) under Concluir consulta is "for T and P",
+// and Tratar um pedido de novo cliente (M2) under Adicionar paciente needs
+// guest_requests:read, which a therapist lacks. An administrator reads the
+// Proprietário entries whose capability it holds: not Assinar registo
+// (clinical_records:sign), and not the G1 link (clinical_records:author).
+
+type FaqList = [entry: string, lessons: string[]][];
+
+const faqOf = (role: Role): FaqList => guideFaqFor(role).map((entry) => [entry.id, entry.lessons.map((lesson) => lesson.id)]);
+
+const MARCAR_CONSULTA: FaqList[number] = [
+  "perguntas.marcar-consulta",
+  ["agenda.marcar-consulta", "pacientes.marcacoes-na-ficha", "pacotes.marcar-com-pacote"],
+];
+const MARCAR_EM_LOTE: FaqList[number] = ["perguntas.marcar-em-lote", ["agenda.marcar-varias-sessoes", "pacotes.atribuir-pacote"]];
+const ADICIONAR_PACIENTE_ONLINE: FaqList[number] = [
+  "perguntas.adicionar-paciente",
+  ["pacientes.registar-paciente", "pacientes.encontrar-paciente", "marcacao-online.tratar-pedido-novo-cliente"],
+];
+const ATRIBUIR_PACOTE: FaqList[number] = [
+  "perguntas.atribuir-pacote",
+  ["pacotes.atribuir-pacote", "pacotes.marcar-com-pacote", "pacotes.saldo-de-sessoes"],
+];
+const BLOQUEAR_HORARIO: FaqList[number] = [
+  "perguntas.bloquear-horario",
+  ["agenda.bloquear-horario", "equipa-e-horarios.registar-ausencia"],
+];
+const CONCLUIR_SEM_REGISTO: FaqList[number] = [
+  "perguntas.concluir-consulta",
+  ["agenda.registar-o-estado", "pacientes.marcacoes-na-ficha"],
+];
+const CONCLUIR_COM_REGISTO: FaqList[number] = [
+  "perguntas.concluir-consulta",
+  ["agenda.registar-o-estado", "pacientes.marcacoes-na-ficha", "registos.criar-registo"],
+];
+const ASSINAR_REGISTO: FaqList[number] = ["perguntas.assinar-registo", ["registos.assinar-registo", "registos.revisao-consulta"]];
+
+const RECEPTION_FAQ: FaqList = [
+  MARCAR_CONSULTA,
+  MARCAR_EM_LOTE,
+  ADICIONAR_PACIENTE_ONLINE,
+  ATRIBUIR_PACOTE,
+  BLOQUEAR_HORARIO,
+  CONCLUIR_SEM_REGISTO,
+];
+const THERAPIST_FAQ: FaqList = [
+  MARCAR_CONSULTA,
+  MARCAR_EM_LOTE,
+  ["perguntas.adicionar-paciente", ["pacientes.registar-paciente", "pacientes.encontrar-paciente"]],
+  ATRIBUIR_PACOTE,
+  BLOQUEAR_HORARIO,
+  CONCLUIR_COM_REGISTO,
+  ASSINAR_REGISTO,
+];
+const ADMIN_FAQ: FaqList = [
+  MARCAR_CONSULTA,
+  MARCAR_EM_LOTE,
+  ADICIONAR_PACIENTE_ONLINE,
+  ATRIBUIR_PACOTE,
+  BLOQUEAR_HORARIO,
+  CONCLUIR_SEM_REGISTO,
+];
+const OWNER_FAQ: FaqList = [
+  MARCAR_CONSULTA,
+  MARCAR_EM_LOTE,
+  ADICIONAR_PACIENTE_ONLINE,
+  ATRIBUIR_PACOTE,
+  BLOQUEAR_HORARIO,
+  CONCLUIR_COM_REGISTO,
+  ASSINAR_REGISTO,
+];
+
+describe("each role reads exactly its own FAQ entries, the seven base tasks first, in file order (G1-2, G1-3)", () => {
+  it("reception: six entries, no Assinar registo, and no Registos link", () => {
+    expect(faqOf("reception")).toEqual(RECEPTION_FAQ);
+    expect(GUIDE_DATA.faq.map((entry) => entry.id)).toContain("perguntas.assinar-registo");
+    expect(faqOf("reception").flatMap(([, lessons]) => lessons).filter((id) => id.startsWith("registos."))).toEqual([]);
+  });
+
+  it("therapist: all seven, with Criar e preencher um registo clínico under Concluir consulta and no Marcação online link", () => {
+    expect(faqOf("therapist")).toEqual(THERAPIST_FAQ);
+    expect(faqOf("therapist").flatMap(([, lessons]) => lessons).filter((id) => id.startsWith("marcacao-online."))).toEqual([]);
+  });
+
+  it("admin: the six Proprietário entries whose capability the admin role holds, each with the links it can open", () => {
+    expect(faqOf("admin")).toEqual(ADMIN_FAQ);
+    // The same list, derived: the owner's entries filtered by can("admin", capability).
+    const derived = guideFaqFor("owner")
+      .filter((entry) => entry.capability === null || (isCapability(entry.capability) && can("admin", entry.capability)))
+      .map((entry) => entry.id);
+    expect(faqOf("admin").map(([id]) => id)).toEqual(derived);
+  });
+
+  it("owner: all seven, every link of every entry", () => {
+    expect(faqOf("owner")).toEqual(OWNER_FAQ);
+    expect(faqOf("owner").map(([id]) => id)).toEqual(GUIDE_DATA.faq.map((entry) => entry.id));
+    for (const [id, lessons] of faqOf("owner")) {
+      expect(lessons, id).toEqual(GUIDE_DATA.faq.find((entry) => entry.id === id)!.see);
+    }
+  });
+
+  it("the helper's FAQ order is the model's order for every profile", () => {
+    for (const profile of PROFILES) {
+      const role = (Object.keys(PROFILE_OF_ROLE) as Role[]).find((r) => PROFILE_OF_ROLE[r] === profile && r !== "admin")!;
+      expect(faqOf(role).map(([id]) => id)).toEqual(GUIDE_DATA.orders[profile].faq);
+    }
+  });
+});
+
+describe("every lesson an FAQ entry links is a published lesson the same role reads", () => {
+  it("for every role: each link is in the role's own guide, the primary lesson is first, and no link the role reads is dropped", () => {
+    const problems: string[] = [];
+    let links = 0;
+    for (const role of ROLES) {
+      const readable = new Set(ids(role));
+      for (const entry of guideFaqFor(role)) {
+        const got = entry.lessons.map((lesson) => lesson.id);
+        links += got.length;
+        for (const id of got) if (!readable.has(id)) problems.push(`${role} ${entry.id}: links ${id}, outside its guide`);
+        if (got[0] !== entry.see[0]) problems.push(`${role} ${entry.id}: the primary lesson ${entry.see[0]} is not its first link`);
+        const want = entry.see.filter((id) => readable.has(id));
+        if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${role} ${entry.id}: links ${got.join(" ")}, not ${want.join(" ")}`);
+      }
+    }
+    expect(problems).toEqual([]);
+    expect(links).toBeGreaterThan(0);
+  });
+
+  it("every see id of every entry is a published lesson, and reaches at least one role through the entry", () => {
+    const published = new Set(GUIDE_DATA.lessons.map((lesson) => lesson.id));
+    const reached = new Set(ROLES.flatMap((role) => guideFaqFor(role).flatMap((entry) => entry.lessons.map((l) => `${entry.id} ${l.id}`))));
+    const problems: string[] = [];
+    for (const entry of GUIDE_DATA.faq) {
+      for (const id of entry.see) {
+        if (!published.has(id)) problems.push(`${entry.id}: ${id} is not a published lesson`);
+        if (!reached.has(`${entry.id} ${id}`)) problems.push(`${entry.id}: no role is shown ${id}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("seeded: a link to a lesson outside a role's guide is dropped for that role and kept for the role that reads it", () => {
+    const base = GUIDE_DATA.faq.find((entry) => entry.id === "perguntas.marcar-consulta")!;
+    const entry = { ...base, see: ["agenda.marcar-consulta", "registos.criar-registo"] };
+    const data: GuideData = { ...GUIDE_DATA, faq: [entry] };
+    const linksOf = (role: Role) => guideFaqFor(role, data).map((item) => item.lessons.map((lesson) => lesson.id));
+    expect(linksOf("reception")).toEqual([["agenda.marcar-consulta"]]);
+    expect(linksOf("therapist")).toEqual([["agenda.marcar-consulta", "registos.criar-registo"]]);
+    expect(linksOf("admin")).toEqual([["agenda.marcar-consulta"]]);
   });
 });
 

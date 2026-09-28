@@ -3,7 +3,16 @@
 //
 //   docs/guide/content/NN-<section>/_seccao.md        a section of the guide
 //   docs/guide/content/NN-<section>/NN-<slug>.md      a lesson of that section
-//   docs/guide/content/00-perguntas/NN-<slug>.md      an FAQ entry (PR 4)
+//   docs/guide/content/00-perguntas/NN-<slug>.md      an FAQ entry
+//
+// An FAQ entry (Perguntas frequentes) is a short answer to one question, and a
+// pointer into the course: its "see" key names the lessons it links, its
+// PRIMARY lesson first. The primary lesson is the one that teaches the task in
+// full, and it names the entry back with "faq: <slug>". The entry is read by
+// exactly the roles that read its primary lesson or fewer, with the same
+// capability, so no viewer is shown an answer whose lesson it cannot open. It
+// has no capture of its own: it shows its primary lesson's capture pair, or,
+// while that lesson has none, no image at all (the page shows "sem imagem").
 //
 // The three chapter files at the top of docs/guide/content (01-rececao.md and
 // its two siblings) are NOT read here. build-guide.mjs still prints them, and
@@ -425,13 +434,19 @@ export function countWords(blocks) {
 /**
  * The lesson's capture pair, checked: none, or exactly one phone capture (390)
  * and one desktop capture of this lesson, on consecutive image lines outside any role
- * block, at apps/web/public/ajuda/<section>/<slug>-{390,desktop}.png.
+ * block, at apps/web/public/ajuda/<section>/<slug>-{390,desktop}.png. An FAQ
+ * entry's pair is its primary lesson's: `owner` is that lesson's { section, slug },
+ * or null when the entry names no primary lesson.
  */
-function readImages(images, ctx, at, lines) {
+function readImages(images, ctx, at, lines, owner = { section: ctx.section, slug: ctx.slug }) {
   if (images.length === 0) return null;
   const first = images[0];
   if (ctx.kind === 'section') {
     at(first.line, 'a section file has no image; the captures belong to its lessons');
+    return null;
+  }
+  if (owner === null) {
+    at(first.line, 'an FAQ entry shows its primary lesson\'s capture pair; name that lesson first in "see"');
     return null;
   }
   if (images.length !== 2) {
@@ -449,15 +464,16 @@ function readImages(images, ctx, at, lines) {
     ok = false;
   }
   const want = {
-    phone: path.join(ctx.publicDir, 'ajuda', ctx.section, `${ctx.slug}-390.png`),
-    desktop: path.join(ctx.publicDir, 'ajuda', ctx.section, `${ctx.slug}-desktop.png`),
+    phone: path.join(ctx.publicDir, 'ajuda', owner.section, `${owner.slug}-390.png`),
+    desktop: path.join(ctx.publicDir, 'ajuda', owner.section, `${owner.slug}-desktop.png`),
   };
+  const whose = ctx.kind === 'faq' ? `this entry's primary lesson, ${owner.section}.${owner.slug},` : 'this lesson';
   const found = {};
   for (const image of images) {
     const resolved = path.resolve(ctx.dir, image.src);
     const kind = resolved === want.phone ? 'phone' : resolved === want.desktop ? 'desktop' : null;
     if (!kind) {
-      at(image.line, `a capture of this lesson is apps/web/public/ajuda/${ctx.section}/${ctx.slug}-390.png or ${ctx.slug}-desktop.png, not ${image.src}`);
+      at(image.line, `a capture of ${whose} is apps/web/public/ajuda/${owner.section}/${owner.slug}-390.png or ${owner.slug}-desktop.png, not ${image.src}`);
       ok = false;
     } else if (found[kind]) {
       at(image.line, `the ${kind} capture is named twice`);
@@ -521,6 +537,8 @@ function readGuideFile(file, ctx, at) {
   const faq = readIdList(fields.faq, at, SLUG_ONLY, 'an FAQ slug such as marcar-consulta');
   const answers = readIdList(fields.answers, at, LESSON_ID, 'a lesson id such as agenda.marcar-consulta');
   const see = readIdList(fields.see, at, LESSON_ID, 'a lesson id such as agenda.marcar-consulta');
+  if (ctx.kind === 'faq' && !fields.see) at(1, 'missing front matter key "see"; an FAQ entry links its lessons, its primary lesson first');
+  if (fields.see && new Set(see).size !== see.length) at(fields.see.line, 'see names a lesson twice');
   for (const key of ['review', 'hold']) {
     if (fields[key] && !TOKEN.test(fields[key].value)) at(fields[key].line, `"${key}" is one card name, such as CARE-02a or GUEST-05`);
   }
@@ -530,13 +548,27 @@ function readGuideFile(file, ctx, at) {
   const words = countWords(body.blocks);
   if (words >= WORD_LIMIT) at(front.end + 2, `${words} words; a guide file stays under ${WORD_LIMIT}`);
 
-  const images = readImages(body.images, ctx, at, lines);
   const shots = value('shots');
-  if (shots !== null && shots !== wantId) at(fields.shots.line, `shots is this file's id, "${wantId}"`);
-  if (body.images.length > 0 && shots === null && ctx.kind !== 'section') {
-    at(body.images[0].line, `a lesson with a capture names its capture spec: "shots: ${wantId}"`);
+  let images;
+  if (ctx.kind === 'faq') {
+    // An FAQ entry's capture pair is its primary lesson's, and so is the spec
+    // that makes it: the entry has no capture spec of its own.
+    const primary = see.length > 0 && LESSON_ID.test(see[0]) ? see[0].split('.') : null;
+    images = readImages(body.images, ctx, at, lines, primary && { section: primary[0], slug: primary[1] });
+    if (shots !== null) at(fields.shots.line, 'an FAQ entry has no capture spec of its own; it shows its primary lesson\'s capture pair');
+    // A second "#" or "##" line is refused for every file (readBody); "###" is
+    // refused here, role blocks included.
+    for (let i = front.end + 1; i < lines.length; i += 1) {
+      if (/^###\s/.test(lines[i].trim())) at(i + 1, 'an FAQ answer has no heading of its own; the question is its heading');
+    }
+  } else {
+    images = readImages(body.images, ctx, at, lines);
+    if (shots !== null && shots !== wantId) at(fields.shots.line, `shots is this file's id, "${wantId}"`);
+    if (body.images.length > 0 && shots === null && ctx.kind !== 'section') {
+      at(body.images[0].line, `a lesson with a capture names its capture spec: "shots: ${wantId}"`);
+    }
+    if (shots !== null && body.images.length === 0) at(fields.shots.line, 'shots is set, but the body has no capture pair');
   }
-  if (shots !== null && body.images.length === 0) at(fields.shots.line, 'shots is set, but the body has no capture pair');
 
   // The "## " title heading is the title key, already checked; the blocks are what follows it.
   const blocks = body.blocks[0]?.type === 'heading' && body.blocks[0].level === 2 ? body.blocks.slice(1) : body.blocks;
@@ -686,13 +718,51 @@ function crossCheck(guide) {
     }
   }
   if (guide.faq.length > 0) {
-    const faqSlugs = new Set(guide.faq.map((f) => f.slug));
+    const faqBySlug = new Map(guide.faq.map((f) => [f.slug, f]));
     for (const lesson of guide.lessons) {
       for (const slug of lesson.faq) {
-        if (!faqSlugs.has(slug)) errors.push(`${lesson.file}: faq "${slug}" names no file in ${FAQ_FOLDER}`);
+        const entry = faqBySlug.get(slug);
+        if (!entry) errors.push(`${lesson.file}: faq "${slug}" names no file in ${FAQ_FOLDER}`);
+        else if (entry.see[0] !== lesson.id) {
+          errors.push(`${lesson.file}: faq "${slug}" names an entry whose primary lesson is not this one; its "see" starts with ${entry.see[0] ?? 'nothing'}`);
+        }
       }
     }
   }
+
+  const lessonById = new Map(guide.lessons.map((l) => [l.id, l]));
+  for (const entry of guide.faq) checkFaqEntry(entry, lessonById, errors);
+}
+
+/**
+ * An FAQ entry against the lessons it links. Its primary lesson (the first
+ * "see" id) is published, is read by every role that reads the entry, has the
+ * entry's capability, names the entry back with "faq:", and lends the entry
+ * its capture pair: the entry shows that pair exactly when the lesson does.
+ * Every other lesson it links is published and read by at least one of its
+ * roles; /ajuda shows each viewer only the links it can open.
+ */
+function checkFaqEntry(entry, lessonById, errors) {
+  const fail = (message) => errors.push(`${entry.file}: ${message}`);
+  for (const id of entry.see) {
+    const lesson = lessonById.get(id);
+    if (!lesson) continue; // reported above: not a lesson id
+    if (lesson.hold) fail(`"${id}" is held (${lesson.hold}); an entry links only published lessons`);
+    else if (!lesson.roles.some((role) => entry.roles.includes(role))) fail(`"${id}" is read by none of this entry's roles`);
+  }
+  const primary = lessonById.get(entry.see[0]);
+  if (!primary) return;
+  for (const role of entry.roles) {
+    if (!primary.roles.includes(role)) fail(`role "${role}" reads this entry but not its primary lesson "${primary.id}"`);
+  }
+  if (entry.capability !== primary.capability) {
+    fail(`capability is the primary lesson's, "${primary.capability ?? 'none'}", not "${entry.capability ?? 'none'}"`);
+  }
+  if (!primary.faq.includes(entry.slug)) fail(`its primary lesson "${primary.id}" does not name it back with "faq: ${entry.slug}"`);
+  if (primary.images && !entry.images) {
+    fail(`its primary lesson "${primary.id}" has a capture pair; show it here too, with the same two image lines`);
+  }
+  if (entry.images && !primary.images) fail(`the capture pair is its primary lesson's, and "${primary.id}" shows none`);
 }
 
 function assertProfile(profile) {

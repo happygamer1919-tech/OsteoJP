@@ -50,6 +50,14 @@ export function lessonHref(lesson: Pick<GuideLesson, "id" | "section">): string 
 }
 
 /**
+ * The element id of an FAQ entry on the Perguntas frequentes tab, so one
+ * answer can be sent as /ajuda?tab=perguntas#pergunta-marcar-consulta.
+ */
+export function faqAnchor(entry: Pick<GuideLesson, "id" | "section">): string {
+  return `pergunta-${lessonSlug(entry)}`;
+}
+
+/**
  * The section at /ajuda/<seccao> as this role reads it (its text resolved for
  * the role) with the lessons the role reads there, or null when it reads none
  * there.
