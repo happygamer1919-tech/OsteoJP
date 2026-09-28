@@ -19,7 +19,7 @@ node docs/guide/build/build-guide.mjs
 # then take docs/guide/build/guia-rececao.pdf (or guia-terapeuta.pdf, guia-proprietario.pdf)
 ```
 
-As built on 2026-09-28 from source `51c38859b2a5b67d` (57 lessons, 7 FAQ entries): the full guide 51 pages (committed); Receção 36 pages, Terapeuta 34, Proprietário 46 (built, not committed).
+The committed PDF's page count and source hash are in the manifest; the builder prints every PDF's page count when it runs. Numbers written here would go stale with the next lesson PR, so none are.
 
 Each PDF has a cover, an index, "Perguntas frequentes" first, then the sections. A lesson prints its title, its goal, its body and its capture pair side by side (the phone capture and the desktop capture, at one height, each captioned by its alt text), or, while it has no capture, a small "Sem imagem" note with the same words as `/ajuda` (`guide.noImage`, `guide.noImageHint` in `packages/i18n/src/strings.pt.json`): never a broken image. An FAQ entry prints its question, its answer and the lessons it links that the same PDF prints; its capture pair is its primary lesson's, and prints with that lesson. A held lesson (`hold: GUEST-05`) is never printed. The colours are tokens read from `packages/ui/theme.css`: text `--color-text-primary`, secondary text `--color-text-secondary`, headings `--color-primary-800`, the cover bar and title rule `--color-accent-2-500`, the role and "Só para" labels `--color-accent-2-700`, borders `--color-border-strong`, the "Sem imagem" note `--color-surface-muted`, the page `--color-surface`.
 
@@ -46,7 +46,7 @@ and commits `apps/web/lib/guide/guide-data.json`, `docs/guide/pdf/guia-plataform
 
 Seeded arms prove each failure both ways on copies in a temporary folder, and an untouched copy passes. The title arm runs on both forms Chromium writes a title in: a literal string, on a copy of the committed PDF, and UTF-16 in a hex string (the form of a title with an accent, such as the Receção PDF's), on a small hand-written PDF, since the committed PDF's title has no accent.
 
-The source hash is `guideSourceHash` in `guide-model.mjs`: the sha256 of the published model (every section, every published lesson and FAQ entry with its front matter and blocks, role blocks included, and each profile's order) plus the sha256 of every capture those lessons and entries show. A held lesson is not in it, so editing one does not ask for a rebuild. The builder's code, its CSS and the theme tokens are not in it either: a change to how the PDFs look does not fail the check, so rebuild in the PR that makes it. The file names, which PDF is committed, the folders, the manifest and the title, shared by the builder and the check, are in `guide-pdf.mjs` (`PDF_JOBS`, `COMMITTED_JOBS`, `PDF_DIR`, `BUILD_DIR`).
+The source hash is `guideSourceHash` in `guide-model.mjs`: the sha256 of the published model (every section, every published lesson and FAQ entry with its front matter and blocks, role blocks included, and each profile's order) plus the sha256 of every capture those lessons and entries show. A held lesson is not in it, so editing one does not ask for a rebuild. The builder's code, its CSS and the theme tokens are not in it either: a change to how the PDFs look does not fail the check, so rebuild in the PR that makes it. Nor are the four platform strings the PDF shares with /ajuda (`guide.noImage`, `guide.noImageHint`, `guide.tabFaq` and `guide.faqLessonsLabel` in `packages/i18n/src/strings.pt.json`): a PR that rewords one must rebuild the PDF too, or the two say different words while the check stays green. The file names, which PDF is committed, the folders, the manifest and the title, shared by the builder and the check, are in `guide-pdf.mjs` (`PDF_JOBS`, `COMMITTED_JOBS`, `PDF_DIR`, `BUILD_DIR`).
 
 Every rebuild rewrites the committed PDF (Chromium stamps it with its build time), so each one adds about 9 MB to the repository's history. Rebuild once per PR, after the last edit.
 
@@ -54,7 +54,7 @@ Every rebuild rewrites the committed PDF (Chromium stamps it with its build time
 
 The three chapter files at the top of `docs/guide/content` (`01-rececao.md`, `02-terapeuta.md`, `03-proprietario.md`) and the captures under `docs/guide/screens` are **no longer the PDFs' source**. They stay in the repository until the GATE-CHANGE #1481 lets the frozen `scripts/guide-content.test.mjs` stop requiring them; until then that test checks them, and spawns the builder's chapter mode on a temporary folder to assert its lint messages.
 
-Chapter mode is the old builder, unchanged, and runs only with `--content`:
+Chapter mode is the old builder, with the same lint and the same messages (the frozen `scripts/guide-content.test.mjs` asserts them), and runs only with `--content`. One thing did change: its colours now come from `packages/ui/theme.css` like the lesson mode's, and it stops if a token is missing.
 
 ```sh
 node docs/guide/build/build-guide.mjs --content docs/guide/content --out <dir>
