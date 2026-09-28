@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 2, terapeuta 5, proprietario 2
 capability: patients:write
 screens: pacientes, novo-paciente
+shots: pacientes.registar-paciente
 faq: adicionar-paciente
 ---
 ## Registar um paciente novo
@@ -21,3 +22,6 @@ Antes de registar, pesquise sempre pelo NIF ou pelo telemóvel em **Pacientes**.
 7. Clique em **Criar paciente**. Abre a ficha do paciente.
 
 Se o número for um telefone fixo ou estrangeiro, aparece um aviso: os lembretes por SMS não chegam a esse número. Peça um telemóvel português. Marque **Consentimento RGPD assinado** apenas quando o paciente tiver assinado; até lá, a ficha mostra **RGPD em falta**.
+
+![Registar um paciente novo no telemóvel](../../../../apps/web/public/ajuda/pacientes/registar-paciente-390.png)
+![Registar um paciente novo no computador](../../../../apps/web/public/ajuda/pacientes/registar-paciente-desktop.png)

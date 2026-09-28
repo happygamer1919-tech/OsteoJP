@@ -121,6 +121,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -128,7 +131,16 @@
       "file": "00-perguntas/01-marcar-consulta.md",
       "goal": null,
       "id": "perguntas.marcar-consulta",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Marcar uma consulta no computador",
+          "src": "/ajuda/agenda/marcar-consulta-desktop.png"
+        },
+        "phone": {
+          "alt": "Marcar uma consulta no telemóvel",
+          "src": "/ajuda/agenda/marcar-consulta-390.png"
+        }
+      },
       "order": {
         "proprietario": 1,
         "rececao": 1,
@@ -246,6 +258,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -253,7 +268,16 @@
       "file": "00-perguntas/02-marcar-em-lote.md",
       "goal": null,
       "id": "perguntas.marcar-em-lote",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Marcar várias sessões de uma vez no computador",
+          "src": "/ajuda/agenda/marcar-varias-sessoes-desktop.png"
+        },
+        "phone": {
+          "alt": "Marcar várias sessões de uma vez no telemóvel",
+          "src": "/ajuda/agenda/marcar-varias-sessoes-390.png"
+        }
+      },
       "order": {
         "proprietario": 2,
         "rececao": 2,
@@ -371,6 +395,9 @@
             "proprietario"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:write",
@@ -378,7 +405,16 @@
       "file": "00-perguntas/03-adicionar-paciente.md",
       "goal": null,
       "id": "perguntas.adicionar-paciente",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Registar um paciente novo no computador",
+          "src": "/ajuda/pacientes/registar-paciente-desktop.png"
+        },
+        "phone": {
+          "alt": "Registar um paciente novo no telemóvel",
+          "src": "/ajuda/pacientes/registar-paciente-390.png"
+        }
+      },
       "order": {
         "proprietario": 3,
         "rececao": 3,
@@ -505,6 +541,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -512,7 +551,16 @@
       "file": "00-perguntas/04-atribuir-pacote.md",
       "goal": null,
       "id": "perguntas.atribuir-pacote",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Atribuir um pacote e marcar as sessões no computador",
+          "src": "/ajuda/pacotes/atribuir-pacote-desktop.png"
+        },
+        "phone": {
+          "alt": "Atribuir um pacote e marcar as sessões no telemóvel",
+          "src": "/ajuda/pacotes/atribuir-pacote-390.png"
+        }
+      },
       "order": {
         "proprietario": 4,
         "rececao": 4,
@@ -644,6 +692,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "schedule:manage",
@@ -651,7 +702,16 @@
       "file": "00-perguntas/05-bloquear-horario.md",
       "goal": null,
       "id": "perguntas.bloquear-horario",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Bloquear um horário na agenda no computador",
+          "src": "/ajuda/agenda/bloquear-horario-desktop.png"
+        },
+        "phone": {
+          "alt": "Bloquear um horário na agenda no telemóvel",
+          "src": "/ajuda/agenda/bloquear-horario-390.png"
+        }
+      },
       "order": {
         "proprietario": 5,
         "rececao": 5,
@@ -791,6 +851,9 @@
             "terapeuta"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -798,7 +861,16 @@
       "file": "00-perguntas/06-concluir-consulta.md",
       "goal": null,
       "id": "perguntas.concluir-consulta",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Confirmar, concluir, marcar falta ou cancelar no computador",
+          "src": "/ajuda/agenda/registar-o-estado-desktop.png"
+        },
+        "phone": {
+          "alt": "Confirmar, concluir, marcar falta ou cancelar no telemóvel",
+          "src": "/ajuda/agenda/registar-o-estado-390.png"
+        }
+      },
       "order": {
         "proprietario": 6,
         "rececao": 6,
@@ -1116,6 +1188,9 @@
             "terapeuta"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:read",
@@ -1123,7 +1198,16 @@
       "file": "01-inicio/01-resumo-do-dia.md",
       "goal": "Ler os números do topo, os acessos rápidos, o resumo semanal e as próximas marcações.",
       "id": "inicio.resumo-do-dia",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "O resumo do dia no computador",
+          "src": "/ajuda/inicio/resumo-do-dia-desktop.png"
+        },
+        "phone": {
+          "alt": "O resumo do dia no telemóvel",
+          "src": "/ajuda/inicio/resumo-do-dia-390.png"
+        }
+      },
       "order": {
         "proprietario": 1,
         "rececao": 1,
@@ -1141,7 +1225,7 @@
       ],
       "section": "inicio",
       "see": [],
-      "shots": null,
+      "shots": "inicio.resumo-do-dia",
       "title": "O resumo do dia",
       "words": 195
     },
@@ -1264,6 +1348,9 @@
             "proprietario"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:read",
@@ -1271,7 +1358,16 @@
       "file": "01-inicio/02-ver-outro-dia.md",
       "goal": "Mudar o dia do resumo e voltar a hoje.",
       "id": "inicio.ver-outro-dia",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Ver outro dia no computador",
+          "src": "/ajuda/inicio/ver-outro-dia-desktop.png"
+        },
+        "phone": {
+          "alt": "Ver outro dia no telemóvel",
+          "src": "/ajuda/inicio/ver-outro-dia-390.png"
+        }
+      },
       "order": {
         "proprietario": 2,
         "rececao": 2,
@@ -1289,7 +1385,7 @@
       ],
       "section": "inicio",
       "see": [],
-      "shots": null,
+      "shots": "inicio.ver-outro-dia",
       "title": "Ver outro dia",
       "words": 133
     },
@@ -1373,6 +1469,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:write",
@@ -1380,7 +1479,16 @@
       "file": "01-inicio/03-nota-rapida.md",
       "goal": "Escrever uma nota sobre um paciente sem abrir a ficha.",
       "id": "inicio.nota-rapida",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Deixar uma nota rápida no computador",
+          "src": "/ajuda/inicio/nota-rapida-desktop.png"
+        },
+        "phone": {
+          "alt": "Deixar uma nota rápida no telemóvel",
+          "src": "/ajuda/inicio/nota-rapida-390.png"
+        }
+      },
       "order": {
         "proprietario": 3,
         "rececao": 3,
@@ -1398,7 +1506,7 @@
       ],
       "section": "inicio",
       "see": [],
-      "shots": null,
+      "shots": "inicio.nota-rapida",
       "title": "Deixar uma nota rápida",
       "words": 69
     },
@@ -1680,6 +1788,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": null,
@@ -1687,7 +1798,16 @@
       "file": "01-inicio/04-menu-e-sessao.md",
       "goal": "Encontrar cada ecrã no computador e no telemóvel e terminar a sessão num computador partilhado.",
       "id": "inicio.menu-e-sessao",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "O menu, o sino e o fim da sessão no computador",
+          "src": "/ajuda/inicio/menu-e-sessao-desktop.png"
+        },
+        "phone": {
+          "alt": "O menu, o sino e o fim da sessão no telemóvel",
+          "src": "/ajuda/inicio/menu-e-sessao-390.png"
+        }
+      },
       "order": {
         "proprietario": 4,
         "rececao": 4,
@@ -1706,7 +1826,7 @@
       ],
       "section": "inicio",
       "see": [],
-      "shots": null,
+      "shots": "inicio.menu-e-sessao",
       "title": "O menu, o sino e o fim da sessão",
       "words": 150
     },
@@ -1865,6 +1985,9 @@
             "proprietario"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": null,
@@ -1872,7 +1995,16 @@
       "file": "01-inicio/05-mudar-nome-ou-palavra-passe.md",
       "goal": "Atualizar os dados da própria conta.",
       "id": "inicio.mudar-nome-ou-palavra-passe",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Mudar o nome ou a palavra-passe no computador",
+          "src": "/ajuda/inicio/mudar-nome-ou-palavra-passe-desktop.png"
+        },
+        "phone": {
+          "alt": "Mudar o nome ou a palavra-passe no telemóvel",
+          "src": "/ajuda/inicio/mudar-nome-ou-palavra-passe-390.png"
+        }
+      },
       "order": {
         "proprietario": 5,
         "rececao": 5,
@@ -1890,7 +2022,7 @@
       ],
       "section": "inicio",
       "see": [],
-      "shots": null,
+      "shots": "inicio.mudar-nome-ou-palavra-passe",
       "title": "Mudar o nome ou a palavra-passe",
       "words": 131
     },
@@ -2057,6 +2189,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:read",
@@ -2064,7 +2199,16 @@
       "file": "02-agenda/01-ler-a-agenda.md",
       "goal": "Mudar entre dia e semana, filtrar e reconhecer o estado de cada marcação pelo símbolo.",
       "id": "agenda.ler-a-agenda",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Ler a agenda no computador",
+          "src": "/ajuda/agenda/ler-a-agenda-desktop.png"
+        },
+        "phone": {
+          "alt": "Ler a agenda no telemóvel",
+          "src": "/ajuda/agenda/ler-a-agenda-390.png"
+        }
+      },
       "order": {
         "proprietario": 1,
         "rececao": 2,
@@ -2082,7 +2226,7 @@
       ],
       "section": "agenda",
       "see": [],
-      "shots": null,
+      "shots": "agenda.ler-a-agenda",
       "title": "Ler a agenda",
       "words": 179
     },
@@ -2265,6 +2409,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -2274,7 +2421,16 @@
       "file": "02-agenda/02-marcar-consulta.md",
       "goal": "Criar uma marcação para um paciente que já tem ficha.",
       "id": "agenda.marcar-consulta",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Marcar uma consulta no computador",
+          "src": "/ajuda/agenda/marcar-consulta-desktop.png"
+        },
+        "phone": {
+          "alt": "Marcar uma consulta no telemóvel",
+          "src": "/ajuda/agenda/marcar-consulta-390.png"
+        }
+      },
       "order": {
         "proprietario": 2,
         "rececao": 1,
@@ -2292,7 +2448,7 @@
       ],
       "section": "agenda",
       "see": [],
-      "shots": null,
+      "shots": "agenda.marcar-consulta",
       "title": "Marcar uma consulta",
       "words": 188
     },
@@ -2419,6 +2575,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -2428,7 +2587,16 @@
       "file": "02-agenda/03-marcar-varias-sessoes.md",
       "goal": "Usar Agendar lote para criar uma série e ver o que ficou por marcar.",
       "id": "agenda.marcar-varias-sessoes",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Marcar várias sessões de uma vez no computador",
+          "src": "/ajuda/agenda/marcar-varias-sessoes-desktop.png"
+        },
+        "phone": {
+          "alt": "Marcar várias sessões de uma vez no telemóvel",
+          "src": "/ajuda/agenda/marcar-varias-sessoes-390.png"
+        }
+      },
       "order": {
         "proprietario": 4,
         "rececao": 4,
@@ -2446,7 +2614,7 @@
       ],
       "section": "agenda",
       "see": [],
-      "shots": null,
+      "shots": "agenda.marcar-varias-sessoes",
       "title": "Marcar várias sessões de uma vez",
       "words": 125
     },
@@ -2661,6 +2829,9 @@
             "terapeuta"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -2670,7 +2841,16 @@
       "file": "02-agenda/04-registar-o-estado.md",
       "goal": "Registar o que aconteceu a uma consulta, numa marcação ou numa série.",
       "id": "agenda.registar-o-estado",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Confirmar, concluir, marcar falta ou cancelar no computador",
+          "src": "/ajuda/agenda/registar-o-estado-desktop.png"
+        },
+        "phone": {
+          "alt": "Confirmar, concluir, marcar falta ou cancelar no telemóvel",
+          "src": "/ajuda/agenda/registar-o-estado-390.png"
+        }
+      },
       "order": {
         "proprietario": 3,
         "rececao": 3,
@@ -2688,7 +2868,7 @@
       ],
       "section": "agenda",
       "see": [],
-      "shots": null,
+      "shots": "agenda.registar-o-estado",
       "title": "Confirmar, concluir, marcar falta ou cancelar",
       "words": 138
     },
@@ -2824,6 +3004,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "schedule:manage",
@@ -2833,7 +3016,16 @@
       "file": "02-agenda/05-bloquear-horario.md",
       "goal": "Tirar umas horas de um terapeuta da agenda, com o motivo.",
       "id": "agenda.bloquear-horario",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Bloquear um horário na agenda no computador",
+          "src": "/ajuda/agenda/bloquear-horario-desktop.png"
+        },
+        "phone": {
+          "alt": "Bloquear um horário na agenda no telemóvel",
+          "src": "/ajuda/agenda/bloquear-horario-390.png"
+        }
+      },
       "order": {
         "proprietario": 5,
         "rececao": 5,
@@ -2851,7 +3043,7 @@
       ],
       "section": "agenda",
       "see": [],
-      "shots": null,
+      "shots": "agenda.bloquear-horario",
       "title": "Bloquear um horário na agenda",
       "words": 100
     },
@@ -2993,6 +3185,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:read",
@@ -3000,7 +3195,16 @@
       "file": "02-agenda/06-encontrar-marcacoes.md",
       "goal": "Procurar por datas, paciente, estado, serviço ou terapeuta e abrir a marcação.",
       "id": "agenda.encontrar-marcacoes",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Encontrar marcações na lista no computador",
+          "src": "/ajuda/agenda/encontrar-marcacoes-desktop.png"
+        },
+        "phone": {
+          "alt": "Encontrar marcações na lista no telemóvel",
+          "src": "/ajuda/agenda/encontrar-marcacoes-390.png"
+        }
+      },
       "order": {
         "proprietario": 6,
         "rececao": 7,
@@ -3018,7 +3222,7 @@
       ],
       "section": "agenda",
       "see": [],
-      "shots": null,
+      "shots": "agenda.encontrar-marcacoes",
       "title": "Encontrar marcações na lista",
       "words": 153
     },
@@ -3087,6 +3291,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:write",
@@ -3094,7 +3301,16 @@
       "file": "02-agenda/07-nota-na-marcacao.md",
       "goal": "Passar informação entre a receção e o terapeuta sobre uma consulta.",
       "id": "agenda.nota-na-marcacao",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Deixar uma nota numa marcação no computador",
+          "src": "/ajuda/agenda/nota-na-marcacao-desktop.png"
+        },
+        "phone": {
+          "alt": "Deixar uma nota numa marcação no telemóvel",
+          "src": "/ajuda/agenda/nota-na-marcacao-390.png"
+        }
+      },
       "order": {
         "proprietario": 7,
         "rececao": 8,
@@ -3112,7 +3328,7 @@
       ],
       "section": "agenda",
       "see": [],
-      "shots": null,
+      "shots": "agenda.nota-na-marcacao",
       "title": "Deixar uma nota numa marcação",
       "words": 72
     },
@@ -3435,6 +3651,9 @@
             "terapeuta"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:read",
@@ -3442,7 +3661,16 @@
       "file": "03-pacientes/01-encontrar-paciente.md",
       "goal": "Pesquisar por nome, NIF, telemóvel ou nº de utente e abrir a ficha.",
       "id": "pacientes.encontrar-paciente",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Encontrar um paciente no computador",
+          "src": "/ajuda/pacientes/encontrar-paciente-desktop.png"
+        },
+        "phone": {
+          "alt": "Encontrar um paciente no telemóvel",
+          "src": "/ajuda/pacientes/encontrar-paciente-390.png"
+        }
+      },
       "order": {
         "proprietario": 1,
         "rececao": 1,
@@ -3460,7 +3688,7 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": null,
+      "shots": "pacientes.encontrar-paciente",
       "title": "Encontrar um paciente",
       "words": 162
     },
@@ -3644,6 +3872,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:write",
@@ -3653,7 +3884,16 @@
       "file": "03-pacientes/02-registar-paciente.md",
       "goal": "Criar a ficha de quem vem pela primeira vez, sem duplicar.",
       "id": "pacientes.registar-paciente",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Registar um paciente novo no computador",
+          "src": "/ajuda/pacientes/registar-paciente-desktop.png"
+        },
+        "phone": {
+          "alt": "Registar um paciente novo no telemóvel",
+          "src": "/ajuda/pacientes/registar-paciente-390.png"
+        }
+      },
       "order": {
         "proprietario": 2,
         "rececao": 2,
@@ -3672,7 +3912,7 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": null,
+      "shots": "pacientes.registar-paciente",
       "title": "Registar um paciente novo",
       "words": 156
     },
@@ -3862,6 +4102,9 @@
             "terapeuta"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:read",
@@ -3869,7 +4112,16 @@
       "file": "03-pacientes/03-ficha-do-paciente.md",
       "goal": "Saber o que está em cada separador e o que dizem os avisos.",
       "id": "pacientes.ficha-do-paciente",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "A ficha do paciente no computador",
+          "src": "/ajuda/pacientes/ficha-do-paciente-desktop.png"
+        },
+        "phone": {
+          "alt": "A ficha do paciente no telemóvel",
+          "src": "/ajuda/pacientes/ficha-do-paciente-390.png"
+        }
+      },
       "order": {
         "proprietario": 3,
         "rececao": 8,
@@ -3887,7 +4139,7 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": null,
+      "shots": "pacientes.ficha-do-paciente",
       "title": "A ficha do paciente",
       "words": 167
     },
@@ -3977,6 +4229,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:write",
@@ -3984,7 +4239,16 @@
       "file": "03-pacientes/04-atualizar-dados.md",
       "goal": "Corrigir os dados pessoais, os contactos ou a clínica de um paciente.",
       "id": "pacientes.atualizar-dados",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Atualizar os dados de um paciente no computador",
+          "src": "/ajuda/pacientes/atualizar-dados-desktop.png"
+        },
+        "phone": {
+          "alt": "Atualizar os dados de um paciente no telemóvel",
+          "src": "/ajuda/pacientes/atualizar-dados-390.png"
+        }
+      },
       "order": {
         "proprietario": 4,
         "rececao": 4
@@ -4000,7 +4264,7 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": null,
+      "shots": "pacientes.atualizar-dados",
       "title": "Atualizar os dados de um paciente",
       "words": 63
     },
@@ -4066,6 +4330,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "care_team:manage",
@@ -4073,7 +4340,16 @@
       "file": "03-pacientes/05-atribuir-terapeutas.md",
       "goal": "Dizer quem acompanha o paciente.",
       "id": "pacientes.atribuir-terapeutas",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Atribuir terapeutas a um paciente no computador",
+          "src": "/ajuda/pacientes/atribuir-terapeutas-desktop.png"
+        },
+        "phone": {
+          "alt": "Atribuir terapeutas a um paciente no telemóvel",
+          "src": "/ajuda/pacientes/atribuir-terapeutas-390.png"
+        }
+      },
       "order": {
         "proprietario": 5,
         "rececao": 5
@@ -4089,7 +4365,7 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": null,
+      "shots": "pacientes.atribuir-terapeutas",
       "title": "Atribuir terapeutas a um paciente",
       "words": 69
     },
@@ -4318,6 +4594,9 @@
             "proprietario"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -4325,7 +4604,16 @@
       "file": "03-pacientes/06-marcacoes-na-ficha.md",
       "goal": "Gerir as marcações de um paciente sem passar pela agenda.",
       "id": "pacientes.marcacoes-na-ficha",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Marcar, cancelar ou corrigir um estado a partir da ficha no computador",
+          "src": "/ajuda/pacientes/marcacoes-na-ficha-desktop.png"
+        },
+        "phone": {
+          "alt": "Marcar, cancelar ou corrigir um estado a partir da ficha no telemóvel",
+          "src": "/ajuda/pacientes/marcacoes-na-ficha-390.png"
+        }
+      },
       "order": {
         "proprietario": 6,
         "rececao": 3,
@@ -4343,7 +4631,7 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": null,
+      "shots": "pacientes.marcacoes-na-ficha",
       "title": "Marcar, cancelar ou corrigir um estado a partir da ficha",
       "words": 138
     },
@@ -4535,6 +4823,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "patients:write",
@@ -4542,7 +4833,16 @@
       "file": "03-pacientes/07-declaracao-e-documentos.md",
       "goal": "Imprimir uma declaração e carregar ou retirar um documento.",
       "id": "pacientes.declaracao-e-documentos",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Declaração de presença e documentos no computador",
+          "src": "/ajuda/pacientes/declaracao-e-documentos-desktop.png"
+        },
+        "phone": {
+          "alt": "Declaração de presença e documentos no telemóvel",
+          "src": "/ajuda/pacientes/declaracao-e-documentos-390.png"
+        }
+      },
       "order": {
         "proprietario": 7,
         "rececao": 6,
@@ -4560,7 +4860,7 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": null,
+      "shots": "pacientes.declaracao-e-documentos",
       "title": "Declaração de presença e documentos",
       "words": 134
     },
@@ -6165,6 +6465,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -6174,7 +6477,16 @@
       "file": "05-pacotes/01-atribuir-pacote.md",
       "goal": "Escolher o pacote na nova marcação e marcar já as sessões que o paciente quer.",
       "id": "pacotes.atribuir-pacote",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Atribuir um pacote e marcar as sessões no computador",
+          "src": "/ajuda/pacotes/atribuir-pacote-desktop.png"
+        },
+        "phone": {
+          "alt": "Atribuir um pacote e marcar as sessões no telemóvel",
+          "src": "/ajuda/pacotes/atribuir-pacote-390.png"
+        }
+      },
       "order": {
         "proprietario": 2,
         "rececao": 1,
@@ -6192,7 +6504,7 @@
       ],
       "section": "pacotes",
       "see": [],
-      "shots": null,
+      "shots": "pacotes.atribuir-pacote",
       "title": "Atribuir um pacote e marcar as sessões",
       "words": 184
     },
@@ -6469,6 +6781,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "appointments:write",
@@ -6476,7 +6791,16 @@
       "file": "05-pacotes/03-associar-a-pacote.md",
       "goal": "Fazer uma marcação existente consumir uma sessão.",
       "id": "pacotes.associar-a-pacote",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Associar uma marcação já feita a um pacote no computador",
+          "src": "/ajuda/pacotes/associar-a-pacote-desktop.png"
+        },
+        "phone": {
+          "alt": "Associar uma marcação já feita a um pacote no telemóvel",
+          "src": "/ajuda/pacotes/associar-a-pacote-390.png"
+        }
+      },
       "order": {
         "proprietario": 5,
         "rececao": 4,
@@ -6495,7 +6819,7 @@
       ],
       "section": "pacotes",
       "see": [],
-      "shots": null,
+      "shots": "pacotes.associar-a-pacote",
       "title": "Associar uma marcação já feita a um pacote",
       "words": 138
     },
@@ -6926,6 +7250,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "invoices:issue",
@@ -6933,7 +7260,16 @@
       "file": "06-faturacao/01-faturas-de-um-periodo.md",
       "goal": "Filtrar por datas, estado e local e abrir uma fatura.",
       "id": "faturacao.faturas-de-um-periodo",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Consultar as faturas de um período no computador",
+          "src": "/ajuda/faturacao/faturas-de-um-periodo-desktop.png"
+        },
+        "phone": {
+          "alt": "Consultar as faturas de um período no telemóvel",
+          "src": "/ajuda/faturacao/faturas-de-um-periodo-390.png"
+        }
+      },
       "order": {
         "proprietario": 1,
         "rececao": 1
@@ -6949,7 +7285,7 @@
       ],
       "section": "faturacao",
       "see": [],
-      "shots": null,
+      "shots": "faturacao.faturas-de-um-periodo",
       "title": "Consultar as faturas de um período",
       "words": 125
     },
@@ -7014,6 +7350,9 @@
             "terapeuta"
           ],
           "type": "role"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "invoices:read",
@@ -7021,7 +7360,16 @@
       "file": "06-faturacao/02-faturas-de-um-paciente.md",
       "goal": "Abrir o separador Faturação da ficha.",
       "id": "faturacao.faturas-de-um-paciente",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Ver as faturas de um paciente no computador",
+          "src": "/ajuda/faturacao/faturas-de-um-paciente-desktop.png"
+        },
+        "phone": {
+          "alt": "Ver as faturas de um paciente no telemóvel",
+          "src": "/ajuda/faturacao/faturas-de-um-paciente-390.png"
+        }
+      },
       "order": {
         "proprietario": 4,
         "rececao": 2,
@@ -7039,7 +7387,7 @@
       ],
       "section": "faturacao",
       "see": [],
-      "shots": null,
+      "shots": "faturacao.faturas-de-um-paciente",
       "title": "Ver as faturas de um paciente",
       "words": 53
     },
@@ -7617,6 +7965,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "schedule:read",
@@ -7624,7 +7975,16 @@
       "file": "07-equipa-e-horarios/01-inspetor-de-horarios.md",
       "goal": "Usar o Inspetor de horários para ver o horário que a agenda usa.",
       "id": "equipa-e-horarios.inspetor-de-horarios",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Ver onde e quando um terapeuta trabalha no computador",
+          "src": "/ajuda/equipa-e-horarios/inspetor-de-horarios-desktop.png"
+        },
+        "phone": {
+          "alt": "Ver onde e quando um terapeuta trabalha no telemóvel",
+          "src": "/ajuda/equipa-e-horarios/inspetor-de-horarios-390.png"
+        }
+      },
       "order": {
         "proprietario": 1,
         "rececao": 2,
@@ -7642,7 +8002,7 @@
       ],
       "section": "equipa-e-horarios",
       "see": [],
-      "shots": null,
+      "shots": "equipa-e-horarios.inspetor-de-horarios",
       "title": "Ver onde e quando um terapeuta trabalha",
       "words": 148
     },
@@ -7776,6 +8136,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "schedule:manage",
@@ -7783,7 +8146,16 @@
       "file": "07-equipa-e-horarios/02-horario-semanal.md",
       "goal": "Definir os dias, as horas e o local de uma semana normal.",
       "id": "equipa-e-horarios.horario-semanal",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Alterar o horário semanal habitual no computador",
+          "src": "/ajuda/equipa-e-horarios/horario-semanal-desktop.png"
+        },
+        "phone": {
+          "alt": "Alterar o horário semanal habitual no telemóvel",
+          "src": "/ajuda/equipa-e-horarios/horario-semanal-390.png"
+        }
+      },
       "order": {
         "proprietario": 2,
         "rececao": 3,
@@ -7801,7 +8173,7 @@
       ],
       "section": "equipa-e-horarios",
       "see": [],
-      "shots": null,
+      "shots": "equipa-e-horarios.horario-semanal",
       "title": "Alterar o horário semanal habitual",
       "words": 107
     },
@@ -8103,6 +8475,9 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "type": "figure"
         }
       ],
       "capability": "schedule:manage",
@@ -8110,7 +8485,16 @@
       "file": "07-equipa-e-horarios/04-registar-ausencia.md",
       "goal": "Bloquear horas, um bloqueio repetido ou dias inteiros.",
       "id": "equipa-e-horarios.registar-ausencia",
-      "images": null,
+      "images": {
+        "desktop": {
+          "alt": "Registar uma ausência no computador",
+          "src": "/ajuda/equipa-e-horarios/registar-ausencia-desktop.png"
+        },
+        "phone": {
+          "alt": "Registar uma ausência no telemóvel",
+          "src": "/ajuda/equipa-e-horarios/registar-ausencia-390.png"
+        }
+      },
       "order": {
         "proprietario": 4,
         "rececao": 1,
@@ -8128,7 +8512,7 @@
       ],
       "section": "equipa-e-horarios",
       "see": [],
-      "shots": null,
+      "shots": "equipa-e-horarios.registar-ausencia",
       "title": "Registar uma ausência",
       "words": 161
     },

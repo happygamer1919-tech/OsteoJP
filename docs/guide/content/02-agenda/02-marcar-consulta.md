@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 1, terapeuta 3, proprietario 2
 capability: appointments:write
 screens: agenda
+shots: agenda.marcar-consulta
 faq: marcar-consulta
 review: CARE-02a
 ---
@@ -25,3 +26,6 @@ O campo **Terapeuta** já traz o seu nome; se a clínica tiver um equipamento pa
 A janela não cria pacientes: quem ainda não tem ficha regista-se primeiro em **Pacientes**, **Novo paciente**.
 
 Se houver conflito (terapeuta ou sala ocupados, ou uma ausência), aparece um aviso e o botão passa a **Guardar mesmo assim**: use-o só com certeza. Uma hora fora do horário do terapeuta ou com a clínica fechada é sempre recusada.
+
+![Marcar uma consulta no telemóvel](../../../../apps/web/public/ajuda/agenda/marcar-consulta-390.png)
+![Marcar uma consulta no computador](../../../../apps/web/public/ajuda/agenda/marcar-consulta-desktop.png)

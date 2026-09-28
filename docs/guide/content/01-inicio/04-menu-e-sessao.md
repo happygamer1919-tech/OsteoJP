@@ -5,6 +5,7 @@ goal: Encontrar cada ecrã no computador e no telemóvel e terminar a sessão nu
 roles: rececao, terapeuta, proprietario
 order: rececao 4, terapeuta 4, proprietario 4
 screens: inicio, notificacoes
+shots: inicio.menu-e-sessao
 ---
 ## O menu, o sino e o fim da sessão
 
@@ -25,3 +26,6 @@ O menu tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcaçõe
 No topo de todas as páginas ficam o sino das **Notificações**, **O meu perfil** e **Terminar sessão**. O número no sino indica as notificações por ler; clique no sino para abrir a página **Notificações**.
 
 Num computador partilhado, termine sempre o dia com **Terminar sessão**.
+
+![O menu, o sino e o fim da sessão no telemóvel](../../../../apps/web/public/ajuda/inicio/menu-e-sessao-390.png)
+![O menu, o sino e o fim da sessão no computador](../../../../apps/web/public/ajuda/inicio/menu-e-sessao-desktop.png)

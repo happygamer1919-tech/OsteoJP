@@ -1,0 +1,101 @@
+sha256 15e8b468018e2cc706ca371f41f8b188de313cf23ab1ed90ac237df539b62d90
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Voltar
+ME
+Marta Exemplo
+RGPD em falta
+
+42 anos · Não especificado · NIF 999000001
+
++351 910 000 101 · marta.exemplo@exemplo.test
+
+Nova marcação
+Resumo
+Marcações
+Notas
+Documentos
+Faturação
+Dados pessoais
+Editar dados
+Data de nascimento
+12/03/1984
+Sexo
+Não especificado
+NIF
+999000001
+N.º de paciente
+0001
+Telemóvel
++351 910 000 101
+Email
+marta.exemplo@exemplo.test
+Terapeutas atribuídos
+
+Os terapeutas atribuídos veem todo o histórico de consultas deste paciente, incluindo as consultas com colegas.
+
+As entradas adicionadas automaticamente vêm de uma marcação e não podem ser removidas.
+
+Bruno Fictício
+Atribuído manualmente em 01/09/2026
+Remover
+Terapeuta
+Carla Modelo
+Duarte Inventado
+Atribuir
+## frame 1 form values
+Carla Modelo
+## frame 2
+RE
+O meu perfil
+Terminar sessão
+← Voltar
+Editar dados
+Nome completo *
+Data de nascimento
+Sexo
+Não especificado
+Masculino
+Feminino
+NIF
+9 dígitos.
+Estrangeiro / sem NIF
+Números dos seguros de saúde
+
+Sem seguros registados.
+
+Adicionar seguro
+Telemóvel
+Número guardado num formato antigo. Fica como está, a menos que o altere.
+Email
+Localidade
+Código postal
+Profissão
+Localização *
+Selecionar localização
+Polo Exemplo
+Sede Exemplo
+Como nos conheceu?
+Não especificado
+Redes sociais
+Website
+Recomendação de um amigo
+Outro
+Contraindicações Gerais
+Epilepsia
+Gravidez
+Portador de pacemaker
+Outra
+Guardar
+Cancelar
+## frame 2 form values
+Marta Exemplo
+12/03/1984
+Não especificado
+999000001
++351 910 000 101
+marta.exemplo@exemplo.test
+Selecionar localização
+Não especificado

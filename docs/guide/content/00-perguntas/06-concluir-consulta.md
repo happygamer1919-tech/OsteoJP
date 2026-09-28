@@ -20,3 +20,6 @@ Se a consulta ficou **Concluída** ou **Falta** por engano, corrija na ficha do 
 ::: terapeuta
 Depois da consulta, escreva o registo em **Nova ficha clínica**.
 :::
+
+![Confirmar, concluir, marcar falta ou cancelar no telemóvel](../../../../apps/web/public/ajuda/agenda/registar-o-estado-390.png)
+![Confirmar, concluir, marcar falta ou cancelar no computador](../../../../apps/web/public/ajuda/agenda/registar-o-estado-desktop.png)

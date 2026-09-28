@@ -18,3 +18,6 @@ O campo **Terapeuta** já traz o seu nome.
 :::
 
 A janela não cria pacientes: registe primeiro o paciente novo em **Pacientes**, **Novo paciente**. Se o paciente tiver sessões pagas por usar, a janela avisa com **Este utente tem sessões por usar**.
+
+![Marcar uma consulta no telemóvel](../../../../apps/web/public/ajuda/agenda/marcar-consulta-390.png)
+![Marcar uma consulta no computador](../../../../apps/web/public/ajuda/agenda/marcar-consulta-desktop.png)
