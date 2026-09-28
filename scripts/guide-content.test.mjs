@@ -13,9 +13,10 @@
  *   one (U+2010, U+2011, the minus sign U+2212 and three look-alikes), because
  *   the hyphen checks read only "-" and would let those through.
  *
- *   EVERY SCREEN OF docs/guide/outline.md IS SHOWN. Each capture the outline
- *   links appears in a chapter, the phone (-390) and the desktop image of one
- *   screen on consecutive image lines, which the build prints side by side.
+ *   EVERY SCREEN OF docs/guide/outline.md IS SHOWN. Every screen entry of the
+ *   outline links its two captures, and each capture the outline links appears
+ *   in a chapter, the phone (-390) and the desktop image of one screen on
+ *   consecutive image lines, which the build prints side by side.
  *
  * And the chapters use only the Markdown the build converts: "#", "##", "###"
  * headings, paragraphs, "* " and "1. " lists, **bold**, and image lines. Any
@@ -121,6 +122,38 @@ function imagesOf(chapters) {
 
 function report(offences, headline) {
   assert.deepEqual(offences, [], `${headline}\n  ${offences.join('\n  ')}`);
+}
+
+// One screen of the outline: "* **Name** (`/route`): what it is. Capturas: ...".
+const OUTLINE_ENTRY = /^\* \*\*([^*]+)\*\* \(`\//;
+const CAPTURE_LINK = /\]\((screens\/[^)\s]+\.png)\)/g;
+
+/**
+ * The outline's screen entries that do not link exactly one phone (-390) and
+ * one desktop capture of the same screen. The test below that holds the
+ * chapters to the outline reads only the captures the outline LINKS, so an
+ * entry that links none ("Capturas: por tirar.") passed it; this is the check
+ * that reads the entries themselves (outline.md: "Cada ecrã tem duas
+ * capturas").
+ */
+function outlineEntriesWithoutCaptures(text) {
+  const entries = [];
+  const offences = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    const entry = OUTLINE_ENTRY.exec(line);
+    if (!entry) return;
+    entries.push(entry[1]);
+    const links = [...line.matchAll(CAPTURE_LINK)].map((m) => m[1]);
+    const phones = links.filter((l) => l.endsWith('-390.png'));
+    const desktops = links.filter((l) => l.endsWith('-desktop.png'));
+    const paired =
+      links.length === 2 &&
+      phones.length === 1 &&
+      desktops.length === 1 &&
+      phones[0].replace(/-390\.png$/, '') === desktops[0].replace(/-desktop\.png$/, '');
+    if (!paired) offences.push(`outline.md:${i + 1}: ${entry[1]} links ${links.length ? links.join(', ') : 'no capture'}`);
+  });
+  return { entries, offences };
 }
 
 test('the content directory holds at least three chapter files', (t) => {
@@ -252,6 +285,40 @@ test('every screen in docs/guide/outline.md appears as both its -390 and its -de
   const shownInChapters = new Set(imagesOf(loadChapters()).map((image) => image.key).filter(Boolean));
   const missing = [...new Set(wanted)].filter((key) => !shownInChapters.has(key));
   report(missing, `${missing.length} of the outline's ${new Set(wanted).size} captures appear in no chapter:`);
+});
+
+test('every screen entry in docs/guide/outline.md links its -390 and its -desktop capture', () => {
+  const { entries, offences } = outlineEntriesWithoutCaptures(readFileSync(OUTLINE, 'utf8'));
+  // A parse that found no entry would pass this test for the wrong reason.
+  assert.ok(entries.length > 0, `found no screen entry ("* **Name** (\`/route\`)") in ${shown(OUTLINE)}`);
+  report(offences, 'Every screen in the outline has two captures, phone and desktop, linked on its own line:');
+});
+
+// THE CHECK ABOVE, PROVED BOTH WAYS on seeded outline lines. The red arms are
+// the shapes that slipped through before (no link at all) and the near misses;
+// the null arm is a complete entry, plus a line that is not an entry, which
+// must be ignored rather than refused.
+test('the outline entry check refuses an entry without both captures and passes a complete one', () => {
+  const entry = (captures) => `* **Respostas** (\`/reminders/review\`): o ecrã. Capturas: ${captures}.`;
+  const phone = '[telemóvel](screens/rececao/respostas-sms-390.png)';
+  const desktop = '[computador](screens/rececao/respostas-sms-desktop.png)';
+  const red = [
+    entry('por tirar'),
+    entry(phone),
+    entry(desktop),
+    entry(`${phone}, [computador](screens/rececao/outra-desktop.png)`),
+    entry(`${phone}, ${phone}`),
+    entry(`${phone}, ${desktop}, ${desktop}`),
+  ];
+  for (const line of red) {
+    const { entries, offences } = outlineEntriesWithoutCaptures(line);
+    assert.equal(entries.length, 1, `the seeded line was not read as an entry: ${line}`);
+    assert.equal(offences.length, 1, `the outline entry check let ${JSON.stringify(line)} through`);
+  }
+  const clean = [entry(`${phone}, ${desktop}`), '* Cada ecrã tem duas capturas: telemóvel e computador.', 'Menu: Início, Agenda.'].join('\n');
+  const { entries, offences } = outlineEntriesWithoutCaptures(clean);
+  assert.deepEqual(entries, ['Respostas'], 'only the "* **Name** (`/route`)" line is a screen entry');
+  assert.deepEqual(offences, [], `the outline entry check refused a complete entry:\n  ${offences.join('\n  ')}`);
 });
 
 test("each screen's phone and desktop images sit on consecutive image lines", () => {

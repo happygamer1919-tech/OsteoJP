@@ -600,3 +600,34 @@ describe("RB-NOTES: the note excerpts on a Marcações row", () => {
     expect(html).toContain("marcacoes-notes-button");
   });
 });
+
+describe("T5 F5 - the subtitle says whose bookings the list holds", () => {
+  // For a therapist, page.tsx locks the query to practitionerId = their own id,
+  // so the list holds only the rows where they are the main Terapeuta. The
+  // subtitle used to say "dos seus pacientes" to them, which also promised their
+  // patients' bookings with a colleague and the rows where they are Terapeuta 2.
+  const renderFor = (lockTherapist: boolean) =>
+    render(
+      <MarcacoesView
+        filters={baseFilters}
+        lockTherapist={lockTherapist}
+        viewer={lockTherapist ? { role: "therapist", userId: "t1" } : VIEWER}
+        options={OPTIONS}
+        serviceFilterOptions={SERVICES}
+        canHardDelete={false}
+        appointments={[]}
+      />,
+    );
+
+  it("a therapist is told the list is the bookings where they are the main therapist", () => {
+    const html = renderFor(true);
+    expect(html).toContain("Consulte as marcações em que é o terapeuta principal.");
+    expect(html).not.toContain("Consulte as marcações dos seus pacientes.");
+  });
+
+  it("every other role keeps the unscoped subtitle", () => {
+    const html = renderFor(false);
+    expect(html).toContain("Consulte as marcações dos seus pacientes.");
+    expect(html).not.toContain("terapeuta principal");
+  });
+});

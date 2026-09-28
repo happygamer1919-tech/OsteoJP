@@ -10,6 +10,7 @@ import type {
   ResolveOutcome,
   ReviewResolution,
 } from "@/lib/reminders/inbound-store";
+import type { AppointmentStatusValue } from "@/lib/scheduling/types";
 
 // Reception review list for inbound patient SMS replies (W14-06).
 //
@@ -38,6 +39,25 @@ function stamp(iso: string): string {
 }
 
 type RowState = "double_booked" | "not_found" | "no_appointment" | null;
+
+// The matched appointment's lifecycle status, in the staff's language. The row
+// printed the raw enum ("scheduled") until T5 F4 put this screen in the menu;
+// the labels are the ones Marcações and the patient's appointment list use.
+// Local, matching the per-view duplication of this mapping elsewhere
+// (marcacoes-view.tsx, patients/[id]/appointments-list.tsx).
+const STATUS_KEY: Record<AppointmentStatusValue, keyof typeof s> = {
+  scheduled: "appointment.status.scheduled",
+  confirmed: "appointment.status.confirmed",
+  completed: "appointment.status.completed",
+  cancelled: "appointment.status.cancelled",
+  no_show: "appointment.status.no_show",
+};
+
+/** " · Agendada" for a known status; nothing for null or a value outside the enum, never the raw value. */
+function statusSuffix(status: string | null): string {
+  if (!status || !Object.hasOwn(STATUS_KEY, status)) return "";
+  return ` · ${s[STATUS_KEY[status as AppointmentStatusValue]]}`;
+}
 
 export function InboundReviewList({
   items,
@@ -109,7 +129,7 @@ export function InboundReviewList({
               {item.appointmentStartsAt ? (
                 <p className="text-xs text-v2-text-secondary">
                   {s["remindersReview.appointment"]} {stamp(item.appointmentStartsAt)}
-                  {item.appointmentStatus ? ` · ${item.appointmentStatus}` : ""}
+                  {statusSuffix(item.appointmentStatus)}
                 </p>
               ) : (
                 <p className="text-xs text-v2-text-secondary">
