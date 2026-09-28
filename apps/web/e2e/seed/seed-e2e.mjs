@@ -11,7 +11,7 @@
  *     - 3 users: e2e-admin / e2e-therapist / e2e-reception (role claims via the
  *       custom_access_token_hook, enabled in config.toml)
  *     - 1 location, 1 service
- *     - patients: "Maria Silva" (active, searchable by NIF/phone), two more
+ *     - patients: "Maria Filia" (active, searchable by NIF/phone), two more
  *       active, and one PRE-SOFT-DELETED patient (absent-from-active-views guard)
  *     - form templates (osteopathy/physiotherapy/nesa — files that carry a
  *       JSON `schema`; the x-form-ref wrappers are skipped)
@@ -203,15 +203,15 @@ const SERVICE_UNMAPPED_NAME = "Drenagem Linfática";
 const PATIENTS_A = [
   {
     id: "00000000-0000-0000-0000-00000000a301",
-    full_name: "Maria Silva",
+    full_name: "Maria Filia",
     nif: "123456789",
     phone: "+351 912 345 678",
-    email: "maria.silva@example.pt",
+    email: "maria.filia@example.pt",
     deleted_at: null,
   },
   {
     id: "00000000-0000-0000-0000-00000000a302",
-    full_name: "João Pereira",
+    full_name: "João Fictício",
     nif: "234567891",
     phone: "+351 913 000 002",
     email: null,
@@ -219,7 +219,7 @@ const PATIENTS_A = [
   },
   {
     id: "00000000-0000-0000-0000-00000000a303",
-    full_name: "Ana Costa",
+    full_name: "Ana Inventada",
     nif: "345678912",
     phone: "+351 914 000 003",
     email: null,
@@ -256,7 +256,7 @@ const PATIENTS_A = [
 // ---------------------------------------------------------------------------
 // W13-03 / SEC-otp-login-path-has-zero-e2e-coverage — the OTP LOGIN patient.
 //
-// A SECOND portal patient, and it exists because Maria Silva CANNOT be used for
+// A SECOND portal patient, and it exists because Maria Filia CANNOT be used for
 // this. resolvePatientByProvenPhone (apps/api/lib/auth/patient-linkage.ts:73)
 // requires `auth_user_id IS NULL` - an unclaimed row - and ensurePortalPatient
 // below sets Maria's auth_user_id so the trusted-device path can use her. She is
@@ -441,7 +441,7 @@ async function ensureDeclaracaoAppointment(therapistUserId) {
     {
       id: "00000000-0000-0000-0000-0000000ad001",
       tenant_id: TENANT_A,
-      patient_id: "00000000-0000-0000-0000-00000000a301", // Maria Silva
+      patient_id: "00000000-0000-0000-0000-00000000a301", // Maria Filia
       practitioner_id: therapistUserId,
       location_id: LOCATION_A, // Linda-a-Velha
       service_id: SERVICE_A,
@@ -1099,7 +1099,7 @@ async function ensureFormTemplates() {
 // ---------------------------------------------------------------------------
 
 const AI_REVIEW_DRAFT_ID = "00000000-0000-0000-0000-00000000ad17";
-const AI_REVIEW_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Pereira
+const AI_REVIEW_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Fictício
 
 /**
  * LE-seed-not-idempotent. THE SEED USED TO DIE ON ITS SECOND RUN, and the reason
@@ -1131,7 +1131,7 @@ const AI_REVIEW_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João
  * two are known.
  *
  * WHAT ACCUMULATES, stated rather than discovered later: one signed record per
- * suite run stays on João Pereira for ever, because nothing can delete it. They
+ * suite run stays on João Fictício for ever, because nothing can delete it. They
  * are inert - every spec addresses a record by id, none counts them - and they
  * leave the "Por rever" queue on signing (ai_review_state becomes approved).
  */
@@ -1223,7 +1223,7 @@ async function ensureAiReviewDraft() {
 // ---------------------------------------------------------------------------
 
 const IMPORTED_RECORD_ID = "00000000-0000-0000-0000-00000000fe01";
-const IMPORTED_RECORD_PATIENT = "00000000-0000-0000-0000-00000000a303"; // Ana Costa
+const IMPORTED_RECORD_PATIENT = "00000000-0000-0000-0000-00000000a303"; // Ana Inventada
 
 /** The vendor-named cells the adapter carries through verbatim. */
 const IMPORTED_RECORD_DATA = {
@@ -1344,7 +1344,7 @@ async function ensureImportedDocuments(recordId) {
 // ---------------------------------------------------------------------------
 
 const AI_DELETE_DRAFT_ID = "00000000-0000-0000-0000-00000000ad18";
-const AI_DELETE_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Pereira
+const AI_DELETE_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Fictício
 const AI_DELETE_INGESTION_ID = "00000000-0000-0000-0000-00000000a1d8";
 
 async function ensureAiDeleteDraft() {
@@ -1384,20 +1384,20 @@ async function ensureAiDeleteDraft() {
 }
 
 // ---------------------------------------------------------------------------
-// Portal patient — an auth user linked to Maria Silva's patient row.
+// Portal patient — an auth user linked to Maria Filia's patient row.
 // Used by portal-reminders.spec.ts. Credentials: E2E_PORTAL_PATIENT_EMAIL /
 // E2E_PASSWORD. The seed resets reminder prefs to a known initial state on
 // every run so toggle-persistence tests start deterministically.
 // ---------------------------------------------------------------------------
 
 const E2E_PORTAL_PATIENT_EMAIL = "e2e-patient@osteojp.test";
-const MARIA_SILVA_ID = PATIENTS_A[0].id; // "00000000-0000-0000-0000-00000000a301"
+const MARIA_FILIA_ID = PATIENTS_A[0].id; // "00000000-0000-0000-0000-00000000a301"
 
 async function ensurePortalPatient() {
   // Create (or update) the portal patient auth user.
   const authId = await ensureAuthUser(E2E_PORTAL_PATIENT_EMAIL, E2E_PASSWORD);
 
-  // Link the auth user to Maria Silva's patient row and reset reminder prefs
+  // Link the auth user to Maria Filia's patient row and reset reminder prefs
   // to the known initial state (sms=true, email=false) so toggle tests are
   // deterministic across re-runs.
   const { error } = await db
@@ -1408,9 +1408,9 @@ async function ensurePortalPatient() {
       reminder_sms_enabled: true,
       reminder_email_enabled: false,
     })
-    .eq("id", MARIA_SILVA_ID)
+    .eq("id", MARIA_FILIA_ID)
     .eq("tenant_id", TENANT_A);
-  must(error, `link portal patient auth_user_id for ${MARIA_SILVA_ID}`);
+  must(error, `link portal patient auth_user_id for ${MARIA_FILIA_ID}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1441,7 +1441,7 @@ async function ensurePortalTrustedDevice() {
     {
       device_token_hash: PORTAL_DEVICE_HASH,
       tenant_id: TENANT_A,
-      patient_id: MARIA_SILVA_ID,
+      patient_id: MARIA_FILIA_ID,
       expires_at: expiresAt,
       // Explicitly cleared: a previous run may have revoked it, and a revoked
       // row is refused for the rest of time.
@@ -1449,7 +1449,7 @@ async function ensurePortalTrustedDevice() {
     },
     { onConflict: "device_token_hash" },
   );
-  must(error, `seed portal trusted device for ${MARIA_SILVA_ID}`);
+  must(error, `seed portal trusted device for ${MARIA_FILIA_ID}`);
 }
 
 async function main() {
@@ -1488,7 +1488,7 @@ async function main() {
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
   console.log("[seed-e2e] patients A:", PATIENTS_A.length + 2, "(1 soft-deleted, +1 other-therapist, +1 otp-login)");
   console.log("[seed-e2e] availability: reset for every seeded user, then the two location fixtures");
-  console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
+  console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_FILIA_ID);
   console.log("[seed-e2e] otp-login patient:", PATIENT_OTP_LOGIN_A.phone, "→", PATIENT_OTP_LOGIN_A.id, "(auth_user_id null, first-login eligible)");
   console.log("[seed-e2e] portal trusted device:", `${PORTAL_DEVICE_HASH.slice(0, 12)}… (30d)`);
   console.log(
