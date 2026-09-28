@@ -44,11 +44,17 @@ table below. Those two promotions emptied the table above. The `0094` file was p
 there later and has since been promoted too (see the Promoted table), so the table is
 empty again.
 
-**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22.** It is
-**`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (applied and merged) ·
-`0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, applied and
-merged) · `0094` the users/tenants role fix (#1459, promoted, held for the apply) ·
-`0095` the grants revoke (#1397) · `0096` the conflict check's patient name**.
+**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-27 (the fourth time).** It is
+**`0090` NESA names · `0091` CARE-01 · `0092` CARE-LOC · `0093` RGPD-01 (all four
+applied and merged) · `0094` the users/tenants role fix (#1459, promoted, held for the apply) ·
+`0095` the conflict check's patient name (#1438, held; was `0096`) · `0096` the grants revoke
+(#1397, held; was `0095`) · `0097` the staging index (held) · `0098` CARE-02a (held) ·
+`0099` the registo write fix · `0100` onward SAT-01**. A pending file's `NEXT-AFTER-`
+name follows this queue: the conflict check follows `0094`, the grants revoke follows
+`0095`. The binding table is in `CLAUDE.md` under "SOLO's record".
+
+The 2026-09-22 queue, superseded: `0094` the users/tenants role fix · `0095` the grants
+revoke (#1397) · `0096` the conflict check's patient name.
 
 **THIS IS THE SECOND RENUMBERING OF THAT QUEUE, and the earlier ones were real.**
 The order first recorded here was 0090 NESA, 0091 care-team, 0092 RGPD-01,
