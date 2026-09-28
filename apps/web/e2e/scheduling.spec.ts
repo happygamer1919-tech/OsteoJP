@@ -54,8 +54,8 @@ test("a newly created appointment persists as scheduled / pendente (W3-01)", asy
   // ACC-marcacoes-row-vanished-between-tests - THE ROW IT REOPENS IS THE
   // ROW IT WROTE, and before this it was not asserted to be.
   // ======================================================================
-  // This reopened by `getByRole("button", { name: /Maria Silva/ })`, which asks
-  // "is there a card for Maria Silva on this day" and can be satisfied by
+  // This reopened by `getByRole("button", { name: /Maria Exemplo/ })`, which asks
+  // "is there a card for Maria Exemplo on this day" and can be satisfied by
   // SOMEBODY ELSE'S ROW. `portal-booking-request-mode.spec.ts` runs earlier in
   // the same shard and uses Maria as its portal patient, so Maria rows exist
   // that this test did not create. If the save above had silently failed, a

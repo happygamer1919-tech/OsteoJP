@@ -8,6 +8,7 @@
 import { type Page, type Locator, expect, test } from "@playwright/test";
 
 import { nifWithCheckDigit } from "../../lib/patients/nif";
+import { PATIENTS } from "../fixtures";
 
 /**
  * PL-31 — a NIF is now REQUIRED to create a patient, so every spec that creates
@@ -379,7 +380,7 @@ export async function gotoPatientEdit(page: Page, id: string): Promise<void> {
  * WHY A PRE-COMPUTED VERDICT AND NOT A RE-RUN
  * ==========================================================================
  * On 2026-09-03 `scheduling.spec.ts:406` failed three times in a row on E2E
- * shard 3 of #1107: the Maria Silva row was absent from
+ * shard 3 of #1107: the Maria Exemplo row was absent from
  * /marcacoes?from=<+13>&to=<+13>. The page snapshot showed every filter at its
  * default and exactly ONE row on the page, so she was absent from the RESULT
  * SET rather than filtered out of a correct one. A re-run of the same commit
@@ -442,9 +443,11 @@ export type MissingRowVerdict =
 /**
  * The control subject for the visibility read. A SEEDED patient, so "not
  * findable" cannot mean "never existed" for this one - which is exactly the
- * distinction the subject alone cannot make.
+ * distinction the subject alone cannot make. Read from PATIENTS, never typed
+ * again here, so a renamed seed patient cannot leave the control asking for a
+ * name nobody has.
  */
-const CONTROL_PATIENT = "Ana Costa";
+const CONTROL_PATIENT = PATIENTS.ana.name;
 
 /** Every appointment row rendered on the current page, id and shown name. */
 async function rowsOnPage(page: Page): Promise<Array<{ id: string; text: string }>> {
