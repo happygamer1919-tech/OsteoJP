@@ -8,11 +8,16 @@ import { s } from "@/lib/i18n";
 
 /**
  * T5b: the owner's clinic toggle on the Inicio revenue tile. "Todas as
- * localizacoes" (the default, every clinic) or one clinic.
+ * clinicas" (the default, every clinic) or one clinic.
  *
- * The platform's own `Select`, the same control and the same "Todas as
- * localizacoes" first entry as the Faturacao location filter, so the owner
- * meets one idiom for "which clinic" on both pages.
+ * The platform's own `Select`, the same control as the Faturacao location
+ * filter. Its first entry is the Pacientes clinic filter's words ("Todas as
+ * clinicas", patients.filterLocationAll), not Faturacao's "Todas as
+ * localizacoes", because this select lives inside a KPI tile: at 1280 to
+ * about 1365px (xl, four tiles beside the sidebar) its text box is about
+ * 124px, and "Todas as localizacoes" (145px in Inter 14px) was cut to "Todas
+ * as localizac". "Todas as clinicas" is 113px. The e2e spec measures it
+ * (dashboard-revenue-per-clinic.spec.ts, expectChoicesReadInFull).
  *
  * THE CHOICE LIVES IN THE URL (`?location=<id>`), never in client state: the
  * figure is computed on the server from that parameter, so a reload, a shared

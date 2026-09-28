@@ -46,7 +46,7 @@ import { serviceClient, therapistUserId } from "./helpers/confirm-code";
 
 const REVENUE_LABEL = "Receita (mês)";
 const TOGGLE_NAME = "Localização da receita";
-const ALL_LABEL = "Todas as localizações";
+const ALL_LABEL = "Todas as clínicas";
 
 /** Fixed ids, so a killed run's rows are found and removed by the next one. */
 const APPT_LV = "00000000-0000-0000-0000-0000000f5b01";
@@ -192,6 +192,60 @@ async function expectToggleFits(page: Page, where: string): Promise<void> {
   expect(m.toggle.bottom, `${where}: toggle bottom inside the tile`).toBeLessThanOrEqual(m.tile.bottom + 0.5);
   expect(m.contentHeight, `${where}: tile content height vs its box`).toBeLessThanOrEqual(m.boxHeight);
   expect(m.scrollWidth, `${where}: page scrollWidth vs clientWidth`).toBeLessThanOrEqual(m.clientWidth);
+  await expectChoicesReadInFull(page, where);
+}
+
+/**
+ * A SELECT THAT FITS ITS TILE CAN STILL CUT ITS OWN TEXT. The closed control
+ * shows the chosen entry inside its text box: the select's clientWidth less its
+ * left and right padding (the right padding is the chevron's room). At 1280 the
+ * tile is at its narrowest (xl, four columns beside the 304px sidebar), and the
+ * first label, then "Todas as localizações" (145px), was cut to "Todas as
+ * localizaç" there (text box 124px) while every box check above passed. It is
+ * now "Todas as clínicas" (113px).
+ *
+ * So the entries are measured in the select's own computed font, after the
+ * web font has loaded, and must fit that text box: the default entry, which
+ * is what the owner sees on arrival, and "Linda-a-Velha".
+ * NOT "Consultório B (E2E)": that fixture name carries a test suffix and is
+ * 129px, wider than "Castelo Branco" (101px), so at 1280 it is cut by about
+ * 5px, which is the fixture's suffix and not the control. Nor another spec's
+ * clinic, left behind by a killed run on a shared lane database.
+ */
+async function expectChoicesReadInFull(page: Page, where: string): Promise<void> {
+  const labels = [ALL_LABEL, LOCATION.name];
+  const m = await revenueTile(page)
+    .locator("select")
+    .evaluate(async (sel, wanted) => {
+      await document.fonts.ready;
+      const select = sel as HTMLSelectElement;
+      const cs = getComputedStyle(select);
+      const probe = document.createElement("span");
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.whiteSpace = "pre";
+      for (const p of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "fontStretch", "letterSpacing"] as const) {
+        probe.style[p] = cs[p];
+      }
+      document.body.appendChild(probe);
+      const offered = Array.from(select.options, (o) => o.text);
+      const widths = wanted.map((text) => {
+        probe.textContent = text;
+        return { text, offered: offered.includes(text), width: probe.getBoundingClientRect().width };
+      });
+      probe.remove();
+      return {
+        textBox: select.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+        widths,
+      };
+    }, labels);
+  for (const w of m.widths) {
+    expect(w.offered, `${where}: "${w.text}" is one of the toggle's entries`).toBe(true);
+    expect(
+      w.width,
+      `${where}: "${w.text}" is ${w.width.toFixed(1)}px, the select's text box ${m.textBox.toFixed(1)}px`,
+    ).toBeLessThanOrEqual(m.textBox);
+  }
 }
 
 test.describe("owner: every clinic by default, one clinic with the toggle (T5b)", () => {
@@ -241,19 +295,57 @@ test.describe("owner: every clinic by default, one clinic with the toggle (T5b)"
     await expect(revenueTile(page)).toContainText(FIGURE.b);
   });
 
-  for (const vp of [
-    { name: "390", size: { width: 390, height: 844 } },
-    { name: "1024", size: { width: 1024, height: 768 } },
-    { name: "1440", size: { width: 1440, height: 900 } },
-  ]) {
-    test(`at ${vp.name}: the toggle fits inside the tile and nothing scrolls sideways`, async ({ page }) => {
-      await page.setViewportSize(vp.size);
-      await loginAs(page, USERS.owner);
-      await page.goto("/dashboard");
-      await expect(revenueTile(page)).toContainText(FIGURE.all);
-      await expectToggleFits(page, `owner ${vp.name}`);
-    });
-  }
+  // The two client-side paths the links above do not take: the toggle's own
+  // navigation from a page that HAS a ?date=, and the typed date field (the
+  // DateJump), which navigates in the browser rather than following a link.
+  // The dates are navigation only: the tile sums the current month whatever
+  // day the page shows, so the figure is the clinic's throughout.
+  test("choosing a clinic keeps an explicit ?date=, and typing a day keeps the clinic", async ({ page }) => {
+    await loginAs(page, USERS.owner);
+    await page.goto("/dashboard?date=2026-03-17");
+    const toggle = page.getByRole("combobox", { name: TOGGLE_NAME });
+    await expect(toggle).toHaveValue("");
+
+    await toggle.selectOption({ label: LOCATION.name });
+    await expect(page).toHaveURL(new RegExp(`[?&]location=${LOCATION.id}(&|$)`));
+    await expect(page, "choosing a clinic kept the day").toHaveURL(/[?&]date=2026-03-17(&|$)/);
+    await expect(revenueTile(page)).toContainText(FIGURE.lv);
+
+    await page
+      .getByTestId("dashboard-date-nav")
+      .getByRole("textbox", { name: "Escolher data", exact: true })
+      .fill("19/03/2026");
+    await expect(page).toHaveURL(/[?&]date=2026-03-19(&|$)/);
+    await expect(page, "typing a day kept the clinic").toHaveURL(new RegExp(`[?&]location=${LOCATION.id}(&|$)`));
+    await expect(revenueTile(page)).toContainText(FIGURE.lv);
+    await expect(toggle).toHaveValue(LOCATION.id);
+  });
+
+  // ONE SIGN-IN FOR EVERY WIDTH. The staff sign-in allows six attempts per
+  // credential a minute (RULES.staffLoginCredential, packages/rate-limit) and
+  // refuses the seventh with the wrong-password sentence. With one test and one
+  // sign-in per width this file signed the owner in seven times in under a
+  // minute once 1280 was added, and the seventh, at 1440, was refused. So the
+  // widths share one session and each is loaded fresh at its own size.
+  test("the toggle fits inside the tile, reads in full, and nothing scrolls sideways, at 390, 1024, 1280 and 1440", async ({
+    page,
+  }) => {
+    await loginAs(page, USERS.owner);
+    for (const vp of [
+      { name: "390", size: { width: 390, height: 844 } },
+      { name: "1024", size: { width: 1024, height: 768 } },
+      // The narrowest tile: xl's four columns begin here, beside the 304px sidebar.
+      { name: "1280", size: { width: 1280, height: 800 } },
+      { name: "1440", size: { width: 1440, height: 900 } },
+    ]) {
+      await test.step(`at ${vp.name}`, async () => {
+        await page.setViewportSize(vp.size);
+        await page.goto("/dashboard");
+        await expect(revenueTile(page)).toContainText(FIGURE.all);
+        await expectToggleFits(page, `owner ${vp.name}`);
+      });
+    }
+  });
 });
 
 test.describe("admin assigned to Linda-a-Velha: that clinic's figure only, no toggle (T5b)", () => {

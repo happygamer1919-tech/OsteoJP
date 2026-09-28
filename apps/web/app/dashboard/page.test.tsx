@@ -16,6 +16,7 @@
  * Children that need a browser or the Next router (the date field, Notas
  * rapidas) are stubbed. Nothing they render is asserted here.
  */
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStrings } from "@osteojp/i18n";
@@ -32,6 +33,8 @@ const h = vi.hoisted(() => ({
   listActiveLocations: vi.fn(),
   runScoped: vi.fn(),
   listAppointments: vi.fn(),
+  /** T5b: the props the page handed the date field, one entry per render. */
+  dateJump: [] as Array<{ date: string; location?: string | null }>,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -56,10 +59,16 @@ vi.mock("@/lib/invoices/queries", async (importOriginal) => ({
   getMonthlyRevenue: h.getMonthlyRevenue,
   listActiveLocations: h.listActiveLocations,
 }));
-vi.mock("./date-jump", () => ({ DateJump: () => null }));
+vi.mock("./date-jump", () => ({
+  DateJump: (p: { date: string; location?: string | null }) => {
+    h.dateJump.push(p);
+    return null;
+  },
+}));
 vi.mock("./notas-rapidas", () => ({ NotasRapidas: () => null }));
 
 import DashboardPage from "./page";
+import { RevenueLocationToggle } from "./revenue-location";
 
 const pt = getStrings("pt");
 
@@ -104,6 +113,7 @@ beforeEach(() => {
   h.getMonthlyRevenue.mockResolvedValue(124500);
   h.listActiveLocations.mockReset();
   h.listActiveLocations.mockResolvedValue([CB, LV]);
+  h.dateJump.length = 0;
   h.runScoped.mockReset();
   // The two runScoped reads: active patients (total, week) and new records (count).
   h.runScoped.mockResolvedValue([{ total: 7, week: 2, count: 3 }]);
@@ -257,4 +267,66 @@ describe("the revenue tile's clinic toggle (T5b)", () => {
     expect(h.listActiveLocations).not.toHaveBeenCalled();
     expect(h.getMonthlyRevenue).not.toHaveBeenCalled();
   });
+});
+
+/**
+ * T5b: WHAT THE PAGE HANDS THE TWO CLIENT NAVIGATIONS. url-carry.test.tsx
+ * proves each control builds the right URL from the props it is given; these
+ * cases prove the page gives them the right props. The toggle needs the page's
+ * explicit `?date=` (and null without one, so choosing a clinic does not pin
+ * today's date into the URL); the date field needs the owner's chosen clinic,
+ * and null for every other role.
+ *
+ * The toggle's `date` never reaches the markup, so it is read from the element
+ * tree the page returns: the toggle sits in the revenue tile's `action` prop,
+ * not among any children, so every prop is walked.
+ */
+function propsOf(node: ReactNode, type: unknown): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const walk = (n: unknown) => {
+    if (Array.isArray(n)) return n.forEach(walk);
+    if (!isValidElement(n)) return;
+    const el = n as ReactElement<Record<string, unknown>>;
+    if (el.type === type) out.push(el.props);
+    Object.values(el.props).forEach(walk);
+  };
+  walk(node);
+  return out;
+}
+
+async function toggleProps(searchParams: Record<string, string>): Promise<Record<string, unknown>[]> {
+  h.ctx = { tenantId: "tenant-1", role: "owner", userId: "user-owner" };
+  return propsOf(await DashboardPage({ searchParams: Promise.resolve(searchParams) }), RevenueLocationToggle);
+}
+
+describe("what the page hands the toggle and the date field (T5b)", () => {
+  it("the toggle gets the page's explicit ?date=, and null when there is none or it is not a date", async () => {
+    const withDate = await toggleProps({ date: "2026-03-17", location: LV.id });
+    expect(withDate).toHaveLength(1);
+    expect(withDate[0]).toMatchObject({ date: "2026-03-17", value: LV.id });
+
+    expect((await toggleProps({}))[0]).toMatchObject({ date: null, value: null });
+    expect((await toggleProps({ date: "17-03-2026" }))[0]).toMatchObject({ date: null });
+  });
+
+  it("the date field gets the owner's chosen clinic, and null for every clinic", async () => {
+    await render("owner", { location: CB.id, date: "2026-09-15" });
+    expect(h.dateJump.at(-1)).toMatchObject({ date: "2026-09-15", location: CB.id });
+
+    await render("owner", { date: "2026-09-15" });
+    expect(h.dateJump.at(-1)).toMatchObject({ location: null });
+
+    // An id the toggle does not offer is every clinic, on the date field too.
+    await render("owner", { location: "00000000-0000-0000-0000-00000000dead" });
+    expect(h.dateJump.at(-1)).toMatchObject({ location: null });
+  });
+
+  it.each(["admin", "reception", "therapist"] as const)(
+    "the date field gets no clinic for %s, whatever the URL says",
+    async (role) => {
+      await render(role, { location: CB.id });
+      expect(h.dateJump).toHaveLength(1);
+      expect(h.dateJump[0]).toMatchObject({ location: null });
+    },
+  );
 });

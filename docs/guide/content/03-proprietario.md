@@ -10,9 +10,9 @@ O Início é o resumo do dia na clínica. No topo há quatro números: **Pacient
 
 ### Como fazer: ver a receita de um só local
 
-1. No cartão **Receita (mês)**, abra a lista **Todas as localizações**, por baixo do valor, e escolha o local.
+1. No cartão **Receita (mês)**, abra a lista **Todas as clínicas**, por baixo do valor, e escolha o local.
 2. O valor passa a somar só as faturas das marcações desse local, e a escolha mantém-se ao mudar de dia.
-3. Para voltar ao total da clínica, escolha **Todas as localizações**.
+3. Para voltar ao total da clínica, escolha **Todas as clínicas**.
 
 ### Como fazer: ver outro dia
 

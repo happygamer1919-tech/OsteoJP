@@ -37,7 +37,9 @@ import type { Role } from "@osteojp/auth";
  * period, including the invoices with no marcacao. So for that viewer the
  * Inicio figure can be LOWER than the same month's issued and paid invoices on
  * their /invoicing "Todas" list. The /invoicing side predates T5b and is not
- * changed here, and this figure is deliberately not widened to match it.
+ * changed here, and this figure is deliberately not widened to match it. Which
+ * of the two "Todas" is right for /invoicing is an open question with a
+ * recommended default: docs/design/QUESTIONS.md, Q-T5B-1.
  */
 export type RevenueLocations = readonly string[] | null;
 
