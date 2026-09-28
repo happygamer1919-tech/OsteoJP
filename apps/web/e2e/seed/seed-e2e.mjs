@@ -137,6 +137,32 @@ const USERS = [
     email: "e2e-therapist-disposable-webkit@osteojp.test",
     fullName: "E2E Terapeuta Descartavel webkit",
   },
+  // SKEW-01: per-project users whose ONLY job is to be SIGNED OUT, by
+  // agenda-signout.spec.ts pressing "Terminar sessão" for real. logout() calls
+  // supabase.auth.signOut() with its default GLOBAL scope, which ends EVERY
+  // session of the user, so signing out a user any other spec signs in as would
+  // end that spec's session mid-run. One per browser project for the same
+  // reason as the disposables above: a manual cross-browser run executes the
+  // projects in parallel against one database. Reception, so never bookable and
+  // never an agenda column. Never referenced by any other spec.
+  {
+    slug: "receptionSignOutChromium",
+    roleSlug: "reception",
+    email: "e2e-reception-signout-chromium@osteojp.test",
+    fullName: "E2E Rececao Sessao chromium",
+  },
+  {
+    slug: "receptionSignOutFirefox",
+    roleSlug: "reception",
+    email: "e2e-reception-signout-firefox@osteojp.test",
+    fullName: "E2E Rececao Sessao firefox",
+  },
+  {
+    slug: "receptionSignOutWebkit",
+    roleSlug: "reception",
+    email: "e2e-reception-signout-webkit@osteojp.test",
+    fullName: "E2E Rececao Sessao webkit",
+  },
 ];
 
 const LOCATION_A = "00000000-0000-0000-0000-00000000a101";

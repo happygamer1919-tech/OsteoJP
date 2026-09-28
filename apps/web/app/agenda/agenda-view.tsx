@@ -15,6 +15,7 @@ import {
 import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
+import { useDeploymentCheck } from "@/lib/deployment/use-deployment-check";
 import {
   addDays,
   formatAnchorLabel,
@@ -149,6 +150,14 @@ export function AgendaView({
   // W12-28: "Bloquear horário" dialog state (null = closed). Prefills from a slot
   // when opened from an empty cell; the current therapist filter preselects.
   const [blockOpen, setBlockOpen] = useState<{ slot?: { date: string; time: string } } | null>(null);
+
+  // SKEW-01 S6: when this tab comes back into view (or gains focus), compare
+  // the deployment it was built from with the one serving now, and reload
+  // quietly on a mismatch. HELD while a form is open: every surface on /agenda
+  // that can hold unsaved input (the appointment drawer with everything it
+  // hosts, and the block dialog) renders only under one of these two states,
+  // so a reload found meanwhile waits and happens when the form closes.
+  useDeploymentCheck(modal !== null || blockOpen !== null);
 
   // W6-03: on a deep-link from a patient profile ("Nova marcação"), open the
   // create drawer ONCE with the patient preselected + locked, then strip the
