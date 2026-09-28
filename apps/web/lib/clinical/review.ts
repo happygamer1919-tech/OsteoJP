@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   clinicalRecords,
@@ -12,6 +12,7 @@ import { runScoped } from "@/lib/auth/context";
 import { therapistPatientScope, therapistRegistoWriteScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
+import { recordDataHash } from "./records";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -342,16 +343,17 @@ export async function editReviewNarrative(
   ctx: RequestContext,
   recordId: string,
   edit: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ dataHash: string }> {
   assertCan(ctx.role, "clinical_records:review");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  return runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
         source: clinicalRecords.source,
         aiState: clinicalRecords.aiReviewState,
         data: clinicalRecords.data,
+        dataHash: recordDataHash(),
         schema: formTemplates.schema,
       })
       .from(clinicalRecords)
@@ -371,13 +373,18 @@ export async function editReviewNarrative(
     if (Object.keys(rejected).length > 0) {
       throw new ClinicalError("not_narrative_field", rejected);
     }
-    if (Object.keys(narrative).length === 0) return; // nothing to apply
+    // Nothing to apply: the stored content, and so its fingerprint, is unchanged.
+    if (Object.keys(narrative).length === 0) return { dataHash: row.dataHash };
 
     const merged = { ...((row.data as Record<string, unknown>) ?? {}), ...narrative };
-    await tx
+    const saved = await tx
       .update(clinicalRecords)
       .set({ data: merged })
-      .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")));
+      .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")))
+      .returning({ dataHash: recordDataHash() });
+    // Finalized between the read and the write: nothing was saved.
+    const stored = saved[0];
+    if (!stored) throw new ClinicalError("finalized");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -388,6 +395,7 @@ export async function editReviewNarrative(
       metadata: { review: true, fields: Object.keys(narrative) },
       ip,
     });
+    return { dataHash: stored.dataHash };
   });
 }
 
@@ -418,10 +426,10 @@ export async function saveReviewFicha(
   data: Record<string, unknown>,
   schema: TemplateSchema | null,
   formTemplateId?: string | null,
-): Promise<void> {
+): Promise<{ dataHash: string }> {
   assertCan(ctx.role, "clinical_records:review");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  return runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -471,10 +479,14 @@ export async function saveReviewFicha(
     // (rule #5 immutability). data is written every save; the two axes
     // (status / ai_review_state) are untouched here.
     const bindTemplate = row.formTemplateId == null && formTemplateId != null;
-    await tx
+    const saved = await tx
       .update(clinicalRecords)
       .set(bindTemplate ? { data: payload, formTemplateId } : { data: payload })
-      .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")));
+      .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")))
+      .returning({ dataHash: recordDataHash() });
+    // Finalized between the read and the write: nothing was saved.
+    const stored = saved[0];
+    if (!stored) throw new ClinicalError("finalized");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -485,6 +497,7 @@ export async function saveReviewFicha(
       metadata: { review: true, ficha: true, fields: Object.keys(payload) },
       ip,
     });
+    return { dataHash: stored.dataHash };
   });
 }
 
@@ -502,6 +515,7 @@ export async function saveReviewFicha(
 export async function finalizeReview(
   ctx: RequestContext,
   recordId: string,
+  expectedDataHash: string,
 ): Promise<void> {
   assertCan(ctx.role, "clinical_records:review");
   assertCan(ctx.role, "clinical_records:sign");
@@ -512,6 +526,7 @@ export async function finalizeReview(
         status: clinicalRecords.status,
         source: clinicalRecords.source,
         aiState: clinicalRecords.aiReviewState,
+        dataHash: recordDataHash(),
       })
       .from(clinicalRecords)
       // CARE-02a: a write, so the source row is read under the pre-0098 reach.
@@ -520,6 +535,11 @@ export async function finalizeReview(
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
     if (row.status !== "draft") throw new ClinicalError("finalized");
+    // SIGN-CONFIRM-AND-SAVE-FIRST: the reviewer signs the content their form last
+    // loaded or saved, or nothing. The same condition is repeated in each
+    // branch's UPDATE below, so it also holds against a concurrent writer.
+    if (row.dataHash !== expectedDataHash) throw new ClinicalError("stale");
+    const sameContent = sql`${recordDataHash()} = ${expectedDataHash}`;
 
     const signedAt = new Date();
 
@@ -543,10 +563,13 @@ export async function finalizeReview(
             eq(clinicalRecords.id, recordId),
             eq(clinicalRecords.status, "draft"),
             eq(clinicalRecords.aiReviewState, "in_review"),
+            sameContent,
           ),
         )
         .returning({ id: clinicalRecords.id });
-      if (updated.length === 0) throw new ClinicalError("not_under_review");
+      // The row moved between the read and the write (its review state, its
+      // status or its content): nothing was signed.
+      if (updated.length === 0) throw new ClinicalError("stale");
     } else {
       // patient (or any non-AI) record materialised from a submission.
       const subs = await tx
@@ -563,9 +586,13 @@ export async function finalizeReview(
       const updated = await tx
         .update(clinicalRecords)
         .set({ status: "signed", signedBy: ctx.userId, signedAt })
-        .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")))
+        .where(
+          and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft"), sameContent),
+        )
         .returning({ id: clinicalRecords.id });
-      if (updated.length === 0) throw new ClinicalError("finalized");
+      // The row moved between the read and the write (its status or its
+      // content): nothing was signed.
+      if (updated.length === 0) throw new ClinicalError("stale");
 
       await tx
         .update(patientFormSubmissions)

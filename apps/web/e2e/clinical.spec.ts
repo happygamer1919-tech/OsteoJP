@@ -19,6 +19,7 @@ import {
   TEMPLATE_RETIRED_LABEL,
   TEMPLATE_SUPERSEDED_LABEL,
 } from "./fixtures";
+import { signAndConfirm } from "./helpers/sign-confirm";
 
 test.describe("authoring (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
@@ -109,8 +110,8 @@ test.describe("authoring (therapist)", () => {
     await expect(page.getByText(/Versão 1/)).toBeVisible();
     await expect(page.getByText("Rascunho")).toBeVisible();
 
-    // --- Sign + lock → immutable ---
-    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    // --- Sign + lock → immutable (SIGN-CONFIRM: through the confirmation) ---
+    await signAndConfirm(page);
     await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
       timeout: 12_000,
     });
@@ -202,8 +203,8 @@ test.describe("authoring (therapist)", () => {
     await page.getByRole("button", { name: "Criar ficha" }).click();
     await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     const recordId = page.url().match(/clinical\/([0-9a-f-]{36})/)![1];
-    // Sign + lock → signed (immutable).
-    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    // Sign + lock → signed (immutable), through the confirmation.
+    await signAndConfirm(page);
     await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
       timeout: 12_000,
     });
@@ -401,10 +402,15 @@ test.describe("authoring (therapist)", () => {
     await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
     // Arm placement, then place one Activa marker on Cervical, then sign/lock.
+    // SIGN-CONFIRM-AND-SAVE-FIRST: the marker is an unsaved edit, so the sign
+    // saves it first, and a save needs the required Motivos da Consulta. Before
+    // that change this signed WITHOUT saving: the marker never reached the
+    // signed registo and only lived in the form.
     const form = page.locator("#record-form");
     await form.getByRole("button", { name: "Inserir marcador", exact: true }).click();
     await form.getByRole("application", { name: "Cervical" }).click({ position: { x: 40, y: 40 } });
-    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await form.getByLabel(/Motivos da Consulta/i).fill("Mobilidade cervical.");
+    await signAndConfirm(page);
     await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
       timeout: 12_000,
     });
@@ -519,7 +525,7 @@ test.describe("authoring (therapist)", () => {
     ).toHaveValue("7");
 
     // Sign/lock → the EVA value still shows, but the editable control is gone.
-    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await signAndConfirm(page);
     await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
       timeout: 12_000,
     });
@@ -549,7 +555,7 @@ test.describe("authoring (therapist)", () => {
     const recordUrl = page.url(); // capture the record-detail deep link
 
     // Sign/lock so the ficha is finalized (its addendum action then appears in the tab).
-    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await signAndConfirm(page);
     await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
       timeout: 12_000,
     });
