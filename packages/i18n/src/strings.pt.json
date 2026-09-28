@@ -1308,6 +1308,7 @@
   "agenda.pickDate": "Escolher data",
   "appointment.recurringCheckbox": "Marcação recorrente",
   "appointment.movedButDetailsNotSaved": "A marcação FOI movida para o novo horário. As restantes alterações (serviço, sala, notas, estado) não foram guardadas por causa do conflito acima. Corrija-o e guarde de novo.",
+  "appointment.movedButDetailsNotSent": "A marcação FOI movida para o novo horário, mas as restantes alterações (serviço, sala, notas, estado) não foram guardadas. Guarde de novo.",
   "appointment.saved": "Marcação guardada",
   "appointment.patientRecordLink": "Ficha do paciente",
   "appointment.patientTwoRecordLink": "Ficha do paciente 2",
@@ -1793,5 +1794,7 @@
   "reschedule.queue.markHandled": "Marcar como tratado",
   "reschedule.queue.marking": "A marcar…",
   "reschedule.queue.markFailed": "Não foi possível marcar este pedido. Atualize a página.",
-  "reschedule.queue.note": "Marcar como tratado não altera a marcação. Remarque na agenda como habitualmente."
+  "reschedule.queue.note": "Marcar como tratado não altera a marcação. Remarque na agenda como habitualmente.",
+  "actions.skewReload": "Nova versão disponível, a atualizar...",
+  "actions.networkError": "Sem ligação ao servidor. Verifique a ligação à internet."
 }
