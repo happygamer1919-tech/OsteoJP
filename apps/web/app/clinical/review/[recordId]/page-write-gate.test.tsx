@@ -91,7 +91,7 @@ async function open(rec: ReturnType<typeof record> | null): Promise<{ html?: str
   h.getRecordDetail.mockResolvedValue(rec);
   const { default: ReviewDetailPage } = await import("./page");
   try {
-    const el = await ReviewDetailPage({ params: Promise.resolve({ recordId: REC }) });
+    const el = await ReviewDetailPage({ params: Promise.resolve({ recordId: REC }), searchParams: Promise.resolve({}) });
     return { html: renderToStaticMarkup(el) };
   } catch (e) {
     if (e instanceof Redirected) return { redirectedTo: e.url };
