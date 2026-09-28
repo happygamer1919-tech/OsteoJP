@@ -72,7 +72,14 @@ vi.mock("@sentry/nextjs", () => ({ captureException: h.captureException, capture
 
 import { redirect } from "next/navigation";
 
-import { GUIDE_DATA, guideLessonsFor, type GuideBlock, type GuideLesson, type GuideViewLesson } from "@/lib/guide/guide";
+import {
+  GUIDE_DATA,
+  guideFaqFor,
+  guideLessonsFor,
+  type GuideBlock,
+  type GuideLesson,
+  type GuideViewLesson,
+} from "@/lib/guide/guide";
 import { lessonHref, lessonSlug } from "@/lib/guide/guide-routes";
 
 import AjudaLicaoPage, { metadata as licaoMetadata } from "./[seccao]/[licao]/page";
@@ -319,21 +326,132 @@ describe("the page itself (G1-1)", () => {
   });
 });
 
-describe("Perguntas frequentes (G1-2): empty until its own PR writes the entries", () => {
-  it("?tab=perguntas shows the empty state and no lesson, for every role", async () => {
-    expect(GUIDE_DATA.faq).toEqual([]);
+/** Every FAQ entry on the Perguntas frequentes tab, in document order. */
+function faqEntries(html: string): string[] {
+  return [...html.matchAll(/data-guide-faq="([a-z0-9.-]+)"/g)].map((m) => m[1]!);
+}
+
+/** The HTML of one FAQ entry: from its article to the next one (or the end). */
+function faqEntryHtml(html: string, id: string): string {
+  const start = html.indexOf(`data-guide-faq="${id}"`);
+  expect(start, `${id} is on the page`).toBeGreaterThan(-1);
+  const next = html.indexOf("data-guide-faq=", start + 1);
+  return html.slice(start, next === -1 ? undefined : next);
+}
+
+/** The lesson links of one FAQ entry, in order, as lesson ids. */
+function faqLinks(html: string, id: string): string[] {
+  return [...faqEntryHtml(html, id).matchAll(/data-guide-faq-lesson="([a-z0-9.-]+)"/g)].map((m) => m[1]!);
+}
+
+describe("Perguntas frequentes (G1-2): the seven base tasks first, for the viewer's role (one test per role)", () => {
+  const SEVEN = [
+    "perguntas.marcar-consulta",
+    "perguntas.marcar-em-lote",
+    "perguntas.adicionar-paciente",
+    "perguntas.atribuir-pacote",
+    "perguntas.bloquear-horario",
+    "perguntas.concluir-consulta",
+    "perguntas.assinar-registo",
+  ];
+  const SIX = SEVEN.slice(0, 6);
+
+  it("the seven are the published entries, in file order", () => {
+    expect(GUIDE_DATA.faq.map((entry) => entry.id)).toEqual(SEVEN);
+  });
+
+  it("reception: six entries in order, no Assinar registo, each with its lessons, and no Registos link", async () => {
+    const html = await indexHtml("reception", "perguntas");
+    expect(html).toMatch(/role="tab" aria-selected="true"[^>]*>Perguntas frequentes</);
+    expect(faqEntries(html)).toEqual(SIX);
+    expect(faqEntries(html)).not.toContain("perguntas.assinar-registo");
+    expect(html).not.toContain("Como assino um registo?");
+    expect(html).not.toContain("/ajuda/registos");
+    for (const entry of guideFaqFor("reception")) {
+      expect(faqLinks(html, entry.id), entry.id).toEqual(entry.lessons.map((lesson) => lesson.id));
+    }
+    expect(faqLinks(html, "perguntas.concluir-consulta")).toEqual(["agenda.registar-o-estado", "pacientes.marcacoes-na-ficha"]);
+  });
+
+  it("therapist: all seven, Concluir consulta links the registo lesson, Adicionar paciente links no Marcação online lesson", async () => {
+    const html = await indexHtml("therapist", "perguntas");
+    expect(faqEntries(html)).toEqual(SEVEN);
+    for (const entry of guideFaqFor("therapist")) {
+      expect(faqLinks(html, entry.id), entry.id).toEqual(entry.lessons.map((lesson) => lesson.id));
+    }
+    expect(faqLinks(html, "perguntas.concluir-consulta")).toContain("registos.criar-registo");
+    expect(faqLinks(html, "perguntas.adicionar-paciente")).toEqual(["pacientes.registar-paciente", "pacientes.encontrar-paciente"]);
+    expect(html).not.toContain("/ajuda/marcacao-online");
+  });
+
+  it("admin: six entries, no Assinar registo, and no Registos link", async () => {
+    const html = await indexHtml("admin", "perguntas");
+    expect(faqEntries(html)).toEqual(SIX);
+    for (const entry of guideFaqFor("admin")) {
+      expect(faqLinks(html, entry.id), entry.id).toEqual(entry.lessons.map((lesson) => lesson.id));
+    }
+    expect(html).not.toContain("/ajuda/registos");
+  });
+
+  it("owner: all seven, each with every lesson it names", async () => {
+    const html = await indexHtml("owner", "perguntas");
+    expect(faqEntries(html)).toEqual(SEVEN);
+    for (const entry of GUIDE_DATA.faq) expect(faqLinks(html, entry.id), entry.id).toEqual(entry.see);
+  });
+
+  it("every lesson link on the tab opens, for the role that sees it", async () => {
+    let opened = 0;
     for (const role of ROLES) {
       const html = await indexHtml(role, "perguntas");
-      expect(html, role).toContain(pt["guide.faqEmptyTitle"]);
-      expect(html, role).toMatch(/role="tab" aria-selected="true"[^>]*>Perguntas frequentes</);
-      expect(lessonLinks(html), role).toEqual([]);
+      for (const href of lessonLinks(html)) {
+        const [, , seccao, licao] = href.split("/");
+        await expect(lessonHtml(role, seccao!, licao!), `${role} ${href}`).resolves.toContain("<h1");
+        opened += 1;
+      }
+    }
+    expect(opened).toBeGreaterThan(0);
+  });
+
+  it("each entry is its question, its answer for the role, and the Sem imagem card while its primary lesson has no capture", async () => {
+    for (const role of ROLES) {
+      const html = await indexHtml(role, "perguntas");
+      for (const entry of guideFaqFor(role)) {
+        const part = faqEntryHtml(html, entry.id);
+        expect(part, `${role} ${entry.id}`).toContain(`>${entry.question}</h2>`);
+        expect(entry.images, entry.id).toBeNull();
+        expect(part, `${role} ${entry.id}`).toContain("data-guide-no-image");
+        expect(part, `${role} ${entry.id}`).not.toContain("<img");
+      }
+      expect(html).toContain(`id="pergunta-marcar-consulta"`);
+    }
+  });
+
+  it("an answer shows each role only its own role blocks", async () => {
+    // Concluir consulta: Corrigir estado is for reception and the owner (it
+    // needs appointments:delete); the registo line is for the therapist.
+    const CORRIGIR = "Corrigir estado";
+    const REGISTO = "Nova ficha clínica";
+    const part = async (role: Role) => faqEntryHtml(await indexHtml(role, "perguntas"), "perguntas.concluir-consulta");
+    expect(JSON.stringify(GUIDE_DATA.faq.find((e) => e.id === "perguntas.concluir-consulta")!.blocks)).toContain(CORRIGIR);
+    expect(await part("reception")).toContain(CORRIGIR);
+    expect(await part("reception")).not.toContain(REGISTO);
+    expect(await part("therapist")).toContain(REGISTO);
+    expect(await part("therapist")).not.toContain(CORRIGIR);
+    expect(await part("owner")).toContain(CORRIGIR);
+    expect(await part("owner")).not.toContain(REGISTO);
+  });
+
+  it("the guide tab shows no FAQ entry, and the FAQ tab no course", async () => {
+    for (const role of ROLES) {
+      expect(faqEntries(await indexHtml(role)), role).toEqual([]);
+      expect(sectionLinks(await indexHtml(role, "perguntas")), role).toEqual([]);
     }
   });
 
   it("an unknown ?tab= opens the guide", async () => {
     const html = await indexHtml("owner", "outra");
     expect(lessonLinks(html)).toHaveLength(57);
-    expect(html).not.toContain(pt["guide.faqEmptyTitle"]);
+    expect(faqEntries(html)).toEqual([]);
   });
 });
 
@@ -486,12 +604,11 @@ describe("the heading outline never skips a level", () => {
     }
   });
 
-  it("the empty Perguntas frequentes tab: the h1, then the platform EmptyState's own h3", async () => {
-    // EmptyState (packages/ui, SPEC-foundation 4.10) draws its title as an h3
-    // on every screen of the platform, and /ajuda does not fork it. That one
-    // skip lasts until PR 4 writes the entries, each drawn as an h2.
+  it("the Perguntas frequentes tab, for every role: the h1, then each question an h2", async () => {
     for (const role of ROLES) {
-      expect(headingLevels(await indexHtml(role, "perguntas")), role).toEqual([1, 3]);
+      const html = await indexHtml(role, "perguntas");
+      expect(headingProblems(html), role).toEqual([]);
+      expect(headingLevels(html), role).toEqual([1, ...guideFaqFor(role).map(() => 2)]);
     }
   });
 

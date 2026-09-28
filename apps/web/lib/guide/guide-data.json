@@ -1,6 +1,924 @@
 {
   "$comment": "Generated from docs/guide/content by docs/guide/build/gen-guide-data.mjs. Do not edit by hand: change the lesson files and run node docs/guide/build/gen-guide-data.mjs.",
-  "faq": [],
+  "faq": [
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Na "
+              },
+              {
+                "strong": "Agenda"
+              },
+              {
+                "text": ", clique em "
+              },
+              {
+                "strong": "Nova marcação"
+              },
+              {
+                "text": ". No computador, também pode clicar num espaço livre da grelha."
+              }
+            ],
+            [
+              {
+                "text": "Em "
+              },
+              {
+                "strong": "Paciente"
+              },
+              {
+                "text": ", escreva parte do nome e escolha o paciente na lista."
+              }
+            ],
+            [
+              {
+                "text": "Confirme o "
+              },
+              {
+                "strong": "Terapeuta"
+              },
+              {
+                "text": ", o "
+              },
+              {
+                "strong": "Serviço"
+              },
+              {
+                "text": ", a "
+              },
+              {
+                "strong": "Data"
+              },
+              {
+                "text": " e a "
+              },
+              {
+                "strong": "Hora"
+              },
+              {
+                "text": ", e clique em "
+              },
+              {
+                "strong": "Guardar"
+              },
+              {
+                "text": "."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "O campo "
+                },
+                {
+                  "strong": "Terapeuta"
+                },
+                {
+                  "text": " já traz o seu nome."
+                }
+              ],
+              "type": "para"
+            }
+          ],
+          "roles": [
+            "terapeuta"
+          ],
+          "type": "role"
+        },
+        {
+          "spans": [
+            {
+              "text": "A janela não cria pacientes: registe primeiro o paciente novo em "
+            },
+            {
+              "strong": "Pacientes"
+            },
+            {
+              "text": ", "
+            },
+            {
+              "strong": "Novo paciente"
+            },
+            {
+              "text": ". Se o paciente tiver sessões pagas por usar, a janela avisa com "
+            },
+            {
+              "strong": "Este utente tem sessões por usar"
+            },
+            {
+              "text": "."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "appointments:write",
+      "faq": [],
+      "file": "00-perguntas/01-marcar-consulta.md",
+      "goal": null,
+      "id": "perguntas.marcar-consulta",
+      "images": null,
+      "order": {
+        "proprietario": 1,
+        "rececao": 1,
+        "terapeuta": 1
+      },
+      "question": "Como marco uma consulta?",
+      "review": null,
+      "roles": [
+        "rececao",
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "perguntas",
+      "see": [
+        "agenda.marcar-consulta",
+        "pacientes.marcacoes-na-ficha",
+        "pacotes.marcar-com-pacote"
+      ],
+      "shots": null,
+      "title": "Marcar consulta",
+      "words": 84
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Na janela "
+              },
+              {
+                "strong": "Nova marcação"
+              },
+              {
+                "text": ", preencha o paciente, o terapeuta, a data e a hora da primeira sessão."
+              }
+            ],
+            [
+              {
+                "text": "Marque "
+              },
+              {
+                "strong": "Agendar lote"
+              },
+              {
+                "text": ", escolha os "
+              },
+              {
+                "strong": "Dias da semana"
+              },
+              {
+                "text": ", o intervalo em "
+              },
+              {
+                "strong": "A cada (semanas)"
+              },
+              {
+                "text": " e quando "
+              },
+              {
+                "strong": "Termina"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Gerar datas"
+              },
+              {
+                "text": ", confira a lista e clique em "
+              },
+              {
+                "strong": "Guardar"
+              },
+              {
+                "text": "."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Se aparecer "
+            },
+            {
+              "strong": "Algumas marcações não foram criadas"
+            },
+            {
+              "text": ", marque à parte as sessões que ficaram por marcar."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "As sessões de um pacote não usam "
+            },
+            {
+              "strong": "Agendar lote"
+            },
+            {
+              "text": ": cada sessão é escolhida à mão, nunca gerada."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "appointments:write",
+      "faq": [],
+      "file": "00-perguntas/02-marcar-em-lote.md",
+      "goal": null,
+      "id": "perguntas.marcar-em-lote",
+      "images": null,
+      "order": {
+        "proprietario": 2,
+        "rececao": 2,
+        "terapeuta": 2
+      },
+      "question": "Como marco várias sessões de uma vez?",
+      "review": null,
+      "roles": [
+        "rececao",
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "perguntas",
+      "see": [
+        "agenda.marcar-varias-sessoes",
+        "pacotes.atribuir-pacote"
+      ],
+      "shots": null,
+      "title": "Marcar em lote",
+      "words": 81
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Em "
+              },
+              {
+                "strong": "Pacientes"
+              },
+              {
+                "text": ", pesquise primeiro pelo NIF ou pelo telemóvel, para não criar uma segunda ficha da mesma pessoa."
+              }
+            ],
+            [
+              {
+                "text": "Se não a encontrar, clique em "
+              },
+              {
+                "strong": "Novo paciente"
+              },
+              {
+                "text": " e preencha o "
+              },
+              {
+                "strong": "Nome completo"
+              },
+              {
+                "text": ", o "
+              },
+              {
+                "strong": "NIF"
+              },
+              {
+                "text": ", o "
+              },
+              {
+                "strong": "Telemóvel"
+              },
+              {
+                "text": " e o "
+              },
+              {
+                "strong": "Email"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Criar paciente"
+              },
+              {
+                "text": ". Abre a ficha do paciente."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "O pedido de um cliente novo feito na marcação online trata-se em "
+                },
+                {
+                  "strong": "Notificações"
+                },
+                {
+                  "text": ", com "
+                },
+                {
+                  "strong": "Criar paciente e marcar"
+                },
+                {
+                  "text": "."
+                }
+              ],
+              "type": "para"
+            }
+          ],
+          "roles": [
+            "rececao",
+            "proprietario"
+          ],
+          "type": "role"
+        }
+      ],
+      "capability": "patients:write",
+      "faq": [],
+      "file": "00-perguntas/03-adicionar-paciente.md",
+      "goal": null,
+      "id": "perguntas.adicionar-paciente",
+      "images": null,
+      "order": {
+        "proprietario": 3,
+        "rececao": 3,
+        "terapeuta": 3
+      },
+      "question": "Como registo um paciente novo?",
+      "review": null,
+      "roles": [
+        "rececao",
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "perguntas",
+      "see": [
+        "pacientes.registar-paciente",
+        "pacientes.encontrar-paciente",
+        "marcacao-online.tratar-pedido-novo-cliente"
+      ],
+      "shots": null,
+      "title": "Adicionar paciente",
+      "words": 67
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Nova marcação"
+              },
+              {
+                "text": " e escolha o "
+              },
+              {
+                "strong": "Paciente"
+              },
+              {
+                "text": ", o "
+              },
+              {
+                "strong": "Terapeuta"
+              },
+              {
+                "text": ", a "
+              },
+              {
+                "strong": "Data"
+              },
+              {
+                "text": " e a "
+              },
+              {
+                "strong": "Hora"
+              },
+              {
+                "text": " da primeira sessão."
+              }
+            ],
+            [
+              {
+                "text": "Em "
+              },
+              {
+                "strong": "Pacote"
+              },
+              {
+                "text": ", escolha o pacote. O "
+              },
+              {
+                "strong": "Serviço"
+              },
+              {
+                "text": " passa a ser o serviço do pacote."
+              }
+            ],
+            [
+              {
+                "text": "Em "
+              },
+              {
+                "strong": "Quantas sessões marcar agora"
+              },
+              {
+                "text": ", indique quantas sessões marca já e escolha a data e a hora de cada uma."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Guardar"
+              },
+              {
+                "text": "."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Se o paciente já tem sessões por usar, a janela avisa com "
+            },
+            {
+              "strong": "Este utente tem sessões por usar"
+            },
+            {
+              "text": ": clique em "
+            },
+            {
+              "strong": "Marcar com este pacote"
+            },
+            {
+              "text": " no pacote certo."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "appointments:write",
+      "faq": [],
+      "file": "00-perguntas/04-atribuir-pacote.md",
+      "goal": null,
+      "id": "perguntas.atribuir-pacote",
+      "images": null,
+      "order": {
+        "proprietario": 4,
+        "rececao": 4,
+        "terapeuta": 4
+      },
+      "question": "Como atribuo um pacote?",
+      "review": null,
+      "roles": [
+        "rececao",
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "perguntas",
+      "see": [
+        "pacotes.atribuir-pacote",
+        "pacotes.marcar-com-pacote",
+        "pacotes.saldo-de-sessoes"
+      ],
+      "shots": null,
+      "title": "Atribuir pacote",
+      "words": 84
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Na "
+              },
+              {
+                "strong": "Agenda"
+              },
+              {
+                "text": ", clique em "
+              },
+              {
+                "strong": "Bloquear"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Escolha o "
+              },
+              {
+                "strong": "Terapeuta"
+              },
+              {
+                "text": ", a "
+              },
+              {
+                "strong": "Data"
+              },
+              {
+                "text": ", o "
+              },
+              {
+                "strong": "Início"
+              },
+              {
+                "text": " e o "
+              },
+              {
+                "strong": "Fim"
+              },
+              {
+                "text": ", e escreva o motivo em "
+              },
+              {
+                "strong": "Nota (obrigatória)"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Bloquear"
+              },
+              {
+                "text": "."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "O campo "
+                },
+                {
+                  "strong": "Terapeuta"
+                },
+                {
+                  "text": " já traz o seu nome."
+                }
+              ],
+              "type": "para"
+            }
+          ],
+          "roles": [
+            "terapeuta"
+          ],
+          "type": "role"
+        },
+        {
+          "spans": [
+            {
+              "text": "Um bloqueio não cancela as marcações que já existem nesse período. Para dias inteiros de ausência, use "
+            },
+            {
+              "strong": "Horários"
+            },
+            {
+              "text": "."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "schedule:manage",
+      "faq": [],
+      "file": "00-perguntas/05-bloquear-horario.md",
+      "goal": null,
+      "id": "perguntas.bloquear-horario",
+      "images": null,
+      "order": {
+        "proprietario": 5,
+        "rececao": 5,
+        "terapeuta": 5
+      },
+      "question": "Como bloqueio um horário?",
+      "review": null,
+      "roles": [
+        "rececao",
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "perguntas",
+      "see": [
+        "agenda.bloquear-horario",
+        "equipa-e-horarios.registar-ausencia"
+      ],
+      "shots": null,
+      "title": "Bloquear horário",
+      "words": 53
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Na "
+              },
+              {
+                "strong": "Agenda"
+              },
+              {
+                "text": ", clique na marcação. Abre a janela "
+              },
+              {
+                "strong": "Editar marcação"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Em "
+              },
+              {
+                "strong": "Estado"
+              },
+              {
+                "text": ", escolha "
+              },
+              {
+                "strong": "Concluída"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Guardar"
+              },
+              {
+                "text": "."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "Se a consulta ficou "
+                },
+                {
+                  "strong": "Concluída"
+                },
+                {
+                  "text": " ou "
+                },
+                {
+                  "strong": "Falta"
+                },
+                {
+                  "text": " por engano, corrija na ficha do paciente: em "
+                },
+                {
+                  "strong": "Gerir marcação"
+                },
+                {
+                  "text": ", use "
+                },
+                {
+                  "strong": "Corrigir estado"
+                },
+                {
+                  "text": "."
+                }
+              ],
+              "type": "para"
+            }
+          ],
+          "roles": [
+            "rececao",
+            "proprietario"
+          ],
+          "type": "role"
+        },
+        {
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "Depois da consulta, escreva o registo em "
+                },
+                {
+                  "strong": "Nova ficha clínica"
+                },
+                {
+                  "text": "."
+                }
+              ],
+              "type": "para"
+            }
+          ],
+          "roles": [
+            "terapeuta"
+          ],
+          "type": "role"
+        }
+      ],
+      "capability": "appointments:write",
+      "faq": [],
+      "file": "00-perguntas/06-concluir-consulta.md",
+      "goal": null,
+      "id": "perguntas.concluir-consulta",
+      "images": null,
+      "order": {
+        "proprietario": 6,
+        "rececao": 6,
+        "terapeuta": 6
+      },
+      "question": "Como dou uma consulta por concluída?",
+      "review": null,
+      "roles": [
+        "rececao",
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "perguntas",
+      "see": [
+        "agenda.registar-o-estado",
+        "pacientes.marcacoes-na-ficha",
+        "registos.criar-registo"
+      ],
+      "shots": null,
+      "title": "Concluir consulta",
+      "words": 49
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Abra o registo em "
+              },
+              {
+                "strong": "Rascunho"
+              },
+              {
+                "text": ", confirme que está completo e clique em "
+              },
+              {
+                "strong": "Guardar"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Assinar e bloquear"
+              },
+              {
+                "text": ". Não há pedido de confirmação e o bloqueio é permanente."
+              }
+            ],
+            [
+              {
+                "text": "Para corrigir depois, abra o registo e clique em "
+              },
+              {
+                "strong": "Nova versão (adenda)"
+              },
+              {
+                "text": "."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Um registo que veio de uma gravação ou de um formulário do paciente assina-se em "
+            },
+            {
+              "strong": "Revisão Consulta"
+            },
+            {
+              "text": ", com "
+            },
+            {
+              "strong": "Finalizar (assinar e bloquear)"
+            },
+            {
+              "text": "."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "clinical_records:sign",
+      "faq": [],
+      "file": "00-perguntas/07-assinar-registo.md",
+      "goal": null,
+      "id": "perguntas.assinar-registo",
+      "images": null,
+      "order": {
+        "proprietario": 7,
+        "terapeuta": 7
+      },
+      "question": "Como assino um registo?",
+      "review": null,
+      "roles": [
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "perguntas",
+      "see": [
+        "registos.assinar-registo",
+        "registos.revisao-consulta"
+      ],
+      "shots": null,
+      "title": "Assinar registo",
+      "words": 64
+    }
+  ],
   "format": 1,
   "held": [
     {
@@ -9451,7 +10369,15 @@
   ],
   "orders": {
     "proprietario": {
-      "faq": [],
+      "faq": [
+        "perguntas.marcar-consulta",
+        "perguntas.marcar-em-lote",
+        "perguntas.adicionar-paciente",
+        "perguntas.atribuir-pacote",
+        "perguntas.bloquear-horario",
+        "perguntas.concluir-consulta",
+        "perguntas.assinar-registo"
+      ],
       "lessons": [
         "inicio.resumo-do-dia",
         "inicio.ver-outro-dia",
@@ -9524,7 +10450,14 @@
       ]
     },
     "rececao": {
-      "faq": [],
+      "faq": [
+        "perguntas.marcar-consulta",
+        "perguntas.marcar-em-lote",
+        "perguntas.adicionar-paciente",
+        "perguntas.atribuir-pacote",
+        "perguntas.bloquear-horario",
+        "perguntas.concluir-consulta"
+      ],
       "lessons": [
         "inicio.resumo-do-dia",
         "inicio.ver-outro-dia",
@@ -9576,7 +10509,15 @@
       ]
     },
     "terapeuta": {
-      "faq": [],
+      "faq": [
+        "perguntas.marcar-consulta",
+        "perguntas.marcar-em-lote",
+        "perguntas.adicionar-paciente",
+        "perguntas.atribuir-pacote",
+        "perguntas.bloquear-horario",
+        "perguntas.concluir-consulta",
+        "perguntas.assinar-registo"
+      ],
       "lessons": [
         "inicio.resumo-do-dia",
         "inicio.nota-rapida",
