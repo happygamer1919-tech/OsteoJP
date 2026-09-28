@@ -28,6 +28,7 @@ import {
 } from "@/lib/patients/documents";
 import type { UploadCandidate } from "@/lib/patients/document-validation";
 import { isClinicalError } from "@/lib/clinical/errors";
+import { isDataHash } from "@/lib/clinical/sign-sequence";
 import type { SaveState } from "./RecordForm";
 
 /**
@@ -58,8 +59,9 @@ export async function saveRecordAction(
   } catch {
     return { ok: false, code: "error" };
   }
+  let dataHash: string;
   try {
-    await updateRecordData(ctx, id, data);
+    ({ dataHash } = await updateRecordData(ctx, id, data));
   } catch (e) {
     if (isClinicalError(e)) {
       return { ok: false, code: e.code, errors: e.fieldErrors };
@@ -82,21 +84,34 @@ export async function saveRecordAction(
       // the save reports success and the acceptance simply is not recorded —
       // which the unchanged "sem aceitacao registada" line on the next render
       // shows them truthfully.
-      return { ok: true, code: "terms_not_recorded" };
+      return { ok: true, code: "terms_not_recorded", dataHash };
     }
   }
 
   revalidatePath(`/clinical/${id}`);
-  return { ok: true };
+  return { ok: true, dataHash };
 }
 
-export async function signRecordAction(id: string): Promise<void> {
+/**
+ * Sign and lock a draft. SIGN-CONFIRM-AND-SAVE-FIRST: called from the
+ * confirmation dialog (SignConfirm), after any unsaved edits were saved, with
+ * the fingerprint of the content the signer's form last loaded or saved. The
+ * sign commits only while the stored content still has that fingerprint, so an
+ * edit saved from another tab or by another person in between is refused
+ * (`err:stale`), never signed unseen. The fingerprint comes from the client and
+ * is checked for shape here; its only power is to make the sign refuse.
+ */
+export async function signRecordAction(id: string, expectedDataHash: string): Promise<void> {
   const ctx = await requireRequestContext();
   let m = "signed";
-  try {
-    await signAndLockRecord(ctx, id);
-  } catch (e) {
-    m = isClinicalError(e) ? `err:${e.code}` : "err";
+  if (!isDataHash(expectedDataHash)) {
+    m = "err:invalid";
+  } else {
+    try {
+      await signAndLockRecord(ctx, id, expectedDataHash);
+    } catch (e) {
+      m = isClinicalError(e) ? `err:${e.code}` : "err";
+    }
   }
   revalidatePath(`/clinical/${id}`);
   redirect(`/clinical/${id}?m=${m}`);

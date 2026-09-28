@@ -1,7 +1,7 @@
 "use client";
 import { Banner, Button, Card, Checkbox, DatePicker, Field, Input, Textarea } from "@osteojp/ui";
 import { Lock } from "lucide-react";
-import { type ReactNode, useActionState, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import {
   enumLabel,
@@ -20,16 +20,61 @@ import {
   type ConsentDecision,
   type ConsentItemKey,
 } from "@/lib/clinical/consent";
+import { sameRecordData } from "@/lib/clinical/sign-sequence";
 
 import { fieldAnchorId } from "./anchors";
 import { HIDDEN_FIELD_KEYS, sectionLabel } from "./field-display";
 import { BodyChart, type Marker } from "./BodyChart";
 import { MobilidadeChart, type MobilidadeValue } from "./MobilidadeChart";
 import { SignatureConsent } from "./SignatureConsent";
+import { SignConfirm } from "./SignConfirm";
+import { useAwaitableSave } from "./use-awaitable-save";
 
-export type SaveState = { ok: boolean; errors?: Record<string, string>; code?: string };
+export type SaveState = {
+  ok: boolean;
+  errors?: Record<string, string>;
+  code?: string;
+  /** SIGN-CONFIRM: fingerprint of the stored content after a successful save. */
+  dataHash?: string;
+};
+
+/**
+ * SIGN-CONFIRM-AND-SAVE-FIRST: the sign (or review finalize) this form offers,
+ * behind a confirmation that saves unsaved changes first. Omitted when this
+ * viewer cannot sign this record.
+ */
+export type SignControl = {
+  /** The server action, bound to the record; it receives the fingerprint it may sign. */
+  action: (expectedDataHash: string) => Promise<void>;
+  label: string;
+  /** What signing does (clinical.signLockConfirm / review.finalizeConfirm). */
+  message: string;
+  /** Fingerprint of the stored content this page was rendered from. */
+  dataHash: string;
+  /**
+   * The form opens showing content that is NOT what is stored: the AI review
+   * editor draws the partner payload projected onto the ficha's fields, and
+   * binds the template, only on its first save. Such a form counts as unsaved
+   * until it has saved once, so a sign always saves it first.
+   */
+  startsUnsaved?: boolean;
+};
 
 const initialState: SaveState = { ok: false };
+
+function saveFailureReason(result: SaveState | null): string {
+  if (result?.code === "validation") return s["clinical.validationFailed"];
+  if (result?.code === "finalized") return s["clinical.finalized"];
+  return s["clinical.error"];
+}
+
+function submittedData(formData: FormData): Record<string, unknown> | null {
+  try {
+    return JSON.parse(String(formData.get("data") ?? "{}")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * FF2-A grouped rows (SPEC-ficha-medica.md AMENDMENT 2026-07-12). Any contiguous
@@ -82,6 +127,7 @@ export function RecordForm({
   patientId,
   recordId,
   existingTermsAcceptance = null,
+  sign,
 }: {
   schema: TemplateSchema;
   initialData: Record<string, unknown>;
@@ -95,8 +141,28 @@ export function RecordForm({
   /** W13-05: the patient's latest terms acceptance, for DISPLAY only. It never
    *  seeds the checkbox — see the state initialiser below. */
   existingTermsAcceptance?: { acceptedAt: string; termsVersion: string } | null;
+  sign?: SignControl;
 }) {
-  const [state, formAction, pending] = useActionState(saveAction, initialState);
+  const formRef = useRef<HTMLFormElement>(null);
+  // SIGN-CONFIRM: what the database holds, as this form last sent it (null: the
+  // form opened on content that is not stored yet), and that content's
+  // fingerprint. Both move forward on every save that answers ok, Gravar's and
+  // the one a sign runs first alike. Neither is re-seeded from props: after a
+  // save the page re-renders with fresh props, but the form keeps its own
+  // `data`, so the baseline must stay the one this form actually sent.
+  const [baseline, setBaseline] = useState<Record<string, unknown> | null>(
+    sign?.startsUnsaved ? null : initialData,
+  );
+  const [dataHash, setDataHash] = useState(sign?.dataHash ?? "");
+  const { state, formAction, pending, saveAndWait } = useAwaitableSave(
+    saveAction,
+    initialState,
+    (result, formData) => {
+      if (!result.ok) return;
+      setBaseline(submittedData(formData));
+      if (result.dataHash) setDataHash(result.dataHash);
+    },
+  );
   // Ruling B: no episode_date prefill/seed here — the field has no input and is
   // stamped from created_at server-side on save. Existing values in `data` (from
   // a prior save) round-trip unchanged through the hidden `data` field.
@@ -144,9 +210,24 @@ export function RecordForm({
     setTermsAccept(false);
   }
 
+  // SIGN-CONFIRM: unsaved means the fields differ from what this form last
+  // saved, or the form opened on content that is not stored, or the terms box
+  // is ticked: the acceptance is written by a save, and after the sign the form
+  // is read-only, so a ticked box left unsaved would be lost with the edits.
+  const isDirty = () => baseline === null || termsAccept || !sameRecordData(data, baseline);
+  // The save a sign runs first is the record form's own submission: the same
+  // hidden `data` and `termsAccept` fields a Gravar press sends.
+  const saveFirst = () =>
+    formRef.current ? saveAndWait(new FormData(formRef.current)) : Promise.resolve(null);
+
   return (
     <>
-    <form id="record-form" action={formAction} className="flex min-w-0 flex-col gap-6 pb-24">
+    <form
+      ref={formRef}
+      id="record-form"
+      action={formAction}
+      className="flex min-w-0 flex-col gap-6 pb-24"
+    >
       <input type="hidden" name="data" value={JSON.stringify(data)} />
       <input type="hidden" name="termsAccept" value={termsAccept ? "true" : "false"} />
 
@@ -289,6 +370,18 @@ export function RecordForm({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {extraActions}
+          {sign && (
+            <SignConfirm
+              label={sign.label}
+              message={sign.message}
+              isDirty={isDirty}
+              save={saveFirst}
+              sign={sign.action}
+              dataHash={dataHash}
+              saveFailureReason={saveFailureReason}
+              disabled={pending}
+            />
+          )}
           {!readOnly && (
             <Button type="submit" form="record-form" loading={pending}>
               {s["clinical.save"]}
