@@ -6,7 +6,12 @@ import { notFound } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import { summariseAiRecordingDraft } from "@/lib/clinical/ai-recording-draft";
 import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
-import { getFichaMedicaTemplate, getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import {
+  getFichaMedicaTemplate,
+  getRecordDetail,
+  mayFileRegistoFor,
+  type RecordStatus,
+} from "@/lib/clinical/records";
 import { isImporterSourcedRecord } from "@/lib/clinical/record-origin";
 import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
@@ -103,9 +108,21 @@ export default async function RecordDetailPage({
   // the second, so it follows `finalized`: a draft is never announced as
   // "finalizada e imutavel", whoever is looking at it.
   const finalized = record.status !== "draft";
-  const readOnly = finalized || !can(ctx.role, "clinical_records:author");
-  const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign");
-  const canVersion = readOnly && can(ctx.role, "clinical_records:author");
+  // 0099: the controls ask what the writers and the write policies ask, so a
+  // therapist is never offered a Save, a Sign or a Nova versao that would
+  // always be refused. A therapist saves and signs only a draft they authored,
+  // for a patient they treat or created (the UPDATE policy); files a new
+  // version only for a patient they treat or created (the INSERT policy). The
+  // owner writes every registo of the tenant, and `mayFileRegistoFor` answers
+  // yes for anyone but a therapist without a read. The attachments keep their
+  // own gate (`attachmentsReadOnly`, as before): 0099 changes no attachment rule.
+  const mayFile = await mayFileRegistoFor(ctx, record.patientId);
+  const writesThis = mayFile && (ctx.role !== "therapist" || record.practitionerId === ctx.userId);
+  const canAuthor = can(ctx.role, "clinical_records:author");
+  const readOnly = finalized || !canAuthor || !writesThis;
+  const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign") && writesThis;
+  const canVersion = finalized && canAuthor && mayFile;
+  const attachmentsReadOnly = finalized || !canAuthor;
 
   const anchors = schema
     ? topLevelFields(schema)
@@ -282,7 +299,7 @@ export default async function RecordDetailPage({
           )}
 
           <div className="mt-6">
-            <Attachments recordId={id} items={record.attachments} readOnly={readOnly} />
+            <Attachments recordId={id} items={record.attachments} readOnly={attachmentsReadOnly} />
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-// THE FOUR BEHAVIOUR CHECKS SAY WHO THEY ACT AS, ONCE, BEFORE ANY VERDICT.
+// THE BEHAVIOUR CHECKS SAY WHO THEY ACT AS, ONCE, BEFORE ANY VERDICT.
 //
 // scripts/db/behaviour-*-readonly.sql impersonate one staff user and print
 // verdicts about what that user's session can read. Two of them PICK the user
@@ -40,6 +40,15 @@ export const FILES = {
   "scripts/db/behaviour-care-team-readonly.sql": [PICKED],
   "scripts/db/behaviour-nesa-names-readonly.sql": [PICKED],
   "scripts/db/behaviour-rgpd-readonly.sql": ["passed in with -v actor_id"],
+  // 0099 (held): three actors, each passed; the file reads itself once per
+  // actor (the shape of 0098's behaviour-care02a-readonly.sql), so its one
+  // ACTOR line prints once per actor, and each slot names the variable it
+  // came from.
+  "scripts/db/behaviour-registo-writes-readonly.sql": [
+    "passed in with -v t1_id",
+    "passed in with -v t2_id",
+    "passed in with -v t3_id",
+  ],
 };
 
 const ACTOR_LINE = /^\\echo 'ACTOR id' /;

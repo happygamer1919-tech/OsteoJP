@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none on this branch) | | | |
+| `NEXT-AFTER-0098_clinical_records_write_matrix.sql` | `0098`. Ruled **`0099`** by the owner on 2026-09-27 ("0099 registo fix, SAT-01 from 0100."): the `clinical_records` write policies follow the permission matrix. A therapist edits and deletes only their own unsigned registos, and files registos only in their own name for a patient they treat or created. Three `ALTER POLICY` statements (`clinical_records_insert`, `_update`, `_delete`; the owner arms and every other policy byte-identical, the count flat, the immutability trigger untouched; the UPDATE's WITH CHECK is the INSERT's arm, the apply document's Q4) and one SECURITY DEFINER function, `claim_ai_draft_authorship(uuid)`, the review claim of an AI draft (section 4 of the file). sha256 `076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318`, which `scripts/db/precheck-0099-registo-writes.sql` and `scripts/db/postcheck-0099-registo-writes.sql` pin and `scripts/registo-writes-0099.test.mjs` checks. At promotion its journal `when` must be strictly greater than `0098`'s, and the SECURITY DEFINER count moves 27 to 28 (section 6 of the file: `EXPECTED_COUNT` is in a frozen gate file, so that half is a GATE-CHANGE). The apply document is `docs/migration-apply-0099.md` | 2026-09-27 | `db/0099-registo-write-matrix`, Tier C, **HELD**: authored now and applied later by GREEN, never by this lane, after `0094` to `0098` are promoted, applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES

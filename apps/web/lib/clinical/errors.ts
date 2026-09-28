@@ -13,6 +13,8 @@ export type ClinicalErrorCode =
   | "not_narrative_field" // edit touched a coded/safety field (narrative-only)
   // --- SIGN-CONFIRM-AND-SAVE-FIRST ---
   | "stale" // the stored content moved since the signer's form loaded or saved it: nothing signed
+  // --- 0099, the registo write matrix ---
+  | "not_author" // a therapist writes only a registo they authored: the UPDATE or DELETE touched no row
   // --- W5-30 delete / annul ---
   | "not_draft" // hard delete is draft / AI-pending only (locked/signed blocked by trigger)
   | "not_signed" // Anular applies only to a signed record

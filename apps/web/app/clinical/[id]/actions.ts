@@ -258,7 +258,15 @@ export async function confirmSignatureAction(input: {
 
 export async function versionRecordAction(id: string): Promise<void> {
   const ctx = await requireRequestContext();
-  const { id: newId } = await createAddendum(ctx, id);
+  let newId: string;
+  try {
+    ({ id: newId } = await createAddendum(ctx, id));
+  } catch (e) {
+    // A refusal (0099: a new version is filed only for a patient the caller
+    // treats or created) stays on the record with a message, as signing does.
+    if (!isClinicalError(e)) throw e;
+    redirect(`/clinical/${id}?m=err:${e.code}`);
+  }
   revalidatePath(`/clinical/${newId}`);
   redirect(`/clinical/${newId}`);
 }
