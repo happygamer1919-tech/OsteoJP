@@ -156,11 +156,36 @@ export function guideLessonsFor(role: Role, data: GuideData = GUIDE_DATA): Guide
   return guideSectionsFor(role, data).flatMap((entry) => entry.lessons);
 }
 
-/** The FAQ entries a role sees, in its profile's order. */
-export function guideFaqFor(role: Role, data: GuideData = GUIDE_DATA): GuideViewLesson[] {
+/**
+ * An FAQ entry as one viewer reads it: its role blocks resolved, and `lessons`,
+ * the lessons its "see" key links, narrowed to the ones in this viewer's own
+ * guide, in the "see" order (the primary lesson first).
+ */
+export type GuideViewFaq = GuideViewLesson & { lessons: GuideViewLesson[] };
+
+/**
+ * The FAQ entries a role sees, in its profile's order, each with the lessons
+ * it links that this role reads.
+ *
+ * The links are narrowed per viewer, like role blocks: an entry may link a
+ * lesson only some of its readers open (Concluir consulta links Criar e
+ * preencher um registo clínico, which a therapist reads and reception does
+ * not), and a viewer is never handed a link to a lesson outside its guide.
+ * The primary lesson is never dropped: guide-model.mjs holds every entry to
+ * the roles and the capability of its primary lesson, and guide-roles.test.ts
+ * proves the primary link is there for every role that reads the entry.
+ */
+export function guideFaqFor(role: Role, data: GuideData = GUIDE_DATA): GuideViewFaq[] {
   const entryById = new Map(data.faq.map((entry) => [entry.id, entry]));
+  const readable = new Map(guideLessonsFor(role, data).map((lesson) => [lesson.id, lesson]));
   return data.orders[PROFILE_OF_ROLE[role]].faq
     .map((id) => entryById.get(id))
     .filter((entry): entry is GuideLesson => entry !== undefined && visibleTo(role, entry))
-    .map((entry) => lessonFor(role, entry));
+    .map((entry) => ({
+      ...lessonFor(role, entry),
+      lessons: entry.see.flatMap((id) => {
+        const lesson = readable.get(id);
+        return lesson ? [lesson] : [];
+      }),
+    }));
 }
