@@ -1,31 +1,38 @@
-// The committed guide PDFs and the manifest that binds them to the lesson
+// The committed guide PDF and the manifest that binds it to the lesson
 // source. One module for the two sides: build-guide.mjs, which prints the PDFs
 // and writes the manifest, and apps/web/lib/guide/guide-pdf.test.ts, which
-// checks them in the unit test job. They agree here on the file names, the
-// manifest, the document title and what "the PDFs and the source diverged"
-// means.
+// checks the committed one in the unit test job. They agree here on the file
+// names, where each PDF goes, the manifest, the document title and what "the
+// PDF and the source diverged" means.
 //
-//   docs/guide/pdf/guia-plataforma-osteojp.pdf    the full guide
-//   docs/guide/pdf/guia-rececao.pdf               one per profile (admin is not one)
-//   docs/guide/pdf/guia-terapeuta.pdf
-//   docs/guide/pdf/guia-proprietario.pdf
-//   docs/guide/pdf/guide-pdf.manifest.json        the source hash, and per PDF its
-//                                                 file name, pages and sha256
+//   docs/guide/pdf/guia-plataforma-osteojp.pdf    the full guide: COMMITTED
+//   docs/guide/pdf/guide-pdf.manifest.json        the source hash, and the full
+//                                                 guide's file name, pages and sha256
+//   docs/guide/build/guia-rececao.pdf             one per profile (admin is not
+//   docs/guide/build/guia-terapeuta.pdf           one): BUILT, NEVER COMMITTED;
+//   docs/guide/build/guia-proprietario.pdf        docs/guide/build/*.pdf is gitignored
+//
+// Only the full guide is committed, for the weight of the repository: every
+// rebuild rewrites every PDF (Chromium stamps its build time), and the four
+// together were about 34 MB of history per lesson change in a public
+// repository. The spec names one PDF, the full guide; the role PDFs are built
+// by the same command, from the same source, on demand.
 //
 // THE BINDING. The source hash is guideSourceHash (guide-model.mjs): the
 // published lessons, FAQ entries and sections, and every capture they show.
-// The builder writes it into the manifest and its first 16 hex into each PDF's
-// document title ("Guia da plataforma OsteoJP: Receção (fonte 1a2b3c4d5e6f7a8b)"),
+// The builder writes it into the manifest and its first 16 hex into every
+// PDF's document title ("Guia da plataforma OsteoJP: Receção (fonte 1a2b3c4d5e6f7a8b)"),
 // which Chromium writes to the PDF's Info /Title. checkGuidePdfs below then
 // fails when:
 //
 //   source   the lesson source's hash is not the manifest's (a lesson changed
-//            and the PDFs were not rebuilt);
-//   sha256   a PDF is not the file the builder wrote (replaced by hand);
-//   title    a PDF's Info /Title does not carry the manifest's source prefix;
-//   files    the folder holds a file the manifest does not name, or lacks one
-//            it names;
-//   manifest the manifest itself is malformed or names other PDFs than the four.
+//            and the PDF was not rebuilt);
+//   sha256   the PDF is not the file the builder wrote (replaced by hand);
+//   title    the PDF's Info /Title does not carry the manifest's source prefix;
+//   files    the folder holds a file the manifest does not name (a role PDF
+//            included), or lacks one it names;
+//   manifest the manifest itself is malformed or names other PDFs than the
+//            full guide alone.
 //
 // Node built-ins only, and no Chromium: reading a title is a byte scan of the
 // PDF's Info dictionary, so the check runs where the unit tests run.
@@ -36,21 +43,30 @@ import path from 'node:path';
 
 import { REPO_ROOT } from './guide-model.mjs';
 
-/** Where the committed PDFs live. docs/guide/build/*.pdf is gitignored; this folder is not. */
+/** Where the committed PDF and its manifest live. This folder is not gitignored. */
 export const PDF_DIR = path.join(REPO_ROOT, 'docs', 'guide', 'pdf');
+/** Where the role PDFs are built. Its *.pdf is gitignored, so they are never committed. */
+export const BUILD_DIR = path.join(REPO_ROOT, 'docs', 'guide', 'build');
 /** The manifest's file name, inside the PDF folder. */
 export const MANIFEST_NAME = 'guide-pdf.manifest.json';
 export const MANIFEST_FILE = path.join(PDF_DIR, MANIFEST_NAME);
 
 export const GUIDE_TITLE = 'Guia da plataforma OsteoJP';
 
-/** The four PDFs, in build order: the full guide, then one per guide profile. */
+/**
+ * The four PDFs the builder prints, in build order: the full guide, then one
+ * per guide profile. Only a `committed` one goes to PDF_DIR and the manifest;
+ * the others go to BUILD_DIR.
+ */
 export const PDF_JOBS = Object.freeze([
-  Object.freeze({ profile: null, label: null, file: 'guia-plataforma-osteojp.pdf' }),
-  Object.freeze({ profile: 'rececao', label: 'Receção', file: 'guia-rececao.pdf' }),
-  Object.freeze({ profile: 'terapeuta', label: 'Terapeuta', file: 'guia-terapeuta.pdf' }),
-  Object.freeze({ profile: 'proprietario', label: 'Proprietário', file: 'guia-proprietario.pdf' }),
+  Object.freeze({ profile: null, label: null, file: 'guia-plataforma-osteojp.pdf', committed: true }),
+  Object.freeze({ profile: 'rececao', label: 'Receção', file: 'guia-rececao.pdf', committed: false }),
+  Object.freeze({ profile: 'terapeuta', label: 'Terapeuta', file: 'guia-terapeuta.pdf', committed: false }),
+  Object.freeze({ profile: 'proprietario', label: 'Proprietário', file: 'guia-proprietario.pdf', committed: false }),
 ]);
+
+/** The PDFs committed in PDF_DIR and named by the manifest: the full guide alone. */
+export const COMMITTED_JOBS = Object.freeze(PDF_JOBS.filter((job) => job.committed));
 
 /** How many hex digits of the source hash a PDF's title carries. */
 export const TITLE_PREFIX_LENGTH = 16;
@@ -179,8 +195,9 @@ const HEX64 = /^[0-9a-f]{64}$/;
 
 /**
  * Checks a PDF folder against a manifest and the lesson source's hash.
- * Returns the problems by kind; every list is empty when the PDFs are the ones
- * the builder made from this source.
+ * Returns the problems by kind; every list is empty when the folder holds the
+ * committed PDF the builder made from this source, its manifest, and nothing
+ * else.
  *
  *   pdfDir      the folder holding the PDFs and the manifest
  *   manifest    the parsed manifest
@@ -200,9 +217,9 @@ export function checkGuidePdfs({ pdfDir = PDF_DIR, manifest, sourceHash }) {
 
   const entries = manifest && Array.isArray(manifest.pdfs) ? manifest.pdfs : [];
   const names = entries.map((entry) => entry && entry.file);
-  const wanted = PDF_JOBS.map((job) => job.file);
+  const wanted = COMMITTED_JOBS.map((job) => job.file);
   if (JSON.stringify(names) !== JSON.stringify(wanted)) {
-    problems.manifest.push(`the manifest names ${JSON.stringify(names)}, not the four PDFs ${JSON.stringify(wanted)}`);
+    problems.manifest.push(`the manifest names ${JSON.stringify(names)}, not the committed PDF ${JSON.stringify(wanted)} alone`);
   }
 
   const present = existsSync(pdfDir) ? readdirSync(pdfDir) : [];

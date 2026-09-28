@@ -1,5 +1,5 @@
 {
-  "$comment": "Written by docs/guide/build/build-guide.mjs with the PDFs beside it. Do not edit by hand: change the lesson source and run node docs/guide/build/build-guide.mjs. apps/web/lib/guide/guide-pdf.test.ts checks the source hash, each PDF sha256 and each PDF title against this file.",
+  "$comment": "Written by docs/guide/build/build-guide.mjs with the committed PDF beside it. Do not edit by hand: change the lesson source and run node docs/guide/build/build-guide.mjs. apps/web/lib/guide/guide-pdf.test.ts checks the source hash, the PDF sha256 and the PDF title against this file. The role PDFs are built into docs/guide/build, never committed, and not named here.",
   "format": 1,
   "pdfs": [
     {
@@ -9,34 +9,7 @@
       "lessons": 57,
       "pages": 51,
       "profile": null,
-      "sha256": "511a51184752383f064272602cedc5004d2f022228882c4f478e5be02882a841"
-    },
-    {
-      "bytes": 8661216,
-      "faq": 6,
-      "file": "guia-rececao.pdf",
-      "lessons": 37,
-      "pages": 36,
-      "profile": "rececao",
-      "sha256": "e119b9fd76e56642a0eab5ef9b2d3dc0781b4c26f06419afe10a102b1adde3ff"
-    },
-    {
-      "bytes": 7838345,
-      "faq": 7,
-      "file": "guia-terapeuta.pdf",
-      "lessons": 37,
-      "pages": 34,
-      "profile": "terapeuta",
-      "sha256": "ecadb1de17dc79edc2b148be7e43a7171f10de23187f8b2417cafbbcd4d887f0"
-    },
-    {
-      "bytes": 8943201,
-      "faq": 7,
-      "file": "guia-proprietario.pdf",
-      "lessons": 57,
-      "pages": 46,
-      "profile": "proprietario",
-      "sha256": "061c97cd80bd86c463dd3304a95ceedd677bad232cee3b90cb42ce8e849d6f08"
+      "sha256": "04802351db807fcd041259b60a82c98b22c6a4d18deabb07bf1368e549ceabf9"
     }
   ],
   "source": {

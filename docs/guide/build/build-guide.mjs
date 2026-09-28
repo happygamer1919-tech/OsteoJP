@@ -6,14 +6,20 @@
 //
 // LESSON MODE, the default. Reads the lesson source that /ajuda reads,
 // docs/guide/content/NN-<section>/ and 00-perguntas/, through guide-model.mjs,
-// and prints four A4 PDFs into docs/guide/pdf with Playwright's Chromium:
+// and prints four A4 PDFs with Playwright's Chromium:
 //
-//   guia-plataforma-osteojp.pdf   every published lesson and FAQ entry, in the
-//                                 Proprietário order, and every role block
-//                                 under a small "Só para <Role>" label
-//   guia-rececao.pdf              the lessons and FAQ entries of one profile
-//   guia-terapeuta.pdf            (lessonsFor, faqFor), in its order, with only
-//   guia-proprietario.pdf         the role blocks written for it
+//   docs/guide/pdf/guia-plataforma-osteojp.pdf   COMMITTED: every published
+//                                 lesson and FAQ entry, in the Proprietário
+//                                 order, and every role block under a small
+//                                 "Só para <Role>" label
+//   docs/guide/build/guia-rececao.pdf       BUILT, NEVER COMMITTED (the folder's
+//   docs/guide/build/guia-terapeuta.pdf     *.pdf is gitignored): the lessons and
+//   docs/guide/build/guia-proprietario.pdf  FAQ entries of one profile (lessonsFor,
+//                                 faqFor), in its order, with only the role
+//                                 blocks written for it
+//
+// Only the full guide is committed, for the weight of the repository: every
+// rebuild rewrites every PDF, since Chromium stamps its build time.
 //
 // Each has a cover, an index, "Perguntas frequentes" first, then the sections.
 // Each lesson prints its capture pair side by side (phone and desktop,
@@ -21,14 +27,16 @@
 // image. A held lesson (hold: GUEST-05) is never printed, and admin is not a
 // PDF profile. The colours are packages/ui/theme.css tokens.
 //
-// Next to them it writes guide-pdf.manifest.json: the SOURCE hash
+// Next to the full guide it writes guide-pdf.manifest.json: the SOURCE hash
 // (guideSourceHash in guide-model.mjs: the published lessons, FAQ entries and
-// sections, and every capture they show) and, per PDF, its file name, pages,
-// size and sha256. Each PDF's document title ends with "(fonte <the first 16
-// hex of the source hash>)", which Chromium writes to the PDF's Info /Title, so
-// a PDF names the source it was built from. apps/web/lib/guide/guide-pdf.test.ts
-// fails when the source, the manifest and the PDFs disagree (guide-pdf.mjs), so
-// a PR that changes a lesson must rebuild the PDFs in the same PR.
+// sections, and every capture they show) and the full guide's file name,
+// pages, size and sha256; it names no role PDF. Each PDF's document title ends
+// with "(fonte <the first 16 hex of the source hash>)", which Chromium writes
+// to the PDF's Info /Title, so a PDF names the source it was built from.
+// apps/web/lib/guide/guide-pdf.test.ts fails when the source, the manifest and
+// the committed PDF disagree (guide-pdf.mjs), so a PR that changes a lesson
+// must rebuild the PDF in the same PR. --out <dir> writes all four PDFs and the
+// manifest to that one folder instead.
 //
 // It refuses, and writes nothing, when the lesson source has a problem (every
 // problem listed with its file and line, as gen-guide-data.mjs lists them), or
@@ -76,6 +84,7 @@ import {
   serializeGuideData,
 } from './guide-model.mjs';
 import {
+  BUILD_DIR,
   GUIDE_TITLE,
   MANIFEST_NAME,
   PDF_DIR,
@@ -892,14 +901,17 @@ async function buildLessons(opts) {
   });
 
   // Every PDF is printed and checked in memory first; nothing is written
-  // unless all four carry their title.
-  const out = opts.out ?? PDF_DIR;
+  // unless all four carry their title. The committed one goes to
+  // docs/guide/pdf with the manifest, the role PDFs to docs/guide/build
+  // (gitignored); --out puts all of them in one folder.
+  const outOf = (job) => opts.out ?? (job.committed ? PDF_DIR : BUILD_DIR);
+  const manifestDir = opts.out ?? PDF_DIR;
   const mark = titleMark(sourceHash);
   const printed = [];
   const browser = await launch();
   try {
     for (const doc of documents) {
-      const file = path.join(out, doc.job.file);
+      const file = path.join(outOf(doc.job), doc.job.file);
       const { pdf, pages } = await printPdf(browser, doc.html, doc.footer, file);
       const title = readPdfTitle(pdf);
       if (title === null || !title.endsWith(mark)) {
@@ -911,10 +923,10 @@ async function buildLessons(opts) {
     await browser.close();
   }
 
-  mkdirSync(out, { recursive: true });
+  for (const dir of new Set([manifestDir, ...printed.map((doc) => path.dirname(doc.file))])) mkdirSync(dir, { recursive: true });
   const manifest = {
     $comment:
-      'Written by docs/guide/build/build-guide.mjs with the PDFs beside it. Do not edit by hand: change the lesson source and run node docs/guide/build/build-guide.mjs. apps/web/lib/guide/guide-pdf.test.ts checks the source hash, each PDF sha256 and each PDF title against this file.',
+      'Written by docs/guide/build/build-guide.mjs with the committed PDF beside it. Do not edit by hand: change the lesson source and run node docs/guide/build/build-guide.mjs. apps/web/lib/guide/guide-pdf.test.ts checks the source hash, the PDF sha256 and the PDF title against this file. The role PDFs are built into docs/guide/build, never committed, and not named here.',
     format: 1,
     source: {
       sha256: sourceHash,
@@ -922,7 +934,7 @@ async function buildLessons(opts) {
       lessons: guide.lessons.filter((l) => !l.hold).length,
       faq: guide.faq.filter((f) => !f.hold).length,
     },
-    pdfs: printed.map((doc) => ({
+    pdfs: printed.filter((doc) => doc.job.committed).map((doc) => ({
       file: doc.job.file,
       profile: doc.job.profile,
       pages: doc.pages,
@@ -935,10 +947,12 @@ async function buildLessons(opts) {
   for (const doc of printed) {
     writeFileSync(doc.file, doc.pdf);
     process.stdout.write(
-      `${shownPath(doc.file)}  ${doc.pages} pages, ${megabytes(doc.pdf.length)}, ${doc.counts.lessons} lessons, ${doc.counts.faq} FAQ entries\n`,
+      `${shownPath(doc.file)}  ${doc.pages} pages, ${megabytes(doc.pdf.length)}, ${doc.counts.lessons} lessons, ${doc.counts.faq} FAQ entries, ${
+        doc.job.committed ? 'committed' : 'built, not committed'
+      }\n`,
     );
   }
-  const manifestFile = path.join(out, MANIFEST_NAME);
+  const manifestFile = path.join(manifestDir, MANIFEST_NAME);
   writeFileSync(manifestFile, serializeGuideData(manifest));
   process.stdout.write(`${shownPath(manifestFile)}  source ${sourcePrefix(sourceHash)}\n`);
 }

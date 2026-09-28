@@ -4,13 +4,15 @@
 import type { GuideProfile } from './guide-model.mjs';
 
 export const PDF_DIR: string;
+export const BUILD_DIR: string;
 export const MANIFEST_NAME: string;
 export const MANIFEST_FILE: string;
 export const GUIDE_TITLE: string;
 export const TITLE_PREFIX_LENGTH: number;
 
-export type PdfJob = { profile: GuideProfile | null; label: string | null; file: string };
+export type PdfJob = { profile: GuideProfile | null; label: string | null; file: string; committed: boolean };
 export const PDF_JOBS: readonly PdfJob[];
+export const COMMITTED_JOBS: readonly PdfJob[];
 
 export function sha256Hex(bytes: Uint8Array | string): string;
 export function sourcePrefix(sourceHash: string): string;

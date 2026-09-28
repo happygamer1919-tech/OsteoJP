@@ -6,39 +6,49 @@ Run from the repository root:
 node docs/guide/build/build-guide.mjs
 ```
 
-It reads the lesson source, `docs/guide/content/NN-<section>/` and `docs/guide/content/00-perguntas/` (the same source `/ajuda` reads, below), through `guide-model.mjs`, and writes four A4 PDFs and their manifest into **`docs/guide/pdf/`**, printing each PDF with its pages, size, lessons and FAQ entries:
+It reads the lesson source, `docs/guide/content/NN-<section>/` and `docs/guide/content/00-perguntas/` (the same source `/ajuda` reads, below), through `guide-model.mjs`, and prints four A4 PDFs, printing each with its path, pages, size, lessons, FAQ entries and whether it is committed:
 
-* `guia-plataforma-osteojp.pdf`: every published lesson and FAQ entry, in the Proprietário order, with every role block printed under a small "Só para <Role>" label ("Só para Terapeuta", "Só para Receção e Proprietário").
-* `guia-rececao.pdf`, `guia-terapeuta.pdf`, `guia-proprietario.pdf`: the lessons and FAQ entries of that profile (`lessonsFor` and `faqFor` in `guide-model.mjs`), in its order, with only the role blocks written for it, unwrapped as `/ajuda` shows them. Admin is not a PDF profile.
-* `guide-pdf.manifest.json`: the source hash the PDFs were built from, and per PDF its file name, profile, pages, size and sha256. Written by the builder; never edited by hand.
+* **`docs/guide/pdf/guia-plataforma-osteojp.pdf`, the full guide, COMMITTED**: every published lesson and FAQ entry, in the Proprietário order, with every role block printed under a small "Só para <Role>" label ("Só para Terapeuta", "Só para Receção e Proprietário").
+* **`docs/guide/build/guia-rececao.pdf`, `guia-terapeuta.pdf`, `guia-proprietario.pdf`, one per role, BUILT AND NEVER COMMITTED** (the `*.pdf` of `docs/guide/build` is gitignored): the lessons and FAQ entries of that profile (`lessonsFor` and `faqFor` in `guide-model.mjs`), in its order, with only the role blocks written for it, unwrapped as `/ajuda` shows them. Admin is not a PDF profile.
+* **`docs/guide/pdf/guide-pdf.manifest.json`, COMMITTED**: the source hash the committed PDF was built from, and the full guide's file name, profile, pages, size and sha256. It names no role PDF. Written by the builder; never edited by hand.
+
+**Only the full guide is committed, for the weight of the repository.** Every rebuild rewrites every PDF it prints, because Chromium stamps each with its build time, so a byte-identical rebuild is impossible and each rebuild is a new file in the history of a public repository. The four PDFs together were about 34 MB of history per lesson change; the full guide alone is about 9 MB. The spec item ("One content source feeds both the PDF and /ajuda. The PDF is regenerated from it in the same PR that changes it; a CI check fails when the two diverge.") names one PDF, the full guide, and it holds every lesson and every role block. Decision of the lead, 2026-09-28. A role PDF is built when someone needs one to hand out:
+
+```sh
+node docs/guide/build/build-guide.mjs
+# then take docs/guide/build/guia-rececao.pdf (or guia-terapeuta.pdf, guia-proprietario.pdf)
+```
+
+As built on 2026-09-28 from source `51c38859b2a5b67d` (57 lessons, 7 FAQ entries): the full guide 51 pages (committed); Receção 36 pages, Terapeuta 34, Proprietário 46 (built, not committed).
 
 Each PDF has a cover, an index, "Perguntas frequentes" first, then the sections. A lesson prints its title, its goal, its body and its capture pair side by side (the phone capture and the desktop capture, at one height, each captioned by its alt text), or, while it has no capture, a small "Sem imagem" note with the same words as `/ajuda` (`guide.noImage`, `guide.noImageHint` in `packages/i18n/src/strings.pt.json`): never a broken image. An FAQ entry prints its question, its answer and the lessons it links that the same PDF prints; its capture pair is its primary lesson's, and prints with that lesson. A held lesson (`hold: GUEST-05`) is never printed. The colours are tokens read from `packages/ui/theme.css`: text `--color-text-primary`, secondary text `--color-text-secondary`, headings `--color-primary-800`, the cover bar and title rule `--color-accent-2-500`, the role and "Só para" labels `--color-accent-2-700`, borders `--color-border-strong`, the "Sem imagem" note `--color-surface-muted`, the page `--color-surface`.
 
 **A capture pair of two or three frames prints small.** Side by side at one height across 174 mm, a pair of two frames is about 41 mm tall and a pair of three about 28 mm. The captures are embedded at their full resolution, so they read when the PDF is zoomed on a screen, not on paper.
 
-## The rule: the PR that changes the lesson source rebuilds the PDFs
+## The rule: the PR that changes the lesson source rebuilds the PDF
 
-The PDFs are committed, so a PR that changes a lesson, an FAQ entry, a section file or a capture also runs, after its last edit:
+The full guide PDF is committed, so a PR that changes a lesson, an FAQ entry, a section file or a capture also runs, after its last edit:
 
 ```sh
 node docs/guide/build/gen-guide-data.mjs
 node docs/guide/build/build-guide.mjs
 ```
 
-and commits `apps/web/lib/guide/guide-data.json`, the four PDFs and the manifest with the change, in the same PR.
+and commits `apps/web/lib/guide/guide-data.json`, `docs/guide/pdf/guia-plataforma-osteojp.pdf` and the manifest with the change, in the same PR. The three role PDFs the same command writes to `docs/guide/build/` are gitignored and stay out of the commit.
 
 **The check is `apps/web/lib/guide/guide-pdf.test.ts`**, in `pnpm test` (CI job "Lint + typecheck + test"). It needs neither Chromium nor the network. It fails when:
 
-* the source hash of the lesson source as it is now is not the manifest's: the source changed and the PDFs were not rebuilt;
-* a committed PDF's sha256 is not the manifest's: a PDF replaced by hand;
-* a PDF's document title (its Info `/Title`) does not end with "(fonte <the first 16 hex of the manifest's source hash>)", which the builder puts there so each PDF names the source it was printed from;
-* `docs/guide/pdf` holds a file the manifest does not name, or lacks one it names, or the manifest does not name the four PDFs.
+* the source hash of the lesson source as it is now is not the manifest's: the source changed and the PDF was not rebuilt;
+* the committed PDF's sha256 is not the manifest's: a PDF replaced by hand;
+* the PDF's document title (its Info `/Title`) does not end with "(fonte <the first 16 hex of the manifest's source hash>)", which the builder puts there so each PDF names the source it was printed from;
+* `docs/guide/pdf` holds a file the manifest does not name (a role PDF included), or lacks one it names;
+* the manifest names anything but the full guide, alone.
 
-Seeded arms prove each failure both ways on copies in a temporary folder, and an untouched copy passes.
+Seeded arms prove each failure both ways on copies in a temporary folder, and an untouched copy passes. The title arm runs on both forms Chromium writes a title in: a literal string, on a copy of the committed PDF, and UTF-16 in a hex string (the form of a title with an accent, such as the Receção PDF's), on a small hand-written PDF, since the committed PDF's title has no accent.
 
-The source hash is `guideSourceHash` in `guide-model.mjs`: the sha256 of the published model (every section, every published lesson and FAQ entry with its front matter and blocks, role blocks included, and each profile's order) plus the sha256 of every capture those lessons and entries show. A held lesson is not in it, so editing one does not ask for a rebuild. The builder's code, its CSS and the theme tokens are not in it either: a change to how the PDFs look does not fail the check, so rebuild in the PR that makes it. The manifest and the PDFs shared by the builder and the check are in `guide-pdf.mjs`.
+The source hash is `guideSourceHash` in `guide-model.mjs`: the sha256 of the published model (every section, every published lesson and FAQ entry with its front matter and blocks, role blocks included, and each profile's order) plus the sha256 of every capture those lessons and entries show. A held lesson is not in it, so editing one does not ask for a rebuild. The builder's code, its CSS and the theme tokens are not in it either: a change to how the PDFs look does not fail the check, so rebuild in the PR that makes it. The file names, which PDF is committed, the folders, the manifest and the title, shared by the builder and the check, are in `guide-pdf.mjs` (`PDF_JOBS`, `COMMITTED_JOBS`, `PDF_DIR`, `BUILD_DIR`).
 
-Every rebuild rewrites all four PDFs (Chromium stamps each with its build time), so each one adds about 34 MB to the repository's history. Rebuild once per PR, after the last edit.
+Every rebuild rewrites the committed PDF (Chromium stamps it with its build time), so each one adds about 9 MB to the repository's history. Rebuild once per PR, after the last edit.
 
 ## Chapter mode, and what is no longer the PDFs' source
 
@@ -50,7 +60,7 @@ Chapter mode is the old builder, unchanged, and runs only with `--content`:
 node docs/guide/build/build-guide.mjs --content docs/guide/content --out <dir>
 ```
 
-It reads the flat chapter files `<dir>/*.md` in file-name order (never the lesson folders) and writes four PDFs to `--out`, by default `docs/guide/build`, whose `*.pdf` is gitignored: `guia-plataforma-osteojp.pdf` (cover, index, every chapter) and one per role (cover and that role's chapter). A chapter belongs to a role by its file name (`01-rececao.md`, `02-terapeuta.md`, `03-proprietario.md`), or failing that by its `# ` title. A chapter that names no role goes into every PDF. It writes no manifest.
+It reads the flat chapter files `<dir>/*.md` in file-name order (never the lesson folders) and writes four PDFs to `--out`, by default `docs/guide/build`, whose `*.pdf` is gitignored: `guia-plataforma-osteojp.pdf` (cover, index, every chapter) and one per role (cover and that role's chapter). Those are the file names the lesson build gives its role PDFs in the same folder, so a chapter build there replaces them; neither is committed. A chapter belongs to a role by its file name (`01-rececao.md`, `02-terapeuta.md`, `03-proprietario.md`), or failing that by its `# ` title. A chapter that names no role goes into every PDF. It writes no manifest.
 
 ## What a chapter may contain
 
@@ -68,7 +78,7 @@ No dependency of its own. Playwright comes from `apps/web` (`@playwright/test`),
 
 ## Options
 
-* `--out <dir>`: write the PDFs (and, with the lesson source, the manifest) somewhere else, for a trial build that leaves `docs/guide/pdf` alone.
+* `--out <dir>`: write all four PDFs (and, with the lesson source, the manifest) into that one folder, for a trial build that leaves `docs/guide/pdf` and `docs/guide/build` alone. Never `--out docs/guide/pdf`: the three role PDFs would land beside the committed one, and the check fails the folder.
 * `--content <dir>`: chapter mode: read flat chapter files from that directory (image paths resolve against it).
 
 ## The content check
@@ -137,6 +147,8 @@ The repository is public. `apps/web/lib/guide/guide-names.test.ts` (in `pnpm tes
 * with `GUIDE_FORBIDDEN_NAMES` empty the scan cannot run: it fails when `GUIDE_NAMES_REQUIRED` is `1`, and otherwise passes with a console line saying the check is not wired yet;
 * seeded arms prove it both ways on a synthetic list, through the same function the live check runs: not wired, fail closed, a hit through the environment (whole list and split list), no hit, a malformed list, and a waiver. Another holds that what the check decides carries no size of the list, so its public log cannot print one.
 
+Once GATE-CHANGE #1481 merges, `guide-names-waived.txt` is a frozen gate file (with `guide-names.mjs` and `guide-names.test.ts`, pinned in `.github/gate-manifest.json`), so adding or removing a waiver is itself a GATE-CHANGE the owner merges.
+
 **The legacy captures under `docs/guide/screens` are not scanned**: they have no text records. They are pinned instead. `legacy-screens.sha256` lists each of the 94 files with its sha256, and the test holds that list's own sha256 and its count, so a file cannot be added there, removed or changed without editing the test. G1-5 is complete only when PR 7 retires them with the chapters.
 
 **The list is personal data, although it holds no name in clear.** `guide-names.mjs` normalizes a name (NFKD, no accents, lower case, letters and digits only, single spaces), keeps its first four words (a candidate in a text is a run of 2 to 4 words, so a longer name is found by its first four; a one word name is left out, it could never be found), and keeps the first 4 bytes of its sha256. The list is those numbers sorted, written as gaps in LEB128, compressed with deflate and written in base64 after `v1:`. Four bytes do not hide a name from someone who guesses it: whoever holds the list can hash any name they suspect and look it up, and at about 13 000 entries a name that is not in the list matches by chance only about 3 times in a million. So the list answers, for any named person, whether that person is a patient or a member of staff of the clinic. It is handled as personal data: it exists only in the Actions secret and in the owner's own paste below; it is never printed, committed, written to a file, pasted into a conversation or given to an agent; and the check never prints how many names it holds, because its log is public. Measured on 15 000 synthetic names: 55 755 bytes, OVER the 49 152 bytes of one Actions secret; one secret holds about 13 000 names. `encode-guide-names.mjs` refuses a list that does not fit and says how many parts to split it into; `--part k/N` writes one part (by hash range), and the test reads several parts from one variable, separated by spaces.
@@ -146,11 +158,11 @@ A 32 bit hash can collide: with N names and U distinct candidate runs in the sca
 **When the check goes red**, open each file at the line it names:
 
 1. If a real person's name is on the line, replace it with an invented one. In a text record that means fixing `seed-guide.mjs` or the spec and capturing again, never editing the record.
-2. If every word on the line is platform copy (`packages/i18n/src/strings.pt.json`) or an invented name of `seed-guide.mjs`, it is a chance match of the hash, and platform copy cannot be renamed. Copy the context hash the check printed beside that line into `guide-names-waived.txt`, with a note naming the file and line and why it is not a name, in the PR that went red.
+2. If every word on the line is platform copy (`packages/i18n/src/strings.pt.json`) or an invented name of `seed-guide.mjs`, it is a chance match of the hash, and platform copy cannot be renamed. Copy the context hash the check printed beside that line into `guide-names-waived.txt`, with a note naming the file and line and why it is not a name. Once #1481 has merged, that is a GATE-CHANGE of its own: a PR titled `GATE-CHANGE` that carries the waiver file and the regenerated gate manifest and nothing else, which the owner merges; the PR that went red then merges `main` in and goes green. Before #1481 merges, the waiver goes in the PR that went red.
 
 A waiver covers the line's words and the three words after it, which are all the words a candidate starting on that line can hold. Any change to them brings the line back into the check, and a waiver that no longer matches any line of the scanned files fails the check until it is removed.
 
-**What a red check makes public.** The context hash is the sha256 of text that is already public, so it adds nothing to what the line says. The hit itself does disclose something. The Actions log of this public repository is public, and a line named there tells anyone who opens it that a run of 2 to 4 words on that line is in the list. On a real name, that confirms the person is a patient or a member of staff. On a chance match, it gives away one of the list's 4 byte values, against which anyone can test names they suspect. A committed waiver says the same, for good. That is the price of a check that must say where to look. It is kept small in two ways: likely names are taken out of the scanned files before the secret is wired (the three common e2e names, below), and a red check is fixed in the PR that went red, not left open.
+**What a red check makes public.** The context hash is the sha256 of text that is already public, so it adds nothing to what the line says. The hit itself does disclose something. The Actions log of this public repository is public, and a line named there tells anyone who opens it that a run of 2 to 4 words on that line is in the list. On a real name, that confirms the person is a patient or a member of staff. On a chance match, it gives away one of the list's 4 byte values, against which anyone can test names they suspect. A committed waiver says the same, for good. That is the price of a check that must say where to look. It is kept small in two ways: likely names are taken out of the scanned files before the secret is wired (the three common e2e names, below), and a red check is fixed at once, not left open: a real name is replaced in the PR that went red, and a chance match is waived by the owner's GATE-CHANGE above.
 
 ### Building the list: OWNER-RUN, never by an agent
 
