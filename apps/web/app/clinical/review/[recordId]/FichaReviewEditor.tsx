@@ -1,5 +1,5 @@
 "use client";
-import { Button, GlassStatusChip } from "@osteojp/ui";
+import { GlassStatusChip } from "@osteojp/ui";
 
 import { RecordForm, type SaveState } from "@/app/clinical/[id]/RecordForm";
 import type { TemplateSchema } from "@/lib/clinical/form-template";
@@ -17,8 +17,10 @@ import { s } from "@/lib/i18n";
  *     never status / ai_review_state.
  *   * Finalizar → finalizeAction → finalizeReview: signs (record_status →
  *     signed) AND approves (ai_review_state → approved) in ONE statement. It is a
- *     distinct, separately-gated action, rendered in its OWN form (outside the
- *     record form), exactly like the author flow's Assinar.
+ *     distinct, separately-gated action, exactly like the author flow's Assinar.
+ *     SIGN-CONFIRM-AND-SAVE-FIRST: RecordForm draws it behind a confirmation
+ *     and saves unsaved edits first (see `sign` below); it is no longer a form
+ *     of its own that finalizes on one press.
  *
  * A finalized record is immutable (the DB trigger is the wall); after finalize
  * the record leaves the review path and lives in the normal clinical viewer /
@@ -30,6 +32,8 @@ export function FichaReviewEditor({
   initialData,
   saveAction,
   finalizeAction,
+  dataHash,
+  startsUnsaved,
   patientSex,
   patientId,
   reviewStateLabel,
@@ -38,7 +42,11 @@ export function FichaReviewEditor({
   schema: TemplateSchema;
   initialData: Record<string, unknown>;
   saveAction: (prev: SaveState, formData: FormData) => Promise<SaveState>;
-  finalizeAction: () => Promise<void>;
+  finalizeAction: (expectedDataHash: string) => Promise<void>;
+  /** Fingerprint of the stored content this page was rendered from. */
+  dataHash: string;
+  /** The editor shows content that is not stored yet (see the page). */
+  startsUnsaved: boolean;
   patientSex?: string | null;
   patientId: string;
   reviewStateLabel: string;
@@ -53,17 +61,9 @@ export function FichaReviewEditor({
     </GlassStatusChip>
   );
 
-  const extraActions = (
-    // Finalizar is its OWN form (a record_status + ai_review_state transition),
-    // never nested inside the record form. Signing + approving stay together and
-    // separate from the data save above.
-    <form action={finalizeAction}>
-      <Button type="submit" variant="primary">
-        {s["review.finalize"]}
-      </Button>
-    </form>
-  );
-
+  // Finalizar stays a SEPARATE action from the data save (a record_status +
+  // ai_review_state transition); RecordForm only puts it behind the
+  // confirmation and runs the save first when there is something to save.
   return (
     <RecordForm
       schema={schema}
@@ -71,10 +71,17 @@ export function FichaReviewEditor({
       readOnly={false}
       saveAction={saveAction}
       statusChip={statusChip}
-      extraActions={extraActions}
+      extraActions={null}
       patientSex={patientSex}
       patientId={patientId}
       recordId={recordId}
+      sign={{
+        action: finalizeAction,
+        label: s["review.finalize"],
+        message: s["review.finalizeConfirm"],
+        dataHash,
+        startsUnsaved,
+      }}
     />
   );
 }
