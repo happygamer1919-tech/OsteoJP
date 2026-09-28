@@ -30,6 +30,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DASH_CHARS, lintLine, parseBlocks } from './guide-model.mjs';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const ROLES = [
@@ -41,30 +43,10 @@ const FULL_FILE = 'guia-plataforma-osteojp.pdf';
 const GUIDE_TITLE = 'Guia da plataforma OsteoJP';
 const GUIDE_SUBTITLE = 'Para a equipa da clínica';
 
-// Every dash character the guide must not contain, by code point. Not only
-// the dashes proper: a Unicode hyphen, a non-breaking hyphen or a minus sign
-// looks like "-" on the page but slips past the ASCII hyphen checks below.
-// Keep this list the same as DASHES in scripts/guide-content.test.mjs.
-const DASH_CHARS = [
-  ['\u2010', 'hyphen (U+2010)'],
-  ['\u2011', 'non-breaking hyphen (U+2011)'],
-  ['\u2012', 'figure dash (U+2012)'],
-  ['\u2013', 'en dash (U+2013)'],
-  ['\u2014', 'em dash (U+2014)'],
-  ['\u2015', 'horizontal bar (U+2015)'],
-  ['\u2212', 'minus sign (U+2212)'],
-  ['\ufe58', 'small em dash (U+FE58)'],
-  ['\ufe63', 'small hyphen-minus (U+FE63)'],
-  ['\uff0d', 'fullwidth hyphen-minus (U+FF0D)'],
-];
-
-// A hyphen used as punctuation: one that starts a word ("outro -solto", or a
-// line) or ends one ("outro- solto", or a line). A hyphen inside a word
-// (palavra-passe, e-mail) has a letter on both sides and never matches.
-const HYPHEN_PUNCTUATION = /(^|\s)-|-(\s|$)/;
-
-const IMG_LINE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
-const IMG_ANY = /!\[[^\]]*\]\(([^)\s]*)\)/g;
+// The dash list (DASH_CHARS), the line lint and the Markdown parser live in
+// guide-model.mjs, shared with the lesson source; the messages are unchanged.
+// scripts/guide-content.test.mjs keeps its own copy of the dash list, which
+// must stay the same as DASH_CHARS there.
 
 class BuildError extends Error {
   constructor(message, code = 1) {
@@ -121,39 +103,7 @@ function lintChapter(chapter, contentDir) {
   const at = (n, message) => errors.push(`${chapter.name}:${n}: ${message}`);
 
   chapter.lines.forEach((line, index) => {
-    const n = index + 1;
-    const trimmed = line.trim();
-
-    for (const [ch, name] of DASH_CHARS) {
-      if (line.includes(ch)) at(n, `contains a dash character, ${name}; use a comma, full stop, colon or parentheses`);
-    }
-    if (/^\s*-(\s|$)/.test(line)) at(n, 'hyphen used as a list marker; use "* "');
-    else if (HYPHEN_PUNCTUATION.test(line)) at(n, 'hyphen used as punctuation between words');
-    if (line.includes('--')) at(n, 'double hyphen');
-
-    if (/^\s*(```|~~~)/.test(line)) at(n, 'fenced code is not supported');
-    if (line.includes('|')) at(n, 'tables ("|") are not supported');
-    if (/<[A-Za-z!/?]/.test(line)) at(n, 'HTML tags are not supported');
-    if (/^\s*>/.test(line)) at(n, 'block quotes (">") are not supported');
-    if (/^#{4,}/.test(trimmed)) at(n, 'headings deeper than "###" are not supported');
-    else if (/^#+[^#\s]/.test(trimmed)) at(n, 'a heading needs a space after "#"');
-    if (/^([-*_=])(\s*\1){2,}$/.test(trimmed)) at(n, 'horizontal rules and underlined headings are not supported');
-    if (/^\s*\+\s/.test(line)) at(n, 'use "* " for list items');
-    if (/^\s+(\*|\+|\d+\.)\s/.test(line)) at(n, 'nested lists are not supported');
-    else if (/^(\t| {4,})\S/.test(line)) at(n, 'indented code is not supported');
-    if (/(^|[^!])\[[^\]]*\]\(/.test(line)) at(n, 'links are not supported; only image lines ![alt](path)');
-    if (line.includes('![') && !IMG_LINE.test(trimmed)) at(n, 'an image must be alone on its line, as ![alt](path)');
-    const leftover = line.replace(/^\s*\*\s+/, '').replace(/\*\*[^*]+\*\*/g, '');
-    if (leftover.includes('*')) at(n, 'unsupported "*": use **bold** or a "* " list item');
-    if (line.includes('__')) at(n, 'use **bold**, not __bold__');
-
-    for (const match of line.matchAll(IMG_ANY)) {
-      const src = match[1];
-      const resolved = path.resolve(contentDir, src);
-      if (!src || /^[a-z]+:/i.test(src) || !existsSync(resolved) || !statSync(resolved).isFile()) {
-        at(n, `image not found: ${src} (looked for ${resolved})`);
-      }
-    }
+    for (const problem of lintLine(line, contentDir)) at(index + 1, problem);
   });
 
   const first = chapter.lines.find((line) => line.trim() !== '');
@@ -192,56 +142,6 @@ function inline(text) {
   return escapeHtml(text)
     .replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`)
     .replace(/\*\*(.+?)\*\*/g, (_, bold) => `<strong>${bold}</strong>`);
-}
-
-function parseBlocks(lines) {
-  const blocks = [];
-  let para = null;
-  let list = null;
-  let afterBlank = false;
-  const close = () => {
-    para = null;
-    list = null;
-  };
-
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line === '') {
-      para = null;
-      afterBlank = true;
-      continue;
-    }
-    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
-    const image = IMG_LINE.exec(line);
-    const bullet = /^\*\s+(.*)$/.exec(line);
-    const numbered = /^(\d+)\.\s+(.*)$/.exec(line);
-
-    if (heading) {
-      close();
-      blocks.push({ type: 'heading', level: heading[1].length, text: heading[2].trim() });
-    } else if (image) {
-      close();
-      blocks.push({ type: 'image', alt: image[1], src: image[2] });
-    } else if (bullet || numbered) {
-      para = null;
-      const kind = bullet ? 'ul' : 'ol';
-      if (!list || list.kind !== kind) {
-        list = { type: 'list', kind, start: numbered ? Number(numbered[1]) : 1, items: [] };
-        blocks.push(list);
-      }
-      list.items.push(bullet ? bullet[1] : numbered[2]);
-    } else if (list && !afterBlank) {
-      list.items[list.items.length - 1] += ` ${line}`;
-    } else if (para) {
-      para.text += ` ${line}`;
-    } else {
-      list = null;
-      para = { type: 'para', text: line };
-      blocks.push(para);
-    }
-    afterBlank = false;
-  }
-  return blocks;
 }
 
 function shotKind(src) {
