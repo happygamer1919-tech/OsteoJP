@@ -279,8 +279,8 @@ Steps:
 3. Opcionalmente ajustar "Data de início" / "Data de fim" e o filtro "Estado".
 Expected result: Lista de faturas do período, ou o estado vazio "Sem faturas no período selecionado" se não existirem faturas nesse intervalo.
 Edge cases:
-- **O botão "Nova fatura" está atualmente sempre ausente** neste ambiente — a emissão de faturas depende de credenciais InvoiceXpress configuradas (`credentialsConfigured()`), que não estão definidas. Isto não é um bloqueio de permissão; é uma integração externa por configurar. Não descrever "emitir fatura" como um fluxo disponível até essa configuração existir.
-- Função "terapeuta" — vê a lista (tem `invoices:read`) mas nunca vê "Nova fatura" (não tem `invoices:issue`), independentemente da configuração do InvoiceXpress.
+- **Não existe botão "Nova fatura"**, em nenhum ambiente e para nenhuma função: foi retirado (T5 F2) porque não tinha ação associada, e nenhum ecrã chama a emissão de faturas. Emitir faturas a partir da plataforma espera decisão do proprietário. Não descrever "emitir fatura" como um fluxo disponível.
+- Função "terapeuta": não abre esta página (a rota exige `invoices:issue`, que o terapeuta não tem); vê as faturas no separador "Faturação" da ficha do paciente (tem `invoices:read`), também sem botão para emitir.
 - Separador "Faturação" no perfil de um paciente específico — mostra as faturas desse paciente isoladamente; mesmo estado vazio "Sem faturas" quando não existem.
 
 ---
