@@ -1,0 +1,48 @@
+{
+  "$comment": "Written by docs/guide/build/build-guide.mjs with the PDFs beside it. Do not edit by hand: change the lesson source and run node docs/guide/build/build-guide.mjs. apps/web/lib/guide/guide-pdf.test.ts checks the source hash, each PDF sha256 and each PDF title against this file.",
+  "format": 1,
+  "pdfs": [
+    {
+      "bytes": 9006244,
+      "faq": 7,
+      "file": "guia-plataforma-osteojp.pdf",
+      "lessons": 57,
+      "pages": 51,
+      "profile": null,
+      "sha256": "511a51184752383f064272602cedc5004d2f022228882c4f478e5be02882a841"
+    },
+    {
+      "bytes": 8661216,
+      "faq": 6,
+      "file": "guia-rececao.pdf",
+      "lessons": 37,
+      "pages": 36,
+      "profile": "rececao",
+      "sha256": "e119b9fd76e56642a0eab5ef9b2d3dc0781b4c26f06419afe10a102b1adde3ff"
+    },
+    {
+      "bytes": 7838345,
+      "faq": 7,
+      "file": "guia-terapeuta.pdf",
+      "lessons": 37,
+      "pages": 34,
+      "profile": "terapeuta",
+      "sha256": "ecadb1de17dc79edc2b148be7e43a7171f10de23187f8b2417cafbbcd4d887f0"
+    },
+    {
+      "bytes": 8943201,
+      "faq": 7,
+      "file": "guia-proprietario.pdf",
+      "lessons": 57,
+      "pages": 46,
+      "profile": "proprietario",
+      "sha256": "061c97cd80bd86c463dd3304a95ceedd677bad232cee3b90cb42ce8e849d6f08"
+    }
+  ],
+  "source": {
+    "faq": 7,
+    "lessons": 57,
+    "sections": 9,
+    "sha256": "51c38859b2a5b67d9a4bb882dcfc0fa45ccba0f28beb06144284f709090fe39c"
+  }
+}

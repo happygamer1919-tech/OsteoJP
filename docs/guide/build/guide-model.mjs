@@ -15,9 +15,11 @@
 // while that lesson has none, no image at all (the page shows "sem imagem").
 //
 // The three chapter files at the top of docs/guide/content (01-rececao.md and
-// its two siblings) are NOT read here. build-guide.mjs still prints them, and
-// the Markdown lint and parser it uses live in this file, so the chapters and
-// the lessons are held to one set of rules.
+// its two siblings) are NOT read here, and they are no longer the PDFs'
+// source: build-guide.mjs prints the guide PDFs from this model. It still
+// prints flat chapter files in its chapter mode (--content <dir>), with the
+// Markdown lint and parser that live in this file, so the chapters and the
+// lessons are held to one set of rules.
 //
 // A guide file is a flat front matter block, then a body. The block opens and
 // closes with a line of three hyphens (the only place a guide file may have
@@ -45,9 +47,11 @@
 // and only viewers of those roles see what is inside.
 //
 // Pure ESM, no dependency. Nothing runs at import time: build-guide.mjs imports
-// this module for its lint and parser, and a test imports it to regenerate the
-// JSON that /ajuda reads (apps/web/lib/guide/guide-data.json).
+// this module to print the PDFs, a test imports it to regenerate the JSON that
+// /ajuda reads (apps/web/lib/guide/guide-data.json), and another recomputes
+// the source hash the PDFs are bound to (guideSourceHash, at the end).
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -907,4 +911,46 @@ export function serializeGuideData(data) {
 /** The exact bytes of apps/web/lib/guide/guide-data.json for this source. */
 export function renderGuideData(options = {}) {
   return serializeGuideData(guideData(loadGuide(options)));
+}
+
+// ==== The fingerprint the PDFs are bound to ====
+
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * The SOURCE HASH of the guide PDFs: the sha256 of one canonical text holding
+ * everything the PDFs print, and nothing they do not.
+ *
+ *   the published model  guideData(guide) without "held" and "$comment": every
+ *                        section, every published lesson and FAQ entry (front
+ *                        matter plus the block AST, role blocks included) and
+ *                        each profile's order;
+ *   the images           the sha256 of every capture file a published lesson
+ *                        or FAQ entry shows, by its src ("/ajuda/<section>/...").
+ *
+ * A held lesson (hold: GUEST-05) is never printed, so its text is not in the
+ * hash. Nothing in it depends on where the repository sits on disk: paths are
+ * relative ("02-agenda/02-marcar-consulta.md", "/ajuda/agenda/...").
+ *
+ * build-guide.mjs writes this hash into docs/guide/pdf/guide-pdf.manifest.json
+ * and the first 16 hex of it into each PDF's title;
+ * apps/web/lib/guide/guide-pdf.test.ts recomputes it through this function and
+ * fails when the manifest carries another, so a lesson, an FAQ answer or a
+ * capture changed without rebuilding the PDFs fails its own PR. The builder's
+ * own code, its CSS and the theme tokens are not in it: a change to how the
+ * PDFs look does not demand a rebuild, a change to what they say does.
+ *
+ * Throws GuideError when the source has errors, like guideData.
+ */
+export function guideSourceHash(guide) {
+  const data = guideData(guide);
+  const { held: _held, $comment: _comment, ...published } = data;
+  const images = {};
+  for (const item of [...data.lessons, ...data.faq]) {
+    if (!item.images) continue;
+    for (const image of [item.images.phone, item.images.desktop]) {
+      if (!(image.src in images)) images[image.src] = sha256(readFileSync(path.join(guide.publicDir, image.src)));
+    }
+  }
+  return sha256(serializeGuideData({ kind: 'osteojp guide pdf source', version: 1, published, images }));
 }

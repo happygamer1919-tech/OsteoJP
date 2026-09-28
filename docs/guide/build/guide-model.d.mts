@@ -98,3 +98,6 @@ export function inlineSpans(text: string): Span[];
 export function guideData(guide: Guide): Record<string, unknown>;
 export function serializeGuideData(data: unknown): string;
 export function renderGuideData(options?: LoadOptions): string;
+
+/** The sha256 (hex) the guide PDFs are bound to: the published model plus every capture file it shows. */
+export function guideSourceHash(guide: Guide): string;
