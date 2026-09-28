@@ -210,6 +210,9 @@ O separador **Respostas SMS** abre o ecrã **Respostas por rever**: as respostas
 2. Se o paciente confirma, clique em **Marcar como confirmada**; se desmarca, clique em **Marcar como cancelada**. A consulta passa a **Confirmada** ou **Cancelada** e a resposta fica tratada.
 3. Se a mensagem não pede nenhuma alteração, clique em **Marcar como lida**. A resposta fica tratada e a consulta não muda.
 
+![Respostas SMS no telemóvel](../screens/rececao/respostas-sms-390.png)
+![Respostas SMS no computador](../screens/rececao/respostas-sms-desktop.png)
+
 Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta que ainda está **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, a resposta fica tratada e aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar. Enquanto a receção de respostas por SMS não estiver ativada na clínica, o ecrã mostra apenas **Respostas por rever indisponível**.
 
 ## Faturação

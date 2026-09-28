@@ -11,8 +11,12 @@ import { s } from "../i18n";
  * all three; a section that existed in only one of them is how a tab bar comes
  * to offer a page its route then refuses.
  *
- * THE CAPABILITY IS THE PAGE'S OWN ROUTE GATE, restated, not a second rule: each
- * page redirects without it and its query asserts it.
+ * THE CAPABILITY IS THE PAGE'S OWN ROUTE GATE, restated, not a second rule. The
+ * pages do not refuse in the same way: Recuperação and Lembretes SMS redirect a
+ * viewer without it to the home page, and their queries assert it again;
+ * Respostas SMS (/reminders/review) asserts it on the page and renders the
+ * forbidden message in place of the queue, and its resolve action asserts
+ * `sms_replies:resolve`.
  */
 export type CommsSection = { href: string; label: string; capability: Capability };
 

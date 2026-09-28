@@ -175,6 +175,9 @@ O separador **Respostas SMS** abre **Respostas por rever**: as respostas de paci
 1. Leia a mensagem e veja a consulta associada.
 2. Clique em **Marcar como confirmada** ou **Marcar como cancelada** para mudar a consulta, ou em **Marcar como lida** para a deixar como está. Em qualquer dos casos a resposta fica tratada.
 
+![Respostas SMS no telemóvel](../screens/proprietario/respostas-sms-390.png)
+![Respostas SMS no computador](../screens/proprietario/respostas-sms-desktop.png)
+
 Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta ainda **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar. Enquanto a receção de respostas por SMS não estiver ativada, o ecrã mostra apenas **Respostas por rever indisponível**.
 
 ## Faturação
