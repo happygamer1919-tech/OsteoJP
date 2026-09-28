@@ -5,7 +5,7 @@
  * Runs as admin.
  *
  * "E2E Terapeuta Sem Servicos" is seeded with NO therapist_services (the
- * Catarina-Vieira case): the Serviço principal section lists all active services
+ * zero-mapping case): the Serviço principal section lists all active services
  * so a first primary can be assigned, and Nova marcação then auto-fills it.
  */
 import { test, expect, type Page } from "@playwright/test";
