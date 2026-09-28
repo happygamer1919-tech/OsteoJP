@@ -756,14 +756,16 @@ adds a function or a policy moves them. It is an assertion about this apply.
 
 ## Rehearsal
 
-**NOT YET REHEARSED AS BLOCKS.** By the owner's ruling of 2026-09-27 ("build/rehearse/
-document as separate agents"), the lane that writes an apply document does not rehearse
-it. The rehearsal agent extracts the five blocks from this document at the sha256 its
-sidecar pins, on the promoted tree, and runs them on a throwaway standing at production's
-position after 0094 (92 migrations), with the substitutions it counts and names, and
-records the result here. If a finding changes one byte of a block, this document, its
-sidecar and GREEN's dispatch move together, and the dispatch's document sha256 is
-refilled. GREEN's dispatch stays NOT READY until that record is in.
+**THE BLOCKS ARE REHEARSED, and no byte of any block changed.** By the owner's ruling of
+2026-09-27 ("build/rehearse/document as separate agents"), the lane that writes an apply
+document does not rehearse it. A rehearsal agent, a separate invocation from the one that
+wrote this document and the dispatch, extracted the five blocks from this document at the
+sha256 its sidecar pinned, on a promoted tree, and ran them on a throwaway standing at
+production's position after 0094 (92 migrations), with the substitutions it counts and
+names. Its record is "The rehearsal of the blocks and the dispatch" at the end of this
+section. Recording it changed this document's sha256 and no byte of any block, so the
+dispatch's document sha256 was refilled for that reason alone. If a later finding changes
+one byte of a block, this document, its sidecar and GREEN's dispatch move together again.
 
 **What has run, on the local rehearsal container (Postgres 17.6), in throwaway databases
 copied from `t3_0094_final` (main's 91 migrations plus 0094, journal 92, one tenant, no
@@ -788,6 +790,142 @@ an actor passed in and with the default selector; with 0059's body re-applied
 Those runs were on earlier bytes of the file (sha256 `f2b48422…836d`); the changes since
 are the ACTOR line (C4, 2026-09-27) and the renumbering's header, banner and STOP
 wording. The rehearsal agent runs the file at the pinned `ce4ec4aa…c4e5`.
+
+### The rehearsal of the blocks and the dispatch, 2026-09-28
+
+**Every run below exited as wanted, and no block changed.** It rehearsed the five blocks
+of this document as it stood at sha256
+`b816f8d892ff371912f8dc229664a12cbb3c88304a5656596a583da82b5dd928` (commit `5f3fc33b`),
+and two blocks of GREEN's dispatch `green-dispatch-0095.txt` (sha256
+`a57bb5e521ee5be5a7c5d09b69c3fcd2fa0c05f30e4a4661411ab535c9f3ed2f`, which stays on the
+authoring machine): BEFORE YOU START (its lines 145 to 217) and the CLOCK CHECK (its
+lines 275 to 300). Each block's sha256, taken between its fences, is the same before this
+subsection and after it:
+
+| Block | sha256 of its text between the fences |
+|---|---|
+| stage 0 | `78b2c203cb23064885e3b1cc7a05d0584980266d68eebd2c05ab0987b785678d` |
+| stage 1 | `1dd30c8bc8be15518e16845fc523e463d330c4cf2fed7fb9adf155b34218272b` |
+| stage 2 | `24639b430bc09f9d82573f21055e8caa1770ba7fec06c0110aa08ed1286fb05c` |
+| stage 3 | `b9f3af186eba952e9ab894c33f6ebbef2b2493bc534d1c5221270741d36a2b90` |
+| closing read | `f17712201b78f9815dce56b8a8e89c383661cc31835a180262fef48f065642bd` |
+
+**The promoted tree it ran from is a stand-in, never pushed.** A scratch worktree at
+`5f3fc33b`, with `origin/db/0094-users-tenants-role-policy-split-r6` (`0dc8a684`, 0094
+promoted, journal idx 91) merged in, then one mechanical promotion commit: the `git mv`
+of the pending file to `packages/db/migrations/0095_conflict_name_visibility.sql` (body
+sha256 unchanged, `cfdfffff…5806`), the journal entry idx 92, `when 1788501600000`, the
+mirror by `node scripts/sync-supabase-migrations.mjs`, and a Promoted row. The merge had
+one conflict, in `scripts/behaviour-checks-print-actor.test.mjs` (both sides add a file
+to one table), resolved in the scratch tree as the union; no block runs that test. The
+two tests that move with the promotion (above) were not changed there, because no block
+runs them either. The stand-in merge commit is that promotion commit, `78286283`. The
+worktree had its own `pnpm install --frozen-lockfile --offline`, so `verified-migrate.mjs`
+reached drizzle through `pnpm --filter @osteojp/db exec` exactly as GREEN's will, and it
+applied 0095, not a hand-run `psql`.
+
+**Where it ran.** `t3b_0095_p92` on the rehearsal container (Postgres 17.6), built for
+this run: a database from `template0`, the `auth` schema copied schema-only from the
+container's own `postgres` database, every migration on `origin/main` (`ad61f5c1`, 91
+journal entries) applied in journal order with `psql -1`, drizzle's journal written the
+way drizzle writes it (`hash` the file's sha256, `created_at` its `when`), then #1459's
+promoted 0094 (sha256 `439cb53e…6a6c`) applied with `psql -1` and its journal row
+written the same way. Its fingerprint equals that of `t3_0094_final`, which was built by
+other means: 92 journal rows with one md5 over their hashes in id order
+(`23f9d1e84fc06c174763a35843ab9a39`), one md5 over every policy, 26 SECURITY DEFINER
+functions and 286 functions in `public`. Each run below used its own copy of
+`t3b_0095_base`, that database plus synthetic data only: one tenant, two clinics, the
+four staff roles, two therapists (T1 holds clinic A, T2 clinic B), a shared resource at
+clinic A, four patients, one care-team row, and five blocking bookings in the current
+week (T1's own for patient 1 at A; T2's for patient 1 at A and for patient 2 at B, the
+pair; T2's for a care-team-only patient at A; the shared resource's at A).
+
+**How it ran, and how `origin/main` and production were replaced.** Each block was
+extracted verbatim, substituted, and run under `zsh -f` with a clean environment
+(`env -i`, with `HOME`, `PATH` and `TERM` only). A scratch bare repository whose `main`
+is the stand-in merge commit stood in for `origin`: each `git fetch origin --prune`
+became a fetch of that repository's `main` into a ref private to the worktree, and each
+`git rev-parse origin/main` reads that ref. Moving the stand-in's `main` is a merge
+landing on GitHub. The substitutions, applied in this order and counted per block:
+
+| Substitution | BEFORE YOU START | stage 0 | CLOCK | stage 1 | stage 2 | stage 3 | closing |
+|---|---|---|---|---|---|---|---|
+| `/tmp/` to a scratch directory, one per sitting | 5 | 7 | 9 | 24 | 15 | 22 | 17 |
+| the `cd` line to the scratch worktree | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| `git fetch origin --prune` to the stand-in origin's `main` | 1 | 1 | 0 | 1 | 1 | 1 | 0 |
+| `git rev-parse origin/main` to the worktree's ref | 1 | 1 | 0 | 1 | 1 | 1 | 0 |
+| the environment line to `export DATABASE_URL_DIRECT=` the throwaway | 0 | 0 | 0 | 1 | 1 | 1 | 0 |
+| the target guard to an `echo` naming the throwaway | 0 | 0 | 0 | 1 | 1 | 1 | 0 |
+| the reader's `--env-file` to the throwaway's URL (below) | 1 | 0 | 0 | 0 | 0 | 0 | 1 |
+| `MERGED='<MERGED_SHA>'` to the stand-in merge commit | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+After substitution no block named the apply worktree, the secrets directory or
+`/tmp/0095`: the extractor refuses to write one that does. **The reader ran
+byte-identical, as pinned:** its guard refuses a connection string that does not contain
+the production ref somewhere in it, and the throwaway's URL carried the ref inside its
+`application_name`, so the pinned bytes ran on a local database. **The target guard ran
+once for real, unsubstituted,** against the throwaway: exit 2,
+`REFUSING: project ref is "postgres", not the production project.`
+
+**The happy path, in GREEN's order, by a fixed Lisbon clock on Monday 28 September:**
+
+| Block, at | Exit | What it printed |
+|---|---|---|
+| BEFORE YOU START, 21:30 | 0 | `main head` the stand-in, `origin/main IS the merge commit of PR 1438`, `worktree: clean`, the document, the sidecar and all eight file pins and the reader twice as the dispatch's EXPECT lists them, `run window:   monday`, then the read: `journal rows on production: 92`, 0095 `NOT APPLIED`, `pending on this ref: 1`; the last line |
+| stage 0, 21:31 | 0 | `docs/migration-apply-0095.md: OK`; `newest journal entry: idx 92, when 1788501600000, tag 0095_conflict_name_visibility, of 93; before it idx 91, when 1788501500000, tag 0094_users_tenants_roles_policy_split`; check-journal `93 .sql files match 93 journal entries in order`; `running from origin/main 78286283…`; `0095 PROMOTION, NUMBER AND FILES VERIFIED` |
+| CLOCK CHECK, 21:32 | 0 | the same sha twice, `document at the recorded sha: b816f8d8…d928`, `<sha> 202609282100 202609282229 202609282300` recorded, the last line |
+| stage 1, 21:33 | 0 | the same sha twice; the window line; the pre-check **14 OK, 0 FAIL**, carries `journal_rows_before` 92, `secdef_functions_before` 26, `public_functions_before` 286 and two md5s; `behaviour actor: <T1's id> (therapist)`, the lowest-id therapist the selector admits; `pending    1  [0095_conflict_name_visibility]`; drizzle `exit: 0`; `journal    92 -> 93  (delta 1)`; present by sha256 `yes`; `0095 APPLIED. Paste stage 2 now.` |
+| stage 2, 21:35 | 0 | `main has not moved since stage 0`; `carries from this run: journal_before=92 secdef_before=26 public_functions_before=286 ...`; the post-check **13 OK**; `journal rows before=92 after=93, 0095 present by hash`, newest row `cfdfffff…5806` at `when` 1788501600000; the last line |
+| stage 3, 21:36 | 0 | `ACTOR id <T1's id> \| role therapist \| chosen passed in with -v actor_id`; **`14 OK / 0 VACUOUS / 0 FAIL`**: S1 and S2 12 rows over 5 calls, C1 6 named and 6 NULL (4 not readable), D1 0 named of 2, E1 0 wrong of 2; the last line |
+| closing read, 21:37 | 0 | `journal rows on production: 93`, 93 files `APPLIED` with 0095 last, `pending on this ref: 0`, `journal rows with no matching file on this ref: 0`, `CLOSING READ: ...` |
+
+**The same sitting twice more.** Every block PASTED, fed on stdin to an interactive
+`zsh -f -i`: every block exit 0, the same last lines, `14 OK / 0 VACUOUS / 0 FAIL`, the
+closing read 93. And in the Tuesday window: BEFORE YOU START at 06:25, stage 0 at 06:26,
+the CLOCK CHECK at 06:27 (recorded `202609290000 202609290629 202609290700`), stage 1 at
+06:28 and stage 2 at 06:59, each exit 0, journal 92 to 93; stage 3 at 07:00 is an arm
+below.
+
+**Every halt, each run for real:**
+
+| Arm | Exit | Halted on | Database after |
+|---|---|---|---|
+| main moved between stage 0 and stage 1 (a commit on top of the stand-in merge, in the stand-in origin) | 1 | stage 1: `STOP: main moved since stage 0, the merge freeze was broken.` with both shas, before the environment line and before psql | journal 92, no pre-check transcript |
+| main moved between BEFORE YOU START and stage 0 | 1 | the CLOCK CHECK: `STOP: main moved between BEFORE YOU START and stage 0, the merge freeze was broken.`, no window recorded; stage 1 pasted anyway: `STOP: the dispatch's CLOCK CHECK recorded no run window ...` | journal 92 |
+| stage 0 on a main whose 0095 file has one byte appended | 1 | `STOP: 0095 on disk is not the approved body`, no sha recorded | untouched |
+| the same, the pre-check, the post-check, the behaviour check, `verified-migrate.mjs`, `check-journal.mjs` | 1 each | the matching `STOP: ... on disk is not the approved file`, no sha recorded | untouched |
+| stage 0 on a main whose copy of this document has one byte appended, its sidecar not | 1 | `STOP: this document is not the approved one` | untouched |
+| BEFORE YOU START on each of those seven mains | 1 each | the matching `STOP: ... on origin/main is not the approved ...` and `The journal read has not run` | untouched |
+| the CLOCK CHECK at Lisbon Monday 02:00, 20:59, 22:30, 22:59, 23:00, 23:30 and 23:59, Tuesday 06:30 and 07:00 | 1 each | `STOP: it is outside the run window ...` | |
+| the CLOCK CHECK at Monday 21:00 and 22:29, Tuesday 00:00 and 06:29 | 0 each | `CLOCK: inside the run window ...` | |
+| BEFORE YOU START at Monday 02:00, 20:59, 22:30, 23:00 and 23:59, Tuesday 06:30 | 1 each | `STOP: it is outside the run window ...` and `The journal read has not run` | |
+| BEFORE YOU START at Tuesday 00:00 and 06:29 | 0 each | `BEFORE YOU START: every check passed, and the journal reads 92.` | |
+| stage 1 started at 22:30, the window recorded at 22:29 | 1 | `STOP: Lisbon 202609282230 is past 202609282229, the last minute the run window lets stage 1 start. Nothing was applied` | journal 92, no pre-check transcript |
+| stage 1 started at 22:29, the clock reading 22:30 when the pre-check ends | 1 | the pre-check 14 OK, then `STOP: Lisbon 202609282230 is past 202609282229 after the pre-check, so the apply does not start.` | journal 92; the transcript in `.new`, no `.out` |
+| stage 3 at Tuesday 07:00, after stages 1 and 2 passed | 1 | `STOP: Lisbon 202609290700 is at or past 202609290700, the end of the run window. The write stands ...`; the closing read then: `STOP: stage 3 left no pass mark ...` | journal 93 |
+| stage 1 with no therapist to act as (production's position plus 0094, no bookings) | 1 | the pre-check 14 OK, then `STOP: no active, non-resource therapist holding a clinic has, within 90 days, ... A missing subject is a FAIL. Nothing was applied` | journal 92 |
+| stage 0 and stage 1 again after the apply | 1 each | `STOP: stage 1 has ALREADY APPLIED 0095 in this sitting` | journal 93 |
+
+The clock arms put a `date` on the `PATH` that prints one fixed instant (for the
+second arm of stage 1, a second instant from its second call on); the blocks call `date`
+by name, and nothing else in them was changed for those arms.
+
+| File, in the rehearsal agent's scratchpad (not committed) | sha256 |
+|---|---|
+| `build.zsh`, the database at main's 91 migrations | `8117e833332a5287b4584489288387b0d94fc6a6faf21c2591c00a973445f4d4` |
+| `fixture-conflict.sql`, the synthetic data | `34a6648d468629cb0e7aa9386b383d3619efe661a80c0ae51bf41d5571e946ac` |
+| `extract.mjs`, the extractor and its counted substitutions | `9eea15138cd5776aee8a80d75775d74dcded2e6ea1dad44aa0bb7f792d3d8da4` |
+| `run.zsh`, one block under `zsh -f` | `ab80de163829929eb60053d475acc0fe68faa3e356d824c31c15aca3cd800c0e` |
+| `run-i.zsh`, one block pasted into `zsh -f -i` | `18b36d2b7fb0d29d9a33051ccf8887ebd32dc92074c501080bdec5b3858a3738` |
+| `tamper.zsh`, a stand-in main with one byte appended to one file | `85998f06c3ea515f80afc3b8fb643ad5b528fe868a8671363a743e797c4b523b` |
+| `fakeclock/date`, the fixed clock | `bad344485eb017321000575e545d5120e809937967a5214e9be2a6114f6ebac3` |
+
+**What this rehearsal does not cover.** The two tests the promotion moves (above) and
+CI on the promoted tree; the target guard passing on production, which only GREEN's
+sitting can show; and reception, admin and owner, which the behaviour check does not act
+as (the builder's rehearsal compared them). Its behaviour profile is the fixture's: a
+production day with no care-team-only or shared-resource booking in range reads VACUOUS
+on 12 or 13, which stage 3 allows.
 
 ## What this does NOT do
 
