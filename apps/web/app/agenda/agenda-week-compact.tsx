@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type Ref } from "react";
 
 import { locale, s } from "@/lib/i18n";
+import { useVisibleInterval } from "@/lib/timers/visible-interval";
 import {
   autoScrollDecision,
   buildCompactWeek,
@@ -162,15 +163,15 @@ export function AgendaWeekCompact({
      (The desktop grid's `useState(() => new Date())` initialiser is the
      pattern this avoids.) */
   const [now, setNow] = useState<{ date: string; min: number } | null>(null);
-  useEffect(() => {
-    const tick = () => {
+  // SKEW-01 S5: paused while the tab is hidden; ticks at once on return.
+  useVisibleInterval(
+    () => {
       const d = new Date();
       setNow({ date: todayInLisbon(d), min: lisbonMinutesFromMidnight(d) });
-    };
-    tick();
-    const id = window.setInterval(tick, 60_000);
-    return () => window.clearInterval(id);
-  }, []);
+    },
+    60_000,
+    { tickOnStart: true },
+  );
 
   const rootRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);

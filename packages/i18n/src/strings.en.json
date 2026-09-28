@@ -1311,6 +1311,7 @@
   "agenda.pickDate": "Choose date",
   "appointment.recurringCheckbox": "Recurring appointment",
   "appointment.movedButDetailsNotSaved": "The appointment WAS moved to the new time. The remaining changes (service, room, notes, status) were not saved because of the conflict above. Fix it and save again.",
+  "appointment.movedButDetailsNotSent": "The appointment WAS moved to the new time, but the remaining changes (service, room, notes, status) were not saved. Save again.",
   "appointment.saved": "Appointment saved",
   "appointment.patientRecordLink": "Patient record",
   "appointment.patientTwoRecordLink": "Patient 2 record",
@@ -1796,5 +1797,7 @@
   "reschedule.queue.markHandled": "Mark as handled",
   "reschedule.queue.marking": "Marking…",
   "reschedule.queue.markFailed": "Could not mark this request. Refresh the page.",
-  "reschedule.queue.note": "Marking as handled does not change the appointment. Reschedule in the agenda as usual."
+  "reschedule.queue.note": "Marking as handled does not change the appointment. Reschedule in the agenda as usual.",
+  "actions.skewReload": "New version available, refreshing...",
+  "actions.networkError": "Could not reach the server. Check your internet connection."
 }
