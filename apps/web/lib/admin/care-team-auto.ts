@@ -11,6 +11,7 @@ import {
   careTeamWriteReach,
   type CareTeamAddition,
 } from "./care-team-core";
+import { careTeamClinicHelperPresentOn } from "../patients/care-team-reads-gate";
 
 /**
  * CARE-02c: a booking puts its therapist on the patient's care team, once.
@@ -103,6 +104,10 @@ export async function addBookedTherapistsToCareTeam(
   try {
     const reach = careTeamWriteReach(actor.role);
     if (reach === "none") return [];
+    // A therapist's own row is admitted only by 0098's insert policy, which
+    // arrives with 0098's helper. Before the apply the write would be refused
+    // (and logged below) on every self-booking, so it is not attempted.
+    if (reach === "own" && !(await careTeamClinicHelperPresentOn(tx))) return [];
     return await tx.transaction(async (sp) => {
       const rows = await sp
         .select({
