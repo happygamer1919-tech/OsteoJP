@@ -1,0 +1,24 @@
+{
+  "id": "pacientes.ficha-do-paciente",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/patients/00000000-0000-0000-0000-00000000c301",
+      "ready": {
+        "css": "[role=\"tablist\"]"
+      },
+      "annotate": [
+        {
+          "kind": "box",
+          "target": {
+            "css": "[role=\"tablist\"]"
+          }
+        }
+      ]
+    }
+  ]
+}

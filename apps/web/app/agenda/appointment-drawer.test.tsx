@@ -36,6 +36,9 @@ vi.mock("@/lib/patients/actions", () => ({
   getPatientContraindications: vi.fn(),
   getPatientNoSmsReason: vi.fn(),
 }));
+// SKEW-01 PR 2: the edit drawer's loader. A static render runs no effect, so it
+// is never called here; mocked so the render never loads the real server graph.
+vi.mock("@/lib/scheduling/drawer-load", () => ({ loadAppointmentDrawer: vi.fn() }));
 vi.mock("./availability-panel", () => ({ AvailabilityPanel: () => null }));
 vi.mock("./confirmation-indicator", () => ({ ConfirmationIndicator: () => null }));
 vi.mock("@osteojp/ui", () => {
@@ -78,6 +81,7 @@ vi.mock("@osteojp/ui", () => {
 });
 
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
+import { loadAppointmentDrawer } from "@/lib/scheduling/drawer-load";
 
 const options: AgendaOptions = { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
 
@@ -687,5 +691,17 @@ describe("AppointmentDrawer — Marcar novamente (SCHED-15)", () => {
   it("does NOT offer it in CREATE mode — there is no source to copy", () => {
     const html = render({ mode: "create" });
     expect(html).not.toContain("Marcar novamente");
+  });
+});
+
+// SKEW-01 PR 2: the loader is made while rendering but STARTED only by the first
+// read that asks for it, from an effect. A render that sent it would send it on
+// every re-render, and twice per render in development.
+describe("AppointmentDrawer - the edit loader never runs during render (SKEW-01 PR 2)", () => {
+  it("renders edit and create modes without calling the loader", () => {
+    vi.mocked(loadAppointmentDrawer).mockClear();
+    render({ mode: "edit", appt: editAppt });
+    render({ mode: "create" });
+    expect(loadAppointmentDrawer).not.toHaveBeenCalled();
   });
 });

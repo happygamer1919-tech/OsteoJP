@@ -13,12 +13,15 @@
  * | clinical_records:read   |  ✓    |    ✓      |    ✗      |
  * | clinical_records:author |  ✗    |    ✓      |    ✗      |
  * | settings:read           |  ✓    |    ✗      |    ✗      |
+ * | invoices:issue          |  ✓    |    ✗      |    ✓      |
  *
  * KPI cards visible per role:
  *   "Pacientes ativos"    — always
  *   "Marcações hoje"      — roles with appointments:read (all three)
  *   "Novas fichas"        — roles with clinical_records:read (admin + therapist)
- *   "Receita (mês)"       — always
+ *   "Receita (mês)"       : roles with invoices:issue (admin + reception), never the
+ *                           therapist (DASH-THERAPIST-REVENUE, whose spec is
+ *                           dashboard-therapist-no-revenue.spec.ts)
  *
  */
 import { test, expect } from "@playwright/test";

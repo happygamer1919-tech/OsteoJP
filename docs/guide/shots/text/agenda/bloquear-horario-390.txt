@@ -1,0 +1,317 @@
+sha256 bca8eb2d20e30a365271aa5ae12dcdb49639b2be5a04928d21677cfaf9f87398
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Agenda
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Dia
+Semana
+Serviços
+Hoje
+Bloquear
+Nova marcação
+08:00
+09:00
+10:00
+11:00
+12:00
+13:00
+14:00
+15:00
+16:00
+17:00
+18:00
+19:00
+20:00
+21:00
+09:00
+Marta
+09:30
+Sofia
+10:00
+Rui
+11:00
+Paulo
+11:30
+Inês
+14:00
+Nuno
+15:00
+Vera
+16:00
+Lara
++1
+09:00
+Beatriz
+09:00
+Hugo
+10:00
+Teresa
+10:30
+Filipe
+11:00
+Clara
+12:00
+Marta
+14:30
+Sofia
+15:00
+Tiago
+15:30
+Miguel
+16:00
+Paulo
+17:00
+Nuno
++1
+09:00
+Inês
+10:00
+Rui
+10:00
+Vera
+11:00
+Beatriz
+14:00
+Filipe
+14:00
+Lara
+15:00
+Hugo
+09:00
+Teresa
+09:30
+Marta
+11:00
+Tiago
+11:30
+Sofia
+15:00
+Gonçalo
+16:00
+Nuno
+09:00
+Filipe
+10:00
+Paulo
+10:30
+Inês
+11:00
+Clara
+14:30
+Beatriz
+16:00
+Vera
+09:30
+Hugo
+11:00
+Teresa
+Fisioterapia
+Osteopatia
+Reavaliação
+## frame 1 form values
+Todos os terapeutas
+Todas as localizações
+06/10/2026
+## frame 2
+RE
+O meu perfil
+Terminar sessão
+Agenda
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Dia
+Semana
+Serviços
+Hoje
+Bloquear
+Nova marcação
+08:00
+09:00
+10:00
+11:00
+12:00
+13:00
+14:00
+15:00
+16:00
+17:00
+18:00
+19:00
+20:00
+21:00
+09:00
+Marta
+09:30
+Sofia
+10:00
+Rui
+11:00
+Paulo
+11:30
+Inês
+14:00
+Nuno
+15:00
+Vera
+16:00
+Lara
++1
+09:00
+Beatriz
+09:00
+Hugo
+10:00
+Teresa
+10:30
+Filipe
+11:00
+Clara
+12:00
+Marta
+14:30
+Sofia
+15:00
+Tiago
+15:30
+Miguel
+16:00
+Paulo
+17:00
+Nuno
++1
+09:00
+Inês
+10:00
+Rui
+10:00
+Vera
+11:00
+Beatriz
+14:00
+Filipe
+14:00
+Lara
+15:00
+Hugo
+09:00
+Teresa
+09:30
+Marta
+11:00
+Tiago
+11:30
+Sofia
+15:00
+Gonçalo
+16:00
+Nuno
+09:00
+Filipe
+10:00
+Paulo
+10:30
+Inês
+11:00
+Clara
+14:30
+Beatriz
+16:00
+Vera
+09:30
+Hugo
+11:00
+Teresa
+Fisioterapia
+Osteopatia
+Reavaliação
+Bloquear horário
+Terapeuta *
+Selecionar terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Data
+Início
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Fim
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Nota (obrigatória)
+Repetir bloqueio
+Cancelar
+Bloquear
+## frame 2 form values
+Todos os terapeutas
+Todas as localizações
+06/10/2026
+Selecionar terapeuta
+dd/mm/aaaa
+Porquê? Ex.: formação, consulta externa, atende em LV

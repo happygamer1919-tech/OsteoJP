@@ -1,0 +1,32 @@
+{
+  "id": "equipa-e-horarios.inspetor-de-horarios",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/horarios",
+      "ready": {
+        "css": "[data-testid=\"inspector-therapist\"]"
+      },
+      "annotate": [
+        {
+          "kind": "box",
+          "n": 1,
+          "target": {
+            "css": "[data-testid=\"inspector-therapist\"]"
+          }
+        },
+        {
+          "kind": "box",
+          "n": 2,
+          "target": {
+            "css": "[data-testid=\"inspector-period\"]"
+          }
+        }
+      ]
+    }
+  ]
+}

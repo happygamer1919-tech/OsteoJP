@@ -4,7 +4,7 @@ import { can } from "@osteojp/auth";
 import { Banner } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
-import { getRecordDetail, getFichaMedicaTemplate } from "@/lib/clinical/records";
+import { canWriteRecord, getRecordDetail, getFichaMedicaTemplate } from "@/lib/clinical/records";
 import { partitionNarrativeEdit } from "@/lib/clinical/review-fields";
 import { parseTemplateSchema } from "@/lib/clinical/form-template";
 import { projectAiPayloadOntoFichaFields } from "@/lib/clinical/ficha-medica";
@@ -59,6 +59,15 @@ export default async function ReviewDetailPage({
   // Only a draft under review is editable here; a finalized record lives in the
   // normal clinical viewer (immutable, rule #4).
   if (record.status !== "draft") redirect(`/clinical/${recordId}`);
+  // CARE-02a: getRecordDetail takes the care-team READ scope (0098), so a
+  // therapist on the patient's care team can open a colleague's draft here.
+  // Every action this page offers (save ficha, edit narrative, finalize) reads
+  // its registo under therapistRegistoWriteScope and refuses that reader. This
+  // page is nothing but those actions, so a reader who cannot write is sent to
+  // the registo viewer, which shows the draft read-only (clinical/[id]/page.tsx
+  // asks canWriteRecord too). Always true for a role the therapist scope does
+  // not narrow.
+  if (!(await canWriteRecord(ctx, recordId))) redirect(`/clinical/${recordId}`);
 
   const finalizeError = finalizeErrorText(m);
   const header = (

@@ -186,8 +186,8 @@ Help text: Fatura anulada; não conta para os totais de pago nem pendente.
 Tooltip: NONE
 
 Screen: Faturação
-Element: Botão "Nova fatura"
-Help text: [A CONFIRMAR COM JP] Fluxo de emissão a partir daqui ainda não está confirmado no código (sem ação associada).
+Element: Emissão de faturas (sem botão nesta versão)
+Help text: [A CONFIRMAR COM JP] Não há botão "Nova fatura": este ecrã só consulta faturas. Emitir a partir daqui espera decisão.
 Tooltip: NONE
 
 Screen: Faturação

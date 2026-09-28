@@ -1,0 +1,25 @@
+sha256 c90b9b353949adc1bd588bd077cc1e9ac9bde52e62a00bffdb8317e23bb6ce9f
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Faturação
+—
+Todos os estados
+Rascunho
+Emitida
+Paga
+Anulada
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Sem faturas no período selecionado
+
+Ajuste o período selecionado.
+
+Emissão via InvoiceXpress · pagamento via IfThenPay/Stripe
+## frame 1 form values
+01/09/2026
+28/09/2026
+Todos os estados
+Todas as localizações

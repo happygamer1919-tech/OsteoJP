@@ -22,6 +22,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
+import { useActionOwner } from "@/lib/actions/use-action-owner";
+import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
 import { patientLabel } from "@/lib/scheduling/patient-label";
 import { getPatientContraindications, getPatientNoSmsReason, searchPatientsAction } from "@/lib/patients/actions";
@@ -44,6 +47,9 @@ import {
   type ClinicWindowRefusal,
 } from "@/lib/scheduling/clinic-hours-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
+import { loadAppointmentDrawer } from "@/lib/scheduling/drawer-load";
+import { drawerPieceKeys, linkableKey, type DrawerLoadInput } from "@/lib/scheduling/drawer-load-core";
+import { createDrawerPreload, type DrawerPreload } from "@/lib/scheduling/drawer-preload";
 import { bookingStaffOptions } from "@/lib/scheduling/booking-staff-options";
 import { staffLabelContext } from "@/lib/scheduling/staff-options";
 import {
@@ -182,6 +188,10 @@ export function AppointmentDrawer({
   onDone: () => void;
 }) {
   const toast = useToast();
+  // SKEW-01: every write below passes this as `owner`, so its failure toast
+  // closes with the drawer and its "Tentar novamente" cannot re-send a closed
+  // form (lib/actions/use-action-owner.ts).
+  const actionOwner = useActionOwner();
   const editing = state.mode === "edit" ? state.appt : null;
   // PL-10 — therapist self-booking self-lock (create form only). See prop doc.
   const selfLocked = isTherapistSelfLocked(viewer.role, state.mode);
@@ -256,6 +266,27 @@ export function AppointmentDrawer({
   ]);
 
   const [form, setForm] = useState<FormState>(init);
+
+  // SKEW-01 PR 2: opening an EXISTING marcacao asks ONE loader for the five
+  // reads it used to POST one at a time: the availability panel's day, the
+  // notes board's thread, the NESA flags, the SMS reason and the pacotes. Made
+  // once per drawer, from the values the form opens with, and started by
+  // whichever of those reads asks first (lib/scheduling/drawer-preload.ts).
+  // Every read after opening still calls its own action. Create mode opens
+  // with nothing to read, so it has none.
+  const [preload] = useState<DrawerPreload | null>(() => {
+    if (!editing) return null;
+    const input: DrawerLoadInput = {
+      appointmentId: editing.id,
+      patientId: init.patientId,
+      therapistId: init.practitionerId,
+      date: init.date,
+      locationId: init.locationId,
+    };
+    return createDrawerPreload(drawerPieceKeys(input), (retry) =>
+      runAction(() => loadAppointmentDrawer(input), { kind: "read", retry }),
+    );
+  });
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
   // SCHED-15. Its own state, like `notesFor` on the profile list: it opens a
@@ -348,29 +379,62 @@ export function AppointmentDrawer({
   const [patientQuery, setPatientQuery] = useState(presetPatient?.label ?? "");
   const [patientSearchResults, setPatientSearchResults] = useState<ComboboxOption[]>([]);
   const [patientLoading, setPatientLoading] = useState(false);
+  // SKEW-01 PR 2: whether the user has typed into (or picked from) the patient
+  // field. On an edit the query opens as the booked patient's own label, and
+  // searching for it answered a question nobody asked: the patient is already
+  // chosen. So an edit searches from the first keystroke, not on open.
+  const [patientQueryEdited, setPatientQueryEdited] = useState(false);
+  const patientSearchOnHold = !!editing && !patientQueryEdited;
+  function onPatientQueryChange(q: string) {
+    setPatientQueryEdited(true);
+    setPatientQuery(q);
+  }
 
   // When query is below the minimum, show the current patient (edit / locked) or
   // nothing (create). When at or above minimum, show the debounced search results.
+  // SKEW-01 PR 2: an edit nobody has typed into has run no search, so it offers
+  // the current patient, as below the minimum.
   const patientOptions = useMemo<ComboboxOption[]>(() => {
-    if (patientQuery.trim().length < 2) return presetPatient ? [presetPatient] : [];
+    if (patientQuery.trim().length < 2 || patientSearchOnHold) return presetPatient ? [presetPatient] : [];
     return patientSearchResults;
-  }, [patientQuery, patientSearchResults, presetPatient]);
+  }, [patientQuery, patientSearchResults, presetPatient, patientSearchOnHold]);
 
   useEffect(() => {
     // W6-03: the locked (deep-link) patient is fixed; never search for it.
     if (patientLocked) return;
+    // SKEW-01 PR 2: an edit searches only once the user types.
+    if (patientSearchOnHold) return;
     const q = patientQuery.trim();
     if (q.length < 2) return;
-    const timer = setTimeout(() => {
+    // SKEW-01: `search` is also the toast's retry, which does nothing once the
+    // query has moved on (that newer query runs its own search). A superseded
+    // search lands NOTHING: its automatic read retry can answer 800 ms after a
+    // newer query's results, and must not replace them or clear the newer
+    // query's spinner. The cleanup clears the spinner a superseded search left.
+    let cancelled = false;
+    let inFlight = false;
+    function search() {
+      inFlight = true;
       setPatientLoading(true);
-      searchPatientsAction(q)
-        .then((rows) => setPatientSearchResults(rows.map((r) => ({ value: r.id, label: r.label }))))
-        .finally(() => setPatientLoading(false));
-    }, 300);
-    return () => clearTimeout(timer);
+      void runAction(() => searchPatientsAction(q), { kind: "read", retry: () => { if (!cancelled) search(); } })
+        .then((out) => {
+          if (cancelled) return;
+          inFlight = false;
+          if (!out.failed) setPatientSearchResults(out.value.map((r) => ({ value: r.id, label: r.label })));
+          setPatientLoading(false);
+        });
+    }
+    const timer = setTimeout(search, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (inFlight) setPatientLoading(false);
+    };
   // editing is stable for the drawer's lifetime; patientQuery drives the search.
+  // SKEW-01 PR 2: so does the hold lifting, so picking the booked patient again
+  // without typing still searches its label once, as opening used to.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientQuery]);
+  }, [patientQuery, patientSearchOnHold]);
 
   // Secondary patient (W4-19) — a second, OPTIONAL search combobox mirroring the
   // primary. De-emphasized; primary-only semantics elsewhere (never fed to
@@ -386,22 +450,45 @@ export function AppointmentDrawer({
   const [patientTwoQuery, setPatientTwoQuery] = useState(editingPatientTwo?.label ?? "");
   const [patientTwoResults, setPatientTwoResults] = useState<ComboboxOption[]>([]);
   const [patientTwoLoading, setPatientTwoLoading] = useState(false);
+  // SKEW-01 PR 2: as the primary field above. On an edit the second patient's
+  // combobox is not even rendered (Participantes secundarios is create-only),
+  // so the search it used to run on open filled a list nothing showed.
+  const [patientTwoQueryEdited, setPatientTwoQueryEdited] = useState(false);
+  const patientTwoSearchOnHold = !!editing && !patientTwoQueryEdited;
+  function onPatientTwoQueryChange(q: string) {
+    setPatientTwoQueryEdited(true);
+    setPatientTwoQuery(q);
+  }
   const patientTwoOptions = useMemo<ComboboxOption[]>(() => {
-    if (patientTwoQuery.trim().length < 2) return editingPatientTwo ? [editingPatientTwo] : [];
+    if (patientTwoQuery.trim().length < 2 || patientTwoSearchOnHold) return editingPatientTwo ? [editingPatientTwo] : [];
     return patientTwoResults;
-  }, [patientTwoQuery, patientTwoResults, editingPatientTwo]);
+  }, [patientTwoQuery, patientTwoResults, editingPatientTwo, patientTwoSearchOnHold]);
   useEffect(() => {
+    if (patientTwoSearchOnHold) return;
     const q = patientTwoQuery.trim();
     if (q.length < 2) return;
-    const timer = setTimeout(() => {
+    // SKEW-01: as the primary search above - a superseded search lands nothing.
+    let cancelled = false;
+    let inFlight = false;
+    function search() {
+      inFlight = true;
       setPatientTwoLoading(true);
-      searchPatientsAction(q)
-        .then((rows) => setPatientTwoResults(rows.map((r) => ({ value: r.id, label: r.label }))))
-        .finally(() => setPatientTwoLoading(false));
-    }, 300);
-    return () => clearTimeout(timer);
+      void runAction(() => searchPatientsAction(q), { kind: "read", retry: () => { if (!cancelled) search(); } })
+        .then((out) => {
+          if (cancelled) return;
+          inFlight = false;
+          if (!out.failed) setPatientTwoResults(out.value.map((r) => ({ value: r.id, label: r.label })));
+          setPatientTwoLoading(false);
+        });
+    }
+    const timer = setTimeout(search, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (inFlight) setPatientTwoLoading(false);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientTwoQuery]);
+  }, [patientTwoQuery, patientTwoSearchOnHold]);
 
   // NESA contraindication warning (W2-08): the selected patient's flags, fetched
   // reactively. Stored WITH the patient id they belong to so the derived value
@@ -415,13 +502,26 @@ export function AppointmentDrawer({
     const pid = form.patientId;
     if (!pid) return;
     let cancelled = false;
-    getPatientContraindications(pid).then((flags) => {
-      if (!cancelled) setCiResult({ patientId: pid, flags });
+    function load() {
+      void runAction(() => getPatientContraindications(pid), { kind: "read", retry: () => { if (!cancelled) load(); } })
+        .then((out) => {
+          if (!out.failed && !cancelled) setCiResult({ patientId: pid, flags: out.value });
+        });
+    }
+    // SKEW-01 PR 2: the patient the drawer opened with is read by the loader.
+    const covered = preload?.take("contraindications", pid, {
+      value: (flags) => {
+        if (!cancelled) setCiResult({ patientId: pid, flags });
+      },
+      fallback: () => {
+        if (!cancelled) load();
+      },
     });
+    if (!covered) load();
     return () => {
       cancelled = true;
     };
-  }, [form.patientId]);
+  }, [form.patientId, preload]);
   const patientCI =
     ciResult && ciResult.patientId === form.patientId ? ciResult.flags : null;
 
@@ -437,13 +537,26 @@ export function AppointmentDrawer({
     const pid = form.patientId;
     if (!pid) return;
     let cancelled = false;
-    getPatientNoSmsReason(pid).then((reason) => {
-      if (!cancelled) setNoSmsResult({ patientId: pid, reason });
+    function load() {
+      void runAction(() => getPatientNoSmsReason(pid), { kind: "read", retry: () => { if (!cancelled) load(); } })
+        .then((out) => {
+          if (!out.failed && !cancelled) setNoSmsResult({ patientId: pid, reason: out.value });
+        });
+    }
+    // SKEW-01 PR 2: as the NESA flags above.
+    const covered = preload?.take("noSms", pid, {
+      value: (reason) => {
+        if (!cancelled) setNoSmsResult({ patientId: pid, reason });
+      },
+      fallback: () => {
+        if (!cancelled) load();
+      },
     });
+    if (!covered) load();
     return () => {
       cancelled = true;
     };
-  }, [form.patientId]);
+  }, [form.patientId, preload]);
   const patientNoSms =
     noSmsResult && noSmsResult.patientId === form.patientId ? noSmsResult.reason : null;
 
@@ -463,9 +576,13 @@ export function AppointmentDrawer({
     const packId = form.packId;
     if (!pid || !packId) return;
     let cancelled = false;
-    getPatientPackBalanceAction(pid, packId).then((balance) => {
-      if (!cancelled) setPackBalanceResult({ patientId: pid, packId, balance });
-    });
+    function load() {
+      void runAction(() => getPatientPackBalanceAction(pid, packId), { kind: "read", retry: () => { if (!cancelled) load(); } })
+        .then((out) => {
+          if (!out.failed && !cancelled) setPackBalanceResult({ patientId: pid, packId, balance: out.value });
+        });
+    }
+    load();
     return () => {
       cancelled = true;
     };
@@ -503,9 +620,13 @@ export function AppointmentDrawer({
     const pid = form.patientId;
     if (editing || !pid) return;
     let cancelled = false;
-    listAvailablePacksForPatientAction(pid).then((packs) => {
-      if (!cancelled) setAvailablePacksResult({ patientId: pid, packs });
-    });
+    function load() {
+      void runAction(() => listAvailablePacksForPatientAction(pid), { kind: "read", retry: () => { if (!cancelled) load(); } })
+        .then((out) => {
+          if (!out.failed && !cancelled) setAvailablePacksResult({ patientId: pid, packs: out.value });
+        });
+    }
+    load();
     return () => {
       cancelled = true;
     };
@@ -530,14 +651,29 @@ export function AppointmentDrawer({
   const [packLinkError, setPackLinkError] = useState<StringKey | null>(null);
   useEffect(() => {
     if (!editingId) return;
+    const appointmentId = editingId;
     let cancelled = false;
-    listLinkablePacksAction(editingId).then((view) => {
-      if (!cancelled) setPackLinkResult({ appointmentId: editingId, view });
+    function load() {
+      void runAction(() => listLinkablePacksAction(appointmentId), { kind: "read", retry: () => { if (!cancelled) load(); } })
+        .then((out) => {
+          if (!out.failed && !cancelled) setPackLinkResult({ appointmentId, view: out.value });
+        });
+    }
+    // SKEW-01 PR 2: the first read is the loader's. The key carries the tick,
+    // so the refetch after a link attempt always calls the action itself.
+    const covered = preload?.take("linkable", linkableKey(appointmentId, packLinkTick), {
+      value: (view) => {
+        if (!cancelled) setPackLinkResult({ appointmentId, view });
+      },
+      fallback: () => {
+        if (!cancelled) load();
+      },
     });
+    if (!covered) load();
     return () => {
       cancelled = true;
     };
-  }, [editingId, packLinkTick]);
+  }, [editingId, packLinkTick, preload]);
   const packLink =
     packLinkResult && packLinkResult.appointmentId === editingId ? packLinkResult.view : null;
   /**
@@ -552,7 +688,13 @@ export function AppointmentDrawer({
     setPackLinkBusy(instanceId);
     setPackLinkError(null);
     try {
-      const res = await linkAppointmentToPackAction(editingId, instanceId);
+      const out = await runAction(() => linkAppointmentToPackAction(editingId, instanceId), {
+        kind: "write",
+        retry: () => void linkPack(instanceId),
+        owner: actionOwner,
+      });
+      if (out.failed) return;
+      const res = out.value;
       if (res.ok) {
         toast({ tone: "success", message: s["appointment.packLinkDone"] });
         // REFETCH RATHER THAN PATCH THE LOCAL LIST. The balance is derived on
@@ -693,9 +835,18 @@ export function AppointmentDrawer({
   useEffect(() => {
     const therapistId = form.practitionerId;
     if (!therapistId) return;
+    // SKEW-01 PR 2: NOT ON AN EDIT OPEN. Both answers were thrown away there:
+    // the service preselect and the location auto-fill act only on a real
+    // Terapeuta change (shouldPreselectPrimaryService, pickAutoFillLocation),
+    // and selfLocked is create-only. So an edit sends the two reads the first
+    // time the user changes the Terapeuta, which sets the flag before the value
+    // moves. Create mode is untouched: a self-locked create still fetches on
+    // open, and every other create fetches when a therapist is picked.
+    if (editing && !userChangedTherapist.current) return;
     let cancelled = false;
-    getTherapistServices(therapistId).then((r) => {
-      if (cancelled) return;
+    // SKEW-01: each read goes through runAction; `load*` is also the toast's
+    // retry, which does nothing once the therapist has changed again.
+    function applyServices(r: Awaited<ReturnType<typeof getTherapistServices>>) {
       const ids = r.ok ? r.data : [];
       // PL-06a: preselect the therapist's PRIMARY (oldest-first ids[0]) as the
       // default Serviço. This NEVER filters the Select — every active service
@@ -707,21 +858,38 @@ export function AppointmentDrawer({
       if (shouldPreselectPrimaryService(userChangedTherapist.current, selfLocked) && ids.length >= 1) {
         applyDefaultService(ids[0]);
       }
-    });
+    }
+    function loadServices() {
+      void runAction(() => getTherapistServices(therapistId), {
+        kind: "read",
+        retry: () => { if (!cancelled) loadServices(); },
+      }).then((out) => {
+        if (!cancelled && !out.failed) applyServices(out.value);
+      });
+    }
+    loadServices();
     // W4-12: on the SAME therapist-selection event, auto-fill Localização when
     // the therapist has exactly one active location. Independent fetch/setForm
     // from the service auto-fill above — different field, no clobber. Guards
     // (real therapist change, no manual location pick) read fresh after the
     // await via pickAutoFillLocation, so a location edit during the fetch wins.
-    getTherapistLocations(therapistId).then((r) => {
-      if (cancelled) return;
+    function applyLocations(r: Awaited<ReturnType<typeof getTherapistLocations>>) {
       const ids = r.ok ? r.data : [];
       const pick = pickAutoFillLocation(ids, {
         userChangedTherapist: userChangedTherapist.current,
         userChangedLocation: userChangedLocation.current,
       });
       if (pick) applyDefaultLocation(pick);
-    });
+    }
+    function loadLocations() {
+      void runAction(() => getTherapistLocations(therapistId), {
+        kind: "read",
+        retry: () => { if (!cancelled) loadLocations(); },
+      }).then((out) => {
+        if (!cancelled && !out.failed) applyLocations(out.value);
+      });
+    }
+    loadLocations();
     return () => {
       cancelled = true;
     };
@@ -911,6 +1079,11 @@ export function AppointmentDrawer({
     return false;
   }
 
+  // SKEW-01: "Tentar novamente" on a failed save re-runs THIS handler, as it is
+  // now, WITHOUT the conflict override: the form's validation and the server's
+  // conflict check both run again, and a standing conflict asks again.
+  const retrySubmit = useLatestCallback(() => void submit(false));
+
   async function submit(allowConflict: boolean) {
     setError(null);
     if (!form.patientId || !form.practitionerId || !form.locationId || !form.date || !form.time || form.durationMin <= 0) {
@@ -945,14 +1118,19 @@ export function AppointmentDrawer({
             setError(s["pack.batchIncomplete"]);
             return;
           }
-          const r = await batchScheduleAppointments({
+          // Built OUTSIDE the thunk: the thunk only sends (run-action-core.ts,
+          // contract 7).
+          const packBatchSlots = buildLoteSlots(packSlots, form.durationMin);
+          const out = await runAction(() => batchScheduleAppointments({
             patientId: form.patientId,
             practitionerId: form.practitionerId,
             locationId: form.locationId,
             serviceId: form.serviceId || null,
             packId: form.packId,
-            slots: buildLoteSlots(packSlots, form.durationMin),
-          });
+            slots: packBatchSlots,
+          }), { kind: "write", retry: retrySubmit, owner: actionOwner });
+          if (out.failed) return;
+          const r = out.value;
           if (!r.ok) {
             handleResult(r);
             return;
@@ -971,13 +1149,15 @@ export function AppointmentDrawer({
             setError(s["lote.noDates"]);
             return;
           }
-          const r = await batchScheduleAppointments({
+          const out = await runAction(() => batchScheduleAppointments({
             patientId: form.patientId,
             practitionerId: form.practitionerId,
             locationId: form.locationId,
             serviceId: form.serviceId || null,
             slots,
-          });
+          }), { kind: "write", retry: retrySubmit, owner: actionOwner });
+          if (out.failed) return;
+          const r = out.value;
           if (!r.ok) {
             handleResult(r);
             return;
@@ -989,7 +1169,7 @@ export function AppointmentDrawer({
           setBatchFailures({ bookedCount: r.data.booked.length, failures: r.data.failures });
           return;
         }
-        const r = await createAppointment({
+        const out = await runAction(() => createAppointment({
           patientId: form.patientId,
           practitionerId: form.practitionerId,
           locationId: form.locationId,
@@ -1012,16 +1192,22 @@ export function AppointmentDrawer({
           // service and registers/decrements a pack session in the same tx.
           packId: form.packId || null,
           allowConflict,
-        });
-        if (!handleResult(r)) return;
+        }), { kind: "write", retry: retrySubmit, owner: actionOwner });
+        if (out.failed) return;
+        if (!handleResult(out.value)) return;
         succeed();
         return;
       }
 
       const scope = form.scope;
       if (form.status === "cancelled" && editing.status !== "cancelled") {
-        const r = await cancelAppointment(editing.id, form.notes || undefined, { scope });
-        if (!handleResult(r)) return;
+        const out = await runAction(() => cancelAppointment(editing.id, form.notes || undefined, { scope }), {
+          kind: "write",
+          retry: retrySubmit,
+          owner: actionOwner,
+        });
+        if (out.failed) return;
+        if (!handleResult(out.value)) return;
         succeed();
         return;
       }
@@ -1059,21 +1245,34 @@ export function AppointmentDrawer({
       let movedFirst = false;
 
       if (temporalChanged) {
-        const r = await rescheduleAppointment(editing.id, {
+        const out = await runAction(() => rescheduleAppointment(editing.id, {
           startsAt: startISO,
           endsAt: endISO,
           practitionerId: form.practitionerId,
           locationId: form.locationId,
           scope,
           allowConflict,
-        });
-        if (!handleResult(r)) return;
+        }), { kind: "write", retry: retrySubmit, owner: actionOwner });
+        if (out.failed) return;
+        if (!handleResult(out.value)) return;
         movedFirst = true;
       }
 
       if (Object.keys(patch).length > 0) {
-        const r = await updateAppointment(editing.id, patch, { scope, allowConflict });
-        if (!handleResult(r)) {
+        const out = await runAction(() => updateAppointment(editing.id, patch, { scope, allowConflict }), {
+          kind: "write",
+          retry: retrySubmit,
+          owner: actionOwner,
+        });
+        // SKEW-01: the move is already written here too, so the drawer says so,
+        // but NOT with the refusal's sentence: there is no conflict to fix, only
+        // a request that did not complete, and the wrapper's toast (no
+        // connection, or the generic error) already says why.
+        if (out.failed) {
+          if (movedFirst) setError(s["appointment.movedButDetailsNotSent"]);
+          return;
+        }
+        if (!handleResult(out.value)) {
           // The move already committed. Say that plainly rather than leaving the
           // user to infer it from a dialog that looks like a clean refusal.
           if (movedFirst) setError(s["appointment.movedButDetailsNotSaved"]);
@@ -1093,12 +1292,20 @@ export function AppointmentDrawer({
 
   // Password-gated hard delete (W3-06). The password is verified SERVER-side;
   // the client only forwards it. On success the appointment is permanently gone.
+  const retryHardDelete = useLatestCallback(() => void doHardDelete());
+
   async function doHardDelete() {
     if (!editing) return;
     setDeleting(true);
     setDeleteErr(null);
     try {
-      const r = await hardDeleteAppointment(editing.id, deletePw);
+      const out = await runAction(() => hardDeleteAppointment(editing.id, deletePw), {
+        kind: "write",
+        retry: retryHardDelete,
+        owner: actionOwner,
+      });
+      if (out.failed) return;
+      const r = out.value;
       if (r.ok) {
         setDeleteOpen(false);
         toast({ tone: "success", message: s["appointment.deleted"] });
@@ -1121,14 +1328,21 @@ export function AppointmentDrawer({
 
   // Re-attempt ONE slot from the failure dialog at the edited date/time, through
   // the same engine — as a single explicit slot.
-  async function rebookSlot(date: string, hhmm: string): Promise<RebookOutcome> {
-    const r = await batchScheduleAppointments({
+  // SKEW-01: `retry` is the dialog's own rebook handler for that row; a
+  // transport failure reads as "not booked", the same as a refusal.
+  async function rebookSlot(date: string, hhmm: string, retry: () => void): Promise<RebookOutcome> {
+    // Built OUTSIDE the thunk: the thunk only sends (run-action-core.ts,
+    // contract 7).
+    const slots = buildLoteSlots([{ date, time: hhmm }], form.durationMin);
+    const out = await runAction(() => batchScheduleAppointments({
       patientId: form.patientId,
       practitionerId: form.practitionerId,
       locationId: form.locationId,
       serviceId: form.serviceId || null,
-      slots: buildLoteSlots([{ date, time: hhmm }], form.durationMin),
-    });
+      slots,
+    }), { kind: "write", retry, owner: actionOwner });
+    if (out.failed) return { booked: false, failure: null };
+    const r = out.value;
     if (!r.ok) return { booked: false, failure: null };
     return { booked: r.data.booked.length > 0, failure: r.data.failures[0] ?? null };
   }
@@ -1230,7 +1444,7 @@ export function AppointmentDrawer({
               value={form.patientId || null}
               onChange={(v) => set("patientId", v)}
               query={patientQuery}
-              onQueryChange={setPatientQuery}
+              onQueryChange={onPatientQueryChange}
               loading={patientLoading}
               placeholder={s["appointment.patientTypeToSearch"]}
               emptyLabel={s["appointment.patientSearchEmpty"]}
@@ -1496,7 +1710,7 @@ export function AppointmentDrawer({
                   value={form.patientTwoId || null}
                   onChange={(v) => set("patientTwoId", v ?? "")}
                   query={patientTwoQuery}
-                  onQueryChange={setPatientTwoQuery}
+                  onQueryChange={onPatientTwoQueryChange}
                   loading={patientTwoLoading}
                   placeholder={s["appointment.patientTypeToSearch"]}
                   emptyLabel={s["appointment.patientSearchEmpty"]}
@@ -1607,6 +1821,7 @@ export function AppointmentDrawer({
           durationMin={form.durationMin}
           time={form.time}
           onPickTime={(hhmm) => set("time", hhmm)}
+          preload={preload}
         />
 
         {/* Agendar lote (W2-10) — replaces the V1 recorrente control. Hidden while
@@ -1879,7 +2094,7 @@ export function AppointmentDrawer({
             row yet to hang notes on, so the first note stays a plain field and is
             written as note one by createAppointment. */}
         {editing ? (
-          <AppointmentNotesBoard appointmentId={editing.id} />
+          <AppointmentNotesBoard appointmentId={editing.id} preload={preload} />
         ) : (
           <Field label={s["appointment.notes"]}>
             <Textarea autoComplete="off" value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />

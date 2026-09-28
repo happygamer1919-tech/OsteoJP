@@ -50,7 +50,7 @@ import { listGuestIntakesForPatient } from "../../../lib/guest-intake/queries";
 import { toGuestIntakeDisplay } from "../../../lib/guest-intake/view";
 import { GuestIntakeAnswers } from "../../../components/guest-intake-answers";
 // CARE-01: the therapists reception has assigned to this patient.
-import { listCareTeam } from "../../../lib/admin/care-team";
+import { listCareTeam, listCareTeamForTherapist } from "../../../lib/admin/care-team";
 import { labelCareTeamCard, staffLabelContext } from "../../../lib/scheduling/staff-options";
 import { CareTeamCard } from "./care-team-card";
 
@@ -143,8 +143,19 @@ export default async function PatientProfilePage({
     );
   }
 
-  const patient = await getPatient(id, { includeDeleted: true });
+  // CARE-02a: the ficha is a READER, so a therapist on this patient's care team
+  // opens it (0098). Every write reached from it keeps the narrow scope in its
+  // own server action.
+  const patient = await getPatient(id, { includeDeleted: true, access: "read" });
   if (!patient) notFound();
+
+  // CARE-02a: may this viewer also ACT on the patient? A therapist on the care
+  // team reads the ficha (0098) but writes only where they could before 0098,
+  // which is the narrow scope getPatient applies by default. Every write
+  // refuses on the server either way; this keeps the controls that would refuse
+  // off the screen. One extra read, for a therapist only.
+  const canActOnPatient =
+    ctx.role !== "therapist" || (await getPatient(id, { includeDeleted: true })) !== null;
 
   // PL-15b: the patient's clinic, resolved for the identity line. Null when the
   // patient has none (pre-PL-15b registrations) - shown as absent, never guessed.
@@ -162,20 +173,20 @@ export default async function PatientProfilePage({
   // Documentos tab: every staff role can view/upload administrative patient
   // documents (patients:read to view, patients:write to upload) — this is an
   // administrative surface, not clinical_records.
-  const canUploadDocuments = can(ctx.role, "patients:write");
+  const canUploadDocuments = can(ctx.role, "patients:write") && canActOnPatient;
   const canInvoice = can(ctx.role, "invoices:read");
   // Consultas per-row edits (W5-09) REUSE the Agenda gates verbatim: reschedule
   // and Estado change need appointments:write; Cancel needs appointments:delete
   // (therapist can write but NOT cancel). These flags only shape the affordance;
   // each Agenda server action re-asserts its own capability server-side.
-  const canEditAppointments = can(ctx.role, "appointments:write");
+  const canEditAppointments = can(ctx.role, "appointments:write") && canActOnPatient;
   const canCancelAppointments = can(ctx.role, "appointments:delete");
   // SCHED-30 (owner dispatch 2026-09-14): a therapist cancels, and brings back,
   // the rows they are Terapeuta or Terapeuta 2 on, at their own clinics. Only the
   // affordance; cancelAppointment and updateAppointment re-check it.
   const canCancelOwnAppointments = !canCancelAppointments && can(ctx.role, "appointments:cancel_own");
   const canDelete = can(ctx.role, "patients:delete");
-  const canStartEpisode = can(ctx.role, "clinical_records:author");
+  const canStartEpisode = can(ctx.role, "clinical_records:author") && canActOnPatient;
   // Hard delete is Tenant-settings tier (W5-08), like appointment/staff delete.
   // The blockers read only drives the disabled affordance — the server action
   // re-enforces the password gate and every refuse guard.
@@ -279,24 +290,30 @@ export default async function PatientProfilePage({
   // because `listCareTeam` asserts it and would throw rather than return empty -
   // the same shape the guest-intake fetch above uses.
   //
-  // RECEPTION AND OWNER ONLY. A therapist never sees this card: they would be
-  // reading who else follows their patient, which is not what the ruling grants
-  // them. What it grants them is the appointment history, and that arrives
-  // through RLS without any screen.
+  // RECEPTION AND OWNER MANAGE IT, with Atribuir and Remover.
   //
-  // CARE-02b (a read-only card for the therapist) IS BLOCKED ON THE DATABASE,
-  // not on this page. `patient_care_team_select` (0091) admits owner and
-  // reception only, so a therapist's read of the table returns no rows, and a
-  // card built from that would tell them nobody is assigned. The card has its
-  // read-only mode (CareTeamCard `readOnly`); it is wired here once a read path
-  // for therapists exists, which is a policy or a SECURITY DEFINER reader and
-  // therefore Tier C. The same reasoning keeps `reminders:log_read` from the
-  // therapist in packages/auth/permissions.ts.
+  // CARE-02b, WIRED BY CARE-02a (0098): A THERAPIST SEES THE SAME LIST,
+  // READ-ONLY, WHEN THEY CAN READ ALL OF IT. 0098's `patient_care_team_select`
+  // admits a therapist to the whole live team of a patient whose team they are
+  // on AT ONE OF THEIR OWN CLINICS (the owner's clinic limit), and to their own
+  // rows. `listCareTeamForTherapist` returns null unless the patient is in that
+  // clinic-limited set AND the list names the viewer, so the card appears only
+  // when it is the real team: never for a therapist who is not on it, never for
+  // one whose only readable row is their own, and never before 0098 is applied,
+  // when the card would otherwise say "Nenhum terapeuta atribuido" about a
+  // patient who has one.
   const canManageCareTeam = can(ctx.role, "care_team:manage");
+  const therapistCareTeam =
+    tab === "resumo" && !canManageCareTeam && ctx.role === "therapist"
+      ? await listCareTeamForTherapist(ctx, patient.id)
+      : null;
+  const showCareTeam = canManageCareTeam || therapistCareTeam !== null;
   const careTeam =
-    tab === "resumo" && canManageCareTeam ? await listCareTeam(ctx, patient.id) : [];
+    tab === "resumo" && canManageCareTeam
+      ? await listCareTeam(ctx, patient.id)
+      : (therapistCareTeam ?? []);
   const careTeamOptions =
-    tab === "resumo" && canManageCareTeam ? await getAgendaOptions(ctx) : null;
+    tab === "resumo" && showCareTeam ? await getAgendaOptions(ctx) : null;
   // NESA-SCOPE: members and picker are named as one list (labelCareTeamCard),
   // so two same-named machines on this card always read apart. Labels only.
   const careTeamLabels = careTeamOptions ? staffLabelContext(careTeamOptions) : null;
@@ -308,15 +325,20 @@ export default async function PatientProfilePage({
     source: m.source,
     assignedAt: m.assignedAt,
   }));
+  // The read-only card offers no picker, so a therapist's card is named against
+  // the roster alone and carries no candidates.
   const { candidates: careTeamCandidates, members: careTeamMembers } =
     careTeamLabels && careTeamOptions
       ? labelCareTeamCard(
-          careTeamOptions.therapists,
+          canManageCareTeam ? careTeamOptions.therapists : [],
           careTeamMembersRaw,
           careTeamLabels,
           careTeamOptions.allTherapists ?? careTeamOptions.therapists,
         )
-      : { candidates: careTeamOptions?.therapists ?? [], members: careTeamMembersRaw };
+      : {
+          candidates: canManageCareTeam ? (careTeamOptions?.therapists ?? []) : [],
+          members: careTeamMembersRaw,
+        };
   // Faturação tab: fetch invoices for this patient when the tab is active.
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // U1 — the Marcações filters, read from the URL and applied IN SQL.
@@ -464,11 +486,16 @@ export default async function PatientProfilePage({
           <div className="flex flex-wrap items-center gap-2">
             {/* W6-03: deep-link into Agenda with the create drawer open and THIS
                 patient preselected + locked (the user then picks only therapist +
-                date/time). Mirrors the /clinical/new?patientId= precedent. */}
-            <Link href={`/agenda?novaMarcacaoPaciente=${id}`} className={primaryLink}>
-              <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-              {s["patients.newAppointment"]}
-            </Link>
+                date/time). Mirrors the /clinical/new?patientId= precedent.
+                CARE-02a: not for a read-only care-team viewer. The agenda's
+                prefill and patient picker keep the narrow scope (booking
+                rights are not in 0098), so the link would open an empty drawer. */}
+            {canActOnPatient && (
+              <Link href={`/agenda?novaMarcacaoPaciente=${id}`} className={primaryLink}>
+                <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+                {s["patients.newAppointment"]}
+              </Link>
+            )}
             {canStartEpisode && (
               <form action={createEpisodeAction}>
                 <input type="hidden" name="patientId" value={patient.id} />
@@ -526,10 +553,12 @@ export default async function PatientProfilePage({
             <Card
               title={s["patients.cardPersonal"]}
               headerAction={
-                <Link href={`/patients/${id}/edit`} className={ghostLink}>
-                  <Pencil size={16} strokeWidth={1.75} aria-hidden="true" />
-                  {s["patients.editRecord"]}
-                </Link>
+                canActOnPatient ? (
+                  <Link href={`/patients/${id}/edit`} className={ghostLink}>
+                    <Pencil size={16} strokeWidth={1.75} aria-hidden="true" />
+                    {s["patients.editRecord"]}
+                  </Link>
+                ) : undefined
               }
             >
               <Rows rows={personalRows} />
@@ -553,15 +582,17 @@ export default async function PatientProfilePage({
             {/* CARE-01: reception decides which therapists follow this patient.
                 An assigned therapist reads the patient's whole appointment
                 history, including the appointments with colleagues - which is
-                the thing the clinic asked for. */}
-            {canManageCareTeam && (
+                the thing the clinic asked for. CARE-02a: a therapist on the
+                team sees the same list, read-only (no Atribuir, no Remover). */}
+            {showCareTeam && (
               <section className="mt-6" data-testid="ficha-care-team">
                 <CareTeamCard
                   patientId={id}
                   locale={DEFAULT_LOCALE}
                   members={careTeamMembers}
                   candidates={careTeamCandidates}
-                  error={typeof m === "string" && m.startsWith("err")}
+                  error={canManageCareTeam && typeof m === "string" && m.startsWith("err")}
+                  readOnly={!canManageCareTeam}
                 />
               </section>
             )}
@@ -616,7 +647,7 @@ export default async function PatientProfilePage({
             {/* PL-13: the composer adds a note; unified notes are editable in
                 place with a last-edited stamp (NotesList), legacy revisions are
                 read-only. */}
-            <NotesComposer patientId={id} />
+            {canActOnPatient && <NotesComposer patientId={id} />}
             {noteRevisions.length === 0 ? (
               <p className="mt-4 text-sm text-text-secondary">{s["patients.notesEmpty"]}</p>
             ) : (

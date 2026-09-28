@@ -1,0 +1,16 @@
+{
+  "id": "agenda.encontrar-marcacoes",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "frames": [
+    {
+      "goto": "/marcacoes?from=2026-10-05&to=2026-10-10",
+      "ready": { "labelKey": "marcacoes.filterDateFrom" },
+      "annotate": [
+        { "kind": "box", "n": 1, "target": { "labelKey": "marcacoes.filterDateFrom" } },
+        { "kind": "box", "n": 2, "target": { "labelKey": "common.search" } },
+        { "kind": "box", "n": 3, "target": { "labelKey": "appointment.status" } }
+      ]
+    }
+  ]
+}
