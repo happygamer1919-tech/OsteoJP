@@ -29,6 +29,7 @@ const h = vi.hoisted(() => ({
   getRecordDetail: vi.fn(),
   getFichaMedicaTemplate: vi.fn(),
   mayFileRegistoFor: vi.fn(),
+  canWriteRecord: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/context", () => ({ requireRequestContext: async () => h.ctx }));
@@ -36,6 +37,7 @@ vi.mock("@/lib/clinical/records", () => ({
   getRecordDetail: h.getRecordDetail,
   getFichaMedicaTemplate: h.getFichaMedicaTemplate,
   mayFileRegistoFor: h.mayFileRegistoFor,
+  canWriteRecord: h.canWriteRecord,
 }));
 vi.mock("@/lib/clinical/terms-acceptance", () => ({ getLatestTermsAcceptance: async () => null }));
 vi.mock("@/lib/patients/documents", () => ({ listImportedPatientDocuments: vi.fn(async () => []) }));
@@ -125,6 +127,9 @@ beforeEach(() => {
   h.getRecordDetail.mockReset();
   h.getFichaMedicaTemplate.mockReset();
   h.mayFileRegistoFor.mockReset();
+  // CARE-02a's test, ANDed with 0099's on the page; true unless an arm says not.
+  h.canWriteRecord.mockReset();
+  h.canWriteRecord.mockResolvedValue(true);
 });
 
 describe("a therapist is offered only the writes 0099 admits", () => {
@@ -164,6 +169,19 @@ describe("a therapist is offered only the writes 0099 admits", () => {
 
   it("a signed registo of a patient they neither treat nor created: no Nova versao", async () => {
     const c = await controls(record({ status: "signed" }), false);
+    expect(c.newVersion).toBe(false);
+  });
+
+  it("CARE-02a still binds: their own draft outside the pre-0098 write reach: read-only, no Sign", async () => {
+    h.canWriteRecord.mockResolvedValue(false);
+    const c = await controls(record(), true);
+    expect([c.readOnly, c.sign]).toEqual(["true", "none"]);
+    expect(h.canWriteRecord).toHaveBeenCalledWith(h.ctx, REC);
+  });
+
+  it("CARE-02a still binds: a signed registo outside the pre-0098 write reach: no Nova versao", async () => {
+    h.canWriteRecord.mockResolvedValue(false);
+    const c = await controls(record({ status: "signed", practitionerId: "user-9" }), true);
     expect(c.newVersion).toBe(false);
   });
 });

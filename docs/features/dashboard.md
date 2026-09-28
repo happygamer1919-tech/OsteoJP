@@ -1,8 +1,8 @@
 # Staff Dashboard (`/dashboard`)
 
-> Verified against `apps/web/app/dashboard/page.tsx`, `apps/web/app/dashboard/notas-rapidas.tsx`, `apps/web/lib/dashboard/notes.ts`, `apps/web/lib/dashboard/actions.ts`, `apps/web/lib/invoices/queries.ts`, `apps/web/lib/scheduling/data.ts`, `packages/db/src/schema.ts`, `supabase/migrations/0018_quick_notes.sql`, and `packages/auth/permissions.ts`.
+> Verified against `apps/web/app/dashboard/page.tsx`, `apps/web/app/dashboard/notas-rapidas.tsx`, `apps/web/lib/dashboard/notes.ts`, `apps/web/lib/dashboard/actions.ts`, `apps/web/lib/invoices/queries.ts`, `apps/web/lib/invoices/revenue-scope.ts`, `apps/web/app/dashboard/revenue-location.tsx`, `apps/web/lib/auth/viewer-locations.ts`, `apps/web/lib/scheduling/data.ts`, `packages/db/src/schema.ts`, `supabase/migrations/0018_quick_notes.sql`, and `packages/auth/permissions.ts`.
 
-The dashboard is a server-rendered Next.js page (`apps/web/app/dashboard/page.tsx`). It accepts a `?date=YYYY-MM-DD` query parameter (defaults to today in Lisbon time) used to scope the Marcações panel to a specific day. All timestamps are stored in UTC and displayed in `Europe/Lisbon` (including DST transitions in March and October).
+The dashboard is a server-rendered Next.js page (`apps/web/app/dashboard/page.tsx`). It accepts a `?date=YYYY-MM-DD` query parameter (defaults to today in Lisbon time) used to scope the Marcações panel to a specific day, and, for the owner only, a `?location=<location id>` parameter that holds the Receita (mês) tile to one clinic (section 2; T5b). All timestamps are stored in UTC and displayed in `Europe/Lisbon` (including DST transitions in March and October).
 
 ---
 
@@ -20,7 +20,7 @@ The dashboard is a server-rendered Next.js page (`apps/web/app/dashboard/page.ts
 
 The KPI: Novas fichas card is the only widget gated on `clinical_records:read`; reception does not hold that capability.
 
-The KPI: Receita (mês) card is gated on `invoices:issue`, which the therapist does not hold (DASH-THERAPIST-REVENUE; see section 2). The therapist's KPI row therefore has three tiles, laid out in three columns at `xl` with the third tile spanning the row at `md` and `lg`, so it has no empty column. Owner, admin and reception keep the row they had: `md:grid-cols-2 xl:grid-cols-4` with no tile spanning, which for reception's three tiles still leaves an empty quarter at `xl`.
+The KPI: Receita (mês) card is gated on `invoices:issue`, which the therapist does not hold (DASH-THERAPIST-REVENUE; see section 2). Since T5b its figure is per clinic: the owner sees every clinic with a toggle for one, admin and reception see the clinics they are assigned to. The therapist's KPI row therefore has three tiles, laid out in three columns at `xl` with the third tile spanning the row at `md` and `lg`, so it has no empty column. Owner, admin and reception keep the row they had: `md:grid-cols-2 xl:grid-cols-4` with no tile spanning, which for reception's three tiles still leaves an empty quarter at `xl`.
 
 ---
 
@@ -54,11 +54,11 @@ The 7-element counts array is derived client-side from the result: for each of t
 ## 2. Receita (mês)
 
 **Label (PT):** "Receita (mês)"
-**Component:** `<GlassKpiCard accent="gold">`, the last KPI card in the row (fourth for owner and admin, third for reception; not rendered for the therapist)
+**Component:** `<GlassKpiCard accent="gold">`, the last KPI card in the row (fourth for owner and admin, third for reception; not rendered for the therapist). For the owner it carries the clinic toggle in its `action` slot.
 
 ### What it does
 
-Displays the total invoiced revenue for the **current calendar month**, expressed as a PT-locale EUR string (e.g. `"1.245,00 €"`). The value is a read-only summary; there is no link or action attached to the card.
+Displays the total invoiced revenue for the **current calendar month**, expressed as a PT-locale EUR string (e.g. `"1.245,00 €"`), for the clinics the viewer may see (below). The value is a read-only summary with no link. The owner's card also carries the clinic toggle.
 
 > **Gated on `invoices:issue` (DASH-THERAPIST-REVENUE).** Owner, admin and reception see the card; the therapist does not. Until this card the tile was rendered for every role, and the guide writers found a therapist's Início showing the whole clinic's monthly revenue. The gate is enforced on the server twice: the page does not call `getMonthlyRevenue` for a role without the capability (no tile, no "Sem dados"), and `getMonthlyRevenue` itself throws `ForbiddenError` before any read, so no other caller can leak the figure.
 >
@@ -67,17 +67,19 @@ Displays the total invoiced revenue for the **current calendar month**, expresse
 ### Data source
 
 ```
-lib/invoices/queries.ts → getMonthlyRevenue(ctx, monthStartUtc, monthEndUtc)
+lib/invoices/queries.ts → getMonthlyRevenue(ctx, monthStartUtc, monthEndUtc, { locationId })
 ```
 
-SQL:
+SQL (the last line only when the figure is held to clinics):
 ```sql
-SELECT COALESCE(SUM(amount_cents), 0)::int
+SELECT COALESCE(SUM(invoices.amount_cents), 0)::int
 FROM invoices
-WHERE status IN ('issued', 'paid')
-  AND issued_at IS NOT NULL
-  AND issued_at >= :monthStartUtc
-  AND issued_at <  :monthEndUtc
+LEFT JOIN appointments ON appointments.id = invoices.appointment_id
+WHERE invoices.status IN ('issued', 'paid')
+  AND invoices.issued_at IS NOT NULL
+  AND invoices.issued_at >= :monthStartUtc
+  AND invoices.issued_at <  :monthEndUtc
+  AND appointments.location_id IN (:clinics)
 ```
 
 Month boundaries are calculated as:
@@ -88,7 +90,27 @@ Month boundaries are calculated as:
 
 ### Scoping
 
-`getMonthlyRevenue` first asserts `invoices:issue` (above), then reads through `runScoped(ctx, …)`: RLS on the `invoices` table restricts the sum to the caller's tenant. There is no per-user and no per-location filter; the value reflects all invoiced revenue across every clinic of the tenant for the month.
+`getMonthlyRevenue` first asserts `invoices:issue` (above), then reads through `runScoped(ctx, …)`: RLS on the `invoices` table restricts the sum to the caller's tenant.
+
+**Per clinic (T5b).** The invoices RLS is tenant-wide, so the clinic scope is decided inside `getMonthlyRevenue`, never by the page. It resolves the caller's own clinics with `viewerLocationScope` (the app mirror of `viewer_location_ids()`, migration 0073) and `revenueLocations` (`lib/invoices/revenue-scope.ts`) turns role, scope and the owner's choice into the clinics the sum is held to:
+
+| Viewer | Clinics summed |
+|---|---|
+| owner, no choice (default) | every clinic, and invoices with no marcação |
+| owner, `?location=<id>` | that clinic only |
+| admin or reception with `staff_locations` rows | exactly those clinics; `?location=` is ignored |
+| admin or reception with no assignment | every clinic, and invoices with no marcação (the PL-09 fallback that `viewerLocationScope`, `/invoicing` and the appointments RLS already apply to this viewer) |
+| therapist | refused before any read (DASH-THERAPIST-REVENUE) |
+
+An invoice's clinic is the clinic of its marcação (`invoices.appointment_id` → `appointments.location_id`), the same link the `/invoicing` location filter and Estatísticas (`getStatistics`) use. An invoice with no marcação has no clinic: it counts in the whole-tenant figure and in no clinic's figure. The appointments RLS also runs inside the join, as defense in depth; the explicit `location_id` condition is what excludes a marcação at another clinic that an admin created themselves.
+
+**Against `/invoicing`: the same answer for two of the three admin and reception cases.** With one clinic, `/invoicing` pins that clinic (`scopedLocationId`) and lists the invoices this figure sums. With no assignment, both are the whole tenant. With two or more clinics they differ: this figure is exactly those clinics, as T5b asks (`viewer_location_ids()`), while `/invoicing`'s "Todas as localizações" resolves to no location, `listInvoices` adds no location condition, and the list holds every invoice of the tenant in the period, including the invoices with no marcação. So a two-clinic admin's Início figure can be lower than the same month's issued and paid invoices on their `/invoicing` "Todas" list. That `/invoicing` behaviour predates T5b and is not changed here; this figure is not widened to match it. Whether `/invoicing`'s "Todas" should mean the viewer's own clinics, as PL-14 says, is open as Q-T5B-1 in `docs/design/QUESTIONS.md`.
+
+**The owner's toggle.** A `Select` from `@osteojp/ui` (`RevenueLocationToggle`, `app/dashboard/revenue-location.tsx`) under the figure, labelled "Localização da receita", first entry "Todas as clínicas", then the tenant's active clinics (`listActiveLocations`, as on `/invoicing`). Choosing writes `?location=` (keeping `?date=`), and the day navigation links keep it. The page honours the id only when it is one of those active clinics, so the control and the figure always name the same thing; anything else falls back to every clinic. With a single active clinic there is nothing to choose and no toggle (PL-14). No other role sees the toggle, and `getMonthlyRevenue` ignores `?location=` for them.
+
+The first entry takes the Pacientes clinic filter's words (`patients.filterLocationAll`), not Faturação's "Todas as localizações", because this select sits inside a KPI tile. From 1280 to about 1365px wide (four tiles beside the sidebar) its text box is about 124px: "Todas as localizações" (145px in Inter 14px) was cut to "Todas as localizaç", and "Todas as clínicas" is 113px. The e2e spec measures the entry against the text box at 1280, the narrowest tile. A clinic name wider than about 124px (roughly 19 characters) would still be cut at those widths; "Linda-a-Velha" measures 93px and "Castelo Branco" 101px.
+
+**Tests.** `lib/invoices/revenue-scope.test.ts` (the decision per role), `lib/invoices/queries.test.ts` (the location ids that reach the statement), `lib/invoices/revenue.db.test.ts` (the figures per principal against a real database, RLS on), `app/dashboard/page.test.tsx` (the toggle per role, and what the page hands the toggle and the date field), `app/dashboard/url-carry.test.tsx` (the toggle keeps `?date=`, the date field keeps `&location=`) and `e2e/dashboard-revenue-per-clinic.spec.ts` (the owner toggles and the figure changes; an admin assigned to Linda-a-Velha sees only that clinic's figure).
 
 ---
 

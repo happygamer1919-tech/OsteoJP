@@ -17,7 +17,7 @@ import {
 import { documentPreviewKind, type DocumentPreviewKind } from "./document-preview";
 import { importedDocumentPrefix } from "./imported-documents-path";
 import { viewerLocationScope } from "../auth/viewer-locations";
-import { patientLocationScope, therapistPatientScope } from "./scope";
+import { patientLocationScope, therapistPatientReadScope, therapistPatientScope } from "./scope";
 
 // Staff-side PATIENT DOCUMENTS (administrative documents & declarations attached
 // to a patient, e.g. consent forms, identity docs, referrals). Reuses the
@@ -90,13 +90,24 @@ export function isDocumentosRow(
   return row.clinicalRecordId === null || row.storagePath.startsWith(importedDocumentPrefix(tenantId));
 }
 
-/** Assert the patient exists inside this tenant (RLS-scoped). Throws not_found. */
+/**
+ * Assert the patient exists inside this tenant (RLS-scoped). Throws not_found.
+ *
+ * CARE-02a: AND, FOR A THERAPIST, THAT THE UPLOAD IS THEIRS TO MAKE. This read
+ * used to lean on `patients_select` alone, which was the right answer while
+ * that policy admitted a therapist to exactly the patients they treat or
+ * created. 0098 widens `patients_select` to the care team for READING, and an
+ * upload is a write, so the narrow `therapistPatientScope` is ANDed in here and
+ * a care-team-only therapist is refused the upload as before. For every other
+ * role it is undefined and `and()` drops it, so nothing else moves.
+ */
 async function assertPatientInTenant(ctx: RequestContext, patientId: string): Promise<void> {
+  const writeScope = therapistPatientScope(ctx, patients.id);
   const found = await runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({ id: patients.id })
       .from(patients)
-      .where(eq(patients.id, patientId))
+      .where(and(eq(patients.id, patientId), writeScope))
       .limit(1);
     return rows[0]?.id ?? null;
   });
@@ -174,12 +185,15 @@ export async function confirmPatientDocument(
   }
   const ip = await clientIp();
 
+  // CARE-02a: the confirm half of the same write gets the same narrow scope as
+  // the mint (assertPatientInTenant above explains why).
+  const writeScope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, async (tx) => {
     // Patient must exist in this tenant (RLS-scoped) before we link the row.
     const pat = await tx
       .select({ id: patients.id })
       .from(patients)
-      .where(eq(patients.id, input.patientId))
+      .where(and(eq(patients.id, input.patientId), writeScope))
       .limit(1);
     if (!pat[0]?.id) throw new ClinicalError("not_found");
 
@@ -247,8 +261,13 @@ export async function confirmPatientDocument(
  */
 async function documentVisibilityScope(ctx: RequestContext): Promise<SQL | undefined> {
   const locIds = await viewerLocationScope(ctx);
+  // CARE-02a: the READ scope. All four callers are readers (list, imported
+  // list, preview, download), so a therapist on the patient's care team reads
+  // the Documentos tab the ficha shows them. `attachments` keeps its
+  // tenant-only policy (its narrowing is the N5 wave), so this predicate is the
+  // whole of the narrowing here. The two writers below keep the narrow scope.
   return (
-    therapistPatientScope(ctx, attachments.patientId) ??
+    (await therapistPatientReadScope(ctx, attachments.patientId)) ??
     (locIds ? patientLocationScope(attachments.patientId, locIds) : undefined)
   );
 }

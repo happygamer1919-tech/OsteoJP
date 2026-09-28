@@ -53,22 +53,40 @@ export function careTeamSource(rowId: string, autoRowIds: ReadonlySet<string>): 
 }
 
 /**
- * THE ROLES THAT CAN WRITE A CARE-TEAM ROW UNDER THE CURRENT POLICY.
+ * WHICH CARE-TEAM ROWS A ROLE MAY WRITE, AS `patient_care_team_insert` SAYS.
  *
- * `patient_care_team_insert` (0091) admits `jwt_role()` owner and reception and
- * nobody else. `care_team:manage` is held by exactly those two roles, and
- * care-team-core.test.ts pins that the two lists agree, so a drift in either
- * reddens a test rather than turning into an RLS refusal inside a booking.
+ *   "any"   owner and reception: any row of their tenant. 0091's arm, which
+ *           0098 keeps byte for byte. `care_team:manage` is held by exactly
+ *           those two roles.
+ *   "own"   therapist, since 0098 (CARE-02a): ONE kind of row, their own
+ *           booking's. user_id and assigned_by are the caller and the patient
+ *           is one they have an appointment with. The writer filters its
+ *           candidates to `userId === actor.userId`, and the appointment it
+ *           just wrote is what puts the patient in viewer_treated_patient_ids().
+ *   "none"  admin, deliberately (0091 says so and 0098 keeps it), and any role
+ *           added later until somebody rules on it.
  *
- * WHY IT IS CHECKED BEFORE THE WRITE AND NOT LEFT TO THE DATABASE. A refused
- * INSERT inside the booking's transaction would abort the booking itself: a
- * therapist could no longer book their own patient. Asking first means the
- * booking goes through and the care team is simply not written, which is the
- * gap this PR reports (a therapist's own booking needs a writer the current
- * policy does not allow, which is Tier C).
+ * care-team-core.test.ts reads BOTH migrations and pins that this map equals
+ * what they admit, so a drift in either reddens a test rather than turning into
+ * an RLS refusal inside a booking (a role the app thinks may write) or a silent
+ * skip (a role the policy would admit).
+ *
+ * WHY IT IS CHECKED BEFORE THE WRITE AND NOT LEFT TO THE DATABASE. The writer
+ * runs in a savepoint, so a refusal would not fail the booking, but an INSERT
+ * carries every pair of a booking in ONE statement: one pair the policy refuses
+ * would take the admitted pairs beside it down with it. Filtering first means
+ * the statement only ever carries rows the policy admits.
+ *
+ * `therapist` IS A ROLE NAME HERE, NOT A CAPABILITY, because the policy arm it
+ * mirrors is `jwt_role() = 'therapist'` and no capability is held by the
+ * therapist alone.
  */
-export function canWriteCareTeamUnderCurrentPolicy(role: Role): boolean {
-  return can(role, "care_team:manage");
+export type CareTeamWriteReach = "any" | "own" | "none";
+
+export function careTeamWriteReach(role: Role): CareTeamWriteReach {
+  if (can(role, "care_team:manage")) return "any";
+  if (role === "therapist") return "own";
+  return "none";
 }
 
 /** What a written appointment contributes: both patient slots, both practitioner slots. */

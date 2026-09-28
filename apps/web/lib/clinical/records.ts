@@ -14,7 +14,11 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
-import { therapistPatientScope } from "@/lib/patients/scope";
+import {
+  therapistPatientReadScope,
+  therapistPatientScope,
+  therapistRegistoWriteScope,
+} from "@/lib/patients/scope";
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError, type ClinicalErrorCode } from "./errors";
@@ -131,7 +135,10 @@ export async function listRecords(
 ): Promise<RecordListItem[]> {
   assertCan(ctx.role, "clinical_records:read");
   // W10-04: a therapist sees fichas only for their own patients (own-only).
-  const scope = therapistPatientScope(ctx, clinicalRecords.patientId);
+  // CARE-02a: and, as a READ, for the patients whose care team they are on.
+  // clinical_records_select (0098) admits the same set; the INSERT, UPDATE and
+  // DELETE policies do not, so a registo listed here is not one they can edit.
+  const scope = await therapistPatientReadScope(ctx, clinicalRecords.patientId);
   const patientFilter = filter.patientId
     ? eq(clinicalRecords.patientId, filter.patientId)
     : undefined;
@@ -192,7 +199,8 @@ export async function getRecordDetail(
 ): Promise<RecordDetail | null> {
   assertCan(ctx.role, "clinical_records:read");
   // W10-04: a therapist can only open a ficha for one of their own patients.
-  const scope = therapistPatientScope(ctx, clinicalRecords.patientId);
+  // CARE-02a: or, to READ it, a patient whose care team they are on (0098).
+  const scope = await therapistPatientReadScope(ctx, clinicalRecords.patientId);
   return runScoped(ctx, async (tx) => {
     const signer = users;
     const rows = await tx
@@ -304,6 +312,29 @@ export async function getRecordDetail(
  * This is the new-record path only. Existing records pin formTemplateId and are
  * resolved by id elsewhere (immutability) — never through this resolver.
  */
+/**
+ * CARE-02a: may this viewer WRITE to the registo `id`, as well as read it?
+ *
+ * `getRecordDetail` takes the READ scope, so since 0098 a therapist on the care
+ * team opens a colleague's registo. Every registo writer reads its source row
+ * under `therapistRegistoWriteScope` and refuses outside it; this is the same
+ * read, for the page, so the form, Assinar, Nova versao, the review controls
+ * and the attachment upload are not offered where they would refuse. For every
+ * non-therapist the scope is undefined and the answer is simply "the row is
+ * visible", which is what the page assumed before.
+ */
+export async function canWriteRecord(ctx: RequestContext, id: string): Promise<boolean> {
+  assertCan(ctx.role, "clinical_records:read");
+  return runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({ id: clinicalRecords.id })
+      .from(clinicalRecords)
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
+      .limit(1);
+    return rows.length > 0;
+  });
+}
+
 export async function listActiveTemplates(ctx: RequestContext): Promise<TemplateOption[]> {
   assertCan(ctx.role, "clinical_records:read");
   return runScoped(ctx, async (tx) => {
@@ -370,6 +401,9 @@ export async function getFichaMedicaTemplate(
 export async function listPatients(ctx: RequestContext): Promise<PatientOption[]> {
   assertCan(ctx.role, "clinical_records:read");
   // W10-04: the ficha "Paciente" picker offers a therapist only their own patients.
+  // CARE-02a: THE NARROW SCOPE, deliberately. This picker feeds a new registo,
+  // which is a write: clinical_records' INSERT policy still keys on
+  // clinical_therapist_sees_patient(), which 0098 does not touch.
   const scope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, (tx) =>
     tx
@@ -553,7 +587,8 @@ export async function updateRecordData(
       })
       .from(clinicalRecords)
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
@@ -627,7 +662,8 @@ export async function createAddendum(
         version: clinicalRecords.version,
       })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const s = src[0];
     if (!s) throw new ClinicalError("not_found");
@@ -691,7 +727,8 @@ export async function signAndLockRecord(
         dataHash: recordDataHash(),
       })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
@@ -748,7 +785,8 @@ export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string):
         practitionerId: clinicalRecords.practitionerId,
       })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     if (!target) throw new ClinicalError("not_found");
     // Only draft / AI-pending (status=draft) is deletable; the trigger blocks the rest.
@@ -827,7 +865,8 @@ export async function annulRecord(
     const [target] = await tx
       .select({ status: clinicalRecords.status })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     if (!target) throw new ClinicalError("not_found");
     if (target.status !== "signed") throw new ClinicalError("not_signed");

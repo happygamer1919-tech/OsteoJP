@@ -81,7 +81,7 @@ const NAV_ICON: Record<string, { icon: LucideIcon; className: string }> = {
   // distinct from the two blues either side of it in the list.
   "/marcacoes": { icon: CalendarClock, className: "text-v2-violet-700" },
   // Comunicações (COMMS-01, owner dispatch 2026-09-14) is the GROUP that holds
-  // Recuperação and Lembretes SMS. It inherits Recuperação's hue, because that
+  // Recuperação, Lembretes SMS and (T5 F4) Respostas SMS. It inherits Recuperação's hue, because that
   // call list is what the entry used to be, and takes a messages glyph because
   // the group is about talking to patients rather than about one call list.
   // /recuperacao keeps its own URL and lights this entry through

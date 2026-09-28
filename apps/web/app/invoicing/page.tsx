@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { getRequestContext } from "@/lib/auth/context";
 import { scopedLocationId } from "@/lib/auth/location-choice";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
-import { credentialsConfigured } from "@/lib/integrations/invoicexpress";
 import { s } from "@/lib/i18n";
 import { listInvoices, listActiveLocations, type InvoiceStatus } from "@/lib/invoices/queries";
 import { InvoicingView, type InvoicingFilters } from "./invoicing-view";
@@ -88,15 +87,9 @@ export default async function InvoicingPage({
     ? locationRows.filter((l) => locationScope.includes(l.id))
     : locationRows;
 
-  // "Nova fatura" button is only shown when InvoiceXpress credentials are configured.
-  const issueEnabled = credentialsConfigured();
-
+  // T5 F2: no "Nova fatura" control, so no credential check here. The reason is
+  // on InvoicingView (invoicing-view.tsx).
   return (
-    <InvoicingView
-      filters={filters}
-      invoices={invoiceRows}
-      locations={visibleLocations}
-      issueEnabled={issueEnabled}
-    />
+    <InvoicingView filters={filters} invoices={invoiceRows} locations={visibleLocations} />
   );
 }

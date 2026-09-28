@@ -7,6 +7,7 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { summariseAiRecordingDraft } from "@/lib/clinical/ai-recording-draft";
 import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
 import {
+  canWriteRecord,
   getFichaMedicaTemplate,
   getRecordDetail,
   mayFileRegistoFor,
@@ -108,20 +109,27 @@ export default async function RecordDetailPage({
   // the second, so it follows `finalized`: a draft is never announced as
   // "finalizada e imutavel", whoever is looking at it.
   const finalized = record.status !== "draft";
-  // 0099: the controls ask what the writers and the write policies ask, so a
-  // therapist is never offered a Save, a Sign or a Nova versao that would
+  // CARE-02a: a therapist on the care team READS a colleague's registo (0098)
+  // and writes to it nowhere; every registo writer refuses outside the pre-0098
+  // reach. `canWrite` is that same test, so no control that would refuse is
+  // offered. Always true for a role the therapist scope does not narrow.
+  //
+  // 0099: the controls also ask what the writers and the write policies ask, so
+  // a therapist is never offered a Save, a Sign or a Nova versao that would
   // always be refused. A therapist saves and signs only a draft they authored,
   // for a patient they treat or created (the UPDATE policy); files a new
   // version only for a patient they treat or created (the INSERT policy). The
   // owner writes every registo of the tenant, and `mayFileRegistoFor` answers
-  // yes for anyone but a therapist without a read. The attachments keep their
-  // own gate (`attachmentsReadOnly`, as before): 0099 changes no attachment rule.
+  // yes for anyone but a therapist without a read. Both tests are ANDed, so
+  // neither narrows the other away. The attachments keep their own gate
+  // (`attachmentsReadOnly`, as before): 0099 changes no attachment rule.
+  const canWrite = await canWriteRecord(ctx, id);
   const mayFile = await mayFileRegistoFor(ctx, record.patientId);
-  const writesThis = mayFile && (ctx.role !== "therapist" || record.practitionerId === ctx.userId);
+  const writesThis = canWrite && mayFile && (ctx.role !== "therapist" || record.practitionerId === ctx.userId);
   const canAuthor = can(ctx.role, "clinical_records:author");
   const readOnly = finalized || !canAuthor || !writesThis;
   const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign") && writesThis;
-  const canVersion = finalized && canAuthor && mayFile;
+  const canVersion = finalized && canAuthor && canWrite && mayFile;
   const attachmentsReadOnly = finalized || !canAuthor;
 
   const anchors = schema
@@ -280,7 +288,7 @@ export default async function RecordDetailPage({
               fichaSchema={aiFichaSchema}
               status={record.status}
               aiReviewState={record.aiReviewState}
-              canReview={can(ctx.role, "clinical_records:review")}
+              canReview={can(ctx.role, "clinical_records:review") && canWrite}
             />
           ) : (
             /* FICHA-IMPORTED-VIEW: any other record without a template that

@@ -26,10 +26,11 @@ const assignedDateFmt = new Intl.DateTimeFormat("pt-PT", {
 /**
  * CARE-01 — "Terapeutas atribuídos" on the patient ficha.
  *
- * A list, an add control and a per-row remove control. Rendered only for the
- * roles holding `care_team:manage` (reception and owner); the page decides that,
- * because the page is where `ctx.role` lives and a component that re-derived it
- * would be a second copy of the rule.
+ * A list, an add control and a per-row remove control, for the roles holding
+ * `care_team:manage` (reception and owner); a therapist gets the list alone
+ * (`readOnly`, below). The page decides which, because the page is where
+ * `ctx.role` lives and a component that re-derived it would be a second copy of
+ * the rule.
  *
  * PER-ROW REMOVE, NOT A CHECKBOX SET. The Equipa "Gerir" modal replaces a whole
  * membership set in one submit, which cannot express a SOFT removal: the row has
@@ -41,11 +42,12 @@ const assignedDateFmt = new Intl.DateTimeFormat("pt-PT", {
  * MANUAL entry only; removeTherapist refuses an automatic one on the server too.
  *
  * CARE-02b: `readOnly` renders the same list with no control at all, which is
- * the card a therapist is meant to see. It is NOT rendered for a therapist yet:
- * `patient_care_team_select` (0091) admits owner and reception only, so a
- * therapist's read returns no rows and the card would say "Nenhum terapeuta
- * atribuído" about a patient who has one. That would be a confident wrong
- * statement, so the page leaves the card out until a read path exists.
+ * the card a therapist sees. CARE-02a (0098) wired it: the page renders it for a
+ * therapist only when `listCareTeamForTherapist` read the whole team (the
+ * patient is in the clinic-limited care-team set and the list names them), so
+ * it never says "Nenhum terapeuta atribuído", or lists the viewer alone, about
+ * a patient whose team the viewer cannot read (not on it, on it at another
+ * clinic, or 0098 not yet applied).
  *
  * NO CLIENT JAVASCRIPT. Plain forms posting to server actions; the action
  * revalidates the path and redirects. That is the whole refresh mechanism on
