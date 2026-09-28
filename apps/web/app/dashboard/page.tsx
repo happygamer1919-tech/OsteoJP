@@ -45,7 +45,7 @@ import {
   todayInLisbon,
 } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
-import { getMonthlyRevenue } from "@/lib/invoices/queries";
+import { getMonthlyRevenue, MONTHLY_REVENUE_CAPABILITY } from "@/lib/invoices/queries";
 
 import { DateJump } from "./date-jump";
 import { NotasRapidas } from "./notas-rapidas";
@@ -79,6 +79,38 @@ function monthStart(dateStr: string): string {
   const [y, m] = dateStr.split("-");
   return `${y}-${m}-01`;
 }
+
+type Kpi = {
+  key: string;
+  accent: V2Accent;
+  icon: ReactNode;
+  label: ReactNode;
+  value: ReactNode;
+  caption?: ReactNode;
+};
+
+/**
+ * DASH-THERAPIST-REVENUE: the KPI row as it was before the revenue gate. Every
+ * role that is shown the revenue tile (owner and admin, four tiles; reception,
+ * three) keeps this exact class, and no tile of theirs gets a column span: the
+ * card's acceptance says those three roles see exactly what they saw.
+ * Reception's row therefore still ends in an empty quarter at xl and a lone
+ * tile on a half row at md and lg, as it always has; changing that is a
+ * separate owner call.
+ */
+const KPI_GRID_WITH_REVENUE = "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4";
+
+/**
+ * The row for a role NOT shown the revenue tile (today, only the therapist),
+ * by tile count, so taking the tile away leaves no empty column. Such a role
+ * has at most three tiles (Pacientes ativos, Marcacoes hoje, Novas fichas).
+ * Literal strings, one per count, so Tailwind finds every class in the source.
+ */
+const KPI_GRID_WITHOUT_REVENUE: Record<number, string> = {
+  1: "grid grid-cols-1 gap-4",
+  2: "grid grid-cols-1 gap-4 md:grid-cols-2",
+  3: "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3",
+};
 
 // `max-sm:shrink-0`: below `sm` the date row may shrink to the screen and only
 // the date field gives way (see the row below). Without it the previous and
@@ -116,6 +148,13 @@ export default async function DashboardPage({
 
   const canAppointments = can(ctx.role, "appointments:read");
   const canClinical = can(ctx.role, "clinical_records:read");
+  // DASH-THERAPIST-REVENUE: the clinic's monthly revenue is for the roles that
+  // work Faturacao (owner, admin, reception). A therapist's Inicio showed the
+  // whole clinic's figure, because the invoices RLS is tenant-wide and nothing
+  // here asked. The query is not even made for them; getMonthlyRevenue asserts
+  // the same capability, so a missed gate here would throw, not leak. Why it is
+  // not `invoices:read`: MONTHLY_REVENUE_CAPABILITY's comment.
+  const canRevenue = can(ctx.role, MONTHLY_REVENUE_CAPABILITY);
 
   // Fire all widget queries in parallel; a failure in one degrades only that
   // widget rather than error-boundarying the entire dashboard.
@@ -147,12 +186,14 @@ export default async function DashboardPage({
               .where(gte(clinicalRecords.createdAt, weekStartUtc)),
           )
         : Promise.resolve([] as Array<{ count: number }>),
-      // 4. Monthly revenue
-      getMonthlyRevenue(
-        ctx,
-        lisbonMidnightUtc(mStart),
-        lisbonMidnightUtc(addMonths(mStart, 1)),
-      ),
+      // 4. Monthly revenue (DASH-THERAPIST-REVENUE: never read without the capability)
+      canRevenue
+        ? getMonthlyRevenue(
+            ctx,
+            lisbonMidnightUtc(mStart),
+            lisbonMidnightUtc(addMonths(mStart, 1)),
+          )
+        : Promise.resolve(null),
       // 5. Weekly appointments (Resumo semanal chart)
       canAppointments
         ? listAppointments(ctx, {
@@ -192,10 +233,33 @@ export default async function DashboardPage({
   const recRows = recResult.status === "fulfilled" ? recResult.value : null;
   const newRecords = recRows?.[0]?.count ?? 0;
 
-  // KPI 4 — Receita (mês)
+  // KPI 4: Receita (mês), sum of issued + paid invoices for the current month.
+  // Only built for a role holding the capability; for any other role there is
+  // no figure, no tile and no "Sem dados" either.
   const monthRevenueCents = revenueResult.status === "fulfilled" ? revenueResult.value : null;
   const revenueDisplay =
     monthRevenueCents !== null ? formatEur(monthRevenueCents) : s["dashboard.kpiNoData"];
+
+  const kpis: Kpi[] = [
+    { key: "patients", accent: "green", icon: <Users size={20} strokeWidth={1.75} />, label: s["dashboard.kpiActivePatients"], value: countResult.status === "rejected" ? s["dashboard.kpiNoData"] : patientCount, caption: patientsCaption },
+    ...(canAppointments
+      ? [{ key: "today", accent: "blue", icon: <Calendar size={20} strokeWidth={1.75} />, label: s["dashboard.kpiTodayAppointments"], value: upcomingResult.status === "rejected" ? s["dashboard.kpiNoData"] : todayCount, caption: nextCaption } satisfies Kpi]
+      : []),
+    ...(canClinical
+      ? [{ key: "records", accent: "lavender", icon: <ClipboardList size={20} strokeWidth={1.75} />, label: s["dashboard.kpiNewRecords"], value: recResult.status === "rejected" ? s["dashboard.kpiNoData"] : newRecords, caption: s["dashboard.kpiThisWeek"] } satisfies Kpi]
+      : []),
+    ...(canRevenue
+      ? [{ key: "revenue", accent: "gold", icon: <TrendingUp size={20} strokeWidth={1.75} />, label: s["dashboard.kpiRevenue"], value: revenueDisplay } satisfies Kpi]
+      : []),
+  ];
+  // Roles shown the revenue tile keep the row they had (KPI_GRID_WITH_REVENUE).
+  // For the others the grid follows the tile count, and three tiles in two
+  // columns (md and lg) would leave the third alone on a half row, so it takes
+  // the whole row there, and one column again at xl.
+  const kpiGrid = canRevenue
+    ? KPI_GRID_WITH_REVENUE
+    : (KPI_GRID_WITHOUT_REVENUE[kpis.length] ?? KPI_GRID_WITH_REVENUE);
+  const lastKpiSpan = !canRevenue && kpis.length === 3 ? "md:col-span-2 xl:col-span-1" : undefined;
 
   // Resumo semanal — appointment counts grouped by calendar day (Mon–Sun).
   const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
@@ -290,17 +354,20 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <GlassKpiCard accent="green" icon={<Users size={20} strokeWidth={1.75} />} label={s["dashboard.kpiActivePatients"]} value={countResult.status === "rejected" ? s["dashboard.kpiNoData"] : patientCount} caption={patientsCaption} />
-        {canAppointments && (
-          <GlassKpiCard accent="blue" icon={<Calendar size={20} strokeWidth={1.75} />} label={s["dashboard.kpiTodayAppointments"]} value={upcomingResult.status === "rejected" ? s["dashboard.kpiNoData"] : todayCount} caption={nextCaption} />
-        )}
-        {canClinical && (
-          <GlassKpiCard accent="lavender" icon={<ClipboardList size={20} strokeWidth={1.75} />} label={s["dashboard.kpiNewRecords"]} value={recResult.status === "rejected" ? s["dashboard.kpiNoData"] : newRecords} caption={s["dashboard.kpiThisWeek"]} />
-        )}
-        {/* Receita (mês) — sum of issued + paid invoices for the current month. */}
-        <GlassKpiCard accent="gold" icon={<TrendingUp size={20} strokeWidth={1.75} />} label={s["dashboard.kpiRevenue"]} value={revenueDisplay} />
+      {/* KPI row. Unchanged for every role shown the revenue tile; for a role
+          without it the columns follow the number of tiles (kpiGrid above). */}
+      <div data-testid="dashboard-kpis" className={kpiGrid}>
+        {kpis.map((k, i) => (
+          <GlassKpiCard
+            key={k.key}
+            accent={k.accent}
+            icon={k.icon}
+            label={k.label}
+            value={k.value}
+            caption={k.caption}
+            className={i === kpis.length - 1 ? lastKpiSpan : undefined}
+          />
+        ))}
       </div>
 
       {/* Acessos rápidos */}

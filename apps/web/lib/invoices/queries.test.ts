@@ -4,8 +4,8 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
 
 import { runScoped } from "@/lib/auth/context";
-import { listInvoices } from "./queries";
-import type { RequestContext } from "@osteojp/auth";
+import { getMonthlyRevenue, listInvoices, MONTHLY_REVENUE_CAPABILITY } from "./queries";
+import { can, ROLES, type RequestContext, type Role } from "@osteojp/auth";
 
 const mockRunScoped = vi.mocked(runScoped);
 
@@ -88,5 +88,56 @@ describe("listInvoices — local ledger display query", () => {
 
     expect(result[0]!.patientName).toBeNull();
     expect(result[0]!.locationId).toBeNull();
+  });
+});
+
+/**
+ * DASH-THERAPIST-REVENUE. A therapist's Inicio showed the whole clinic's
+ * monthly revenue: the invoices RLS is tenant-wide and getMonthlyRevenue asked
+ * nothing. It now asserts MONTHLY_REVENUE_CAPABILITY before its one read.
+ *
+ * The roles are pinned by name, not derived from the matrix, because the
+ * acceptance is about people: owner, admin and reception keep the figure they
+ * see today, and the therapist loses it. A matrix edit that moved either side
+ * must fail here and be ruled on.
+ */
+describe("getMonthlyRevenue: only the roles that work Faturacao read the clinic's revenue", () => {
+  const from = new Date("2026-09-01T00:00:00Z");
+  const to = new Date("2026-10-01T00:00:00Z");
+  const as = (role: Role): RequestContext => ({ tenantId: "t1", role, userId: `u-${role}` });
+
+  beforeEach(() => {
+    mockRunScoped.mockReset();
+    mockRunScoped.mockResolvedValue([{ total: 124500 }]);
+  });
+
+  it("refuses the therapist before any read, though the therapist holds invoices:read", async () => {
+    // The trap this card fell into: every role holds invoices:read, so a gate
+    // on it passes the therapist. The refusal must come from the capability
+    // the therapist does NOT hold.
+    expect(can("therapist", "invoices:read")).toBe(true);
+    expect(can("therapist", MONTHLY_REVENUE_CAPABILITY)).toBe(false);
+
+    await expect(getMonthlyRevenue(as("therapist"), from, to)).rejects.toMatchObject({
+      name: "ForbiddenError",
+      role: "therapist",
+      capability: MONTHLY_REVENUE_CAPABILITY,
+    });
+    expect(mockRunScoped).not.toHaveBeenCalled();
+  });
+
+  it.each(["owner", "admin", "reception"] as const)("returns the month's total for %s", async (role) => {
+    await expect(getMonthlyRevenue(as(role), from, to)).resolves.toBe(124500);
+    expect(mockRunScoped).toHaveBeenCalledOnce();
+    expect(mockRunScoped).toHaveBeenCalledWith(as(role), expect.any(Function));
+  });
+
+  it("returns 0, not a refusal, for a permitted role with no invoices in the month", async () => {
+    mockRunScoped.mockResolvedValue([]);
+    await expect(getMonthlyRevenue(as("admin"), from, to)).resolves.toBe(0);
+  });
+
+  it("the roles that read it are exactly owner, admin and reception", () => {
+    expect(ROLES.filter((r) => can(r, MONTHLY_REVENUE_CAPABILITY))).toEqual(["owner", "admin", "reception"]);
   });
 });
