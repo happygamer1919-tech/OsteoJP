@@ -3,7 +3,8 @@
  *
  * What a fake CAN prove, and it is the part a real database cannot be made to
  * show on demand: a failure inside the care-team write never escapes into the
- * booking, and a role the policy refuses never reaches the database at all. The
+ * booking, a role the policy refuses never reaches the database at all, and a
+ * therapist's booking puts only the therapist's own row in the statement. The
  * real INSERT, its conflict target and RLS are measured in
  * apps/web/lib/scheduling/care-team-booking.db.test.ts.
  */
@@ -113,13 +114,48 @@ describe("addBookedTherapistsToCareTeam", () => {
     expect(h.audits).toEqual([]);
   });
 
-  it("a THERAPIST's own booking never reaches the database: 0091's insert policy would refuse it", async () => {
+  it("CARE-02a: a THERAPIST booking THEMSELVES writes their own row, audited as automatic (0098's own-row arm)", async () => {
+    h.rows[0]!.practitionerId = "actor-1";
+    h.written = [{ id: "ct-own", patientId: "pA", userId: "actor-1" }];
     const out = await addBookedTherapistsToCareTeam(tx, actor("therapist"), ["a1"]);
-    expect(out).toEqual([]);
-    expect(h.transactionCalls).toBe(0);
+    expect(h.valuesSeen[0]).toEqual([
+      { tenantId: "t1", patientId: "pA", userId: "actor-1", assignedBy: "actor-1" },
+    ]);
+    expect(out).toEqual([
+      { patientId: "pA", userId: "actor-1", appointmentId: "a1", startsAt: T0, careTeamId: "ct-own" },
+    ]);
+    expect(h.audits.map((a) => a.entityId)).toEqual(["ct-own"]);
   });
 
-  it("an ADMIN's booking skips the write for the same reason", async () => {
+  it("CARE-02a: a therapist's booking carries ONLY their own row: a colleague in the Terapeuta 2 slot is not written", async () => {
+    // One refused pair would sink the whole INSERT, own row included, so the
+    // colleague's row is never put in the statement at all.
+    h.rows[0]!.practitionerId = "actor-1";
+    h.rows[0]!.practitionerTwoId = "colleague";
+    h.written = [{ id: "ct-own", patientId: "pA", userId: "actor-1" }];
+    await addBookedTherapistsToCareTeam(tx, actor("therapist"), ["a1"]);
+    expect(h.valuesSeen[0]!.map((v) => v.userId)).toEqual(["actor-1"]);
+  });
+
+  it("CARE-02a: a therapist's booking that does not name them writes nothing at all", async () => {
+    // practitioner "t1" is not the actor.
+    const out = await addBookedTherapistsToCareTeam(tx, actor("therapist"), ["a1"]);
+    expect(out).toEqual([]);
+    expect(h.valuesSeen).toEqual([]);
+  });
+
+  it("CARE-02a: both patients of a shared booking get the therapist's own row", async () => {
+    h.rows[0]!.practitionerId = "actor-1";
+    h.rows[0]!.patientTwoId = "pB";
+    h.written = [];
+    await addBookedTherapistsToCareTeam(tx, actor("therapist"), ["a1"]);
+    expect(h.valuesSeen[0]!.map((v) => [v.patientId, v.userId])).toEqual([
+      ["pA", "actor-1"],
+      ["pB", "actor-1"],
+    ]);
+  });
+
+  it("an ADMIN's booking never reaches the database: 0091 and 0098 both exclude admin", async () => {
     expect(await addBookedTherapistsToCareTeam(tx, actor("admin"), ["a1"])).toEqual([]);
     expect(h.transactionCalls).toBe(0);
   });

@@ -7,8 +7,8 @@ import { writeAudit } from "./audit";
 import {
   CARE_TEAM_AUTO_ACTION,
   CARE_TEAM_ENTITY_TYPE,
-  canWriteCareTeamUnderCurrentPolicy,
   careTeamCandidates,
+  careTeamWriteReach,
   type CareTeamAddition,
 } from "./care-team-core";
 
@@ -51,11 +51,32 @@ import {
  * ==========================================================================
  * WHO IT WRITES FOR, AND WHO IT SKIPS
  * ==========================================================================
- * Owner and reception only, because that is who `patient_care_team_insert`
- * admits (see canWriteCareTeamUnderCurrentPolicy). A therapist's own booking
- * and an admin's booking skip the write rather than attempt it, and that gap is
- * reported, not hidden: closing it needs a writer the current policy does not
- * allow.
+ * Exactly what `patient_care_team_insert` admits (careTeamWriteReach):
+ *
+ *   owner, reception  every therapist the booking names, as before.
+ *   therapist         CARE-02a (0098): THEIR OWN ROW ONLY. A therapist booking
+ *                     themselves joins the team; a colleague they put in the
+ *                     Terapeuta 2 slot does not, because the policy refuses a
+ *                     row for another user and one refused pair would sink the
+ *                     whole INSERT. The colleague joins at their own next
+ *                     booking, or by Atribuir. No notice goes out: the only row
+ *                     written is the actor's own, and careTeamNotices never
+ *                     tells the actor about their own click (the owner booking
+ *                     themselves already worked this way).
+ *   admin             nothing, as 0091 and 0098 both rule.
+ *
+ * Before 0098 is applied, a therapist's own row is refused by 0091's policy;
+ * the savepoint below confines that to the care-team write and the booking
+ * stands, exactly as a refused write always has here.
+ *
+ * WHY THE RETURNING READ-BACK WORKS FOR A THERAPIST. Postgres checks an
+ * INSERT ... ON CONFLICT ... RETURNING row against the SELECT policy too, and a
+ * therapist is not yet in either care-team helper (0091's
+ * viewer_care_team_patient_ids(), or 0098's clinic-limited
+ * viewer_care_team_patient_ids_at_my_clinics()) while their own row is being
+ * written. 0098's select policy admits `user_id = auth.uid()`, NOT limited by
+ * clinic, for exactly this reason (its section 5 (a)); measured refused without
+ * that arm and admitted with it.
  *
  * The rows are READ BACK here, by id, inside the savepoint and under the
  * actor's RLS, rather than taken from the caller. The care team then follows
@@ -80,7 +101,8 @@ export async function addBookedTherapistsToCareTeam(
   // EVERYTHING below is inside the try, the role check included: nothing this
   // function does may throw into the booking that called it.
   try {
-    if (!canWriteCareTeamUnderCurrentPolicy(actor.role)) return [];
+    const reach = careTeamWriteReach(actor.role);
+    if (reach === "none") return [];
     return await tx.transaction(async (sp) => {
       const rows = await sp
         .select({
@@ -106,7 +128,7 @@ export async function addBookedTherapistsToCareTeam(
             opts.slots === "primary" ? [r.practitionerId] : [r.practitionerId, r.practitionerTwoId],
         })),
         sharedIds,
-      );
+      ).filter((c) => reach === "any" || c.userId === actor.userId);
       if (candidates.length === 0) return [];
 
       const written = await sp
