@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { locale, s } from "@/lib/i18n";
+import { useVisibleInterval } from "@/lib/timers/visible-interval";
 import {
   isSlotBlocked,
   placeBlocksOnDate,
@@ -302,11 +303,9 @@ export function AgendaGrid({
   const today = todayInLisbon();
 
   // Current-time line position (refreshed each minute). Rendered only on today.
+  // SKEW-01 S5: paused while the tab is hidden; ticks at once on return.
   const [nowMin, setNowMin] = useState(() => lisbonMinutesFromMidnight(new Date()));
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMin(lisbonMinutesFromMidnight(new Date())), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
+  useVisibleInterval(() => setNowMin(lisbonMinutesFromMidnight(new Date())), 60_000);
   const byDate = new Map<string, AgendaAppointment[]>();
   for (const a of appointments) {
     const d = lisbonParts(new Date(a.startsAt)).date;
