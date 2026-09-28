@@ -25,15 +25,16 @@ import {
 } from "../../../../docs/guide/build/guide-model.mjs";
 
 type Item = { id: string };
-type Data = { lessons: Item[]; sections: Item[]; held: Item[] };
+type Data = { lessons: Item[]; sections: Item[]; faq: Item[]; held: Item[] };
 
 const committed = readFileSync(GUIDE_DATA_FILE, "utf8");
 
-/** The ids whose JSON differs between two renderings, sections and lessons both. */
+/** The ids whose JSON differs between two renderings: sections, lessons and FAQ entries. */
 function changedIds(a: string, b: string): string[] {
   const left = JSON.parse(a) as Data;
   const right = JSON.parse(b) as Data;
-  const byId = (data: Data) => new Map([...data.sections, ...data.lessons].map((item) => [item.id, JSON.stringify(item)]));
+  const byId = (data: Data) =>
+    new Map([...data.sections, ...data.lessons, ...data.faq].map((item) => [item.id, JSON.stringify(item)]));
   const l = byId(left);
   const r = byId(right);
   const ids = new Set([...l.keys(), ...r.keys()]);
@@ -52,14 +53,17 @@ describe("guide-data.json is regenerated from the lesson source (G1-4 for /ajuda
   });
 
   // An empty or unread source would regenerate to an empty file that could
-  // match an empty committed one. The source is the 58 lessons of nine sections.
-  it("the regeneration reads the real source: nine sections, 58 lessons, one of them held", () => {
+  // match an empty committed one. The source is the 58 lessons of nine
+  // sections and the seven FAQ entries of 00-perguntas.
+  it("the regeneration reads the real source: nine sections, 58 lessons (one held), seven FAQ entries", () => {
     const guide = loadGuide();
     expect(guide.errors).toEqual([]);
     expect(guide.sections).toHaveLength(9);
     expect(guide.lessons).toHaveLength(58);
+    expect(guide.faq).toHaveLength(7);
     const data = JSON.parse(committed) as Data;
     expect(data.lessons).toHaveLength(57);
+    expect(data.faq).toHaveLength(7);
     expect(data.held.map((item) => item.id)).toEqual(["marcacao-online.pedido-de-cliente-novo"]);
   });
 });
@@ -117,6 +121,17 @@ describe("the drift check catches a one byte change (seeded)", () => {
       const fresh = render();
       expect(fresh).not.toBe(committed);
       expect(changedIds(committed, fresh)).toEqual(["faturacao.faturas-de-um-paciente"]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("one byte of an FAQ answer changed: the regeneration differs, in that entry only", () => {
+    const restore = edit("00-perguntas/01-marcar-consulta.md", (text) => text.replace("Na **Agenda**", "na **Agenda**"));
+    try {
+      const fresh = render();
+      expect(fresh).not.toBe(committed);
+      expect(changedIds(committed, fresh)).toEqual(["perguntas.marcar-consulta"]);
     } finally {
       restore();
     }

@@ -20,7 +20,9 @@ import { describe, expect, it } from "vitest";
 import { CONTENT_DIR, PUBLIC_DIR, WORD_LIMIT, loadGuide } from "../../../../docs/guide/build/guide-model.mjs";
 import { POSTPONE_WEEKS } from "../followup/postpone-weeks";
 
-import { GUIDE_DATA, type GuideBlock } from "./guide";
+import type { Role } from "@osteojp/auth";
+
+import { GUIDE_DATA, guideFaqFor, type GuideBlock, type GuideViewBlock } from "./guide";
 import { INICIO_SECTION, exampleLesson, loadFixture } from "./guide-test-fixture";
 
 const STRINGS_PT = JSON.parse(
@@ -89,8 +91,9 @@ const files = lessonFiles();
 
 describe("the lesson source is there to check", () => {
   // Zero files would pass every check below for the wrong reason.
-  it("reads the 67 files of the nine sections (58 lessons, nine _seccao.md)", () => {
-    expect(files).toHaveLength(67);
+  it("reads the 74 files: 58 lessons and nine _seccao.md in the nine sections, and seven FAQ entries in 00-perguntas", () => {
+    expect(files).toHaveLength(74);
+    expect(files.filter(({ rel }) => rel.startsWith("00-perguntas/"))).toHaveLength(7);
   });
 });
 
@@ -102,6 +105,7 @@ describe("every lesson is under 200 words (G1-7)", () => {
       .filter((item) => item.words >= WORD_LIMIT)
       .map((item) => `${item.file}: ${item.words} words`);
     expect(guide.lessons.length).toBe(58);
+    expect(guide.faq.length).toBe(7);
     expect(over).toEqual([]);
     expect(WORD_LIMIT).toBe(200);
   });
@@ -225,10 +229,11 @@ describe("every bold term quotes a UI label from strings.pt.json", () => {
 });
 
 // G1-2's "Perguntas frequentes, the 7 base tasks first": the seven FAQ entries
-// of the ruled proposal (its table "The seven FAQ entries"), each named by the
-// slug PR 4 gives its file in docs/guide/content/00-perguntas, and each linked
-// from its primary lesson by that lesson's "faq:" key. Once 00-perguntas has
-// files, guide-model.mjs refuses a slug that names none of them.
+// of the ruled proposal (its table "The seven FAQ entries"), each a file of
+// docs/guide/content/00-perguntas named by its slug, in the ruled order, each
+// with its primary lesson first in "see", and each linked back from that
+// lesson by the lesson's "faq:" key. guide-model.mjs refuses a slug that names
+// no entry, and an entry whose primary lesson does not name it back.
 const FAQ_BASE_TASKS: Record<string, string> = {
   "marcar-consulta": "agenda.marcar-consulta",
   "marcar-em-lote": "agenda.marcar-varias-sessoes",
@@ -240,12 +245,70 @@ const FAQ_BASE_TASKS: Record<string, string> = {
 };
 
 describe("each of the seven FAQ base tasks is linked from its primary lesson (G1-2)", () => {
+  const guide = loadGuide();
+
   it("every faq slug in the source is one of the seven, named by exactly its primary lesson", () => {
-    const guide = loadGuide();
     const namedBy: Record<string, string> = {};
     for (const lesson of guide.lessons) {
       for (const slug of lesson.faq) namedBy[slug] = namedBy[slug] ? `${namedBy[slug]}, ${lesson.id}` : lesson.id;
     }
     expect(namedBy).toEqual(FAQ_BASE_TASKS);
+  });
+
+  it("00-perguntas holds the seven entries, files 01 to 07 in the ruled order, each with its primary lesson first", () => {
+    expect(guide.faq.map((entry) => entry.file)).toEqual(
+      Object.keys(FAQ_BASE_TASKS).map((slug, i) => `00-perguntas/0${i + 1}-${slug}.md`),
+    );
+    expect(Object.fromEntries(guide.faq.map((entry) => [entry.slug, entry.see[0]]))).toEqual(FAQ_BASE_TASKS);
+    expect(guide.faq.every((entry) => entry.id === `perguntas.${entry.slug}` && entry.question?.endsWith("?"))).toBe(true);
+    expect(guide.faq.filter((entry) => entry.hold !== null)).toEqual([]);
+  });
+});
+
+// "A short answer of three to five lines": every paragraph and every list item
+// a viewer reads is one line, counted per role on the answer as that role
+// reads it (its role blocks resolved), capture left out.
+const ROLES_READING: Role[] = ["reception", "therapist", "admin", "owner"];
+
+function answerLines(blocks: GuideViewBlock[]): number {
+  return blocks.reduce((n, block) => n + (block.type === "para" ? 1 : block.type === "list" ? block.items.length : 0), 0);
+}
+
+/** Whether an answer, as one role reads it, is three to five lines. */
+const isShortAnswer = (blocks: GuideViewBlock[]) => answerLines(blocks) >= 3 && answerLines(blocks) <= 5;
+
+describe("every FAQ answer is three to five lines, for every role that reads it", () => {
+  it("each role's entries", () => {
+    const offences: string[] = [];
+    let read = 0;
+    for (const role of ROLES_READING) {
+      for (const entry of guideFaqFor(role)) {
+        read += 1;
+        if (!isShortAnswer(entry.blocks)) offences.push(`${role} ${entry.id}: ${answerLines(entry.blocks)} lines`);
+      }
+    }
+    expect(offences).toEqual([]);
+    // Reception 6, therapist 7, admin 6, owner 7: the loop above read every one.
+    expect(read).toBe(26);
+  });
+
+  it("seeded: two lines and six lines are refused, three and five pass", () => {
+    const para: GuideViewBlock = { type: "para", spans: [{ text: "Texto." }] };
+    const list = (n: number): GuideViewBlock => ({
+      type: "list",
+      kind: "ol",
+      start: 1,
+      items: Array.from({ length: n }, () => [{ text: "Passo." }]),
+    });
+    expect(answerLines([list(1), para])).toBe(2);
+    expect(isShortAnswer([list(1), para])).toBe(false);
+    expect(answerLines([list(2), para])).toBe(3);
+    expect(isShortAnswer([list(2), para])).toBe(true);
+    expect(answerLines([list(4), para])).toBe(5);
+    expect(isShortAnswer([list(4), para])).toBe(true);
+    expect(answerLines([list(5), para])).toBe(6);
+    expect(isShortAnswer([list(5), para])).toBe(false);
+    // The capture is not a line.
+    expect(answerLines([{ type: "figure" }, list(3)])).toBe(3);
   });
 });

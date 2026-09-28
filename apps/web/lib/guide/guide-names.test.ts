@@ -251,12 +251,14 @@ describe("(a) every guide PNG has its text record", () => {
   });
 
   it("the files under apps/web/public/ajuda are exactly the capture pairs the lessons name, so the check above is not empty", () => {
-    const named = [...GUIDE_DATA.lessons, ...GUIDE_DATA.faq]
-      .flatMap((lesson) => (lesson.images === null ? [] : [lesson.images.phone.src, lesson.images.desktop.src]))
-      .map((src) => join(PUBLIC_DIR, src))
-      .sort();
+    // An FAQ entry shows its primary lesson's pair (the model enforces it), so
+    // the set of files is the lessons' pairs, and every FAQ pair is one of them.
+    const pairs = (entries: ReadonlyArray<{ images: typeof GUIDE_DATA.lessons[number]["images"] }>) =>
+      entries.flatMap((entry) => (entry.images === null ? [] : [entry.images.phone.src, entry.images.desktop.src]));
+    const named = [...new Set(pairs(GUIDE_DATA.lessons))].map((src) => join(PUBLIC_DIR, src)).sort();
     const files = walk(AJUDA_DIR);
     expect(files).toEqual(named);
+    for (const src of pairs(GUIDE_DATA.faq)) expect(named, src).toContain(join(PUBLIC_DIR, src));
     expect(files.length).toBeGreaterThan(0);
   });
 
@@ -275,7 +277,8 @@ describe("(a) every guide PNG has its text record", () => {
       .filter((name) => name.endsWith(".shots.json"))
       .map((name) => name.replace(/\.shots\.json$/, ""))
       .sort();
-    const captured = [...GUIDE_DATA.lessons, ...GUIDE_DATA.faq]
+    // Specs belong to lessons; an FAQ entry reuses its primary lesson's capture.
+    const captured = GUIDE_DATA.lessons
       .filter((lesson) => lesson.images !== null)
       .map((lesson) => lesson.id)
       .sort();

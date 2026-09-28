@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  faqFor,
   guideData,
   inlineSpans,
   lessonsFor,
@@ -221,6 +222,175 @@ describe("the source as a whole", () => {
     expect(lessonsFor(guide, "rececao").map((l) => l.id)).toEqual(["inicio.b", "inicio.a", "agenda.c"]);
     expect(lessonsFor(guide, "terapeuta").map((l) => l.id)).toEqual(["agenda.c", "inicio.a", "inicio.b"]);
     expect(sectionsFor(guide, "terapeuta").map((e) => e.section.id)).toEqual(["agenda", "inicio"]);
+  });
+});
+
+// AN FAQ ENTRY ANSWERS WITH ITS LESSONS. Each rule guide-model.mjs holds an
+// entry of docs/guide/content/00-perguntas to is proved here on a seeded tree:
+// a primary lesson (inicio.exemplo, which names the entry back), a second
+// lesson read only by the therapist and the owner, and the entry. The clean
+// tree is the null arm; each red arm changes one thing and names the message.
+describe("an FAQ entry (00-perguntas)", () => {
+  const ENTRY = "00-perguntas/01-exemplo.md";
+  const PAIR = [
+    "![Exemplo no telemóvel](../../../../apps/web/public/ajuda/inicio/exemplo-390.png)",
+    "![Exemplo no computador](../../../../apps/web/public/ajuda/inicio/exemplo-desktop.png)",
+  ].join("\n");
+  const PNGS = ["ajuda/inicio/exemplo-390.png", "ajuda/inicio/exemplo-desktop.png"];
+  const CLINICAL = guideFile(
+    {
+      id: "inicio.clinico",
+      title: "Uma lição clínica",
+      goal: "Servir o terapeuta.",
+      roles: "terapeuta, proprietario",
+      order: "terapeuta 5, proprietario 5",
+      capability: "clinical_records:author",
+    },
+    "## Uma lição clínica\n\nTexto.",
+  );
+  const entry = (front: Record<string, string> = {}, body = "1. Clique em **Nova marcação**.\n2. Escolha a **Data**.\n3. Clique em **Guardar**.") => {
+    const merged: Record<string, string> = {
+      id: "perguntas.exemplo",
+      title: "Exemplo",
+      question: "Como faço o exemplo?",
+      roles: "rececao, terapeuta, proprietario",
+      order: "rececao 1, terapeuta 1, proprietario 1",
+      capability: "appointments:write",
+      see: "inicio.exemplo, inicio.clinico",
+      ...front,
+    };
+    return guideFile(merged, `## ${merged.title}\n\n${body}`);
+  };
+  const primary = (front: Record<string, string> = {}, body = "Clique em **Guardar**.") =>
+    exampleLesson({ capability: "appointments:write", faq: "exemplo", ...front }, body);
+  const tree = (files: { lesson?: string; entry?: string; extra?: Record<string, string> } = {}, pngs: string[] = []) =>
+    loadFixture(
+      {
+        "01-inicio/_seccao.md": INICIO_SECTION,
+        "01-inicio/09-apoio.md": SUPPORT,
+        "01-inicio/05-clinico.md": CLINICAL,
+        [LESSON]: files.lesson ?? primary(),
+        [ENTRY]: files.entry ?? entry(),
+        ...files.extra,
+      },
+      pngs,
+    );
+
+  it("null arm: the clean entry loads, is ordered per profile, and carries its see list, primary first", () => {
+    const guide = tree();
+    expect(guide.errors).toEqual([]);
+    expect(guide.faq.map((f) => [f.id, f.question, f.see, f.images])).toEqual([
+      ["perguntas.exemplo", "Como faço o exemplo?", ["inicio.exemplo", "inicio.clinico"], null],
+    ]);
+    for (const profile of ["rececao", "terapeuta", "proprietario"] as const) {
+      expect(faqFor(guide, profile).map((f) => f.id)).toEqual(["perguntas.exemplo"]);
+    }
+    const data = guideData(guide) as { faq: { id: string }[]; orders: Record<string, { faq: string[] }> };
+    expect(data.faq.map((f) => f.id)).toEqual(["perguntas.exemplo"]);
+    expect(data.orders.rececao.faq).toEqual(["perguntas.exemplo"]);
+  });
+
+  it("null arm: with a capture pair on the primary lesson, the entry shows the same pair", () => {
+    const guide = tree(
+      { lesson: primary({ shots: "inicio.exemplo" }, `Clique em **Guardar**.\n\n${PAIR}`), entry: entry({}, `Clique em **Guardar**.\n\n${PAIR}`) },
+      PNGS,
+    );
+    expect(guide.errors).toEqual([]);
+    expect(guide.faq[0].images).toEqual(guide.lessons.find((l) => l.id === "inicio.exemplo")!.images);
+    expect(guide.faq[0].images?.phone.src).toBe("/ajuda/inicio/exemplo-390.png");
+  });
+
+  it("refuses an entry with no see, or a lesson named twice", () => {
+    const noSee = guideFile(
+      {
+        id: "perguntas.exemplo",
+        title: "Exemplo",
+        question: "Como faço o exemplo?",
+        roles: "rececao, terapeuta, proprietario",
+        order: "rececao 1, terapeuta 1, proprietario 1",
+        capability: "appointments:write",
+      },
+      "## Exemplo\n\nTexto.",
+    );
+    expect(tree({ entry: noSee }).errors).toEqual([
+      `${ENTRY}:1: missing front matter key "see"; an FAQ entry links its lessons, its primary lesson first`,
+      `${LESSON}: faq "exemplo" names an entry whose primary lesson is not this one; its "see" starts with nothing`,
+    ]);
+    expect(tree({ entry: entry({ see: "inicio.exemplo, inicio.exemplo" }) }).errors).toEqual([`${ENTRY}:8: see names a lesson twice`]);
+  });
+
+  it("refuses a role the primary lesson does not have, and a capability that is not the primary lesson's", () => {
+    const lesson = primary({ roles: "terapeuta, proprietario", order: "terapeuta 1, proprietario 1" });
+    expect(tree({ lesson }).errors).toEqual([`${ENTRY}: role "rececao" reads this entry but not its primary lesson "inicio.exemplo"`]);
+    expect(tree({ entry: entry({ capability: "patients:write" }) }).errors).toEqual([
+      `${ENTRY}: capability is the primary lesson's, "appointments:write", not "patients:write"`,
+    ]);
+  });
+
+  it("refuses a linked lesson that is held, or that none of the entry's roles reads", () => {
+    const held = guideFile(
+      {
+        id: "inicio.retido",
+        title: "Uma lição retida",
+        goal: "Esperar.",
+        roles: "rececao, proprietario",
+        order: "rececao 2, proprietario 2",
+        hold: "GUEST-05",
+      },
+      "## Uma lição retida\n\nTexto.",
+    );
+    expect(tree({ entry: entry({ see: "inicio.exemplo, inicio.retido" }), extra: { "01-inicio/02-retido.md": held } }).errors).toEqual([
+      `${ENTRY}: "inicio.retido" is held (GUEST-05); an entry links only published lessons`,
+    ]);
+    const onlyReception = entry({ roles: "rececao", order: "rececao 1" });
+    expect(tree({ entry: onlyReception }).errors).toEqual([`${ENTRY}: "inicio.clinico" is read by none of this entry's roles`]);
+    expect(tree({ entry: entry({ see: "inicio.exemplo, inicio.nenhum" }) }).errors).toEqual([`${ENTRY}: "inicio.nenhum" is not a lesson id`]);
+  });
+
+  it("refuses a primary lesson that does not name the entry back, and a lesson naming an entry it is not the primary of", () => {
+    expect(tree({ lesson: exampleLesson({ capability: "appointments:write" }) }).errors).toEqual([
+      `${ENTRY}: its primary lesson "inicio.exemplo" does not name it back with "faq: exemplo"`,
+    ]);
+    const swapped = entry({ see: "inicio.apoio, inicio.exemplo", capability: "appointments:write" });
+    expect(tree({ entry: swapped }).errors).toEqual([
+      `${LESSON}: faq "exemplo" names an entry whose primary lesson is not this one; its "see" starts with inicio.apoio`,
+      `${ENTRY}: capability is the primary lesson's, "none", not "appointments:write"`,
+      `${ENTRY}: its primary lesson "inicio.apoio" does not name it back with "faq: exemplo"`,
+    ]);
+  });
+
+  it("refuses an entry that leaves out its primary lesson's capture pair, or shows a pair the lesson does not", () => {
+    const withPair = primary({ shots: "inicio.exemplo" }, `Clique em **Guardar**.\n\n${PAIR}`);
+    expect(tree({ lesson: withPair }, PNGS).errors).toEqual([
+      `${ENTRY}: its primary lesson "inicio.exemplo" has a capture pair; show it here too, with the same two image lines`,
+    ]);
+    expect(tree({ entry: entry({}, `Clique em **Guardar**.\n\n${PAIR}`) }, PNGS).errors).toEqual([
+      `${ENTRY}: the capture pair is its primary lesson's, and "inicio.exemplo" shows none`,
+    ]);
+  });
+
+  it("refuses a capture of the entry's own, and a capture spec of its own", () => {
+    const own = [
+      "![Exemplo no telemóvel](../../../../apps/web/public/ajuda/perguntas/exemplo-390.png)",
+      "![Exemplo no computador](../../../../apps/web/public/ajuda/perguntas/exemplo-desktop.png)",
+    ].join("\n");
+    const errors = tree({ entry: entry({}, `Clique em **Guardar**.\n\n${own}`) }, ["ajuda/perguntas/exemplo-390.png", "ajuda/perguntas/exemplo-desktop.png"]).errors;
+    expect(errors).toEqual([
+      `${ENTRY}:14: a capture of this entry's primary lesson, inicio.exemplo, is apps/web/public/ajuda/inicio/exemplo-390.png or exemplo-desktop.png, not ../../../../apps/web/public/ajuda/perguntas/exemplo-390.png`,
+      `${ENTRY}:15: a capture of this entry's primary lesson, inicio.exemplo, is apps/web/public/ajuda/inicio/exemplo-390.png or exemplo-desktop.png, not ../../../../apps/web/public/ajuda/perguntas/exemplo-desktop.png`,
+    ]);
+    expect(tree({ entry: entry({ shots: "perguntas.exemplo" }) }).errors).toEqual([
+      `${ENTRY}:9: an FAQ entry has no capture spec of its own; it shows its primary lesson's capture pair`,
+    ]);
+  });
+
+  it("refuses a heading inside an answer, role blocks included", () => {
+    expect(tree({ entry: entry({}, "### Passos\n\nTexto.") }).errors).toEqual([
+      `${ENTRY}:12: an FAQ answer has no heading of its own; the question is its heading`,
+    ]);
+    expect(tree({ entry: entry({}, "Texto.\n\n::: terapeuta\n### Passos\n:::") }).errors).toEqual([
+      `${ENTRY}:15: an FAQ answer has no heading of its own; the question is its heading`,
+    ]);
   });
 });
 
