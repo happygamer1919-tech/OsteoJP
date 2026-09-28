@@ -12,6 +12,7 @@ import {
   getAppointmentNotesAction,
 } from "@/lib/patients/actions";
 import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
+import type { DrawerPreload } from "@/lib/scheduling/drawer-preload";
 import { NotesList } from "@/app/patients/[id]/notes-list";
 
 /**
@@ -37,7 +38,18 @@ import { NotesList } from "@/app/patients/[id]/notes-list";
  * (`getAppointmentNotesAction`, which re-applies the therapist own-patient rule)
  * and re-fetched after every append/edit.
  */
-export function AppointmentNotesBoard({ appointmentId }: { appointmentId: string }) {
+export function AppointmentNotesBoard({
+  appointmentId,
+  preload,
+}: {
+  appointmentId: string;
+  /**
+   * SKEW-01 PR 2: the appointment drawer's loader, which reads the thread the
+   * drawer opens with. Optional: the Marcacoes popup and the patient profile
+   * mount this board on its own, and there it fetches as it always has.
+   */
+  preload?: DrawerPreload | null;
+}) {
   const [notes, setNotes] = useState<PatientNoteRevision[] | null>(null);
   const [composing, setComposing] = useState(false);
   const [text, setText] = useState("");
@@ -67,11 +79,21 @@ export function AppointmentNotesBoard({ appointmentId }: { appointmentId: string
         if (alive && !out.failed) setNotes(out.value.notes);
       });
     }
-    load();
+    // SKEW-01 PR 2: inside the drawer the first read is the loader's. Every
+    // reload after an append, an edit or a delete still calls the action.
+    const covered = preload?.take("notes", appointmentId, {
+      value: (r) => {
+        if (alive) setNotes(r.notes);
+      },
+      fallback: () => {
+        if (alive) load();
+      },
+    });
+    if (!covered) load();
     return () => {
       alive = false;
     };
-  }, [appointmentId]);
+  }, [appointmentId, preload]);
 
   const retryAdd = useLatestCallback(() => onAdd());
   // The board lives in the drawer: a failed note's toast closes with it
