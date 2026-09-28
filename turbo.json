@@ -15,7 +15,8 @@
       "dependsOn": ["^build"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "passThroughEnv": ["GUIDE_FORBIDDEN_NAMES", "GUIDE_NAMES_REQUIRED"]
     },
     "e2e": {
       "dependsOn": ["^build"],

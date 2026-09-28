@@ -1604,6 +1604,7 @@
   "followup.messageHint": "The message opens ready-written in the app on your phone or computer and can be edited before sending.",
   "nav.followup": "Follow-up",
   "nav.comms": "Communications",
+  "nav.help": "Help",
   "comms.sectionsLabel": "Communications sections",
   "remindersLog.nav": "SMS reminders",
   "remindersLog.title": "SMS reminders",
