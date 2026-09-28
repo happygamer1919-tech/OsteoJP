@@ -23,7 +23,7 @@
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
     ".github/scripts/assert-rls-executed.mjs": "c68a19c97815f024a2b83f9ea2cc549d1c57e6d66b51c3456dd32c71e0bddab1",
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
-    ".github/workflows/ci.yml": "f028396c6e981733c8a28cc0cfb5b4aff78479149795e2503a97143e3920464c",
+    ".github/workflows/ci.yml": "c71e1bfc874e91016a6913e01ec961d11d4c930cfcbaef7434237220172b90c3",
     ".github/workflows/db-tests.yml": "33900efba45c91ea1c5337378aecad322edea9c1e2e2626aade1e03d78f24bc0",
     ".github/workflows/e2e.yml": "e4655dae440762161f7b96d95be1661ecf1349da3b16d5e43b04a5cd5d581c81",
     ".github/workflows/held-for-apply-blocks-merge.yml": "1874ed14cdbf61261e0d5da952a78f65828c3f81a179b7b309853054a0b57566",
@@ -59,6 +59,7 @@
     "scripts/gate-freeze.test.mjs": "7ac61bafa7ecab38f9b6b5154fb97c2601e9a0705c9f3385807b543d264a3188",
     "scripts/gate-manifest.mjs": "9919c1942a51c056829ee11472f1179e5fa4649492783a8e63328b5b19a356a3",
     "scripts/guest-intake-article9-guard.test.mjs": "8b0a73c0e96779f35277622e8fbe755c599f66b0a38e450d126b24a7cfbae398",
+    "scripts/guide-content.test.mjs": "c0c58ca66cf653bd2d9d1ca34ac3970828e73d726b1378ac42d57734f6479303",
     "scripts/handover-counts-match-the-render.test.mjs": "416556caff7490c66f1599d5183b3d73d19be92031be642d1045bf1d99dfd9fc",
     "scripts/held-for-apply-blocks-merge.test.mjs": "1cb935eaa057a1d5a9a702941da5f340b9a90d6e19506d761e53a4c06a58de2a",
     "scripts/import/backfill-location-scripts.test.mjs": "bb577b6994ebe4169a62b319fa3c19d0abf91de612623dffeda991f2b2051a8f",
@@ -95,6 +96,6 @@
     "scripts/staff-11-jp-one-clinic-check.test.mjs": "913fbc28904e1febaa79e650f9bc0ba48ad5f6361ca254d937785d6150623a70",
     "scripts/sync-supabase-migrations.mjs": "d11db8715e2dfeade01cfef368e379a8b0e3f45eb9217acd86f8208246d17ad9",
     "scripts/verified-migrate.test.mjs": "fb442f64b4dd16bcc415a191dd32115c64a6218582551b453ecb3271d6fbe79b",
-    "turbo.json": "a08c724210d166922799ce4e08d1662af4b0511603982943a4b650b7b6f8920e"
+    "turbo.json": "6f0b2af36d35b784b2636445008544ad60c0c119cab2b4b12eaf865cc18fa3fd"
   }
 }

@@ -50,7 +50,23 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # THE G1 NAMES LIST (Suporte e Guia, spec item G1-5). The repository is
+      # public, so no committed guide screenshot or fixture may carry a string
+      # from the production names list. The check that reads the list lives in
+      # apps/web/lib/guide/guide-names.test.ts and runs inside `pnpm test`.
+      #
+      # GUIDE_NAMES_REQUIRED makes that check FAIL CLOSED: with it set, a missing
+      # or empty GUIDE_FORBIDDEN_NAMES is a failure, not a skip, because a names
+      # check that read no names has checked nothing. The secret is set by the
+      # owner in the repository settings; a pull request from a fork receives no
+      # secrets and so fails here, which is the intended direction to fail.
+      #
+      # turbo.json passes both variables through to the test task: turbo runs in
+      # strict env mode and would otherwise hide them from vitest.
       - name: Test
+        env:
+          GUIDE_FORBIDDEN_NAMES: ${{ secrets.GUIDE_FORBIDDEN_NAMES }}
+          GUIDE_NAMES_REQUIRED: "1"
         run: pnpm test
 
       # Root-level scripts are not a workspace package, so `turbo run test` never
