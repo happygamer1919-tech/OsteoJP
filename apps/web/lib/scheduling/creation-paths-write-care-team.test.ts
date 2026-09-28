@@ -26,11 +26,12 @@
  *                 runs as the service role with no staff actor, and the owner
  *                 has not ruled whether acceptance adds the therapist.
  *
- * WHAT A "writes" VERDICT DOES NOT PROMISE. The write is owner and reception
- * only, because that is who `patient_care_team_insert` (0091) admits; a
- * therapist's or an admin's booking at the same site skips it. That is a
- * per-ACTOR gap, reported in the PR and pinned in care-team-core.test.ts, not a
- * per-site one, so it is not a verdict here.
+ * WHAT A "writes" VERDICT DOES NOT PROMISE. Which rows are written depends on
+ * the ACTOR, as `patient_care_team_insert` says: owner and reception write
+ * every therapist the booking names; a therapist (since 0098, CARE-02a) writes
+ * their own row only; an admin writes nothing. That is a per-ACTOR rule, pinned
+ * against both migrations in care-team-core.test.ts, not a per-site one, so it
+ * is not a verdict here.
  */
 import fs from "node:fs";
 import path from "node:path";

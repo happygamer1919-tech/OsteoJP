@@ -1,5 +1,5 @@
 import "server-only";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   clinicalEpisodes,
@@ -9,6 +9,7 @@ import {
   users,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { therapistPatientScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
 import { normalizeEpisodeTitle } from "./episode-title";
@@ -55,7 +56,22 @@ export async function createEpisode(
   if (!input.patientId || !title) throw new ClinicalError("invalid");
 
   const ip = await clientIp();
+  // CARE-02a: a therapist opens an episode only for a patient they treat or
+  // created, the narrow scope. clinical_episodes is tenant-only (its narrowing
+  // is the N5 wave) and this function checked nothing about the patient, which
+  // was unreachable from a screen while the ficha of a patient who was not
+  // theirs answered 404. 0098 opens that ficha to the care team for READING, so
+  // the write is held to its old reach here. undefined for every other role.
+  const writeScope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, async (tx) => {
+    if (writeScope) {
+      const [mine] = await tx
+        .select({ id: patients.id })
+        .from(patients)
+        .where(and(eq(patients.id, input.patientId), writeScope))
+        .limit(1);
+      if (!mine) throw new ClinicalError("not_found");
+    }
     const rows = await tx
       .insert(clinicalEpisodes)
       .values({

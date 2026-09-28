@@ -9,7 +9,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
-import { therapistPatientScope } from "@/lib/patients/scope";
+import { therapistPatientScope, therapistRegistoWriteScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
 import { recordDataHash } from "./records";
@@ -181,7 +181,9 @@ export async function claimReviewItem(
           formTemplateId: clinicalRecords.formTemplateId,
         })
         .from(clinicalRecords)
-        .where(eq(clinicalRecords.id, ref.recordId))
+        // CARE-02a: a claim writes, so the source row is read under the
+        // pre-0098 reach (scope.ts therapistRegistoWriteScope).
+        .where(and(eq(clinicalRecords.id, ref.recordId), therapistRegistoWriteScope(ctx)))
         .limit(1);
       const row = rows[0];
       if (!row) throw new ClinicalError("not_found");
@@ -356,7 +358,8 @@ export async function editReviewNarrative(
       })
       .from(clinicalRecords)
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
-      .where(eq(clinicalRecords.id, recordId))
+      // CARE-02a: a write, so the source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
@@ -436,7 +439,8 @@ export async function saveReviewFicha(
         createdAt: clinicalRecords.createdAt,
       })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, recordId))
+      // CARE-02a: a write, so the source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
@@ -525,7 +529,8 @@ export async function finalizeReview(
         dataHash: recordDataHash(),
       })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, recordId))
+      // CARE-02a: a write, so the source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
