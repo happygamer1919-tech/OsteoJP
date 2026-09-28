@@ -2,8 +2,8 @@
 // and it must be exactly what docs/guide/build/gen-guide-data.mjs makes from
 // the lesson files. This test regenerates it in memory through guide-model.mjs
 // and fails when the committed file differs, so a lesson edited without
-// regenerating the JSON fails its own PR. (The PDF half of G1-4 lands with the
-// PDF builder's move to this source, in a later PR.)
+// regenerating the JSON fails its own PR. (The PDF half of G1-4 is
+// guide-pdf.test.ts: the committed PDFs are held to the same source.)
 //
 // The seeded arms copy the source into a temporary tree, change ONE byte, and
 // prove the regeneration no longer matches, naming the lesson that changed.

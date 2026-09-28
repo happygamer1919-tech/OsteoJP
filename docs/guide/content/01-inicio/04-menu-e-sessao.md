@@ -12,7 +12,7 @@ shots: inicio.menu-e-sessao
 O menu lateral leva a cada ecrã da plataforma. No telemóvel, o menu abre-se com o botão de três linhas no canto superior esquerdo.
 
 ::: rececao
-O menu tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Faturação** e **Horários**.
+O menu tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Faturação** e **Horários**. Em **Comunicações** ficam três separadores: **Recuperação**, **Lembretes SMS** e **Respostas SMS**.
 :::
 
 ::: terapeuta
@@ -20,7 +20,7 @@ O menu tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcaçõe
 :::
 
 ::: proprietario
-O menu tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Faturação**, **Revisão Consulta**, **Estatísticas**, **Horários** e **Administração**. Um administrador não tem **Revisão Consulta**.
+O menu tem, por esta ordem, **Início**, **Agenda**, **Pacientes**, **Marcações**, **Comunicações**, **Faturação**, **Revisão Consulta**, **Estatísticas**, **Horários** e **Administração**. Um administrador não tem **Revisão Consulta**. Em **Comunicações** ficam três separadores: **Recuperação**, **Lembretes SMS** e **Respostas SMS**.
 :::
 
 No topo de todas as páginas ficam o sino das **Notificações**, **O meu perfil** e **Terminar sessão**. O número no sino indica as notificações por ler; clique no sino para abrir a página **Notificações**.
