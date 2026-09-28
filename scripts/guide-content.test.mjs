@@ -418,6 +418,17 @@ function lessonsCarryEveryRole(tree) {
   return ROLES.every((role) => tree.published[role] > 0);
 }
 
+/**
+ * THE CHAPTER COUNT RULE, the one expression the count test asserts: at least
+ * three chapter files, or a lesson tree that gives every role a published
+ * lesson. It is a function so that the seeded test below holds each half on
+ * its own; on main the chapter half always holds, so no run of the real test
+ * alone could tell this expression from a looser one.
+ */
+function countRuleHolds(chapterCount, tree) {
+  return chapterCount >= 3 || lessonsCarryEveryRole(tree);
+}
+
 /** The lesson tree for a lesson test, with a VACUOUS diagnostic when there is none. */
 function loadLessonTree(t) {
   loadChapters();
@@ -493,7 +504,7 @@ test('the content directory holds at least three chapter files, or a lesson tree
       `${tree.files.filter((f) => f.kind === 'lesson').length} lessons; published lessons per role: ${perRole}`,
   );
   assert.ok(
-    chapters.length >= 3 || lessonsCarryEveryRole(tree),
+    countRuleHolds(chapters.length, tree),
     `expected a chapter per role (Receção, Terapeuta, Proprietário) in ${shown(CONTENT)}, ` +
       `found ${chapters.length}: ${chapters.map((c) => c.name).join(', ') || '(none)'}; ` +
       `or a lesson tree with a published lesson for each of ${ROLES.join(', ')}, found ${perRole}`,
@@ -823,6 +834,20 @@ function seededTree(edit = () => ({})) {
   }
 }
 
+/** The seeded lesson held from publication, so no role has a published lesson. */
+const holdTheLesson = (tree) => ({
+  [SEED_LESSON]: swap(tree[SEED_LESSON], 'shots: inicio.primeiro-passo\n', 'shots: inicio.primeiro-passo\nhold: GUEST-05\n'),
+});
+
+/** The seeded lesson without terapeuta, in its roles, its order and its role block, so that role has no lesson. */
+const dropTheTherapist = (tree) => ({
+  [SEED_LESSON]: swap(
+    swap(swap(tree[SEED_LESSON], 'roles: rececao, terapeuta, proprietario', 'roles: rececao, proprietario'), 'terapeuta 1, ', ''),
+    '::: terapeuta proprietario',
+    '::: proprietario',
+  ),
+});
+
 test('the lesson checks refuse each seeded offence and pass the clean tree', () => {
   const clean = seededTree();
   assert.equal(clean.files.length, 3, `the reader should find the section, the lesson and the FAQ entry, found ${clean.files.length}`);
@@ -1052,16 +1077,107 @@ test('the lesson checks refuse each seeded offence and pass the clean tree', () 
 
   // The count rule: a held lesson is not published, and a role with no lesson
   // means the tree cannot stand in for the chapters.
-  const held = seededTree(lesson('shots: inicio.primeiro-passo\n', 'shots: inicio.primeiro-passo\nhold: GUEST-05\n'));
+  const held = seededTree(holdTheLesson);
   assert.deepEqual(held.published, { rececao: 0, terapeuta: 0, proprietario: 0 }, 'a held lesson counted as published');
   assert.ok(!lessonsCarryEveryRole(held), 'a tree whose only lesson is held stood in for the chapters');
-  const noTherapist = seededTree((tree) => ({
-    [SEED_LESSON]: swap(
-      swap(swap(tree[SEED_LESSON], 'roles: rececao, terapeuta, proprietario', 'roles: rececao, proprietario'), 'terapeuta 1, ', ''),
-      '::: terapeuta proprietario',
-      '::: proprietario',
-    ),
-  }));
+  const noTherapist = seededTree(dropTheTherapist);
   assert.deepEqual(noTherapist.offences.roleBlocks, [], 'the no-therapist arm should break only the count rule');
   assert.ok(!lessonsCarryEveryRole(noTherapist), 'a tree with no lesson for terapeuta stood in for the chapters');
+});
+
+// The count rule itself, both halves. The real count test reads main's three
+// chapters, so there the chapter half always holds and the lesson half is
+// never needed; these arms are what proves the whole expression in CI. Each
+// green arm holds on ONE half alone, so a rule that dropped either half, or
+// joined them with "and", refuses it; each red arm has neither half, so a
+// rule that lowered the chapter floor or counted a held or missing role
+// passes it.
+test('the chapter count rule holds on either half alone and refuses a guide with neither', () => {
+  const full = seededTree();
+  const none = seededTree((tree) => Object.fromEntries(Object.keys(tree).map((rel) => [rel, null])));
+  const held = seededTree(holdTheLesson);
+  const noTherapist = seededTree(dropTheTherapist);
+  assert.ok(lessonsCarryEveryRole(full), 'the clean seeded tree should give every role a published lesson');
+  assert.equal(none.files.length, 0, `the emptied seeded tree should hold no file, found ${none.files.length}`);
+
+  const arms = [
+    ['three chapters and no lesson tree', 3, none, true],
+    ['no chapter and a lesson tree with a published lesson for every role', 0, full, true],
+    ['two chapters and a lesson tree with a published lesson for every role', 2, full, true],
+    ['two chapters and no lesson tree', 2, none, false],
+    ['no chapter and no lesson tree', 0, none, false],
+    ['two chapters and a lesson tree whose only lesson is held', 2, held, false],
+    ['two chapters and a lesson tree with no lesson for terapeuta', 2, noTherapist, false],
+  ];
+  for (const [what, chapterCount, tree, want] of arms) {
+    assert.equal(countRuleHolds(chapterCount, tree), want, `the count rule ${want ? 'refused' : 'passed'} ${what}`);
+  }
+});
+
+// The count test itself, end to end. The arms above hold the rule; these hold
+// the count test's CALL of it, which they never read. This file runs again in
+// a child process with only the count test selected and GUIDE_DIR on a seeded
+// guide: a guide of lessons alone, with no chapter, must pass it, and a guide
+// of two chapters and no lesson must fail it. Each arm also checks the profile
+// the child printed, so a child that read the repository's own guide instead
+// of the seeded one cannot pass for the wrong reason.
+const COUNT_TEST = 'the content directory holds at least three chapter files, or a lesson tree with a lesson for every role';
+
+/** The seeded tree laid out as <root>/docs/guide/content and <root>/apps/web/public/ajuda, for GUIDE_DIR. */
+function seededGuideDir(tree) {
+  return Object.fromEntries(
+    Object.entries(tree).map(([rel, body]) =>
+      rel.startsWith('ajuda/')
+        ? [`apps/web/public/${rel}`, body]
+        : [`docs/guide/${rel}`, body.replaceAll('](../../ajuda/', '](../../../../apps/web/public/ajuda/')],
+    ),
+  );
+}
+
+/** Runs only the count test of this file on a seeded guide; returns the child's result. */
+function runCountTestOn(files) {
+  const root = mkdtempSync(join(tmpdir(), 'guide-count-'));
+  // A child that inherits NODE_TEST_CONTEXT reports to a parent runner instead
+  // of exiting on its own verdict, so it is dropped.
+  const env = { ...process.env, GUIDE_DIR: join(root, 'docs', 'guide') };
+  delete env.NODE_TEST_CONTEXT;
+  try {
+    for (const [rel, body] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      writeFileSync(join(root, rel), body);
+    }
+    return spawnSync(process.execPath, [`--test-name-pattern=^${COUNT_TEST}$`, fileURLToPath(import.meta.url)], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env,
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('the count test passes a guide of lessons alone and fails a guide of two chapters', () => {
+  const arms = [
+    [
+      'a guide of lessons alone',
+      seededGuideDir(SEED_TREE),
+      'chapters: 0; lesson tree: 3 files, 1 lessons; published lessons per role: rececao 1, terapeuta 1, proprietario 1',
+      'ok',
+      0,
+    ],
+    [
+      'a guide of two chapters',
+      { 'docs/guide/content/01-rececao.md': '# Receção\n', 'docs/guide/content/02-terapeuta.md': '# Terapeuta\n' },
+      'chapters: 2; lesson tree: 0 files, 0 lessons',
+      'not ok',
+      1,
+    ],
+  ];
+  for (const [what, files, profile, verdict, status] of arms) {
+    const run = runCountTestOn(files);
+    const shownRun = `exit ${run.status}\n${run.stdout}${run.stderr}`;
+    assert.ok(run.stdout.includes(`# ${profile}`), `the child did not read ${what}:\n${shownRun}`);
+    assert.match(run.stdout, new RegExp(`^${verdict} \\d+ - ${COUNT_TEST}$`, 'm'), `the count test on ${what}:\n${shownRun}`);
+    assert.equal(run.status, status, `the count test run on ${what} exited ${run.status}, wanted ${status}:\n${shownRun}`);
+  }
 });

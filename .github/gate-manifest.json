@@ -59,7 +59,7 @@
     "scripts/gate-freeze.test.mjs": "7ac61bafa7ecab38f9b6b5154fb97c2601e9a0705c9f3385807b543d264a3188",
     "scripts/gate-manifest.mjs": "9919c1942a51c056829ee11472f1179e5fa4649492783a8e63328b5b19a356a3",
     "scripts/guest-intake-article9-guard.test.mjs": "8b0a73c0e96779f35277622e8fbe755c599f66b0a38e450d126b24a7cfbae398",
-    "scripts/guide-content.test.mjs": "c0c58ca66cf653bd2d9d1ca34ac3970828e73d726b1378ac42d57734f6479303",
+    "scripts/guide-content.test.mjs": "68d46c07bebe3132a64b5087228bea1235d5609cef2b33f0dec54d40dd31cd73",
     "scripts/handover-counts-match-the-render.test.mjs": "416556caff7490c66f1599d5183b3d73d19be92031be642d1045bf1d99dfd9fc",
     "scripts/held-for-apply-blocks-merge.test.mjs": "1cb935eaa057a1d5a9a702941da5f340b9a90d6e19506d761e53a4c06a58de2a",
     "scripts/import/backfill-location-scripts.test.mjs": "bb577b6994ebe4169a62b319fa3c19d0abf91de612623dffeda991f2b2051a8f",
