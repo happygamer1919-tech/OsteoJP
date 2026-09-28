@@ -686,9 +686,11 @@ document as separate agents"), the lane that writes an apply document does not
 rehearse it. The rehearsal agent extracts the five blocks from this document at the
 sha256 its sidecar pins and runs them on a throwaway standing at production's position
 (main's 91 migrations), with the substitutions it counts and names, and records the
-result in PR #1459 under that sha256. If a finding changes one byte of a block, this
-document, its sidecar and GREEN's dispatch move together, and the dispatch's document
-sha256 is refilled.
+result under "The rehearsal of the blocks and the dispatch" at the end of this section.
+If a finding changes one byte of a block, this document, its sidecar and GREEN's
+dispatch move together, and the dispatch's document sha256 is refilled. Recording the
+rehearsal here changes this document's sha256 and no byte of any block, so the dispatch's
+document sha256 is refilled for that reason alone.
 
 **A smoke run of these five blocks, by the document agent, is not that rehearsal.** On
 2026-09-28 the blocks were extracted from this document verbatim, from a commit that
@@ -728,6 +730,133 @@ whose 91 journal hashes were compared with main's one by one:
 | each control broken on purpose (PR #1459's table), then restored | the post-check and the behaviour check each FAIL on the arm named for it; clean again, 18 OK and 14 OK |
 | idempotence | applied three times, the catalogue fingerprint identical after each |
 | packages/db, the two flipped tests, fresh applied database, serial | 1363 of 1363, exit 0; the two flipped suites fail exactly their 2 new assertions without 0094 and pass 121 of 121 with it |
+
+### The rehearsal of the blocks and the dispatch, 2026-09-28
+
+**Run by the rehearsal agent, which wrote neither this document nor the dispatch.** It
+rehearsed the five blocks of this document as it stood at sha256
+`f7bc4e0e488392efe76afd5873c393b7f2996399becee2dc0f34558740d8aded` (commit `f47f0c6d`,
+the branch head), and two blocks of GREEN's dispatch `green-dispatch-0094.txt` (sha256
+`35e539118de7b717dd8f42d08c03e43bbe22d38bb8e066680e0c9dd1df37da6b`, which stays on the
+authoring machine): BEFORE YOU START (its lines 101 to 167) and the CLOCK CHECK (its
+lines 215 to 225). Every run below exited as wanted, and no block changed. This record
+changes no byte of any block: each block's sha256, taken between its fences, is the same
+before this subsection and after it.
+
+| Block | sha256 of its text between the fences |
+|---|---|
+| stage 0 | `82fdf201afb47c1f8ad99d75abb75cc570d7c0d3ffaea92f59880ecc4b1bd1c4` |
+| stage 1 | `f20c93c80f46d84f34bccb3783142339a0f19168fa7f64affe8b3925b24ea0a2` |
+| stage 2 | `3a4fa4308da14d77d5955f7c675c3aab10bf07f37c3c1c0c46557493cc8388ec` |
+| stage 3 | `5c90bdf6db5a372650f5358bc050a3bc1177993b3eb4266f27a41167e17d5f82` |
+| closing read | `245f82196f4a34bd7b34be21feb10d6d7a20ad4a6a6319599c69eaf28bb01bf4` |
+
+**Where it ran.** `t3_0094_prod` on the rehearsal container (Postgres 17.6), built for
+this run and not copied from a template: a database from `template0`, the `auth` schema
+copied schema-only from the container's own `postgres` database, then every migration on
+`origin/main` (`b8c62fd5`, 91 journal entries) applied in journal order with `psql -1`,
+then drizzle's journal written the way drizzle writes it, one row per entry, `hash` the
+file's sha256 and `created_at` its `when`. Its fingerprint equals that of the templates
+`b13a_app_base` and `c9r2_arms_base`, which were built by other means: 91 journal rows
+with one md5 over their hashes in id order, one md5 over every policy, and the same
+count of SECURITY DEFINER functions in `public`. Synthetic staff only: one tenant, its four
+staff roles, eight users (an owner, an inactive admin and an active one, two therapists,
+an inactive receptionist whose id sorts first and an active one, and a shared resource
+with no role).
+
+**How it ran, and how `origin/main` was replaced.** Each block was extracted verbatim,
+substituted, and run under `zsh -f` with a clean environment (`env -i`, with `HOME`,
+`PATH` and `TERM` only), from a detached git worktree of the branch head with its own
+`pnpm install --frozen-lockfile --offline`, so `verified-migrate.mjs` reached drizzle
+through `pnpm --filter @osteojp/db exec` exactly as GREEN's will, and 0094 was applied
+by it, not by hand. **`origin/main` became the branch head this way:** a scratch bare
+repository whose `main` is the branch head stands in for `origin`; each
+`git fetch origin --prune` became a fetch of that repository's `main` into a ref private
+to the worktree, and each `git rev-parse origin/main` reads that ref. Moving the stand-in's
+`main` is a merge landing on GitHub, and the next block's own fetch sees it. The
+substitutions, applied in this order and counted per block:
+
+| Substitution | BEFORE YOU START | stage 0 | CLOCK | stage 1 | stage 2 | stage 3 | closing |
+|---|---|---|---|---|---|---|---|
+| `/tmp/` to a scratch directory, one per sitting | 2 | 6 | 0 | 20 | 12 | 25 | 14 |
+| the `cd` line to the scratch worktree | 1 | 1 | 0 | 1 | 1 | 1 | 1 |
+| `git fetch origin --prune` to the stand-in origin's `main` | 1 | 1 | 0 | 1 | 1 | 1 | 0 |
+| `git rev-parse origin/main` to the worktree's ref | 1 | 1 | 0 | 1 | 1 | 1 | 0 |
+| the environment line to `export DATABASE_URL_DIRECT=` the throwaway | 0 | 0 | 0 | 1 | 1 | 1 | 0 |
+| the target guard to an `echo` naming the throwaway | 0 | 0 | 0 | 1 | 1 | 1 | 0 |
+| the reader's `--env-file` to the throwaway's URL (below) | 1 | 0 | 0 | 0 | 0 | 0 | 1 |
+| `MERGED='<MERGED_SHA>'` to the stand-in merge commit, the branch head | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+After substitution no block named the apply worktree or the secrets directory: the
+extractor refuses to write one that does. **The reader ran byte-identical, as pinned.**
+Its guard refuses a connection string that does not contain the production ref
+somewhere in it (`packages/db/scripts/read-applied-migrations.mjs`, the `url.includes`
+test); the throwaway's URL carried the ref inside its `application_name`, so that test
+passed on a local database and the read ran the pinned bytes. **The target guard ran
+once for real, unsubstituted:** it refuses the throwaway (below).
+
+**The happy path, in GREEN's order, one tenant, by the real clock at Lisbon 01:14 on
+Monday 28 September:**
+
+| Block | Exit | What it printed |
+|---|---|---|
+| BEFORE YOU START | 0 | `main head` the stand-in, `merge commit: on origin/main`, `worktree: clean`, the document, the sidecar and all eight file pins as the dispatch's EXPECT lists them, `Lisbon now: 2026-09-28 01:14`, then the read: `journal rows on production: 91`, 0094 `NOT APPLIED`, `pending on this ref: 1`; the last line |
+| stage 0 | 0 | `docs/migration-apply-0094.md: OK`; `newest journal entry: idx 91, when 1788501500000, tag 0094_users_tenants_roles_policy_split, of 92`; check-journal `92 .sql files match 92 journal entries in order`; `running from origin/main f47f0c6d…`; `0094 PROMOTION, NUMBER AND FILES VERIFIED` |
+| CLOCK CHECK | 0 | `CLOCK: inside the run window. Paste stage 1 now.` |
+| stage 1 | 0 | the same sha twice; the pre-check **21 OK, 0 FAIL**; `behaviour actors: narrowing <id> (reception), manager <id> (admin)`, the ACTIVE receptionist and admin, not the inactive ones whose ids sort first; `pending    1  [0094_users_tenants_roles_policy_split]`; drizzle `exit: 0`; `journal    91 -> 92  (delta 1)`; present by sha256 `yes`; `0094 APPLIED. Paste stage 2 now.` |
+| stage 2 | 0 | `main has not moved since stage 0`; the carry line `journal_before=91` with the throwaway's four other counts and two md5s; the post-check **18 OK**; the FOR THE RECORD table, ten policies; `journal rows before=91 after=92, 0094 present by hash`, newest row `439cb53e…6a6c` at `when` 1788501500000; the last line |
+| stage 3 | 0 | reception **`12 OK / 2 VACUOUS / 0 FAIL`**, admin **`12 OK / 2 VACUOUS / 0 FAIL`**, VACUOUS on 3 and 10 only; the last line |
+| closing read | 0 | `journal rows on production: 92`, 92 files `APPLIED` with 0094 last, `pending on this ref: 0`, `journal rows with no matching file on this ref: 0`, `CLOSING READ: ...` |
+
+**The same sitting on two other shapes, every block exit 0.** Two tenants, and every
+block PASTED, fed on stdin to an interactive `zsh -f -i`: `14 OK / 0 VACUOUS / 0 FAIL`
+for both actors. One tenant with every admin inactive, so the manager actor is the
+owner: reception `12 OK / 2 VACUOUS / 0 FAIL`, owner `11 OK / 3 VACUOUS / 0 FAIL` (3, 10
+and 12), which stage 3's filter allows for an owner and for no one else.
+
+**Every halt, each run for real:**
+
+| Arm | Exit | Halted on | Database after |
+|---|---|---|---|
+| stage 1 on a database where 0094 is applied, in a fresh sitting after stage 0 passed | 1 | the pre-check, **11 OK / 10 FAIL** (1, 2, 3, 4, 5, 7, 8, 10, 12, `journal_rows_before` reading 92), then `STOP: a pre-check verdict read FAIL` | journal 92, nothing applied again; the failed run's transcript in `.new`, no `.out` |
+| `verified-migrate.mjs` itself, run on that database | 3 | `PRECONDITION FAILED: ... ALREADY in drizzle.__drizzle_migrations`, before drizzle | journal 92 |
+| main moved between stage 0 and stage 1 (a commit on top of the head, in the stand-in origin) | 1 | `STOP: main moved since stage 0, the merge freeze was broken.` with both shas, before the environment line and before psql | journal 91, the three `FOR ALL` policies there, no pre-check transcript |
+| stage 0 on a main whose 0094 file has one byte appended | 1 | `STOP: 0094 on disk is not the approved body`, no sha recorded | untouched |
+| stage 0 on a main whose pre-check has one byte appended | 1 | `STOP: the pre-check on disk is not the approved file`, no sha recorded | untouched |
+| stage 0 on a main whose `verified-migrate.mjs` has one byte appended | 1 | `STOP: verified-migrate on disk is not the approved file`, no sha recorded | untouched |
+| stage 0 on a main whose copy of this document has one byte appended, its sidecar not | 1 | `docs/migration-apply-0094.md: FAILED`, then `STOP: this document is not the approved one` | untouched |
+| BEFORE YOU START on each of those four mains | 1 each | the matching `STOP: ... on origin/main is not the approved ...` and `The journal read has not run` | untouched |
+| the CLOCK CHECK at Lisbon Sunday 20:59, Monday 03:00, Monday 12:00, Tuesday 01:00 and Saturday 22:00 | 1 each | the matching `STOP:` | |
+| the CLOCK CHECK at Lisbon Sunday 21:00 and 23:59, Monday 00:00, 01:00 and 02:59 | 0 each | `CLOCK: inside the run window. Paste stage 1 now.` | |
+| BEFORE YOU START at Lisbon Monday 03:00, Sunday 20:59 and Tuesday 01:00 | 1 each | the matching `STOP:` and `The journal read has not run`; no journal transcript written | |
+| BEFORE YOU START at Lisbon Monday 00:00 | 0 | `BEFORE YOU START: every check passed, and the journal reads 91.` | |
+| BEFORE YOU START with `<MERGED_SHA>` still unfilled | 1 | `STOP: MERGED is not a filled-in sha, so this dispatch is NOT READY` | |
+| BEFORE YOU START with a MERGED that is not on main | 1 | `STOP: the merge commit of PR 1459 is not on origin/main` | |
+| stage 1 with the target guard NOT substituted | 2 | the guard: `REFUSING: project ref is "postgres", not the production project.`, before psql | journal 91 |
+| stage 1 with every receptionist and therapist inactive | 1 | the pre-check 21 OK, then `STOP: no active, non-resource reception or therapist user ...` | journal 91 |
+| stage 2, stage 3 and the closing read after stage 0, stage 1 never run | 1 each | `stage 1 did not complete an apply`, `stage 1 recorded no behaviour actors`, `stage 1 left no applied marker` | |
+| stage 0 and stage 1 again after the apply | 1 each | `STOP: stage 1 has ALREADY APPLIED 0094 in this sitting` | journal 92 |
+| main moved AFTER the apply: stage 2, stage 3 and the closing read | 0 each | `MAIN MOVED since stage 0` with both shas; each ran from the recorded sha and passed | |
+
+The clock arms put a `date` on the `PATH` that prints one fixed instant; the blocks call
+`date` by name, and nothing else in them was changed for those arms.
+
+| File, in the rehearsal agent's scratchpad (not committed) | sha256 |
+|---|---|
+| `build-prod91.zsh`, the database at main's 91 migrations | `9660ba0543c4cc5ea0c81c4356a38b157546d270bb0db1f92b18352735ba2107` |
+| `fixture-one-tenant.sql`, the synthetic staff | `bbfdeb2dd5666da5c9e24a9b5b86367f044d2087c485abe6315ddda0ae022226` |
+| `fixture-second-tenant.sql`, the second tenant | `d1a486fd2e8278c81198a249428b42f2f95842c7a902c7a4a6218a8f6933cca7` |
+| `extract.mjs`, the extractor and its counted substitutions, the refill of the dispatch's document sha256 included. The runs above used it before that option was added; without the option the two write the same blocks byte for byte | `60fb754d88adf8017feb7d6a6ed1e20344a9b637bffc378ffd894417cb40e8a0` |
+| `run.zsh`, one block under `zsh -f` | `bd28b5aab55393d7fcb99dd9dfe4f56a632914f49b3310e83a59a9bd0c2fecc2` |
+| `run-i.zsh`, one block pasted into `zsh -f -i` | `bfc41961b743fa390869cf80909970db1ca086a1d9f054c92a555efd10ecfcdf` |
+| `tamper.zsh`, a stand-in main with one byte appended to one file | `f4d3e4c528197e47d526e77bcd31eb72f4fab42cd4450e5880b83baef21659b7` |
+| `fakeclock/date`, the fixed clock | `e307c7f1b8a7f62913c590c6ecec1921e85f9f9d92b398269002f50e1b0f1cb7` |
+
+**The committed tree is the rehearsed tree.** After this subsection and the sidecar were
+committed, the whole sitting ran once more from that commit as the stand-in `main`, with
+the dispatch's document sha256 refilled to this document's (one more counted
+substitution, in BEFORE YOU START only): every block exit 0, reception and admin
+`12 OK / 2 VACUOUS / 0 FAIL`, the closing read 92.
 
 ## What this does NOT do
 
