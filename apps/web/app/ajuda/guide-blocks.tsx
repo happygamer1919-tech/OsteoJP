@@ -88,7 +88,11 @@ function renderBlock(block: GuideViewBlock, key: number, figure: ReactNode): Rea
   }
 }
 
-/** The "Sem imagem" card a lesson shows until its capture exists. */
+/**
+ * The "Sem imagem" card a lesson shows until its capture exists, and an FAQ
+ * entry until its primary lesson's does. Its hint names neither, so it reads
+ * right under both (ajuda-copy.test.ts holds that).
+ */
 export function NoImageCard(): ReactNode {
   return (
     <GlassCard>
@@ -144,7 +148,7 @@ export function GuideBody({ lesson }: { lesson: Pick<GuideViewLesson, "title" | 
   );
 }
 
-/** Section or FAQ text (no capture), already resolved for its viewer. */
+/** A section's own text (no capture), already resolved for its viewer. An FAQ entry is drawn with GuideBody, for its capture pair. */
 export function GuideText({ blocks }: { blocks: GuideViewBlock[] }): ReactNode {
   return <div className="flex flex-col gap-3">{blocks.map((block, i) => renderBlock(block, i, null))}</div>;
 }

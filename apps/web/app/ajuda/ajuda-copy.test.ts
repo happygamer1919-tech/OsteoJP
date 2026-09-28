@@ -64,6 +64,11 @@ describe("the guide.* strings", () => {
     expect(pt["guide.tabFaq"]).toBe("Perguntas frequentes");
     expect(pt["guide.noImage"]!.toLowerCase()).toBe("sem imagem");
   });
+
+  it("the Sem imagem hint names neither a lesson nor a question: the card shows under both", () => {
+    expect(pt["guide.noImageHint"]).not.toMatch(/lição|pergunta/iu);
+    expect(en["guide.noImageHint"]).not.toMatch(/lesson|question/iu);
+  });
 });
 
 describe("the /ajuda source files", () => {

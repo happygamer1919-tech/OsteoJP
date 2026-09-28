@@ -1,16 +1,16 @@
 import Link from "next/link";
-import { BookOpen, MessageCircleQuestion } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import type { Role } from "@osteojp/auth";
 import { EmptyState, GlassPanel } from "@osteojp/ui";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { ajudaTab } from "@/lib/guide/ajuda-tab";
 import { guideFaqFor, guideSectionsFor } from "@/lib/guide/guide";
-import { sectionHref } from "@/lib/guide/guide-routes";
+import { faqAnchor, lessonHref, sectionHref } from "@/lib/guide/guide-routes";
 import { s } from "@/lib/i18n";
 
 import { AjudaTabs } from "./ajuda-tabs.client";
-import { GuideText } from "./guide-blocks";
+import { GuideBody } from "./guide-blocks";
 import { GuideHeader, LINK, LessonList, lessonCount } from "./guide-chrome";
 
 export const metadata = { title: s["guide.title"] };
@@ -94,27 +94,42 @@ function GuidePart({ role }: { role: Role }) {
 }
 
 /**
- * Perguntas frequentes. The entries are written in their own PR; until then
- * every role sees the empty state. An entry, once written, shows its question
- * and its answer for this role (guideFaqFor resolves its role blocks).
+ * Perguntas frequentes: the seven base tasks first, in this role's order (the
+ * "order" key of each file in docs/guide/content/00-perguntas), each for this
+ * role only. Reception and an admin read six (Assinar registo needs
+ * clinical_records:sign), a therapist and the owner read seven.
+ *
+ * NO EMPTY STATE. Every role reads at least six entries, and
+ * lib/guide/guide-roles.test.ts holds each role to its list by hand, so a
+ * role left with none fails there instead of reaching this page.
+ *
+ * Each entry is its question (an h2), the short answer as this role reads it
+ * (guideFaqFor resolves its role blocks), its primary lesson's capture pair or
+ * the "Sem imagem" card, and links to the lessons it names that this role
+ * reads, the primary lesson first. An entry has no page of its own; its id
+ * (pergunta-<slug>) makes it an address a colleague can send.
  */
 function FaqPart({ role }: { role: Role }) {
-  const entries = guideFaqFor(role);
-  if (entries.length === 0) {
-    return (
-      <EmptyState
-        icon={MessageCircleQuestion}
-        title={s["guide.faqEmptyTitle"]}
-        description={s["guide.faqEmptyDescription"]}
-      />
-    );
-  }
-  return entries.map((entry) => (
+  return guideFaqFor(role).map((entry) => (
     <GlassPanel key={entry.id}>
-      <div className="flex flex-col gap-3">
+      <article id={faqAnchor(entry)} data-guide-faq={entry.id} className="flex max-w-3xl scroll-mt-6 flex-col gap-4">
         <h2 className="text-lg font-semibold text-v2-text-primary">{entry.question ?? entry.title}</h2>
-        <GuideText blocks={entry.blocks} />
-      </div>
+        <GuideBody lesson={entry} />
+        {entry.lessons.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-semibold text-v2-text-primary">{s["guide.faqLessonsLabel"]}</p>
+            <ul className="flex flex-col gap-1 text-sm">
+              {entry.lessons.map((lesson) => (
+                <li key={lesson.id}>
+                  <Link href={lessonHref(lesson)} className={LINK} data-guide-faq-lesson={lesson.id}>
+                    {lesson.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </article>
     </GlassPanel>
   ));
 }
