@@ -63,6 +63,9 @@ export const USERS = {
   // W6-04: the Proprietario (owner) user, for owner-only views (Pacientes
   // eliminados, Estatisticas). Log in fresh with E2E_PASSWORD (no storage state).
   owner: "e2e-owner@osteojp.test",
+  // T5b: an admin assigned to Linda-a-Velha ONLY (seed: ensureRevenueAdminScope),
+  // for the revenue-per-clinic spec. Log in fresh with E2E_PASSWORD.
+  adminRevenueLv: "e2e-admin-receita-lv@osteojp.test",
 } as const;
 
 /**

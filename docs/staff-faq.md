@@ -39,7 +39,7 @@ Para a usar: clique em "Assumir" no item que quer rever. Pode editar apenas os c
 
 ## 7. Como emito uma fatura?
 
-Em **Faturação**, o botão "Nova fatura" só aparece quando a integração InvoiceXpress está configurada e ativada para a clínica. `[A CONFIRMAR COM JP]` — qual o processo a seguir para emitir faturas enquanto essa integração não estiver ativada pelo proprietário.
+Nesta versão, a **Faturação** serve só para consultar faturas: não tem botão nem formulário para emitir uma fatura nova. `[A CONFIRMAR COM JP]`: qual o processo a seguir para emitir faturas enquanto a emissão não estiver disponível na plataforma.
 
 ## 8. Como vejo o calendário da semana?
 
