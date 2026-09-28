@@ -49,14 +49,17 @@ test.describe("reception", () => {
   test("F4: reception reaches Respostas SMS from the sidebar and the Comunicações tabs", async ({ page }) => {
     await page.goto("/dashboard");
     await page.getByRole("navigation", { name: SIDEBAR }).getByRole("link", { name: "Comunicações" }).click();
-    await expect(page).toHaveURL(/\/recuperacao/);
+    // Through the /comunicacoes redirect: on a cold dev server that is two route
+    // compiles before the URL settles, which outran the 5s default on a loaded
+    // machine. The wait is longer; the assertion is the same.
+    await expect(page).toHaveURL(/\/recuperacao/, { timeout: 20_000 });
 
     const tabs = page.getByRole("navigation", { name: TABS });
     await tabs.getByRole("link", { name: "Respostas SMS" }).click();
-    await expect(page).toHaveURL(/\/reminders\/review$/);
+    await expect(page).toHaveURL(/\/reminders\/review$/, { timeout: 20_000 });
 
     // The page itself, not a refusal: reception holds sms_replies:read. EXACT and
-    // level 1: with inbound replies off (the local stack, and production today)
+    // level 1: with inbound replies off, as on the local stack,
     // the page also renders the heading "Respostas por rever indisponível".
     await expect(
       page.getByRole("heading", { level: 1, name: "Respostas por rever", exact: true }),
