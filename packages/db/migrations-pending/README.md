@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0089_revoke_truncate_trigger_references.sql` | 0089 | 2026-09-17 | **last in the queue, deliberately.** It only removes three unused privileges from `authenticated`; the migrations that deliver a feature go first. Apply doc: `docs/migration-apply-revoke-truncate-trigger-references.md` |
+| `NEXT-AFTER-0095_revoke_truncate_trigger_references.sql` | `0095` (the conflict check's patient name, #1438). Ruled **`0096`** by the owner on 2026-09-27 (the fourth renumbering; it was `0095` under the 2026-09-22 queue and held as `NEXT-AFTER-0089` until then). At promotion its journal `when` must be strictly greater than `0095`'s. The body names no number, so the rename left it byte-identical (sha256 `fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b`) | 2026-09-17 | `sec/B10-revoke-truncate-trigger-references` (#1397, a DRAFT), held until `0095` is promoted, applied and merged. It only removes three unused privileges from `authenticated`. Apply doc: `docs/migration-apply-revoke-truncate-trigger-references.md` |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
@@ -69,7 +69,7 @@ from a branch name.
 applied to production and merged.
 
 Other branches hold their own pending files that are not listed here, because this
-table is only accurate for the branch you are reading it on. `#1399` carries one.
+table is only accurate for the branch you are reading it on. `#1438` carries one.
 
 ## Promoted
 

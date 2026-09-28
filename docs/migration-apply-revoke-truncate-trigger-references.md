@@ -1,20 +1,19 @@
 # Apply doc - revoke TRUNCATE, TRIGGER, REFERENCES from `authenticated`
 
-**Status: DRAFT. NOT NUMBERED. NOT VALIDATED. DO NOT RUN.**
+**Status: DRAFT. RULED `0096`, NOT YET PROMOTED. NOT VALIDATED. DO NOT RUN.**
 
 The migration lives at
-`packages/db/migrations-pending/NEXT-AFTER-0089_revoke_truncate_trigger_references.sql`
+`packages/db/migrations-pending/NEXT-AFTER-0095_revoke_truncate_trigger_references.sql`
 and carries no number, so `drizzle-kit migrate` cannot see it by construction.
 
-**It is deliberately last in the queue.** Two pending migrations are ahead of it
-and both are about delivering a feature, while this one only removes privileges
-nobody uses:
-
-1. CARE-01's care-team migration (PR #1374),
-2. NESA-NAMES (PR #1390),
-3. this one.
-
-Promoting it out of that order buys nothing and delays two features.
+**Its place in the queue is the owner's, re-ruled on 2026-09-27 (the fourth
+renumbering).** It takes **`0096`**. It follows `0094` the users/tenants role fix
+(#1459) and `0095` the conflict check's patient name (#1438), and `0097` the
+staging index and `0098` CARE-02a follow it. Under the 2026-09-22 queue it was
+`0095`, ahead of the conflict check; that order is superseded. The binding table
+is in `CLAUDE.md` under "SOLO's record". The order first written here (CARE-01
+#1374, then NESA-NAMES #1390, then this) is also superseded: both of those are
+applied and merged, as `0091` and `0090`.
 
 ---
 
