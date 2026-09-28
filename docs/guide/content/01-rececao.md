@@ -4,7 +4,7 @@ A receção gere o dia a dia da clínica na plataforma: marca, muda e cancela co
 
 ## Início
 
-O Início é a primeira página depois de entrar e mostra o resumo do dia na clínica. No topo há três números: **Pacientes ativos** (com os novos desta semana), **Marcações hoje** (as do dia escolhido, sem contar as canceladas) e **Receita (mês)** (a soma das faturas emitidas e pagas no mês corrente). Por baixo ficam os **Acessos rápidos** (**Nova marcação** abre a Agenda de hoje em vista de dia, **Novo paciente** abre o registo e **Ver agenda** abre a Agenda), o gráfico **Resumo semanal** com o número de marcações de cada dia desta semana, a lista **Próximas marcações** (hora, paciente e terapeuta) e o quadro **Notas rápidas**.
+O Início é a primeira página depois de entrar e mostra o resumo do dia na clínica. No topo há três números: **Pacientes ativos** (com os novos desta semana), **Marcações hoje** (as do dia escolhido, sem contar as canceladas) e **Receita (mês)** (a soma das faturas emitidas e pagas no mês corrente, nos locais a que está atribuída). Por baixo ficam os **Acessos rápidos** (**Nova marcação** abre a Agenda de hoje em vista de dia, **Novo paciente** abre o registo e **Ver agenda** abre a Agenda), o gráfico **Resumo semanal** com o número de marcações de cada dia desta semana, a lista **Próximas marcações** (hora, paciente e terapeuta) e o quadro **Notas rápidas**.
 
 ### Como fazer: ver outro dia
 

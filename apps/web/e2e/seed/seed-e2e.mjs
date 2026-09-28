@@ -56,6 +56,18 @@ const USERS = [
   // W6-04: the Proprietario (owner) role, for the owner-only Pacientes eliminados
   // view (and W6-05 Estatisticas). Not a therapist, so never in therapist/equipa lists.
   { slug: "owner", email: "e2e-owner@osteojp.test", fullName: "E2E Owner" },
+  // T5b (revenue per clinic): an admin assigned to Linda-a-Velha ONLY, so the
+  // Inicio revenue tile can be seen held to one clinic. A DEDICATED account,
+  // because "E2E Admin" above has no staff_locations on purpose and many specs
+  // read the unassigned fallback it gives (see nif-required.spec.ts and
+  // patients.spec.ts). Its one assignment is set by ensureRevenueAdminScope.
+  // Logs in fresh with E2E_PASSWORD, like the owner. No other spec uses it.
+  {
+    slug: "adminRevenueLv",
+    roleSlug: "admin",
+    email: "e2e-admin-receita-lv@osteojp.test",
+    fullName: "E2E Admin Receita LV",
+  },
   // A SECOND therapist with ZERO therapist_services (Catarina-Vieira case, W4-01):
   // `roleSlug` is the real role; `slug` is only the unique key for idBySlug.
   {
@@ -892,6 +904,28 @@ async function ensureLocationFixtures(idBySlug) {
   await ensureTherapistServices(idBySlug.therapistInspector);
 }
 
+/**
+ * T5b: the revenue admin's clinic scope is EXACTLY Linda-a-Velha. Any other
+ * assignment it has is removed first, so the spec's "only LV" figure never
+ * depends on what an earlier run or a hand edit left behind.
+ */
+async function ensureRevenueAdminScope(userId) {
+  const { error: pruneErr } = await db
+    .from("staff_locations")
+    .delete()
+    .eq("tenant_id", TENANT_A)
+    .eq("user_id", userId)
+    .neq("location_id", LOCATION_A);
+  must(pruneErr, "prune revenue admin staff_locations");
+  const { error } = await db
+    .from("staff_locations")
+    .upsert(
+      { tenant_id: TENANT_A, user_id: userId, location_id: LOCATION_A },
+      { onConflict: "tenant_id,user_id,location_id" },
+    );
+  must(error, "revenue admin staff_locations (Linda-a-Velha)");
+}
+
 async function ensureBaseData(userIds) {
   must(
     (await db.from("locations").upsert(
@@ -1435,6 +1469,7 @@ async function main() {
   // BEFORE the location fixtures, because it clears the table they write into.
   await resetAvailabilityFixtures(userIds);
   await ensureLocationFixtures(userIds);
+  await ensureRevenueAdminScope(userIds.adminRevenueLv);
   await ensurePortalPatient();
   await ensurePortalTrustedDevice();
   const templates = await ensureFormTemplates();
