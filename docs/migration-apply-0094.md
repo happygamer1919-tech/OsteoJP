@@ -39,7 +39,7 @@ migrations"). The lane that wrote this document never runs it.
 | Must follow | `0093_patient_rgpd_acceptances`: applied to production (journal 90 to 91, sha256 `7a769298…c454`), merged in #1399 |
 | PR | #1459, branch `db/0094-users-tenants-role-policy-split-r6`, labelled `held-for-apply` until the owner takes it off and merges |
 | Runs from | `origin/main`, after #1459 has merged. Stage 0 records the sha `origin/main` resolves to in `/tmp/0094-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stage 1 HALTS if `origin/main` has moved since (the HEAD CHECK, below) |
-| This document | `docs/migration-apply-0094.md`, pinned by `docs/migration-apply-0094.sha256` and asserted by every stage; GREEN's dispatch names its sha256 as well |
+| This document | `docs/migration-apply-0094.md`, pinned by `docs/migration-apply-0094.sha256` and asserted by every stage; GREEN's dispatch pins its sha256 on its own and checks it by machine twice: on the main BEFORE YOU START resolves, and at the sha stage 0 recorded, in the CLOCK CHECK before stage 1 |
 | Pre-check | `scripts/db/precheck-users-tenants-roles.sql`, READ ONLY, 21 verdicts (15 numbered, 6 carries), sha256 `e0fa6a2dfe5237403fe6a3fb8b8782bbe83a9a53d51ed527b431be4b12f82803` |
 | Post-check | `scripts/db/postcheck-users-tenants-roles.sql`, READ ONLY, 18 verdicts, six carries in, sha256 `4c62a07c08afe20aa309a4871006861334d6623f74932d87474f34ec2d3ff729` |
 | Behaviour check | `scripts/db/behaviour-users-tenants-roles-readonly.sql`, READ ONLY, 14 arms and a SUMMARY row, `-v actor_id` required, sha256 `79c135fca96216baaeef03ea825c4a202b0eb6b4eac82329f61c8721160c5852`. Run TWICE in stage 3, as two actors stage 1 chooses READ ONLY |
@@ -51,8 +51,14 @@ migrations"). The lane that wrote this document never runs it.
 own sha256, so the digest lives in `docs/migration-apply-0094.sha256` and every stage
 checks it with `shasum -a 256 -c` before it trusts a pin written here. The sidecar sits
 on the same head as the document, so a main that moved to a new document and a new
-sidecar together would pass that check: GREEN's dispatch names this document's sha256,
-and the HEAD CHECK halts on any moved main before the apply.
+sidecar together would pass that check. **The sidecar alone does not close that, and
+the HEAD CHECK alone does not either:** the HEAD CHECK compares `origin/main` with the
+sha stage 0 recorded, so it cannot see a main that moved BEFORE stage 0 fetched. GREEN's
+dispatch closes it by machine. It pins this document's sha256 on its own; its BEFORE
+YOU START checks that pin against the `origin/main` it resolves and records that head;
+and its CLOCK CHECK, pasted between stage 0 and stage 1, halts before the apply unless
+stage 0 recorded that same head and the document at the recorded sha still hashes to
+the pin. From stage 0 on, the HEAD CHECK halts on any moved main before the apply.
 
 **There is no `#` line inside any block,** every parameter a colon follows is braced,
 there are no backslash continuations and no `!` except `test !`. The blocks are pasted
@@ -526,14 +532,27 @@ echo "0094 VERIFIED AT THE RLS LAYER: ${NSLUG} ${PN}; ${MSLUG} ${PM}. The column
 **EXPECT: `verifying from the recorded sha <sha>`, whether main moved, the two actors
 stage 1 recorded, and for EACH run: its `ACTOR` line naming that actor and role, 14
 verdicts, a SUMMARY row, no FAIL, and VACUOUS only on arms whose comparand a real
-database can legitimately leave empty,** which the block enforces:
+database can legitimately leave empty.** The block admits VACUOUS on the arms below
+and on no other. **Whether each of them IS empty is decided by the behaviour file, not
+by the block:** it counts the rows each arm needs as the connecting role, before it
+takes the actor's claims (`SET LOCAL ROLE authenticated` comes after those counts), and
+tests FAIL first, then VACUOUS, then OK:
 
-- **arms 3 and 10, for both actors,** when the database holds one tenant: there is no
-  other tenant's row to hide (3) and no other tenant's role to name (10). With two or
-  more tenants both read OK;
+- **arm 3, for both actors,** is VACUOUS only when no `users`, `roles` or `tenants` row
+  of another tenant exists (`other_rows = 0`), which is one tenant in the database. With
+  two or more, the other tenant's own `tenants` row makes it OK or FAIL;
+- **arm 10, for both actors,** is VACUOUS only when no staff row could name another
+  tenant's role (`foreign_role_possible` false): one tenant, or other tenants that hold
+  no user and no role. A second tenant that holds either makes it OK or FAIL;
 - **arm 12 as well, for the manager run only when the manager is an owner** (no
   admin qualified) and the database holds one tenant: an owner may give any of its
   tenant's roles, so no candidate of its own tenant is refused.
+
+**The block does not also count tenants, on purpose.** A tenant count would misjudge
+arm 10: a second tenant with no staff and no roles leaves arm 10 legitimately VACUOUS
+while arm 3 reads OK (measured under "Review round 1", below). And if the connecting
+role's counts ever read nothing where rows exist, arm 2, which is never VACUOUS, FAILs,
+because it needs the actor's own tenant to hold users and roles.
 
 **Never VACUOUS: 0, 1, 2, 4, 5, 6, 7, 8, 9, 11, 13,** and 12 for the narrowing actor and
 for an admin. Arms 5 and 6 would be vacuous only in a tenant with fewer than two staff
