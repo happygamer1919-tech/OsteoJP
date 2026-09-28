@@ -10,14 +10,20 @@
 //       record scans what the image shows, without reading pixels. A PNG with
 //       no record, with a record of another PNG, or with a record missing a
 //       frame's form values fails. A file of any other kind fails too: a JPEG,
-//       WebP or SVG there would escape this check and the scan.
+//       WebP or SVG there would escape this check and the scan. A record the
+//       capture tool writes (capture-guide.mjs, textRecord) is one this check
+//       accepts, so the writer and the checker cannot drift apart.
 //   (b) The text records, the lesson source, the capture specs, the guide seed,
-//       the JSON /ajuda renders and the e2e seed are scanned against the
-//       production names list in GUIDE_FORBIDDEN_NAMES (an encoded list of
-//       hashes; docs/guide/build/guide-names.mjs). A hit fails naming the FILE,
-//       the LINE and the line's context hash, never the words. A line whose
+//       the JSON /ajuda renders, the e2e seed and fixtures
+//       (apps/web/e2e/fixtures.ts) and the guide tests' fixture
+//       (guide-test-fixture.ts) are scanned against the production names list
+//       in GUIDE_FORBIDDEN_NAMES (an encoded list of hashes;
+//       docs/guide/build/guide-names.mjs). A hit fails naming the FILE, the
+//       LINE and the line's context hash, never the words. A line whose
 //       context hash is in docs/guide/build/guide-names-waived.txt (a chance
-//       match of the hash, read and waived by a person) does not fail.
+//       match of the hash, read and waived by a person) does not fail. The
+//       log never says how many names the list holds: a verdict carries the
+//       hits only, and the CI log of this public repository is public.
 //   (c) With GUIDE_FORBIDDEN_NAMES empty the scan cannot run. It FAILS when
 //       GUIDE_NAMES_REQUIRED is "1"; otherwise it passes and says, on the
 //       console, that the check is not wired yet. The GATE-CHANGE PR that sets
@@ -60,6 +66,7 @@ import {
   parseWaivers,
   partOf,
 } from "../../../../docs/guide/build/guide-names.mjs";
+import { textRecord } from "../../../../docs/guide/build/capture-guide.mjs";
 
 import { GUIDE_DATA } from "./guide";
 
@@ -163,7 +170,10 @@ function scan(files: string[], list: Set<number>, root: string, waivers: Set<str
   });
 }
 
-type Verdict = { kind: "not wired" } | { kind: "refused"; reason: string } | { kind: "scanned"; names: number; hits: Hit[] };
+// A scanned verdict holds the hits and nothing about the list: not even its
+// size, which the live test would otherwise be tempted to print to the public
+// CI log. A seeded arm pins that shape.
+type Verdict = { kind: "not wired" } | { kind: "refused"; reason: string } | { kind: "scanned"; hits: Hit[] };
 
 /**
  * (b) and (c): what the names check decides for an environment. The live
@@ -179,10 +189,14 @@ function namesCheck(env: Record<string, string | undefined>, files: string[], ro
   }
   const list = new Set(decodeNames(encoded));
   if (list.size === 0) return { kind: "refused", reason: "GUIDE_FORBIDDEN_NAMES decodes to no name" };
-  return { kind: "scanned", names: list.size, hits: scan(files, list, root, waivers) };
+  return { kind: "scanned", hits: scan(files, list, root, waivers) };
 }
 
-/** The files the names check reads (b), each once. */
+/**
+ * The files the names check reads (b), each once. The e2e specs and helpers
+ * are not read: the people they name are the ones fixtures.ts and the e2e
+ * seed create, which are read.
+ */
 function scannedFiles(): string[] {
   const files = [
     ...walk(TEXT_DIR),
@@ -190,7 +204,9 @@ function scannedFiles(): string[] {
     ...walk(join(REPO_ROOT, "docs", "guide", "shots")),
     join(REPO_ROOT, "docs", "guide", "build", "seed-guide.mjs"),
     join(REPO_ROOT, "apps", "web", "lib", "guide", "guide-data.json"),
+    join(REPO_ROOT, "apps", "web", "lib", "guide", "guide-test-fixture.ts"),
     ...walk(join(REPO_ROOT, "apps", "web", "e2e", "seed")),
+    join(REPO_ROOT, "apps", "web", "e2e", "fixtures.ts"),
   ];
   return [...new Set(files)].filter((file) => !file.endsWith(".png"));
 }
@@ -330,6 +346,37 @@ describe("(a) every guide PNG has its text record", () => {
       "text/agenda/notas.md: not a text record (.txt)",
     ]);
   });
+
+  it("seeded: the record capture-guide.mjs writes (textRecord) is exactly the expected text, and this check accepts it", () => {
+    const root = tempDir();
+    const ajuda = join(root, "ajuda");
+    const text = join(root, "text");
+    mkdirSync(join(ajuda, "agenda"), { recursive: true });
+    mkdirSync(join(text, "agenda"), { recursive: true });
+    const png = Buffer.from("bytes standing in for a capture");
+    writeFileSync(join(ajuda, "agenda", "exemplo-desktop.png"), png);
+    // Frame 1: Windows line ends, trailing blanks, a blank field value; frame 2: no form field.
+    const frames = [
+      { text: "Agenda  \r\nMarta Exemplo\t\n\n", values: ["Marta Exemplo ", "   ", "Consulta de osteopatia"] },
+      { text: "Ficha", values: [] },
+    ];
+    const record = textRecord(png, frames);
+    expect(record).toBe(
+      `sha256 ${sha256(png)}\n` +
+        "## frame 1\nAgenda\nMarta Exemplo\n## frame 1 form values\nMarta Exemplo\nConsulta de osteopatia\n" +
+        "## frame 2\nFicha\n## frame 2 form values\n",
+    );
+    writeFileSync(join(text, "agenda", "exemplo-desktop.txt"), record);
+    expect(recordProblems(ajuda, text, root)).toEqual([]);
+    expect(recordSection(record, "## frame 1 form values")).toEqual(["Marta Exemplo", "Consulta de osteopatia"]);
+    expect(recordSection(record, "## frame 2 form values")).toEqual([]);
+
+    // The same frames recorded for other bytes: the image is not the one its record describes.
+    writeFileSync(join(text, "agenda", "exemplo-desktop.txt"), textRecord(Buffer.from("another capture"), frames));
+    expect(recordProblems(ajuda, text, root)).toEqual([
+      "ajuda/agenda/exemplo-desktop.png: its text record text/agenda/exemplo-desktop.txt is of another image",
+    ]);
+  });
 });
 
 describe("(b) and (c) the guide files hold no production name", () => {
@@ -343,7 +390,10 @@ describe("(b) and (c) the guide files hold no production name", () => {
     expect(rel.filter((f) => f.startsWith("docs/guide/content/")).length).toBeGreaterThanOrEqual(66);
     expect(rel).toContain("docs/guide/build/seed-guide.mjs");
     expect(rel).toContain("apps/web/lib/guide/guide-data.json");
+    expect(rel).toContain("apps/web/lib/guide/guide-test-fixture.ts");
     expect(rel).toContain("apps/web/e2e/seed/seed-e2e.mjs");
+    expect(rel).toContain("apps/web/e2e/fixtures.ts");
+    for (const file of files) expect(existsSync(file), relative(REPO_ROOT, file)).toBe(true);
   });
 
   it("scans against GUIDE_FORBIDDEN_NAMES; a hit names the file, the line and its context hash only", () => {
@@ -354,8 +404,11 @@ describe("(b) and (c) the guide files hold no production name", () => {
     }
     expect(verdict.kind, verdict.kind === "refused" ? verdict.reason : "").toBe("scanned");
     if (verdict.kind !== "scanned") return;
-    console.log(`guide names check: ${files.length} files scanned against ${verdict.names} names, ${verdict.hits.length} hit(s), ${waivers.size} waiver(s)`);
+    // Never the list's size: this log is public.
+    console.log(`guide names check: ${files.length} files scanned, ${verdict.hits.length} hit(s), ${waivers.size} waiver(s)`);
     // Only "file:line" and a hash of public text are printed, never the words.
+    // The line itself is public, so a hit still says that a run of words on
+    // it is in the list (README, "The names check").
     expect(
       verdict.hits.length,
       "each line below holds a name from the production list, or matches one by chance. A real name: replace it with an invented one. " +
@@ -455,10 +508,21 @@ describe("(c) seeded: the environment decides, through the function the live tes
   it("a live list holding the planted name: scanned, and the hit is its file and line", () => {
     const env = { GUIDE_NAMES_REQUIRED: "1", GUIDE_FORBIDDEN_NAMES: encodeNames([PLANTED, "Olímpia Registo Fantasma"]) };
     const verdict = namesCheck(env, [file], root, none);
-    expect(verdict.kind).toBe("scanned");
-    if (verdict.kind !== "scanned") return;
-    expect(verdict.names).toBe(2);
-    expect(verdict.hits).toEqual([{ at: "registo.txt:3", context: contextHash(readFileSync(file, "utf8"), 3) }]);
+    expect(verdict).toEqual({ kind: "scanned", hits: [{ at: "registo.txt:3", context: contextHash(readFileSync(file, "utf8"), 3) }] });
+  });
+
+  it("a scanned verdict says nothing about the list: two lists of different sizes give the same verdict, with no size in it", () => {
+    // The live test prints from the verdict to a public log, so the list's
+    // size must not be in it to print.
+    const small = namesCheck({ GUIDE_FORBIDDEN_NAMES: encodeNames([PLANTED]) }, [file], root, none);
+    const large = namesCheck(
+      { GUIDE_FORBIDDEN_NAMES: encodeNames([PLANTED, ...Array.from({ length: 500 }, (_, i) => `Pessoa Sintetica ${i.toString(36)}`)]) },
+      [file],
+      root,
+      none,
+    );
+    expect(small).toEqual(large);
+    expect(Object.keys(small).sort()).toEqual(["hits", "kind"]);
   });
 
   it("a split list, its parts in one variable separated by a space, catches it too", () => {
@@ -470,7 +534,7 @@ describe("(c) seeded: the environment decides, through the function the live tes
 
   it("a live list without the planted name: scanned, no hit", () => {
     const verdict = namesCheck({ GUIDE_NAMES_REQUIRED: "1", GUIDE_FORBIDDEN_NAMES: encodeNames(["Olímpia Registo Fantasma"]) }, [file], root, none);
-    expect(verdict).toEqual({ kind: "scanned", names: 1, hits: [] });
+    expect(verdict).toEqual({ kind: "scanned", hits: [] });
   });
 
   it("a malformed live list throws, and the message does not quote it", () => {
@@ -484,7 +548,7 @@ describe("(c) seeded: the environment decides, through the function the live tes
     // The context is the line's words and the three words after it.
     expect(lineContext(text, 3)).toBe("paciente zacarias producao sintetica ver ficha guardar");
     const waived = parseWaivers(`# a comment\n\n${contextHash(text, 3)}  registo.txt:3, a chance match in this seeded arm\n`);
-    expect(namesCheck(env, [file], root, waived)).toEqual({ kind: "scanned", names: 1, hits: [] });
+    expect(namesCheck(env, [file], root, waived)).toEqual({ kind: "scanned", hits: [] });
 
     // A word after the line, within the three the context covers, changes: the waiver no longer applies.
     const moved = join(root, "registo-mudado.txt");

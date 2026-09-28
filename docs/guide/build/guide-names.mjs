@@ -4,13 +4,21 @@
 // The repository is public, so the production names can never be in it, not
 // even as a test fixture. They reach CI as an ENCODED LIST in the Actions
 // secret GUIDE_FORBIDDEN_NAMES, which the owner builds on his own machine with
-// encode-guide-names.mjs (README, "The names check"). The list holds no name:
-// only the first 4 bytes of the sha256 of each normalized name.
+// encode-guide-names.mjs (README, "The names check"). The list holds no name
+// in clear, only the first 4 bytes of the sha256 of each normalized name, but
+// that does not make it anonymous: whoever holds it can hash a name they
+// suspect and look it up, and at about 13 000 entries a name outside the list
+// matches by chance about 3 times in a million. The list therefore confirms
+// whether a named person is a patient or staff member, and is personal data
+// in all but form: it lives only in the secret, and the check, whose log is
+// public, never prints its size.
 //
 // How a text is checked. Every run of 2 to 4 consecutive words of the text is
 // a candidate; a candidate whose hash is in the list is a hit. The check names
-// the FILE and the LINE of a hit, never the words: a hit on a real name would
-// otherwise print the very fact the check exists to keep private.
+// the FILE and the LINE of a hit, never the words. That does not keep a hit
+// private: the repository and its CI log are public, so "file:line" in the log
+// tells anyone who opens that line that a run of words on it is in the list.
+// Printing the words as well would only make that easier to read.
 //
 // Normalizing, the same on both sides: NFKD, the diacritics stripped, lower
 // case, every character that is not a letter or a digit read as a space,
