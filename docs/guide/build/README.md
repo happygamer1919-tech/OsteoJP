@@ -39,3 +39,24 @@ No dependency of its own. Playwright comes from `apps/web` (`@playwright/test`),
 ```sh
 node --test scripts/guide-content.test.mjs
 ```
+
+## The lesson source (Suporte e Guia)
+
+The guide is moving from the three chapters to short lessons in section folders, one source for `/ajuda` and, in a later PR, for the PDFs. Until then this builder keeps printing the chapters, and the lessons feed only `/ajuda`.
+
+```
+docs/guide/content/NN-<section>/_seccao.md      the section: title, goal, roles, its position per role
+docs/guide/content/NN-<section>/NN-<slug>.md    a lesson
+docs/guide/content/00-perguntas/NN-<slug>.md    an FAQ entry
+```
+
+A lesson file opens with a flat front matter block (a line of three hyphens, one `key: value` per line, a line of three hyphens), then a body in the Markdown subset above that starts with `## <title>`. The keys are a closed set: `id title goal roles order capability screens shots faq question answers see review hold`. `id`, `title`, `roles` and `goal` (`question` in an FAQ entry) are required. `roles` names `rececao`, `terapeuta` and `proprietario`; `order` gives each of them a position (`rececao 1, terapeuta 3, proprietario 2`); `capability` is the `packages/auth` permission the task needs; `hold` keeps a lesson out of `/ajuda`. A line `::: terapeuta` (one or more roles) opens a role block and a line `:::` closes it: only those roles see what is inside. A lesson stays under 200 words, role blocks included. Its capture pair, once it exists, is `apps/web/public/ajuda/<section>/<slug>-390.png` and `<slug>-desktop.png`, on consecutive image lines, with `shots: <id>`.
+
+* `guide-model.mjs` reads and checks the source (every problem with its file and line) and orders it per role. It also holds the dash list, the line lint and the Markdown parser this builder uses, so the chapters and the lessons are read by one parser.
+* `gen-guide-data.mjs` writes `apps/web/lib/guide/guide-data.json`, the data `/ajuda` renders, and refuses to write while the source has a problem. `--check` compares without writing.
+
+```sh
+node docs/guide/build/gen-guide-data.mjs
+```
+
+The JSON is committed. `apps/web/lib/guide/guide-data.test.ts` regenerates it and fails when it differs, so run the command above in the same PR as any lesson change. `guide-roles.test.ts` holds each role to its exact lesson list (an administrator reads the Proprietário lessons whose capability it holds), and `guide-lessons.test.ts` holds every lesson to the word limit, its capture pair, no dashes, and bold terms that quote `packages/i18n/src/strings.pt.json`.
