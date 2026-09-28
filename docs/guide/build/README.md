@@ -59,7 +59,7 @@ A lesson file opens with a flat front matter block (a line of three hyphens, one
 node docs/guide/build/gen-guide-data.mjs
 ```
 
-The JSON is committed. `apps/web/lib/guide/guide-data.test.ts` regenerates it and fails when it differs, so run the command above in the same PR as any lesson change. `guide-roles.test.ts` holds each role to its exact lesson list (an administrator reads the Proprietário lessons whose capability it holds), and `guide-lessons.test.ts` holds every lesson to the word limit, its capture pair, no dashes, and bold terms that quote `packages/i18n/src/strings.pt.json`.
+The JSON is committed. `apps/web/lib/guide/guide-data.test.ts` regenerates it and fails when it differs, so run the command above in the same PR as any lesson change. `guide-roles.test.ts` holds each role to its exact lesson list (an administrator reads the Proprietário lessons whose capability it holds) and to exactly the role blocks written for it (`apps/web/lib/guide/guide.ts` resolves them before the page sees a lesson), and holds a lesson whose page checks something other than its capability to that page's own check. `guide-lessons.test.ts` holds every lesson to the word limit, its capture pair, no dashes, bold terms that quote `packages/i18n/src/strings.pt.json`, and the seven FAQ base tasks to their primary lessons.
 
 ## The screenshots (Suporte e Guia)
 
@@ -97,7 +97,7 @@ The legacy captures under `docs/guide/screens` have no text records; the test li
 
 **The list holds no name.** `guide-names.mjs` normalizes a name (NFKD, no accents, lower case, letters and digits only, single spaces), keeps its first four words (a candidate in a text is a run of 2 to 4 words, so a longer name is found by its first four; a one word name is left out, it could never be found), and keeps the first 4 bytes of its sha256. The list is those numbers sorted, written as gaps in LEB128, compressed with deflate and written in base64 after `v1:`. Measured on 15 000 synthetic names: 55 755 bytes, OVER the 49 152 bytes of one Actions secret; one secret holds about 13 000 names. `encode-guide-names.mjs` refuses a list that does not fit and says how many parts to split it into; `--part k/N` writes one part (by hash range), and the test reads several parts from one variable, separated by spaces.
 
-A 32 bit hash can collide: with N names and U distinct candidate runs in the scanned files, about U x N / 4 294 967 296 runs match by chance. Today U is about 60 000; at 13 000 names that is about 0.2 chance hits, so a first red on wiring may be a collision rather than a name. A hit names the file and line, and the words on that line are either a real name (replace it) or not.
+A 32 bit hash can collide: with N names and U distinct candidate runs in the scanned files, about U x N / 4 294 967 296 runs match by chance. Measured with this PR's captures, U is about 83 500: at 10 000 names that is about 0.19 chance hits, at 13 000 about 0.25, so a first red on wiring may be a collision rather than a name (each later PR adds only its own new runs). A hit names the file and line, and the words on that line are either a real name (replace it) or not.
 
 ### Building the list: OWNER-RUN, never by an agent
 

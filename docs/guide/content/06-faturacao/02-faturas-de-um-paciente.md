@@ -7,6 +7,7 @@ order: rececao 2, terapeuta 1, proprietario 4
 capability: invoices:read
 screens: ficha-paciente
 shots: faturacao.faturas-de-um-paciente
+review: CARE-02a
 ---
 ## Ver as faturas de um paciente
 

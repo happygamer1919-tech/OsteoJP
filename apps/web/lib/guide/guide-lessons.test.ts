@@ -89,8 +89,8 @@ const files = lessonFiles();
 
 describe("the lesson source is there to check", () => {
   // Zero files would pass every check below for the wrong reason.
-  it("reads the 66 files of the nine sections (57 lessons, nine _seccao.md)", () => {
-    expect(files).toHaveLength(66);
+  it("reads the 67 files of the nine sections (58 lessons, nine _seccao.md)", () => {
+    expect(files).toHaveLength(67);
   });
 });
 
@@ -101,7 +101,7 @@ describe("every lesson is under 200 words (G1-7)", () => {
     const over = [...guide.sections, ...guide.lessons, ...guide.faq]
       .filter((item) => item.words >= WORD_LIMIT)
       .map((item) => `${item.file}: ${item.words} words`);
-    expect(guide.lessons.length).toBe(57);
+    expect(guide.lessons.length).toBe(58);
     expect(over).toEqual([]);
     expect(WORD_LIMIT).toBe(200);
   });
@@ -221,5 +221,31 @@ describe("every bold term quotes a UI label from strings.pt.json", () => {
       "x.md:1: **Botão Inventado** is not a strings.pt.json value",
     ]);
     expect(boldProblems("x.md", ["Clique em **Guardar** e depois em **Nova marcação**."])).toEqual([]);
+  });
+});
+
+// G1-2's "Perguntas frequentes, the 7 base tasks first": the seven FAQ entries
+// of the ruled proposal (its table "The seven FAQ entries"), each named by the
+// slug PR 4 gives its file in docs/guide/content/00-perguntas, and each linked
+// from its primary lesson by that lesson's "faq:" key. Once 00-perguntas has
+// files, guide-model.mjs refuses a slug that names none of them.
+const FAQ_BASE_TASKS: Record<string, string> = {
+  "marcar-consulta": "agenda.marcar-consulta",
+  "marcar-em-lote": "agenda.marcar-varias-sessoes",
+  "adicionar-paciente": "pacientes.registar-paciente",
+  "atribuir-pacote": "pacotes.atribuir-pacote",
+  "bloquear-horario": "agenda.bloquear-horario",
+  "concluir-consulta": "agenda.registar-o-estado",
+  "assinar-registo": "registos.assinar-registo",
+};
+
+describe("each of the seven FAQ base tasks is linked from its primary lesson (G1-2)", () => {
+  it("every faq slug in the source is one of the seven, named by exactly its primary lesson", () => {
+    const guide = loadGuide();
+    const namedBy: Record<string, string> = {};
+    for (const lesson of guide.lessons) {
+      for (const slug of lesson.faq) namedBy[slug] = namedBy[slug] ? `${namedBy[slug]}, ${lesson.id}` : lesson.id;
+    }
+    expect(namedBy).toEqual(FAQ_BASE_TASKS);
   });
 });

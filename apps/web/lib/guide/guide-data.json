@@ -2888,7 +2888,9 @@
         }
       ],
       "capability": "patients:write",
-      "faq": [],
+      "faq": [
+        "adicionar-paciente"
+      ],
       "file": "03-pacientes/02-registar-paciente.md",
       "goal": "Criar a ficha de quem vem pela primeira vez, sem duplicar.",
       "id": "pacientes.registar-paciente",
@@ -3023,7 +3025,7 @@
                   "strong": "Registos clínicos"
                 },
                 {
-                  "text": " e o botão "
+                  "text": ". Quem escreve registos clínicos tem ainda o botão "
                 },
                 {
                   "strong": "Novo episódio"
@@ -3132,7 +3134,7 @@
       },
       "order": {
         "proprietario": 3,
-        "rececao": 7,
+        "rececao": 8,
         "terapeuta": 2
       },
       "question": null,
@@ -3149,19 +3151,11 @@
       "see": [],
       "shots": "pacientes.ficha-do-paciente",
       "title": "A ficha do paciente",
-      "words": 162
+      "words": 167
     },
     {
       "answers": [],
       "blocks": [
-        {
-          "spans": [
-            {
-              "text": "Corrigir os dados pessoais:"
-            }
-          ],
-          "type": "para"
-        },
         {
           "items": [
             [
@@ -3183,7 +3177,36 @@
             ],
             [
               {
-                "text": "Corrija o que for preciso e clique em "
+                "text": "Corrija o que for preciso, por exemplo o "
+              },
+              {
+                "strong": "Nome completo"
+              },
+              {
+                "text": ", o "
+              },
+              {
+                "strong": "NIF"
+              },
+              {
+                "text": ", o "
+              },
+              {
+                "strong": "Telemóvel"
+              },
+              {
+                "text": " ou o "
+              },
+              {
+                "strong": "Email"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
               },
               {
                 "strong": "Guardar"
@@ -3200,16 +3223,69 @@
         {
           "spans": [
             {
-              "text": "Atribuir um terapeuta:"
+              "text": "Se trabalhar com mais de uma clínica, pode também corrigir a "
+            },
+            {
+              "strong": "Localização"
+            },
+            {
+              "text": " de um paciente registado na clínica errada. Com uma só clínica, a "
+            },
+            {
+              "strong": "Localização"
+            },
+            {
+              "text": " aparece sem escolha."
             }
           ],
           "type": "para"
         },
         {
+          "type": "figure"
+        }
+      ],
+      "capability": "patients:write",
+      "faq": [],
+      "file": "03-pacientes/04-atualizar-dados.md",
+      "goal": "Corrigir os dados pessoais, os contactos ou a clínica de um paciente.",
+      "id": "pacientes.atualizar-dados",
+      "images": {
+        "desktop": {
+          "alt": "Atualizar os dados de um paciente no computador",
+          "src": "/ajuda/pacientes/atualizar-dados-desktop.png"
+        },
+        "phone": {
+          "alt": "Atualizar os dados de um paciente no telemóvel",
+          "src": "/ajuda/pacientes/atualizar-dados-390.png"
+        }
+      },
+      "order": {
+        "proprietario": 4,
+        "rececao": 4
+      },
+      "question": null,
+      "review": null,
+      "roles": [
+        "rececao",
+        "proprietario"
+      ],
+      "screens": [
+        "ficha-paciente"
+      ],
+      "section": "pacientes",
+      "see": [],
+      "shots": "pacientes.atualizar-dados",
+      "title": "Atualizar os dados de um paciente",
+      "words": 63
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
           "items": [
             [
               {
-                "text": "No separador "
+                "text": "Na ficha, no separador "
               },
               {
                 "strong": "Resumo"
@@ -3271,22 +3347,22 @@
       ],
       "capability": "care_team:manage",
       "faq": [],
-      "file": "03-pacientes/04-atualizar-dados-e-terapeutas.md",
-      "goal": "Corrigir os dados pessoais e dizer quem acompanha o paciente.",
-      "id": "pacientes.atualizar-dados-e-terapeutas",
+      "file": "03-pacientes/05-atribuir-terapeutas.md",
+      "goal": "Dizer quem acompanha o paciente.",
+      "id": "pacientes.atribuir-terapeutas",
       "images": {
         "desktop": {
-          "alt": "Atualizar dados e atribuir terapeutas no computador",
-          "src": "/ajuda/pacientes/atualizar-dados-e-terapeutas-desktop.png"
+          "alt": "Atribuir terapeutas a um paciente no computador",
+          "src": "/ajuda/pacientes/atribuir-terapeutas-desktop.png"
         },
         "phone": {
-          "alt": "Atualizar dados e atribuir terapeutas no telemóvel",
-          "src": "/ajuda/pacientes/atualizar-dados-e-terapeutas-390.png"
+          "alt": "Atribuir terapeutas a um paciente no telemóvel",
+          "src": "/ajuda/pacientes/atribuir-terapeutas-390.png"
         }
       },
       "order": {
-        "proprietario": 4,
-        "rececao": 4
+        "proprietario": 5,
+        "rececao": 5
       },
       "question": null,
       "review": "CARE-02a",
@@ -3299,9 +3375,9 @@
       ],
       "section": "pacientes",
       "see": [],
-      "shots": "pacientes.atualizar-dados-e-terapeutas",
-      "title": "Atualizar dados e atribuir terapeutas",
-      "words": 92
+      "shots": "pacientes.atribuir-terapeutas",
+      "title": "Atribuir terapeutas a um paciente",
+      "words": 69
     },
     {
       "answers": [],
@@ -3535,7 +3611,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
-      "file": "03-pacientes/05-marcacoes-na-ficha.md",
+      "file": "03-pacientes/06-marcacoes-na-ficha.md",
       "goal": "Gerir as marcações de um paciente sem passar pela agenda.",
       "id": "pacientes.marcacoes-na-ficha",
       "images": {
@@ -3549,7 +3625,7 @@
         }
       },
       "order": {
-        "proprietario": 5,
+        "proprietario": 6,
         "rececao": 3,
         "terapeuta": 3
       },
@@ -3764,7 +3840,7 @@
       ],
       "capability": "patients:write",
       "faq": [],
-      "file": "03-pacientes/06-declaracao-e-documentos.md",
+      "file": "03-pacientes/07-declaracao-e-documentos.md",
       "goal": "Imprimir uma declaração e carregar ou retirar um documento.",
       "id": "pacientes.declaracao-e-documentos",
       "images": {
@@ -3778,8 +3854,8 @@
         }
       },
       "order": {
-        "proprietario": 6,
-        "rececao": 5,
+        "proprietario": 7,
+        "rececao": 6,
         "terapeuta": 4
       },
       "question": null,
@@ -3987,13 +4063,13 @@
       ],
       "capability": "followup:read",
       "faq": [],
-      "file": "03-pacientes/07-recuperacao.md",
+      "file": "03-pacientes/08-recuperacao.md",
       "goal": "Usar a lista Recuperação para ligar, escrever ou adiar.",
       "id": "pacientes.recuperacao",
       "images": null,
       "order": {
-        "proprietario": 7,
-        "rececao": 6,
+        "proprietario": 8,
+        "rececao": 7,
         "terapeuta": 6
       },
       "question": null,
@@ -4110,12 +4186,12 @@
       ],
       "capability": "patients:delete",
       "faq": [],
-      "file": "03-pacientes/08-juntar-ficha-duplicada.md",
+      "file": "03-pacientes/09-juntar-ficha-duplicada.md",
       "goal": "Passar o histórico para a ficha que fica.",
       "id": "pacientes.juntar-ficha-duplicada",
       "images": null,
       "order": {
-        "proprietario": 8
+        "proprietario": 9
       },
       "question": null,
       "review": null,
@@ -4269,12 +4345,12 @@
       ],
       "capability": "patients:recover",
       "faq": [],
-      "file": "03-pacientes/09-pacientes-eliminados.md",
+      "file": "03-pacientes/10-pacientes-eliminados.md",
       "goal": "Restaurar, ou eliminar de vez quando é possível.",
       "id": "pacientes.pacientes-eliminados",
       "images": null,
       "order": {
-        "proprietario": 9
+        "proprietario": 10
       },
       "question": null,
       "review": null,
@@ -4591,7 +4667,9 @@
         }
       ],
       "capability": "clinical_records:sign",
-      "faq": [],
+      "faq": [
+        "assinar-registo"
+      ],
       "file": "04-registos/02-assinar-registo.md",
       "goal": "Fechar o registo e, depois disso, corrigir só com uma adenda.",
       "id": "registos.assinar-registo",
@@ -6187,7 +6265,7 @@
           "type": "figure"
         }
       ],
-      "capability": "invoices:read",
+      "capability": "invoices:issue",
       "faq": [],
       "file": "06-faturacao/01-faturas-de-um-periodo.md",
       "goal": "Filtrar por datas, estado e local e abrir uma fatura.",
@@ -6308,7 +6386,7 @@
         "terapeuta": 1
       },
       "question": null,
-      "review": null,
+      "review": "CARE-02a",
       "roles": [
         "rececao",
         "terapeuta",
@@ -9214,7 +9292,7 @@
         "terapeuta": 2
       },
       "question": null,
-      "review": null,
+      "review": "CARE-02a",
       "roles": [
         "rececao",
         "terapeuta",
@@ -9703,7 +9781,8 @@
         "pacientes.encontrar-paciente",
         "pacientes.registar-paciente",
         "pacientes.ficha-do-paciente",
-        "pacientes.atualizar-dados-e-terapeutas",
+        "pacientes.atualizar-dados",
+        "pacientes.atribuir-terapeutas",
         "pacientes.marcacoes-na-ficha",
         "pacientes.declaracao-e-documentos",
         "pacientes.recuperacao",
@@ -9775,7 +9854,8 @@
         "pacientes.encontrar-paciente",
         "pacientes.registar-paciente",
         "pacientes.marcacoes-na-ficha",
-        "pacientes.atualizar-dados-e-terapeutas",
+        "pacientes.atualizar-dados",
+        "pacientes.atribuir-terapeutas",
         "pacientes.declaracao-e-documentos",
         "pacientes.recuperacao",
         "pacientes.ficha-do-paciente",

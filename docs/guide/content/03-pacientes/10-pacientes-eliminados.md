@@ -3,7 +3,7 @@ id: pacientes.pacientes-eliminados
 title: Recuperar um paciente eliminado
 goal: Restaurar, ou eliminar de vez quando é possível.
 roles: proprietario
-order: proprietario 9
+order: proprietario 10
 capability: patients:recover
 screens: admin-pacientes-eliminados
 ---

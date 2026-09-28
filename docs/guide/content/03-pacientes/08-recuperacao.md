@@ -3,7 +3,7 @@ id: pacientes.recuperacao
 title: Contactar quem não voltou
 goal: Usar a lista Recuperação para ligar, escrever ou adiar.
 roles: rececao, terapeuta, proprietario
-order: rececao 6, terapeuta 6, proprietario 7
+order: rececao 7, terapeuta 6, proprietario 8
 capability: followup:read
 screens: recuperacao
 review: CARE-02a
