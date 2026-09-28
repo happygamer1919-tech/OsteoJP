@@ -47,16 +47,6 @@ Sede Exemplo
 Carla Modelo
 Criado por: Rita Exemplo
 10:00-11:00
-Tiago Fictício
-Criado por: Rita Exemplo
-Agendada
-Notas
-Abrir marcação
-Osteopatia
-Sede Exemplo
-Bruno Fictício
-Criado por: Rita Exemplo
-10:00-11:00
 Rui Inventado
 Criado por: Rita Exemplo
 Agendada
@@ -65,6 +55,16 @@ Abrir marcação
 Osteopatia
 Polo Exemplo
 Duarte Inventado
+Criado por: Rita Exemplo
+10:00-11:00
+Tiago Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
 Criado por: Rita Exemplo
 11:00-11:45
 Paulo Exemplo
@@ -117,16 +117,6 @@ Polo Exemplo
 Duarte Inventado
 Criado por: Rita Exemplo
 6 de outubro de 2026
-09:00-10:00
-Beatriz Exemplo
-Criado por: Rita Exemplo
-Agendada
-Notas
-Abrir marcação
-Osteopatia
-Sede Exemplo
-Bruno Fictício
-Criado por: Rita Exemplo
 09:00-09:45
 Hugo Fictício
 Criado por: Rita Exemplo
@@ -136,6 +126,16 @@ Abrir marcação
 Fisioterapia
 Sede Exemplo
 Carla Modelo
+Criado por: Rita Exemplo
+09:00-10:00
+Beatriz Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
 Criado por: Rita Exemplo
 09:30-10:30
 Gonçalo Modelo
@@ -248,16 +248,6 @@ Osteopatia
 Sede Exemplo
 Bruno Fictício
 Criado por: Rita Exemplo
-10:00-11:00
-Rui Inventado
-Criado por: Rita Exemplo
-Agendada
-Notas
-Abrir marcação
-Osteopatia
-Polo Exemplo
-Duarte Inventado
-Criado por: Rita Exemplo
 10:00-10:45
 Vera Inventada
 Criado por: Rita Exemplo
@@ -268,8 +258,28 @@ Fisioterapia
 Sede Exemplo
 Carla Modelo
 Criado por: Rita Exemplo
+10:00-11:00
+Rui Inventado
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
 11:00-12:00
 Beatriz Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+14:00-15:00
+Filipe Inventado
 Criado por: Rita Exemplo
 Agendada
 Notas
@@ -287,16 +297,6 @@ Abrir marcação
 Osteopatia
 Polo Exemplo
 Duarte Inventado
-Criado por: Rita Exemplo
-14:00-15:00
-Filipe Inventado
-Criado por: Rita Exemplo
-Agendada
-Notas
-Abrir marcação
-Osteopatia
-Sede Exemplo
-Bruno Fictício
 Criado por: Rita Exemplo
 15:00-15:45
 Hugo Fictício
@@ -451,3 +451,11 @@ Fisioterapia
 Polo Exemplo
 Carla Modelo
 Criado por: Rita Exemplo
+## frame 1 form values
+05/10/2026
+10/10/2026
+Pesquisar por paciente
+Todas as localizações
+Todos os estados
+Todos os serviços
+Todos os terapeutas

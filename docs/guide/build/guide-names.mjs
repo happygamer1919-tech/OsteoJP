@@ -30,6 +30,16 @@
 //
 // A uint32 is the first 4 bytes of sha256(normalized name), big endian.
 //
+// A CHANCE MATCH. Four bytes can collide: an unrelated run of words (a line
+// of platform copy) can have the hash of a listed name. Copy cannot be
+// renamed, so such a line is WAIVED, by the hash of its context (lineContext:
+// the line's words and the three words after it, one fewer than MAX_RUN,
+// which are every word a candidate starting on that line can hold), listed
+// in guide-names-waived.txt. A waiver
+// covers that exact text: any change to it brings the line back into the
+// check. The context is public text, so its hash reveals nothing, and a hit
+// prints it beside the file and line for exactly this use.
+//
 // Pure ESM, node built-ins only. Nothing runs at import time.
 
 import { createHash } from 'node:crypto';
@@ -215,4 +225,75 @@ export function hitLines(text, list) {
     if (set.has(hash32(candidate.text))) lines.add(candidate.line);
   }
   return [...lines].sort((a, b) => a - b);
+}
+
+/**
+ * The context of a line of a text: the normalized words of that line and the
+ * three words after it (one fewer than MAX_RUN), joined by single spaces,
+ * which are every word a candidate starting on that line can hold. Empty for
+ * a line with no word.
+ */
+export function lineContext(text, line) {
+  return contextOf(wordsWithLines(text), line);
+}
+
+function contextOf(words, line) {
+  const first = words.findIndex((w) => w.line === line);
+  if (first === -1) return '';
+  let last = first;
+  while (last + 1 < words.length && words[last + 1].line === line) last += 1;
+  return words
+    .slice(first, last + MAX_RUN)
+    .map((w) => w.word)
+    .join(' ');
+}
+
+const sha256hex = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+/** The waiver key of a line: the sha256 hex of its lineContext. */
+export function contextHash(text, line) {
+  return sha256hex(lineContext(text, line));
+}
+
+/** The waiver keys of every line of a text that has a word. */
+export function contextHashes(text) {
+  const words = wordsWithLines(text);
+  const out = [];
+  let i = 0;
+  while (i < words.length) {
+    const { line } = words[i];
+    let last = i;
+    while (last + 1 < words.length && words[last + 1].line === line) last += 1;
+    out.push(
+      sha256hex(
+        words
+          .slice(i, last + MAX_RUN)
+          .map((w) => w.word)
+          .join(' '),
+      ),
+    );
+    i = last + 1;
+  }
+  return out;
+}
+
+/**
+ * The waivers of guide-names-waived.txt: one 64 hex digit context hash per
+ * line, then optionally a note after white space; "#" starts a comment and a
+ * blank line is skipped. Throws GuideNamesError naming the line of anything
+ * else, or of a hash listed twice.
+ */
+export function parseWaivers(text) {
+  const out = new Set();
+  String(text)
+    .split(/\r?\n/)
+    .forEach((raw, i) => {
+      const line = raw.replace(/#.*$/, '').trim();
+      if (line === '') return;
+      const match = /^([0-9a-f]{64})(?:\s+\S.*)?$/.exec(line);
+      if (!match) throw new GuideNamesError(`waiver line ${i + 1} is not "<64 hex digits> <note>"`);
+      if (out.has(match[1])) throw new GuideNamesError(`waiver line ${i + 1} repeats a hash`);
+      out.add(match[1]);
+    });
+  return out;
 }

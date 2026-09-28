@@ -27,3 +27,8 @@ Sem faturas no período selecionado
 Ajuste o período selecionado.
 
 Emissão via InvoiceXpress · pagamento via IfThenPay/Stripe
+## frame 1 form values
+01/09/2026
+28/09/2026
+Todos os estados
+Todas as localizações

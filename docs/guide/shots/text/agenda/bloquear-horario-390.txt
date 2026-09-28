@@ -116,6 +116,10 @@ Teresa
 Fisioterapia
 Osteopatia
 Reavaliação
+## frame 1 form values
+Todos os terapeutas
+Todas as localizações
+06/10/2026
 ## frame 2
 RE
 O meu perfil
@@ -304,3 +308,10 @@ Nota (obrigatória)
 Repetir bloqueio
 Cancelar
 Bloquear
+## frame 2 form values
+Todos os terapeutas
+Todas as localizações
+06/10/2026
+Selecionar terapeuta
+dd/mm/aaaa
+Porquê? Ex.: formação, consulta externa, atende em LV

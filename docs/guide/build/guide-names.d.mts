@@ -18,3 +18,7 @@ export function partOf(hashes: number[], part: number, parts: number): number[];
 export function decodeNames(encoded: string): number[];
 export function candidates(text: string): { text: string; line: number }[];
 export function hitLines(text: string, list: Iterable<number> | Set<number>): number[];
+export function lineContext(text: string, line: number): string;
+export function contextHash(text: string, line: number): string;
+export function contextHashes(text: string): string[];
+export function parseWaivers(text: string): Set<string>;

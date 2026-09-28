@@ -44,3 +44,8 @@ Paciente
 Consulta (opcional)
 Nota geral do paciente (sem consulta)
 Guardar
+## frame 1 form values
+06/10/2026
+Procurar paciente…
+Nota geral do paciente (sem consulta)
+Escreva as suas notas…

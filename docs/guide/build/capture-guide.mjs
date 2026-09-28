@@ -18,9 +18,15 @@
 // record's first line is "sha256 <hex of that png>"; then, per frame, a line
 // "## frame N" and the page's visible text at capture time
 // (document.body.innerText, an open dialog included, taken before the
-// annotations are drawn). It is how CI proves what an image shows without
-// reading pixels: apps/web/lib/guide/guide-names.test.ts checks every PNG
-// against its record and scans the records for production names.
+// annotations are drawn), then a line "## frame N form values" and, one per
+// line, what the frame's visible form controls show: the value of each input
+// and textarea (its placeholder when it is empty), and the label of each
+// selected option. innerText leaves those out, so without them a name typed
+// in a form field would be in the image and not in the record. Password,
+// hidden, checkbox, radio and file inputs are left out: none of them shows
+// its value as text. It is how CI proves what an image shows without reading
+// pixels: apps/web/lib/guide/guide-names.test.ts checks every PNG against its
+// record and scans the records for production names.
 //
 // SAFETY. It refuses a base URL whose host is not localhost or 127.0.0.1, so
 // it can never photograph a deployed platform, and it logs in only with the
@@ -555,7 +561,7 @@ async function captureSize(browser, spec, sizeKey, opts, tokens, strings) {
       if (!(frame.do ?? []).some((step) => step.hover)) await page.mouse.move(0, 0);
       await stabilize(page, spec.stabilize ?? []);
       await settle(page);
-      texts.push(await page.evaluate(() => document.body.innerText));
+      texts.push(await page.evaluate(visibleText));
       const shapes = [];
       for (const a of frame.annotate ?? []) {
         const box = await boxOf(page, a.target, strings, vw, vh);
@@ -606,10 +612,40 @@ async function compose(browser, shots, size, t) {
   return png;
 }
 
-/** The text record: the PNG's sha256, then each frame's visible text. */
-export function textRecord(png, texts) {
+// What one frame shows as text, run in the page: the body's innerText, and
+// the values of the visible form controls, which innerText leaves out. A
+// control counts as visible when it has a layout box and is not
+// visibility:hidden (a stabilized clock, the other tree of a two tree page).
+// It is passed to page.evaluate, so it uses nothing from this module.
+export function visibleText() {
+  const SILENT = new Set(['hidden', 'password', 'checkbox', 'radio', 'file', 'range', 'color', 'image']);
+  const values = [];
+  for (const el of document.querySelectorAll('input, textarea, select')) {
+    if (el.getClientRects().length === 0 || getComputedStyle(el).visibility !== 'visible') continue;
+    if (el.tagName === 'SELECT') {
+      for (const option of el.selectedOptions) values.push(option.label);
+      continue;
+    }
+    if (el.tagName === 'INPUT' && SILENT.has(el.type)) continue;
+    const shown = el.value === '' ? el.placeholder ?? '' : el.value;
+    if (shown.trim() !== '') values.push(shown);
+  }
+  return { text: document.body.innerText, values };
+}
+
+const tidy = (text) => text.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trimEnd();
+
+/**
+ * The text record: the PNG's sha256, then per frame its visible text and the
+ * values its form controls show (visibleText). A frame is { text, values }.
+ */
+export function textRecord(png, frames) {
   const sha = createHash('sha256').update(png).digest('hex');
-  const body = texts.map((text, i) => `## frame ${i + 1}\n${text.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trimEnd()}\n`);
+  const body = frames.map(({ text, values }, i) => {
+    const shown = values.map((value) => tidy(value)).filter((value) => value !== '');
+    const fields = shown.length === 0 ? '' : `${shown.join('\n')}\n`;
+    return `## frame ${i + 1}\n${tidy(text)}\n## frame ${i + 1} form values\n${fields}`;
+  });
   return `sha256 ${sha}\n${body.join('')}`;
 }
 
