@@ -4,6 +4,7 @@ import { SkeletonText, SlotPicker, type SlotOption } from "@osteojp/ui";
 import { useEffect, useState } from "react";
 
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
 import { getTherapistDayAvailability } from "@/lib/scheduling/actions";
 import { SLOT_MINUTES, formatTimeOfDay } from "@/lib/scheduling/time";
 import { noFreeReason } from "@/lib/scheduling/day-availability-core";
@@ -47,14 +48,23 @@ export function AvailabilityPanel({
   useEffect(() => {
     if (!therapistId || !date) return;
     let cancelled = false;
-    getTherapistDayAvailability({ therapistId, date, locationId: locationId || null })
-      .then((r) => {
+    // SKEW-01: a failed call still shows this panel's own error line, as the
+    // `.catch` it replaces did; the wrapper adds the toast and its retry.
+    function load() {
+      void runAction(() => getTherapistDayAvailability({ therapistId, date, locationId: locationId || null }), {
+        kind: "read",
+        retry: () => { if (!cancelled) load(); },
+      }).then((out) => {
         if (cancelled) return;
+        if (out.failed) {
+          setResult({ key, status: "error" });
+          return;
+        }
+        const r = out.value;
         setResult(r.ok ? { key, status: "ready", day: r.data } : { key, status: "error" });
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ key, status: "error" });
       });
+    }
+    load();
     return () => {
       cancelled = true;
     };

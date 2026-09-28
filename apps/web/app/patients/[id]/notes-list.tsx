@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { CalendarClock, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
+import { useActionOwner } from "@/lib/actions/use-action-owner";
+import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import { deleteNoteAction, editAppointmentNoteAction } from "@/lib/patients/actions";
 import type { NoteRelation } from "@/lib/patients/note-delete";
 import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
@@ -124,8 +127,14 @@ function NoteItem({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  function onSave(e: React.FormEvent) {
-    e.preventDefault();
+  // SKEW-01: "Tentar novamente" re-runs these handlers as they are now.
+  const retrySave = useLatestCallback(() => onSave());
+  const retryDelete = useLatestCallback(() => onConfirmDelete());
+  // ...and their toasts close with this row (lib/actions/use-action-owner.ts).
+  const actionOwner = useActionOwner();
+
+  function onSave(e?: React.FormEvent) {
+    e?.preventDefault();
     setError(null);
     const content = text.trim();
     if (!content) {
@@ -133,7 +142,13 @@ function NoteItem({
       return;
     }
     startTransition(async () => {
-      const r = await editAppointmentNoteAction(note.id, content);
+      const out = await runAction(() => editAppointmentNoteAction(note.id, content), {
+        kind: "write",
+        retry: retrySave,
+        owner: actionOwner,
+      });
+      if (out.failed) return;
+      const r = out.value;
       if (!r.ok) {
         setError(s["errors.generic"]);
         return;
@@ -156,7 +171,13 @@ function NoteItem({
   function onConfirmDelete() {
     setError(null);
     startTransition(async () => {
-      const r = await deleteNoteAction(note.id, relationOf(note));
+      const out = await runAction(() => deleteNoteAction(note.id, relationOf(note)), {
+        kind: "write",
+        retry: retryDelete,
+        owner: actionOwner,
+      });
+      if (out.failed) return;
+      const r = out.value;
       if (!r.ok) {
         setError(s["errors.generic"]);
         return;

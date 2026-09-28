@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
+import { useActionOwner } from "@/lib/actions/use-action-owner";
+import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import { cloneAppointment } from "@/lib/scheduling/actions";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { outsideClinicHoursMessage } from "@/lib/scheduling/clinic-hours-message";
@@ -105,13 +108,25 @@ export function ScheduleAgainDrawer({
     };
   }
 
-  async function onConfirm() {
+  // SKEW-01: "Tentar novamente" re-runs this handler as it is now, WITHOUT the
+  // conflict override, so the server's conflict check runs again.
+  const retryConfirm = useLatestCallback(() => void onConfirm(false));
+  // ...and its toast closes with this drawer (lib/actions/use-action-owner.ts).
+  const actionOwner = useActionOwner();
+
+  async function onConfirm(allowConflict = !!conflicts) {
     if (!date || !time) return;
     setSubmitting(true);
     setError(null);
     const startsAt = lisbonDateTimeToUtc(date, time).toISOString();
-    const result = await cloneAppointment(source.id, startsAt, !!conflicts);
+    const out = await runAction(() => cloneAppointment(source.id, startsAt, allowConflict), {
+      kind: "write",
+      retry: retryConfirm,
+      owner: actionOwner,
+    });
     setSubmitting(false);
+    if (out.failed) return;
+    const result = out.value;
     if (result.ok) {
       toast({ tone: "success", message: s["patients.scheduleAgainSuccess"] });
       onCreated?.();

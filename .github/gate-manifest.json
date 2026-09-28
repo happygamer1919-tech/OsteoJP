@@ -19,7 +19,7 @@
   ],
   "packageJsonScripts": "3b18e5e01a171db3611efc857e08007e018eb4dc514224fc034c53d61b14804a",
   "files": {
-    ".env.example": "0b60766258d749431e17d72265f6f2f75a6b17a1417d121d6f3e38b32a218fc3",
+    ".env.example": "2bacd7a18283b2d56df5ffa4ba2ae22d50c44d753629a9d803aec628de36032d",
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
     ".github/scripts/assert-rls-executed.mjs": "c68a19c97815f024a2b83f9ea2cc549d1c57e6d66b51c3456dd32c71e0bddab1",
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
@@ -95,6 +95,6 @@
     "scripts/staff-11-jp-one-clinic-check.test.mjs": "913fbc28904e1febaa79e650f9bc0ba48ad5f6361ca254d937785d6150623a70",
     "scripts/sync-supabase-migrations.mjs": "d11db8715e2dfeade01cfef368e379a8b0e3f45eb9217acd86f8208246d17ad9",
     "scripts/verified-migrate.test.mjs": "fb442f64b4dd16bcc415a191dd32115c64a6218582551b453ecb3271d6fbe79b",
-    "turbo.json": "d6afcf574e7e094ed4b1d13ca9b0973ba3c471ae609bbcde579782b92f747f5f"
+    "turbo.json": "a08c724210d166922799ce4e08d1662af4b0511603982943a4b650b7b6f8920e"
   }
 }
