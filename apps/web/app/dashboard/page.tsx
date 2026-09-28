@@ -27,7 +27,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { type ReactNode } from "react";
 
-import type { Capability } from "@osteojp/auth";
+import type { Capability, RequestContext } from "@osteojp/auth";
 
 import { getRequestContext, runScoped } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -45,10 +45,17 @@ import {
   todayInLisbon,
 } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
-import { getMonthlyRevenue, MONTHLY_REVENUE_CAPABILITY } from "@/lib/invoices/queries";
+import {
+  getMonthlyRevenue,
+  listActiveLocations,
+  MONTHLY_REVENUE_CAPABILITY,
+  type LocationOption,
+} from "@/lib/invoices/queries";
+import { canChooseRevenueLocation } from "@/lib/invoices/revenue-scope";
 
 import { DateJump } from "./date-jump";
 import { NotasRapidas } from "./notas-rapidas";
+import { RevenueLocationToggle } from "./revenue-location";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -87,7 +94,55 @@ type Kpi = {
   label: ReactNode;
   value: ReactNode;
   caption?: ReactNode;
+  action?: ReactNode;
 };
+
+/**
+ * T5b: the revenue tile's figure, and the owner's clinic toggle when there is
+ * one to offer.
+ */
+type RevenueTile = {
+  cents: number;
+  /** The owner's toggle: the clinics it lists and the one chosen (null = all). */
+  toggle: { locations: LocationOption[]; value: string | null } | null;
+};
+
+/**
+ * T5b: read the revenue tile. The clinic scope itself is decided inside
+ * getMonthlyRevenue, for every role; this only turns the owner's `?location=`
+ * into a clinic the owner can actually choose.
+ *
+ * OWNER: the requested id is honoured only when it is one of the tenant's
+ * ACTIVE clinics, the list the toggle offers (the same list, and the same
+ * "active only" rule, as the Faturacao location filter). Anything else (a
+ * stale link to a closed clinic, a typo, a non-uuid) falls back to every
+ * clinic, so the control and the figure always name the same thing and a bad
+ * URL never becomes a database error. The toggle is offered only when there is
+ * MORE THAN ONE clinic to choose between: PL-14's rule for every location
+ * control on the platform (lib/auth/location-choice.ts).
+ *
+ * EVERY OTHER ROLE: no toggle and no requested id. getMonthlyRevenue holds an
+ * admin or a receptionist to their own clinics whatever the URL says.
+ */
+async function loadRevenueTile(
+  ctx: RequestContext,
+  requested: string | null,
+  monthStartUtc: Date,
+  monthEndUtc: Date,
+): Promise<RevenueTile> {
+  if (!canChooseRevenueLocation(ctx.role)) {
+    return { cents: await getMonthlyRevenue(ctx, monthStartUtc, monthEndUtc), toggle: null };
+  }
+  const locations = await listActiveLocations(ctx);
+  // One clinic or none: nothing to choose, so no toggle, and no hand-typed
+  // `?location=` narrows a figure the page offers no control for.
+  if (locations.length < 2) {
+    return { cents: await getMonthlyRevenue(ctx, monthStartUtc, monthEndUtc), toggle: null };
+  }
+  const value = requested && locations.some((l) => l.id === requested) ? requested : null;
+  const cents = await getMonthlyRevenue(ctx, monthStartUtc, monthEndUtc, { locationId: value });
+  return { cents, toggle: { locations, value } };
+}
 
 /**
  * DASH-THERAPIST-REVENUE: the KPI row as it was before the revenue gate. Every
@@ -132,6 +187,10 @@ export default async function DashboardPage({
   const raw = Array.isArray(sp.date) ? sp.date[0] : sp.date;
   const today = todayInLisbon();
   const date = raw && DATE_RE.test(raw) ? raw : today;
+  // T5b: the owner's clinic choice for the revenue tile. Read for every role
+  // and honoured only for the owner (loadRevenueTile, then getMonthlyRevenue).
+  const rawLocation = Array.isArray(sp.location) ? sp.location[0] : sp.location;
+  const requestedLocation = rawLocation ? rawLocation : null;
 
   const now = new Date();
   const greeting = s[greetingKey(lisbonParts(now).hour)];
@@ -186,10 +245,12 @@ export default async function DashboardPage({
               .where(gte(clinicalRecords.createdAt, weekStartUtc)),
           )
         : Promise.resolve([] as Array<{ count: number }>),
-      // 4. Monthly revenue (DASH-THERAPIST-REVENUE: never read without the capability)
+      // 4. Monthly revenue (DASH-THERAPIST-REVENUE: never read without the
+      //    capability; T5b: held to the viewer's clinics inside getMonthlyRevenue)
       canRevenue
-        ? getMonthlyRevenue(
+        ? loadRevenueTile(
             ctx,
+            requestedLocation,
             lisbonMidnightUtc(mStart),
             lisbonMidnightUtc(addMonths(mStart, 1)),
           )
@@ -236,9 +297,25 @@ export default async function DashboardPage({
   // KPI 4: Receita (mês), sum of issued + paid invoices for the current month.
   // Only built for a role holding the capability; for any other role there is
   // no figure, no tile and no "Sem dados" either.
-  const monthRevenueCents = revenueResult.status === "fulfilled" ? revenueResult.value : null;
+  const revenueTile = revenueResult.status === "fulfilled" ? revenueResult.value : null;
   const revenueDisplay =
-    monthRevenueCents !== null ? formatEur(monthRevenueCents) : s["dashboard.kpiNoData"];
+    revenueTile !== null ? formatEur(revenueTile.cents) : s["dashboard.kpiNoData"];
+  // T5b: the owner's clinic toggle, under the figure. Only loadRevenueTile
+  // builds one, and only for the owner.
+  const revenueToggle = revenueTile?.toggle ? (
+    <RevenueLocationToggle
+      locations={revenueTile.toggle.locations}
+      value={revenueTile.toggle.value}
+      date={raw && DATE_RE.test(raw) ? raw : null}
+    />
+  ) : undefined;
+  // The chosen clinic rides along on the day navigation, so moving the day
+  // does not quietly put the owner's figure back on every clinic.
+  const chosenLocation = revenueTile?.toggle?.value ?? null;
+  const dayHref = (d: string) =>
+    chosenLocation
+      ? `/dashboard?date=${d}&location=${encodeURIComponent(chosenLocation)}`
+      : `/dashboard?date=${d}`;
 
   const kpis: Kpi[] = [
     { key: "patients", accent: "green", icon: <Users size={20} strokeWidth={1.75} />, label: s["dashboard.kpiActivePatients"], value: countResult.status === "rejected" ? s["dashboard.kpiNoData"] : patientCount, caption: patientsCaption },
@@ -249,7 +326,7 @@ export default async function DashboardPage({
       ? [{ key: "records", accent: "lavender", icon: <ClipboardList size={20} strokeWidth={1.75} />, label: s["dashboard.kpiNewRecords"], value: recResult.status === "rejected" ? s["dashboard.kpiNoData"] : newRecords, caption: s["dashboard.kpiThisWeek"] } satisfies Kpi]
       : []),
     ...(canRevenue
-      ? [{ key: "revenue", accent: "gold", icon: <TrendingUp size={20} strokeWidth={1.75} />, label: s["dashboard.kpiRevenue"], value: revenueDisplay } satisfies Kpi]
+      ? [{ key: "revenue", accent: "gold", icon: <TrendingUp size={20} strokeWidth={1.75} />, label: s["dashboard.kpiRevenue"], value: revenueDisplay, action: revenueToggle } satisfies Kpi]
       : []),
   ];
   // Roles shown the revenue tile keep the row they had (KPI_GRID_WITH_REVENUE).
@@ -341,14 +418,14 @@ export default async function DashboardPage({
             99px at 360 for a date about 80px wide. At 640 and up nothing
             changes. */}
         <div data-testid="dashboard-date-nav" className="flex items-center gap-2 max-sm:min-w-0">
-          <Link href={`/dashboard?date=${addDays(date, -1)}`} aria-label={s["dashboard.prevDay"]} className={iconNav}>
+          <Link href={dayHref(addDays(date, -1))} aria-label={s["dashboard.prevDay"]} className={iconNav}>
             <ChevronLeft size={20} strokeWidth={1.75} aria-hidden="true" />
           </Link>
-          <DateJump date={date} label={s["dashboard.pickDate"]} />
-          <Link href={`/dashboard?date=${today}`} className={ghostNav}>
+          <DateJump date={date} label={s["dashboard.pickDate"]} location={chosenLocation} />
+          <Link href={dayHref(today)} className={ghostNav}>
             {s["agenda.today"]}
           </Link>
-          <Link href={`/dashboard?date=${addDays(date, 1)}`} aria-label={s["dashboard.nextDay"]} className={iconNav}>
+          <Link href={dayHref(addDays(date, 1))} aria-label={s["dashboard.nextDay"]} className={iconNav}>
             <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" />
           </Link>
         </div>
@@ -365,6 +442,7 @@ export default async function DashboardPage({
             label={k.label}
             value={k.value}
             caption={k.caption}
+            action={k.action}
             className={i === kpis.length - 1 ? lastKpiSpan : undefined}
           />
         ))}

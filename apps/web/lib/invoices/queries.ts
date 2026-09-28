@@ -3,6 +3,8 @@ import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { assertCan, type Capability, type RequestContext } from "@osteojp/auth";
 import { appointments, invoices, locations, patients } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { revenueLocations } from "./revenue-scope";
 
 /**
  * DASH-THERAPIST-REVENUE: who may read the clinic's monthly revenue.
@@ -32,23 +34,55 @@ export const MONTHLY_REVENUE_CAPABILITY = "invoices:issue" satisfies Capability;
  * therapist the whole clinic's total; this assertion is the only thing between
  * any caller and that figure, which is why it lives here and not only on the
  * dashboard page.
+ *
+ * T5b, REVENUE PER CLINIC, AND THE SCOPE IS DECIDED HERE, NOT BY THE CALLER.
+ * The invoices RLS is tenant-wide, so a location scope a page forgot to pass
+ * would be a whole-tenant figure. So this function resolves the caller's own
+ * clinics itself (`viewerLocationScope`) and `revenueLocations` turns role,
+ * scope and the owner's choice into the one location list the sum is held to.
+ * `options.locationId` is the owner's toggle and nothing else: for an admin or
+ * a receptionist it is ignored, never intersected, never honoured.
+ *
+ * AN INVOICE BELONGS TO THE CLINIC OF ITS MARCACAO. `invoices` has no
+ * location column; the clinic is `appointments.location_id` through the
+ * nullable `invoices.appointment_id`, the same link `/invoicing`'s location
+ * filter (listInvoices below) and the owner's Estatisticas (`getStatistics`,
+ * lib/statistics/queries.ts, whose PL-09 scope this mirrors) already use. So:
+ *   - a whole-tenant figure (`null`) keeps every invoice, linked or not. The
+ *     LEFT JOIN is on the appointment's primary key, so it neither drops nor
+ *     repeats an invoice, and the owner's default figure is the one the tile
+ *     showed before T5b;
+ *   - a clinic figure holds only invoices whose marcacao is at one of those
+ *     clinics. An invoice with no marcacao has no clinic and is in no clinic's
+ *     figure, exactly as it is in no clinic on /invoicing.
+ * The appointments RLS runs inside the join as well, as defense in depth: an
+ * admin's join cannot reach a marcacao at a clinic they are not assigned to,
+ * except one they created themselves, and the explicit `location_id` condition
+ * below excludes that one too.
  */
 export async function getMonthlyRevenue(
   ctx: RequestContext,
   monthStartUtc: Date,
   monthEndUtc: Date,
+  options: { locationId?: string | null } = {},
 ): Promise<number> {
   assertCan(ctx.role, MONTHLY_REVENUE_CAPABILITY);
+  const scope = revenueLocations(ctx.role, await viewerLocationScope(ctx), options.locationId ?? null);
+  // No clinic at all: nothing to sum, and no read to make. `inArray` over an
+  // empty list is never true anyway; this says so without a round trip.
+  if (scope !== null && scope.length === 0) return 0;
   const rows = await runScoped(ctx, (tx) =>
     tx
       .select({ total: sql<number>`coalesce(sum(${invoices.amountCents}), 0)::int` })
       .from(invoices)
+      .leftJoin(appointments, eq(appointments.id, invoices.appointmentId))
       .where(
         and(
           inArray(invoices.status, ["issued", "paid"]),
           isNotNull(invoices.issuedAt),
           gte(invoices.issuedAt, monthStartUtc),
           lt(invoices.issuedAt, monthEndUtc),
+          scope ? inArray(appointments.locationId, [...scope]) : undefined,
         ),
       ),
   );
