@@ -627,7 +627,8 @@ no vacuous branch.
 
 **The profile is printed, not asserted exactly,** because it moves with the data (which
 tenants exist, and which staff and roles each holds). On the rehearsal, with 0094 applied: **`12 OK / 2 VACUOUS / 0 FAIL`** (3
-and 10) for reception, therapist and admin actors with one tenant, **`14 OK / 0 VACUOUS / 0 FAIL`**
+and 10) for reception, therapist and admin actors with one tenant (the therapist rows
+measured in review round 2, below), **`14 OK / 0 VACUOUS / 0 FAIL`**
 with two, and **`11 OK / 3 VACUOUS / 0 FAIL`** (3, 10 and 12) for an owner with one.
 Only a pass writes `/tmp/0094-stage3.ok`, the recorded sha, just before the last line;
 the block removes it before anything else, so a stage 3 that stops leaves no mark, and
@@ -955,7 +956,7 @@ review round 1, below, refilled it.
 ### Review round 1, 2026-09-28: what changed, and the runs that measured it
 
 **No byte of any block changed in round 1.** Each block's sha256 between its fences was
-still the one in the table above; round 2, below, changed four blocks. What round 1 changed:
+still the one in the table above; round 2, below, changed all five. What round 1 changed:
 
 - **the branch carries `origin/main` at `b8c62fd5`** (#1466, the owner's fourth
   renumbering). The one conflict, `packages/db/migrations-pending/README.md`, resolves
@@ -1045,6 +1046,138 @@ promoted journal or the two flipped suites.
 This subsection, the arm 12 wording and the arm table were written after these runs,
 and none of them is a byte of a block. They move this document's sha256 away from
 `fa4bf04d…659d`, and the dispatch carries the committed one.
+
+### Review round 2, 2026-09-28: what changed, and the runs that measured it
+
+**All five blocks changed, and both of the dispatch's.** What changed:
+
+- **check-journal is pinned.** Stage 0 asserts `scripts/check-journal.mjs` by sha256
+  (`7f89e49a…6c59`) before it runs it, and BEFORE YOU START asserts it on `origin/main`.
+  The fact table says what stays unpinned, and why;
+- **the run window is checked by machine in every block from stage 1 on.** The CLOCK
+  CHECK records it for the recorded sha in `/tmp/0094-window.ok`; stage 1 checks it at
+  its start and again after the pre-check, before the apply; stages 2 and 3 and the
+  closing read refuse at or after its end; stage 0 removes the record. This document
+  still carries no date;
+- **stage 3 needs stage 2's pass:** the applied marker, and stage 2's pass mark naming
+  the recorded sha and newer than that marker, before any connection;
+- **GREEN's dispatch.** BEFORE YOU START requires `origin/main` to BE #1459's merge
+  commit (round 1 required only that it contain it); the NOT READY lines add SOLO's step
+  to disarm auto-merge on the armed PRs before #1459 merges, and the freeze starts at
+  that merge. The window is stated in each of its two blocks as `WOPEN`, `WSTART` and
+  `WEND`;
+- **the one-tenant profile for a therapist,** measured below.
+
+**Where it ran.** `t3_fix_r2_one` on the rehearsal container, built as round 1's
+database was (from `template0`, the `auth` schema copied schema-only, the 91 migrations
+of `b8c62fd5` in journal order with `psql -1`, drizzle's journal seeded by file sha256),
+with the same synthetic one-tenant fixture. Its fingerprint equals `b13a_app_base`'s and
+`c9r2_arms_base`'s: one md5 over the 91 journal hashes in id order, one md5 over every
+policy, 26 SECURITY DEFINER functions in `public`. Variants, each a copy: the second
+tenant added; the active receptionist made inactive; the active admin made inactive;
+every receptionist and therapist inactive. Each run had its own copy. The blocks ran
+from a new detached worktree of `831fb515` (this document at sha256 `e0e5a05c…8623`,
+pinned by that commit's sidecar), with its own offline frozen-lockfile install, and a
+scratch bare repository whose `main` is that commit stood in for `origin`. The dispatch
+ran at sha256 `c2d9e17a…e0e5`, its document sha256 already filled with
+`e0e5a05c…8623`. The substitutions are round 1's, counted:
+
+| Substitution | BEFORE YOU START | stage 0 | CLOCK | stage 1 | stage 2 | stage 3 | closing |
+|---|---|---|---|---|---|---|---|
+| `/tmp/` to a scratch directory, one per sitting | 5 | 7 | 9 | 25 | 15 | 33 | 17 |
+| the `cd` line to the scratch worktree | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| `git fetch origin --prune` to the stand-in origin's `main` | 1 | 1 | 0 | 1 | 1 | 1 | 0 |
+| `git rev-parse origin/main` to the worktree's ref | 1 | 1 | 0 | 1 | 1 | 1 | 0 |
+| the environment line to `export DATABASE_URL_DIRECT=` the throwaway | 0 | 0 | 0 | 1 | 1 | 1 | 0 |
+| the target guard to an `echo` naming the throwaway | 0 | 0 | 0 | 1 | 1 | 1 | 0 |
+| the reader's `--env-file` to the throwaway's URL | 1 | 0 | 0 | 0 | 0 | 0 | 1 |
+| `MERGED='<MERGED_SHA>'` to the stand-in merge commit | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+| Block | sha256 of its text between the fences, round 2 |
+|---|---|
+| stage 0 | `d7236d94b49289f35a94f9991b5f2255783863fe28d8856ceb82de82c117c9b2` |
+| stage 1 | `98a1358c81d52df758bf6b9f9b492c88569c214481ce216924408de77d09c39d` |
+| stage 2 | `3f161231f9a3f27ce47c61c70f3e54fae86b42108998b3b55f30ab1421110304` |
+| stage 3 | `cfbb97115d8c43a6c45f598bf8462b5c44443403e4a525e3b08f469b9ba8c35a` |
+| closing read | `af467dd9ff6fca6c1c5eb4a6ce27af801b40c3aa071906e6852d182eb8d797bd` |
+
+**The happy path, one tenant, the fixed clock at Lisbon Monday 01:30 for BEFORE YOU
+START and moving on a minute or two per block:**
+
+| Block | Exit | What it printed |
+|---|---|---|
+| BEFORE YOU START | 0 | `merge commit: origin/main IS the merge commit of PR 1459`; the document, the sidecar and all eight file pins, `check-journal: 7f89e49a…6c59` among them; `Lisbon now:   202609280130`; `journal rows on production: 91`, 0094 `NOT APPLIED`, `pending on this ref: 1`; the head recorded; the last line |
+| stage 0 | 0 | `docs/migration-apply-0094.md: OK`; the newest journal entry, idx 91, of 92; check-journal `92 .sql files match 92 journal entries`; `running from origin/main 831fb515…`; the last line |
+| CLOCK CHECK | 0 | the same sha twice; `document at the recorded sha: e0e5a05c…8623`; `run window recorded in .../0094-window.ok: 831fb515… 202609272100 202609280229 202609280300`; the last line |
+| stage 1 | 0 | the same sha twice; `run window, ... now 202609280133`; the pre-check **21 OK**; the active reception and admin; `run window, again before the apply: now 202609280133`; `pending    1`; drizzle `exit: 0`; `journal    91 -> 92  (delta 1)`; `0094 APPLIED. Paste stage 2 now.` |
+| stage 2 | 0 | `run window, ... now 202609280135`; the post-check **18 OK**; `journal rows before=91 after=92, 0094 present by hash`; the last line |
+| stage 3 | 0 | stage 2's pass mark accepted; `now 202609280136`; reception and admin **`12 OK / 2 VACUOUS / 0 FAIL`**, VACUOUS on 3 and 10 only |
+| closing read | 0 | `now 202609280137`; `journal rows on production: 92`, 92 files `APPLIED`, `pending on this ref: 0`, `journal rows with no matching file on this ref: 0`, `CLOSING READ: ...` |
+
+**Three other shapes, every block exit 0.** Two tenants, every block pasted into
+`zsh -f -i`: reception and admin `14 OK / 0 VACUOUS / 0 FAIL`, the closing read 92. One
+tenant with the active receptionist inactive: stage 1 chose the lower-id active
+therapist and the admin, and stage 3 read therapist `12 OK / 2 VACUOUS / 0 FAIL` and
+admin `12 OK / 2 VACUOUS / 0 FAIL`. One tenant with the active admin inactive: reception
+`12 OK / 2 VACUOUS / 0 FAIL`, owner `11 OK / 3 VACUOUS / 0 FAIL` (3, 10 and 12).
+**The therapist rows:** after the happy path, the behaviour file run directly as each of
+the two active therapists read `12 OK / 2 VACUOUS / 0 FAIL`, VACUOUS on 3 and 10.
+
+**Every halt, each run for real:**
+
+| Arm | Exit | Halted on | Database after |
+|---|---|---|---|
+| stage 1 after BEFORE YOU START and stage 0, the CLOCK CHECK never pasted | 1 | `STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0.`, before the environment line | journal 91, no pre-check transcript |
+| the CLOCK CHECK at 02:29, stage 1 at 02:30 | 0, 1 | `STOP: Lisbon 202609280230 is past 202609280229, the last minute the run window lets stage 1 start.`, before the environment line | journal 91 |
+| the CLOCK CHECK at Sunday 21:00, stage 1 at 20:59 | 0, 1 | `STOP: Lisbon 202609272059 is before the run window opens at 202609272100.` | journal 91 |
+| stage 1 whose clock reads 02:29 at its start and 02:30 after the pre-check | 1 | the pre-check 21 OK and both actors, then `STOP: Lisbon 202609280230 is past 202609280229 after the pre-check, so the apply does not start.` | journal 91; the run's `.new` files kept, no `.out` |
+| the run window record rewritten to name another sha | 1 | `STOP: the run window was recorded for b8c62fd5…, not for the sha stage 0 recorded.` | journal 91 |
+| stage 0 pasted again after the CLOCK CHECK, then stage 1 | 0, 1 | stage 0 removed the record; stage 1 `recorded no run window` | journal 91 |
+| stage 2 at Monday 03:00, after an apply at 01:33 | 1 | `STOP: Lisbon 202609280300 is at or past 202609280300, the end of the run window. The write stands; ...`, before the environment line; no post-check, no pass mark | journal 92 |
+| stage 3 pasted after that stage 2 STOP, which the halt rule forbids | 1 | `STOP: stage 2 left no pass mark, so it did not pass. Stage 3 has not run`, before the environment line; no behaviour transcript | journal 92 |
+| the closing read after it | 1 | `STOP: stage 2 left no pass mark. The journal read has not run` | |
+| stage 2 at 02:59, stage 3 at 03:00 | 0, 1 | stage 3's run window STOP, no behaviour run and no pass mark; the closing read then `stage 3 left no pass mark` | |
+| stage 3 at 02:59:59, the closing read at 03:00 | 0, 1 | the run window STOP, `The journal read has not run`, no journal transcript; the same read at 02:59:59 exit 0 | |
+| stage 3 with the applied marker touched after stage 2's pass mark | 1 | `STOP: stage 2's pass mark is older than the apply.` | |
+| stage 3 with stage 2's pass mark naming another sha | 1 | `STOP: stage 2's pass mark does not name the sha stage 0 recorded.` | |
+| stages 2 and 3 and the closing read after stage 0, stage 1 never run | 1 each | `stage 1 did not complete an apply`, then `stage 1 left no applied marker` twice | journal 91 |
+| BEFORE YOU START with `origin/main` one commit past MERGED (the pending README with one byte appended) | 1 | `STOP: origin/main is not the merge commit of PR 1459 itself (...)`; no head recorded, no journal read. Round 1's dispatch passed this main | |
+| BEFORE YOU START with a MERGED that is not on `origin/main` | 1 | the same STOP | |
+| BEFORE YOU START with `<MERGED_SHA>` unfilled | 1 | `STOP: MERGED is not a filled-in sha, so this dispatch is NOT READY` | |
+| BEFORE YOU START on a merge whose `check-journal.mjs` has one byte appended | 1 | `check-journal: 3ca4755f…`, then `STOP: check-journal on origin/main is not the approved file` | |
+| stage 0 on that main | 1 | `STOP: check-journal on disk is not the approved file`, before it runs; no sha recorded | |
+| stage 0 on mains whose 0094 file, pre-check, `verified-migrate.mjs` or this document has one byte appended | 1 each | the matching STOP, `docs/migration-apply-0094.md: FAILED` first for the document; no sha recorded | |
+| main moved between the CLOCK CHECK and stage 1 | 0, 1 | `STOP: main moved since stage 0, the merge freeze was broken.`, before the run window line and the environment line | journal 91 |
+| main moved between BEFORE YOU START and stage 0 | 0, 1 | the CLOCK CHECK's `STOP: main moved between BEFORE YOU START and stage 0`; no run window recorded | |
+| every receptionist and therapist inactive | 1 | the pre-check 21 OK, then the missing-subject STOP | journal 91 |
+| stage 1 with the target guard NOT substituted | 2 | `REFUSING: project ref is "postgres", not the production project.` | journal 91 |
+| stage 0 and stage 1 pasted again after the apply | 1 each | `STOP: stage 1 has ALREADY APPLIED 0094 in this sitting` | journal 92 |
+| main moved after the apply: stages 2 and 3 and the closing read | 0 each | stages 2 and 3 print `MAIN MOVED since stage 0` and pass from the recorded sha; the closing read passes on it | |
+| BEFORE YOU START at Lisbon Saturday 22:00, Sunday 20:59, Monday 02:30 and 03:00, Tuesday 01:00 | 1 each | the matching STOP; no head recorded, no journal read | |
+| BEFORE YOU START at Lisbon Sunday 21:00 and 23:59, Monday 00:00, 02:29 and 02:29:59 | 0 each | its last line | |
+| the CLOCK CHECK at the same ten instants | the same exits | a pass records `<sha> 202609272100 202609280229 202609280300`; a STOP leaves no record, an earlier pass's included | |
+
+The clock arms put a `date` on the `PATH` that prints one fixed instant or, for the
+arm that needs time to pass inside stage 1, one instant on its first call and another
+after. Not re-run in round 2, because nothing they exercise changed: the pre-check on
+an applied database, the controls broken on purpose, and the packages/db suite.
+
+| File, in the scratchpad (not committed) | sha256 |
+|---|---|
+| `build.zsh`, the database at a given migrations tree | `8de82af5e5740be2a841a446fadd9cc975b75226f6f8c6ce67a59b86bc00507c` |
+| `fixture-one-tenant.sql`, the same synthetic staff | `bbfdeb2dd5666da5c9e24a9b5b86367f044d2087c485abe6315ddda0ae022226` |
+| `fixture-second-tenant.sql`, the same second tenant | `d1a486fd2e8278c81198a249428b42f2f95842c7a902c7a4a6218a8f6933cca7` |
+| `extract.mjs`, the extractor, pointed at this round's worktree | `83d9b83602400aeb2fe5350c708a4c0fc95ac1845316590c2432252f1b52f244` |
+| `run.zsh`, one block under `zsh -f` | `8a8c172333d0637986eed4744f2768418aa6a60bc31f263e974821d37320d086` |
+| `run-i.zsh`, one block pasted into `zsh -f -i` | `b86f69ed534c5e512f8d2612c7a6a5c277d136f6fea8ec6108216b458cae0042` |
+| `sitting.zsh`, a fresh copy and a run of named blocks in order | `cc4c114e79a68f6f6b56bfd2f0deee7b840dab991b7b53a9e06e31189cbaf78e` |
+| `lib.zsh`, the arm helpers | `630c444121f3db2ad2e656d308cdaef15394e65bd0909d3ab369140349f9ff9a` |
+| `tamper.zsh`, a stand-in main with one byte appended | `ebc9c6d76143544d634145b631246c2d93754ac41b89cc23b042c6db19392b93` |
+| `fakeclock/date`, the fixed clock, with a second instant on request | `bad344485eb017321000575e545d5120e809937967a5214e9be2a6114f6ebac3` |
+
+This subsection, the therapist wording above and the sidecar were written after these
+runs, and none of them is a byte of a block. They move this document's sha256 away from
+`e0e5a05c…8623`, and the dispatch carries the committed one.
 
 ## What this does NOT do
 
