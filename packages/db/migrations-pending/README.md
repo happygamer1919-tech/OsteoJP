@@ -40,7 +40,7 @@ claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NES
 was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 `NEXT-AFTER-0089_care_team.sql` was promoted second, on
 `care/CARE-01-assigned-therapists` (PR #1374), and took **`0091`** — see the Promoted
-table below. That is why the table above is empty again.
+table below. That is why the table above holds one file on this branch and none on main.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-27 (the fourth time).** It is
 **`0090` NESA names · `0091` CARE-01 · `0092` CARE-LOC · `0093` RGPD-01 (all four

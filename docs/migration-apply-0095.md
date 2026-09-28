@@ -752,7 +752,27 @@ adds a function or a policy moves them. It is an assertion about this apply.
 | grants: EXECUTE for `authenticated` only on both | post-check 5 and 6; behaviour arm 5 | the catalogue |
 | nothing else moved | post-check 8 to 11 | the catalogue |
 | reception, admin and owner get the same rule | **NOT DISCHARGED BY THIS DOCUMENT.** The builder's rehearsal compared five identities; no block here acts as them | the function |
-| the app's conflict line names or withholds the patient, and "Guardar mesmo assim" still works | **NOT DISCHARGED BY THIS DOCUMENT.** The in-app check is the owner's, after the sitting (PR #1438, "Verification checklist", item 3) | the route |
+| the app's conflict line names or withholds the patient, and "Guardar mesmo assim" still works | **NOT DISCHARGED BY THE SITTING.** Two in-app checks, both the owner's, after GREEN's report: the named case is PR #1438, "Verification checklist", item 3; the placeholder is scheduled here, in "After the sitting: the owner's in-app check of the placeholder" below | the route |
+
+## After the sitting: the owner's in-app check of the placeholder
+
+This check is the owner's and it is scheduled HERE; PR #1438's "Verification
+checklist", item 3, covers only the named case and points to this section for the
+placeholder. It runs after GREEN's report is in, never during the sitting, and it
+writes nothing: the owner closes the booking form without saving.
+
+1. Sign in to the app as a therapist, not as the owner. The placeholder shows only to a
+   caller whose own reads do not return the clashing appointment, and the owner's
+   session may read every appointment, in which case the line names the patient.
+2. Open a new booking for a room and a time that an existing appointment already holds,
+   where that appointment does NOT appear in this therapist's own agenda (behaviour arm
+   9, N2, is the database side of the same case).
+3. Expected: the conflict warning line shows the time and reads "Marcação reservada" in
+   place of a patient's name; no patient's name appears anywhere on the line; and
+   "Guardar mesmo assim" still appears. Close the form without saving.
+4. If the line names the patient, or the warning or "Guardar mesmo assim" is missing,
+   the owner reports it to the lead with a screenshot. Nothing is rolled back on that
+   report alone; the lead decides.
 
 ## Rehearsal
 
