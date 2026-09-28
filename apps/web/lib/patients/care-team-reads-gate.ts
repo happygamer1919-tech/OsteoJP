@@ -46,9 +46,9 @@ import { runScoped, type RequestContext } from "../auth/context";
  * CACHED PER PROCESS AND ASYMMETRICALLY, as shared-resource.ts does: "present"
  * never becomes false again and is kept for the life of the process; "absent"
  * is asked again after a minute, so the apply takes effect on a running
- * deployment without a redeploy. Production is applied BEFORE this PR merges
- * (apply-before-merge), so on production the answer is "present" from the first
- * request.
+ * deployment without a redeploy. The app half merges BEFORE 0098 is applied
+ * (owner, 2026-09-27), so production answers "absent" until the apply and
+ * "present" within a minute of it. The migration's PR merges after the apply.
  */
 export const CARE_TEAM_CLINIC_HELPER = "viewer_care_team_patient_ids_at_my_clinics";
 

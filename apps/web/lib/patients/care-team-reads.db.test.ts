@@ -43,9 +43,9 @@
  * WITHOUT 0098 THE "0098:" ARMS ASSERT THE PRE-0098 PROFILE, AND SAY SO
  * ==========================================================================
  * 0098 is held in migrations-pending, and CI's DB-gated job builds its
- * database from supabase/migrations, so on the held PR these arms run against
- * a database without it. They neither skip (the skip-guard reddens any
- * not-run test) nor assert 0098 blindly (red on every run until promotion).
+ * database from supabase/migrations, so on the app-half PR and the held PR
+ * these arms run on a database without it. They neither skip (the skip-guard
+ * reddens any not-run test) nor assert 0098 blindly (red until promotion).
  * Each reads `care0098State` (care-team-0098-state.ts) and asserts WHICHEVER
  * profile the database owes: 0098's when it is applied, main's when it is not,
  * which is a real assertion of today's behaviour. The first test reports which

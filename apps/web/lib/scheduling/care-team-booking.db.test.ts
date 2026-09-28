@@ -20,10 +20,10 @@
  * (lib/patients/care-team-0098-state.ts): 0098's when it is applied, and
  * without it what main does today (0091's policies refuse both, and the
  * booking still stands). 0098 is held in migrations-pending and CI builds from
- * supabase/migrations, so on the held PR these arms assert the pre-0098 answer,
- * and the first test says so; a half-applied database, or an unapplied one
- * once 0098 is promoted into packages/db/migrations, fails every arm. On the
- * rehearsal database with 0098 applied they prove 0098.
+ * supabase/migrations, so on the app-half PR and the held PR these arms assert
+ * the pre-0098 answer, and the first test says so; a half-applied database, or
+ * an unapplied one once 0098 is promoted into packages/db/migrations, fails
+ * every arm. On the rehearsal database with 0098 applied they prove 0098.
  */
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";

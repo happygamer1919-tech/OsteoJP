@@ -10,7 +10,7 @@
  * 0098 is HELD: it sits in packages/db/migrations-pending until 0094 to 0097 are
  * promoted, applied and merged, and CI's DB-gated job builds its database from
  * supabase/migrations, which does not contain it until the promotion commit.
- * The held PR must stay green there, and its 0098 arms must still run:
+ * The app half and the held PR must stay green there; the 0098 arms must run:
  *
  *   - a SKIP is red: .github/scripts/assert-rls-executed.mjs fails the job on
  *     any not-run test outside PERMITTED_SKIPS, and that list is frozen;
