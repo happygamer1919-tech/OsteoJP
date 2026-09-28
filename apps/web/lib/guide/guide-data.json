@@ -1568,6 +1568,30 @@
                   "strong": "Horários"
                 },
                 {
+                  "text": ". Em "
+                },
+                {
+                  "strong": "Comunicações"
+                },
+                {
+                  "text": " ficam três separadores: "
+                },
+                {
+                  "strong": "Recuperação"
+                },
+                {
+                  "text": ", "
+                },
+                {
+                  "strong": "Lembretes SMS"
+                },
+                {
+                  "text": " e "
+                },
+                {
+                  "strong": "Respostas SMS"
+                },
+                {
                   "text": "."
                 }
               ],
@@ -1732,6 +1756,30 @@
                   "strong": "Revisão Consulta"
                 },
                 {
+                  "text": ". Em "
+                },
+                {
+                  "strong": "Comunicações"
+                },
+                {
+                  "text": " ficam três separadores: "
+                },
+                {
+                  "strong": "Recuperação"
+                },
+                {
+                  "text": ", "
+                },
+                {
+                  "strong": "Lembretes SMS"
+                },
+                {
+                  "text": " e "
+                },
+                {
+                  "strong": "Respostas SMS"
+                },
+                {
                   "text": "."
                 }
               ],
@@ -1828,7 +1876,7 @@
       "see": [],
       "shots": "inicio.menu-e-sessao",
       "title": "O menu, o sino e o fim da sessão",
-      "words": 150
+      "words": 172
     },
     {
       "answers": [],
