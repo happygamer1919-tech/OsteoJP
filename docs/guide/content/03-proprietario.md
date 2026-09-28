@@ -32,7 +32,7 @@ O Início é o resumo do dia na clínica. No topo há quatro números: **Pacient
 ![Início no telemóvel](../screens/proprietario/inicio-390.png)
 ![Início no computador](../screens/proprietario/inicio-desktop.png)
 
-Nota: **Marcações hoje** e **Próximas marcações** só cobrem hoje e os seis dias seguintes; num dia passado ou mais distante aparecem vazios. Para esses dias use a Agenda ou as Marcações. **Receita (mês)** e **Resumo semanal** mostram sempre o mês e a semana atuais, seja qual for o dia escolhido. Uma fatura sem marcação não pertence a nenhum local: conta em **Todas as localizações** e em nenhum local escolhido. Um administrador ou a receção vê, no seu Início, só a receita dos locais a que está atribuído, sem esta lista.
+Nota: **Marcações hoje** e **Próximas marcações** só cobrem hoje e os seis dias seguintes; num dia passado ou mais distante aparecem vazios. Para esses dias use a Agenda ou as Marcações. **Receita (mês)** e **Resumo semanal** mostram sempre o mês e a semana atuais, seja qual for o dia escolhido. Uma fatura sem marcação não pertence a nenhum local: conta em **Todas as clínicas** e em nenhum local escolhido. Um administrador ou a receção vê, no seu Início, só a receita dos locais a que está atribuído, sem esta lista.
 
 ## Agenda
 
