@@ -33,20 +33,31 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| (none on this branch) | | | |
+| `NEXT-AFTER-0096_migration_staging_imported_entity_idx.sql` | `0096` | 2026-09-27 | `db/0097-staging-imported-entity-index`, held (Tier C, ruled `0097` per the SOLO dispatch of 2026-09-27; GREEN applies it only after `0094`, `0095` and `0096`). One partial btree index on `migration_staging_rows (imported_entity_id, entity_type)` for `importerSourcedRecordSql`. Its checks are `scripts/db/precheck-0097-staging-imported-entity-idx.sql` and `postcheck-0097-staging-imported-entity-idx.sql`, and `scripts/migration-0097-staging-index.test.mjs` pins its shape; both checks pin this file's sha256, so the promotion must not change a byte. At promotion its journal `when` must be strictly greater than `0096`'s |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
 was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 `NEXT-AFTER-0089_care_team.sql` was promoted second, on
 `care/CARE-01-assigned-therapists` (PR #1374), and took **`0091`** — see the Promoted
-table below. That is why the table above is empty again.
+table below. Those two promotions emptied the table above; the one row in it on this
+branch is the `0097` file, parked later. Other branches hold their own pending files,
+which this table does not list: it is only accurate for the branch you read it on.
 
-**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22.** It is
+**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-22 AND EXTENDED ON 2026-09-27.** It is
 **`0090` NESA names (#1390, applied and merged) · `0091` CARE-01 (applied and merged) ·
-`0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, promoted, held
-for the apply) · `0094` the users/tenants role fix (not yet opened) · `0095` the
-grants revoke (#1397) · `0096` the conflict check's patient name**.
+`0092` CARE-LOC (#1426, applied and merged) · `0093` RGPD-01 (#1399, merged on
+2026-09-23, applied on 2026-09-24) · `0094` the users/tenants role fix (#1459, held) ·
+`0095` the grants revoke (#1397, held) · `0096` the conflict check's patient name
+(#1438, held) · `0097` the staging index (the one file in the table above, held) ·
+`0098` CARE-02a, the care team reading the ficha and the registos (held, on its own
+branch)**. The states in brackets were read on 2026-09-27: each PR's state from
+GitHub, and `0093`'s apply from its board card `MIG-0093-patient-rgpd-acceptances` on
+`origin/main`. A state that changes after that date does not change this line; read
+the PR or the card. The last two are the owner's ruling of 2026-09-27, "0097 and 0098
+authored now": both are held, GREEN applies them later, and `0097` follows `0096`
+(`CLAUDE.md` on `origin/main`, line 127). That ruling added two items and moved no
+number.
 
 **THIS IS THE SECOND RENUMBERING OF THAT QUEUE, and the earlier ones were real.**
 The order first recorded here was 0090 NESA, 0091 care-team, 0092 RGPD-01,
