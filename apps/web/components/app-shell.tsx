@@ -9,10 +9,10 @@ import { requiresPasswordRotation } from "@/lib/auth/password-rotation";
 import { staffDisplayName, initialsFor } from "@/lib/auth/staff-identity";
 import { unreadCount } from "@/lib/notifications/centre";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { logout } from "@/app/logout/actions";
 import { s } from "@/lib/i18n";
 import { navItemsForRole } from "@/lib/nav/nav-items";
 
+import { LogoutForm } from "./logout-form.client";
 import { StaffShellClient } from "./staff-shell.client";
 
 /**
@@ -218,14 +218,12 @@ export async function AppShell({
       >
         {s["nav.myProfile"]}
       </Link>
-      <form action={logout}>
-        <button
-          type="submit"
-          className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
-        >
-          {s["common.signOut"]}
-        </button>
-      </form>
+      {/* SKEW-01: a client component so the call goes through the
+          server-action wrapper; still a plain form without JavaScript. */}
+      <LogoutForm
+        label={s["common.signOut"]}
+        className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
+      />
     </div>
   );
 

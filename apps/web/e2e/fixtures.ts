@@ -65,6 +65,30 @@ export const USERS = {
   owner: "e2e-owner@osteojp.test",
 } as const;
 
+/**
+ * SKEW-01: the user agenda-signout.spec.ts signs OUT for real, one per browser
+ * project. logout() calls supabase.auth.signOut() with its default GLOBAL scope,
+ * which ends every session of that user, so it must be a user no other spec
+ * signs in as (seed-e2e.mjs, the receptionSignOut* entries). Log in fresh with
+ * E2E_PASSWORD; it has no storage state.
+ */
+const SIGN_OUT_USERS: Readonly<Record<string, string>> = {
+  chromium: "e2e-reception-signout-chromium@osteojp.test",
+  firefox: "e2e-reception-signout-firefox@osteojp.test",
+  webkit: "e2e-reception-signout-webkit@osteojp.test",
+};
+
+export function signOutUser(projectName: string): string {
+  const email = SIGN_OUT_USERS[projectName];
+  if (!email) {
+    throw new Error(
+      `no sign-out user is seeded for the Playwright project "${projectName}"; ` +
+        "add one to SIGN_OUT_USERS here and to USERS in e2e/seed/seed-e2e.mjs",
+    );
+  }
+  return email;
+}
+
 /** Storage-state files written by auth.setup.ts (one per role). */
 export const STORAGE = {
   admin: "e2e/.auth/admin.json",
