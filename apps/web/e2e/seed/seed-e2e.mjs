@@ -11,7 +11,7 @@
  *     - 3 users: e2e-admin / e2e-therapist / e2e-reception (role claims via the
  *       custom_access_token_hook, enabled in config.toml)
  *     - 1 location, 1 service
- *     - patients: "Maria Teste" (active, searchable by NIF/phone), two more
+ *     - patients: "Maria Filia" (active, searchable by NIF/phone), two more
  *       active, and one PRE-SOFT-DELETED patient (absent-from-active-views guard)
  *     - form templates (osteopathy/physiotherapy/nesa — files that carry a
  *       JSON `schema`; the x-form-ref wrappers are skipped)
@@ -203,10 +203,10 @@ const SERVICE_UNMAPPED_NAME = "Drenagem Linfática";
 const PATIENTS_A = [
   {
     id: "00000000-0000-0000-0000-00000000a301",
-    full_name: "Maria Teste",
+    full_name: "Maria Filia",
     nif: "123456789",
     phone: "+351 912 345 678",
-    email: "maria.teste@example.pt",
+    email: "maria.filia@example.pt",
     deleted_at: null,
   },
   {
@@ -256,7 +256,7 @@ const PATIENTS_A = [
 // ---------------------------------------------------------------------------
 // W13-03 / SEC-otp-login-path-has-zero-e2e-coverage — the OTP LOGIN patient.
 //
-// A SECOND portal patient, and it exists because Maria Teste CANNOT be used for
+// A SECOND portal patient, and it exists because Maria Filia CANNOT be used for
 // this. resolvePatientByProvenPhone (apps/api/lib/auth/patient-linkage.ts:73)
 // requires `auth_user_id IS NULL` - an unclaimed row - and ensurePortalPatient
 // below sets Maria's auth_user_id so the trusted-device path can use her. She is
@@ -441,7 +441,7 @@ async function ensureDeclaracaoAppointment(therapistUserId) {
     {
       id: "00000000-0000-0000-0000-0000000ad001",
       tenant_id: TENANT_A,
-      patient_id: "00000000-0000-0000-0000-00000000a301", // Maria Teste
+      patient_id: "00000000-0000-0000-0000-00000000a301", // Maria Filia
       practitioner_id: therapistUserId,
       location_id: LOCATION_A, // Linda-a-Velha
       service_id: SERVICE_A,
@@ -1384,20 +1384,20 @@ async function ensureAiDeleteDraft() {
 }
 
 // ---------------------------------------------------------------------------
-// Portal patient — an auth user linked to Maria Teste's patient row.
+// Portal patient — an auth user linked to Maria Filia's patient row.
 // Used by portal-reminders.spec.ts. Credentials: E2E_PORTAL_PATIENT_EMAIL /
 // E2E_PASSWORD. The seed resets reminder prefs to a known initial state on
 // every run so toggle-persistence tests start deterministically.
 // ---------------------------------------------------------------------------
 
 const E2E_PORTAL_PATIENT_EMAIL = "e2e-patient@osteojp.test";
-const MARIA_TESTE_ID = PATIENTS_A[0].id; // "00000000-0000-0000-0000-00000000a301"
+const MARIA_FILIA_ID = PATIENTS_A[0].id; // "00000000-0000-0000-0000-00000000a301"
 
 async function ensurePortalPatient() {
   // Create (or update) the portal patient auth user.
   const authId = await ensureAuthUser(E2E_PORTAL_PATIENT_EMAIL, E2E_PASSWORD);
 
-  // Link the auth user to Maria Teste's patient row and reset reminder prefs
+  // Link the auth user to Maria Filia's patient row and reset reminder prefs
   // to the known initial state (sms=true, email=false) so toggle tests are
   // deterministic across re-runs.
   const { error } = await db
@@ -1408,9 +1408,9 @@ async function ensurePortalPatient() {
       reminder_sms_enabled: true,
       reminder_email_enabled: false,
     })
-    .eq("id", MARIA_TESTE_ID)
+    .eq("id", MARIA_FILIA_ID)
     .eq("tenant_id", TENANT_A);
-  must(error, `link portal patient auth_user_id for ${MARIA_TESTE_ID}`);
+  must(error, `link portal patient auth_user_id for ${MARIA_FILIA_ID}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1441,7 +1441,7 @@ async function ensurePortalTrustedDevice() {
     {
       device_token_hash: PORTAL_DEVICE_HASH,
       tenant_id: TENANT_A,
-      patient_id: MARIA_TESTE_ID,
+      patient_id: MARIA_FILIA_ID,
       expires_at: expiresAt,
       // Explicitly cleared: a previous run may have revoked it, and a revoked
       // row is refused for the rest of time.
@@ -1449,7 +1449,7 @@ async function ensurePortalTrustedDevice() {
     },
     { onConflict: "device_token_hash" },
   );
-  must(error, `seed portal trusted device for ${MARIA_TESTE_ID}`);
+  must(error, `seed portal trusted device for ${MARIA_FILIA_ID}`);
 }
 
 async function main() {
@@ -1488,7 +1488,7 @@ async function main() {
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
   console.log("[seed-e2e] patients A:", PATIENTS_A.length + 2, "(1 soft-deleted, +1 other-therapist, +1 otp-login)");
   console.log("[seed-e2e] availability: reset for every seeded user, then the two location fixtures");
-  console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_TESTE_ID);
+  console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_FILIA_ID);
   console.log("[seed-e2e] otp-login patient:", PATIENT_OTP_LOGIN_A.phone, "→", PATIENT_OTP_LOGIN_A.id, "(auth_user_id null, first-login eligible)");
   console.log("[seed-e2e] portal trusted device:", `${PORTAL_DEVICE_HASH.slice(0, 12)}… (30d)`);
   console.log(

@@ -35,7 +35,7 @@ import { SIGN_LABEL, signButton, signDialog } from "./helpers/sign-confirm";
 
 const LOCKED_NOTICE = "Ficha finalizada e imutável.";
 
-/** Create a fresh draft ficha for Maria Teste from the current template; returns its id. */
+/** Create a fresh draft ficha for Maria Filia from the current template; returns its id. */
 async function createDraftFicha(page: Page): Promise<string> {
   await page.goto("/clinical/new");
   const patient = page.getByRole("combobox", { name: /Paciente/i });

@@ -104,7 +104,7 @@ export const PATIENTS = {
   // Active, searchable by name / NIF / phone.
   maria: {
     id: "00000000-0000-0000-0000-00000000a301",
-    name: "Maria Teste",
+    name: "Maria Filia",
     nif: "123456789",
     phone: "912345678",       // digit-only — used as search input
     phoneDisplay: "+351 912 345 678", // stored/rendered value — used for column assertions
@@ -415,7 +415,7 @@ export const PORTAL_STORAGE = {
 export const PORTAL_DEVICE_TOKEN = "e2efacade".padEnd(64, "0");
 
 /**
- * Maria Teste's patient row doubles as the portal test patient.
+ * Maria Filia's patient row doubles as the portal test patient.
  * The seed sets her auth_user_id to the e2e-patient auth user ID.
  */
 export const PORTAL_PATIENT = {

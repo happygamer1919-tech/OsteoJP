@@ -380,7 +380,7 @@ export async function gotoPatientEdit(page: Page, id: string): Promise<void> {
  * WHY A PRE-COMPUTED VERDICT AND NOT A RE-RUN
  * ==========================================================================
  * On 2026-09-03 `scheduling.spec.ts:406` failed three times in a row on E2E
- * shard 3 of #1107: the Maria Teste row was absent from
+ * shard 3 of #1107: the Maria Filia row was absent from
  * /marcacoes?from=<+13>&to=<+13>. The page snapshot showed every filter at its
  * default and exactly ONE row on the page, so she was absent from the RESULT
  * SET rather than filtered out of a correct one. A re-run of the same commit
