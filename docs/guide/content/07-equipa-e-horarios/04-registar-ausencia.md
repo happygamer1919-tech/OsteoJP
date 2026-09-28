@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 1, terapeuta 1, proprietario 4
 capability: schedule:manage
 screens: horarios
+shots: equipa-e-horarios.registar-ausencia
 ---
 ## Registar uma ausência
 
@@ -21,3 +22,6 @@ Em **O meu horário** só aparece o seu cartão. Uma manhã de formação, por e
 Nota: um bloqueio não cancela as marcações que já existem no período: reveja-as na Agenda. Uma **Ausência prolongada** tira o terapeuta da agenda em todas as clínicas, e ninguém consegue marcar com ele, nem a receção nem os pacientes no portal.
 
 Nota: se o terapeuta vai apenas atender noutra clínica, não bloqueie: use **Definir dia a dia**.
+
+![Registar uma ausência no telemóvel](../../../../apps/web/public/ajuda/equipa-e-horarios/registar-ausencia-390.png)
+![Registar uma ausência no computador](../../../../apps/web/public/ajuda/equipa-e-horarios/registar-ausencia-desktop.png)

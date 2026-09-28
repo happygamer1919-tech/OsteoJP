@@ -1,0 +1,47 @@
+sha256 ebb73fa9f959f55a91067b8278535bfc20837ee2c4fb72cf039bfd092359b1de
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Pacientes
+
+Consulte e faça a gestão dos seus pacientes.
+
+Novo paciente
+Utentes
+16
+Vistos este mês
+16
+Com marcação futura
+16
+Na janela de recuperação
+0
+Pesquisar
+Clínica
+Todas as clínicas
+Polo Exemplo
+Sede Exemplo
+Só com marcação futura
+Lista de pacientes
+Nº	Paciente
+	NIF	Telemóvel	Clínica	Última consulta
+	Próxima
+0011	Beatriz Exemplo	999000011	+351 910 000 111	—	21/09/2026	06/10/2026
+0013	Clara Amostra	999000013	+351 910 000 113	—	21/09/2026	06/10/2026
+0014	Filipe Inventado	999000014	+351 910 000 114	—	07/09/2026	06/10/2026
+0010	Gonçalo Modelo	999000010	+351 910 000 110	—	21/09/2026	06/10/2026
+0012	Hugo Fictício	999000012	+351 910 000 112	—	21/09/2026	06/10/2026
+0005	Inês Modelo	999000005	+351 910 000 105	—	21/09/2026	05/10/2026
+0007	Lara Fictícia	999000007	+351 910 000 107	—	21/09/2026	05/10/2026
+0001	Marta Exemplo	999000001	+351 910 000 101	—	21/09/2026	05/10/2026
+0016	Miguel Exemplo	999000016	+351 910 000 116	—	21/09/2026	06/10/2026
+0008	Nuno Amostra	999000008	+351 910 000 108	—	21/09/2026	05/10/2026
+0006	Paulo Exemplo	999000006	+351 910 000 106	—	21/09/2026	05/10/2026
+0004	Rui Inventado	999000004	+351 910 000 104	—	07/09/2026	05/10/2026
+0003	Sofia Amostra	999000003	+351 910 000 103	—	21/09/2026	05/10/2026
+0015	Teresa Modelo	999000015	+351 910 000 115	—	21/09/2026	06/10/2026
+0002	Tiago Fictício	999000002	+351 910 000 102	—	21/09/2026	05/10/2026
+0009	Vera Inventada	999000009	+351 910 000 109	—	07/09/2026	07/10/2026
+## frame 1 form values
+Nome, NIF, telemóvel ou nº de utente
+Todas as clínicas

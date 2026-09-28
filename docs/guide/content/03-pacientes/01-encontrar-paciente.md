@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 1, terapeuta 1, proprietario 1
 capability: patients:read
 screens: pacientes
+shots: pacientes.encontrar-paciente
 review: CARE-02a
 ---
 ## Encontrar um paciente
@@ -21,3 +22,6 @@ Para ordenar, clique no título **Paciente** ou **Última consulta**. Quando a l
 ::: terapeuta
 Pacientes visíveis: a lista mostra os pacientes com quem tem ou teve uma marcação, como **Terapeuta** ou como **Terapeuta 2**, e os pacientes que registou. Um paciente atribuído, mas ainda sem marcação consigo, não aparece. Os quatro números contam só estes pacientes.
 :::
+
+![Encontrar um paciente no telemóvel](../../../../apps/web/public/ajuda/pacientes/encontrar-paciente-390.png)
+![Encontrar um paciente no computador](../../../../apps/web/public/ajuda/pacientes/encontrar-paciente-desktop.png)

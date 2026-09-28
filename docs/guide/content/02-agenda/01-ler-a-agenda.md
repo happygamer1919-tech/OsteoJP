@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 2, terapeuta 1, proprietario 1
 capability: appointments:read
 screens: agenda
+shots: agenda.ler-a-agenda
 review: CARE-02a
 ---
 ## Ler a agenda
@@ -29,3 +30,6 @@ Cada marcação mostra o nome do paciente e um símbolo do estado:
 * pessoa vermelha com o nome riscado: Falta.
 
 A agenda não se atualiza sozinha: uma marcação feita por um colega ou no portal só aparece depois de clicar na seta circular de atualizar.
+
+![Ler a agenda no telemóvel](../../../../apps/web/public/ajuda/agenda/ler-a-agenda-390.png)
+![Ler a agenda no computador](../../../../apps/web/public/ajuda/agenda/ler-a-agenda-desktop.png)

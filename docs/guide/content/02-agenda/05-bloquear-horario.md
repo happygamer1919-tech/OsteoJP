@@ -6,6 +6,7 @@ roles: rececao, terapeuta, proprietario
 order: rececao 5, terapeuta 4, proprietario 5
 capability: schedule:manage
 screens: agenda
+shots: agenda.bloquear-horario
 faq: bloquear-horario
 ---
 ## Bloquear um horário na agenda
@@ -23,3 +24,6 @@ O campo **Terapeuta** já traz o seu nome.
 O bloqueio aparece na grelha, com a nota, quando esse terapeuta está escolhido no filtro de terapeutas.
 
 Um bloqueio não cancela as marcações que já existem nesse período: reveja essas marcações e remarque as que for preciso. Para dias inteiros de ausência, use **Horários**.
+
+![Bloquear um horário na agenda no telemóvel](../../../../apps/web/public/ajuda/agenda/bloquear-horario-390.png)
+![Bloquear um horário na agenda no computador](../../../../apps/web/public/ajuda/agenda/bloquear-horario-desktop.png)

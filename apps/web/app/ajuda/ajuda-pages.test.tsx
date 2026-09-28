@@ -27,7 +27,7 @@
  * must NOT look like a logout, are both the helper's own behaviour on these
  * pages, not a stub's.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Role } from "@osteojp/auth";
@@ -412,15 +412,22 @@ describe("Perguntas frequentes (G1-2): the seven base tasks first, for the viewe
     expect(opened).toBeGreaterThan(0);
   });
 
-  it("each entry is its question, its answer for the role, and the Sem imagem card while its primary lesson has no capture", async () => {
+  it("each entry is its question, its answer for the role, and its primary lesson's capture pair, or the Sem imagem card while that lesson has none", async () => {
     for (const role of ROLES) {
       const html = await indexHtml(role, "perguntas");
       for (const entry of guideFaqFor(role)) {
         const part = faqEntryHtml(html, entry.id);
         expect(part, `${role} ${entry.id}`).toContain(`>${entry.question}</h2>`);
-        expect(entry.images, entry.id).toBeNull();
-        expect(part, `${role} ${entry.id}`).toContain("data-guide-no-image");
-        expect(part, `${role} ${entry.id}`).not.toContain("<img");
+        const primary = GUIDE_DATA.lessons.find((lesson) => lesson.id === entry.see[0]);
+        expect(entry.images, entry.id).toEqual(primary?.images ?? null);
+        if (entry.images === null) {
+          expect(part, `${role} ${entry.id}`).toContain("data-guide-no-image");
+          expect(part, `${role} ${entry.id}`).not.toContain("<img");
+        } else {
+          expect(part, `${role} ${entry.id}`).not.toContain("data-guide-no-image");
+          expect(part, `${role} ${entry.id}`).toContain(entry.images.phone.src);
+          expect(part, `${role} ${entry.id}`).toContain(entry.images.desktop.src);
+        }
       }
       expect(html).toContain(`id="pergunta-marcar-consulta"`);
     }
@@ -642,16 +649,27 @@ describe("the heading outline never skips a level", () => {
   });
 });
 
+/** apps/web/public: a capture's src ("/ajuda/...") is a path under it. */
+const PUBLIC_DIR = join(__dirname, "..", "..", "public");
+
 describe("a lesson without a capture shows Sem imagem, never a broken image (G1-7)", () => {
-  it("every published lesson has no capture yet, and every one renders the Sem imagem card and no <img>", async () => {
-    expect(GUIDE_DATA.lessons.every((lesson) => lesson.images === null)).toBe(true);
+  it("every published lesson renders its capture pair or the Sem imagem card, never both, and every capture it names is a file", async () => {
     for (const lesson of guideLessonsFor("owner")) {
       const html = await lessonHtml("owner", lesson.section, lessonSlug(lesson));
-      expect(html, lesson.id).toContain("data-guide-no-image");
-      expect(html, lesson.id).toContain(`>${pt["guide.noImage"]}<`);
-      expect(html.toLowerCase(), lesson.id).toContain("sem imagem");
-      expect(html, lesson.id).not.toContain("<img");
-      expect(html, lesson.id).not.toContain("<picture");
+      if (lesson.images === null) {
+        expect(html, lesson.id).toContain("data-guide-no-image");
+        expect(html, lesson.id).toContain(`>${pt["guide.noImage"]}<`);
+        expect(html.toLowerCase(), lesson.id).toContain("sem imagem");
+        expect(html, lesson.id).not.toContain("<img");
+        expect(html, lesson.id).not.toContain("<picture");
+      } else {
+        expect(html, lesson.id).not.toContain("data-guide-no-image");
+        expect(html.match(/<picture/g), lesson.id).toHaveLength(1);
+        for (const image of [lesson.images.phone, lesson.images.desktop]) {
+          expect(html, lesson.id).toContain(image.src);
+          expect(existsSync(join(PUBLIC_DIR, image.src)), `${lesson.id}: ${image.src}`).toBe(true);
+        }
+      }
     }
   });
 });

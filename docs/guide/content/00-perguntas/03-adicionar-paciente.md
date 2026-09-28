@@ -16,3 +16,6 @@ see: pacientes.registar-paciente, pacientes.encontrar-paciente, marcacao-online.
 ::: rececao proprietario
 O pedido de um cliente novo feito na marcação online trata-se em **Notificações**, com **Criar paciente e marcar**.
 :::
+
+![Registar um paciente novo no telemóvel](../../../../apps/web/public/ajuda/pacientes/registar-paciente-390.png)
+![Registar um paciente novo no computador](../../../../apps/web/public/ajuda/pacientes/registar-paciente-desktop.png)
