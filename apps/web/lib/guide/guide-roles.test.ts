@@ -381,7 +381,7 @@ describe("a lesson is only ever written for a role that can open its screen", ()
 });
 
 // G1-2 AND G1-3 FOR PERGUNTAS FREQUENTES: each role reads its own FAQ
-// entries, the seven base tasks in the order of their files, and each entry
+// entries, the seven base tasks in the order their "order" keys give, and each entry
 // links only lessons that role reads, its primary lesson first. Written out by
 // hand from the ruled proposal (its table "The seven FAQ entries": primary
 // lesson, "also" lessons, roles), not read back from the code.
@@ -459,7 +459,7 @@ const OWNER_FAQ: FaqList = [
   ASSINAR_REGISTO,
 ];
 
-describe("each role reads exactly its own FAQ entries, the seven base tasks first, in file order (G1-2, G1-3)", () => {
+describe("each role reads exactly its own FAQ entries, the seven base tasks first, in the ruled order (G1-2, G1-3)", () => {
   it("reception: six entries, no Assinar registo, and no Registos link", () => {
     expect(faqOf("reception")).toEqual(RECEPTION_FAQ);
     expect(GUIDE_DATA.faq.map((entry) => entry.id)).toContain("perguntas.assinar-registo");
@@ -488,10 +488,22 @@ describe("each role reads exactly its own FAQ entries, the seven base tasks firs
     }
   });
 
-  it("the helper's FAQ order is the model's order for every profile", () => {
+  // The order is worked out here from the FAQ files themselves: their "order"
+  // keys, read by guide-model.mjs's loader and sorted in this test. It is not
+  // GUIDE_DATA.orders, which is what the helper reads, nor the model's faqFor,
+  // which wrote those orders.
+  it("the helper's FAQ order is the order the files' order keys give, for every profile", () => {
+    const source = loadGuide();
+    expect(source.errors).toEqual([]);
     for (const profile of PROFILES) {
       const role = (Object.keys(PROFILE_OF_ROLE) as Role[]).find((r) => PROFILE_OF_ROLE[r] === profile && r !== "admin")!;
-      expect(faqOf(role).map(([id]) => id)).toEqual(GUIDE_DATA.orders[profile].faq);
+      const byOrderKey = source.faq
+        .filter((entry) => entry.hold === null && entry.roles.includes(profile))
+        .map((entry) => ({ id: entry.id, position: entry.order[profile]! }))
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => entry.id);
+      expect(byOrderKey.length, profile).toBeGreaterThan(0);
+      expect(faqOf(role).map(([id]) => id), profile).toEqual(byOrderKey);
     }
   });
 });
@@ -558,22 +570,22 @@ function textOf(blocks: readonly GuideBlock[]): string[] {
 }
 
 /**
- * Checks every lesson the role sees against the source blocks in
- * GUIDE_DATA. What the role reads must be, line for line and in order, the
- * shared text plus the role blocks that name its profile; and a line of any
- * other role block must not be there, unless the same sentence is also
- * written for this profile (Horários da equipa repeats one step in two
- * blocks). Returns the problems and how many role blocks were read and
- * withheld, so an empty problem list is never the result of there being no
- * role block to check.
+ * Checks every lesson (or, with "faq", every FAQ entry) the role sees against
+ * the source blocks in GUIDE_DATA. What the role reads must be, line for line
+ * and in order, the shared text plus the role blocks that name its profile;
+ * and a line of any other role block must not be there, unless the same
+ * sentence is also written for this profile (Horários da equipa repeats one
+ * step in two blocks). Returns the problems and how many role blocks were
+ * read and withheld, so an empty problem list is never the result of there
+ * being no role block to check.
  */
-function roleBlockAudit(role: Role): { problems: string[]; read: number; withheld: number } {
+function roleBlockAudit(role: Role, kind: "lessons" | "faq" = "lessons"): { problems: string[]; read: number; withheld: number } {
   const profile = PROFILE_OF_ROLE[role];
   const problems: string[] = [];
   let read = 0;
   let withheld = 0;
-  const source = new Map(GUIDE_DATA.lessons.map((lesson) => [lesson.id, lesson]));
-  for (const seen of guideLessonsFor(role)) {
+  const source = new Map((kind === "lessons" ? GUIDE_DATA.lessons : GUIDE_DATA.faq).map((lesson) => [lesson.id, lesson]));
+  for (const seen of kind === "lessons" ? guideLessonsFor(role) : guideFaqFor(role)) {
     const lesson = source.get(seen.id)!;
     if (seen.blocks.some((block) => (block as GuideBlock).type === "role")) problems.push(`${seen.id}: a role block reached the page`);
     const text = textOf(seen.blocks);
@@ -675,6 +687,129 @@ describe("each role reads only the role blocks written for it (G1-3)", () => {
     const data: GuideData = { ...GUIDE_DATA, faq: [entry], orders };
     expect(guideFaqFor("reception", data).map((item) => textOf(item.blocks))).toEqual([["Todos"]]);
     expect(guideFaqFor("therapist", data).map((item) => textOf(item.blocks))).toEqual([["Todos", "Terapeuta"]]);
+  });
+});
+
+// G1-3 INSIDE AN FAQ ANSWER. The same audit, run on the FAQ entries each role
+// reads, and, as with A ficha do paciente above, the lines each role reads
+// from the answers' role blocks written out by hand from the ruled proposal,
+// not read back from the code. So a role block widened to a role it was not
+// written for fails here by name, even though the helper resolves it
+// faithfully: the therapist does not read the Notificações line of Adicionar
+// paciente, because it cannot open that queue (it needs guest_requests:read).
+
+/** The lines a role reads in its FAQ answers that are not shared text, as "entry: line", in order. */
+function faqRoleLines(role: Role, data: GuideData = GUIDE_DATA): string[] {
+  const source = new Map(data.faq.map((entry) => [entry.id, entry]));
+  return guideFaqFor(role, data).flatMap((entry) => {
+    const shared = textOf(source.get(entry.id)!.blocks.filter((block) => block.type !== "role"));
+    return textOf(entry.blocks)
+      .filter((line) => !shared.includes(line))
+      .map((line) => `${entry.id}: ${line}`);
+  });
+}
+
+const NOTIFICACOES_LINE =
+  "perguntas.adicionar-paciente: O pedido de um cliente novo feito na marcação online trata-se em Notificações, com Criar paciente e marcar.";
+const CORRIGIR_ESTADO_LINE =
+  "perguntas.concluir-consulta: Se a consulta ficou Concluída ou Falta por engano, corrija na ficha do paciente: em Gerir marcação, use Corrigir estado.";
+const FAQ_ROLE_LINES: Record<Role, string[]> = {
+  reception: [NOTIFICACOES_LINE, CORRIGIR_ESTADO_LINE],
+  therapist: [
+    "perguntas.marcar-consulta: O campo Terapeuta já traz o seu nome.",
+    "perguntas.bloquear-horario: O campo Terapeuta já traz o seu nome.",
+    "perguntas.concluir-consulta: Depois da consulta, escreva o registo em Nova ficha clínica.",
+  ],
+  admin: [NOTIFICACOES_LINE, CORRIGIR_ESTADO_LINE],
+  owner: [NOTIFICACOES_LINE, CORRIGIR_ESTADO_LINE],
+};
+
+// A ROLE LINE OF AN ANSWER IS HELD TO ITS SCREEN'S GATE. Each role line that
+// sends the reader to a gated screen, with that screen's own check read from
+// its source (as in PAGE_GATES below) and that check as a predicate on the
+// role. No role may read the line and be refused by the screen.
+const FAQ_LINE_GATES: { entry: string; label: string; page: string; check: string; admits: (role: Role) => boolean }[] = [
+  {
+    entry: "perguntas.adicionar-paciente",
+    label: "Criar paciente e marcar",
+    page: "apps/web/app/notificacoes/page.tsx",
+    check: 'const canReadGuestQueue = can(ctx.role, "guest_requests:read");',
+    admits: (role) => can(role, "guest_requests:read"),
+  },
+  {
+    entry: "perguntas.concluir-consulta",
+    label: "Corrigir estado",
+    page: "apps/web/app/patients/[id]/page.tsx",
+    check: 'const canCancelAppointments = can(ctx.role, "appointments:delete");',
+    admits: (role) => can(role, "appointments:delete"),
+  },
+  {
+    entry: "perguntas.concluir-consulta",
+    label: "Nova ficha clínica",
+    page: "apps/web/app/clinical/new/page.tsx",
+    check: 'if (!can(ctx.role, "clinical_records:author")) redirect("/clinical");',
+    admits: (role) => can(role, "clinical_records:author"),
+  },
+];
+
+/** The roles that read each gated line, and every reader the line's screen refuses. */
+function faqLineGateAudit(data: GuideData = GUIDE_DATA): { readers: Record<string, Role[]>; problems: string[] } {
+  const readers: Record<string, Role[]> = {};
+  const problems: string[] = [];
+  for (const gate of FAQ_LINE_GATES) {
+    const key = `${gate.entry} ${gate.label}`;
+    readers[key] = ROLES.filter((role) =>
+      faqRoleLines(role, data).some((line) => line.startsWith(`${gate.entry}: `) && line.includes(gate.label)),
+    );
+    for (const role of readers[key]) {
+      if (!gate.admits(role)) problems.push(`${role} reads "${gate.label}" in ${gate.entry}, and ${gate.page} refuses it`);
+    }
+  }
+  return { readers, problems };
+}
+
+describe("each role reads only the FAQ role blocks written for it (G1-3)", () => {
+  for (const role of ["reception", "therapist", "admin", "owner"] as const) {
+    it(`${role}: every block for its profile and no other, and exactly its ruled role lines`, () => {
+      const audit = roleBlockAudit(role, "faq");
+      expect(audit.problems).toEqual([]);
+      expect(audit.read).toBeGreaterThan(0);
+      expect(audit.withheld).toBeGreaterThan(0);
+      expect(faqRoleLines(role)).toEqual(FAQ_ROLE_LINES[role]);
+    });
+  }
+
+  it("a role line that names a gated screen is read only by roles that screen admits", () => {
+    for (const gate of FAQ_LINE_GATES) {
+      expect(readFileSync(join(REPO_ROOT, gate.page), "utf8"), gate.page).toContain(gate.check);
+    }
+    const audit = faqLineGateAudit();
+    expect(audit.problems).toEqual([]);
+    // Each gated line is read by someone, so the check above is never true of nothing.
+    expect(audit.readers).toEqual({
+      "perguntas.adicionar-paciente Criar paciente e marcar": ["owner", "admin", "reception"],
+      "perguntas.concluir-consulta Corrigir estado": ["owner", "admin", "reception"],
+      "perguntas.concluir-consulta Nova ficha clínica": ["therapist"],
+    });
+  });
+
+  // The review's case: the Adicionar paciente block widened to the therapist.
+  // The helper resolves it faithfully, so only the ruled lines and the gate
+  // can catch it, and both do.
+  it("seeded: the Notificações line widened to the therapist fails the ruled lines and the gate", () => {
+    const widen = (block: GuideBlock): GuideBlock =>
+      block.type === "role" && block.roles.join(" ") === "rececao proprietario"
+        ? { ...block, roles: ["rececao", "terapeuta", "proprietario"] }
+        : block;
+    const faq = GUIDE_DATA.faq.map((entry) =>
+      entry.id === "perguntas.adicionar-paciente" ? { ...entry, blocks: entry.blocks.map(widen) } : entry,
+    );
+    const widened: GuideData = { ...GUIDE_DATA, faq };
+    expect(faqRoleLines("therapist", widened)).toContain(NOTIFICACOES_LINE);
+    expect(faqRoleLines("therapist", widened)).not.toEqual(FAQ_ROLE_LINES.therapist);
+    expect(faqLineGateAudit(widened).problems).toEqual([
+      'therapist reads "Criar paciente e marcar" in perguntas.adicionar-paciente, and apps/web/app/notificacoes/page.tsx refuses it',
+    ]);
   });
 });
 

@@ -99,7 +99,7 @@
         {
           "spans": [
             {
-              "text": "Quem ainda não tem ficha regista-se primeiro em "
+              "text": "A janela não cria pacientes: registe primeiro o paciente novo em "
             },
             {
               "strong": "Pacientes"
@@ -150,7 +150,7 @@
       ],
       "shots": null,
       "title": "Marcar consulta",
-      "words": 81
+      "words": 84
     },
     {
       "answers": [],

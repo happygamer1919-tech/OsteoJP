@@ -88,7 +88,11 @@ function renderBlock(block: GuideViewBlock, key: number, figure: ReactNode): Rea
   }
 }
 
-/** The "Sem imagem" card a lesson shows until its capture exists. */
+/**
+ * The "Sem imagem" card a lesson shows until its capture exists, and an FAQ
+ * entry until its primary lesson's does. Its hint names neither, so it reads
+ * right under both (ajuda-copy.test.ts holds that).
+ */
 export function NoImageCard(): ReactNode {
   return (
     <GlassCard>

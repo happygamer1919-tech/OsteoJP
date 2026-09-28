@@ -17,4 +17,4 @@ see: agenda.marcar-consulta, pacientes.marcacoes-na-ficha, pacotes.marcar-com-pa
 O campo **Terapeuta** já traz o seu nome.
 :::
 
-Quem ainda não tem ficha regista-se primeiro em **Pacientes**, **Novo paciente**. Se o paciente tiver sessões pagas por usar, a janela avisa com **Este utente tem sessões por usar**.
+A janela não cria pacientes: registe primeiro o paciente novo em **Pacientes**, **Novo paciente**. Se o paciente tiver sessões pagas por usar, a janela avisa com **Este utente tem sessões por usar**.

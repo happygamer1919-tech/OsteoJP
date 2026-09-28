@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, MessageCircleQuestion } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import type { Role } from "@osteojp/auth";
 import { EmptyState, GlassPanel } from "@osteojp/ui";
 
@@ -94,10 +94,14 @@ function GuidePart({ role }: { role: Role }) {
 }
 
 /**
- * Perguntas frequentes: the seven base tasks first, in the order of their files
- * in docs/guide/content/00-perguntas, each for this role only. Reception and
- * an admin read six (Assinar registo needs clinical_records:sign), a therapist
- * and the owner read seven.
+ * Perguntas frequentes: the seven base tasks first, in this role's order (the
+ * "order" key of each file in docs/guide/content/00-perguntas), each for this
+ * role only. Reception and an admin read six (Assinar registo needs
+ * clinical_records:sign), a therapist and the owner read seven.
+ *
+ * NO EMPTY STATE. Every role reads at least six entries, and
+ * lib/guide/guide-roles.test.ts holds each role to its list by hand, so a
+ * role left with none fails there instead of reaching this page.
  *
  * Each entry is its question (an h2), the short answer as this role reads it
  * (guideFaqFor resolves its role blocks), its primary lesson's capture pair or
@@ -106,17 +110,7 @@ function GuidePart({ role }: { role: Role }) {
  * (pergunta-<slug>) makes it an address a colleague can send.
  */
 function FaqPart({ role }: { role: Role }) {
-  const entries = guideFaqFor(role);
-  if (entries.length === 0) {
-    return (
-      <EmptyState
-        icon={MessageCircleQuestion}
-        title={s["guide.faqEmptyTitle"]}
-        description={s["guide.faqEmptyDescription"]}
-      />
-    );
-  }
-  return entries.map((entry) => (
+  return guideFaqFor(role).map((entry) => (
     <GlassPanel key={entry.id}>
       <article id={faqAnchor(entry)} data-guide-faq={entry.id} className="flex max-w-3xl scroll-mt-6 flex-col gap-4">
         <h2 className="text-lg font-semibold text-v2-text-primary">{entry.question ?? entry.title}</h2>
