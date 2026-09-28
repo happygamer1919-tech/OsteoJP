@@ -1,19 +1,27 @@
 /**
- * invoicing.spec.ts — /invoicing list page + patient Faturação tab
+ * invoicing.spec.ts: the /invoicing list page and the patient Faturação tab.
  *
- * Feature: PR #332 — invoicing list UI with InvoiceXpress integration gate.
+ * Feature: PR #332, the invoicing list UI with the InvoiceXpress integration gate.
  *
  * Assertions:
  *   1. /invoicing renders the "Faturação" heading for admin and reception.
- *   2. "Nova fatura" button is absent. T5 F2 removed it for every environment:
- *      it had no click handler, and issuing an invoice is not wired to a screen.
+ *   2. "Nova fatura" button is absent. This is NOT the evidence for T5 F2, which
+ *      removed the button: InvoiceXpress credentials are never set in e2e, so the
+ *      button was absent here before F2 as well. F2's guard is the unit test
+ *      app/invoicing/invoicing-view.test.tsx.
  *   3. Empty state shows when no invoices exist in the date range (seed has none).
- *   4. Reception also has invoices:read — verified to see the page.
- *   5. Therapist also has invoices:read (read-only) — can access the page.
- *   6. Patient profile page shows a "Faturação" tab for admin (invoices:read).
+ *   4. Reception holds invoices:issue, which is what the route gates on, and sees
+ *      the page.
+ *   5. Therapist holds invoices:read but NOT invoices:issue, so the route renders
+ *      the forbidden message instead of the page (W10-04, owner ruling
+ *      2026-07-21).
+ *   6. Patient profile page shows a "Faturação" tab for admin and for the
+ *      therapist (both hold invoices:read).
  *   7. Faturação tab body renders the empty state for the test patient.
  *
- * Role matrix for invoices:read: owner ✓, admin ✓, therapist ✓, reception ✓.
+ * Role matrix, from packages/auth/permissions.ts:
+ *   /invoicing page (invoices:issue):  owner ✓, admin ✓, reception ✓, therapist ✗.
+ *   Patient Faturação tab (invoices:read): owner ✓, admin ✓, reception ✓, therapist ✓.
  *
  * All specs run in chromium only (listed in testIgnore for firefox + webkit).
  */
@@ -42,8 +50,9 @@ test.describe("/invoicing — admin", () => {
       page.getByText(/Sem faturas no período selecionado/i),
     ).toBeVisible();
 
-    // T5 F2: there is no "Nova fatura" button in any environment. It used to
-    // render (with no handler) when InvoiceXpress credentials were configured.
+    // No "Nova fatura" button. This was already true before T5 F2 removed the
+    // button, because the e2e stack never sets InvoiceXpress credentials, so it
+    // is not the evidence for F2: app/invoicing/invoicing-view.test.tsx is.
     await expect(
       page.getByRole("button", { name: /Nova fatura/i }),
     ).toHaveCount(0);
@@ -98,7 +107,11 @@ test.describe("/invoicing — therapist (no access)", () => {
   }) => {
     await page.goto("/invoicing");
     // The route renders the forbidden guard for a therapist (invoices:read but
-    // NOT invoices:issue): no Faturação heading, no issue button.
+    // NOT invoices:issue): no Faturação heading. The heading half is the real
+    // check, because admin and reception see it above. The button half proves
+    // nothing about the therapist: no role sees that button in e2e, before T5
+    // F2 or after it (board card
+    // TEST-negative-security-assertions-without-a-positive-control, item 4).
     await expect(
       page.getByRole("heading", { level: 1, name: /Fatura[cç][aã]o/i }),
     ).toHaveCount(0);

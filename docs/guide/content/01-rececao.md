@@ -202,6 +202,8 @@ Nota: este ecrã só mostra o que aconteceu e não reenvia mensagens. Um lembret
 
 ## Comunicações: Respostas SMS
 
+Nesta versão, a clínica ainda não recebe respostas dos pacientes por SMS, por isso o separador **Respostas SMS** mostra apenas o aviso **Respostas por rever indisponível**. O resto desta secção, incluindo as capturas, mostra o ecrã depois de a receção de respostas ser ativada.
+
 O separador **Respostas SMS** abre o ecrã **Respostas por rever**: as respostas de pacientes aos SMS da clínica que não correspondem a uma palavra-chave e que, por isso, alguém da receção tem de ler. Cada resposta mostra o paciente (ou **Paciente não identificado**), a data em que chegou (**Recebida em**), a consulta a que foi associada (ou **Sem consulta associada**), o texto da mensagem e os botões **Marcar como confirmada**, **Marcar como cancelada** e **Marcar como lida**.
 
 ### Como fazer: tratar uma resposta
@@ -213,7 +215,7 @@ O separador **Respostas SMS** abre o ecrã **Respostas por rever**: as respostas
 ![Respostas SMS no telemóvel](../screens/rececao/respostas-sms-390.png)
 ![Respostas SMS no computador](../screens/rececao/respostas-sms-desktop.png)
 
-Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta que ainda está **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, a resposta fica tratada e aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar. Enquanto a receção de respostas por SMS não estiver ativada na clínica, o ecrã mostra apenas **Respostas por rever indisponível**.
+Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta que ainda está **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, a resposta fica tratada e aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar.
 
 ## Faturação
 

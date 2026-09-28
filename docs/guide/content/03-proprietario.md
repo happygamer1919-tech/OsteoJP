@@ -168,6 +168,8 @@ Nota: só aparecem os SMS que chegaram à fase de envio; um lembrete agendado qu
 
 ## Comunicações: Respostas SMS
 
+Nesta versão, a clínica ainda não recebe respostas dos pacientes por SMS, por isso o separador **Respostas SMS** mostra apenas o aviso **Respostas por rever indisponível**. O resto desta secção, incluindo as capturas, mostra o ecrã depois de a receção de respostas ser ativada.
+
 O separador **Respostas SMS** abre **Respostas por rever**: as respostas de pacientes aos SMS da clínica que não correspondem a uma palavra-chave, para alguém ler e decidir. Cada resposta mostra o paciente (ou **Paciente não identificado**), **Recebida em**, a consulta associada (ou **Sem consulta associada**), o texto e os botões **Marcar como confirmada**, **Marcar como cancelada** e **Marcar como lida**. É o mesmo ecrã que a receção usa.
 
 ### Como fazer: tratar uma resposta
@@ -178,7 +180,7 @@ O separador **Respostas SMS** abre **Respostas por rever**: as respostas de paci
 ![Respostas SMS no telemóvel](../screens/proprietario/respostas-sms-390.png)
 ![Respostas SMS no computador](../screens/proprietario/respostas-sms-desktop.png)
 
-Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta ainda **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar. Enquanto a receção de respostas por SMS não estiver ativada, o ecrã mostra apenas **Respostas por rever indisponível**.
+Nota: **Marcar como confirmada** e **Marcar como cancelada** só mudam uma consulta ainda **Agendada**. Se a consulta já estiver noutro estado, ou se não houver consulta associada, aparece **Resposta arquivada. Nenhuma consulta foi alterada.** Se já houver outra consulta confirmada à mesma hora com o mesmo terapeuta, a confirmação é recusada e a resposta continua por tratar.
 
 ## Faturação
 

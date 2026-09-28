@@ -10,8 +10,13 @@
  *   F5  A therapist read "Horários da equipa" above their own single card, and a
  *       Marcações subtitle promising all their patients' bookings.
  *
- * F2 (no "Nova fatura" button) is asserted in invoicing.spec.ts, and F3 (the
- * refusal message matches the transition table) in
+ * F2 and F3 have no browser check here, and neither needs one. F2 (no "Nova
+ * fatura" button) is guarded by app/invoicing/invoicing-view.test.tsx: the view
+ * takes no issue prop, renders no button with or without rows, and the i18n key
+ * is gone from both locales. A browser check could not show F2: the e2e stack
+ * never sets InvoiceXpress credentials, so the button was already absent there
+ * before the fix (invoicing.spec.ts says so where it asserts the absence). F3
+ * (the refusal message matches the transition table) is
  * lib/scheduling/estado-transitions-message.test.ts, which is where the table is.
  *
  * THE SHELL IS ASSERTED BY ITS OWN LANDMARKS, not by a page heading: the

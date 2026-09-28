@@ -51,8 +51,10 @@ export default async function InboundReviewPage() {
     assertCan(actor.role, "sms_replies:read");
   } catch (e) {
     if (e instanceof ForbiddenError) {
+      // Inside AppShell since T5 F4 (app/reminders/layout.tsx), so the same
+      // padding as the two branches below, not a full-viewport-height block.
       return (
-        <main className="min-h-dvh p-8">
+        <main className="flex flex-col gap-6 p-6">
           <p className="text-sm text-error">{s["errors.forbidden"]}</p>
         </main>
       );
