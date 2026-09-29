@@ -1,0 +1,178 @@
+# Lines allowed to name a production host or the Supabase production ref in a
+# test config, a fixture or a test file (INC-G1). Read by, and pinned beside,
+# scripts/no-production-hosts-in-tests.test.mjs; its header says what a hit is.
+#
+# One entry per line, three fields separated by a TAB:
+#
+#   <path>	<sha256 of the line, trimmed>	<why this line cannot reach production>
+#
+# The failing check prints the first two fields for every new hit. An entry is
+# added only after a person has read the line and found that nothing on it can
+# open a connection to production, and only in a pull request titled
+# GATE-CHANGE that the owner merges by hand: this file is pinned in
+# .github/gate-manifest.json because an entry here silences the check.
+#
+# An entry clears every identical trimmed line in its file. Any edit to the line
+# changes the hash and the line comes back as a hit. An entry that clears no line
+# fails the check as STALE. An entry whose reason starts FOLLOW-UP is allowed
+# today but names a test that should be changed, and is listed on the card.
+#
+# The preferred fix for a new hit is not an entry here: it is a reserved name,
+# such as portal.<the production domain>.invalid, which never resolves.
+
+apps/admin/lib/auth/operator.test.ts	97b21d8f39928a3a33cb8bcc03f160f81c9df9578965e8c99c10d0b173b4a69d	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/admin/lib/auth/operator.test.ts	d77170d095be15ff73ba7b42d7949c83935a5bd4f8145545f68b28250df1e5d0	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/admin/lib/auth/operator.test.ts	60bd8bc470e070a6b336f15c20bdf083da158c816c0ee80f4a02ae48b003ddf9	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/admin/lib/auth/operator.test.ts	2e219e2134c5314c46c8db0220a260c266fc417d037e338715af9b2c0f1b21bf	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/admin/lib/auth/operator.test.ts	99c21f5faec3f3e3418f6f5291223a47bd3d04d13b02cae200862cf553d6e728	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/admin/lib/auth/operator.test.ts	d02375f1f4a911b147438859371e6d39431f3aeb4368964a47f4077e42d13c46	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/api/app/api/v1/auth/session/route.test.ts	0735eb458bdd601b7389b7f981d261a4e8ebdde23377945396b39fe597ec304c	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/api/app/api/v1/patient/documents/[id]/download/route.test.ts	b63f3aa05eac2a73dedd95388ac04cc44ecd0cf95d47bb3f23a392c8cc2d0f45	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/api/app/api/v1/patient/documents/[id]/download/route.test.ts	a3fbd6c6dc07e18a8025e3fb85fc54da00799cde4098dbd101d37b7178a03565	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/api/app/api/v1/patient/documents/[id]/download/route.test.ts	1d326395fa5688d574387f4430d4810dc2951a6ce306b16c8dd98d8dc3793c7c	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/api/app/api/v1/patient/documents/[id]/preview/route.test.ts	b63f3aa05eac2a73dedd95388ac04cc44ecd0cf95d47bb3f23a392c8cc2d0f45	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/api/app/api/v1/patient/documents/[id]/preview/route.test.ts	0c64e37abc7092d2f43985cee3dcfe25a8ef021cc99757eac511ebbc525c3e3a	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/api/lib/exposure/patient-surface.test.ts	717e7f932df0f2083b675226ba0d7dd2553fe7b5ff3bfcbfc6c33708f710bb60	prose in the exposure register saying what the public site already publishes; loads nothing
+apps/api/lib/notify/registry.test.ts	981d3f70117069fdf18540ab7a2ff7c91a03bea3e33db69819e0682c81b3cb2f	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/app/_components/timing-panel.test.tsx	f8b55991a9fd253509955fee9074f73adab9ba3ea61b45db351d642e278a07d9	URL string handed to a pure navigation classifier; nothing is fetched
+apps/web/app/_components/timing-panel.test.tsx	fdbae911f2bb2cc07aff44fc665f9e8faa809f1a556dbbd3e6240b823ab8b8ca	URL string handed to a pure navigation classifier; nothing is fetched
+apps/web/app/admin/staff/StaffManageModal.test.tsx	96b73057fa09918c630f45087794ffcafc622159d11ed84d224f3728d7e09436	staff email address as props for a component render test; nothing is sent
+apps/web/app/api/v1/ingestion/clinical-records/rate-limit.test.ts	b11a5fcf6f8107217cea397fe8ae5e062d9e758e7ea5b7096ecba590230d72e7	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/web/app/api/v1/integrations/stripe/webhook/rate-limit.test.ts	bf906cf8c6e6acb62cf44fabd32cd864355106a1a5a33c72e49a7dd849e66b7f	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/web/app/api/webhooks/ifthenpay/rate-limit.test.ts	a0ce1aafc1730358f33e09b2dc4ad5d9c53ca20e159c1ae86e97f3cd5d542493	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/web/app/auth/forgot-password/request.test.ts	fa09fd8b970ff5a3c19f93371cdc1cf8e386d9d805a1f4c1ee55187738477d6c	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/web/app/auth/forgot-password/request.test.ts	1e0ec53a3146f8ca411392b7c3e814eb7cba4ebdeadd54695507340a88b6791e	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/web/app/auth/forgot-password/request.test.ts	fac170bae1923f63e874dbb2a2cf10103817555bc3583ab254840504e1feffd1	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/web/app/auth/forgot-password/request.test.ts	331004ee139a9b0000acd99ff88898f799e735e0f805182cf07373761c282ba5	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/web/app/auth/update-password/inert-get.test.ts	e3f8b9912ed25b544a5d4bd1e0b10a1b4a92175fae85f42c549ec8ba3498d632	asserts the recovery link inside an email template's source as a string; nothing is fetched
+apps/web/app/login/rate-limit.test.ts	dddc13c430b46a33edb979f9b12e984f8451eb6780ed13a7486445510bfa020a	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/app/login/rate-limit.test.ts	02a9a5f4567f98c8565c029e11ceedbd288d347c439970f44a0a66ffe5631f84	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/app/login/rate-limit.test.ts	ac128c8d5b6d7e18e87d230a16834ed73ffe64d6d0866d6a3b6ebe095663149b	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/app/login/rate-limit.test.ts	a7c4d7c2f4ff3827dd6690793601b895f8142fe4f106d81c3c756925fd98debe	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/app/login/rate-limit.test.ts	63e1fdb2c844d2955efe12f7102e5183ce76a6bb708b585aea7a014e670a2230	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/app/login/rate-limit.test.ts	3f4288106ec21273b9b0d780f02d09203921f59cbd9583ebd541fd711ba1d9b1	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/app/login/rate-limit.test.ts	f2d15d367363f5861ff53d081729767be73ae18a6edf48f08cdc0dcf42574513	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/app/login/rate-limit.test.ts	78e1e09a4e04b16fe3bcc1a70bed1fbba0091fb5953ddd01b2024f0eb91489cd	email typed into the login action under test; the Supabase auth client is mocked, so no sign-in request leaves the process
+apps/web/e2e/reminders.spec.ts	b1925a28a44bc237bf60998778e2ed37c9ed10cad5460a38456a553acd613f2f	template context value rendered in process by a Playwright API test; the spec never navigates to it
+apps/web/lib/admin/staff.activate.test.ts	91ca56f4294b676745811eed3f944d0c5be95c62576283349ecf9048889c1398	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.activate.test.ts	09055ea32f619196cdd3e0768586e23b42a79ae6f826d83e5720c2055825ec2f	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.activate.test.ts	2a359809a0739786fbdf461d5edf64ebb275692d4e9ecca7a549d48b12a53ec9	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.activate.test.ts	41d7df87630dc27b77e34864663382b250f82917f28df87491f9df15baa7f265	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.activate.test.ts	3100be01c8ab92417c97e12030332d5b198fba9cffad8c143f3cf1ac1c4dadf5	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.activate.test.ts	f936758c772a984c5b6bb80ef141a1b154c763fb63f952de2bb9838dd700b8e5	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	38a35e4cfc13a330acde402301a49f9a27fd4d69c7e836f6e4216324d9db30fd	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	fcda5d193aadb4a5254a0ebae05315b31773d18e9e559053cdf5f16e54ed832b	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	5b8679fbd8a4461826ba2a74da5a09f0368f8fedc63e21c5414249ea42e01afd	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	441d56bd5f54549e167f3296483e03a4860aec6d46588110e76be61f139b66cc	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	50c12aa7e82b9760dd24aaf7faa610aabddd3ba865ad3e6a661561814f969389	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	07b6504791bc80b894232ebe8b0406181952b150cf36f6d422fcc33dc165665e	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	3530beb96eb3cfa672ae250b36041c8c59d457f4c88939c037174d323bcc8b74	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	2252ca829845a515a65d66073a9679a0eed01b010b24e374772f0f8fe67fa014	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	60660ba376d6949af1f795301f78923c00dd68751fd9f3dbc587ba93732a6143	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	a91d3d54f959c5fa73595e8200117b46984d60056589a2a29de571ca04e8d563	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	4aaa05eae5f00115048e63740ce0f4dbe00894c4d9c57d48739dee640eede7af	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	0993d2bb6e3c36cedf6c09d588cf5ce1de96ed3ea0f73fd750856763015a857d	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	79e9cce22ff5ba62259bd73313046ff4ec0eda0d1896216ee7de03143b10368c	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	5e29f195be6bac83374afb6f5f00883f4aa9f777797c07d99dabb07a39d118c0	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	23983dde910ae24a71c08e7c178064920dc7bfaa2d0d053f269467be45e43922	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	7d16eb4ab367edea7b6081785b203dfd795e4fd526f9e47e9e45eaabac741128	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	656c65ecf7c493b2157110b725d5865c6d95e614588cdd6297b64dc0ef42d997	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	638c241519da06289a4e6a4c2f658a214f6c53585e5d7870b50efadccde619aa	asserts the pure maskEmail function's output as a string; nothing is sent
+apps/web/lib/admin/staff.edit.test.ts	6f2db6d54fc799fa8a415058588164374559f38fc908d036b13a7af68dcb8d81	asserts the pure maskEmail function's output as a string; nothing is sent
+apps/web/lib/admin/staff.invite.test.ts	d67f636a5d9c73b1a1c0a50155279309d51f694a0e7ca6114b00ae8d876fa7e2	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.invite.test.ts	05720cdba1138520ab8364921bce359aa86a5a37200b8c26dd01314aef2698fd	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.invite.test.ts	b900a3b277230649c1aa3be37bacc7f1024328ccbf4d2e92b7113d431bc3824b	staff email address as test data for a server function whose database, auth and mail clients are mocked; nothing is sent
+apps/web/lib/admin/staff.test.ts	5bfa170504e04e2d46e0c526e4c67680698d85c4cb6a4f35f7f284b7237084b8	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/web/lib/admin/staff.test.ts	c1a6344ffbc021d9eb060248d856d037dfedc3dc3e2ac399d910a2bfb072a7fa	email address on the clinic mail domain as input to a pure parser, matcher or validator; nothing is sent and no host is contacted
+apps/web/lib/clinical/declaracao/declaracao-pdf.test.ts	8e75b577c5f810777dd60b0d1b2007ebac7f91f7f21c9ff34d6ca2ddb9039a63	clinic contact email as test data for an in-process PDF render; nothing is sent
+apps/web/lib/clinical/report/location-contacts.test.ts	08e47c55cd6456892b7271cd792b204dd4ff8b513dac5d8e9b956c7ee54d53f7	test title naming the production domain in prose; loads nothing
+apps/web/lib/clinical/report/location-contacts.test.ts	3955f8198a2d6d504845929cbe7f4c8eacc8f255d5ddddebf16f3e11f49d04eb	clinic contact email asserted as a string from the pure location contacts table; nothing is sent
+apps/web/lib/clinical/report/location-contacts.test.ts	460b0265dca80372c57d5b86e0279da0de9d449a28aba0706c52bda80d999ba0	clinic contact email asserted as a string from the pure location contacts table; nothing is sent
+apps/web/lib/clinical/report/location-contacts.test.ts	5c3aa778eebfbdcecda26c67e4ea7816c82ad94d87afea3c88de1138cf6bdf13	clinic contact email asserted as a string from the pure location contacts table; nothing is sent
+apps/web/lib/consultation/first-fire-e2e.test.ts	26d798764d47fdd84c0e9c55ac6fd540c3234df417659fe2bec26de2c60a5b74	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/web/lib/guide/guide-capture.test.ts	c679065a60ac356223ea4bf16e8781bf07325f159d4fcf9641fa2771c4a540a0	the capture host guard's own refusal arm, on the pure checkBaseUrl function; the command arms use a reserved .invalid host instead
+apps/web/lib/guide/guide-capture.test.ts	6c68ee4368bc9d82f361ab1c56681aaea40c62674a943cb752aeb5842f74d2df	the capture host guard's own refusal arm, on the pure checkBaseUrl function; the command arms use a reserved .invalid host instead
+apps/web/lib/guide/guide-capture.test.ts	8132656fbed9a63f3ce1a172e5644a124635a4a7241109b7f8bb9072e61be556	the capture host guard's own refusal arm, on the pure checkBaseUrl function; the command arms use a reserved .invalid host instead
+apps/web/lib/ingestion/ficha-medica-compat.test.ts	b4023d750fdbc426013f155f8164c573a3d00591098e6d19294706bcd2a6d6e0	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/web/lib/ingestion/ingestion-e2e.test.ts	b4023d750fdbc426013f155f8164c573a3d00591098e6d19294706bcd2a6d6e0	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/web/lib/ingestion/route-access.test.ts	b4023d750fdbc426013f155f8164c573a3d00591098e6d19294706bcd2a6d6e0	URL of a Request object handed straight to the route handler in the same process; no network request is made
+apps/web/lib/integrations/ifthenpay/fixtures.ts	0d29ba2624cd3b66c2e98fa739df3ac719e4c54609a7fcec04868cc24b08087c	comment naming the public site the fixture values were copied from; loads nothing
+apps/web/lib/integrations/ifthenpay/fixtures.ts	be85052fb8857dc3c5031f0b9648ce8f7604b9f61d1cec1c66725ada3a15ce9b	comment naming the public site the fixture values were copied from; loads nothing
+apps/web/lib/integrations/invoicexpress/fixtures.ts	01154f48fd74968373e54d8daeafcd8535057f5f93e3d65a21561ed81bac5164	comment naming the public site the fixture values were copied from; loads nothing
+apps/web/lib/invites/email.test.ts	00b8e199c58d77b5e4355ec3df9bbf5573bb679fee3dab59f0dd2d45016ef5fc	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/invites/email.test.ts	1ba4483120d5b283f4c024a113bf62fc4e698227798c82703e170418c49c75ab	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/invites/email.test.ts	7be6d9c1368c8f6fc93c5e3720f4232c376069b2405af02507b01de469d099c3	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/invites/email.test.ts	b4ce1cb62a4000d287e4cefe29dd0424731ec86526a861dd4a8b282b589748ca	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/invites/email.test.ts	ba1839f03f97fbdf30478b212b374e35a2e68057e8f6c2bb2817f80308f01e15	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/invites/email.test.ts	4f85722a6cc14aef0346c4338b263bb1ac6673745787d1f601169f85ebd4de48	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/observability/extension-noise.test.ts	c0212b9efda401a110105439491797c8f7101f6e27f3afa4faeb4f80192a4fbb	stack frame filename handed to a pure event classifier; nothing is fetched
+apps/web/lib/observability/extension-noise.test.ts	10ed76852a45757a7137d1ec01dccbd20fecb5546359df3e53bbccf93ab3bcfc	stack frame filename handed to a pure event classifier; nothing is fetched
+apps/web/lib/observability/extension-noise.test.ts	c4afb621a1033f30a095b5d52c80b78355a5a732d2ae2b61d0259a82eb754143	stack frame filename handed to a pure event classifier; nothing is fetched
+apps/web/lib/observability/extension-noise.test.ts	0148abcf584a47bea3b6fc2a5be55292ce8bcf78b7b572f38748d0415ec66c49	stack frame filename handed to a pure event classifier; nothing is fetched
+apps/web/lib/proxy/canonical-host.test.ts	2ff91ad3b9eb83bc34a2ce2ddde01ea544051b787782b8f01e70dcd30ba2b5f7	the canonical host redirect's own test: a pure function over a constructed URL; no request is made
+apps/web/lib/proxy/canonical-host.test.ts	a7d5ffe97807c3bb8db9cac9fa420440bbd08abda872c216ad1b88143bb569cc	the canonical host redirect's own test: a pure function over a constructed URL; no request is made
+apps/web/lib/proxy/canonical-host.test.ts	68f586e2656be3ee83e6acc8dcc93513eb801652e6cdfcdac7762d3934c18d31	the canonical host redirect's own test: a pure function over a constructed URL; no request is made
+apps/web/lib/reminders/clients.test.ts	c5f107314ea13116230f20b39ac1070aeaf6ed685eeb71e3b8b73f6b4c8725f0	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/reminders/clients.test.ts	495bbea91db29141c19492942168655076e7b0e19f3fbf202c27e6638e963b8b	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/reminders/confirm-link.test.ts	864c7917b0b65d1e5c972bfdb2261569f280bbbb8fa2462a1353785dbd42938d	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/confirm-link.test.ts	efc489aa8c6ce6e43bbff698d68cec5b5d54fa734e32d6c2e5d9a92a62de54a1	comment naming the production domain in prose; loads nothing
+apps/web/lib/reminders/confirm-link.test.ts	2132068e836bc135fa016957591891f4839cf3cfb99e04b9b48a5ac479350a0f	comment naming the production domain in prose; loads nothing
+apps/web/lib/reminders/confirm-link.test.ts	74ab353082d7dfaf0b98c9eea9e8ba87d45e4e476dcd0bf2bfdcae4158b7e585	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/confirm-link.test.ts	e4df76017d4068cf450d9346d8899d283de8570f31df91e7220738bc1c9cbbaa	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/confirm-link.test.ts	634abb5b7ccb564ad6bf315377fbd1341c5b51a4a1336d7b7b38df1de5a64987	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/confirm-link.test.ts	62297f85d65e0d3261a3bc2391738db37700bb73a75c4940bbc6d58b47d86ce9	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/confirm-link.test.ts	0c8d3cf3847f6f8e0fa04b3dbdc40e5bfbe95282fd01bb7eb19692642481e285	comment naming the production domain in prose; loads nothing
+apps/web/lib/reminders/confirm-link.test.ts	b2857beb20f274ab2832e386a3c7330c22f0dee03f6cc699bcb81138f4a4fdcc	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/darkened-bodies.test.ts	981d3f70117069fdf18540ab7a2ff7c91a03bea3e33db69819e0682c81b3cb2f	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/reminders/dispatch-sms-skip-reason.test.ts	f170f704fd54f0fb92f122c015a66ddf1c8c848d425d9c922d5fa6dbc20ab7c0	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/dispatch.test.ts	f170f704fd54f0fb92f122c015a66ddf1c8c848d425d9c922d5fa6dbc20ab7c0	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/email-leg-live.test.ts	7be6d9c1368c8f6fc93c5e3720f4232c376069b2405af02507b01de469d099c3	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/reminders/email-leg-live.test.ts	0f1a92b71a1f229f4d04c042be9639d04adfeecef1eae1090018af871baa224b	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/reminders/fee-notice.test.ts	0afa1da544c0359622c92ae05f7378e9c71aec3a8ed63f5f6bcc29ba975a1a98	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/inbound-signature.test.ts	e450e65825abadf109ce43b1bbb6a324660caec09bb54e296d7ccf4dc52ff274	URL fed to the inbound webhook signature check, a pure HMAC over a string; no request is made
+apps/web/lib/reminders/inbound-signature.test.ts	eab4c521278ac37f121513caa40f2ecd376f716caf3a5f15ac627da191f83b49	URL fed to the inbound webhook signature check, a pure HMAC over a string; no request is made
+apps/web/lib/reminders/inbound-signature.test.ts	07e968e23e8acacfcd7e37540dd2d5375232455904fa03386b5998fdc90bc083	URL fed to the inbound webhook signature check, a pure HMAC over a string; no request is made
+apps/web/lib/reminders/inbound-signature.test.ts	286a3f01d1ec88678015659f3ea0c0c9f988375c4bdbc8908ec38ea7eac1e2e9	URL fed to the inbound webhook signature check, a pure HMAC over a string; no request is made
+apps/web/lib/reminders/loud-env.test.ts	5e7935ae51a9ce5899739205709426484b062190dcca6aa4dee7741c806d8332	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/loud-env.test.ts	97d2705049fc57f233f452c41851fc92fbf1a81b6b0c21196641fda179fdb729	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/loud-env.test.ts	7ab3f28522869f848911bdb42c1fd3486f3b8d354f2514cf0c84ab88c17f44bc	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/loud-env.test.ts	2d897800761213c4a3fd84f0204b2c3001bfe87d153b98f5a807b758bff4b34d	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/messaging-check.test.ts	08792f63a853abcd0223d47566b887dec4289d74473b6cdc2a4a7826e83701af	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/notification-registry.test.ts	981d3f70117069fdf18540ab7a2ff7c91a03bea3e33db69819e0682c81b3cb2f	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/reminders/notification-registry.test.ts	ba3ff6759ef2a4db9895bf644c87143006163df32c78d291dc5d2204618aee02	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+apps/web/lib/reminders/reminder-log.db.test.ts	370e81c1769531a0d48645201d62ce2354d61602c3f4efafb951c7e258f115d5	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/reminders-e2e.smoke.test.ts	72e6cac57da5cf88e88eb11120344c155119b4e2699a94dbefe76eb48bb8c254	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/sms-body-parity.test.ts	08792f63a853abcd0223d47566b887dec4289d74473b6cdc2a4a7826e83701af	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/sms-body-parity.test.ts	5ff34af111988e15905fe0d92edcb5cf08e839d55ba995f1284d7ccbcfa4204b	comment naming the production domain in prose; loads nothing
+apps/web/lib/reminders/sms-body-parity.test.ts	489327200c44753343d20c28ccd403f9f3f1b61e54a23f671d70fe7d8d5d2c69	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/sms-body-parity.test.ts	5b2e918e431281e20372f7b3c3b9ae4a5fd54d539f6fc6711c629bdd245753ca	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/sms-body.test.ts	00688c6dd055b898d664225428fdab472a207f0ed45ebb0834f8796add790851	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/sms-body.test.ts	bea7ee471af54e036c7e55386804bf11122758886e99122745c62260cd613d44	comment naming the production domain in prose; loads nothing
+apps/web/lib/reminders/sms-body.test.ts	022df63dbfd225ae3f33044ffb3459ada280f3444b819f305023d191135bffc0	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/sms-body.test.ts	90485ccc338ba353b9b2e5a93de58d9d06afe2a5a1490a350aafb71197c3a204	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/soft-delete-suppression.test.ts	f170f704fd54f0fb92f122c015a66ddf1c8c848d425d9c922d5fa6dbc20ab7c0	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/templates.test.ts	864c7917b0b65d1e5c972bfdb2261569f280bbbb8fa2462a1353785dbd42938d	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/templates.test.ts	572da676567dab6a78d4069f46aaacc05d33f698151fc9afb685574d025928e0	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/templates.test.ts	3cbf55540c6e9f722afddba98921f7e3953e23a3fb6da20a19f71031c7dceef4	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/templates.test.ts	e1f1cf2f7bd8e46750e477e0b31ffbbffa6fa571e9b3ab62042ff5dc954f04ec	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/templates.test.ts	e4ced623a21a7c185823b6653dda954364e09c311298fc9dffcabb19acf2644f	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/twilio-proof.test.ts	d32a3cf3f41130d4400ba4355c7dbf72b1ea7d86b0961479eccb424bd5aa3321	link or base URL given as input to a message template or a URL builder, run in process; the transports are mocked and the link is never opened
+apps/web/lib/reminders/twilio-proof.test.ts	57d430b60084b95e5d5762341f0cd5d65e219d77aa0b102ec15e600b21b4852c	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+apps/web/lib/reminders/twilio-proof.test.ts	660c0e7b7cc5935d2ce53b827e10d5973f803460c84e2d55db6487b706cf0301	asserts the rendered text of a URL builder or a message template as a string; nothing is opened
+packages/db/tests/local-target.test.ts	c45c2283ea078540db32774bde4d91b90053245d0473c293d985df77e0fb2112	the Supabase production ref as the value a target guard must refuse; pure functions, no connection is opened
+packages/db/tests/rehearsal-import.test.ts	1d7ab68b14e714eac2286e07fc7cf6e76f1a3c9f529f1e3509ceea5f3979ac9e	the Supabase production ref as the value a target guard must refuse; pure functions, no connection is opened
+packages/db/tests/seed-guard.test.ts	1d7ab68b14e714eac2286e07fc7cf6e76f1a3c9f529f1e3509ceea5f3979ac9e	the Supabase production ref as the value a target guard must refuse; pure functions, no connection is opened
+packages/notify/src/env.test.ts	a8cf706fba0e1be3f9c526d97f1af50ef5e2c5ddf664a85978a1b2b8a4a9a450	value in an env map handed to a pure env parser; nothing is sent
+packages/notify/src/env.test.ts	3085c1d0fb37b567398c34136331741444783ce52c8429ba6f7ec0d2fb41757c	value in an env map handed to a pure env parser; nothing is sent
+packages/notify/src/gate.test.ts	981d3f70117069fdf18540ab7a2ff7c91a03bea3e33db69819e0682c81b3cb2f	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
+scripts/apply-lane/apply-lane-settings.test.mjs	8b7334b55db4290c4f856b63d63b4e0d1dc48d44b1fac62bbae80e33f85b1b7b	asserts the apply lane settings name the Supabase production ref; reads a JSON file, connects to nothing
+scripts/apply-lane/apply-lane-settings.test.mjs	d0d6d88e039f5f9f095664366c846377bbc28f5a9a2333cdd71e13d1bb5c9680	asserts the apply lane settings name the Supabase production ref; reads a JSON file, connects to nothing
+scripts/assert-production-target.test.mjs	1d7ab68b14e714eac2286e07fc7cf6e76f1a3c9f529f1e3509ceea5f3979ac9e	the production target guard's own test; its connection host is db.example.invalid, which never resolves
+scripts/assert-production-target.test.mjs	28b3a94f2e6febcb009b0089258211b740924fd443aa9754aa7c9549bed8fa77	the production target guard's own test; its connection host is db.example.invalid, which never resolves
+scripts/import/copy-attachments-gate.test.mjs	f2d447ee305e18b7ab076084a1f0e7f1273c751136105e780ae81ccedea9d04e	the attachment copy gate's own test: pure functions over URL strings and a temporary source file; nothing connects
+scripts/import/copy-attachments-gate.test.mjs	8e0a51db30e7d97c8a1f9d6b14131e50f1c8e71efa7237ed29ca43d73d9d4ed4	the attachment copy gate's own test: pure functions over URL strings and a temporary source file; nothing connects
+scripts/ingestion-sign.test.mjs	41b49e54cbe8e0865dab0f881231646311c16276dea28382148d908fb05c24a6	argv handed to the signer's pure parseArgs; nothing is sent
+scripts/ingestion-sign.test.mjs	cd8d23441858efdd6a4f8ee74b4c504b13766b0adf0167b7cbba8de07341420f	argv handed to the signer's pure parseArgs; nothing is sent
+scripts/local-target.test.mjs	0599497b219db4279c510e41239ffca8cef766b9a56b0a44f3147a3d803ea4fa	FOLLOW-UP: the seeder guard's refusal test spawns the seeder with a production pooler URL; with the guard mutated away the seeder would open a connection to production (placeholder password)
+scripts/obs-05-backfill-emit.test.mjs	c38b4916aefb479845136234bd15d6304341ca38fe5775a1df050e810d584c68	the production ref as a pooler user name on host db.invalid, which never resolves; nothing can connect
+scripts/staff-11-jp-one-clinic-check.test.mjs	d6b5da7b8940ef4a0985011da16d6f70d9d2995a1ed830e7c60fa35df384846a	FOLLOW-UP: the check's own port refusal test spawns the check against the production pooler; with the refusal mutated away it would open a connection to production (placeholder password)
