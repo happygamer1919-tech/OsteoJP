@@ -9,6 +9,7 @@ import {
   makeMinToPx,
   shortPatientName,
 } from "./agenda-grid";
+import { patientLabel } from "@/lib/scheduling/patient-label";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
@@ -106,6 +107,26 @@ function visibleText(fragment: string): string {
   return fragment.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** The name element's opening tag inside a face. */
+function nameTag(face: string): string {
+  const m = face.match(/<span\b[^>]*data-testid="agenda-card-patient"[^>]*>/);
+  if (!m) throw new Error("no agenda-card-patient element on the face");
+  return m[0];
+}
+
+/** The name element's class list, one token per entry. */
+function nameClasses(face: string): string[] {
+  const m = nameTag(face).match(/\bclass="([^"]*)"/);
+  if (!m) throw new Error("the agenda-card-patient element has no class attribute");
+  return m[1]!.split(/\s+/).filter(Boolean);
+}
+
+/** The name element's title attribute, or null when it has none. */
+function nameTitle(face: string): string | null {
+  const m = nameTag(face).match(/\btitle="([^"]*)"/);
+  return m ? m[1]! : null;
+}
+
 /** The data-testid values present inside a fragment. */
 function testids(fragment: string): string[] {
   return [...fragment.matchAll(/data-testid="([^"]+)"/g)].map((m) => m[1]).sort();
@@ -113,10 +134,13 @@ function testids(fragment: string): string[] {
 
 /** Assert a face is the therapist-coloured patient NAME line and nothing else. */
 function expectNameLine(face: string, patientName: string, therapistId: string, therapistName: string) {
-  // (2/6) the visible face text is EXACTLY the patient name, and it wraps.
+  // (2/6) the visible face text is EXACTLY the patient name, on ONE line.
+  // SR62 PU-2b (ruled 2026-09-29) replaces W11-00 v3's "wraps, never truncates":
+  // a wrapped name is a second line the grid never made room for, so it
+  // overflowed the last row's band at 1024px. The describe below pins the rest.
   expect(visibleText(face)).toBe(patientName);
-  expect(face).toContain("break-words");
-  expect(face).not.toContain("truncate");
+  expect(nameClasses(face)).toEqual(expect.arrayContaining(["truncate", "min-w-0"]));
+  expect(nameClasses(face)).not.toContain("break-words");
   // (3/9c) the name carries the therapist TEXT colour (same source as spine/dot).
   expect(face).toContain(therapistColor(therapistId).text);
   // (2/9a) NO card chrome: no background/tint, no stripe, no dot, no icon/badge.
@@ -133,7 +157,7 @@ function expectNameLine(face: string, patientName: string, therapistId: string, 
 }
 
 describe("W11-00 v3 - appointment is a therapist-coloured name line (no card chrome)", () => {
-  it("renders ONLY the patient name, coloured in the therapist hue, wrapping not truncating", () => {
+  it("renders ONLY the patient name, coloured in the therapist hue, on one line", () => {
     const html = render([appt({ patientName: "Maria Madalena dos Santos Figueiredo" })]);
     // PL-10: the visible line is shortened to first + last; the full name is kept on the hover.
     expectNameLine(
@@ -268,6 +292,61 @@ describe("W12-11 R10 - estado glyph on the agenda face (colour-not-only)", () =>
   it("keeps the visible face text exactly the patient name (estado is aria-only on the face)", () => {
     const face = faceFor(render([appt({ status: "confirmed" })]), "Maria Silva");
     expect(visibleText(face)).toBe("Maria Silva");
+  });
+});
+
+// SR62 PU-2b (ruled 2026-09-29): at 1024px in week view a name wider than
+// "Maria Silva" wrapped, and on the last row (19:45) the second line overflowed
+// the band PU-2 had made room for. The ruled fix: the name line truncates to ONE
+// line with an ellipsis (overflow hidden, text-overflow ellipsis, nowrap, and
+// min-width 0 on the flex child) and carries the FULL name in a title attribute.
+// The geometry itself is asserted on a drawn page by PU-2's e2e spec
+// (apps/web/e2e/agenda-last-row-visible.spec.ts); this pins the markup that
+// produces it, in the node env, with invented names only.
+describe("SR62 PU-2b - the name line is one line, with the full name in its title", () => {
+  const LONG = "Maria Inventada Exemplo Ficticia";
+
+  it("the name element truncates: `truncate` and `min-w-0`, and never `break-words`", () => {
+    const face = faceFor(render([appt({ patientName: LONG })]), "Maria Ficticia");
+    const classes = nameClasses(face);
+    // `truncate` is Tailwind's overflow hidden + text-overflow ellipsis + nowrap.
+    expect(classes).toContain("truncate");
+    // Without min-width 0 a flex child cannot shrink below its text, and the
+    // nowrap line would run past the column instead of ending in an ellipsis.
+    expect(classes).toContain("min-w-0");
+    expect(classes).not.toContain("break-words");
+    expect(classes).not.toContain("whitespace-normal");
+  });
+
+  it("the title carries the FULL name, while the face keeps PL-10's first and last", () => {
+    const face = faceFor(render([appt({ patientName: LONG })]), "Maria Ficticia");
+    expect(nameTitle(face)).toBe(LONG);
+    expect(visibleText(face)).toBe("Maria Ficticia");
+  });
+
+  it("a two-word name's title is the same name the face shows", () => {
+    const face = faceFor(render([appt({ patientName: "Ana Inventada" })]), "Ana Inventada");
+    expect(nameTitle(face)).toBe("Ana Inventada");
+  });
+
+  it("a withheld patient's title reads as occupied, never empty", () => {
+    const withheld = patientLabel(null);
+    // CONTROL: the label is a real sentence, so the equality below is not two empties.
+    expect(withheld.length).toBeGreaterThan(0);
+    const face = faceFor(render([appt({ patientName: null })]), withheld);
+    expect(nameTitle(face)).toBe(withheld);
+  });
+
+  it("every name line in a week render carries a title (none is missed by a second path)", () => {
+    const html = render([
+      appt({ id: "a", patientName: "Ana Inventada" }),
+      appt({ id: "b", patientName: LONG, startsAt: `${DAY}T09:00:00Z`, endsAt: `${DAY}T10:00:00Z` }),
+      appt({ id: "c", patientName: "Rui Exemplo", startsAt: "2026-07-22T08:00:00Z", endsAt: "2026-07-22T09:00:00Z" }),
+    ]);
+    const all = faces(html);
+    // CONTROL: three faces were read, so "every" is not a claim about none.
+    expect(all).toHaveLength(3);
+    expect(all.map(nameTitle)).toEqual(["Ana Inventada", LONG, "Rui Exemplo"]);
   });
 });
 

@@ -859,12 +859,26 @@ export function shortPatientName(fullName: string): string {
 /**
  * W11-00 v3 (owner ruling, Fisiozero model): one appointment = one line of the
  * patient name, coloured in the assigned therapist hue (`therapistColor().
- * text`, the SAME source of truth as the pre-v3 spine/dot). The name WRAPS
- * before it truncates (`break-words`, never `truncate`). PL-10 (2026-07-30)
+ * text`, the SAME source of truth as the pre-v3 spine/dot). PL-10 (2026-07-30)
  * shortened the visible line to first + last name (`shortPatientName`) and made it
  * smaller + non-bold to save space; the W10-05 hover popup is UNCHANGED and
- * remains the sole carrier of every detail (incl. the full name); the line stays
- * click-to-open.
+ * carries every detail (incl. the full name); the line stays click-to-open.
+ *
+ * SR62 PU-2b (ruled 2026-09-29): THE LINE IS ONE LINE, AND A NAME TOO WIDE FOR IT
+ * ENDS IN AN ELLIPSIS. It used to wrap (`break-words`, the W11-00 v3 rule), and
+ * a wrapped name is a second line the grid never made room for: STAFF-03 sizes
+ * each hour by how many appointment LINES start in it, one per appointment, so
+ * at 1024px in week view a name wider than "Maria Silva" wrapped and the 19:45
+ * card's band came out 10px taller than its box (PU-2's spec caught it on #1485).
+ * Real names are usually longer than the fixture's, so staff met it too.
+ *
+ * `min-w-0` is half of the fix, not decoration: a flex child's minimum width is
+ * its content by default, so without it `truncate` would push the line past
+ * the column instead of cutting it. The `title` attribute carries the FULL name
+ * (not the shortened one), so the whole name is one pointer rest away even when
+ * the hover popup is not open. It applies in Dia as well as Semana, because the
+ * one-line-per-appointment scale is the same in both; in Dia the column is wide
+ * enough that the ellipsis rarely shows.
  *
  * W12-11 R10 (Q-W12-01 ruling): a small leading estado glyph precedes the name
  * (EstadoMarker; a controlled amendment to the name-only face — the estado is in
@@ -878,6 +892,7 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
   // W12-40-T2: prefer the practitioner's assigned colour (staff_locations), fall
   // back to the deterministic FNV colour when unset. Same rule everywhere.
   const tColor = paletteColorByKey(appt.colorKey) ?? therapistColor(appt.practitionerId);
+  const fullName = patientLabel(appt.patientName);
 
   return (
     // W12-33: the shared unified hover popup (mini-dashboard). Rendered through a
@@ -912,9 +927,10 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
         <EstadoMarker estado={estado} className="mt-0.5" />
         <span
           data-testid="agenda-card-patient"
-          className={`block min-w-0 break-words ${struck ? "line-through" : ""}`}
+          title={fullName}
+          className={`block min-w-0 truncate ${struck ? "line-through" : ""}`}
         >
-          {shortPatientName(patientLabel(appt.patientName))}
+          {shortPatientName(fullName)}
         </span>
       </button>
     </HoverPopover>
