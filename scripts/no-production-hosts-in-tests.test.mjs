@@ -28,23 +28,42 @@
 //    in the same letters counts too, and no test has a reason to write one.
 //    After the apex must come a character that cannot continue a host name.
 //
-// 2. THE RESERVED-SUFFIX RULE. A name that continues past the apex with the
-//    single label `.invalid` or `.example` is NOT a production host: RFC 2606
-//    reserves both, and neither resolves. That is how a guard's own test names
-//    a production-shaped host that nothing can answer (the capture test does
-//    exactly this). Only those two labels, and only as a whole label: a longer
-//    label (`.invalidx`, `.examples`) or any other suffix (`.test`, `.com`)
-//    stays a hit. `.test` and `.localhost` are reserved too and are
-//    deliberately NOT exempt: the house rule for host-guard tests names
-//    `.invalid`, and one escape hatch is easier to audit than four.
+// 2. THE PRODUCTION VERCEL ALIASES, the same way. The three Vercel projects
+//    (platform, portal, api) deploy production from main, and each project's
+//    own `<project>.vercel.app` name follows the newest production deployment:
+//    apps/portal/.env.example says the portal's is "THE SAME DEPLOYMENT, not a
+//    preview", and apps/web/lib/proxy/canonical-host.ts says the same of the
+//    platform's. So a test pointed at an alias reaches production exactly as
+//    one pointed at the domain does. A PREVIEW host carries a deployment hash
+//    or a branch in its name (`<project>-<hash>-<scope>.vercel.app`), so it
+//    never contains an alias followed by a host-ending character, and is not
+//    a hit.
 //
-// 3. THE SUPABASE PRODUCTION REF, as a token and as any substring. Twenty
+// 3. THE RESERVED-SUFFIX RULE. A name that continues past the apex or an alias
+//    with the single label `.invalid` or `.example` is NOT a production host:
+//    RFC 2606 reserves both, and neither resolves. That is how a guard's own
+//    test names a production-shaped host that nothing can answer (the capture
+//    test does exactly this). Only those two labels, and only as a whole
+//    label: a longer label (`.invalidx`, `.examples`) or any other suffix
+//    (`.test`, `.com`) stays a hit. `.test` and `.localhost` are reserved too
+//    and are deliberately NOT exempt: the house rule for host-guard tests
+//    names `.invalid`, and one escape hatch is easier to audit than four.
+//
+// 4. THE SUPABASE PRODUCTION REF, as a token and as any substring. Twenty
 //    random letters cannot occur by chance, and a word-boundary match would
 //    miss the ref behind a percent-encoded slash; every token match is also a
 //    substring match, so this is the token rule plus the encoded case.
 //
-// Both names are spelled in parts below. This file is itself a test file in
+// Every name is spelled in parts below. This file is itself a test file in
 // scope, and with the names written whole it would find itself.
+//
+// THE NAMES ARE PINNED, NOT ONLY USED. Every matcher arm builds its line from
+// the same constants the check matches with, so a typo in a constant would
+// turn every arm green while the check looked for a name nobody writes. So the
+// constants are pinned twice, apart from the arms: each one's sha256 is
+// written below as a literal, and two of them are read back from the code that
+// acts on them (the domain from the canonical host redirect, the ref from the
+// seeders' blocklist of production refs).
 //
 // ==========================================================================
 // THE SCOPE: WHICH FILES ARE READ
@@ -53,10 +72,18 @@
 // repository, and CI sees nothing else. See inScope() for the exact rules:
 //   CONFIG   playwright.* and vitest.* anywhere; *.config.* under a directory
 //            named e2e, test, tests or __tests__.
+//   CONFIG   also supabase/config.toml, the local stack every DB-gated and
+//            E2E run starts from.
 //   FIXTURE  any path through a `fixtures` or `__fixtures__` directory;
 //            apps/*/e2e/fixtures*; apps/*/e2e/seed/**; docs/guide/shots/**;
 //            docs/guide/build/seed-guide.mjs; and a file whose own name says
 //            fixture (fixtures.ts, guide-test-fixture.ts), Markdown excepted.
+//            Also the seeds that build a database a test or a local run works
+//            against: supabase/seed.sql (the base seed `supabase db reset`
+//            loads for the DB-gated and E2E jobs), packages/db/seed/** (the
+//            dev seeds, their target guards, and the form templates the E2E
+//            seeder loads) and scripts/perf-seed-*.mjs (the seeds the perf
+//            specs read).
 //   TEST     *.test.* and *.spec.*, and every other file under a directory
 //            named e2e, test, tests or __tests__ (helpers, setup, seeders),
 //            Markdown excepted: a README there runs nothing.
@@ -87,6 +114,13 @@
 // incident test carried, not a proof that no test can reach production. The
 // other half of that defence is the house rule for host-guard tests: reserved
 // hosts only, and an empty PLAYWRIGHT_BROWSERS_PATH.
+//
+// AN ENTRY ON A LINE THAT DEFINES A CONSTANT ALLOWS EVERY USE OF IT. Only the
+// line that spells the name is read, so once `const LIVE = <the ref>` is
+// allowed, `prodUrl(LIVE)` further down the same file is never a hit, and
+// neither would be a new `fetch(ENDPOINT)` after an allowed
+// `const ENDPOINT = <a production URL>`. Whoever reads a new entry on a
+// constant reads every use of that constant in the file, not only the line.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -97,24 +131,40 @@ import { dirname, join } from "node:path";
 import test, { describe } from "node:test";
 
 import { MANIFEST_PATH, isGateFile, readManifest } from "./gate-manifest.mjs";
+import { readProdRefs } from "./import/prod-refs.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const ALLOW_PATH = "scripts/no-production-hosts-in-tests.allow.txt";
 
 // Spelled in parts on purpose: see the header.
 const APEX = ["osteojp", "pt"].join(".");
+const VERCEL_ALIASES = ["platform", "portal", "api"].map((project) => [`osteojp-${project}`, "vercel", "app"].join("."));
 const SUPABASE_REF = ["dfotoodq", "vmjhbdcxyaxf"].join("");
 const RESERVED_SUFFIXES = ["invalid", "example"];
+
+// The pins: see "THE NAMES ARE PINNED" in the header. A new or changed name
+// changes its digest here too, in the same GATE-CHANGE.
+const PINNED_SHA256 = Object.freeze({
+  APEX: "d89371a346521e687d045d6e96ddac58ca24d61bf4ef831fbe40868b16c18004",
+  // of the three aliases joined with "," in the order above
+  VERCEL_ALIASES: "b0f470569d941ed504e3ffb68b34cbe3f8a95d2e80d677003e2da8f575a6d8d2",
+  SUPABASE_REF: "eb5658945743d084d2e0ebeb177db4619d017a8e48ab768a02de0c7774378f47",
+});
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * The apex, then a character that cannot continue a host name, then an
- * OPTIONAL reserved label. When the reserved label is there, the match is not
- * a production host. A fresh RegExp per call keeps `lastIndex` out of it.
+ * The apex or an alias, then a character that cannot continue a host name,
+ * then an OPTIONAL reserved label. When the reserved label is there, the match
+ * is not a production host. A fresh RegExp per call keeps `lastIndex` out of
+ * it. No alias contains the apex, and the apex contains no alias, so one name
+ * on a line is one match.
  */
 const hostRe = () =>
-  new RegExp(`${escapeRe(APEX)}(?![a-z0-9-])(\\.(?:${RESERVED_SUFFIXES.join("|")})(?![a-z0-9-]))?`, "gi");
+  new RegExp(
+    `(?:${[APEX, ...VERCEL_ALIASES].map(escapeRe).join("|")})(?![a-z0-9-])(\\.(?:${RESERVED_SUFFIXES.join("|")})(?![a-z0-9-]))?`,
+    "gi",
+  );
 const refRe = () => new RegExp(escapeRe(SUPABASE_REF), "gi");
 
 /** What a line carries: the production names on it, reserved ones excluded. */
@@ -156,10 +206,14 @@ export function inScope(p) {
 
   if (/^(playwright|vitest)\./i.test(base)) return "config";
   if (underTestDir && /\.config\./i.test(base)) return "config";
+  if (p === "supabase/config.toml") return "config";
 
   if (dirs.some((d) => FIXTURE_DIRS.has(d))) return "fixture";
   if (/^apps\/[^/]+\/e2e\/fixtures/.test(p)) return "fixture";
   if (/^apps\/[^/]+\/e2e\/seed\//.test(p)) return "fixture";
+  if (p === "supabase/seed.sql") return "fixture";
+  if (p.startsWith("packages/db/seed/")) return "fixture";
+  if (/^scripts\/perf-seed-[^/]+\.mjs$/.test(p)) return "fixture";
   if (p.startsWith("docs/guide/shots/")) return "fixture";
   if (p === "docs/guide/build/seed-guide.mjs") return "fixture";
   if (!isMarkdown && /(^|[-_.])fixtures?\./i.test(base)) return "fixture";
@@ -276,6 +330,24 @@ describe("the matcher: a production name in any spelling is a hit", () => {
     }
   });
 
+  test("each production Vercel alias, with or without a scheme, encoded, in any case", () => {
+    assert.equal(VERCEL_ALIASES.length, 3);
+    for (const alias of VERCEL_ALIASES) {
+      for (const line of [
+        `["https://${alias}", /refusing/],`,
+        `baseURL: "https://${alias}/agenda",`,
+        `"${alias}",`,
+        `https://${alias.toUpperCase()}/marcacao`,
+        `https%3A%2F%2F${alias}%2Fx`,
+        `${alias}.evil.com`,
+      ]) {
+        assert.deepEqual(productionNamesIn(line), ["host"], line);
+      }
+    }
+    // One of each on one line is two hits: the apex and an alias never overlap.
+    assert.deepEqual(productionNamesIn(`${VERCEL_ALIASES[1]} and portal.${APEX}`), ["host", "host"]);
+  });
+
   test("the Supabase ref as a token, inside a URL, in a pooler user, encoded, in any case", () => {
     for (const line of [
       `const REF = "${SUPABASE_REF}";`,
@@ -296,6 +368,7 @@ describe("the matcher: a production name in any spelling is a hit", () => {
       `mail@send.${APEX}.example`,
       `portal.${APEX}.example.com`,
       `https://PORTAL.${APEX}.INVALID/`,
+      `https://${VERCEL_ALIASES[1]}.invalid/marcacao`,
     ]) {
       assert.deepEqual(productionNamesIn(line), [], line);
     }
@@ -307,6 +380,7 @@ describe("the matcher: a production name in any spelling is a hit", () => {
       `https://portal.${APEX}.examples.org`,
       `https://portal.${APEX}.test`,
       `https://portal.${APEX}.localhost`,
+      `https://${VERCEL_ALIASES[0]}.test`,
     ]) {
       assert.deepEqual(productionNamesIn(line), ["host"], line);
     }
@@ -322,6 +396,12 @@ describe("the matcher: a production name in any spelling is a hit", () => {
       `${APEX}x.com`, // a name continues past the apex
       `portal.${APEX}-invalid`, // so does this one: its last label is not the country code
       "a twenty-letter ref that is not production: zzzzyyyyxxxxwwwwvvvv",
+      // Vercel PREVIEW hosts: a hash or a branch continues the project name.
+      `https://${VERCEL_ALIASES[0].replace(".vercel", "-abc123-scope.vercel")}/agenda`,
+      `https://${VERCEL_ALIASES[1].replace(".vercel", "-git-some-branch-scope.vercel")}/`,
+      `${VERCEL_ALIASES[2]}lication`, // a name continues past the alias
+      `.setIssuer("${VERCEL_ALIASES[2].split(".")[0]}")`, // the project name alone is no host
+      "https://another-project.vercel.app/x",
     ]) {
       assert.deepEqual(productionNamesIn(line), [], line);
     }
@@ -337,6 +417,31 @@ describe("the matcher: a production name in any spelling is a hit", () => {
 });
 
 // ==========================================================================
+// THE NAMES ARE PINNED: A TYPO IN A CONSTANT FAILS HERE, NOT SILENTLY
+// ==========================================================================
+describe("the names are pinned apart from the arms that use them", () => {
+  test("each constant hashes to its pinned sha256", () => {
+    assert.equal(sha256(APEX), PINNED_SHA256.APEX, "the production domain changed");
+    assert.equal(sha256(VERCEL_ALIASES.join(",")), PINNED_SHA256.VERCEL_ALIASES, "the production Vercel aliases changed");
+    assert.equal(sha256(SUPABASE_REF), PINNED_SHA256.SUPABASE_REF, "the Supabase production ref changed");
+  });
+
+  test("the domain is the one the canonical host redirect sends the app to", () => {
+    const src = readFileSync(join(ROOT, "apps/web/lib/proxy/canonical-host.ts"), "utf8");
+    const m = src.match(/export const CANONICAL_HOST = "([^"]+)";/);
+    assert.ok(m, "CANONICAL_HOST is no longer a string literal in canonical-host.ts; re-point this pin");
+    assert.equal(m[1], `app.${APEX}`);
+  });
+
+  test("the ref is on the seeders' blocklist of production refs", () => {
+    // readProdRefs() parses PROD_REFS out of packages/db/seed/seed-guard.ts and
+    // throws, rather than returning [], when it cannot.
+    const refs = readProdRefs();
+    assert.ok(refs.includes(SUPABASE_REF), `the ref this check matches is not in PROD_REFS (${refs.length} refs there)`);
+  });
+});
+
+// ==========================================================================
 // THE SCOPE
 // ==========================================================================
 describe("the scope: test configs, fixtures and tests are read; ordinary code is not", () => {
@@ -347,6 +452,12 @@ describe("the scope: test configs, fixtures and tests are read; ordinary code is
       "packages/db/vitest.workspace.ts": "config",
       "packages/ui/vitest.shims.d.ts": "config",
       "apps/web/e2e/global.config.ts": "config",
+      "supabase/config.toml": "config",
+      "supabase/seed.sql": "fixture",
+      "packages/db/seed/patients-dev.ts": "fixture",
+      "packages/db/seed/seed-guard.ts": "fixture",
+      "packages/db/seed/form-templates/osteopathy-v5.json": "fixture",
+      "scripts/perf-seed-agenda-week.mjs": "fixture",
       "apps/web/e2e/fixtures.ts": "fixture",
       "apps/web/e2e/fixtures/test-attachment.png": "fixture",
       "apps/web/e2e/seed/seed-e2e.mjs": "fixture",
@@ -370,7 +481,7 @@ describe("the scope: test configs, fixtures and tests are read; ordinary code is
     for (const [p, cls] of Object.entries(expected)) assert.equal(inScope(p), cls, p);
   });
 
-  test("CONTROL: application code, docs and a README in a test directory are not read", () => {
+  test("CONTROL: application code, migrations, email templates, docs and a README in a test directory are not read", () => {
     for (const p of [
       "apps/web/lib/proxy/canonical-host.ts",
       "apps/web/lib/reminders/confirm-code.ts",
@@ -382,6 +493,10 @@ describe("the scope: test configs, fixtures and tests are read; ordinary code is
       ".env.example",
       "apps/web/next.config.ts",
       "docs/latest-contest.md",
+      "supabase/migrations/0001_rls.sql",
+      "supabase/templates/invite.html",
+      "scripts/perf-name-search.mjs", // a hand-run benchmark no test or spec runs
+      "packages/db/src/schema.ts",
     ]) {
       assert.equal(inScope(p), null, p);
     }
@@ -465,6 +580,47 @@ describe("seeded arms: the whole check run end to end on a temporary repository"
       assert.deepEqual(
         r.offences.map((o) => [o.path, o.line, o.kinds]),
         [["packages/demo/src/target.test.ts", 1, ["supabase-ref"]]],
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ARM: a planted production name in the base seed, the stack config, a dev seed and a perf seed FAILS", () => {
+    const root = seedRepo({
+      ...CLEAN,
+      "supabase/seed.sql": `-- base seed\ninsert into t (url) values ('https://portal.${APEX}/marcacao');\n`,
+      "supabase/config.toml": `[auth]\nsite_url = "https://app.${APEX}"\n`,
+      "packages/db/seed/patients-dev.ts": `export const DB = "postgresql://postgres.${SUPABASE_REF}:x@db.invalid/postgres";\n`,
+      "scripts/perf-seed-demo.mjs": `const BASE = "https://${VERCEL_ALIASES[0]}";\n`,
+    });
+    try {
+      const r = evaluate(root, "");
+      assert.deepEqual(r.errors, []);
+      assert.deepEqual(
+        r.offences.map((o) => [o.path, o.line, o.kinds]).sort(),
+        [
+          ["packages/db/seed/patients-dev.ts", 1, ["supabase-ref"]],
+          ["scripts/perf-seed-demo.mjs", 1, ["host"]],
+          ["supabase/config.toml", 2, ["host"]],
+          ["supabase/seed.sql", 2, ["host"]],
+        ],
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("ARM: a planted production Vercel alias in a temporary test FAILS", () => {
+    const root = seedRepo({
+      ...CLEAN,
+      "apps/demo/lib/capture.test.ts": `const BASE = "https://${VERCEL_ALIASES[1]}";\nconst OK = "https://${VERCEL_ALIASES[1]}.invalid";\n`,
+    });
+    try {
+      const r = evaluate(root, "");
+      assert.deepEqual(
+        r.offences.map((o) => [o.path, o.line, o.kinds]),
+        [["apps/demo/lib/capture.test.ts", 1, ["host"]]],
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
