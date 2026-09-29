@@ -18,8 +18,12 @@
  */
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getStrings } from "@osteojp/i18n";
+import { GlassKpiCard } from "@osteojp/ui";
+
+import { lisbonDateTimeToUtc, lisbonMidnightUtc } from "@/lib/scheduling/time";
+import type { AgendaAppointment } from "@/lib/scheduling/types";
 
 vi.mock("server-only", () => ({}));
 
@@ -329,4 +333,217 @@ describe("what the page hands the toggle and the date field (T5b)", () => {
       expect(h.dateJump[0]).toMatchObject({ location: null });
     },
   );
+});
+
+/**
+ * GUIDE-F6: INICIO SHOWS THE BOOKINGS OF THE DAY BEING VIEWED.
+ *
+ * The page read the bookings from Lisbon midnight TODAY to today+7 and then
+ * kept the `?date=` the viewer picked, so a past day, or any day from today+7
+ * on, read "Marcacoes hoje 0" and "Sem marcacoes" whatever it held. The ruled
+ * fix (option a) reads the viewed day's own window.
+ *
+ * THE STUB IS A DATABASE, NOT A LIST. listAppointments here returns only the
+ * fixture rows whose start falls inside the window the page asks for, which is
+ * what the real range read does. So a page that asks for the wrong window gets
+ * the wrong rows, and these cases go red: on the old today to today+7 read the
+ * past day, the far day and today+7 read 0 (proved by reverting the read once).
+ *
+ * The clock is pinned to Tuesday 29 Sep 2026, 10:00 Lisbon (UTC+1), so no case
+ * depends on when CI runs. Every name below is invented.
+ */
+const NOW = new Date("2026-09-29T09:00:00.000Z");
+const TODAY = "2026-09-29";
+const PAST = "2026-09-15"; // 14 days back
+const WEEK_EDGE = "2026-10-06"; // today+7: the first day the old read missed
+const FAR = "2026-10-20"; // 21 days ahead
+const INSIDE = "2026-10-02"; // today+3: inside the old window, still shown
+
+function booking(
+  id: string,
+  date: string,
+  hhmm: string,
+  over: Partial<AgendaAppointment> = {},
+): AgendaAppointment {
+  const start = lisbonDateTimeToUtc(date, hhmm);
+  return {
+    id,
+    patientId: `p-${id}`,
+    patientName: `Paciente Inventado ${id}`,
+    practitionerId: "t-other",
+    practitionerName: "Terapeuta Ficticio",
+    colorKey: null,
+    patientTwoId: null,
+    patientTwoName: null,
+    practitionerTwoId: null,
+    practitionerTwoName: null,
+    locationId: "loc-1",
+    locationName: "Clinica Exemplo",
+    serviceId: null,
+    serviceName: null,
+    room: null,
+    startsAt: start.toISOString(),
+    endsAt: new Date(start.getTime() + 45 * 60_000).toISOString(),
+    status: "scheduled",
+    notes: null,
+    recurrenceRule: null,
+    recurrenceParentId: null,
+    ...over,
+  } as AgendaAppointment;
+}
+
+const ROWS: AgendaAppointment[] = [
+  booking("past1", PAST, "11:00"),
+  booking("past2", PAST, "15:30", { practitionerId: "t-self" }),
+  booking("pastX", PAST, "17:00", { status: "cancelled" }),
+  booking("today1", TODAY, "08:30"),
+  booking("today2", TODAY, "14:00", { practitionerId: "t-self" }),
+  booking("todayX", TODAY, "16:00", { status: "cancelled" }),
+  booking("inside1", INSIDE, "12:00"),
+  booking("edge1", WEEK_EDGE, "10:30"),
+  booking("far1", FAR, "09:30"),
+  // Where a `?date=2026-02-30` read lands: the day it rolls over to.
+  booking("roll1", "2026-03-02", "10:00"),
+];
+
+type Read = { startUtc: Date; endUtc: Date } & Record<string, unknown>;
+
+/**
+ * The range read, as the database answers it. `scoped` stands in for the role
+ * scoping inside listAppointments (RLS and viewerLocationScope): a therapist's
+ * read returns only their own rows, so the page must show what the scoped read
+ * returned and nothing wider.
+ */
+function database(scoped = false) {
+  h.listAppointments.mockImplementation(async (ctx: { role: string }, args: Read) =>
+    ROWS.filter((r) => {
+      const t = Date.parse(r.startsAt);
+      if (t < args.startUtc.getTime() || t >= args.endUtc.getTime()) return false;
+      return !scoped || ctx.role !== "therapist" || r.practitionerId === "t-self";
+    }),
+  );
+}
+
+type Role = "owner" | "admin" | "therapist" | "reception";
+
+async function view(role: Role, searchParams: Record<string, string> = {}) {
+  h.ctx = { tenantId: "tenant-1", role, userId: `user-${role}` };
+  const tree = await DashboardPage({ searchParams: Promise.resolve(searchParams) });
+  const html = renderToStaticMarkup(tree);
+  const tile = propsOf(tree, GlassKpiCard).find((p) => p.label === pt["dashboard.kpiTodayAppointments"]);
+  expect(tile, "the Marcacoes hoje tile is on the page").toBeDefined();
+  // Proximas marcacoes: from its heading to the Notas rapidas heading.
+  const from = html.indexOf(pt["dashboard.upcomingTitle"]);
+  const to = html.indexOf(pt["dashboard.notes"], from);
+  expect(from).toBeGreaterThan(0);
+  expect(to).toBeGreaterThan(from);
+  const panel = html.slice(from, to);
+  const times = [...panel.matchAll(/tabular-nums text-v2-text-primary">(\d\d:\d\d)<\/span>/g)].map((m) => m[1]);
+  return { html, panel, times, count: tile!.value, caption: tile!.caption };
+}
+
+describe("GUIDE-F6: Inicio shows the bookings of the day being viewed", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    database();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a past day shows that day's bookings, not zero", async () => {
+    const v = await view("reception", { date: PAST });
+    expect(v.count).toBe(2);
+    expect(v.times).toEqual(["11:00", "15:30"]);
+    expect(v.panel).toContain("Paciente Inventado past1");
+    expect(v.panel).toContain("Paciente Inventado past2");
+    expect(v.panel).not.toContain(pt["dashboard.upcomingEmpty"]);
+    // No "Proxima" on a day that is not today, as before.
+    expect(v.caption).toBeUndefined();
+  });
+
+  it("a day more than 7 days ahead shows that day's bookings, not zero", async () => {
+    const v = await view("reception", { date: FAR });
+    expect(v.count).toBe(1);
+    expect(v.times).toEqual(["09:30"]);
+    expect(v.panel).toContain("Paciente Inventado far1");
+  });
+
+  it("today+7, the first day the old read left out, shows its booking", async () => {
+    const v = await view("reception", { date: WEEK_EDGE });
+    expect(v.count).toBe(1);
+    expect(v.times).toEqual(["10:30"]);
+  });
+
+  it("a day inside the old window still shows its booking", async () => {
+    const v = await view("reception", { date: INSIDE });
+    expect(v.count).toBe(1);
+    expect(v.times).toEqual(["12:00"]);
+  });
+
+  it("today still shows today's: the count of the day, the next one, and only what is still ahead", async () => {
+    for (const sp of [{}, { date: TODAY }] as Array<Record<string, string>>) {
+      const v = await view("reception", sp);
+      // 08:30 and 14:00; the cancelled 16:00 is not counted.
+      expect(v.count).toBe(2);
+      expect(v.caption).toBe(`${pt["dashboard.kpiNext"]}: 14:00`);
+      // 10:00 now: 08:30 is behind, so the list holds 14:00 alone.
+      expect(v.times).toEqual(["14:00"]);
+    }
+  });
+
+  it("a day with no bookings still reads zero and Sem marcacoes", async () => {
+    const v = await view("reception", { date: "2026-09-16" });
+    expect(v.count).toBe(0);
+    expect(v.times).toEqual([]);
+    expect(v.panel).toContain(pt["dashboard.upcomingEmpty"]);
+  });
+
+  it("a ?date= that is not a calendar date counts nothing, although its read lands on the next real day", async () => {
+    const v = await view("reception", { date: "2026-02-30" });
+    expect(v.count).toBe(0);
+    expect(v.times).toEqual([]);
+    expect(v.panel).not.toContain("Paciente Inventado roll1");
+  });
+
+  it("the week chart and the month revenue still follow today, not the viewed day", async () => {
+    await view("owner", { date: FAR });
+    const reads = h.listAppointments.mock.calls.map((c) => (c[1] as Read).startUtc.toISOString());
+    // Monday 28 Sep 2026, today's week: the Resumo semanal read.
+    expect(reads).toContain(lisbonMidnightUtc("2026-09-28").toISOString());
+    // September 2026, today's month: the Receita (mes) read.
+    expect(h.getMonthlyRevenue).toHaveBeenCalledOnce();
+    expect((h.getMonthlyRevenue.mock.calls[0]![1] as Date).toISOString()).toBe(
+      lisbonMidnightUtc("2026-09-01").toISOString(),
+    );
+  });
+
+  describe.each(["owner", "admin", "reception", "therapist"] as const)("role scoping, %s", (role) => {
+    it("reads the viewed day through listAppointments with its own context and no practitioner or clinic", async () => {
+      await view(role, { date: PAST });
+      const day = h.listAppointments.mock.calls.find(
+        (c) => (c[1] as Read).startUtc.getTime() === lisbonMidnightUtc(PAST).getTime(),
+      );
+      expect(day, "one read is the viewed day's").toBeDefined();
+      expect(day![0]).toBe(h.ctx);
+      expect(day![1]).toEqual({
+        startUtc: lisbonMidnightUtc(PAST),
+        endUtc: lisbonMidnightUtc("2026-09-16"),
+      });
+    });
+
+    it("shows exactly what the scoped read returned for the viewed day", async () => {
+      database(true);
+      const v = await view(role, { date: PAST });
+      if (role === "therapist") {
+        expect(v.count).toBe(1);
+        expect(v.times).toEqual(["15:30"]);
+        expect(v.panel).not.toContain("Paciente Inventado past1");
+      } else {
+        expect(v.count).toBe(2);
+        expect(v.times).toEqual(["11:00", "15:30"]);
+      }
+    });
+  });
 });
