@@ -1,6 +1,8 @@
 # ANEXO LINK v2: the imported documents an episode row named against one registo are linked to it
 
-**Status: NOT RUN. HELD.** A DATA operation, not a migration: no schema change, no journal
+**Status: stage 1 READ on production on 2026-09-29, READ ONLY, from the held head. Stage 2 NOT
+RUN. HELD for its write sitting** (the section "The write sitting: the pinned carries, the run
+window and the apply transcript"). A DATA operation, not a migration: no schema change, no journal
 entry. Four blocks, each pasted whole, on its own and in order: stage 0 (the files and the
 head it runs from), stage 1 (read), stage 2 (write) and stage 3 (verify). One rule governs
 every halt, in STAFF-10 v2's words, here and in GREEN's dispatch:
@@ -23,13 +25,15 @@ nothing else; the section "Rehearsal" says what has run on these exact bytes.
 | Fact | Value |
 |---|---|
 | Card | `INC-imported-fichas-sem-anexos-originals-are-patient-level`, ruling (a) |
-| Tier | A production data op that is NOT on the ruled Tier C list (`CLAUDE.md`, "SOLO's record"): it rewrites production rows outside STAFF-10. Authored, rehearsed on the throwaway and held unarmed with a question block (Q2 below); nothing runs until the owner rules it onto that list and his dispatch names these files |
+| Tier | A production data op on the ruled Tier C list since the owner's ruling of 2026-09-27, option (a) (`CLAUDE.md`, the owner rulings of 2026-09-27, where it is B14): it rewrites production rows outside STAFF-10. Authored, rehearsed on the throwaway and held unarmed; nothing runs until the owner's dispatch names these files (Q2 below) |
 | Replaces | the original op, `docs/data-op-anexo-link.md` and its three files, which carry a SUPERSEDED banner, stay on main byte-identical and must not be run. They never ran |
 | Ruling, owner, 2026-09-13, paraphrased | (a) a document that a Fisiozero episode row named against ONE specific registo is linked to that registo, pinned and counted, rehearsed first; nothing else is guessed. With it, a linked imported original shows on the ficha's Anexos AND stays on the patient's Documentos tab (the app half, built and merged in #1310) |
 | Order | **After DUR-01**, by the owner's order. Not coupled in SQL: the section "The order with DUR-01" says why there is no data dependency to couple |
 | Linda-a-Velha | `de000002-0000-0000-0000-000000000001`. The op links in the tenant that owns this row, and no other |
 | Castelo Branco | `de000002-0000-0000-0000-000000000002`. R01 refuses unless it sits in the same tenant |
 | Runs from | `origin/main`, after this op's PR has merged. The owner freezes merges to main for the sitting. Stage 0 records the sha `origin/main` resolves to in `/tmp/anexo2-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stages 1 and 2 HALT if `origin/main` has moved since (the HEAD CHECK, below) |
+| Run window | named by GREEN's dispatch, never here: its CLOCK CHECK records it in `/tmp/anexo2-window.ok` with the sha stage 0 recorded, as three Lisbon times `YYYYMMDDHHMM` (opens, the last minute stage 1 may start, ends). Stage 1 refuses to start outside it; stage 2 refuses before it opens or at or after its end; stage 3 refuses at or after its end. Stage 0 removes the record, so only a CLOCK CHECK pasted after stage 0 can write it |
+| Stage 2's carries | PINNED in the stage 2 block: `anexo_v2_count` 220 and `anexo_v2_digest` `9f36e315c698b99cf95775d48698405d`, the carries of the stage 1 read on production on 2026-09-29 at 01:24 Lisbon, transcript sha256 `cf3306e3fc1d29c39241ca85a3e073a3ebececf342d6965f5a6cc97b5e4c6c35`, the read the owner ruled on. Stage 2 stops unless this sitting's stage 1 prints the same two values, and hands psql the pinned ones |
 | Stage 1 | `scripts/data/anexo-link-v2-1-read.sql`, READ ONLY, 12 refusal lines, sha256 `e2ece4302398ea12e9508c391d1f46a07faa7f0cdf94609c693c405afef360dd` |
 | Stage 2 | `scripts/data/anexo-link-v2-2-write.sql`, ONE DO block in ONE transaction, sha256 `926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5` |
 | Stage 3 | `scripts/data/anexo-link-v2-3-verify.sql`, READ ONLY, 12 verdicts and a SUMMARY row, sha256 `28fd91982f183d505b482a38e103fbf73e3dec681c13197b83f72ce7571f4e29` |
@@ -122,7 +126,7 @@ the files, their pins and the rehearsal.
 | # | Question | Default built |
 |---|---|---|
 | Q1 | A named document that staff have soft deleted: link it too? | **No.** It is left unlinked and soft deleted, listed by id in stage 1 section 2d and in the audit row (`excluded.soft_deleted`), and stage 3 verdict 10 proves it unchanged. Not a refusal: the rest of the link set still runs. The original files would have linked it; the Anexos read hides a soft-deleted row either way (SR-62 PU-4), so a link would only write a row staff removed |
-| Q2 | May GREEN run it at all? The owner ruled the scope on 2026-09-13, before the tiers, and the op is on no ruled Tier C list | **Held.** Nothing runs until the owner rules it onto the Tier C list and his dispatch names these three files and this document's sha256, after DUR-01. Recommended first sitting: stage 0 and stage 1 alone, READ ONLY, so section 2 shows the link set and every class it leaves alone before anyone rules on stage 2 |
+| Q2 | May GREEN run it at all? The owner ruled the scope on 2026-09-13, before the tiers, and the op is on no ruled Tier C list | **Held.** Nothing runs until the owner rules it onto the Tier C list and his dispatch names these three files and this document's sha256, after DUR-01. Recommended first sitting: stage 0 and stage 1 alone, READ ONLY, so section 2 shows the link set and every class it leaves alone before anyone rules on stage 2. **Ruled since, paraphrased:** onto the Tier C list on 2026-09-27; stage 0 and stage 1 ran alone, READ ONLY, on 2026-09-29, after DUR-01 (written on 2026-09-27, #1445); and on that read, on 2026-09-29, the owner ruled the whole link set linked with nothing excluded, stages 2 and 3 to run in the window GREEN's dispatch names (the section on the write sitting) |
 | Q3 | A document named against a registo that exists, and also by a staging row whose registo is not there: link it to the one that exists, or refuse the sitting? | **Linked**, as the original files would have: their inner join dropped the staging row whose registo is gone, so R04 counts only registos that exist. Stage 1 section 2d lists that no_registo pair with `linked_by_another_pair` true, so it shows before stage 2, and the document is then compared as a linked one (`w_fixed`, verdict 5), not as one left alone. A ruling to refuse would count those pairs in R04 |
 | D1 | Added: which tenant? | The tenant that owns the Linda-a-Velha row, and R01 refuses unless the Castelo Branco row sits in it. The original files took whatever tenant the candidates were in and refused more than one; here another tenant's named documents are class `other_tenant`, listed, never linked, and compared by md5 |
 | D2 | Added: a named file to link that resolves to more than one live document row? | Refuses (R05), whether the other row is unlinked, already on that registo or on another: which row the cell names would be a guess, and a link would show the file twice on one registo or put it on two. A soft-deleted row at the same path does not count: Q1 leaves it alone, and the live row is linked |
@@ -160,6 +164,64 @@ machine runs it inside the blocks, and halts on it.
 - **A moved main before the write ends the sitting.** Nothing is written, both shas go in the
   report, and whether and when to start again is the lead's call.
 - **If `/tmp/anexo2-main.sha` is gone,** stages 1 to 3 stop, and the lead rules.
+- **A stage 3 re-issued after the run window's end** stops on the window like any other paste:
+  it needs a dispatch whose CLOCK CHECK records a new window for the recorded sha.
+- **The run window is checked by machine in every block from stage 1 on,** from the record
+  GREEN's CLOCK CHECK writes after stage 0 (`/tmp/anexo2-window.ok`: the recorded sha, then
+  the window's opening minute, the last minute stage 1 may start and its end). Stage 1
+  refuses to start before the window opens or after its last start minute; stage 2 refuses
+  before it opens or at or after its end, before the environment is loaded and before psql;
+  stage 3 refuses at or after its end. A missing record, or one written for another sha, is a
+  `STOP:` in each. Stage 0 removes the record, so only a CLOCK CHECK pasted after stage 0 can
+  write it.
+- **Stage 2's carries are pinned in its block,** and this sitting's stage 1 must print the
+  same two values or stage 2 stops before psql (the section on the write sitting, next).
+
+## The write sitting: the pinned carries, the run window and the apply transcript
+
+**What the owner ruled on.** Stage 1 ran on production on 2026-09-29 at 01:24 Lisbon, READ
+ONLY, from this op's held head `e00c7716` (a read-only dispatch of its own, before this PR
+merged). Every refusal read `n` 0 and OK, section 2b read `partition holds`, section 2d
+listed no pair the op leaves alone, and sections 4b and 5 were empty. Its carries: the link
+set's count `anexo_v2_count` 220 and its digest `anexo_v2_digest`
+`9f36e315c698b99cf95775d48698405d`. The transcript it wrote, `/tmp/anexo2-stage1.out` on the
+apply machine, has sha256 `cf3306e3fc1d29c39241ca85a3e073a3ebececf342d6965f5a6cc97b5e4c6c35`.
+On that read the owner ruled on 2026-09-29, paraphrased: link the whole link set it shows,
+with nothing excluded.
+
+- **Stage 2 is handed those two values, pinned in its block** as `PINCOUNT` and `PINDIGEST`,
+  never read back from a file a sitting can rewrite; the block echoes where they come from,
+  with that transcript's sha256. The write sitting still runs stage 0 and stage 1 first, and
+  stage 2 still refuses unless stage 1 passed in this sitting, within the hour, on the
+  recorded sha. It then parses this sitting's two carries out of stage 1's transcript and
+  STOPS, before the environment is loaded and before psql, unless each equals its pin: then
+  production moved since the read the owner ruled on, and nothing is written. psql is handed
+  the pinned values, and P3 recomputes both inside the transaction and refuses on any
+  difference, so a change between this sitting's stage 1 and the write stops it too.
+- **The run window.** GREEN's dispatch names it; this document carries no date. The
+  dispatch's CLOCK CHECK, pasted after stage 0, records it for the recorded sha, and stages
+  1, 2 and 3 each check it by machine (the section on the HEAD CHECK, above).
+- **The apply transcript.** The apply is stage 2's psql run. Its whole output is teed to
+  `/tmp/anexo2-stage2.out`, which the block reads for its DONE and COMMITTED lines, and to
+  `/tmp/anexo2-apply.out`, the file every write sitting's apply output lands in. GREEN
+  pastes both raw, never reformatted.
+- **Stage 3 marks its pass** in `/tmp/anexo2-stage3.ok` with the recorded sha, only after
+  every one of its checks has passed, having removed the mark first, so a stage 3 that halts
+  leaves none. The dispatch's closing journal read requires it.
+- **No DELETE, DROP or TRUNCATE.** No stage file holds one, and no block runs one.
+- **The unit test holds these changes.** Two tests are new: the pinned carries (assigned once,
+  named the same in the facts row, in this section and in the block's echo with the
+  transcript's sha256, compared before psql, and run under bash on written stage 1
+  transcripts, equal, moved and missing), and the run window (stage 0 removes the record, and
+  each of stages 1 to 3 runs its window lines under bash with a stand-in clock, inside, at each
+  edge, on another sha, with no record and with one that does not parse). The carries test now
+  holds psql's arguments to the pinned values, the transcript test holds the apply transcript
+  and stage 3's pass mark, and the psql pin holds both tee files. A sweep of 14 seeded wrong
+  copies of this document (each check above dropped, loosened or pointed elsewhere) turned a
+  test red on every one.
+- **The rehearsal of these blocks** at production's position (the journal at 93, and the
+  stage 1 result of 2026-09-29 seeded) is its own run, by a lane that did not write them. It is
+  recorded on #1458, not here, so this document's sha256 does not move with it.
 
 ## STAGE 0: the files, the pins and the recorded head
 
@@ -176,7 +238,7 @@ cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 [ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
-rm -f /tmp/anexo2-main.sha /tmp/anexo2-stage1.out /tmp/anexo2-stage1.ok
+rm -f /tmp/anexo2-main.sha /tmp/anexo2-window.ok /tmp/anexo2-stage1.out /tmp/anexo2-stage1.ok
 git fetch origin --prune
 MAIN=$(git rev-parse origin/main)
 [ "$(git cat-file -t ${MAIN})" = commit ] || { echo "STOP: origin/main does not resolve to a commit"; exit 1; }
@@ -201,7 +263,8 @@ echo "ANEXO LINK V2 FILES VERIFIED"
 **EXPECT: the sidecar line `docs/data-op-anexo-link-v2.md: OK`, then
 `running from origin/main <sha>, recorded in /tmp/anexo2-main.sha`, then
 `ANEXO LINK V2 FILES VERIFIED`.** It reads no database. The sha it prints is the one every
-later stage runs from.
+later stage runs from. It removes any earlier run window record: GREEN's CLOCK CHECK, pasted
+after it, writes the one stages 1 to 3 read.
 
 ## STAGE 1: the read
 
@@ -233,6 +296,19 @@ test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard i
 [ "$(shasum -a 256 scripts/data/anexo-link-v2-1-read.sql | cut -d' ' -f1)" = "${SHA1}" ] || { echo "STOP: stage 1 on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
+echo "--- THE RUN WINDOW: GREEN's dispatch names it and its CLOCK CHECK recorded it. Stage 1 starts inside it or not at all"
+test -f /tmp/anexo2-window.ok || { echo "STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0. Nothing was read"; exit 1; }
+WREC=$(cut -d' ' -f1 /tmp/anexo2-window.ok)
+WOPEN=$(cut -d' ' -f2 /tmp/anexo2-window.ok)
+WSTART=$(cut -d' ' -f3 /tmp/anexo2-window.ok)
+WEND=$(cut -d' ' -f4 /tmp/anexo2-window.ok)
+[ "${WREC}" = "${REC}" ] || { echo "STOP: the run window was recorded for ${WREC}, not for the sha stage 0 recorded. Nothing was read"; exit 1; }
+echo "${WOPEN} ${WSTART} ${WEND}" | grep -qxE '[0-9]{12} [0-9]{12} [0-9]{12}' || { echo "STOP: the recorded run window did not parse. Nothing was read"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: opens ${WOPEN}, stage 1 starts by ${WSTART}, everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -ge "${WOPEN}" ] || { echo "STOP: Lisbon ${NOWL} is before the run window opens at ${WOPEN}. Nothing was read"; exit 1; }
+[ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART}, the last minute the run window lets stage 1 start. Nothing was read"; exit 1; }
+
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
@@ -249,14 +325,17 @@ echo "STAGE 1 READ, NO REFUSAL. Read sections 1, 2, 2b, 2c, 2d, 4 and 4b before 
 ```
 
 **Read the output before pasting stage 2.** The HEAD CHECK prints both shas, and they are
-equal or the block has already halted. Section 4 prints 12 refusals, `R01` to `R12`; the
+equal or the block has already halted. The run window line prints the three recorded times
+and now, and the block has already halted if now is before the window opens or past its last
+start minute. Section 4 prints 12 refusals, `R01` to `R12`; the
 block has already stopped if any reads REFUSE. A refusal that reads `VACUOUS` read an empty
 population: that is not a refusal, and the sections above it say which population it was.
 Section 2b must read `partition holds`, and the block checks it. Section 4b must be empty.
 Section 2 is the link set and every class the op leaves alone; section 2d names each pair it
 leaves alone by id, and marks one whose document another pair links (Q3). Section 3 holds the
 two carries stage 2 consumes; nobody types them, stage 2 parses them out of the transcript this
-block wrote.
+block wrote, and stops before psql unless each equals the value pinned in its block (the
+section on the write sitting).
 
 ## STAGE 2: the write
 
@@ -265,10 +344,8 @@ block wrote.
 set -eo pipefail
 SHA2=926d792af095e2034e783415c7f4af318bf3c3b32668c82c3f9ae406472cd3d5
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
-NAMES=(
-anexo_v2_count
-anexo_v2_digest
-)
+PINCOUNT=220
+PINDIGEST=9f36e315c698b99cf95775d48698405d
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 [ -z "$(find /tmp/anexo2-written.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 2 has ALREADY WRITTEN in this sitting. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
@@ -295,16 +372,36 @@ test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard i
 [ "$(shasum -a 256 scripts/data/anexo-link-v2-2-write.sql | cut -d' ' -f1)" = "${SHA2}" ] || { echo "STOP: stage 2 on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
+echo "--- THE RUN WINDOW: GREEN's dispatch names it and its CLOCK CHECK recorded it. Nothing is written outside it"
+test -f /tmp/anexo2-window.ok || { echo "STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0. Nothing was written"; exit 1; }
+WREC=$(cut -d' ' -f1 /tmp/anexo2-window.ok)
+WOPEN=$(cut -d' ' -f2 /tmp/anexo2-window.ok)
+WEND=$(cut -d' ' -f4 /tmp/anexo2-window.ok)
+[ "${WREC}" = "${REC}" ] || { echo "STOP: the run window was recorded for ${WREC}, not for the sha stage 0 recorded. Nothing was written"; exit 1; }
+echo "${WOPEN} ${WEND}" | grep -qxE '[0-9]{12} [0-9]{12}' || { echo "STOP: the recorded run window did not parse. Nothing was written"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: opens ${WOPEN}, everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -ge "${WOPEN}" ] || { echo "STOP: Lisbon ${NOWL} is before the run window opens at ${WOPEN}. Nothing was written"; exit 1; }
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. Nothing was written"; exit 1; }
+
+echo "--- THE PINNED CARRIES: the stage 1 read on production of 2026-09-29 01:24 Lisbon, from the held head e00c7716, transcript /tmp/anexo2-stage1.out as that sitting wrote it, sha256 cf3306e3fc1d29c39241ca85a3e073a3ebececf342d6965f5a6cc97b5e4c6c35, the read the owner ruled on"
+echo "pinned:                 anexo_v2_count ${PINCOUNT}, anexo_v2_digest ${PINDIGEST}"
 carry() { awk -F'|' -v k="$1" 'index($1,k)>0 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' /tmp/anexo2-stage1.out; }
-ARGS=()
-for C in "${NAMES[@]}"; do V=$(carry ${C}); [ -n "${V}" ] || { echo "STOP: carry ${C} did not parse out of stage 1's transcript"; exit 1; }; ARGS+=(-v "${C}=${V}"); done
-echo "carries from this sitting: ${#NAMES[@]} names"
+C1=$(carry anexo_v2_count)
+C2=$(carry anexo_v2_digest)
+echo "this sitting's stage 1: anexo_v2_count ${C1}, anexo_v2_digest ${C2}"
+[ -n "${C1}" ] || { echo "STOP: carry anexo_v2_count did not parse out of stage 1's transcript. Nothing was written"; exit 1; }
+[ -n "${C2}" ] || { echo "STOP: carry anexo_v2_digest did not parse out of stage 1's transcript. Nothing was written"; exit 1; }
+[ "${C1}" = "${PINCOUNT}" ] || { echo "STOP: carry anexo_v2_count reads ${C1} in this sitting's stage 1 and the pin is ${PINCOUNT}. Production moved since the read the owner ruled on. Nothing was written; the sitting stops here"; exit 1; }
+[ "${C2}" = "${PINDIGEST}" ] || { echo "STOP: carry anexo_v2_digest reads ${C2} in this sitting's stage 1 and the pin is ${PINDIGEST}. Production moved since the read the owner ruled on. Nothing was written; the sitting stops here"; exit 1; }
+ARGS=(-v "anexo_v2_count=${PINCOUNT}" -v "anexo_v2_digest=${PINDIGEST}")
+echo "carries: this sitting's stage 1 printed the pinned values, and psql is handed the pinned values"
 
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
-rm -f /tmp/anexo2-stage2.out
-psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "${ARGS[@]}" -f scripts/data/anexo-link-v2-2-write.sql 2>&1 | tee /tmp/anexo2-stage2.out
+rm -f /tmp/anexo2-stage2.out /tmp/anexo2-apply.out
+psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "${ARGS[@]}" -f scripts/data/anexo-link-v2-2-write.sql 2>&1 | tee /tmp/anexo2-stage2.out /tmp/anexo2-apply.out
 touch /tmp/anexo2-written.ok
 grep -q 'ANEXO LINK V2 STAGE 2 DONE' /tmp/anexo2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its DONE line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 grep -q 'ANEXO LINK V2 STAGE 2 COMMITTED' /tmp/anexo2-stage2.out || { echo "STOP: psql exited 0, so the COMMIT ran and THE WRITE STANDS, but its COMMITTED line is missing. The sitting stops here. Never run stage 0, 1 or 2 again. GREEN reports this whole output, and stage 3 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
@@ -331,8 +428,9 @@ COMMIT.
 prints `ANEXO LINK V2 WRITTEN. Paste stage 3 now.` **Every other exit stops the sitting, with
 nothing else pasted.** psql exit 3 is every in-database STOP, and nothing was written; an
 undefined carry fails before the block, on the `set_config` statement, also with exit 3. A
-`STOP:` the block prints exits 1: before psql nothing was written, and after it (the two lines
-above) the write stands. Any other exit (psql exits 2 on a lost connection, possibly during the
+`STOP:` the block prints exits 1: before psql nothing was written (the HEAD CHECK's, the run
+window's and a carry that moved from its pin among them), and after it (the two lines above)
+the write stands. Any other exit (psql exits 2 on a lost connection, possibly during the
 COMMIT) leaves open whether the write stands. In every case GREEN reports the exit code and the
 whole output, and stage 3, READ ONLY, runs only on the owner's or the lead's word; its
 verdict 1 answers whether the write stands. R03 refuses a second write regardless.
@@ -346,6 +444,7 @@ SHA3=28fd91982f183d505b482a38e103fbf73e3dec681c13197b83f72ce7571f4e29
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+rm -f /tmp/anexo2-stage3.ok
 test -f /tmp/anexo2-main.sha || { echo "STOP: stage 0 recorded no sha in this sitting, and stage 3 runs only from the recorded sha. The lead rules"; exit 1; }
 REC=$(cat /tmp/anexo2-main.sha)
 [ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit"; exit 1; }
@@ -361,6 +460,15 @@ test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard i
 [ "$(shasum -a 256 scripts/data/anexo-link-v2-3-verify.sql | cut -d' ' -f1)" = "${SHA3}" ] || { echo "STOP: stage 3 on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
+echo "--- THE RUN WINDOW: nothing runs at or after its end"
+test -f /tmp/anexo2-window.ok || { echo "STOP: no run window is recorded for this sitting. Stage 3 read nothing, and runs only on the owner's or the lead's word"; exit 1; }
+[ "$(cut -d' ' -f1 /tmp/anexo2-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. Stage 3 read nothing, and runs only on the owner's or the lead's word"; exit 1; }
+WEND=$(cut -d' ' -f4 /tmp/anexo2-window.ok)
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. Stage 3 read nothing, and runs only on the owner's or the lead's word"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. Stage 3 read nothing, and runs only on the owner's or the lead's word"; exit 1; }
+
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
@@ -374,17 +482,21 @@ NV=$(grep -cE '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*(OK|VACUOUS|FAIL
 BAD=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]*\|.*\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/anexo2-stage3.out | sed -E 's/^[[:space:]]*([0-9]+)[[:space:]]*\|.*/\1/' | grep -vxE '10|11' | tr '\n' ' ' || true)
 [ -z "${BAD}" ] || { echo "STOP: VACUOUS on ${BAD}, which the op never allows to be vacuous"; exit 1; }
 PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|[[:space:]]*SUMMARY[[:space:]]*\|' /tmp/anexo2-stage3.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
+echo "${REC}" > /tmp/anexo2-stage3.ok
 echo "ANEXO LINK V2 VERIFIED: ${PROFILE}."
 )
 ```
 
-**EXPECT: `verifying from the recorded sha <sha>`, whether main moved, no FAIL, 12 verdicts,
-a SUMMARY row, and VACUOUS only on 10 and 11**, which the block enforces: 10 when no named
+**EXPECT: `verifying from the recorded sha <sha>`, whether main moved, the run window line
+with now before its end, no FAIL, 12 verdicts, a SUMMARY row, and VACUOUS only on 10 and
+11**, which the block enforces: 10 when no named
 document was left alone, 11 when no target registo has an episode. **Never VACUOUS: 1 to 9 and
 12.** Each of those compares the link set, which R09 refuses to write empty, so each FAILs on
 an empty comparand instead. The block prints the profile; the profile moves with the data,
 so no exact profile is asserted for production. After the SUMMARY, stage 3 prints the link set
-as it stands, counts only.
+as it stands, counts only. Only when every check has passed does the block write its pass
+mark, the recorded sha, to `/tmp/anexo2-stage3.ok`, which it removed first; the dispatch's
+closing journal read requires that mark.
 
 ## What every refusal and every verdict means
 
@@ -472,8 +584,13 @@ op.
 
 ## Rehearsal
 
-**Every block and every stage file below ran, as committed, at the commit that carries this
-section,** on the local throwaway container only. Nothing here has touched production. The kit
+**Every block and every stage file below ran, as committed, at the review round 7 commit
+`5c522388`,** on the local throwaway container only. Nothing here has touched production. The
+stage files are byte-identical since. The blocks changed on 2026-09-29 for the write sitting
+(the run window in stages 1 to 3, the pinned carries and the apply transcript in stage 2, the
+pass mark in stage 3, the window record removed by stage 0): the section on the write sitting
+says what changed and where the rehearsal of the changed blocks is recorded. The tables below
+are the rehearsal at `5c522388`, and the substitution counts are that commit's. The kit
 lives in the authoring lane's scratchpad, `b14-rehearsal/` (not committed, as for 0090 to 0093
 and STAFF-10 v2), and one runner reproduces every table below.
 
@@ -696,7 +813,7 @@ carries. This is the evidence for the section "What changed from the original op
 **The unit test, proved red.** `scripts/anexo-link-v2-data-op.test.mjs` passes on this commit,
 and `prove-red.mjs` ran it against 228 seeded wrong copies of the committed tree, each
 re-pinned so only its target property is wrong: every copy turned its target test red, and the
-green controls (DELETE, DROP and TRUNCATE only inside comments, a string and an echo; an
+green controls (the three forbidden statement words only inside comments, a string and an echo; an
 assignment to a guarded or a recorded name only inside a comment and a string; a comment inside
 the audit row and a value set further from its key; a heading of this document quoted in its
 prose) kept every test green. Every test has at least one copy.

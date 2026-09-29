@@ -691,8 +691,8 @@ test("the carries: the link set's count and digest, lifted in plain SQL, compare
   for (const a of names) for (const b of names) if (a !== b) assert.ok(!b.includes(a), `carry ${a} is inside ${b}`);
   for (const c of names) assert.match(S2, new RegExp(`set_config\\('anexo2\\.${c}',\\s+:'${c}',\\s+false\\)`), `stage 2 does not lift ${c}`);
   assert.match(S2, /IF v_n <> 2 THEN\n\s+RAISE EXCEPTION 'STOP: the carry set has % names, not 2'/, "stage 2 does not assert the carry count");
-  const blockNames = block("STAGE 2").match(/NAMES=\(\n([\s\S]*?)\n\)/)?.[1].split(/\s+/).filter(Boolean);
-  assert.deepEqual(blockNames, names, "the doc's stage 2 block does not pass exactly these carries, in order");
+  const args = block("STAGE 2").split("\n").filter((x) => /\bARGS(?:\+)?=/.test(x));
+  assert.deepEqual(args, [`ARGS=(${names.map((c, i) => `-v "${c}=\${${PIN_NAMES[i]}}"`).join(" ")})`], "the doc's stage 2 block does not hand psql exactly these carries, in order, each its pinned value, assigned once");
   assert.match(car, /coalesce\(md5\(string_agg\(l\.attachment_id::text \|\| ':' \|\| l\.record_id::text, ','\n\s+ORDER BY l\.attachment_id, l\.record_id\)\), 'empty'\)/, "the digest expression moved");
   // P3, the one place the block holds what stage 1 printed against what it
   // recomputes: v_car is the car CTE of the SETS block, assigned once; each of its
@@ -715,6 +715,172 @@ test("stage 2 refuses on stale or foreign carries: stage 1 passed within the hou
   assert.match(b, /find \/tmp\/anexo2-stage1\.ok -mmin -60(?![0-9])/, "stage 2 takes a stage 1 mark older than the hour");
   assert.match(b, /find \/tmp\/anexo2-stage1\.out -mmin -60(?![0-9])/, "stage 2 takes a stage 1 transcript older than the hour");
   assert.ok(b.includes('[ "$(cat /tmp/anexo2-stage1.ok)" = "${REC}" ] || {'), "stage 2 does not hold stage 1's pass to the recorded sha");
+});
+
+/** The names the stage 2 block pins the two carries under, in the car CTE's order. */
+const PIN_NAMES = ["PINCOUNT", "PINDIGEST"];
+
+/** The pinned carries as the stage 2 block assigns them: in its head, each exactly once. */
+function pinnedCarries() {
+  const l = block("STAGE 2").split("\n");
+  const head = l.slice(0, l.indexOf(""));
+  const out = {};
+  for (const n of PIN_NAMES) {
+    const set = l.filter((x) => new RegExp(`\\b${n}=`).test(x));
+    assert.equal(set.length, 1, `the stage 2 block assigns ${n} ${set.length} times, not once`);
+    assert.ok(head.includes(set[0]) && set[0].startsWith(`${n}=`), `the stage 2 block assigns ${n} outside its head`);
+    out[n] = set[0].slice(n.length + 1);
+  }
+  assert.match(out.PINCOUNT, /^[1-9][0-9]*$/, "the pinned count is not a positive whole number");
+  assert.match(out.PINDIGEST, /^[0-9a-f]{32}$/, "the pinned digest is not an md5");
+  return out;
+}
+
+/**
+ * The stage 2 block's carry lines, from its carry function to its ARGS line, run under
+ * bash after the block's own head, on a stage 1 transcript whose section 3 carries rows
+ * (as psql prints it, in the column order stage 1's SELECT gives), then psql's arguments
+ * printed one per line.
+ */
+function runCarries(rows) {
+  const dir = mkdtempSync(join(tmpdir(), "anexo2-pins-"));
+  try {
+    const l = block("STAGE 2").split("\n");
+    const head = l.slice(1, l.indexOf(""));
+    const from = l.findIndex((x) => x.startsWith("carry() {"));
+    const to = l.findIndex((x) => x.startsWith("ARGS=("));
+    assert.ok(from > 0 && to > from, "the stage 2 block has no carry parse before its ARGS line");
+    const cols = selectList(S1, "\n  FROM jsonb_array_elements(:'anexo_v2_json'::jsonb -> 'carries') e", "stage 1 section 3");
+    assert.deepEqual(cols, ["e ->> 'carry' AS carry", "e ->> 'value' AS value"], "stage 1 section 3 prints its carries in another shape than this test writes");
+    writeFileSync(join(dir, "anexo2-stage1.out"), ["=== 3. THE CARRIES ===", ...aligned([["carry", false], ["value", false]], rows), ""].join("\n"));
+    const body = [...head, ...l.slice(from, to + 1), 'printf "%s\\n" "${ARGS[@]}"'].join("\n").split("/tmp/").join(`${dir}/`);
+    const r = spawnSync("bash", ["-c", `(\n${body}\n)`], { encoding: "utf8" });
+    return { code: r.status, out: `${r.stdout}${r.stderr}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("stage 2 is handed the carries pinned from the stage 1 read the owner ruled on, and stops before the environment and psql unless this sitting's stage 1 printed the same", () => {
+  const pin = pinnedCarries();
+  // The document names the same values, and the transcript they came from, where a reader looks.
+  const facts = DOC.split("\n").filter((x) => x.startsWith("| Stage 2's carries | "));
+  assert.equal(facts.length, 1, "the facts table has no single row for stage 2's carries");
+  assert.ok(facts[0].includes(`\`anexo_v2_count\` ${pin.PINCOUNT} and \`anexo_v2_digest\` \`${pin.PINDIGEST}\``), "the facts row does not name the values the block pins");
+  const tsha = facts[0].match(/transcript sha256 `([0-9a-f]{64})`/)?.[1];
+  assert.ok(tsha, "the facts row does not name the sha256 of the transcript the pins came from");
+  const section = between(DOC, "## The write sitting: the pinned carries, the run window and the apply transcript\n", "\n## ", "the write sitting section").replace(/\s+/g, " ");
+  assert.ok(section.includes(`\`anexo_v2_count\` ${pin.PINCOUNT} and its digest \`anexo_v2_digest\` \`${pin.PINDIGEST}\``), "the write sitting section does not name the values the block pins");
+  assert.ok(section.includes(`has sha256 \`${tsha}\``), "the write sitting section does not name the transcript's sha256");
+  const l = block("STAGE 2").split("\n");
+  assert.ok(l.some((x) => x.startsWith('echo "--- THE PINNED CARRIES: ') && x.includes(`sha256 ${tsha},`)), "the stage 2 block does not echo the transcript its pins came from, by sha256");
+  // Where: after the HEAD CHECK and the run window, before psql's arguments, the environment and psql.
+  const at = (re) => l.findIndex((x) => re.test(x));
+  const co = l.indexOf("git checkout -q --detach ${REC}");
+  const win = at(/^\[ "\$\{NOWL\}" -lt "\$\{WEND\}" \] \|\| /);
+  const c1 = l.indexOf("C1=$(carry anexo_v2_count)");
+  const c2 = l.indexOf("C2=$(carry anexo_v2_digest)");
+  const k1 = at(/^\[ "\$\{C1\}" = "\$\{PINCOUNT\}" \] \|\| \{ echo "STOP: [^"]*Nothing was written; the sitting stops here"; exit 1; \}$/);
+  const k2 = at(/^\[ "\$\{C2\}" = "\$\{PINDIGEST\}" \] \|\| \{ echo "STOP: [^"]*Nothing was written; the sitting stops here"; exit 1; \}$/);
+  const args = at(/^ARGS=\(/);
+  const env = at(/osteojp-secrets/);
+  const psql = at(/^psql /);
+  assert.ok(co >= 0 && co < win && win < c1 && c1 < c2 && c2 < k1 && k1 < k2 && k2 < args && args < env && env < psql, "stage 2 does not parse this sitting's carries and hold each to its pin after the HEAD CHECK and the run window, and before it builds psql's arguments, loads the environment and runs psql");
+  assert.equal(l.filter((x) => x.includes("$(carry ")).length, 2, "stage 2 parses a carry more than once, so this test cannot tell which read decides");
+  // And what those lines do, under bash, on written stage 1 transcripts.
+  const handed = ["-v", `anexo_v2_count=${pin.PINCOUNT}`, "-v", `anexo_v2_digest=${pin.PINDIGEST}`];
+  const same = runCarries([["anexo_v2_count", pin.PINCOUNT], ["anexo_v2_digest", pin.PINDIGEST]]);
+  assert.equal(same.code, 0, `stage 2 stops on carries equal to its pins\n${same.out}`);
+  assert.deepEqual(same.out.trim().split("\n").slice(-4), handed, "stage 2 does not hand psql the pinned values");
+  const moved = `${Number(pin.PINCOUNT) + 1}`;
+  for (const [what, rows, stop] of [
+    ["a count one more than the pin", [["anexo_v2_count", moved], ["anexo_v2_digest", pin.PINDIGEST]], `STOP: carry anexo_v2_count reads ${moved} in this sitting's stage 1 and the pin is ${pin.PINCOUNT}.`],
+    ["a count that only begins with the pin", [["anexo_v2_count", `${pin.PINCOUNT}0`], ["anexo_v2_digest", pin.PINDIGEST]], `STOP: carry anexo_v2_count reads ${pin.PINCOUNT}0 in this sitting's stage 1`],
+    ["the count kept and the digest moved", [["anexo_v2_count", pin.PINCOUNT], ["anexo_v2_digest", "f".repeat(32)]], `STOP: carry anexo_v2_digest reads ${"f".repeat(32)} in this sitting's stage 1 and the pin is ${pin.PINDIGEST}.`],
+    ["no digest printed", [["anexo_v2_count", pin.PINCOUNT]], "STOP: carry anexo_v2_digest did not parse out of stage 1's transcript"],
+    ["no carry printed", [], "STOP: carry anexo_v2_count did not parse out of stage 1's transcript"],
+  ]) {
+    const r = runCarries(rows);
+    assert.equal(r.code, 1, `stage 2 on ${what} went on (exit ${r.code})\n${r.out}`);
+    assert.ok(r.out.includes(stop), `stage 2 on ${what} did not print ${JSON.stringify(stop)}\n${r.out}`);
+    assert.ok(!r.out.includes("anexo_v2_count=") && !r.out.includes("anexo_v2_digest="), `stage 2 on ${what} built psql's arguments`);
+  }
+});
+
+/**
+ * The lines of the stage n block from its THE RUN WINDOW line to the blank line after
+ * it, run under bash after the block's own head, with REC set, /tmp/ moved to a scratch
+ * directory holding the window record (none when record is null), and a stand-in date
+ * first on PATH that prints now.
+ */
+function runWindow(n, record, now, rec = "a".repeat(40)) {
+  const dir = mkdtempSync(join(tmpdir(), "anexo2-window-"));
+  try {
+    const bin = join(dir, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "date"), `#!/bin/sh\necho ${now}\n`, { mode: 0o755 });
+    if (record !== null) writeFileSync(join(dir, "anexo2-window.ok"), `${record}\n`);
+    const l = block(`STAGE ${n}`).split("\n");
+    const head = l.slice(1, l.indexOf(""));
+    const from = l.findIndex((x) => x.startsWith('echo "--- THE RUN WINDOW'));
+    const to = l.indexOf("", from);
+    assert.ok(from > 0 && to > from, `the stage ${n} block has no run window section`);
+    const body = [...head, `REC=${rec}`, ...l.slice(from, to)].join("\n").split("/tmp/").join(`${dir}/`);
+    const r = spawnSync("bash", ["-c", `(\n${body}\n)`], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    return { code: r.status, out: `${r.stdout}${r.stderr}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("the run window: stage 0 removes the record, and stages 1 to 3 each check the one the CLOCK CHECK wrote for the recorded sha, by machine, before the environment and psql", () => {
+  const s0 = block("STAGE 0").split("\n");
+  const rm0 = s0.findIndex((x) => x.startsWith("rm -f ") && x.split(" ").includes("/tmp/anexo2-window.ok"));
+  assert.ok(rm0 >= 0 && rm0 < s0.indexOf("git fetch origin --prune"), "stage 0 does not remove the run window record before it fetches, so a record from an earlier sitting could pass");
+  for (const [label, b] of STAGE_BLOCKS()) {
+    assert.ok(!b.split("\n").some((x) => />\s*\/tmp\/anexo2-window\.ok/.test(x)), `${label} writes the run window record, which only the dispatch's CLOCK CHECK may`);
+  }
+  for (const n of [1, 2, 3]) {
+    const l = block(`STAGE ${n}`).split("\n");
+    const first = l.findIndex((x) => x.includes("/tmp/anexo2-window.ok"));
+    const co = l.indexOf("git checkout -q --detach ${REC}");
+    const env = l.findIndex((x) => x.includes("osteojp-secrets"));
+    assert.ok(co >= 0 && co < first && first < env, `stage ${n} does not check the run window after it checks out the recorded sha and before it loads the environment and runs psql`);
+    assert.ok(l.filter((x) => x.includes("TZ=Europe/Lisbon date")).length === 1, `stage ${n} does not read the Lisbon clock exactly once`);
+  }
+  const W = (rec = "a".repeat(40)) => `${rec} 202609292100 202609292229 202609292300`;
+  const arms = [
+    [1, W(), "202609292100", null],
+    [1, W(), "202609292229", null],
+    [1, W(), "202609292059", "STOP: Lisbon 202609292059 is before the run window opens at 202609292100. Nothing was read"],
+    [1, W(), "202609292230", "STOP: Lisbon 202609292230 is past 202609292229, the last minute the run window lets stage 1 start. Nothing was read"],
+    [1, W("b".repeat(40)), "202609292110", "STOP: the run window was recorded for bbbb"],
+    [1, null, "202609292110", "STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0. Nothing was read"],
+    [1, `${"a".repeat(40)} 20260929210 202609292229 202609292300`, "202609292110", "STOP: the recorded run window did not parse. Nothing was read"],
+    [2, W(), "202609292100", null],
+    [2, W(), "202609292259", null],
+    [2, W(), "202609292059", "STOP: Lisbon 202609292059 is before the run window opens at 202609292100. Nothing was written"],
+    [2, W(), "202609292300", "STOP: Lisbon 202609292300 is at or past 202609292300, the end of the run window. Nothing was written"],
+    [2, W(), "202609300100", "STOP: Lisbon 202609300100 is at or past 202609292300, the end of the run window. Nothing was written"],
+    [2, W("b".repeat(40)), "202609292110", "STOP: the run window was recorded for bbbb"],
+    [2, null, "202609292110", "STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0. Nothing was written"],
+    [2, `${"a".repeat(40)} 202609292100 202609292229 2026092923`, "202609292110", "STOP: the recorded run window did not parse. Nothing was written"],
+    [3, W(), "202609292259", null],
+    [3, W(), "202609292300", "STOP: Lisbon 202609292300 is at or past 202609292300, the end of the run window. Stage 3 read nothing"],
+    [3, W("b".repeat(40)), "202609292110", "STOP: the run window was recorded for another sha. Stage 3 read nothing"],
+    [3, null, "202609292110", "STOP: no run window is recorded for this sitting. Stage 3 read nothing"],
+  ];
+  for (const [n, record, now, stop] of arms) {
+    const r = runWindow(n, record, now);
+    const what = `stage ${n} at ${now} with ${record === null ? "no record" : `the record ${record.slice(36)}`}`;
+    if (stop === null) {
+      assert.equal(r.code, 0, `${what} halts inside the window\n${r.out}`);
+      assert.ok(r.out.includes(`; now ${now}`), `${what} does not print now beside the window\n${r.out}`);
+    } else {
+      assert.equal(r.code, 1, `${what} went on (exit ${r.code})\n${r.out}`);
+      assert.ok(r.out.includes(stop), `${what} did not print ${JSON.stringify(stop)}\n${r.out}`);
+    }
+  }
 });
 
 test("every refusal stage 1 prints is a refusal stage 2 raises, each with its control, and the doc counts and lists them", () => {
@@ -1049,7 +1215,7 @@ function runTail(n, transcript, { rec = "a".repeat(40), guard = 0, error = null 
     const body = [...l.slice(1, head), `REC=${rec}`, ...l.slice(from, -1)].join("\n").split("/tmp/").join(`${dir}/`);
     const r = spawnSync("bash", ["-c", `(\n${body}\n)`], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
     const file = (x) => (existsSync(join(dir, x)) ? readFileSync(join(dir, x), "utf8").trim() : null);
-    return { code: r.status, out: `${r.stdout}${r.stderr}`, mark: file("anexo2-stage1.ok"), written: file("anexo2-written.ok") !== null, psqlRan: existsSync(join(dir, "psql.ran")) };
+    return { code: r.status, out: `${r.stdout}${r.stderr}`, mark: file("anexo2-stage1.ok"), mark3: file("anexo2-stage3.ok"), written: file("anexo2-written.ok") !== null, psqlRan: existsSync(join(dir, "psql.ran")), apply: file("anexo2-apply.out"), stage2: file("anexo2-stage2.out") };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1221,6 +1387,8 @@ test("the checks each block makes on its transcript halt where they must: run un
   const s2 = runTail(2, STAGE2_DONE);
   assert.equal(s2.code, 0, `stage 2 halts on a clean write\n${s2.out}`);
   assert.ok(s2.written && s2.out.includes(WRITTEN_LINE), "stage 2 does not mark the write and send the runner on");
+  assert.equal(s2.apply, STAGE2_DONE.trim(), "stage 2 does not tee psql's whole output to the apply transcript");
+  assert.equal(s2.stage2, STAGE2_DONE.trim(), "stage 2 does not tee psql's whole output to its own transcript");
   for (const [what, out, stop] of [
     ["no DONE line", "=== ANEXO LINK V2 STAGE 2 COMMITTED ===\n", "but its DONE line is missing"],
     ["no COMMITTED line", "NOTICE:  ANEXO LINK V2 STAGE 2 DONE: linked\n", "but its COMMITTED line is missing"],
@@ -1233,6 +1401,7 @@ test("the checks each block makes on its transcript halt where they must: run un
   // Stage 3: VERIFIED only with 12 verdicts, a SUMMARY, the COMPLETE line, no FAIL, and VACUOUS on 10 and 11 alone.
   const s3 = runTail(3, stage3Out());
   assert.equal(s3.code, 0, `stage 3 halts on a clean verify\n${s3.out}`);
+  assert.equal(s3.mark3, "a".repeat(40), "stage 3 does not mark its pass with the recorded sha");
   assert.ok(s3.out.includes("ANEXO LINK V2 VERIFIED: 12 OK / 0 VACUOUS / 0 FAIL."), `stage 3 does not print its profile\n${s3.out}`);
   const allowed = runTail(3, stage3Out({ verdicts: { 10: "VACUOUS", 11: "VACUOUS" } }));
   assert.equal(allowed.code, 0, `stage 3 halts on VACUOUS 10 and 11, which the op allows\n${allowed.out}`);
@@ -1255,13 +1424,14 @@ test("the checks each block makes on its transcript halt where they must: run un
     const r = runTail(3, out);
     halts(r, stop, `stage 3 on ${what}`);
     assert.ok(!r.out.includes("ANEXO LINK V2 VERIFIED"), `stage 3 on ${what} still printed VERIFIED`);
+    assert.equal(r.mark3, null, `stage 3 on ${what} marked its pass, so the closing journal read would run`);
   }
 });
 
 const ENV_LINE = "set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport";
 const PSQL_LINES = {
   "stage 1": `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f ${F1} 2>&1 | tee /tmp/anexo2-stage1.out`,
-  "stage 2": `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "\${ARGS[@]}" -f ${F2} 2>&1 | tee /tmp/anexo2-stage2.out`,
+  "stage 2": `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off "\${ARGS[@]}" -f ${F2} 2>&1 | tee /tmp/anexo2-stage2.out /tmp/anexo2-apply.out`,
   "stage 3": `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -f ${F3} 2>&1 | tee /tmp/anexo2-stage3.out`,
 };
 
