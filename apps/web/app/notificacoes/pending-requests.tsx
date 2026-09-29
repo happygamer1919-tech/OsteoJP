@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 
 import { confirmAppointmentRequest } from "@/lib/scheduling/actions";
 import { s } from "@/lib/i18n";
+import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import type { ConflictInfo } from "@/lib/scheduling/types";
 
 /**
@@ -63,7 +64,8 @@ const TIME_FMT: Intl.DateTimeFormatOptions = {
  *  "conflicts with something" is not actionable. */
 function conflictLine(c: ConflictInfo): string {
   const when = new Date(c.startsAt).toLocaleString("pt-PT", TIME_FMT);
-  return c.patientName ? `${when} · ${c.patientName}` : when;
+  const name = conflictPatientLabel(c);
+  return name ? `${when} · ${name}` : when;
 }
 
 function messageFor(err: RowError): string {

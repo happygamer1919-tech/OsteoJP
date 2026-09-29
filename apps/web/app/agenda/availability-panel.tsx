@@ -4,10 +4,13 @@ import { SkeletonText, SlotPicker, type SlotOption } from "@osteojp/ui";
 import { useEffect, useState } from "react";
 
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
 import { getTherapistDayAvailability } from "@/lib/scheduling/actions";
 import { SLOT_MINUTES, formatTimeOfDay } from "@/lib/scheduling/time";
 import { noFreeReason } from "@/lib/scheduling/day-availability-core";
-import type { DayAvailability, IsoInterval } from "@/lib/scheduling/types";
+import { availabilityKey } from "@/lib/scheduling/drawer-load-core";
+import type { DrawerPreload } from "@/lib/scheduling/drawer-preload";
+import type { ActionResult, DayAvailability, IsoInterval } from "@/lib/scheduling/types";
 
 /**
  * Availability panel for the new-appointment flow (SPEC-appointments §5).
@@ -24,6 +27,7 @@ export function AvailabilityPanel({
   durationMin,
   time,
   onPickTime,
+  preload,
 }: {
   therapistId: string;
   date: string;
@@ -31,13 +35,18 @@ export function AvailabilityPanel({
   durationMin: number;
   time: string;
   onPickTime: (hhmm: string) => void;
+  /**
+   * SKEW-01 PR 2: the drawer's loader, when it opened an existing marcacao.
+   * The day it opened on comes from there; every other day is fetched here.
+   */
+  preload?: DrawerPreload | null;
 }) {
   // Fetch keyed by therapist/date/location. `result` only ever holds the
   // outcome for the key it was fetched with, so a stale response landing
   // after the key has already moved on is naturally ignored by the render-time
   // comparison below rather than flashing outdated data — the effect body
   // itself never calls setState, only its async callback does.
-  const key = `${therapistId}|${date}|${locationId}`;
+  const key = availabilityKey(therapistId, date, locationId);
   const [result, setResult] = useState<
     | { key: string; status: "error" }
     | { key: string; status: "ready"; day: DayAvailability }
@@ -47,18 +56,43 @@ export function AvailabilityPanel({
   useEffect(() => {
     if (!therapistId || !date) return;
     let cancelled = false;
-    getTherapistDayAvailability({ therapistId, date, locationId: locationId || null })
-      .then((r) => {
+    function show(r: ActionResult<DayAvailability>) {
+      setResult(r.ok ? { key, status: "ready", day: r.data } : { key, status: "error" });
+    }
+    // SKEW-01: a failed call still shows this panel's own error line, as the
+    // `.catch` it replaces did; the wrapper adds the toast and its retry.
+    function load() {
+      void runAction(() => getTherapistDayAvailability({ therapistId, date, locationId: locationId || null }), {
+        kind: "read",
+        retry: () => { if (!cancelled) load(); },
+      }).then((out) => {
         if (cancelled) return;
-        setResult(r.ok ? { key, status: "ready", day: r.data } : { key, status: "error" });
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ key, status: "error" });
+        if (out.failed) {
+          setResult({ key, status: "error" });
+          return;
+        }
+        show(out.value);
       });
+    }
+    // SKEW-01 PR 2: the day the drawer opened on is the loader's. A failed
+    // loader call shows the same error line a failed call of this panel's own
+    // shows; a piece that failed on the server runs this panel's own call.
+    const covered = preload?.take("availability", key, {
+      value: (r) => {
+        if (!cancelled) show(r);
+      },
+      fallback: () => {
+        if (!cancelled) load();
+      },
+      failed: () => {
+        if (!cancelled) setResult({ key, status: "error" });
+      },
+    });
+    if (!covered) load();
     return () => {
       cancelled = true;
     };
-  }, [key, therapistId, date, locationId]);
+  }, [key, therapistId, date, locationId, preload]);
 
   if (!therapistId || !date) return null;
 

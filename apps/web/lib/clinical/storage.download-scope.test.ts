@@ -4,6 +4,14 @@ import type { SQL } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
+// CARE-02a (0098 v2): the read scope asks whether the clinic-limited care-team
+// helper exists before naming it (care-team-reads-gate.ts). That probe is a
+// read of its own and would land on the fake runScoped below, so it is
+// answered here: present, the shape production has once 0098 is applied.
+vi.mock("@/lib/patients/care-team-reads-gate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/patients/care-team-reads-gate")>()),
+  careTeamClinicHelperPresent: vi.fn(async () => true),
+}));
 vi.mock("./audit", () => ({
   writeClinicalAudit: vi.fn(async () => {}),
   clientIp: vi.fn(async () => "127.0.0.1"),
@@ -17,6 +25,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 import type { RequestContext } from "@osteojp/auth";
 import { runScoped } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { CARE_TEAM_CLINIC_HELPER } from "@/lib/patients/care-team-reads-gate";
 import { isClinicalError } from "./errors";
 import { createAttachmentDownloadUrl } from "./storage";
 
@@ -108,6 +117,13 @@ const PATIENT_LEVEL = '"attachments"."clinical_record_id" is null';
  * only the SHAPE is under test and a reflow of the scope templates does not
  * fail it. The other three cases keep the readable substring assertions; this
  * one is the mutation gate they lean on.
+ *
+ * CARE-02a (0098): both arms are the READ scope now, so each carries the
+ * care-team disjunct beside the treats-or-created one. v2: that disjunct is
+ * 0098's CLINIC-LIMITED helper (the owner's ruling of 2026-09-27), named from
+ * care-team-reads-gate.ts so this pin and the app cannot spell it apart. A download serves a
+ * reader (the registo, or the Documentos tab), and both readers took the read
+ * scope in the same PR; see lib/patients/scope-callers.test.ts.
  */
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -116,25 +132,31 @@ const THERAPIST_WHERE = squash(`
    and "attachments"."tenant_id" = $2
    and "attachments"."deleted_at" is null
    and (("clinical_records"."id" is not null and (
-     EXISTS (
-       SELECT 1 FROM patients po
-       WHERE po.id = "clinical_records"."patient_id" AND po.created_by = $3
+     (
+       EXISTS (
+         SELECT 1 FROM patients po
+         WHERE po.id = "clinical_records"."patient_id" AND po.created_by = $3
+       )
+       OR EXISTS (
+         SELECT 1 FROM appointments ap
+         WHERE (ap.patient_id = "clinical_records"."patient_id" OR ap.patient_2_id = "clinical_records"."patient_id")
+           AND (ap.practitioner_id = $4 OR ap.practitioner_2_id = $5)
+       )
      )
-     OR EXISTS (
-       SELECT 1 FROM appointments ap
-       WHERE (ap.patient_id = "clinical_records"."patient_id" OR ap.patient_2_id = "clinical_records"."patient_id")
-         AND (ap.practitioner_id = $4 OR ap.practitioner_2_id = $5)
-     )
+     OR "clinical_records"."patient_id" = ANY (coalesce((SELECT public.${CARE_TEAM_CLINIC_HELPER}()), '{}'::uuid[]))
    )) or ("attachments"."clinical_record_id" is null and "attachments"."patient_id" is not null and (
-     EXISTS (
-       SELECT 1 FROM patients po
-       WHERE po.id = "attachments"."patient_id" AND po.created_by = $6
+     (
+       EXISTS (
+         SELECT 1 FROM patients po
+         WHERE po.id = "attachments"."patient_id" AND po.created_by = $6
+       )
+       OR EXISTS (
+         SELECT 1 FROM appointments ap
+         WHERE (ap.patient_id = "attachments"."patient_id" OR ap.patient_2_id = "attachments"."patient_id")
+           AND (ap.practitioner_id = $7 OR ap.practitioner_2_id = $8)
+       )
      )
-     OR EXISTS (
-       SELECT 1 FROM appointments ap
-       WHERE (ap.patient_id = "attachments"."patient_id" OR ap.patient_2_id = "attachments"."patient_id")
-         AND (ap.practitioner_id = $7 OR ap.practitioner_2_id = $8)
-     )
+     OR "attachments"."patient_id" = ANY (coalesce((SELECT public.${CARE_TEAM_CLINIC_HELPER}()), '{}'::uuid[]))
    ))))
 `);
 

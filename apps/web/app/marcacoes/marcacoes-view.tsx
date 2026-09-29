@@ -660,7 +660,15 @@ export function MarcacoesView({
       )}
       <div className="space-y-1">
         <h1 className="text-2xl text-v2-text-primary">{s["marcacoes.title"]}</h1>
-        <p className="text-sm text-v2-text-secondary">{s["marcacoes.subtitle"]}</p>
+        {/* T5 F5 (guide finding, #1462): for a therapist the list is locked to
+            rows where they are the main Terapeuta (page.tsx sets practitionerId
+            to their own id), so "dos seus pacientes" overstated it: their
+            patients' bookings with a colleague, and the rows where they are
+            Terapeuta 2, are not here. The subtitle follows the same flag that
+            narrows the query. */}
+        <p className="text-sm text-v2-text-secondary">
+          {lockTherapist ? s["marcacoes.subtitleTherapist"] : s["marcacoes.subtitle"]}
+        </p>
       </div>
 
       {/* Filters (SPEC-v2-marcacoes §1.2): date range, location, status,

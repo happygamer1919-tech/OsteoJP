@@ -10,7 +10,8 @@ export type NavItem = {
    * COMMS-01: other URL prefixes that light this entry as active. Used by a
    * GROUP entry whose sections keep their own routes (Comunicações holds
    * /recuperacao, which predates the group and is named by links, revalidatePath
-   * and e2e specs). Absent for every ordinary entry.
+   * and e2e specs, and /reminders/review, which the page and its tests name).
+   * Absent for every ordinary entry.
    */
   activePrefixes?: string[];
 };
@@ -74,8 +75,10 @@ const ALL: (NavItem & { capability?: Capability | readonly Capability[] })[] = [
   // they may not open; it is not what stops them opening it.
   //
   // COMMS-01 (owner dispatch 2026-09-14, BL-2): THE ENTRY IS NOW THE GROUP.
-  // "Comunicações" holds two sections, Recuperação and Lembretes SMS, and sits in
-  // Recuperação's old slot for the NAV-01 reason above. The sidebar shell has no
+  // "Comunicações" holds its sections (Recuperação, Lembretes SMS and, since T5
+  // F4, Respostas SMS at /reminders/review; the list is COMMS_SECTIONS in
+  // comms-sections.ts) and sits in Recuperação's old slot for the NAV-01 reason
+  // above. The sidebar shell has no
   // nested items, so the group is ONE entry whose sections share a tab bar
   // (app/comunicacoes/comms-nav.client.tsx); /comunicacoes redirects to the first
   // section the role may open. The entry shows when the role may open ANY
@@ -126,6 +129,18 @@ const ALL: (NavItem & { capability?: Capability | readonly Capability[] })[] = [
   // apart by inverse conditions, which is the arrangement that drifts.
   { href: "/horarios", label: s["nav.schedule"], capability: "schedule:read" },
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },
+  // ==========================================================================
+  // Ajuda. G1 (owner ruling 2026-09-27, proposal section 7 Q3): the LAST item
+  // for EVERY role.
+  // ==========================================================================
+  // It is appended AFTER Administração, never inserted, so no ruled position
+  // moves: NAV-01 still reads Estatísticas, Horários, Administração by index,
+  // and every role simply gains one entry at the end of what it already sees.
+  //
+  // NO CAPABILITY, ON PURPOSE. /ajuda is the staff guide and every role has
+  // lessons in it; the page itself filters WHICH lessons a role sees (G1-3).
+  // Gating the entry would hide the guide from the people it is written for.
+  { href: "/ajuda", label: s["nav.help"] },
 ];
 
 function roleMayUse(role: Role, capability: Capability | readonly Capability[] | undefined): boolean {

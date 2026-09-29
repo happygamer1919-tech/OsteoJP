@@ -1,0 +1,14 @@
+# Lines of the guide's files waived from the names check (G1-5), because a
+# hit there was a chance match of the 32 bit hash and not a person's name.
+#
+# One entry per line: the context hash the failing check printed beside the
+# file and line, then a note saying which line it was and why it is not a name.
+#
+#   <64 hex digits>  docs/guide/shots/text/<file>.txt:<line>, platform copy only
+#
+# A waiver is added only after a person has read the named line and found on
+# it nothing but platform copy and invented names from seed-guide.mjs. It
+# covers that exact text and the three words after it; any change to them
+# brings the line back into the check. An entry that matches no line of the
+# scanned files fails the check, so a stale waiver cannot linger.
+# README, "The names check", says when and how.

@@ -54,7 +54,33 @@ describe("the matched appointment is shown, because reception has to know which 
     const html = renderToStaticMarkup(<InboundReviewList items={[item()]} />);
     // 21/07/2026 10:00 in Europe/Lisbon (WEST, UTC+1) for the 09:00Z fixture.
     expect(html).toContain("21/07/2026");
-    expect(html).toContain("scheduled");
+    expect(html).toContain("· Agendada");
+  });
+
+  // T5 F4 put this screen in the menu, and the row printed the raw enum
+  // ("scheduled") on a pt-PT screen. Every lifecycle value reads as the label
+  // Marcações uses, and no raw value reaches the page.
+  it.each([
+    ["scheduled", "Agendada"],
+    ["confirmed", "Confirmada"],
+    ["completed", "Concluída"],
+    ["cancelled", "Cancelada"],
+    ["no_show", "Falta"],
+  ])("renders the %s status as %s, never the raw value", (status, label) => {
+    const html = renderToStaticMarkup(
+      <InboundReviewList items={[item({ appointmentStatus: status })]} />,
+    );
+    expect(html).toContain(`· ${label}`);
+    expect(html).not.toContain(status);
+  });
+
+  it("drops a status outside the enum rather than printing it", () => {
+    const html = renderToStaticMarkup(
+      <InboundReviewList items={[item({ appointmentStatus: "toString" })]} />,
+    );
+    expect(html).toContain("21/07/2026");
+    expect(html).not.toContain("toString");
+    expect(html).not.toContain(" · ");
   });
 
   it("says so plainly when the reply matched NO appointment", () => {

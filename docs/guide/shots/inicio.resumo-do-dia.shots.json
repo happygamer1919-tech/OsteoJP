@@ -1,0 +1,15 @@
+{
+  "id": "inicio.resumo-do-dia",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "stabilize": [{ "css": "main h1", "text": "Bom dia, Rita" }],
+  "frames": [
+    {
+      "goto": "/dashboard?date=2026-10-06",
+      "ready": { "css": "[data-testid=\"dashboard-kpis\"]" },
+      "annotate": [
+        { "kind": "box", "target": { "css": "[data-testid=\"dashboard-kpis\"]" } }
+      ]
+    }
+  ]
+}

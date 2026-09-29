@@ -1,0 +1,470 @@
+sha256 9cf4f099368554a75f6c23766fbe5ab7150a20ca5754031b7ca535cc3c9d4fd0
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Marcações
+
+Consulte as marcações dos seus pacientes.
+
+a
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Todos os estados
+Agendada
+Confirmada
+Concluída
+Cancelada
+Falta
+Todos os serviços
+Fisioterapia
+Osteopatia
+Reavaliação
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+5 de outubro de 2026
+09:00-10:00
+Marta Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+09:30-10:15
+Sofia Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+10:00-11:00
+Rui Inventado
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+10:00-11:00
+Tiago Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+11:00-11:45
+Paulo Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+11:30-12:00
+Inês Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Reavaliação
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+14:00-15:00
+Nuno Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+15:00-15:45
+Vera Inventada
+Criado por: Rita Exemplo
+Cancelada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+16:00-17:00
+Lara Fictícia
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+6 de outubro de 2026
+09:00-09:45
+Hugo Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+09:00-10:00
+Beatriz Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+09:30-10:30
+Gonçalo Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+10:00-10:45
+Teresa Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+10:30-11:30
+Filipe Inventado
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+11:00-12:00
+Clara Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+12:00-12:30
+Marta Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Reavaliação
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+14:30-15:15
+Sofia Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+15:00-16:00
+Tiago Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+15:30-16:30
+Miguel Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+16:00-16:45
+Paulo Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+17:00-18:00
+Nuno Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+7 de outubro de 2026
+09:00-10:00
+Inês Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+10:00-10:45
+Vera Inventada
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+10:00-11:00
+Rui Inventado
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+11:00-12:00
+Beatriz Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+14:00-15:00
+Filipe Inventado
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+14:00-15:00
+Lara Fictícia
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+15:00-15:45
+Hugo Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+8 de outubro de 2026
+09:00-09:45
+Teresa Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+09:30-10:30
+Marta Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+11:00-11:30
+Tiago Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Reavaliação
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+11:30-12:15
+Sofia Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+15:00-16:00
+Gonçalo Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+16:00-17:00
+Nuno Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+9 de outubro de 2026
+09:00-10:00
+Filipe Inventado
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+10:00-10:45
+Paulo Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+10:30-11:30
+Inês Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+11:00-12:00
+Clara Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+14:30-15:30
+Beatriz Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+16:00-16:45
+Vera Inventada
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+10 de outubro de 2026
+09:30-10:15
+Hugo Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Polo Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+11:00-11:45
+Teresa Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Polo Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+## frame 1 form values
+05/10/2026
+10/10/2026
+Pesquisar por paciente
+Todas as localizações
+Todos os estados
+Todos os serviços
+Todos os terapeutas

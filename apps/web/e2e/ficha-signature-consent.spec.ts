@@ -19,6 +19,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { PATIENTS, STORAGE, TEMPLATE_CURRENT_LABEL } from "./fixtures";
+import { signAndConfirm } from "./helpers/sign-confirm";
 
 /** Create a fresh draft Ficha Médica for a synthetic patient; land on its detail. */
 async function createDraftFicha(page: Page) {
@@ -113,7 +114,7 @@ test.describe("ficha signature + consent (therapist)", () => {
       timeout: 12_000,
     });
 
-    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await signAndConfirm(page);
     await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
       timeout: 12_000,
     });

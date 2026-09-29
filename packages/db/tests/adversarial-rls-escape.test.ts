@@ -120,8 +120,13 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
 // under an OWNER JWT (owner = all in-tenant write) that satisfies the row gate —
 // isolating WITH CHECK (tenant_id) as the thing doing the rejection. Under admin
 // the UPDATE would match 0 rows (no write path), proving nothing about tenant_id.
+//
+// roles is NOT in this list since 0094. It keeps only a tenant SELECT policy
+// (roles_tenant_select), so a staff session's UPDATE of roles matches no row at
+// all and nothing is left for a WITH CHECK to reject. Its re-homing case is the
+// separate test after this loop: the UPDATE affects 0 rows and the row is still
+// in tenant A.
 const REHOME_TARGETS: { table: string; ownRowId: string; role?: AppRole }[] = [
-  { table: "roles", ownRowId: A.role },
   { table: "users", ownRowId: A.user },
   { table: "locations", ownRowId: A.location },
   { table: "services", ownRowId: A.service },
@@ -167,6 +172,22 @@ describe.skipIf(!live)("adversarial RLS escape attempts", () => {
         ).rejects.toThrow(/row-level security/i);
       });
     }
+
+    it("roles: cannot move an own row into tenant B (0094: no UPDATE policy, so 0 rows and the row stays in A)", async () => {
+      const result = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) => {
+        const updated = (await tx.unsafe(
+          `update roles set tenant_id = $1 where id = $2 returning id`,
+          [B.tenant, A.role],
+        )) as { id: string }[];
+        const after = await tx<{ tenant_id: string }[]>`
+          select tenant_id::text as tenant_id from roles where id = ${A.role}
+        `;
+        return { updated: updated.length, after: after.map((r) => r.tenant_id) };
+      });
+      expect(result.updated).toBe(0);
+      // Not vacuous: the row is visible to the same session and still in tenant A.
+      expect(result.after).toEqual([A.tenant]);
+    });
   });
 
   /* ---- 2. claim injection: missing + foreign tenant claims fail closed -- */
