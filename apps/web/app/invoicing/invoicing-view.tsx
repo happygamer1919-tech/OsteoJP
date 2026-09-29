@@ -162,16 +162,29 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * T5 F2 (guide finding, #1462): THERE IS NO "Nova fatura" BUTTON, AND THAT IS
+ * THE FIX. It used to render here whenever InvoiceXpress credentials were
+ * configured, with no click handler: a primary button that did nothing.
+ * `issueInvoiceAction` (lib/invoices/actions.ts) is called from no screen.
+ *
+ * REMOVED RATHER THAN DISABLED. This page already hides what a viewer cannot
+ * use instead of showing it inert: the button itself was hidden when the
+ * credentials were missing, and the location picker gives way to a plain chip
+ * when there is only one clinic. A permanently disabled primary action would be
+ * the one exception, and it would promise a feature that has no ruling yet.
+ *
+ * Wiring issuance is fiscal (Tier D, an owner decision). When it is ruled, the
+ * control comes back WITH its handler in the same change.
+ */
 export function InvoicingView({
   filters,
   invoices,
   locations,
-  issueEnabled,
 }: {
   filters: InvoicingFilters;
   invoices: InvoiceRow[];
   locations: LocationOption[];
-  issueEnabled: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -209,20 +222,12 @@ export function InvoicingView({
     .filter((i) => i.status === "issued")
     .reduce((sum, i) => sum + i.amountCents, 0);
 
-  const primaryBtn =
-    "inline-flex h-10 items-center justify-center rounded bg-accent-2-700 px-4 text-sm font-semibold text-text-inverse transition motion-safe:active:scale-[0.97] hover:bg-accent-2-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
-
   return (
     <main className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl text-text-primary">{s["nav.invoicing"]}</h1>
         </div>
-        {issueEnabled && (
-          <button type="button" className={primaryBtn}>
-            {s["invoicing.newInvoice"]}
-          </button>
-        )}
       </div>
 
       {/* Filter bar */}

@@ -1,0 +1,33 @@
+sha256 dd226717af050edb2da25f19667d390ff993cc8aaa3f749b74ceefe09d75bc8a
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Perfil
+
+Faça a gestão da sua conta.
+
+Dados pessoais
+Nome
+Email
+O email é o seu identificador de acesso e não pode ser alterado aqui.
+Guardar
+Palavra-passe
+Nova palavra-passe
+Confirmar palavra-passe
+
+Mínimo 8 caracteres, com pelo menos uma letra e um número.
+
+Alterar palavra-passe
+## frame 1 form values
+Rita Exemplo
+rita.exemplo@clinica-exemplo.test

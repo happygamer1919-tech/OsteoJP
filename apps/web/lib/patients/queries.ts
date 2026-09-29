@@ -22,7 +22,13 @@ import { HARD_DELETE_CLASSES, type HardDeleteCount } from "./hard-delete-preflig
 import { requireRequestContext, runScoped } from "../auth/context";
 import { viewerLocationScope } from "../auth/viewer-locations";
 import { activePatientsOnly } from "./filters";
-import { patientLocationScope, therapistPatientScope } from "./scope";
+import {
+  patientLocationScope,
+  therapistPatientReadScope,
+  therapistPatientScope,
+  therapistPatientScopeFor,
+  type PatientAccess,
+} from "./scope";
 import { escapeLike, parseSearch } from "./validation";
 import { fullNameMatcher } from "./name-search";
 import type { Patient } from "./types";
@@ -37,16 +43,29 @@ function clampLimit(limit: number | undefined): number {
 
 export async function getPatient(
   id: string,
-  opts: { includeDeleted?: boolean } = {},
+  opts: {
+    includeDeleted?: boolean;
+    /**
+     * CARE-02a. "read" admits a therapist to a patient whose care team they are
+     * on; the default, "write", does not. The DEFAULT IS THE NARROW ONE on
+     * purpose: four note writers, the edit page, the declaração's NIF write-back
+     * and the booking and new-registo prefills all gate on this function, and a
+     * caller that forgets the option must show a care-team therapist less, never
+     * let them act on more. The patient page and the two notes READ actions pass
+     * "read"; scope-callers.test.ts pins which callers do.
+     */
+    access?: PatientAccess;
+  } = {},
 ): Promise<Patient | null> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:read");
-  // W10-04: a therapist may only load a patient that is theirs (own-only).
+  // W10-04: a therapist may only load a patient that is theirs (own-only), or,
+  // for a READ (CARE-02a), one whose care team they are on.
   // PL-09 Phase 1: reception + admin may only load a patient AT their location.
   // A non-visible id returns null -> the detail page 404s.
   const locIds = await viewerLocationScope(ctx);
   const scope =
-    therapistPatientScope(ctx, patients.id) ??
+    (await therapistPatientScopeFor(ctx, patients.id, opts.access ?? "write")) ??
     (locIds ? patientLocationScope(patients.id, locIds) : undefined);
   return runScoped(ctx, async (tx) => {
     const base = opts.includeDeleted
@@ -116,12 +135,13 @@ export async function listPatients(
   assertCan(ctx.role, "patients:read");
   const limit = clampLimit(opts.limit);
   const offset = Math.max(0, opts.offset ?? 0);
-  // W10-04: therapist sees only their own patients. PL-09 Phase 1: reception +
+  // W10-04: therapist sees only their own patients, and (CARE-02a, a READ) the
+  // patients whose care team they are on. PL-09 Phase 1: reception +
   // admin see only patients at their assigned location(s); owner is tenant-wide;
   // an unassigned reception/admin falls back to tenant-wide (locIds null).
   const locIds = await viewerLocationScope(ctx);
   const scope =
-    therapistPatientScope(ctx, patients.id) ??
+    (await therapistPatientReadScope(ctx, patients.id)) ??
     (locIds ? patientLocationScope(patients.id, locIds) : undefined);
   return runScoped(ctx, async (tx) =>
     tx
@@ -155,6 +175,13 @@ export async function searchPatients(
   // W10-04: therapist search is scoped to their own patients. PL-09 Phase 1:
   // reception + admin are scoped to their location's patients (fallback tenant-
   // wide when unassigned); owner tenant-wide.
+  //
+  // CARE-02a: THE NARROW SCOPE, NOT THE READ SCOPE, although this is a read.
+  // Its only caller is `searchPatientsAction`, and every screen that calls that
+  // is a PICKER FOR A WRITE: the agenda's booking drawer, the new-registo form,
+  // the consultation recorder and the Notas Rapidas composer. The /patients
+  // list and its search box are `listPatientsPage` (list-queries.ts), which
+  // does take the read scope.
   const locIds = await viewerLocationScope(ctx);
   const scope =
     therapistPatientScope(ctx, patients.id) ??

@@ -1,0 +1,168 @@
+sha256 b1981fa68839437fd990cdddcd4d677ec9093ec7e2c8f525db64f53d8cca0750
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Agenda
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Dia
+Semana
+Serviços
+Hoje
+Bloquear
+Nova marcação
+Terça 6
+12 marcações
+09:00
+1h
+Beatriz Exemplo
+Bruno Fictício · Osteopatia
+09:00
+45min
+Hugo Fictício
+Carla Modelo · Fisioterapia
+09:30
+1h
+Gonçalo Modelo
+Duarte Inventado · Osteopatia
+10:00
+45min
+Teresa Modelo
+Carla Modelo · Fisioterapia
+10:30
+1h
+Filipe Inventado
+Bruno Fictício · Osteopatia
+11:00
+1h
+Clara Amostra
+Duarte Inventado · Osteopatia
+12:00
+30min
+Marta Exemplo
+Bruno Fictício · Reavaliação
+14:30
+45min
+Sofia Amostra
+Carla Modelo · Fisioterapia
+15:00
+1h
+Tiago Fictício
+Bruno Fictício · Osteopatia
+15:30
+1h
+Miguel Exemplo
+Duarte Inventado · Osteopatia
+16:00
+45min
+Paulo Exemplo
+Carla Modelo · Fisioterapia
+17:00
+1h
+Nuno Amostra
+Bruno Fictício · Osteopatia
+Editar marcação
+Paciente *
+Terapeuta *
+Selecionar terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Serviço
+Selecionar serviço
+Fisioterapia
+Osteopatia
+Reavaliação
+Sala
+Localização *
+Selecionar localização
+Polo Exemplo
+Sede Exemplo
+Data *
+Hora *
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Duração
+30 min
+45 min
+60 min
+90 min
+Disponibilidade
+Horário:
+09:00-13:00, 14:00-19:00
+Ocupado:
+09:00-10:00, 10:30-11:30, 12:00-12:30, 15:00-16:00, 17:00-18:00
+14:00
+16:00
+18:00
+Estado
+Pendente
+Confirmada
+Concluída
+Cancelada
+Falta
+Confirmação
+Confirmação recebida
+Associar a um pacote
+
+O utente não tem pacotes com sessões disponíveis para este serviço.
+
+Criado por: Rita Exemplo · 01/09/2026, 09:00:00
+
+ID da consulta: 00000000-0000-0000-0000-0000000c402a
+
+Notas
+Adicionar nota
+
+Ainda sem notas.
+
+Marcar novamente
+Ficha do paciente
+Cancelar
+Guardar
+## frame 1 form values
+Todos os terapeutas
+Todas as localizações
+06/10/2026
+Beatriz Exemplo
+Bruno Fictício
+Osteopatia
+Sede Exemplo
+06/10/2026
+09
+00
+60 min
+Pendente

@@ -5,7 +5,11 @@ import { assertCan, type RequestContext } from "@osteojp/auth";
 import { attachments, clinicalRecords } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
-import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scope";
+import {
+  patientLocationScope,
+  therapistPatientReadScope,
+  therapistRegistoWriteScope,
+} from "@/lib/patients/scope";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 // The gate itself, not the module that owns the Documentos writers: importing
 // `@/lib/patients/documents` would close a cycle, since that module already
@@ -47,11 +51,13 @@ export async function createAttachmentUploadUrl(
   if (validateDocumentUpload(file)) throw new ClinicalError("validation");
 
   // Confirm the record is visible to this tenant and still editable.
+  // CARE-02a: and writable by this viewer. An attachment is a write, and
+  // `attachments` is tenant-only, so the pre-0098 reach is applied here.
   const status = await runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({ status: clinicalRecords.status })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, recordId))
+      .where(and(eq(clinicalRecords.id, recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     return rows[0]?.status ?? null;
   });
@@ -109,10 +115,11 @@ export async function confirmAttachment(
   const ip = await clientIp();
 
   return runScoped(ctx, async (tx) => {
+    // CARE-02a: the confirm half of the same write, the same reach as the mint.
     const rec = await tx
       .select({ status: clinicalRecords.status })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, input.recordId))
+      .where(and(eq(clinicalRecords.id, input.recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const status = rec[0]?.status;
     if (!status) throw new ClinicalError("not_found");
@@ -185,10 +192,17 @@ export async function createAttachmentDownloadUrl(
   // OR be a patient-level document under the ficha's rule. The clinic scope is
   // resolved before the transaction, as queries.ts does, because it is a read of
   // its own. Every refusal is the same `not_found` as a path nobody holds.
+  //
+  // CARE-02a: BOTH ARMS TAKE THE READ SCOPE, because a download is a read of a
+  // file the reader beside it lists. The registo arm mirrors getRecordDetail and
+  // the patient-level arm mirrors documentVisibilityScope; both moved to the
+  // read scope in 0098's PR, and a download narrower than its list would show
+  // a care-team therapist a file they cannot open.
   const locIds = await viewerLocationScope(ctx);
   const patientLevelScope =
-    therapistPatientScope(ctx, attachments.patientId) ??
+    (await therapistPatientReadScope(ctx, attachments.patientId)) ??
     (locIds ? patientLocationScope(attachments.patientId, locIds) : undefined);
+  const registoScope = await therapistPatientReadScope(ctx, clinicalRecords.patientId);
 
   const live = await runScoped(ctx, async (tx) => {
     const rows = await tx
@@ -201,10 +215,7 @@ export async function createAttachmentDownloadUrl(
           eq(attachments.tenantId, ctx.tenantId),
           isNull(attachments.deletedAt),
           or(
-            and(
-              isNotNull(clinicalRecords.id),
-              therapistPatientScope(ctx, clinicalRecords.patientId),
-            ),
+            and(isNotNull(clinicalRecords.id), registoScope),
             and(
               isNull(attachments.clinicalRecordId),
               isNotNull(attachments.patientId),

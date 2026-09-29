@@ -670,7 +670,7 @@ is the constraint, and this one is the lifecycle map. Three different guards.
 | **Open** | `/agenda` at **T-B** and click the **Confirmada** appointment from B2.1 |
 | **In** | **"Estado"**, choose **"Pendente"** |
 | **Click** | **"Guardar"** |
-| **Expect** | refused, with: **"Mudança de estado não permitida. Uma marcação confirmada não volta a pendente, e concluída, cancelada e falta são estados finais."** |
+| **Expect** | refused, with: **"Mudança de estado não permitida. Uma marcação confirmada não volta a pendente. Concluída e falta são estados finais. Uma marcação cancelada só pode voltar a pendente ou confirmada."** |
 | **Worked if** | it refuses and the appointment stays **Confirmada** |
 | **STOP if** | it saves — that is the exact move that started the production double booking |
 

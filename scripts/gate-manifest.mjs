@@ -87,6 +87,31 @@ export const GATE_GLOBS = Object.freeze([
   //     file changed in 0 of the last 60 squashed PRs, so the friction is
   //     approximately zero and the hole it closes is real. ---
   ".env.example",
+  // --- the G1 names check (spec item G1-5): no production name in a committed
+  //     guide screenshot, text record or fixture, because this repository is
+  //     public. It runs inside `pnpm test` in the REQUIRED `Lint + typecheck +
+  //     test` job, which ci.yml runs with GUIDE_NAMES_REQUIRED=1 so that a
+  //     missing list FAILS instead of skipping. The test is what honours that
+  //     flag and the module is what decodes the list and finds a hit, so an
+  //     edit to either can switch the check off while the job stays green.
+  //     EXACT PATHS, not a pattern: a `.ts` test is not a gate by default
+  //     (gate-freeze.test.mjs says so), and this one is a gate by name. The
+  //     two under docs/guide/build are pinned only because gateFiles() reads
+  //     an exact path directly: the walk skips every directory named `build`.
+  //
+  //     The waiver list is the check's INPUT, the same case as `.env.example`
+  //     above: a context hash added there clears the hit on that line, so it
+  //     silences the check line by line; and the test cannot run without it,
+  //     because it reads the file while the suite is collected. So a waiver is
+  //     a GATE-CHANGE, and the owner signs the judgement that a hit is chance.
+  //
+  //     NOT frozen, said plainly: what the test imports besides the module
+  //     (guide-model.mjs for the repository root, capture-guide.mjs for the
+  //     record writer, guide.ts for the lessons) and apps/web's vitest config
+  //     and `test` script. Those are ordinary code the check reads through. ---
+  "apps/web/lib/guide/guide-names.test.ts",
+  "docs/guide/build/guide-names.mjs",
+  "docs/guide/build/guide-names-waived.txt",
   // --- the task graph. Editing it can stop `lint`, `typecheck` or `test`
   //     from running at all while every check still reports green. ---
   "turbo.json",
@@ -135,9 +160,19 @@ export function isGateFile(p) {
   return MATCHERS.some((re) => re.test(p));
 }
 
-/** Every existing gate file, repo-relative, sorted. Walks the tree once. */
+/**
+ * Every existing gate file, repo-relative, sorted. Walks the tree once, then
+ * reads each EXACT path of the set directly.
+ *
+ * WHY THE SECOND STEP. The walk never enters a directory named in SKIP, and
+ * `build` is one of them, so it cannot see docs/guide/build/guide-names.mjs.
+ * Without the direct read, `--write` would leave that file out without a word,
+ * and a manifest that named it would report it DELETED on every run. A path
+ * written out in full in GATE_GLOBS is pinned wherever it lives; a PATTERN is
+ * still matched only by the walk, so SKIP keeps build output out of it.
+ */
 export function gateFiles(root = ROOT) {
-  const out = [];
+  const out = new Set();
   (function walk(dir) {
     let entries;
     try {
@@ -151,11 +186,21 @@ export function gateFiles(root = ROOT) {
       if (e.isDirectory()) walk(abs);
       else if (e.isFile()) {
         const rel = relative(root, abs).split(sep).join("/");
-        if (isGateFile(rel)) out.push(rel);
+        if (isGateFile(rel)) out.add(rel);
       }
     }
   })(root);
-  return out.sort();
+  for (const glob of GATE_GLOBS) {
+    if (glob.includes("*")) continue;
+    let isFile = false;
+    try {
+      isFile = statSync(join(root, glob)).isFile();
+    } catch {
+      // absent: nothing to pin, and a pinned file that is gone reads as DELETED
+    }
+    if (isFile) out.add(glob);
+  }
+  return [...out].sort();
 }
 
 /** sha256 of a file's bytes, lowercase hex. */

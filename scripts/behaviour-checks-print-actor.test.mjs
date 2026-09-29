@@ -2,7 +2,7 @@
 //
 // scripts/db/behaviour-*-readonly.sql impersonate one staff user and print
 // verdicts about what that user's session can read. Two of them PICK the user
-// at run time (the lowest matching id), one takes it with -v actor_id, and one
+// at run time (the lowest matching id), two take it with -v actor_id, and one
 // does either. Until this guard, none of them said which user it had acted as,
 // so a transcript could not show whether the run had acted as a particular
 // account, for example a test account somebody is about to deactivate.
@@ -52,6 +52,8 @@ export const FILES = {
   "scripts/db/behaviour-nesa-names-readonly.sql": [PICKED],
   "scripts/db/behaviour-rgpd-readonly.sql": ["passed in with -v actor_id"],
   "scripts/db/behaviour-conflict-name-readonly.sql": PICKED_OR_PASSED,
+  // 0094 (held): the users/tenants/roles policy split. Passed in, like rgpd.
+  "scripts/db/behaviour-users-tenants-roles-readonly.sql": ["passed in with -v actor_id"],
 };
 
 /** Per file, the exact trimmed lines that may name a personal column. See the header. */

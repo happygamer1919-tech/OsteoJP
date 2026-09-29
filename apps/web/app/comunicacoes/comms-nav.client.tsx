@@ -17,12 +17,20 @@ const cx = (...c: Array<string | false | null | undefined>): string =>
  * The items arrive already filtered to what the viewer may open
  * (`commsSectionsForRole`), so this component offers no tab its route refuses.
  * It decides nothing about access.
+ *
+ * THE TABS WRAP, THEY DO NOT SCROLL. Until T5 this bar scrolled sideways like the
+ * admin one (overflow-x-auto). With three sections (T5 F4 added Respostas SMS)
+ * it no longer fits a 390px phone, and the third tab showed as "Resp" with
+ * nothing on screen saying the bar scrolls. Wrapping puts every tab the role may
+ * open on screen at every width, on a second row when the first is full, the
+ * way the page toolbars wrap. Each label stays on one line (whitespace-nowrap).
+ * e2e/guide-findings.spec.ts asserts it at 390 and 360.
  */
 export function CommsNav({ items, label }: { items: CommsNavItem[]; label: string }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label={label} className="flex gap-1 overflow-x-auto border-b border-v2-border">
+    <nav aria-label={label} className="flex flex-wrap gap-x-1 border-b border-v2-border">
       {items.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (

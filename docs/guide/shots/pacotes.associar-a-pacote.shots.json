@@ -1,0 +1,46 @@
+{
+  "id": "pacotes.associar-a-pacote",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "stabilize": [
+    "[data-testid=\"agenda-freshness\"] time"
+  ],
+  "frames": [
+    {
+      "goto": "/agenda?view=day&date=2026-10-06",
+      "do": [
+        {
+          "click": {
+            "css": "[data-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"] [data-testid=\"agenda-card-patient\"], [data-list-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"]"
+          }
+        },
+        {
+          "scroll": {
+            "css": "div:has(> [data-testid=\"pack-link-none\"])",
+            "in": {
+              "role": "dialog"
+            }
+          }
+        }
+      ],
+      "ready": {
+        "css": "[data-testid=\"pack-link-none\"]"
+      },
+      "annotate": [
+        {
+          "kind": "box",
+          "n": 2,
+          "target": {
+            "css": "div:has(> [data-testid=\"pack-link-none\"])",
+            "in": {
+              "role": "dialog"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

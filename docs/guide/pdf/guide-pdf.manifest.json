@@ -1,0 +1,21 @@
+{
+  "$comment": "Written by docs/guide/build/build-guide.mjs with the committed PDF beside it. Do not edit by hand: change the lesson source and run node docs/guide/build/build-guide.mjs. apps/web/lib/guide/guide-pdf.test.ts checks the source hash, the PDF sha256 and the PDF title against this file. The role PDFs are built into docs/guide/build, never committed, and not named here.",
+  "format": 1,
+  "pdfs": [
+    {
+      "bytes": 9006244,
+      "faq": 7,
+      "file": "guia-plataforma-osteojp.pdf",
+      "lessons": 57,
+      "pages": 51,
+      "profile": null,
+      "sha256": "04802351db807fcd041259b60a82c98b22c6a4d18deabb07bf1368e549ceabf9"
+    }
+  ],
+  "source": {
+    "faq": 7,
+    "lessons": 57,
+    "sections": 9,
+    "sha256": "51c38859b2a5b67d9a4bb882dcfc0fa45ccba0f28beb06144284f709090fe39c"
+  }
+}

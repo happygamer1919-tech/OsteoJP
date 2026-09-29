@@ -55,7 +55,7 @@ test("PL-06a: the Serviço Select offers every active service (preselection, not
 
   // ANOTHER JOAO BOOKING ON THIS DAY, ON PURPOSE
   // (LE-e2e-booking-service-preselection-35-red-on-main-at-retries-0).
-  // agenda-week-6day books João Pereira at 10:00 on the Saturday of the week
+  // agenda-week-6day books João Fictício at 10:00 on the Saturday of the week
   // holding RUN_DAY_BASE + 22. Whenever that day is a Friday - one base in seven -
   // the Saturday IS this test's day, and the old re-read clicked the FIRST João
   // card on the grid: that 10:00 Osteopatia booking, not this one (run
