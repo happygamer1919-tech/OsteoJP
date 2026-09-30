@@ -441,7 +441,7 @@ The lane that issues 0097 (after the promotion) fills these and regenerates the 
 fills nothing: a GREEN session that meets a placeholder has been handed a document that is not
 issued, and stops.
 
-| Value | Where | Placeholder today | Filled with |
+| Value | Where | Placeholder before issue | Filled with |
 |---|---|---|---|
 | `PR` | stages 0, 1, 2, 3 | `NOT-YET-ISSUED` | `1475`, for the `refs/pull/<PR>/head` fallback |
 | "Measured on production, READ ONLY" | the section of that name | NOT YET MEASURED | the pre-check and the stage 1 pick, both READ ONLY, run before issue from their own block and GREEN dispatch, neither of which is written yet |
@@ -480,7 +480,7 @@ the write stands; the READ ONLY stages then run only on the owner's or the lead'
 set -eo pipefail
 SHA=076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318
 BRANCH=db/0099-registo-write-matrix
-PR=NOT-YET-ISSUED
+PR=1475
 MIG=packages/db/migrations/0097_clinical_records_write_matrix.sql
 PEND=packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql
 DOCPIN=docs/migration-apply-0097.sha256
@@ -673,7 +673,7 @@ SHABEHAVIOUR=20c1b13f3ef9c5ba63b301b0dc2d9d7f138ef5a8dd31b296aba166f315765908
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=db/0099-registo-write-matrix
-PR=NOT-YET-ISSUED
+PR=1475
 U='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 PICK="with t as (select u.id, u.tenant_id from public.users u join public.roles r on r.id = u.role_id and r.slug = 'therapist' where u.is_active and not u.is_shared_resource), f as (select distinct c.tenant_id, c.patient_id as pid, c.practitioner_id as t1 from public.clinical_records c join public.patients p on p.id = c.patient_id and p.tenant_id = c.tenant_id and p.deleted_at is null join t on t.id = c.practitioner_id and t.tenant_id = c.tenant_id where c.status = 'draft' and (p.created_by = c.practitioner_id or exists (select 1 from public.appointments a where a.tenant_id = c.tenant_id and (a.patient_id = c.patient_id or a.patient_2_id = c.patient_id) and (a.practitioner_id = c.practitioner_id or a.practitioner_2_id = c.practitioner_id)))), s as (select f.pid, f.t1::text as t1, (select min(x.id::text) from t x where x.tenant_id = f.tenant_id and x.id <> f.t1 and exists (select 1 from public.appointments a where a.tenant_id = f.tenant_id and (a.patient_id = f.pid or a.patient_2_id = f.pid) and (a.practitioner_id = x.id or a.practitioner_2_id = x.id))) as t2, (select min(y.id::text) from t y where y.tenant_id = f.tenant_id and y.id <> f.t1 and not exists (select 1 from public.appointments a where a.tenant_id = f.tenant_id and (a.patient_id = f.pid or a.patient_2_id = f.pid) and (a.practitioner_id = y.id or a.practitioner_2_id = y.id)) and not exists (select 1 from public.patients p where p.id = f.pid and p.created_by = y.id) and not exists (select 1 from public.clinical_records c where c.tenant_id = f.tenant_id and c.patient_id = f.pid and c.practitioner_id = y.id) and not exists (select 1 from public.patient_care_team ct where ct.tenant_id = f.tenant_id and ct.patient_id = f.pid and ct.user_id = y.id and ct.removed_at is null) and (exists (select 1 from public.patients q where q.tenant_id = f.tenant_id and q.deleted_at is null and q.created_by = y.id) or exists (select 1 from public.appointments a join public.patients q on q.id in (a.patient_id, a.patient_2_id) and q.tenant_id = a.tenant_id and q.deleted_at is null where a.tenant_id = f.tenant_id and (a.practitioner_id = y.id or a.practitioner_2_id = y.id)))) as t3, exists (select 1 from public.clinical_records c where c.tenant_id = f.tenant_id and c.patient_id = f.pid and c.source = 'ai_ingested' and c.status = 'draft' and c.ai_review_state = 'pending_review' and c.practitioner_id is null) as has_ai from f) select pid::text || '|' || t1 || '|' || t2 || '|' || t3 || '|' || case when has_ai then 'ai' else 'noai' end from s where t2 is not null and t3 is not null order by has_ai desc, pid, t1 limit 1"
 
@@ -876,7 +876,7 @@ SHA0097=076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318
 SHAPOST=296b9a09f00e22c70a98496c7c89bec80d4d955d61eb34492b1e90ee21ad053b
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=db/0099-registo-write-matrix
-PR=NOT-YET-ISSUED
+PR=1475
 
 echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting"; exit 1; }
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -979,7 +979,7 @@ umask 077
 SHABEHAVIOUR=20c1b13f3ef9c5ba63b301b0dc2d9d7f138ef5a8dd31b296aba166f315765908
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 BRANCH=db/0099-registo-write-matrix
-PR=NOT-YET-ISSUED
+PR=1475
 U='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting"; exit 1; }
@@ -1270,7 +1270,14 @@ its block exists, is the evidence that production renders the same way; until it
 
 ## Measured on production, READ ONLY
 
-**NOT YET MEASURED.** This lane had no production access, by its dispatch. Before the document
+**NOT MEASURED BEFORE ISSUE, BY THE OWNER'S RULING OF 2026-09-30.** The owner ruled that 0096
+to 0099 run that day, one after another. So the document was issued without this separate
+READ ONLY run, on the fallback the paragraph after next names: **Q3's counts are first read by
+stage 1's verdict 13, which STOPs before the pick, with nothing applied, unless they are 0.**
+The pick's shape is first read by stage 1 too. The text below is the plan as written before
+that ruling, kept for the record.
+
+This lane had no production access, by its dispatch. Before the document
 is issued, and never as part of a sitting, the pre-check and the pick of stage 1 are run READ
 ONLY against production by GREEN, and this section records: the 20 verdicts, verdict 13 (Q3)
 among them; the carries; the `draft_profile`; and whether the pick finds a P, with which
@@ -1282,6 +1289,29 @@ and prints only what this section records, and a GREEN dispatch that names it. T
 for the sitting lists them among the steps before it is issued. Until that run, Q3's counts
 are first read by stage 1's verdict 13, which STOPs before the pick, with nothing applied,
 unless they are 0.
+
+## Issued 2026-09-30, after 0096 was applied and merged: the promotion and the PR number
+
+0096 was applied by GREEN on 2026-09-30 at 16:08 Lisbon: journal 93 to 94, post-check 16/16 OK,
+behaviour check 26 OK / 6 VACUOUS / 0 FAIL. Then the owner merged #1500, the count 26 to 27,
+and main was merged into #1471. #1471 merged as `774ddd2f`.
+
+**The promotion, on this branch (#1475), after main was merged in:**
+- `git mv` from `migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql` to
+  `migrations/0097_clinical_records_write_matrix.sql`, bytes unchanged. The sha256 is
+  `076481bf...c318` before and after.
+- Journal: idx 94, when 1788501800000, tag `0097_clinical_records_write_matrix`, strictly
+  after 0096's 1788501700000.
+- The supabase mirror, by `sync-supabase-migrations`. check-journal reads 95 of 95.
+- The pending README's row moved to Promoted.
+- `packages/db/tests/security-definer-owner.test.ts` derives its set from the migrations, so
+  it now finds 28 definers against the frozen 27. It reads red until 0097's count GATE-CHANGE
+  (27 to 28) lands after the apply. That is one red run, expected, as 0096's was.
+
+**The issue:** `PR=1475` is filled in stages 0 to 3, the four lines that held
+`NOT-YET-ISSUED`. No other byte of any block changed. The five fenced blocks were cut from
+`c3006189` and from this revision by one script and compared: only those four lines differ.
+"Measured on production, READ ONLY" records the owner's ruling instead of a measurement.
 
 ## Changed after the owner's override, 2026-09-30: the clock and clinic checks, two blocks
 

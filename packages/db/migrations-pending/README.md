@@ -33,7 +33,6 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0096_clinical_records_write_matrix.sql` | `0096`. Ruled **`0097`** by the owner and the lead on 2026-09-30, the fifth renumbering ("... registo write policies 0097 (#1475) ..."); ruled onto Tier C by the owner on 2026-09-27 as `0099` and named `NEXT-AFTER-0098_...` until the rename, which changed no byte. The `clinical_records` write policies follow the permission matrix: a therapist edits and deletes only their own unsigned registos, and files registos only in their own name for a patient they treat or created. Three `ALTER POLICY` statements (`clinical_records_insert`, `_update`, `_delete`; the owner arms and every other policy byte-identical, the count flat, the immutability trigger untouched; the UPDATE's WITH CHECK is the INSERT's arm, Q4 ruled (a)) and one SECURITY DEFINER function, `claim_ai_draft_authorship(uuid)`, the review claim of an AI draft (section 4 of the file). sha256 `076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318`, which `scripts/db/precheck-0097-registo-writes.sql` and `scripts/db/postcheck-0097-registo-writes.sql` pin and `scripts/registo-writes-0097.test.mjs` checks. **The file's own header still says "RULED NUMBER 0099", "must follow 0098 (CARE-02a)", the 2026-09-27 queue and Q4 open, and the function's COMMENT opens "0099"; stale on purpose, because the sha256 is what every pin points at.** At promotion its journal `when` must be strictly greater than `0096`'s (idx 94 after 0096's 93), and the SECURITY DEFINER count moves 27 to 28 (`EXPECTED_COUNT` is in a frozen gate file, so that half is a GATE-CHANGE, in 0096's order: promote, apply, count GATE-CHANGE, main in, merge). Its app half is its own PR, #1501, merged first (Q2 (b)). The apply document is `docs/migration-apply-0097.md` | 2026-09-27 | `db/0099-registo-write-matrix` (#1475; the branch keeps its old name), Tier C, **HELD**: authored now and applied later by GREEN, never by this lane, after `0096` is promoted, applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
@@ -43,14 +42,15 @@ was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 table below. Those two promotions emptied the table above. The `0094` file was parked
 there later and has since been promoted too, and so has the `0095` conflict-check file (see the
 Promoted table), so the table is empty again on `main`. The four held files of the queue below
-live on their held branches, not on `main`, until each is promoted. On THIS branch (#1471) the
-CARE-02a file is already promoted as `0096` (see the Promoted table).
+live on their held branches, not on `main`, until each is promoted. CARE-02a was promoted as
+`0096` on #1471, applied on 2026-09-30 and merged. On THIS branch (#1475) the registo write
+file is promoted as `0097` (see the Promoted table), so the table above is empty here too.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER AND THE LEAD ON 2026-09-30 (the fifth time).**
 It is **`0090` NESA names · `0091` CARE-01 · `0092` CARE-LOC · `0093` RGPD-01 · `0094`
 the users/tenants role fix · `0095` the conflict check's patient name (all six applied
-and merged) · `0096` CARE-02a (#1471, promoted on its branch, held for the apply; was `0098`) · `0097` the registo write
-policies (#1475, held; was `0099`) · `0098` the staging index (#1469, held; was `0097`) ·
+and merged) · `0096` CARE-02a (#1471, applied 2026-09-30 and merged; was `0098`) · `0097` the registo write
+policies (#1475, promoted on its branch, held for the apply; was `0099`) · `0098` the staging index (#1469, held; was `0097`) ·
 `0099` the grants revoke (#1397, held; was `0096`) · `0100` onward SAT-01**. From this
 ruling on, **apply order equals file order**: the lead rules an apply order only in number
 order or after a renumber, because `scripts/check-journal.mjs` rule 3 requires the
@@ -105,8 +105,10 @@ from a branch name.
 
 **ONE MIGRATION IS IN FLIGHT AT A TIME.** `0097` is not promoted until `0096` is
 applied to production and merged, `0098` not until `0097` is, and `0099` not until
-`0098` is. `0096`'s sitting keeps its documented order: promote, apply, the count
-GATE-CHANGE (26 to 27), main into #1471, then #1471 merges.
+`0098` is. `0096`'s sitting kept its documented order: promote, apply, the count
+GATE-CHANGE (26 to 27), main into #1471, then #1471 merges. `0097`'s keeps the same order:
+promote, apply from #1475's held head, the count GATE-CHANGE (27 to 28), main into #1475,
+then #1475 merges.
 
 ## Promoted
 
@@ -120,3 +122,4 @@ GATE-CHANGE (26 to 27), main into #1471, then #1471 merges.
 | `NEXT-AFTER-0093_users_tenants_roles_policy_split.sql` | `packages/db/migrations/0094_users_tenants_roles_policy_split.sql`, bytes unchanged (sha256 `439cb53eab62803026a74e1148dbe3f5af1b7f95f0fc8e486d55eb7d62836a6c`), journal `idx 91`, `when 1788501500000` | 2026-09-28, branch `db/0094-users-tenants-role-policy-split-r6` (PR #1459). Promoted after 0093 was applied and merged, under the owner's ruling of 2026-09-22 that put the users/tenants role fix at `0094`; **authored, NOT yet applied**. By the owner's ruling of 2026-09-27 the PR merges first and GREEN applies it from `origin/main`, from `docs/migration-apply-0094.md`, which is not part of this promotion commit. The pre-check pins this sha256 as a literal (`scripts/db/precheck-users-tenants-roles.sql`, verdict 10), so it needed no edit. **The promoted file's own header still reads "NO NUMBER IN THIS FILE NAME YET, BY CONSTRUCTION".** Stale on purpose, for the same reason as 0091's row above. |
 | `NEXT-AFTER-0094_conflict_name_visibility.sql` | `packages/db/migrations/0095_conflict_name_visibility.sql`, bytes unchanged (sha256 `cfdfffff71a6c847a791ce17c71bbc6e05b75a367e9c8f03dfcb0cfc638f5806`), journal `idx 92`, `when 1788501600000` | 2026-09-29, branch `sched/0096-conflict-names-follow-caller-reads` (PR #1438). Promoted after 0094 was applied (2026-09-29 00:27 Lisbon, journal 92) and merged, under the owner's ruling of 2026-09-27 that put the conflict check at `0095`; **authored, NOT yet applied**. The PR merges first and GREEN applies it from `origin/main`. |
 | `NEXT-AFTER-0097_care02a_care_team_reads.sql` | `packages/db/migrations/0096_care02a_care_team_reads.sql`, bytes unchanged (sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45`), journal `idx 93`, `when 1788501700000` | 2026-09-30, branch `care/0098-CARE-02a-care-team-reads` (PR #1471; the branch keeps its old number). Promoted after 0095 was applied (journal 93) and merged, under the owner's and the lead's fifth renumbering of 2026-09-30 that put CARE-02a at `0096`; **authored, NOT yet applied**. By that ruling GREEN applies it from #1471's HELD head, before #1471 merges, from `docs/migration-apply-0096.md` (staged in the same commit, with its sidecar and the three check scripts renamed to `0096`); then the owner merges the SECURITY DEFINER count's GATE-CHANGE (26 to 27), main is merged into #1471, and #1471 merges. **The promoted file's own header still reads "RULED NUMBER 0098" and "MUST FOLLOW 0097", and cites the 2026-09-27 queue, and the helper's `COMMENT ON FUNCTION` text, which production will carry, begins "CARE-02a (0098)".** Stale on purpose, for the same reason as 0091's row above: a promotion changes no byte, and the sha256 in this row is what every pin points at. |
+| `NEXT-AFTER-0096_clinical_records_write_matrix.sql` | `packages/db/migrations/0097_clinical_records_write_matrix.sql`, bytes unchanged (sha256 `076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318`), journal `idx 94`, `when 1788501800000` | 2026-09-30, branch `db/0099-registo-write-matrix` (PR #1475; the branch keeps its old name). Promoted after 0096 was applied (2026-09-30 16:08 Lisbon, journal 94) and merged (#1471), under the owner's and the lead's fifth renumbering of 2026-09-30 that put the registo write policies at `0097`; **authored, NOT yet applied**. By 0096's order GREEN applies it from #1475's HELD head, before #1475 merges, from `docs/migration-apply-0097.md`; then the owner merges the SECURITY DEFINER count's GATE-CHANGE (27 to 28), main is merged into #1475, and #1475 merges. Its app half, #1501, merged first. **The promoted file's own header still reads "RULED NUMBER 0099", "must follow 0098 (CARE-02a)" and Q4 open, and the function's `COMMENT ON FUNCTION` text, which production will carry, opens "0099".** Stale on purpose, for the same reason as 0091's row above. |
