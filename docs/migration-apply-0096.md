@@ -550,6 +550,14 @@ also reads `locations.opens_at` and `closes_at` READ ONLY right before the pre-c
 STOPs if any active clinic is open by its own row, so an hours change after that ruling is
 caught there.
 
+**THE OWNER'S OVERRIDE OF 2026-09-30.** At 13:13 Lisbon the owner ruled the applies of 0096
+to 0099 to run that day "despite the current clinic schedule, we are doing it now", and after
+GREEN stopped before BEFORE YOU START on this check he ruled "amend". So stage 1's clinic
+check still reads the clinics' hours and still prints them, and on 2026-09-30 ONLY (the
+Lisbon date read by machine, `OVERRIDE_DAY=20260930`) an open clinic prints an `OVERRIDE:`
+line quoting him and the block continues. On every other day it STOPs exactly as before,
+and a read that finds no active clinic STOPs on every day.
+
 ## What is new here, because 0096 is not shaped like 0093
 
 0093 CREATED a table, so its pre-check proved things ABSENT and its post-check
@@ -763,7 +771,15 @@ node scripts/assert-production-target.mjs
 echo "--- the clinics' own hours, READ ONLY: no active clinic may be open now"
 CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (now() at time zone 'Europe/Lisbon')::time >= opens_at and (now() at time zone 'Europe/Lisbon')::time < closes_at) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1)
 echo "active clinics open now by their own hours: ${CL}"
-awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && (a[3] + 0) >= 1) exit 0; exit 1 }' || { echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1; }
+OVERRIDE_DAY=20260930
+TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
+if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && (a[3] + 0) >= 1) exit 0; exit 1 }'; then
+  echo "clinics: every active clinic is closed by its own hours"
+elif [ "${TODAYL}" = "${OVERRIDE_DAY}" ] && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[2] == "of" && (a[3] + 0) >= 1 && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
+  echo "OVERRIDE: ${CL} active clinics open now by their own hours; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on ${OVERRIDE_DAY} only"
+else
+  echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1
+fi
 
 echo "--- the pre-check. READ ONLY. Its transcript IS the carry, so it is kept"
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v prev_hash=${SHAPREV} -v prev_when=${PREVWHEN} -f scripts/db/precheck-0096-care02a.sql 2>&1 | tee /tmp/0096-precheck.new
@@ -827,8 +843,11 @@ echo "0096 APPLIED. Paste stage 2 now."
 - **`0095: sha256 cfdfffff71a6c847a791ce17c71bbc6e05b75a367e9c8f03dfcb0cfc638f5806, journal when 1788501600000`;**
 - **`run window, Lisbon YYYYMMDDHHMM: opens <t>, stage 1 starts by <t>, everything ends before <t>; now <t>`,**
   with now inside it (the block halts otherwise), then the target guard;
-- **the clinics line, `active clinics open now by their own hours: 0 of <n>`**, `n` at
-  least 1. A zero with no clinic behind it would be vacuous, so the block requires both;
+- **the clinics line, `active clinics open now by their own hours: <k> of <n>`**, `n` at
+  least 1 (a zero with no clinic behind it would be vacuous, so the block requires it),
+  then either `clinics: every active clinic is closed by its own hours` (k is 0) or, ON
+  2026-09-30 ONLY, the owner's override line `OVERRIDE: <k> of <n> active clinics open now
+  ...` (k above 0). On any other day an open clinic STOPs the block, as before;
 - **the pre-check prints `20` OK verdicts and no FAIL**, with `journal_rows_before` 93 and
   arm 11 naming 0095's sha256 and `when` exactly as the `0095:` line printed them;
 - **`subjects picked: T1 <id>, T2 <id>, T3 <id>, T4 <id or none>, N <id or none>`**, and no
