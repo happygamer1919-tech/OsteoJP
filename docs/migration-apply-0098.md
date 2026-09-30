@@ -1,6 +1,6 @@
 # 0098: apply the staging index, the importer ledger looked up by its target row
 
-**Status: NOT APPLIED, and not ready until the six steps below are done.** GREEN's
+**Status: NOT APPLIED, and not ready until the seven steps below are done.** GREEN's
 dispatch is not issued before them, and its BEFORE YOU START checks their result by
 machine. One migration, today the
 pending file `packages/db/migrations-pending/NEXT-AFTER-0097_migration_staging_imported_entity_idx.sql`,
@@ -27,10 +27,16 @@ them is GREEN's.** Each is written out under "The promotion, and the NOT READY s
    the supabase mirror, the README's Promoted row, and `node scripts/check-journal.mjs`
    reading `96 .sql files match 96 journal entries`. SOLO re-reads every pin of this
    document against the promoted head; the ones that can move are named in that section.
-4. The PR reads every required check green on the promoted head, from the checks API.
-5. The owner takes the label `held-for-apply` off #1469 and merges it, and freezes merges
+4. A separate rehearsal agent (the owner's ruling of 2026-09-27, "build/rehearse/document
+   as separate agents") runs the four blocks and GREEN's dispatch on a throwaway at
+   production's position and records the result under "Rehearsed on 2026-09-30"; that
+   changes this document's sha256 and no block, and the sidecar and the dispatch are
+   refilled with it. The document lane's own smoke run of the same blocks is recorded
+   there already and is not that rehearsal.
+5. The PR reads every required check green on the promoted head, from the checks API.
+6. The owner takes the label `held-for-apply` off #1469 and merges it, and freezes merges
    to `main` from that merge until GREEN's report is in.
-6. SOLO fills the merge commit's sha into GREEN's dispatch
+7. SOLO fills the merge commit's sha into GREEN's dispatch
    (`/Users/ivan/osteojp-handover/green-dispatch-0098.txt`, the line `MERGED='NOT-FILLED'`
    and the EXPECT line that repeats it) and deletes the dispatch's NOT READY header.
 
@@ -152,13 +158,18 @@ merged, #1471 and #1475 merged, and `main` carrying
    - the target guard, the migration reader and check-journal, the same way, if any of
      them has changed on `main`.
 
-**Step 4:** every required check green on the promoted head, read from the checks API.
+**Step 4, the rehearsal by a separate agent,** at the sha256 the sidecar pins, on a
+throwaway at 95 journal rows with the promotion simulated, as the smoke run below was
+set up; it records its run in this document, the sidecar is regenerated and the
+dispatch's document sha256 refilled.
 
-**Step 5, the owner's two clicks:** `held-for-apply` off #1469, then the merge. He holds
+**Step 5:** every required check green on the promoted head, read from the checks API.
+
+**Step 6, the owner's two clicks:** `held-for-apply` off #1469, then the merge. He holds
 the merge freeze from that merge until GREEN's report is in; SOLO disarms every PR armed
 for auto-merge before it.
 
-**Step 6:** SOLO writes the merge commit's sha into the dispatch in the two places it
+**Step 7:** SOLO writes the merge commit's sha into the dispatch in the two places it
 reads `NOT-FILLED` and deletes the dispatch's NOT READY paragraph. Until then its BEFORE
 YOU START stops on the unfilled sha, before any read.
 
@@ -855,12 +866,49 @@ synthetic ledger of 20,000, 200,000 and 1,000,000 rows (6.9 MB, 68 MB and 336 MB
 its indexes) was seeded into three copies; the new index measured 7 MB at 200,000 rows and
 35 MB at 1,000,000.
 
-**The blocks of this document have not been run.** By the owner's ruling of 2026-09-27
-("build/rehearse/document as separate agents") the lane that writes an apply document does
-not rehearse its blocks; a separate rehearsal agent extracts the four blocks and GREEN's
-dispatch at the sha256 the sidecar pins and runs them on a throwaway at production's
-position, and records the result here. Recording it changes this document's sha256 and no
-byte of a block, and the dispatch's document sha256 is refilled for that reason alone.
+**The blocks, a smoke run by the document lane, 2026-09-30, 13:48 to 13:55 Lisbon. It is
+not the rehearsal the owner's ruling of 2026-09-27 ("build/rehearse/document as separate
+agents") asks for;** that is NOT READY step 4. The four blocks were extracted verbatim from
+this document as committed, and BEFORE YOU START and the CLOCK CHECK from GREEN's dispatch
+with `MERGED` filled, and run under `zsh -f` with stdin closed, in a clone of a local bare
+origin whose `main` was ONE commit: this branch's tree with the promotion simulated
+(`0096` from #1471's held head and `0097` from #1475's pending file at the bytes above,
+`0098` renamed with its bytes unchanged, journal idx 93, 94 and 95 at `when` 1788501700000,
+1788501800000 and 1788501900000, the supabase mirror synced; check-journal read `96 .sql
+files match 96 journal entries in order`). Six text substitutions, counted per block, and
+nothing else: `/tmp/` to a scratch directory; the `cd` line to the clone; the environment
+line to an `export` of the throwaway's URL; the target guard to an `echo`; the reader's
+invocation to a copy of the reader without its production ref check (the pinned reader's
+sha256 was still compared first); `MERGED` filled. The harness refused to run any block
+that still named the secrets directory, the apply worktree or the production ref after
+substitution. `node_modules` was linked from this worktree and excluded, so the clone read
+clean, and `pnpm_config_verify_deps_before_run=false` was set in the environment, not in a
+block. The apply was the real `verified-migrate.mjs` through `drizzle-kit migrate`, and git
+was real.
+
+| Substitution | BEFORE YOU START | stage 0 | CLOCK CHECK | stage 1 | stage 2 | closing read |
+|---|---|---|---|---|---|---|
+| `/tmp/` | 5 | 7 | 9 | 25 | 18 | 15 |
+| `cd` | 1 | 1 | 1 | 1 | 1 | 1 |
+| environment | 0 | 0 | 0 | 1 | 1 | 0 |
+| target guard | 0 | 0 | 0 | 1 | 1 | 0 |
+| reader | 1 | 0 | 0 | 0 | 0 | 1 |
+| `MERGED` | 1 | 0 | 0 | 0 | 0 | 0 |
+
+| Run | Exit | What it printed |
+|---|---|---|
+| the chain on a copy of the 20,000 row base | 0 each | BEFORE YOU START `journal reads 95`; stage 0 `newest journal entry: idx 95, when 1788501900000, ... before it idx 94, when 1788501800000, ... before that idx 93, when 1788501700000, ...`, check-journal 96 of 96; the CLOCK CHECK recorded `202609301300 202609302059 202609302130`; stage 1 `20 OK / 0 VACUOUS / 0 FAIL`, `the build reads 20000 ledger rows ...`, `pending 1`, `journal 95 -> 96 (delta 1)`, `0098 APPLIED. Paste stage 2 now.`; stage 2 `0098 POST-CHECK PASSED. pre-check 20 OK / 0 VACUOUS / 0 FAIL, post-check 17 OK / 0 VACUOUS / 0 FAIL, journal 95 to 96. Paste the closing read now.`; the closing read `CLOSING READ: the journal reads 96, 0098 is APPLIED, and nothing is pending on the recorded sha.` |
+| the chain on a copy of the empty ledger base | 0 each | stage 1 `19 OK / 1 VACUOUS / 0 FAIL`, `VACUOUS on 12 only`, `the build reads 0 ledger rows ...`; stage 2 `... pre-check 19 OK / 1 VACUOUS / 0 FAIL, post-check 16 OK / 1 VACUOUS / 0 FAIL, journal 95 to 96 ...`; the closing read as above |
+| stage 0, then stage 1, pasted again after the apply | 1 and 1 | `STOP: stage 1 has ALREADY APPLIED 0098 in this sitting. ...`; journal 96, nothing applied again |
+| BEFORE YOU START with `MERGED` unfilled | 1 | `STOP: MERGED is not a filled-in sha, so this dispatch is NOT READY. The journal read has not run` |
+| a commit pushed to the origin's `main` between the CLOCK CHECK and stage 1 | 1 | `STOP: main moved since stage 0, the merge freeze was broken. ...`, both shas printed, before the environment line; journal 95, nothing applied |
+| BEFORE YOU START after that push | 1 | `STOP: origin/main is not the merge commit of PR 1469 itself ...` |
+
+**What the smoke run does not show.** The target guard never ran, and the reader ran
+without its production ref check. The promotion was simulated with synthetic `when`s for
+`0097` and `0098`; the real ones are what stage 0 checks at the sitting. The clock was the
+real Lisbon clock, inside the day window; the window's edges were not exercised here.
+
 The blocks written on 2026-09-27 under `docs/migration-apply-0097.md`, which applied from
 the held branch, were rehearsed then and are superseded by these.
 
@@ -905,7 +953,12 @@ which is why the key leads with `imported_entity_id` (the migration file, sectio
   DEFINER function: the file is one CREATE INDEX and one COMMENT and nothing else, which
   `scripts/migration-0098-staging-index.test.mjs` pins, and post-check 9, 10 and 12 to
   15 prove it on production.
-- **It holds no DELETE and no TRUNCATE**, and neither does either check file.
+- **It holds no DELETE and no TRUNCATE statement**, and neither does either check file:
+  a case insensitive grep of the migration and both checks for `DELETE` and `TRUNCATE`
+  finds 0 lines. It holds no `REVOKE TRUNCATE` either; that is a privilege change, not a
+  TRUNCATE statement, and it is `0099`'s. The only removals in this document are the
+  blocks' `rm -f` of their own `/tmp/0098-*` records, and the only `DELETE` named is the
+  one a SHARE lock makes wait.
 - **It does not prove the plan on production.** A plan depends on production's
   statistics and ledger; the rehearsal proves the switch on 20,000 rows, and no verdict
   in this sitting asserts a plan.
