@@ -551,12 +551,13 @@ purpose: see "The migration file's own header names its old number, on purpose".
 (`docs/data-op-location-hours.md:18`, AGENDA-2100), so a Lisbon time before 08:00 or from 21:00
 is outside every ruled opening hour. The hours are data, not code: stage 1 reads
 `locations.opens_at` and `closes_at` READ ONLY right before the apply and STOPs if any active
-clinic is open by its own row. The dated window is the dispatch's, recorded by its CLOCK
+clinic is open by its own row (on 2026-09-30 only, it prints the override line below instead).
+The dated window is the dispatch's, recorded by its CLOCK
 CHECK in `/tmp/0097-window.ok` for the head stage 0 recorded; stage 1 refuses without it.
 
 **THE OWNER'S OVERRIDE OF 2026-09-30.** At 13:13 Lisbon the owner ruled the applies of 0096
-to 0099 to run that day "despite the current clinic schedule, we are doing it now", and after
-GREEN stopped on the clinic check in 0096's sitting he ruled "amend". Two checks here read
+to 0099 to run that day "despite the current clinic schedule, we are doing it now". GREEN, reading 0096's document, stopped before BEFORE YOU START because its clinic check
+would STOP; nothing had run against production. He then ruled "amend". Two checks here read
 the clinics' hours, and both still read and print them:
 - **the Lisbon clock**, in stages 0 and 1, against 08:00 to 21:00. On 2026-09-30 ONLY (the
   Lisbon date read by machine), a time inside those hours prints an `OVERRIDE:` line quoting
@@ -829,7 +830,7 @@ echo "0097 APPLIED. Paste stage 2 now."
 - **`active clinics open now by their own hours: <k> of <n>`**, `n` at least 1. A zero with no
   clinic behind it would be vacuous, so the block requires both. Then either
   `clinics: every active clinic is closed by its own hours` (k is 0) or, ON 2026-09-30 ONLY,
-  the owner's override line `OVERRIDE: <k> of <n> active clinics open now ...` (k above 0).
+  the owner's override line `OVERRIDE: <k> of <n> active clinics open now ...` (k above 0 and at most n).
   On any other day an open clinic STOPs the block, as before;
 - **the pre-check prints `20` OK verdicts and no FAIL**, with `journal_rows_before` 94 and
   verdict 10 naming 0096's sha256 and `when` as the line above it printed them;
@@ -1285,8 +1286,8 @@ unless they are 0.
 ## Changed after the owner's override, 2026-09-30: the clock and clinic checks, two blocks
 
 The owner ruled at 13:13 Lisbon that 0096 to 0099 run that day "despite the current clinic
-schedule, we are doing it now". GREEN stopped on 0096's clinic check, and the owner ruled
-"amend". The same ruling reaches this document's two clinic-hours checks.
+schedule, we are doing it now". GREEN, reading 0096's document, stopped before BEFORE YOU START because its clinic check
+would STOP; nothing had run against production. The owner then ruled "amend". The same ruling reaches this document's two clinic-hours checks.
 
 **What changed.** The five fenced blocks were cut from `7af3b808` and from this revision by one
 script. Stages 2 and 3 and the closing read compare equal. Stages 0 and 1 differ only here:
@@ -1319,6 +1320,12 @@ were cut from this document by one script and run under `zsh -f` inside
 | `CL` `3 of 2`, `0 of 0`, empty, `x of 2`, `1 of`, `-1 of 2`, `1.5 of 2`, `00 of 2`, `01 of 2`, `+1 of 2`, `1e0 of 2`, `1 of 2x`, `0 of 2x`, `0 of 0x1` | STOP, exit 1 | STOP, exit 1 |
 
 Stages 0 and 1 each pass `zsh -n`.
+
+0096's second reviewer found two MINOR limits in these same clinic arms. They are known and
+not fixed, because neither input can come from the read that feeds the arms. First, awk
+compares k and n as floating-point numbers, so a k above n passes once both are above 2^53.
+Second, `awk -v` and `split` accept a padded or tab-separated `1 of 2`. `CL` is `psql -At`
+output of `count || ' of ' || count`: one line, single spaces, a count of `locations` rows.
 
 **Prose changed:**
 - "Before the sitting", item 7.
