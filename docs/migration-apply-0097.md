@@ -37,9 +37,11 @@ never applies it. So three kinds of value live here:
   dispatch's CLOCK CHECK records; and the behaviour check's patient and actors, **picked by
   GREEN in stage 1, READ ONLY, by that pinned rule**, and reused unchanged by stage 3;
 - **filled at issue, and refused by machine until then**: the PR number (`PR=NOT-YET-ISSUED`
-  in every block, which STOPs on it before it touches git or a database). The PR is #1475;
-  the placeholder is the guard that this document has not been issued. See "What the issue
-  fills".
+  in stages 0 to 3, each of which STOPs on it before it touches git or a database). The
+  closing read carries no PR: it runs only on the head record stage 0 writes and the marks
+  stages 1 to 3 write, and each of those stages STOPs on the placeholder before it writes
+  one. The PR is #1475; the placeholder is the guard that this document has not been issued.
+  See "What the issue fills".
 
 **Written at the standard of `docs/migration-apply-0093.md`, section for section, in the
 ALTER shape of `docs/migration-apply-0092.md`, with CARE-02a's one-CREATE shape, and with
@@ -60,7 +62,7 @@ the DB-gated suite to that.
 | Migration, today | `packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql`, sha256 `076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318` (renamed from `NEXT-AFTER-0098_...` on 2026-09-30; bytes unchanged) |
 | Migration, at the sitting | `packages/db/migrations/0097_clinical_records_write_matrix.sql`, **bytes unchanged** (a promotion is a rename and nothing else, so the sha256 above is the hash drizzle records) |
 | Journal | `idx 94`, tag `0097_clinical_records_write_matrix`, `when` set at promotion and **strictly greater than 0096's** (0096 is expected at `idx 93`, `when 1788501700000`). The rehearsal used `0096 1788501700000` and `0097 1788501800000`; stage 0 asserts the order, not those values |
-| Must follow | `0096`, CARE-02a (#1471), pending as `NEXT-AFTER-0095_care02a_care_team_reads.sql` under the fifth renumbering (sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45`, the file the rehearsal applied, read from #1471's head `6fb88730` on 2026-09-30). Before it: `0095` the conflict check's patient name, applied 2026-09-29 |
+| Must follow | `0096`, CARE-02a (#1471), promoted on #1471's head `1d9ae1ab` as `packages/db/migrations/0096_care02a_care_team_reads.sql`, journal `idx 93`, `when 1788501700000`, sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45` (read 2026-09-30). The same bytes the rehearsal applied: it read them pending, as `NEXT-AFTER-0095_care02a_care_team_reads.sql`, from #1471's earlier head `6fb88730`. Before it: `0095` the conflict check's patient name, applied 2026-09-29 |
 | Comes before | `0098` the staging index (#1469) and `0099` the grants revoke (#1397). Neither is in production at this sitting, and this document reads neither |
 | Production journal at the sitting | **94 rows before, 95 after.** 93 on 2026-09-30 (0000 to 0095, the numbering has gaps; 0095 applied 2026-09-29 13:09 Lisbon), plus one row for 0096 |
 | Branch | `db/0099-registo-write-matrix`, PR **#1475**, `held-for-apply` from the moment it opened. The branch name carries the old number and is not renamed: a new branch name would be a new PR |
@@ -136,23 +138,27 @@ touched (`NEXT-AFTER-0096_clinical_records_write_matrix.sql:32-64`, the statemen
 
 ## Every app writer, read against the new arms
 
-Read on `origin/main` at `e0e75cfe`, after #1464 (`7b8e49b1`), which made each UPDATE below
-read back the rows it touched. Every staff writer runs under `withTenantContext`
-(`packages/db/src/client.ts:146-158`: `SET LOCAL ROLE authenticated` and the JWT claims), so
-the policies apply to it. The same list, with the reasoning, is section 3 of the migration
-(`:99-179`).
+First read on `origin/main` at `e0e75cfe`, after #1464 (`7b8e49b1`), which made each UPDATE
+below read back the rows it touched; **every line number below re-read on `origin/main` at
+`453cf2c4` on 2026-09-30**, where the statements cited are unchanged and the lines in
+`records.ts`, `review.ts` and the patient page have moved (listPatients also gained
+CARE-02a's comment). These are main's lines before the app half: #1501 moves them again.
+Every staff writer runs under `withTenantContext` (`packages/db/src/client.ts:146-158`: `SET
+LOCAL ROLE authenticated` and the JWT claims), so the policies apply to it. The same list,
+with the reasoning, is section 3 of the migration (`:99-179`), which cites the lines as they
+were at `e0e75cfe` and keeps them, because they are the migration's bytes.
 
 | Writer | Where (main) | Write | After 0097 |
 |---|---|---|---|
-| createDraftRecord | `apps/web/lib/clinical/records.ts:431-442` | INSERT, `practitioner_id = ctx.userId`, patient from the new-registo picker, which offers a therapist only patients they treat or created (`:364-375`, `therapistPatientScope`, the same test as `clinical_therapist_sees_patient`) | ADMITTED (W1). Any other patient (a posted id, or one whose last appointment with the caller was deleted since the page rendered) is refused by the app half as `not_found` before the INSERT, not as a raw 42501 |
-| updateRecordData | `records.ts:509-517` | UPDATE of the registo being edited. Main reads back the rows it touched and refuses 0 as `not_found`, with no audit row | ADMITTED for its author while they treat or created the patient; 0 rows for anyone else (W2), which the app half names `not_author`. An author who no longer treats or created the patient is refused by WITH CHECK (Q4) |
-| createAddendum | `records.ts:554-567` | INSERT in the caller's name for the superseded registo's patient | ADMITTED (W1) for a therapist who treats or created that patient, whoever wrote the registo being superseded. Anyone else is refused by the app half as `not_found` before the INSERT, and the record page shows it; the owner files any |
-| signAndLockRecord | `records.ts:613-627` | UPDATE status to signed. Main reads back and reports 0 rows as `stale` | ADMITTED for the author, with the same patient test as the save; 0 rows for anyone else (W2), which main would report as `stale` ("changed in the meantime") and the app half names `not_author` |
-| hardDeleteClinicalRecord | `records.ts:691-695` | DELETE of a draft. Main refuses 0 rows as `not_found` | ADMITTED for the author; 0 rows for any other therapist, including on an AI draft nobody has claimed, which the app half names `not_author`. The owner deletes any draft, as before. The patient page still offers a therapist Eliminar on every draft (below and Q5); a therapist discards an AI draft nobody has claimed by claiming it first |
-| claimReviewItem, patient submission | `apps/web/lib/clinical/review.ts:284-294` | INSERT in the claimer's name (`:290`) for the submission's patient; the queue offers a therapist only patients they treat or created (`:86-90`) | ADMITTED (W1). A posted submission id for any other patient is refused by the app half as `not_found` before the INSERT, as createDraftRecord refuses one |
-| claimReviewItem, AI draft | `review.ts:228-243` | UPDATE of a draft the ingestion endpoint wrote WITHOUT an author (`apps/web/lib/ingestion/store.ts:78-93` sets no `practitioner_id`) | **WOULD BREAK**: no therapist is its author, so the claim reads 0 rows and ends in `not_under_review`. **Measured**: `origin/main`'s own `packages/db/tests/review-finalize-rls.test.ts` fails 4 of its 11 arms on a database with 0097 (the four AI arms, "expected +0 to be 1"). The narrow path is the next section |
+| createDraftRecord | `apps/web/lib/clinical/records.ts:465-476` | INSERT, `practitioner_id = ctx.userId`, patient from the new-registo picker, which offers a therapist only patients they treat or created (`:395-409`, `therapistPatientScope`, the same test as `clinical_therapist_sees_patient`) | ADMITTED (W1). Any other patient (a posted id, or one whose last appointment with the caller was deleted since the page rendered) is refused by the app half as `not_found` before the INSERT, not as a raw 42501 |
+| updateRecordData | `records.ts:544-552` | UPDATE of the registo being edited. Main reads back the rows it touched and refuses 0 as `not_found`, with no audit row | ADMITTED for its author while they treat or created the patient; 0 rows for anyone else (W2), which the app half names `not_author`. An author who no longer treats or created the patient is refused by WITH CHECK (Q4) |
+| createAddendum | `records.ts:590-603` | INSERT in the caller's name for the superseded registo's patient | ADMITTED (W1) for a therapist who treats or created that patient, whoever wrote the registo being superseded. Anyone else is refused by the app half as `not_found` before the INSERT, and the record page shows it; the owner files any |
+| signAndLockRecord | `records.ts:650-664` | UPDATE status to signed. Main reads back and reports 0 rows as `stale` | ADMITTED for the author, with the same patient test as the save; 0 rows for anyone else (W2), which main would report as `stale` ("changed in the meantime") and the app half names `not_author` |
+| hardDeleteClinicalRecord | `records.ts:729-733` | DELETE of a draft. Main refuses 0 rows as `not_found` | ADMITTED for the author; 0 rows for any other therapist, including on an AI draft nobody has claimed, which the app half names `not_author`. The owner deletes any draft, as before. The patient page still offers a therapist Eliminar on every draft (below and Q5); a therapist discards an AI draft nobody has claimed by claiming it first |
+| claimReviewItem, patient submission | `apps/web/lib/clinical/review.ts:286-296` | INSERT in the claimer's name (`:292`) for the submission's patient; the queue offers a therapist only patients they treat or created (`:86-90`) | ADMITTED (W1). A posted submission id for any other patient is refused by the app half as `not_found` before the INSERT, as createDraftRecord refuses one |
+| claimReviewItem, AI draft | `review.ts:230-245` | UPDATE of a draft the ingestion endpoint wrote WITHOUT an author (`apps/web/lib/ingestion/store.ts:78-93` sets no `practitioner_id`) | **WOULD BREAK**: no therapist is its author, so the claim reads 0 rows and ends in `not_under_review`. **Measured**: `origin/main`'s own `packages/db/tests/review-finalize-rls.test.ts` fails 4 of its 11 arms on a database with 0097 (the four AI arms, "expected +0 to be 1"). The narrow path is the next section |
 | listReviewQueue, AI rows | `review.ts:86-110` | a read, not a write | The app half shows a therapist an AI draft only while it has no author or when they are its author: a draft another therapist has taken is theirs, and a claim of it would end in `not_under_review` |
-| editReviewNarrative, saveReviewFicha, finalizeReview | `review.ts:377-384`, `:478-485`, `:548-567` and `:581-590` | UPDATEs of a claimed draft. Main reads back and reports 0 rows as `finalized` (the two saves) or `stale` (finalize) | After the claim the claimer IS the author, so ADMITTED for the claimer; 0 rows for anyone else, which the app half names `not_author` |
+| editReviewNarrative, saveReviewFicha, finalizeReview | `review.ts:380-387`, `:482-489`, `:553-572` and `:586-595` | UPDATEs of a claimed draft. Main reads back and reports 0 rows as `finalized` (the two saves) or `stale` (finalize) | After the claim the claimer IS the author, so ADMITTED for the claimer; 0 rows for anyone else, which the app half names `not_author` |
 | The consultation actions | `apps/web/app/consultation/actions.ts`: `createStubPatient` (`:58`), the recording consent's audit row (`:156`), `persistConsultation` (`:381`) | a stub patient, an audit row, and the `consultations` row, which `apps/web/lib/consultation/consultation-store.ts:96-193` writes on `getDbAdmin()`; none of them writes `clinical_records` (the AI draft a recording leads to arrives through the ingestion endpoint, the next row) | NOT UNDER THESE POLICIES |
 | AI ingestion | `apps/web/lib/ingestion/store.ts:77-93` | INSERT on `getDbAdmin()` (BYPASSRLS), the sanctioned service_role path | NOT UNDER THESE POLICIES |
 | merge_patients | `packages/db/migrations/0005_patient_merge_multilocation.sql:117-120`, owner `postgres` since `0060:90` | re-points `patient_id` as its SECURITY DEFINER owner | NOT UNDER THESE POLICIES |
@@ -189,7 +195,7 @@ it (below).
 
 **The patient page is not gated by the app half, and meets it (Q5, ruled (c): a follow-up Tier
 B PR merged after the apply).** Its Registos clínicos tab
-(`apps/web/app/patients/[id]/page.tsx:709-721`) offers anyone with `clinical_records:author`,
+(`apps/web/app/patients/[id]/page.tsx:740-752`) offers anyone with `clinical_records:author`,
 the owner and a therapist, Eliminar on every draft (`record-lifecycle-actions.tsx:80`) and Nova
 versão (adenda) on every finalized registo. With 0097, a therapist's Eliminar on a draft they
 did not author, a colleague's or an AI draft nobody has claimed, deletes nothing and ends in
@@ -296,8 +302,12 @@ recorded on 2026-09-29; Q1, Q2, Q3 and Q5 stand as the PR's defaults, by the sam
   active owner's name is not at risk: the owner arm, which 0097 leaves alone, still admits its
   author. **The table records a draft's author, not who last typed into it**, so "its current
   writer" is read as its author, the only therapist the permission matrix and 0097 admit. The
-  counts are read, never assumed: the READ ONLY pre-check before issue reads them first, so the
-  sitting is not where they are learned.
+  counts are read by machine, never assumed: stage 1's verdict 13 reads them before the pick
+  and before the apply, and STOPs with nothing applied unless they are 0. A READ ONLY run of
+  the pre-check before issue is meant to read them first, so that the owner has time to finish
+  those drafts and the sitting is not where they are learned. **No block and no dispatch for
+  that run exist yet** (see "Measured on production, READ ONLY"): until one runs, the sitting
+  can be where they are learned, and verdict 13 is what keeps that safe.
 - **Q4, the new-row check of UPDATE: (a), as built.** USING the author; WITH CHECK the author
   AND `clinical_therapist_sees_patient(patient_id)`, W1's arm, so every row a therapist writes,
   by INSERT or by UPDATE, meets the ruled sentence. Cost: an author who no longer treats or
@@ -335,8 +345,12 @@ Checked by the operator and the lead before stage 0. None of these is a block.
    below makes: every required check green but the two that read the count, each read off its
    log as a count failure and nothing else.
 6. **This document is issued for the sitting**: `PR` is filled with `1475`, the production
-   READ ONLY section is written, and the sidecar is regenerated. Stages 0 to 3 and the closing
-   read STOP on the placeholder.
+   READ ONLY section is written from the READ ONLY run before issue (whose block and dispatch
+   are not written yet: see "Measured on production, READ ONLY"), and the sidecar is
+   regenerated. Stages 0 to 3 STOP on the placeholder. The closing read carries none: it runs
+   only on the head record stage 0 writes and the marks stages 1 to 3 write, and each of those
+   stages STOPs on the placeholder before it writes one, so while the placeholder stands the
+   closing read has none of this sitting's records to run on, and STOPs.
 7. **The owner's dispatch names `0097_clinical_records_write_matrix` and a run window that
    falls outside both clinics' opening hours**, and GREEN is launched with
    `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no date: the
@@ -426,9 +440,9 @@ issued, and stops.
 | Value | Where | Placeholder today | Filled with |
 |---|---|---|---|
 | `PR` | stages 0, 1, 2, 3 | `NOT-YET-ISSUED` | `1475`, for the `refs/pull/<PR>/head` fallback |
-| "Measured on production, READ ONLY" | the section of that name | NOT YET MEASURED | the pre-check and the stage 1 pick, both READ ONLY, run before issue |
+| "Measured on production, READ ONLY" | the section of that name | NOT YET MEASURED | the pre-check and the stage 1 pick, both READ ONLY, run before issue from their own block and GREEN dispatch, neither of which is written yet |
 | the sidecar | `docs/migration-apply-0097.sha256` | this revision's digest | the issued revision's digest |
-| the dispatch | `/Users/ivan/osteojp-handover/green-dispatch-0097.txt` | this revision's digest and `HEAD97='NOT-READY'` | the issued digest in WHAT IS BEING APPLIED, both DOCSHA lines, the EXPECT lines and the sidecar line, and the promoted head |
+| the dispatch | `/Users/ivan/osteojp-handover/green-dispatch-0097.txt` | this revision's digest, the one line `HELD='NOT-FILLED'` in BEFORE YOU START, and the NOT READY paragraph at its top | the issued digest in WHAT IS BEING APPLIED, both DOCSHA lines, the EXPECT lines and the sidecar line; the promoted head's sha in the `HELD=` line; and the NOT READY paragraph deleted |
 
 Nothing else in the blocks changes at issue. If a pinned check file, the migration or a
 pinned program changes before the sitting, its pin changes with it and the rehearsal arms
@@ -617,7 +631,9 @@ does not bypass row level security it ERRORs rather than reads a filtered count.
 the connection is `postgres`, which bypasses it (as on the rehearsal image, where `postgres` is
 not a superuser and holds BYPASSRLS), and the tables are owned by `postgres` with RLS ENABLED,
 not FORCED. 0094's behaviour check set `row_security = off` on production on 2026-09-29 and
-read. The READ ONLY run before issue is the first measurement of these three files there.
+read. The first production measurement of the pre-check and the pick is the READ ONLY run
+before issue once its block and dispatch exist (see "Measured on production, READ ONLY"), and
+stage 1 until then; the behaviour check's is stage 1's subjects-only run either way.
 
 ## STAGE 1: the head, the window, pre-flight, pre-check (Q3), the pick, the subjects BEFORE, apply
 
@@ -1203,8 +1219,9 @@ were read on a rehearsal database built from main's 91 migrations and the held 0
 2026-09-27, and read again, identical, on 2026-09-30 on one built from main's 93 migrations
 and 0096 alone, the ruled order.
 If production rendered differently, pre-check arms 1 to 4 would FAIL and stage 1 would halt
-**before** the apply, which is the safe direction. The READ ONLY pre-check before issue is the
-evidence that production renders the same way.
+**before** the apply, which is the safe direction. The READ ONLY pre-check before issue, once
+its block exists, is the evidence that production renders the same way; until it runs, stage
+1's own pre-check is that evidence.
 
 
 ## Measured on production, READ ONLY
@@ -1214,6 +1231,13 @@ is issued, and never as part of a sitting, the pre-check and the pick of stage 1
 ONLY against production by GREEN, and this section records: the 20 verdicts, verdict 13 (Q3)
 among them; the carries; the `draft_profile`; and whether the pick finds a P, with which
 shape. No patient id is recorded here.
+
+**No block and no dispatch for that run exist yet.** Both are SOLO's to write before issue: a
+READ ONLY block that runs this document's pinned pre-check and its `PICK` against production
+and prints only what this section records, and a GREEN dispatch that names it. The dispatch
+for the sitting lists them among the steps before it is issued. Until that run, Q3's counts
+are first read by stage 1's verdict 13, which STOPs before the pick, with nothing applied,
+unless they are 0.
 
 ## Rehearsed on 2026-09-30, the fifth run, in the ruled order, synthetic data only
 
@@ -1231,7 +1255,9 @@ directory). `c97_base`: `origin/main` at `453cf2c4`, its 93 migrations (0000 to 
 journal order, each with its journal row (hash the file's sha256, `created_at` its `when`):
 93 rows, **26** SECURITY DEFINER functions in `public`. `c97_pre`: plus 0096, CARE-02a's
 pending file from #1471's head `6fb88730` (sha256 `fbf8cad1...`, the file the 2026-09-27
-runs applied as 0098) at `when 1788501700000`: 94 rows, **27**. `c97_fix`: plus the C14
+runs applied as 0098) at `when 1788501700000`: 94 rows, **27**. #1471's head has since moved
+to `1d9ae1ab`, which promotes the same bytes as `0096_care02a_care_team_reads.sql` at `idx 93`
+and that same `when`, so the 0096 this base holds is still the 0096 that 0097 follows. `c97_fix`: plus the C14
 synthetic fixture (sha256 `fd217b2c35231df19f17604112888e9479d0637f764d48dee184cf389ff70a65`,
 unchanged; described in the next section), 9 registos.
 
