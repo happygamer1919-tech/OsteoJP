@@ -50,6 +50,13 @@ import { pairingProblems, readSecdef, readSecdefFromDir } from "./secdef-from-mi
  * checker's number, and the arm below pins the derived set to it, so a new
  * SECURITY DEFINER function still has to move that constant on purpose.
  */
+// CARE-02a (0096, promoted on the held branch that carries this note): its
+// migration creates `viewer_care_team_patient_ids_at_my_clinics`, the 27th,
+// with its own owner-pin, and the derived set below picks it up from the
+// promoted file. EXPECTED_COUNT in check-security-definer-owner.mjs moves
+// 26 -> 27 in its own GATE-CHANGE (a frozen gate) that the owner merges after
+// the apply, so on this branch the count arm reads derived 27 against frozen 26
+// until main is merged in after that GATE-CHANGE: one red, expected.
 const MIGRATIONS = readSecdefFromDir(join(__dirname, "..", "migrations"));
 
 const EXPECTED_FUNCTIONS = MIGRATIONS.definers.map((name) => ({ name, owner: EXPECTED_OWNER }));
