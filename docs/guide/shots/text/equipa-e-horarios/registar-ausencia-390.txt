@@ -1,0 +1,501 @@
+sha256 f4e1144b79b80ddaa6b5586a517fa41335623d263b97aae111c0053d58cc0c7f
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Horários da equipa
+
+Defina os horários de trabalho e ausências dos terapeutas da sua unidade.
+
+Inspetor de horários
+
+O que a agenda resolve, dia a dia, para cada terapeuta.
+
+Terapeuta
+Escolha um terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Período
+Esta semana
+Duas semanas
+Este mês
+
+Escolha um terapeuta para ver o horário que a agenda resolve. Nada é mostrado até escolher.
+
+Bruno Fictício
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Carla Modelo
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Duarte Inventado
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+## frame 1 form values
+Escolha um terapeuta
+Esta semana
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+17
+00
+Polo Exemplo
+## frame 2
+RE
+O meu perfil
+Terminar sessão
+Horários da equipa
+
+Defina os horários de trabalho e ausências dos terapeutas da sua unidade.
+
+Inspetor de horários
+
+O que a agenda resolve, dia a dia, para cada terapeuta.
+
+Terapeuta
+Escolha um terapeuta
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Período
+Esta semana
+Duas semanas
+Este mês
+
+Escolha um terapeuta para ver o horário que a agenda resolve. Nada é mostrado até escolher.
+
+Bruno Fictício
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Bloqueios de Bruno Fictício
+
+Sem bloqueios
+
+Adicionar bloqueio
+
+Tipo
+Bloqueio pontual
+Ausência prolongada
+Bloqueio repetido
+Data
+Início
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Fim
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+:
+00
+15
+30
+45
+Nota *
+Guardar
+Fechar
+Editar horários
+Carla Modelo
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+Duarte Inventado
+Ver no inspetor
+Definir semanas alternadas
+Definir dia a dia
+Bloquear horário
+Editar horários
+## frame 2 form values
+Escolha um terapeuta
+Esta semana
+Bloqueio pontual
+dd/mm/aaaa
+09
+00
+10
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Sede Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+13
+00
+Polo Exemplo
+14
+00
+19
+00
+09
+00
+17
+00
+Polo Exemplo
+09
+00
+17
+00
+Polo Exemplo

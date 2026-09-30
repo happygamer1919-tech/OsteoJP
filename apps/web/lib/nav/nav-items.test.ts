@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { can } from "@osteojp/auth";
+import { ROLES, can } from "@osteojp/auth";
 import { navItemsForRole } from "./nav-items";
 
 const hrefs = (role: Parameters<typeof navItemsForRole>[0]) =>
@@ -29,6 +29,8 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/estatisticas",
       "/horarios",
       "/admin",
+      // G1 (owner ruling 2026-09-27): Ajuda, the last item for every role.
+      "/ajuda",
     ]);
   });
 
@@ -55,6 +57,8 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/estatisticas",
       "/horarios",
       "/admin",
+      // G1 (owner ruling 2026-09-27): Ajuda, the last item for every role.
+      "/ajuda",
     ]);
     expect(hrefs("admin")).not.toContain("/clinical");
     expect(hrefs("admin")).not.toContain("/clinical/review");
@@ -84,6 +88,8 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/comunicacoes",
       "/clinical/review",
       "/horarios",
+      // G1 (owner ruling 2026-09-27): Ajuda, the last item for every role.
+      "/ajuda",
     ]);
     expect(hrefs("therapist")).not.toContain("/invoicing");
     expect(hrefs("therapist")).not.toContain("/clinical");
@@ -127,6 +133,8 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/comunicacoes",
       "/invoicing",
       "/horarios",
+      // G1 (owner ruling 2026-09-27): Ajuda, the last item for every role.
+      "/ajuda",
     ]);
     expect(r).not.toContain("/clinical");
     expect(r).not.toContain("/clinical/review");
@@ -169,6 +177,22 @@ describe("navItemsForRole — role-aware nav gating", () => {
     const o = hrefs("owner");
     expect(o[o.indexOf("/horarios") - 1]).toBe("/estatisticas");
     expect(o[o.indexOf("/horarios") + 1]).toBe("/admin");
+  });
+
+  it("G1: Ajuda is the LAST item for EVERY role, and appears exactly once", () => {
+    // Owner ruling 2026-09-27 (G1 proposal, section 7 Q3). Asserted per role by
+    // position, because "the entry exists" and "the entry is last" are
+    // different claims and only the second was ruled on. No capability gates
+    // it: every role has lessons in the guide.
+    for (const role of ROLES) {
+      const h = hrefs(role);
+      expect(h.at(-1), `${role}: Ajuda must be the last sidebar item`).toBe("/ajuda");
+      expect(h.filter((x) => x === "/ajuda"), `${role}: one Ajuda entry`).toHaveLength(1);
+    }
+    // The loop above must not pass over an empty role list.
+    expect(ROLES.length).toBeGreaterThanOrEqual(4);
+    const item = navItemsForRole("reception").at(-1);
+    expect(item).toEqual({ href: "/ajuda", label: "Ajuda" });
   });
 
   it("NO role sees the top-level Registos Clínicos (/clinical) section (ruling F)", () => {

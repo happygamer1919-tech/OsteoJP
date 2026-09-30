@@ -36,14 +36,14 @@ test.describe("Revisão Consulta — Assumir opens the Ficha Médica editor (the
   test("Assumir an AI draft → Ficha Médica editor shows the twelve AI values editable → edit + sign → appears signed in Registos", async ({
     page,
   }) => {
-    // --- Review queue: the AI draft is queued (Por rever) for João Pereira. ---
+    // --- Review queue: the AI draft is queued (Por rever) for João Fictício. ---
     await page.goto("/clinical/review");
     await expect(page.getByRole("heading", { name: "Revisão Consulta" })).toBeVisible();
 
     // Scope to the queue row for THIS RECORD, by id.
     //
     // It used to filter by patient NAME and take .first(), which was only ever
-    // correct by accident: fixtures.ts seeds TWO drafts for Joao Pereira -
+    // correct by accident: fixtures.ts seeds TWO drafts for Joao Ficticio -
     // AI_REVIEW_DRAFT and AI_DELETE_DRAFT - and this test passed only because
     // clinical.spec.ts runs earlier in file order (c before r) and hard-deletes
     // the second one first. So this spec silently depended on another spec file

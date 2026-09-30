@@ -1,0 +1,42 @@
+sha256 3f1465a8e57f1cba431152e597c9e444e95f9e9b681eba6915e54f295535a715
+## frame 1
+RE
+O meu perfil
+Terminar sessão
+Bom dia, Rita
+
+Aqui está o resumo do dia na clínica.
+
+Hoje
+Pacientes ativos
+16
+Marcações hoje
+0
+Receita (mês)
+0,00 €
+Acessos rápidos
+Nova marcação
+Novo paciente
+Ver agenda
+Resumo semanal
+Segunda
+Terça
+Quarta
+Quinta
+Sexta
+Sábado
+Domingo
+Próximas marcações
+
+Sem marcações para hoje.
+
+Notas rápidas
+Paciente
+Consulta (opcional)
+Nota geral do paciente (sem consulta)
+Guardar
+## frame 1 form values
+06/10/2026
+Procurar paciente…
+Nota geral do paciente (sem consulta)
+Escreva as suas notas…

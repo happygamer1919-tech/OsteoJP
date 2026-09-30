@@ -10,83 +10,87 @@
  * Driven with fabricated catalog rows on purpose. The thing under test is the
  * VERDICT, not the query.
  */
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   EXPECTED_COUNT,
   EXPECTED_OWNER,
   evaluate,
 } from "../scripts/check-security-definer-owner.mjs";
+import { pairingProblems, readSecdef, readSecdefFromDir } from "./secdef-from-migrations";
 
 /**
- * Every public SECURITY DEFINER function, by name.
+ * Every public SECURITY DEFINER function, by name: READ FROM THE MIGRATIONS.
  *
- * EXPECTED_FUNCTIONS as production returned them on 2026-08-07, plus
- * `resolve_confirm_code` from migration 0072 (SR-29) - the single door to
- * `appointment_confirm_codes`, which is granted to nobody - plus
- * `viewer_location_ids` and `viewer_visible_patient_ids` from migration 0073
- * (SR-33), the two nullary helpers `patients_select` evaluates once per
- * statement instead of once per row - plus the three WRITE doors and
- * `viewer_treated_patient_ids` from migration 0074 (SR-35). The writers exist
- * because 0072 revoked the table from every application role and built only the
- * read door, so nothing in the application could mint a code at all.
+ * This was a hand list, first as production returned it on 2026-08-07 and then
+ * grown by one line per migration (0072, 0073, 0074, 0075, 0086, 0087, 0090,
+ * 0091; the reasons each function exists are in the checker's EXPECTED_COUNT
+ * comment and in each migration). It stopped being enough at 0095, which does
+ * not ADD a function but SWAPS one: `appointment_conflict_rows` becomes the
+ * SECURITY DEFINER door and `appointment_conflicts` becomes SECURITY INVOKER
+ * through CREATE OR REPLACE. Net zero, so the count holds, but a hand list is
+ * right on one side of that promotion and wrong on the other.
+ *
+ * HOW PRODUCTION'S SET FOLLOWS FROM THE MIGRATIONS. Production is exactly the
+ * migrations applied in journal order, which is file order. secdef-from-
+ * migrations.ts replays every packages/db/migrations/*.sql in that order, with
+ * comments removed and every quoted literal and $$ body blanked, and tracks each
+ * public function's FINAL mode: a CREATE [OR REPLACE] FUNCTION makes it DEFINER
+ * if the statement says SECURITY DEFINER and INVOKER otherwise (PostgreSQL's
+ * default, which a replace without the clause resets to); an ALTER FUNCTION ...
+ * SECURITY DEFINER|INVOKER sets it; a DROP FUNCTION removes it. What is left
+ * marked DEFINER is the set `pg_proc.prosecdef` reports after the last
+ * migration. Anything done to production OUTSIDE the migrations is not in the
+ * files, which is why the live checker (check-security-definer-owner.mjs) still
+ * reads the catalog itself; this test is the static half.
+ *
+ * THE COUNT STAYS A DELIBERATE ACT. EXPECTED_COUNT is still the frozen
+ * checker's number, and the arm below pins the derived set to it, so a new
+ * SECURITY DEFINER function still has to move that constant on purpose.
  */
-const EXPECTED_FUNCTIONS = [
-  "appointment_conflicts",
-  "assign_patient_number",
-  "clinical_admin_sees_patient",
-  "clinical_therapist_sees_patient",
-  "custom_access_token_hook",
-  "is_unconfirmed_pedido",
-  "jwt_patient_id",
-  "jwt_tenant_id",
-  "location_in_viewer_scope",
-  "merge_patients",
-  "patient_appt_at_viewer_location",
-  "patient_appt_treated_by_viewer",
-  "resolve_confirm_code",
-  "viewer_has_location_assignment",
-  "viewer_location_ids",
-  "viewer_visible_patient_ids",
-  "consume_confirm_code",
-  "issue_confirm_code",
-  "withdraw_confirm_code",
-  "viewer_treated_patient_ids",
-  // 0075 (SR-45/OBS-04): the Twilio status callback's ONE crossing. It has no
-  // session and knows only the SID, so the tenant cannot be scoped before this
-  // answers - the same problem `resolve_confirm_code` solves for the confirm
-  // page, bounded the same way: one argument, one column, no table grant.
-  "reminder_dispatch_tenant",
-  // 0086 (SCHED-17, NESA): the nullary set of shared-resource practitioners at
-  // the viewer's clinics, evaluated once per statement by appointments_rls.
-  "shared_resource_practitioner_ids",
-  // 0087 (INTAKE-01): the patient arm's nullary set of its own converted guest
-  // request ids (the patient role cannot read guest_booking_requests), and the
-  // retention job's body, which deletes what no application role may delete.
-  "patient_guest_request_ids",
-  "purge_expired_guest_intakes",
-  // 0090 (NESA-NAMES): the narrow read returning an appointment id and a display
-  // name for bookings held by a SHARED RESOURCE, so a therapist sees the patient's
-  // name on a NESA card without `patients_select` being widened. EXECUTE is
-  // granted to `authenticated` only; anon, patient and service_role are revoked
-  // in the same migration, which is why this one never reaches the portal.
-  "shared_resource_appointment_patient_names",
-  // 0091 (CARE-01): the nullary set of patients the calling therapist is
-  // CURRENTLY assigned to by reception (removed_at IS NULL), evaluated once per
-  // statement by `appointments_care_team_patient_history_select`. Nullary for
-  // the reason 0073/0074/0078 are: a per-row call on `appointments` is the
-  // 4,691 ms defect 0078 removed. EXECUTE is granted to `authenticated` only.
-  "viewer_care_team_patient_ids",
-].map((name) => ({ name, owner: "postgres" }));
+const MIGRATIONS = readSecdefFromDir(join(__dirname, "..", "migrations"));
+
+const EXPECTED_FUNCTIONS = MIGRATIONS.definers.map((name) => ({ name, owner: EXPECTED_OWNER }));
+
+/**
+ * The names the negative arms fabricate catalog rows with. They are SECURITY
+ * DEFINER before AND after 0095 (appointment_conflicts is not after it), and a
+ * positive arm below proves each one is in the derived set, so no negative arm
+ * can pass on a name that has quietly left it.
+ */
+const PROBE = "assign_patient_number";
+const PROBE_2 = "is_unconfirmed_pedido";
 
 describe("POSITIVE ARM — production as it actually is", () => {
   it("passes on the real set, all owned by postgres", () => {
     expect(evaluate(EXPECTED_FUNCTIONS)).toEqual([]);
   });
 
-  it("the declared count matches the declared list", () => {
-    // If these drift, the count assertion below is asserting the wrong number.
+  it("the set read from the migrations has the checker's count, and the owner is postgres", () => {
+    // The derived set is pinned to the frozen checker's number, so a function
+    // that becomes SECURITY DEFINER (or stops being one) moves EXPECTED_COUNT on
+    // purpose or reddens this arm. Not a vacuous pass: 92+ files are read.
+    expect(MIGRATIONS.files.length).toBeGreaterThan(90);
     expect(EXPECTED_FUNCTIONS).toHaveLength(EXPECTED_COUNT);
     expect(EXPECTED_OWNER).toBe("postgres");
+  });
+
+  it("the probe names the negative arms use are SECURITY DEFINER in the migrations", () => {
+    expect(MIGRATIONS.definers).toContain(PROBE);
+    expect(MIGRATIONS.definers).toContain(PROBE_2);
+  });
+
+  it("the conflict check has exactly ONE SECURITY DEFINER door, before and after 0095", () => {
+    // Before 0095 it is appointment_conflicts itself; after, appointment_conflict_rows,
+    // with appointment_conflicts running as the caller. Never both, never neither:
+    // neither would be a conflict check blind to appointments the caller cannot
+    // read, which is a double booking.
+    const doors = ["appointment_conflicts", "appointment_conflict_rows"].filter((n) =>
+      MIGRATIONS.definers.includes(n),
+    );
+    expect(doors).toHaveLength(1);
   });
 
   it("guards against a vacuous pass: an empty catalog does NOT pass", () => {
@@ -98,15 +102,19 @@ describe("POSITIVE ARM — production as it actually is", () => {
 
 /**
  * THE NEGATIVE ARM. Required. Both failure modes the dispatch named.
+ *
+ * The fabricated rows use PROBE / PROBE_2, not appointment_conflicts: 0095 makes
+ * that one SECURITY INVOKER, and an arm that edits a row which is not in the set
+ * would change nothing and still expect a failure.
  */
 describe("NEGATIVE ARM — a wrong owner FAILS", () => {
   it("fails when ONE function has a fabricated wrong owner", () => {
     const split = EXPECTED_FUNCTIONS.map((r) =>
-      r.name === "appointment_conflicts" ? { ...r, owner: "migrator" } : r,
+      r.name === PROBE ? { ...r, owner: "migrator" } : r,
     );
     const problems = evaluate(split);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain("appointment_conflicts");
+    expect(problems[0]).toContain(PROBE);
     expect(problems[0]).toContain('owned by "migrator"');
   });
 
@@ -114,9 +122,7 @@ describe("NEGATIVE ARM — a wrong owner FAILS", () => {
     // The actual shape of the failure: the applying principal changed partway,
     // so functions created after that point differ. Nothing else detects this.
     const split = EXPECTED_FUNCTIONS.map((r) =>
-      ["is_unconfirmed_pedido", "appointment_conflicts"].includes(r.name)
-        ? { ...r, owner: "svc_migrations" }
-        : r,
+      [PROBE_2, PROBE].includes(r.name) ? { ...r, owner: "svc_migrations" } : r,
     );
     expect(evaluate(split)).toHaveLength(2);
   });
@@ -131,7 +137,8 @@ describe("NEGATIVE ARM — a count of TWELVE fails", () => {
     // a further function landed - which is a test failing for arithmetic
     // rather than for the property it names. The property is "one fewer than
     // expected is reported as missing", and that is what it says now.
-    const oneShort = EXPECTED_FUNCTIONS.filter((r) => r.name !== "appointment_conflicts");
+    const oneShort = EXPECTED_FUNCTIONS.filter((r) => r.name !== PROBE);
+    expect(oneShort).toHaveLength(EXPECTED_FUNCTIONS.length - 1);
     const problems = evaluate(oneShort);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain(`found ${EXPECTED_COUNT - 1}`);
@@ -154,8 +161,8 @@ describe("NEGATIVE ARM — a count of TWELVE fails", () => {
     const bad = [
       // One short of the expected set, then a wrongly-owned one and an
       // unreviewed one - so the total is one OVER and one owner is wrong.
-      ...EXPECTED_FUNCTIONS.filter((r) => r.name !== "appointment_conflicts"),
-      { name: "appointment_conflicts", owner: "migrator" },
+      ...EXPECTED_FUNCTIONS.filter((r) => r.name !== PROBE),
+      { name: PROBE, owner: "migrator" },
       { name: "some_new_helper", owner: "postgres" },
     ];
     expect(evaluate(bad).length).toBeGreaterThanOrEqual(2);
@@ -163,7 +170,8 @@ describe("NEGATIVE ARM — a count of TWELVE fails", () => {
 });
 
 /**
- * THE PAIRING, GENERALISED FROM 0060 TO THE WHOLE MIGRATION SET.
+ * THE PAIRING, GENERALISED FROM 0060 TO THE WHOLE MIGRATION SET, AND NOW TO A
+ * SET THAT CAN SHRINK AS WELL AS GROW.
  *
  * This used to read 0060 alone, because 0060 was where all thirteen owner-pins
  * lived. Migration 0072 adds a fourteenth function AND its own
@@ -172,40 +180,187 @@ describe("NEGATIVE ARM — a count of TWELVE fails", () => {
  * supposed to require - and the 0060-only version would have failed it for
  * being in the right place.
  *
- * So the invariant is stated as what it always meant: EVERY SECURITY DEFINER
- * function the checker counts has an owner-pin SOMEWHERE in the migrations, and
- * there are no pins for functions nobody counts. Which file carries it is not
- * the property; that it exists is.
+ * So the invariant is stated as what it always meant: EVERY function in the
+ * final SECURITY DEFINER set has exactly ONE owner-pin somewhere in the
+ * migrations, to EXPECTED_OWNER. A pin of a function that WAS SECURITY DEFINER
+ * when pinned and has since been made INVOKER or dropped is HISTORICAL:
+ * migrations are immutable, so 0060's pin of appointment_conflicts outlives the
+ * day 0095 makes it INVOKER, and that is allowed. Any other pin (a function
+ * that was never DEFINER, or a name no migration created) fails. Which file
+ * carries a pin is not the property; that it exists is.
  */
 describe("the migrations declare exactly the functions the checker counts", () => {
-  const altersAcrossMigrations = async () => {
-    const { readdirSync, readFileSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const dir = join(__dirname, "..", "migrations");
-    const out: { name: string; owner: string }[] = [];
-    for (const f of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
-      const live = readFileSync(join(dir, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, " ");
-      for (const m of live.matchAll(
-        /^ALTER FUNCTION public\.([a-z_]+)\([^)]*\)\s+OWNER TO ([a-z_]+);/gm,
-      )) {
-        out.push({ name: m[1]!, owner: m[2]! });
-      }
-    }
-    return out;
-  };
-
-  it("one owner-pin per expected function, and no more", async () => {
-    const alters = await altersAcrossMigrations();
-    expect(alters).toHaveLength(EXPECTED_COUNT);
-    expect(alters.map((a) => a.name).sort()).toEqual(
-      EXPECTED_FUNCTIONS.map((r) => r.name).sort(),
-    );
+  it("one live owner-pin per SECURITY DEFINER function, no extra pins, every pin to the owner", () => {
+    expect(pairingProblems(MIGRATIONS, EXPECTED_OWNER)).toEqual([]);
   });
 
-  it("every pin names the expected owner, not something else", async () => {
+  it("the live pins name exactly the derived set", () => {
+    const live = MIGRATIONS.pins.filter((p) => p.kind === "live");
+    expect(live).toHaveLength(EXPECTED_COUNT);
+    expect(live.map((p) => p.name).sort()).toEqual([...MIGRATIONS.definers].sort());
+  });
+
+  it("every pin names the expected owner, not something else", () => {
     // A migration that pinned to the wrong role would pass the count check and
-    // then MOVE ownership away from the role everything depends on.
-    const alters = await altersAcrossMigrations();
-    expect(new Set(alters.map((a) => a.owner))).toEqual(new Set([EXPECTED_OWNER]));
+    // then MOVE ownership away from the role everything depends on. Historical
+    // pins included: each one ran against production when it was applied.
+    expect(new Set(MIGRATIONS.pins.map((p) => p.owner))).toEqual(new Set([EXPECTED_OWNER]));
+  });
+});
+
+/**
+ * THE READER'S OWN ARMS, on synthetic migration directories. No real migration
+ * is read or touched here: each arm writes a few .sql files to a temp directory
+ * and replays them, so every rule the real arms depend on has a red and a green
+ * of its own.
+ */
+describe("the reader, on seeded migrations", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  const seed = (files: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), "secdef-seed-"));
+    dirs.push(dir);
+    for (const [name, sql] of Object.entries(files)) writeFileSync(join(dir, name), sql);
+    return readSecdefFromDir(dir);
+  };
+  const definerFn = (name: string, extra = "") =>
+    `CREATE OR REPLACE FUNCTION public.${name}(p uuid)\n  RETURNS boolean\n  LANGUAGE sql\n  STABLE\n  SECURITY DEFINER\n  SET search_path = public\nAS $$ SELECT true $$;${extra}\n`;
+  const invokerFn = (name: string, body = "SELECT true") =>
+    `CREATE OR REPLACE FUNCTION public.${name}(p uuid)\n  RETURNS boolean\n  LANGUAGE sql\n  STABLE\nAS $$ ${body} $$;\n`;
+  const pin = (name: string, owner = "postgres") =>
+    `ALTER FUNCTION public.${name}(uuid) OWNER TO ${owner};--> statement-breakpoint\n`;
+
+  it("GREEN: a DEFINER function with one pin passes", () => {
+    const r = seed({ "0001_a.sql": definerFn("f") + pin("f") });
+    expect(r.definers).toEqual(["f"]);
+    expect(r.pins.map((p) => p.kind)).toEqual(["live"]);
+    expect(pairingProblems(r, "postgres")).toEqual([]);
+  });
+
+  it("created DEFINER, then CREATE OR REPLACE'd without SECURITY DEFINER, reads INVOKER", () => {
+    const r = seed({ "0001_a.sql": definerFn("f") + pin("f"), "0002_b.sql": invokerFn("f") });
+    expect(r.finalMode.get("f")).toBe("INVOKER");
+    expect(r.definers).toEqual([]);
+  });
+
+  it("a pin of such a function is HISTORICAL, and allowed", () => {
+    const r = seed({
+      "0001_a.sql": definerFn("f") + pin("f"),
+      "0002_b.sql": invokerFn("f") + definerFn("g") + pin("g"),
+    });
+    expect(r.pins.map((p) => [p.name, p.kind])).toEqual([
+      ["f", "historical"],
+      ["g", "live"],
+    ]);
+    expect(pairingProblems(r, "postgres")).toEqual([]);
+  });
+
+  it("RED: a DEFINER function with no pin fails", () => {
+    const r = seed({ "0001_a.sql": definerFn("f") + pin("f") + definerFn("g") });
+    expect(pairingProblems(r, "postgres")).toEqual(["g is SECURITY DEFINER with no owner pin"]);
+  });
+
+  it("RED: a second pin of the same live function fails", () => {
+    const r = seed({ "0001_a.sql": definerFn("f") + pin("f"), "0002_b.sql": pin("f") });
+    const problems = pairingProblems(r, "postgres");
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("f has 2 owner pins");
+  });
+
+  it("RED: a pin of a function that was never SECURITY DEFINER fails", () => {
+    const r = seed({ "0001_a.sql": invokerFn("f") + pin("f") + pin("nobody_made_this") });
+    expect(r.pins.map((p) => p.kind)).toEqual(["extra", "extra"]);
+    expect(pairingProblems(r, "postgres")).toHaveLength(2);
+  });
+
+  it("RED: a pin to another owner fails", () => {
+    const r = seed({ "0001_a.sql": definerFn("f") + pin("f", "migrator") });
+    expect(pairingProblems(r, "postgres")).toEqual([
+      '0001_a.sql: pin of f names "migrator", expected "postgres"',
+    ]);
+  });
+
+  it("SECURITY DEFINER inside a $$ body, a $tag$ body, a COMMENT ON FUNCTION string or a comment does not count", () => {
+    const r = seed({
+      "0001_a.sql":
+        invokerFn("in_body", "SELECT 'SECURITY DEFINER' IS NOT NULL") +
+        `CREATE OR REPLACE FUNCTION public.in_tag(p uuid) RETURNS boolean LANGUAGE plpgsql AS $fn$\nBEGIN\n  -- SECURITY DEFINER\n  RETURN true;\nEND\n$fn$;\n` +
+        invokerFn("in_comment") +
+        `COMMENT ON FUNCTION public.in_comment(uuid) IS\n  'Not SECURITY DEFINER; it''s SECURITY INVOKER '\n  'on purpose.';--> statement-breakpoint\n` +
+        `/* CREATE OR REPLACE FUNCTION public.ghost(p uuid) ... SECURITY DEFINER */\n` +
+        `-- CREATE OR REPLACE FUNCTION public.ghost2(p uuid) SECURITY DEFINER AS $$ $$;\n` +
+        `CREATE OR REPLACE FUNCTION public.in_line_comment(p uuid) RETURNS boolean LANGUAGE sql\n  -- SECURITY DEFINER\nAS $$ SELECT true $$;\n` +
+        // The old single-quoted body form, still legal: the clause is inside a literal.
+        `CREATE OR REPLACE FUNCTION public.in_quoted_body(p uuid) RETURNS text LANGUAGE sql\nAS 'SELECT ''SECURITY DEFINER''::text';\n`,
+    });
+    expect([...r.finalMode.keys()].sort()).toEqual([
+      "in_body",
+      "in_comment",
+      "in_line_comment",
+      "in_quoted_body",
+      "in_tag",
+    ]);
+    expect(r.definers).toEqual([]);
+  });
+
+  it("SECURITY DEFINER AFTER the body still counts (PostgreSQL accepts it there)", () => {
+    const r = seed({
+      "0001_a.sql": `CREATE FUNCTION public.f(p uuid) RETURNS boolean AS $$ SELECT true $$ LANGUAGE sql SECURITY DEFINER;\n`,
+    });
+    expect(r.definers).toEqual(["f"]);
+  });
+
+  it("DROP removes it, and a pin from before the DROP is historical", () => {
+    const r = seed({
+      "0001_a.sql": definerFn("f") + pin("f"),
+      "0002_b.sql": `DROP FUNCTION IF EXISTS public.f(uuid);--> statement-breakpoint\n`,
+    });
+    expect(r.finalMode.has("f")).toBe(false);
+    expect(r.definers).toEqual([]);
+    expect(r.pins.map((p) => p.kind)).toEqual(["historical"]);
+    expect(pairingProblems(r, "postgres")).toEqual([]);
+  });
+
+  it("RED: dropped and re-created DEFINER needs its OWN pin (the new object has a new owner)", () => {
+    const r = seed({
+      "0001_a.sql": definerFn("f") + pin("f"),
+      "0002_b.sql": `DROP FUNCTION public.f(uuid);\n` + definerFn("f"),
+    });
+    expect(pairingProblems(r, "postgres")).toEqual(["f is SECURITY DEFINER with no owner pin"]);
+  });
+
+  it("ALTER FUNCTION ... SECURITY DEFINER / INVOKER sets the mode", () => {
+    const r = seed({
+      "0001_a.sql": invokerFn("up") + definerFn("down"),
+      "0002_b.sql":
+        `ALTER FUNCTION public.up(uuid) SECURITY DEFINER;\n` +
+        `ALTER FUNCTION public.down(uuid) SECURITY INVOKER;\n`,
+    });
+    expect(r.finalMode.get("up")).toBe("DEFINER");
+    expect(r.finalMode.get("down")).toBe("INVOKER");
+  });
+
+  it("files replay in FILE order, not the order they were written", () => {
+    const r = seed({ "0002_b.sql": invokerFn("f"), "0001_a.sql": definerFn("f") });
+    expect(r.files).toEqual(["0001_a.sql", "0002_b.sql"]);
+    expect(r.finalMode.get("f")).toBe("INVOKER");
+  });
+
+  it("FAILS CLOSED on a re-create with a different parameter list (an overload it cannot model)", () => {
+    expect(() =>
+      readSecdef(["0001_a.sql", "0002_b.sql"], (f) =>
+        f === "0001_a.sql"
+          ? definerFn("f")
+          : `CREATE OR REPLACE FUNCTION public.f(p uuid, q int) RETURNS boolean LANGUAGE sql AS $$ SELECT true $$;`,
+      ),
+    ).toThrow(/different parameter list/);
+  });
+
+  it("FAILS CLOSED on an unqualified CREATE FUNCTION", () => {
+    expect(() =>
+      readSecdef(["0001_a.sql"], () => `CREATE FUNCTION f() RETURNS int LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;`),
+    ).toThrow(/unqualified/);
   });
 });

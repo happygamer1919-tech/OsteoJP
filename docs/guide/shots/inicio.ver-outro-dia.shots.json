@@ -1,0 +1,15 @@
+{
+  "id": "inicio.ver-outro-dia",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "stabilize": [{ "css": "main h1", "text": "Bom dia, Rita" }],
+  "frames": [
+    {
+      "goto": "/dashboard?date=2026-10-06",
+      "ready": { "css": "[data-testid=\"dashboard-date-nav\"]" },
+      "annotate": [
+        { "kind": "box", "n": 1, "target": { "css": "[data-testid=\"dashboard-date-nav\"]" } }
+      ]
+    }
+  ]
+}

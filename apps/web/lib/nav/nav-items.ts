@@ -129,6 +129,18 @@ const ALL: (NavItem & { capability?: Capability | readonly Capability[] })[] = [
   // apart by inverse conditions, which is the arrangement that drifts.
   { href: "/horarios", label: s["nav.schedule"], capability: "schedule:read" },
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },
+  // ==========================================================================
+  // Ajuda. G1 (owner ruling 2026-09-27, proposal section 7 Q3): the LAST item
+  // for EVERY role.
+  // ==========================================================================
+  // It is appended AFTER Administração, never inserted, so no ruled position
+  // moves: NAV-01 still reads Estatísticas, Horários, Administração by index,
+  // and every role simply gains one entry at the end of what it already sees.
+  //
+  // NO CAPABILITY, ON PURPOSE. /ajuda is the staff guide and every role has
+  // lessons in it; the page itself filters WHICH lessons a role sees (G1-3).
+  // Gating the entry would hide the guide from the people it is written for.
+  { href: "/ajuda", label: s["nav.help"] },
 ];
 
 function roleMayUse(role: Role, capability: Capability | readonly Capability[] | undefined): boolean {

@@ -27,8 +27,31 @@
  *
  * DAY 72, private to this file (scripts/e2e-spec-days-do-not-collide.test.mjs).
  * The spec writes its two appointments and deletes them again.
+ *
+ * ==========================================================================
+ * PU-2b: A LONG NAME ON THE LAST ROW (SR62-PU2b, ruled 2026-09-29)
+ * ==========================================================================
+ * The arms above pass with the fixture's "Maria Filia" and failed with "Maria
+ * Exemplo": at 1024px in week view a name wider than the column wrapped, and on
+ * the last row the second line overflowed its band by 10px. Real names are
+ * usually longer than the fixture's. The ruled fix truncates the name line to
+ * ONE line with an ellipsis and puts the full name in a title attribute.
+ *
+ * So the PU-2b arms book an INVENTED patient this spec creates and removes
+ * itself, never a seeded or real one, at 19:45 on a day of its own (DAY 85,
+ * also private to this file, and more than a week from DAY 72 so neither
+ * week view draws the other's rows). The name is long in its FIRST and LAST
+ * words on purpose: PL-10 shows only those two on the card, so a long middle
+ * name would never reach the screen and the arm would measure nothing.
+ *
+ *   - week, 1024px: CONTROL first, the drawn name is wider than its line (the
+ *     ellipsis is actually exercised); then the line is one line high, it has no
+ *     hidden overflow in its band either way, the title is the full name, and a
+ *     click on it still opens the appointment;
+ *   - day, 1024px: the same name has room and is NOT clipped, so truncation
+ *     costs the day view nothing, and the title is the same full name.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import { lisbonDateTimeToUtc } from "@/lib/scheduling/time";
@@ -38,6 +61,15 @@ import { serviceClient } from "./helpers/confirm-code";
 const DAY = futureWeekdayDate(RUN_DAY_BASE + 72);
 const LATE = randomUUID();
 const EARLIER = randomUUID();
+/** PU-2b: an invented patient with a long first AND last name, created and removed here. */
+const LONG_PATIENT = {
+  id: "00000000-0000-4000-8000-00000062b201",
+  name: "Maximiliana Inventada Exemplo Ficticiamente",
+  /** What PL-10's shortPatientName draws on the card: first and last only. */
+  shown: "Maximiliana Ficticiamente",
+} as const;
+const LONG_DAY = futureWeekdayDate(RUN_DAY_BASE + 85);
+const LONG_APPT = randomUUID();
 const WIDTHS = [
   { width: 1024, height: 768 },
   { width: 1280, height: 800 },
@@ -181,3 +213,140 @@ for (const view of ["day", "week"] as const) {
     });
   }
 }
+
+type NameProbe = {
+  title: string | null;
+  text: string;
+  scrollWidth: number;
+  clientWidth: number;
+  height: number;
+  lineHeight: number;
+  textOverflow: string;
+  whiteSpace: string;
+  bandScrollWidth: number;
+  bandClientWidth: number;
+};
+
+/** The name element's own geometry and style, read on the drawn page. */
+async function probeName(page: Page, id: string): Promise<NameProbe> {
+  const p = await page.evaluate((apptId) => {
+    const btn = document.querySelector(`[data-appointment-id="${apptId}"]`);
+    const name = btn?.querySelector('[data-testid="agenda-card-patient"]');
+    const band = btn?.closest('[data-testid="agenda-start-group"]');
+    if (!(name instanceof HTMLElement) || !(band instanceof HTMLElement)) return null;
+    const cs = getComputedStyle(name);
+    return {
+      title: name.getAttribute("title"),
+      text: (name.textContent ?? "").trim(),
+      scrollWidth: name.scrollWidth,
+      clientWidth: name.clientWidth,
+      height: name.getBoundingClientRect().height,
+      lineHeight: parseFloat(cs.lineHeight),
+      textOverflow: cs.textOverflow,
+      whiteSpace: cs.whiteSpace,
+      bandScrollWidth: band.scrollWidth,
+      bandClientWidth: band.clientWidth,
+    };
+  }, id);
+  if (!p) throw new Error(`appointment ${id}'s name line or its band is not rendered`);
+  // A line height that does not parse would make the one-line check compare with
+  // NaN, which is false and reads as neither a pass nor the defect.
+  if (!Number.isFinite(p.lineHeight) || p.lineHeight <= 0) throw new Error(`the name's line height did not resolve: ${JSON.stringify(p)}`);
+  if (p.clientWidth <= 0) throw new Error(`the name line has no width yet: ${JSON.stringify(p)}`);
+  return p;
+}
+
+test.describe("PU-2b: a long patient name on the last row", () => {
+  async function removeLong(db: ReturnType<typeof serviceClient>): Promise<void> {
+    // Children first, and by PATIENT as well as by id, so a row left by a crashed
+    // run under an earlier RUN_DAY_BASE is removed too.
+    await db.from("appointments").delete().eq("tenant_id", TENANT_A).eq("patient_id", LONG_PATIENT.id);
+    await db.from("patients").delete().eq("tenant_id", TENANT_A).eq("id", LONG_PATIENT.id);
+  }
+
+  test.beforeAll(async () => {
+    const db = serviceClient();
+    const practitioner = await therapistId(db);
+    await removeLong(db);
+    // Upsert, so a patient row a crashed run could not remove is reused, not refused.
+    const patient = await db.from("patients").upsert({
+      id: LONG_PATIENT.id,
+      tenant_id: TENANT_A,
+      full_name: LONG_PATIENT.name,
+      primary_location_id: LOCATION.id,
+    });
+    if (patient.error) throw new Error(`PU-2b patient insert failed: ${patient.error.message}`);
+    const appt = await db.from("appointments").insert({
+      id: LONG_APPT,
+      tenant_id: TENANT_A,
+      patient_id: LONG_PATIENT.id,
+      practitioner_id: practitioner,
+      location_id: LOCATION.id,
+      service_id: SERVICE.id,
+      starts_at: lisbonDateTimeToUtc(LONG_DAY, "19:45").toISOString(),
+      ends_at: lisbonDateTimeToUtc(LONG_DAY, "20:00").toISOString(),
+      status: "scheduled",
+      confirmation_state: "pending",
+    });
+    if (appt.error) throw new Error(`PU-2b appointment insert failed: ${appt.error.message}`);
+  });
+
+  test.afterAll(async () => {
+    await removeLong(serviceClient());
+  });
+
+  async function open(page: Page, view: "day" | "week", testInfo: TestInfo) {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto(`/agenda?view=${view}&date=${LONG_DAY}&location=${LOCATION.id}`);
+    const card = page.locator(`[data-appointment-id="${LONG_APPT}"]`);
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("agenda-closing-label")).toHaveText("20:00");
+    const m = await measure(page, LONG_APPT);
+    const p = await probeName(page, LONG_APPT);
+    const top = Math.max(0, Math.min(m.card.bottom, m.viewportHeight) - 260);
+    const shot = testInfo.outputPath(`pu2b-${view}-1024.png`);
+    await page.screenshot({ path: shot, clip: { x: 0, y: top, width: 1024, height: m.viewportHeight - top } });
+    await testInfo.attach(`pu2b-${view}-1024.png`, { path: shot, contentType: "image/png" });
+    await testInfo.attach(`pu2b-${view}-1024.json`, { body: JSON.stringify({ measure: m, name: p }, null, 2), contentType: "application/json" });
+    return { card, m, p };
+  }
+
+  test("PU-2b: at 1024px, week view, a long name on the 19:45 row is one line with an ellipsis, its full name in the title, and the card opens", async ({
+    page,
+  }, testInfo) => {
+    const { card, m, p } = await open(page, "week", testInfo);
+
+    // CONTROL. The drawn name is wider than its line, so the ellipsis is really
+    // in play. Without this, a name that happened to fit would pass every
+    // assertion below and prove nothing about a long one.
+    expect(p.text, "the card draws PL-10's first and last name").toBe(LONG_PATIENT.shown);
+    expect(p.scrollWidth, `the name is wider than its line: ${JSON.stringify(p)}`).toBeGreaterThan(p.clientWidth);
+
+    expect.soft(p.textOverflow, "the cut end is an ellipsis").toBe("ellipsis");
+    expect.soft(p.whiteSpace, "the name never wraps").toBe("nowrap");
+    expect.soft(p.height, `the name is ONE line high: ${JSON.stringify(p)}`).toBeLessThanOrEqual(p.lineHeight + 1);
+    expect.soft(m.bandOverflow, "the name has no hidden vertical overflow in its band").toBeLessThanOrEqual(0);
+    expect.soft(p.bandScrollWidth, "nor does it push its band sideways").toBeLessThanOrEqual(p.bandClientWidth);
+    expect.soft(insideCard(m.name, m), `the 19:45 name is inside the card: ${JSON.stringify({ name: m.name, card: m.card, radius: m.radius })}`).toBe(true);
+    expect.soft(m.hitIsCard, "the point at the centre of the name is the card").toBe(true);
+    expect.soft(p.title, "the title carries the FULL name, middle names included").toBe(LONG_PATIENT.name);
+
+    await card.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("dialog")).toContainText("Editar marcação");
+  });
+
+  test("PU-2b: at 1024px, day view, the same long name has room and is not cut, with the same title", async ({ page }, testInfo) => {
+    const { card, m, p } = await open(page, "day", testInfo);
+
+    expect(p.text, "the card draws PL-10's first and last name").toBe(LONG_PATIENT.shown);
+    expect.soft(p.scrollWidth, `the name fits its line, so nothing is hidden behind an ellipsis: ${JSON.stringify(p)}`).toBeLessThanOrEqual(p.clientWidth);
+    expect.soft(p.height, `the name is ONE line high: ${JSON.stringify(p)}`).toBeLessThanOrEqual(p.lineHeight + 1);
+    expect.soft(m.bandOverflow, "the name has no hidden vertical overflow in its band").toBeLessThanOrEqual(0);
+    expect.soft(p.title, "the title carries the FULL name").toBe(LONG_PATIENT.name);
+
+    await card.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("dialog")).toContainText("Editar marcação");
+  });
+});

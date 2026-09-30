@@ -1,0 +1,15 @@
+{
+  "id": "agenda.ler-a-agenda",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "stabilize": ["[data-testid=\"agenda-freshness\"] time"],
+  "frames": [
+    {
+      "goto": "/agenda?date=2026-10-06",
+      "ready": { "role": "button", "nameKey": "agenda.newAppointment" },
+      "annotate": [
+        { "kind": "box", "target": { "css": "[data-testid=\"agenda-refresh\"]" } }
+      ]
+    }
+  ]
+}

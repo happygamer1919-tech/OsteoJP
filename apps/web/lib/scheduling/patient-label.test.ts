@@ -21,10 +21,53 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { isPatientWithheld, patientLabel } from "./patient-label";
+import { conflictPatientLabel, isPatientWithheld, patientLabel } from "./patient-label";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = join(HERE, "../../../../packages/db/migrations");
+const WEB = join(HERE, "../..");
+
+describe("the name on a conflict line", () => {
+  it("a booking conflict with a NULL name reads as a booking", () => {
+    expect(conflictPatientLabel({ kind: "therapist", patientName: null })).toBe("Marcação reservada");
+    expect(conflictPatientLabel({ kind: "room", patientName: null })).toBe("Marcação reservada");
+  });
+
+  it("a named booking conflict passes the name through", () => {
+    expect(conflictPatientLabel({ kind: "therapist", patientName: "Maria Silva" })).toBe("Maria Silva");
+    expect(conflictPatientLabel({ kind: "room", patientName: "Maria Silva" })).toBe("Maria Silva");
+  });
+
+  it("availability and time-off lines are not bookings and stay unnamed", () => {
+    // The agenda drawer labels a time-off line by its reason when this is
+    // NULL; a placeholder here would replace the absence reason with a
+    // booking label.
+    expect(conflictPatientLabel({ kind: "time_off", patientName: null })).toBeNull();
+    expect(conflictPatientLabel({ kind: "availability", patientName: null })).toBeNull();
+  });
+
+  it("every surface that renders a conflict line goes through it", () => {
+    // Six lines in four files render a conflict's patient. A seventh written
+    // as `c.patientName` would print a bare time for a booking whose patient
+    // the caller does not read, so the four files are read and pinned.
+    const surfaces = [
+      "app/agenda/appointment-drawer.tsx",
+      "app/agenda/schedule-again-drawer.tsx",
+      "app/notificacoes/pending-requests.tsx",
+      "app/patients/[id]/appointments-list.tsx",
+    ];
+    let uses = 0;
+    for (const rel of surfaces) {
+      const src = readFileSync(join(WEB, rel), "utf8");
+      expect(src, `${rel} reads c.patientName directly`).not.toMatch(/\bc\.patientName\b/);
+      uses += src.split("conflictPatientLabel(c)").length - 1;
+    }
+    // appointment-drawer 1, schedule-again-drawer 1, pending-requests 1,
+    // appointments-list 3 banners x 2 reads. A zero here would mean the
+    // regex above passed over files that render nothing.
+    expect(uses).toBe(9);
+  });
+});
 
 describe("the withheld label", () => {
   it("passes a real name straight through", () => {

@@ -1,0 +1,32 @@
+{
+  "id": "faturacao.faturas-de-um-periodo",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/invoicing",
+      "ready": {
+        "labelKey": "invoicing.filterDateFrom"
+      },
+      "annotate": [
+        {
+          "kind": "box",
+          "n": 1,
+          "target": {
+            "labelKey": "invoicing.filterDateFrom"
+          }
+        },
+        {
+          "kind": "box",
+          "n": 2,
+          "target": {
+            "labelKey": "invoicing.filterStatus"
+          }
+        }
+      ]
+    }
+  ]
+}
