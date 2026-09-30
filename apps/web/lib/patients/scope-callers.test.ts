@@ -140,6 +140,14 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
   "lib/clinical/records.ts#annulRecord#therapistRegistoWriteScope": {
     calls: 1, verdict: "write", why: "Anular: record_annulments is tenant-only.",
   },
+  // 0097: the INSERT policy's therapist arm (a patient they treat or created), asked
+  // in the app so a refusal is a clean not_found; the narrow scope, never the read one.
+  "lib/clinical/records.ts#therapistMayFileFor#therapistPatientScope": {
+    calls: 1, verdict: "write", why: "0097: files a new draft or version only for a patient the therapist treats or created, the clinical_records INSERT policy's therapist arm.",
+  },
+  "lib/clinical/records.ts#mayFileRegistoFor#therapistPatientScope": {
+    calls: 1, verdict: "write", why: "0097: the registo page asks it which write controls to draw; the same test as therapistMayFileFor.",
+  },
   "lib/clinical/storage.ts#createAttachmentUploadUrl#therapistRegistoWriteScope": {
     calls: 1, verdict: "write", why: "Mints an upload onto a draft registo; attachments is tenant-only.",
   },

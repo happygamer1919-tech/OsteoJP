@@ -10,6 +10,7 @@ import {
   canWriteRecord,
   getFichaMedicaTemplate,
   getRecordDetail,
+  mayFileRegistoFor,
   type RecordStatus,
 } from "@/lib/clinical/records";
 import { isImporterSourcedRecord } from "@/lib/clinical/record-origin";
@@ -112,10 +113,24 @@ export default async function RecordDetailPage({
   // and writes to it nowhere; every registo writer refuses outside the pre-0098
   // reach. `canWrite` is that same test, so no control that would refuse is
   // offered. Always true for a role the therapist scope does not narrow.
+  //
+  // 0097: the controls also ask what the writers and the write policies ask, so
+  // a therapist is never offered a Save, a Sign or a Nova versao that would
+  // always be refused. A therapist saves and signs only a draft they authored,
+  // for a patient they treat or created (the UPDATE policy); files a new
+  // version only for a patient they treat or created (the INSERT policy). The
+  // owner writes every registo of the tenant, and `mayFileRegistoFor` answers
+  // yes for anyone but a therapist without a read. Both tests are ANDed, so
+  // neither narrows the other away. The attachments keep their own gate
+  // (`attachmentsReadOnly`, as before): 0097 changes no attachment rule.
   const canWrite = await canWriteRecord(ctx, id);
-  const readOnly = finalized || !can(ctx.role, "clinical_records:author") || !canWrite;
-  const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign") && canWrite;
-  const canVersion = readOnly && can(ctx.role, "clinical_records:author") && canWrite;
+  const mayFile = await mayFileRegistoFor(ctx, record.patientId);
+  const writesThis = canWrite && mayFile && (ctx.role !== "therapist" || record.practitionerId === ctx.userId);
+  const canAuthor = can(ctx.role, "clinical_records:author");
+  const readOnly = finalized || !canAuthor || !writesThis;
+  const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign") && writesThis;
+  const canVersion = finalized && canAuthor && canWrite && mayFile;
+  const attachmentsReadOnly = finalized || !canAuthor;
 
   const anchors = schema
     ? topLevelFields(schema)
@@ -292,7 +307,7 @@ export default async function RecordDetailPage({
           )}
 
           <div className="mt-6">
-            <Attachments recordId={id} items={record.attachments} readOnly={readOnly} />
+            <Attachments recordId={id} items={record.attachments} readOnly={attachmentsReadOnly} />
           </div>
         </div>
       </div>

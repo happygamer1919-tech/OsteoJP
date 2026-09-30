@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   clinicalRecords,
@@ -12,7 +12,7 @@ import { runScoped } from "@/lib/auth/context";
 import { therapistPatientScope, therapistRegistoWriteScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
-import { recordDataHash } from "./records";
+import { assertTherapistMayFileFor, recordDataHash, zeroRowRefusal } from "./records";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -87,6 +87,14 @@ export async function listReviewQueue(ctx: RequestContext): Promise<ReviewQueueI
   assertCan(ctx.role, "clinical_records:review");
   // W10-04: a therapist's review queue is scoped to their own patients too.
   const aiScope = therapistPatientScope(ctx, clinicalRecords.patientId);
+  // 0097: an AI draft a therapist can act on is one with no author yet (the
+  // claim makes them its author) or one they already author. A draft another
+  // therapist has taken is theirs, so it leaves everyone else's queue, and so
+  // does one whose author was set by a direct call to the claim function.
+  const aiAuthor =
+    ctx.role === "therapist"
+      ? or(isNull(clinicalRecords.practitionerId), eq(clinicalRecords.practitionerId, ctx.userId))
+      : undefined;
   const submissionScope = therapistPatientScope(ctx, patientFormSubmissions.patientId);
   return runScoped(ctx, async (tx) => {
     const aiRows = await tx
@@ -106,6 +114,7 @@ export async function listReviewQueue(ctx: RequestContext): Promise<ReviewQueueI
           eq(clinicalRecords.source, "ai_ingested"),
           inArray(clinicalRecords.aiReviewState, ACTIVE_REVIEW_STATES),
           aiScope,
+          aiAuthor,
         ),
       )
       .orderBy(desc(clinicalRecords.updatedAt));
@@ -227,6 +236,12 @@ export async function claimReviewItem(
         (row.data as Record<string, unknown>) ?? {},
       );
 
+      // 0097: an AI draft arrives with no author, and the UPDATE policy admits a
+      // therapist only on a registo they authored. The claim makes the claiming
+      // therapist its author first, in THIS transaction, so the UPDATE below
+      // runs as the author and a failed UPDATE rolls the assignment back too.
+      await takeAiDraftAuthorship(tx, ctx, ref.recordId);
+
       const updated = await tx
         .update(clinicalRecords)
         .set(
@@ -282,6 +297,14 @@ export async function claimReviewItem(
     const { narrative } = partitionNarrativeEdit(
       (sub.payload as Record<string, unknown>) ?? {},
     );
+
+    // 0097: the claim files the registo in the claimer's name for the
+    // submission's patient, so it meets the INSERT policy's test like any other
+    // registo: a therapist files only for a patient they treat or created. The
+    // queue offers a therapist only those, but a submission id can be posted;
+    // refuse any other patient cleanly here, before the INSERT the database
+    // would refuse with a raw 42501 (createDraftRecord asks the same).
+    await assertTherapistMayFileFor(tx, ctx, sub.patientId);
 
     const inserted = await tx
       .insert(clinicalRecords)
@@ -350,6 +373,7 @@ export async function editReviewNarrative(
     const rows = await tx
       .select({
         status: clinicalRecords.status,
+        practitionerId: clinicalRecords.practitionerId,
         source: clinicalRecords.source,
         aiState: clinicalRecords.aiReviewState,
         data: clinicalRecords.data,
@@ -382,9 +406,12 @@ export async function editReviewNarrative(
       .set({ data: merged })
       .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")))
       .returning({ dataHash: recordDataHash() });
-    // Finalized between the read and the write: nothing was saved.
+    // Nothing was saved, and no audit row is written. Either the draft was
+    // finalized between the read and the write (`finalized`), or, from 0097,
+    // row level security admitted no row because the caller is a therapist who
+    // is not its author (`not_author`, `zeroRowRefusal`).
     const stored = saved[0];
-    if (!stored) throw new ClinicalError("finalized");
+    if (!stored) throw zeroRowRefusal(ctx, row.practitionerId, "finalized");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -433,6 +460,7 @@ export async function saveReviewFicha(
     const rows = await tx
       .select({
         status: clinicalRecords.status,
+        practitionerId: clinicalRecords.practitionerId,
         source: clinicalRecords.source,
         aiState: clinicalRecords.aiReviewState,
         formTemplateId: clinicalRecords.formTemplateId,
@@ -484,9 +512,10 @@ export async function saveReviewFicha(
       .set(bindTemplate ? { data: payload, formTemplateId } : { data: payload })
       .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")))
       .returning({ dataHash: recordDataHash() });
-    // Finalized between the read and the write: nothing was saved.
+    // Nothing was saved: finalized between the read and the write, or, from
+    // 0097, a therapist who is not the author (as in editReviewNarrative).
     const stored = saved[0];
-    if (!stored) throw new ClinicalError("finalized");
+    if (!stored) throw zeroRowRefusal(ctx, row.practitionerId, "finalized");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -524,6 +553,7 @@ export async function finalizeReview(
     const rows = await tx
       .select({
         status: clinicalRecords.status,
+        practitionerId: clinicalRecords.practitionerId,
         source: clinicalRecords.source,
         aiState: clinicalRecords.aiReviewState,
         dataHash: recordDataHash(),
@@ -567,9 +597,10 @@ export async function finalizeReview(
           ),
         )
         .returning({ id: clinicalRecords.id });
-      // The row moved between the read and the write (its review state, its
-      // status or its content): nothing was signed.
-      if (updated.length === 0) throw new ClinicalError("stale");
+      // Nothing was signed: the row moved between the read and the write (its
+      // review state, its status or its content), which is `stale`, or, from
+      // 0097, the caller is a therapist who is not its author (`not_author`).
+      if (updated.length === 0) throw zeroRowRefusal(ctx, row.practitionerId, "stale");
     } else {
       // patient (or any non-AI) record materialised from a submission.
       const subs = await tx
@@ -590,9 +621,10 @@ export async function finalizeReview(
           and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft"), sameContent),
         )
         .returning({ id: clinicalRecords.id });
-      // The row moved between the read and the write (its status or its
-      // content): nothing was signed.
-      if (updated.length === 0) throw new ClinicalError("stale");
+      // Nothing was signed: the row moved between the read and the write (its
+      // status or its content), or, from 0097, the caller is a therapist who is
+      // not its author (the claim filed it in the claimer's name).
+      if (updated.length === 0) throw zeroRowRefusal(ctx, row.practitionerId, "stale");
 
       await tx
         .update(patientFormSubmissions)
@@ -624,6 +656,38 @@ export async function finalizeReview(
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
+
+/**
+ * 0097 (packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql,
+ * section 4): make the claiming THERAPIST the author of an unclaimed AI draft.
+ *
+ * The ingestion endpoint writes an AI draft with no author (practitioner_id is
+ * NULL, lib/ingestion/store.ts), and from 0097 the clinical_records UPDATE
+ * policy admits a therapist only on a registo they authored. So the claim takes
+ * authorship first, through `claim_ai_draft_authorship(uuid)`: a SECURITY
+ * DEFINER function that assigns only an unclaimed AI draft of a patient the
+ * caller treats or created, in the caller's tenant, and never replaces an
+ * author. Its answer is not read: the claim's own UPDATE, under RLS, decides,
+ * as it did before.
+ *
+ * ASKED FIRST, because the function arrives with 0097. On a database without
+ * it, naming it raises 42883 and would end the claim; `to_regprocedure` answers
+ * NULL instead, and the claim then runs as it does today, so nothing else is
+ * needed. Only a therapist asks: the owner arm admits the owner on every
+ * registo, and the function assigns nobody else.
+ */
+async function takeAiDraftAuthorship(
+  tx: DbTx,
+  ctx: RequestContext,
+  recordId: string,
+): Promise<void> {
+  if (ctx.role !== "therapist") return;
+  const probe = (await tx.execute(
+    sql`select to_regprocedure('public.claim_ai_draft_authorship(uuid)') is not null as present`,
+  )) as unknown as ReadonlyArray<{ present: boolean }>;
+  if (probe[0]?.present !== true) return;
+  await tx.execute(sql`select public.claim_ai_draft_authorship(${recordId}::uuid)`);
+}
 
 /** Throws unless `recordId` is a queue item currently in `in_review`. */
 async function assertUnderReview(
