@@ -229,11 +229,17 @@ export default async function DashboardPage({
           .from(patients)
           .where(activePatientsOnly),
       ),
-      // 2. Upcoming appointments (KPI 2)
+      // 2. The viewed day's appointments (KPI 2 and Proximas marcacoes).
+      //    GUIDE-F6: this read is the viewed day's own Lisbon window. It was
+      //    today to today+7, then filtered to `date`, so a past day or a day
+      //    more than a week ahead read "Marcacoes hoje 0" and "Sem marcacoes"
+      //    whatever it held. Same call otherwise: the viewer's ctx and no
+      //    practitioner or location, so the role scoping inside
+      //    listAppointments (and RLS) is unchanged.
       canAppointments
         ? listAppointments(ctx, {
-            startUtc: lisbonMidnightUtc(today),
-            endUtc: lisbonMidnightUtc(addDays(today, 7)),
+            startUtc: lisbonMidnightUtc(date),
+            endUtc: lisbonMidnightUtc(addDays(date, 1)),
           })
         : Promise.resolve([] as AgendaAppointment[]),
       // 3. Clinical records count
@@ -273,7 +279,10 @@ export default async function DashboardPage({
       ? `+${newPatientsThisWeek} ${s["dashboard.thisWeekLower"]}`
       : undefined;
 
-  // KPI 2 — rolling 7-day window from today.
+  // KPI 2: the viewed day (GUIDE-F6). The date filter below is kept although
+  // the read is already that day: a `?date=` that passes DATE_RE but is not a
+  // calendar date (2026-02-30) reads the day it rolls over to, and must still
+  // count nothing, as it did before.
   const upcomingAppointments =
     upcomingResult.status === "fulfilled" ? upcomingResult.value : [];
   const active = upcomingAppointments
@@ -387,8 +396,8 @@ export default async function DashboardPage({
   // W4-18 — Próximas marcações: the viewed day's upcoming appointments (time,
   // patient, therapist), reusing the already-fetched `active` list (role-scoped
   // via listAppointments). No new query, no schema. When viewing today, only
-  // appointments still ahead of now; a past/future viewed date shows that day's
-  // appointments that fall inside the fetched today→+7 window.
+  // appointments still ahead of now; any other viewed date shows that day's
+  // appointments, read for that day (GUIDE-F6), up to six.
   const upcomingToday = active
     .filter((a) => {
       if (lisbonParts(new Date(a.startsAt)).date !== date) return false;

@@ -241,7 +241,7 @@ function migrations() {
   return journal.entries.map((e) => ({ tag: e.tag, sql: read(`packages/db/migrations/${e.tag}.sql`) }));
 }
 
-test("the inline rule mirrors the LAST definitions of is_unconfirmed_pedido and appointment_conflicts", () => {
+test("the inline rule mirrors the LAST definitions of is_unconfirmed_pedido and the conflict arms (appointment_conflict_rows since 0095)", () => {
   const defs = (name) => migrations().filter((m) => new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(`).test(m.sql)).map((m) => m.tag);
   const pedido = defs("is_unconfirmed_pedido");
   assert.equal(pedido.at(-1), "0067_followup_packs_and_provenance", `is_unconfirmed_pedido was redefined after 0067 (${pedido.at(-1)}); re-read it before trusting the inline rule`);
@@ -250,10 +250,19 @@ test("the inline rule mirrors the LAST definitions of is_unconfirmed_pedido and 
   assert.match(body, /a\.status = 'scheduled'/);
   assert.match(body, /a\.origin = 'patient_portal'/);
   assert.match(body, /n\.kind = 'appointment_request'/);
+  // 0095 made appointment_conflicts a SECURITY INVOKER wrapper over
+  // appointment_conflict_rows, which now carries the therapist and room arms; so
+  // the arms are read from the last definition of whichever function holds them.
   const conflicts = defs("appointment_conflicts");
-  assert.equal(conflicts.at(-1), "0059_pedido_does_not_block_slot", `appointment_conflicts was redefined after 0059 (${conflicts.at(-1)}); re-read it`);
-  const c59 = migrations().find((m) => m.tag === conflicts.at(-1)).sql;
-  const fn = c59.slice(c59.indexOf("CREATE OR REPLACE FUNCTION public.appointment_conflicts("));
+  assert.equal(conflicts.at(-1), "0095_conflict_name_visibility", `appointment_conflicts was redefined after 0095 (${conflicts.at(-1)}); re-read it`);
+  const c95 = migrations().find((m) => m.tag === conflicts.at(-1)).sql;
+  const wrapper = c95.slice(c95.indexOf("CREATE OR REPLACE FUNCTION public.appointment_conflicts("), c95.indexOf("$$;", c95.indexOf("CREATE OR REPLACE FUNCTION public.appointment_conflicts(")));
+  assert.match(wrapper, /public\.appointment_conflict_rows\s*\(/, "appointment_conflicts no longer delegates to appointment_conflict_rows; re-read it");
+  assert.doesNotMatch(wrapper, /a\.practitioner_id = p_practitioner/, "appointment_conflicts holds an arm of its own again; re-read it");
+  const rows = defs("appointment_conflict_rows");
+  assert.equal(rows.at(-1), "0095_conflict_name_visibility", `appointment_conflict_rows was redefined after 0095 (${rows.at(-1)}); re-read it`);
+  const r95 = migrations().find((m) => m.tag === rows.at(-1)).sql;
+  const fn = r95.slice(r95.indexOf("CREATE OR REPLACE FUNCTION public.appointment_conflict_rows("));
   assert.match(fn, /a\.starts_at < p_ends\s+AND a\.ends_at > p_starts\s+AND a\.practitioner_id = p_practitioner/, "the therapist arm moved");
   assert.match(fn, /AND btrim\(p_room\) <> ''[\s\S]*AND a\.location_id = p_location\s+AND lower\(a\.room\) = lower\(btrim\(p_room\)\)/, "the room arm moved");
 });

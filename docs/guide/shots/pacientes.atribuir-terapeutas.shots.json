@@ -1,0 +1,46 @@
+{
+  "id": "pacientes.atribuir-terapeutas",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/patients/00000000-0000-0000-0000-00000000c301",
+      "do": [
+        {
+          "scroll": {
+            "role": "button",
+            "nameKey": "patients.careTeamAdd"
+          }
+        }
+      ],
+      "ready": {
+        "role": "button",
+        "nameKey": "patients.careTeamAdd"
+      },
+      "annotate": [
+        {
+          "kind": "box",
+          "n": 1,
+          "target": {
+            "labelKey": "patients.careTeamPick",
+            "in": {
+              "css": "[data-testid=\"ficha-care-team\"]"
+            }
+          }
+        },
+        {
+          "kind": "arrow",
+          "n": 2,
+          "target": {
+            "role": "button",
+            "nameKey": "patients.careTeamAdd"
+          },
+          "from": "right"
+        }
+      ]
+    }
+  ]
+}

@@ -42,7 +42,7 @@
  * application ships, in `packages/db/tests/pack-derived-balance.db.test.ts`.
  * A second, more fragile copy would add flake without adding proof.
  *
- * Never touches the real Maria João Silva; uses the synthetic seed patient
+ * Never touches the retired production QA patient; uses the synthetic seed patient
  * PATIENTS.ana. Each run creates a UNIQUE pack, so its instance is isolated from
  * prior runs (deterministic under re-runs / parallel days).
  */

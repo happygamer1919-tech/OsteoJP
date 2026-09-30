@@ -1,0 +1,21 @@
+{
+  "id": "pacotes.atribuir-pacote",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "stabilize": ["[data-testid=\"agenda-freshness\"] time"],
+  "frames": [
+    {
+      "goto": "/agenda?date=2026-10-06",
+      "do": [
+        { "click": { "role": "button", "nameKey": "agenda.newAppointment" } },
+        { "select": { "labelKey": "appointment.pack" }, "value": "00000000-0000-0000-0000-00000000c211" },
+        { "scroll": { "labelKey": "pack.batchCount" } }
+      ],
+      "ready": { "labelKey": "pack.batchCount" },
+      "annotate": [
+        { "kind": "box", "n": 2, "target": { "labelKey": "appointment.pack" } },
+        { "kind": "box", "n": 3, "target": { "labelKey": "pack.batchCount" } }
+      ]
+    }
+  ]
+}

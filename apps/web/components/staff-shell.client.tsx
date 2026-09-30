@@ -5,6 +5,7 @@ import {
   CalendarClock,
   CalendarCog,
   ChartColumnBig,
+  CircleHelp,
   ClipboardCheck,
   FileText,
   Home,
@@ -99,6 +100,10 @@ const NAV_ICON: Record<string, { icon: LucideIcon; className: string }> = {
   // Neutral on purpose. Administração is the one destination that is not a
   // subject area, and a hue would claim it was.
   "/admin": { icon: Settings, className: "text-v2-gray-700" },
+  // Ajuda (G1): the staff guide. A question mark is the glyph people already
+  // read as "help", and brown is an unused, measured hue that stays quiet at
+  // the bottom of the list rather than competing with the work surfaces.
+  "/ajuda": { icon: CircleHelp, className: "text-v2-brown-700" },
 };
 
 // Heritage is OsteoJP-tenant-only and opt-in (SPEC §2.2 / §6). No tenant heritage

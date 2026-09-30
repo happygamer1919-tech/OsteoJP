@@ -1,0 +1,42 @@
+{
+  "id": "pacientes.marcacoes-na-ficha",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/patients/00000000-0000-0000-0000-00000000c301",
+      "ready": {
+        "role": "tab",
+        "nameKey": "patients.tabAppointments"
+      },
+      "annotate": [
+        {
+          "kind": "arrow",
+          "n": 1,
+          "target": {
+            "role": "tab",
+            "nameKey": "patients.tabAppointments"
+          },
+          "from": "below-right"
+        }
+      ]
+    },
+    {
+      "do": [
+        {
+          "click": {
+            "role": "tab",
+            "nameKey": "patients.tabAppointments"
+          }
+        }
+      ],
+      "ready": {
+        "role": "button",
+        "nameKey": "patients.scheduleAgain"
+      }
+    }
+  ]
+}

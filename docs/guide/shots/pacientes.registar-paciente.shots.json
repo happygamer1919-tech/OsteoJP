@@ -1,0 +1,30 @@
+{
+  "id": "pacientes.registar-paciente",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "frames": [
+    {
+      "goto": "/patients",
+      "ready": { "role": "link", "nameKey": "patients.new" },
+      "annotate": [
+        { "kind": "arrow", "n": 1, "target": { "role": "link", "nameKey": "patients.new" }, "from": { "390": "below-right", "desktop": "below-right" } }
+      ]
+    },
+    {
+      "do": [{ "click": { "role": "link", "nameKey": "patients.new" } }],
+      "ready": { "fieldKey": "patients.fieldFullName" },
+      "annotate": [
+        { "kind": "box", "n": 2, "target": { "fieldKey": "patients.fieldFullName" } },
+        { "kind": "box", "n": 3, "target": { "fieldKey": "patients.fieldNif" } },
+        { "kind": "box", "n": 4, "target": { "fieldKey": "patients.fieldPhone" } }
+      ]
+    },
+    {
+      "do": [{ "scroll": { "role": "button", "nameKey": "patients.create" } }],
+      "ready": { "role": "button", "nameKey": "patients.create" },
+      "annotate": [
+        { "kind": "arrow", "n": 7, "target": { "role": "button", "nameKey": "patients.create" }, "from": "below-right" }
+      ]
+    }
+  ]
+}

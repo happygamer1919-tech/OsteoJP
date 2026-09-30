@@ -36,9 +36,11 @@ import {
  * function handed to something else that could call it unwrapped. Comments are
  * stripped first, so prose naming an action cannot trip it.
  *
- * THE COUNT IS PINNED PER FILE, 28 IN ALL: the call sites re-derived by the
- * SKEW-01 map and its critic. A call that silently disappears reddens the count
- * as surely as one that goes around the wrapper.
+ * THE COUNT IS PINNED PER FILE, 29 IN ALL: the 28 call sites re-derived by the
+ * SKEW-01 map and its critic, plus PR 2's drawer loader (loadAppointmentDrawer,
+ * one more wrapped call in appointment-drawer.tsx; every read it serves on open
+ * keeps its own wrapped call for the reads after open). A call that silently
+ * disappears reddens the count as surely as one that goes around the wrapper.
  *
  * COMPLETENESS. The import graph is walked from /agenda's own route files
  * (page, layout, error, loading), following relative and `@/` imports the way
@@ -54,7 +56,7 @@ import {
 type Entry = { file: string; calls: number; formActionFallback?: string[] };
 
 const REGISTER: Entry[] = [
-  { file: "app/agenda/appointment-drawer.tsx", calls: 18 },
+  { file: "app/agenda/appointment-drawer.tsx", calls: 19 },
   { file: "app/agenda/appointment-notes-board.tsx", calls: 3 },
   { file: "app/agenda/availability-panel.tsx", calls: 1 },
   { file: "app/agenda/block-time-dialog.tsx", calls: 2 },
@@ -121,8 +123,8 @@ describe("SKEW-01 register: every server-action call on /agenda goes through run
     });
   }
 
-  it("the register holds the 28 call sites of the SKEW-01 map", () => {
-    expect(REGISTER.reduce((n, e) => n + e.calls, 0)).toBe(28);
+  it("the register holds the 28 call sites of the SKEW-01 map plus PR 2's drawer loader", () => {
+    expect(REGISTER.reduce((n, e) => n + e.calls, 0)).toBe(29);
   });
 
   it("every module reachable from /agenda that imports a server action is registered", () => {
