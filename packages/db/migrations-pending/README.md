@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0096_migration_staging_imported_entity_idx.sql` | `0096` | 2026-09-27 | `db/0097-staging-imported-entity-index`, held (Tier C, ruled `0097` per the SOLO dispatch of 2026-09-27; GREEN applies it only after `0094`, `0095` and `0096`). One partial btree index on `migration_staging_rows (imported_entity_id, entity_type)` for `importerSourcedRecordSql`. Its checks are `scripts/db/precheck-0097-staging-imported-entity-idx.sql` and `postcheck-0097-staging-imported-entity-idx.sql`, and `scripts/migration-0097-staging-index.test.mjs` pins its shape; both checks pin this file's sha256, so the promotion must not change a byte. At promotion its journal `when` must be strictly greater than `0096`'s |
+| `NEXT-AFTER-0097_migration_staging_imported_entity_idx.sql` | `0097` (the registo write policies, #1475). Ruled **`0098`** by the owner on 2026-09-30 (the fifth renumbering; it was `0097`, after `0096`, under the 2026-09-27 queue, and parked as `NEXT-AFTER-0096` until then). At promotion its journal `when` must be strictly greater than `0097`'s; its journal `idx` is set at promotion. **The file's own header still reads "RULED NUMBER 0097" and names `0096` (the conflict check) as what it follows, and its index COMMENT text begins `0097.`**: stale on purpose, because the rename changed no byte (sha256 `198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0`) and both checks pin that sha256 | 2026-09-27 | `db/0097-staging-imported-entity-index` (#1469), held (Tier C; GREEN applies it only after `0096` CARE-02a and `0097` the registo write policies are applied and merged, in that order). One partial btree index on `migration_staging_rows (imported_entity_id, entity_type)` for `importerSourcedRecordSql`. Its checks are `scripts/db/precheck-0098-staging-imported-entity-idx.sql` and `postcheck-0098-staging-imported-entity-idx.sql`, and `scripts/migration-0098-staging-index.test.mjs` pins its shape. Apply doc: `docs/migration-apply-0098.md` |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
@@ -43,7 +43,7 @@ was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 table below. Those two promotions emptied the table above. The `0094` file was parked
 there later and has since been promoted too, and so has the `0095` conflict-check file (see the
 Promoted table), so on main the table is empty again. On this branch it holds one row, the
-`0097` staging index, parked later. Other branches hold their own pending files, which
+`0098` staging index, parked later. Other branches hold their own pending files, which
 this table does not list: it is only accurate for the branch you read it on.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-27 (the fourth time).** It is

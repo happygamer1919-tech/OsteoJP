@@ -1,16 +1,16 @@
 -- ============================================================================
--- 0097 MIGRATION STAGING INDEX: POST-CHECK. READ ONLY. Read the profile row
+-- 0098 MIGRATION STAGING INDEX: POST-CHECK. READ ONLY. Read the profile row
 -- last: 13 OK / 0 VACUOUS / 0 FAIL on a ledger that holds a row with a
 -- target, 12 OK / 1 VACUOUS / 0 FAIL on one that holds none. Any FAIL is a
 -- STOP.
 --
 -- Runs after `packages/db/scripts/verified-migrate.mjs` has applied
--- 0097_migration_staging_imported_entity_idx: ONE btree index,
+-- 0098_migration_staging_imported_entity_idx: ONE btree index,
 -- migration_staging_imported_entity_idx, on public.migration_staging_rows
 -- (imported_entity_id, entity_type) WHERE imported_entity_id IS NOT NULL, with
 -- a COMMENT, and nothing else. Every verdict is a catalogue read, except the
 -- ledger profile (12), which is a count. What the index DOES to a plan is the
--- rehearsal's to prove (docs/migration-apply-0097.md), because a plan on
+-- rehearsal's to prove (docs/migration-apply-0098.md), because a plan on
 -- production depends on production's statistics and this file pins only what
 -- the migration itself fixes.
 --
@@ -35,7 +35,7 @@
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
 --        -v journal_rows_before=<pre> -v staging_indexes_before=<pre>
 --        -v staging_indexes_md5=<pre>
---        -c "begin read only" -f scripts/db/postcheck-0097-staging-imported-entity-idx.sql -c "rollback"
+--        -c "begin read only" -f scripts/db/postcheck-0098-staging-imported-entity-idx.sql -c "rollback"
 -- ============================================================================
 
 \if :{?journal_rows_before}
@@ -61,7 +61,7 @@
 \timing off
 
 \echo ''
-\echo '=== 0097 STAGING INDEX POST-CHECK - read the profile row last (13 OK, or 12 OK and 1 VACUOUS on an empty ledger) ==='
+\echo '=== 0098 STAGING INDEX POST-CHECK - read the profile row last (13 OK, or 12 OK and 1 VACUOUS on an empty ledger) ==='
 
 WITH t AS (
   SELECT to_regclass('public.migration_staging_rows') AS tbl
@@ -111,7 +111,7 @@ WITH t AS (
        FROM ix WHERE relname <> 'migration_staging_imported_entity_idx')             AS others_md5_now,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations)                          AS journal_rows_now,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations
-      WHERE hash = '198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0')  AS has_0097
+      WHERE hash = '198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0')  AS has_0098
 ), p AS (
   /* The ledger profile: a count, and no value of any row. */
   SELECT (SELECT count(*)::int FROM public.migration_staging_rows
@@ -153,10 +153,10 @@ WITH t AS (
   (10, '10. every OTHER index on the table is byte-identical (one md5 over name, definition and state)',
       coalesce(j.others_md5_now, 'absent'), :'staging_indexes_md5',
       CASE WHEN j.others_md5_now = :'staging_indexes_md5' THEN 'OK' ELSE 'FAIL' END),
-  (11, '11. 0097 is in the journal by hash, and the journal moved by exactly one',
-      j.has_0097::text || ' by hash, journal ' || j.journal_rows_now::text,
+  (11, '11. 0098 is in the journal by hash, and the journal moved by exactly one',
+      j.has_0098::text || ' by hash, journal ' || j.journal_rows_now::text,
       '1 by hash, journal ' || (:'journal_rows_before'::int + 1)::text,
-      CASE WHEN j.has_0097 = 1 AND j.journal_rows_now = :'journal_rows_before'::int + 1 THEN 'OK' ELSE 'FAIL' END),
+      CASE WHEN j.has_0098 = 1 AND j.journal_rows_now = :'journal_rows_before'::int + 1 THEN 'OK' ELSE 'FAIL' END),
   (12, '12. PROFILE: ledger rows the index holds (imported_entity_id set)',
       p.with_target::text, '> 0 is OK; 0 is VACUOUS',
       CASE WHEN p.with_target > 0 THEN 'OK' ELSE 'VACUOUS' END)

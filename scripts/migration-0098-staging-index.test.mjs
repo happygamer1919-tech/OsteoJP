@@ -1,4 +1,5 @@
-// 0097 (migration staging index, HELD): the migration's shape, and the two
+// 0098 (migration staging index, HELD; ruled 0098 on 2026-09-30, the fifth
+// renumbering, it was 0097): the migration's shape, and the two
 // check files agree with it, byte for byte where it matters.
 //
 // WHAT THIS PROVES, statically, with no database:
@@ -20,7 +21,7 @@
 //     count, either way: a forbidden word in a comment is not a statement,
 //     and a green arm below proves the rule is not so tight that prose trips
 //     it;
-//   * the pre-check's "0097 is absent, by hash" and the post-check's "0097 is
+//   * the pre-check's "0098 is absent, by hash" and the post-check's "0098 is
 //     in the journal, by hash" pin the sha256 of the migration as it stands.
 //     A promotion changes no byte, so this is the hash the journal carries;
 //   * the pre-check expects the index's name absent (verdict 3) and no index
@@ -39,14 +40,14 @@
 //     of both files in turn and require each copy red on that part; a GREEN
 //     arm requires a reflowed, re-indented, commented copy green;
 //   * the migration is read WHERE IT STANDS: parked in migrations-pending
-//     now, or promoted into migrations/ as 0097. Both, or neither, is red;
+//     now, or promoted into migrations/ as 0098. Both, or neither, is red;
 //   * THE APPLY DOCUMENT QUOTES THE REAL FILES: every sha256 a block of
-//     docs/migration-apply-0097.md sets is the sha256 of the file on disk it
+//     docs/migration-apply-0098.md sets is the sha256 of the file on disk it
 //     is compared with; stages 1 and 2 compare every file they run or read
 //     before they load the production credentials, and stage 1 compares
 //     every file stage 2 reads, so a post-check edited on the branch stops
 //     the sitting BEFORE the apply; the facts table quotes each file's real
-//     sha256; and docs/migration-apply-0097.sha256 is the document's sha256.
+//     sha256; and docs/migration-apply-0098.sha256 is the document's sha256.
 //
 // Each rule is a function of the texts it reads. The tests run it on the
 // committed files; the CONTROLS run the SAME function on a seeded wrong copy
@@ -54,7 +55,7 @@
 // on a copy that must stay green.
 //
 // WHAT IT DOES NOT PROVE: that any of it runs, or what the planner does with
-// it. That is the rehearsal's job (docs/migration-apply-0097.md).
+// it. That is the rehearsal's job (docs/migration-apply-0098.md).
 //
 // Run: pnpm test:scripts   (node --test, wired into the REQUIRED CI quality job)
 
@@ -69,20 +70,20 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
 
 /** The migration parked, and the same bytes after the promotion renames it. */
-const PENDING_PATH = "packages/db/migrations-pending/NEXT-AFTER-0096_migration_staging_imported_entity_idx.sql";
-const PROMOTED_PATH = "packages/db/migrations/0097_migration_staging_imported_entity_idx.sql";
+const PENDING_PATH = "packages/db/migrations-pending/NEXT-AFTER-0097_migration_staging_imported_entity_idx.sql";
+const PROMOTED_PATH = "packages/db/migrations/0098_migration_staging_imported_entity_idx.sql";
 
 /** Where the migration stands: exactly one of the two places. `exists` answers for a repo path. */
 function locateMigration(exists) {
   const found = [PENDING_PATH, PROMOTED_PATH].filter((p) => exists(p));
   assert.equal(found.length, 1,
-    `the 0097 migration must stand in exactly one of ${PENDING_PATH} and ${PROMOTED_PATH}; found ${found.length}`);
+    `the 0098 migration must stand in exactly one of ${PENDING_PATH} and ${PROMOTED_PATH}; found ${found.length}`);
   return found[0];
 }
 
 const MIGRATION_PATH = locateMigration((p) => existsSync(join(ROOT, p)));
-const PRE = "scripts/db/precheck-0097-staging-imported-entity-idx.sql";
-const POST = "scripts/db/postcheck-0097-staging-imported-entity-idx.sql";
+const PRE = "scripts/db/precheck-0098-staging-imported-entity-idx.sql";
+const POST = "scripts/db/postcheck-0098-staging-imported-entity-idx.sql";
 
 const migration = read(MIGRATION_PATH);
 const pre = read(PRE);
@@ -306,12 +307,12 @@ const codeOf = (sql) => lexPostgres(sql).stripped;
 
 function assertChecksPinTheHash(migrationText, preText, postText) {
   const want = sha256(migrationText);
-  const prePins = [...codeOf(preText).matchAll(/hash\s*=\s*'([0-9a-f]{64})'\s*\)\s+AS\s+has_0097/g)].map((m) => m[1]);
-  assert.equal(prePins.length, 1, "the pre-check must pin 0097's hash exactly once, in code");
-  assert.equal(prePins[0], want, "the migration changed and the pre-check's has_0097 pin did not");
-  const postPins = [...codeOf(postText).matchAll(/hash\s*=\s*'([0-9a-f]{64})'\s*\)\s+AS\s+has_0097/g)].map((m) => m[1]);
-  assert.equal(postPins.length, 1, "the post-check must pin 0097's hash exactly once, in code");
-  assert.equal(postPins[0], want, "the migration changed and the post-check's has_0097 pin did not");
+  const prePins = [...codeOf(preText).matchAll(/hash\s*=\s*'([0-9a-f]{64})'\s*\)\s+AS\s+has_0098/g)].map((m) => m[1]);
+  assert.equal(prePins.length, 1, "the pre-check must pin 0098's hash exactly once, in code");
+  assert.equal(prePins[0], want, "the migration changed and the pre-check's has_0098 pin did not");
+  const postPins = [...codeOf(postText).matchAll(/hash\s*=\s*'([0-9a-f]{64})'\s*\)\s+AS\s+has_0098/g)].map((m) => m[1]);
+  assert.equal(postPins.length, 1, "the post-check must pin 0098's hash exactly once, in code");
+  assert.equal(postPins[0], want, "the migration changed and the post-check's has_0098 pin did not");
 }
 
 // ---------------------------------------------------------------------------
@@ -514,7 +515,7 @@ function preCheckAsReviewed(migrationText) {
       indexes_md5: "(SELECT md5(string_agg(relname || ':' || def || ':' || indisvalid::text || ':' || " +
         "indisready::text || ':' || indislive::text, ';' ORDER BY relname)) FROM ix)",
       journal_rows: "(SELECT count(*)::int FROM drizzle.__drizzle_migrations)",
-      has_0097: hasHash(sha256(migrationText)),
+      has_0098: hasHash(sha256(migrationText)),
     },
     p: {
       ledger_rows: "(SELECT count(*)::int FROM public.migration_staging_rows)",
@@ -545,14 +546,14 @@ function preCheckAsReviewed(migrationText) {
         ...is0014("def_batch", "CREATE INDEX migration_staging_tenant_batch_idx ON public.migration_staging_rows USING btree (tenant_id, batch_id)")],
       8: ["'8. the status index is 0014''s, valid, ready and live'",
         ...is0014("def_status", "CREATE INDEX migration_staging_tenant_status_idx ON public.migration_staging_rows USING btree (tenant_id, status)")],
-      9: ["'9. 0097 is absent from the journal, by hash'", "j.has_0097::text", "'0'",
-        "CASE WHEN j.has_0097 = 0 THEN 'OK' ELSE 'FAIL' END"],
+      9: ["'9. 0098 is absent from the journal, by hash'", "j.has_0098::text", "'0'",
+        "CASE WHEN j.has_0098 = 0 THEN 'OK' ELSE 'FAIL' END"],
       10: ["'10. PROFILE: ledger rows the index will hold (imported_entity_id set)'",
         "CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE p.with_target::text || ' of ' || p.ledger_rows::text || " +
           "' ledger rows, ' || p.with_target_records::text || ' of them clinical_record' END",
         "'> 0 is OK; 0 is VACUOUS'",
         "CASE WHEN j.tbl IS NULL THEN 'FAIL' WHEN p.with_target > 0 THEN 'OK' ELSE 'VACUOUS' END"],
-      11: ["'journal_rows_before'", "j.journal_rows::text", "'94'", "CASE WHEN j.journal_rows = 94 THEN 'OK' ELSE 'FAIL' END"],
+      11: ["'journal_rows_before'", "j.journal_rows::text", "'95'", "CASE WHEN j.journal_rows = 95 THEN 'OK' ELSE 'FAIL' END"],
       12: ["'staging_indexes_before'", "CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE j.indexes::text END", "'4'",
         "CASE WHEN j.tbl IS NOT NULL AND j.indexes = 4 THEN 'OK' ELSE 'FAIL' END"],
       13: ["'staging_indexes_md5'", "coalesce(j.indexes_md5, 'absent')", "'32 hex characters'",
@@ -608,7 +609,7 @@ function postCheckAsReviewed(migrationText) {
       others_md5_now: "(SELECT md5(string_agg(relname || ':' || pg_get_indexdef(indexrelid) || ':' || indisvalid::text || " +
         `':' || indisready::text || ':' || indislive::text, ';' ORDER BY relname)) FROM ix WHERE relname <> '${N}')`,
       journal_rows_now: "(SELECT count(*)::int FROM drizzle.__drizzle_migrations)",
-      has_0097: hasHash(sha256(migrationText)),
+      has_0098: hasHash(sha256(migrationText)),
     },
     p: {
       with_target: "(SELECT count(*)::int FROM public.migration_staging_rows WHERE imported_entity_id IS NOT NULL)",
@@ -641,10 +642,10 @@ function postCheckAsReviewed(migrationText) {
       10: ["'10. every OTHER index on the table is byte-identical (one md5 over name, definition and state)'",
         "coalesce(j.others_md5_now, 'absent')", ":'staging_indexes_md5'",
         "CASE WHEN j.others_md5_now = :'staging_indexes_md5' THEN 'OK' ELSE 'FAIL' END"],
-      11: ["'11. 0097 is in the journal by hash, and the journal moved by exactly one'",
-        "j.has_0097::text || ' by hash, journal ' || j.journal_rows_now::text",
+      11: ["'11. 0098 is in the journal by hash, and the journal moved by exactly one'",
+        "j.has_0098::text || ' by hash, journal ' || j.journal_rows_now::text",
         "'1 by hash, journal ' || (:'journal_rows_before'::int + 1)::text",
-        "CASE WHEN j.has_0097 = 1 AND j.journal_rows_now = :'journal_rows_before'::int + 1 THEN 'OK' ELSE 'FAIL' END"],
+        "CASE WHEN j.has_0098 = 1 AND j.journal_rows_now = :'journal_rows_before'::int + 1 THEN 'OK' ELSE 'FAIL' END"],
       12: ["'12. PROFILE: ledger rows the index holds (imported_entity_id set)'", "p.with_target::text",
         "'> 0 is OK; 0 is VACUOUS'", "CASE WHEN p.with_target > 0 THEN 'OK' ELSE 'VACUOUS' END"],
     },
@@ -879,21 +880,22 @@ test("CONTROL comment: a COMMENT on another index is red", () => {
 });
 
 test("CONTROL pin: a one-byte edit to the migration no longer matches the checks' hash pins", () => {
+  // The migration's own COMMENT text still begins '0097.': the fifth renumbering renamed the file and changed no byte.
   const edited = plant(migration, "'0097. Serves", "'0097.  Serves");
-  red(() => assertChecksPinTheHash(edited, pre, post), /pre-check's has_0097 pin did not/);
+  red(() => assertChecksPinTheHash(edited, pre, post), /pre-check's has_0098 pin did not/);
 });
 
 test("CONTROL pin: a stale pre-check pin is red although the current hash is parked in a line comment", () => {
   const current = sha256(migration);
   const stale = plant(pre, `hash = '${current}')`, `hash = '${"0".repeat(64)}')`);
-  const parked = plant(stale, "BEGIN READ ONLY;", `-- hash = '${current}') AS has_0097\nBEGIN READ ONLY;`);
-  red(() => assertChecksPinTheHash(migration, parked, post), /pre-check's has_0097 pin did not/);
+  const parked = plant(stale, "BEGIN READ ONLY;", `-- hash = '${current}') AS has_0098\nBEGIN READ ONLY;`);
+  red(() => assertChecksPinTheHash(migration, parked, post), /pre-check's has_0098 pin did not/);
 });
 
 test("CONTROL pin: a stale post-check pin is red", () => {
   const current = sha256(migration);
   const stale = plant(post, `hash = '${current}')`, `hash = '${"f".repeat(64)}')`);
-  red(() => assertChecksPinTheHash(migration, pre, stale), /post-check's has_0097 pin did not/);
+  red(() => assertChecksPinTheHash(migration, pre, stale), /post-check's has_0098 pin did not/);
 });
 
 test("CONTROL comment md5: a COMMENT text edit no longer matches the post-check's md5", () => {
@@ -947,11 +949,11 @@ test("CONTROL pre-check: a verdict 4 that also says OK after target_keyed = 0 is
   red(() => assertPreCheckExpectsItAbsent(migration, edited), /does not expect no index keying the column/);
 });
 
-test("CONTROL pre-check: verdict 9 (has_0097 = 0) and the journal carry (= 94) loosened to >= 0 are each red", () => {
+test("CONTROL pre-check: verdict 9 (has_0098 = 0) and the journal carry (= 95) loosened to >= 0 are each red", () => {
   const want = preCheckAsReviewed(migration);
-  const nine = plant(pre, "WHEN j.has_0097 = 0 THEN", "WHEN j.has_0097 >= 0 THEN");
+  const nine = plant(pre, "WHEN j.has_0098 = 0 THEN", "WHEN j.has_0098 >= 0 THEN");
   red(() => assertCheckAsReviewed("the pre-check", nine, want), /verdict 9's verdict is not the reviewed text/);
-  const carry = plant(pre, "WHEN j.journal_rows = 94 THEN", "WHEN j.journal_rows >= 0 THEN");
+  const carry = plant(pre, "WHEN j.journal_rows = 95 THEN", "WHEN j.journal_rows >= 0 THEN");
   red(() => assertCheckAsReviewed("the pre-check", carry, want), /verdict 11's verdict is not the reviewed text/);
 });
 
@@ -1106,8 +1108,8 @@ test("GREEN: both checks reflowed, re-indented and commented stay green on every
 });
 
 // ---------------------------------------------------------------------------
-// THE APPLY DOCUMENT. docs/migration-apply-0097.md pins five files by sha256
-// in the blocks GREEN pastes, and docs/migration-apply-0097.sha256 pins the
+// THE APPLY DOCUMENT. docs/migration-apply-0098.md pins five files by sha256
+// in the blocks GREEN pastes, and docs/migration-apply-0098.sha256 pins the
 // document. A pin that does not match the file on disk halts the sitting,
 // and where it halts matters: a file stage 2 reads and stage 1 never compared
 // halts AFTER production is written. So, statically:
@@ -1121,8 +1123,8 @@ test("GREEN: both checks reflowed, re-indented and commented stay green on every
 //     other 64-hex string, and the sidecar is the document's sha256.
 // ---------------------------------------------------------------------------
 
-const DOC_PATH = "docs/migration-apply-0097.md";
-const SIDECAR_PATH = "docs/migration-apply-0097.sha256";
+const DOC_PATH = "docs/migration-apply-0098.md";
+const SIDECAR_PATH = "docs/migration-apply-0098.sha256";
 const VM_PATH = "packages/db/scripts/verified-migrate.mjs";
 const GUARD_PATH = "scripts/assert-production-target.mjs";
 const fileSha = (p) => createHash("sha256").update(readFileSync(join(ROOT, p))).digest("hex");
@@ -1182,7 +1184,7 @@ function assertDocPins(text, real) {
       assert.ok(c.path in real, `${stage} compares ${c.path}, which is not a file the document pins`);
       assert.equal(vars.get(c.name), real[c.path], `${c.name} in ${stage} is not the sha256 of ${c.path}`);
     }
-    const until = stage === "STAGE 0" ? lines.findIndex((l) => l.includes("> /tmp/0097-head.sha")) : lines.indexOf(CREDENTIALS);
+    const until = stage === "STAGE 0" ? lines.findIndex((l) => l.includes("> /tmp/0098-head.sha")) : lines.indexOf(CREDENTIALS);
     assert.ok(until >= 0, `${stage} has no ${stage === "STAGE 0" ? "head record" : "credentials line"} to be compared before`);
     for (const p of STAGE_PINS[stage]) {
       assert.ok(compares.some((c) => c.path === p && c.at < until),
@@ -1219,7 +1221,7 @@ function assertNoOtherHash(text, real) {
   assert.deepEqual(unknown, [], `the apply document quotes a sha256 that is no pinned file's: ${unknown}`);
 }
 
-/** The sidecar is exactly `shasum -a 256 docs/migration-apply-0097.md`. */
+/** The sidecar is exactly `shasum -a 256 docs/migration-apply-0098.md`. */
 function assertSidecar(text, side) {
   assert.equal(side, `${sha256(text)}  ${DOC_PATH}\n`, `${SIDECAR_PATH} is not the sha256 of ${DOC_PATH}`);
 }

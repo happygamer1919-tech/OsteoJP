@@ -1,10 +1,12 @@
--- 0097 MIGRATION STAGING INDEX: PRE-CHECK. READ ONLY. It writes nothing and cannot.
+-- 0098 MIGRATION STAGING INDEX: PRE-CHECK. READ ONLY. It writes nothing and cannot.
 --
--- For docs/migration-apply-0097.md, which pins this file's sha256. The
+-- For docs/migration-apply-0098.md, which pins this file's sha256. The
 -- migration is packages/db/migrations-pending/
--- NEXT-AFTER-0096_migration_staging_imported_entity_idx.sql until it is
--- promoted to 0097 by a rename; it is HELD, and it is applied only after
--- 0094, 0095 and 0096.
+-- NEXT-AFTER-0097_migration_staging_imported_entity_idx.sql until it is
+-- promoted to 0098 by a rename; it is HELD, and it is applied only after
+-- 0096 and 0097, in that order. It was ruled 0098 on 2026-09-30 (the fifth
+-- renumbering; it was 0097), and the migration's own header and COMMENT
+-- still say 0097, because a rename changes no byte.
 --
 -- THE SHAPE is 0093's and 0094's: check | observed | expected | verdict,
 -- verdict LAST so a stage can match it anchored to the end of the line. The
@@ -24,7 +26,7 @@
 -- look the table up with to_regclass and FAIL on its NULL as well, so no row
 -- can count zero matches of nothing and call that absent.
 --
--- 0097 CREATES ONE INDEX AND COMMENTS ON IT. This file proves the starting
+-- 0098 CREATES ONE INDEX AND COMMENTS ON IT. This file proves the starting
 -- point, and pins only what the migrations on main and the ruled queue fix:
 --   0      the transaction is READ ONLY;
 --   1      public.migration_staging_rows exists, an ordinary table;
@@ -40,7 +42,7 @@
 --          NOT EXISTS cannot see one of those, and would build a duplicate;
 --   5-8    the four indexes 0014 made are there, each exactly as Postgres 17
 --          renders 0014's definition, and each valid, ready and live;
---   9      0097 is absent from the journal, BY HASH. The hash is the sha256 of
+--   9      0098 is absent from the journal, BY HASH. The hash is the sha256 of
 --          the pending file as it stands; a promotion changes no byte, so it
 --          is the hash the journal will carry;
 --   10     PROFILE: the ledger rows the index will hold (imported_entity_id
@@ -48,22 +50,22 @@
 --          the index is then built over nothing and no probe can show it
 --          working. It is a count and nothing else; no ledger value is read
 --          out;
---   CARRY  journal_rows_before = 94: main's journal after 0093 is 91 rows,
---          and 0094, 0095 and 0096 each add one. A different number means the
---          queue is not where 0097 was ruled to follow, and the sitting stops;
+--   CARRY  journal_rows_before = 95: production's journal after 0095 is 93
+--          rows, and 0096 and 0097 each add one. A different number means the
+--          queue is not where 0098 was ruled to follow, and the sitting stops;
 --   CARRY  staging_indexes_before = 4. The post-check wants it + 1;
 --   CARRY  staging_indexes_md5: one md5 over every index on the table (name,
 --          definition, valid, ready, live). The post-check recomputes it over
---          every index except 0097's; nothing else on the table may move.
+--          every index except 0098's; nothing else on the table may move.
 --
--- IT PINS NOTHING IT CANNOT KNOW. 0094's, 0095's and 0096's bytes can still
--- change in their own reviews and their journal `when`s are set only at their
+-- IT PINS NOTHING IT CANNOT KNOW. 0096's and 0097's bytes can still change
+-- in their own reviews and their journal `when`s are set only at their
 -- promotions, so no hash or `when` of theirs is read here; the row count above
 -- is what the ruled order fixes. The ledger's size is reported, never pinned.
 --
 -- Run (the file opens and rolls back its own READ ONLY transaction):
 --   psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 \
---        -f scripts/db/precheck-0097-staging-imported-entity-idx.sql
+--        -f scripts/db/precheck-0098-staging-imported-entity-idx.sql
 
 \pset pager off
 \timing off
@@ -72,7 +74,7 @@
 BEGIN READ ONLY;
 
 \echo ''
-\echo '=== 0097 STAGING INDEX PRE-CHECK - read the profile row last (14 OK, or 13 OK and 1 VACUOUS on an empty ledger) ==='
+\echo '=== 0098 STAGING INDEX PRE-CHECK - read the profile row last (14 OK, or 13 OK and 1 VACUOUS on an empty ledger) ==='
 
 WITH t AS (
   SELECT to_regclass('public.migration_staging_rows') AS tbl
@@ -119,7 +121,7 @@ WITH t AS (
        FROM ix)                                                                      AS indexes_md5,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations)                          AS journal_rows,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations
-      WHERE hash = '198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0')  AS has_0097
+      WHERE hash = '198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0')  AS has_0098
 ), p AS (
   /* The ledger profile: counts only, and no value of any row. */
   SELECT
@@ -168,16 +170,16 @@ WITH t AS (
       'CREATE INDEX migration_staging_tenant_status_idx ON public.migration_staging_rows USING btree (tenant_id, status)',
       CASE WHEN j.def_status = 'CREATE INDEX migration_staging_tenant_status_idx ON public.migration_staging_rows USING btree (tenant_id, status)'
            THEN 'OK' ELSE 'FAIL' END),
-  (9, '9. 0097 is absent from the journal, by hash', j.has_0097::text, '0',
-      CASE WHEN j.has_0097 = 0 THEN 'OK' ELSE 'FAIL' END),
+  (9, '9. 0098 is absent from the journal, by hash', j.has_0098::text, '0',
+      CASE WHEN j.has_0098 = 0 THEN 'OK' ELSE 'FAIL' END),
   (10, '10. PROFILE: ledger rows the index will hold (imported_entity_id set)',
       CASE WHEN j.tbl IS NULL THEN 'table absent'
            ELSE p.with_target::text || ' of ' || p.ledger_rows::text || ' ledger rows, '
                 || p.with_target_records::text || ' of them clinical_record' END,
       '> 0 is OK; 0 is VACUOUS',
       CASE WHEN j.tbl IS NULL THEN 'FAIL' WHEN p.with_target > 0 THEN 'OK' ELSE 'VACUOUS' END),
-  (11, 'journal_rows_before', j.journal_rows::text, '94',
-      CASE WHEN j.journal_rows = 94 THEN 'OK' ELSE 'FAIL' END),
+  (11, 'journal_rows_before', j.journal_rows::text, '95',
+      CASE WHEN j.journal_rows = 95 THEN 'OK' ELSE 'FAIL' END),
   (12, 'staging_indexes_before', CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE j.indexes::text END, '4',
       CASE WHEN j.tbl IS NOT NULL AND j.indexes = 4 THEN 'OK' ELSE 'FAIL' END),
   (13, 'staging_indexes_md5', coalesce(j.indexes_md5, 'absent'), '32 hex characters',
