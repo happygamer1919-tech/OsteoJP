@@ -1,11 +1,13 @@
-// 0099 (the clinical_records write policies follow the permission matrix,
-// HELD): the migration, its three check files and the app's claim agree with
-// each other, byte for byte where it matters.
+// 0097 (the clinical_records write policies follow the permission matrix,
+// HELD; it was 0099 until the fifth renumbering, owner and lead, 2026-09-30,
+// and this file was registo-writes-0099.test.mjs): the migration, its three
+// check files and the app's claim agree with each other, byte for byte where
+// it matters.
 //
 // WHAT THIS PROVES, statically, with no database:
 //   * COMMENTS NEVER COUNT. Every rule that reads SQL reads its code with block
 //     and line comments removed, so a pin parked in a comment satisfies no rule;
-//   * the pre-check's "0099 is absent, by hash" and the post-check's "0099 is
+//   * the pre-check's "0097 is absent, by hash" and the post-check's "0097 is
 //     present and newest, by hash" pin the sha256 of the migration as it
 //     stands. A promotion changes no byte, so this is the hash the journal will
 //     carry; an edit to the migration that forgets a check goes red here;
@@ -21,19 +23,29 @@
 //     is SECURITY DEFINER with search_path pinned, owned by postgres, revoked
 //     from PUBLIC, anon and service_role and granted to authenticated only;
 //   * the app's claim (apps/web/lib/clinical/review.ts) probes for and calls the
-//     function by the exact signature the migration creates;
-//   * the pre-check's "author cannot write" count, which stage 1 requires to
-//     read 0, leaves out a draft in an ACTIVE OWNER's name: the owner arm, which
-//     0099 does not touch, still admits its author, so counting it would halt a
-//     sitting over a draft its author can finish;
-//   * the apply document runs the files it pins: every SHA0099, SHA, SHAPRE,
+//     function by the exact signature the migration creates. THE APP HALF IS ITS
+//     OWN PR and merges to main FIRST (owner ruling Q2 (b)), so until main is
+//     merged in here review.ts is main's, which names the function nowhere: that
+//     state is accepted only while the migration is still parked, only when the
+//     file carries no trace of the function (never a half-built claim), and only
+//     with the apply document's stage 0 refusing a head without the app half.
+//     From the promotion on, the app half must be here;
+//   * the pre-check's Q3 verdict (13) is the gate the owner ruled: OK only when
+//     the real drafts read at risk 0 AND the six planted rows read exactly their
+//     classes, through ONE classification shared by both; its "author writes"
+//     arm spares a draft in an ACTIVE OWNER's name (the owner arm, which 0097
+//     does not touch, still admits its author, so counting it would halt a
+//     sitting over a draft its author can finish); and the transaction sets
+//     row_security = off before any read, so a session that does not bypass row
+//     level security errors instead of reading a filtered zero;
+//   * the apply document runs the files it pins: every SHA0097, SHA, SHAPRE,
 //     SHAPOST and SHABEHAVIOUR assignment in its blocks is the sha256 of the file
 //     it names, and its sidecar is the sha256 of the document itself;
 //   * the migration is read WHERE IT STANDS: parked in migrations-pending now,
-//     or promoted into migrations/ as 0099. Both present, or neither, is red;
-//   * THE FILES DESCRIBE THE DATABASE WITH 0099. The apply document, the
+//     or promoted into migrations/ as 0097. Both present, or neither, is red;
+//   * THE FILES DESCRIBE THE DATABASE WITH 0097. The apply document, the
 //     behaviour check and the DB-gated suite carry no BEFORE column, no
-//     expected FAIL set before the apply, and no arm about the policies 0099
+//     expected FAIL set before the apply, and no arm about the policies 0097
 //     replaces.
 //
 // Each rule is a function of the texts it reads. The tests run it on the
@@ -41,7 +53,7 @@
 // require it to go red with that rule's own message.
 //
 // WHAT IT DOES NOT PROVE: that any of it runs. That is the rehearsal's job
-// (docs/migration-apply-0099.md), and the DB-gated suite's
+// (docs/migration-apply-0097.md), and the DB-gated suite's
 // (packages/db/tests/clinical-records-write-matrix.db.test.ts).
 //
 // The ACTOR line of the behaviour check is C4's rule and is checked there:
@@ -59,24 +71,24 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
 
-const PENDING_PATH = "packages/db/migrations-pending/NEXT-AFTER-0098_clinical_records_write_matrix.sql";
-const PROMOTED_PATH = "packages/db/migrations/0099_clinical_records_write_matrix.sql";
+const PENDING_PATH = "packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql";
+const PROMOTED_PATH = "packages/db/migrations/0097_clinical_records_write_matrix.sql";
 
 /** Where the migration stands: exactly one of the two places. `exists` answers for a repo path. */
 function locateMigration(exists) {
   const found = [PENDING_PATH, PROMOTED_PATH].filter((p) => exists(p));
   assert.equal(found.length, 1,
-    `the 0099 migration must stand in exactly one of ${PENDING_PATH} and ${PROMOTED_PATH}; found ${found.length}`);
+    `the 0097 migration must stand in exactly one of ${PENDING_PATH} and ${PROMOTED_PATH}; found ${found.length}`);
   return found[0];
 }
 
 const MIGRATION_PATH = locateMigration((p) => existsSync(join(ROOT, p)));
-const PRE = "scripts/db/precheck-0099-registo-writes.sql";
-const POST = "scripts/db/postcheck-0099-registo-writes.sql";
+const PRE = "scripts/db/precheck-0097-registo-writes.sql";
+const POST = "scripts/db/postcheck-0097-registo-writes.sql";
 const BEHAVIOUR = "scripts/db/behaviour-registo-writes-readonly.sql";
 const REVIEW = "apps/web/lib/clinical/review.ts";
-const DOC = "docs/migration-apply-0099.md";
-const SIDECAR = "docs/migration-apply-0099.sha256";
+const DOC = "docs/migration-apply-0097.md";
+const SIDECAR = "docs/migration-apply-0097.sha256";
 const DBTEST = "packages/db/tests/clinical-records-write-matrix.db.test.ts";
 
 const migration = read(MIGRATION_PATH);
@@ -123,15 +135,15 @@ const AUTHOR_AND_SEES =
 
 function assertChecksPinMigrationHash(migrationText, preText, postText) {
   const want = sha256(migrationText);
-  const prePins = [...statementsOf(preText).matchAll(/hash = '([0-9a-f]{64})'\)\s+AS has_0099/g)].map((m) => m[1]);
-  assert.equal(prePins.length, 1, "the pre-check must pin 0099's hash exactly once");
-  assert.equal(prePins[0], want, "the migration changed and the pre-check's has_0099 pin did not");
+  const prePins = [...statementsOf(preText).matchAll(/hash = '([0-9a-f]{64})'\)\s+AS has_0097/g)].map((m) => m[1]);
+  assert.equal(prePins.length, 1, "the pre-check must pin 0097's hash exactly once");
+  assert.equal(prePins[0], want, "the migration changed and the pre-check's has_0097 pin did not");
   const postCode = statementsOf(postText);
   const postPins = [
-    ...postCode.matchAll(/hash = '([0-9a-f]{64})'\)\s+AS has_0099/g),
+    ...postCode.matchAll(/hash = '([0-9a-f]{64})'\)\s+AS has_0097/g),
     ...postCode.matchAll(/newest_hash = '([0-9a-f]{64})'/g),
   ].map((m) => m[1]);
-  assert.equal(postPins.length, 3, "the post-check must pin 0099's hash in has_0099 and twice in verdict 14");
+  assert.equal(postPins.length, 3, "the post-check must pin 0097's hash in has_0097 and twice in verdict 14");
   for (const p of postPins) assert.equal(p, want, "the migration changed and a post-check hash pin did not");
 }
 
@@ -198,6 +210,27 @@ function assertClaimFunctionIsNarrow(migrationText) {
   assert.deepEqual(grants, ["authenticated"], "the claim function is granted to someone other than authenticated alone");
 }
 
+/**
+ * Where the app half stands on this branch: "present" once main, which carries
+ * it (Q2 (b)), is merged in; "absent" while review.ts is still main's from
+ * before it. Any mention of the function counts as present, so a half-built
+ * claim is judged by the full rule below and never passes as "absent".
+ */
+const appHalfState = (reviewText) => (reviewText.includes(FN) ? "present" : "absent");
+
+/** The line stage 0 of the apply document carries, refusing a head without the app half. */
+const STAGE0_APP_HALF =
+  `grep -qF "to_regprocedure('public.${FN}(uuid)')" apps/web/lib/clinical/review.ts || { echo "STOP: the app half (Q2 (b)) is not on this head`;
+
+function assertAppHalfWhereItMustBe(migrationPath, reviewText, docText) {
+  const stage0 = docText.split("## STAGE 0")[1]?.split("\n## ")[0] ?? "";
+  assert.ok(stage0.includes(STAGE0_APP_HALF),
+    "the apply document's stage 0 does not refuse a head without the app half");
+  if (appHalfState(reviewText) === "present") return;
+  assert.notEqual(migrationPath, PROMOTED_PATH,
+    "0097 is promoted but the app half is not on this branch: main, which carries it, is merged in before the promotion");
+}
+
 function assertAppCallsTheFunction(migrationText, reviewText) {
   assert.ok(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${FN}\\(p_record_id uuid\\)`).test(statementsOf(migrationText)),
     "the migration does not create the claim function the app calls");
@@ -211,7 +244,7 @@ function assertAppCallsTheFunction(migrationText, reviewText) {
 function assertDocPinsTheFiles(docText, texts) {
   const want = {
     SHA: sha256(texts.migration),
-    SHA0099: sha256(texts.migration),
+    SHA0097: sha256(texts.migration),
     SHAPRE: sha256(texts.pre),
     SHAPOST: sha256(texts.post),
     SHABEHAVIOUR: sha256(texts.behaviour),
@@ -224,22 +257,22 @@ function assertDocPinsTheFiles(docText, texts) {
 }
 
 /**
- * The files describe the database with 0099. Each pattern is a shape they must
- * not carry: a BEFORE or "Before 0099" column, an expected FAIL set or profile
+ * The files describe the database with 0097. Each pattern is a shape they must
+ * not carry: a BEFORE or "Before 0097" column, an expected FAIL set or profile
  * before the apply, a mutation named as the replaced policy, an arm about the
- * policies 0099 replaces.
+ * policies 0097 replaces.
  */
 const PRE_APPLY_PATTERNS = [
   [DOC, /\|\s*BEFORE\s*\|/, "a BEFORE column"],
-  [DOC, /Before 0099\s*\|/, "a Before 0099 column"],
+  [DOC, /Before 0097\s*\|/, "a Before 0097 column"],
   [DOC, /\|\s*differs(\s|\|)/, "a differs cell"],
   [DOC, /XFAIL|failing on exactly/, "an expected FAIL set before the apply"],
   [DOC, /OR'ed back|0045's arm\)/, "a mutation named as the replaced policy"],
   [DOC, /[0-9]+ OK \/ [0-9]+ VACUOUS \/ [1-9][0-9]* FAIL/, "a profile with FAILs"],
-  [BEHAVIOUR, /WITHOUT 0099/, "a profile without 0099"],
+  [BEHAVIOUR, /WITHOUT 0097/, "a profile without 0097"],
   [BEHAVIOUR, /[0-9]+ OK \/ [0-9]+ VACUOUS \/ [1-9][0-9]* FAIL/, "a profile with FAILs"],
   [DBTEST, /as 0045 left it/, "an arm asserting the replaced policies"],
-  [DBTEST, /const want = w99 \? 0 : 1/, "an arm asserting the replaced policies"],
+  [DBTEST, /const want = w97 \? 0 : 1/, "an arm asserting the replaced policies"],
 ];
 
 function assertNoPreApplyProfile(texts) {
@@ -249,18 +282,54 @@ function assertNoPreApplyProfile(texts) {
 }
 
 /**
- * The owner exclusion in the pre-check's "author cannot write": an active
- * owner of the draft's own tenant, matched on the draft's author.
+ * The owner exclusion in the pre-check's classification (the `k` CTE): a draft
+ * whose author is an active owner of the draft's own tenant is one its author
+ * still writes ("author writes"), never "author cannot write".
  */
 const OWNER_EXCLUSION =
-  /AND NOT EXISTS \(\s*SELECT 1 FROM public\.users o\s+JOIN public\.roles ro ON ro\.id = o\.role_id AND ro\.slug = 'owner'\s+WHERE o\.id = c\.practitioner_id AND o\.tenant_id = c\.tenant_id AND o\.is_active\)/;
+  /WHEN EXISTS \(\s*SELECT 1 FROM public\.users o\s+JOIN public\.roles ro ON ro\.id = o\.role_id AND ro\.slug = 'owner'\s+WHERE o\.id = d\.practitioner_id AND o\.tenant_id = d\.tenant_id AND o\.is_active\)/;
+
+/** The pre-check's one classification: the `k` CTE, up to the `j` CTE. */
+const classificationOf = (code) => code.match(/\), k AS \(([\s\S]*?)\), j AS \(/)?.[1] ?? null;
 
 function assertAuthorCannotWriteSparesOwners(preText) {
-  const code = statementsOf(preText);
-  const m = code.match(/', author cannot write ' \|\| \(SELECT count\(\*\) FROM public\.clinical_records c([\s\S]*?)FROM \(SELECT count/);
-  assert.ok(m, "the pre-check's author cannot write count was not found");
-  assert.match(m[1], OWNER_EXCLUSION,
+  const k = classificationOf(statementsOf(preText));
+  assert.ok(k, "the pre-check's classification (the k CTE) was not found");
+  const writes = k.match(/THEN 'other'([\s\S]*?)THEN 'author writes'/);
+  assert.ok(writes, "the pre-check's classification has no author writes arm after the unauthored ones");
+  assert.match(writes[1], OWNER_EXCLUSION,
     "the pre-check's author cannot write counts a draft in an active owner's name, which its author still writes");
+}
+
+/** The six planted rows and the class each must read, as verdict 13 compares them. */
+const Q3_CONTROL =
+  "c_gone=author cannot write, c_other=other, c_owner=author writes, c_pending=ai pending, c_review=ai in review, c_treats=author writes";
+
+/**
+ * Q3, the owner's ruling: the sitting proceeds only when the at-risk count reads
+ * 0, and the count is proven by a control. One classification (k) reads the real
+ * drafts and the planted rows; the at-risk classes are exactly the three the
+ * ruling names; the verdict is OK only on 0 at risk AND the exact control; and
+ * row_security is off before the first read.
+ */
+function assertQ3GateAndControl(preText) {
+  const code = statementsOf(preText);
+  const d = code.match(/\), d AS \(([\s\S]*?)\), k AS \(/)?.[1];
+  assert.ok(d, "the pre-check's row set (the d CTE) was not found");
+  assert.match(d, /FROM public\.clinical_records c\s+WHERE c\.status = 'draft'/, "the pre-check's row set is not every unsigned registo");
+  for (const kind of ["c_other", "c_review", "c_gone", "c_pending", "c_owner", "c_treats"]) {
+    assert.ok(d.includes(`'${kind}'`), `the pre-check's control does not plant ${kind}`);
+  }
+  assert.ok(classificationOf(code)?.includes("FROM d"), "the classification does not read the row set the control rides in");
+  assert.match(code, /WHERE kind = 'real' AND cls IN \('ai in review', 'other', 'author cannot write'\)\)\s+AS q3_at_risk/,
+    "the at-risk count is not exactly the real drafts in the three at-risk classes");
+  const verdict = code.match(/'13\. Q3:[\s\S]*?THEN 'OK' ELSE 'FAIL' END FROM j/)?.[0];
+  assert.ok(verdict, "the pre-check has no verdict 13 (Q3)");
+  assert.ok(verdict.includes(`CASE WHEN q3_at_risk = 0\n             AND q3_control = '${Q3_CONTROL}'`),
+    "verdict 13 is not OK only on 0 at risk AND the exact planted control");
+  const off = code.indexOf("SET LOCAL row_security = off;");
+  assert.ok(off >= 0 && off > code.indexOf("BEGIN READ ONLY;") && off < code.indexOf("WITH pol AS"),
+    "the pre-check does not turn row_security off inside its transaction before the first read");
 }
 
 function assertSidecarPinsDoc(docText, sidecarText) {
@@ -291,8 +360,9 @@ test("the claim function carries every guard, is SECURITY DEFINER, owned by post
   assertClaimFunctionIsNarrow(migration);
 });
 
-test("the app's claim probes for and calls the function the migration creates, right before its UPDATE", () => {
-  assertAppCallsTheFunction(migration, review);
+test(`the app's claim probes for and calls the function the migration creates, right before its UPDATE [app half on this branch: ${appHalfState(review)}]`, () => {
+  assertAppHalfWhereItMustBe(MIGRATION_PATH, review, doc);
+  if (appHalfState(review) === "present") assertAppCallsTheFunction(migration, review);
 });
 
 test("the apply document's blocks pin the sha256 of every file they run, and its sidecar pins the document", () => {
@@ -304,7 +374,11 @@ test("the pre-check's author cannot write leaves out a draft in an active owner'
   assertAuthorCannotWriteSparesOwners(pre);
 });
 
-test("no pre-apply profile is published: the document, the behaviour check and the DB-gated suite describe only the database with 0099", () => {
+test("the pre-check's verdict 13 is the Q3 gate: 0 at risk AND the planted control, one classification, row_security off", () => {
+  assertQ3GateAndControl(pre);
+});
+
+test("no pre-apply profile is published: the document, the behaviour check and the DB-gated suite describe only the database with 0097", () => {
   assertNoPreApplyProfile({ [DOC]: doc, [BEHAVIOUR]: behaviour, [DBTEST]: dbtest });
 });
 
@@ -332,7 +406,7 @@ const red = (fn, message) => assert.throws(fn, { name: "AssertionError", message
 
 test("CONTROL hash: a one-byte edit to the migration no longer matches the checks' pins", () => {
   const edited = plant(migration, "RETURN n = 1;", "RETURN n  = 1;");
-  red(() => assertChecksPinMigrationHash(edited, pre, post), /pre-check's has_0099 pin did not/);
+  red(() => assertChecksPinMigrationHash(edited, pre, post), /pre-check's has_0097 pin did not/);
 });
 
 test("CONTROL hash: a stale post-check pin is red although the pre-check is current", () => {
@@ -343,9 +417,9 @@ test("CONTROL hash: a stale post-check pin is red although the pre-check is curr
 
 test("CONTROL hash: a pin parked in a comment does not count", () => {
   const current = sha256(migration);
-  const parked = plant(pre, `WHERE hash = '${current}')  AS has_0099`, `WHERE hash = '${"0".repeat(64)}')  AS has_0099`)
-    .replace("BEGIN READ ONLY;", `-- WHERE hash = '${current}')  AS has_0099\nBEGIN READ ONLY;`);
-  red(() => assertChecksPinMigrationHash(migration, parked, post), /pre-check's has_0099 pin did not/);
+  const parked = plant(pre, `WHERE hash = '${current}')  AS has_0097`, `WHERE hash = '${"0".repeat(64)}')  AS has_0097`)
+    .replace("BEGIN READ ONLY;", `-- WHERE hash = '${current}')  AS has_0097\nBEGIN READ ONLY;`);
+  red(() => assertChecksPinMigrationHash(migration, parked, post), /pre-check's has_0097 pin did not/);
 });
 
 test("CONTROL body: a changed claim body is red against the md5 the post-check pins", () => {
@@ -410,25 +484,68 @@ test("CONTROL claim: an OR in the claim function's WHERE, an INVOKER header, or 
     `GRANT EXECUTE ON FUNCTION public.${FN}(uuid) TO authenticated, anon;`)), /granted to someone other than authenticated alone/);
 });
 
+/**
+ * The app half's claim as it merges from its own PR, planted onto whatever
+ * review.ts this branch holds, so the controls below run on either side of
+ * main being merged in. It is the probe, the call and the one line that calls
+ * them before the claim's UPDATE, which is all the rule reads.
+ */
+const APP_HALF_CLAIM = [
+  "async function takeAiDraftAuthorship(tx, ctx, recordId) {",
+  "  if (ctx.role !== \"therapist\") return;",
+  `  const probe = await tx.execute(sql\`select to_regprocedure('public.${FN}(uuid)') is not null as present\`);`,
+  "  if (probe[0]?.present !== true) return;",
+  `  await tx.execute(sql\`select public.${FN}(\${recordId}::uuid)\`);`,
+  "}",
+  "      await takeAiDraftAuthorship(tx, ctx, ref.recordId);",
+  "      const updated = await tx",
+  "        .update(clinicalRecords)",
+].join("\n");
+const withAppHalf = appHalfState(review) === "present" ? review : `${review}\n${APP_HALF_CLAIM}\n`;
+
 test("CONTROL app: a claim that no longer takes authorship before its UPDATE is red", () => {
-  const edited = plant(review, "      await takeAiDraftAuthorship(tx, ctx, ref.recordId);\n", "");
+  assertAppCallsTheFunction(migration, withAppHalf);
+  const edited = plant(withAppHalf, "      await takeAiDraftAuthorship(tx, ctx, ref.recordId);\n", "");
   red(() => assertAppCallsTheFunction(migration, edited), /does not take authorship immediately before/);
-  const renamed = plant(review, `select public.${FN}(\${recordId}::uuid)`, "select public.claim_something_else(${recordId}::uuid)");
+  const renamed = plant(withAppHalf, `select public.${FN}(\${recordId}::uuid)`, "select public.claim_something_else(${recordId}::uuid)");
   red(() => assertAppCallsTheFunction(migration, renamed), /does not call the function/);
 });
 
+test("CONTROL app half: promoted without it, or a stage 0 that does not refuse a head without it, is red", () => {
+  const mainReview = review.split(FN).join("claim_function_named_nowhere");
+  assert.equal(appHalfState(mainReview), "absent");
+  assertAppHalfWhereItMustBe(PENDING_PATH, mainReview, doc);
+  red(() => assertAppHalfWhereItMustBe(PROMOTED_PATH, mainReview, doc), /promoted but the app half is not on this branch/);
+  const noGuard = plant(doc, STAGE0_APP_HALF, "true || { echo \"STOP: nothing");
+  red(() => assertAppHalfWhereItMustBe(PENDING_PATH, withAppHalf, noGuard), /does not refuse a head without the app half/);
+  const halfBuilt = `${mainReview}\n// calls public.${FN} somewhere\n`;
+  assert.equal(appHalfState(halfBuilt), "present", "a half-built claim is judged by the full rule, never as absent");
+  red(() => assertAppCallsTheFunction(migration, halfBuilt), /does not probe for the function/);
+});
+
 test("CONTROL owner drafts: an author cannot write count without the owner exclusion, or with an inactive owner spared, is red", () => {
-  const bare = plant(pre, OWNER_EXCLUSION, "");
+  const bare = plant(pre, OWNER_EXCLUSION, "WHEN false");
   red(() => assertAuthorCannotWriteSparesOwners(bare), /counts a draft in an active owner's name/);
-  const inactive = plant(pre, "AND o.tenant_id = c.tenant_id AND o.is_active)", "AND o.tenant_id = c.tenant_id)");
+  const inactive = plant(pre, "AND o.tenant_id = d.tenant_id AND o.is_active)", "AND o.tenant_id = d.tenant_id)");
   red(() => assertAuthorCannotWriteSparesOwners(inactive), /counts a draft in an active owner's name/);
 });
 
-test("CONTROL pre-apply: a BEFORE column, an expected FAIL set, or a pre-0099 arm is red", () => {
+test("CONTROL Q3: a verdict that passes on a count alone, an at-risk class dropped, a planted row removed, or row_security left on, is red", () => {
+  const noControl = plant(pre, `CASE WHEN q3_at_risk = 0\n             AND q3_control = '${Q3_CONTROL}'`, "CASE WHEN q3_at_risk = 0\n             AND true");
+  red(() => assertQ3GateAndControl(noControl), /not OK only on 0 at risk AND the exact planted control/);
+  const narrow = plant(pre, "cls IN ('ai in review', 'other', 'author cannot write'))", "cls IN ('author cannot write'))");
+  red(() => assertQ3GateAndControl(narrow), /not exactly the real drafts in the three at-risk classes/);
+  const noGone = plant(pre, /\s+\('c_gone',[^\n]*\n/, "\n");
+  red(() => assertQ3GateAndControl(noGone), /does not plant c_gone/);
+  const rlsOn = plant(pre, "SET LOCAL row_security = off;", "SET LOCAL row_security = on;");
+  red(() => assertQ3GateAndControl(rlsOn), /does not turn row_security off/);
+});
+
+test("CONTROL pre-apply: a BEFORE column, an expected FAIL set, or a pre-0097 arm is red", () => {
   const texts = { [DOC]: doc, [BEHAVIOUR]: behaviour, [DBTEST]: dbtest };
   red(() => assertNoPreApplyProfile({ ...texts, [DOC]: `${doc}\n| Arm | BEFORE | AFTER |\n` }), /a BEFORE column/);
   red(() => assertNoPreApplyProfile({ ...texts, [DOC]: `${doc}\nXFAIL="U1 "\n` }), /an expected FAIL set/);
-  red(() => assertNoPreApplyProfile({ ...texts, [BEHAVIOUR]: `${behaviour}\n--   WITHOUT 0099: x\n` }), /a profile without 0099/);
+  red(() => assertNoPreApplyProfile({ ...texts, [BEHAVIOUR]: `${behaviour}\n--   WITHOUT 0097: x\n` }), /a profile without 0097/);
   red(() => assertNoPreApplyProfile({ ...texts, [DOC]: `${doc}\nreads 1 OK / 0 VACUOUS / 1 FAIL\n` }), /a profile with FAILs/);
   red(() => assertNoPreApplyProfile({ ...texts, [DBTEST]: `${dbtest}\n// reads as 0045 left it\n` }), /asserting the replaced policies/);
 });
@@ -439,5 +556,5 @@ test("CONTROL doc: a stale block pin, or a stale sidecar, is red", () => {
   red(() => assertDocPinsTheFiles(stale, { migration, pre, post, behaviour }), /SHAPRE is not the sha256/);
   const edited = `${doc}\n`;
   red(() => assertSidecarPinsDoc(edited, sidecar), /sidecar is not the sha256/);
-  red(() => assertDocPinsTheFiles(doc, { migration: `${migration} `, pre, post, behaviour }), /SHA(0099)? is not the sha256/);
+  red(() => assertDocPinsTheFiles(doc, { migration: `${migration} `, pre, post, behaviour }), /SHA(0097)? is not the sha256/);
 });

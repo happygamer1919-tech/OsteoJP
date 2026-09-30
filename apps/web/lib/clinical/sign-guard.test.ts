@@ -11,9 +11,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //   - an UPDATE that matched no row signed nothing and writes no audit row;
 //   - a save hands back the fingerprint of what it stored.
 // The same holds for Revisao Consulta's finalize, on both of its branches.
-// 0099: every row here is the signer's own (practitionerId "thera-1"), so a
-// write that matched no row is the race these arms pin; a therapist who is not
-// the author gets `not_author` instead (records.write-guards.test.ts).
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
@@ -110,14 +107,14 @@ beforeEach(() => {
 
 describe("signAndLockRecord: signs only the content the signer saw", () => {
   it("a fingerprint that differs from the stored one is refused as stale, before any write", async () => {
-    const { updates } = makeTx([[{ practitionerId: "thera-1", status: "draft", dataHash: OTHER }]], []);
+    const { updates } = makeTx([[{ status: "draft", dataHash: OTHER }]], []);
     expect(await codeOf(signAndLockRecord(therapist, "rec-1", LOADED))).toBe("stale");
     expect(updates).toHaveLength(0);
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
   it("the sign UPDATE carries the fingerprint and the draft status in its own WHERE", async () => {
-    const { updates } = makeTx([[{ practitionerId: "thera-1", status: "draft", dataHash: LOADED }]], [[{ id: "rec-1" }]]);
+    const { updates } = makeTx([[{ status: "draft", dataHash: LOADED }]], [[{ id: "rec-1" }]]);
     expect(await codeOf(signAndLockRecord(therapist, "rec-1", LOADED))).toBe("resolved");
     expect(updates).toHaveLength(1);
     const q = rendered(updates[0]!.where);
@@ -130,13 +127,13 @@ describe("signAndLockRecord: signs only the content the signer saw", () => {
   });
 
   it("an UPDATE that matched no row (something moved in between) signs nothing and writes no audit", async () => {
-    makeTx([[{ practitionerId: "thera-1", status: "draft", dataHash: LOADED }]], [[]]);
+    makeTx([[{ status: "draft", dataHash: LOADED }]], [[]]);
     expect(await codeOf(signAndLockRecord(therapist, "rec-1", LOADED))).toBe("stale");
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
   it("a record that is no longer a draft is still reported as finalized", async () => {
-    makeTx([[{ practitionerId: "thera-1", status: "signed", dataHash: LOADED }]], []);
+    makeTx([[{ status: "signed", dataHash: LOADED }]], []);
     expect(await codeOf(signAndLockRecord(therapist, "rec-1", LOADED))).toBe("finalized");
   });
 });
@@ -144,7 +141,7 @@ describe("signAndLockRecord: signs only the content the signer saw", () => {
 describe("updateRecordData: a save hands back the fingerprint of what it stored", () => {
   it("returns the RETURNING fingerprint, computed by the database from the stored data", async () => {
     const { updates } = makeTx(
-      [[{ practitionerId: "thera-1", status: "draft", schema: null, createdAt: new Date("2026-09-27T10:00:00Z") }]],
+      [[{ status: "draft", schema: null, createdAt: new Date("2026-09-27T10:00:00Z") }]],
       [[{ dataHash: OTHER }]],
     );
     await expect(updateRecordData(therapist, "rec-1", { consultation_reason: "dor" })).resolves.toEqual({
@@ -155,7 +152,7 @@ describe("updateRecordData: a save hands back the fingerprint of what it stored"
   });
 
   it("an UPDATE that returned no row saved nothing: not_found, no audit", async () => {
-    makeTx([[{ practitionerId: "thera-1", status: "draft", schema: null, createdAt: new Date() }]], [[]]);
+    makeTx([[{ status: "draft", schema: null, createdAt: new Date() }]], [[]]);
     expect(await codeOf(updateRecordData(therapist, "rec-1", {}))).toBe("not_found");
     expect(mockAudit).not.toHaveBeenCalled();
   });
@@ -164,7 +161,7 @@ describe("updateRecordData: a save hands back the fingerprint of what it stored"
 describe("finalizeReview: the reviewer signs the content they saw, on both branches", () => {
   it("AI draft: a differing fingerprint is refused as stale before any write", async () => {
     const { updates } = makeTx(
-      [[{ practitionerId: "thera-1", status: "draft", source: "ai_ingested", aiState: "in_review", dataHash: OTHER }]],
+      [[{ status: "draft", source: "ai_ingested", aiState: "in_review", dataHash: OTHER }]],
       [],
     );
     expect(await codeOf(finalizeReview(therapist, "rec-1", LOADED))).toBe("stale");
@@ -173,7 +170,7 @@ describe("finalizeReview: the reviewer signs the content they saw, on both branc
 
   it("AI draft: the finalize UPDATE carries the fingerprint in its own WHERE", async () => {
     const { updates } = makeTx(
-      [[{ practitionerId: "thera-1", status: "draft", source: "ai_ingested", aiState: "in_review", dataHash: LOADED }]],
+      [[{ status: "draft", source: "ai_ingested", aiState: "in_review", dataHash: LOADED }]],
       [[{ id: "rec-1" }]],
     );
     expect(await codeOf(finalizeReview(therapist, "rec-1", LOADED))).toBe("resolved");
@@ -184,7 +181,7 @@ describe("finalizeReview: the reviewer signs the content they saw, on both branc
   });
 
   it("AI draft: an UPDATE that matched no row finalizes nothing and writes no audit", async () => {
-    makeTx([[{ practitionerId: "thera-1", status: "draft", source: "ai_ingested", aiState: "in_review", dataHash: LOADED }]], [[]]);
+    makeTx([[{ status: "draft", source: "ai_ingested", aiState: "in_review", dataHash: LOADED }]], [[]]);
     expect(await codeOf(finalizeReview(therapist, "rec-1", LOADED))).toBe("stale");
     expect(mockAudit).not.toHaveBeenCalled();
   });
@@ -192,7 +189,7 @@ describe("finalizeReview: the reviewer signs the content they saw, on both branc
   it("patient submission: the record UPDATE carries the fingerprint in its own WHERE", async () => {
     const { updates } = makeTx(
       [
-        [{ practitionerId: "thera-1", status: "draft", source: "patient", aiState: null, dataHash: LOADED }],
+        [{ status: "draft", source: "patient", aiState: null, dataHash: LOADED }],
         [{ id: "sub-1", state: "in_review" }],
       ],
       [[{ id: "rec-1" }], []],
@@ -205,7 +202,7 @@ describe("finalizeReview: the reviewer signs the content they saw, on both branc
 
   it("patient submission: a differing fingerprint is refused as stale before any write", async () => {
     const { updates } = makeTx(
-      [[{ practitionerId: "thera-1", status: "draft", source: "patient", aiState: null, dataHash: OTHER }]],
+      [[{ status: "draft", source: "patient", aiState: null, dataHash: OTHER }]],
       [],
     );
     expect(await codeOf(finalizeReview(therapist, "rec-1", LOADED))).toBe("stale");
@@ -216,7 +213,7 @@ describe("finalizeReview: the reviewer signs the content they saw, on both branc
 describe("the review saves hand back the fingerprint a finalize must name", () => {
   it("saveReviewFicha returns the RETURNING fingerprint", async () => {
     const { updates } = makeTx(
-      [[{ practitionerId: "thera-1", status: "draft", source: "ai_ingested", aiState: "in_review", formTemplateId: null, createdAt: new Date() }]],
+      [[{ status: "draft", source: "ai_ingested", aiState: "in_review", formTemplateId: null, createdAt: new Date() }]],
       [[{ dataHash: OTHER }]],
     );
     await expect(saveReviewFicha(therapist, "rec-1", { consultation_reason: "dor" }, null, "tpl-1")).resolves.toEqual({
@@ -227,7 +224,7 @@ describe("the review saves hand back the fingerprint a finalize must name", () =
 
   it("saveReviewFicha: an UPDATE that matched no row saved nothing (finalized in between)", async () => {
     makeTx(
-      [[{ practitionerId: "thera-1", status: "draft", source: "ai_ingested", aiState: "in_review", formTemplateId: null, createdAt: new Date() }]],
+      [[{ status: "draft", source: "ai_ingested", aiState: "in_review", formTemplateId: null, createdAt: new Date() }]],
       [[]],
     );
     expect(await codeOf(saveReviewFicha(therapist, "rec-1", {}, null, null))).toBe("finalized");
@@ -236,7 +233,7 @@ describe("the review saves hand back the fingerprint a finalize must name", () =
 
   it("editReviewNarrative with nothing to apply writes nothing and returns the stored fingerprint", async () => {
     const { updates } = makeTx(
-      [[{ practitionerId: "thera-1", status: "draft", source: "ai_ingested", aiState: "in_review", data: {}, dataHash: LOADED, schema: null }]],
+      [[{ status: "draft", source: "ai_ingested", aiState: "in_review", data: {}, dataHash: LOADED, schema: null }]],
       [],
     );
     await expect(editReviewNarrative(therapist, "rec-1", {})).resolves.toEqual({ dataHash: LOADED });

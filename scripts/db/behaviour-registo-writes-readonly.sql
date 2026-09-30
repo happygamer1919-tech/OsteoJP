@@ -1,7 +1,8 @@
--- 0099 REGISTO WRITES BEHAVIOUR CHECK. READ ONLY. Run AFTER 0099 is applied; run
+-- 0097 REGISTO WRITES BEHAVIOUR CHECK. READ ONLY. Run AFTER 0097 is applied; run
 -- before it only with -v subjects_only=on (see "TWO MODES" below).
+-- (Renumbered by the fifth renumbering, 2026-09-30: the migration was 0099.)
 --
--- 0099 makes the clinical_records write policies follow the permission
+-- 0097 makes the clinical_records write policies follow the permission
 -- matrix: a therapist edits and deletes only their own unsigned registos, and
 -- files registos only in their own name for a patient they treat or created.
 -- This file proves what real staff sessions may WRITE, and still READ, on the
@@ -22,7 +23,7 @@
 --       slot), who is not R's author. The subject of the narrowing.
 --   T3  THE UNRELATED THERAPIST: an active therapist with no appointment with
 --       P, who did not create P, authored no registo of P and is not on P's
---       care team (no live patient_care_team row for P: after 0098 a care
+--       care team (no live patient_care_team row for P: after 0096 a care
 --       team member at one of their own clinics reads P's registos, and T3
 --       is the actor who reads none).
 -- Two further subjects are chosen here, by the lowest id, and never printed:
@@ -57,7 +58,7 @@
 -- ===========================================================================
 -- It cannot run an UPDATE, not even inside a savepoint that is rolled back:
 -- in a READ ONLY transaction the server refuses the statement before it reads
--- a row. So, as 0094's and 0098's behaviour checks do, it reads from
+-- a row. So, as 0094's and 0096's behaviour checks do, it reads from
 -- pg_policy the expression Postgres applies to a command for `authenticated`
 -- (every PERMISSIVE policy OR'ed, every RESTRICTIVE one AND'ed, FOR ALL
 -- included; an UPDATE is read twice, its USING for the old row and its WITH
@@ -82,7 +83,7 @@
 -- FAIL. Arms S0 to S3 and I1 are the subjects and the instrument; every arm
 -- after them reads FAIL when any of those is not OK.
 --
--- THE PROFILES WITH 0099 APPLIED, measured on the rehearsal fixture (one
+-- THE PROFILES WITH 0097 APPLIED, measured on the rehearsal fixture (one
 -- tenant with T1, T2, T3 and a fourth therapist on P's care team at one
 -- clinic, P with T1's draft and an unclaimed AI draft, Q created by T3, and a
 -- second tenant):
@@ -91,7 +92,7 @@
 --   every arm:             19 OK / 1 VACUOUS / 0 FAIL.
 -- With no Q, N3 reads VACUOUS as well. The apply document states the profile
 -- it expects, and why. The subjects-only mode reads 6 OK / 0 VACUOUS / 0 FAIL
--- on either side of 0099.
+-- on either side of 0097.
 --
 -- THE ARMS
 --   0   the transaction is READ ONLY and REPEATABLE READ.
@@ -134,7 +135,7 @@
 --       has, is refused by UPDATE (both sides) and DELETE. T1 is its author, so
 --       only the tenant conjunct can refuse it. Control: U1, U2 and D1's T1.
 --   A1  the unclaimed AI draft A of P: no actor's UPDATE admits it (USING).
---       After 0099 a therapist takes one only through the claim function,
+--       After 0097 a therapist takes one only through the claim function,
 --       which this READ ONLY file cannot call. VACUOUS when P has none.
 --   R1  reads are unchanged: T1 and T2 read R, T3 does not.
 --
@@ -194,7 +195,7 @@
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 
 \echo ''
-\echo '=== 0099 REGISTO WRITES BEHAVIOUR CHECK. READ ONLY. 20 arms, three actors, profile printed last ==='
+\echo '=== 0097 REGISTO WRITES BEHAVIOUR CHECK. READ ONLY. 20 arms, three actors, profile printed last ==='
 
 -- Every read outside the actors' sessions is unfiltered, or it ERRORs: a
 -- connection subject to row level security STOPs here rather than reading a

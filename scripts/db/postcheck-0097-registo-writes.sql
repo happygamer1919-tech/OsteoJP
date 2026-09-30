@@ -1,9 +1,15 @@
 -- ============================================================================
--- 0099 (the clinical_records write policies follow the permission matrix):
+-- 0097 (the clinical_records write policies follow the permission matrix):
 -- POST-CHECK. READ ONLY. Every verdict must read OK (15 expected).
 --
+-- Renumbered by the fifth renumbering, owner and lead, 2026-09-30: this file
+-- was postcheck-0099-registo-writes.sql. The migration's bytes did not change,
+-- so every pin below is the one it carried before; only the numbers in the
+-- text moved. The function's own COMMENT, which the migration writes into the
+-- catalogue, still opens with "0099": the file is never edited for a rename.
+--
 -- Runs after `packages/db/scripts/verified-migrate.mjs` has applied
--- 0099_clinical_records_write_matrix: THREE write policies of clinical_records
+-- 0097_clinical_records_write_matrix: THREE write policies of clinical_records
 -- were ALTERED in place, ONE function was CREATED, and nothing else moved.
 -- Every verdict here is a catalogue read. The behaviour is proven elsewhere:
 -- scripts/db/behaviour-registo-writes-readonly.sql on the database this was
@@ -13,12 +19,12 @@
 -- THE FIVE CARRIES COME FROM THE PRE-CHECK OF THE SAME SITTING (SR-59).
 --
 -- EXACT, NOT "LOOKS LIKE". Every policy expression is compared by md5 to the
--- text Postgres 17 renders for it, as 0093's, 0094's and 0098's post-checks
+-- text Postgres 17 renders for it, as 0093's, 0094's and 0096's post-checks
 -- do; the expected values were read on the rehearsal database after the
 -- apply. A LIKE would pass `... OR true`; this does not.
 --
 -- THE THREE NEW EXPRESSIONS, as the migration writes them
--- (packages/db/migrations-pending/NEXT-AFTER-0098_clinical_records_write_matrix.sql,
+-- (packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql,
 -- section 7), rendered by Postgres 17 as:
 --   clinical_records_insert   b29103acdd113bb10d23b45556707fb2  (WITH CHECK)
 --   clinical_records_update   1170825c999f154fc35dab5217ba9548  (USING)
@@ -34,10 +40,10 @@
 --   b8095495c969750b89e2988ce4cd669d; EXECUTE for authenticated, and for
 --   neither anon, service_role, patient nor PUBLIC.
 --
--- "NO OTHER FUNCTION CHANGED" IS MEASURED WITHOUT THE NEW ONE, as 0098's
+-- "NO OTHER FUNCTION CHANGED" IS MEASURED WITHOUT THE NEW ONE, as 0096's
 -- post-check measures it: the pre-check's functions_md5 and grants_md5 were
 -- read before the function existed; this file recomputes both over the same
--- rows, leaving out the one function 0099 creates. With the new function
+-- rows, leaving out the one function 0097 creates. With the new function
 -- present exactly once (verdict 11), that is also the proof that the SECURITY
 -- DEFINER count in public moved by exactly one.
 --
@@ -48,7 +54,7 @@
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
 --        -v policies_before=<pre> -v other_policies_md5=<pre>
 --        -v functions_md5=<pre> -v grants_md5=<pre> -v journal_rows_before=<pre>
---        -c "begin read only" -f scripts/db/postcheck-0099-registo-writes.sql -c "rollback"
+--        -c "begin read only" -f scripts/db/postcheck-0097-registo-writes.sql -c "rollback"
 -- ============================================================================
 
 \if :{?policies_before}
@@ -86,7 +92,7 @@
 \timing off
 
 \echo ''
-\echo '=== 0099 REGISTO WRITE MATRIX POST-CHECK - every verdict must read OK (15 expected) ==='
+\echo '=== 0097 REGISTO WRITE MATRIX POST-CHECK - every verdict must read OK (15 expected) ==='
 
 WITH pol AS (
   SELECT c.relname, p.polname, p.polcmd::text AS cmd, p.polpermissive AS permissive,
@@ -186,21 +192,21 @@ WITH pol AS (
                            AND p.proname <> 'claim_ai_draft_authorship'), '')))          AS grants_md5_now,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations)                           AS journal_rows_now,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations
-      WHERE hash = '076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318')  AS has_0099,
+      WHERE hash = '076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318')  AS has_0097,
     (SELECT hash FROM drizzle.__drizzle_migrations ORDER BY created_at DESC, id DESC LIMIT 1) AS newest_hash,
     (SELECT count(*)::int FROM pg_policies
       WHERE coalesce(qual, '') || ' ' || coalesce(with_check, '') LIKE '%claim_ai_draft_authorship%') AS naming_pols
 )
-SELECT '1. clinical_records_insert: FOR INSERT, PERMISSIVE, TO authenticated, WITH CHECK exactly 0099''s expression (owner; or a therapist, in their own name, for a patient they treat or created)' AS check,
+SELECT '1. clinical_records_insert: FOR INSERT, PERMISSIVE, TO authenticated, WITH CHECK exactly 0097''s expression (owner; or a therapist, in their own name, for a patient they treat or created)' AS check,
        coalesce(new_insert, 'absent')                                 AS observed,
        'a/true/authenticated - b29103acdd113bb10d23b45556707fb2'      AS expected,
        CASE WHEN new_insert = 'a/true/authenticated - b29103acdd113bb10d23b45556707fb2' THEN 'OK' ELSE 'FAIL' END AS verdict FROM t
-UNION ALL SELECT '2. clinical_records_update: FOR UPDATE, PERMISSIVE, TO authenticated, USING (owner; or the author) and WITH CHECK (owner; or the author, for a patient they treat or created) exactly 0099''s expressions',
+UNION ALL SELECT '2. clinical_records_update: FOR UPDATE, PERMISSIVE, TO authenticated, USING (owner; or the author) and WITH CHECK (owner; or the author, for a patient they treat or created) exactly 0097''s expressions',
        coalesce(new_update, 'absent'),
        'w/true/authenticated 1170825c999f154fc35dab5217ba9548 b29103acdd113bb10d23b45556707fb2',
        CASE WHEN new_update = 'w/true/authenticated 1170825c999f154fc35dab5217ba9548 b29103acdd113bb10d23b45556707fb2'
             THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '3. clinical_records_delete: FOR DELETE, PERMISSIVE, TO authenticated, USING exactly 0099''s expression (owner; or the author)',
+UNION ALL SELECT '3. clinical_records_delete: FOR DELETE, PERMISSIVE, TO authenticated, USING exactly 0097''s expression (owner; or the author)',
        coalesce(new_delete, 'absent'),
        'd/true/authenticated 1170825c999f154fc35dab5217ba9548 -',
        CASE WHEN new_delete = 'd/true/authenticated 1170825c999f154fc35dab5217ba9548 -' THEN 'OK' ELSE 'FAIL' END FROM t
@@ -230,7 +236,7 @@ UNION ALL SELECT '9. no function in public other than the new one changed',
 UNION ALL SELECT '10. no table, column or function grant in public changed, the new function''s own ACL aside',
        coalesce(grants_md5_now, 'absent'), :'grants_md5',
        CASE WHEN grants_md5_now = :'grants_md5' THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '11. the claim function exists ONCE: (uuid), boolean, plpgsql, SECURITY DEFINER, VOLATILE, search_path=public, owned by postgres, with 0099''s body',
+UNION ALL SELECT '11. the claim function exists ONCE: (uuid), boolean, plpgsql, SECURITY DEFINER, VOLATILE, search_path=public, owned by postgres, with 0097''s body',
        nf_n::text || ' found, ' || coalesce(nf_shape, 'absent'),
        '1 found, sig=claim_ai_draft_authorship(uuid) returns=boolean lang=plpgsql secdef=true volatile=v config=search_path=public owner=postgres body=b8095495c969750b89e2988ce4cd669d',
        CASE WHEN nf_n = 1
@@ -248,12 +254,12 @@ UNION ALL SELECT '12. EXECUTE on the claim function: authenticated only (anon, s
             THEN 'OK' ELSE 'FAIL' END FROM t
 UNION ALL SELECT '13. row level security is still ENABLED on clinical_records', rls_on::text, '1',
        CASE WHEN rls_on = 1 THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '14. 0099 is in the journal by hash, it is the newest row, and the journal moved by exactly one',
-       has_0099::text || ' by hash, newest ' || CASE WHEN newest_hash = '076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318'
-                                                     THEN 'is 0099' ELSE 'is NOT 0099' END
+UNION ALL SELECT '14. 0097 is in the journal by hash, it is the newest row, and the journal moved by exactly one',
+       has_0097::text || ' by hash, newest ' || CASE WHEN newest_hash = '076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318'
+                                                     THEN 'is 0097' ELSE 'is NOT 0097' END
        || ', journal ' || journal_rows_now::text,
-       '1 by hash, newest is 0099, journal ' || (:'journal_rows_before'::int + 1)::text,
-       CASE WHEN has_0099 = 1
+       '1 by hash, newest is 0097, journal ' || (:'journal_rows_before'::int + 1)::text,
+       CASE WHEN has_0097 = 1
              AND newest_hash = '076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318'
              AND journal_rows_now = :'journal_rows_before'::int + 1
             THEN 'OK' ELSE 'FAIL' END FROM t

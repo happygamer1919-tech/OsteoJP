@@ -1,24 +1,24 @@
 /**
- * clinical-records-write-matrix.db.test.ts: 0099 (held), the clinical_records
+ * clinical-records-write-matrix.db.test.ts: 0097 (held), the clinical_records
  * write policies follow the permission matrix. A therapist edits and deletes
  * only their own unsigned registos, and files registos only in their own name
  * for a patient they treat or created. The review claim of an AI draft, which
  * arrives with no author, goes through public.claim_ai_draft_authorship(uuid).
  *
- * The migration is packages/db/migrations-pending/NEXT-AFTER-0098_clinical_
+ * The migration is packages/db/migrations-pending/NEXT-AFTER-0096_clinical_
  * records_write_matrix.sql until it is promoted. So this file ASKS THE SCHEMA
- * WHICH SIDE IT IS ON and names it in each title. The arms 0099 adds run only
+ * WHICH SIDE IT IS ON and names it in each title. The arms 0097 adds run only
  * on a database that has it, and are skipped on one that does not; the arms
  * that hold on either side run on both. It never skips as a whole on a live
  * database:
- *   1. NEVER HALF. 0099 is one transaction: the function, and the three write
+ *   1. NEVER HALF. 0097 is one transaction: the function, and the three write
  *      policies in their ruled shape (UPDATE USING and DELETE USING: the
  *      author; INSERT WITH CHECK and UPDATE WITH CHECK: the author, for a
  *      patient they treat or created). All five, or none; anything else
  *      THROWS, and nothing here is measured.
  *   2. THE PROMOTION FLIPS IT. Once a .sql file in packages/db/migrations
- *      defines the function, a database WITHOUT 0099 THROWS: from the
- *      promotion commit on, the 0099 arms cannot be skipped.
+ *      defines the function, a database WITHOUT 0097 THROWS: from the
+ *      promotion commit on, the 0097 arms cannot be skipped.
  *
  * Every assertion runs through asRole("authenticated", ...) inside a
  * transaction that always rolls back (rls-harness.ts). The owner connection
@@ -34,7 +34,7 @@ import { type AppRole, asRole, claimsFor, connect, live } from "./rls-harness";
 const FN = "claim_ai_draft_authorship";
 const SEES = "clinical_therapist_sees_patient";
 
-/** The promoted migration files that define 0099's function, if any. */
+/** The promoted migration files that define 0097's function, if any. */
 function promotedFiles(): string[] {
   const dir = join(__dirname, "..", "migrations");
   return readdirSync(dir)
@@ -42,8 +42,8 @@ function promotedFiles(): string[] {
     .filter((f) => readFileSync(join(dir, f), "utf8").includes(FN));
 }
 
-/** Which side of 0099 this database is on. Throws on anything but a whole side. */
-async function applied0099(): Promise<boolean> {
+/** Which side of 0097 this database is on. Throws on anything but a whole side. */
+async function applied0097(): Promise<boolean> {
   if (!live) return false;
   const probe = connect();
   try {
@@ -61,7 +61,7 @@ async function applied0099(): Promise<boolean> {
     const del = by.get("clinical_records_delete")?.qual;
     if (!ins || !updU || !updC || !del) {
       throw new Error(
-        "0099 STATE UNREADABLE: expected clinical_records_insert WITH CHECK, clinical_records_update USING and " +
+        "0097 STATE UNREADABLE: expected clinical_records_insert WITH CHECK, clinical_records_update USING and " +
           "WITH CHECK, and clinical_records_delete USING. Nothing here was measured.",
       );
     }
@@ -75,16 +75,16 @@ async function applied0099(): Promise<boolean> {
     else if (n === 0) applied = false;
     else {
       throw new Error(
-        `0099 IS HALF APPLIED: ${n} of 5 parts present (function, UPDATE USING, UPDATE WITH CHECK, DELETE USING, ` +
-          "INSERT WITH CHECK). 0099 applies as one transaction, so this database was built some other way. " +
+        `0097 IS HALF APPLIED: ${n} of 5 parts present (function, UPDATE USING, UPDATE WITH CHECK, DELETE USING, ` +
+          "INSERT WITH CHECK). 0097 applies as one transaction, so this database was built some other way. " +
           "Nothing here was measured.",
       );
     }
     const promoted = promotedFiles();
     if (promoted.length > 0 && !applied) {
       throw new Error(
-        `0099 IS PROMOTED (${promoted.join(", ")} defines ${FN}) BUT THIS DATABASE DOES NOT HAVE IT. ` +
-          "From the promotion on, the pre-0099 answer is no longer acceptable. Nothing here was measured.",
+        `0097 IS PROMOTED (${promoted.join(", ")} defines ${FN}) BUT THIS DATABASE DOES NOT HAVE IT. ` +
+          "From the promotion on, the pre-0097 answer is no longer acceptable. Nothing here was measured.",
       );
     }
     return applied;
@@ -93,8 +93,8 @@ async function applied0099(): Promise<boolean> {
   }
 }
 
-const w99 = await applied0099();
-const SIDE = w99 ? "0099 APPLIED" : "0099 NOT APPLIED on this database (flips when 0099 is applied)";
+const w97 = await applied0097();
+const SIDE = w97 ? "0097 APPLIED" : "0097 NOT APPLIED on this database (flips when 0097 is applied)";
 
 const W = {
   tenant: randomUUID(),
@@ -123,8 +123,8 @@ const T1 = "2026-03-02T10:00:00Z";
 
 async function seed(p: Sql): Promise<void> {
   await p`insert into tenants (id, name, slug) values
-    (${W.tenant}, 'W99', ${`w99-${W.tenant}`}),
-    (${W.other}, 'W99 other', ${`w99o-${W.other}`})`;
+    (${W.tenant}, 'W97', ${`w97-${W.tenant}`}),
+    (${W.other}, 'W97 other', ${`w97o-${W.other}`})`;
   await p`insert into users (id, tenant_id, email, full_name) values
     (${W.t1},        ${W.tenant}, ${`t1-${W.t1}@x.pt`},        'Terapeuta 1'),
     (${W.t2},        ${W.tenant}, ${`t2-${W.t2}@x.pt`},        'Terapeuta 2'),
@@ -132,7 +132,7 @@ async function seed(p: Sql): Promise<void> {
     (${W.owner},     ${W.tenant}, ${`ow-${W.owner}@x.pt`},     'Owner'),
     (${W.admin},     ${W.tenant}, ${`ad-${W.admin}@x.pt`},     'Admin'),
     (${W.reception}, ${W.tenant}, ${`rc-${W.reception}@x.pt`}, 'Reception')`;
-  await p`insert into locations (id, tenant_id, name) values (${W.loc}, ${W.tenant}, 'W99 loc')`;
+  await p`insert into locations (id, tenant_id, name) values (${W.loc}, ${W.tenant}, 'W97 loc')`;
   // P was registered by reception, so the receptionist "created" P: the claim
   // function's therapist role guard is the only thing between them and P's AI draft.
   await p`insert into patients (id, tenant_id, full_name, created_by) values (${W.p}, ${W.tenant}, 'Utente P', ${W.reception})`;
@@ -181,10 +181,10 @@ const claim = async (tx: TransactionSql, id: string): Promise<boolean | null> =>
   return row?.assigned ?? null;
 };
 
-/** The arms 0099 adds: run where 0099 is applied, skipped where it is not. */
-const it99 = it.skipIf(!w99);
+/** The arms 0097 adds: run where 0097 is applied, skipped where it is not. */
+const it97 = it.skipIf(!w97);
 
-describe.skipIf(!live)(`0099: the clinical_records write policies follow the permission matrix [${SIDE}]`, () => {
+describe.skipIf(!live)(`0097: the clinical_records write policies follow the permission matrix [${SIDE}]`, () => {
   beforeAll(async () => {
     sql = connect();
     await seed(sql);
@@ -221,7 +221,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
   });
 
   /* ---- a colleague ------------------------------------------------------ */
-  it99(`${SIDE}: a colleague who treats the patient updates, signs and deletes NONE of another therapist's draft`, async () => {
+  it97(`${SIDE}: a colleague who treats the patient updates, signs and deletes NONE of another therapist's draft`, async () => {
     expect((await asUser("therapist", W.t2, (tx) => updates(tx, W.draft))).length).toBe(0);
     expect((await asUser("therapist", W.t2, (tx) => deletes(tx, W.draft))).length).toBe(0);
     const signed = await asUser("therapist", W.t2, (tx) =>
@@ -236,7 +236,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
     expect((await asUser("therapist", W.t3, (tx) => deletes(tx, W.draft))).length).toBe(0);
   });
 
-  it99(`${SIDE}: an UPDATE cannot hand the author's draft to a colleague (WITH CHECK)`, async () => {
+  it97(`${SIDE}: an UPDATE cannot hand the author's draft to a colleague (WITH CHECK)`, async () => {
     await expect(
       asUser("therapist", W.t1, (tx) =>
         tx<{ id: string }[]>`update clinical_records set practitioner_id = ${W.t2} where id = ${W.draft} returning id`,
@@ -244,7 +244,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
     ).rejects.toThrow(/row-level security/i);
   });
 
-  it99(`${SIDE}: the new row of an author's UPDATE names only a patient they treat or created (WITH CHECK, W1's test)`, async () => {
+  it97(`${SIDE}: the new row of an author's UPDATE names only a patient they treat or created (WITH CHECK, W1's test)`, async () => {
     // T3 files in its own name for Q, which it created (admitted), and that
     // draft may then name only a patient T3 treats or created.
     await expect(
@@ -260,7 +260,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
     ).rejects.toThrow(/row-level security/i);
   });
 
-  it99(`${SIDE}: an author who neither treats nor created the patient deletes their draft but no longer saves it; the owner saves it`, async () => {
+  it97(`${SIDE}: an author who neither treats nor created the patient deletes their draft but no longer saves it; the owner saves it`, async () => {
     await expect(asUser("therapist", W.t1, (tx) => updates(tx, W.lapsed))).rejects.toThrow(/row-level security/i);
     expect((await asUser("therapist", W.t1, (tx) => deletes(tx, W.lapsed))).length).toBe(1);
     expect((await asUser("owner", W.owner, (tx) => updates(tx, W.lapsed))).length).toBe(1);
@@ -272,11 +272,11 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
     expect(await asUser("therapist", W.t3, (tx) => fileFor(tx, W.q, W.t3))).toBe(1);
   });
 
-  it99(`${SIDE}: a therapist files NOTHING for a patient they neither treat nor created, even in their own name`, async () => {
+  it97(`${SIDE}: a therapist files NOTHING for a patient they neither treat nor created, even in their own name`, async () => {
     await expect(asUser("therapist", W.t3, (tx) => fileFor(tx, W.p, W.t3))).rejects.toThrow(/row-level security/i);
   });
 
-  it99(`${SIDE}: a therapist files NOTHING in a colleague's name, even for a patient they treat`, async () => {
+  it97(`${SIDE}: a therapist files NOTHING in a colleague's name, even for a patient they treat`, async () => {
     await expect(asUser("therapist", W.t1, (tx) => fileFor(tx, W.p, W.t2))).rejects.toThrow(/row-level security/i);
   });
 
@@ -304,8 +304,8 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
     ).rejects.toThrow(/immutable/i);
   });
 
-  /* ---- the AI review claim (0099's function) --------------------------- */
-  it99(`${SIDE}: an unclaimed AI draft is updated directly by NO therapist; the claim function makes a treating therapist its author, and the claim follows`, async () => {
+  /* ---- the AI review claim (0097's function) --------------------------- */
+  it97(`${SIDE}: an unclaimed AI draft is updated directly by NO therapist; the claim function makes a treating therapist its author, and the claim follows`, async () => {
       expect((await asUser("therapist", W.t2, (tx) => updates(tx, W.ai))).length).toBe(0);
       const out = await asUser("therapist", W.t2, async (tx) => {
         const assigned = await claim(tx, W.ai);
@@ -330,7 +330,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
       });
     });
 
-  it99(`${SIDE}: the claim function never replaces an author, and a second claimer is then refused`, async () => {
+  it97(`${SIDE}: the claim function never replaces an author, and a second claimer is then refused`, async () => {
       const out = await asUser("therapist", W.t2, async (tx) => {
         const first = await claim(tx, W.ai);
         const again = await claim(tx, W.ai);
@@ -344,7 +344,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
       expect(out).toEqual({ first: true, again: false, other: false, otherUpdate: 0, author: W.t2 });
     });
 
-  it99(`${SIDE}: the claim function assigns nothing to a therapist who does not treat the patient, to the owner, to an admin, to the receptionist who registered the patient, on a non-AI draft, or on an AI draft already in review`, async () => {
+  it97(`${SIDE}: the claim function assigns nothing to a therapist who does not treat the patient, to the owner, to an admin, to the receptionist who registered the patient, on a non-AI draft, or on an AI draft already in review`, async () => {
       const t3 = await asUser("therapist", W.t3, async (tx) => ({ assigned: await claim(tx, W.ai), updated: (await updates(tx, W.ai)).length }));
       expect(t3).toEqual({ assigned: false, updated: 0 });
       const owner = await asUser("owner", W.owner, async (tx) => ({ assigned: await claim(tx, W.ai), updated: (await updates(tx, W.ai)).length }));
@@ -360,7 +360,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
       expect(author!.n).toBe(0);
     });
 
-  it99(`${SIDE}: EXECUTE on the claim function is authenticated's alone (read from the catalogue, never by calling it as a role that lacks it)`, async () => {
+  it97(`${SIDE}: EXECUTE on the claim function is authenticated's alone (read from the catalogue, never by calling it as a role that lacks it)`, async () => {
       const [g] = await sql<{ authenticated: boolean; anon: boolean; service_role: boolean; patient: boolean }[]>`
         select has_function_privilege('authenticated', ${`public.${FN}(uuid)`}, 'EXECUTE') as authenticated,
                has_function_privilege('anon', ${`public.${FN}(uuid)`}, 'EXECUTE') as anon,
@@ -369,7 +369,7 @@ describe.skipIf(!live)(`0099: the clinical_records write policies follow the per
       expect(g).toEqual({ authenticated: true, anon: false, service_role: false, patient: false });
     });
 
-  /* ---- the arms 0099 must not move ------------------------------------- */
+  /* ---- the arms 0097 must not move ------------------------------------- */
   it("the OWNER updates and deletes any draft of the tenant (both sides)", async () => {
     expect((await asUser("owner", W.owner, (tx) => updates(tx, W.draft))).length).toBe(1);
     expect((await asUser("owner", W.owner, (tx) => deletes(tx, W.draft))).length).toBe(1);

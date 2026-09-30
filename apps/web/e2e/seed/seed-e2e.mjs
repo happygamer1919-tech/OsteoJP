@@ -1341,24 +1341,18 @@ async function ensureImportedDocuments(recordId) {
 // as the opaque "Ocorreu um erro". ai_review_state='in_review' keeps it OFF the
 // "Por rever" queue so the Revisão Consulta spec is untouched. Upserted (reset)
 // every run so the delete spec starts from the same state.
-// 0099: its author is the e2e therapist, the shape a review claim leaves (the
-// claim makes the claiming therapist the draft's author). The delete spec runs
-// as that therapist, and 0099's DELETE policy admits a therapist only on a
-// registo they authored, so the spec deletes it as its author on a database
-// with or without 0099.
 // ---------------------------------------------------------------------------
 
 const AI_DELETE_DRAFT_ID = "00000000-0000-0000-0000-00000000ad18";
 const AI_DELETE_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Fictício
 const AI_DELETE_INGESTION_ID = "00000000-0000-0000-0000-00000000a1d8";
 
-async function ensureAiDeleteDraft(therapistId) {
+async function ensureAiDeleteDraft() {
   const draft = await db.from("clinical_records").upsert(
     {
       id: AI_DELETE_DRAFT_ID,
       tenant_id: TENANT_A,
       patient_id: AI_DELETE_DRAFT_PATIENT,
-      practitioner_id: therapistId,
       source: "ai_ingested",
       status: "draft",
       ai_review_state: "in_review",
@@ -1483,7 +1477,7 @@ async function main() {
   // Médica template by key when the record's form_template_id is null).
   const aiReviewDraftId = await ensureAiReviewDraft();
   // W6-01a: an AI-ingested draft with an ai_ingestion_requests back-pointer.
-  await ensureAiDeleteDraft(userIds.therapist);
+  await ensureAiDeleteDraft();
   // B1: an imported Fisiozero registo clinico (locked, form_template_id NULL).
   const importedRecordId = await ensureImportedRecord();
   // G-D: the patient's imported originals (one patient-level, one linked) + one ordinary document.

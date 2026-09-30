@@ -35,14 +35,15 @@
  * persists. GATING: needs a live privileged DATABASE_URL with migrations
  * applied; skipped in CI without a DB.
  *
- * 0099 (held, packages/db/migrations-pending/NEXT-AFTER-0098_clinical_records_
- * write_matrix.sql): an AI draft arrives with no author, and from 0099 the
+ * 0097 (held, packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_
+ * write_matrix.sql): an AI draft arrives with no author, and from 0097 the
  * UPDATE policy admits a therapist only on a registo they authored. The app's
  * claim therefore first calls public.claim_ai_draft_authorship(uuid), in the
  * same transaction, when that function exists (apps/web/lib/clinical/review.ts,
- * takeAiDraftAuthorship). Every AI arm below issues the SAME two statements the
+ * takeAiDraftAuthorship, in the app half, PR 1501, which merges first). Every
+ * AI arm below issues the SAME two statements the
  * service issues, through `claimAuthorship`, so this file runs green on a
- * database with 0099 and on one without it. What 0099 itself changes is
+ * database with 0097 and on one without it. What 0097 itself changes is
  * measured in clinical-records-write-matrix.db.test.ts.
  */
 import { randomUUID } from "node:crypto";
@@ -107,7 +108,7 @@ describe.skipIf(!live)("review/finalize write path RLS + lifecycle", () => {
     asRole(sql, "authenticated", claimsFor(A.tenant, "therapist", A.user), fn);
 
   /**
-   * The claim's first statement, as review.ts issues it: where 0099's function
+   * The claim's first statement, as review.ts issues it: where 0097's function
    * exists, make the claiming therapist the AI draft's author. Absent, there is
    * nothing to call, and the claim runs exactly as it does on main.
    * Returns what the function answered, or null where it does not exist.
@@ -156,8 +157,8 @@ describe.skipIf(!live)("review/finalize write path RLS + lifecycle", () => {
      paths at claim, and the two axes transition INDEPENDENTLY. ---- */
   it("W5-17 AI: claim projects the twelve keys to field paths; axes stay separate through finalize", async () => {
     await asTherapistA(async (tx) => {
-      // The claimer takes authorship first (0099), so the fixture write below
-      // and the claim run as the author on a database with 0099 too.
+      // The claimer takes authorship first (0097), so the fixture write below
+      // and the claim run as the author on a database with 0097 too.
       expect(await claimAuthorship(tx, A.aiRecord)).not.toBe(false);
       // The raw AI payload the ingestion endpoint stored under `_aiIngestionRaw`
       // (mirrors the ingestion store shape) — the source of truth the projection
@@ -239,7 +240,7 @@ describe.skipIf(!live)("review/finalize write path RLS + lifecycle", () => {
   it("AI: NEVER auto-finalize — finalizing a pending_review item matches 0 rows", async () => {
     await asTherapistA(async (tx) => {
       // Authorship first, so the zero below is the in_review guard's and not
-      // the 0099 UPDATE policy's.
+      // the 0097 UPDATE policy's.
       expect(await claimAuthorship(tx, A.aiRecord)).not.toBe(false);
       const jumped = await tx<{ id: string }[]>`
         update clinical_records

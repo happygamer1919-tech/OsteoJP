@@ -32,7 +32,6 @@ const h = vi.hoisted(() => ({
   },
   getRecordDetail: vi.fn(),
   getFichaMedicaTemplate: vi.fn(),
-  mayFileRegistoFor: vi.fn(),
   canWriteRecord: vi.fn(),
   isImporterSourcedRecord: vi.fn(),
   listImportedPatientDocuments: vi.fn(),
@@ -42,7 +41,6 @@ vi.mock("@/lib/auth/context", () => ({ requireRequestContext: async () => h.ctx 
 vi.mock("@/lib/clinical/records", () => ({
   getRecordDetail: h.getRecordDetail,
   getFichaMedicaTemplate: h.getFichaMedicaTemplate,
-  mayFileRegistoFor: h.mayFileRegistoFor,
   canWriteRecord: h.canWriteRecord,
 }));
 vi.mock("@/lib/clinical/terms-acceptance", () => ({ getLatestTermsAcceptance: async () => null }));
@@ -177,10 +175,6 @@ beforeEach(() => {
   h.getRecordDetail.mockReset();
   h.getFichaMedicaTemplate.mockReset();
   h.getFichaMedicaTemplate.mockResolvedValue(FICHA_TEMPLATE);
-  // 0099 and CARE-02a: the write controls ask these; nothing in this suite is
-  // about them (page-write-controls.test.tsx is).
-  h.mayFileRegistoFor.mockReset();
-  h.mayFileRegistoFor.mockResolvedValue(true);
   h.canWriteRecord.mockReset();
   h.canWriteRecord.mockResolvedValue(true);
   h.isImporterSourcedRecord.mockReset();

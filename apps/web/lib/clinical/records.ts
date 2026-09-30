@@ -11,7 +11,6 @@ import {
   patients,
   recordAnnulments,
   users,
-  type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import {
@@ -21,7 +20,7 @@ import {
 } from "@/lib/patients/scope";
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
-import { ClinicalError, type ClinicalErrorCode } from "./errors";
+import { ClinicalError } from "./errors";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -82,9 +81,6 @@ export type RecordDetail = {
   episodeTitle: string | null;
   formTemplateId: string | null;
   status: RecordStatus;
-  /** The registo's author (clinical_records.practitioner_id); null for an AI
-   *  draft nobody has claimed yet. 0099: a therapist writes only their own. */
-  practitionerId: string | null;
   /** Origin axis (schema.ts `source`); 'ai_ingested' records flow through the
    *  Revisão Consulta review path (W5-17). */
   source: string;
@@ -216,7 +212,6 @@ export async function getRecordDetail(
         episodeTitle: clinicalEpisodes.title,
         formTemplateId: clinicalRecords.formTemplateId,
         status: clinicalRecords.status,
-        practitionerId: clinicalRecords.practitionerId,
         source: clinicalRecords.source,
         aiReviewState: clinicalRecords.aiReviewState,
         version: clinicalRecords.version,
@@ -269,7 +264,6 @@ export async function getRecordDetail(
       episodeTitle: r.episodeTitle,
       formTemplateId: r.formTemplateId,
       status: r.status as RecordStatus,
-      practitionerId: r.practitionerId ?? null,
       source: r.source,
       aiReviewState: (r.aiReviewState as AiReviewState | null) ?? null,
       version: r.version,
@@ -458,73 +452,6 @@ export async function listEpisodesForPicker(
 /* in the SAME tenant-scoped tx.                                      */
 /* ------------------------------------------------------------------ */
 
-/**
- * 0099: a therapist files a registo (a new draft, or a new version of one)
- * only in their own name AND for a patient they treat or created: the
- * clinical_records INSERT policy's therapist arm, and `therapistPatientScope`
- * is the same test in the app. The owner files for any patient of the tenant,
- * so only a therapist is asked; for anyone else the answer is yes, with no
- * read. Refuses nothing the policy admits.
- */
-async function therapistMayFileFor(tx: DbTx, ctx: RequestContext, patientId: string): Promise<boolean> {
-  const scope = therapistPatientScope(ctx, patients.id);
-  if (!scope) return true;
-  const own = await tx
-    .select({ id: patients.id })
-    .from(patients)
-    .where(and(eq(patients.id, patientId), scope))
-    .limit(1);
-  return own.length > 0;
-}
-
-/**
- * `therapistMayFileFor`, asked first inside the writer's own transaction, so a
- * patient outside that scope (a posted id, or a patient whose last appointment
- * with the caller was deleted since the page rendered) is a clean `not_found`
- * and not a raw row level security error from the INSERT.
- */
-export async function assertTherapistMayFileFor(
-  tx: DbTx,
-  ctx: RequestContext,
-  patientId: string,
-): Promise<void> {
-  if (!(await therapistMayFileFor(tx, ctx, patientId))) throw new ClinicalError("not_found");
-}
-
-/**
- * The same question for a page deciding which controls to draw (the record
- * page's "Nova versao", and its Save and Sign, which 0099's UPDATE WITH CHECK
- * also asks). A read of its own, in the caller's tenant-scoped context.
- */
-export async function mayFileRegistoFor(ctx: RequestContext, patientId: string): Promise<boolean> {
-  if (!therapistPatientScope(ctx, patients.id)) return true;
-  return runScoped(ctx, (tx) => therapistMayFileFor(tx, ctx, patientId));
-}
-
-/**
- * 0099: the error for an UPDATE or DELETE of a registo that touched no row,
- * decided from the row this transaction read before the write.
- *
- * From 0099 the clinical_records UPDATE and DELETE policies admit a therapist
- * only on a registo they authored, so a therapist who is not the row's author
- * gets 0 rows from row level security: `not_author`. Anyone else who gets 0
- * rows lost a race (the row moved between the read and the write), and the
- * writer's own code for that stands (`moved`: `stale`, `finalized` or
- * `not_found`). Either way the answer only names a refusal that already
- * happened: it never turns a refusal into a write or a write into a refusal,
- * on a database with or without 0099, and `not_author` is true under the
- * permission matrix, which gives a therapist only their own registos. Only the
- * owner and a therapist hold the write capabilities, and the owner arm admits
- * every registo of the tenant.
- */
-export function zeroRowRefusal(
-  ctx: RequestContext,
-  authorId: string | null | undefined,
-  moved: ClinicalErrorCode,
-): ClinicalError {
-  return new ClinicalError(ctx.role === "therapist" && authorId !== ctx.userId ? "not_author" : moved);
-}
-
 export async function createDraftRecord(
   ctx: RequestContext,
   input: { patientId: string; formTemplateId: string; episodeId?: string | null; appointmentId?: string | null },
@@ -535,10 +462,6 @@ export async function createDraftRecord(
   }
   const ip = await clientIp();
   return runScoped(ctx, async (tx) => {
-    // 0099: a therapist files a registo only for a patient they treat or
-    // created. Refuse any other patient here, cleanly, before the INSERT the
-    // database would refuse with a raw 42501.
-    await assertTherapistMayFileFor(tx, ctx, input.patientId);
     const rows = await tx
       .insert(clinicalRecords)
       .values({
@@ -581,7 +504,6 @@ export async function updateRecordData(
     const rows = await tx
       .select({
         status: clinicalRecords.status,
-        practitionerId: clinicalRecords.practitionerId,
         schema: formTemplates.schema,
         createdAt: clinicalRecords.createdAt,
       })
@@ -625,12 +547,9 @@ export async function updateRecordData(
       .where(eq(clinicalRecords.id, id))
       .returning({ dataHash: recordDataHash() });
     // The row was read above in this transaction; an UPDATE that returns
-    // nothing saved nothing, and writes no audit row. From 0099 that is also
-    // what row level security does to a therapist who is not the author
-    // (`zeroRowRefusal` tells the two apart); otherwise the row is gone or out
-    // of reach now.
+    // nothing means it is gone or out of reach now, and nothing was saved.
     const stored = saved[0];
-    if (!stored) throw zeroRowRefusal(ctx, row.practitionerId, "not_found");
+    if (!stored) throw new ClinicalError("not_found");
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
       actorUserId: ctx.userId,
@@ -667,9 +586,6 @@ export async function createAddendum(
       .limit(1);
     const s = src[0];
     if (!s) throw new ClinicalError("not_found");
-    // 0099: a new version is filed in the caller's name for the same patient,
-    // so it meets the same test as any registo: a patient they treat or created.
-    await assertTherapistMayFileFor(tx, ctx, s.patientId);
 
     const rows = await tx
       .insert(clinicalRecords)
@@ -721,11 +637,7 @@ export async function signAndLockRecord(
   const ip = await clientIp();
   await runScoped(ctx, async (tx) => {
     const rows = await tx
-      .select({
-        status: clinicalRecords.status,
-        practitionerId: clinicalRecords.practitionerId,
-        dataHash: recordDataHash(),
-      })
+      .select({ status: clinicalRecords.status, dataHash: recordDataHash() })
       .from(clinicalRecords)
       // CARE-02a: a write, so its source row is read under the pre-0098 reach.
       .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
@@ -747,11 +659,9 @@ export async function signAndLockRecord(
         ),
       )
       .returning({ id: clinicalRecords.id });
-    // Nothing was signed. Either something moved between the read and the
-    // write (another save, or another sign), which is `stale`, or, from 0099,
-    // row level security admitted no row because the caller is a therapist who
-    // did not write this draft, which is `not_author` (`zeroRowRefusal`).
-    if (signed.length === 0) throw zeroRowRefusal(ctx, row.practitionerId, "stale");
+    // Something moved between the read and the write (another save, or
+    // another sign): nothing was signed.
+    if (signed.length === 0) throw new ClinicalError("stale");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -779,11 +689,7 @@ export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string):
   const ip = await clientIp();
   await runScoped(ctx, async (tx) => {
     const [target] = await tx
-      .select({
-        status: clinicalRecords.status,
-        version: clinicalRecords.version,
-        practitionerId: clinicalRecords.practitionerId,
-      })
+      .select({ status: clinicalRecords.status, version: clinicalRecords.version })
       .from(clinicalRecords)
       // CARE-02a: a write, so its source row is read under the pre-0098 reach.
       .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
@@ -824,10 +730,7 @@ export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string):
       .delete(clinicalRecords)
       .where(and(eq(clinicalRecords.id, id), eq(clinicalRecords.status, "draft")))
       .returning({ id: clinicalRecords.id });
-    // 0 rows deleted nothing (the transaction then rolls the detaches above
-    // back). From 0099 the DELETE policy admits a therapist only on a draft they
-    // authored, so for a therapist who did not write it that is `not_author`.
-    if (deleted.length === 0) throw zeroRowRefusal(ctx, target.practitionerId, "not_found");
+    if (deleted.length === 0) throw new ClinicalError("not_found");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
