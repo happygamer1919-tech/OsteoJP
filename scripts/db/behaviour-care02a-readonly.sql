@@ -1,6 +1,6 @@
--- CARE-02a (0098 v2) BEHAVIOUR CHECK. READ ONLY. Run BEFORE and AFTER 0098 is applied.
+-- CARE-02a (0096 v2) BEHAVIOUR CHECK. READ ONLY. Run BEFORE and AFTER 0096 is applied.
 --
--- 0098 lets a therapist on a patient's live care team read that patient's
+-- 0096 lets a therapist on a patient's live care team read that patient's
 -- ficha (patients) and registos (clinical_records) ONLY WHEN THE PATIENT IS
 -- LINKED TO ONE OF THE THERAPIST'S OWN CLINICS (the owner's ruling of
 -- 2026-09-27, "limit to their clinic only"), lets a therapist write their own
@@ -15,7 +15,7 @@
 -- staff_locations row for; or, ONLY when the patient has no appointment with a
 -- location, the patient's primary_location_id is such a location. Arm I1 proves
 -- this file's reading of it agrees with 0045's own clinical_admin_sees_patient
--- called as each actor, and arm H1 proves 0098's helper agrees with both.
+-- called as each actor, and arm H1 proves 0096's helper agrees with both.
 --
 -- ===========================================================================
 -- THE ACTORS AND THE PATIENT ARE PASSED, NEVER PICKED
@@ -36,7 +36,7 @@
 --       registos. THE CLINIC LIMIT'S OWN ARM: reads 0 of P, 0 registos, and of
 --       P's team only its own row.
 --   N   A NON-THERAPIST ON THE TEAM: an active ADMIN or RECEPTION user on P's
---       live team and linked to P, so 0098's helper DOES name P for them. The
+--       live team and linked to P, so 0096's helper DOES name P for them. The
 --       care-team term sits inside the therapist role guard, so N must read
 --       exactly what its own role's arm admits and not one row more (arm N1).
 --       Which role N has decides what N1 can catch: a RECEPTION N reads no
@@ -65,7 +65,7 @@
 -- (scripts/behaviour-checks-print-actor.test.mjs requires exactly one ACTOR line
 -- per file). The variable c02a_pass says which half is running; do not pass it.
 --
--- IT RUNS ON A DATABASE WITHOUT 0098 TOO. 0098 creates
+-- IT RUNS ON A DATABASE WITHOUT 0096 TOO. 0096 creates
 -- viewer_care_team_patient_ids_at_my_clinics(); this file asks to_regprocedure
 -- for it and calls it only when it exists, so the BEFORE run measures instead of
 -- dying with 42883. Arm H1 reads FAIL while it is absent.
@@ -102,10 +102,10 @@
 --
 -- THE PROFILES, measured on the v2 rehearsal fixture (one tenant, two clinics;
 -- T1, T2, T3 at P's clinic, T4 at the other; N a receptionist at P's clinic):
---   WITH 0098 applied:     32 OK / 0 VACUOUS / 0 FAIL.
---   WITHOUT 0098:          17 OK / 0 VACUOUS / 15 FAIL, failing on
+--   WITH 0096 applied:     32 OK / 0 VACUOUS / 0 FAIL.
+--   WITHOUT 0096:          17 OK / 0 VACUOUS / 15 FAIL, failing on
 --                          H1 P1 P4 P5 R1 R4 C1 C2 C3 C4 C5 N1 W5 W6 W8.
---   WITH v1 OF 0098 (no clinic limit, never applied outside a throwaway):
+--   WITH v1 OF 0096 (no clinic limit, never applied outside a throwaway):
 --                          26 OK / 0 VACUOUS / 6 FAIL, failing on
 --                          H1 P4 P5 R4 C4 C5.
 -- With -v t4_id=none the four T4 arms (S4 P5 R4 C5) read VACUOUS; with
@@ -136,10 +136,10 @@
 --       clinical_admin_sees_patient(P), called as the actor, agrees with this
 --       file's reading of "linked". Calling them as the actor also proves
 --       `authenticated` holds EXECUTE.
---   H1  0098's HELPER: viewer_care_team_patient_ids_at_my_clinics() exists,
+--   H1  0096's HELPER: viewer_care_team_patient_ids_at_my_clinics() exists,
 --       and for each actor it names P exactly when the actor is on P's live
---       team AND linked to P. FAIL while it is absent (before 0098).
---   P1  patients, T1: reads P. 0 WITHOUT 0098: this is the ficha.
+--       team AND linked to P. FAIL while it is absent (before 0096).
+--   P1  patients, T1: reads P. 0 WITHOUT 0096: this is the ficha.
 --   P2  patients, T2: reads P. The control for P3.
 --   P3  patients, T3: does not read P.
 --   P4  patients, every therapist actor: reads EXACTLY its tenant's patients
@@ -165,20 +165,20 @@
 --       the migration). Control C1.
 --   N1  N reads, of P, P's registos and P's team, exactly what its OWN role's
 --       arm admits: an admin reads no care-team row, a receptionist reads no
---       registo, whatever 0098's helper says about them. Control: the helper
+--       registo, whatever 0096's helper says about them. Control: the helper
 --       term is live for a therapist (R1 for a receptionist, C1 for an admin).
 --   W1  registos, T1 writes NOTHING of T2's: UPDATE 0, DELETE 0, and an INSERT
---       of that registo's row (T2's authorship, for P) is refused. 0098 adds a
+--       of that registo's row (T2's authorship, for P) is refused. 0096 adds a
 --       SELECT arm only; clinical_therapist_sees_patient is not widened.
 --   W2  CONTROL for W1 and W3: T2 is admitted by the same three expressions for
 --       its own registo: 1, 1, 1.
 --   W3  registos, T3 and T4 write nothing of T2's: 0, 0, 0 each.
 --   W4  patients UPDATE and DELETE of P: T1 0 and 0, T2 1 and 1 (its control),
---       T3 0 and 0, T4 0 and 0. 0098 does not touch either policy.
+--       T3 0 and 0, T4 0 and 0. 0096 does not touch either policy.
 --   W5  care team, own row for P in the writer's shape: the INSERT check, and
 --       the SELECT policy on the new row (the writer uses ON CONFLICT and
 --       RETURNING, which apply it). T1, T3 and T4 refused (none treats P), T2
---       admitted by both. 0 for T2 WITHOUT 0098.
+--       admitted by both. 0 for T2 WITHOUT 0096.
 --   W6  care team, every therapist actor: a row for ANOTHER user, and its own
 --       row under a tenant id no tenant has, are both refused. The control is
 --       W5's T2.
@@ -197,12 +197,12 @@
 --     rehearsal proves the term in action (a therapist not on the team books P
 --     and writes its row; with the term removed the same write is refused).
 --   * The other tables (attachments, clinical_episodes, appointment_notes,
---     patient_note_revisions, guest_clinical_intakes): 0098 does not touch
+--     patient_note_revisions, guest_clinical_intakes): 0096 does not touch
 --     them, and the pre-check and post-check pin their thirteen policies.
 --   * The care-team term leaking out of the therapist guard on patients_select:
 --     no staff role can see it (see N above); the post-check's md5 does.
 --   * A patient linked to the actor's clinic only as the SECOND participant of
---     an appointment: 0098 does not count that link, by design (migration
+--     an appointment: 0096 does not count that link, by design (migration
 --     section 2), and no subject here needs it.
 --
 -- IT PRINTS ONE ACTOR LINE PER ACTOR, THEN COUNTS AND VERDICTS, AND NOTHING
@@ -265,7 +265,7 @@
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 
 \echo ''
-\echo '=== CARE-02a (0098 v2) BEHAVIOUR CHECK. READ ONLY. 32 arms, up to five actors, profile printed last ==='
+\echo '=== CARE-02a (0096 v2) BEHAVIOUR CHECK. READ ONLY. 32 arms, up to five actors, profile printed last ==='
 
 -- Every read outside the actors' sessions is unfiltered, or it ERRORs: a
 -- connection subject to row level security STOPs here rather than reading a
@@ -321,7 +321,7 @@ SELECT (SELECT count(*)::int FROM public.clinical_records c
        (SELECT count(*)::int FROM public.patient_care_team ct
          WHERE ct.tenant_id = :'tenant'::uuid AND ct.patient_id = :'patient_id'::uuid) AS team_total \gset
 
--- IS 0098's HELPER HERE? Asked, never assumed: a call to a function that does
+-- IS 0096's HELPER HERE? Asked, never assumed: a call to a function that does
 -- not exist raises 42883 and would end the BEFORE run.
 SELECT (to_regprocedure('public.viewer_care_team_patient_ids_at_my_clinics()') IS NOT NULL)::text AS clinic_helper \gset
 
@@ -607,7 +607,7 @@ SELECT (coalesce((SELECT auth.uid())::text, '') = :'actor_id')::text AS uid_ok,
          WHERE patient_id = :'patient_id'::uuid AND user_id <> :'actor_id'::uuid) AS pct_p_others_read
 \gset :c02a_slot
 
--- 0098's helper, called AS THE ACTOR (so EXECUTE is proven too), and only when
+-- 0096's helper, called AS THE ACTOR (so EXECUTE is proven too), and only when
 -- it exists.
 \if :clinic_helper
 SELECT coalesce(:'patient_id'::uuid = ANY (public.viewer_care_team_patient_ids_at_my_clinics()), false)::text AS h_clinic
@@ -755,7 +755,7 @@ WITH r(n, "check", observed, expected, verdict) AS (VALUES
       || '; T4 care ' || :'t4_on_team' || ' treated ' || :'t4_treats' || ' 0045 ' || :'t4_linked'
       || '; N care ' || :'n_on_team' || ' treated ' || :'n_treats' || ' 0045 ' || :'n_linked' || '; uid ok',
       CASE WHEN :'i1_ok' = 'true' THEN 'OK' ELSE 'FAIL' END),
-  (8, 'H1. 0098''s helper exists and names P for each actor exactly when it is on P''s live team AND linked to P',
+  (8, 'H1. 0096''s helper exists and names P for each actor exactly when it is on P''s live team AND linked to P',
       CASE WHEN :'clinic_helper' <> 'true' THEN 'absent'
            ELSE 'T1 ' || :'t1_h_clinic' || ', T2 ' || :'t2_h_clinic' || ', T3 ' || :'t3_h_clinic'
                 || ', T4 ' || :'t4_h_clinic' || ', N ' || :'n_h_clinic' END,

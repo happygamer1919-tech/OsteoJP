@@ -1,83 +1,111 @@
-# 0098: apply CARE-02a v2, the care team reads the ficha and the registos, at the therapist's own clinics only
+# 0096: apply CARE-02a v2, the care team reads the ficha and the registos, at the therapist's own clinics only
 
-**Status: HELD. NOT PROMOTED, NOT APPLIED, NOT YET ISSUED FOR A SITTING.** One
-migration, today `packages/db/migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql`
-on the branch below, applied later by GREEN as
-`packages/db/migrations/0098_care02a_care_team_reads.sql`, **after 0097**. Any `STOP:`
-line, any `FAIL` verdict or any `ERROR` halts the sitting.
+**Status: PROMOTED ON #1471's HELD BRANCH, NOT APPLIED.** One migration,
+`packages/db/migrations/0096_care02a_care_team_reads.sql`, applied by GREEN from the HELD
+head of PR #1471, before #1471 merges. Six blocks, each pasted whole, on its own and in
+order: stage 0 (the promotion, the files and the held head it runs from), GREEN's CLOCK
+CHECK (in the dispatch, not here), stage 1 (the HEAD CHECK, the pre-check, the pick, the
+behaviour check BEFORE, the apply), stage 2 (the post-check), stage 3 (the behaviour check
+AFTER) and the closing journal read.
 
-**This is v2 of the document, for v2 of the file.** v1 had no clinic limit and was
-never applied anywhere but a throwaway. On 2026-09-27 the owner ruled the open
-question v1 carried, "limit to their clinic only", and the file was rewritten to it
-(its header, `NEXT-AFTER-0097_care02a_care_team_reads.sql:1-25`). Nothing below is
-carried over from v1's numbers.
+**THE ORDER, ruled by the owner and the lead on 2026-09-30. Nothing runs out of it:**
 
-**This document is written before the promotion, on purpose.** The owner ruled on
-2026-09-27 that 0097 and 0098 are "authored now" and held (`CLAUDE.md` on `origin/main`
-at `b8c62fd5`, line 133); the lane that authored them never applies them, and GREEN
-applies 0098 only after `0094`, `0095`, `0096` and `0097` are promoted, applied to
-production and merged, in that order. **Which content each of those numbers means
-changed the same night**: the owner's fourth renumbering made `0095` the conflict
-check's patient name (#1438) and `0096` the grants revoke (#1397), the reverse of the
-2026-09-22 order (`CLAUDE.md` at `b8c62fd5`, line 116). This document uses the new
-order throughout. So three kinds of value live here:
+1. **PROMOTE.** The commit that carries this document renames the file into
+   `packages/db/migrations/0096_care02a_care_team_reads.sql`, bytes unchanged, and adds
+   its journal entry (`idx 93`, `when 1788501700000`) and its supabase mirror.
+2. **APPLY.** GREEN applies 0096 to production from #1471's HELD head, by this document,
+   in the run window GREEN's dispatch names. #1471 cannot merge before the count
+   GATE-CHANGE, and the GATE-CHANGE cannot merge before the apply, so the apply runs from
+   the held head. **The owner does NOT merge #1471 before the apply.**
+3. **COUNT GATE-CHANGE.** The owner merges #1500, which moves `EXPECTED_COUNT` from 26 to
+   27, by hand, after GREEN's report says 0096 is applied.
+4. **MAIN INTO #1471.** SOLO merges `main` into #1471 (`git merge --no-edit origin/main`,
+   never a rebase), and every check runs again.
+5. **#1471 MERGES.** The owner takes `held-for-apply` off and merges it.
 
-- **pinned now**, because their bytes are final: the migration's sha256, the three
-  check files, the two programs that run with production credentials, and the rule
-  that picks the behaviour subjects (it is text in stage 1, so the sidecar pins it);
-- **derived at the sitting, by machine**: 0097's sha256 and journal `when`, which the
-  pre-check needs as `-v prev_hash` and `-v prev_when`, read off the branch by stage 1;
-  and the behaviour check's patient and actors, **picked by GREEN in stage 1, READ
-  ONLY, by that pinned rule**, and reused unchanged by stage 3;
-- **filled at promotion, and refused by machine until then**: the PR number. It is a
-  placeholder today (`NOT-YET-OPENED`), and every block STOPs on it before it touches
-  git or a database. See "What the promotion fills".
+One rule governs every halt, in these words here and in GREEN's dispatch:
 
-**Written at the standard `docs/migration-apply-0093.md` set, section for section, in
-the ALTER shape of `docs/migration-apply-0092.md`, plus one CREATE.** Every count below
-is a structural count, a verdict profile, or a measurement on the synthetic B13a
-rehearsal of 2026-09-27, quoted from its report. **No production figure appears here:
-this lane had no production access, and the production READ ONLY section is written
-before the document is issued.**
+THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any
+STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and
+nothing continues to the next block. After stage 1 has committed, a post-commit STOP
+still stops the sitting: the write stands, and stages 2 and 3 (READ ONLY) run only on the
+owner's or the lead's word. The only onward path from stage 1 to stage 2 is exit 0
+with the line "0096 APPLIED. Paste stage 2 now." No block, and no dispatch
+step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:
+no closing read and no journal read. Whether and when a halted sitting starts again
+is the lead's call, never the runner's.
+
+**That is the halt rule of `docs/migration-apply-0095.md`, word for word, with its
+migration number changed and no other change.**
+
+**Authored by SOLO. Run by GREEN,** a fresh session launched with the apply settings, on
+the owner's dispatch naming this migration by filename (`CLAUDE.md`, "Who applies
+migrations"). The lane that wrote this document never runs it.
+
+**THE FIFTH RENUMBERING, and why the file says 0098 inside.** The owner and the lead ruled
+on 2026-09-30: "renumber (option 1). CARE-02a 0096 (#1471), registo write policies 0097
+(#1475), staging index 0098 (#1469), grants revoke 0099 (#1397), SAT-01 from 0100. Apply
+order equals file order from now; the lead rules apply order only in number order or after
+a renumber." And: "Tonight's sitting is 0096 at journal idx 93; its count GATE-CHANGE (26
+to 27) keeps the documented order: promote, apply, count GATE-CHANGE, main into #1471,
+#1471." This document was `docs/migration-apply-0098.md` until that ruling; it assumed the
+staging index (then `0097`) before it and journal `idx 95`, and both are superseded. 0096
+follows 0095, which production has carried since 2026-09-29. The branch keeps its old name,
+`care/0098-CARE-02a-care-team-reads`.
 
 | Fact | Value |
 |---|---|
 | Card | `CARE-02a` |
-| Ruling | Owner, 2026-09-27: "0097 and 0098 authored now", `0098` is CARE-02a, HELD (`CLAUDE.md` on `origin/main` at `b8c62fd5`, line 133). The acceptance is the owner's CHECK: `viewer_care_team_patient_ids()` joined into the `patients` and `clinical_records` therapist arms; the `patient_care_team` insert policy admits a therapist writing their own booking's row, and the select policy admits therapists reading their own list; `attachments`, `clinical_episodes` and `appointment_notes` stay as they are. **And the owner's ruling of the same day on the open question: "limit to their clinic only"** |
-| Migration, today | `packages/db/migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql`, sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45` |
-| Migration, at the sitting | `packages/db/migrations/0098_care02a_care_team_reads.sql`, **bytes unchanged** (a promotion is a rename and nothing else, so the sha256 above is the hash drizzle records) |
-| Journal | `idx 95`, tag `0098_care02a_care_team_reads`, `when` set at promotion and **strictly greater than 0097's**. The rehearsal used the synthetic `when` values `0097 1788501800000` and `0098 1788501900000`; stage 0 asserts the order, not those values |
-| Must follow | `0097`, the index on `migration_staging_rows.imported_entity_id`, pending as `NEXT-AFTER-0096_migration_staging_imported_entity_idx.sql` (sha256 `198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0` as rehearsed). Before it: `0094` the users/tenants/roles split (#1459), `0095` the conflict check's patient name (#1438), `0096` the grants revoke (#1397), as the owner renumbered them on 2026-09-27 (`CLAUDE.md` at `b8c62fd5`, lines 116 and 134). Until that night the two middle numbers were the other way round, and the rehearsal base below applied them in that older order |
-| Production journal at the sitting | **95 rows before, 96 after.** 91 once 0093 was applied (`docs/migration-apply-0093.md:7`), plus one row each for 0094 to 0097 |
-| Branch | `care/0098-CARE-02a-care-team-reads`. PR **not yet opened** (`PR=NOT-YET-OPENED` in the blocks); it carries `held-for-apply` from the moment it opens |
-| Before the sitting | See "Before the sitting": the queue ahead, the promotion, the SECURITY DEFINER count's GATE-CHANGE, the PR's checks, the issue of this document, and the owner being ready to merge promptly after the apply |
-| This document | `docs/migration-apply-0098.md`, pinned by `docs/migration-apply-0098.sha256` and asserted in STAGE 0 and again in STAGE 1. The sidecar moves at promotion, when the placeholder is filled |
-| Pre-check | `scripts/db/precheck-0098-care02a.sql`, READ ONLY, **20 verdicts**, sha256 `d429c81f75e4e54c27c8c21c9184cc80a2dd86e03b1da91024224dd6533bef70`. Takes `-v prev_hash` and `-v prev_when` |
-| Post-check | `scripts/db/postcheck-0098-care02a.sql`, READ ONLY, **16 verdicts**, sha256 `01a1cd260fd3e1b391b85cfbce7c82ae04eafbc12c746e89e47f1aab51bae728`. Takes five carries |
-| Behaviour check | `scripts/db/behaviour-care02a-readonly.sql`, READ ONLY, **32 arms**, up to five actors and one patient, sha256 `b7a53c223edd54af9ef0fca344e00b6c0e5eb4f4202a4752ccf8e7e4e8c75d51`. Run TWICE in this sitting, before the apply and after it, with the same subjects |
+| Ruling | Owner, 2026-09-27: CARE-02a authored and HELD on the Tier C list. The acceptance is the owner's CHECK: `viewer_care_team_patient_ids()` joined into the `patients` and `clinical_records` therapist arms; the `patient_care_team` insert policy admits a therapist writing their own booking's row, and the select policy admits therapists reading their own list; `attachments`, `clinical_episodes` and `appointment_notes` stay as they are. **And the owner's ruling of the same day on the open question: "limit to their clinic only".** Numbered `0098` that day; renumbered `0096` by the owner and the lead on 2026-09-30 (the fifth renumbering, quoted above) |
+| Migration | `packages/db/migrations/0096_care02a_care_team_reads.sql`, sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45` |
+| Promoted from | `packages/db/migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql`, **bytes unchanged** (`git mv`, 100% similarity): the pending file's sha256 is the promoted file's, and the hash drizzle records |
+| Journal | `idx 93`, `when 1788501700000`, tag `0096_care02a_care_team_reads`; `when` strictly above 0095's `1788501600000`, and 0095's entry (`idx 92`) directly before it |
+| Mirror | `supabase/migrations/0096_care02a_care_team_reads.sql`, written by `scripts/sync-supabase-migrations.mjs` with its fixed header; checked by content by `scripts/check-journal.mjs`, which stage 0 runs with `node` directly, after asserting its sha256 |
+| Must follow | `0095_conflict_name_visibility`, sha256 `cfdfffff71a6c847a791ce17c71bbc6e05b75a367e9c8f03dfcb0cfc638f5806`, journal `when 1788501600000`: merged in #1438 and APPLIED to production on 2026-09-29 (journal 92 to 93). Stage 1 pins both values, checks them against 0095's file and journal entry on the held head, and passes them to the pre-check, whose arm 11 proves on production that the newest journal row is 0095's by hash and `when` |
+| Production journal at the sitting | **93 rows before, 94 after.** 0000 to 0095 are applied; the journal holds fewer rows than there are file numbers, as it always has, and `check-journal.mjs` reconciles files with journal entries, not with numbers |
+| PR | #1471, branch `care/0098-CARE-02a-care-team-reads` (the branch keeps its old number; the migration is `0096`), labelled `held-for-apply`, never armed, unmerged until after the apply and the count GATE-CHANGE |
+| Runs from | #1471's HELD head. Stage 0 resolves `refs/pull/1471/head` and the held branch, requires them to be the same commit, checks it out DETACHED and records its sha in `/tmp/0096-held.sha`; every later stage uses that recorded sha, never a fresh fetch, and stage 1 HALTS if the head has moved since (the HEAD CHECK) |
+| The count GATE-CHANGE | #1500, branch `sec/0096-secdef-count-27`: `EXPECTED_COUNT` 26 to 27 in `packages/db/scripts/check-security-definer-owner.mjs`, and that one pin in `.github/gate-manifest.json`. Labelled `held-for-apply`, never armed, merged by the owner by hand after the apply |
+| This document | `docs/migration-apply-0096.md`, pinned by `docs/migration-apply-0096.sha256` and asserted by every stage; GREEN's dispatch pins its sha256 on its own and checks it by machine twice: on the held head BEFORE YOU START resolves, and at the sha stage 0 recorded, in the CLOCK CHECK before stage 1 |
+| Pre-check | `scripts/db/precheck-0096-care02a.sql`, READ ONLY, **20 verdicts**, sha256 `7fc2085e9318b36610bd9ce1c3f0d504fe3013930985951b41457fc34e938b02`. Takes `-v prev_hash` and `-v prev_when` |
+| Post-check | `scripts/db/postcheck-0096-care02a.sql`, READ ONLY, **16 verdicts**, sha256 `acd879888c4643057c48ff1a926aca5e5a634dec258093052c03c5fa482ecda1`. Takes five carries |
+| Behaviour check | `scripts/db/behaviour-care02a-readonly.sql`, READ ONLY, **32 arms**, up to five actors and one patient, sha256 `7698cabc62e9501d680738e8e27cf2e979d3d1adeed72b646daa12d1031e0644`. Run TWICE in this sitting, before the apply and after it, with the same subjects |
 | Behaviour subjects | `-v patient_id`, `-v t1_id`, `-v t2_id`, `-v t3_id`, `-v t4_id`, `-v n_id`. **Picked by GREEN in stage 1, READ ONLY, by the rule the block carries (`PICK`)**: the lowest id that meets each slot. T4 and N are each picked, or passed as `none`, independently of the other (four shapes, each measured). The patient id is never printed and never committed (this repository is public). See "The behaviour subjects on production" |
-| The two programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`. Both byte-identical to `origin/main` at `b8c62fd5` and to the heads of the 0094 (#1459, `69ea425d`), 0095 (#1438, `67cdc97e`) and 0096 (#1397, `077ee449`) branches, read 2026-09-27 from the local remote-tracking refs; both pinned in every block that runs them |
-| What it changes | ONE new function, `public.viewer_care_team_patient_ids_at_my_clinics()`, nullary, SECURITY DEFINER, STABLE, `search_path = public`, owned by `postgres`, EXECUTE for `authenticated` only; and FOUR `ALTER POLICY` statements, each restating the policy's current expression and adding one arm: `patients_select` USING, `clinical_records_select` USING, `patient_care_team_select` USING, `patient_care_team_insert` WITH CHECK. No policy is created or dropped; the policy count is flat on every table |
+| The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `867e2823130b1ec1a9f7790522968924ecd872452c48322884c3e22efb5704d1`. All three byte-identical to `origin/main` at `453cf2c4` and to 0095's pins, and pinned in every block that runs them |
+| The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59`, byte-identical to `origin/main` at `453cf2c4`. It imports nothing but `node:` builtins, so its pin covers everything it runs |
+| Not pinned, and why | what the pinned programs load in turn: drizzle-kit and the rest of `node_modules`, and `packages/db/drizzle.config.ts`, which drizzle-kit loads through `verified-migrate.mjs` (0094 and 0095 did not pin them either). Their tree is fixed instead: GREEN's BEFORE YOU START requires #1471's head to BE the sha its dispatch names, and the CLOCK CHECK and the HEAD CHECK halt on any other head before the apply |
+| Run window | named by GREEN's dispatch, never here: its CLOCK CHECK records it in `/tmp/0096-window.ok` with the sha stage 0 recorded, as three Lisbon times `YYYYMMDDHHMM` (opens, the last minute stage 1 may start, ends). Stage 1 refuses to start outside it and checks again just before the apply; stages 2, 3 and the closing read refuse at or after its end. Stage 0 removes the record, so only a CLOCK CHECK pasted after stage 0 can write it |
+| What it changes | ONE new function, `public.viewer_care_team_patient_ids_at_my_clinics()`, nullary, SECURITY DEFINER, STABLE, `search_path = public`, owned by `postgres`, EXECUTE for `authenticated` only; and FOUR `ALTER POLICY` statements, each restating the policy's current expression and adding one arm: `patients_select` USING, `clinical_records_select` USING, `patient_care_team_select` USING, `patient_care_team_insert` WITH CHECK. No policy is created or dropped; the policy count is flat on every table. The SECURITY DEFINER count in `public` moves 26 to 27 |
 | What it never touches | every other policy (one md5 over all of them, a second over the eleven others on the three tables, a third over the thirteen on `attachments`, `clinical_episodes`, `appointment_notes`, `patient_note_revisions` and `guest_clinical_intakes`), every existing function (one md5 over every function in `public` but the new one), every existing grant (one md5 over every table, column and function ACL in `public` but the new function's). `viewer_care_team_patient_ids()`, `clinical_therapist_sees_patient()` and `clinical_admin_sees_patient()` are NOT edited, so no write widens |
 
-**THIS DOCUMENT PINS ITSELF, and the sidecar is why.** A document cannot contain its
-own sha256: writing the value changes the value. So the digest lives beside it in
-`docs/migration-apply-0098.sha256` and STAGE 0 checks it with `shasum -a 256 -c`.
+**THIS DOCUMENT PINS ITSELF, and the sidecar is why.** A document cannot contain its own
+sha256, so the digest lives in `docs/migration-apply-0096.sha256` and every stage checks it
+with `shasum -a 256 -c` before it trusts a pin written here. The sidecar sits on the same
+head as the document, so a head that moved to a new document and a new sidecar together
+would pass that check. **The sidecar alone does not close that, and the HEAD CHECK alone
+does not either:** the HEAD CHECK compares #1471's head with the sha stage 0 recorded, so it
+cannot see a head that moved BEFORE stage 0 fetched. GREEN's dispatch closes it by machine.
+It pins this document's sha256 and #1471's head on its own; its BEFORE YOU START checks both
+and records that head; and its CLOCK CHECK, pasted between stage 0 and stage 1, halts before
+the apply unless stage 0 recorded that same head and the document at the recorded sha still
+hashes to the pin. From stage 0 on, the HEAD CHECK halts on any moved head before the apply.
 
-**There is no `#` comment inside any block in this document, deliberately,** and every
-parameter is braced, including before a colon, because the blocks are pasted into an
-interactive zsh (`scripts/owner-blocks-survive-zsh.test.mjs` enforces the braces). No
-backslash continuations, and no `!` except as the `test !` operator followed by a
-space. Narration is `echo`.
+**There is no `#` line inside any block,** every parameter a colon follows is braced, there
+are no backslash continuations and no `!` except `test !`. The blocks are pasted into zsh
+(`scripts/owner-blocks-survive-zsh.test.mjs` reads this document by its number). Narration
+is `echo`.
 
-**Each stage derives the head from `origin/care/0098-CARE-02a-care-team-reads`, not
-`origin/main`, and survives that branch being deleted.** The PR is held until this
-apply succeeds, so `origin/main` cannot contain the migration at the moment the apply
-runs. On 2026-09-23 #1399 was merged before 0093's apply, the squash merge deleted its
-branch, and every block of the 0093 document, which resolved `origin/<branch>` alone,
-could not run. So every block here reads `origin/<branch>` when it exists and
-otherwise `refs/pull/<PR>/head`, which a merge does not delete, and says which one it
-read.
+**The promoted file's own header, and its helper's COMMENT, still read "0098".** The header
+says "RULED NUMBER 0098" and "It must follow 0097", and cites the 2026-09-27 queue
+(`packages/db/migrations/0096_care02a_care_team_reads.sql:13-20`); the `COMMENT ON FUNCTION`
+text production will carry begins "CARE-02a (0098)" (`:340-341`). That is stale, and it is
+left stale on purpose: a promotion does not touch one byte of the file, which is the only
+reason the sha256 above can pin anything. Read the header as a record of when the file was
+authored, and `packages/db/migrations-pending/README.md`'s Promoted table for where it sits.
+No check reads the COMMENT. The two apps/web modules that ask whether the helper exists are
+named for the authoring number too (`apps/web/lib/patients/care-team-0098-state.ts`), and
+the DB-gated tests of both packages title their arms "0098 APPLIED" and "0098 NOT APPLIED":
+the app half is on `main` byte for byte, and this PR does not touch it.
 
 ## The clinic limit and its location basis
 
@@ -94,7 +122,7 @@ care-team patient counts for a therapist when the patient is linked to one of th
 therapist's clinics, and then the ficha and EVERY registo of that patient count,
 including a registo written at another clinic; otherwise none of them do. That is the
 granularity 0045 already gives admins on `clinical_records`
-(`NEXT-AFTER-0097_care02a_care_team_reads.sql:78-87`).
+(`0096_care02a_care_team_reads.sql:78-87`).
 
 **The basis, exactly.** A patient P is linked to a caller when an appointment of P
 (`appointments.patient_id`, the FIRST slot) in the JWT tenant is at a location the
@@ -107,7 +135,7 @@ caller's clinics read the way 0092 reads them, `viewer_location_ids()`
 JWT tenant; `viewer_location_ids()` reads `sl.user_id = auth.uid()` and
 `sl.tenant_id = jwt_tenant_id()`. A NULL location never matches, because
 `x = ANY (array)` is never true for a NULL `x`, which is 0045's `IS NOT NULL` written as
-membership (`NEXT-AFTER-0097_care02a_care_team_reads.sql:89-107`).
+membership (`0096_care02a_care_team_reads.sql:89-107`).
 
 **The one real difference between 0045 and 0092 is the patient slot, and 0045's is
 kept.** 0092's appointment arm follows `patient_2_id` too; 0045's admin basis does not.
@@ -119,10 +147,10 @@ clinics cannot read. **The cost, stated because it is real:** a patient who is a
 clinic A ONLY as the second participant of a shared booking, and whose own bookings are
 at clinic B, is not linked to A. A's care-team therapist sees that shared booking (0092
 follows both slots) but not the ficha or the registos. It is the narrower answer, never
-the wider one (`NEXT-AFTER-0097_care02a_care_team_reads.sql:108-128`).
+the wider one (`0096_care02a_care_team_reads.sql:108-128`).
 
 **The new helper, and why it is new.** `viewer_care_team_patient_ids_at_my_clinics()`
-(`NEXT-AFTER-0097_care02a_care_team_reads.sql:302-348`) reads the team through 0091's
+(`0096_care02a_care_team_reads.sql:302-348`) reads the team through 0091's
 own `viewer_care_team_patient_ids()`, so "on the live care team" has one definition,
 and keeps the patients linked on the basis above. It is nullary, so `(SELECT f())` is an
 InitPlan evaluated once per statement (the 0073, 0074 and 0091 shape); SECURITY DEFINER,
@@ -156,182 +184,126 @@ and exactly one row: their own. And `patient_care_team_insert`'s therapist arm r
 
 ## Before the sitting
 
-Checked by the operator before stage 0. None of these is a block.
+Checked by the operator before GREEN's BEFORE YOU START. None of these is a block.
 
-1. **0094, 0095, 0096 and 0097 are applied to production and merged, in that order.**
-   One migration is in flight at a time (`packages/db/migrations-pending/README.md`).
-   The pre-check re-proves the end state by machine: `journal_rows_before` must read
-   **95**, 0093 must be in the journal by hash (arm 10), and the newest journal row
-   must be 0097's, by hash and `when` (arm 11).
-2. **0098 is promoted on this branch**: the rename into `packages/db/migrations/`, its
-   journal entry with a `when` above 0097's, the supabase mirror, the README's Promoted
-   row, and `packages/db/tests/security-definer-owner.test.ts`'s `EXPECTED_FUNCTIONS`
-   gaining the new helper (`NEXT-AFTER-0097_care02a_care_team_reads.sql:274-277`).
-   Stage 0 proves the rename and the journal, and STOPs until they are there.
-3. **The SECURITY DEFINER count moves 26 to 27, and half of that is a GATE-CHANGE.**
-   `EXPECTED_COUNT` is `packages/db/scripts/check-security-definer-owner.mjs:117`, a
-   frozen gate (`.github/gate-manifest.json:10`) that CI's DB-gated job runs against the
-   seeded database (`.github/workflows/db-tests.yml:199`). It moves in a GATE-CHANGE the
-   owner merges by hand, which may not carry the migration, so whichever of the two
-   lands first reddens that step until the other lands. 0098 is the first held
-   migration since the freeze to move this count; **the order is the owner's call**
-   (`NEXT-AFTER-0097_care02a_care_team_reads.sql:278-285`), and the order this document
-   follows is in "Order of merges".
-4. **The PR reads all required checks green on the head being applied**, except, once
-   it is promoted, the two count checks "Order of merges" names. Held, it stays
-   green against main's migrations. **That is measured, not inferred** (review round 2):
-   the without-0098 database of round 1 held 0094 to 0097, but CI's DB-gated job builds
-   from `supabase/migrations`, main's 91 migrations only, and 0094 changes the `users`
-   policies that `listCareTeam` reads through. So `b13a2_fix_ci` was built the way CI's
-   `supabase db reset` builds its database, `supabase/migrations` alone then
-   `supabase/seed.sql`, and the three suites 0098 flips read 67 of 67 and 17 of 17 there,
-   asserting the pre-0098 profile, with `check-security-definer-owner.mjs` at 26, OK (see
-   "The DB-gated suites"). That database is the rehearsal container, not CI's Supabase
-   stack, so the PR's first CI run is still the check this item is read off. And it stays
-   honest: every DB-gated arm 0098 flips
-   reads the catalogue and asserts whichever answer the database owes, never skips, and
-   says which in its title or its log
-   (`apps/web/lib/patients/care-team-0098-state.ts:1-45`,
-   `packages/db/tests/care-team-appointment-visibility.db.test.ts:79-167`, `:512-534`).
-   Both packages ask the same two questions: does the helper exist AND do all three
-   SELECT policies name it (anything in between THROWS as half applied), and does any
-   file in `packages/db/migrations` define it. From the promotion commit on, CI applies
-   0098 and those arms assert 0098's profile; a database missing 0098 while the
-   repository has it promoted THROWS in both packages, so it cannot read as a pass.
-   Measured on the rehearsal: see "The DB-gated suites".
-5. **This document is issued for the sitting**: `PR` is filled, the production READ ONLY
-   section is written, and the sidecar is regenerated. Stages 0 to 3 STOP on the
-   placeholder.
-6. **The owner's dispatch names `0098_care02a_care_team_reads` and a run window that
-   falls outside both clinics' opening hours**, and GREEN is launched with
-   `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no date
-   (`CLAUDE.md` on `origin/main` at `b8c62fd5`, line 132): stage 0 and stage 1 read the Lisbon clock,
-   and stage 1 also reads the clinics' own hours from the database.
-7. **The owner is ready to take `held-for-apply` off and merge the PR promptly after the
-   apply** (`CLAUDE.md` on `origin/main` at `b8c62fd5`, line 135: those are the owner's two clicks).
-   See "The apply window" next: it is why "promptly" is part of the sitting.
+1. **0094 and 0095 are applied to production and merged.** 0094 was applied on 2026-09-29
+   at 00:27 Lisbon (journal 91 to 92) and merged in #1459; 0095 on 2026-09-29 at 13:09
+   Lisbon (journal 92 to 93) and merged in #1438. Production's journal reads **93**, and
+   GREEN's BEFORE YOU START refuses any other count. The pre-check re-proves it by machine:
+   `journal_rows_before` must read **93**, 0093 must be in the journal by hash (arm 10),
+   and the newest journal row must be 0095's, by hash and `when` (arm 11).
+2. **0096 is promoted on #1471's branch** (the commit that carries this document): the
+   rename, its journal entry, the supabase mirror and the README's Promoted row. Stage 0
+   proves the rename, the journal and the mirror, and STOPs without them.
+   `packages/db/tests/security-definer-owner.test.ts` needs no edit: since #1491 it derives
+   the SECURITY DEFINER set from `packages/db/migrations`, so the new helper joins it by the
+   rename.
+3. **The count GATE-CHANGE, #1500, is open, labelled `held-for-apply` and unmerged.** It
+   merges only after the apply ("Order of merges").
+4. **#1471's required checks on the promoted head read green except the count.** Two
+   required checks read the SECURITY DEFINER count, and on the promoted head both read red
+   on it, by construction, until #1500 lands: the DB-gated job's count step
+   (`.github/workflows/db-tests.yml:199`) prints `expected exactly 26 SECURITY DEFINER
+   function(s) in public, found 27` and runs no suite after it, and
+   `Lint + typecheck + test` fails the count arms of
+   `packages/db/tests/security-definer-owner.test.ts` (the set derived from the
+   migrations holds 27, the frozen constant 26). Every other required check reads green,
+   and `held-for-apply-blocks-merge` reads red while the label is on, which is its job.
+   Each red is read off its log as the count and nothing else. The DB-gated suites'
+   evidence for this PR is its last run before the promotion (the pre-0096 profile,
+   green) and the rehearsal (0096's profile); CI's own database asserts 0096's profile
+   for the first time at step 4 of the order.
+5. **The held head is frozen for the sitting.** From GREEN's BEFORE YOU START until GREEN's
+   report, nothing is pushed to #1471 and nothing is merged to `main`, and no PR is armed
+   for auto-merge. SOLO fills the held head's sha into the dispatch at the sitting, after
+   checking that no push has moved it.
+6. **The app half is live.** #1470 merged to `main` as `7633ff64` on 2026-09-28, and every
+   production deployment of `main` since carries it ("The app half is already live" below).
+7. **GREEN's dispatch names `0096_care02a_care_team_reads` and a run window that falls
+   outside both clinics' opening hours,** and GREEN is launched with
+   `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no date: the
+   dispatch names the window and its CLOCK CHECK records it, and stage 1 also reads the
+   clinics' own hours from the database.
 
-## Apply before merge, and merge promptly after: the apply window
+## The app half is already live, so the apply opens nothing unguarded
 
-**Merged before the apply, nothing breaks and nothing new works.** The app asks the
-schema whether the helper exists (`to_regprocedure`, `apps/web/lib/patients/care-team-reads-gate.ts:55-99`)
-and, without it, keeps the narrow read scope (`apps/web/lib/patients/scope.ts:103-123`),
-so it never names a function that is not there. A therapist's own booking row is
-refused by 0091's insert policy, a refusal the writer's savepoint confines to the
-care-team write while the booking stands (`apps/web/lib/admin/care-team-auto.ts:27-33`,
-`:68-70`). The head resolution above is what lets this document still run from the PR's
-head in that case.
+**The owner ruled on 2026-09-27: "0098 app half as its own PR merging first."** It did:
+#1470, `7633ff64`, on 2026-09-28, the `apps/web` code and its tests and no migration. Every
+file under `apps/` on this branch is byte-identical to `main`'s, so the two cannot conflict.
+On production, from that deploy to the apply:
 
-**Applied and not yet merged, registo writers gate on RLS alone. That is the apply
-window, and it is why the merge follows the apply promptly.** On main today, several
-registo writers read their source registo with no scope but RLS and then write where
-their own policy would admit them anyway: a new version (`createAddendum`,
-`apps/web/lib/clinical/records.ts:514` on `origin/main`; `clinical_records_insert`
-admits any therapist filing in their own name), an annulment (`annulRecord`, `:672`;
-`record_annulments` is tenant-only), an attachment on a draft
-(`apps/web/lib/clinical/storage.ts:54` and `:115` on `origin/main`; `attachments` is
-tenant-only). Before 0098, RLS let a therapist SELECT only the registos they authored or
-of a patient they treat or created. **From the apply on, it also lets a care-team
-therapist at the patient's clinic SELECT a colleague's registo, and each of those
-writers widens with it** (the reasoning is `apps/web/lib/patients/scope.ts:132-140`, in
-this PR). This PR's app half closes it: every such writer reads its source row under
-`therapistRegistoWriteScope`, the pre-0098 reach (`scope.ts:125-148`). Until that code is
-deployed, nothing but RLS stands there.
+- **Reads keep the narrow scope.** The app asks the schema whether the helper exists
+  (`to_regprocedure`, `apps/web/lib/patients/care-team-reads-gate.ts:55-99`) and, without
+  it, keeps the narrow read scope (`apps/web/lib/patients/scope.ts:103-123`), so no
+  statement names a function that is not there. "Absent" is asked again each minute, so the
+  apply widens the read scope within a minute of stage 1, with no redeploy.
+- **A therapist's own booking tries its care-team row and is refused.** That write is not
+  behind the helper question: 0091's insert policy refuses it, the writer's savepoint
+  confines the refusal (`apps/web/lib/admin/care-team-auto.ts:27-33`, `:68-70`), the
+  booking stands, and one line is logged per such booking ("care-team: the automatic
+  care-team write failed and was rolled back to its savepoint; the booking itself is
+  unaffected"). Expected until the apply; it stops there.
+- **No registo writer widens with the apply.** Several registo writers read their source
+  registo with no scope but RLS and then write where their own policy would admit them
+  anyway: a new version (`createAddendum`), an annulment (`annulRecord`), an attachment on
+  a draft (`apps/web/lib/clinical/storage.ts`). From the apply on, RLS lets a care-team
+  therapist at the patient's clinic SELECT a colleague's registo. The app half closed that
+  before it could open: every such writer reads its source row under
+  `therapistRegistoWriteScope`, the pre-0096 reach (the reasoning is
+  `apps/web/lib/patients/scope.ts:132-140`, the scope `:125-148`).
 
-What bounds the window: main's registo list and registo page still read under the
-narrow scope (`origin/main:apps/web/lib/clinical/records.ts:110` and `:171`), so those
-screens do not offer a colleague's registo to a care-team therapist, and each writer
-above takes a registo id as its input; and the sitting runs while both clinics are
-closed. **The window closes when the production deployment of the merge commit is
-live, not at the merge click** (a merge to main is a production deploy). The report of
-the sitting names the apply time and the deploy time.
+**Between the apply and #1471's merge, production runs one migration ahead of `main`.**
+`main` has no `0096` file until step 5 of the order, so a journal read against `main` names
+one row with no matching file, and the daily `prod-drift-check` reports it; that report is
+correct and informational. That is the state the ruled order accepts, for as short a time
+as steps 3 to 5 take after GREEN's report.
 
 ## Order of merges
 
-**The owner ruled on 2026-09-27: "0098 app half as its own PR merging first."** CARE-02a
-ships as two PRs, in this order:
+**The order is the ruling's, at the top of this document: promote, apply, count
+GATE-CHANGE, main into #1471, #1471.** Why two PRs and why this order:
 
-1. **The app-half PR merges first**: branch `care/0098-app-half-care-team-reads`, the
-   `apps/web` code and its tests, no migration. Tier B: armed at open once its REVIEWER
-   returns PASS, and squash-merged on green.
-2. **GREEN applies 0098 from this document**, after 0094 to 0097 are promoted, applied
-   and merged ("Before the sitting").
-3. **This PR merges after the apply**, held until then with `held-for-apply`.
+- **The SECURITY DEFINER count is a frozen gate.** Promoting 0096 raises the count of
+  SECURITY DEFINER functions in `public` from 26 to 27. `EXPECTED_COUNT` is
+  `packages/db/scripts/check-security-definer-owner.mjs:117`, pinned by
+  `.github/gate-manifest.json:46`, so it moves only in a PR titled `GATE-CHANGE` that
+  changes nothing but gate files and the manifest (rule C of
+  `scripts/assert-gates-unchanged.mjs`), is never armed and is merged by the owner by hand:
+  #1500. That PR cannot carry the migration, so the two land separately.
+- **Two required checks read it, and whichever PR lands alone reddens both.** The DB-gated
+  job's count step (`.github/workflows/db-tests.yml:199`) runs before every suite in that
+  job; the unit run's `packages/db/tests/security-definer-owner.test.ts` derives the set
+  from `packages/db/migrations` and pins it to `EXPECTED_COUNT`. On #1471's promoted head
+  they read 27 against 26; on #1500 alone, 26 against 27. **Together they are green**:
+  measured locally on #1471's promoted tree with #1500's constant in place,
+  `security-definer-owner.test.ts` 28 of 28, its negative arms (a wrong owner, a realistic
+  owner split, one function missing, one more than expected) each still failing the checker
+  as they must.
+- **`main` reads red on the count from step 3 to step 5, one CI run.** The other two orders
+  are refused. #1471 first would merge a migration past a red required check whose job
+  never ran a suite on the promoted head. #1500 before the apply would keep `main` red
+  through the sitting, and for as long as a STOP holds it. **Step 3 merges a PR whose
+  required checks read red, and so does every other order**: whether branch protection lets
+  the owner do that is his setting, not read here.
+- **Step 4 is where CI first asserts 0096's profile on its own database.** Every DB-gated
+  arm 0096 flips reads the catalogue and asserts whichever answer the database owes, never
+  skips, and says which in its title or its log
+  (`apps/web/lib/patients/care-team-0098-state.ts:1-45`,
+  `packages/db/tests/care-team-appointment-visibility.db.test.ts:79-167`, `:512-534`); a
+  database missing 0096 while the repository has it promoted THROWS in both packages, so it
+  cannot read as a pass.
 
-**What merging the app half first changes for the sitting.** Measured on 2026-09-27 on a
-throwaway built as CI's `supabase db reset` builds its database (`supabase/migrations` of
-`origin/main` at `b8c62fd5` alone, then `supabase/seed.sql`): every `apps/web` DB-gated
-suite passes on the app half, 401 of 401, and the two care-team suites print "0098 NOT
-APPLIED ... This run proves nothing about 0098 itself". On production, from the app
-half's deploy to the apply:
+## Undoing 0096: a new migration, policies first, the helper last
 
-- **Reads keep the narrow scope.** The helper is asked about first and is absent, so no
-  statement names it; "absent" is asked again each minute, so the apply widens the read
-  scope within a minute of stage 1, with no redeploy.
-- **A therapist's own booking tries its care-team row and is refused.** That write is not
-  behind the helper question: 0091's insert policy refuses it, the writer's savepoint
-  confines the refusal, the booking stands, and one line is logged per such booking
-  ("care-team: the automatic care-team write failed and was rolled back to its
-  savepoint; the booking itself is unaffected"). Expected until the apply; it stops there.
-- **The apply window of the section above is closed before the apply.** That section was
-  written when one PR carried both halves. With the app half deployed, every registo
-  writer already reads its source under `therapistRegistoWriteScope` when 0098 lands.
-  That holds only if the app half's production deployment is live, so the operator reads
-  the commit status of the app half's merge commit on `main` before stage 0, and does not
-  sit without it. "Merge promptly after" still holds for this PR: production must not run
-  ahead of `main` for longer than the sitting.
-
-**This branch keeps the app half's files, byte for byte.** Every file under `apps/` here
-is identical to the app-half PR's head, so the two PRs cannot conflict: once the app half
-merges and `main` is merged in here, those files carry the same change on both sides and
-leave this PR's diff. Until then this branch passes on its own. If the app half changes in
-review before it merges, the same bytes are copied here.
-
-**The SECURITY DEFINER count: a GATE-CHANGE, merged together with this PR, just before
-it.** Promoting 0098 raises the count of SECURITY DEFINER functions in `public` from 26
-to 27. `EXPECTED_COUNT` is `packages/db/scripts/check-security-definer-owner.mjs:117`, a
-frozen gate (`.github/gate-manifest.json:10`), so it moves only in a PR titled
-`GATE-CHANGE` that changes the count and the manifest and nothing else, is never armed,
-and is merged by the owner by hand. Two required checks read it: the DB-gated job's
-count step (`.github/workflows/db-tests.yml:199`), which runs before every suite in that
-job, and the unit run's `packages/db/tests/security-definer-owner.test.ts`, whose arms at
-`:96` and `:207` hold `EXPECTED_FUNCTIONS` and the owner pins in `packages/db/migrations`
-to `EXPECTED_COUNT`. Whichever of the two PRs lands alone reddens both checks, on `main`
-and on every open PR, until the other lands. The order this document follows:
-
-1. **This PR is promoted** (the rename, the journal, the mirror, `EXPECTED_FUNCTIONS`).
-   From that commit it reads red on those two checks, on the count: the DB-gated job
-   prints `expected exactly 26 SECURITY DEFINER function(s) in public, found 27` and then
-   runs no suite, and the unit run fails the two count arms. **This qualifies "Before the
-   sitting" item 4**: on the promoted head, "all required checks green" means every
-   check but those two, each read off its log as a count failure and nothing else. The
-   suites' evidence for that head is the unpromoted head's CI run (the pre-0098 profile)
-   and the rehearsal (0098's).
-2. **GREEN applies 0098**, stages 0 to 3.
-3. **The owner merges the GATE-CHANGE** by hand. Its own run reads the same two checks
-   red the other way round (26 found, 27 expected), by construction.
-4. **`main` is merged into this PR** and every check runs again, green, the DB-gated
-   suites asserting 0098's profile on CI's own database for the first time.
-5. **The owner takes `held-for-apply` off and merges this PR.**
-
-`main` reads red on the count from step 3 to step 5, one CI run. The other two orders are
-refused. This PR first would merge a migration past a red required check whose job never
-ran a suite on the promoted head. The GATE-CHANGE before the apply would keep `main` red
-through the sitting, and for as long as a STOP holds it. **Step 3 merges a PR whose
-required checks read red, and so does every other order**: whether branch protection lets
-the owner do that is his setting, not read here.
-
-## Undoing 0098: a new migration, policies first, the helper last
-
-**It is not reversible by editing it.** Once applied, 0098's bytes are the hash drizzle's
+**It is not reversible by editing it.** Once applied, 0096's bytes are the hash drizzle's
 journal holds, so an undo is a NEW numbered migration, ruled onto the Tier C list like
 any other, rehearsed, and applied by GREEN; never a hand edit on production (the rule
 `docs/migration-apply-0092.md:708-710` states for 0092). **It runs in two steps, in this
 order, and the order is the safety.**
 
 **Step 1: restore the four policy expressions, and leave the helper in place.** The undo
-migration's `ALTER POLICY` statements restore each expression from the file 0098 read it
-from (`NEXT-AFTER-0097_care02a_care_team_reads.sql:139-151`): `patients_select` from
+migration's `ALTER POLICY` statements restore each expression from the file 0096 read it
+from (`0096_care02a_care_team_reads.sql:139-151`): `patients_select` from
 `0074_confirm_writers_and_therapist_set.sql:222-242`, `clinical_records_select` from
 `0045_clinical_records_location_rls.sql:221-240`, `patient_care_team_select` and
 `patient_care_team_insert` from `0091_care_team.sql:108-124`. This document's pre-check
@@ -346,10 +318,10 @@ names the helper in its SQL (`apps/web/lib/patients/scope.ts:112-123`). Dropped 
 running deployment, each of those reads raises 42883 until every process has restarted.
 With the policies restored and the helper still there, nothing errors: the app's read
 scope still names the care-team patients, and on `patients` and `clinical_records` RLS
-no longer admits them, so the ficha, the list and the registos show the pre-0098 answer.
+no longer admits them, so the ficha, the list and the registos show the pre-0096 answer.
 Documentos is the one read RLS does not back (`attachments` is tenant-only, the N5
 wave's): between step 1 and the app revert the Documentos reader still admits a team
-patient at the therapist's clinic, exactly as it does while 0098 stands and no more, and
+patient at the therapist's clinic, exactly as it does while 0096 stands and no more, and
 the screen does not reach it, because the ficha behind that tab now 404s. The app revert
 closes it.
 
@@ -361,105 +333,189 @@ objects depend on it", naming `clinical_records_select`, `patients_select` and
 `patient_care_team_select`), which is the check that step 1 really happened; `CASCADE`
 drops those three SELECT policies with it, and a table with RLS enabled and no SELECT
 policy returns nothing to any staff session. Step 2 also moves the SECURITY DEFINER
-count back from 27 to 26, which is a GATE-CHANGE (see "Before the sitting", item 3).
+count back from 27 to 26, which is a GATE-CHANGE (see "Order of merges").
 
 **What step 1 costs.** A therapist's own booking row (B7) is refused again by 0091's
 insert policy, and the writer's savepoint confines the refusal to the care-team write
 while the booking stands (`apps/web/lib/admin/care-team-auto.ts:27-33`, `:68-70`): the
 same state as merged-before-apply. The apply window's concern does not arise: RLS
-narrows back, so no registo writer reaches further than it did before 0098.
+narrows back, so no registo writer reaches further than it did before 0096.
 
-## What the promotion fills
+## The promotion, and what these pins are for
 
-The lane that promotes 0098 fills these and regenerates the sidecar. GREEN fills
-nothing: a GREEN session that meets a placeholder has been handed a document that is
-not issued, and stops.
+**Every pin in this document is for the PROMOTED file on #1471's held head.** The promotion
+is one commit on `care/0098-CARE-02a-care-team-reads`, made after `origin/main` was merged
+in (so that 0095's file and journal entry are there to follow), and kept separate from that
+merge:
 
-| Value | Where | Placeholder today | Filled with |
-|---|---|---|---|
-| `PR` | stages 0, 1, 2, 3 | `NOT-YET-OPENED` | the PR number, for the `refs/pull/<PR>/head` fallback |
-| "Measured on production, READ ONLY" | the section of that name | NOT YET MEASURED | the pre-check and the stage 1 pick, both READ ONLY, run before issue |
-| the sidecar | `docs/migration-apply-0098.sha256` | this revision's digest | the issued revision's digest |
+1. `git mv packages/db/migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql packages/db/migrations/0096_care02a_care_team_reads.sql`,
+   100% similarity; the body's sha256 is `fbf8cad1...9c45` before and after;
+2. one journal entry appended to `packages/db/migrations/meta/_journal.json`:
+   `{"idx":93,"version":"7","when":1788501700000,"tag":"0096_care02a_care_team_reads","breakpoints":true}`,
+   directly after 0095's `idx 92`, `when 1788501600000`;
+3. the mirror, by `node scripts/sync-supabase-migrations.mjs`, which writes
+   `supabase/migrations/0096_care02a_care_team_reads.sql` with its fixed header;
+4. the pending README's row moved to its Promoted table, and its queue paragraph brought to
+   the fifth renumbering;
+5. the three check files brought to the new number: `precheck-0098-care02a.sql` and
+   `postcheck-0098-care02a.sql` renamed to `0096` names, and every "0098" in their labels
+   and comments, and in `behaviour-care02a-readonly.sql`'s, changed to "0096". **One
+   predicate moved, and only one:** the pre-check's `journal_rows_before` expects **93**
+   (was 95), and its arm 11 names 0095 as the newest row. Every md5 pin, every other
+   literal and every verdict's logic is unchanged ("What changed at the renumbering",
+   below, lists it byte by byte);
+6. this document, renamed from `docs/migration-apply-0098.md`, and its sidecar with it.
 
-Nothing else in the blocks changes at promotion. **The subjects are not filled in**: v1
-of this document named them at promotion; v2 has GREEN pick them at the sitting by a rule
-this document carries, so they cannot go stale between issue and sitting. If a pinned
-check file, the migration or a pinned program changes before the sitting, its pin
-changes with it and the rehearsal arms that read it are re-run.
+`node scripts/check-journal.mjs` then reads `94 .sql files match 94 journal entries`.
 
-## STAGE 0: verify the promotion, the number and the clock
+**Exactly one `packages/db/migrations/0096_*.sql` may exist, and no `0097_*.sql`; if
+anything else is ever found, STOP.** The number is the apply authorisation (`CLAUDE.md`,
+the binding table under "SOLO's record", and the fifth renumbering above): `0097` is the
+registo write policies (#1475), `0098` the staging index (#1469), `0099` the grants revoke
+(#1397). `0097` is not promoted until 0096 is applied to production, so the journal on the
+held head ends at 0096 and `verified-migrate.mjs` finds exactly one pending migration.
+
+**What was a placeholder and is now filled:** the PR number, `1471`. **What is not filled:**
+the section "Measured on production, READ ONLY". No READ ONLY run preceded this sitting, so
+stage 1 is the first measurement, and everything it learns is learned before the apply (see
+that section).
+
+## The HEAD CHECK, and running from the held head
+
+The migration runs from #1471's HELD head, before #1471 merges, and nothing is pushed to
+#1471 or merged to `main` for the sitting. No block reads `main`, and there is no separate
+HEAD CHECK to paste: the machine runs it inside the blocks.
+
+- **Stage 0** refuses once stage 1 has applied, checks that the apply worktree is clean,
+  removes the previous held-sha and run window records, fetches, resolves
+  `refs/pull/1471/head` and `origin/care/0098-CARE-02a-care-team-reads`, and STOPs if the
+  branch is gone (#1471 may have merged before the apply, against the order) or if the two
+  are not the same commit. It checks that sha out DETACHED, verifies the sidecar, the
+  promotion, the journal, the mirror and every pin (check-journal's before it runs it), and
+  only then records the sha in `/tmp/0096-held.sha` and prints `running from the held head
+  of PR 1471 <sha>`.
+- **The run window is checked by machine in every block from stage 1 on,** from the record
+  GREEN's CLOCK CHECK writes after stage 0. Stage 1 refuses to start before the window opens
+  or after the last minute it may start, and checks again just before the apply; stages 2
+  and 3 and the closing read refuse at or after the window's end. A missing record, or one
+  written for another sha, is a `STOP:` in each.
+- **Stage 1 begins with the HEAD CHECK:** read the recorded sha, fetch, resolve #1471's head
+  and the held branch again, print them with the worktree's HEAD, and HALT on any
+  difference with `STOP: the head of PR 1471 moved since stage 0, the freeze was broken.`
+  (or the branch's or the worktree's own STOP). It runs before the environment is loaded and
+  before psql, so a halt there has touched no database and applied nothing. Every file it
+  runs is then asserted by sha256 before it runs any.
+- **After stage 1 has applied: NEVER run stage 0 or 1 again.** Each refuses once the applied
+  marker `/tmp/0096-applied.ok` exists, and `verified-migrate.mjs` refuses an
+  already-applied migration regardless (exit 3).
+- **Stages 2 and 3 and the closing read are READ ONLY** and run from the recorded sha
+  whatever #1471 has done since: each prints whether its head moved, with both shas, and
+  never stops on it. Every file they run is asserted by sha256 at that sha, so a merge of
+  `main` into #1471 after the apply changes nothing they read.
+- **A moved head before the apply ends the sitting.** Nothing is applied, every sha goes in
+  the report, and whether and when to start again is the lead's call.
+- **If `/tmp/0096-held.sha` is gone,** stages 1 to 3 stop, and the lead rules.
+
+## STAGE 0: the promotion, the files and the recorded held head
 
 **This stage PROVES the promotion; it never performs it.** It reads no database.
 
 ```
 (
 set -eo pipefail
-SHA=fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45
+PR=1471
 BRANCH=care/0098-CARE-02a-care-team-reads
-PR=NOT-YET-OPENED
-MIG=packages/db/migrations/0098_care02a_care_team_reads.sql
+DOCPIN=docs/migration-apply-0096.sha256
+MIG=packages/db/migrations/0096_care02a_care_team_reads.sql
 PEND=packages/db/migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql
-DOCPIN=docs/migration-apply-0098.sha256
-
-echo "--- the Lisbon clock: a sitting runs only while both clinics are closed"
-LT=$(TZ=Europe/Lisbon date +%H%M)
-echo "${LT}" | grep -qE '^[0-9]{4}$' || { echo "STOP: the Lisbon clock did not read as HHMM"; exit 1; }
-awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }' || { echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1; }
-echo "Lisbon ${LT}: outside 08:00 to 21:00"
-
-echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting: 0098 is HELD"; exit 1; }
+MIRROR=supabase/migrations/0096_care02a_care_team_reads.sql
+PREV=packages/db/migrations/0095_conflict_name_visibility.sql
+SHA0096=fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45
+SHAPREV=cfdfffff71a6c847a791ce17c71bbc6e05b75a367e9c8f03dfcb0cfc638f5806
+SHAPRE=7fc2085e9318b36610bd9ce1c3f0d504fe3013930985951b41457fc34e938b02
+SHAPOST=acd879888c4643057c48ff1a926aca5e5a634dec258093052c03c5fa482ecda1
+SHABEHAVIOUR=7698cabc62e9501d680738e8e27cf2e979d3d1adeed72b646daa12d1031e0644
+SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
+SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
+SHAREADER=867e2823130b1ec1a9f7790522968924ecd872452c48322884c3e22efb5704d1
+SHACJ=7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+[ -z "$(find /tmp/0096-applied.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 1 has ALREADY APPLIED 0096 in this sitting. The sitting stops here. Never run stage 0 or 1 again. GREEN reports this whole output, and stages 2 and 3 (READ ONLY) run only on the owner's or the lead's word"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
+rm -f /tmp/0096-held.sha /tmp/0096-window.ok
 git fetch origin --prune
-if git rev-parse -q --verify refs/remotes/origin/${BRANCH} > /dev/null; then PIN=$(git rev-parse refs/remotes/origin/${BRANCH}); else echo "the branch is gone from origin: reading the head of PR ${PR}"; git fetch -q origin refs/pull/${PR}/head; PIN=$(git rev-parse FETCH_HEAD); fi
-[ "$(git cat-file -t ${PIN})" = commit ] || { echo "STOP: ${PIN} does not resolve to a commit"; exit 1; }
-echo "running from ${PIN}"
-git checkout -q --detach ${PIN}
+git fetch -q origin refs/pull/${PR}/head
+HELD=$(git rev-parse FETCH_HEAD)
+BR=$(git rev-parse -q --verify refs/remotes/origin/${BRANCH} || true)
+echo "PR ${PR} head:      ${HELD}"
+echo "held branch head: ${BR}"
+[ -n "${BR}" ] || { echo "STOP: the held branch ${BRANCH} is gone from origin, so PR ${PR} may have merged before the apply, against the documented order. Nothing was checked out. The lead rules"; exit 1; }
+[ "${BR}" = "${HELD}" ] || { echo "STOP: the held branch and the head of PR ${PR} are not the same commit. Nothing was checked out"; exit 1; }
+[ "$(git cat-file -t ${HELD})" = commit ] || { echo "STOP: ${HELD} does not resolve to a commit"; exit 1; }
+git checkout -q --detach ${HELD}
+[ "$(git rev-parse HEAD)" = "${HELD}" ] || { echo "STOP: the checkout did not land on ${HELD}"; exit 1; }
 
-test -f ${DOCPIN} || { echo "STOP: the document pin is not on disk"; exit 1; }
+test -f ${DOCPIN} || { echo "STOP: the document pin is not on disk at the held head"; exit 1; }
 shasum -a 256 -c ${DOCPIN} || { echo "STOP: this document is not the approved one"; exit 1; }
-
-test -f ${MIG} || { echo "STOP: 0098 is not on disk; the promotion is not on this branch, and 0098 is still HELD"; exit 1; }
-[ "$(shasum -a 256 ${MIG} | cut -d' ' -f1)" = "${SHA}" ] || { echo "STOP: 0098 is not the approved body"; exit 1; }
+test -f ${MIG} || { echo "STOP: 0096 is not on disk at the held head, so the promotion is not there"; exit 1; }
 test ! -f ${PEND} || { echo "STOP: the pending copy still exists, so the rename did not happen"; exit 1; }
-N98=$(find packages/db/migrations -maxdepth 1 -name '0098_*.sql' | wc -l | tr -d ' ')
-[ "${N98}" = 1 ] || { echo "STOP: ${N98} files claim migration number 0098, not 1"; exit 1; }
+test -f ${MIRROR} || { echo "STOP: the supabase mirror of 0096 is not on disk"; exit 1; }
+N96=$(find packages/db/migrations -maxdepth 1 -name '0096_*.sql' | wc -l | tr -d ' ')
+[ "${N96}" = 1 ] || { echo "STOP: ${N96} files claim migration number 0096, not 1"; exit 1; }
 N97=$(find packages/db/migrations -maxdepth 1 -name '0097_*.sql' | wc -l | tr -d ' ')
-[ "${N97}" = 1 ] || { echo "STOP: ${N97} files claim migration number 0097, not 1. 0098 follows exactly one 0097"; exit 1; }
+[ "${N97}" = 0 ] || { echo "STOP: ${N97} files claim migration number 0097, and 0097 is not promoted until 0096 is applied"; exit 1; }
+test -f ${PREV} || { echo "STOP: 0095 is not on disk at the held head"; exit 1; }
+test -f scripts/db/precheck-0096-care02a.sql || { echo "STOP: the pre-check is not on disk"; exit 1; }
+test -f scripts/db/postcheck-0096-care02a.sql || { echo "STOP: the post-check is not on disk"; exit 1; }
+test -f scripts/db/behaviour-care02a-readonly.sql || { echo "STOP: the behaviour check is not on disk"; exit 1; }
+test -f packages/db/scripts/verified-migrate.mjs || { echo "STOP: verified-migrate is not on disk"; exit 1; }
+test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
+test -f packages/db/scripts/read-applied-migrations.mjs || { echo "STOP: the migration reader is not on disk"; exit 1; }
+test -f scripts/check-journal.mjs || { echo "STOP: check-journal is not on disk"; exit 1; }
+[ "$(shasum -a 256 ${MIG} | cut -d' ' -f1)" = "${SHA0096}" ] || { echo "STOP: 0096 on disk is not the approved body"; exit 1; }
+[ "$(shasum -a 256 ${PREV} | cut -d' ' -f1)" = "${SHAPREV}" ] || { echo "STOP: 0095 on disk is not the file production applied"; exit 1; }
+[ "$(shasum -a 256 scripts/db/precheck-0096-care02a.sql | cut -d' ' -f1)" = "${SHAPRE}" ] || { echo "STOP: the pre-check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/db/postcheck-0096-care02a.sql | cut -d' ' -f1)" = "${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/db/behaviour-care02a-readonly.sql | cut -d' ' -f1)" = "${SHABEHAVIOUR}" ] || { echo "STOP: the behaviour check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 packages/db/scripts/verified-migrate.mjs | cut -d' ' -f1)" = "${SHAVM}" ] || { echo "STOP: verified-migrate on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 packages/db/scripts/read-applied-migrations.mjs | cut -d' ' -f1)" = "${SHAREADER}" ] || { echo "STOP: the migration reader on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/check-journal.mjs | cut -d' ' -f1)" = "${SHACJ}" ] || { echo "STOP: check-journal on disk is not the approved file"; exit 1; }
 
-node -e 'const e = require("./packages/db/migrations/meta/_journal.json").entries; const a = e[e.length - 2]; const b = e[e.length - 1]; console.log("journal: " + e.length + " entries, then idx " + a.idx + " " + a.tag + " when " + a.when + ", then idx " + b.idx + " " + b.tag + " when " + b.when); if (e.length === 96 && a.idx === 94 && /^0097_/.test(a.tag) && b.idx === 95 && b.tag === "0098_care02a_care_team_reads" && b.when > a.when) process.exit(0); console.log("STOP: the journal must end with 0097 at idx 94 and then 0098_care02a_care_team_reads at idx 95, 96 entries, with a strictly greater when"); process.exit(1)'
+node -e "const j=JSON.parse(require('fs').readFileSync('packages/db/migrations/meta/_journal.json','utf8'));const e=j.entries[j.entries.length-1];const p=j.entries[j.entries.length-2];console.log('newest journal entry: idx '+e.idx+', when '+e.when+', tag '+e.tag+', of '+j.entries.length+'; before it idx '+p.idx+', when '+p.when+', tag '+p.tag);process.exit(j.entries.length===94&&e.idx===93&&e.when===1788501700000&&e.tag==='0096_care02a_care_team_reads'&&p.idx===92&&p.when===1788501600000&&p.tag==='0095_conflict_name_visibility'?0:1)" || { echo "STOP: the journal does not end idx 92 0095 (when 1788501600000) then idx 93 0096 (when 1788501700000), of 94"; exit 1; }
+node scripts/check-journal.mjs 2>&1 | tee /tmp/0096-check-journal.out
+grep -qF '94 .sql files match 94 journal entries' /tmp/0096-check-journal.out || { echo "STOP: check-journal did not reconcile 94 files with 94 journal entries"; exit 1; }
 
-pnpm db:check-journal
-echo "PROMOTION AND NUMBER VERIFIED"
+echo "${HELD}" > /tmp/0096-held.sha
+echo "running from the held head of PR ${PR} ${HELD}, DETACHED, recorded in /tmp/0096-held.sha"
+echo "0096 PROMOTION, NUMBER AND FILES VERIFIED ON THE HELD HEAD"
 )
 ```
 
-**EXPECT: `PROMOTION AND NUMBER VERIFIED`.** Before it: `Lisbon <HHMM>: outside 08:00
-to 21:00`; `running from <sha>`; `journal: 96 entries, then idx 94 0097_... when <W97>,
-then idx 95 0098_care02a_care_team_reads when <W98>`; and `pnpm db:check-journal`
-printing **96 `.sql` files match 96 journal entries** in order, `when` strictly
-increasing, the supabase mirror matching by CONTENT. Stage 1 re-proves the migration
-by sha256 through `verified-migrate.mjs`.
-
-**The promoted file's own header will still read "RULED NUMBER 0098. NO NUMBER IN THIS
-FILE NAME YET, BY CONSTRUCTION"** (`:13`). That is stale after the rename, and it stays
-stale on purpose: a promotion does not touch one byte of the file, which is the only
-reason the sha256 above can pin anything. Read the header as a record of when the file
-was authored, and the README's Promoted table for where it sits.
+**EXPECT: `PR 1471 head: <sha>` and `held branch head: <sha>`, the same sha twice; the
+sidecar line `docs/migration-apply-0096.md: OK`; then
+`newest journal entry: idx 93, when 1788501700000, tag 0096_care02a_care_team_reads, of 94; before it idx 92, when 1788501600000, tag 0095_conflict_name_visibility`;
+then check-journal's line `... 94 .sql files match 94 journal entries in order ... the supabase mirror matches by CONTENT.`;
+then `running from the held head of PR 1471 <sha>, DETACHED, recorded in /tmp/0096-held.sha`,
+then `0096 PROMOTION, NUMBER AND FILES VERIFIED ON THE HELD HEAD`. Exit 0.** git's fetch
+lines may print between them. It reads no database and prints no count of anything in it.
+The sha it records is the one every later stage runs from, and GREEN's CLOCK CHECK, next,
+halts unless it is the sha the dispatch names.
 
 **The clock.** Both clinics were ruled to 08:00 to 21:00 on every open day
-(`docs/data-op-location-hours.md:18`, AGENDA-2100), so a Lisbon time before 08:00 or
-from 21:00 is outside every ruled opening hour. The hours are data, not code: stage 1
-reads `locations.opens_at` and `closes_at` READ ONLY right before the apply and STOPs
-if any active clinic is open by its own row, so an hours change after that ruling is
+(`docs/data-op-location-hours.md:18`, AGENDA-2100), and the owner's rule of 2026-09-27 runs
+a sitting only while the clinics are closed, so GREEN's dispatch names a window outside
+08:00 to 21:00 Lisbon and its CLOCK CHECK records it. The hours are data, not code: stage 1
+also reads `locations.opens_at` and `closes_at` READ ONLY right before the pre-check and
+STOPs if any active clinic is open by its own row, so an hours change after that ruling is
 caught there.
 
-## What is new here, because 0098 is not shaped like 0093
+## What is new here, because 0096 is not shaped like 0093
 
 0093 CREATED a table, so its pre-check proved things ABSENT and its post-check
-asserted deltas. **0098 creates one function and alters four policies**: 0092's ALTER
+asserted deltas. **0096 creates one function and alters four policies**: 0092's ALTER
 shape four times over, and 0091's helper contract once.
 
 - **The pre-check proves each of the four policies PRESENT and exactly as main's
@@ -467,19 +523,19 @@ shape four times over, and 0091's helper contract once.
   `patients_select` as `0074:222-242` leaves it, `clinical_records_select` as
   `0045:221-240`, the two care-team policies as `0091:108-124`). `ALTER POLICY ...
   USING` replaces whatever expression it finds, so a policy somebody edited by hand
-  would be overwritten without a word, and one already carrying 0098's arm would mean
-  0098 had run outside the journal. Both STOP here, before the apply.
+  would be overwritten without a word, and one already carrying 0096's arm would mean
+  0096 had run outside the journal. Both STOP here, before the apply.
 - **It proves the new helper's name is FREE** (arm 13), because `CREATE OR REPLACE`
   would silently take over a same-named function somebody else made.
 - **It pins the eleven OTHER policies on the three tables by one md5** (arm 5), because
-  0098 relies on them NOT moving: the writes of `patients` and `clinical_records` and
+  0096 relies on them NOT moving: the writes of `patients` and `clinical_records` and
   `patient_care_team_update` are what keep a care-team-only therapist writing nothing;
-  and **the thirteen policies on the five tables 0098 leaves to the N5 wave** by another
+  and **the thirteen policies on the five tables 0096 leaves to the N5 wave** by another
   (arm 14).
 - **It pins the five helpers** (arm 7): the three the new helper and the new arms call
   or reproduce, `viewer_care_team_patient_ids()`, `viewer_location_ids()` and
   `clinical_admin_sees_patient()`; the insert arm's `viewer_treated_patient_ids()`; and
-  the one 0098 must NOT touch, `clinical_therapist_sees_patient()`.
+  the one 0096 must NOT touch, `clinical_therapist_sees_patient()`.
 - **The post-check asserts the new function exactly** (verdict 12: one of it, nullary,
   `uuid[]`, `sql`, DEFINER, STABLE, `search_path=public`, owner `postgres`, body by md5)
   **and its grants** (verdict 13: EXECUTE for `authenticated`, none for `anon`,
@@ -487,15 +543,15 @@ shape four times over, and 0091's helper contract once.
   counts, and three "nothing else moved" md5s carried from the pre-check: every other
   policy, every other function, every other grant.
 - **The behaviour check runs TWICE, as an A/B on production itself,** with the subjects
-  stage 1 picks. Before the apply it must FAIL on exactly the arms that see what 0098
+  stage 1 picks. Before the apply it must FAIL on exactly the arms that see what 0096
   opens; after it, the same file with the same subjects must read no FAIL.
 
 There are **five** carries: `journal_rows_before`, `policies_before`,
 `other_policies_md5`, `functions_md5`, `grants_md5`. No carry's name is a substring of
 another's or of any other row's `check` column (read off the pre-check file,
-`scripts/db/precheck-0098-care02a.sql:218-281`), because stage 2's `carry()` matches
+`scripts/db/precheck-0096-care02a.sql:222-285`), because stage 2's `carry()` matches
 column 1 with `index()`. The pre-check also takes two inputs that are not carries,
-`prev_hash` and `prev_when`, and refuses to run without them (`:91-102`).
+`prev_hash` and `prev_when`, and refuses to run without them (`:95-106`).
 
 ## The behaviour subjects on production
 
@@ -537,8 +593,8 @@ rehearsal-only, and stage 1 says so by printing `T4 none`.** The limit is then c
 on production by P4 and C4 only if one of T1 to T3 happens to sit on a team at a clinic
 its patient is not linked to (they compare each therapist's reads with the rule over
 every team it is on), by H1 for P, by post-check verdicts 1 to 3 and 12 (the exact
-expressions and the helper's body), and by the rehearsal's T4 arms below. The READ
-ONLY run before issue records which shape production furnishes.
+expressions and the helper's body), and by the rehearsal's T4 arms below. Stage 1
+prints which shape production furnishes, before the apply.
 
 **T2 on P's live team is part of the rule, not an arm.** S2 does not require it. With
 it, C2 has a population and reads FAIL before and OK after, and the profiles are the
@@ -558,7 +614,7 @@ measured profiles.
   is the point of running the instrument first.
 
 **How the ids reach stage 3.** Stage 1 writes the one line it picked
-(`<patient>|<T1>|<T2>|<T3>|<T4 or none>|<N or none>`) to `/tmp/0098-subjects.out`, under
+(`<patient>|<T1>|<T2>|<T3>|<T4 or none>|<N or none>`) to `/tmp/0096-subjects.out`, under
 `umask 077`, and prints only the five staff slots. Stage 3 reads that file, never picks
 again, and first checks that stage 1's BEFORE transcript named exactly its actors. The
 patient id never reaches a transcript: the behaviour file keeps it out by design
@@ -575,8 +631,9 @@ an appointment with the patient and so cannot be T1; or by owner or reception th
 the ficha's care-team card. If no patient has an assigned-only therapist at their own
 clinic on the day, the rule finds no P and stage 1 STOPs before anything is applied.
 Making one is a production write through the app: the owner's or reception's click,
-never this lane's and never GREEN's. The READ ONLY run before issue ("Measured on
-production") answers this before a sitting is scheduled.
+never this lane's and never GREEN's. No READ ONLY run answered it before this sitting
+("Measured on production"), so stage 1 answers it, READ ONLY and before the apply: without a
+T1 it STOPs with nothing applied.
 
 **The pick and the behaviour check read outside row level security for their
 comparands.** Both set `row_security = off` for their unfiltered reads (the pick in its
@@ -584,114 +641,82 @@ block, the file at `:273`), so on a connection that does not bypass row level se
 on these tables they ERROR rather than read a filtered count. On production the tables
 are owned by `postgres` with RLS ENABLED, not FORCED (`docs/runbook-prod-migrations.md:104`,
 `:157-160`), which is the case where they read. **No file that sets
-`row_security = off` has run on production yet**; the READ ONLY run before issue is the
-first measurement. If it errors at the sitting, stage 1 halts before the apply.
+`row_security = off` has run on production yet**; stage 1 of this sitting is the first
+measurement, and if it errors, stage 1 halts before the apply.
 
-## HEAD CHECK: run this FIRST, and read it with your eyes
-
-Paste this on its own, before stage 1, and again before stage 2. It writes nothing and
-touches no database.
-
-```
-(
-cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-git fetch origin --prune
-echo "head of the branch this document applies from (a failure below means the branch is gone, and the stages read refs/pull/<PR>/head):"
-git rev-parse -q --verify refs/remotes/origin/care/0098-CARE-02a-care-team-reads || echo "the branch is gone from origin"
-)
-```
-
-**Compare the sha it prints with the one STAGE 0 printed as `running from`.** That is
-the comparand: stage 0 is where the promotion, the number, the sidecar and the journal
-were verified.
-
-**This branch carries the label `held-for-apply`,** so `.github/workflows/auto-update-prs.yml`
-does not merge main into it, and the owner takes the label off (`CLAUDE.md` on
-`origin/main` at `b8c62fd5`, line 135). A moved head still means opposite things depending on WHEN:
-
-- **Before stage 1 has applied:** the sitting starts again from stage 0.
-- **After stage 1 has applied: NEVER go back to stage 1.** Go on to stage 2 on the new
-  head. Stage 2 asserts the migration, the post-check and the guard by sha256, so a
-  merge of main that left those bytes alone changes nothing it reads, and one that
-  changed them halts it. Both shas go on the SR-51 card.
-
-**Two halts that case can produce, named so they are not improvised around.** Two
-pinned files live on main, not only on this branch: `scripts/assert-production-target.mjs`
-(pinned by stages 1, 2 and 3) and `packages/db/scripts/verified-migrate.mjs` (stage 1).
-If a merge of main changes the guard after stage 1 has applied, stage 2 or stage 3
-stops on `the target guard on disk is not the approved file`, with production already
-applied. The applied-marker is good for **60 minutes**. Do not edit a pin and do not
-re-run stage 1. Report it to the owner with both shas; the post-check and the
-behaviour check are READ ONLY and can be re-issued against the new guard.
-
-Stage 1 refuses to start while a fresh applied-marker exists, and it never touches the
-previous transcripts until a new pre-check, a new pick AND a new before-run have passed.
-
-## STAGE 1: the clock, pre-flight, pre-check, the pick, the instrument BEFORE, apply
+## STAGE 1: the HEAD CHECK, the pre-check, the pick, the instrument BEFORE, the apply
 
 ```
 (
 set -eo pipefail
 umask 077
-SHA0098=fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45
-SHAPRE=d429c81f75e4e54c27c8c21c9184cc80a2dd86e03b1da91024224dd6533bef70
-SHABEHAVIOUR=b7a53c223edd54af9ef0fca344e00b6c0e5eb4f4202a4752ccf8e7e4e8c75d51
+PR=1471
+BRANCH=care/0098-CARE-02a-care-team-reads
+SHA0096=fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45
+SHAPREV=cfdfffff71a6c847a791ce17c71bbc6e05b75a367e9c8f03dfcb0cfc638f5806
+PREVWHEN=1788501600000
+SHAPRE=7fc2085e9318b36610bd9ce1c3f0d504fe3013930985951b41457fc34e938b02
+SHABEHAVIOUR=7698cabc62e9501d680738e8e27cf2e979d3d1adeed72b646daa12d1031e0644
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
-BRANCH=care/0098-CARE-02a-care-team-reads
-PR=NOT-YET-OPENED
 U='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 PICK="with cand as (select ct.tenant_id, ct.patient_id from public.patient_care_team ct join public.patients p on p.id = ct.patient_id and p.tenant_id = ct.tenant_id and p.deleted_at is null where ct.removed_at is null group by ct.tenant_id, ct.patient_id having count(*) >= 2), f as (select c.patient_id as pid, u.id::text as uid, r.slug, exists (select 1 from public.patient_care_team t where t.tenant_id = c.tenant_id and t.patient_id = c.patient_id and t.user_id = u.id and t.removed_at is null) as on_team, exists (select 1 from public.appointments a where a.tenant_id = c.tenant_id and (a.patient_id = c.patient_id or a.patient_2_id = c.patient_id) and (a.practitioner_id = u.id or a.practitioner_2_id = u.id)) as treats, exists (select 1 from public.patients p where p.id = c.patient_id and p.created_by = u.id) as created, (select count(*) from public.clinical_records cr where cr.tenant_id = c.tenant_id and cr.patient_id = c.patient_id and cr.practitioner_id = u.id) as authored, (exists (select 1 from public.appointments a join public.staff_locations s on s.location_id = a.location_id and s.tenant_id = a.tenant_id and s.user_id = u.id where a.tenant_id = c.tenant_id and a.patient_id = c.patient_id) or (not exists (select 1 from public.appointments a where a.tenant_id = c.tenant_id and a.patient_id = c.patient_id and a.location_id is not null) and exists (select 1 from public.patients p join public.staff_locations s on s.location_id = p.primary_location_id and s.tenant_id = p.tenant_id and s.user_id = u.id where p.id = c.patient_id and p.tenant_id = c.tenant_id))) as linked from cand c join public.users u on u.tenant_id = c.tenant_id and u.is_active and not u.is_shared_resource join public.roles r on r.id = u.role_id), s as (select pid, min(uid) filter (where slug = 'therapist' and on_team and linked and not treats and not created) as t1, min(uid) filter (where slug = 'therapist' and treats and authored > 0 and on_team and linked) as t2, min(uid) filter (where slug = 'therapist' and not on_team and not treats and not created and authored = 0) as t3, min(uid) filter (where slug = 'therapist' and on_team and not linked and not treats and not created and authored = 0) as t4, min(uid) filter (where slug in ('admin', 'reception') and on_team and linked) as n from f group by pid) select pid::text || '|' || t1 || '|' || t2 || '|' || t3 || '|' || coalesce(t4, 'none') || '|' || coalesce(n, 'none') from s where t1 is not null and t2 is not null and t3 is not null order by (t4 is not null) desc, (n is not null) desc, pid limit 1"
 
-echo "--- the Lisbon clock, before anything else"
-LT=$(TZ=Europe/Lisbon date +%H%M)
-echo "${LT}" | grep -qE '^[0-9]{4}$' || { echo "STOP: the Lisbon clock did not read as HHMM"; exit 1; }
-awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }' || { echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1; }
-echo "Lisbon ${LT}: outside 08:00 to 21:00"
-
-echo "--- the value the promotion fills. A placeholder means this document is not issued: 0098 is HELD"
-echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting"; exit 1; }
-
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-[ -z "$(find /tmp/0098-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 ALREADY APPLIED in this sitting. Do not run it again. Go to stage 2"; exit 1; }
-rm -f /tmp/0098-precheck.new /tmp/0098-subjects.new /tmp/0098-behaviour-before.new
-
-echo "--- ASSERTION 1, THE HEAD. The sha printed as applying from MUST equal the one the HEAD CHECK showed."
-git fetch origin --prune
-
-echo "--- pre-flight: the tree holds nothing but the checkout"
+[ -z "$(find /tmp/0096-applied.ok -mmin -720 2>/dev/null)" ] || { echo "STOP: stage 1 has ALREADY APPLIED 0096 in this sitting. The sitting stops here. Never run stage 0 or 1 again. GREEN reports this whole output, and stages 2 and 3 (READ ONLY) run only on the owner's or the lead's word"; exit 1; }
+rm -f /tmp/0096-precheck.new /tmp/0096-subjects.new /tmp/0096-behaviour-before.new
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
-if git rev-parse -q --verify refs/remotes/origin/${BRANCH} > /dev/null; then PIN=$(git rev-parse refs/remotes/origin/${BRANCH}); else echo "the branch is gone from origin: reading the head of PR ${PR}"; git fetch -q origin refs/pull/${PR}/head; PIN=$(git rev-parse FETCH_HEAD); fi
-[ "$(git cat-file -t ${PIN})" = commit ] || { echo "STOP: ${PIN} does not resolve to a commit"; exit 1; }
-echo "applying from ${PIN}"
 
-echo "--- SR-58: this stage checks out its own ref and proves the files"
-git checkout -q --detach ${PIN}
-test -f docs/migration-apply-0098.sha256 || { echo "STOP: the document pin is not on disk"; exit 1; }
-shasum -a 256 -c docs/migration-apply-0098.sha256 || { echo "STOP: this document is not the approved one"; exit 1; }
-test -f packages/db/migrations/0098_care02a_care_team_reads.sql || { echo "STOP: 0098 is not on disk"; exit 1; }
-test -f scripts/db/precheck-0098-care02a.sql || { echo "STOP: the pre-check is not on disk"; exit 1; }
+echo "--- THE HEAD CHECK: the head of PR 1471, the held branch and this worktree must all still be the sha stage 0 recorded."
+test -f /tmp/0096-held.sha || { echo "STOP: stage 0 recorded no sha in this sitting. The sitting stops"; exit 1; }
+REC=$(cat /tmp/0096-held.sha)
+[ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit"; exit 1; }
+git fetch origin --prune
+git fetch -q origin refs/pull/${PR}/head
+NOW=$(git rev-parse FETCH_HEAD)
+BR=$(git rev-parse -q --verify refs/remotes/origin/${BRANCH} || true)
+WT=$(git rev-parse HEAD)
+echo "recorded by stage 0: ${REC}"
+echo "PR ${PR} head now:    ${NOW}"
+echo "held branch now:     ${BR}"
+echo "worktree HEAD now:   ${WT}"
+[ "${NOW}" = "${REC}" ] || { echo "STOP: the head of PR ${PR} moved since stage 0, the freeze was broken. The sitting halts and nothing is applied. Report the shas above"; exit 1; }
+[ "${BR}" = "${REC}" ] || { echo "STOP: the held branch is not the sha stage 0 recorded: it moved, or it is gone. The sitting halts and nothing is applied. Report the shas above"; exit 1; }
+[ "${WT}" = "${REC}" ] || { echo "STOP: the apply worktree is not on the sha stage 0 recorded. The sitting halts and nothing is applied. Report the shas above"; exit 1; }
+shasum -a 256 -c docs/migration-apply-0096.sha256 || { echo "STOP: this document is not the approved one"; exit 1; }
+test -f packages/db/migrations/0096_care02a_care_team_reads.sql || { echo "STOP: 0096 is not on disk"; exit 1; }
+test -f packages/db/migrations/0095_conflict_name_visibility.sql || { echo "STOP: 0095 is not on disk"; exit 1; }
+test -f scripts/db/precheck-0096-care02a.sql || { echo "STOP: the pre-check is not on disk"; exit 1; }
 test -f scripts/db/behaviour-care02a-readonly.sql || { echo "STOP: the behaviour check is not on disk"; exit 1; }
 test -f packages/db/scripts/verified-migrate.mjs || { echo "STOP: verified-migrate is not on disk"; exit 1; }
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
-N98=$(find packages/db/migrations -maxdepth 1 -name '0098_*.sql' | wc -l | tr -d ' ')
-[ "${N98}" = 1 ] || { echo "STOP: ${N98} files claim migration number 0098, not 1"; exit 1; }
-[ "$(shasum -a 256 packages/db/migrations/0098_care02a_care_team_reads.sql | cut -d' ' -f1)" = "${SHA0098}" ] || { echo "STOP: 0098 on disk is not the approved file"; exit 1; }
-[ "$(shasum -a 256 scripts/db/precheck-0098-care02a.sql | cut -d' ' -f1)" = "${SHAPRE}" ] || { echo "STOP: the pre-check on disk is not the approved file"; exit 1; }
+N96=$(find packages/db/migrations -maxdepth 1 -name '0096_*.sql' | wc -l | tr -d ' ')
+[ "${N96}" = 1 ] || { echo "STOP: ${N96} files claim migration number 0096, not 1"; exit 1; }
+[ "$(shasum -a 256 packages/db/migrations/0096_care02a_care_team_reads.sql | cut -d' ' -f1)" = "${SHA0096}" ] || { echo "STOP: 0096 on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 packages/db/migrations/0095_conflict_name_visibility.sql | cut -d' ' -f1)" = "${SHAPREV}" ] || { echo "STOP: 0095 on disk is not the file production applied"; exit 1; }
+[ "$(shasum -a 256 scripts/db/precheck-0096-care02a.sql | cut -d' ' -f1)" = "${SHAPRE}" ] || { echo "STOP: the pre-check on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/db/behaviour-care02a-readonly.sql | cut -d' ' -f1)" = "${SHABEHAVIOUR}" ] || { echo "STOP: the behaviour check on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 packages/db/scripts/verified-migrate.mjs | cut -d' ' -f1)" = "${SHAVM}" ] || { echo "STOP: verified-migrate on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
-echo "--- 0097 as this branch carries it: the pre-check's prev_hash and prev_when, read here and never typed"
-N97=$(find packages/db/migrations -maxdepth 1 -name '0097_*.sql' | wc -l | tr -d ' ')
-[ "${N97}" = 1 ] || { echo "STOP: ${N97} files claim migration number 0097, not 1"; exit 1; }
-F97=$(find packages/db/migrations -maxdepth 1 -name '0097_*.sql')
-PREVHASH=$(shasum -a 256 ${F97} | cut -d' ' -f1)
-PREVWHEN=$(node -e 'const e = require("./packages/db/migrations/meta/_journal.json").entries.filter((x) => /^0097_/.test(x.tag)); process.stdout.write(e.length === 1 ? String(e[0].when) : "")')
-echo "${PREVHASH}" | grep -qE '^[0-9a-f]{64}$' || { echo "STOP: 0097's sha256 did not read"; exit 1; }
-echo "${PREVWHEN}" | grep -qE '^[0-9]{13}$' || { echo "STOP: 0097's journal when did not read as exactly one 13-digit value"; exit 1; }
-echo "0097: ${F97}, sha256 ${PREVHASH}, journal when ${PREVWHEN}"
+echo "--- 0095, the migration 0096 follows: its sha256 and journal when, pinned here, checked against this head, and passed to the pre-check. Never typed"
+PW=$(node -e 'const e = require("./packages/db/migrations/meta/_journal.json").entries.filter((x) => x.tag === "0095_conflict_name_visibility"); process.stdout.write(e.length === 1 ? String(e[0].when) : "")')
+[ "${PW}" = "${PREVWHEN}" ] || { echo "STOP: 0095's journal when on this head reads [${PW}], not ${PREVWHEN}"; exit 1; }
+echo "0095: sha256 ${SHAPREV}, journal when ${PREVWHEN}"
+
+echo "--- THE RUN WINDOW: GREEN's dispatch names it and its CLOCK CHECK recorded it. Stage 1 starts inside it or not at all"
+test -f /tmp/0096-window.ok || { echo "STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0. Nothing was applied"; exit 1; }
+WREC=$(cut -d' ' -f1 /tmp/0096-window.ok)
+WOPEN=$(cut -d' ' -f2 /tmp/0096-window.ok)
+WSTART=$(cut -d' ' -f3 /tmp/0096-window.ok)
+WEND=$(cut -d' ' -f4 /tmp/0096-window.ok)
+[ "${WREC}" = "${REC}" ] || { echo "STOP: the run window was recorded for ${WREC}, not for the sha stage 0 recorded. Nothing was applied"; exit 1; }
+echo "${WOPEN} ${WSTART} ${WEND}" | grep -qxE '[0-9]{12} [0-9]{12} [0-9]{12}' || { echo "STOP: the recorded run window did not parse. Nothing was applied"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: opens ${WOPEN}, stage 1 starts by ${WSTART}, everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -ge "${WOPEN}" ] || { echo "STOP: Lisbon ${NOWL} is before the run window opens at ${WOPEN}. Nothing was applied"; exit 1; }
+[ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART}, the last minute the run window lets stage 1 start. Nothing was applied"; exit 1; }
 
 echo "--- the production target, asserted by the guard, not by the prompt"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
@@ -703,10 +728,10 @@ echo "active clinics open now by their own hours: ${CL}"
 awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && (a[3] + 0) >= 1) exit 0; exit 1 }' || { echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1; }
 
 echo "--- the pre-check. READ ONLY. Its transcript IS the carry, so it is kept"
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v prev_hash=${PREVHASH} -v prev_when=${PREVWHEN} -f scripts/db/precheck-0098-care02a.sql 2>&1 | tee /tmp/0098-precheck.new
-grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0098-precheck.new && { echo "STOP: a pre-check verdict read FAIL. Nothing was applied and no earlier transcript was touched"; exit 1; }
-OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0098-precheck.new || true)
-[ "${OKS}" = 20 ] || { echo "STOP: the pre-check printed ${OKS} OK verdicts, not 20"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v prev_hash=${SHAPREV} -v prev_when=${PREVWHEN} -f scripts/db/precheck-0096-care02a.sql 2>&1 | tee /tmp/0096-precheck.new
+grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0096-precheck.new && { echo "STOP: a pre-check verdict read FAIL. Nothing was applied and no earlier transcript was touched"; exit 1; }
+OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0096-precheck.new || true)
+[ "${OKS}" = 20 ] || { echo "STOP: the pre-check printed ${OKS} OK verdicts, not 20. Nothing was applied"; exit 1; }
 
 echo "--- the behaviour subjects, picked READ ONLY by the rule in PICK: the lowest id that meets each slot. GREEN chooses nothing and substitutes nothing"
 SUBJ=$(psql "${DATABASE_URL_DIRECT}" -X -q -At -v ON_ERROR_STOP=1 -c "begin read only" -c "set local row_security = off" -c "${PICK}" | tail -1)
@@ -718,46 +743,58 @@ T2=$(echo "${SUBJ}" | cut -d'|' -f3)
 T3=$(echo "${SUBJ}" | cut -d'|' -f4)
 T4=$(echo "${SUBJ}" | cut -d'|' -f5)
 N=$(echo "${SUBJ}" | cut -d'|' -f6)
-echo "${SUBJ}" > /tmp/0098-subjects.new
+echo "${SUBJ}" > /tmp/0096-subjects.new
 echo "subjects picked: T1 ${T1}, T2 ${T2}, T3 ${T3}, T4 ${T4}, N ${N}, and one patient (used, never printed)"
 if [ "${T4}" = none ]; then K4=0; else K4=1; fi
 if [ "${N}" = none ]; then KN=0; else KN=1; fi
 case "${K4}${KN}" in 11) XBEFORE="17 OK / 0 VACUOUS / 15 FAIL"; XFAIL="C1 C2 C3 C4 C5 H1 N1 P1 P4 P5 R1 R4 W5 W6 W8 "; XVAC=""; XACTORS="${T1} ${T2} ${T3} ${T4} ${N} ";; 10) XBEFORE="16 OK / 2 VACUOUS / 14 FAIL"; XFAIL="C1 C2 C3 C4 C5 H1 P1 P4 P5 R1 R4 W5 W6 W8 "; XVAC="N1 S5 "; XACTORS="${T1} ${T2} ${T3} ${T4} ";; 01) XBEFORE="16 OK / 4 VACUOUS / 12 FAIL"; XFAIL="C1 C2 C3 C4 H1 N1 P1 P4 R1 W5 W6 W8 "; XVAC="C5 P5 R4 S4 "; XACTORS="${T1} ${T2} ${T3} ${N} ";; 00) XBEFORE="15 OK / 6 VACUOUS / 11 FAIL"; XFAIL="C1 C2 C3 C4 H1 P1 P4 R1 W5 W6 W8 "; XVAC="C5 N1 P5 R4 S4 S5 "; XACTORS="${T1} ${T2} ${T3} ";; esac
 echo "subject shape ${K4}${KN} (T4 then N, 1 picked, 0 none): expected BEFORE ${XBEFORE}"
 
-echo "--- the behaviour check BEFORE the apply. READ ONLY. It must see what 0098 opens, and nothing else"
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v patient_id=${PATIENT} -v t1_id=${T1} -v t2_id=${T2} -v t3_id=${T3} -v t4_id=${T4} -v n_id=${N} -f scripts/db/behaviour-care02a-readonly.sql 2>&1 | tee /tmp/0098-behaviour-before.new
-grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/0098-behaviour-before.new || { echo "STOP: the behaviour check printed no SUMMARY row before the apply"; exit 1; }
-ACTORS=$(grep -E '^ACTOR id ' /tmp/0098-behaviour-before.new | awk '{print $3}' | tr '\n' ' ' || true)
+echo "--- the behaviour check BEFORE the apply. READ ONLY. It must see what 0096 opens, and nothing else"
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v patient_id=${PATIENT} -v t1_id=${T1} -v t2_id=${T2} -v t3_id=${T3} -v t4_id=${T4} -v n_id=${N} -f scripts/db/behaviour-care02a-readonly.sql 2>&1 | tee /tmp/0096-behaviour-before.new
+grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/0096-behaviour-before.new || { echo "STOP: the behaviour check printed no SUMMARY row before the apply"; exit 1; }
+ACTORS=$(grep -E '^ACTOR id ' /tmp/0096-behaviour-before.new | awk '{print $3}' | tr '\n' ' ' || true)
 [ "${ACTORS}" = "${XACTORS}" ] || { echo "STOP: the ACTOR lines must name the picked actors in slot order, once each [${XACTORS}]. They named [${ACTORS}]"; exit 1; }
-FAILSET=$(grep -E '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0098-behaviour-before.new | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*([A-Z0-9]+)\..*/\1/' | LC_ALL=C sort | tr '\n' ' ' || true)
+FAILSET=$(grep -E '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0096-behaviour-before.new | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*([A-Z0-9]+)\..*/\1/' | LC_ALL=C sort | tr '\n' ' ' || true)
 [ "${FAILSET}" = "${XFAIL}" ] || { echo "STOP: before the apply the behaviour check must FAIL on exactly [${XFAIL}]. It failed on [${FAILSET}]"; exit 1; }
-VACSET=$(grep -E '\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/0098-behaviour-before.new | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*([A-Z0-9]+)\..*/\1/' | LC_ALL=C sort | tr '\n' ' ' || true)
+VACSET=$(grep -E '\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/0096-behaviour-before.new | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*([A-Z0-9]+)\..*/\1/' | LC_ALL=C sort | tr '\n' ' ' || true)
 [ "${VACSET}" = "${XVAC}" ] || { echo "STOP: before the apply the VACUOUS arms must be exactly [${XVAC}]. They were [${VACSET}]"; exit 1; }
-PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0098-behaviour-before.new | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
+PROFILE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0096-behaviour-before.new | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
 [ "${PROFILE}" = "${XBEFORE}" ] || { echo "STOP: before the apply the profile must read ${XBEFORE}. It read ${PROFILE}"; exit 1; }
-echo "the instrument sees what 0098 opens: ${PROFILE}, failing on ${FAILSET}"
+echo "the instrument sees what 0096 opens: ${PROFILE}, failing on ${FAILSET}"
+
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, again before the apply: now ${NOWL}, stage 1 starts by ${WSTART}"
+[ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART} after the pre-check, the pick and the BEFORE run, so the apply does not start. Nothing was applied"; exit 1; }
 
 echo "--- only now, with a passing pre-check, a full pick and a discriminating instrument in hand, does the previous sitting's state go"
-rm -f /tmp/0098-postcheck.out /tmp/0098-behaviour-after.out /tmp/0098-applied.ok /tmp/0098-subjects.out
-mv /tmp/0098-precheck.new /tmp/0098-precheck.out
-mv /tmp/0098-subjects.new /tmp/0098-subjects.out
-mv /tmp/0098-behaviour-before.new /tmp/0098-behaviour-before.out
+rm -f /tmp/0096-postcheck.out /tmp/0096-stage2.ok /tmp/0096-behaviour-after.out /tmp/0096-stage3.ok /tmp/0096-journal-after.out /tmp/0096-apply.out /tmp/0096-applied.ok /tmp/0096-subjects.out
+mv /tmp/0096-precheck.new /tmp/0096-precheck.out
+mv /tmp/0096-subjects.new /tmp/0096-subjects.out
+mv /tmp/0096-behaviour-before.new /tmp/0096-behaviour-before.out
 
-echo "--- the apply. It is the only writing command in this document"
-node packages/db/scripts/verified-migrate.mjs --tag 0098_care02a_care_team_reads --sha256 ${SHA0098} --expect-pending 1
-touch /tmp/0098-applied.ok
+echo "--- the apply. It is the only writing command in this document. Its full output is teed to /tmp/0096-apply.out"
+node packages/db/scripts/verified-migrate.mjs --tag 0096_care02a_care_team_reads --sha256 ${SHA0096} --expect-pending 1 2>&1 | tee /tmp/0096-apply.out
+touch /tmp/0096-applied.ok
+echo "0096 APPLIED. Paste stage 2 now."
 )
 ```
 
 **EXPECT, and these are what stage 1 is read for:**
 
-- **the clock line and `active clinics open now by their own hours: 0 of <n>`**, `n` at
+- **`--- THE HEAD CHECK`, then `recorded by stage 0: <sha>`, `PR 1471 head now: <sha>`,
+  `held branch now: <sha>` and `worktree HEAD now: <sha>`, the same sha four times** (the
+  block halts otherwise, before the environment is loaded), then
+  `docs/migration-apply-0096.md: OK`;
+- **`0095: sha256 cfdfffff71a6c847a791ce17c71bbc6e05b75a367e9c8f03dfcb0cfc638f5806, journal when 1788501600000`;**
+- **`run window, Lisbon YYYYMMDDHHMM: opens <t>, stage 1 starts by <t>, everything ends before <t>; now <t>`,**
+  with now inside it (the block halts otherwise), then the target guard;
+- **the clinics line, `active clinics open now by their own hours: 0 of <n>`**, `n` at
   least 1. A zero with no clinic behind it would be vacuous, so the block requires both;
-- **the pre-check prints `20` OK verdicts and no FAIL**, with `journal_rows_before` 95
-  and arm 11 naming 0097's sha256 and `when` as the line above it printed them;
-- **`subjects picked: T1 <id>, T2 <id>, T3 <id>, T4 <id or none>, N <id or none>`**, and
-  no patient id anywhere; then `subject shape <T4><N> ...`, `11`, `10`, `01` or `00`;
+- **the pre-check prints `20` OK verdicts and no FAIL**, with `journal_rows_before` 93 and
+  arm 11 naming 0095's sha256 and `when` exactly as the `0095:` line printed them;
+- **`subjects picked: T1 <id>, T2 <id>, T3 <id>, T4 <id or none>, N <id or none>`**, and no
+  patient id anywhere; then `subject shape <T4><N> ...`, `11`, `10`, `01` or `00`;
 - **the behaviour check BEFORE, exactly as the shape requires:**
   - `11`, five actors: `17 OK / 0 VACUOUS / 15 FAIL`, failing on exactly
     `C1 C2 C3 C4 C5 H1 N1 P1 P4 P5 R1 R4 W5 W6 W8`, nothing VACUOUS;
@@ -768,115 +805,149 @@ touch /tmp/0098-applied.ok
   - `00`, three actors: `15 OK / 6 VACUOUS / 11 FAIL`, failing on exactly
     `C1 C2 C3 C4 H1 P1 P4 R1 W5 W6 W8`, VACUOUS on exactly `C5 N1 P5 R4 S4 S5`.
 
-  Those FAILs are correct and required: they are the arms that see what 0098 opens, and H1
+  Those FAILs are correct and required: they are the arms that see what 0096 opens, and H1
   among them, because the helper does not exist yet. The subject arms S0 to S3 and the
-  instrument I1 must be among the OKs, and are: a FAIL on any of them changes the set,
-  and the block halts with nothing applied;
-- **`pending    1  [0098_care02a_care_team_reads]`.** Exactly one.
+  instrument I1 must be among the OKs, and are: a FAIL on any of them changes the set, and
+  the block halts with nothing applied;
+- **`run window, again before the apply: now <t>, stage 1 starts by <t>`,** now no later
+  than that minute (the block halts otherwise);
+- **verified-migrate, teed whole to `/tmp/0096-apply.out`:**
+  `file       0096_care02a_care_team_reads.sql present, sha256 matches`,
+  `journal    93 row(s) applied, last when=1788501600000`,
+  `pending    1  [0096_care02a_care_team_reads]` (exactly one), the drizzle-kit banner with
+  its stdout, stderr and exit, then `journal    93 -> 94  (delta 1)`,
+  `0096_care02a_care_team_reads present by sha256: yes`,
+  `OK: the journal moved by exactly the pending count and carries the approved sha256.`;
+- **the last line, exactly, `0096 APPLIED. Paste stage 2 now.`** Stage 2 re-reads the
+  journal from the database rather than trusting these lines.
 
-It then prints `journal    95 -> 96  (delta 1)` and
-`0098_care02a_care_team_reads present by sha256: yes`. Stage 2 re-reads both from the
-database rather than trusting this line.
+`verified-migrate.mjs` exits **2** on a bad invocation or a missing environment variable;
+**3** BEFORE drizzle runs on a missing file, a wrong sha256, a tag missing from
+`_journal.json`, an already-applied migration or a pending count that is not 1, and AFTER
+drizzle has run on a journal that moved by the wrong amount or moved without the approved
+sha256; **4** if drizzle itself failed or on any thrown error; **5** if drizzle reports
+success and the journal did not move. Exit 3 can therefore follow a committed apply too.
+The `tee` keeps that exit: the block runs with `pipefail`, so the stage exits with
+verified-migrate's own code.
 
-`verified-migrate.mjs` exits **2** on a bad invocation or a missing environment
-variable; **3** BEFORE drizzle runs on a missing file, a wrong sha256, a tag missing
-from `_journal.json`, an already-applied migration or a pending count that is not 1,
-and AFTER drizzle has run on a journal that moved by the wrong amount or moved without
-the approved sha256; **4** if drizzle itself failed or on any thrown error; **5** if
-drizzle reports success and the journal did not move. Exit 3 can therefore follow a
-committed apply too: the rule below covers every non-zero exit after the banner.
+**Exit 4 does not always mean nothing was applied.** `verified-migrate.mjs` also exits 4 on
+ANY thrown error, including its own journal read AFTER drizzle has committed. drizzle applies
+the file's statements and the journal row in ONE transaction (measured for 0092 by refusing
+a statement part way, `docs/migration-apply-0092.md`; 0096 is nine statements, each ended by
+`--> statement-breakpoint`, the last one included), so the migration is either wholly
+applied or not at all. **If stage 1 ended non-zero after the `--- drizzle-kit migrate ---`
+banner had printed, the halt rule governs: GREEN pastes nothing else, not stage 1 again and
+not the journal read, and reports the exit code and the whole output** (`/tmp/0096-apply.out`
+holds it). The read that answers whether 0096 is applied is
+`packages/db/scripts/read-applied-migrations.mjs`, READ ONLY, and it runs only on the
+owner's or the lead's word. No marker exists after such a halt, so stage 2 refuses until the
+lead rules.
 
-**Exit 4 does not always mean nothing was applied.** `verified-migrate.mjs` also exits
-4 on ANY thrown error, including its own journal read AFTER drizzle has committed. So:
-**if stage 1 ended non-zero after the `drizzle-kit migrate` banner had printed, do not
-paste stage 1 again.** Run, READ ONLY,
-`cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply && node --env-file=/Users/ivan/osteojp-secrets/new-prod.env packages/db/scripts/read-applied-migrations.mjs`.
-If it lists 0098 as APPLIED, production is applied and no marker exists, so stage 2
-will refuse: stop and ask the owner to rule. **If it lists 0098 as NOT APPLIED,
-nothing changed:** drizzle applies the file's statements and the journal row in ONE
-transaction (measured for 0092 by refusing a statement part way,
-`docs/migration-apply-0092.md`). 0098 is nine statements, each ended by
-`--> statement-breakpoint`, the last one included, which is how 0092's file ended too.
-Stop and report the exit code and the drizzle output. Do not re-run stage 1 on your
-own.
+**An exit 4 whose captured drizzle output is a pnpm error, not drizzle's, means drizzle
+never ran.** `verified-migrate.mjs` reaches drizzle through `pnpm --filter @osteojp/db exec`,
+and pnpm checks the installed dependencies first; in a clone whose `node_modules` does not
+match its lockfile it tries to reinstall and, with no terminal, aborts
+(`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`). The block then prints
+`journal    93 -> 93  (delta 0)`: nothing was applied. The halt rule governs it all the same.
 
-## STAGE 2: post-check, carries derived from stage 1
+**Every `STOP:` this block prints before the `--- the apply` line means nothing was
+applied,** the HEAD CHECK's, the run window's, the clinics', the pre-check's, the missing
+subject's and the BEFORE profile's included, and the previous sitting's transcripts are
+untouched: the failed run's output stays in the `.new` files.
+
+## STAGE 2: the post-check, carries from stage 1. READ ONLY
 
 ```
 (
 set -eo pipefail
-SHA0098=fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45
-SHAPOST=01a1cd260fd3e1b391b85cfbce7c82ae04eafbc12c746e89e47f1aab51bae728
+PR=1471
+SHA0096=fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45
+SHAPOST=acd879888c4643057c48ff1a926aca5e5a634dec258093052c03c5fa482ecda1
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
-BRANCH=care/0098-CARE-02a-care-team-reads
-PR=NOT-YET-OPENED
 
-echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting"; exit 1; }
+rm -f /tmp/0096-stage2.ok
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-
-echo "--- ASSERTION 1, THE HEAD. Record the sha printed as checking from beside the one stage 1 applied from. If it has MOVED, carry on: never go back to stage 1 after an apply. Everything this stage reads is asserted by sha256 below."
+test -f /tmp/0096-held.sha || { echo "STOP: stage 0 recorded no sha in this sitting, and stage 2 runs only from the recorded sha. The lead rules"; exit 1; }
+REC=$(cat /tmp/0096-held.sha)
+[ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit"; exit 1; }
 git fetch origin --prune
-
-echo "--- SR-58 again. This stage inherits nothing from stage 1"
-if git rev-parse -q --verify refs/remotes/origin/${BRANCH} > /dev/null; then PIN=$(git rev-parse refs/remotes/origin/${BRANCH}); else echo "the branch is gone from origin: reading the head of PR ${PR}"; git fetch -q origin refs/pull/${PR}/head; PIN=$(git rev-parse FETCH_HEAD); fi
-[ "$(git cat-file -t ${PIN})" = commit ] || { echo "STOP: ${PIN} does not resolve to a commit"; exit 1; }
-echo "checking from ${PIN}"
-git checkout -q --detach ${PIN}
-test -f packages/db/migrations/0098_care02a_care_team_reads.sql || { echo "STOP: 0098 is not on disk"; exit 1; }
-test -f scripts/db/postcheck-0098-care02a.sql || { echo "STOP: the post-check is not on disk"; exit 1; }
+git fetch -q origin refs/pull/${PR}/head
+NOW=$(git rev-parse FETCH_HEAD)
+echo "checking from the recorded sha ${REC}"
+echo "PR ${PR} head now: ${NOW}"
+if [ "${NOW}" = "${REC}" ]; then echo "the held head has not moved since stage 0"; else echo "THE HELD HEAD MOVED since stage 0: recorded ${REC}, PR ${PR} head now ${NOW}. Stage 2 still runs from the recorded sha. Report both"; fi
+git checkout -q --detach ${REC}
+shasum -a 256 -c docs/migration-apply-0096.sha256 || { echo "STOP: this document is not the approved one"; exit 1; }
+test -f packages/db/migrations/0096_care02a_care_team_reads.sql || { echo "STOP: 0096 is not on disk"; exit 1; }
+test -f scripts/db/postcheck-0096-care02a.sql || { echo "STOP: the post-check is not on disk"; exit 1; }
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
-[ "$(shasum -a 256 packages/db/migrations/0098_care02a_care_team_reads.sql | cut -d' ' -f1)" = "${SHA0098}" ] || { echo "STOP: 0098 on disk is not the approved file"; exit 1; }
-[ "$(shasum -a 256 scripts/db/postcheck-0098-care02a.sql | cut -d' ' -f1)" = "${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 packages/db/migrations/0096_care02a_care_team_reads.sql | cut -d' ' -f1)" = "${SHA0096}" ] || { echo "STOP: 0096 on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/db/postcheck-0096-care02a.sql | cut -d' ' -f1)" = "${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
 echo "--- stage 1 must have APPLIED, in this sitting, not merely run"
-[ -n "$(find /tmp/0098-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not complete an apply in this sitting"; exit 1; }
+[ -n "$(find /tmp/0096-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not complete an apply in this sitting, or completed it over an hour ago"; exit 1; }
+
+echo "--- THE RUN WINDOW: nothing runs at or after its end"
+test -f /tmp/0096-window.ok || { echo "STOP: no run window is recorded for this sitting. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+[ "$(cut -d' ' -f1 /tmp/0096-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+WEND=$(cut -d' ' -f4 /tmp/0096-window.ok)
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
 
 echo "--- SR-59: the carries come out of THIS SITTING's pre-check transcript"
-test -f /tmp/0098-precheck.out || { echo "STOP: stage 1's transcript is missing; re-run stage 1"; exit 1; }
-[ -n "$(find /tmp/0098-precheck.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's"; exit 1; }
-carry() { awk -F'|' -v k="$1" 'index($1,k)>0 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' /tmp/0098-precheck.out; }
+test -f /tmp/0096-precheck.out || { echo "STOP: stage 1's transcript is missing; re-run stage 1"; exit 1; }
+[ -n "$(find /tmp/0096-precheck.out -mmin -90)" ] || { echo "STOP: stage 1's pre-check transcript is over 90 minutes old; it is not this sitting's"; exit 1; }
+carry() { awk -F'|' -v k="$1" 'index($1,k)>0 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' /tmp/0096-precheck.out; }
 J=$(carry journal_rows_before)
 P=$(carry policies_before)
 O=$(carry other_policies_md5)
 F=$(carry functions_md5)
 G=$(carry grants_md5)
 [ -n "${J}" ] && [ -n "${P}" ] && [ -n "${O}" ] && [ -n "${F}" ] && [ -n "${G}" ] || { echo "STOP: a carry did not parse out of the transcript"; exit 1; }
-[ "${J}" = 95 ] || { echo "STOP: the carried journal_rows_before reads ${J}, not 95"; exit 1; }
+[ "${J}" = 93 ] || { echo "STOP: the carried journal_rows_before reads ${J}, not 93"; exit 1; }
 echo "carries from this run: journal_before=${J} policies_before=${P} other_policies_md5=${O} functions_md5=${F} grants_md5=${G}"
 
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
 echo "--- the post-check, inside one READ ONLY transaction, so the server is what refuses a write"
-rm -f /tmp/0098-postcheck.out
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v policies_before="${P}" -v other_policies_md5="${O}" -v functions_md5="${F}" -v grants_md5="${G}" -v journal_rows_before="${J}" -c "begin read only" -f scripts/db/postcheck-0098-care02a.sql -c "rollback" 2>&1 | tee /tmp/0098-postcheck.out
-N1213=$(grep -cE '^[[:space:]]*1[23]\. .*\|[[:space:]]*OK[[:space:]]*$' /tmp/0098-postcheck.out || true)
-[ "${N1213}" = 2 ] || { echo "STOP: post-check 12 or 13 is not OK: the new helper's security, owner, body or EXECUTE is not what 0098 writes, and every therapist's read of patients now calls it. Do NOT run stage 3. Report to the owner now"; exit 1; }
-grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0098-postcheck.out && { echo "STOP: a post-check verdict read FAIL"; exit 1; }
-OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0098-postcheck.out || true)
+rm -f /tmp/0096-postcheck.out
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v policies_before="${P}" -v other_policies_md5="${O}" -v functions_md5="${F}" -v grants_md5="${G}" -v journal_rows_before="${J}" -c "begin read only" -f scripts/db/postcheck-0096-care02a.sql -c "rollback" 2>&1 | tee /tmp/0096-postcheck.out
+N1213=$(grep -cE '^[[:space:]]*1[23]\. .*\|[[:space:]]*OK[[:space:]]*$' /tmp/0096-postcheck.out || true)
+[ "${N1213}" = 2 ] || { echo "STOP: post-check 12 or 13 is not OK: the new helper's security, owner, body or EXECUTE is not what 0096 writes, and every therapist's read of patients now calls it. Do NOT run stage 3. Report to the owner now"; exit 1; }
+grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0096-postcheck.out && { echo "STOP: a post-check verdict read FAIL"; exit 1; }
+OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0096-postcheck.out || true)
 [ "${OKS}" = 16 ] || { echo "STOP: the post-check printed ${OKS} OK verdicts, not 16"; exit 1; }
 
-echo "--- SR-51: the journal grew by exactly one, and the row is 0098 by hash"
+echo "--- SR-51: the journal grew by exactly one, and the row is 0096 by hash"
 JA=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations")
 JA=$(echo "${JA}" | tail -1)
 [ "${JA}" = "$((J + 1))" ] || { echo "STOP: the journal reads ${JA} rows, not ${J} plus one"; exit 1; }
-HN=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations where hash = '${SHA0098}'")
+HN=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations where hash = '${SHA0096}'")
 HN=$(echo "${HN}" | tail -1)
-[ "${HN}" = 1 ] || { echo "STOP: the sha256 of 0098 is in the journal ${HN} times, not once"; exit 1; }
-echo "journal rows before=${J} after=${JA}, 0098 present by hash"
+[ "${HN}" = 1 ] || { echo "STOP: the sha256 of 0096 is in the journal ${HN} times, not once"; exit 1; }
+echo "journal rows before=${J} after=${JA}, 0096 present by hash"
 
 echo "--- the journal read: the last three rows, as applied"
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -c "select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 3;"
 
-echo "0098 APPLIED. 20/20 pre-check OK, 16/16 post-check OK, journal ${J} to ${JA}."
+echo "${REC}" > /tmp/0096-stage2.ok
+echo "0096 POST-CHECK PASSED. 20/20 pre-check OK, 16/16 post-check OK, journal ${J} to ${JA}. Paste stage 3 now."
 )
 ```
 
-**EXPECT:** the carry line reads `journal_before=95`; the post-check prints `16` OK
-verdicts and no FAIL, 12 and 13 among them; the journal reads `95` before and `96`
-after, with 0098's sha256 in it **exactly once**; the final line reads exactly
-`0098 APPLIED. 20/20 pre-check OK, 16/16 post-check OK, journal 95 to 96.`
+**EXPECT:** `checking from the recorded sha <sha>` and whether the held head moved;
+`docs/migration-apply-0096.md: OK`; `run window, Lisbon YYYYMMDDHHMM: everything ends before <t>; now <t>`,
+with now before the end (the block halts otherwise, and the write stands); the carry line
+reads `journal_before=93`; the target guard; the post-check prints `16` OK verdicts and no
+FAIL, 12 and 13 among them; the journal reads `93` before and `94` after, with 0096's
+sha256 in it **exactly once**; the last three journal rows, 0096's sha256 newest; the last
+line reads exactly
+`0096 POST-CHECK PASSED. 20/20 pre-check OK, 16/16 post-check OK, journal 93 to 94. Paste stage 3 now.`
+A missing carry makes the post-check itself STOP with psql exit 3 before any verdict.
 
 **Verdicts 12 and 13 are read first, with their own STOP, because they are the crash
 guard.** Stage 3 acts as `authenticated`, and so does every therapist's next page load:
@@ -890,37 +961,56 @@ owner at once, not a stage 3.
 
 ## STAGE 3: the behaviour check AFTER the apply. READ ONLY
 
-Same file, the SAME subjects stage 1 picked and wrote down, so the two transcripts are
-an A/B on the database itself. This stage never picks.
+Same file, the SAME subjects stage 1 picked and wrote down, so the two transcripts are an
+A/B on the database itself. This stage never picks.
 
 ```
 (
 set -eo pipefail
 umask 077
-SHABEHAVIOUR=b7a53c223edd54af9ef0fca344e00b6c0e5eb4f4202a4752ccf8e7e4e8c75d51
+PR=1471
+SHABEHAVIOUR=7698cabc62e9501d680738e8e27cf2e979d3d1adeed72b646daa12d1031e0644
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
-BRANCH=care/0098-CARE-02a-care-team-reads
-PR=NOT-YET-OPENED
 U='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
-echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting"; exit 1; }
-
+rm -f /tmp/0096-stage3.ok
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+test -f /tmp/0096-held.sha || { echo "STOP: stage 0 recorded no sha in this sitting, and stage 3 runs only from the recorded sha. The lead rules"; exit 1; }
+REC=$(cat /tmp/0096-held.sha)
+[ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit"; exit 1; }
 git fetch origin --prune
-if git rev-parse -q --verify refs/remotes/origin/${BRANCH} > /dev/null; then PIN=$(git rev-parse refs/remotes/origin/${BRANCH}); else echo "the branch is gone from origin: reading the head of PR ${PR}"; git fetch -q origin refs/pull/${PR}/head; PIN=$(git rev-parse FETCH_HEAD); fi
-[ "$(git cat-file -t ${PIN})" = commit ] || { echo "STOP: ${PIN} does not resolve to a commit"; exit 1; }
-echo "checking from ${PIN}"
-git checkout -q --detach ${PIN}
+git fetch -q origin refs/pull/${PR}/head
+NOW=$(git rev-parse FETCH_HEAD)
+echo "verifying from the recorded sha ${REC}"
+echo "PR ${PR} head now: ${NOW}"
+if [ "${NOW}" = "${REC}" ]; then echo "the held head has not moved since stage 0"; else echo "THE HELD HEAD MOVED since stage 0: recorded ${REC}, PR ${PR} head now ${NOW}. Stage 3 still runs from the recorded sha. Report both"; fi
+git checkout -q --detach ${REC}
+shasum -a 256 -c docs/migration-apply-0096.sha256 || { echo "STOP: this document is not the approved one"; exit 1; }
 test -f scripts/db/behaviour-care02a-readonly.sql || { echo "STOP: the behaviour check is not on disk"; exit 1; }
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
 [ "$(shasum -a 256 scripts/db/behaviour-care02a-readonly.sql | cut -d' ' -f1)" = "${SHABEHAVIOUR}" ] || { echo "STOP: the behaviour check on disk is not the approved file"; exit 1; }
 [ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
 
+echo "--- stage 2 must have PASSED on the recorded sha, after this sitting's apply"
+test -f /tmp/0096-applied.ok || { echo "STOP: stage 1 left no applied marker. Stage 3 has not run"; exit 1; }
+test -f /tmp/0096-stage2.ok || { echo "STOP: stage 2 left no pass mark, so it did not pass. Stage 3 has not run"; exit 1; }
+[ "$(cat /tmp/0096-stage2.ok)" = "${REC}" ] || { echo "STOP: stage 2's pass mark does not name the sha stage 0 recorded. Stage 3 has not run"; exit 1; }
+[ -n "$(find /tmp/0096-stage2.ok -newer /tmp/0096-applied.ok)" ] || { echo "STOP: stage 2's pass mark is older than the apply. Stage 3 has not run"; exit 1; }
+
+echo "--- THE RUN WINDOW: nothing runs at or after its end"
+test -f /tmp/0096-window.ok || { echo "STOP: no run window is recorded for this sitting. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
+[ "$(cut -d' ' -f1 /tmp/0096-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
+WEND=$(cut -d' ' -f4 /tmp/0096-window.ok)
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The write stands; stage 3 runs only on the owner's or the lead's word"; exit 1; }
+
 echo "--- the subjects are stage 1's, read back and never picked again"
-test -f /tmp/0098-behaviour-before.out || { echo "STOP: stage 1's BEFORE transcript is missing, so there is nothing to compare against"; exit 1; }
-test -f /tmp/0098-subjects.out || { echo "STOP: stage 1's subjects file is missing. Never pick again after the apply: report it"; exit 1; }
-[ "$(wc -l < /tmp/0098-subjects.out | tr -d ' ')" = 1 ] || { echo "STOP: the subjects file must hold exactly one line"; exit 1; }
-SUBJ=$(head -1 /tmp/0098-subjects.out)
+test -f /tmp/0096-behaviour-before.out || { echo "STOP: stage 1's BEFORE transcript is missing, so there is nothing to compare against"; exit 1; }
+test -f /tmp/0096-subjects.out || { echo "STOP: stage 1's subjects file is missing. Never pick again after the apply: report it"; exit 1; }
+[ "$(wc -l < /tmp/0096-subjects.out | tr -d ' ')" = 1 ] || { echo "STOP: the subjects file must hold exactly one line"; exit 1; }
+SUBJ=$(head -1 /tmp/0096-subjects.out)
 echo "${SUBJ}" | grep -qxE "${U}[|]${U}[|]${U}[|]${U}[|](${U}|none)[|](${U}|none)" || { echo "STOP: the subjects file does not read as one patient and five slots"; exit 1; }
 PATIENT=$(echo "${SUBJ}" | cut -d'|' -f1)
 T1=$(echo "${SUBJ}" | cut -d'|' -f2)
@@ -931,58 +1021,118 @@ N=$(echo "${SUBJ}" | cut -d'|' -f6)
 if [ "${T4}" = none ]; then K4=0; else K4=1; fi
 if [ "${N}" = none ]; then KN=0; else KN=1; fi
 case "${K4}${KN}" in 11) XBEFORE="17 OK / 0 VACUOUS / 15 FAIL"; XAFTER="32 OK / 0 VACUOUS / 0 FAIL"; XVAC=""; XACTORS="${T1} ${T2} ${T3} ${T4} ${N} ";; 10) XBEFORE="16 OK / 2 VACUOUS / 14 FAIL"; XAFTER="30 OK / 2 VACUOUS / 0 FAIL"; XVAC="N1 S5 "; XACTORS="${T1} ${T2} ${T3} ${T4} ";; 01) XBEFORE="16 OK / 4 VACUOUS / 12 FAIL"; XAFTER="28 OK / 4 VACUOUS / 0 FAIL"; XVAC="C5 P5 R4 S4 "; XACTORS="${T1} ${T2} ${T3} ${N} ";; 00) XBEFORE="15 OK / 6 VACUOUS / 11 FAIL"; XAFTER="26 OK / 6 VACUOUS / 0 FAIL"; XVAC="C5 N1 P5 R4 S4 S5 "; XACTORS="${T1} ${T2} ${T3} ";; esac
-BACTORS=$(grep -E '^ACTOR id ' /tmp/0098-behaviour-before.out | awk '{print $3}' | tr '\n' ' ' || true)
+BACTORS=$(grep -E '^ACTOR id ' /tmp/0096-behaviour-before.out | awk '{print $3}' | tr '\n' ' ' || true)
 [ "${BACTORS}" = "${XACTORS}" ] || { echo "STOP: stage 1's BEFORE transcript and its subjects file do not name the same actors [${BACTORS}] [${XACTORS}]"; exit 1; }
 echo "subjects from stage 1: T1 ${T1}, T2 ${T2}, T3 ${T3}, T4 ${T4}, N ${N}, and one patient (used, never printed)"
 
 echo "--- the crash guard: stage 2's post-check of this sitting, 16 OK with 12 and 13 among them, before any session acts as authenticated"
-test -f /tmp/0098-postcheck.out || { echo "STOP: stage 2's post-check transcript is missing. Run stage 2 first"; exit 1; }
-[ /tmp/0098-postcheck.out -nt /tmp/0098-behaviour-before.out ] || { echo "STOP: the post-check transcript is older than stage 1's BEFORE run, so it is not this sitting's"; exit 1; }
-grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0098-postcheck.out && { echo "STOP: stage 2's post-check read FAIL. Do not run the behaviour check"; exit 1; }
-OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0098-postcheck.out || true)
+test -f /tmp/0096-postcheck.out || { echo "STOP: stage 2's post-check transcript is missing. Run stage 2 first"; exit 1; }
+[ /tmp/0096-postcheck.out -nt /tmp/0096-behaviour-before.out ] || { echo "STOP: the post-check transcript is older than stage 1's BEFORE run, so it is not this sitting's"; exit 1; }
+grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0096-postcheck.out && { echo "STOP: stage 2's post-check read FAIL. Do not run the behaviour check"; exit 1; }
+OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0096-postcheck.out || true)
 [ "${OKS}" = 16 ] || { echo "STOP: stage 2's post-check printed ${OKS} OK verdicts, not 16"; exit 1; }
-N1213=$(grep -cE '^[[:space:]]*1[23]\. .*\|[[:space:]]*OK[[:space:]]*$' /tmp/0098-postcheck.out || true)
+N1213=$(grep -cE '^[[:space:]]*1[23]\. .*\|[[:space:]]*OK[[:space:]]*$' /tmp/0096-postcheck.out || true)
 [ "${N1213}" = 2 ] || { echo "STOP: post-check 12 and 13 are not both OK. Do not run the behaviour check"; exit 1; }
 
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
-rm -f /tmp/0098-behaviour-after.out
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v patient_id=${PATIENT} -v t1_id=${T1} -v t2_id=${T2} -v t3_id=${T3} -v t4_id=${T4} -v n_id=${N} -f scripts/db/behaviour-care02a-readonly.sql 2>&1 | tee /tmp/0098-behaviour-after.out
-grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0098-behaviour-after.out && { echo "STOP: a behaviour verdict read FAIL after the apply"; exit 1; }
-grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/0098-behaviour-after.out || { echo "STOP: the behaviour check printed no SUMMARY row, so the transcript is truncated"; exit 1; }
-ACTORS=$(grep -E '^ACTOR id ' /tmp/0098-behaviour-after.out | awk '{print $3}' | tr '\n' ' ' || true)
+rm -f /tmp/0096-behaviour-after.out
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v patient_id=${PATIENT} -v t1_id=${T1} -v t2_id=${T2} -v t3_id=${T3} -v t4_id=${T4} -v n_id=${N} -f scripts/db/behaviour-care02a-readonly.sql 2>&1 | tee /tmp/0096-behaviour-after.out
+grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0096-behaviour-after.out && { echo "STOP: a behaviour verdict read FAIL after the apply"; exit 1; }
+grep -qE '^[[:space:]]*99[[:space:]]*\|' /tmp/0096-behaviour-after.out || { echo "STOP: the behaviour check printed no SUMMARY row, so the transcript is truncated"; exit 1; }
+ACTORS=$(grep -E '^ACTOR id ' /tmp/0096-behaviour-after.out | awk '{print $3}' | tr '\n' ' ' || true)
 [ "${ACTORS}" = "${XACTORS}" ] || { echo "STOP: the ACTOR lines must name stage 1's actors in slot order, once each [${XACTORS}]. They named [${ACTORS}]"; exit 1; }
-VACSET=$(grep -E '\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/0098-behaviour-after.out | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*([A-Z0-9]+)\..*/\1/' | LC_ALL=C sort | tr '\n' ' ' || true)
+VACSET=$(grep -E '\|[[:space:]]*VACUOUS[[:space:]]*$' /tmp/0096-behaviour-after.out | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*([A-Z0-9]+)\..*/\1/' | LC_ALL=C sort | tr '\n' ' ' || true)
 [ "${VACSET}" = "${XVAC}" ] || { echo "STOP: after the apply the VACUOUS arms must be exactly [${XVAC}]. They were [${VACSET}]"; exit 1; }
-BEFORE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0098-behaviour-before.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
-AFTER=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0098-behaviour-after.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
+BEFORE=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0096-behaviour-before.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
+AFTER=$(grep -E '^[[:space:]]*99[[:space:]]*\|' /tmp/0096-behaviour-after.out | sed -E 's/.*\| *([0-9]+ OK \/ [0-9]+ VACUOUS \/ [0-9]+ FAIL) *\|.*/\1/' || true)
 [ "${BEFORE}" = "${XBEFORE}" ] || { echo "STOP: stage 1's BEFORE transcript does not read ${XBEFORE}. It read ${BEFORE}"; exit 1; }
 [ "${AFTER}" = "${XAFTER}" ] || { echo "STOP: after the apply the profile must read ${XAFTER}. It read ${AFTER}"; exit 1; }
-echo "CARE-02a BEHAVES AS RULED AT THE RLS LAYER. before ${BEFORE}, after ${AFTER}. The writes in action are proven by the rehearsal, not by this READ ONLY transcript."
+echo "${REC}" > /tmp/0096-stage3.ok
+echo "0096 VERIFIED. CARE-02a BEHAVES AS RULED AT THE RLS LAYER. before ${BEFORE}, after ${AFTER}. The writes in action are proven by the rehearsal, not by this READ ONLY transcript."
 )
 ```
 
-**EXPECT: no FAIL, a SUMMARY row, the ACTOR lines naming stage 1's actors, and the
-profile EXACTLY the one stage 1's shape requires**, which the block asserts, against the
-matching BEFORE: `32 OK / 0 VACUOUS / 0 FAIL` for `11`; `30 OK / 2 VACUOUS / 0 FAIL`,
-VACUOUS on exactly `N1 S5`, for `10`; `28 OK / 4 VACUOUS / 0 FAIL`, VACUOUS on exactly
-`C5 P5 R4 S4`, for `01`; `26 OK / 6 VACUOUS / 0 FAIL`, VACUOUS on exactly
-`C5 N1 P5 R4 S4 S5`, for `00`. The final line
-reads `CARE-02a BEHAVES AS RULED AT THE RLS LAYER. before <BEFORE>, after <AFTER>. ...`.
+**EXPECT: `verifying from the recorded sha <sha>` and whether the held head moved, then a
+halt unless stage 1's applied marker exists and stage 2's pass mark names the recorded sha
+and is newer than that marker (so a stage 3 pasted after a stage 2 that halted stops here,
+before any connection); the run window line with now before its end; the subjects line;
+the crash guard read off stage 2's transcript; then for the run: no FAIL, a SUMMARY row, the
+ACTOR lines naming stage 1's actors, and the profile EXACTLY the one stage 1's shape
+requires**, which the block asserts, against the matching BEFORE:
+`32 OK / 0 VACUOUS / 0 FAIL` for `11`; `30 OK / 2 VACUOUS / 0 FAIL`, VACUOUS on exactly
+`N1 S5`, for `10`; `28 OK / 4 VACUOUS / 0 FAIL`, VACUOUS on exactly `C5 P5 R4 S4`, for
+`01`; `26 OK / 6 VACUOUS / 0 FAIL`, VACUOUS on exactly `C5 N1 P5 R4 S4 S5`, for `00`. The
+last line reads
+`0096 VERIFIED. CARE-02a BEHAVES AS RULED AT THE RLS LAYER. before <BEFORE>, after <AFTER>. ...`.
+Only a pass writes `/tmp/0096-stage3.ok`, the recorded sha, just before the last line; the
+block removes it before anything else, so a stage 3 that stops leaves no mark, and the
+closing read runs only on it.
 
-**If stage 3 STOPs, production is already applied.** Do not re-run stage 1, do not
-pick again, and do not substitute a subject: report the transcript to the owner. The
-post-check of stage 2 is what proves the catalogue; stage 3 proves the behaviour, and a
-subject whose data moved between the stages reads FAIL there by design.
+**If stage 3 STOPs, production is already applied.** Do not re-run stage 1, do not pick
+again, and do not substitute a subject: report the transcript to the owner. The post-check
+of stage 2 is what proves the catalogue; stage 3 proves the behaviour, and a subject whose
+data moved between the stages reads FAIL there by design.
 
-**A re-run later is not a regression test.** The file reads whatever the clinic has
-done since: T1 booked with P, T2 removed from the team, P soft-deleted. Any of those
-moves a subject arm to FAIL on a correct database. It is an assertion about the
-sitting.
+**A re-run later is not a regression test.** The file reads whatever the clinic has done
+since: T1 booked with P, T2 removed from the team, P soft-deleted. Any of those moves a
+subject arm to FAIL on a correct database. It is an assertion about the sitting.
+
+## THE CLOSING JOURNAL READ. READ ONLY
+
+Paste this on its own, and **only** after stage 3 exited 0 with its last line
+`0096 VERIFIED. CARE-02a BEHAVES AS RULED AT THE RLS LAYER. ...`. Before the read runs it
+checks by machine that the worktree is on the sha stage 0 recorded, that stage 1 applied,
+that stage 2 and the last paste of stage 3 passed on that sha after the apply, that the
+Lisbon clock is before the end of the run window recorded for that sha, and that the reader
+is the pinned file. A check that fails prints a `STOP:` line and exits 1, and the read does
+not run.
+
+```
+(
+set -eo pipefail
+SHAREADER=867e2823130b1ec1a9f7790522968924ecd872452c48322884c3e22efb5704d1
+READER=packages/db/scripts/read-applied-migrations.mjs
+cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+test -f /tmp/0096-held.sha || { echo "STOP: stage 0 recorded no sha in this sitting. The journal read has not run"; exit 1; }
+REC=$(cat /tmp/0096-held.sha)
+[ "$(git rev-parse HEAD)" = "${REC}" ] || { echo "STOP: the apply worktree is not on the sha stage 0 recorded. The journal read has not run"; exit 1; }
+test -f /tmp/0096-applied.ok || { echo "STOP: stage 1 left no applied marker. The journal read has not run"; exit 1; }
+test -f /tmp/0096-stage2.ok || { echo "STOP: stage 2 left no pass mark. The journal read has not run"; exit 1; }
+[ "$(cat /tmp/0096-stage2.ok)" = "${REC}" ] || { echo "STOP: stage 2's pass mark does not name the sha stage 0 recorded. The journal read has not run"; exit 1; }
+test -f /tmp/0096-stage3.ok || { echo "STOP: stage 3 left no pass mark, so its last paste did not pass. The journal read has not run"; exit 1; }
+[ "$(cat /tmp/0096-stage3.ok)" = "${REC}" ] || { echo "STOP: stage 3's pass mark does not name the sha stage 0 recorded. The journal read has not run"; exit 1; }
+[ -n "$(find /tmp/0096-stage3.ok -newer /tmp/0096-applied.ok)" ] || { echo "STOP: stage 3's pass mark is older than the apply. The journal read has not run"; exit 1; }
+test -f /tmp/0096-window.ok || { echo "STOP: no run window is recorded for this sitting. The journal read has not run"; exit 1; }
+[ "$(cut -d' ' -f1 /tmp/0096-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The journal read has not run"; exit 1; }
+WEND=$(cut -d' ' -f4 /tmp/0096-window.ok)
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The journal read has not run"; exit 1; }
+NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M')
+echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The journal read has not run"; exit 1; }
+RW=$(shasum -a 256 ${READER} | cut -d' ' -f1)
+echo "reader: ${RW} (at the recorded sha ${REC})"
+[ "${RW}" = "${SHAREADER}" ] || { echo "STOP: the migration reader at the recorded sha is not the pinned file. The journal read has not run"; exit 1; }
+node --env-file=/Users/ivan/osteojp-secrets/new-prod.env ${READER} 2>&1 | tee /tmp/0096-journal-after.out
+grep -qx 'journal rows on production: 94' /tmp/0096-journal-after.out || { echo "STOP: the journal read after the apply does not say 94"; exit 1; }
+grep -qE '^[[:space:]]*APPLIED[[:space:]]+0096_care02a_care_team_reads[.]sql$' /tmp/0096-journal-after.out || { echo "STOP: the journal read does not list 0096 as APPLIED"; exit 1; }
+grep -qx 'pending on this ref: 0' /tmp/0096-journal-after.out || { echo "STOP: the journal read finds a migration pending on the recorded sha"; exit 1; }
+grep -qx 'journal rows with no matching file on this ref: 0' /tmp/0096-journal-after.out || { echo "STOP: the journal holds a row with no matching file on the recorded sha"; exit 1; }
+echo "CLOSING READ: the journal reads 94, 0096 is APPLIED, and nothing is pending on the recorded sha."
+)
+```
+
+**EXPECT:** the run window line with now before its end, the reader's sha256 line, then the
+read printed IN FULL through `tee`: `journal rows on production: 94`, every migration file on
+the recorded sha listed `APPLIED`, 0096 last, `pending on this ref: 0`,
+`journal rows with no matching file on this ref: 0`, and the last line, exactly,
+`CLOSING READ: the journal reads 94, 0096 is APPLIED, and nothing is pending on the recorded sha.`
+After any halt at any stage it is not pasted: the halt rule says no journal read runs after
+a halt, and the block stops on its own when a pass mark is missing.
 
 ## What every verdict must read
 
-**Pre-check, 20 rows, all `OK`** (`scripts/db/precheck-0098-care02a.sql:218-281`):
+**Pre-check, 20 rows, all `OK`** (`scripts/db/precheck-0096-care02a.sql:222-285`):
 
 - 0 the transaction is READ ONLY;
 - 1 `patients_select` is `FOR SELECT`, PERMISSIVE, `TO authenticated`, USING md5
@@ -1004,9 +1154,9 @@ sitting.
   (`viewer_location_ids`), `c6bb997dced200956d7b5d1c49427dfa`
   (`viewer_treated_patient_ids`);
 - 8 row level security ENABLED on the three tables;
-- 9 0098 absent from the journal by hash; 10 0093 present by hash;
-- 11 the newest journal row is 0097's, by hash and `when`, with no tie at that `when`;
-- `journal_rows_before` **95**; `policies_before` (the rehearsal read **100**);
+- 9 0096 absent from the journal by hash; 10 0093 present by hash;
+- 11 the newest journal row is 0095's, by hash and `when`, with no tie at that `when`;
+- `journal_rows_before` **93**; `policies_before` (the rehearsal read **100**);
   `other_policies_md5` (rehearsal `776dfb6285cfe69342269a8647360dd4`);
   `functions_md5` (rehearsal `1ee1bb23afbb5b0cd795caf10f940bf8`); `grants_md5`
   (rehearsal `4230defc1e016a39c61c131b9f17ae54`). Only the first is asserted as a
@@ -1018,7 +1168,7 @@ sitting.
   `clinical_episodes` (2), `guest_clinical_intakes` (2) and `patient_note_revisions`
   (3), one md5 `50438a565df1b37cbadbb32b896876eb`.
 
-**Post-check, 16 rows, all `OK`** (`scripts/db/postcheck-0098-care02a.sql:217-296`):
+**Post-check, 16 rows, all `OK`** (`scripts/db/postcheck-0096-care02a.sql:220-299`):
 
 1. `patients_select` USING md5 `de612f10145303302884747fa10b6c66`, command, PERMISSIVE
    and roles unchanged;
@@ -1042,7 +1192,7 @@ sitting.
     `patient` or PUBLIC (the positive control sits in the same row, so a function
     nobody may execute cannot pass);
 14. row level security still ENABLED on the three tables;
-15. 0098 is in the journal by hash, it is the newest row, and the journal moved by
+15. 0096 is in the journal by hash, it is the newest row, and the journal moved by
     exactly one;
 16. exactly three policies in the database name the new helper, and they are
     `clinical_records_select`, `patient_care_team_select` and `patients_select`.
@@ -1067,7 +1217,7 @@ differ, the verdicts must not.
 | S4 | T4: on P's live team, NOT linked to P, no appointment, did not create, authored none | OK | OK |
 | S5 | N: active admin or receptionist on P's live team, linked to P | OK | OK |
 | I1 | each session is its actor; 0091's and 0074's helpers place P as the tables do; 0045's `clinical_admin_sees_patient` agrees with "linked" | OK | OK |
-| H1 | 0098's helper names P for each actor exactly when on P's live team AND linked | **FAIL**, helper absent | OK, T1 true, T2 true, T3 false, T4 false, N true |
+| H1 | 0096's helper names P for each actor exactly when on P's live team AND linked | **FAIL**, helper absent | OK, T1 true, T2 true, T3 false, T4 false, N true |
 | P1 | patients: T1 reads P. **The ficha** | **FAIL**, 0 read | OK, 1 read |
 | P2 | patients: T2 reads P, the control for P3 | OK | OK |
 | P3 | patients: T3 does not read P | OK | OK |
@@ -1096,7 +1246,7 @@ differ, the verdicts must not.
 | SUMMARY | N picked, T4 passed as `none` (S4 P5 R4 C5 VACUOUS) | **16 OK / 4 VACUOUS / 12 FAIL** | **28 OK / 4 VACUOUS / 0 FAIL** |
 | SUMMARY | T4 and N passed as `none` (S4 S5 P5 R4 C5 N1 VACUOUS) | **15 OK / 6 VACUOUS / 11 FAIL** | **26 OK / 6 VACUOUS / 0 FAIL** |
 
-W1, W3 and W4 are the "no write widens" arms: 0098 adds a SELECT arm to
+W1, W3 and W4 are the "no write widens" arms: 0096 adds a SELECT arm to
 `clinical_records` only and does not touch `clinical_therapist_sees_patient` or any
 write policy, and all three read the same before and after. **How a READ ONLY file
 measures a write**: it cannot run one, so it reads from `pg_policy` the expression
@@ -1111,7 +1261,7 @@ Stated so a green stage 3 is not read as covering it. Each item names what does.
 
 - **The insert policy's therapist role guard** (`jwt_role() = 'therapist'` in the
   therapist arm of `patient_care_team_insert`,
-  `NEXT-AFTER-0097_care02a_care_team_reads.sql:413`). Mutation CI07 removes it and
+  `0096_care02a_care_team_reads.sql:413`). Mutation CI07 removes it and
   survives every behaviour arm and every in-action arm. Its effect is real: a bookable
   admin who treats a patient then writes their own care-team row ("written 1" with CI07,
   "refused 42501" with the real file, the rehearsal's `probe-admin-own-row.sql`). **In
@@ -1146,10 +1296,10 @@ Stated so a green stage 3 is not read as covering it. Each item names what does.
   row through.** When T2 is already on P's team, W5's SELECT half is admitted by the team
   term as well (`:193-198`). The rehearsal's IA2b and IA12 prove the term in action.
 - **The other tables** (`attachments`, `clinical_episodes`, `appointment_notes`,
-  `patient_note_revisions`, `guest_clinical_intakes`): 0098 does not touch them;
+  `patient_note_revisions`, `guest_clinical_intakes`): 0096 does not touch them;
   pre-check 14 and post-check 9 pin their thirteen policies.
 - **A patient linked to the actor's clinic only as the SECOND participant of an
-  appointment**: 0098 does not count that link, by design (the basis above), and no
+  appointment**: 0096 does not count that link, by design (the basis above), and no
   subject needs it (`:204-206`).
 
 ### Which acceptance check this sitting discharges, and which it does not
@@ -1162,36 +1312,52 @@ Stated so a green stage 3 is not read as covering it. Each item names what does.
 | V4: no policy on the five other tables changes; the new helper's body, owner, volatility, security and grants; no other function changed | pre-check 13, 14; post-check 8 to 13 | the catalogue |
 | V5, V7: the app's read scope, the registo write scope, B7 and B8, the DB-gated arms | **NOT DISCHARGED BY THIS DOCUMENT.** They ship when the PR merges, after the apply; the screen check is the owner's. The suites are measured on the rehearsal below | the route, and the test database |
 | V6: the behaviour check with T1 to T4 and N, ACTOR, VACUOUS contract | this sitting, stages 1 and 3 | RLS |
-| V9: the clinic limit, the basis, the helper, the T4 arm, the order after 0097, the apply window | this document | |
+| V9: the clinic limit, the basis, the helper, the T4 arm, the order after 0095, the apply window | this document | |
 
 **The md5 pins depend on how the session renders an expression.** Pre-check arms 1 to 7
 and 14 and post-check verdicts 1 to 6, 9, 10 and 12 compare md5s of `pg_get_expr(...)`
 or of a body, and the rendering prints `jwt_tenant_id()` without its schema only when
 `public` is on the session's `search_path`. The expected values were read on a rehearsal
-database built from main's 91 migrations and the held 0094 to 0097. If production
-rendered differently, pre-check arms 1 to 5 would FAIL and stage 1 would halt
-**before** the apply, which is the safe direction. The evidence that production renders
-the same way is the READ ONLY pre-check before issue: 20 OK there means it does. The
-stage blocks set no `search_path`, so the sitting connects exactly as that read did.
+database built from main's 91 migrations and the then held 0094 to 0097 (0094 and 0095
+as production now carries them, plus the grants revoke and the staging index, which
+production does not carry and which touch no policy, no function body and no pinned
+value). If production rendered differently, pre-check arms 1 to 5 would FAIL and stage 1
+would halt **before** the apply, which is the safe direction. The evidence that production
+renders the same way is this sitting's own pre-check, READ ONLY and before the apply: 20 OK
+there means it does. The stage blocks set no `search_path`.
 
 ## Measured on production, READ ONLY
 
-**NOT YET MEASURED.** This lane had no production access, by its dispatch. Before the
-document is issued, and never as part of a sitting, the pre-check and the pick of stage 1
-are run READ ONLY against production (both write nothing; the pick with
-`row_security = off`, so this is also the first read of that kind there), and this section
-records:
+**NOT MEASURED BEFORE THIS SITTING.** No READ ONLY run of the pre-check or of the pick
+preceded it: this document was renumbered and issued for the sitting of 2026-09-30 by that
+day's ruling. **Stage 1 is therefore the first measurement, and everything in it up to the
+apply is READ ONLY**: the clinics' hours, the pre-check, the pick and the behaviour check
+BEFORE all run before `verified-migrate.mjs`, and each STOPs with nothing applied on a FAIL,
+a missing subject or a profile other than the rehearsed one. Three things the sitting learns
+for the first time, each a STOP before the apply if it comes out wrong:
 
-- the pre-check, with 0097's sha256 and `when` as production holds them: must read
-  **20 OK, 0 FAIL**, `journal_rows_before` 95; record the five carries;
-- the pick: whether it found a patient at all (the OPEN ITEM on T1 above), and which of
-  the four shapes (`11`, `10`, `01`, `00`); **whether it found a T4, because without one
-  the clinic limit's own arms are rehearsal-only**; the five staff slots and their roles and flags, **never
-  the patient id**.
+- whether production renders the four policy expressions, the eleven others and the
+  thirteen on the five N5 tables as the rehearsal did (pre-check arms 1 to 5 and 14);
+- whether the pick finds a patient with a T1 at all (the OPEN ITEM above), and which of the
+  four shapes; **without a T4 the clinic limit's own arms are rehearsal-only on
+  production**;
+- whether `row_security = off` reads on the connection GREEN uses (the pick and the
+  behaviour check both set it).
 
-Nothing recorded here is a count of patients, clinics or registos.
+GREEN's report records the shape, the five staff slots (never the patient id) and the five
+carries. Nothing recorded is a count of patients, clinics or registos.
 
 ## Rehearsed on 2026-09-27 (B13a v2) on a throwaway, synthetic data only
+
+**READ THIS SECTION AS A RECORD, IN THE NUMBERS OF ITS DAY.** It ran before the fifth
+renumbering, when this migration was `0098`, the staging index stood before it as `0097`,
+and the rehearsal base carried main's 91 migrations plus the then held 0094 to 0097: so its
+journal counts read 95 before and 96 after, its `when` values are the synthetic
+`0097 1788501800000` and `0098 1788501900000`, and its file names and pins are the `0098`
+ones of that day. **In every line below, `0098` is today's 0096, and `0097` is the staging
+index, today's `0098`.** Nothing in it was re-run after the renumbering; what changed since,
+and what that leaves unmeasured, is the subsection "What changed at the renumbering" at the
+end.
 
 **Where it ran.** A throwaway Postgres on `127.0.0.1:55522`. `b13a_base` is `origin/main`'s
 91 migrations at `e674100b` plus the pending 0094 (#1459, branch head `69ea425d`, sha256
@@ -1621,3 +1787,94 @@ holding round 2's pre-check. Every sha256 pin in the five blocks (11) and in the
 table (7) was checked against the worktree file it names: 18 of 18 match. The patient id
 reached only the mode-600 subjects files. The server's auxiliary processes still date
 from the 21:00:32 UTC recovery.
+
+### What changed at the renumbering, and what was re-run (2026-09-30)
+
+**The migration: no byte.** Its sha256 is `fbf8cad1...9c45` before and after the `git mv`.
+
+**The check files, byte by byte outside their `--` comments:**
+
+- **pre-check**, `precheck-0098-care02a.sql` renamed `precheck-0096-care02a.sql`, sha256
+  `d429c81f...` to `7fc2085e...`: its two refusal messages name 0095 instead of 0097; its
+  banner and the labels of arms 7, 9 and 11 name 0096 and 0095; the column alias `has_0098`
+  reads `has_0096`; and **one predicate: `journal_rows_before` expects 93, not 95.**
+- **post-check**, `postcheck-0098-care02a.sql` renamed `postcheck-0096-care02a.sql`, sha256
+  `01a1cd26...` to `acd87988...`: its banner, the labels of verdicts 1 to 4, 12, 15 and 16,
+  the alias, and verdict 15's observed and expected text (`is 0096` on both sides). No
+  predicate and no pinned md5 moved.
+- **behaviour check**, same name, sha256 `b7a53c22...` to `7698cabc...`: all 21 of its
+  "0098"s read "0096", among them its banner and H1's label; 936 lines before and after, no
+  predicate moved.
+
+**The blocks** were rebuilt on `docs/migration-apply-0095.md`'s pattern: stage 0 records
+#1471's held head; the HEAD CHECK is inside stage 1 and halts on a moved head; the run window
+comes from GREEN's CLOCK CHECK record; `prev_hash` and `prev_when` are pinned (0095 is
+applied and final) and checked against the head; the apply is teed to `/tmp/0096-apply.out`;
+stages 2 and 3 leave pass marks; the closing journal read is new; the journal is 93 before
+and 94 after. The fixed 08:00 to 21:00 clock line of the old stages 0 and 1 gives way to the
+window record; the clinics' own-hours read stays. The pick, the shape logic, the BEFORE and
+AFTER assertions and the post-check's crash guard are the old blocks' lines, with only
+`/tmp/0098-` read as `/tmp/0096-` and the labels.
+
+**Re-run on 2026-09-30 from 02:00 Lisbon, on a throwaway at production's position.**
+Container `c96-reh`, the Supabase image `public.ecr.aws/supabase/postgres:17.6.1.165` on
+`127.0.0.1:55622`. `c96_base` was built from `template0` with the image's auth schema copied
+in and two stand-ins: `auth.jwt()`, which this image lacks, and `auth.uid()` in GoTrue's
+current form, which reads `request.jwt.claims` (the image's own reads only
+`request.jwt.claim.sub`, and the behaviour check's identity arm refused it, correctly). Then
+`packages/db/migrations` 0000 to 0095 in journal order, 93 files, each in one transaction
+with its drizzle journal row (the file's sha256, its `when`). No grants revoke and no staging
+index, which is production's shape:
+
+- the renumbered pre-check, `prev_hash` 0095's sha256, `prev_when` 1788501600000: **20 OK,
+  0 FAIL**, `journal_rows_before` 93, and the same four carries the 2026-09-27 rehearsal
+  read (`policies_before` 100, `776dfb62...`, `1ee1bb23...`, `4230defc...`), with 26
+  SECURITY DEFINER functions. So every pin holds without the grants revoke and the staging
+  index, measured rather than argued;
+- 0096 and its journal row in one transaction, then the renumbered post-check fed those
+  carries: **16 OK, 0 FAIL**, 12 and 13 among them, verdict 15 reading
+  `1 by hash, newest is 0096, journal 94`; 27 SECURITY DEFINER functions;
+- the negative control, the pre-check again on the applied database: FAIL on 1, 2, 3, 4, 9,
+  11, `journal_rows_before` and 13;
+- **the six doc-block arms**, each on a fresh copy with the v2 fixture and its extension row,
+  extracted from this document's text by a script: stage 1 from the clinics' hours read to
+  the last `mv`; the apply stood in by `psql -1` with the journal row (`when`
+  1788501700000) and the marker touched; stage 2 from the applied-marker check to its last
+  line; a catalogue guard; stage 3 from the stage 2 pass-mark check to its last line. The
+  substitutions: `/tmp/` to a scratch directory, the env line to the throwaway's URL, the
+  target guard to an `echo`, a run window record written for the scratch run; nothing else.
+  - shapes `11`, `10`, `01` and `00`: every segment exit 0, `0 of 3` clinics open, the pick
+    as rehearsed, BEFORE `17 OK / 0 VACUOUS / 15 FAIL`, `16 / 2 / 14`, `16 / 4 / 12` and
+    `15 / 6 / 11` on exactly the FAIL and VACUOUS sets stage 1 asserts, stage 2's
+    `0096 POST-CHECK PASSED. 20/20 pre-check OK, 16/16 post-check OK, journal 93 to 94.`,
+    the guard SAFE, and stage 3's `after 32 OK / 0 VACUOUS / 0 FAIL`, `30 / 2 / 0`,
+    `28 / 4 / 0` and `26 / 6 / 0`;
+  - T1's row on P removed: exit 1 at `STOP: a MISSING SUBJECT`, the journal at 93, the
+    helper absent, only the `.new` pre-check transcript written;
+  - shape `11`, then the subjects file's N rewritten to `none` before stage 3: exit 1 at
+    `STOP: stage 1's BEFORE transcript and its subjects file do not name the same actors`,
+    no session acted.
+
+  The patient id reached only the mode-600 subjects files.
+- **statically:** every block passes `zsh -n`; `scripts/owner-blocks-survive-zsh.test.mjs`
+  5 of 5; every sha256 pin in the blocks and in the facts table matches the file it names.
+  And the parts of every block that come before any database, run in a scratch clone of
+  this revision against a stand-in origin that carried it as `refs/pull/1471/head` and as
+  the held branch, with `/tmp/0096-` and the apply worktree's path pointed into a scratch
+  directory: stage 0 exit 0, printing every EXPECT line; then, with a run window record
+  written as the CLOCK CHECK writes it, stage 1 through its window check, stage 2 through
+  its window check, stage 3 through its pass-mark and window checks (it then stopped, as it
+  must, on the BEFORE transcript the scratch run never wrote), and the closing read through
+  its reader pin. **The negative arms, each exit 1 on its own `STOP:`
+  line before any database:** #1471's head moved after stage 0; the held branch moved; no
+  window record; a record for another sha; before the window opens; past its last start
+  minute; stage 2 at the window's end; stage 0 with a fresh applied marker; stage 0 with
+  the held branch deleted. That run was on this revision before this paragraph's results
+  were written in, which is the only difference.
+
+**Not re-run:** `verified-migrate.mjs` and `drizzle-kit migrate` (the apply is stood in by
+`psql -1`, as in every rehearsal of this file); the in-action arms and the mutation sweep (no
+byte they read moved: the migration and the fixture are the same, and the sweep judges the
+catalogue with the post-check, whose predicates did not change); the DB-gated suites, which
+CI runs on its own database at step 4 of the order. Every database this re-run created was
+dropped after it, and the container removed.

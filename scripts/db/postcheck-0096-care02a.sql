@@ -1,10 +1,13 @@
 -- ============================================================================
--- 0098 CARE-02a v2 (the care team reads the ficha and the registos, at the
--- therapist's own clinics only): POST-CHECK.
+-- 0096 CARE-02a v2 (the care team reads the ficha and the registos, at the
+-- therapist's own clinics only): POST-CHECK. Ruled 0098 on 2026-09-27 and
+-- renumbered 0096 by the fifth renumbering of 2026-09-30; the migration's own
+-- header and its helper's COMMENT still say 0098, because a promotion changes
+-- no byte of it.
 -- READ ONLY. Every verdict must read OK (16 expected).
 --
 -- Runs after `packages/db/scripts/verified-migrate.mjs` has applied
--- 0098_care02a_care_team_reads: ONE function was CREATED, FOUR policies were
+-- 0096_care02a_care_team_reads: ONE function was CREATED, FOUR policies were
 -- ALTERED in place, and nothing else moved. Every verdict here is a catalogue
 -- read. The behaviour is proven elsewhere: scripts/db/behaviour-care02a-
 -- readonly.sql on the database this was applied to, and the in-action arms of
@@ -20,11 +23,11 @@
 -- THIRTEEN ON attachments, clinical_episodes, appointment_notes,
 -- patient_note_revisions AND guest_clinical_intakes TO THE SAME md5 AS ITS ARM
 -- 14, which is the proof that no write policy of patients or clinical_records,
--- not patient_care_team_update, and nothing on the five tables 0098 leaves to
+-- not patient_care_team_update, and nothing on the five tables 0096 leaves to
 -- the N5 wave, moved.
 --
 -- THE FOUR NEW EXPRESSIONS, as the migration writes them
--- (packages/db/migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql,
+-- (packages/db/migrations/0096_care02a_care_team_reads.sql,
 -- section 9), rendered by Postgres 17 as:
 --   patients_select           de612f10145303302884747fa10b6c66  (USING)
 --   clinical_records_select   976ba6f105c2bc373f0ec3c4a2ffb342  (USING)
@@ -38,7 +41,7 @@
 --
 -- "NO OTHER FUNCTION CHANGED" IS MEASURED WITHOUT THE NEW ONE. The pre-check's
 -- functions_md5 and grants_md5 were read before the function existed; this file
--- recomputes both over the same rows, leaving out the one function 0098 creates,
+-- recomputes both over the same rows, leaving out the one function 0096 creates,
 -- so an equal md5 says every other function's body, security, volatility,
 -- owner, settings and ACL, and every table and column ACL, is byte-identical.
 -- With the new function present exactly once (arm 12), that is also the proof
@@ -51,7 +54,7 @@
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
 --        -v policies_before=<pre> -v other_policies_md5=<pre>
 --        -v functions_md5=<pre> -v grants_md5=<pre> -v journal_rows_before=<pre>
---        -c "begin read only" -f scripts/db/postcheck-0098-care02a.sql -c "rollback"
+--        -c "begin read only" -f scripts/db/postcheck-0096-care02a.sql -c "rollback"
 -- ============================================================================
 
 \if :{?policies_before}
@@ -89,7 +92,7 @@
 \timing off
 
 \echo ''
-\echo '=== 0098 CARE-02a v2 POST-CHECK - every verdict must read OK (16 expected) ==='
+\echo '=== 0096 CARE-02a v2 POST-CHECK - every verdict must read OK (16 expected) ==='
 
 WITH pol AS (
   SELECT c.relname, p.polname, p.polcmd::text AS cmd, p.polpermissive AS permissive,
@@ -211,22 +214,22 @@ WITH pol AS (
                            AND p.proname <> 'viewer_care_team_patient_ids_at_my_clinics'), '')))  AS grants_md5_now,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations)                           AS journal_rows_now,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations
-      WHERE hash = 'fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45')  AS has_0098,
+      WHERE hash = 'fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45')  AS has_0096,
     (SELECT hash FROM drizzle.__drizzle_migrations ORDER BY created_at DESC, id DESC LIMIT 1) AS newest_hash
 )
-SELECT '1. patients_select: FOR SELECT, PERMISSIVE, TO authenticated, USING exactly 0098''s expression (the clinic-limited care-team term on the therapist arm)' AS check,
+SELECT '1. patients_select: FOR SELECT, PERMISSIVE, TO authenticated, USING exactly 0096''s expression (the clinic-limited care-team term on the therapist arm)' AS check,
        coalesce(new_patients, 'absent')                               AS observed,
        'r/true/authenticated de612f10145303302884747fa10b6c66 -'      AS expected,
        CASE WHEN new_patients = 'r/true/authenticated de612f10145303302884747fa10b6c66 -' THEN 'OK' ELSE 'FAIL' END AS verdict FROM t
-UNION ALL SELECT '2. clinical_records_select: FOR SELECT, PERMISSIVE, TO authenticated, USING exactly 0098''s expression (the clinic-limited care-team term on the therapist arm)',
+UNION ALL SELECT '2. clinical_records_select: FOR SELECT, PERMISSIVE, TO authenticated, USING exactly 0096''s expression (the clinic-limited care-team term on the therapist arm)',
        coalesce(new_records, 'absent'),
        'r/true/authenticated 976ba6f105c2bc373f0ec3c4a2ffb342 -',
        CASE WHEN new_records = 'r/true/authenticated 976ba6f105c2bc373f0ec3c4a2ffb342 -' THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '3. patient_care_team_select: FOR SELECT, PERMISSIVE, TO authenticated, USING exactly 0098''s expression (owner, reception; a therapist''s own rows and its teams at its clinics)',
+UNION ALL SELECT '3. patient_care_team_select: FOR SELECT, PERMISSIVE, TO authenticated, USING exactly 0096''s expression (owner, reception; a therapist''s own rows and its teams at its clinics)',
        coalesce(new_team_select, 'absent'),
        'r/true/authenticated 6a84c4ab560d81fabf3424b6f75dbd04 -',
        CASE WHEN new_team_select = 'r/true/authenticated 6a84c4ab560d81fabf3424b6f75dbd04 -' THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '4. patient_care_team_insert: FOR INSERT, PERMISSIVE, TO authenticated, WITH CHECK exactly 0098''s expression (owner, reception; a therapist''s own booking row)',
+UNION ALL SELECT '4. patient_care_team_insert: FOR INSERT, PERMISSIVE, TO authenticated, WITH CHECK exactly 0096''s expression (owner, reception; a therapist''s own booking row)',
        coalesce(new_team_insert, 'absent'),
        'a/true/authenticated - 93edfcb33192ef57568c0970a5283a4d',
        CASE WHEN new_team_insert = 'a/true/authenticated - 93edfcb33192ef57568c0970a5283a4d' THEN 'OK' ELSE 'FAIL' END FROM t
@@ -259,7 +262,7 @@ UNION ALL SELECT '10. no function in public other than the new one changed, and 
 UNION ALL SELECT '11. no table, column or function grant in public changed, the new function''s own ACL aside',
        coalesce(grants_md5_now, 'absent'), :'grants_md5',
        CASE WHEN grants_md5_now = :'grants_md5' THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '12. the new helper exists ONCE, nullary, uuid[], sql, SECURITY DEFINER, STABLE, search_path=public, owned by postgres, with 0098''s body',
+UNION ALL SELECT '12. the new helper exists ONCE, nullary, uuid[], sql, SECURITY DEFINER, STABLE, search_path=public, owned by postgres, with 0096''s body',
        nf_n::text || ' found, ' || coalesce(nf_shape, 'absent'),
        '1 found, args=0 returns=uuid[] lang=sql secdef=true volatile=s config=search_path=public owner=postgres body=9539ec380f391d56af0d89c7998156db',
        CASE WHEN nf_n = 1
@@ -277,16 +280,16 @@ UNION ALL SELECT '13. EXECUTE on the new helper: authenticated only (anon, servi
             THEN 'OK' ELSE 'FAIL' END FROM t
 UNION ALL SELECT '14. row level security is still ENABLED on the three tables', rls_on::text, '3',
        CASE WHEN rls_on = 3 THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '15. 0098 is in the journal by hash, it is the newest row, and the journal moved by exactly one',
-       has_0098::text || ' by hash, newest ' || CASE WHEN newest_hash = 'fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45'
-                                                     THEN 'is 0098' ELSE 'is NOT 0098' END
+UNION ALL SELECT '15. 0096 is in the journal by hash, it is the newest row, and the journal moved by exactly one',
+       has_0096::text || ' by hash, newest ' || CASE WHEN newest_hash = 'fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45'
+                                                     THEN 'is 0096' ELSE 'is NOT 0096' END
        || ', journal ' || journal_rows_now::text,
-       '1 by hash, newest is 0098, journal ' || (:'journal_rows_before'::int + 1)::text,
-       CASE WHEN has_0098 = 1
+       '1 by hash, newest is 0096, journal ' || (:'journal_rows_before'::int + 1)::text,
+       CASE WHEN has_0096 = 1
              AND newest_hash = 'fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45'
              AND journal_rows_now = :'journal_rows_before'::int + 1
             THEN 'OK' ELSE 'FAIL' END FROM t
-UNION ALL SELECT '16. exactly three policies in the database name the new helper, and they are the three 0098 put it in',
+UNION ALL SELECT '16. exactly three policies in the database name the new helper, and they are the three 0096 put it in',
        coalesce((SELECT string_agg(tablename || '.' || policyname, ',' ORDER BY tablename, policyname) FROM pg_policies
                   WHERE coalesce(qual, '') || ' ' || coalesce(with_check, '') LIKE '%viewer_care_team_patient_ids_at_my_clinics%'), 'none'),
        'clinical_records.clinical_records_select,patient_care_team.patient_care_team_select,patients.patients_select',

@@ -53,7 +53,7 @@ export const FILES = {
   "scripts/db/behaviour-rgpd-readonly.sql": ["passed in with -v actor_id"],
   // Up to five actors, each passed; the file reads itself once per actor, so its
   // one ACTOR line prints once per actor, and each slot names the variable it
-  // came from. 0098 v2 added T4 (on the team at another clinic) and N (a
+  // came from. CARE-02a v2 (0096) added T4 (on the team at another clinic) and N (a
   // non-therapist on the team); either may be passed as the word none, and a
   // slot passed as none prints no ACTOR line and sets no actor at all.
   "scripts/db/behaviour-care02a-readonly.sql": [

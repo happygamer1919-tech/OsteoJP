@@ -1,37 +1,40 @@
--- 0098 CARE-02a v2 (the care team reads the ficha and the registos, at the
--- therapist's own clinics only): PRE-CHECK.
+-- 0096 CARE-02a v2 (the care team reads the ficha and the registos, at the
+-- therapist's own clinics only): PRE-CHECK. Ruled 0098 on 2026-09-27 and
+-- renumbered 0096 by the fifth renumbering of 2026-09-30; the migration's own
+-- header still says 0098, because a promotion changes no byte of it.
 -- READ ONLY. It writes nothing and cannot.
 --
--- For the apply document written at promotion (docs/migration-apply-0098.md),
+-- For the apply document written at promotion (docs/migration-apply-0096.md),
 -- which pins this file's sha256 and asserts that every verdict reads OK (20
 -- expected). The shape is 0094's: check | observed | expected | verdict, verdict
 -- LAST so a stage can match it anchored to the end of the line. The five carries
 -- are rows whose `check` column IS the carry's name, and no carry name is a
 -- substring of another's or of any other row's `check`.
 --
--- 0098 CREATES ONE FUNCTION AND ALTERS FOUR POLICIES, AND CHANGES NOTHING ELSE,
+-- 0096 CREATES ONE FUNCTION AND ALTERS FOUR POLICIES, AND CHANGES NOTHING ELSE,
 -- so this file proves the starting point exactly:
 --   0      the transaction is READ ONLY;
---   1-4    each of the four policies 0098 alters is there, PERMISSIVE, TO
+--   1-4    each of the four policies 0096 alters is there, PERMISSIVE, TO
 --          authenticated, with the command it has on main and the expression
 --          main's migrations leave it with, pinned by md5 of Postgres 17's
 --          rendering (read on the rehearsal built from main's 91 migrations
---          and the held 0094 to 0097):
+--          and the then held 0094 to 0097, which included 0094 and 0095 as
+--          production now carries them):
 --            patients_select           0074:222-242
 --            clinical_records_select   0045:221-240
 --            patient_care_team_select  0091:108-115
 --            patient_care_team_insert  0091:117-124
---          0098 RESTATES each expression and adds one arm. A different
+--          0096 RESTATES each expression and adds one arm. A different
 --          expression on production means the ALTER would overwrite something
 --          this file was not written against: STOP and find out why;
 --   5      the eleven OTHER policies on those three tables (the patients and
 --          clinical_records writes, patient_care_team_update, the patient
 --          self-scopes, the token hook's read) read as main's migrations leave
---          them, one md5 over all eleven. 0098 relies on them NOT moving: a
+--          them, one md5 over all eleven. 0096 relies on them NOT moving: a
 --          care-team-only therapist must still write nothing;
 --   6      the three tables carry exactly 7, 5 and 3 policies, none RESTRICTIVE,
 --          so the post-check's flat-count arithmetic holds;
---   7      the five functions 0098 calls or reproduces, and must NOT touch, are
+--   7      the five functions 0096 calls or reproduces, and must NOT touch, are
 --          as their migrations left them: SECURITY DEFINER, STABLE,
 --          search_path=public, owned by postgres, EXECUTE to authenticated,
 --          body pinned by md5:
@@ -41,48 +44,49 @@
 --            viewer_treated_patient_ids       0074, the insert arm's check
 --            clinical_therapist_sees_patient  0045, deliberately not widened;
 --   8      row level security is ENABLED on the three tables;
---   9      0098 is absent from the journal, BY HASH: the sha256 of
---          packages/db/migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql,
---          fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45.
+--   9      0096 is absent from the journal, BY HASH: the sha256 of
+--          packages/db/migrations/0096_care02a_care_team_reads.sql,
+--          fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45,
+--          promoted from migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql.
 --          The promotion is a rename and changes no byte, so this is the hash
---          drizzle records for 0098;
+--          drizzle records for 0096;
 --   10     0093 is present, BY HASH (the last migration numbered on main when
 --          this file was written);
---   11     the newest applied journal row is 0097's: its hash and its `when`,
---          passed in with -v prev_hash and -v prev_when, which the apply
---          document reads from main's journal and 0097's promoted file at the
---          sitting. Neither value is final while 0097 is held, so neither can
---          be literal here. 0098 follows it; its own `when` is set above
---          prev_when at promotion (the 0058 skip guard);
+--   11     the newest applied journal row is 0095's: its hash and its `when`,
+--          passed in with -v prev_hash and -v prev_when. The apply document
+--          pins both (0095 is applied and final) and checks them against
+--          0095's file and journal entry on the branch it runs from. 0096
+--          follows it; its own `when` is above prev_when (the 0058 skip guard);
 --   12     the three helpers every policy calls exist (public.jwt_tenant_id,
 --          public.jwt_role, auth.uid);
 --   13     the NEW helper's name is free: no function in public is called
 --          viewer_care_team_patient_ids_at_my_clinics, with any arguments.
---          0098 creates it with CREATE OR REPLACE, which would silently take
+--          0096 creates it with CREATE OR REPLACE, which would silently take
 --          over a same-named function somebody else made;
 --   14     the thirteen policies on attachments, clinical_episodes,
 --          appointment_notes, patient_note_revisions and guest_clinical_intakes
 --          read as main's migrations leave them (2, 2, 4, 3 and 2 of them),
---          one md5 over all thirteen. 0098 must not move them, and the
+--          one md5 over all thirteen. 0096 must not move them, and the
 --          post-check pins the same md5;
---   CARRY  journal_rows_before = 95: main's 91 after 0093, then 0094, 0095,
---          0096 and 0097, one row each, in the ruled queue;
---   CARRY  policies_before. 0098 must not move it;
+--   CARRY  journal_rows_before = 93: main's 91 after 0093, then 0094 and
+--          0095, one row each, in the ruled queue (0000 to 0095 applied;
+--          the journal has fewer rows than file numbers, as it always has);
+--   CARRY  policies_before. 0096 must not move it;
 --   CARRY  other_policies_md5: one md5 over every policy in the database EXCEPT
---          the four 0098 alters. The post-check recomputes it; nothing else may
+--          the four 0096 alters. The post-check recomputes it; nothing else may
 --          move;
 --   CARRY  functions_md5: one md5 over every function in public (signature,
 --          body, SECURITY DEFINER, volatility, owner, settings). The post-check
---          recomputes it over every function EXCEPT the one 0098 creates, and
---          it must not move: 0098 edits no existing function;
+--          recomputes it over every function EXCEPT the one 0096 creates, and
+--          it must not move: 0096 edits no existing function;
 --   CARRY  grants_md5: one md5 over every table, column and function ACL in
 --          public. The post-check recomputes it without the new function's
---          ACL, and it must not move: 0098 grants nothing on anything else.
+--          ACL, and it must not move: 0096 grants nothing on anything else.
 --
 -- Run:
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
---        -v prev_hash=<0097's sha256> -v prev_when=<0097's journal when>
---        -f scripts/db/precheck-0098-care02a.sql
+--        -v prev_hash=<0095's sha256> -v prev_when=<0095's journal when>
+--        -f scripts/db/precheck-0096-care02a.sql
 
 \pset pager off
 \timing off
@@ -91,20 +95,20 @@
 \if :{?prev_hash}
 \else
   DO $missing$ BEGIN
-    RAISE EXCEPTION 'STOP: -v prev_hash is missing (the sha256 of 0097 as promoted). This file refuses to guess.';
+    RAISE EXCEPTION 'STOP: -v prev_hash is missing (the sha256 of 0095 as applied). This file refuses to guess.';
   END $missing$;
 \endif
 \if :{?prev_when}
 \else
   DO $missing$ BEGIN
-    RAISE EXCEPTION 'STOP: -v prev_when is missing (0097''s journal when). This file refuses to guess.';
+    RAISE EXCEPTION 'STOP: -v prev_when is missing (0095''s journal when). This file refuses to guess.';
   END $missing$;
 \endif
 
 BEGIN READ ONLY;
 
 \echo ''
-\echo '=== 0098 CARE-02a v2 PRE-CHECK - every verdict must read OK (20 expected) ==='
+\echo '=== 0096 CARE-02a v2 PRE-CHECK - every verdict must read OK (20 expected) ==='
 
 WITH pol AS (
   SELECT c.relname, p.polname, p.polcmd::text AS cmd, p.polpermissive AS permissive,
@@ -133,7 +137,7 @@ WITH pol AS (
   SELECT
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations)                           AS journal_rows,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations
-      WHERE hash = 'fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45')  AS has_0098,
+      WHERE hash = 'fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45')  AS has_0096,
     (SELECT count(*)::int FROM drizzle.__drizzle_migrations
       WHERE hash = '7a769298c43f982cdc27dc71cbec403a53861dbfc2c24b72c62c2203d370c454')  AS has_0093,
     (SELECT hash || ' ' || created_at::text FROM drizzle.__drizzle_migrations
@@ -244,23 +248,23 @@ UNION ALL SELECT '6. the three tables carry 5, 3 and 7 policies, none RESTRICTIV
        'clinical_records=5,patient_care_team=3,patients=7, 0 restrictive',
        CASE WHEN per_table = 'clinical_records=5,patient_care_team=3,patients=7' AND restrictive_pols = 0
             THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '7. the five helpers 0098 calls, reproduces or leaves alone are as 0045, 0073, 0074 and 0091 left them',
+UNION ALL SELECT '7. the five helpers 0096 calls, reproduces or leaves alone are as 0045, 0073, 0074 and 0091 left them',
        coalesce(helper_shapes, 'absent'),
        'clinical_admin_sees_patient=DEFINER/s/search_path=public/postgres/exec 278de3a836486f3950e9513baf5429b3 ; clinical_therapist_sees_patient=DEFINER/s/search_path=public/postgres/exec 9d9e8a5a8ee79ce1c1fe04830d7c9186 ; viewer_care_team_patient_ids=DEFINER/s/search_path=public/postgres/exec 88b26a83d4c94fe7e5acbf906c2d4b4e ; viewer_location_ids=DEFINER/s/search_path=public/postgres/exec 1238f35e2142dbb260a0c7acda4f48ef ; viewer_treated_patient_ids=DEFINER/s/search_path=public/postgres/exec c6bb997dced200956d7b5d1c49427dfa',
        CASE WHEN helper_shapes = 'clinical_admin_sees_patient=DEFINER/s/search_path=public/postgres/exec 278de3a836486f3950e9513baf5429b3 ; clinical_therapist_sees_patient=DEFINER/s/search_path=public/postgres/exec 9d9e8a5a8ee79ce1c1fe04830d7c9186 ; viewer_care_team_patient_ids=DEFINER/s/search_path=public/postgres/exec 88b26a83d4c94fe7e5acbf906c2d4b4e ; viewer_location_ids=DEFINER/s/search_path=public/postgres/exec 1238f35e2142dbb260a0c7acda4f48ef ; viewer_treated_patient_ids=DEFINER/s/search_path=public/postgres/exec c6bb997dced200956d7b5d1c49427dfa'
             THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT '8. row level security is ENABLED on patients, clinical_records and patient_care_team', rls_on::text, '3',
        CASE WHEN rls_on = 3 THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '9. 0098 is absent from the journal, by hash', has_0098::text, '0',
-       CASE WHEN has_0098 = 0 THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '9. 0096 is absent from the journal, by hash', has_0096::text, '0',
+       CASE WHEN has_0096 = 0 THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT '10. 0093 is present in the journal, by hash', has_0093::text, '1',
        CASE WHEN has_0093 = 1 THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '11. the newest applied journal row is 0097''s, by hash and when, and no other row shares its when',
+UNION ALL SELECT '11. the newest applied journal row is 0095''s, by hash and when, and no other row shares its when',
        coalesce(newest_row, 'absent') || ', ' || newest_ties::text || ' at that when',
        lower(:'prev_hash') || ' ' || :'prev_when' || ', 1 at that when',
        CASE WHEN newest_row = lower(:'prev_hash') || ' ' || :'prev_when' AND newest_ties = 1 THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT 'journal_rows_before', journal_rows::text, '95',
-       CASE WHEN journal_rows = 95 THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT 'journal_rows_before', journal_rows::text, '93',
+       CASE WHEN journal_rows = 93 THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT 'policies_before', policies::text, '> 0',
        CASE WHEN policies > 0 THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT 'other_policies_md5', coalesce(other_md5, 'absent'), '32 hex characters',
