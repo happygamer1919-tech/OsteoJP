@@ -10,9 +10,9 @@ AFTER) and the closing journal read.
 
 **THE ORDER, ruled by the owner and the lead on 2026-09-30. Nothing runs out of it:**
 
-1. **PROMOTE.** The commit that carries this document renames the file into
-   `packages/db/migrations/0096_care02a_care_team_reads.sql`, bytes unchanged, and adds
-   its journal entry (`idx 93`, `when 1788501700000`) and its supabase mirror.
+1. **PROMOTE.** The promotion commit, `1d9ae1ab`, which first staged this document, renames
+   the file into `packages/db/migrations/0096_care02a_care_team_reads.sql`, bytes unchanged,
+   and adds its journal entry (`idx 93`, `when 1788501700000`) and its supabase mirror.
 2. **APPLY.** GREEN applies 0096 to production from #1471's HELD head, by this document,
    in the run window GREEN's dispatch names. #1471 cannot merge before the count
    GATE-CHANGE, and the GATE-CHANGE cannot merge before the apply, so the apply runs from
@@ -20,7 +20,11 @@ AFTER) and the closing journal read.
 3. **COUNT GATE-CHANGE.** The owner merges #1500, which moves `EXPECTED_COUNT` from 26 to
    27, by hand, after GREEN's report says 0096 is applied.
 4. **MAIN INTO #1471.** SOLO merges `main` into #1471 (`git merge --no-edit origin/main`,
-   never a rebase), and every check runs again.
+   never a rebase), and every check runs again. Once #1499 is on `main`, the merge stops on
+   `packages/db/migrations-pending/README.md`, which both PRs rewrite. Resolve it to
+   #1499's text with CARE-02a shown as promoted: keep this branch's Promoted row for 0096,
+   drop #1499's pending row for `NEXT-AFTER-0095_care02a_care_team_reads.sql` (the file is
+   promoted here), and state the 2026-09-27 queue once, not twice.
 5. **#1471 MERGES.** The owner takes `held-for-apply` off and merges it.
 
 One rule governs every halt, in these words here and in GREEN's dispatch:
@@ -192,7 +196,7 @@ Checked by the operator before GREEN's BEFORE YOU START. None of these is a bloc
    GREEN's BEFORE YOU START refuses any other count. The pre-check re-proves it by machine:
    `journal_rows_before` must read **93**, 0093 must be in the journal by hash (arm 10),
    and the newest journal row must be 0095's, by hash and `when` (arm 11).
-2. **0096 is promoted on #1471's branch** (the commit that carries this document): the
+2. **0096 is promoted on #1471's branch** (the promotion commit, `1d9ae1ab`): the
    rename, its journal entry, the supabase mirror and the README's Promoted row. Stage 0
    proves the rename, the journal and the mirror, and STOPs without them.
    `packages/db/tests/security-definer-owner.test.ts` needs no edit: since #1491 it derives
@@ -224,6 +228,16 @@ Checked by the operator before GREEN's BEFORE YOU START. None of these is a bloc
    `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no date: the
    dispatch names the window and its CLOCK CHECK records it, and stage 1 also reads the
    clinics' own hours from the database.
+8. **The number table GREEN launches with.** #1499 writes the fifth renumbering into
+   `CLAUDE.md`'s binding table under "SOLO's record". This held head does not carry it
+   (it arrives at step 4 of the order), so here `CLAUDE.md` still reads the fourth
+   renumbering's table: `0096` the TRUNCATE, TRIGGER, REFERENCES revoke (#1397), `0097` the
+   staging index, `0098` CARE-02a. **Before the sitting, #1499 merges and the apply worktree
+   is moved to that `main`**, a detached checkout of a clean tree whose migration reader is
+   still the pinned file, so the session GREEN launches in reads the ruled table. If #1499
+   has not merged, GREEN's dispatch states the mismatch and its BEFORE YOU START prints which
+   table the worktree carries. Either way, from stage 0 on the worktree sits on this held
+   head, whose `CLAUDE.md` is the older table, and the dispatch says so.
 
 ## The app half is already live, so the apply opens nothing unguarded
 
@@ -369,11 +383,15 @@ merge:
 `node scripts/check-journal.mjs` then reads `94 .sql files match 94 journal entries`.
 
 **Exactly one `packages/db/migrations/0096_*.sql` may exist, and no `0097_*.sql`; if
-anything else is ever found, STOP.** The number is the apply authorisation (`CLAUDE.md`,
-the binding table under "SOLO's record", and the fifth renumbering above): `0097` is the
-registo write policies (#1475), `0098` the staging index (#1469), `0099` the grants revoke
-(#1397). `0097` is not promoted until 0096 is applied to production, so the journal on the
-held head ends at 0096 and `verified-migrate.mjs` finds exactly one pending migration.
+anything else is ever found, STOP.** The number is the apply authorisation: the fifth
+renumbering above, which #1499 writes into `CLAUDE.md`'s binding table under "SOLO's
+record". **This held head's own `CLAUDE.md` predates #1499** and still reads the fourth
+renumbering's table (`0096` the grants revoke, `0098` CARE-02a); that table is superseded
+by the ruling, and `main` brings the ruled one here at step 4 of the order ("Before the
+sitting", item 8). Under the ruling, `0097` is the registo write policies (#1475), `0098`
+the staging index (#1469), `0099` the grants revoke (#1397). `0097` is not promoted until
+0096 is applied to production, so the journal on the held head ends at 0096 and
+`verified-migrate.mjs` finds exactly one pending migration.
 
 **What was a placeholder and is now filled:** the PR number, `1471`. **What is not filled:**
 the section "Measured on production, READ ONLY". No READ ONLY run preceded this sitting, so
@@ -409,8 +427,10 @@ HEAD CHECK to paste: the machine runs it inside the blocks.
   marker `/tmp/0096-applied.ok` exists, and `verified-migrate.mjs` refuses an
   already-applied migration regardless (exit 3).
 - **Stages 2 and 3 and the closing read are READ ONLY** and run from the recorded sha
-  whatever #1471 has done since: each prints whether its head moved, with both shas, and
-  never stops on it. Every file they run is asserted by sha256 at that sha, so a merge of
+  whatever #1471 has done since. Stages 2 and 3 fetch #1471's head and print whether it
+  moved, with both shas, and never stop on it. The closing read fetches nothing and reads
+  no head of #1471: it checks only that the apply worktree's HEAD is the recorded sha, and
+  STOPs if it is not. Every file they run is asserted by sha256 at that sha, so a merge of
   `main` into #1471 after the apply changes nothing they read.
 - **A moved head before the apply ends the sitting.** Nothing is applied, every sha goes in
   the report, and whether and when to start again is the lead's call.
@@ -1878,3 +1898,23 @@ byte they read moved: the migration and the fixture are the same, and the sweep 
 catalogue with the post-check, whose predicates did not change); the DB-gated suites, which
 CI runs on its own database at step 4 of the order. Every database this re-run created was
 dropped after it, and the container removed.
+
+### Changed after review, 2026-09-30: prose only, no block
+
+Review of `1d9ae1ab` found four things this document's prose had wrong or left unsaid, and
+the fixes change this document and its sidecar and nothing else on the branch: no
+migration, check file, script, journal entry or test moved.
+
+- Step 1 of the order and "Before the sitting", item 2, name the promotion commit,
+  `1d9ae1ab`, where they said "the commit that carries this document", which a later commit
+  now also is.
+- "Before the sitting", item 8, and the authorisation paragraph under "The promotion": this
+  held head's `CLAUDE.md` predates #1499 and still reads the fourth renumbering's table.
+- Step 4 of the order: the pending README conflicts with #1499's, and how that resolves.
+- "The HEAD CHECK": the closing read does not read #1471's head. Only stages 2 and 3 print
+  whether it moved; the closing read checks that the worktree is on the recorded sha.
+- This subsection.
+
+**Every block is byte-identical to `1d9ae1ab`'s.** The five fenced blocks (stages 0 to 3 and
+the closing read), cut from both revisions by one script, compare equal one by one, so every
+run above that exercised a block exercised the block this revision carries.
