@@ -356,7 +356,10 @@ Checked by the operator and the lead before stage 0. None of these is a block.
    `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no date: the
    dispatch's CLOCK CHECK records the window in `/tmp/0097-window.ok`, every stage reads it,
    stage 1 also reads the Lisbon clock against 08:00 and 21:00, and the clinics' own hours from
-   the database.
+   the database. **On 2026-09-30 only, the owner's override** (under "The clock" below) lets
+   the window fall inside the clinics' hours: stages 0 and 1 print an `OVERRIDE:` line for
+   the clock, and stage 1 one for an open clinic, and continue. On every other day both STOP
+   as before.
 8. **The owner is ready to merge the count GATE-CHANGE and then #1475 promptly after the
    apply**, in the order below.
 
@@ -413,7 +416,8 @@ every claim (it is asked on every claim, not cached), and every refusal carries 
 of `main`**: the migration is applied and its file is not yet on `main`. Main's CI does not
 build 0097 until #1475 merges, so a PR merged in between is tested against a database without
 it. The count GATE-CHANGE and the merge follow the apply at once (steps 3 to 5 above), and the
-sitting runs while both clinics are closed.
+sitting runs while both clinics are closed (on 2026-09-30, by the owner's override, while they
+may be open).
 
 ## Undoing 0097: a new migration
 
@@ -484,8 +488,14 @@ DOCPIN=docs/migration-apply-0097.sha256
 echo "--- the Lisbon clock: a sitting runs only while both clinics are closed"
 LT=$(TZ=Europe/Lisbon date +%H%M)
 echo "${LT}" | grep -qE '^[0-9]{4}$' || { echo "STOP: the Lisbon clock did not read as HHMM"; exit 1; }
-awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }' || { echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1; }
-echo "Lisbon ${LT}: outside 08:00 to 21:00"
+TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
+if awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }'; then
+  echo "Lisbon ${LT}: outside 08:00 to 21:00"
+elif [ "${TODAYL}" = "20260930" ]; then
+  echo "OVERRIDE: Lisbon ${LT} is inside 08:00 to 21:00; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on 20260930 only"
+else
+  echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1
+fi
 
 echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting: 0097 is HELD"; exit 1; }
 test ! -f /tmp/0097-applied.ok || { echo "STOP: /tmp/0097-applied.ok exists, so stage 1 has applied 0097 on this machine. Never paste stage 0 or stage 1 again: go to stage 2, or report"; exit 1; }
@@ -525,7 +535,8 @@ echo "PROMOTION AND NUMBER VERIFIED"
 ```
 
 **EXPECT: `PROMOTION AND NUMBER VERIFIED`.** Before it: `Lisbon <HHMM>: outside 08:00 to
-21:00`; `running from <sha>`; `docs/migration-apply-0097.md: OK`; `journal: 95 entries, then
+21:00` (on 2026-09-30 only, it may instead be the override line `OVERRIDE: Lisbon <HHMM> is
+inside 08:00 to 21:00; ...`); `running from <sha>`; `docs/migration-apply-0097.md: OK`; `journal: 95 entries, then
 idx 93 0096_... when <W96>, then idx 94 0097_clinical_records_write_matrix when <W97>`; `the
 app half's claim probe is on this head`; `pnpm db:check-journal` printing **95 `.sql` files
 match 95 journal entries** in order, `when` strictly increasing, the supabase mirror matching
@@ -545,11 +556,17 @@ CHECK in `/tmp/0097-window.ok` for the head stage 0 recorded; stage 1 refuses wi
 
 **THE OWNER'S OVERRIDE OF 2026-09-30.** At 13:13 Lisbon the owner ruled the applies of 0096
 to 0099 to run that day "despite the current clinic schedule, we are doing it now", and after
-GREEN stopped on this check in 0096's sitting he ruled "amend". So stage 1's clinic check
-still reads the clinics' hours and still prints them, and on 2026-09-30 ONLY (the Lisbon
-date read by machine, `OVERRIDE_DAY=20260930`) an open clinic prints an `OVERRIDE:` line
-quoting him and the block continues. On every other day it STOPs exactly as before, and a
-read that finds no active clinic STOPs on every day.
+GREEN stopped on the clinic check in 0096's sitting he ruled "amend". Two checks here read
+the clinics' hours, and both still read and print them:
+- **the Lisbon clock**, in stages 0 and 1, against 08:00 to 21:00. On 2026-09-30 ONLY (the
+  Lisbon date read by machine), a time inside those hours prints an `OVERRIDE:` line quoting
+  him, and the block continues.
+- **the clinics' own rows**, in stage 1 (`OVERRIDE_DAY=20260930`). On that date only, an open
+  clinic prints an `OVERRIDE:` line quoting him, and the block continues.
+
+On every other day both STOP exactly as before. A read that finds no active clinic, or a
+count that is not a positive integer, STOPs on every day. The dispatch's dated window is
+unchanged in kind: its CLOCK CHECK still records it, and every stage still reads it.
 
 ## What is new here, because 0097 is not shaped like 0093
 
@@ -662,8 +679,14 @@ PICK="with t as (select u.id, u.tenant_id from public.users u join public.roles 
 echo "--- the Lisbon clock, before anything else"
 LT=$(TZ=Europe/Lisbon date +%H%M)
 echo "${LT}" | grep -qE '^[0-9]{4}$' || { echo "STOP: the Lisbon clock did not read as HHMM"; exit 1; }
-awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }' || { echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1; }
-echo "Lisbon ${LT}: outside 08:00 to 21:00"
+TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
+if awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }'; then
+  echo "Lisbon ${LT}: outside 08:00 to 21:00"
+elif [ "${TODAYL}" = "20260930" ]; then
+  echo "OVERRIDE: Lisbon ${LT} is inside 08:00 to 21:00; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on 20260930 only"
+else
+  echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1
+fi
 
 echo "--- the value the issue fills. A placeholder means this document is not issued: 0097 is HELD"
 echo "${PR}" | grep -qE '^[0-9]+$' || { echo "STOP: PR is still a placeholder. This document is not issued for a sitting"; exit 1; }
@@ -730,14 +753,14 @@ echo "--- the production target, asserted by the guard, not by the prompt"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
-echo "--- the clinics' own hours, READ ONLY: no active clinic may be open now"
+echo "--- the clinics' own hours, READ ONLY: no active clinic may be open now (on 2026-09-30 only, the owner's override lets the sitting run while one is)"
 CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (now() at time zone 'Europe/Lisbon')::time >= opens_at and (now() at time zone 'Europe/Lisbon')::time < closes_at) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1)
 echo "active clinics open now by their own hours: ${CL}"
 OVERRIDE_DAY=20260930
 TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
-if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && (a[3] + 0) >= 1) exit 0; exit 1 }'; then
+if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/) exit 0; exit 1 }'; then
   echo "clinics: every active clinic is closed by its own hours"
-elif [ "${TODAYL}" = "${OVERRIDE_DAY}" ] && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[0-9]+$/ && a[2] == "of" && a[3] ~ /^[0-9]+$/ && (a[3] + 0) >= 1 && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
+elif [ "${TODAYL}" = "${OVERRIDE_DAY}" ] && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[1-9][0-9]*$/ && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/ && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
   echo "OVERRIDE: ${CL} active clinics open now by their own hours; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on ${OVERRIDE_DAY} only"
 else
   echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1
@@ -797,7 +820,8 @@ echo "0097 APPLIED. Paste stage 2 now."
 
 **EXPECT, and these are what stage 1 is read for:**
 
-- **the clock line; `recorded by stage 0: <sha>` and `branch head now: <sha>`, the same sha
+- **the clock line (`Lisbon <HHMM>: outside 08:00 to 21:00`, or on 2026-09-30 only the
+  `OVERRIDE: Lisbon <HHMM> ...` line); `recorded by stage 0: <sha>` and `branch head now: <sha>`, the same sha
   twice; and the run window line, now inside it** (each halts the block otherwise, with
   nothing applied);
 - **`applying from <sha>`**, the recorded sha, and `docs/migration-apply-0097.md: OK`;
@@ -1257,6 +1281,51 @@ and prints only what this section records, and a GREEN dispatch that names it. T
 for the sitting lists them among the steps before it is issued. Until that run, Q3's counts
 are first read by stage 1's verdict 13, which STOPs before the pick, with nothing applied,
 unless they are 0.
+
+## Changed after the owner's override, 2026-09-30: the clock and clinic checks, two blocks
+
+The owner ruled at 13:13 Lisbon that 0096 to 0099 run that day "despite the current clinic
+schedule, we are doing it now". GREEN stopped on 0096's clinic check, and the owner ruled
+"amend". The same ruling reaches this document's two clinic-hours checks.
+
+**What changed.** The five fenced blocks were cut from `7af3b808` and from this revision by one
+script. Stages 2 and 3 and the closing read compare equal. Stages 0 and 1 differ only here:
+- **The Lisbon clock** (stages 0 and 1, the same eight lines in both):
+  - The single awk STOP line became an `if` with three arms. Outside 08:00 to 21:00 it prints
+    `Lisbon <HHMM>: outside 08:00 to 21:00` on every day. Inside those hours on `20260930`
+    only, it prints the `OVERRIDE:` line. Anything else STOPs.
+  - The HHMM format check before it is unchanged.
+- **The clinics' own rows** (stage 1): the header line names the override, and the awk STOP
+  line became the same three arms as 0096's, byte-identical to 0096's at `aa33a458`:
+  - `0 of <n>`, n a positive integer: continue on every day.
+  - On `20260930` only, `<k> of <n>`, k and n positive integers written without a sign or
+    leading zero, and k at most n: the `OVERRIDE:` line, then continue.
+  - Anything else: STOP.
+- The `0 of <n>` arm is tighter than before. `0 of 2x` and `0 of 0x1` used to pass and now
+  STOP. It loosens nothing.
+
+**How the new arms were proved.** No throwaway-DB rehearsal ran an override arm: every
+rehearsal ran outside 08:00 to 21:00 with the fixture's clinics closed. The arms read only
+`LT` and `CL`, which come from reads that did not change, and the machine date. The lines
+were cut from this document by one script and run under `zsh -f` inside
+`( set -eo pipefail ... )`, with only the `TODAYL=` line replaced by a fixed date:
+
+| input | 20260930 | 20261001, 20260929 |
+|---|---|---|
+| `LT` 0000, 0759, 2100, 2359 | outside, exit 0 | outside, exit 0 |
+| `LT` 0800, 1540, 2059 | OVERRIDE, exit 0 | STOP, exit 1 |
+| `CL` `0 of 2` | closed, exit 0 | closed, exit 0 |
+| `CL` `1 of 2`, `2 of 2` | OVERRIDE, exit 0 | STOP, exit 1 |
+| `CL` `3 of 2`, `0 of 0`, empty, `x of 2`, `1 of`, `-1 of 2`, `1.5 of 2`, `00 of 2`, `01 of 2`, `+1 of 2`, `1e0 of 2`, `1 of 2x`, `0 of 2x`, `0 of 0x1` | STOP, exit 1 | STOP, exit 1 |
+
+Stages 0 and 1 each pass `zsh -n`.
+
+**Prose changed:**
+- "Before the sitting", item 7.
+- The paragraph after "The clock", THE OWNER'S OVERRIDE OF 2026-09-30.
+- The closing sentence of "What stays open between the apply and the merge".
+- Stage 0's EXPECT, and stage 1's EXPECT items for the clock and clinics lines.
+- This section.
 
 ## Rehearsed on 2026-09-30, the fifth run, in the ruled order, synthetic data only
 
