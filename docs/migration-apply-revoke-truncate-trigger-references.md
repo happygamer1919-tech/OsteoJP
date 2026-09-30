@@ -1,17 +1,20 @@
 # Apply doc - revoke TRUNCATE, TRIGGER, REFERENCES from `authenticated`
 
-**Status: DRAFT. RULED `0096`, NOT YET PROMOTED. NOT VALIDATED. DO NOT RUN.**
+**Status: DRAFT. RULED `0099`, NOT YET PROMOTED. NOT VALIDATED. DO NOT RUN.**
 
 The migration lives at
-`packages/db/migrations-pending/NEXT-AFTER-0095_revoke_truncate_trigger_references.sql`
+`packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql`
 and carries no number, so `drizzle-kit migrate` cannot see it by construction.
 
-**Its place in the queue is the owner's, re-ruled on 2026-09-27 (the fourth
-renumbering).** It takes **`0096`**. It follows `0094` the users/tenants role fix
-(#1459) and `0095` the conflict check's patient name (#1438), and `0097` the
-staging index and `0098` CARE-02a follow it. Under the 2026-09-22 queue it was
-`0095`, ahead of the conflict check; that order is superseded. The binding table
-is in `CLAUDE.md` under "SOLO's record". The order first written here (CARE-01
+**Its place in the queue is the owner's, re-ruled on 2026-09-30 (the fifth
+renumbering):** "renumber (option 1). CARE-02a 0096 (#1471), registo write policies 0097 (#1475), staging index 0098 (#1469), grants revoke 0099 (#1397), SAT-01 from 0100. Apply order equals file order from now; the lead rules apply order only in number order or after a renumber." It takes **`0099`**. It follows `0096` CARE-02a
+(#1471), `0097` the registo write policies (#1475) and `0098` the staging index
+(#1469), in that order, and SAT-01 follows it from `0100`. `0094` the users/tenants
+role fix (#1459) and `0095` the conflict check's patient name (#1438) are applied.
+Its journal `idx` is set at promotion, and its journal `when` must then be strictly
+greater than `0098`'s. Under the 2026-09-27 queue it was `0096`, after the conflict
+check, and under the 2026-09-22 queue `0095`, ahead of it; both orders are
+superseded. The binding table is in `CLAUDE.md` under "SOLO's record". The order first written here (CARE-01
 #1374, then NESA-NAMES #1390, then this) is also superseded: both of those are
 applied and merged, as `0091` and `0090`.
 
