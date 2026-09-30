@@ -1,8 +1,8 @@
 /**
  * page-write-gate.test.tsx: THE REVIEW PAGE OFFERS ITS EDITOR ONLY TO A READER
- * WHO MAY WRITE THE DRAFT. CARE-02a (0098), review round 2.
+ * WHO MAY WRITE THE DRAFT. CARE-02a (0096), review round 2.
  *
- * getRecordDetail takes the care-team READ scope, so after 0098 a therapist on
+ * getRecordDetail takes the care-team READ scope, so after 0096 a therapist on
  * a patient's care team can open a colleague's AI draft by its id. Every
  * control this page renders (save ficha, edit narrative, finalize) is a write
  * that reads its registo under therapistRegistoWriteScope and refuses that
@@ -15,8 +15,10 @@
  * editors replaced by stubs; `redirect` throws, as Next's does, so a test can
  * read where the page sent the reader and that nothing was drawn.
  */
+import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getStrings } from "@osteojp/i18n";
 
 vi.mock("server-only", () => ({}));
 
@@ -87,11 +89,17 @@ function record(over: Record<string, unknown> = {}) {
 }
 
 /** Renders the page, or returns where it redirected. */
-async function open(rec: ReturnType<typeof record> | null): Promise<{ html?: string; redirectedTo?: string }> {
+async function open(
+  rec: ReturnType<typeof record> | null,
+  m?: string,
+): Promise<{ html?: string; redirectedTo?: string }> {
   h.getRecordDetail.mockResolvedValue(rec);
   const { default: ReviewDetailPage } = await import("./page");
   try {
-    const el = await ReviewDetailPage({ params: Promise.resolve({ recordId: REC }), searchParams: Promise.resolve({}) });
+    const el = await ReviewDetailPage({
+      params: Promise.resolve({ recordId: REC }),
+      searchParams: Promise.resolve(m === undefined ? {} : { m }),
+    });
     return { html: renderToStaticMarkup(el) };
   } catch (e) {
     if (e instanceof Redirected) return { redirectedTo: e.url };
@@ -153,5 +161,26 @@ describe("CARE-02a: the review page asks canWriteRecord before drawing any write
     expect((await open(record())).redirectedTo).toBe("/clinical");
     expect(h.getRecordDetail).not.toHaveBeenCalled();
     expect(h.canWriteRecord).not.toHaveBeenCalled();
+  });
+});
+
+describe("a refused Finalizar is named on the review page", () => {
+  const pt = getStrings("pt");
+  const text = (t: string) => renderToStaticMarkup(createElement(Fragment, null, t));
+
+  it("?m=not_author (a draft with another author): its own pt-PT message, not the generic review error", async () => {
+    h.canWriteRecord.mockResolvedValue(true);
+    const { html } = await open(record({ source: "ai_ingested" }), "not_author");
+    expect(pt["clinical.notAuthor"]).toBeTruthy();
+    expect(html).toContain(text(pt["clinical.notAuthor"]));
+    expect(html).not.toContain(text(pt["review.error"]));
+  });
+
+  it("CONTROL ?m=stale and ?m=finalized keep their own messages", async () => {
+    h.canWriteRecord.mockResolvedValue(true);
+    const stale = (await open(record({ source: "ai_ingested" }), "stale")).html;
+    expect(stale).toContain(text(pt["clinical.signStale"]));
+    expect(stale).not.toContain(text(pt["clinical.notAuthor"]));
+    expect((await open(record(), "finalized")).html).toContain(text(pt["clinical.finalized"]));
   });
 });

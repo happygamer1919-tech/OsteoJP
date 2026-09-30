@@ -113,8 +113,26 @@ export const EXPECTED_OWNER = "postgres";
  * whole mirror applied through 0091 reports 26 `prosecdef` functions in
  * `public`, which is the same number arrived at from the other end. 0091
  * contributes exactly one, so the sum is 24 + 1 + 1.
+ *
+ * 26 -> 27 with migration 0096 (CARE-02a, ruled 0098 on 2026-09-27 and
+ * renumbered 0096 on 2026-09-30, promoted on PR #1471):
+ * `public.viewer_care_team_patient_ids_at_my_clinics()`, the nullary set of
+ * patients the calling user is CURRENTLY on the care team of AND linked to one
+ * of their own clinics, which `patients_select`, `clinical_records_select` and
+ * `patient_care_team_select` evaluate once per statement. It carries its own
+ * `ALTER FUNCTION ... OWNER TO postgres` in 0096, and EXECUTE is granted to
+ * `authenticated` only (PUBLIC, `anon` and `service_role` are revoked in the
+ * same migration). 0095 made one function SECURITY DEFINER and one SECURITY
+ * INVOKER, a net zero, so 26 held through it and the sum is 26 + 1.
+ *
+ * THE ORDER, because this constant and the migration live in different PRs and
+ * a frozen gate cannot ride with a migration: GREEN applies 0096 from #1471's
+ * held head FIRST; then this change merges; then main is merged into #1471 and
+ * #1471 merges. Between this merge and #1471's, main's own count reads red
+ * (the seeded database and the derived set hold 26, this says 27): one red run,
+ * accepted by the ruling.
  */
-export const EXPECTED_COUNT = 26;
+export const EXPECTED_COUNT = 27;
 
 /**
  * The verdict, as a pure function of the catalog rows.

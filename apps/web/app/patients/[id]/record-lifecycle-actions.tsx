@@ -19,6 +19,8 @@ const s = getStrings(DEFAULT_LOCALE);
 export const ERROR_TEXT: Partial<Record<RecordActionError, string>> = {
   password: s["clinical.recordActionWrongPassword"],
   not_draft: s["clinical.recordDeleteNotDraft"],
+  // The draft has another author (zeroRowRefusal, records.ts).
+  not_author: s["clinical.notAuthor"],
   not_signed: s["clinical.recordAnnulNotSigned"],
   already_annulled: s["clinical.recordAlreadyAnnulled"],
   error: s["clinical.recordActionServerError"],
