@@ -37,12 +37,11 @@ never applies it. So three kinds of value live here:
   head stage 0 checked out, which it records for every later stage; the run window, which the
   dispatch's CLOCK CHECK records; and the behaviour check's patient and actors, **picked by
   GREEN in stage 1, READ ONLY, by that pinned rule**, and reused unchanged by stage 3;
-- **filled at issue, and refused by machine until then**: the PR number (`PR=NOT-YET-ISSUED`
-  in stages 0 to 3, each of which STOPs on it before it touches git or a database). The
-  closing read carries no PR: it runs only on the head record stage 0 writes and the marks
-  stages 1 to 3 write, and each of those stages STOPs on the placeholder before it writes
-  one. The PR is #1475; the placeholder is the guard that this document has not been issued.
-  See "What the issue fills".
+- **filled at issue, and refused by machine until then**: the PR number. Before the issue,
+  stages 0 to 3 read `PR=NOT-YET-ISSUED` and each STOPped on it before it touched git or a
+  database. **Issued on 2026-09-30: they read `PR=1475`** (see "Issued"). The closing read
+  carries no PR: it runs only on the head record stage 0 writes and the marks stages 1 to 3
+  write. See "What the issue fills".
 
 **Written at the standard of `docs/migration-apply-0093.md`, section for section, in the
 ALTER shape of `docs/migration-apply-0092.md`, with CARE-02a's one-CREATE shape, and with
@@ -51,8 +50,9 @@ count, a verdict profile, or a measurement on a synthetic rehearsal (the fifth, 
 2026-09-30, in the ruled order; and the four of 2026-09-27, in that day's order). **No
 production figure of 0097's appears here: this lane had no production access, and by the
 owner's ruling of 2026-09-30 no separate READ ONLY run preceded the issue (see "Measured on
-production, READ ONLY"). Stage 1 is the first production measurement.** The one production
-figure quoted, in the "Issued" section, is 0096's own verdict profile from GREEN's report.
+production, READ ONLY"). Stage 1 is the first production measurement.** The production figures quoted (the journal at
+93 and 94, and 0096's post-check and behaviour profiles in the "Issued" section) are 0096's,
+from GREEN's report.
 
 **This document describes the database as it is with 0097.** Stage 1 runs the behaviour
 check before the apply only in its subjects-only mode (the subjects and the instrument, no
@@ -100,7 +100,7 @@ recorded sha and only report a moved branch.
 
 ## The migration file's own header names its old number, on purpose
 
-The promoted file will read, in its header, "0099: THE clinical_records WRITE POLICIES FOLLOW
+The promoted file reads, in its header, "0099: THE clinical_records WRITE POLICIES FOLLOW
 THE PERMISSION MATRIX", "RULED NUMBER 0099. NO NUMBER IN THIS FILE NAME YET, BY
 CONSTRUCTION", "It must follow 0098 (CARE-02a)" and the queue of 2026-09-27; section 2 says
 "0098 alters clinical_records_select"; section 6 says the SECURITY DEFINER count moves "27 ->
@@ -359,7 +359,8 @@ Checked by the operator and the lead before stage 0. None of these is a block.
    falls outside both clinics' opening hours**, and GREEN is launched with
    `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no run window; its
    one date is the override day `20260930`, in stages 0 and 1. The dispatch's CLOCK CHECK
-   records the window in `/tmp/0097-window.ok`, every stage reads it, stages 0 and 1 also read
+   records the window in `/tmp/0097-window.ok`, which stages 1, 2 and 3 and the closing read
+   read (stage 0 runs before it and clears it), stages 0 and 1 also read
    the Lisbon clock against 08:00 and 21:00, and stage 1 reads the clinics' own hours from the
    database. **On 2026-09-30 only, the owner's override** (under "The clock" below) lets
    the window fall inside the clinics' hours: stages 0 and 1 print an `OVERRIDE:` line for
@@ -547,7 +548,7 @@ match 95 journal entries** in order, `when` strictly increasing, the supabase mi
 by CONTENT; and `head recorded in /tmp/0097-head.sha: <sha>`, the `running from` sha. Stage 1
 re-proves the migration by sha256 through `verified-migrate.mjs`.
 
-**The promoted file's own header will still read "RULED NUMBER 0099. NO NUMBER IN THIS FILE
+**The promoted file's own header still reads "RULED NUMBER 0099. NO NUMBER IN THIS FILE
 NAME YET, BY CONSTRUCTION"** (`:13`). That is stale after the rename, and it stays stale on
 purpose: see "The migration file's own header names its old number, on purpose".
 
@@ -572,7 +573,8 @@ the clinics' hours, and both still read and print them:
 On every other day both STOP exactly as before. A read that finds no active clinic, a count
 not written as a plain integer (no sign, no leading zero, nothing after it), or more open
 clinics than active ones, STOPs on every day. The dispatch's dated window is
-unchanged in kind: its CLOCK CHECK still records it, and every stage still reads it.
+unchanged in kind: its CLOCK CHECK still records it, and stages 1 to 3 and the closing read
+still read it.
 
 ## What is new here, because 0097 is not shaped like 0093
 
@@ -1318,7 +1320,7 @@ and main was merged into #1471. #1471 merged as `774ddd2f`.
 `c3006189` and from this revision by one script and compared: only those four lines differ.
 "Measured on production, READ ONLY" records the owner's ruling instead of a measurement.
 
-### The whole blocks on the promoted head, rehearsed 2026-09-30 17:29 to 17:40 Lisbon
+### The whole blocks on the promoted head, rehearsed 2026-09-30 17:29 to 17:30 Lisbon
 
 This is the run "The rehearsal adaptation" (below) says is owed at promotion. A rehearsal
 agent ran every block WHOLE, in order, extracted verbatim from `6a7068c4`: the dispatch's
@@ -1338,21 +1340,24 @@ cut):
 - the apply worktree's `cd`, to a fresh clone;
 - every `/tmp/0097-` path, to scratch;
 - the production env load, to the throwaway's URL;
+- **not authorised, see below:** the journal reader's `--env-file`, to the throwaway's URL
+  carrying the production ref as an `application_name` label;
 - the target guard, to an assertion of the throwaway's host and port. The real guard, run
   once first, refused: `REFUSING: project ref is "postgres", not the production project.`
 
 | block | exit | last line |
 |---|---|---|
-| BEFORE YOU START | 0 | `BEFORE YOU START: every check passed, and the journal reads 94.` |
+| BEFORE YOU START | 0 | `BEFORE YOU START: every check passed, and the journal reads 94.` **Its journal read ran only past the reader's guard by the unauthorised label: NOT rehearsed, see below.** |
 | STAGE 0 | 0 | `PROMOTION AND NUMBER VERIFIED` |
 | CLOCK CHECK | 0 | `CLOCK: inside the run window, ... Paste stage 1 now.` |
 | STAGE 1 | 0 | `0097 APPLIED. Paste stage 2 now.` The pre-check read 20 OK, verdict 13 `at risk 0 of 6`, and the subjects `6 OK / 0 VACUOUS / 0 FAIL`. verified-migrate reached drizzle-kit through pnpm: `pending 1 [0097_clinical_records_write_matrix]`, `journal 94 -> 95 (delta 1)`, present by sha256 |
 | STAGE 2 | 0 | `0097 POST-CHECK PASSED. 20/20 pre-check OK, 15/15 post-check OK, journal 94 to 95.` |
 | STAGE 3 | 0 | `0097 BEHAVES AS RULED AT THE RLS LAYER. subjects before 6 OK / 0 VACUOUS / 0 FAIL, every arm after 20 OK / 0 VACUOUS / 0 FAIL.` |
-| CLOSING READ | 0 | `CLOSING READ: the journal reads 95, 0097 is APPLIED, and nothing is pending on the recorded head.` |
+| CLOSING READ | 0 | `CLOSING READ: the journal reads 95, 0097 is APPLIED, and nothing is pending on the recorded head.` **Its journal read ran only past the reader's guard by the unauthorised label: NOT rehearsed, see below.** |
 
 It ran at 17:29 Lisbon on 2026-09-30, inside the clinics' hours. So **the override arms ran
-against a real database read for the first time**: both clock checks printed
+on real inputs for the first time**, the clock arms on the real Lisbon clock and the clinic
+arm on a real database read: both clock checks printed
 `OVERRIDE: Lisbon 1729 ...` and `1730 ...`, and the clinic check read `2 of 2` and printed
 its `OVERRIDE:` line.
 
@@ -1390,6 +1395,16 @@ All are fixed here:
 - two citations of the pending path.
 
 Every fenced block is byte-identical to `6a7068c4`'s.
+
+**Round 2** found 0 BLOCKER, 0 MAJOR and 5 MINOR, all prose, fixed without a third round
+under the review-loop cap:
+- the rehearsal's end time;
+- the unauthorised reader label marked in the rehearsal table and the substitution list;
+- three passages still written before the issue or the promotion;
+- which stages read `/tmp/0097-window.ok`;
+- which production figures are quoted.
+
+Every fenced block is byte-identical to `9b91c52f`'s.
 
 ## Changed after the owner's override, 2026-09-30: the clock and clinic checks, two blocks
 
