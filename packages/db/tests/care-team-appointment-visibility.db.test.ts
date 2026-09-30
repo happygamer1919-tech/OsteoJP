@@ -32,6 +32,8 @@
  * all. Every appointment here is created by RECEPTION.
  */
 import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql } from "postgres";
 
@@ -72,6 +74,97 @@ async function careTeamApplied(): Promise<boolean> {
 
 const applied = await careTeamApplied();
 const d = applied ? describe : describe.skip;
+
+/**
+ * 0098 (CARE-02a) FLIPS ONE ARM IN THIS FILE, AND THE ARM ASKS THE SCHEMA WHICH
+ * SIDE OF THE FLIP IT IS ON.
+ *
+ * 0098 sits in `migrations-pending/NEXT-AFTER-0097_care02a_care_team_reads.sql`
+ * until it is promoted, held for its apply. It gives a therapist a SELECT arm
+ * on `patient_care_team`: their own rows, and the teams they are on at their
+ * own clinics. So "a THERAPIST sees NOTHING in this table, including their own
+ * row" is true on every database built from main's migrations, which is what
+ * CI's DB-gated job builds, and false on one where 0098 is applied (the
+ * rehearsal today, CI and production after promotion).
+ *
+ * THE ARM ASSERTS WHICHEVER IS TRUE HERE, AND SAYS WHICH IN ITS TITLE. It never
+ * skips: a skip in a DB-gated suite reddens `.github/scripts/assert-rls-executed.mjs`
+ * unless a GATE-CHANGE lists it in PERMITTED_SKIPS, and a skip would stop
+ * measuring the pre-0098 rule this arm measures today. Nor does it pass for
+ * 0098 on a database without it: the title reads "0098 NOT APPLIED", and the
+ * assertion under it is the pre-0098 rule. At promotion nothing here is edited;
+ * the database changes and the arm follows it.
+ *
+ * THE SAME QUESTIONS THE apps/web SUITES ASK (apps/web/lib/patients/
+ * care-team-0098-state.ts), so the two packages cannot disagree about what
+ * "0098 is applied" means:
+ *   1. NEVER HALF. Does the helper 0098 creates exist, and do ALL THREE SELECT
+ *      policies 0098 joins it into name it (patients_select,
+ *      clinical_records_select, patient_care_team_select)? 0098 is one
+ *      transaction, so the helper with fewer than three, or any of the three
+ *      without the helper, is not a state 0098 leaves behind, and this THROWS
+ *      rather than picking a side. So does a failed probe or a missing policy:
+ *      an error here is an error, never "not applied".
+ *   2. THE PROMOTION FLIPS IT BY ITSELF. Once any .sql file in
+ *      packages/db/migrations defines the helper (a promotion is a rename into
+ *      that directory), a database WITHOUT 0098 is no longer an acceptable
+ *      answer, and this THROWS: from the promotion commit on, the pre-0098
+ *      branch of the arm below cannot pass.
+ * Asked only where 0091's table exists: below 0091 every block in this file
+ * skips (see `applied` above), and there is no 0098 question to ask.
+ */
+const CARE02A_HELPER = "viewer_care_team_patient_ids_at_my_clinics";
+
+/** The promoted migration files that define 0098's helper, if any. */
+function care02aPromotedFiles(): string[] {
+  const dir = join(__dirname, "..", "migrations");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => readFileSync(join(dir, f), "utf8").includes(CARE02A_HELPER));
+}
+
+async function care02aApplied(): Promise<boolean> {
+  if (!live) return false;
+  const probe = connect();
+  try {
+    const [row] = await probe<{ helper: boolean; policies: number; naming: number }[]>`
+      select to_regprocedure(${`public.${CARE02A_HELPER}()`}) is not null as helper,
+             count(*)::int as policies,
+             (count(*) filter (where strpos(coalesce(qual, ''), ${CARE02A_HELPER}) > 0))::int as naming
+        from pg_policies
+       where schemaname = 'public'
+         and ((tablename = 'patients' and policyname = 'patients_select')
+           or (tablename = 'clinical_records' and policyname = 'clinical_records_select')
+           or (tablename = 'patient_care_team' and policyname = 'patient_care_team_select'))`;
+    if (!row || row.policies !== 3) {
+      throw new Error(
+        `0098 STATE UNREADABLE: expected the 3 SELECT policies patients_select, clinical_records_select and ` +
+          `patient_care_team_select, found ${String(row?.policies)}. Nothing here was measured.`,
+      );
+    }
+    let applied: boolean;
+    if (row.helper && row.naming === 3) applied = true;
+    else if (!row.helper && row.naming === 0) applied = false;
+    else {
+      throw new Error(
+        `0098 is half there: helper ${String(row.helper)}, ${row.naming} of 3 SELECT policies name it. ` +
+          "0098 applies as one transaction, so this database was built some other way. Nothing here was measured.",
+      );
+    }
+    const promoted = care02aPromotedFiles();
+    if (promoted.length > 0 && !applied) {
+      throw new Error(
+        `0098 IS PROMOTED (${promoted.join(", ")} defines ${CARE02A_HELPER}) BUT THIS DATABASE DOES NOT HAVE IT. ` +
+          "From the promotion on, the pre-0098 answer is no longer acceptable. Nothing here was measured.",
+      );
+    }
+    return applied;
+  } finally {
+    await probe.end({ timeout: 5 });
+  }
+}
+
+const care02a = applied ? await care02aApplied() : false;
 
 const H = 60 * 60 * 1000;
 
@@ -361,11 +454,14 @@ d("CARE-01: the appointment history of a patient a therapist treats", () => {
 /* THE NEW TABLE'S OWN ISOLATION                                        */
 /* ==================================================================== */
 /* CLAUDE.md: every migration adding a domain table ships its RLS        */
-/* isolation test in the same PR. Reception and owner manage the team;   */
-/* a therapist has no policy on this table at all and must read nothing  */
-/* through it, even about themselves - their access arrives through the  */
-/* SECURITY DEFINER helper, which is a different thing from a view of    */
-/* who else is on the team.                                             */
+/* isolation test in the same PR. Reception and owner manage the team.   */
+/* UNDER 0091 a therapist has no policy on this table at all and reads   */
+/* nothing through it, even about themselves - their access arrives      */
+/* through the SECURITY DEFINER helper, which is a different thing from  */
+/* a view of who else is on the team. 0098 (CARE-02a, held) gives them   */
+/* one: their own rows, and the teams they are on at their own clinics.  */
+/* The arm that says which is `care02a`'s, above; the therapist here has */
+/* no clinic at all, so under 0098 they read their own row and no other. */
 d("CARE-01: patient_care_team is tenant-isolated and reception-managed", () => {
   let p: Sql;
   const X = {
@@ -373,6 +469,8 @@ d("CARE-01: patient_care_team is tenant-isolated and reception-managed", () => {
     otherTenant: randomUUID(),
     reception: randomUUID(),
     therapist: randomUUID(),
+    /** A second team member, so "their own row and no other" has an other. */
+    colleague: randomUUID(),
     patient: randomUUID(),
     intruder: randomUUID(),
   };
@@ -385,6 +483,7 @@ d("CARE-01: patient_care_team is tenant-isolated and reception-managed", () => {
     await p`insert into users (id, tenant_id, email, full_name) values
             (${X.reception}, ${X.tenant},      ${`rx-${X.reception.slice(0, 8)}@x.pt`}, 'Reception X'),
             (${X.therapist}, ${X.tenant},      ${`tx-${X.therapist.slice(0, 8)}@x.pt`}, 'Therapist X'),
+            (${X.colleague}, ${X.tenant},      ${`cx-${X.colleague.slice(0, 8)}@x.pt`}, 'Colleague X'),
             (${X.intruder},  ${X.otherTenant}, ${`iy-${X.intruder.slice(0, 8)}@x.pt`},  'Reception Y')`;
     await p`insert into patients (id, tenant_id, full_name)
             values (${X.patient}, ${X.tenant}, 'Paciente X')`;
@@ -410,19 +509,49 @@ d("CARE-01: patient_care_team is tenant-isolated and reception-managed", () => {
     expect(await rowsSeenBy("reception", X.reception, X.tenant)).toBe(1);
   });
 
-  it("A THERAPIST sees NOTHING in this table, including their own row", async () => {
-    expect(await rowsSeenBy("therapist", X.therapist, X.tenant)).toBe(0);
-  });
+  // THE ARM 0098 FLIPS (see `care02a` at the top of the file). The colleague's
+  // row is on the SAME patient, written for this arm and removed after it, so
+  // the other arms' counts do not move. The therapist has no staff_locations
+  // row, so under 0098 the patient is linked to none of their clinics: the
+  // own-row term admits their row, the clinic-limited team term admits nothing.
+  it(
+    care02a
+      ? "0098 APPLIED: a THERAPIST sees exactly their OWN row in this table, and not the colleague's on the same patient"
+      : "0098 NOT APPLIED on this database: a THERAPIST sees NOTHING in this table, including their own row (flips when 0098 is applied)",
+    async () => {
+      await p`insert into patient_care_team (tenant_id, patient_id, user_id, assigned_by)
+              values (${X.tenant}, ${X.patient}, ${X.colleague}, ${X.reception})`;
+      try {
+        const seen = await asRole(p, "authenticated", claimsFor(X.tenant, "therapist", X.therapist), async (tx) => {
+          const rows = await tx<{ user_id: string }[]>`select user_id::text as user_id from patient_care_team`;
+          return rows.map((r) => r.user_id);
+        });
+        expect(seen).toEqual(care02a ? [X.therapist] : []);
+      } finally {
+        await p`delete from patient_care_team where tenant_id = ${X.tenant} and user_id = ${X.colleague}`;
+      }
+    },
+  );
 
   it("ANOTHER TENANT's reception sees nothing", async () => {
     expect(await rowsSeenBy("reception", X.intruder, X.otherTenant)).toBe(0);
   });
 
-  it("a THERAPIST cannot assign themselves", async () => {
+  // 0098 admits exactly ONE kind of therapist row: their own, assigned by
+  // themselves, for a patient they have an appointment with. This row is the
+  // first two and NOT the third (the premise is asserted first: X.patient has
+  // no appointment at all), so with 0098 it is refused for the patient alone,
+  // and without 0098 for the role alone. It does not claim a therapist can
+  // never assign themselves: with 0098 they can, for a patient they treat.
+  it("a THERAPIST who does NOT treat the patient cannot assign themselves, even naming themselves as the assigner", async () => {
+    const [premise] = await p<{ n: number }[]>`
+      select count(*)::int as n from appointments
+       where tenant_id = ${X.tenant} and (patient_id = ${X.patient} or patient_2_id = ${X.patient})`;
+    expect(premise!.n).toBe(0);
     await expect(
       asRole(p, "authenticated", claimsFor(X.tenant, "therapist", X.therapist), (tx) =>
-        tx`insert into patient_care_team (tenant_id, patient_id, user_id)
-           values (${X.tenant}, ${X.patient}, ${X.therapist})`,
+        tx`insert into patient_care_team (tenant_id, patient_id, user_id, assigned_by)
+           values (${X.tenant}, ${X.patient}, ${X.therapist}, ${X.therapist})`,
       ),
     ).rejects.toThrow(/row-level security/i);
   });

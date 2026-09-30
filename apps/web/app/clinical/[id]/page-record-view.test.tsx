@@ -32,6 +32,7 @@ const h = vi.hoisted(() => ({
   },
   getRecordDetail: vi.fn(),
   getFichaMedicaTemplate: vi.fn(),
+  mayFileRegistoFor: vi.fn(),
   canWriteRecord: vi.fn(),
   isImporterSourcedRecord: vi.fn(),
   listImportedPatientDocuments: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("@/lib/auth/context", () => ({ requireRequestContext: async () => h.ctx 
 vi.mock("@/lib/clinical/records", () => ({
   getRecordDetail: h.getRecordDetail,
   getFichaMedicaTemplate: h.getFichaMedicaTemplate,
+  mayFileRegistoFor: h.mayFileRegistoFor,
   canWriteRecord: h.canWriteRecord,
 }));
 vi.mock("@/lib/clinical/terms-acceptance", () => ({ getLatestTermsAcceptance: async () => null }));
@@ -175,6 +177,10 @@ beforeEach(() => {
   h.getRecordDetail.mockReset();
   h.getFichaMedicaTemplate.mockReset();
   h.getFichaMedicaTemplate.mockResolvedValue(FICHA_TEMPLATE);
+  // 0097 and CARE-02a: the write controls ask these; nothing in this suite is
+  // about them (page-write-controls.test.tsx is).
+  h.mayFileRegistoFor.mockReset();
+  h.mayFileRegistoFor.mockResolvedValue(true);
   h.canWriteRecord.mockReset();
   h.canWriteRecord.mockResolvedValue(true);
   h.isImporterSourcedRecord.mockReset();
@@ -298,7 +304,7 @@ describe("the AI draft panel's way to the review screen", () => {
   });
 
   it("CARE-02a: a therapist who READS the draft through the care team but cannot write it gets no review link", async () => {
-    // 0098 lets a care-team therapist open a colleague's registo; every review
+    // 0096 lets a care-team therapist open a colleague's registo; every review
     // writer refuses them (therapistRegistoWriteScope), so the page offers none.
     h.canWriteRecord.mockResolvedValue(false);
     h.isImporterSourcedRecord.mockResolvedValue(false);

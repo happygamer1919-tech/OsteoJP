@@ -813,6 +813,7 @@
   "clinical.signSavesFirst": "As alterações ainda não guardadas são guardadas primeiro; a ficha só é assinada depois de guardada.",
   "clinical.signSaveFailed": "Não foi possível guardar as alterações, por isso a ficha não foi assinada.",
   "clinical.signStale": "A ficha foi alterada entretanto. Nada foi assinado: reveja a versão atual e assine novamente.",
+  "clinical.notAuthor": "Esta ficha tem outro autor: só quem a escreveu a pode alterar, assinar ou eliminar. Nada foi alterado.",
   "clinical.signedBy": "Assinada por",
   "clinical.signedAt": "Data de assinatura",
   "clinical.newVersion": "Nova versão (adenda)",
