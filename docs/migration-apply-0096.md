@@ -242,7 +242,9 @@ Checked by the operator before GREEN's BEFORE YOU START. None of these is a bloc
    outside both clinics' opening hours,** and GREEN is launched with
    `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no date: the
    dispatch names the window and its CLOCK CHECK records it, and stage 1 also reads the
-   clinics' own hours from the database.
+   clinics' own hours from the database. **On 2026-09-30 only, the owner's override**
+   (under "The clock" below) lets the window fall inside the clinics' hours; stage 1 still
+   reads and prints them, and on every other day an open clinic STOPs it.
 8. **The number table GREEN launches with.** #1499 writes the fifth renumbering into
    `CLAUDE.md`'s binding table under "SOLO's record". This held head does not carry it
    (it arrives at step 4 of the order), so here `CLAUDE.md` still reads the fourth
@@ -545,7 +547,8 @@ halts unless it is the sha the dispatch names.
 **The clock.** Both clinics were ruled to 08:00 to 21:00 on every open day
 (`docs/data-op-location-hours.md:18`, AGENDA-2100), and the owner's rule of 2026-09-27 runs
 a sitting only while the clinics are closed, so GREEN's dispatch names a window outside
-08:00 to 21:00 Lisbon and its CLOCK CHECK records it. The hours are data, not code: stage 1
+08:00 to 21:00 Lisbon (on 2026-09-30 only, by the override below, a window inside them) and
+its CLOCK CHECK records it. The hours are data, not code: stage 1
 also reads `locations.opens_at` and `closes_at` READ ONLY right before the pre-check and
 STOPs if any active clinic is open by its own row, so an hours change after that ruling is
 caught there.
@@ -768,14 +771,14 @@ echo "--- the production target, asserted by the guard, not by the prompt"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
 node scripts/assert-production-target.mjs
 
-echo "--- the clinics' own hours, READ ONLY: no active clinic may be open now"
+echo "--- the clinics' own hours, READ ONLY: no active clinic may be open now (on 2026-09-30 only, the owner's override lets the sitting run while one is)"
 CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (now() at time zone 'Europe/Lisbon')::time >= opens_at and (now() at time zone 'Europe/Lisbon')::time < closes_at) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1)
 echo "active clinics open now by their own hours: ${CL}"
 OVERRIDE_DAY=20260930
 TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
-if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && (a[3] + 0) >= 1) exit 0; exit 1 }'; then
+if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/) exit 0; exit 1 }'; then
   echo "clinics: every active clinic is closed by its own hours"
-elif [ "${TODAYL}" = "${OVERRIDE_DAY}" ] && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[2] == "of" && (a[3] + 0) >= 1 && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
+elif [ "${TODAYL}" = "${OVERRIDE_DAY}" ] && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[1-9][0-9]*$/ && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/ && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
   echo "OVERRIDE: ${CL} active clinics open now by their own hours; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on ${OVERRIDE_DAY} only"
 else
   echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1
@@ -2017,3 +2020,55 @@ the branch: no migration, check file, script, journal entry or test moved.
 
 **Every block is byte-identical to `aee775ba`'s and `91b06c97`'s, and so to `1d9ae1ab`'s.**
 The five fenced blocks, cut from each revision by one script, compare equal one by one.
+
+### Changed after the owner's override, 2026-09-30: stage 1's clinic check, one block
+
+The owner ruled at 13:13 Lisbon that 0096 to 0099 run that day "despite the current clinic
+schedule, we are doing it now". GREEN then stopped on stage 1's clinic check before any
+production contact, and the owner ruled "amend". **This is the first revision since
+`1d9ae1ab` whose blocks are not byte-identical to it.** The two sentences above that say
+every block is byte-identical were true of their revisions. For this one they hold for
+stages 0, 2, 3 and the closing read, and for every line of stage 1 except the clinic check.
+
+What changed, and only in stage 1 (the five fenced blocks were cut from `1d9ae1ab` and from
+this revision by one script and compared one by one; four compare equal):
+- the clinic check's header line names the override;
+- the single awk STOP line became an `if` with three arms:
+  - `0 of <n>`, n a positive integer: `clinics: every active clinic is closed by its own hours`, and the block continues, on every day;
+  - on the Lisbon date `20260930` only, `<k> of <n>` with k and n positive integers written without a sign or leading zero and k at most n: the `OVERRIDE:` line, and the block continues;
+  - anything else: STOP, exit 1.
+- `OVERRIDE_DAY=20260930` and `TODAYL`, the Lisbon date read by machine, are the two lines the arms read.
+
+The `0 of <n>` arm is tighter than before. It used to accept `0 of 2x` and `0 of 0x1`,
+because awk reads `2x` as 2, and macOS awk reads `0x1` as 1. It now requires n to be a
+positive integer. It loosens nothing.
+
+**How the new arms were proved.** No throwaway-DB rehearsal ran the override arm: the
+fixture's clinics are closed, so every earlier run printed `0 of <n>`. The arms read only
+`CL`, which comes from the unchanged read-only count, and the machine date. So the nine
+lines from `OVERRIDE_DAY` to `fi` were cut from this document by one script. They were run
+under `zsh -f` inside `( set -eo pipefail ... )`, with only the `TODAYL=` line replaced by a
+fixed date, over 17 values of `CL` on 20260930, 20261001 and 20260929:
+
+| `CL` | 20260930 | 20261001, 20260929 |
+|---|---|---|
+| `0 of 2` | closed, exit 0 | closed, exit 0 |
+| `1 of 2`, `2 of 2` | OVERRIDE, exit 0 | STOP, exit 1 |
+| `3 of 2`, `0 of 0`, empty, `x of 2`, `1 of`, `-1 of 2`, `1.5 of 2`, `00 of 2`, `01 of 2`, `+1 of 2`, `1e0 of 2`, `1 of 2x`, `0 of 2x`, `0 of 0x1` | STOP, exit 1 | STOP, exit 1 |
+
+Stage 1 as a whole passes `zsh -n`.
+
+Changed in the prose:
+- "Before the sitting", item 7;
+- "The clock", and the paragraph after it, THE OWNER'S OVERRIDE OF 2026-09-30;
+- the stage 1 EXPECT item for the clinics line;
+- this subsection.
+
+The first revision of this change was reviewed by a fresh R4 reviewer, which returned FAIL:
+- BLOCKER: the override arm accepted a malformed or non-positive k.
+- MAJOR: no subsection recorded that stage 1 had changed.
+- MINOR: the stale header line.
+- MINOR: item 7 and "The clock" still demanded a window outside the clinics' hours.
+- MINOR: the loose `0 of <n>` arm.
+
+All five are fixed here.
