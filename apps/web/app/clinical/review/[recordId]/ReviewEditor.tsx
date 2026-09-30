@@ -17,7 +17,7 @@ export type ReviewSaveState = {
 
 const initialState: ReviewSaveState = { ok: false };
 
-function reviewSaveErrorText(state: ReviewSaveState | null): string | null {
+export function reviewSaveErrorText(state: ReviewSaveState | null): string | null {
   if (!state) return s["review.error"];
   return state.code === "not_narrative_field"
     ? s["review.notNarrative"]
@@ -25,9 +25,11 @@ function reviewSaveErrorText(state: ReviewSaveState | null): string | null {
       ? s["review.invalidJson"]
       : state.code === "finalized"
         ? s["clinical.finalized"]
-        : state.code
-          ? s["review.error"]
-          : null;
+        : state.code === "not_author"
+          ? s["clinical.notAuthor"]
+          : state.code
+            ? s["review.error"]
+            : null;
 }
 
 /**
