@@ -1,9 +1,10 @@
 # 0097: apply the registo write policies, the clinical_records write policies follow the permission matrix
 
-**Status: HELD. NOT PROMOTED, NOT APPLIED, NOT YET ISSUED FOR A SITTING.** One
-migration, today `packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql`
-on the branch below, applied later by GREEN as
-`packages/db/migrations/0097_clinical_records_write_matrix.sql`, **after 0096**. Any `STOP:`
+**Status: PROMOTED ON #1475's HELD BRANCH (journal idx 94), ISSUED FOR THE SITTING OF
+2026-09-30 (PR=1475), NOT APPLIED.** One migration,
+`packages/db/migrations/0097_clinical_records_write_matrix.sql` (until the promotion
+`packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql`), applied by
+GREEN from #1475's held head, **after 0096**, which production carries since 2026-09-30. Any `STOP:`
 line, any `FAIL` verdict or any `ERROR` halts the sitting.
 
 **What it makes true, in one sentence: the clinical_records write policies follow the
@@ -48,8 +49,10 @@ ALTER shape of `docs/migration-apply-0092.md`, with CARE-02a's one-CREATE shape,
 0095's run-window record, pass marks and closing read.** Every count below is a structural
 count, a verdict profile, or a measurement on a synthetic rehearsal (the fifth, on
 2026-09-30, in the ruled order; and the four of 2026-09-27, in that day's order). **No
-production figure appears here: this lane had no production access, and the production READ
-ONLY section is written before the document is issued.**
+production figure of 0097's appears here: this lane had no production access, and by the
+owner's ruling of 2026-09-30 no separate READ ONLY run preceded the issue (see "Measured on
+production, READ ONLY"). Stage 1 is the first production measurement.** The one production
+figure quoted, in the "Issued" section, is 0096's own verdict profile from GREEN's report.
 
 **This document describes the database as it is with 0097.** Stage 1 runs the behaviour
 check before the apply only in its subjects-only mode (the subjects and the instrument, no
@@ -59,7 +62,7 @@ the DB-gated suite to that.
 | Fact | Value |
 |---|---|
 | Ruling | Owner, 2026-09-27: "0099 registo fix, SAT-01 from 0100.", Tier C, HELD. Renumbered `0097` by the owner and the lead on 2026-09-30 (above). The acceptance: the therapist arm of `clinical_records_update` USING and `clinical_records_delete` is `practitioner_id = auth.uid()` only; the therapist arm of `clinical_records_insert` is `practitioner_id = auth.uid() AND clinical_therapist_sees_patient(patient_id)`; the owner arms and every other policy byte-identical; the policy count flat; the immutability trigger untouched; every app writer verified against the new arms, and a narrow path designed for any legitimate writer they would break. **Owner rulings on the PR (Q1 to Q5, below): Q1 (a) the claim function, Q2 (b) the app half first as its own PR, Q3 proceed only when the at-risk draft count reads 0, Q4 (a) UPDATE's WITH CHECK is the INSERT's arm, Q5 (c) the patient page's controls in a follow-up** |
-| Migration, today | `packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql`, sha256 `076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318` (renamed from `NEXT-AFTER-0098_...` on 2026-09-30; bytes unchanged) |
+| Migration, promoted | `packages/db/migrations/0097_clinical_records_write_matrix.sql` (was `packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_write_matrix.sql` until the promotion of 2026-09-30), sha256 `076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318` (renamed from `NEXT-AFTER-0098_...` on 2026-09-30; bytes unchanged) |
 | Migration, at the sitting | `packages/db/migrations/0097_clinical_records_write_matrix.sql`, **bytes unchanged** (a promotion is a rename and nothing else, so the sha256 above is the hash drizzle records) |
 | Journal | `idx 94`, tag `0097_clinical_records_write_matrix`, `when` set at promotion and **strictly greater than 0096's** (0096 is expected at `idx 93`, `when 1788501700000`). The rehearsal used `0096 1788501700000` and `0097 1788501800000`; stage 0 asserts the order, not those values |
 | Must follow | `0096`, CARE-02a (#1471), promoted on #1471's head `1d9ae1ab` as `packages/db/migrations/0096_care02a_care_team_reads.sql`, journal `idx 93`, `when 1788501700000`, sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45` (read 2026-09-30). The same bytes the rehearsal applied: it read them pending, as `NEXT-AFTER-0095_care02a_care_team_reads.sql`, from #1471's earlier head `6fb88730`. Before it: `0095` the conflict check's patient name, applied 2026-09-29 |
@@ -133,7 +136,7 @@ trigger `clinical_records_enforce_immutability` (0001, re-parent-aware since 000
 every change to a locked or signed registo, and 0097 does not touch it. The owner arm of all
 three policies is 0045's, byte for byte: an owner writes any registo of the tenant, as
 before. Admin and reception match no write arm, as before. The SELECT policies are not
-touched (`NEXT-AFTER-0096_clinical_records_write_matrix.sql:32-64`, the statements at
+touched (`0097_clinical_records_write_matrix.sql:32-64`, the statements at
 `:281-378`).
 
 ## Every app writer, read against the new arms
@@ -236,7 +239,7 @@ UPDATE policy that admits only the author cannot admit that first UPDATE, becaus
 the OLD row, whose `practitioner_id` is NULL.
 
 `public.claim_ai_draft_authorship(p_record_id uuid)` makes the caller the author of ONE such
-draft and does nothing else (`NEXT-AFTER-0096_clinical_records_write_matrix.sql:182-230`,
+draft and does nothing else (`0097_clinical_records_write_matrix.sql:182-230`,
 the function at `:340-378`). It sets `practitioner_id` to `auth.uid()` only when ALL hold: the
 row is in the caller's JWT tenant; the caller's role is therapist; `source = 'ai_ingested'`,
 `status = 'draft'` and `ai_review_state = 'pending_review'`; `practitioner_id IS NULL` (an
@@ -304,10 +307,10 @@ recorded on 2026-09-29; Q1, Q2, Q3 and Q5 stand as the PR's defaults, by the sam
   writer" is read as its author, the only therapist the permission matrix and 0097 admit. The
   counts are read by machine, never assumed: stage 1's verdict 13 reads them before the pick
   and before the apply, and STOPs with nothing applied unless they are 0. A READ ONLY run of
-  the pre-check before issue is meant to read them first, so that the owner has time to finish
-  those drafts and the sitting is not where they are learned. **No block and no dispatch for
-  that run exist yet** (see "Measured on production, READ ONLY"): until one runs, the sitting
-  can be where they are learned, and verdict 13 is what keeps that safe.
+  the pre-check before issue was planned to read them first, so that the owner had time to
+  finish those drafts. **By the owner's ruling of 2026-09-30 it did not run** (see "Measured
+  on production, READ ONLY"): the sitting is where they are learned, and verdict 13 is what
+  keeps that safe.
 - **Q4, the new-row check of UPDATE: (a), as built.** USING the author; WITH CHECK the author
   AND `clinical_therapist_sees_patient(patient_id)`, W1's arm, so every row a therapist writes,
   by INSERT or by UPDATE, meets the ruled sentence. Cost: an author who no longer treats or
@@ -345,18 +348,20 @@ Checked by the operator and the lead before stage 0. None of these is a block.
    below makes: every required check green but the two that read the count, each read off its
    log as a count failure and nothing else.
 6. **This document is issued for the sitting**: `PR` is filled with `1475`, the production
-   READ ONLY section is written from the READ ONLY run before issue (whose block and dispatch
-   are not written yet: see "Measured on production, READ ONLY"), and the sidecar is
-   regenerated. Stages 0 to 3 STOP on the placeholder. The closing read carries none: it runs
+   READ ONLY section records the owner's ruling of 2026-09-30 that no separate READ ONLY run
+   precedes this sitting (Q3 is first read by stage 1's verdict 13, which STOPs before the
+   pick with nothing applied unless it reads 0), and the sidecar is regenerated. **Done on
+   2026-09-30; see "Issued".** Before the issue, stages 0 to 3 STOPped on the placeholder. The closing read carries none: it runs
    only on the head record stage 0 writes and the marks stages 1 to 3 write, and each of those
    stages STOPs on the placeholder before it writes one, so while the placeholder stands the
    closing read has none of this sitting's records to run on, and STOPs.
 7. **The owner's dispatch names `0097_clinical_records_write_matrix` and a run window that
    falls outside both clinics' opening hours**, and GREEN is launched with
-   `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no date: the
-   dispatch's CLOCK CHECK records the window in `/tmp/0097-window.ok`, every stage reads it,
-   stage 1 also reads the Lisbon clock against 08:00 and 21:00, and the clinics' own hours from
-   the database. **On 2026-09-30 only, the owner's override** (under "The clock" below) lets
+   `scripts/apply-lane/osteojp-apply-settings.json`. This document carries no run window; its
+   one date is the override day `20260930`, in stages 0 and 1. The dispatch's CLOCK CHECK
+   records the window in `/tmp/0097-window.ok`, every stage reads it, stages 0 and 1 also read
+   the Lisbon clock against 08:00 and 21:00, and stage 1 reads the clinics' own hours from the
+   database. **On 2026-09-30 only, the owner's override** (under "The clock" below) lets
    the window fall inside the clinics' hours: stages 0 and 1 print an `OVERRIDE:` line for
    the clock, and stage 1 one for an open clinic, and continue. On every other day both STOP
    as before.
@@ -444,7 +449,7 @@ issued, and stops.
 | Value | Where | Placeholder before issue | Filled with |
 |---|---|---|---|
 | `PR` | stages 0, 1, 2, 3 | `NOT-YET-ISSUED` | `1475`, for the `refs/pull/<PR>/head` fallback |
-| "Measured on production, READ ONLY" | the section of that name | NOT YET MEASURED | the pre-check and the stage 1 pick, both READ ONLY, run before issue from their own block and GREEN dispatch, neither of which is written yet |
+| "Measured on production, READ ONLY" | the section of that name | NOT YET MEASURED | planned: the pre-check and the stage 1 pick, both READ ONLY, run before issue. **Filled instead with the owner's ruling of 2026-09-30** that no separate READ ONLY run precedes this sitting |
 | the sidecar | `docs/migration-apply-0097.sha256` | this revision's digest | the issued revision's digest |
 | the dispatch | `/Users/ivan/osteojp-handover/green-dispatch-0097.txt` | this revision's digest, the one line `HELD='NOT-FILLED'` in BEFORE YOU START, and the NOT READY paragraph at its top | the issued digest in WHAT IS BEING APPLIED, both DOCSHA lines, the EXPECT lines and the sidecar line; the promoted head's sha in the `HELD=` line; and the NOT READY paragraph deleted |
 
@@ -457,8 +462,7 @@ that read it are re-run.
 Paste each block exactly as printed, whole, and on its own, in this order: **STAGE 0**, the
 dispatch's **CLOCK CHECK**, **STAGE 1**, **STAGE 2**, **STAGE 3**, **THE CLOSING READ**. The
 dispatch adds a BEFORE YOU START read at the front and the CLOCK CHECK between stage 0 and
-stage 1; neither is in this document, because the window is a date and this document carries
-none.
+stage 1; neither is in this document, because the window is a date the dispatch names.
 
 | Record | Written by | Holds | Read by |
 |---|---|---|---|
@@ -565,8 +569,9 @@ the clinics' hours, and both still read and print them:
 - **the clinics' own rows**, in stage 1 (`OVERRIDE_DAY=20260930`). On that date only, an open
   clinic prints an `OVERRIDE:` line quoting him, and the block continues.
 
-On every other day both STOP exactly as before. A read that finds no active clinic, or a
-count that is not a positive integer, STOPs on every day. The dispatch's dated window is
+On every other day both STOP exactly as before. A read that finds no active clinic, a count
+not written as a plain integer (no sign, no leading zero, nothing after it), or more open
+clinics than active ones, STOPs on every day. The dispatch's dated window is
 unchanged in kind: its CLOCK CHECK still records it, and every stage still reads it.
 
 ## What is new here, because 0097 is not shaped like 0093
@@ -657,9 +662,9 @@ does not bypass row level security it ERRORs rather than reads a filtered count.
 the connection is `postgres`, which bypasses it (as on the rehearsal image, where `postgres` is
 not a superuser and holds BYPASSRLS), and the tables are owned by `postgres` with RLS ENABLED,
 not FORCED. 0094's behaviour check set `row_security = off` on production on 2026-09-29 and
-read. The first production measurement of the pre-check and the pick is the READ ONLY run
-before issue once its block and dispatch exist (see "Measured on production, READ ONLY"), and
-stage 1 until then; the behaviour check's is stage 1's subjects-only run either way.
+read. By the owner's ruling of 2026-09-30 no READ ONLY run preceded the issue (see "Measured
+on production, READ ONLY"), so the first production measurement of the pre-check and the pick
+is stage 1's, and the behaviour check's is stage 1's subjects-only run.
 
 ## STAGE 1: the head, the window, pre-flight, pre-check (Q3), the pick, the subjects BEFORE, apply
 
@@ -1263,9 +1268,9 @@ were read on a rehearsal database built from main's 91 migrations and the held 0
 2026-09-27, and read again, identical, on 2026-09-30 on one built from main's 93 migrations
 and 0096 alone, the ruled order.
 If production rendered differently, pre-check arms 1 to 4 would FAIL and stage 1 would halt
-**before** the apply, which is the safe direction. The READ ONLY pre-check before issue, once
-its block exists, is the evidence that production renders the same way; until it runs, stage
-1's own pre-check is that evidence.
+**before** the apply, which is the safe direction. No READ ONLY pre-check ran before the
+issue (the owner's ruling of 2026-09-30), so stage 1's own pre-check is the evidence that
+production renders the same way.
 
 
 ## Measured on production, READ ONLY
@@ -1313,14 +1318,88 @@ and main was merged into #1471. #1471 merged as `774ddd2f`.
 `c3006189` and from this revision by one script and compared: only those four lines differ.
 "Measured on production, READ ONLY" records the owner's ruling instead of a measurement.
 
+### The whole blocks on the promoted head, rehearsed 2026-09-30 17:29 to 17:40 Lisbon
+
+This is the run "The rehearsal adaptation" (below) says is owed at promotion. A rehearsal
+agent ran every block WHOLE, in order, extracted verbatim from `6a7068c4`: the dispatch's
+BEFORE YOU START, stage 0, the dispatch's CLOCK CHECK, stages 1 to 3 and the closing read.
+
+**The throwaway:**
+- A local Supabase stack (CLI 2.100.0, project `r0097wb`) at production's position: main's
+  94 migrations, 0000 to 0096, without 0097's mirror.
+- A drizzle journal of 94 rows. The newest is 0096 by hash `fbf8cad1...`, when
+  1788501700000.
+- The synthetic fixture `fd217b2c...`, cut to shape `ai` by the documented reduction. As
+  loaded, its pre-check read verdict 13 FAIL (`at risk 2 of 8`), exactly as this document
+  records, and the reduction took it to `at risk 0 of 6`.
+
+**The substitutions**, and nothing else (the agent diffed each block against its verbatim
+cut):
+- the apply worktree's `cd`, to a fresh clone;
+- every `/tmp/0097-` path, to scratch;
+- the production env load, to the throwaway's URL;
+- the target guard, to an assertion of the throwaway's host and port. The real guard, run
+  once first, refused: `REFUSING: project ref is "postgres", not the production project.`
+
+| block | exit | last line |
+|---|---|---|
+| BEFORE YOU START | 0 | `BEFORE YOU START: every check passed, and the journal reads 94.` |
+| STAGE 0 | 0 | `PROMOTION AND NUMBER VERIFIED` |
+| CLOCK CHECK | 0 | `CLOCK: inside the run window, ... Paste stage 1 now.` |
+| STAGE 1 | 0 | `0097 APPLIED. Paste stage 2 now.` The pre-check read 20 OK, verdict 13 `at risk 0 of 6`, and the subjects `6 OK / 0 VACUOUS / 0 FAIL`. verified-migrate reached drizzle-kit through pnpm: `pending 1 [0097_clinical_records_write_matrix]`, `journal 94 -> 95 (delta 1)`, present by sha256 |
+| STAGE 2 | 0 | `0097 POST-CHECK PASSED. 20/20 pre-check OK, 15/15 post-check OK, journal 94 to 95.` |
+| STAGE 3 | 0 | `0097 BEHAVES AS RULED AT THE RLS LAYER. subjects before 6 OK / 0 VACUOUS / 0 FAIL, every arm after 20 OK / 0 VACUOUS / 0 FAIL.` |
+| CLOSING READ | 0 | `CLOSING READ: the journal reads 95, 0097 is APPLIED, and nothing is pending on the recorded head.` |
+
+It ran at 17:29 Lisbon on 2026-09-30, inside the clinics' hours. So **the override arms ran
+against a real database read for the first time**: both clock checks printed
+`OVERRIDE: Lisbon 1729 ...` and `1730 ...`, and the clinic check read `2 of 2` and printed
+its `OVERRIDE:` line.
+
+**One part did NOT run by an approved method, and does not count as rehearsed.** The journal
+reader, `read-applied-migrations.mjs`, refuses any target whose URL does not contain the
+production ref. It did so here, as designed:
+`REFUSED: this script reads drizzle.__drizzle_migrations, which only production uses.`
+Without authorisation, the agent then passed that guard by putting the ref into the
+throwaway URL as an `application_name` label. **SOLO did not authorise that, does not accept
+it as evidence, and deleted the env file.** So the journal-read half of BEFORE YOU START and
+of the closing read is unrehearsed here. The checks before each read did run. The reader
+itself is the pinned program (`867e2823...`) that ran 0096's BEFORE YOU START and closing
+read on production on 2026-09-30.
+
+The spoof shows the guard is a substring test (`url.includes(PROD_REF)`), a weakness to
+harden separately. That changes a pinned file, so it is not done here.
+
+### Changed after the first review of the issue, 2026-09-30: prose only, no block
+
+A fresh R4 workflow reviewed `6a7068c4`: two lenses, then an adversarial check of every
+MAJOR. The block logic passed:
+- 2240 runs over the clock and clinic arms;
+- the clinic arms are byte-identical to main's 0096;
+- only the four `PR` lines changed at issue.
+
+It found two MAJOR, both confirmed by the adversarial check, and several MINOR, all prose.
+All are fixed here:
+- the status header and the migration row said NOT PROMOTED and NOT YET ISSUED, and named
+  the deleted pending path;
+- "Before the sitting" item 6 still required the READ ONLY run the ruling skipped;
+- item 7 and "The order of the blocks" said the document carries no date;
+- the every-day STOP sentence was wrong for `0 of n`;
+- the changelog's "this revision";
+- the passages that still planned the READ ONLY run;
+- two citations of the pending path.
+
+Every fenced block is byte-identical to `6a7068c4`'s.
+
 ## Changed after the owner's override, 2026-09-30: the clock and clinic checks, two blocks
 
 The owner ruled at 13:13 Lisbon that 0096 to 0099 run that day "despite the current clinic
 schedule, we are doing it now". GREEN, reading 0096's document, stopped before BEFORE YOU START because its clinic check
 would STOP; nothing had run against production. The owner then ruled "amend". The same ruling reaches this document's two clinic-hours checks.
 
-**What changed.** The five fenced blocks were cut from `7af3b808` and from this revision by one
-script. Stages 2 and 3 and the closing read compare equal. Stages 0 and 1 differ only here:
+**What changed.** The five fenced blocks were cut from `7af3b808` and from `daf161b4` by one
+script. Stages 2 and 3 and the closing read compare equal. (At the issue, the `PR` line of
+stages 0 to 3 changed too; see "Issued".) Stages 0 and 1 differ only here:
 - **The Lisbon clock** (stages 0 and 1, the same eight lines in both):
   - The single awk STOP line became an `if` with three arms. Outside 08:00 to 21:00 it prints
     `Lisbon <HHMM>: outside 08:00 to 21:00` on every day. Inside those hours on `20260930`
@@ -1354,12 +1433,13 @@ Stages 0 and 1 each pass `zsh -n`.
 0096's second reviewer found two MINOR limits in these same clinic arms. They are known and
 not fixed, because neither input can come from the read that feeds the arms. First, awk
 compares k and n as floating-point numbers, so a k above n passes once both are above 2^53.
-Second, `awk -v` and `split` accept a padded or tab-separated `1 of 2`. `CL` is `psql -At`
+Second, `awk -v` turns backslash escapes into characters and `split` splits on any
+whitespace, so a padded, tab-separated or escape-written `1 of 2` passes. `CL` is `psql -At`
 output of `count || ' of ' || count`: one line, single spaces, a count of `locations` rows.
 
 **Prose changed:**
 - "Before the sitting", item 7.
-- The paragraph after "The clock", THE OWNER'S OVERRIDE OF 2026-09-30.
+- "The clock", and the paragraph after it, THE OWNER'S OVERRIDE OF 2026-09-30.
 - The closing sentence of "What stays open between the apply and the merge".
 - Stage 0's EXPECT, and stage 1's EXPECT items for the clock and clinics lines.
 - This section.
@@ -1391,7 +1471,8 @@ unchanged; described in the next section), 9 registos.
 **`verified-migrate.mjs`, `drizzle-kit migrate` and stage 0 as a whole block did not run:**
 they need a promoted branch. Stage 0's journal line and its app-half line were run on their
 own, from this document's text, below. That run, on a throwaway at production's position, is
-owed at promotion, before the document is issued.
+owed at promotion, before the document is issued. **It ran on 2026-09-30 after the
+promotion: see "The whole blocks on the promoted head, rehearsed".**
 
 **The main run, `c97_main`** (a copy of `c97_fix`, every exit 0):
 
