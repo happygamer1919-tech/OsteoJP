@@ -112,6 +112,14 @@ export const GATE_GLOBS = Object.freeze([
   "apps/web/lib/guide/guide-names.test.ts",
   "docs/guide/build/guide-names.mjs",
   "docs/guide/build/guide-names-waived.txt",
+  // --- the INC-G1 production-host check's allow-list. The check itself,
+  //     scripts/no-production-hosts-in-tests.test.mjs, is already a gate
+  //     through `scripts/**/*.test.mjs` above, and runs in the REQUIRED job
+  //     through `pnpm test:scripts`. The allow-list is its INPUT, the same case
+  //     as `.env.example` and the guide names waiver list: an entry added there
+  //     clears a hit on that line, so it silences the check line by line, and
+  //     the test reads it on every run. So a new entry is a GATE-CHANGE. ---
+  "scripts/no-production-hosts-in-tests.allow.txt",
   // --- the task graph. Editing it can stop `lint`, `typecheck` or `test`
   //     from running at all while every check still reports green. ---
   "turbo.json",
