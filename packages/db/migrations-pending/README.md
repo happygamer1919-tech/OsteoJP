@@ -41,16 +41,49 @@ was promoted first, by the B8 dispatch's ordering, and took **`0090`**.
 `care/CARE-01-assigned-therapists` (PR #1374), and took **`0091`** — see the Promoted
 table below. Those two promotions emptied the table above. The `0094` file was parked
 there later and has since been promoted too, and so has the `0095` conflict-check file (see the
-Promoted table), so the table is empty again.
+Promoted table), so the table is empty again on `main`. The four held files of the queue below
+live on their held branches, not on `main`, until each is promoted.
 
-**THE RULED QUEUE, RE-RULED BY THE OWNER ON 2026-09-27 (the fourth time).** It is
-**`0090` NESA names · `0091` CARE-01 · `0092` CARE-LOC · `0093` RGPD-01 (all four
-applied and merged) · `0094` the users/tenants role fix (#1459, promoted, held for the apply) ·
-`0095` the conflict check's patient name (#1438, held; was `0096`) · `0096` the grants revoke
-(#1397, held; was `0095`) · `0097` the staging index (held) · `0098` CARE-02a (held) ·
-`0099` the registo write fix · `0100` onward SAT-01**. A pending file's `NEXT-AFTER-`
-name follows this queue: the conflict check follows `0094`, the grants revoke follows
-`0095`. The binding table is in `CLAUDE.md` under "SOLO's record".
+**THE RULED QUEUE, RE-RULED BY THE OWNER AND THE LEAD ON 2026-09-30 (the fifth time).**
+It is **`0090` NESA names · `0091` CARE-01 · `0092` CARE-LOC · `0093` RGPD-01 · `0094`
+the users/tenants role fix · `0095` the conflict check's patient name (all six applied
+and merged) · `0096` CARE-02a (#1471, held; was `0098`) · `0097` the registo write
+policies (#1475, held; was `0099`) · `0098` the staging index (#1469, held; was `0097`) ·
+`0099` the grants revoke (#1397, held; was `0096`) · `0100` onward SAT-01**. From this
+ruling on, **apply order equals file order**: the lead rules an apply order only in number
+order or after a renumber, because `scripts/check-journal.mjs` rule 3 requires the
+journal's `idx` order to match the numeric file order, and the apply order ruled on
+2026-09-29 (`0098, 0099, 0097, 0096` under the old numbers) would have broken it at the
+first promotion. The binding table is in `CLAUDE.md` under "SOLO's record".
+
+A pending file's `NEXT-AFTER-` name follows this queue. Named as they will be on their
+held branches:
+
+| file | must follow | becomes | held on |
+|---|---|---|---|
+| `NEXT-AFTER-0095_care02a_care_team_reads.sql` | `0095` | `0096` | #1471 |
+| `NEXT-AFTER-0096_clinical_records_write_matrix.sql` | `0096` | `0097` | #1475 |
+| `NEXT-AFTER-0097_migration_staging_imported_entity_idx.sql` | `0097` | `0098` | #1469 |
+| `NEXT-AFTER-0098_revoke_truncate_trigger_references.sql` | `0098` | `0099` | #1397 |
+
+Before this ruling the same four files were named `NEXT-AFTER-0097_care02a_care_team_reads.sql`,
+`NEXT-AFTER-0098_clinical_records_write_matrix.sql`,
+`NEXT-AFTER-0096_migration_staging_imported_entity_idx.sql` and
+`NEXT-AFTER-0095_revoke_truncate_trigger_references.sql`. Those names are superseded, not
+typos; a branch still carrying one is renamed on that branch, with no other edit.
+
+**A FILE'S HEADER COMMENT MAY STILL NAME ITS OLD NUMBER, AND THAT IS ON PURPOSE.** A
+rename changes no byte of the file. CARE-02a's header reads "RULED NUMBER 0098", the
+registo write policies' header reads "RULED NUMBER 0099" and the staging index's header
+reads "RULED NUMBER 0097", and each names the predecessor and the queue of its day. They
+keep saying so after the rename and after the promotion. The file is never edited to
+match, because its sha256 is what every pin points at (the apply document, its sidecar,
+and any pre-check that pins it as a literal). Read the header as a record of when the
+file was authored, and this README and the table in `CLAUDE.md` for where it sits now.
+
+The 2026-09-27 queue, superseded: `0095` the conflict check's patient name · `0096` the
+grants revoke (#1397) · `0097` the staging index · `0098` CARE-02a · `0099` the registo
+write fix.
 
 The 2026-09-22 queue, superseded: `0094` the users/tenants role fix · `0095` the grants
 revoke (#1397) · `0096` the conflict check's patient name.
@@ -66,8 +99,10 @@ it stood, so a PR description, comment or note still naming `0092` for care-team
 table lives in `CLAUDE.md` under "SOLO's record"; read it, not a number remembered
 from a branch name.
 
-**ONE MIGRATION IS IN FLIGHT AT A TIME.** `0095` is not promoted until `0094` is
-applied to production and merged.
+**ONE MIGRATION IS IN FLIGHT AT A TIME.** `0097` is not promoted until `0096` is
+applied to production and merged, `0098` not until `0097` is, and `0099` not until
+`0098` is. `0096`'s sitting keeps its documented order: promote, apply, the count
+GATE-CHANGE (26 to 27), main into #1471, then #1471 merges.
 
 ## Promoted
 
