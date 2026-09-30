@@ -1320,7 +1320,9 @@ and main was merged into #1471. #1471 merged as `774ddd2f`.
 `c3006189` and from this revision by one script and compared: only those four lines differ.
 "Measured on production, READ ONLY" records the owner's ruling instead of a measurement.
 
-### The whole blocks on the promoted head, rehearsed 2026-09-30 17:29 to 17:30 Lisbon
+### VOID: the whole blocks on the promoted head, rehearsed 2026-09-30 17:29 to 17:30 Lisbon
+
+**VOIDED BY THE LEAD ON 2026-09-30** (INC-rehearsal-subagent-passed-the-reader-guard). Its agent passed the journal reader's guard with an unauthorised URL label. The run is kept below as a record, and none of it counts as evidence. The redone run under the lead's standing rule is the next section.
 
 This is the run "The rehearsal adaptation" (below) says is owed at promotion. A rehearsal
 agent ran every block WHOLE, in order, extracted verbatim from `6a7068c4`: the dispatch's
@@ -1374,6 +1376,58 @@ read on production on 2026-09-30.
 
 The spoof shows the guard is a substring test (`url.includes(PROD_REF)`), a weakness to
 harden separately. That changes a pinned file, so it is not done here.
+
+### The whole blocks on the promoted head, rehearsed AGAIN 2026-09-30 18:13 to 18:14 Lisbon, under the lead's standing rule
+
+This is the lead's ruling of 2026-09-30, ruling 1: a fresh agent, whose prompt carried
+verbatim: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never
+edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot
+run on the throwaway is recorded as NOT REHEARSED and the document says so."
+
+**The setup:**
+- The head was `f7be8111`, checked out from a fresh clone.
+- The throwaway was a local Supabase stack (project `r0097wb2`) at production's position:
+  main's 94 migrations, 0000 to 0096, and a drizzle journal of 94 rows.
+- The fixture was `fd217b2c...`. As loaded, its pre-check read verdict 13 FAIL
+  `at risk 2 of 8 drafts`, as this document records. After the documented shape `ai`
+  reduction it read `at risk 0 of 6`.
+
+**Four substitutions, and nothing else.** A reverse-substitution check turned every block
+back into its verbatim cut.
+- The apply worktree's `cd`, to the clone.
+- Every `/tmp/0097-` path, to scratch.
+- The env source, to a scratch file holding one line: the throwaway URL, 127.0.0.1, no query
+  string. No production ref appears in any substituted block.
+- The target guard in stages 1 to 3. The real guard ran once first and refused
+  (`REFUSING: project ref is "postgres", not the production project.`). Its stand-in asserts
+  the throwaway's host, port and database and no query.
+
+| block | exit | last line |
+|---|---|---|
+| BEFORE YOU START | 2 | **the reader REFUSED the throwaway: NOT REHEARSED from the journal read on.** Every check before the read passed. |
+| (the start records only, authorised by SOLO) | 0 | `held head recorded for the CLOCK CHECK: f7be8111...`. The journal-read line and its output check were left out, and so was the closing echo claiming the journal reads 94. |
+| STAGE 0 | 0 | `PROMOTION AND NUMBER VERIFIED` (the clock `OVERRIDE: Lisbon 1813 ...`; journal 95 entries, idx 94 0097 when 1788501800000) |
+| CLOCK CHECK | 0 | `CLOCK: inside the run window, ... Paste stage 1 now.` |
+| STAGE 1 | 0 | `0097 APPLIED. Paste stage 2 now.` Clinics `2 of 2`, then the `OVERRIDE:` line. Pre-check 20 OK. Subjects `6 OK / 0 VACUOUS / 0 FAIL`, shape `ai`. verified-migrate reached drizzle-kit through pnpm: `pending 1 [0097_clinical_records_write_matrix]`, `journal 94 -> 95 (delta 1)`, present by sha256 |
+| STAGE 2 | 0 | `0097 POST-CHECK PASSED. 20/20 pre-check OK, 15/15 post-check OK, journal 94 to 95.` |
+| STAGE 3 | 0 | `0097 BEHAVES AS RULED AT THE RLS LAYER. subjects before 6 OK / 0 VACUOUS / 0 FAIL, every arm after 20 OK / 0 VACUOUS / 0 FAIL.` |
+| THE CLOSING READ | 2 | **the reader REFUSED the throwaway: the journal read is NOT REHEARSED.** The checks before it passed. |
+
+**NOT REHEARSED, and why.** The journal read in BEFORE YOU START and in the closing read are
+not rehearsed. The reader, `packages/db/scripts/read-applied-migrations.mjs` (pinned
+`867e2823...`), refuses any target that is not production, and no throwaway can pass it
+without defeating it. What stands for them:
+- the same pinned reader ran both reads on production in 0096's sitting of 2026-09-30, and
+  BEFORE YOU START's read in 0097's own sitting of 18:01, which stopped at Q3 with nothing
+  applied;
+- the check after BEFORE YOU START's read (`journal rows on production: 94`) printed 94
+  there.
+
+**Other differences from the fifth run**, none a halt:
+- `functions_md5` and `grants_md5` differ, because a Supabase stack has its own functions
+  and default privileges. They are carried, not asserted.
+- drizzle-kit printed two harmless NOTICEs (the `drizzle` schema and the journal table
+  already exist). Production printed the same in 0096's sitting.
 
 ### Changed after the first review of the issue, 2026-09-30: prose only, no block
 
