@@ -20,6 +20,10 @@
 //     behaviour check's EXPLAIN templates, which plan and never execute. Each
 //     opens READ ONLY: the pre-check and the behaviour check themselves, the
 //     post-check through the stage 2 block's `begin read only`;
+//   * the pre-check and the post-check read a NULL relacl as acldefault() of the
+//     relation's own object type, 's' for a sequence (acldefault's 'S' is a
+//     FOREIGN SERVER), so a GRANT or REVOKE that materialises a default moves
+//     no hash;
 //   * the verdict counts the blocks require are the counts the files print:
 //     15 in the pre-check, 15 in the post-check, 7 arms in the behaviour check;
 //   * every sha256 the document pins for a check file or the migration is that
@@ -125,6 +129,23 @@ export function writeProblems(sql) {
   return problems;
 }
 
+/**
+ * A NULL relacl reads as acldefault() of the relation's own object type. acldefault
+ * spells a SEQUENCE 's' (owner=rwU); its capital 'S' is a FOREIGN SERVER (owner=U),
+ * although pg_class.relkind spells a sequence 'S'. So the capital code must never be
+ * the type argument, and rel_items must map relkind 'S' to 's'.
+ */
+export const REL_DEFAULT = `acldefault(CASE WHEN c.relkind = 'S' THEN 's'::"char" ELSE 'r'::"char" END, c.relowner)`;
+export function aclDefaultProblems(sql) {
+  const problems = [];
+  const code = codeOf(sql);
+  if (/acldefault\(\s*'S'|THEN\s+'S'::"char"|'S'::"char"\s+ELSE/.test(code)) {
+    problems.push("acldefault is given the FOREIGN SERVER code 'S' where a sequence's code is 's'");
+  }
+  if (!code.includes(REL_DEFAULT)) problems.push("rel_items does not read a NULL relacl as acldefault of its own object type");
+  return problems;
+}
+
 /** Verdicts a check file can print OK for. */
 const okVerdicts = (sql) => (codeOf(sql).match(/THEN 'OK' ELSE 'FAIL' END(?: AS verdict)? FROM j/g) ?? []).length;
 
@@ -219,6 +240,18 @@ test("the check files write nothing, and each opens READ ONLY", () => {
   assert.notDeepEqual(writeProblems(pre + "\nDELETE FROM public.patients;\n"), []);
   assert.notDeepEqual(writeProblems(behaviour.replace("'EXPLAIN (COSTS OFF) DELETE FROM %s WHERE false'", "'DELETE FROM %s'")), []);
   assert.notDeepEqual(writeProblems(post + "\nREVOKE SELECT ON public.patients FROM authenticated;\n"), []);
+});
+
+test("the pre-check and the post-check read a NULL relacl as acldefault of its own object type ('s' for a sequence)", () => {
+  assert.deepEqual(aclDefaultProblems(pre), []);
+  assert.deepEqual(aclDefaultProblems(post), []);
+  // CONTROLS: the FOREIGN SERVER code in place of the sequence code goes red, in either file.
+  const foreignServer = (s) => s.replace(`THEN 's'::"char"`, `THEN 'S'::"char"`);
+  assert.notDeepEqual(aclDefaultProblems(foreignServer(pre)), []);
+  assert.notDeepEqual(aclDefaultProblems(foreignServer(post)), []);
+  assert.notDeepEqual(aclDefaultProblems(pre.replace(REL_DEFAULT, "acldefault('r', c.relowner)")), []);
+  // A comment naming the capital code is not code, and does not go red.
+  assert.deepEqual(aclDefaultProblems(pre + "\n-- acldefault('S', owner) is a foreign server\n"), []);
 });
 
 test("the verdict counts the blocks require are the counts the files print", () => {

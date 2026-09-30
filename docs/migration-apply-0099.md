@@ -84,8 +84,8 @@ migrations"). The lane that wrote this document never runs it.
 | PR | #1397, branch `sec/B10-revoke-truncate-trigger-references`, labelled `held-for-apply` until the owner takes it off and merges |
 | Runs from | `origin/main`, when it IS #1397's merge commit. Stage 0 records the sha `origin/main` resolves to in `/tmp/0099-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stage 1 HALTS if `origin/main` has moved since (the HEAD CHECK) |
 | This document | `docs/migration-apply-0099.md`, pinned by `docs/migration-apply-0099.sha256` and asserted by every stage; GREEN's dispatch pins its sha256 on its own and checks it by machine twice |
-| Pre-check | `scripts/db/precheck-0099-grants-revoke.sql`, READ ONLY, 15 verdicts each with its control, 12 carries, 3 INFO rows, `-v prev_hash` and `-v prev_when` required, sha256 `12693e59c7e354dc79e00ef12e4d7ea4426c7cb51eecb5a2443001b9740667d7` |
-| Post-check | `scripts/db/postcheck-0099-grants-revoke.sql`, READ ONLY, 15 verdicts, nine carries in, sha256 `586d39b92e9c89d46ae2cf4abedf37a321ea2ea607480ce0a3af3a2c370851bb` |
+| Pre-check | `scripts/db/precheck-0099-grants-revoke.sql`, READ ONLY, 15 verdicts each with its control, 12 carries, 3 INFO rows, `-v prev_hash` and `-v prev_when` required, sha256 `2860eab70cff72dbd53b09203abb0b0b8a45130e875654d7156c7ab8ac98f761` |
+| Post-check | `scripts/db/postcheck-0099-grants-revoke.sql`, READ ONLY, 15 verdicts, nine carries in, sha256 `4aedfa68a2f119783d0ec3acebea279300c9b8c34e5c5c1437b053d1365f9e14` |
 | Behaviour check | `scripts/db/behaviour-0099-grants-readonly.sql`, READ ONLY, 7 arms and a SUMMARY row, run TWICE: `-v phase=before` in stage 1 before the apply, `-v phase=after` in stage 3 with the BEFORE run's two outcome md5s. sha256 `580202037bf7f7e5d06460f3b64b0c3dea0abd2f4af2dfdf4360c9051e106470` |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `867e2823130b1ec1a9f7790522968924ecd872452c48322884c3e22efb5704d1`. All three as `origin/main` holds them on 2026-09-30 (`f884be4d`), and all pinned in every block that runs them. NOT READY step 4 says why `verified-migrate.mjs`'s pin may move |
 | The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59`. It imports nothing but `node:` builtins |
@@ -275,8 +275,8 @@ MIG=packages/db/migrations/0099_revoke_truncate_trigger_references.sql
 PEND=packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql
 SHA0099=fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b
 SHAPREV=198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0
-SHAPRE=12693e59c7e354dc79e00ef12e4d7ea4426c7cb51eecb5a2443001b9740667d7
-SHAPOST=586d39b92e9c89d46ae2cf4abedf37a321ea2ea607480ce0a3af3a2c370851bb
+SHAPRE=2860eab70cff72dbd53b09203abb0b0b8a45130e875654d7156c7ab8ac98f761
+SHAPOST=4aedfa68a2f119783d0ec3acebea279300c9b8c34e5c5c1437b053d1365f9e14
 SHABEHAVIOUR=580202037bf7f7e5d06460f3b64b0c3dea0abd2f4af2dfdf4360c9051e106470
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
@@ -350,7 +350,7 @@ prints is the one every later stage runs from.
 set -eo pipefail
 SHA0099=fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b
 SHAPREV=198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0
-SHAPRE=12693e59c7e354dc79e00ef12e4d7ea4426c7cb51eecb5a2443001b9740667d7
+SHAPRE=2860eab70cff72dbd53b09203abb0b0b8a45130e875654d7156c7ab8ac98f761
 SHABEHAVIOUR=580202037bf7f7e5d06460f3b64b0c3dea0abd2f4af2dfdf4360c9051e106470
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
@@ -510,7 +510,7 @@ and the previous sitting's transcripts are untouched: the failed run's output st
 (
 set -eo pipefail
 SHA0099=fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b
-SHAPOST=586d39b92e9c89d46ae2cf4abedf37a321ea2ea607480ce0a3af3a2c370851bb
+SHAPOST=4aedfa68a2f119783d0ec3acebea279300c9b8c34e5c5c1437b053d1365f9e14
 SHAGUARD=bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093
 
 rm -f /tmp/0099-stage2.ok
@@ -843,7 +843,8 @@ of 96 rows whose newest is 0098's real sha256 at `when` 1788501900000. The migra
 applied with `psql -1` from the pending file (these exact bytes, sha256 `fbc5e545…163b`)
 and its journal row written by hand: verified-migrate did not run.
 
-**The happy path, with these exact check files:**
+**The happy path, with these exact check files** (run again on `hp3` with the fixed files
+after the review fix below, with the same results):
 
 | Run | Result |
 |---|---|
@@ -890,6 +891,34 @@ on (section 1).
 | `happy.zsh`, the happy path | `f23ce9472bb0ed52d999d409bcca21d76dc7a92cc881ac1149110441c62f838e` |
 | `arms.zsh`, N1 to N12 | `2a23e3c9e2efe3cc2434ebe09159b48a61a95900ac368d31ca1fc4da94b57b13` |
 | `in-action.sql`, W1 to W5 | `422252bd9d451802970b718ee28ec1a828223d784dab7bd7ec93615be1d24130` |
+| `verify.zsh`, the review fix: previous against fixed, and N13 | `fa5ac6095fe7e52224fe2197a2e38229a7b9bd9e5da5fac13d64052807f79fef` |
+
+### The review fix of 2026-09-30: acldefault's code for a sequence
+
+**The defect.** Both check files read a NULL `relacl` as `acldefault()` of the relation's
+type, and passed the capital `'S'` for a sequence. In `acldefault`, the capital `'S'` is
+FOREIGN SERVER (`owner=U`); a SEQUENCE is the small `'s'` (`owner=rwU`). `pg_class.relkind`
+spells a sequence with the capital letter, which is how the slip happened. So a sequence
+whose ACL had never been touched hashed as `owner=U`, and the pre-check's claim that a NULL
+`relacl` reads as what a REVOKE materialises was false for sequences. **No 0099 verdict
+moved:** both files hashed it the same way, 0099 touches no sequence, and a sequence
+`postgres` creates under the Supabase defaults carries an explicit ACL anyway. **The fix**
+passes `'s'` in both files, one line each, and says so in each header;
+`scripts/grants-revoke-0099.test.mjs` now requires it, with a control that plants the
+capital code back and goes red. Both files' sha256 moved, so every pin to them moved with
+them, and this document's sha256 with it.
+
+**Measured on `b10-0099-reh`, 2026-09-30, finished by 14:24 Lisbon (read by machine):**
+
+| Run | Result |
+|---|---|
+| the previous and the fixed pre-check, the same database at the same moment, on `syn0`, `syn1`, `hp`, `hp2` and `n1` to `n9` | **identical output, byte for byte, on all 13** |
+| the previous and the fixed post-check, the same carries, on `hp`, `hp2`, `syn1` and `n2` to `n5` | **identical output, byte for byte, on all 7** |
+| the happy path again, `happy.zsh hp3`, with the fixed files | pre-check 15 OK / 0 FAIL; behaviour BEFORE 6 OK / 1 VACUOUS / 0 FAIL; the body exit 0; post-check 15 OK / 0 FAIL; behaviour AFTER 7 OK / 0 VACUOUS / 0 FAIL |
+| N13, the arm that tells them apart: a sequence in `public` owned by a role with no default privileges (`relacl` NULL), then a GRANT and REVOKE pair that changes no privilege but materialises its ACL as `{syn_seq_owner=rwU/syn_seq_owner}` | the previous file's `relation_acl_md5` MOVED (`8535f63d…` to `12df657e…`), so its post-check verdict 8 read **FAIL** with nothing changed; the fixed file's read `12df657e…` before and after, and its verdict 8 read **OK**. The fixed file reads the NULL `relacl` as exactly the ACL a GRANT or REVOKE materialises, as its header says |
+
+So N1 to N12 above, run with the previous files, stand for the fixed files too: on every
+one of those databases the two print the same bytes.
 
 ### What the rehearsal agent owes before the dispatch is issued
 
@@ -935,6 +964,9 @@ on (section 1).
   `authenticated=[^,]*[tDx]` in the text of the default ACL, and the grantor's name
   `postgres` after the `/` contains a `t`, so it would have read non-zero after a correct
   apply. The post-check now parses the ACL with `aclexplode()` and names privileges.
+- **A review found a second defect, in both check files, and it is gone.** They read a
+  sequence's NULL ACL through `acldefault()` with the FOREIGN SERVER code. No verdict moved;
+  "The review fix of 2026-09-30" under Rehearsal gives the fix and the measurement.
 
 ## The op carries no DELETE and no TRUNCATE statement
 

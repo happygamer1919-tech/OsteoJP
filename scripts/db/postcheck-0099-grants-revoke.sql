@@ -23,7 +23,9 @@
 --          default_acl_md5;
 --   8      every OTHER privilege on every relation in `public` hashes to the
 --          pre-check's relation_acl_md5: 0099 removed the three from
---          `authenticated` on the tables and nothing else from anyone;
+--          `authenticated` on the tables and nothing else from anyone. A NULL
+--          relacl reads exactly as the pre-check reads it: acldefault() of the
+--          relation's own object type, code 's' for a sequence;
 --   9      every column privilege in `public` hashes to column_acl_md5 (the
 --          REVOKE dropped no column grant);
 --   10     WHAT THE APP ROLES MAY READ AND WRITE IS UNCHANGED: has_table_privilege
@@ -98,7 +100,7 @@ WITH t AS (
   SELECT c.oid::regclass::text AS rel, c.relkind::text AS kind, a.grantor, a.grantee, a.privilege_type, a.is_grantable
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault(CASE WHEN c.relkind = 'S' THEN 'S'::"char" ELSE 'r'::"char" END, c.relowner))) a
+    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault(CASE WHEN c.relkind = 'S' THEN 's'::"char" ELSE 'r'::"char" END, c.relowner))) a
    WHERE n.nspname = 'public'
 ), def_items AS (
   SELECT d.defaclrole, d.defaclnamespace, d.defaclobjtype::text AS objtype, a.grantor, a.grantee, a.privilege_type, a.is_grantable

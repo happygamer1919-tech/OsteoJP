@@ -65,7 +65,11 @@
 --   CARRY  relation_acl_md5: every privilege on every relation in `public`, one
 --          md5, WITHOUT the items 0099 removes (grantee `authenticated`, an
 --          ordinary or partitioned table, TRUNCATE, TRIGGER or REFERENCES). A NULL
---          relacl reads as acldefault(), which is what a REVOKE materialises;
+--          relacl reads as acldefault() of the relation's own object type, which
+--          is what a GRANT or REVOKE materialises: code 's' for a sequence
+--          (owner=rwU) and 'r' for every other relation. relkind spells a
+--          sequence with the capital letter, but acldefault's capital code is
+--          FOREIGN SERVER (owner=U), so the two spellings differ on purpose;
 --   CARRY  column_acl_md5: every column privilege in `public`, one md5;
 --   CARRY  default_acl_md5: every default privilege in the database, one md5,
 --          WITHOUT the three items of `authenticated` in the session role's
@@ -118,7 +122,7 @@ WITH t AS (
   SELECT c.oid::regclass::text AS rel, c.relkind::text AS kind, a.grantor, a.grantee, a.privilege_type, a.is_grantable
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault(CASE WHEN c.relkind = 'S' THEN 'S'::"char" ELSE 'r'::"char" END, c.relowner))) a
+    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault(CASE WHEN c.relkind = 'S' THEN 's'::"char" ELSE 'r'::"char" END, c.relowner))) a
    WHERE n.nspname = 'public'
 ), def_items AS (
   SELECT d.defaclrole, d.defaclnamespace, d.defaclobjtype::text AS objtype, a.grantor, a.grantee, a.privilege_type, a.is_grantable
