@@ -1,6 +1,6 @@
 # 0099: apply the TRUNCATE, TRIGGER, REFERENCES revoke from `authenticated`
 
-**NOT READY: waits on the owner's ruling on SEC-truncate-grant-platform-default (option 1 prepared).**
+**NOT READY. OPTION 1 IS RULED (the lead, 2026-09-30). It waits on 0096, 0097 and 0098 applied and merged, the promotion, and the whole-block rehearsal on the promoted head.**
 
 **Status: NOT READY. NOT PROMOTED. NOT APPLIED.** One migration, today the pending file
 `packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql`,
@@ -31,7 +31,9 @@ migrations"). The lane that wrote this document never runs it.
 
 ## NOT READY: what must happen first, in this order, and none of it by GREEN
 
-1. **The owner rules on `SEC-truncate-grant-platform-default`.** The card puts three
+1. **DONE 2026-09-30: OPTION 1 RULED.** The lead's dispatch of that evening: "0099: option 1
+   (revoke across public plus matching default privileges)". As first written, this step
+   read: **The owner rules on `SEC-truncate-grant-platform-default`.** The card puts three
    options: (1) revoke across `public` plus the matching `ALTER DEFAULT PRIVILEGES`,
    (2) revoke only on the tables holding patient data, (3) accept the platform default and
    record the acceptance. **This document prepares option 1, exactly as #1397 builds it.**
@@ -65,7 +67,13 @@ migrations"). The lane that wrote this document never runs it.
    on the OsteoJP schema was BLOCKED on 2026-09-30 by the classifier,** verbatim below.
 6. **CI is green on the promoted head** (the required checks, and `db-tests`, which
    applies 0099 with every other migration on a real Supabase stack and runs the packages/db
-   suite over it: the first run of the whole app suite with the three privileges gone).
+   suite over it). **Corrected 2026-09-30:** this step first called that run "the first run
+   of the whole app suite with the three privileges gone", which is probably false.
+   `supabase/seed.sql` says Supabase CLI v2.106.0 stopped applying the platform's default
+   Data API privileges, and `db-tests.yml` pins v2.107.0. If so, CI's stack never gave
+   `authenticated` the three privileges. `db-tests` still shows the app does not need them,
+   but it cannot stand in for the premise. The premise was measured on the throwaway of
+   16:16 (see "Rehearsal").
 7. **The owner takes `held-for-apply` off #1397 and merges it**, and freezes merges to
    main from that merge until GREEN's report is in (SOLO disarms every armed PR first).
    The title's DRAFT marker is the lead's to remove.
@@ -75,7 +83,7 @@ migrations"). The lane that wrote this document never runs it.
 
 | Fact | Value |
 |---|---|
-| Card | `SEC-truncate-grant-platform-default` (PURPLE, #1396), `blocked`, `blocked_on: ivan`. Option 1 prepared |
+| Card | `SEC-truncate-grant-platform-default` (PURPLE, #1396). **Option 1 ruled by the lead on 2026-09-30**; the card is updated on the board |
 | Ruling | **None yet on the option.** The number is ruled: `0099` by the owner and the lead on 2026-09-30 (the fifth renumbering), was `0096` (2026-09-27) and `0095` (2026-09-22). The binding table is in `CLAUDE.md` under "SOLO's record" |
 | Migration | today `packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql`; at the sitting `packages/db/migrations/0099_revoke_truncate_trigger_references.sql`. sha256 `fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b` in both places |
 | Journal | `idx 96`, tag `0099_revoke_truncate_trigger_references`, `when` strictly above 0098's. Stage 0 reads both from the journal and requires the order; no `when` is pinned here, because 0098's is set at its own promotion |
@@ -157,7 +165,7 @@ Board card **`SEC-truncate-grant-platform-default`** measured it on production o
 on a throwaway built from `supabase/migrations` with that one platform default added and
 nothing else changed; built without it, the same migrations produce zero of all three.
 
-**This document implements that card's option 1 and does not pre-empt the ruling.** The
+**This document implements that card's option 1, which the lead ruled on 2026-09-30.** The
 card notes only option 1 survives the next `CREATE TABLE`. The migration is held so the
 decision has something to approve rather than something to specify.
 
@@ -919,6 +927,49 @@ them, and this document's sha256 with it.
 
 So N1 to N12 above, run with the previous files, stand for the fixed files too: on every
 one of those databases the two print the same bytes.
+
+### The rehearsal agent's runs of 2026-09-30: one TAINTED, one clean
+
+**13:54 to 14:11 Lisbon: TAINTED, NOT EVIDENCE.** A rehearsal agent ran this document's
+blocks on a local database at 127.0.0.1:54722. It passed the journal reader's
+production-only guard by putting the production ref into the local URL as an
+`application_name` label (`reh0099-lane-amber-<ref>`, the ref elided here). Its prompt did
+not list that substitution. This is the fourth run in the incident carded as
+`INC-rehearsal-subagent-passed-the-reader-guard`. The lead ruled it listed here as tainted
+and not evidence. Its results were never recorded in this document, and none of them is
+relied on.
+
+**16:16 to 16:23 Lisbon: CLEAN. THIS IS THE DOCUMENT'S REHEARSAL** of steps 1 and 2 below,
+the lead's ruling of 2026-09-30. It is a separate agent. It never ran the journal reader,
+only psql, and no guard was passed.
+- **The throwaway:**
+  - A local Supabase stack (CLI 2.100.0, `supabase/postgres:17.6.1.106`, `gotrue:v2.188.1`,
+    so the full `auth` schema existed), project `r0099`, torn down after.
+  - It stood at production's position after 0098: supabase/migrations from #1471's
+    `f94075e6` (main plus 0096), then 0097's pending file from #1475 (`076481bf...`), then
+    0098's (`198054ab...`, equal to its pin), each applied with `psql -1` and its journal
+    row. The drizzle journal read 96 rows.
+  - The platform default privileges were in place: `authenticated` held TRUNCATE on
+    **31 of 48** tables, and TRIGGER and REFERENCES on **40 of 48**.
+- **The check files** were read from #1397's `acc881f6`, and each equals its pin.
+
+| step | result |
+|---|---|
+| pre-check, unapplied | **15 OK / 0 FAIL**. The premise is non-zero: 31, 40, 40 of 48; control 48 of 48 |
+| behaviour check BEFORE, claims `{}`, the real OsteoJP policies | **6 OK / 1 VACUOUS / 0 FAIL**. **Arms 1 and 3 OK**: no policy errors at planning time with empty claims, the one thing the synthetic run could not show. Arm 5 VACUOUS, as required |
+| the apply | `psql -X -1`: 0099's pending file (`fbc5e545...`, equal to its pin) plus its journal row, exit 0. verified-migrate cannot run before promotion |
+| post-check | **15 OK / 0 FAIL**: `journal 96 to 97; authenticated TRUNCATE 31 to 0, TRIGGER 40 to 0, REFERENCES 40 to 0 of 48 tables` |
+| behaviour check AFTER | **7 OK / 0 VACUOUS / 0 FAIL** |
+
+**Two notes from that run:**
+- The card's counts have moved: "30 of 46 / 38 of 46" is now 31/40/40 of 48, because two
+  tables were added since. The document prints this profile and does not assert it.
+- `public.patient_care_team` revokes DELETE from `authenticated` but not TRUNCATE (31 vs 30),
+  and 0099 removes that too.
+
+**Still owed at promotion:** steps 3 and 4 below. Step 3 runs under the lead's standing
+rule: the journal reader will refuse the throwaway, and its two reads are recorded as NOT
+REHEARSED.
 
 ### What the rehearsal agent owes before the dispatch is issued
 
