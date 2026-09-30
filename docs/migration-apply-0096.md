@@ -550,8 +550,8 @@ a sitting only while the clinics are closed, so GREEN's dispatch names a window 
 08:00 to 21:00 Lisbon (on 2026-09-30 only, by the override below, a window inside them) and
 its CLOCK CHECK records it. The hours are data, not code: stage 1
 also reads `locations.opens_at` and `closes_at` READ ONLY right before the pre-check and
-STOPs if any active clinic is open by its own row, so an hours change after that ruling is
-caught there.
+STOPs if any active clinic is open by its own row (on 2026-09-30 only, it prints the
+override line below instead), so an hours change after that ruling is caught there.
 
 **THE OWNER'S OVERRIDE OF 2026-09-30.** At 13:13 Lisbon the owner ruled the applies of 0096
 to 0099 to run that day "despite the current clinic schedule, we are doing it now", and after
@@ -850,7 +850,8 @@ echo "0096 APPLIED. Paste stage 2 now."
   least 1 (a zero with no clinic behind it would be vacuous, so the block requires it),
   then either `clinics: every active clinic is closed by its own hours` (k is 0) or, ON
   2026-09-30 ONLY, the owner's override line `OVERRIDE: <k> of <n> active clinics open now
-  ...` (k above 0). On any other day an open clinic STOPs the block, as before;
+  ...` (k above 0 and at most n). On any other day an open clinic STOPs the block, as
+  before;
 - **the pre-check prints `20` OK verdicts and no FAIL**, with `journal_rows_before` 93 and
   arm 11 naming 0095's sha256 and `when` exactly as the `0095:` line printed them;
 - **`subjects picked: T1 <id>, T2 <id>, T3 <id>, T4 <id or none>, N <id or none>`**, and no
@@ -2024,11 +2025,12 @@ The five fenced blocks, cut from each revision by one script, compare equal one 
 ### Changed after the owner's override, 2026-09-30: stage 1's clinic check, one block
 
 The owner ruled at 13:13 Lisbon that 0096 to 0099 run that day "despite the current clinic
-schedule, we are doing it now". GREEN then stopped on stage 1's clinic check before any
-production contact, and the owner ruled "amend". **This is the first revision since
-`1d9ae1ab` whose blocks are not byte-identical to it.** The two sentences above that say
-every block is byte-identical were true of their revisions. For this one they hold for
-stages 0, 2, 3 and the closing read, and for every line of stage 1 except the clinic check.
+schedule, we are doing it now". GREEN, reading this document, then stopped before BEFORE
+YOU START, because stage 1's clinic check would STOP. Nothing had run against production.
+The owner then ruled "amend". **This change, first committed as `3d920382` and revised here,
+is the first since `1d9ae1ab` to change a block.** The two sentences above that say every
+block is byte-identical were true of their revisions. For this one they hold for stages 0,
+2, 3 and the closing read, and for every line of stage 1 except the clinic check.
 
 What changed, and only in stage 1 (the five fenced blocks were cut from `1d9ae1ab` and from
 this revision by one script and compared one by one; four compare equal):
@@ -2072,3 +2074,14 @@ The first revision of this change was reviewed by a fresh R4 reviewer, which ret
 - MINOR: the loose `0 of <n>` arm.
 
 All five are fixed here.
+
+A second fresh reviewer found no BLOCKER and no MAJOR, and four MINOR. Two are fixed in the
+prose above: the account of where GREEN stopped, and two sentences that did not name the
+override. **Two are known and not fixed in the block**, because changing a block byte would
+need a third review round, and neither can come from the read that feeds it:
+- awk compares k and n as floating-point numbers, so a k above n passes once both are above
+  2^53. `CL` is a count of `locations` rows.
+- `awk -v` turns backslash escapes into characters, and `split` splits on any whitespace, so
+  a padded or tab-separated `1 of 2` passes. `CL` is `psql -At` output of
+  `count || ' of ' || count`, one line with single spaces. The `0 of <n>` arm had the same
+  looseness before this change.
