@@ -73,10 +73,14 @@ function excludedStatusSets(source: string): string[][] {
 }
 
 const APP_STORE = "apps/api/lib/appointments/store.ts";
-// 0059 supersedes 0052 as the definition of appointment_conflicts. Reading 0052
-// would assert against a superseded body and pass while production disagreed -
-// the same reason this constant moved from 0048 to 0052.
-const CONFLICT_FN = "packages/db/migrations/0059_pedido_does_not_block_slot.sql";
+// 0095 supersedes 0059 as the definition of the conflict predicate: its
+// appointment_conflict_rows (SECURITY DEFINER) carries the therapist and room
+// overlap, and appointment_conflicts became a SECURITY INVOKER wrapper. Reading
+// 0059 would assert against a superseded body and pass while production
+// disagreed - the same reason this constant moved from 0048 to 0052 to 0059.
+const CONFLICT_FN = "packages/db/migrations/0095_conflict_name_visibility.sql";
+// is_unconfirmed_pedido is still defined where 0059 created it; 0095 only calls it.
+const PEDIDO_FN = "packages/db/migrations/0059_pedido_does_not_block_slot.sql";
 // W13-04a: the THIRD site. The staff free-interval display shares the occupancy
 // question and was outside this guard until the pedido exclusion made it a place
 // the sites could disagree.
@@ -185,7 +189,8 @@ describe("W13-04a — the pedido exclusion is present, and spelled the same way,
     // EXISTS. It would pass the test above at the SQL site and ERROR at runtime
     // in apps/api, where the patient role cannot read staff_notifications.
     for (const [name, src] of sources) {
-      if (name === CONFLICT_FN) continue; // the function itself is defined there
+      // 0095 only CALLS public.is_unconfirmed_pedido (0059 defines it), so the
+      // conflict function is held to the rule too.
       expect(
         /appointment_request/i.test(live(src)),
         `${name} names appointment_request directly. The exclusion must go ` +
@@ -196,7 +201,7 @@ describe("W13-04a — the pedido exclusion is present, and spelled the same way,
   });
 
   it("the function is defined once, SECURITY DEFINER, and granted to both roles", () => {
-    const fn = readRepo(CONFLICT_FN);
+    const fn = readRepo(PEDIDO_FN);
     expect(fn).toMatch(/CREATE OR REPLACE FUNCTION public\.is_unconfirmed_pedido\(p_appointment uuid\)/);
     expect(live(fn)).toMatch(/SECURITY DEFINER/);
     // `patient` is not optional: the portal slot sweep runs under that role and

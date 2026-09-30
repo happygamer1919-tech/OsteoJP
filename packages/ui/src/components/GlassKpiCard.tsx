@@ -32,6 +32,13 @@ export interface GlassKpiCardProps {
   loading?: boolean;
   /** Compact inline error message shown in place of value/caption. */
   error?: ReactNode;
+  /**
+   * An optional control under the value (T5b: the owner's clinic toggle on the
+   * dashboard's revenue tile). It gets its own block, so a form control never
+   * sits inside the caption's inline span. Absent, the tile renders exactly as
+   * before, byte for byte.
+   */
+  action?: ReactNode;
   className?: string;
 }
 
@@ -46,6 +53,7 @@ export function GlassKpiCard({
   caption,
   loading = false,
   error,
+  action,
   className,
 }: GlassKpiCardProps) {
   const tint = V2_ACCENT_TINT[accent];
@@ -100,6 +108,7 @@ export function GlassKpiCard({
           {caption != null && (
             <span className="text-sm text-v2-text-secondary">{caption}</span>
           )}
+          {action != null && <div className="mt-1">{action}</div>}
         </div>
       )}
     </div>

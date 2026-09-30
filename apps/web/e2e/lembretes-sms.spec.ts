@@ -68,7 +68,7 @@ test.beforeAll(async () => {
   });
   if (row.error) throw new Error(`reminder_dispatches: ${row.error.message}`);
 
-  // COMMS-03: a DELIVERED reminder for João Pereira, whose name is stored accented,
+  // COMMS-03: a DELIVERED reminder for João Fictício, whose name is stored accented,
   // so the search has a second patient to tell apart and Só falhas has a row to drop.
   await db.from("appointments").delete().eq("id", SEARCH_APPOINTMENT_ID);
   const joaoAppt = await db.from("appointments").insert({
@@ -133,7 +133,7 @@ test.describe("reception", () => {
     await page.goto("/comunicacoes/lembretes-sms");
     await expect(rowOf(PATIENTS.maria.name)).toHaveCount(1);
 
-    // UNACCENTED, and the stored name is "João Pereira".
+    // UNACCENTED, and the stored name is "João Fictício".
     await search.fill("joao");
     await search.press("Enter");
     await expect(page).toHaveURL(/[?&]q=joao/);

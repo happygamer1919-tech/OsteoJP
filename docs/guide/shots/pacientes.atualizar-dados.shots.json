@@ -1,0 +1,50 @@
+{
+  "id": "pacientes.atualizar-dados",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "frames": [
+    {
+      "goto": "/patients/00000000-0000-0000-0000-00000000c301",
+      "ready": {
+        "role": "link",
+        "nameKey": "patients.editRecord"
+      },
+      "annotate": [
+        {
+          "kind": "arrow",
+          "n": 1,
+          "target": {
+            "role": "link",
+            "nameKey": "patients.editRecord"
+          },
+          "from": "below-left"
+        }
+      ]
+    },
+    {
+      "do": [
+        {
+          "click": {
+            "role": "link",
+            "nameKey": "patients.editRecord"
+          }
+        }
+      ],
+      "ready": {
+        "fieldKey": "patients.fieldFullName"
+      },
+      "annotate": [
+        {
+          "kind": "box",
+          "n": 2,
+          "target": {
+            "fieldKey": "patients.fieldFullName"
+          }
+        }
+      ]
+    }
+  ]
+}

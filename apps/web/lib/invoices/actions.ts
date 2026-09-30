@@ -29,8 +29,12 @@ export type IssueInvoiceResult =
  *
  * GATED OFF in production: both INVOICEXPRESS_API_KEY and INVOICEXPRESS_ACCOUNT_NAME
  * must be set in the environment for any call to proceed. In staging/prod these are
- * left unset — the function returns not_configured immediately and the "Nova fatura"
- * button is hidden on the client. Sandbox only.
+ * left unset, so the function returns not_configured immediately. Sandbox only.
+ *
+ * NO SCREEN CALLS IT. Faturação has no "Nova fatura" button in any environment
+ * (T5 F2, guide finding, #1462: the button it used to render had no click
+ * handler). Wiring issuance to a screen is fiscal (Tier D, an owner decision);
+ * the reason is on InvoicingView (app/invoicing/invoicing-view.tsx).
  */
 export async function issueInvoiceAction(invoiceId: string): Promise<IssueInvoiceResult> {
   // Gate 1: credentials must be present. Checked before any auth call so the

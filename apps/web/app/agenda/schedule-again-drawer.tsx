@@ -11,6 +11,7 @@ import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import { cloneAppointment } from "@/lib/scheduling/actions";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { outsideClinicHoursMessage } from "@/lib/scheduling/clinic-hours-message";
+import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import { formatTimeOfDay, lisbonDateTimeToUtc } from "@/lib/scheduling/time";
 import type { AgendaAppointment, ConflictInfo } from "@/lib/scheduling/types";
 
@@ -61,7 +62,7 @@ function ConflictSummary({ items }: { items: ConflictInfo[] }) {
             .filter((c) => c.kind === kind)
             .map((c) => {
               const time = `${formatTimeOfDay(new Date(c.startsAt))}-${formatTimeOfDay(new Date(c.endsAt))}`;
-              const prefix = [c.patientName, c.room].filter(Boolean).join(" · ");
+              const prefix = [conflictPatientLabel(c), c.room].filter(Boolean).join(" · ");
               return prefix ? `${prefix}: ${time}` : time;
             })
             .join("; ")}

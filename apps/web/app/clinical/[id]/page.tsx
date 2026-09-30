@@ -6,7 +6,12 @@ import { notFound } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import { summariseAiRecordingDraft } from "@/lib/clinical/ai-recording-draft";
 import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
-import { getFichaMedicaTemplate, getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import {
+  canWriteRecord,
+  getFichaMedicaTemplate,
+  getRecordDetail,
+  type RecordStatus,
+} from "@/lib/clinical/records";
 import { isImporterSourcedRecord } from "@/lib/clinical/record-origin";
 import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
@@ -103,9 +108,14 @@ export default async function RecordDetailPage({
   // the second, so it follows `finalized`: a draft is never announced as
   // "finalizada e imutavel", whoever is looking at it.
   const finalized = record.status !== "draft";
-  const readOnly = finalized || !can(ctx.role, "clinical_records:author");
-  const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign");
-  const canVersion = readOnly && can(ctx.role, "clinical_records:author");
+  // CARE-02a: a therapist on the care team READS a colleague's registo (0098)
+  // and writes to it nowhere; every registo writer refuses outside the pre-0098
+  // reach. `canWrite` is that same test, so no control that would refuse is
+  // offered. Always true for a role the therapist scope does not narrow.
+  const canWrite = await canWriteRecord(ctx, id);
+  const readOnly = finalized || !can(ctx.role, "clinical_records:author") || !canWrite;
+  const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign") && canWrite;
+  const canVersion = readOnly && can(ctx.role, "clinical_records:author") && canWrite;
 
   const anchors = schema
     ? topLevelFields(schema)
@@ -263,7 +273,7 @@ export default async function RecordDetailPage({
               fichaSchema={aiFichaSchema}
               status={record.status}
               aiReviewState={record.aiReviewState}
-              canReview={can(ctx.role, "clinical_records:review")}
+              canReview={can(ctx.role, "clinical_records:review") && canWrite}
             />
           ) : (
             /* FICHA-IMPORTED-VIEW: any other record without a template that

@@ -1,8 +1,8 @@
-// THE FOUR BEHAVIOUR CHECKS SAY WHO THEY ACT AS, ONCE, BEFORE ANY VERDICT.
+// THE BEHAVIOUR CHECKS SAY WHO THEY ACT AS, ONCE, BEFORE ANY VERDICT.
 //
 // scripts/db/behaviour-*-readonly.sql impersonate one staff user and print
 // verdicts about what that user's session can read. Two of them PICK the user
-// at run time (the lowest matching id), one takes it with -v actor_id, and one
+// at run time (the lowest matching id), two take it with -v actor_id, and one
 // does either. Until this guard, none of them said which user it had acted as,
 // so a transcript could not show whether the run had acted as a particular
 // account, for example a test account somebody is about to deactivate.
@@ -15,7 +15,18 @@
 //   * every way the file can choose its actor sets :actor_source to a phrase
 //     that names that way, and no other phrase;
 //   * the line comes AFTER the actor id, the role and the source are final,
-//     and BEFORE the verdict block, so it is printed before any verdict row.
+//     and BEFORE the verdict block, so it is printed before any verdict row;
+//   * no line outside a `--` comment names a personal column, except the exact
+//     lines PERSONAL_READS lists for that file, and every listed line must
+//     still be in the file, so the allowance cannot outlive what it names.
+//
+// THE ONE ALLOWANCE. behaviour-conflict-name-readonly.sql proves that the
+// conflict check returns a patient's name only where the caller's own reads
+// would show it, and the only way to prove that is to read the name the caller
+// reads and compare. It does so on exactly two lines; both results stay inside
+// SQL and leave as a boolean or a count, never as text. The allowance is those
+// two lines, verbatim and for that file only. It is not a column allowance:
+// the same column on any other line of that file, or in any other file, fails.
 //
 // WHAT THIS DOES NOT PROVE: that the SQL runs. These files need a database,
 // and CI runs none of them. This is a static check on the bytes, and each rule
@@ -40,6 +51,17 @@ export const FILES = {
   "scripts/db/behaviour-care-team-readonly.sql": [PICKED],
   "scripts/db/behaviour-nesa-names-readonly.sql": [PICKED],
   "scripts/db/behaviour-rgpd-readonly.sql": ["passed in with -v actor_id"],
+  "scripts/db/behaviour-conflict-name-readonly.sql": PICKED_OR_PASSED,
+  // 0094 (held): the users/tenants/roles policy split. Passed in, like rgpd.
+  "scripts/db/behaviour-users-tenants-roles-readonly.sql": ["passed in with -v actor_id"],
+};
+
+/** Per file, the exact trimmed lines that may name a personal column. See the header. */
+export const PERSONAL_READS = {
+  "scripts/db/behaviour-conflict-name-readonly.sql": [
+    "((SELECT p.full_name FROM public.appointments a JOIN public.patients p ON p.id = a.patient_id",
+    "(SELECT p.full_name FROM public.appointments a",
+  ],
 };
 
 const ACTOR_LINE = /^\\echo 'ACTOR id' /;
@@ -64,7 +86,7 @@ function lastAssignment(lines, name) {
 }
 
 /** Every problem with the actor line in one file's text. Empty means it passes. */
-export function actorLineProblems(sql, allowedSources) {
+export function actorLineProblems(sql, allowedSources, personalReads = []) {
   const problems = [];
   const lines = sql.split("\n");
   const actorIdx = lines.map((l, i) => (ACTOR_LINE.test(l) ? i : -1)).filter((i) => i >= 0);
@@ -101,16 +123,23 @@ export function actorLineProblems(sql, allowedSources) {
   if (verdict < 0) problems.push("no verdict block found");
   else if (at > verdict) problems.push("the ACTOR line is printed after the verdict block starts");
 
+  const trimmed = lines.map((l) => l.trim());
   lines.forEach((l, i) => {
     if (/^\s*--/.test(l)) return;
-    if (PERSONAL.test(l)) problems.push(`line ${i + 1} names a personal column: ${l.trim()}`);
+    if (PERSONAL.test(l) && !personalReads.includes(trimmed[i])) {
+      problems.push(`line ${i + 1} names a personal column: ${l.trim()}`);
+    }
   });
+  for (const allowed of personalReads) {
+    const at = trimmed.filter((t) => t === allowed).length;
+    if (at !== 1) problems.push(`a PERSONAL_READS line must appear exactly once, found ${at}: ${allowed}`);
+  }
   return problems;
 }
 
 for (const [file, sources] of Object.entries(FILES)) {
   test(`${file} prints one ACTOR line (id, role, how chosen) before any verdict`, () => {
-    const problems = actorLineProblems(readFileSync(join(ROOT, file), "utf8"), sources);
+    const problems = actorLineProblems(readFileSync(join(ROOT, file), "utf8"), sources, PERSONAL_READS[file]);
     assert.deepEqual(problems, [], `${file}:\n  ${problems.join("\n  ")}`);
   });
 }
@@ -168,4 +197,43 @@ test("CONTROL: a role read from anything but roles.slug is caught", () => {
 test("CONTROL: a personal column selected anywhere in the file is caught", () => {
   const found = actorLineProblems(real().replace("SELECT tenant_id AS actor_tenant", "SELECT tenant_id AS actor_tenant, u.email AS actor_email"), FILES[CARE_LOC]);
   assert.match(found.join("\n"), /names a personal column/);
+});
+
+// ---------------------------------------------------------------------------
+// THE ALLOWANCE'S OWN CONTROLS. The conflict-name file may name a patient's
+// name on its two listed lines and nowhere else, and only that file may.
+// ---------------------------------------------------------------------------
+
+const CONFLICT = "scripts/db/behaviour-conflict-name-readonly.sql";
+const conflict = () => readFileSync(join(ROOT, CONFLICT), "utf8");
+
+test("CONTROL: the conflict-name file passes only because of its two listed lines", () => {
+  assert.deepEqual(actorLineProblems(conflict(), FILES[CONFLICT], PERSONAL_READS[CONFLICT]), []);
+  const without = actorLineProblems(conflict(), FILES[CONFLICT]);
+  assert.equal(without.filter((p) => /names a personal column/.test(p)).length, 2);
+});
+
+test("CONTROL: a personal column on any other line of the conflict-name file is caught", () => {
+  const planted = conflict().replace("SELECT tenant_id AS actor_tenant", "SELECT tenant_id AS actor_tenant, u.email AS actor_email");
+  const found = actorLineProblems(planted, FILES[CONFLICT], PERSONAL_READS[CONFLICT]);
+  assert.match(found.join("\n"), /names a personal column: SELECT tenant_id AS actor_tenant, u\.email/);
+});
+
+test("CONTROL: the patient name read elsewhere in the conflict-name file is caught", () => {
+  const planted = conflict().replace("SELECT tenant_id AS actor_tenant FROM public.users",
+    "SELECT tenant_id AS actor_tenant, (SELECT p.full_name FROM public.patients p LIMIT 1) AS leak FROM public.users");
+  const found = actorLineProblems(planted, FILES[CONFLICT], PERSONAL_READS[CONFLICT]);
+  assert.match(found.join("\n"), /names a personal column: .*AS leak/);
+});
+
+test("CONTROL: a listed line that is no longer in the file is caught", () => {
+  const stale = conflict().replace(PERSONAL_READS[CONFLICT][1], "(SELECT NULL::text FROM public.appointments a");
+  const found = actorLineProblems(stale, FILES[CONFLICT], PERSONAL_READS[CONFLICT]);
+  assert.match(found.join("\n"), /must appear exactly once, found 0/);
+});
+
+test("CONTROL: the allowance does not travel to another file", () => {
+  const planted = real().replace("SELECT tenant_id AS actor_tenant", `${PERSONAL_READS[CONFLICT][1]}\nSELECT tenant_id AS actor_tenant`);
+  const found = actorLineProblems(planted, FILES[CARE_LOC], PERSONAL_READS[CARE_LOC]);
+  assert.match(found.join("\n"), /names a personal column: \(SELECT p\.full_name/);
 });

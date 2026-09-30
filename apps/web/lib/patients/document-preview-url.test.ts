@@ -17,6 +17,14 @@ import type { SQL } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
+// CARE-02a (0098 v2): the read scope asks whether the clinic-limited care-team
+// helper exists before naming it (care-team-reads-gate.ts). That probe is a
+// read of its own and would land on the fake runScoped below, so it is
+// answered here: present, the shape production has once 0098 is applied.
+vi.mock("@/lib/patients/care-team-reads-gate", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/patients/care-team-reads-gate")>()),
+  careTeamClinicHelperPresent: vi.fn(async () => true),
+}));
 // server-only modules, stubbed to their one exported constant / functions.
 vi.mock("@/lib/clinical/storage", () => ({ ATTACHMENTS_BUCKET: "clinical-attachments" }));
 vi.mock("@/lib/clinical/audit", () => ({

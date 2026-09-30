@@ -1473,3 +1473,13 @@ audit-and-rollback design that a future, differently-scoped move could reuse; th
 header is what stops it being run by somebody who has not read the rulings.
 **Alternative:** delete it, on the ground that a script nobody may run is a
 liability, and let its design be recovered from git history if it is ever wanted.
+
+## Q-T5B-1 - Faturação "Todas as localizações" for staff at two or more clinics: all of THEIR clinics, or every clinic? (T5b, 2026-09-27)
+
+**Status: OPEN.** Raised by the T5b review. T5b does not change Faturação; this question exists so the difference below is decided rather than inherited.
+
+**What is true on main.** For an admin or a receptionist assigned to two or more clinics (`staff_locations`), the Faturação location picker lists only their own clinics (PL-14). Its first entry, "Todas as localizações", adds no location condition: `scopedLocationId` returns no clinic for it (`apps/web/app/invoicing/page.tsx:60-61`), `listInvoices` then filters by none (`apps/web/lib/invoices/queries.ts`), and the list holds the invoices of every clinic in the period, plus the invoices with no marcação. PL-14's own text says that on a filter toolbar "Todas as localizações" means "all of MINE" (`apps/web/lib/auth/location-choice.ts:16-18`).
+
+**What T5b does.** The Início "Receita (mês)" figure for that same viewer sums exactly their own clinics (`viewer_location_ids()`, as the T5b acceptance asks). So for a viewer assigned to two or more clinics, the Início figure can be LOWER than the month's issued and paid invoices on their Faturação "Todas" list. For a viewer with one clinic (Faturação pins it) or with none (both are every clinic), the two agree. `docs/features/dashboard.md` (Scoping) and `apps/web/lib/invoices/revenue-scope.ts` record the same.
+
+**Recommended default:** Faturação's "Todas as localizações" means the viewer's own clinics for a location-scoped viewer, as PL-14 says: `listInvoices` takes the viewer's clinic list when no single clinic is chosen. The Início figure and the Faturação list then agree for every viewer. A consequence to rule with it: an invoice with no marcação has no clinic, so that viewer would stop seeing it on "Todas", which is already the case today for a viewer with ONE clinic. **Alternative:** keep Faturação's "Todas" as every clinic for those viewers, and widen nothing on Início; the two screens then keep differing for staff at two or more clinics.

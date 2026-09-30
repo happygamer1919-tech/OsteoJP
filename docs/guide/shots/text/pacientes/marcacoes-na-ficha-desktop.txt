@@ -1,0 +1,161 @@
+sha256 40c7ae31d1756a250f4379b9adb9ce6c8846b0028065d774e2844e58d501e030
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Voltar
+ME
+Marta Exemplo
+RGPD em falta
+
+42 anos · Não especificado · NIF 999000001
+
++351 910 000 101 · marta.exemplo@exemplo.test
+
+Nova marcação
+Resumo
+Marcações
+Notas
+Documentos
+Faturação
+Dados pessoais
+Editar dados
+Data de nascimento
+12/03/1984
+Sexo
+Não especificado
+NIF
+999000001
+N.º de paciente
+0001
+Telemóvel
++351 910 000 101
+Email
+marta.exemplo@exemplo.test
+Terapeutas atribuídos
+
+Os terapeutas atribuídos veem todo o histórico de consultas deste paciente, incluindo as consultas com colegas.
+
+As entradas adicionadas automaticamente vêm de uma marcação e não podem ser removidas.
+
+Bruno Fictício
+Atribuído manualmente em 01/09/2026
+Remover
+Terapeuta
+Carla Modelo
+Duarte Inventado
+Atribuir
+## frame 1 form values
+Carla Modelo
+## frame 2
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Voltar
+ME
+Marta Exemplo
+RGPD em falta
+
+42 anos · Não especificado · NIF 999000001
+
++351 910 000 101 · marta.exemplo@exemplo.test
+
+Nova marcação
+Resumo
+Marcações
+Notas
+Documentos
+Faturação
+De
+Até
+Terapeuta
+Todos
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+Clínica
+Todos
+Polo Exemplo
+Sede Exemplo
+Serviço
+Todos
+Fisioterapia
+Osteopatia
+Reavaliação
+Ordenar
+Mais recentes primeiro
+Mais antigas primeiro
+Estado
+Estado
+Agendada
+Confirmada
+Concluída
+Cancelada
+Falta
+Sem nota
+5 marcações
+08/10/2026 · 09:30
+Bruno Fictício · Osteopatia
+Criado por: Rita Exemplo · Criado em 01/09/2026, 09:00
+Agendada
+Notas
+Marcar novamente
+Gerir marcação
+06/10/2026 · 12:00
+Bruno Fictício · Reavaliação
+Criado por: Rita Exemplo · Criado em 01/09/2026, 09:00
+Agendada
+Notas
+Marcar novamente
+Gerir marcação
+05/10/2026 · 09:00
+Bruno Fictício · Osteopatia
+Criado por: Rita Exemplo · Criado em 01/09/2026, 09:00
+Agendada
+Notas
+Marcar novamente
+Gerir marcação
+21/09/2026 · 09:00
+Bruno Fictício · Osteopatia
+Criado por: Rita Exemplo · Criado em 01/09/2026, 09:00
+Concluída
+Sem nota
+Notas
+Marcar novamente
+Gerir marcação
+07/09/2026 · 09:00
+Bruno Fictício · Osteopatia
+Criado por: Rita Exemplo · Criado em 01/09/2026, 09:00
+Concluída
+Sem nota
+Notas
+Marcar novamente
+Gerir marcação
+## frame 2 form values
+Todos
+Todos
+Todos
+Mais recentes primeiro
+Confirmada
+Confirmada
+Confirmada
+Cancelada
+Cancelada

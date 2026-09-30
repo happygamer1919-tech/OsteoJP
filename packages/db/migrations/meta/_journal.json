@@ -638,6 +638,20 @@
       "when": 1788501400000,
       "tag": "0093_patient_rgpd_acceptances",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1788501500000,
+      "tag": "0094_users_tenants_roles_policy_split",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788501600000,
+      "tag": "0095_conflict_name_visibility",
+      "breakpoints": true
     }
   ]
 }

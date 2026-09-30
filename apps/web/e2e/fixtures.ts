@@ -63,6 +63,9 @@ export const USERS = {
   // W6-04: the Proprietario (owner) user, for owner-only views (Pacientes
   // eliminados, Estatisticas). Log in fresh with E2E_PASSWORD (no storage state).
   owner: "e2e-owner@osteojp.test",
+  // T5b: an admin assigned to Linda-a-Velha ONLY (seed: ensureRevenueAdminScope),
+  // for the revenue-per-clinic spec. Log in fresh with E2E_PASSWORD.
+  adminRevenueLv: "e2e-admin-receita-lv@osteojp.test",
 } as const;
 
 /**
@@ -101,13 +104,13 @@ export const PATIENTS = {
   // Active, searchable by name / NIF / phone.
   maria: {
     id: "00000000-0000-0000-0000-00000000a301",
-    name: "Maria Silva",
+    name: "Maria Filia",
     nif: "123456789",
     phone: "912345678",       // digit-only — used as search input
     phoneDisplay: "+351 912 345 678", // stored/rendered value — used for column assertions
   },
-  joao: { id: "00000000-0000-0000-0000-00000000a302", name: "João Pereira" },
-  ana: { id: "00000000-0000-0000-0000-00000000a303", name: "Ana Costa" },
+  joao: { id: "00000000-0000-0000-0000-00000000a302", name: "João Fictício" },
+  ana: { id: "00000000-0000-0000-0000-00000000a303", name: "Ana Inventada" },
   // Pre-soft-deleted — must be ABSENT from active list/search, visible only on
   // its own profile with the "Eliminado" badge.
   // Digit-free name: a name search must not trip the NIF/phone digit-matcher.
@@ -148,7 +151,7 @@ export const PATIENT_LONG_HISTORY = {
 
 /**
  * A seeded AI-ingested clinical_record draft awaiting review (W5-17). It sits on
- * João Pereira, source='ai_ingested', status='draft', ai_review_state=
+ * João Fictício, source='ai_ingested', status='draft', ai_review_state=
  * 'pending_review', with the TWELVE Ficha Médica AI keys under
  * data._aiIngestionRaw at their field paths (identity mapping). The
  * Revisão Consulta "Assumir" opens it in the Ficha Médica editor with these
@@ -176,7 +179,7 @@ export const AI_REVIEW_DRAFT = {
  * W6-01a: a seeded AI-ingested draft that carries an ai_ingestion_requests
  * back-pointer (clinical_record_id → this record). Pre-fix, hard-deleting it
  * raised a Postgres FK violation that surfaced as the opaque "Ocorreu um erro"
- * (the paol / paul failure). It sits on João Pereira with ai_review_state=
+ * (the paol / paul failure). It sits on João Fictício with ai_review_state=
  * 'in_review' so it stays OFF the "Por rever" queue (never perturbing the
  * Revisão Consulta spec). Distinct id from AI_REVIEW_DRAFT; the delete spec
  * targets it by data-record-id only.
@@ -412,7 +415,7 @@ export const PORTAL_STORAGE = {
 export const PORTAL_DEVICE_TOKEN = "e2efacade".padEnd(64, "0");
 
 /**
- * Maria Silva's patient row doubles as the portal test patient.
+ * Maria Filia's patient row doubles as the portal test patient.
  * The seed sets her auth_user_id to the e2e-patient auth user ID.
  */
 export const PORTAL_PATIENT = {

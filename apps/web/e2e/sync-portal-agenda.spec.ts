@@ -339,7 +339,7 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // ASSERT ON THE DAY IT BOOKED. NO SCAN. THIS IS THE WHOLE FIX.
     // ================================================================= //
     // The previous version SCANNED a window for the patient's name and the slot
-    // time. Both are SHARED VOCABULARY on a shared seeded database: Maria Silva
+    // time. Both are SHARED VOCABULARY on a shared seeded database: Maria Filia
     // is a name every spec can produce, and 09:00 is a time every spec can
     // produce. Run 31628095909 booked `segunda-feira 17 de agosto` and reported
     // "the crossing landed on 2026-08-20" — a Thursday. IT MATCHED SOMEBODY
@@ -371,7 +371,7 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // THE VERDICT IS THE ROW'S OWN ID. LE-pg8-e2e-needs-run-scoped-patient.
     // ================================================================= //
     // WHAT WAS STILL WRONG AFTER THE DATE PIN, and it is the residual the card
-    // named: `Maria Silva` and `09:00` are SHARED VOCABULARY on a shared seeded
+    // named: `Maria Filia` and `09:00` are SHARED VOCABULARY on a shared seeded
     // database. Pinning the DATE narrowed the collision to "the same patient at
     // the same time on the same day", which is smaller and is not zero - and the
     // whole history of this spec is two false greens produced by exactly that

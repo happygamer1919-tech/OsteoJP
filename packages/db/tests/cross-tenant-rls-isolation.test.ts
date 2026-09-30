@@ -16,6 +16,10 @@
  *     form_templates, clinical_episodes, attachments, invoices,
  *     patient_locations (0005), availability_templates + time_off (0006),
  *     service_location_prices (0007).
+ *   One flip since 0094: roles keeps only a tenant SELECT policy
+ *   (roles_tenant_select), so a staff session inserts no roles row at all,
+ *   own tenant included. Its own-tenant INSERT case asserts that refusal
+ *   (`ownInsert: "refused"`); its other four cases are unchanged.
  *
  *   Non-standard policies — tested for what the policy ACTUALLY says, not the
  *   four-verb template:
@@ -180,6 +184,11 @@ type StdCfg = {
   ownRowId: string;
   otherRowId: string;
   insertOwn: (tx: TransactionSql) => Promise<readonly { id: string }[]>;
+  /**
+   * What the own-tenant INSERT must do. Default "allowed". "refused" is for a
+   * table with no INSERT policy for a staff session (roles, since 0094).
+   */
+  ownInsert?: "allowed" | "refused";
   insertCross: (tx: TransactionSql) => Promise<unknown>;
   /** A harmless, existing column to SET in the cross-tenant UPDATE attempt. */
   updateCrossSet: string;
@@ -221,12 +230,13 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
   const standardTables: StdCfg[] = [
     {
       table: "roles",
-      policyDesc: "FOR ALL, tenant_id = jwt_tenant_id()",
+      policyDesc: "SELECT only since 0094 (roles_tenant_select), tenant_id = jwt_tenant_id()",
       ownRowId: A.role,
       otherRowId: B.role,
       insertOwn: (tx) =>
         tx<{ id: string }[]>`insert into roles (tenant_id, slug, name)
           values (${A.tenant}, ${`r-${randomUUID()}`}, 'X') returning id`,
+      ownInsert: "refused",
       insertCross: (tx) =>
         tx`insert into roles (tenant_id, slug, name)
           values (${B.tenant}, ${`r-${randomUUID()}`}, 'X') returning id`,
@@ -425,10 +435,18 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
         expect(rows.every((r) => r.scope === A.tenant)).toBe(true);
       });
 
-      it("INSERT of an own-tenant row under tenant-A JWT succeeds (WITH CHECK allows)", async () => {
-        const inserted = await asRole(sql, "authenticated", claims(), cfg.insertOwn);
-        expect(inserted.length).toBe(1);
-      });
+      if (cfg.ownInsert === "refused") {
+        it("INSERT of an own-tenant row under tenant-A JWT is refused (no INSERT policy for a staff session)", async () => {
+          await expect(
+            asRole(sql, "authenticated", claims(), cfg.insertOwn),
+          ).rejects.toThrow(/row-level security/i);
+        });
+      } else {
+        it("INSERT of an own-tenant row under tenant-A JWT succeeds (WITH CHECK allows)", async () => {
+          const inserted = await asRole(sql, "authenticated", claims(), cfg.insertOwn);
+          expect(inserted.length).toBe(1);
+        });
+      }
 
       it("INSERT of a tenant-B row under tenant-A JWT is rejected by WITH CHECK", async () => {
         await expect(

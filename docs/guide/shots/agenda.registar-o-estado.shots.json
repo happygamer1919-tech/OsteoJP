@@ -1,0 +1,76 @@
+{
+  "id": "agenda.registar-o-estado",
+  "profile": "rececao",
+  "sizes": [
+    "390",
+    "desktop"
+  ],
+  "stabilize": [
+    "[data-testid=\"agenda-freshness\"] time"
+  ],
+  "frames": [
+    {
+      "goto": "/agenda?view=day&date=2026-10-06",
+      "ready": {
+        "css": "[data-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"] [data-testid=\"agenda-card-patient\"], [data-list-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"]"
+      },
+      "annotate": [
+        {
+          "kind": "arrow",
+          "n": 1,
+          "target": {
+            "css": "[data-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"] [data-testid=\"agenda-card-patient\"], [data-list-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"]"
+          },
+          "from": {
+            "390": "below",
+            "desktop": "right"
+          }
+        }
+      ]
+    },
+    {
+      "do": [
+        {
+          "click": {
+            "css": "[data-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"] [data-testid=\"agenda-card-patient\"], [data-list-appointment-id=\"00000000-0000-0000-0000-0000000c402a\"]"
+          }
+        },
+        {
+          "scroll": {
+            "labelKey": "appointment.status",
+            "in": {
+              "role": "dialog"
+            }
+          }
+        }
+      ],
+      "ready": {
+        "role": "dialog"
+      },
+      "annotate": [
+        {
+          "kind": "box",
+          "n": 3,
+          "target": {
+            "labelKey": "appointment.status",
+            "in": {
+              "role": "dialog"
+            }
+          }
+        },
+        {
+          "kind": "box",
+          "n": 4,
+          "target": {
+            "role": "button",
+            "nameKey": "common.save",
+            "in": {
+              "role": "dialog"
+            }
+          },
+          "at": "above"
+        }
+      ]
+    }
+  ]
+}

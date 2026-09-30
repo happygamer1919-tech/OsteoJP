@@ -1,0 +1,135 @@
+sha256 a220190ad2c631e26bcb808c990f560bf4944d10aedf91364c1e49f7e95d8156
+## frame 1
+Início
+Agenda
+Pacientes
+Marcações
+Comunicações
+Faturação
+Horários
+RE
+Rita Exemplo
+Receção
+O meu perfil
+Terminar sessão
+Marcações
+
+Consulte as marcações dos seus pacientes.
+
+a
+Todas as localizações
+Polo Exemplo
+Sede Exemplo
+Todos os estados
+Agendada
+Confirmada
+Concluída
+Cancelada
+Falta
+Todos os serviços
+Fisioterapia
+Osteopatia
+Reavaliação
+Todos os terapeutas
+Bruno Fictício
+Carla Modelo
+Duarte Inventado
+5 de outubro de 2026
+09:00-10:00
+Marta Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+09:30-10:15
+Sofia Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+10:00-11:00
+Rui Inventado
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+10:00-11:00
+Tiago Fictício
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+11:00-11:45
+Paulo Exemplo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+11:30-12:00
+Inês Modelo
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Reavaliação
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+14:00-15:00
+Nuno Amostra
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Sede Exemplo
+Bruno Fictício
+Criado por: Rita Exemplo
+15:00-15:45
+Vera Inventada
+Criado por: Rita Exemplo
+Cancelada
+Notas
+Abrir marcação
+Fisioterapia
+Sede Exemplo
+Carla Modelo
+Criado por: Rita Exemplo
+16:00-17:00
+Lara Fictícia
+Criado por: Rita Exemplo
+Agendada
+Notas
+Abrir marcação
+Osteopatia
+Polo Exemplo
+Duarte Inventado
+Criado por: Rita Exemplo
+## frame 1 form values
+05/10/2026
+05/10/2026
+Pesquisar por paciente
+Todas as localizações
+Todos os estados
+Todos os serviços
+Todos os terapeutas
