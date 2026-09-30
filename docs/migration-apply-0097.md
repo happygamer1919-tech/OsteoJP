@@ -543,6 +543,14 @@ is outside every ruled opening hour. The hours are data, not code: stage 1 reads
 clinic is open by its own row. The dated window is the dispatch's, recorded by its CLOCK
 CHECK in `/tmp/0097-window.ok` for the head stage 0 recorded; stage 1 refuses without it.
 
+**THE OWNER'S OVERRIDE OF 2026-09-30.** At 13:13 Lisbon the owner ruled the applies of 0096
+to 0099 to run that day "despite the current clinic schedule, we are doing it now", and after
+GREEN stopped on this check in 0096's sitting he ruled "amend". So stage 1's clinic check
+still reads the clinics' hours and still prints them, and on 2026-09-30 ONLY (the Lisbon
+date read by machine, `OVERRIDE_DAY=20260930`) an open clinic prints an `OVERRIDE:` line
+quoting him and the block continues. On every other day it STOPs exactly as before, and a
+read that finds no active clinic STOPs on every day.
+
 ## What is new here, because 0097 is not shaped like 0093
 
 0093 CREATED a table. **0097 alters three policies and creates one function**: 0092's ALTER
@@ -725,7 +733,15 @@ node scripts/assert-production-target.mjs
 echo "--- the clinics' own hours, READ ONLY: no active clinic may be open now"
 CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (now() at time zone 'Europe/Lisbon')::time >= opens_at and (now() at time zone 'Europe/Lisbon')::time < closes_at) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1)
 echo "active clinics open now by their own hours: ${CL}"
-awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && (a[3] + 0) >= 1) exit 0; exit 1 }' || { echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1; }
+OVERRIDE_DAY=20260930
+TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
+if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && (a[3] + 0) >= 1) exit 0; exit 1 }'; then
+  echo "clinics: every active clinic is closed by its own hours"
+elif [ "${TODAYL}" = "${OVERRIDE_DAY}" ] && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[0-9]+$/ && a[2] == "of" && a[3] ~ /^[0-9]+$/ && (a[3] + 0) >= 1 && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
+  echo "OVERRIDE: ${CL} active clinics open now by their own hours; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on ${OVERRIDE_DAY} only"
+else
+  echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1
+fi
 
 echo "--- the pre-check. READ ONLY. Its transcript IS the carry, so it is kept"
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v prev_hash=${PREVHASH} -v prev_when=${PREVWHEN} -f scripts/db/precheck-0097-registo-writes.sql 2>&1 | tee /tmp/0097-precheck.new
@@ -786,8 +802,11 @@ echo "0097 APPLIED. Paste stage 2 now."
   nothing applied);
 - **`applying from <sha>`**, the recorded sha, and `docs/migration-apply-0097.md: OK`;
 - **`0096: packages/db/migrations/0096_..., sha256 <sha>, journal when <when>`**;
-- **`active clinics open now by their own hours: 0 of <n>`**, `n` at least 1. A zero with no
-  clinic behind it would be vacuous, so the block requires both;
+- **`active clinics open now by their own hours: <k> of <n>`**, `n` at least 1. A zero with no
+  clinic behind it would be vacuous, so the block requires both. Then either
+  `clinics: every active clinic is closed by its own hours` (k is 0) or, ON 2026-09-30 ONLY,
+  the owner's override line `OVERRIDE: <k> of <n> active clinics open now ...` (k above 0).
+  On any other day an open clinic STOPs the block, as before;
 - **the pre-check prints `20` OK verdicts and no FAIL**, with `journal_rows_before` 94 and
   verdict 10 naming 0096's sha256 and `when` as the line above it printed them;
 - **`draft profile (Q3): ai pending <n>, ai in review 0, other 0, author cannot write 0`**,
