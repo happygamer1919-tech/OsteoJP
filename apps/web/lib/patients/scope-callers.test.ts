@@ -1,5 +1,5 @@
 /**
- * scope-callers.test.ts - CARE-02a (0098): EVERY CALLER OF THE TWO THERAPIST
+ * scope-callers.test.ts: CARE-02a (0096), EVERY CALLER OF THE TWO THERAPIST
  * SCOPES, AND OF getPatient, WITH ITS VERDICT. COUNTED, NOT REMEMBERED.
  *
  * ==========================================================================
@@ -49,10 +49,10 @@ type Helper =
 const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }> = {
   // ---------------------------------------------------------------- read
   "lib/clinical/records.ts#listRecords#therapistPatientReadScope": {
-    calls: 1, verdict: "read", why: "The Registos tab of the ficha. clinical_records_select (0098) admits the same set.",
+    calls: 1, verdict: "read", why: "The Registos tab of the ficha. clinical_records_select (0096) admits the same set.",
   },
   "lib/clinical/records.ts#getRecordDetail#therapistPatientReadScope": {
-    calls: 1, verdict: "read", why: "Opening a registo. Its edit, sign and version actions are refused by clinical_records' write policies, which 0098 does not touch.",
+    calls: 1, verdict: "read", why: "Opening a registo. Its edit, sign and version actions are refused by clinical_records' write policies, which 0096 does not touch.",
   },
   "lib/clinical/storage.ts#createAttachmentDownloadUrl#therapistPatientReadScope": {
     calls: 2, verdict: "read", why: "Downloading a file the registo or the Documentos tab lists. Both arms mirror the reader they serve.",
@@ -87,7 +87,7 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
     calls: 1, verdict: "write", why: "Settles the patient for the audio upload URL and the consultation write.",
   },
   "lib/patients/documents.ts#assertPatientInTenant#therapistPatientScope": {
-    calls: 1, verdict: "write", why: "The document upload mint. Added by CARE-02a: it leaned on patients_select, which 0098 widens for reading.",
+    calls: 1, verdict: "write", why: "The document upload mint. Added by CARE-02a: it leaned on patients_select, which 0096 widens for reading.",
   },
   "lib/patients/documents.ts#confirmPatientDocument#therapistPatientScope": {
     calls: 1, verdict: "write", why: "The document upload confirm, for the same reason as the mint.",
@@ -108,7 +108,7 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
     calls: 1, verdict: "write", why: "Deletes a note.",
   },
   "app/patients/[id]/edit/page.tsx#EditPatientPage#getPatient:write": {
-    calls: 1, verdict: "write", why: "The edit form; patients_update (0047) is not widened by 0098 either.",
+    calls: 1, verdict: "write", why: "The edit form; patients_update (0047) is not widened by 0096 either.",
   },
   "app/patients/[id]/declaracao-actions.ts#generateDeclaracaoUrlAction#getPatient:write": {
     calls: 1, verdict: "write", why: "The NIF write-back after a declaracao; the read only decides whether to write.",
@@ -120,8 +120,8 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
     calls: 1, verdict: "write", why: "Opens an episode. clinical_episodes is tenant-only, so this is the whole patient gate; added by CARE-02a.",
   },
   // ---------------------------------------------------------------- registo writers
-  // Each reads its source registo under therapistRegistoWriteScope: the pre-0098
-  // clinical_records_select therapist arm, so the write does not widen with 0098's SELECT.
+  // Each reads its source registo under therapistRegistoWriteScope: the pre-0096
+  // clinical_records_select therapist arm, so the write does not widen with 0096's SELECT.
   "lib/clinical/records.ts#updateRecordData#therapistRegistoWriteScope": {
     calls: 1, verdict: "write", why: "Saves a draft registo; without it a care-team read became a 0-row UPDATE plus an audit row.",
   },
@@ -140,10 +140,11 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
   "lib/clinical/records.ts#annulRecord#therapistRegistoWriteScope": {
     calls: 1, verdict: "write", why: "Anular: record_annulments is tenant-only.",
   },
-  // 0097: the INSERT policy's therapist arm (a patient they treat or created), asked
-  // in the app so a refusal is a clean not_found; the narrow scope, never the read one.
+  // The permission matrix, 0097's INSERT policy therapist arm once applied (a patient
+  // they treat or created), asked in the app so a refusal is a clean not_found; before
+  // 0097 the refusal is the app's own. The narrow scope, never the read one.
   "lib/clinical/records.ts#therapistMayFileFor#therapistPatientScope": {
-    calls: 1, verdict: "write", why: "0097: files a new draft or version only for a patient the therapist treats or created, the clinical_records INSERT policy's therapist arm.",
+    calls: 1, verdict: "write", why: "Files a new draft or version only for a patient the therapist treats or created: the permission matrix, and 0097's INSERT policy therapist arm once applied.",
   },
   "lib/clinical/records.ts#mayFileRegistoFor#therapistPatientScope": {
     calls: 1, verdict: "write", why: "0097: the registo page asks it which write controls to draw; the same test as therapistMayFileFor.",

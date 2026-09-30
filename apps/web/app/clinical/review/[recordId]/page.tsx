@@ -39,6 +39,8 @@ function finalizeErrorText(m: string | undefined): string | null {
   if (!m) return null;
   if (m === "stale") return s["clinical.signStale"];
   if (m === "finalized") return s["clinical.finalized"];
+  // The draft has another author (zeroRowRefusal, records.ts).
+  if (m === "not_author") return s["clinical.notAuthor"];
   return s["review.error"];
 }
 
@@ -59,7 +61,7 @@ export default async function ReviewDetailPage({
   // Only a draft under review is editable here; a finalized record lives in the
   // normal clinical viewer (immutable, rule #4).
   if (record.status !== "draft") redirect(`/clinical/${recordId}`);
-  // CARE-02a: getRecordDetail takes the care-team READ scope (0098), so a
+  // CARE-02a: getRecordDetail takes the care-team READ scope (0096), so a
   // therapist on the patient's care team can open a colleague's draft here.
   // Every action this page offers (save ficha, edit narrative, finalize) reads
   // its registo under therapistRegistoWriteScope and refuses that reader. This

@@ -12,8 +12,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //   - a save hands back the fingerprint of what it stored.
 // The same holds for Revisao Consulta's finalize, on both of its branches.
 // 0097: every row here is the signer's own (practitionerId "thera-1"), so a
-// write that matched no row is the race these arms pin; a therapist who is not
-// the author gets `not_author` instead (records.write-guards.test.ts).
+// write that matched no row is the race these arms pin; a therapist on a
+// registo with another author gets `not_author` instead, and a registo with no
+// author keeps the race code (records.write-guards.test.ts).
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));

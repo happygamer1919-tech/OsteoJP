@@ -45,13 +45,16 @@ const RECORD_TONE: Record<RecordStatus, StatusTone> = {
 
 /**
  * The message for a sign that did not happen (`signRecordAction` redirects with
- * `?m=err:<code>`). Only `err:finalized` had a message before; every other code
+ * `?m=err:<code>`), or a new version that was refused (`versionRecordAction`,
+ * the same way). Only `err:finalized` had a message before; every other code
  * showed nothing, so a refused sign looked like a page that did not react.
+ * `err:not_author`: the draft has another author (zeroRowRefusal, records.ts).
  */
 function signErrorText(m: string | undefined): string | null {
   if (!m || !m.startsWith("err")) return null;
   if (m === "err:finalized") return s["clinical.finalized"];
   if (m === "err:stale") return s["clinical.signStale"];
+  if (m === "err:not_author") return s["clinical.notAuthor"];
   return s["clinical.error"];
 }
 
@@ -109,20 +112,33 @@ export default async function RecordDetailPage({
   // the second, so it follows `finalized`: a draft is never announced as
   // "finalizada e imutavel", whoever is looking at it.
   const finalized = record.status !== "draft";
-  // CARE-02a: a therapist on the care team READS a colleague's registo (0098)
-  // and writes to it nowhere; every registo writer refuses outside the pre-0098
-  // reach. `canWrite` is that same test, so no control that would refuse is
-  // offered. Always true for a role the therapist scope does not narrow.
+  // CARE-02a: a therapist on the care team READS a colleague's registo (0096)
+  // and writes to it nowhere; every registo writer refuses outside the pre-0096
+  // write reach. `canWrite` is that same test, so no control that would refuse
+  // is offered. Always true for a role the therapist scope does not narrow.
   //
-  // 0097: the controls also ask what the writers and the write policies ask, so
-  // a therapist is never offered a Save, a Sign or a Nova versao that would
-  // always be refused. A therapist saves and signs only a draft they authored,
-  // for a patient they treat or created (the UPDATE policy); files a new
-  // version only for a patient they treat or created (the INSERT policy). The
-  // owner writes every registo of the tenant, and `mayFileRegistoFor` answers
-  // yes for anyone but a therapist without a read. Both tests are ANDed, so
-  // neither narrows the other away. The attachments keep their own gate
-  // (`attachmentsReadOnly`, as before): 0097 changes no attachment rule.
+  // The permission matrix ("Edit clinical records: own, until locked"), which
+  // 0097's write policies enforce once applied: a therapist saves and signs
+  // only a draft they authored, for a patient they treat or created (0097's
+  // UPDATE policy), and files a new version only for a patient they treat or
+  // created (0097's INSERT policy). The page asks the same, so after 0097 a
+  // therapist is never offered a Save, a Sign or a Nova versao the database
+  // would refuse. BEFORE 0097 THE APP IS THE NARROWER OF THE TWO: 0045's
+  // UPDATE admits a therapist on a draft they authored OR on any draft of a
+  // patient they treat or created, so on merge a therapist loses Save and Sign
+  // on a draft they did not author (every claimed AI draft among them, since a
+  // claim writes no author until 0097), and on their own draft of a patient
+  // they no longer treat and did not create. The owner writes every registo of
+  // the tenant, and
+  // `mayFileRegistoFor` answers yes for anyone but a therapist without a read.
+  // Both tests are ANDed, so neither narrows the other away.
+  //
+  // The attachments keep main's gate exactly (`attachmentsReadOnly`: finalized,
+  // a role that cannot author, or outside CARE-02a's pre-0096 write reach), so
+  // a care-team reader is never offered "Adicionar anexo" or the camera, which
+  // createAttachmentUploadUrl and confirmAttachment refuse. 0097 changes no
+  // attachment rule, so neither the authorship test nor the patient test is
+  // asked of them.
   const canWrite = await canWriteRecord(ctx, id);
   const mayFile = await mayFileRegistoFor(ctx, record.patientId);
   const writesThis = canWrite && mayFile && (ctx.role !== "therapist" || record.practitionerId === ctx.userId);
@@ -130,7 +146,7 @@ export default async function RecordDetailPage({
   const readOnly = finalized || !canAuthor || !writesThis;
   const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign") && writesThis;
   const canVersion = finalized && canAuthor && canWrite && mayFile;
-  const attachmentsReadOnly = finalized || !canAuthor;
+  const attachmentsReadOnly = finalized || !canAuthor || !canWrite;
 
   const anchors = schema
     ? topLevelFields(schema)

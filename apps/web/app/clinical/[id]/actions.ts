@@ -262,8 +262,10 @@ export async function versionRecordAction(id: string): Promise<void> {
   try {
     ({ id: newId } = await createAddendum(ctx, id));
   } catch (e) {
-    // A refusal (0097: a new version is filed only for a patient the caller
-    // treats or created) stays on the record with a message, as signing does.
+    // A refusal stays on the record with a message, as signing does: chiefly
+    // `not_found` for a patient the caller neither treats nor created, which
+    // createAddendum refuses from this change on (the permission matrix, and
+    // 0097's INSERT policy once applied). Any other fault still throws.
     if (!isClinicalError(e)) throw e;
     redirect(`/clinical/${id}?m=err:${e.code}`);
   }

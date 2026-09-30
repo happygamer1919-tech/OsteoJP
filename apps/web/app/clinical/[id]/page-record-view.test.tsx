@@ -304,7 +304,7 @@ describe("the AI draft panel's way to the review screen", () => {
   });
 
   it("CARE-02a: a therapist who READS the draft through the care team but cannot write it gets no review link", async () => {
-    // 0098 lets a care-team therapist open a colleague's registo; every review
+    // 0096 lets a care-team therapist open a colleague's registo; every review
     // writer refuses them (therapistRegistoWriteScope), so the page offers none.
     h.canWriteRecord.mockResolvedValue(false);
     h.isImporterSourcedRecord.mockResolvedValue(false);

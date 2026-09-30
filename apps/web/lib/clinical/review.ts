@@ -191,7 +191,7 @@ export async function claimReviewItem(
         })
         .from(clinicalRecords)
         // CARE-02a: a claim writes, so the source row is read under the
-        // pre-0098 reach (scope.ts therapistRegistoWriteScope).
+        // pre-0096 write reach (scope.ts therapistRegistoWriteScope).
         .where(and(eq(clinicalRecords.id, ref.recordId), therapistRegistoWriteScope(ctx)))
         .limit(1);
       const row = rows[0];
@@ -298,12 +298,14 @@ export async function claimReviewItem(
       (sub.payload as Record<string, unknown>) ?? {},
     );
 
-    // 0097: the claim files the registo in the claimer's name for the
-    // submission's patient, so it meets the INSERT policy's test like any other
-    // registo: a therapist files only for a patient they treat or created. The
-    // queue offers a therapist only those, but a submission id can be posted;
-    // refuse any other patient cleanly here, before the INSERT the database
-    // would refuse with a raw 42501 (createDraftRecord asks the same).
+    // The claim files the registo in the claimer's name for the submission's
+    // patient, so it meets the permission matrix's test like any other registo
+    // (0097's INSERT policy once applied): a therapist files only for a patient
+    // they treat or created. The queue offers a therapist only those, but a
+    // submission id can be posted; refuse any other patient cleanly here
+    // (createDraftRecord asks the same). Before 0097 the INSERT would succeed,
+    // since 0045 admits a therapist filing in their own name for any patient,
+    // so this refusal is new on merge; from 0097 it would be a raw 42501.
     await assertTherapistMayFileFor(tx, ctx, sub.patientId);
 
     const inserted = await tx
@@ -382,7 +384,7 @@ export async function editReviewNarrative(
       })
       .from(clinicalRecords)
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
-      // CARE-02a: a write, so the source row is read under the pre-0098 reach.
+      // CARE-02a: a write, so the source row is read under the pre-0096 write reach.
       .where(and(eq(clinicalRecords.id, recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
@@ -408,8 +410,10 @@ export async function editReviewNarrative(
       .returning({ dataHash: recordDataHash() });
     // Nothing was saved, and no audit row is written. Either the draft was
     // finalized between the read and the write (`finalized`), or, from 0097,
-    // row level security admitted no row because the caller is a therapist who
-    // is not its author (`not_author`, `zeroRowRefusal`).
+    // row level security admitted no row because the caller is a therapist and
+    // the draft has another author (`not_author`, `zeroRowRefusal`). A draft
+    // with no author (every claimed AI draft before 0097) is a race:
+    // `finalized`.
     const stored = saved[0];
     if (!stored) throw zeroRowRefusal(ctx, row.practitionerId, "finalized");
 
@@ -467,7 +471,7 @@ export async function saveReviewFicha(
         createdAt: clinicalRecords.createdAt,
       })
       .from(clinicalRecords)
-      // CARE-02a: a write, so the source row is read under the pre-0098 reach.
+      // CARE-02a: a write, so the source row is read under the pre-0096 write reach.
       .where(and(eq(clinicalRecords.id, recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
@@ -513,7 +517,8 @@ export async function saveReviewFicha(
       .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")))
       .returning({ dataHash: recordDataHash() });
     // Nothing was saved: finalized between the read and the write, or, from
-    // 0097, a therapist who is not the author (as in editReviewNarrative).
+    // 0097, a therapist on a draft with another author (as in
+    // editReviewNarrative; a draft with no author is a race, `finalized`).
     const stored = saved[0];
     if (!stored) throw zeroRowRefusal(ctx, row.practitionerId, "finalized");
 
@@ -559,7 +564,7 @@ export async function finalizeReview(
         dataHash: recordDataHash(),
       })
       .from(clinicalRecords)
-      // CARE-02a: a write, so the source row is read under the pre-0098 reach.
+      // CARE-02a: a write, so the source row is read under the pre-0096 write reach.
       .where(and(eq(clinicalRecords.id, recordId), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
@@ -599,7 +604,8 @@ export async function finalizeReview(
         .returning({ id: clinicalRecords.id });
       // Nothing was signed: the row moved between the read and the write (its
       // review state, its status or its content), which is `stale`, or, from
-      // 0097, the caller is a therapist who is not its author (`not_author`).
+      // 0097, the caller is a therapist and the draft has another author
+      // (`not_author`). A draft with no author is a race: `stale`.
       if (updated.length === 0) throw zeroRowRefusal(ctx, row.practitionerId, "stale");
     } else {
       // patient (or any non-AI) record materialised from a submission.
@@ -622,8 +628,9 @@ export async function finalizeReview(
         )
         .returning({ id: clinicalRecords.id });
       // Nothing was signed: the row moved between the read and the write (its
-      // status or its content), or, from 0097, the caller is a therapist who is
-      // not its author (the claim filed it in the claimer's name).
+      // status or its content), or, from 0097, the caller is a therapist and
+      // the registo has another author (the claim filed it in the claimer's
+      // name).
       if (updated.length === 0) throw zeroRowRefusal(ctx, row.practitionerId, "stale");
 
       await tx

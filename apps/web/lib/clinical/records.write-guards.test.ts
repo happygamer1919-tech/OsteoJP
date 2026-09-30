@@ -1,21 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// 0097 (held, packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_
-// write_matrix.sql): the registo writers in records.ts refuse cleanly what the
-// clinical_records write policies refuse, and say WHY.
+// The registo writers in records.ts follow the permission matrix, which 0097
+// (held, packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_
+// write_matrix.sql) enforces in the clinical_records write policies once
+// applied, and say WHY a write that touched no row did not happen.
 //
 //   * updateRecordData, signAndLockRecord and hardDeleteClinicalRecord read the
 //     row first and read back the rows their write touched. 0 rows writes NO
 //     audit row, and its code is chosen from the row read first
-//     (`zeroRowRefusal`): a therapist who is not the author is `not_author`
-//     (from 0097 row level security admits no row for them); anyone else lost
-//     a race and gets the writer's own code (`not_found` for a save or a
-//     delete, `stale` for a sign). So a colleague's sign is never reported as
-//     "changed in the meantime".
+//     (`zeroRowRefusal`): a therapist on a registo WITH ANOTHER AUTHOR is
+//     `not_author` (from 0097 row level security admits no row for them);
+//     anyone else, and any registo with NO author yet, lost a race and gets
+//     the writer's own code (`not_found` for a save or a delete, `stale` for a
+//     sign). So a colleague's sign is never reported as "changed in the
+//     meantime", and a race on an unauthored draft is never reported as
+//     someone else's.
 //   * createDraftRecord and createAddendum ask, for a therapist, whether the
 //     patient is one they treat or created BEFORE the INSERT, so a patient
-//     outside that scope is `not_found` and never reaches the database as an
-//     INSERT the policy would refuse with a raw 42501. The owner is not asked.
+//     outside that scope is `not_found`. Before 0097 this refusal is the
+//     app's own (0045's INSERT admits a therapist filing in their own name for
+//     any patient); from 0097 it also keeps the INSERT from reaching the policy
+//     as a raw 42501. The owner is not asked.
 //
 // On a mock transaction (no live DB): each guard is shown to fire on its 0-row
 // or empty-scope answer, and its control shows the same call succeeding and
@@ -136,8 +141,11 @@ describe("zeroRowRefusal: which code a write that touched no row gets", () => {
     }
   });
 
-  it("an unauthored draft (no author yet) is not the therapist's either: not_author", () => {
-    expect(zeroRowRefusal(therapist, null, "stale").code).toBe("not_author");
+  it("a registo with no author yet (every claimed AI draft before 0097): the writer's own code, a race", () => {
+    for (const moved of ["not_found", "stale", "finalized"] as const) {
+      expect(zeroRowRefusal(therapist, null, moved).code).toBe(moved);
+      expect(zeroRowRefusal(therapist, undefined, moved).code).toBe(moved);
+    }
   });
 
   it("CONTROL the author: the writer's own code (the row moved in between)", () => {
@@ -186,6 +194,12 @@ describe("signAndLockRecord: a sign that touched no row says why", () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  it("0 rows on a draft with no author yet: stale (a race), never not_author, and no audit row", async () => {
+    fakeTx({ selects: [[draft(null)]], written: [] });
+    expect(await codeOf(signAndLockRecord(therapist, RECORD, HASH))).toBe("stale");
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
   it("CONTROL: 1 row signs and writes one audit row", async () => {
     fakeTx({ selects: [[draft(THERAPIST_ID)]], written: [{ id: RECORD }] });
     expect(await codeOf(signAndLockRecord(therapist, RECORD, HASH))).toBe("resolved");
@@ -202,7 +216,7 @@ describe("hardDeleteClinicalRecord: a DELETE that touched no row says why", () =
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it("0 rows on the caller's own draft: not_found, as before", async () => {
+  it("0 rows on the caller's own draft: not_found, as on main", async () => {
     fakeTx({ selects: [[draft(THERAPIST_ID)]], written: [] });
     expect(await codeOf(hardDeleteClinicalRecord(therapist, RECORD))).toBe("not_found");
     expect(mockAudit).not.toHaveBeenCalled();

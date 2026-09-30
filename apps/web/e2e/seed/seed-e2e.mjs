@@ -1341,8 +1341,9 @@ async function ensureImportedDocuments(recordId) {
 // as the opaque "Ocorreu um erro". ai_review_state='in_review' keeps it OFF the
 // "Por rever" queue so the Revisão Consulta spec is untouched. Upserted (reset)
 // every run so the delete spec starts from the same state.
-// 0097: its author is the e2e therapist, the shape a review claim leaves (the
-// claim makes the claiming therapist the draft's author). The delete spec runs
+// 0097: its author is the e2e therapist, the shape a review claim leaves once
+// 0097 is applied (its claim function makes the claiming therapist the draft's
+// author; before 0097 a claim writes no author). The delete spec runs
 // as that therapist, and 0097's DELETE policy admits a therapist only on a
 // registo they authored, so the spec deletes it as its author on a database
 // with or without 0097.

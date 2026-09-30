@@ -1,19 +1,30 @@
 /**
  * page-write-controls.test.tsx: WHICH WRITE CONTROLS THE RECORD PAGE OFFERS.
  *
- * 0097 (held, packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_
- * write_matrix.sql): a therapist saves and signs only a draft they authored,
- * for a patient they treat or created, and files a new version only for a
- * patient they treat or created. The page used to ask only the capability and
- * the status, so a therapist reading a colleague's draft was offered Save and
- * "Assinar e bloquear", each of which always failed. This suite renders the
- * REAL page with its reads replaced by fixtures and a RecordForm stub that
- * prints the props the page hands it: `readOnly`, whether a sign is offered,
- * and the extra actions ("Nova versao"). The attachments keep their own gate.
+ * The permission matrix, which 0097 (held, packages/db/migrations-pending/
+ * NEXT-AFTER-0096_clinical_records_write_matrix.sql) enforces once applied: a
+ * therapist saves and signs only a draft they authored, for a patient they
+ * treat or created, and files a new version only for a patient they treat or
+ * created. The page used to ask only the capability, the status and CARE-02a's
+ * write reach. TODAY, BEFORE 0097, that matched the database: 0045's UPDATE
+ * admits a therapist on a draft they authored or on any draft of a patient
+ * they treat or created, so Save and "Assinar e bloquear" on a colleague's
+ * draft worked. From 0097 the UPDATE policy admits a therapist only on their
+ * own draft, of a patient they treat or created, and each of those would
+ * always fail. So this page change is visible on merge: a therapist loses Save
+ * and Sign on a draft they did not author, and on their own draft of a
+ * patient they no longer treat and did not create, before 0097 as after it.
+ *
+ * This suite renders the REAL page with its reads replaced by fixtures and a
+ * RecordForm stub that prints the props the page hands it: `readOnly`, whether
+ * a sign is offered, and the extra actions ("Nova versao"). The attachments
+ * keep main's gate (finalized, no author capability, or outside CARE-02a's
+ * pre-0096 write reach), which 0097 does not change.
  *
  * Deleting the authorship test, the patient test, or either from one control,
- * turns an arm red.
+ * or dropping CARE-02a's reach from the attachments, turns an arm red.
  */
+import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStrings } from "@osteojp/i18n";
@@ -143,7 +154,7 @@ describe("a therapist is offered only the writes 0097 admits", () => {
     expect(h.mayFileRegistoFor).toHaveBeenCalledWith(h.ctx, "patient-1");
   });
 
-  it("a colleague's draft: read-only, no Sign, the attachments as before", async () => {
+  it("a colleague's draft: read-only, no Sign, the attachments as on main", async () => {
     expect(await controls(record({ practitionerId: "user-9" }), true)).toEqual({
       readOnly: "true",
       sign: "none",
@@ -184,6 +195,19 @@ describe("a therapist is offered only the writes 0097 admits", () => {
     const c = await controls(record({ status: "signed", practitionerId: "user-9" }), true);
     expect(c.newVersion).toBe(false);
   });
+
+  it("CARE-02a still binds the attachments: a draft outside the pre-0096 write reach: attachments read-only", async () => {
+    // A care-team reader: 0096 lets them open the registo, and
+    // createAttachmentUploadUrl and confirmAttachment still refuse them, so
+    // "Adicionar anexo" and the camera are not offered. Main's gate, kept.
+    h.canWriteRecord.mockResolvedValue(false);
+    expect(await controls(record({ practitionerId: "user-9" }), true)).toEqual({
+      readOnly: "true",
+      sign: "none",
+      newVersion: false,
+      attachmentsReadOnly: "true",
+    });
+  });
 });
 
 describe("CONTROL: the owner and the admin are unchanged", () => {
@@ -206,5 +230,31 @@ describe("CONTROL: the owner and the admin are unchanged", () => {
       newVersion: false,
       attachmentsReadOnly: "true",
     });
+  });
+});
+
+describe("the record page names a refused sign or new version", () => {
+  /** The page's HTML for `?m=<m>`, on a therapist's own draft. */
+  async function pageWith(m: string): Promise<string> {
+    h.getRecordDetail.mockResolvedValue(record());
+    h.mayFileRegistoFor.mockResolvedValue(true);
+    const { default: RecordDetailPage } = await import("./page");
+    const el = await RecordDetailPage({ params: Promise.resolve({ id: REC }), searchParams: Promise.resolve({ m }) });
+    return renderToStaticMarkup(el);
+  }
+  const text = (t: string) => renderToStaticMarkup(createElement(Fragment, null, t));
+
+  it("err:not_author (a draft with another author): its own pt-PT message, not the generic one", async () => {
+    const html = await pageWith("err:not_author");
+    expect(pt["clinical.notAuthor"]).toBeTruthy();
+    expect(html).toContain(text(pt["clinical.notAuthor"]));
+    expect(html).not.toContain(text(pt["clinical.error"]));
+  });
+
+  it("CONTROL err:stale keeps its own message, and err:not_found (a refused Nova versao) the generic one", async () => {
+    const stale = await pageWith("err:stale");
+    expect(stale).toContain(text(pt["clinical.signStale"]));
+    expect(stale).not.toContain(text(pt["clinical.notAuthor"]));
+    expect(await pageWith("err:not_found")).toContain(text(pt["clinical.error"]));
   });
 });

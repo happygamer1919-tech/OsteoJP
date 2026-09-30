@@ -2,21 +2,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
-// 0097 (held, packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_
-// write_matrix.sql): the review path in review.ts.
+// The review path in review.ts, under the permission matrix that 0097 (held,
+// packages/db/migrations-pending/NEXT-AFTER-0096_clinical_records_
+// write_matrix.sql) enforces in the write policies once applied.
 //
 //   * editReviewNarrative, saveReviewFicha and finalizeReview read back the rows
 //     their UPDATE touched, and 0 rows writes NO audit row. Its code is chosen
-//     from the row read first (`zeroRowRefusal`, records.ts): a therapist who
-//     is not the author is `not_author` (from 0097 row level security admits
-//     no row for them); the author, or the owner, lost a race and gets the
-//     writer's own code (`finalized` for the two saves, `stale` for finalize).
-//     So a refusal is never reported as "finalized" or "changed in the
-//     meantime".
+//     from the row read first (`zeroRowRefusal`, records.ts): a therapist on a
+//     draft WITH ANOTHER AUTHOR is `not_author` (from 0097 row level security
+//     admits no row for them); the author, the owner, and anyone on a draft
+//     with NO author yet lost a race and get the writer's own code
+//     (`finalized` for the two saves, `stale` for finalize). Before 0097 a
+//     claim writes no author, so every claimed AI draft is unauthored and its
+//     race keeps its "finalized" or "changed in the meantime" message. So a
+//     refusal is never reported as a race, and a race never as a refusal.
 //   * claimReviewItem, for a patient submission, asks whether the submission's
 //     patient is one the therapist treats or created BEFORE it files the
 //     registo, as createDraftRecord does, so a posted submission id for any
-//     other patient is `not_found` and never reaches the INSERT.
+//     other patient is `not_found` and never reaches the INSERT. Before 0097
+//     that refusal is the app's own: 0045's INSERT would have admitted it.
 //   * listReviewQueue shows a therapist an AI draft only while it has no author
 //     or when they are its author: a draft another therapist has taken, or one
 //     whose author was set by a direct call to the claim function, is theirs.
@@ -148,6 +152,12 @@ describe("editReviewNarrative: an UPDATE that touched no row is a refusal, never
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  it("0 rows on a claimed AI draft with NO author (every one before 0097), finalized in between: finalized, never not_author", async () => {
+    fakeTx({ selects: [[claimed(null)]], written: [] });
+    expect(await codeOf(editReviewNarrative(therapist, RECORD, { observations: "revisto" }))).toBe("finalized");
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
   it("CONTROL: 1 row edits and writes one audit row", async () => {
     fakeTx({ selects: [[claimed(THERAPIST_ID)]], written: [{ dataHash: HASH }] });
     expect(await codeOf(editReviewNarrative(therapist, RECORD, { observations: "revisto" }))).toBe("resolved");
@@ -169,6 +179,12 @@ describe("saveReviewFicha: an UPDATE that touched no row is a refusal, never a s
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  it("0 rows on a claimed AI draft with NO author (every one before 0097): finalized, never not_author", async () => {
+    fakeTx({ selects: [[claimed(null)]], written: [] });
+    expect(await codeOf(saveReviewFicha(therapist, RECORD, { observations: "revisto" }, null))).toBe("finalized");
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
   it("CONTROL: 1 row saves and writes one audit row", async () => {
     fakeTx({ selects: [[claimed(THERAPIST_ID)]], written: [{ dataHash: HASH }] });
     expect(await codeOf(saveReviewFicha(therapist, RECORD, { observations: "revisto" }, null))).toBe("resolved");
@@ -185,6 +201,12 @@ describe("finalizeReview: a finalize that touched no row says why", () => {
 
   it("0 rows on the caller's own draft (it moved in between): stale, and no audit row", async () => {
     fakeTx({ selects: [[claimed(THERAPIST_ID)]], written: [] });
+    expect(await codeOf(finalizeReview(therapist, RECORD, HASH))).toBe("stale");
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("0 rows on a claimed AI draft with NO author (every one before 0097), moved in between: stale, never not_author", async () => {
+    fakeTx({ selects: [[claimed(null)]], written: [] });
     expect(await codeOf(finalizeReview(therapist, RECORD, HASH))).toBe("stale");
     expect(mockAudit).not.toHaveBeenCalled();
   });
