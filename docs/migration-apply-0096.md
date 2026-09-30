@@ -204,23 +204,37 @@ Checked by the operator before GREEN's BEFORE YOU START. None of these is a bloc
    rename.
 3. **The count GATE-CHANGE, #1500, is open, labelled `held-for-apply` and unmerged.** It
    merges only after the apply ("Order of merges").
-4. **#1471's required checks on the promoted head read green except the count.** Two
-   required checks read the SECURITY DEFINER count, and on the promoted head both read red
-   on it, by construction, until #1500 lands: the DB-gated job's count step
+4. **#1471's CI on the promoted head is red on the count, and the count stops the rest of
+   its job, so what CI skips is run locally.** Two required checks read the SECURITY
+   DEFINER count, and on the promoted head both read red on it, by construction, until
+   #1500 lands: the DB-gated job's count step
    (`.github/workflows/db-tests.yml:199`) prints `expected exactly 26 SECURITY DEFINER
    function(s) in public, found 27` and runs no suite after it, and
    `Lint + typecheck + test` fails the count arms of
    `packages/db/tests/security-definer-owner.test.ts` (the set derived from the
-   migrations holds 27, the frozen constant 26). Every other required check reads green,
-   and `held-for-apply-blocks-merge` reads red while the label is on, which is its job.
+   migrations holds 27, the frozen constant 26). **That failure stops
+   `Lint + typecheck + test` at its `Test` step, and CI skips every step after it:**
+   `Test scripts`, `Gate freeze`, `A GATE-CHANGE pull request is never armed`, the secret
+   scan and the board reconcile, read off the job's steps on #1471 and on #1500 alike.
+   Turbo also stops the tests still running when `@osteojp/db#test` fails: on #1471 the
+   `apps/web` and `apps/api` tests (`Tasks: 5 successful, 8 total`), on #1500 the
+   `apps/web` tests (`6 successful, 8 total`). So those gates have not run in CI on either
+   PR, and the freeze's rules B and C, which bind a GATE-CHANGE, never run in CI on #1500
+   before the owner merges it. Each PR's body records the local runs that stand in for
+   them, all passing but the count arms. CI runs every step on #1471 at step 4 of the
+   order, once #1500 is on `main`. What does run to its end in CI reads green: the E2E
+   shards and `Validate spec + drift check`. `held-for-apply-blocks-merge` reads red while
+   the label is on, which is its job.
    Each red is read off its log as the count and nothing else. The DB-gated suites'
    evidence for this PR is its last run before the promotion (the pre-0096 profile,
    green) and the rehearsal (0096's profile); CI's own database asserts 0096's profile
    for the first time at step 4 of the order.
 5. **The held head is frozen for the sitting.** From GREEN's BEFORE YOU START until GREEN's
    report, nothing is pushed to #1471 and nothing is merged to `main`, and no PR is armed
-   for auto-merge. SOLO fills the held head's sha into the dispatch at the sitting, after
-   checking that no push has moved it.
+   for auto-merge. The dispatch carries the held head's sha, filled when the head was
+   last reviewed. Any other head is not ready, and that is checked by machine twice: SOLO's
+   issue check refuses to issue the dispatch, and GREEN's BEFORE YOU START refuses to read
+   the journal, unless #1471's head and its branch are both that sha.
 6. **The app half is live.** #1470 merged to `main` as `7633ff64` on 2026-09-28, and every
    production deployment of `main` since carries it ("The app half is already live" below).
 7. **GREEN's dispatch names `0096_care02a_care_team_reads` and a run window that falls
@@ -232,12 +246,15 @@ Checked by the operator before GREEN's BEFORE YOU START. None of these is a bloc
    `CLAUDE.md`'s binding table under "SOLO's record". This held head does not carry it
    (it arrives at step 4 of the order), so here `CLAUDE.md` still reads the fourth
    renumbering's table: `0096` the TRUNCATE, TRIGGER, REFERENCES revoke (#1397), `0097` the
-   staging index, `0098` CARE-02a. **Before the sitting, #1499 merges and the apply worktree
-   is moved to that `main`**, a detached checkout of a clean tree whose migration reader is
-   still the pinned file, so the session GREEN launches in reads the ruled table. If #1499
-   has not merged, GREEN's dispatch states the mismatch and its BEFORE YOU START prints which
-   table the worktree carries. Either way, from stage 0 on the worktree sits on this held
-   head, whose `CLAUDE.md` is the older table, and the dispatch says so.
+   staging index, `0098` CARE-02a. **GREEN's dispatch is not issued until #1499 has
+   merged and the apply worktree has been moved to that `main`**, a detached checkout of a
+   clean tree whose migration reader is still the pinned file, so the session GREEN
+   launches in reads the ruled table. SOLO's issue check, printed in the dispatch, proves
+   both by machine before the dispatch is issued, and GREEN's BEFORE YOU START STOPs, with
+   the journal unread, if the worktree's `CLAUDE.md` does not name `0096` CARE-02a. If
+   #1499 has not merged, the dispatch is not issued and the sitting waits; SOLO reports
+   that to the lead. From stage 0 on the worktree sits on this held head, whose
+   `CLAUDE.md` is the older table, and the dispatch says so.
 
 ## The app half is already live, so the apply opens nothing unguarded
 
@@ -1400,9 +1417,11 @@ the commits in between (#1461, #1445, #1462, #1463, #1466) change no migration: 
 with `psql -1 -f` and its journal row written in the same transaction, the way drizzle
 does it (hash the sha256 of the file, `created_at` the `when`). **`verified-migrate.mjs`
 and `drizzle-kit migrate` did not run, and neither did stages 0 to 3 as whole blocks:**
-they need a promoted branch. That run, on a throwaway at production's position, is owed
-at promotion, before the document is issued. What was run from this document's own text
-is below, under "The blocks' own lines".
+they need a promoted branch. That run, on a throwaway at production's position, was owed
+at promotion, before the document is issued. **It ran on 2026-09-30 from the promoted
+head `1d9ae1ab`,** and its record is the subsection "The whole blocks and the apply
+command, rehearsed (2026-09-30)", at the end. What was run from this document's own text
+on 2026-09-27 is below, under "The blocks' own lines".
 
 **Re-run after review round 1, the same day.** The review changed no byte of the
 migration, the pre-check, the post-check, the fixture or the in-action arms. It changed
@@ -1892,12 +1911,43 @@ index, which is production's shape:
   the held branch deleted. That run was on this revision before this paragraph's results
   were written in, which is the only difference.
 
-**Not re-run:** `verified-migrate.mjs` and `drizzle-kit migrate` (the apply is stood in by
-`psql -1`, as in every rehearsal of this file); the in-action arms and the mutation sweep (no
+**Not re-run in this run:** `verified-migrate.mjs` and `drizzle-kit migrate` (the apply is
+stood in by `psql -1` here; the separate whole-block rehearsal, next, ran both for real);
+the in-action arms and the mutation sweep (no
 byte they read moved: the migration and the fixture are the same, and the sweep judges the
 catalogue with the post-check, whose predicates did not change); the DB-gated suites, which
 CI runs on its own database at step 4 of the order. Every database this re-run created was
 dropped after it, and the container removed.
+
+### The whole blocks and the apply command, rehearsed (2026-09-30)
+
+This is the run the 2026-09-27 section says was owed at promotion. It was recorded first in
+#1471's body, and is copied here so that the document carries it.
+
+**On the promoted head `1d9ae1ab`:** every block, pasted whole as extracted from the
+dispatch and this document (BEFORE YOU START, stage 0, the CLOCK CHECK, stage 1, stage 2,
+stage 3 and the closing read), on a throwaway local database at production's position
+(journal 93, synthetic data only), with the Lisbon clock fixed at 2026-09-30 21:30. Each
+exited 0. **Stage 1 ran `verified-migrate.mjs` and `drizzle-kit migrate` for real:** one
+migration pending (0096), drizzle exit 0, the journal 93 to 94 (delta 1), and
+`OK: the journal moved by exactly the pending count and carries the approved sha256.`
+Stage 3: before `17 OK / 0 VACUOUS / 15 FAIL`, after `32 OK / 0 VACUOUS / 0 FAIL`. The
+closing read: journal 94, 0096 APPLIED, nothing pending. **The negative arms each stopped
+with exit 1 on their own `STOP:` line:** a PR head moved after stage 0; a head moved
+between BEFORE YOU START and stage 0; the held branch moved; a changed document; a changed
+migration; a changed reader; a dirty worktree; a journal not at 93; a pre-check FAIL;
+clocks before the window, past its last start minute and at its end; a missing window
+record; a missing start record; and an applied marker at stage 0 and at stage 1.
+
+**On `91b06c97`**, the dispatch blocks that changed with the first review (BEFORE YOU
+START: the document sha and the `CLAUDE.md` report line; the CLOCK CHECK: the document sha)
+were run again in a scratch clone against a stand-in origin carrying `91b06c97` as #1471's
+head and branch, clock fixed at 21:30. BEFORE YOU START passed every check up to the
+journal read, and stopped there on purpose (no database), in two worktrees: one on `main`,
+printing that `CLAUDE.md` does NOT name 0096 CARE-02a, and one on #1499's head, printing
+that it does. Stage 0 exited 0 on `91b06c97`, and the CLOCK CHECK exited 0, recording the
+window. The CLOCK CHECK on `1d9ae1ab` stopped with
+`the document at the recorded sha is not the approved one`.
 
 ### Changed after review, 2026-09-30: prose only, no block
 
@@ -1918,3 +1968,29 @@ migration, check file, script, journal entry or test moved.
 **Every block is byte-identical to `1d9ae1ab`'s.** The five fenced blocks (stages 0 to 3 and
 the closing read), cut from both revisions by one script, compare equal one by one, so every
 run above that exercised a block exercised the block this revision carries.
+
+### Changed after the second review, 2026-09-30: prose only, no block
+
+Review of `91b06c97` found that this document said more than CI shows, carried the
+whole-block rehearsal only by reference to a run it called owed, and let GREEN's dispatch
+be issued without #1499. The fixes change this document and its sidecar and nothing else on
+the branch: no migration, check file, script, journal entry or test moved.
+
+- "Before the sitting", item 4: it said every other required check reads green. The count
+  failure stops `Lint + typecheck + test` at its `Test` step and CI skips every step after
+  it; item 4 now says which, and where the local runs that stand in for them are recorded.
+- "Before the sitting", item 5: the dispatch carries the held head's sha, filled when the
+  head was last reviewed, and SOLO's issue check and GREEN's BEFORE YOU START refuse any
+  other head by machine. It said SOLO filled the sha by hand at the sitting.
+- "Before the sitting", item 8: #1499's merge, and the apply worktree's move to that
+  `main`, are a precondition of issuing the dispatch, proved by SOLO's issue check, and
+  BEFORE YOU START STOPs on a `CLAUDE.md` that does not name 0096 CARE-02a. It said the
+  dispatch fell back to launching GREEN under the older table.
+- The rehearsal record: the 2026-09-27 section points to the new subsection "The whole
+  blocks and the apply command, rehearsed (2026-09-30)", which carries the record that was
+  only in #1471's body, and the renumbering re-run says that it, not every rehearsal, stood
+  the apply in with `psql -1`.
+- This subsection.
+
+**Every block is byte-identical to `91b06c97`'s, and so to `1d9ae1ab`'s.** The five fenced
+blocks, cut from both revisions by one script, compare equal one by one.
