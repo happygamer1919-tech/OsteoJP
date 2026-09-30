@@ -26,10 +26,15 @@
 //     A promotion changes no byte, so this is the hash the journal carries;
 //   * the pre-check expects the index's name absent (verdict 3) and no index
 //     keying the target column (verdict 4, read from target_keyed's OWN
-//     subquery), and the post-check's verdicts compare the definition, the
-//     key and the predicate to the values DERIVED FROM THIS MIGRATION, and
-//     the comment to the md5 of the COMMENT text in it. A pin that is only in
-//     a comment does not count;
+//     subquery), each with a CONTROL (the same count on a subject that must
+//     be present), and the queue: 0096 and 0097 each in the journal by the
+//     sha256 production applied (SHA_0096, SHA_0097 below), 0097's row the
+//     newest, 0098's hash absent with 0097's as its control. The post-check's
+//     verdicts compare the definition, the key and the predicate to the values
+//     DERIVED FROM THIS MIGRATION, the comment to the md5 of the COMMENT text
+//     in it, and every policy, function, ACL and the SECURITY DEFINER count to
+//     the pre-check's carries, each over a set that must not be empty. A pin
+//     that is only in a comment does not count;
 //   * EVERY PART OF BOTH VERDICT QUERIES IS THE REVIEWED TEXT: each CTE, each
 //     column of j and p, each verdict row's label, observed, expected and
 //     verdict, the frame around the rows and the final SELECT, compared with
@@ -43,11 +48,13 @@
 //     now, or promoted into migrations/ as 0098. Both, or neither, is red;
 //   * THE APPLY DOCUMENT QUOTES THE REAL FILES: every sha256 a block of
 //     docs/migration-apply-0098.md sets is the sha256 of the file on disk it
-//     is compared with; stages 1 and 2 compare every file they run or read
-//     before they load the production credentials, and stage 1 compares
-//     every file stage 2 reads, so a post-check edited on the branch stops
-//     the sitting BEFORE the apply; the facts table quotes each file's real
-//     sha256; and docs/migration-apply-0098.sha256 is the document's sha256.
+//     is compared with; each block compares every file it runs before it
+//     touches the production credentials; stage 0 compares every file any
+//     later block runs, so a wrong pin stops the sitting before any
+//     connection; the facts table quotes each file's real sha256; and
+//     docs/migration-apply-0098.sha256 is the document's sha256;
+//   * 0096's and 0097's files, once the promotion merges main in, are the
+//     bytes the pre-check expects production to have applied.
 //
 // Each rule is a function of the texts it reads. The tests run it on the
 // committed files; the CONTROLS run the SAME function on a seeded wrong copy
@@ -98,6 +105,8 @@ const FORBIDDEN = ["DROP", "ALTER", "DELETE", "UPDATE", "INSERT", "TRUNCATE", "G
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 const md5 = (s) => createHash("md5").update(s).digest("hex");
+/** A 64-hex string one character away from `h`. */
+const stale = (h) => (h[0] === "0" ? "1" : "0") + h.slice(1);
 
 // ---------------------------------------------------------------------------
 // THE LEXER. A migration reaches Postgres in two steps, and this reads it the
@@ -473,11 +482,49 @@ const hasHash = (sha) => `(SELECT count(*)::int FROM drizzle.__drizzle_migration
 const relationsNamed = (name) =>
   `(SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = '${name}')`;
 
+/** The bytes production applied for the two migrations 0098 follows. Their own apply documents pin them; the pre-check carries them as literals. */
+const SHA_0096 = "fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45";
+const SHA_0097 = "076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318";
+const PATH_0096 = "packages/db/migrations/0096_care02a_care_team_reads.sql";
+const PATH_0097 = "packages/db/migrations/0097_clinical_records_write_matrix.sql";
+
+/** The newest journal row, named: `mine` is the name the check expects, `others` the names it may also recognise. */
+const newestOf = (names) =>
+  `(SELECT CASE m.hash ${names.map(([sha, label]) => `WHEN '${sha}' THEN '${label}'`).join(" ")} ELSE 'another, hash ' || m.hash END ` +
+  "FROM drizzle.__drizzle_migrations m ORDER BY m.created_at DESC, m.id DESC LIMIT 1)";
+
+/** The "nothing else moved" instruments, computed the same way by both checks (and by 0096's). */
+const NOTHING_ELSE = {
+  policies: "(SELECT count(*)::int FROM pg_policy)",
+  policies_md5: "(SELECT md5(string_agg(n.nspname || '.' || c.relname || '.' || p.polname || ':' || p.polcmd::text || ':' || " +
+    "p.polpermissive::text || ':' || coalesce(array_to_string(array(SELECT pg_get_userbyid(r) FROM unnest(p.polroles) r ORDER BY 1), ','), '') || " +
+    "':' || coalesce(md5(pg_get_expr(p.polqual, p.polrelid)), '-') || ':' || coalesce(md5(pg_get_expr(p.polwithcheck, p.polrelid)), '-'), " +
+    "';' ORDER BY n.nspname, c.relname, p.polname)) FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid JOIN pg_namespace n ON n.oid = c.relnamespace)",
+  functions: "(SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public')",
+  functions_md5: "(SELECT md5(string_agg(p.oid::regprocedure::text || ':' || md5(p.prosrc) || ':' || p.prosecdef::text || ':' || " +
+    "p.provolatile::text || ':' || pg_get_userbyid(p.proowner) || ':' || coalesce(array_to_string(p.proconfig, ','), ''), " +
+    "';' ORDER BY p.oid::regprocedure::text)) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public')",
+  grants: "(SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
+    "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f') AND c.relacl IS NOT NULL)",
+  grants_md5: "(SELECT md5(coalesce((SELECT string_agg(c.relname || ':' || coalesce(c.relacl::text, 'default'), ';' ORDER BY c.relname) " +
+    "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')), '') || " +
+    "'|' || coalesce((SELECT string_agg(c.relname || '.' || a.attname || ':' || a.attacl::text, ';' ORDER BY c.relname, a.attname) " +
+    "FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace " +
+    "WHERE n.nspname = 'public' AND a.attacl IS NOT NULL AND NOT a.attisdropped), '') || " +
+    "'|' || coalesce((SELECT string_agg(p.oid::regprocedure::text || ':' || coalesce(p.proacl::text, 'default'), ';' ORDER BY p.oid::regprocedure::text) " +
+    "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'), '')))",
+  secdef: "(SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosecdef)",
+  secdef_not_postgres: "(SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace " +
+    "WHERE n.nspname = 'public' AND p.prosecdef AND pg_get_userbyid(p.proowner) <> 'postgres')",
+};
+
 /**
  * The pre-check's verdict query as reviewed. The index's name, its target
  * column and the file's sha256 come from the migration; 0014's four indexes,
- * the key columns' types and the ruled carries are constants the migration
- * does not set.
+ * the key columns' types, the two migrations 0098 follows and the ruled
+ * carries are constants the migration does not set. Every verdict that
+ * asserts an absence carries a control: the same count on a subject that must
+ * be present.
  */
 function preCheckAsReviewed(migrationText) {
   const { index } = readMigration(migrationText);
@@ -487,6 +534,9 @@ function preCheckAsReviewed(migrationText) {
   const defOf = (name) =>
     `(SELECT def || CASE WHEN usable THEN '' ELSE ' NOT VALID, READY AND LIVE' END FROM ix WHERE relname = '${name}')`;
   const KEY_COLUMNS = "imported_entity_id pg_catalog.uuid NULL, entity_type public.migration_entity_type NOT NULL";
+  const carryMd5 = (name, column, count, what) => [`'${name}'`, `coalesce(j.${column}, 'absent')`,
+    `'32 hex characters, over ' || j.${count}::text || ' ${what}'`,
+    `CASE WHEN j.${count} > 0 AND j.${column} ~ '^[0-9a-f]{32}$' THEN 'OK' ELSE 'FAIL' END`];
   return {
     ctes: {
       t: "SELECT to_regclass('public.migration_staging_rows') AS tbl",
@@ -495,7 +545,7 @@ function preCheckAsReviewed(migrationText) {
       j: null,
       p: null,
       r: null,
-      s: summaryCte("14 OK, or 13 OK and 1 VACUOUS; never a FAIL"),
+      s: summaryCte("20 OK, or 19 OK and 1 VACUOUS; never a FAIL"),
     },
     j: {
       tbl: TBL,
@@ -506,7 +556,9 @@ function preCheckAsReviewed(migrationText) {
         "FROM pg_attribute a JOIN pg_type ty ON ty.oid = a.atttypid JOIN pg_namespace tn ON tn.oid = ty.typnamespace " +
         `WHERE a.attrelid = ${TBL} AND NOT a.attisdropped AND a.attname IN ('imported_entity_id', 'entity_type'))`,
       name_taken: relationsNamed(index.name),
+      name_control: relationsNamed("migration_staging_tenant_status_idx"),
       target_keyed: `(SELECT count(*)::int FROM pg_index i WHERE i.indrelid = ${TBL} AND ${attnumOf(index.key[0])} = ANY (i.indkey::int2[]))`,
+      keyed_control: `(SELECT count(*)::int FROM pg_index i WHERE i.indrelid = ${TBL} AND ${attnumOf("tenant_id")} = ANY (i.indkey::int2[]))`,
       def_pkey: defOf("migration_staging_rows_pkey"),
       def_source_uq: defOf("migration_staging_tenant_source_uq"),
       def_batch: defOf("migration_staging_tenant_batch_idx"),
@@ -516,6 +568,10 @@ function preCheckAsReviewed(migrationText) {
         "indisready::text || ':' || indislive::text, ';' ORDER BY relname)) FROM ix)",
       journal_rows: "(SELECT count(*)::int FROM drizzle.__drizzle_migrations)",
       has_0098: hasHash(sha256(migrationText)),
+      has_0096: hasHash(SHA_0096),
+      has_0097: hasHash(SHA_0097),
+      newest: newestOf([[SHA_0097, "0097"], [SHA_0096, "0096"]]),
+      ...NOTHING_ELSE,
     },
     p: {
       ledger_rows: "(SELECT count(*)::int FROM public.migration_staging_rows)",
@@ -531,12 +587,13 @@ function preCheckAsReviewed(migrationText) {
         "CASE WHEN j.tbl IS NOT NULL AND j.relkind = 'r' THEN 'OK' ELSE 'FAIL' END"],
       2: ["'2. the two key columns carry the types 0014 gave them'", "coalesce(j.key_columns, 'absent')", `'${KEY_COLUMNS}'`,
         `CASE WHEN j.key_columns = '${KEY_COLUMNS}' THEN 'OK' ELSE 'FAIL' END`],
-      3: [`'3. no relation named ${index.name} exists in public'`,
-        "CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE j.name_taken::text END", "'0'",
-        "CASE WHEN j.tbl IS NULL THEN 'FAIL' WHEN j.name_taken = 0 THEN 'OK' ELSE 'FAIL' END"],
-      4: [`'4. no index on the table keys ${index.key[0]}, under any name'`,
-        "CASE WHEN j.target_attnum IS NULL THEN 'column absent' ELSE j.target_keyed::text END", "'0'",
-        "CASE WHEN j.target_attnum IS NULL THEN 'FAIL' WHEN j.target_keyed = 0 THEN 'OK' ELSE 'FAIL' END"],
+      3: [`'3. no relation named ${index.name} exists in public; control: the same count finds migration_staging_tenant_status_idx once'`,
+        "CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE j.name_taken::text || ', control ' || j.name_control::text END", "'0, control 1'",
+        "CASE WHEN j.tbl IS NULL THEN 'FAIL' WHEN j.name_taken = 0 AND j.name_control = 1 THEN 'OK' ELSE 'FAIL' END"],
+      4: [`'4. no index on the table keys ${index.key[0]}, under any name; control: the same count finds three indexes keying tenant_id'`,
+        "CASE WHEN j.target_attnum IS NULL THEN 'column absent' ELSE j.target_keyed::text || ', control ' || j.keyed_control::text END",
+        "'0, control 3'",
+        "CASE WHEN j.target_attnum IS NULL THEN 'FAIL' WHEN j.target_keyed = 0 AND j.keyed_control = 3 THEN 'OK' ELSE 'FAIL' END"],
       5: ["'5. the primary key is 0014''s, valid, ready and live'",
         ...is0014("def_pkey", "CREATE UNIQUE INDEX migration_staging_rows_pkey ON public.migration_staging_rows USING btree (id)")],
       6: ["'6. the idempotency key is 0014''s, valid, ready and live'",
@@ -546,18 +603,28 @@ function preCheckAsReviewed(migrationText) {
         ...is0014("def_batch", "CREATE INDEX migration_staging_tenant_batch_idx ON public.migration_staging_rows USING btree (tenant_id, batch_id)")],
       8: ["'8. the status index is 0014''s, valid, ready and live'",
         ...is0014("def_status", "CREATE INDEX migration_staging_tenant_status_idx ON public.migration_staging_rows USING btree (tenant_id, status)")],
-      9: ["'9. 0098 is absent from the journal, by hash'", "j.has_0098::text", "'0'",
-        "CASE WHEN j.has_0098 = 0 THEN 'OK' ELSE 'FAIL' END"],
-      10: ["'10. PROFILE: ledger rows the index will hold (imported_entity_id set)'",
+      9: ["'9. 0098 is absent from the journal, by hash; control: the same count finds 0097 once'",
+        "j.has_0098::text || ', control ' || j.has_0097::text", "'0, control 1'",
+        "CASE WHEN j.has_0098 = 0 AND j.has_0097 = 1 THEN 'OK' ELSE 'FAIL' END"],
+      10: ["'10. THE QUEUE: 0096 and 0097 are each in the journal once, by the sha256 production applied'",
+        "'0096 ' || j.has_0096::text || ', 0097 ' || j.has_0097::text", "'0096 1, 0097 1'",
+        "CASE WHEN j.has_0096 = 1 AND j.has_0097 = 1 THEN 'OK' ELSE 'FAIL' END"],
+      11: ["'11. the newest journal row is 0097''s, by hash'", "coalesce(j.newest, 'the journal is empty')", "'0097'",
+        "CASE WHEN j.newest = '0097' THEN 'OK' ELSE 'FAIL' END"],
+      12: ["'12. PROFILE: ledger rows the index will hold (imported_entity_id set), of the rows the build reads'",
         "CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE p.with_target::text || ' of ' || p.ledger_rows::text || " +
           "' ledger rows, ' || p.with_target_records::text || ' of them clinical_record' END",
         "'> 0 is OK; 0 is VACUOUS'",
         "CASE WHEN j.tbl IS NULL THEN 'FAIL' WHEN p.with_target > 0 THEN 'OK' ELSE 'VACUOUS' END"],
-      11: ["'journal_rows_before'", "j.journal_rows::text", "'95'", "CASE WHEN j.journal_rows = 95 THEN 'OK' ELSE 'FAIL' END"],
-      12: ["'staging_indexes_before'", "CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE j.indexes::text END", "'4'",
+      13: ["'journal_rows_before'", "j.journal_rows::text", "'95'", "CASE WHEN j.journal_rows = 95 THEN 'OK' ELSE 'FAIL' END"],
+      14: ["'staging_indexes_before'", "CASE WHEN j.tbl IS NULL THEN 'table absent' ELSE j.indexes::text END", "'4'",
         "CASE WHEN j.tbl IS NOT NULL AND j.indexes = 4 THEN 'OK' ELSE 'FAIL' END"],
-      13: ["'staging_indexes_md5'", "coalesce(j.indexes_md5, 'absent')", "'32 hex characters'",
-        "CASE WHEN j.indexes_md5 ~ '^[0-9a-f]{32}$' THEN 'OK' ELSE 'FAIL' END"],
+      15: carryMd5("staging_indexes_md5", "indexes_md5", "indexes", "indexes"),
+      16: carryMd5("policies_md5", "policies_md5", "policies", "policies"),
+      17: carryMd5("functions_md5", "functions_md5", "functions", "functions in public"),
+      18: carryMd5("grants_md5", "grants_md5", "grants", "relations with an ACL in public"),
+      19: ["'secdef_functions_before'", "j.secdef::text", "'at least 1, every one owned by postgres; ' || j.secdef_not_postgres::text || ' not'",
+        "CASE WHEN j.secdef > 0 AND j.secdef_not_postgres = 0 THEN 'OK' ELSE 'FAIL' END"],
     },
     final: FINAL,
   };
@@ -566,7 +633,8 @@ function preCheckAsReviewed(migrationText) {
 /**
  * The post-check's verdict query as reviewed. The index's name, table, key,
  * method, predicate, definition, comment md5 and the file's sha256 come from
- * the migration.
+ * the migration; "nothing else moved" is computed exactly as the pre-check
+ * computed each carry, and FAILs on an empty set.
  */
 function postCheckAsReviewed(migrationText) {
   const { index, comments } = readMigration(migrationText);
@@ -576,6 +644,9 @@ function postCheckAsReviewed(migrationText) {
   const KEY = `${index.key.join(", ")}; ${index.key.length} key, ${index.key.length} total, no expression`;
   const PREDICATE = `(${index.predicate})`;
   const MD5 = comments.length === 1 ? md5(comments[0].text) : "(the migration holds no single COMMENT)";
+  const unchanged = (n, label, column, count, what, carry) => [`'${n}. ${label}'`,
+    `coalesce(j.${column}, 'absent') || ' over ' || j.${count}::text || ' ${what}'`, `:'${carry}'`,
+    `CASE WHEN j.${count} > 0 AND j.${column} = :'${carry}' THEN 'OK' ELSE 'FAIL' END`];
   return {
     ctes: {
       t: "SELECT to_regclass('public.migration_staging_rows') AS tbl",
@@ -584,7 +655,7 @@ function postCheckAsReviewed(migrationText) {
       j: null,
       p: null,
       r: null,
-      s: summaryCte("13 OK, or 12 OK and 1 VACUOUS; never a FAIL"),
+      s: summaryCte("17 OK, or 16 OK and 1 VACUOUS; never a FAIL"),
     },
     j: {
       tbl: TBL,
@@ -610,6 +681,8 @@ function postCheckAsReviewed(migrationText) {
         `':' || indisready::text || ':' || indislive::text, ';' ORDER BY relname)) FROM ix WHERE relname <> '${N}')`,
       journal_rows_now: "(SELECT count(*)::int FROM drizzle.__drizzle_migrations)",
       has_0098: hasHash(sha256(migrationText)),
+      newest: newestOf([[sha256(migrationText), "0098"], [SHA_0097, "0097"]]),
+      ...NOTHING_ELSE,
     },
     p: {
       with_target: "(SELECT count(*)::int FROM public.migration_staging_rows WHERE imported_entity_id IS NOT NULL)",
@@ -639,14 +712,23 @@ function postCheckAsReviewed(migrationText) {
       9: ["'9. the table carries exactly one index more than before'", "j.indexes_now::text",
         "(:'staging_indexes_before'::int + 1)::text",
         "CASE WHEN j.indexes_now = :'staging_indexes_before'::int + 1 THEN 'OK' ELSE 'FAIL' END"],
-      10: ["'10. every OTHER index on the table is byte-identical (one md5 over name, definition and state)'",
-        "coalesce(j.others_md5_now, 'absent')", ":'staging_indexes_md5'",
-        "CASE WHEN j.others_md5_now = :'staging_indexes_md5' THEN 'OK' ELSE 'FAIL' END"],
-      11: ["'11. 0098 is in the journal by hash, and the journal moved by exactly one'",
-        "j.has_0098::text || ' by hash, journal ' || j.journal_rows_now::text",
-        "'1 by hash, journal ' || (:'journal_rows_before'::int + 1)::text",
-        "CASE WHEN j.has_0098 = 1 AND j.journal_rows_now = :'journal_rows_before'::int + 1 THEN 'OK' ELSE 'FAIL' END"],
-      12: ["'12. PROFILE: ledger rows the index holds (imported_entity_id set)'", "p.with_target::text",
+      10: ["'10. every OTHER index on the table is byte-identical (one md5 over name, definition and state), over as many indexes as before'",
+        "coalesce(j.others_md5_now, 'absent') || ' over ' || (j.indexes_now - 1)::text || ' indexes'",
+        ":'staging_indexes_md5' || ' over ' || :'staging_indexes_before' || ' indexes'",
+        "CASE WHEN j.indexes_now - 1 = :'staging_indexes_before'::int AND j.indexes_now > 1 " +
+          "AND j.others_md5_now = :'staging_indexes_md5' THEN 'OK' ELSE 'FAIL' END"],
+      11: ["'11. 0098 is in the journal by hash, once, it is the newest row, and the journal moved by exactly one'",
+        "j.has_0098::text || ' by hash, newest ' || coalesce(j.newest, 'none') || ', journal ' || j.journal_rows_now::text",
+        "'1 by hash, newest 0098, journal ' || (:'journal_rows_before'::int + 1)::text",
+        "CASE WHEN j.has_0098 = 1 AND j.newest = '0098' AND j.journal_rows_now = :'journal_rows_before'::int + 1 THEN 'OK' ELSE 'FAIL' END"],
+      12: unchanged(12, "every policy in the database is unchanged, as one md5", "policies_md5", "policies", "policies", "policies_md5"),
+      13: unchanged(13, "every function in public is unchanged, as one md5", "functions_md5", "functions", "functions", "functions_md5"),
+      14: unchanged(14, "every relation, column and function ACL in public is unchanged, as one md5", "grants_md5", "grants",
+        "relations with an ACL", "grants_md5"),
+      15: ["'15. the SECURITY DEFINER count in public is unchanged, every one owned by postgres'",
+        "j.secdef::text || ', ' || j.secdef_not_postgres::text || ' not postgres'", ":'secdef_before' || ', 0 not postgres'",
+        "CASE WHEN j.secdef > 0 AND j.secdef = :'secdef_before'::int AND j.secdef_not_postgres = 0 THEN 'OK' ELSE 'FAIL' END"],
+      16: ["'16. PROFILE: ledger rows the index holds (imported_entity_id set)'", "p.with_target::text",
         "'> 0 is OK; 0 is VACUOUS'", "CASE WHEN p.with_target > 0 THEN 'OK' ELSE 'VACUOUS' END"],
     },
     final: FINAL,
@@ -916,7 +998,7 @@ test("CONTROL post-check: a verdict 3 that does not require the index ready is r
 });
 
 test("CONTROL pre-check: a pre-check that no longer expects the name absent is red", () => {
-  const edited = plant(pre, "WHEN j.name_taken = 0 THEN 'OK'", "WHEN j.name_taken >= 0 THEN 'OK'");
+  const edited = plant(pre, "WHEN j.name_taken = 0 AND", "WHEN j.name_taken >= 0 AND");
   red(() => assertPreCheckExpectsItAbsent(migration, edited), /does not expect the index's name absent/);
 });
 
@@ -945,16 +1027,42 @@ test("CONTROL pre-check: target_attnum looking up another column is red", () => 
 });
 
 test("CONTROL pre-check: a verdict 4 that also says OK after target_keyed = 0 is red", () => {
-  const edited = plant(pre, "WHEN j.target_keyed = 0 THEN 'OK'", "WHEN j.target_keyed = 0 THEN 'OK' WHEN true THEN 'OK'");
+  const edited = plant(pre, "WHEN j.target_keyed = 0 AND j.keyed_control = 3 THEN 'OK'",
+    "WHEN j.target_keyed = 0 AND j.keyed_control = 3 THEN 'OK' WHEN true THEN 'OK'");
   red(() => assertPreCheckExpectsItAbsent(migration, edited), /does not expect no index keying the column/);
 });
 
 test("CONTROL pre-check: verdict 9 (has_0098 = 0) and the journal carry (= 95) loosened to >= 0 are each red", () => {
   const want = preCheckAsReviewed(migration);
-  const nine = plant(pre, "WHEN j.has_0098 = 0 THEN", "WHEN j.has_0098 >= 0 THEN");
+  const nine = plant(pre, "WHEN j.has_0098 = 0 AND", "WHEN j.has_0098 >= 0 AND");
   red(() => assertCheckAsReviewed("the pre-check", nine, want), /verdict 9's verdict is not the reviewed text/);
   const carry = plant(pre, "WHEN j.journal_rows = 95 THEN", "WHEN j.journal_rows >= 0 THEN");
-  red(() => assertCheckAsReviewed("the pre-check", carry, want), /verdict 11's verdict is not the reviewed text/);
+  red(() => assertCheckAsReviewed("the pre-check", carry, want), /verdict 13's verdict is not the reviewed text/);
+});
+
+test("CONTROL pre-check: each absence verdict with its control dropped (3, 4 and 9) is red, and so is each control counting another subject", () => {
+  const want = preCheckAsReviewed(migration);
+  for (const [n, from, to] of [
+    [3, "WHEN j.name_taken = 0 AND j.name_control = 1 THEN", "WHEN j.name_taken = 0 THEN"],
+    [4, "WHEN j.target_keyed = 0 AND j.keyed_control = 3 THEN", "WHEN j.target_keyed = 0 THEN"],
+    [9, "WHEN j.has_0098 = 0 AND j.has_0097 = 1 THEN", "WHEN j.has_0098 = 0 THEN"],
+  ]) {
+    red(() => assertCheckAsReviewed("the pre-check", plant(pre, from, to), want), new RegExp(`verdict ${n}'s verdict is not the reviewed text`));
+  }
+  const name = plantOnce(pre, `${want.j.name_control} AS name_control`,
+    `${want.j.name_control.replace("'migration_staging_tenant_status_idx'", "'migration_staging_imported_entity_idx'")} AS name_control`);
+  red(() => assertCheckAsReviewed("the pre-check", name, want), /j\.name_control is not the reviewed expression/);
+  const keyed = plantOnce(pre, `${want.j.keyed_control} AS keyed_control`,
+    `${want.j.keyed_control.replace("'tenant_id'", "'imported_entity_id'")} AS keyed_control`);
+  red(() => assertCheckAsReviewed("the pre-check", keyed, want), /j\.keyed_control is not the reviewed expression/);
+});
+
+test("CONTROL pre-check: the queue pinned to another sha256 for 0096 or 0097 is red", () => {
+  const want = preCheckAsReviewed(migration);
+  for (const [sha, column] of [[SHA_0096, "has_0096"], [SHA_0097, "has_0097"]]) {
+    const edited = plantOnce(pre, `${want.j[column]} AS ${column}`, `${want.j[column].replace(sha, stale(sha))} AS ${column}`);
+    red(() => assertCheckAsReviewed("the pre-check", edited, want), new RegExp(`j\\.${column} is not the reviewed expression`));
+  }
 });
 
 test("CONTROL post-check: a verdict 4 comparing another key shape is red", () => {
@@ -1040,11 +1148,11 @@ test("SWEEP structure: a changed CTE, frame, label, expected value or final SELE
     ["the post-check", post, postWant, "(SELECT count(*) FROM r WHERE verdict = 'FAIL')", "(SELECT 0)", /the CTE s is not/],
     ["the pre-check", pre, preWant, "FROM j LEFT JOIN p ON true", "FROM j LEFT JOIN p ON false", /the frame around the VALUES rows/],
     ["the post-check", post, postWant, "ORDER BY n;", "ORDER BY 1;", /the final SELECT/],
-    ["the pre-check", pre, preWant, "(11, 'journal_rows_before',", "(11, 'journal_rows_after',", /verdict 11's label/],
+    ["the pre-check", pre, preWant, "(13, 'journal_rows_before',", "(13, 'journal_rows_after',", /verdict 13's label/],
     ["the post-check", post, postWant, "'valid true, ready true, live true',\n", "'valid true',\n", /verdict 3's expected/],
     ["the pre-check", pre, preWant, "AS journal_rows,", "AS journal_rows, (SELECT 1) AS spare,", /the columns of j are not/],
-    ["the pre-check", pre, preWant, "  ) AS v(n,", "  , (14, 'extra', 'x', 'x', 'OK')\n  ) AS v(n,", /verdict rows are not the reviewed ones/],
-    ["the post-check", post, postWant, /\n {2}\(12, '12\. [\s\S]*?(?=\n {2}\) AS v\(n,)/, "", /verdict rows are not the reviewed ones/],
+    ["the pre-check", pre, preWant, "  ) AS v(n,", "  , (20, 'extra', 'x', 'x', 'OK')\n  ) AS v(n,", /verdict rows are not the reviewed ones/],
+    ["the post-check", post, postWant, /\n {2}\(16, '16\. [\s\S]*?(?=\n {2}\) AS v\(n,)/, "", /verdict rows are not the reviewed ones/],
   ];
   for (const [which, text, want, from, to, message] of arms) {
     let seeded = plant(text, from, to);
@@ -1108,66 +1216,96 @@ test("GREEN: both checks reflowed, re-indented and commented stay green on every
 });
 
 // ---------------------------------------------------------------------------
-// THE APPLY DOCUMENT. docs/migration-apply-0098.md pins five files by sha256
-// in the blocks GREEN pastes, and docs/migration-apply-0098.sha256 pins the
-// document. A pin that does not match the file on disk halts the sitting,
-// and where it halts matters: a file stage 2 reads and stage 1 never compared
-// halts AFTER production is written. So, statically:
+// THE APPLY DOCUMENT. docs/migration-apply-0098.md pins eight files by sha256
+// in the four blocks GREEN pastes, and docs/migration-apply-0098.sha256 pins
+// the document. Every block runs from ONE recorded sha of main, so a file
+// cannot change between blocks; what can be wrong is a pin. Where a wrong pin
+// halts the sitting matters: a file only stage 2 or the closing read compared
+// would halt it AFTER production is written. So, statically:
 //   * every SHA*= a block sets is the real sha256 of the file that block
 //     compares it with, and no block sets a pin it never compares;
-//   * stages 1 and 2 compare every file they run or read BEFORE they load the
-//     production credentials, and stage 1's list holds every file of stage
-//     2's, so a file edited on the branch stops the sitting before the apply;
-//   * stages 0 and 1 check the sidecar;
+//   * each block compares every file it runs BEFORE it touches the
+//     production credentials (stage 0, which has none, before it records the
+//     head it runs from), and stage 0 compares check-journal before it runs
+//     it;
+//   * STAGE 0 COMPARES EVERY FILE ANY LATER BLOCK RUNS, so every pin is
+//     proven before any connection;
+//   * stages 0, 1 and 2 check the sidecar;
 //   * the facts table quotes each file's real sha256, the document quotes no
 //     other 64-hex string, and the sidecar is the document's sha256.
+// 0096's and 0097's files reach this branch only when the promotion merges
+// main in. Until then their pins are the constants the pre-check carries;
+// once they are on disk they must hash to those constants.
 // ---------------------------------------------------------------------------
 
 const DOC_PATH = "docs/migration-apply-0098.md";
 const SIDECAR_PATH = "docs/migration-apply-0098.sha256";
 const VM_PATH = "packages/db/scripts/verified-migrate.mjs";
 const GUARD_PATH = "scripts/assert-production-target.mjs";
+const READER_PATH = "packages/db/scripts/read-applied-migrations.mjs";
+const CJ_PATH = "scripts/check-journal.mjs";
 const fileSha = (p) => createHash("sha256").update(readFileSync(join(ROOT, p))).digest("hex");
 const doc = read(DOC_PATH);
 const sidecar = read(SIDECAR_PATH);
+
+/** The migrations 0098 follows, where they will stand on main, and the bytes production applied. */
+const FOLLOWS = [[PATH_0096, SHA_0096], [PATH_0097, SHA_0097]];
+
+/** Each migration 0098 follows, once it is on disk, is the bytes the pre-check expects. `shaOf` answers for a path, or null when it is not on disk. */
+function assertFollowsOnDisk(shaOf) {
+  for (const [path, pinned] of FOLLOWS) {
+    const actual = shaOf(path);
+    if (actual !== null) assert.equal(actual, pinned, `${path} is on disk and is not the bytes the pre-check expects production to have applied`);
+  }
+}
 
 /** The real sha256 of every file the document pins, by the path a block or the facts table names it by. */
 const REAL = Object.freeze({
   [PROMOTED_PATH]: fileSha(MIGRATION_PATH),
   [PENDING_PATH]: fileSha(MIGRATION_PATH),
+  [PATH_0096]: SHA_0096,
+  [PATH_0097]: SHA_0097,
   [PRE]: fileSha(PRE),
   [POST]: fileSha(POST),
   [VM_PATH]: fileSha(VM_PATH),
   [GUARD_PATH]: fileSha(GUARD_PATH),
+  [READER_PATH]: fileSha(READER_PATH),
+  [CJ_PATH]: fileSha(CJ_PATH),
 });
 
-/** What each stage must compare by sha256 before it goes further. */
-const STAGE_PINS = {
-  "STAGE 0": [PROMOTED_PATH],
-  "STAGE 1": [PROMOTED_PATH, PRE, POST, VM_PATH, GUARD_PATH],
-  "STAGE 2": [PROMOTED_PATH, POST, GUARD_PATH],
-};
-const CREDENTIALS = "set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport";
+const HEAD_RECORD = (l) => l.includes("> /tmp/0098-main.sha");
+const CREDENTIALS = (l) => l.includes("/Users/ivan/osteojp-secrets/new-prod.env");
+
+/** What each block must compare by sha256, and the line it must compare them before. */
+const BLOCKS = Object.freeze({
+  "STAGE 0": { pins: [PROMOTED_PATH, PATH_0097, PRE, POST, VM_PATH, GUARD_PATH, READER_PATH, CJ_PATH], until: HEAD_RECORD, sidecar: true },
+  "STAGE 1": { pins: [PROMOTED_PATH, PATH_0097, PRE, VM_PATH, GUARD_PATH], until: CREDENTIALS, sidecar: true },
+  "STAGE 2": { pins: [PROMOTED_PATH, POST, GUARD_PATH], until: CREDENTIALS, sidecar: true },
+  "THE CLOSING JOURNAL READ": { pins: [READER_PATH], until: CREDENTIALS, sidecar: false },
+});
 const COMPARE = /^\[ "\$\(shasum -a 256 (\S+) \| cut -d' ' -f1\)" = "\$\{(\w+)\}" \] \|\| \{ echo "STOP: [^"]+"; exit 1; \}$/;
 
-/** The fenced block under each `## STAGE n` heading, as lines. */
-function stageBlocks(text) {
-  const blocks = {};
-  for (const stage of Object.keys(STAGE_PINS)) {
-    const head = text.indexOf(`\n## ${stage}:`);
-    assert.ok(head >= 0, `the apply document has no "## ${stage}:" section`);
-    const next = text.indexOf("\n## ", head + 1);
-    const section = text.slice(head, next < 0 ? text.length : next);
+/** The fenced block under each block's `## <name>:` or `## <name>.` heading, as lines. */
+function blocksOf(text, names) {
+  const out = {};
+  for (const name of names) {
+    const heads = [`\n## ${name}:`, `\n## ${name}.`].map((h) => text.indexOf(h)).filter((i) => i >= 0);
+    assert.equal(heads.length, 1, `the apply document must have exactly one "## ${name}" section; found ${heads.length}`);
+    const next = text.indexOf("\n## ", heads[0] + 1);
+    const section = text.slice(heads[0], next < 0 ? text.length : next);
     const fence = section.match(/\n```\n([\s\S]*?)\n```\n/);
-    assert.ok(fence, `the apply document's ${stage} section has no fenced block`);
-    blocks[stage] = fence[1].split("\n");
+    assert.ok(fence, `the apply document's ${name} section has no fenced block`);
+    out[name] = fence[1].split("\n");
   }
-  return blocks;
+  return out;
 }
 
-/** Every pin a block sets is the real sha256 of what it is compared with, and every file the stage needs is compared in time. */
-function assertDocPins(text, real) {
-  for (const [stage, lines] of Object.entries(stageBlocks(text))) {
+/** Every pin a block sets is the real sha256 of what it is compared with, every file is compared in time, and stage 0 compares them all. */
+function assertDocPins(text, real, blocks = BLOCKS) {
+  const found = blocksOf(text, Object.keys(blocks));
+  const compared = {};
+  for (const [name, lines] of Object.entries(found)) {
+    const want = blocks[name];
     const vars = new Map();
     for (const l of lines) {
       const m = /^([A-Z][A-Z0-9]*)=(\S+)$/.exec(l);
@@ -1180,25 +1318,35 @@ function assertDocPins(text, real) {
       if (m) compares.push({ path: resolve(m[1]), name: m[2], at: i });
     });
     for (const c of compares) {
-      assert.ok(vars.has(c.name), `${stage} compares ${c.path} against \${${c.name}}, which the block never sets`);
-      assert.ok(c.path in real, `${stage} compares ${c.path}, which is not a file the document pins`);
-      assert.equal(vars.get(c.name), real[c.path], `${c.name} in ${stage} is not the sha256 of ${c.path}`);
+      assert.ok(vars.has(c.name), `${name} compares ${c.path} against \${${c.name}}, which the block never sets`);
+      assert.ok(c.path in real, `${name} compares ${c.path}, which is not a file the document pins`);
+      assert.equal(vars.get(c.name), real[c.path], `${c.name} in ${name} is not the sha256 of ${c.path}`);
     }
-    const until = stage === "STAGE 0" ? lines.findIndex((l) => l.includes("> /tmp/0098-head.sha")) : lines.indexOf(CREDENTIALS);
-    assert.ok(until >= 0, `${stage} has no ${stage === "STAGE 0" ? "head record" : "credentials line"} to be compared before`);
-    for (const p of STAGE_PINS[stage]) {
+    const until = lines.findIndex(want.until);
+    assert.ok(until >= 0, `${name} has no ${want.until === HEAD_RECORD ? "head record" : "credentials line"} to be compared before`);
+    for (const p of want.pins) {
       assert.ok(compares.some((c) => c.path === p && c.at < until),
-        `${stage} does not compare ${p} by sha256 before it ${stage === "STAGE 0" ? "records the head" : "loads the production credentials"}`);
+        `${name} does not compare ${p} by sha256 before it ${want.until === HEAD_RECORD ? "records the head" : "touches the production credentials"}`);
     }
-    for (const name of vars.keys()) {
-      if (/^SHA/.test(name)) assert.ok(compares.some((c) => c.name === name), `${stage} sets ${name} but never compares it`);
+    for (const v of vars.keys()) {
+      if (/^SHA/.test(v)) assert.ok(compares.some((c) => c.name === v), `${name} sets ${v} but never compares it`);
     }
-    if (stage !== "STAGE 2") {
-      const checksSidecar = lines.some((l) => {
-        const m = /^shasum -a 256 -c (\S+) \|\| \{ echo "STOP: [^"]+"; exit 1; \}$/.exec(l);
-        return m !== null && resolve(m[1]) === SIDECAR_PATH;
-      });
-      assert.ok(checksSidecar, `${stage} does not check the document against ${SIDECAR_PATH}`);
+    const checksSidecar = lines.some((l) => {
+      const m = /^shasum -a 256 -c (\S+) \|\| \{ echo "STOP: [^"]+"; exit 1; \}$/.exec(l);
+      return m !== null && resolve(m[1]) === SIDECAR_PATH;
+    });
+    if (want.sidecar) assert.ok(checksSidecar, `${name} does not check the document against ${SIDECAR_PATH}`);
+    compared[name] = compares;
+  }
+  const first = Object.keys(blocks)[0];
+  const stage0 = found[first];
+  const runsCj = stage0.findIndex((l) => l.startsWith(`node ${CJ_PATH}`));
+  assert.ok(runsCj >= 0, `${first} does not run ${CJ_PATH}`);
+  assert.ok(compared[first].some((c) => c.path === CJ_PATH && c.at < runsCj), `${first} runs ${CJ_PATH} before it compares it`);
+  assert.ok(!stage0.some(CREDENTIALS), `${first} touches the production credentials, and it must read no database`);
+  for (const [name, compares] of Object.entries(compared)) {
+    for (const c of compares) {
+      assert.ok(compared[first].some((z) => z.path === c.path), `${first} does not compare ${c.path}, which ${name} runs: a wrong pin there would halt the sitting only in ${name}`);
     }
   }
 }
@@ -1206,7 +1354,7 @@ function assertDocPins(text, real) {
 /** The facts table quotes each pinned file with its real sha256. */
 function assertFactsQuote(text, real) {
   const rows = text.split("\n").filter((l) => l.startsWith("| "));
-  for (const p of [PENDING_PATH, PRE, POST, VM_PATH, GUARD_PATH]) {
+  for (const p of [PENDING_PATH, PATH_0096, PATH_0097, PRE, POST, VM_PATH, GUARD_PATH, READER_PATH, CJ_PATH]) {
     const quoted = rows.map((l) => l.indexOf(`\`${p}\``)).map((i, n) => (i < 0 ? null : /sha256 `([0-9a-f]{64})`/.exec(rows[n].slice(i))?.[1]))
       .filter((h) => h != null);
     assert.ok(quoted.length > 0, `the facts table does not quote ${p} with its sha256`);
@@ -1226,7 +1374,19 @@ function assertSidecar(text, side) {
   assert.equal(side, `${sha256(text)}  ${DOC_PATH}\n`, `${SIDECAR_PATH} is not the sha256 of ${DOC_PATH}`);
 }
 
-test("the apply document: every block's pin is the real sha256 of its file, compared before the stage loads production credentials", () => {
+test("the migrations 0098 follows, once they are on this branch, are the bytes the pre-check expects production to have applied", () => {
+  assertFollowsOnDisk((p) => (existsSync(join(ROOT, p)) ? fileSha(p) : null));
+});
+
+test("CONTROL follows: 0096 or 0097 on disk with other bytes is red; neither on disk (before the promotion) is green", () => {
+  for (const [path] of FOLLOWS) {
+    red(() => assertFollowsOnDisk((p) => (p === path ? stale(SHA_0097) : null)), new RegExp(`^${path} is on disk and is not the bytes`));
+  }
+  assertFollowsOnDisk(() => null);
+  assertFollowsOnDisk((p) => Object.fromEntries(FOLLOWS)[p]);
+});
+
+test("the apply document: every block's pin is the real sha256 of its file, compared before the block touches production credentials, and stage 0 compares them all", () => {
   assertDocPins(doc, REAL);
 });
 
@@ -1239,61 +1399,72 @@ test("the apply document: the sidecar is the document's sha256", () => {
   assertSidecar(doc, sidecar);
 });
 
-/** The document's lines that set a pin, each once, for the sweep. */
+/** The document's lines that set a pin, for the sweep. */
 const pinLines = () => doc.split("\n").map((l, i) => [l, i]).filter(([l]) => /^SHA[A-Z0-9]*=[0-9a-f]{64}$/.test(l));
 const withLine = (i, to) => doc.split("\n").map((l, n) => (n === i ? to : l)).join("\n");
 const withoutLine = (i) => doc.split("\n").filter((_, n) => n !== i).join("\n");
-const stale = (h) => (h[0] === "0" ? "1" : "0") + h.slice(1);
 
 test("SWEEP apply document: each pin a block sets, made stale in turn, is red on that pin", () => {
   const lines = pinLines();
-  assert.equal(lines.length, 9, `the sweep expects 9 pin lines (stage 0: 1, stage 1: 5, stage 2: 3); found ${lines.length}`);
+  assert.equal(lines.length, 17, `the sweep expects 17 pin lines (stage 0: 8, stage 1: 5, stage 2: 3, the closing read: 1); found ${lines.length}`);
   for (const [l, i] of lines) {
     const [name, value] = l.split("=");
-    red(() => assertDocPins(withLine(i, `${name}=${stale(value)}`), REAL), new RegExp(`^${name} in STAGE \\d is not the sha256 of `));
+    red(() => assertDocPins(withLine(i, `${name}=${stale(value)}`), REAL),
+      new RegExp(`^${name} in (STAGE \\d|THE CLOSING JOURNAL READ) is not the sha256 of `));
   }
 });
 
-test("SWEEP apply document: each sha256 comparison, deleted in turn, is red on that file", () => {
+test("SWEEP apply document: each sha256 comparison, deleted in turn, is red", () => {
+  const at = doc.split("\n").map((l, i) => [l, i]).filter(([l]) => COMPARE.test(l));
+  assert.equal(at.length, 17, `the sweep expects 17 sha256 comparisons; found ${at.length}`);
+  for (const [, i] of at) red(() => assertDocPins(withoutLine(i), REAL), /does not compare .* by sha256 before|sets SHA\w+ but never compares it/);
+});
+
+test("CONTROL apply document: a file only stage 2 compares is red, although stage 2 still compares it in time", () => {
   const all = doc.split("\n");
-  const at = all.map((l, i) => [l, i]).filter(([l]) => COMPARE.test(l));
-  assert.equal(at.length, 9, `the sweep expects 9 sha256 comparisons; found ${at.length}`);
-  for (const [, i] of at) red(() => assertDocPins(withoutLine(i), REAL), /does not compare .* by sha256 before/);
-});
-
-test("CONTROL apply document: stage 1 as it stood before round 2 (no post-check pin) is red; so is a post-check edited on the branch", () => {
-  let old = doc;
-  for (const l of [
-    `SHAPOST=${REAL[POST]}\n`,
-    `test -f ${POST} || { echo "STOP: the post-check is not on disk"; exit 1; }\n`,
-    `[ "$(shasum -a 256 ${POST} | cut -d' ' -f1)" = "\${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }\n`,
-  ]) {
-    const i = old.indexOf(l, old.indexOf("\n## STAGE 1:"));
-    assert.ok(i >= 0 && i < old.indexOf("\n## STAGE 2:"), `the plant did not find stage 1's line: ${l.slice(0, 60)}`);
-    old = old.slice(0, i) + old.slice(i + l.length);
-  }
-  red(() => assertDocPins(old, REAL), new RegExp(`^STAGE 1 does not compare ${POST} by sha256 before it loads the production credentials`));
-  red(() => assertDocPins(doc, { ...REAL, [POST]: stale(REAL[POST]) }), new RegExp(`^SHAPOST in STAGE 1 is not the sha256 of ${POST}`));
+  const s0 = all.findIndex((l) => l.startsWith("## STAGE 0:"));
+  const s1 = all.findIndex((l) => l.startsWith("## STAGE 1:"));
+  const drop = all.map((l, i) => [l, i]).filter(([l, i]) => i > s0 && i < s1 && (l === `SHAPOST=${REAL[POST]}` || (COMPARE.test(l) && l.includes(POST))));
+  assert.equal(drop.length, 2, "the plant did not find stage 0's post-check pin and comparison");
+  const without = all.filter((_, i) => !drop.some(([, j]) => j === i)).join("\n");
+  const lax = { ...BLOCKS, "STAGE 0": { ...BLOCKS["STAGE 0"], pins: BLOCKS["STAGE 0"].pins.filter((p) => p !== POST) } };
+  red(() => assertDocPins(without, REAL, lax), new RegExp(`^STAGE 0 does not compare ${POST}, which STAGE 2 runs`));
+  red(() => assertDocPins(without, REAL), new RegExp(`^STAGE 0 does not compare ${POST} by sha256 before it records the head`));
 });
 
 test("CONTROL apply document: a comparison moved after the credentials, a pin compared under another name, an unset pin and an unused pin are each red", () => {
   const all = doc.split("\n");
-  const s1 = all.indexOf("## STAGE 1: the run window, pre-flight, the queue, the pre-check, apply");
-  const post = all.findIndex((l, i) => i > s1 && l.startsWith(`[ "$(shasum -a 256 ${POST} `));
-  const cred = all.indexOf(CREDENTIALS, s1);
-  assert.ok(s1 >= 0 && post > s1 && cred > post, "the plants did not find stage 1's post-check comparison and credentials line");
-  const moved = [...all.slice(0, post), ...all.slice(post + 1, cred + 1), all[post], ...all.slice(cred + 1)].join("\n");
-  red(() => assertDocPins(moved, REAL), new RegExp(`^STAGE 1 does not compare ${POST} by sha256 before`));
-  red(() => assertDocPins(withLine(post, all[post].replace("${SHAPOST}", "${SHAPRE}")), REAL), new RegExp(`^SHAPRE in STAGE 1 is not the sha256 of ${POST}`));
-  const setAt = all.findIndex((l, i) => i > s1 && l.startsWith("SHAPOST="));
-  red(() => assertDocPins(withoutLine(setAt), REAL), /^STAGE 1 compares .* against \$\{SHAPOST\}, which the block never sets/);
+  const s1 = all.findIndex((l) => l.startsWith("## STAGE 1:"));
+  const at = all.findIndex((l, i) => i > s1 && l.startsWith(`[ "$(shasum -a 256 scripts/db/precheck-0098`));
+  const cred = all.findIndex((l, i) => i > s1 && CREDENTIALS(l));
+  assert.ok(s1 >= 0 && at > s1 && cred > at, "the plants did not find stage 1's pre-check comparison and credentials line");
+  const moved = [...all.slice(0, at), ...all.slice(at + 1, cred + 1), all[at], ...all.slice(cred + 1)].join("\n");
+  red(() => assertDocPins(moved, REAL), new RegExp(`^STAGE 1 does not compare ${PRE} by sha256 before`));
+  red(() => assertDocPins(withLine(at, all[at].replace("${SHAPRE}", "${SHAVM}")), REAL), new RegExp(`^SHAVM in STAGE 1 is not the sha256 of ${PRE}`));
+  const setAt = all.findIndex((l, i) => i > s1 && l.startsWith("SHAPRE="));
+  red(() => assertDocPins(withoutLine(setAt), REAL), /^STAGE 1 compares .* against \$\{SHAPRE\}, which the block never sets/);
   red(() => assertDocPins(withLine(setAt, `${all[setAt]}\nSHAEXTRA=${REAL[PRE]}`), REAL), /^STAGE 1 sets SHAEXTRA but never compares it/);
 });
 
-test("CONTROL apply document: a sidecar check deleted from stage 0 or stage 1 is red", () => {
-  for (const [stage, l] of [["STAGE 0", 'shasum -a 256 -c ${DOCPIN} || { echo "STOP: this document is not the approved one"; exit 1; }'],
-    ["STAGE 1", `shasum -a 256 -c ${SIDECAR_PATH} || { echo "STOP: this document is not the approved one"; exit 1; }`]]) {
-    red(() => assertDocPins(plant(doc, `\n${l}\n`, "\n"), REAL), new RegExp(`^${stage} does not check the document against`));
+test("CONTROL apply document: check-journal run before stage 0 compares it, and stage 0 touching the credentials, are each red", () => {
+  const all = doc.split("\n");
+  const s0 = all.findIndex((l) => l.startsWith("## STAGE 0:"));
+  const cj = all.findIndex((l, i) => i > s0 && COMPARE.test(l) && l.includes(CJ_PATH));
+  const run = all.findIndex((l, i) => i > s0 && l.startsWith(`node ${CJ_PATH}`));
+  assert.ok(s0 >= 0 && cj > s0 && run > cj, "the plants did not find stage 0's check-journal comparison and run");
+  const early = [...all.slice(0, cj), all[run], ...all.slice(cj, run), ...all.slice(run + 1)].join("\n");
+  red(() => assertDocPins(early, REAL), new RegExp(`^STAGE 0 runs ${CJ_PATH} before it compares it`));
+  const cred = withLine(run, `${all[run]}\nset -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport`);
+  red(() => assertDocPins(cred, REAL), /^STAGE 0 touches the production credentials/);
+});
+
+test("CONTROL apply document: a sidecar check deleted from stage 0, 1 or 2 is red", () => {
+  const all = doc.split("\n");
+  for (const stage of ["STAGE 0", "STAGE 1", "STAGE 2"]) {
+    const head = all.findIndex((l) => l.startsWith(`## ${stage}:`));
+    const at = all.findIndex((l, i) => i > head && l.startsWith("shasum -a 256 -c "));
+    assert.ok(head >= 0 && at > head, `the plant did not find ${stage}'s sidecar check`);
+    red(() => assertDocPins(withoutLine(at), REAL), new RegExp(`^${stage} does not check the document against`));
   }
 });
 
@@ -1304,13 +1475,17 @@ test("CONTROL apply document: a stale sha256 in the facts table, an unknown 64-h
     new RegExp(`^the facts table quotes ${PRE} with a sha256 that is not the file's`));
   red(() => assertFactsQuote(plant(doc, preRow, preRow.replace(`sha256 \`${REAL[PRE]}\``, "")), REAL),
     new RegExp(`^the facts table does not quote ${PRE} with its sha256`));
+  const follows = doc.split("\n").find((l) => l.startsWith("| Must follow |"));
+  assert.ok(follows, "the plant did not find the facts table's must follow row");
+  red(() => assertFactsQuote(plant(doc, follows, follows.replace(SHA_0097, stale(SHA_0097))), REAL),
+    new RegExp(`^the facts table quotes ${PATH_0097} with a sha256 that is not the file's`));
   red(() => assertNoOtherHash(`${doc}\nan old pin: ${stale(REAL[POST])}\n`, REAL), /quotes a sha256 that is no pinned file's/);
   red(() => assertSidecar(`${doc} `, sidecar), /is not the sha256 of/);
   red(() => assertSidecar(doc, sidecar.replace(/^[0-9a-f]/, (c) => (c === "0" ? "1" : "0"))), /is not the sha256 of/);
 });
 
 test("GREEN apply document: a prose edit with its sidecar rewritten stays green on every document rule", () => {
-  const edited = plant(doc, "**Apply before merge.**", "**Apply before merge, always.**");
+  const edited = plant(doc, "Narration is `echo`.", "Narration is `echo`, always.");
   assertDocPins(edited, REAL);
   assertFactsQuote(edited, REAL);
   assertNoOtherHash(edited, REAL);
