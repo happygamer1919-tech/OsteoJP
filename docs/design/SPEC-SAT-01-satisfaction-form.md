@@ -221,9 +221,11 @@ depends on the sender (`reply-capability.ts`), which SAT-01 does not change.
 * It is authored as `packages/db/migrations-pending/NEXT-AFTER-0099_sat01_satisfaction_survey.sql`
   (the README's rule: the name says what it must follow, and it carries no
   number of its own). It is promoted to `0100` only when every earlier number
-  in the ruled queue is applied to production and merged; by the owner's apply
-  order of 2026-09-29 ("0098, 0099, 0097, 0096" after ANEXO-LINK) that is after
-  `0096`.
+  in the ruled queue is applied to production and merged. Since the fifth
+  renumbering (2026-09-30) apply order equals file order: `0096` CARE-02a,
+  `0097` the registo write policies, `0098` the staging index, `0099` the
+  grants revoke, then `0100`. (The 2026-09-29 order "0098, 0099, 0097, 0096"
+  named the same four items under their old numbers.)
 * It is rehearsed on the throwaway database at production's position, goes
   through R4, is held unarmed with the `held-for-apply` label and a question
   block, and is applied by GREEN from an apply document with its sha256
