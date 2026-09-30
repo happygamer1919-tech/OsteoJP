@@ -62,9 +62,11 @@ export type SignControl = {
 
 const initialState: SaveState = { ok: false };
 
-function saveFailureReason(result: SaveState | null): string {
+export function saveFailureReason(result: SaveState | null): string {
   if (result?.code === "validation") return s["clinical.validationFailed"];
   if (result?.code === "finalized") return s["clinical.finalized"];
+  // The draft has another author (zeroRowRefusal, records.ts).
+  if (result?.code === "not_author") return s["clinical.notAuthor"];
   return s["clinical.error"];
 }
 
@@ -233,11 +235,7 @@ export function RecordForm({
 
       {state.code && !state.ok && (
         <p role="alert" className="text-sm text-error">
-          {state.code === "validation"
-            ? s["clinical.validationFailed"]
-            : state.code === "finalized"
-              ? s["clinical.finalized"]
-              : s["clinical.error"]}
+          {saveFailureReason(state)}
         </p>
       )}
       {state.ok && <p role="status" className="text-sm text-success">{s["clinical.saved"]}</p>}
