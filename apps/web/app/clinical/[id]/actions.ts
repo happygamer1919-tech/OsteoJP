@@ -258,7 +258,17 @@ export async function confirmSignatureAction(input: {
 
 export async function versionRecordAction(id: string): Promise<void> {
   const ctx = await requireRequestContext();
-  const { id: newId } = await createAddendum(ctx, id);
+  let newId: string;
+  try {
+    ({ id: newId } = await createAddendum(ctx, id));
+  } catch (e) {
+    // A refusal stays on the record with a message, as signing does: chiefly
+    // `not_found` for a patient the caller neither treats nor created, which
+    // createAddendum refuses from this change on (the permission matrix, and
+    // 0097's INSERT policy once applied). Any other fault still throws.
+    if (!isClinicalError(e)) throw e;
+    redirect(`/clinical/${id}?m=err:${e.code}`);
+  }
   revalidatePath(`/clinical/${newId}`);
   redirect(`/clinical/${newId}`);
 }

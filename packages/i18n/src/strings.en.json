@@ -813,6 +813,7 @@
   "clinical.signSavesFirst": "Unsaved changes are saved first; the record is signed only once they are saved.",
   "clinical.signSaveFailed": "The changes could not be saved, so the record was not signed.",
   "clinical.signStale": "The record was changed in the meantime. Nothing was signed: review the current version and sign again.",
+  "clinical.notAuthor": "This record has another author: only the person who wrote it can change, sign or delete it. Nothing was changed.",
   "clinical.signedBy": "Signed by",
   "clinical.signedAt": "Signed at",
   "clinical.newVersion": "New version (addendum)",
