@@ -216,11 +216,12 @@ Checked by the operator before GREEN's BEFORE YOU START. None of these is a bloc
    `Lint + typecheck + test` at its `Test` step, and CI skips every step after it:**
    `Test scripts`, `Gate freeze`, `A GATE-CHANGE pull request is never armed`, the secret
    scan and the board reconcile, read off the job's steps on #1471 and on #1500 alike.
-   Turbo also stops the tests still running when `@osteojp/db#test` fails: on #1471 the
-   `apps/web` and `apps/api` tests (`Tasks: 5 successful, 8 total`), on #1500 the
-   `apps/web` tests (`6 successful, 8 total`). So those gates have not run in CI on either
-   PR, and the freeze's rules B and C, which bind a GATE-CHANGE, never run in CI on #1500
-   before the owner merges it. Each PR's body records the local runs that stand in for
+   Turbo also stops whichever tests are still running when `@osteojp/db#test` fails,
+   which is a race: the `apps/web` tests on every run read so far, and on some runs the
+   `apps/api` tests too (`Tasks: 5 successful, 8 total` on #1471 at `91b06c97`,
+   `6 successful, 8 total` on #1471 at `aee775ba` and on #1500). So those gates have not
+   run in CI on either PR, and the freeze's rules B and C, which bind a GATE-CHANGE, never
+   run in CI on #1500 before the owner merges it. Each PR's body records the local runs that stand in for
    them, all passing but the count arms. CI runs every step on #1471 at step 4 of the
    order, once #1500 is on `main`. What does run to its end in CI reads green: the E2E
    shards and `Validate spec + drift check`. `held-for-apply-blocks-merge` reads red while
@@ -1979,6 +1980,9 @@ the branch: no migration, check file, script, journal entry or test moved.
 - "Before the sitting", item 4: it said every other required check reads green. The count
   failure stops `Lint + typecheck + test` at its `Test` step and CI skips every step after
   it; item 4 now says which, and where the local runs that stand in for them are recorded.
+  Its turbo sentence was corrected once more after `aee775ba`: CI on that head stopped one
+  test package fewer than on `91b06c97`, so which packages turbo stops is a race, and the
+  item now says so.
 - "Before the sitting", item 5: the dispatch carries the held head's sha, filled when the
   head was last reviewed, and SOLO's issue check and GREEN's BEFORE YOU START refuse any
   other head by machine. It said SOLO filled the sha by hand at the sitting.
@@ -1992,5 +1996,5 @@ the branch: no migration, check file, script, journal entry or test moved.
   the apply in with `psql -1`.
 - This subsection.
 
-**Every block is byte-identical to `91b06c97`'s, and so to `1d9ae1ab`'s.** The five fenced
-blocks, cut from both revisions by one script, compare equal one by one.
+**Every block is byte-identical to `aee775ba`'s and `91b06c97`'s, and so to `1d9ae1ab`'s.**
+The five fenced blocks, cut from each revision by one script, compare equal one by one.
