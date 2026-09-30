@@ -1,0 +1,22 @@
+{
+  "id": "agenda.marcar-varias-sessoes",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "stabilize": ["[data-testid=\"agenda-freshness\"] time"],
+  "frames": [
+    {
+      "goto": "/agenda?date=2026-10-06",
+      "do": [
+        { "click": { "role": "button", "nameKey": "agenda.newAppointment" } },
+        { "click": { "labelKey": "lote.checkbox" } },
+        { "scroll": { "role": "button", "nameKey": "lote.generate" } }
+      ],
+      "ready": { "role": "button", "nameKey": "lote.generate" },
+      "annotate": [
+        { "kind": "box", "n": 2, "target": { "labelKey": "lote.everyWeeks" } },
+        { "kind": "box", "n": 3, "target": { "labelKey": "lote.endMode" } },
+        { "kind": "arrow", "n": 4, "target": { "role": "button", "nameKey": "lote.generate" }, "from": "right" }
+      ]
+    }
+  ]
+}

@@ -5,7 +5,7 @@ import { assertCan } from "@osteojp/auth";
 import { locations, patients } from "@osteojp/db";
 import { runScoped, requireRequestContext, type RequestContext } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
-import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scope";
+import { patientLocationScope, therapistPatientReadScope } from "@/lib/patients/scope";
 import { activePatientsOnly } from "@/lib/patients/filters";
 import { escapeLike, parseSearch } from "@/lib/patients/validation";
 import { fullNameMatcher } from "@/lib/patients/name-search";
@@ -29,10 +29,12 @@ import { mark, timed } from "../perf/request-timing";
  * ==========================================================================
  * THE ROLE SCOPE IS UNCHANGED AND IS NOT THIS CARD'S BUSINESS
  * ==========================================================================
- * `therapistPatientScope` and `patientLocationScope` are the same helpers
- * `listPatients` and `searchPatients` already use, ANDed in the same order. A
+ * `therapistPatientReadScope` and `patientLocationScope` are the same helpers
+ * `getPatient` (for a read) and `listPatients` use, ANDed in the same order. A
  * redesign that quietly widened who can see a row would be a security change
- * dressed as a table.
+ * dressed as a table. (CARE-02a moved the therapist arm from
+ * `therapistPatientScope` to the read scope, which adds the care team: that
+ * widening is the owner's ruling for 0098, and it is the only one.)
  */
 
 const PAGE_SIZE = 25;
@@ -156,8 +158,11 @@ function searchMatcher(raw: string): SQL | undefined {
 
 async function scopeConditions(ctx: RequestContext, locationId: string | null) {
   const locIds = await viewerLocationScope(ctx);
+  // CARE-02a: the READ scope. This list and its stat strip are readers, so a
+  // therapist also sees the patients whose care team they are on (0098); the
+  // write paths a row leads to keep the narrow scope on their own.
   const roleScope =
-    therapistPatientScope(ctx, patients.id) ??
+    (await therapistPatientReadScope(ctx, patients.id)) ??
     (locIds ? patientLocationScope(patients.id, locIds) : undefined);
   // The location SELECT narrows within the viewer's own scope; it can never
   // widen it. A located receptionist choosing another clinic gets their own

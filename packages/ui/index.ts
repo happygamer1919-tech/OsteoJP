@@ -68,6 +68,7 @@ export { ErrorState, type ErrorStateProps } from "./src/components/ErrorState";
 export {
   ToastProvider,
   useToast,
+  showToast,
   type ToastProviderProps,
   type ToastOptions,
   type ToastTone,

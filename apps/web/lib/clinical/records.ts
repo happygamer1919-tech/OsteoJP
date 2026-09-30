@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   aiIngestionRequests,
@@ -13,7 +13,11 @@ import {
   users,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
-import { therapistPatientScope } from "@/lib/patients/scope";
+import {
+  therapistPatientReadScope,
+  therapistPatientScope,
+  therapistRegistoWriteScope,
+} from "@/lib/patients/scope";
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
@@ -89,9 +93,29 @@ export type RecordDetail = {
   signedAt: string | null;
   signedByName: string | null;
   updatedAt: string;
+  /** SIGN-CONFIRM: fingerprint of the stored `data` (see `recordDataHash`). */
+  dataHash: string;
   template: { title: Localized | null; schema: unknown } | null;
   attachments: AttachmentItem[];
 };
+
+/**
+ * SIGN-CONFIRM-AND-SAVE-FIRST: the fingerprint of a record's stored content,
+ * `md5(data::text)`. jsonb prints canonically (keys sorted, spacing fixed on the
+ * way in), so unchanged content always reads back with the same fingerprint.
+ *
+ * A sign carries the fingerprint of the content the signer's form last loaded or
+ * saved, and commits only while the row still has it (the predicate is in the
+ * UPDATE itself, so it holds under concurrent writers). That is what stops a
+ * save from another tab, or by another person, landing between the signer's
+ * save and their sign and being signed without being seen.
+ *
+ * A fresh expression per call: a query embeds it, and nothing is shared between
+ * queries.
+ */
+export function recordDataHash(): SQL<string> {
+  return sql<string>`md5(${clinicalRecords.data}::text)`;
+}
 
 export type TemplateOption = { id: string; key: string; title: Localized | null; version: number };
 export type PatientOption = { id: string; fullName: string };
@@ -107,7 +131,10 @@ export async function listRecords(
 ): Promise<RecordListItem[]> {
   assertCan(ctx.role, "clinical_records:read");
   // W10-04: a therapist sees fichas only for their own patients (own-only).
-  const scope = therapistPatientScope(ctx, clinicalRecords.patientId);
+  // CARE-02a: and, as a READ, for the patients whose care team they are on.
+  // clinical_records_select (0098) admits the same set; the INSERT, UPDATE and
+  // DELETE policies do not, so a registo listed here is not one they can edit.
+  const scope = await therapistPatientReadScope(ctx, clinicalRecords.patientId);
   const patientFilter = filter.patientId
     ? eq(clinicalRecords.patientId, filter.patientId)
     : undefined;
@@ -168,7 +195,8 @@ export async function getRecordDetail(
 ): Promise<RecordDetail | null> {
   assertCan(ctx.role, "clinical_records:read");
   // W10-04: a therapist can only open a ficha for one of their own patients.
-  const scope = therapistPatientScope(ctx, clinicalRecords.patientId);
+  // CARE-02a: or, to READ it, a patient whose care team they are on (0098).
+  const scope = await therapistPatientReadScope(ctx, clinicalRecords.patientId);
   return runScoped(ctx, async (tx) => {
     const signer = users;
     const rows = await tx
@@ -193,6 +221,7 @@ export async function getRecordDetail(
         signedByName: signer.fullName,
         createdAt: clinicalRecords.createdAt,
         updatedAt: clinicalRecords.updatedAt,
+        dataHash: recordDataHash(),
         templateTitle: formTemplates.title,
         templateSchema: formTemplates.schema,
       })
@@ -244,6 +273,7 @@ export async function getRecordDetail(
       signedByName: r.signedByName,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
+      dataHash: r.dataHash,
       template: r.formTemplateId
         ? { title: (r.templateTitle as Localized | null) ?? null, schema: r.templateSchema }
         : null,
@@ -276,6 +306,29 @@ export async function getRecordDetail(
  * This is the new-record path only. Existing records pin formTemplateId and are
  * resolved by id elsewhere (immutability) — never through this resolver.
  */
+/**
+ * CARE-02a: may this viewer WRITE to the registo `id`, as well as read it?
+ *
+ * `getRecordDetail` takes the READ scope, so since 0098 a therapist on the care
+ * team opens a colleague's registo. Every registo writer reads its source row
+ * under `therapistRegistoWriteScope` and refuses outside it; this is the same
+ * read, for the page, so the form, Assinar, Nova versao, the review controls
+ * and the attachment upload are not offered where they would refuse. For every
+ * non-therapist the scope is undefined and the answer is simply "the row is
+ * visible", which is what the page assumed before.
+ */
+export async function canWriteRecord(ctx: RequestContext, id: string): Promise<boolean> {
+  assertCan(ctx.role, "clinical_records:read");
+  return runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({ id: clinicalRecords.id })
+      .from(clinicalRecords)
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
+      .limit(1);
+    return rows.length > 0;
+  });
+}
+
 export async function listActiveTemplates(ctx: RequestContext): Promise<TemplateOption[]> {
   assertCan(ctx.role, "clinical_records:read");
   return runScoped(ctx, async (tx) => {
@@ -342,6 +395,9 @@ export async function getFichaMedicaTemplate(
 export async function listPatients(ctx: RequestContext): Promise<PatientOption[]> {
   assertCan(ctx.role, "clinical_records:read");
   // W10-04: the ficha "Paciente" picker offers a therapist only their own patients.
+  // CARE-02a: THE NARROW SCOPE, deliberately. This picker feeds a new registo,
+  // which is a write: clinical_records' INSERT policy still keys on
+  // clinical_therapist_sees_patient(), which 0098 does not touch.
   const scope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, (tx) =>
     tx
@@ -433,14 +489,18 @@ export async function createDraftRecord(
   });
 }
 
+/**
+ * Save a draft's `data`. Returns the fingerprint of the content as stored (with
+ * the episode_date stamp below applied), which a later sign must name.
+ */
 export async function updateRecordData(
   ctx: RequestContext,
   id: string,
   data: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ dataHash: string }> {
   assertCan(ctx.role, "clinical_records:author");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  return runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -449,7 +509,8 @@ export async function updateRecordData(
       })
       .from(clinicalRecords)
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
@@ -480,7 +541,15 @@ export async function updateRecordData(
       if (!result.ok) throw new ClinicalError("validation", result.errors);
     }
 
-    await tx.update(clinicalRecords).set({ data: recordData }).where(eq(clinicalRecords.id, id));
+    const saved = await tx
+      .update(clinicalRecords)
+      .set({ data: recordData })
+      .where(eq(clinicalRecords.id, id))
+      .returning({ dataHash: recordDataHash() });
+    // The row was read above in this transaction; an UPDATE that returns
+    // nothing means it is gone or out of reach now, and nothing was saved.
+    const stored = saved[0];
+    if (!stored) throw new ClinicalError("not_found");
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
       actorUserId: ctx.userId,
@@ -490,6 +559,7 @@ export async function updateRecordData(
       metadata: { fields: Object.keys(recordData) },
       ip,
     });
+    return { dataHash: stored.dataHash };
   });
 }
 
@@ -511,7 +581,8 @@ export async function createAddendum(
         version: clinicalRecords.version,
       })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const s = src[0];
     if (!s) throw new ClinicalError("not_found");
@@ -545,25 +616,52 @@ export async function createAddendum(
   });
 }
 
-/** Sign and lock a draft: status → signed, immutable thereafter (DB trigger). */
-export async function signAndLockRecord(ctx: RequestContext, id: string): Promise<void> {
+/**
+ * Sign and lock a draft: status → signed, immutable thereafter (DB trigger).
+ *
+ * SIGN-CONFIRM-AND-SAVE-FIRST: `expectedDataHash` is the fingerprint of the
+ * content the signer's form last loaded or saved (`recordDataHash`). The sign
+ * commits only while the row is still a draft AND still holds that content, and
+ * both conditions sit in the UPDATE's own WHERE, so they hold against a
+ * concurrent writer, not only against the read above. An UPDATE that matched no
+ * row signed nothing and writes no audit row: before this the row count was not
+ * read, so a sign that lost a race to another sign could still write a second
+ * `clinical_record.sign` audit row and report "signed".
+ */
+export async function signAndLockRecord(
+  ctx: RequestContext,
+  id: string,
+  expectedDataHash: string,
+): Promise<void> {
   assertCan(ctx.role, "clinical_records:sign");
   const ip = await clientIp();
   await runScoped(ctx, async (tx) => {
     const rows = await tx
-      .select({ status: clinicalRecords.status })
+      .select({ status: clinicalRecords.status, dataHash: recordDataHash() })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     const row = rows[0];
     if (!row) throw new ClinicalError("not_found");
     if (row.status !== "draft") throw new ClinicalError("finalized");
+    if (row.dataHash !== expectedDataHash) throw new ClinicalError("stale");
 
     const signedAt = new Date();
-    await tx
+    const signed = await tx
       .update(clinicalRecords)
       .set({ status: "signed", signedBy: ctx.userId, signedAt })
-      .where(and(eq(clinicalRecords.id, id), eq(clinicalRecords.status, "draft")));
+      .where(
+        and(
+          eq(clinicalRecords.id, id),
+          eq(clinicalRecords.status, "draft"),
+          sql`${recordDataHash()} = ${expectedDataHash}`,
+        ),
+      )
+      .returning({ id: clinicalRecords.id });
+    // Something moved between the read and the write (another save, or
+    // another sign): nothing was signed.
+    if (signed.length === 0) throw new ClinicalError("stale");
 
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -593,7 +691,8 @@ export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string):
     const [target] = await tx
       .select({ status: clinicalRecords.status, version: clinicalRecords.version })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     if (!target) throw new ClinicalError("not_found");
     // Only draft / AI-pending (status=draft) is deletable; the trigger blocks the rest.
@@ -669,7 +768,8 @@ export async function annulRecord(
     const [target] = await tx
       .select({ status: clinicalRecords.status })
       .from(clinicalRecords)
-      .where(eq(clinicalRecords.id, id))
+      // CARE-02a: a write, so its source row is read under the pre-0098 reach.
+      .where(and(eq(clinicalRecords.id, id), therapistRegistoWriteScope(ctx)))
       .limit(1);
     if (!target) throw new ClinicalError("not_found");
     if (target.status !== "signed") throw new ClinicalError("not_signed");

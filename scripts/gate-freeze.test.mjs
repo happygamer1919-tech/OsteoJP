@@ -13,7 +13,9 @@
 // stated rather than papered over.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test, { describe } from "node:test";
 
 import {
@@ -22,7 +24,9 @@ import {
   ROOT,
   buildManifest,
   compare,
+  gateFiles,
   globToRegExp,
+  hashAll,
   isGateFile,
   packageScriptsHash,
   readManifest,
@@ -86,6 +90,54 @@ describe("the gate set", () => {
       return !files.some((f) => re.test(f));
     });
     assert.deepEqual(dead, [], "these globs match nothing and are decoration");
+  });
+});
+
+describe("an exact path is pinned even where the walk does not go", () => {
+  test("a gate file under a `build` directory is found, and an edit or a deletion of it is reported", () => {
+    // The walk skips every directory named `build`, and the G1 names check's
+    // module and waiver list live in docs/guide/build. Before gateFiles() read
+    // an exact path directly, `--write` left both out without a word, and a
+    // manifest naming them reported them DELETED on every run. Seeded in a
+    // temporary tree, with a control in the same directory.
+    const root = mkdtempSync(join(tmpdir(), "gate-freeze-"));
+    try {
+      const dir = join(root, "docs", "guide", "build");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "guide-names.mjs"), "export const MAX_RUN = 4;\n");
+      writeFileSync(join(dir, "guide-names-waived.txt"), "# no waiver\n");
+      // CONTROL: a file beside them that the set does not name stays out, so
+      // the direct read did not simply take the whole directory.
+      writeFileSync(join(dir, "capture-guide.mjs"), "// not a gate\n");
+      assert.deepEqual(gateFiles(root), ["docs/guide/build/guide-names-waived.txt", "docs/guide/build/guide-names.mjs"]);
+
+      const pinned = { files: hashAll(root), packageJsonScripts: "pkg" };
+      assert.deepEqual(compare(pinned, hashAll(root), "pkg"), { changed: [], removed: [], added: [], pkgMoved: false });
+
+      // A waiver added: the loosening the pin exists to stop.
+      writeFileSync(join(dir, "guide-names-waived.txt"), `# no waiver\n${"a".repeat(64)}  a chance match\n`);
+      assert.deepEqual(compare(pinned, hashAll(root), "pkg").changed, ["docs/guide/build/guide-names-waived.txt"]);
+
+      rmSync(join(dir, "guide-names.mjs"));
+      assert.deepEqual(compare(pinned, hashAll(root), "pkg").removed, ["docs/guide/build/guide-names.mjs"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("the G1 names check is in the set and pinned: its test, its module and its waiver list", () => {
+    const files = Object.keys(readManifest().files);
+    for (const p of [
+      "apps/web/lib/guide/guide-names.test.ts",
+      "docs/guide/build/guide-names.mjs",
+      "docs/guide/build/guide-names-waived.txt",
+    ]) {
+      assert.ok(isGateFile(p), `${p} must be a gate file`);
+      assert.ok(files.includes(p), `${p} must be pinned in ${MANIFEST_PATH}`);
+    }
+    // CONTROL: the rest of the guide is ordinary work, not frozen.
+    assert.ok(!isGateFile("docs/guide/build/capture-guide.mjs"));
+    assert.ok(!isGateFile("apps/web/lib/guide/guide-lessons.test.ts"));
   });
 });
 

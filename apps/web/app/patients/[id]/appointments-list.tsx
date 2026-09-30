@@ -41,6 +41,7 @@ import {
 } from "@/lib/scheduling/estado-transitions";
 import { correctionTargets, isLegalEstadoCorrection } from "@/lib/scheduling/estado-correction";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
+import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import {
   outsideClinicHoursMessage,
   type ClinicWindowRefusal,
@@ -448,8 +449,8 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
             <span className="font-medium">{s["agenda.conflict"]}</span>
             {conflicts.map((c) => (
               <span key={c.id} className="block text-sm">
-                {[c.patientName, c.room].filter(Boolean).join(" · ")}
-                {c.patientName || c.room ? ": " : ""}
+                {[conflictPatientLabel(c), c.room].filter(Boolean).join(" · ")}
+                {conflictPatientLabel(c) || c.room ? ": " : ""}
                 {formatTimeOfDay(new Date(c.startsAt))}-{formatTimeOfDay(new Date(c.endsAt))}
               </span>
             ))}
@@ -591,8 +592,8 @@ function CorrigirEstadoInline({ appt }: { appt: AgendaAppointment }) {
             <span className="font-medium">{s["agenda.conflict"]}</span>
             {conflicts.map((c) => (
               <span key={c.id} className="block text-sm">
-                {[c.patientName, c.room].filter(Boolean).join(" · ")}
-                {c.patientName || c.room ? ": " : ""}
+                {[conflictPatientLabel(c), c.room].filter(Boolean).join(" · ")}
+                {conflictPatientLabel(c) || c.room ? ": " : ""}
                 {formatTimeOfDay(new Date(c.startsAt))}-{formatTimeOfDay(new Date(c.endsAt))}
               </span>
             ))}
@@ -705,8 +706,8 @@ function RescheduleDrawer({
               <span className="font-medium">{s["agenda.conflict"]}</span>
               {conflicts.map((c) => (
                 <span key={c.id} className="block text-sm">
-                  {[c.patientName, c.room].filter(Boolean).join(" · ")}
-                  {c.patientName || c.room ? ": " : ""}
+                  {[conflictPatientLabel(c), c.room].filter(Boolean).join(" · ")}
+                  {conflictPatientLabel(c) || c.room ? ": " : ""}
                   {formatTimeOfDay(new Date(c.startsAt))}-{formatTimeOfDay(new Date(c.endsAt))}
                 </span>
               ))}

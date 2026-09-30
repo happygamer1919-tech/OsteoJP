@@ -5,6 +5,7 @@ import {
   CalendarClock,
   CalendarCog,
   ChartColumnBig,
+  CircleHelp,
   ClipboardCheck,
   FileText,
   Home,
@@ -81,7 +82,7 @@ const NAV_ICON: Record<string, { icon: LucideIcon; className: string }> = {
   // distinct from the two blues either side of it in the list.
   "/marcacoes": { icon: CalendarClock, className: "text-v2-violet-700" },
   // Comunicações (COMMS-01, owner dispatch 2026-09-14) is the GROUP that holds
-  // Recuperação and Lembretes SMS. It inherits Recuperação's hue, because that
+  // Recuperação, Lembretes SMS and (T5 F4) Respostas SMS. It inherits Recuperação's hue, because that
   // call list is what the entry used to be, and takes a messages glyph because
   // the group is about talking to patients rather than about one call list.
   // /recuperacao keeps its own URL and lights this entry through
@@ -99,6 +100,10 @@ const NAV_ICON: Record<string, { icon: LucideIcon; className: string }> = {
   // Neutral on purpose. Administração is the one destination that is not a
   // subject area, and a hue would claim it was.
   "/admin": { icon: Settings, className: "text-v2-gray-700" },
+  // Ajuda (G1): the staff guide. A question mark is the glyph people already
+  // read as "help", and brown is an unused, measured hue that stays quiet at
+  // the bottom of the list rather than competing with the work surfaces.
+  "/ajuda": { icon: CircleHelp, className: "text-v2-brown-700" },
 };
 
 // Heritage is OsteoJP-tenant-only and opt-in (SPEC §2.2 / §6). No tenant heritage

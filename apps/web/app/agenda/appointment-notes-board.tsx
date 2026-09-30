@@ -4,11 +4,15 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
+import { runAction } from "@/lib/actions/run-action";
+import { useActionOwner } from "@/lib/actions/use-action-owner";
+import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import {
   appendAppointmentNoteAction,
   getAppointmentNotesAction,
 } from "@/lib/patients/actions";
 import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
+import type { DrawerPreload } from "@/lib/scheduling/drawer-preload";
 import { NotesList } from "@/app/patients/[id]/notes-list";
 
 /**
@@ -34,30 +38,70 @@ import { NotesList } from "@/app/patients/[id]/notes-list";
  * (`getAppointmentNotesAction`, which re-applies the therapist own-patient rule)
  * and re-fetched after every append/edit.
  */
-export function AppointmentNotesBoard({ appointmentId }: { appointmentId: string }) {
+export function AppointmentNotesBoard({
+  appointmentId,
+  preload,
+}: {
+  appointmentId: string;
+  /**
+   * SKEW-01 PR 2: the appointment drawer's loader, which reads the thread the
+   * drawer opens with. Optional: the Marcacoes popup and the patient profile
+   * mount this board on its own, and there it fetches as it always has.
+   */
+  preload?: DrawerPreload | null;
+}) {
   const [notes, setNotes] = useState<PatientNoteRevision[] | null>(null);
   const [composing, setComposing] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // SKEW-01: every read and write below goes through runAction, which never
+  // rejects, so none of them can reach the agenda's error boundary any more.
   const reload = useCallback(async () => {
-    const r = await getAppointmentNotesAction(appointmentId);
-    setNotes(r.notes);
+    async function load(): Promise<void> {
+      const out = await runAction(() => getAppointmentNotesAction(appointmentId), {
+        kind: "read",
+        retry: () => void load(),
+      });
+      if (!out.failed) setNotes(out.value.notes);
+    }
+    await load();
   }, [appointmentId]);
 
   useEffect(() => {
     let alive = true;
-    void getAppointmentNotesAction(appointmentId).then((r) => {
-      if (alive) setNotes(r.notes);
+    function load() {
+      void runAction(() => getAppointmentNotesAction(appointmentId), {
+        kind: "read",
+        retry: () => { if (alive) load(); },
+      }).then((out) => {
+        if (alive && !out.failed) setNotes(out.value.notes);
+      });
+    }
+    // SKEW-01 PR 2: inside the drawer the first read is the loader's. Every
+    // reload after an append, an edit or a delete still calls the action.
+    const covered = preload?.take("notes", appointmentId, {
+      value: (r) => {
+        if (alive) setNotes(r.notes);
+      },
+      fallback: () => {
+        if (alive) load();
+      },
     });
+    if (!covered) load();
     return () => {
       alive = false;
     };
-  }, [appointmentId]);
+  }, [appointmentId, preload]);
 
-  function onAdd(e: React.FormEvent) {
-    e.preventDefault();
+  const retryAdd = useLatestCallback(() => onAdd());
+  // The board lives in the drawer: a failed note's toast closes with it
+  // (lib/actions/use-action-owner.ts).
+  const actionOwner = useActionOwner();
+
+  function onAdd(e?: React.FormEvent) {
+    e?.preventDefault();
     setError(null);
     const content = text.trim();
     if (!content) {
@@ -65,7 +109,13 @@ export function AppointmentNotesBoard({ appointmentId }: { appointmentId: string
       return;
     }
     startTransition(async () => {
-      const r = await appendAppointmentNoteAction(appointmentId, content);
+      const out = await runAction(() => appendAppointmentNoteAction(appointmentId, content), {
+        kind: "write",
+        retry: retryAdd,
+        owner: actionOwner,
+      });
+      if (out.failed) return;
+      const r = out.value;
       if (!r.ok) {
         setError(s["errors.generic"]);
         return;

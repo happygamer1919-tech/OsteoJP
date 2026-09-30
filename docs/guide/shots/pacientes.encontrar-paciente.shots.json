@@ -1,0 +1,16 @@
+{
+  "id": "pacientes.encontrar-paciente",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "frames": [
+    {
+      "goto": "/patients",
+      "do": [{ "scroll": { "role": "link", "nameKey": "patients.new" } }],
+      "ready": { "fieldKey": "patients.filterSearchLabel" },
+      "annotate": [
+        { "kind": "box", "n": 1, "target": { "fieldKey": "patients.filterSearchLabel" } },
+        { "kind": "box", "n": 2, "target": { "fieldKey": "patients.filterLocationLabel" } }
+      ]
+    }
+  ]
+}

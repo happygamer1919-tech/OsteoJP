@@ -4,10 +4,11 @@ import { can } from "@osteojp/auth";
 import { Banner } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
-import { getRecordDetail, getFichaMedicaTemplate } from "@/lib/clinical/records";
+import { canWriteRecord, getRecordDetail, getFichaMedicaTemplate } from "@/lib/clinical/records";
 import { partitionNarrativeEdit } from "@/lib/clinical/review-fields";
 import { parseTemplateSchema } from "@/lib/clinical/form-template";
 import { projectAiPayloadOntoFichaFields } from "@/lib/clinical/ficha-medica";
+import { sameRecordData } from "@/lib/clinical/sign-sequence";
 import { ReviewEditor } from "./ReviewEditor";
 import { FichaReviewEditor } from "./FichaReviewEditor";
 import { saveNarrativeAction, saveFichaReviewAction, finalizeAction } from "../actions";
@@ -29,12 +30,27 @@ function reviewStateLabel(state: string | null): string {
   }
 }
 
+/**
+ * The message for a finalize that did not happen. `finalizeAction` has always
+ * redirected here with `?m=<code>` on a refusal, and nothing read it, so a
+ * refused Finalizar looked like a button that did nothing.
+ */
+function finalizeErrorText(m: string | undefined): string | null {
+  if (!m) return null;
+  if (m === "stale") return s["clinical.signStale"];
+  if (m === "finalized") return s["clinical.finalized"];
+  return s["review.error"];
+}
+
 export default async function ReviewDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ recordId: string }>;
+  searchParams: Promise<{ m?: string }>;
 }) {
   const { recordId } = await params;
+  const { m } = await searchParams;
   const ctx = await requireRequestContext();
   if (!can(ctx.role, "clinical_records:review")) redirect("/clinical");
 
@@ -43,17 +59,34 @@ export default async function ReviewDetailPage({
   // Only a draft under review is editable here; a finalized record lives in the
   // normal clinical viewer (immutable, rule #4).
   if (record.status !== "draft") redirect(`/clinical/${recordId}`);
+  // CARE-02a: getRecordDetail takes the care-team READ scope (0098), so a
+  // therapist on the patient's care team can open a colleague's draft here.
+  // Every action this page offers (save ficha, edit narrative, finalize) reads
+  // its registo under therapistRegistoWriteScope and refuses that reader. This
+  // page is nothing but those actions, so a reader who cannot write is sent to
+  // the registo viewer, which shows the draft read-only (clinical/[id]/page.tsx
+  // asks canWriteRecord too). Always true for a role the therapist scope does
+  // not narrow.
+  if (!(await canWriteRecord(ctx, recordId))) redirect(`/clinical/${recordId}`);
 
+  const finalizeError = finalizeErrorText(m);
   const header = (
-    <div className="flex items-center justify-between">
-      <div>
-        <h2 className="text-base font-semibold">{s["review.detailTitle"]}</h2>
-        <p className="text-sm text-text-secondary">{record.patientName}</p>
+    <>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold">{s["review.detailTitle"]}</h2>
+          <p className="text-sm text-text-secondary">{record.patientName}</p>
+        </div>
+        <Link href="/clinical/review" className="text-sm underline">
+          {s["review.back"]}
+        </Link>
       </div>
-      <Link href="/clinical/review" className="text-sm underline">
-        {s["review.back"]}
-      </Link>
-    </div>
+      {finalizeError && (
+        <p role="alert" className="text-sm text-error">
+          {finalizeError}
+        </p>
+      )}
+    </>
   );
 
   /* -------------------------------------------------------------------- */
@@ -122,6 +155,13 @@ export default async function ReviewDetailPage({
           initialData={projected}
           saveAction={saveFichaReviewAction.bind(null, recordId)}
           finalizeAction={finalizeAction.bind(null, recordId)}
+          dataHash={record.dataHash}
+          // SIGN-CONFIRM-AND-SAVE-FIRST: the editor draws the PROJECTION, and the
+          // template is bound only by a save. Until a save has stored both,
+          // what the reviewer sees is not what a finalize would sign (a finalize
+          // without one signed the raw payload with no template), so the form
+          // counts as unsaved and Finalizar saves it first.
+          startsUnsaved={record.formTemplateId == null || !sameRecordData(projected, record.data)}
           patientSex={record.patientSex}
           patientId={record.patientId}
           reviewStateLabel={reviewStateLabel(record.aiReviewState)}
@@ -146,6 +186,7 @@ export default async function ReviewDetailPage({
         initialNarrative={narrative}
         saveAction={saveNarrativeAction.bind(null, recordId)}
         finalizeAction={finalizeAction.bind(null, recordId)}
+        dataHash={record.dataHash}
       />
     </section>
   );

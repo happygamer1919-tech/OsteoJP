@@ -1,0 +1,15 @@
+{
+  "id": "inicio.mudar-nome-ou-palavra-passe",
+  "profile": "rececao",
+  "sizes": ["390", "desktop"],
+  "frames": [
+    {
+      "goto": "/perfil",
+      "ready": { "labelKey": "profile.nameLabel" },
+      "annotate": [
+        { "kind": "box", "n": 1, "target": { "labelKey": "profile.nameLabel" } },
+        { "kind": "arrow", "n": 2, "target": { "role": "button", "nameKey": "profile.save" }, "from": "right" }
+      ]
+    }
+  ]
+}

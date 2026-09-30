@@ -7,10 +7,20 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+
+import {
+  appendToStack,
+  createToastLifecycle,
+  createToasterRegistry,
+  pickRegionParent,
+  type Toaster,
+} from "./toast-store";
 
 /**
  * Toast — SPEC-foundation §4.9.
@@ -22,7 +32,8 @@ import {
  * error toasts carry role="alert" so they announce assertively. At most 3 stack
  * (the oldest is dropped). Enter/exit slide+fade at --duration-base.
  *
- * Wrap the app in <ToastProvider> and call `useToast()` to push toasts.
+ * Wrap the app in <ToastProvider> and call `useToast()` to push toasts. Code
+ * that is not a component calls `showToast()` instead (see below).
  *
  * @example
  * const toast = useToast();
@@ -43,13 +54,18 @@ export interface ToastOptions {
   action?: ToastAction;
   /** Auto-dismiss delay in ms (default 5000). */
   duration?: number;
+  /**
+   * Called ONCE when the toast leaves, for whatever reason: its timeout, its X,
+   * its action, being pushed out of the stack by a newer toast, being closed
+   * by the function `showToast` returned, or its provider unmounting.
+   */
+  onClose?: () => void;
 }
 
 interface ToastRecord extends ToastOptions {
   id: number;
 }
 
-const MAX_STACK = 3;
 const DEFAULT_DURATION = 5000;
 
 const TONE_ICON = { success: Check, error: CircleAlert, info: Info } as const;
@@ -67,8 +83,117 @@ export function useToast(): (options: ToastOptions) => void {
   return ctx;
 }
 
+/**
+ * SKEW-01 - EVERY MOUNTED PROVIDER, MOST RECENTLY MOUNTED LAST.
+ *
+ * `useToast` throws without a provider above it, and it is a hook, so code that
+ * is not a component (the server-action wrapper in apps/web) cannot use it at
+ * all. `showToast` is the non-throwing accessor for that code: it pushes into
+ * the provider mounted last and returns a function that closes that toast, or
+ * `null` when no provider is mounted, so the caller decides what a page with no
+ * provider gets. The rules are in toast-store.ts and proven by its test.
+ */
+const registry = createToasterRegistry<ToastOptions>();
+
+export function showToast(options: ToastOptions): (() => void) | null {
+  return registry.show(options);
+}
+
 const cx = (...c: Array<string | false | null | undefined>): string =>
   c.filter(Boolean).join(" ");
+
+/**
+ * SKEW-01 - THE REGION LIVES IN THE TOP LAYER, INSIDE THE TOPMOST MODAL.
+ *
+ * Drawer and Dialog open with `showModal()`, which makes everything outside the
+ * dialog INERT. A region rendered in the page therefore sat UNDER the drawer and
+ * its backdrop: a toast raised while a drawer was open was covered, and its
+ * action button could not be clicked or focused. Measured on 2026-09-27 in
+ * Chromium, Firefox and WebKit through Playwright: a popover outside an open
+ * modal dialog is inert in all three, and the same popover appended INSIDE the
+ * dialog is hit-testable, focusable, clickable and still positioned against the
+ * viewport.
+ *
+ * So the region is a `popover="manual"` element this provider owns (created
+ * imperatively, because React must never see its own node moved) and portalled
+ * into. The classes reset the popover's UA styles (margin, border, background,
+ * overflow, inset, size) and otherwise keep the old region's placement.
+ *
+ * WHERE IT GOES: INTO A MODAL ONLY FOR A TOAST RAISED IN THAT MODAL. Each toast
+ * remembers the topmost modal that was open when it was raised (its origin).
+ * The region sits in the topmost OPEN modal that is the origin of a toast on
+ * screen, and in the body otherwise. A toast raised in a drawer (a failed save's
+ * "Tentar novamente") is therefore on top of it and clickable; when that drawer
+ * closes the region returns to the body, and a drawer opened AFTER a toast was
+ * raised stays above it, as every modal did before SKEW-01. The first version
+ * followed whichever modal was topmost: the "Marcação guardada" toast of one
+ * save was carried into the next drawer the user opened, sat over its
+ * "Guardar", and hovering it to click paused its dismissal (measured on the
+ * blue lane, 2026-09-27: scheduling.spec.ts reschedule, 231 blocked clicks).
+ * A nested dialog (the drawer's discard Dialog) is a DOM descendant of its
+ * drawer and therefore later in document order, which is also the order they
+ * are shown in.
+ */
+const REGION_CLASS =
+  "pointer-events-none fixed inset-x-0 top-auto bottom-0 z-50 m-0 flex h-auto w-auto flex-col items-stretch gap-2 overflow-visible border-0 bg-transparent p-4 text-inherit sm:inset-x-auto sm:bottom-4 sm:right-4 sm:items-end";
+
+function topmostModalDialog(): HTMLDialogElement | null {
+  const open = document.querySelectorAll("dialog[open]");
+  for (let i = open.length - 1; i >= 0; i -= 1) {
+    const d = open[i] as HTMLDialogElement;
+    let modal = true;
+    try {
+      modal = d.matches(":modal");
+    } catch {
+      // A browser without `:modal` gets the open dialog, which is the only kind
+      // this repository opens.
+    }
+    if (modal) return d;
+  }
+  return null;
+}
+
+/**
+ * The topmost open modal that is the origin of a toast on screen, or the body.
+ * A closed or unmounted origin no longer counts (toast-store.ts, pickRegionParent).
+ */
+function regionParent(origins: Iterable<Element | null>): HTMLElement {
+  return pickRegionParent(document.querySelectorAll<HTMLDialogElement>("dialog[open]"), origins) ?? document.body;
+}
+
+/** Puts the region where it belongs now. True when it had to move. */
+function placeRegion(host: HTMLElement, origins: Iterable<Element | null>): boolean {
+  const parent = regionParent(origins);
+  // Moving a showing popover hides it, so it is re-shown below.
+  const moved = host.parentElement !== parent;
+  if (moved) parent.appendChild(host);
+  if (!host.hasAttribute("popover") || typeof host.showPopover !== "function") return moved;
+  try {
+    if (!host.matches(":popover-open")) host.showPopover();
+  } catch {
+    // Not connected, or no popover support: it stays a fixed element.
+  }
+  return moved;
+}
+
+/**
+ * A live region has to be in the accessibility tree BEFORE its content changes,
+ * or a screen reader may announce nothing: moving the region is a removal and a
+ * re-insertion, and a polite (role="status") toast inserted in the same frame as
+ * the move can go unannounced. So a toast that needs the region moved first
+ * waits one frame (with a timer as the backstop, because a hidden tab runs no
+ * animation frames).
+ */
+function afterRegionSettles(fn: () => void): void {
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    fn();
+  };
+  requestAnimationFrame(run);
+  setTimeout(run, 100);
+}
 
 export interface ToastProviderProps {
   children: ReactNode;
@@ -78,29 +203,102 @@ export interface ToastProviderProps {
 
 export function ToastProvider({ children, regionLabel = "Notificações" }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
-  const idRef = useRef(0);
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  const hostRef = useRef<HTMLElement | null>(null);
+  /**
+   * Every toast pushed and not yet closed, and the modal it was raised in (null:
+   * the page). Its onClose fires as it leaves. See toast-store.ts.
+   */
+  const [store] = useState(() => createToastLifecycle<ToastOptions, Element>());
 
-  const dismiss = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  const close = useCallback(
+    (id: number) => {
+      store.release(id);
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    },
+    [store],
+  );
+
+  const toast = useCallback(
+    (options: ToastOptions): number => {
+      const id = store.open(options, topmostModalDialog());
+      const add = () => {
+        // Closed before it was ever added (see afterRegionSettles).
+        if (!store.isLive(id)) return;
+        setToasts((prev) => appendToStack(prev, { ...options, id }));
+      };
+      const el = hostRef.current;
+      if (el && placeRegion(el, store.origins())) afterRegionSettles(add);
+      else add();
+      return id;
+    },
+    [store],
+  );
+
+  const toaster = useMemo<Toaster<ToastOptions>>(() => ({ push: toast, close }), [toast, close]);
+
+  // Registered in a LAYOUT effect so a provider mounted with flushSync is
+  // reachable through `showToast` the moment the render returns.
+  useLayoutEffect(() => registry.register(toaster), [toaster]);
+
+  // A toast pushed out of the stack by a newer one leaves without passing
+  // through `close`, so its onClose fires here. Only ids a committed render has
+  // already reached count: a toast pushed a moment ago whose render has not
+  // committed yet is still on its way, not gone.
+  useEffect(() => {
+    store.committed(toasts.map((t) => t.id));
+  }, [toasts, store]);
+
+  // Leaving the page (or the provider) closes whatever is still up.
+  useEffect(() => () => store.releaseAll(), [store]);
+
+  useEffect(() => {
+    const el = document.createElement("div");
+    el.className = REGION_CLASS;
+    el.setAttribute("aria-live", "polite");
+    el.setAttribute("data-toast-region", "");
+    if (typeof el.showPopover === "function") el.setAttribute("popover", "manual");
+    document.body.appendChild(el);
+    hostRef.current = el;
+    setHost(el);
+    return () => {
+      hostRef.current = null;
+      el.remove();
+    };
   }, []);
 
-  const toast = useCallback((options: ToastOptions) => {
-    const id = (idRef.current += 1);
-    setToasts((prev) => [...prev, { ...options, id }].slice(-MAX_STACK));
-  }, []);
+  useEffect(() => {
+    host?.setAttribute("aria-label", regionLabel);
+  }, [host, regionLabel]);
+
+  // Place the region before paint, and follow its origin dialogs closing or
+  // being unmounted for as long as a toast is on screen. A new toast places the
+  // region itself first (toast() above).
+  useLayoutEffect(() => {
+    if (!host) return;
+    const place = () => {
+      placeRegion(host, store.origins());
+    };
+    place();
+    if (toasts.length === 0) return;
+    const observer = new MutationObserver(place);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["open"],
+    });
+    return () => observer.disconnect();
+  }, [host, toasts, store]);
 
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      <div
-        aria-live="polite"
-        aria-label={regionLabel}
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-stretch gap-2 p-4 sm:inset-x-auto sm:bottom-4 sm:right-4 sm:items-end"
-      >
-        {toasts.map((t) => (
-          <ToastItem key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
-        ))}
-      </div>
+      {host &&
+        createPortal(
+          toasts.map((t) => <ToastItem key={t.id} toast={t} onDismiss={() => close(t.id)} />),
+          host,
+        )}
     </ToastContext.Provider>
   );
 }
