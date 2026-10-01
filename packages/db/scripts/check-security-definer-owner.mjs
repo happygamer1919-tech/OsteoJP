@@ -131,8 +131,24 @@ export const EXPECTED_OWNER = "postgres";
  * #1471 merges. Between this merge and #1471's, main's own count reads red
  * (the seeded database and the derived set hold 26, this says 27): one red run,
  * accepted by the ruling.
+ *
+ * 27 -> 28 with migration 0097 (the registo write policies, ruled 0099 on
+ * 2026-09-27 and renumbered 0097 on 2026-09-30, promoted on PR #1475):
+ * `public.claim_ai_draft_authorship(uuid)`, the review claim of an
+ * AI-ingested draft that nobody has authored yet. It writes one column, in
+ * one direction (a NULL `practitioner_id` becomes the caller), in one state
+ * (a `pending_review` draft), for a therapist who sees the patient. It carries
+ * its own `ALTER FUNCTION ... OWNER TO postgres` in 0097, and EXECUTE is
+ * granted to `authenticated` only (PUBLIC, `anon` and `service_role` are
+ * revoked by name in the same migration). 0097 adds no other definer, so the
+ * sum is 27 + 1.
+ *
+ * THE ORDER is 0096's: GREEN applies 0097 from #1475's held head FIRST; then
+ * this change merges; then main is merged into #1475 and #1475 merges. Between
+ * this merge and #1475's, main's own count reads red (the seeded database and
+ * the derived set hold 27, this says 28): one red run, accepted by the ruling.
  */
-export const EXPECTED_COUNT = 27;
+export const EXPECTED_COUNT = 28;
 
 /**
  * The verdict, as a pure function of the catalog rows.

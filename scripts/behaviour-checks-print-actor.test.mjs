@@ -66,6 +66,15 @@ export const FILES = {
   "scripts/db/behaviour-conflict-name-readonly.sql": PICKED_OR_PASSED,
   // 0094 (held): the users/tenants/roles policy split. Passed in, like rgpd.
   "scripts/db/behaviour-users-tenants-roles-readonly.sql": ["passed in with -v actor_id"],
+  // 0097 (held): three actors, each passed; the file reads itself once per
+  // actor (the shape of 0096's behaviour-care02a-readonly.sql), so its one
+  // ACTOR line prints once per actor, and each slot names the variable it
+  // came from.
+  "scripts/db/behaviour-registo-writes-readonly.sql": [
+    "passed in with -v t1_id",
+    "passed in with -v t2_id",
+    "passed in with -v t3_id",
+  ],
 };
 
 /** Per file, the exact trimmed lines that may name a personal column. See the header. */
