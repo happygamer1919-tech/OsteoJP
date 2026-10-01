@@ -1482,6 +1482,11 @@ Proved the same way as before, on the lines cut from this revision, with only `T
 
 Stages 0 and 1 pass `zsh -n`. Stages 2 and 3 and the closing read are unchanged.
 
+## Corrected 2026-10-02: the owner's ruling was at 16:13, not 16:10; and the 2026-10-01 bytes had no review round
+
+- **The time.** The owner's message of 2026-10-01 is timestamped **16:13:42 Lisbon** in the session record. This document says "16:10" in the section above and in the OVERRIDE lines it added to stages 0 and 1. That was SOLO rounding, not a clock reading. Those lines are in the blocks GREEN ran on production at 16:28 to 16:32 Lisbon that day, so they are NOT edited: they are the record of what ran. Read "16:10" in them as 16:13. The two board cards are corrected (#1516). The 0097, 0098 and 0099 GREEN dispatches carry the same 16:10; they have been run, and they stay as they were.
+- **The review.** The bytes changed in `ac96d859` (the date 20261001 added to the clock arms of stages 0 and 1 and to stage 1's clinic arm) had **no R4 round**. They were proved on the cut lines only, as the section above says, and GREEN ran them because the owner said to start at once. Strategy's ruling R8 of 2026-10-01 (dispatch S-1002-A) closes that: "a document amended for an owner override gets one R4 round on the changed bytes before the READY line. "Start now" from the owner does not waive it."
+
 ## Changed after the owner's override, 2026-09-30: the clock and clinic checks, two blocks
 
 The owner ruled at 13:13 Lisbon that 0096 to 0099 run that day "despite the current clinic
