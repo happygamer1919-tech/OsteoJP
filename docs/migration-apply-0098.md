@@ -776,6 +776,60 @@ not a regression.
 | a second apply is a no-op | **the rehearsal only** (applied twice, the index fingerprint identical). drizzle never runs a hash it holds again, so production cannot show it | the migration file |
 | the ledger probe of `importerSourcedRecordSql` switches from a Seq Scan to an Index Scan | **the rehearsal only** (the plan, below, under RLS and without it) | the planner |
 
+## The whole blocks on the promoted head, rehearsed 2026-10-01 17:32 to 17:37 Lisbon
+
+This is step 4 of NOT READY. A separate rehearsal agent, whose prompt carried the lead's
+standing rule verbatim ("A script's own REFUSE or STOP line is a halt, the same as a harness
+refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A
+block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says
+so."), ran every block WHOLE from the promoted head `cb36beb9`:
+- the dispatch's BEFORE YOU START;
+- stage 0;
+- the dispatch's CLOCK CHECK;
+- stages 1 and 2;
+- the closing read.
+
+**The throwaway.** A local Supabase stack (project `r0098wb`, Postgres 17.6) at production's
+position:
+- main's 95 migrations, 0000 to 0097, and a drizzle journal of 95 rows (max when
+  1788501800000);
+- the ledger fixture this document describes: 20,000 rows, 18,000 with a target, 4,000 of
+  them `clinical_record`, then ANALYZE.
+
+**The origin.** This document's blocks run from `origin/main` at #1469's merge commit, which
+cannot exist before the merge. So the clone's origin was a LOCAL bare repository whose `main`
+is the promoted head, as this document's own smoke run did. No URL was edited and no guard was
+involved: it stands in for the state after the merge, and every git line of every block ran
+unchanged against it.
+
+**The substitutions, and nothing else:**
+- the apply worktree's `cd`;
+- the `/tmp/0098-` paths;
+- the production env source, to a file holding only the throwaway URL (127.0.0.1, no query
+  string);
+- the target guard, to an assertion of the throwaway's host and port. The real guard ran once
+  first and refused: `REFUSING: project ref is "postgres", not the production project.`;
+- the dispatch's `MERGED`, to the promoted head.
+
+| block | exit | last line |
+|---|---|---|
+| BEFORE YOU START | 2 | **the reader REFUSED the throwaway: NOT REHEARSED from the journal read on.** Every check before the read passed: main head, the merge commit check, worktree clean, the document and sidecar `b82268ee...`, and all eight pins. |
+| (the start records, the read and its check left out) | 0 | `BEFORE YOU START: every check passed, and the journal reads 95.` That line asserts nothing here, since no read ran. The throwaway's journal read 95 rows by psql. |
+| STAGE 0 | 0 | `0098 PROMOTION, NUMBER AND FILES VERIFIED` (journal idx 95, when 1788501900000; check-journal 96 of 96) |
+| CLOCK CHECK | 0 | `CLOCK: inside the run window, ... Paste stage 1 now.` (window 202610011600 202610012059 202610012130) |
+| STAGE 1 | 0 | `0098 APPLIED. Paste stage 2 now.` Pre-check `20 OK / 0 VACUOUS / 0 FAIL`. verified-migrate through pnpm and drizzle-kit: `pending 1 [0098_migration_staging_imported_entity_idx]`, `journal 95 -> 96 (delta 1)`, present by sha256. |
+| STAGE 2 | 0 | `0098 POST-CHECK PASSED. pre-check 20 OK / 0 VACUOUS / 0 FAIL, post-check 17 OK / 0 VACUOUS / 0 FAIL, journal 95 to 96.` |
+| THE CLOSING READ | 2 | **the reader REFUSED the throwaway: the journal read is NOT REHEARSED.** The run-window line and the reader's sha256 line printed first. |
+
+**The lock and its length, re-measured.** Stage 1 as a whole took about 2 s of wall time. The
+same index shape, built three times inside a rolled-back transaction at 20,000 rows, took
+17.3, 5.7 and 5.6 ms. pg_locks read a ShareLock on `migration_staging_rows` each time, which
+agrees with "The lock, and how long it is held".
+
+**NOT REHEARSED, and why.** The journal reader (`packages/db/scripts/read-applied-migrations.mjs`,
+pinned `867e2823...`) refuses any target that is not production. The same pinned reader ran
+both reads on production in 0097's sitting of 2026-10-01 (journal 94, then 95).
+
 ## Rehearsed on 2026-09-30: the check files, a control arm for every verdict, and the lock
 
 **Where it ran.** A throwaway container started for this rehearsal, `r98-reh`, on
