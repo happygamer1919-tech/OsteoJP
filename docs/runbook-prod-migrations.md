@@ -285,20 +285,35 @@ turn that failure into a sentence naming the cause instead of a mystery.
 Before this, exit 5's state was indistinguishable from success. That is the state
 that cost 0038–0041, 0049 and 0058.
 
-**From 0100 on, exit 4 with NOTHING printed can also be a timeout firing.** Every
+**From 0100 on, an exit 4 can be a timeout firing, and it looks like every other failing statement.** Every
 migration numbered 0100 or higher starts with `SET LOCAL lock_timeout = '5s'` and
 `SET LOCAL statement_timeout = '60s'` (`scripts/migration-timeouts.test.mjs`, the
-lead's ruling (b) of 2026-10-01). When either fires, Postgres cancels the statement
-("canceling statement due to lock timeout" or "... statement timeout"), drizzle's
-single transaction rolls back, the journal does not move and NOTHING IS APPLIED. But
-drizzle-kit 0.31.10 then exits 1 and prints nothing (measured on a throwaway, R4 of
-#1510), so `verified-migrate.mjs` reports "IT PRINTED NOTHING. That is POST-01" and
-names the pooler. Read that message as two candidates, not one: the POST-01 causes
-it lists, OR a lock or statement timeout. The sitting stops either way (the halt
-rule); a timeout is the safe failure, and whether to re-run, when, or with a ruled
-longer bound is the lead's call. The message itself names only POST-01 until
-`verified-migrate.mjs` is next changed, which is a GATE-CHANGE once #1508 lands,
-because #1508 pins its bytes in `scripts/verified-migrate.test.mjs`.
+lead's ruling (b) of 2026-10-01). When either fires, Postgres cancels the statement,
+drizzle's single transaction rolls back, the journal does not move and NOTHING IS
+APPLIED. What the operator then sees, read from drizzle-kit 0.31.10's migrate handler
+(it runs the migration inside hanji's `renderWithTask`, whose catch writes the spinner
+line and calls `process.exit(1)` without printing the error) and measured on a refused
+local connection by R4 round 2 of #1510:
+- `verified-migrate.mjs` prints `FAIL: drizzle-kit migrate exited 1.` and exits **4**;
+- the reprinted stdout carries drizzle-kit's banner (`No config path provided…`,
+  `Reading config file…`, `Using 'postgres' driver for database querying`), the
+  spinner line `[⣷] applying migrations...`, and pnpm's
+  `[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: drizzle-kit migrate`;
+  stderr is empty;
+- **no Postgres error text appears**, so the words "lock timeout" or "statement
+  timeout" are NOT on screen;
+- `verified-migrate.mjs`'s "IT PRINTED NOTHING. That is POST-01" hint does **not**
+  appear either, because stdout is not empty.
+
+**That same face belongs to EVERY statement that fails inside drizzle-kit migrate:** a
+timeout, a syntax error, a privilege error, a refused connection. So an exit 4 from 0100
+on says "the migration failed and was rolled back", never which cause. The sitting stops
+(the halt rule), nothing is applied, and the cause is found afterwards, READ ONLY, never
+by re-running the apply. Whether to re-run, when, or with a ruled longer bound is the
+lead's call. `verified-migrate.mjs` itself is unchanged here: a change to it is a
+GATE-CHANGE once #1508 lands, because #1508 pins its bytes in
+`scripts/verified-migrate.test.mjs` (card `VM-observer-gate-change-pair` carries the
+message fix).
 
 ### Proved before it was made compulsory
 

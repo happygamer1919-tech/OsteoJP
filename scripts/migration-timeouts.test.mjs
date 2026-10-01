@@ -18,13 +18,14 @@
 //
 // THE VALUES. They are the lead's to change: one line here, in a GATE-CHANGE once
 // the manifest freezes this file.
-//   statement_timeout '60s', FROM THE SITTINGS. In each of the 0096, 0097, 0098
-//     and 0099 sittings of 2026-09-30 and 2026-10-01, the time from the last
-//     pre-apply transcript to the end of /tmp/NNNN-apply.out was 3 s (file
-//     mtimes, one-second resolution). That envelope holds node's start, the
+//   statement_timeout '60s', FROM THE SITTINGS. The time from the last pre-apply
+//     transcript to the applied marker, read from the sittings' file mtimes on the
+//     apply machine (one-second resolution): 0094 4 s or less (2026-09-29), 0095
+//     7 s or less (2026-09-29), and 3 s each for 0096, 0097, 0098 and 0099
+//     (2026-09-30 and 2026-10-01). That envelope holds node's start, the
 //     connection, drizzle-kit and every statement, 0098's index build over 117,314
-//     ledger rows included. 60 s is twenty times it. The 0094 and 0095 transcripts
-//     were no longer on the apply machine. A table rewrite, a backfill UPDATE or a
+//     ledger rows included. 60 s is about eight and a half times the longest (7 s):
+//     a margin chosen, not measured. A table rewrite, a backfill UPDATE or a
 //     constraint validation on the largest table is what could outgrow it.
 //   lock_timeout '5s', A JUDGMENT, NOT A MEASUREMENT. Nothing in those sittings
 //     measured a lock wait. A migration that cannot take its lock in 5 s fails,
@@ -37,25 +38,32 @@
 //   Both bounds are per statement. Neither limits how long the locks a statement
 //     took are held: all are held until the single COMMIT of the pending set.
 //
-// WHAT IS REFUSED, BEYOND A MISSING LINE. A later statement that touches either
-// setting (SET, RESET, set_config, an EXECUTEd string), RESET ALL or DISCARD, and
-// any transaction control (BEGIN, COMMIT, ROLLBACK, END, ABORT, START
-// TRANSACTION, SAVEPOINT, RELEASE, PREPARE TRANSACTION): each would undo the
-// bounds or end the transaction that carries them. A migration that needs a
-// longer bound for one statement asks the lead for a ruled exception; it does not
-// override the bound silently.
+// WHAT IS REFUSED, BEYOND A MISSING LINE, in any letter case. A later statement
+// that touches either setting (SET, RESET, set_config, an EXECUTEd string; it also
+// refuses a string literal that merely names one, which is loud and harmless);
+// RESET ALL and every DISCARD; and all transaction control (BEGIN, COMMIT,
+// ROLLBACK, END, ABORT, START TRANSACTION, SAVEPOINT, RELEASE, PREPARE
+// TRANSACTION). Some of these undo a bound or end the transaction that carries
+// them (RESET ALL, DISCARD ALL, COMMIT, ROLLBACK, END, ABORT, PREPARE
+// TRANSACTION); the rest only warn or do nothing inside drizzle's one transaction
+// (BEGIN, SAVEPOINT, RELEASE, the narrower DISCARDs). None has a place in a
+// migration, so the rule refuses them all rather than reason about each. A
+// migration that needs a longer bound for one statement asks the lead for a
+// ruled exception; it does not override the bound silently.
 //
 // WHAT IS IN SCOPE, FAILING CLOSED. In packages/db/migrations: every `.sql` file
 // (any case) whose leading number is 100 or more, or that has no leading number at
 // all; and every `.sql` file there must carry the strict name NNNN_lowercase.sql,
 // so a name the scope rule might misread is refused rather than skipped. In
-// packages/db/migrations-pending: every `.sql` file, and no subfolder. Files
+// packages/db/migrations-pending: every `.sql` file, and no subfolder. A symbolic
+// link in either folder is refused: drizzle would read the file it points at,
+// wherever that is. Files
 // numbered below 0100 are NOT changed and NOT checked for the lines: they are
 // applied, and their bytes are what every apply document pins.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -89,15 +97,29 @@ export function inScope(dir, file) {
   return n === null || n >= FIRST;
 }
 
+/** drizzle's chunk separator. drizzle-orm's migrator splits each file on this literal text, wherever it stands. */
+const MARKER = "--> statement-breakpoint";
+
 /**
- * The statements of a SQL file, normalised: comments removed by a scanner that
- * knows single-quoted strings ('' escapes), double-quoted names, dollar quotes
- * and NESTED block comments (Postgres nests them); a carriage return counts as
- * whitespace; split on `;` outside quotes; whitespace collapsed; empty statements
- * dropped; each ending in its own `;`. drizzle's `--> statement-breakpoint`
- * marker is a line comment.
+ * The statements of a SQL file, as the applier reads it. First the file is split
+ * on drizzle's marker exactly as drizzle-orm's migrator splits it: on the literal
+ * text, wherever it stands, so SQL after a marker on the same line is the start of
+ * the next chunk and RUNS (it is not a comment). Then each chunk is scanned as
+ * Postgres reads it: line comments; NESTED block comments (Postgres nests them);
+ * single-quoted strings ('' escapes); E'' strings (backslash escapes too);
+ * double-quoted names; dollar quotes, $$ or $tag$, opened only where a `$` does
+ * not follow an identifier character (`a$$` is a name, not a quote); a carriage
+ * return as whitespace; split on `;` outside quotes; whitespace collapsed; empty
+ * statements dropped; each ending in its own `;`.
  */
 export function statementsOf(sql) {
+  return sql.split(MARKER).flatMap((chunk) => scanChunk(chunk));
+}
+
+const IDENT = /[A-Za-z0-9_$\u0080-\uffff]/;
+
+/** The statements of one chunk, scanned as Postgres reads them (see statementsOf). */
+function scanChunk(sql) {
   const stmts = [];
   let cur = "";
   let i = 0;
@@ -130,6 +152,27 @@ export function statementsOf(sql) {
       cur += " ";
       continue;
     }
+    const prev = i > 0 ? sql[i - 1] : "";
+    if ((c === "E" || c === "e") && d === "'" && !IDENT.test(prev)) {
+      let j = i + 2;
+      while (j < n) {
+        if (sql[j] === "\\") {
+          j += 2;
+          continue;
+        }
+        if (sql[j] === "'") {
+          if (sql[j + 1] === "'") {
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        j++;
+      }
+      cur += sql.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
     if (c === "'") {
       let j = i + 1;
       while (j < n) {
@@ -153,7 +196,7 @@ export function statementsOf(sql) {
       i = end;
       continue;
     }
-    if (c === "$") {
+    if (c === "$" && !IDENT.test(prev)) {
       const m = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i, i + 64));
       if (m) {
         const j = sql.indexOf(m[0], i + m[0].length);
@@ -192,9 +235,9 @@ export function timeoutProblems(sql) {
     if (i >= REQUIRED.length && TOUCHES_A_BOUND.test(s)) {
       problems.push(`statement ${i + 1} touches lock_timeout or statement_timeout after the top: ${s.slice(0, 80)}`);
     }
-    if (UNDOES_SETTINGS.test(s)) problems.push(`statement ${i + 1} resets every setting: ${s.slice(0, 80)}`);
+    if (UNDOES_SETTINGS.test(s)) problems.push(`statement ${i + 1} is RESET ALL or DISCARD, which has no place in a migration: ${s.slice(0, 80)}`);
     if (TRANSACTION_CONTROL.test(s)) {
-      problems.push(`statement ${i + 1} is transaction control, which ends or splits the transaction carrying the bounds: ${s.slice(0, 80)}`);
+      problems.push(`statement ${i + 1} is transaction control, which has no place inside drizzle's one transaction: ${s.slice(0, 80)}`);
     }
   });
   return problems;
@@ -204,6 +247,10 @@ export function timeoutProblems(sql) {
 export function scan(root) {
   const out = [];
   for (const entry of readdirSync(join(root, PROMOTED_DIR), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isSymbolicLink()) {
+      out.push([`${PROMOTED_DIR}/${entry.name}`, ["a symbolic link in the migrations folder: drizzle would read the file it points at"]]);
+      continue;
+    }
     if (!entry.isFile() || !isSql(entry.name)) continue;
     const problems = [];
     if (!STRICT_NAME.test(entry.name)) problems.push(`the name is not NNNN_lowercase.sql, so the scope rule could misread it`);
@@ -211,6 +258,10 @@ export function scan(root) {
     if (problems.length > 0 || inScope(PROMOTED_DIR, entry.name)) out.push([`${PROMOTED_DIR}/${entry.name}`, problems]);
   }
   for (const entry of readdirSync(join(root, PENDING_DIR), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isSymbolicLink()) {
+      out.push([`${PENDING_DIR}/${entry.name}`, ["a symbolic link in migrations-pending: the file it points at would be promoted unread"]]);
+      continue;
+    }
     if (entry.isDirectory()) {
       out.push([`${PENDING_DIR}/${entry.name}/`, ["a subfolder in migrations-pending: pending files sit flat, where this rule reads them"]]);
       continue;
@@ -302,6 +353,48 @@ test("CONTROL: comments the old stripper misread are read as Postgres reads them
   // A `--` inside a string opens no comment, so the SET after it on the same line runs: refused.
   const quoted = `${GOOD}\n--> statement-breakpoint\nCOMMENT ON TABLE public.example IS 'x -- y'; SET statement_timeout = 0;`;
   assert.equal(timeoutProblems(quoted).length, 1, "a SET hidden behind a -- inside a string");
+});
+
+test("CONTROL: SQL after a breakpoint marker on the same line runs in drizzle, so it is read, not skipped", () => {
+  // drizzle-orm's migrator splits on the literal marker; the rest of that line is the next chunk.
+  assert.equal(timeoutProblems(`${GOOD}\n--> statement-breakpoint RESET ALL;`).length, 1, "a RESET ALL after a marker on its line");
+  assert.ok(timeoutProblems(`--> statement-breakpoint ALTER TABLE public.example ADD COLUMN x int;\n${GOOD}`).length >= 2, "an ALTER before the lines, after a marker on its line");
+  assert.deepEqual(statementsOf(`SELECT 1;--> statement-breakpoint SELECT 2;`), ["SELECT 1;", "SELECT 2;"]);
+});
+
+test("CONTROL: each quoting form is read as Postgres reads it, so nothing after it hides", () => {
+  const after = (tail) => timeoutProblems(`${GOOD}\n--> statement-breakpoint\n${tail}`).length;
+  // An E'' string whose backslash escapes a quote: the string ends at the real quote, and the COMMIT after it is seen.
+  assert.equal(after("COMMENT ON TABLE public.example IS E'it\\'s'; COMMIT;"), 1, "COMMIT after an E'' string with an escaped quote");
+  // A $ inside a name opens no dollar quote, so the COMMIT between two such names is seen.
+  assert.equal(after("SELECT 1 AS x$$; COMMIT; SELECT 1 AS y$$;"), 1, "COMMIT between names ending in $$");
+  // A -- inside a double-quoted name opens no comment, so the COMMIT after it is seen.
+  assert.equal(after('CREATE TABLE public."a--b" (id int); COMMIT;'), 1, "COMMIT after a double-quoted name holding --");
+  // A tagged dollar quote holds its own ; and keywords: the body is one statement and is not refused.
+  assert.equal(after("DO $fn$ BEGIN RAISE NOTICE 'a; b'; END $fn$;"), 0, "a $fn$ body with ; and BEGIN/END inside");
+  // ...and the statement after a tagged dollar quote is seen.
+  assert.equal(after("DO $fn$ BEGIN PERFORM 1; END $fn$; COMMIT;"), 1, "COMMIT after a $fn$ body");
+});
+
+test("CONTROL: letter case does not matter to the refusals, and every transaction-control word is refused", () => {
+  const after = (tail) => timeoutProblems(`${GOOD}\n--> statement-breakpoint\n${tail}`).length;
+  for (const tail of ["commit;", "Reset All;", "discard plans;", "abort;", "release s1;", "prepare transaction 'x';", "Start Transaction;", "savepoint s1;", "set local LOCK_TIMEOUT = 0;"]) {
+    assert.equal(after(tail), 1, `not refused: ${tail}`);
+  }
+  // The two lines themselves are matched exactly, case included: a lowercase line at the top is refused.
+  assert.equal(timeoutProblems(GOOD.replace(REQUIRED[0], REQUIRED[0].toLowerCase())).length, 1, "a lowercase first line");
+});
+
+test("CONTROL: a symbolic link in either folder is refused, whatever it points at", () => {
+  withRoot((root) => {
+    const target = join(root, "elsewhere.sql");
+    writeFileSync(target, GOOD);
+    symlinkSync(target, join(root, PROMOTED_DIR, "0100_linked.sql"));
+    symlinkSync(target, join(root, PENDING_DIR, "NEXT-AFTER-0100_linked.sql"));
+    const result = Object.fromEntries(scan(root));
+    assert.equal(result[`${PROMOTED_DIR}/0100_linked.sql`].length, 1);
+    assert.equal(result[`${PENDING_DIR}/NEXT-AFTER-0100_linked.sql`].length, 1);
+  });
 });
 
 test("GREEN: comments, blank lines, breakpoints, CRLF, quotes and spacing around correct lines are accepted", () => {
