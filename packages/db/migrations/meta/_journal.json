@@ -652,6 +652,27 @@
       "when": 1788501600000,
       "tag": "0095_conflict_name_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1788501700000,
+      "tag": "0096_care02a_care_team_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1788501800000,
+      "tag": "0097_clinical_records_write_matrix",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1788501900000,
+      "tag": "0098_migration_staging_imported_entity_idx",
+      "breakpoints": true
     }
   ]
 }

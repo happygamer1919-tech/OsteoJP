@@ -119,6 +119,12 @@ d("CARE-02a: the care team reads the ficha and the registos (0098)", () => {
   let state: import("./care-team-0098-state").Care0098State;
   /** The answer the database owes: `applied` with 0098, `before` without it. */
   const owed = <T,>(applied: T, before: T): T => (state.applied ? applied : before);
+  /**
+   * Whether 0097 (the registo write policies) is applied: its claim function
+   * exists. 0097 narrows clinical_records_insert so a therapist files only in
+   * their OWN name, which changes the one arm below that files under another's.
+   */
+  let applied0097 = false;
 
   const tenant = randomUUID();
   const loc = randomUUID();
@@ -274,6 +280,11 @@ d("CARE-02a: the care team reads the ficha and the registos (0098)", () => {
 
     state = await (await import("./care-team-0098-state")).care0098State(db);
     console.warn(`[care-team-reads.db.test] ${state.detail}`);
+    const [fn] = rowsOf(
+      await db.execute(raw`select to_regprocedure('public.claim_ai_draft_authorship(uuid)') is not null as present`),
+    ) as Array<{ present: boolean }>;
+    applied0097 = fn?.present === true;
+    console.warn(`[care-team-reads.db.test] 0097 (registo write policies) ${applied0097 ? "applied" : "not applied"}`);
   });
 
   afterAll(async () => {
@@ -411,12 +422,17 @@ d("CARE-02a: the care team reads the ficha and the registos (0098)", () => {
      * The helper arm is the one a care-team disjunct would have widened, and it
      * is reached by filing under ANOTHER practitioner's name: T2 (who treats)
      * is admitted that way, T1 and T3 are not.
+     *
+     * 0097 (the registo write policies, applied 2026-10-01) removes that path:
+     * a therapist files ONLY in their own name. With 0097, T2 is refused too,
+     * so the arm reads 0097's rule; T1 and T3 are refused either way, which is
+     * what this test exists to show (the care team adds nothing).
      */
-    it("INSERT: the care team adds nothing. Filing under another therapist's name: T2 admitted, T1 and T3 refused", async () => {
+    it("INSERT: the care team adds nothing. Filing under another therapist's name: T2 admitted before 0097 and refused with it, T1 and T3 refused", async () => {
       const fileAs = (author: string) =>
         raw`insert into clinical_records (tenant_id, patient_id, practitioner_id, status)
             values (${tenant}::uuid, ${patient}::uuid, ${author}::uuid, 'draft')`;
-      expect(await outcome(t2, "therapist", fileAs(t3))).toBe("admitted");
+      expect(await outcome(t2, "therapist", fileAs(t3))).toBe(applied0097 ? "refused" : "admitted");
       expect(await outcome(t1, "therapist", fileAs(t2))).toBe("refused");
       expect(await outcome(t3, "therapist", fileAs(t2))).toBe("refused");
     });
