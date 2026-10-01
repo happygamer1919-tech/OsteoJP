@@ -20,12 +20,12 @@
 // the manifest freezes this file.
 //   statement_timeout '60s', FROM THE SITTINGS. The time from the last pre-apply
 //     transcript to the applied marker, read from the sittings' file mtimes on the
-//     apply machine (one-second resolution): 0094 4 s or less (2026-09-29), 0095
-//     7 s or less (2026-09-29), and 3 s each for 0096, 0097, 0098 and 0099
-//     (2026-09-30 and 2026-10-01). That envelope holds node's start, the
-//     connection, drizzle-kit and every statement, 0098's index build over 117,314
-//     ledger rows included. 60 s is about eight and a half times the longest (7 s):
-//     a margin chosen, not measured. A table rewrite, a backfill UPDATE or a
+//     apply machine (one-second resolution, so a reading of N s means under
+//     N + 1 s): 0094 4 s (2026-09-29), 0095 7 s (2026-09-29), and 3 s each for
+//     0096, 0097, 0098 and 0099 (2026-09-30 and 2026-10-01). Each envelope holds
+//     node's start, the connection, drizzle-kit and every statement, 0098's index
+//     build over 117,314 ledger rows included, so no statement ran 8 s. 60 s is
+//     about seven and a half times that bound: a margin chosen, not measured. A table rewrite, a backfill UPDATE or a
 //     constraint validation on the largest table is what could outgrow it.
 //   lock_timeout '5s', A JUDGMENT, NOT A MEASUREMENT. Nothing in those sittings
 //     measured a lock wait. A migration that cannot take its lock in 5 s fails,
@@ -35,13 +35,16 @@
 //     instead of waiting (Supabase's documented default for `anon` is 3 s; this
 //     project's role settings were not read): one more reason sittings run while
 //     the clinics are closed.
-//   Both bounds are per statement. Neither limits how long the locks a statement
-//     took are held: all are held until the single COMMIT of the pending set.
+//   statement_timeout bounds each statement; lock_timeout bounds each attempt to
+//     take a lock, so a statement taking several locks can wait up to 5 s on each.
+//     Neither limits how long the locks taken are held: all are held until the
+//     single COMMIT of the pending set.
 //
 // WHAT IS REFUSED, BEYOND A MISSING LINE, in any letter case. A later statement
-// that touches either setting (SET, RESET, set_config, an EXECUTEd string; it also
-// refuses a string literal that merely names one, which is loud and harmless);
-// RESET ALL and every DISCARD; and all transaction control (BEGIN, COMMIT,
+// whose text names either setting (SET, RESET, set_config, ALTER ROLE/DATABASE/
+// FUNCTION ... SET, UPDATE pg_settings, an EXECUTEd string; it also refuses a
+// string literal that merely names one, which is loud and harmless); RESET ALL
+// anywhere, inside a DO body or an EXECUTEd string included, and every DISCARD; and all transaction control (BEGIN, COMMIT,
 // ROLLBACK, END, ABORT, START TRANSACTION, SAVEPOINT, RELEASE, PREPARE
 // TRANSACTION). Some of these undo a bound or end the transaction that carries
 // them (RESET ALL, DISCARD ALL, COMMIT, ROLLBACK, END, ABORT, PREPARE
@@ -50,6 +53,10 @@
 // migration, so the rule refuses them all rather than reason about each. A
 // migration that needs a longer bound for one statement asks the lead for a
 // ruled exception; it does not override the bound silently.
+// WHAT NO STATIC RULE CAN SEE: the match is on the text as written, so a setting
+// name built at run time (concatenation, format(), a name spelled with E'' or
+// U&"" escapes inside an EXECUTEd string) is not seen. Review is what catches that;
+// this rule makes the plain and the accidental forms impossible.
 //
 // WHAT IS IN SCOPE, FAILING CLOSED. In packages/db/migrations: every `.sql` file
 // (any case) whose leading number is 100 or more, or that has no leading number at
@@ -105,7 +112,7 @@ const MARKER = "--> statement-breakpoint";
  * on drizzle's marker exactly as drizzle-orm's migrator splits it: on the literal
  * text, wherever it stands, so SQL after a marker on the same line is the start of
  * the next chunk and RUNS (it is not a comment). Then each chunk is scanned as
- * Postgres reads it: line comments; NESTED block comments (Postgres nests them);
+ * Postgres reads it: line comments, ended by LF or a lone CR as Postgres ends them; NESTED block comments (Postgres nests them);
  * single-quoted strings ('' escapes); E'' strings (backslash escapes too);
  * double-quoted names; dollar quotes, $$ or $tag$, opened only where a `$` does
  * not follow an identifier character (`a$$` is a name, not a quote); a carriage
@@ -133,7 +140,7 @@ function scanChunk(sql) {
     const c = sql[i];
     const d = sql[i + 1];
     if (c === "-" && d === "-") {
-      while (i < n && sql[i] !== "\n") i++;
+      while (i < n && sql[i] !== "\n" && sql[i] !== "\r") i++;
       cur += " ";
       continue;
     }
@@ -219,7 +226,7 @@ function scanChunk(sql) {
 }
 
 const TOUCHES_A_BOUND = /\b(lock_timeout|statement_timeout)\b/i;
-const UNDOES_SETTINGS = /^(RESET\s+ALL|DISCARD)\b/i;
+const UNDOES_SETTINGS = /\bRESET\s+ALL\b|^DISCARD\b/i;
 const TRANSACTION_CONTROL = /^(BEGIN|COMMIT|ROLLBACK|END|ABORT|START\s+TRANSACTION|SAVEPOINT|RELEASE|PREPARE\s+TRANSACTION)\b/i;
 
 /** Why a migration in scope fails the rule, or [] when it passes. */
@@ -383,6 +390,28 @@ test("CONTROL: letter case does not matter to the refusals, and every transactio
   }
   // The two lines themselves are matched exactly, case included: a lowercase line at the top is refused.
   assert.equal(timeoutProblems(GOOD.replace(REQUIRED[0], REQUIRED[0].toLowerCase())).length, 1, "a lowercase first line");
+});
+
+test("CONTROL: the gaps R4 round 3 named are closed", () => {
+  const after = (tail) => timeoutProblems(`${GOOD}\n--> statement-breakpoint\n${tail}`).length;
+  // Postgres ends a line comment at a lone CR too, so the COMMIT after it runs: refused.
+  assert.equal(after("-- a note\rCOMMIT;"), 1, "a COMMIT after a comment ended by a lone CR");
+  // RESET ALL reverts both bounds wherever it runs: inside a DO body, or an EXECUTEd string.
+  assert.equal(after("DO $$ BEGIN RESET ALL; END $$;"), 1, "RESET ALL inside a DO body");
+  assert.equal(after("DO $$ BEGIN EXECUTE 'RESET ALL'; END $$;"), 1, "RESET ALL in an EXECUTEd string");
+  // A setting changed by something other than SET is refused by its name.
+  assert.equal(after("ALTER ROLE authenticated SET statement_timeout = 0;"), 1, "ALTER ROLE ... SET");
+  assert.equal(after("UPDATE pg_settings SET setting = '0' WHERE name = 'lock_timeout';"), 1, "UPDATE pg_settings");
+  // U&'' strings and U&"" names use the same quote-doubling rule, so what follows them is seen.
+  assert.equal(after("SELECT U&'d\\0061t\\+000061'; COMMIT;"), 1, "COMMIT after a U&'' string");
+  assert.equal(after('CREATE TABLE public.U&"d\\0061t" (id int); COMMIT;'), 1, "COMMIT after a U&\"\" name");
+  withRoot((root) => {
+    writeFileSync(join(root, PROMOTED_DIR, "no_number.sql"), GOOD);
+    writeFileSync(join(root, PROMOTED_DIR, "10000_five_digits.sql"), "REVOKE MAINTAIN ON public.example FROM authenticated;");
+    const result = Object.fromEntries(scan(root));
+    assert.equal(result[`${PROMOTED_DIR}/no_number.sql`].length, 1, "an unnumbered file is read, and refused for its name");
+    assert.equal(result[`${PROMOTED_DIR}/10000_five_digits.sql`].length, 3, "a five-digit file is read: its name and both missing lines");
+  });
 });
 
 test("CONTROL: a symbolic link in either folder is refused, whatever it points at", () => {
