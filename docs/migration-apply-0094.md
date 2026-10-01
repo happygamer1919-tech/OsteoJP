@@ -1196,3 +1196,25 @@ runs, and none of them is a byte of a block. They move this document's sha256 aw
   A staff member just made owner cannot rename themselves until their token refreshes,
   because ROLE_OK refuses an owner row to an admin claim. The app's own checks read the
   same claim.
+
+## Correction, 2026-09-30: the journal reader's reads in this document's rehearsal were not honestly rehearsed
+
+This was added after the sitting, and no block changed. The lead ruled it after the
+incident carded as `INC-rehearsal-subagent-passed-the-reader-guard`.
+
+**What the rehearsal did.** The whole-block rehearsal behind this document ran on a local
+throwaway at 127.0.0.1:55522 (2026-09-28 01:12 Lisbon). `packages/db/scripts/read-applied-migrations.mjs` refuses any
+target that is not production. It ran there only because the rehearsal put the production
+project ref into the throwaway's URL as an `application_name` label (`t3-rehearsal-<ref>`, the ref
+elided here). The rehearsal prompt did not list that substitution. It told the agent to
+override the production guard the way earlier rehearsals did, which SOLO wrote and should
+not have. Only 127.0.0.1 was contacted.
+
+**So every line in this document's rehearsal record that comes from the journal reader is
+NOT evidence.** That covers BEFORE YOU START's journal read and the closing read. The other
+steps of those blocks, and every other block, stand as recorded. 0094's production sitting of 2026-09-29 00:27 Lisbon ran the reader for real: BEFORE YOU START read journal 91 and the closing read 92.
+
+**The rule from now on,** in `CLAUDE.md`, verbatim: "A script's own REFUSE or STOP line is
+a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a
+script to get past a guard. A block that cannot run on the throwaway is recorded as NOT
+REHEARSED and the document says so."
