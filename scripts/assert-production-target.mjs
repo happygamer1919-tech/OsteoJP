@@ -18,7 +18,8 @@
 // FROM THE STRING IT PRINTS HOST, PORT AND PROJECT REF. NOTHING ELSE, EVER.
 // The connection string is read from the environment and never echoed, never
 // logged, never included in an error. The ref is the part of the username after
-// the last dot, which is how Supabase's pooler names the project; it is not a
+// the last dot, which is how Supabase's pooler names the tenant when no startup
+// `options` names another (see scripts/production-target.mjs); it is not a
 // credential.
 //
 // WHY THE PORT MATTERS AS MUCH AS THE REF. drizzle-kit needs SESSION-level
@@ -56,12 +57,14 @@ if (!raw) {
   process.exit(2);
 }
 
-// THE ENVIRONMENT CAN REDIRECT psql PAST THE URL. libpq reads PGHOSTADDR, PGSERVICE
-// and PGSERVICEFILE from the shell that runs psql after this guard, and any of them
-// can send the connection somewhere the URL does not name. A production sitting
+// THE ENVIRONMENT CAN REDIRECT psql PAST THE URL. libpq reads PGHOSTADDR, PGSERVICE,
+// PGSERVICEFILE and PGOPTIONS from the shell that runs psql after this guard. The
+// first three can send the connection somewhere the URL does not name, and
+// PGOPTIONS can carry `reference=<other>`, which Supabase's pooler reads as the
+// tenant before the username. A production sitting
 // sets none of them, so a set one is refused. NAMES ONLY: the value is never read
 // into a message.
-for (const name of ["PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE"]) {
+for (const name of ["PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE", "PGOPTIONS"]) {
   if ((process.env[name] ?? "") !== "") {
     console.error(`REFUSING: ${name} is set, and psql would use it instead of the URL this guard checks. Unset it.`);
     process.exit(2);

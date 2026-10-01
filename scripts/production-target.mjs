@@ -45,7 +45,11 @@
 //              parses to <host> in new URL() and to ["127.0.0.1", "y@<host>"]
 //              in postgres.js, which tries 127.0.0.1 first.
 //   ref        The part of the username after its last `.` is the production
-//              project ref. That is how Supabase's pooler names the project.
+//              project ref. Supabase's pooler (Supavisor) names the tenant by it
+//              UNLESS a startup `options` carries `reference=<other>`, which it
+//              reads first (handler_helpers.ex, parse_user_info). So `options`
+//              is refused as a query key below and PGOPTIONS by the target guard,
+//              which leaves the username's suffix as the only tenant selector.
 //   host       The host is the production session pooler, compared exactly
 //              and without regard to letter case.
 //   port       5432, the session pooler. drizzle-kit needs SESSION advisory
@@ -54,8 +58,9 @@
 //              followed by a query, and there is no `#` anywhere. new URL()
 //              drops a `#` fragment from the path; libpq does not.
 //   query      No query key names a connection target: host, hostaddr, port,
-//              dbname, database, user or service (postgres.js sends any key it
-//              does not know, `database` included, as a startup parameter), compared after decoding and without
+//              dbname, database, user, service or options (postgres.js sends any
+//              key it does not know as a startup parameter, and Supavisor reads a
+//              tenant from `options`), compared after decoding and without
 //              regard to case. libpq applies those OVER the URL's own parts, so
 //              `...:5432/postgres?hostaddr=127.0.0.1` would check as production
 //              and connect to 127.0.0.1. Any other key (sslmode,
@@ -88,7 +93,7 @@ export const PRODUCTION = Object.freeze({
 });
 
 /** Query keys libpq would apply over the URL's own host, port, database or user. */
-export const TARGET_QUERY_KEYS = Object.freeze(["host", "hostaddr", "port", "dbname", "database", "user", "service"]);
+export const TARGET_QUERY_KEYS = Object.freeze(["host", "hostaddr", "port", "dbname", "database", "user", "service", "options"]);
 
 /**
  * Why a string was refused, one sentence per check, NAMING NO VALUE FROM THE
@@ -177,7 +182,10 @@ export function checkProductionTarget(raw) {
 
   // database
   const wanted = `/${PRODUCTION.database}`;
-  if (url.pathname !== wanted || rest.split("?")[0] !== wanted || raw.includes("#")) return refuse("database");
+  // The raw path compare is the check: new URL() normalises "/x/../postgres" to /postgres, libpq does
+  // not. A compare of url.pathname as well can no longer be reached once the raw text and "#" are
+  // checked, and a check no input can reach cannot be pinned, so it is not kept (as with the raw host).
+  if (rest.split("?")[0] !== wanted || raw.includes("#")) return refuse("database");
 
   // query
   for (const key of url.searchParams.keys()) {
