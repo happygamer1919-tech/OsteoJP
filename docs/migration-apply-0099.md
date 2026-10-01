@@ -1,11 +1,11 @@
 # 0099: apply the TRUNCATE, TRIGGER, REFERENCES revoke from `authenticated`
 
-**NOT READY. OPTION 1 IS RULED (the lead, 2026-09-30). It waits on 0096, 0097 and 0098 applied and merged, the promotion, and the whole-block rehearsal on the promoted head.**
+**NOT READY until #1397 is merged and GREEN's dispatch carries its merge sha. OPTION 1 IS RULED (the lead, 2026-09-30). 0096, 0097 and 0098 are applied and merged; 0099 is promoted (`45f1d564`, 2026-10-01) and its whole blocks are rehearsed on the promoted head (see "Rehearsal").**
 
-**Status: NOT READY. NOT PROMOTED. NOT APPLIED.** One migration, today the pending file
-`packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql`,
-which the promotion renames, byte for byte, to
-`packages/db/migrations/0099_revoke_truncate_trigger_references.sql`. It is applied from
+**Status: PROMOTED. NOT APPLIED.** One migration,
+`packages/db/migrations/0099_revoke_truncate_trigger_references.sql`, which the promotion of
+2026-10-01 renamed, byte for byte, from the pending file
+`packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql`. It is applied from
 `origin/main` at #1397's merge commit, after #1397 has merged. Five blocks, each pasted
 whole, on its own and in order: stage 0 (the promotion, the files and the head it runs
 from), stage 1 (the HEAD CHECK, the pre-check, the behaviour check BEFORE and the apply),
@@ -39,11 +39,17 @@ migrations"). The lane that wrote this document never runs it.
    record the acceptance. **This document prepares option 1, exactly as #1397 builds it.**
    A ruling of 2 or 3 retires this document: option 2 needs a different migration body
    and new check files, and option 3 needs no migration.
-2. **0096, 0097 and 0098 are applied to production and merged, in that order** (the fifth
+2. **DONE 2026-10-01.** 0096 applied 2026-09-30 16:08 Lisbon (#1471, merged `774ddd2f`), 0097
+   applied 2026-10-01 16:31 (#1475, merged `977ddd07`), 0098 applied 2026-10-01 18:23 (#1469,
+   merged `2a69ed03`). Production reads journal 96. As first written, this step read:
+   **0096, 0097 and 0098 are applied to production and merged, in that order** (the fifth
    renumbering: apply order equals file order). One migration is in flight at a time, so
    0099 is not promoted until 0098 is applied and #1469 is merged. Production then reads
    journal 96 (`0000` to `0098`; the numbering has gaps).
-3. **SOLO promotes 0099 on this branch, `sec/B10-revoke-truncate-trigger-references`:**
+3. **DONE 2026-10-01 at `45f1d564`:** `origin/main` merged in at `e3acc13d`; the rename, bytes
+   `fbc5e545…` unchanged; journal `idx 96`, `when` 1788502000000 (0098's plus 100000); the
+   mirror; check-journal 97 of 97; the README row Promoted. As first written:
+   **SOLO promotes 0099 on this branch, `sec/B10-revoke-truncate-trigger-references`:**
    merge `origin/main` in (no rebase); `git mv` the pending file to
    `packages/db/migrations/0099_revoke_truncate_trigger_references.sql` (a rename, not one
    byte changed: sha256 `fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b`
@@ -54,18 +60,26 @@ migrations"). The lane that wrote this document never runs it.
    `scripts/check-journal.mjs` refuses one); run `node scripts/sync-supabase-migrations.mjs`
    for the mirror; run `node scripts/check-journal.mjs` (97 files, 97 entries); move the
    README row into the Promoted table.
-4. **SOLO re-reads every pin against the promoted head,** because three may move before
+4. **DONE 2026-10-01:** every pin below re-read against `45f1d564` and unchanged. The lead
+   ruled on 2026-10-01: "0098 and 0099 keep their current pins (bcc43dfb, 867e2823, ea0902f8),
+   no re-pin before 0100." This document's own sha256 moves with each record added here; its
+   sidecar and GREEN's dispatch move with it. As first written:
+   **SOLO re-reads every pin against the promoted head,** because three may move before
    then: 0098's sha256 (pinned below as `198054ab…35b0`, read from #1469's branch on
    2026-09-30; a review fix there would move it); `verified-migrate.mjs` (the lead ruled on
    2026-09-30 that a Tier B PR adds a lock and statement timeout to it after 0096 and 0097
    are applied, "with its new sha256 pinned in later documents only"); and this document's
    own. If any pin moves, this document, its sidecar and GREEN's dispatch move together.
-5. **The rehearsal agent runs this document's five blocks and GREEN's two** on a throwaway
+5. **DONE 2026-10-01 19:41 to 19:42 Lisbon,** PASS, both journal reads NOT REHEARSED (see
+   "Rehearsal"). As first written:
+   **The rehearsal agent runs this document's five blocks and GREEN's two** on a throwaway
    standing at production's position with the Supabase platform default privileges in
    place, and the three check files there, and records it here (see "Rehearsal", which
    says what the authoring lane could and could not run). **The build lane's own rehearsal
    on the OsteoJP schema was BLOCKED on 2026-09-30 by the classifier,** verbatim below.
-6. **CI is green on the promoted head** (the required checks, and `db-tests`, which
+6. **`db-tests` DONE on `45f1d564`** (it applied 0099 on a real stack and passed). The rest of
+   CI must be green on #1397's final head before step 7. As first written:
+   **CI is green on the promoted head** (the required checks, and `db-tests`, which
    applies 0099 with every other migration on a real Supabase stack and runs the packages/db
    suite over it). **Corrected 2026-09-30:** this step first called that run "the first run
    of the whole app suite with the three privileges gone", which is probably false.
@@ -84,8 +98,8 @@ migrations"). The lane that wrote this document never runs it.
 | Fact | Value |
 |---|---|
 | Card | `SEC-truncate-grant-platform-default` (PURPLE, #1396). **Option 1 ruled by the lead on 2026-09-30**; the card is updated on the board |
-| Ruling | **None yet on the option.** The number is ruled: `0099` by the owner and the lead on 2026-09-30 (the fifth renumbering), was `0096` (2026-09-27) and `0095` (2026-09-22). The binding table is in `CLAUDE.md` under "SOLO's record" |
-| Migration | today `packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql`; at the sitting `packages/db/migrations/0099_revoke_truncate_trigger_references.sql`. sha256 `fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b` in both places |
+| Ruling | **Option 1, ruled by the lead on 2026-09-30** (this row read "None yet on the option" until 2026-10-01). The number is ruled: `0099` by the owner and the lead on 2026-09-30 (the fifth renumbering), was `0096` (2026-09-27) and `0095` (2026-09-22). The binding table is in `CLAUDE.md` under "SOLO's record" |
+| Migration | `packages/db/migrations/0099_revoke_truncate_trigger_references.sql` since the promotion of 2026-10-01; before it, `packages/db/migrations-pending/NEXT-AFTER-0098_revoke_truncate_trigger_references.sql`. sha256 `fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b` in both places |
 | Journal | `idx 96`, tag `0099_revoke_truncate_trigger_references`, `when` strictly above 0098's. Stage 0 reads both from the journal and requires the order; no `when` is pinned here, because 0098's is set at its own promotion |
 | Mirror | `supabase/migrations/0099_revoke_truncate_trigger_references.sql`, written by `scripts/sync-supabase-migrations.mjs` and checked by content by `scripts/check-journal.mjs`, which stage 0 runs with `node` directly after asserting its sha256 |
 | Must follow | `0098`, the staging index (#1469): its body sha256 `198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0`, applied to production (journal 95 to 96) and merged. Stage 0 finds it at `idx 95` by its journal tag and asserts its bytes; the pre-check finds it by hash as production's newest row |
@@ -969,7 +983,90 @@ only psql, and no guard was passed.
 
 **Still owed at promotion:** steps 3 and 4 below. Step 3 runs under the lead's standing
 rule: the journal reader will refuse the throwaway, and its two reads are recorded as NOT
-REHEARSED.
+REHEARSED. **Both are discharged: see the next section.**
+
+### The whole blocks on the promoted head, rehearsed 2026-10-01 19:41 to 19:42 Lisbon
+
+Steps 3 and 4 below. A separate rehearsal agent, whose prompt carried the lead's standing
+rule verbatim ("A script's own REFUSE or STOP line is a halt, the same as a harness refusal.
+Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that
+cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."), ran
+every block WHOLE, in order, from the promoted head `45f1d564`:
+- the dispatch's BEFORE YOU START;
+- stage 0;
+- the dispatch's CLOCK CHECK;
+- stages 1, 2 and 3;
+- the closing read.
+
+**The throwaway.** A local Supabase stack (CLI 2.100.0, `supabase/postgres:17.6.1.106`,
+`gotrue:v2.188.1`, so the full `auth` schema; project `r0099wb`, torn down after) at
+production's position:
+- the head's `supabase/migrations` minus 0099: 96 migrations, 0000 to 0098;
+- a drizzle journal of 96 rows built from `_journal.json`, the newest 0098 (`198054ab...`,
+  when 1788501900000);
+- **the premise, read before any block:** `authenticated` held TRUNCATE on 31 of 48 tables
+  and TRIGGER and REFERENCES on 40 of 48, as at 16:16 on 2026-09-30. `postgres`'s default
+  for new tables granted `authenticated` all eight privileges.
+
+**The origin.** The blocks run from `origin/main` at #1397's merge commit, which cannot
+exist before the merge. The clone's origin was a LOCAL bare repository whose `main` is the
+promoted head, and the dispatch's `MERGED` was the promoted head's sha. No block's text
+changed for it.
+
+**The substitutions, and nothing else:**
+- the apply worktree's `cd`;
+- the `/tmp/0099-` paths;
+- the production env source, to a file holding only the throwaway URL (127.0.0.1, database
+  `postgres`, no query string);
+- the target guard, to an assertion of the throwaway's host and port. The real guard ran once
+  first and refused: `REFUSING: project ref is "postgres", not the production project.`;
+- the dispatch's `MERGED`, to the promoted head.
+
+| block | exit | last line |
+|---|---|---|
+| BEFORE YOU START | 2 | **the reader REFUSED the throwaway: NOT REHEARSED from the journal read on.** Every check before the read passed: the document `8e875378...` and its sidecar, the migration, 0098, the three check files, verified-migrate, the guard, check-journal and the reader twice. |
+| (the start records, the read and its check left out) | 0 | `main head recorded for the CLOCK CHECK: 45f1d564...`. The agent also left out the block's last line, `BEFORE YOU START: every check passed, and the journal reads 96.`, because it claims a read that did not run. |
+| STAGE 0 | 0 | `0099 PROMOTION, NUMBER AND FILES VERIFIED` (journal idx 96, when 1788502000000, after idx 95, 0098; check-journal 97 of 97) |
+| CLOCK CHECK | 0 | `CLOCK: inside the run window, on the main BEFORE YOU START checked, with the approved document. Paste stage 1 now.` (window 202610011600 202610012059 202610012130, the real clock) |
+| STAGE 1 | 0 | `0099 APPLIED. Paste stage 2 now.` Pre-check `15 OK / 0 FAIL`; behaviour BEFORE `6 OK / 1 VACUOUS / 0 FAIL`. verified-migrate through pnpm and drizzle-kit: `pending 1 [0099_revoke_truncate_trigger_references]`, `journal 96 -> 97 (delta 1)`, present by sha256. |
+| STAGE 2 | 0 | `0099 POST-CHECK PASSED. 15/15 pre-check OK, 15/15 post-check OK, journal 96 to 97; authenticated TRUNCATE 31 to 0, TRIGGER 40 to 0, REFERENCES 40 to 0 of 48 tables. Paste stage 3 now.` |
+| STAGE 3 | 0 | `0099 VERIFIED AT THE EXECUTOR: before 6 OK / 1 VACUOUS / 0 FAIL, after 7 OK / 0 VACUOUS / 0 FAIL; ...` |
+| THE CLOSING READ | 2 | **the reader REFUSED the throwaway: the journal read is NOT REHEARSED.** The HEAD CHECK, the window and the reader's sha256 lines passed first. |
+
+**Profiles.**
+- Pre-check: verdicts 7, 8 and 9 read 31, 40 and 40 of 48, each with control 48 of 48;
+  verdict 11 names the eight privileges of `postgres`'s default; SECURITY DEFINER functions
+  28; INFO: MAINTAIN 41 of 48, views with TRIGGER 0.
+- Post-check: verdicts 1 to 3 read `0 of 48; control 48 of 48`; the default now grants
+  DELETE, INSERT, MAINTAIN, SELECT, UPDATE; every carried md5 (policies, functions, relation,
+  column and default ACLs, the DML profile) is unchanged; functions 28; journal 97, 0099 once,
+  the newest row.
+- Behaviour, BEFORE and AFTER: arms 1 to 4 OK both times (authenticated 152 plans and 40
+  refusals, patient 10 and 182), arm 5 VACUOUS then OK (`authenticated same, patient same`),
+  arm 6 `31, 40, 40 of 48` then `0, 0, 0 of 48`. The two outcome md5s are equal before and
+  after.
+
+**Two things GREEN will see that the EXPECT lists do not name:**
+- drizzle-kit prints two NOTICE objects between its banner and its success line,
+  `42P06 schema "drizzle" already exists, skipping` and `42P07 relation "__drizzle_migrations"
+  already exists, skipping`. They are drizzle's `CREATE ... IF NOT EXISTS` on a database that
+  already has its journal, and they are not a halt.
+- The reader's refusal text names the production ref, so on a refusal the blocks' `tee`
+  writes it into `/tmp/0099-journal-before.out` or `-after.out`. On production the reader
+  does not refuse. The ref is not a credential.
+
+**Beyond the blocks, on the throwaway only, each in a rolled-back transaction as
+`authenticated` after the apply:** `TRUNCATE public.tenants` and `CREATE TRIGGER` on it both
+gave `permission denied for table tenants`; a new table created by `postgres` gave
+`authenticated` TRUNCATE, TRIGGER and REFERENCES false and SELECT true.
+
+**Step 4.** The packages/db suite (`pnpm exec vitest run`, CI's command) on the applied
+throwaway: 98 files, **1412 of 1412 passed**. CI's `db-tests` on `45f1d564` applied 0099 on
+its own Supabase stack and passed.
+
+**NOT REHEARSED, and why.** The journal reader (`packages/db/scripts/read-applied-migrations.mjs`,
+pinned `867e2823...`) refuses any target that is not production. The same pinned reader ran
+both reads on production in 0098's sitting of 2026-10-01 (journal 95, then 96).
 
 ### What the rehearsal agent owes before the dispatch is issued
 
