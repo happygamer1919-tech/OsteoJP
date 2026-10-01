@@ -92,7 +92,7 @@
     "scripts/lane-stack.test.mjs": "2bcc1f73267c7567c59e89b67bb1d077d3fc81342abcfa1a312ed75d62c51296",
     "scripts/local-target.test.mjs": "a7cfe74aea60206f5b0e2c3215526e9b59d48f31acc565550e331bf23c161f5c",
     "scripts/merge-on-green-arms.test.mjs": "60160fd32fac08b3910e42d264611fe0b28732a5e1c8798a213f5428d65ad565",
-    "scripts/migration-0098-staging-index.test.mjs": "b4ca8ef7178aab47ffe1d0068bf78ad0f9f6467f6b470aac4f91fae58b2d5085",
+    "scripts/migration-0098-staging-index.test.mjs": "340194aa6773a1e5a28652b7979fccf89538b237663427028316b78278561b85",
     "scripts/no-production-hosts-in-tests.allow.txt": "1951b15c09372129a23a38e62d75dcd168797606a671cecd3adc83dd4b814e10",
     "scripts/no-production-hosts-in-tests.test.mjs": "d3e0750f28b68a90b3890c7f2d67406103d82b598870b1a8bbae07bc71e3ca04",
     "scripts/obs-05-backfill-emit.test.mjs": "4004068875a0f56d4fd3149137fc0a672337e25114f359233ceeced9bb57e2a1",
@@ -113,7 +113,7 @@
     "scripts/staff-11-jp-one-clinic-check.test.mjs": "913fbc28904e1febaa79e650f9bc0ba48ad5f6361ca254d937785d6150623a70",
     "scripts/sync-supabase-migrations.mjs": "d11db8715e2dfeade01cfef368e379a8b0e3f45eb9217acd86f8208246d17ad9",
     "scripts/users-tenants-roles-0094.test.mjs": "8b72a94cf836a6311e7462b6175710c56c3354c9cc1c0bbfaeddf38f49b6798a",
-    "scripts/verified-migrate.test.mjs": "fb442f64b4dd16bcc415a191dd32115c64a6218582551b453ecb3271d6fbe79b",
+    "scripts/verified-migrate.test.mjs": "972d39d6b822b5c90f35a0ddfe5c1c2c0534dd2a494c41ac39f2d047d85cbaf7",
     "turbo.json": "6f0b2af36d35b784b2636445008544ad60c0c119cab2b4b12eaf865cc18fa3fd"
   }
 }

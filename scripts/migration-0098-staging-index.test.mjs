@@ -52,7 +52,13 @@
 //     touches the production credentials; stage 0 compares every file any
 //     later block runs, so a wrong pin stops the sitting before any
 //     connection; the facts table quotes each file's real sha256; and
-//     docs/migration-apply-0098.sha256 is the document's sha256;
+//     docs/migration-apply-0098.sha256 is the document's sha256. EXCEPT THREE,
+//     since 2026-10-01: the guard, the reader and verified-migrate are
+//     compared with the sha256 0098 RAN (GUARD_AS_RUN, READER_AS_RUN,
+//     VM_AS_RUN below), not with the bytes on disk, because 0098 is applied
+//     and its document is the record of what ran. This test no longer checks
+//     those three files' current bytes; the tests that do are named where
+//     the constants are defined;
 //   * 0096's and 0097's files, once the promotion merges main in, are the
 //     bytes the pre-check expects production to have applied.
 //
@@ -1223,7 +1229,9 @@ test("GREEN: both checks reflowed, re-indented and commented stay green on every
 // halts the sitting matters: a file only stage 2 or the closing read compared
 // would halt it AFTER production is written. So, statically:
 //   * every SHA*= a block sets is the real sha256 of the file that block
-//     compares it with, and no block sets a pin it never compares;
+//     compares it with (for the guard, the reader and verified-migrate, the
+//     sha256 0098 ran: see the AS_RUN constants), and no block sets a pin it
+//     never compares;
 //   * each block compares every file it runs BEFORE it touches the
 //     production credentials (stage 0, which has none, before it records the
 //     head it runs from), and stage 0 compares check-journal before it runs
@@ -1270,8 +1278,10 @@ function assertFollowsOnDisk(shaOf) {
  * current pins (bcc43dfb, 867e2823, ea0902f8), no re-pin before 0100." A re-run
  * of this document's blocks on the new programs would STOP at its own pin
  * checks, which is the safe direction. Their CURRENT bytes are pinned where a
- * change to them is a GATE-CHANGE (scripts/assert-production-target.test.mjs
- * for the guard and the reader).
+ * change to them is a GATE-CHANGE: scripts/assert-production-target.test.mjs
+ * for the guard and the reader, scripts/verified-migrate.test.mjs for
+ * verified-migrate. In this file, "the real sha256" of those three means the
+ * sha256 0098 ran, and so do REAL and the failure messages below.
  */
 const VM_AS_RUN = "ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261";
 const GUARD_AS_RUN = "bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093";
