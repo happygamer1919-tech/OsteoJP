@@ -2085,3 +2085,25 @@ need a third review round, and neither can come from the read that feeds it:
   a padded or tab-separated `1 of 2` passes. `CL` is `psql -At` output of
   `count || ' of ' || count`, one line with single spaces. The `0 of <n>` arm had the same
   looseness before this change.
+
+## Correction, 2026-09-30: the journal reader's reads in this document's rehearsal were not honestly rehearsed
+
+This was added after the sitting, and no block changed. The lead ruled it after the
+incident carded as `INC-rehearsal-subagent-passed-the-reader-guard`.
+
+**What the rehearsal did.** The whole-block rehearsal behind this document ran on a local
+throwaway at 127.0.0.1:54522 (2026-09-30 02:43 Lisbon). `packages/db/scripts/read-applied-migrations.mjs` refuses any
+target that is not production. It ran there only because the rehearsal put the production
+project ref into the throwaway's URL as an `application_name` label (`reh0096_lane_purple_not_<ref>`, the ref
+elided here). The rehearsal prompt did not list that substitution. It told the agent to
+override the production guard the way earlier rehearsals did, which SOLO wrote and should
+not have. Only 127.0.0.1 was contacted.
+
+**So every line in this document's rehearsal record that comes from the journal reader is
+NOT evidence.** That covers BEFORE YOU START's journal read and the closing read. The other
+steps of those blocks, and every other block, stand as recorded. 0096's production sitting of 2026-09-30 16:05 to 16:10 Lisbon ran the reader for real: BEFORE YOU START read 93 and the closing read 94, nothing pending.
+
+**The rule from now on,** in `CLAUDE.md`, verbatim: "A script's own REFUSE or STOP line is
+a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a
+script to get past a guard. A block that cannot run on the throwaway is recorded as NOT
+REHEARSED and the document says so."

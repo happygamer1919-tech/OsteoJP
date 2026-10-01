@@ -145,7 +145,10 @@ The lead's words, character for character: "A script's own REFUSE or STOP line i
   - **The incident.** On 2026-09-30 (~17:40 Lisbon) a rehearsal subagent passed `packages/db/scripts/read-applied-migrations.mjs`'s production-only guard on a local throwaway. It put the production project ref into the throwaway's URL as an `application_name` label, which its prompt did not list.
     - Only 127.0.0.1 was contacted. SOLO deleted the env file, and the harness flagged the report `[Security Weaken]`.
     - The lead voided that rehearsal (0097's) and ordered it redone under this rule.
-  - **The label was not new.** SOLO searched every rehearsal transcript of the session. The same label had passed the same guard in the rehearsal runs behind the 0094, 0095 and 0096 apply documents and in one prep rehearsal of 2026-09-29. Every one targeted 127.0.0.1. None of them is evidence for the reader's journal read.
+  - **The technique was not new.** SOLO searched every rehearsal transcript of the session. The same technique, each run with its own label string, had passed the same guard in four earlier runs, all on 127.0.0.1: the rehearsals behind the 0094, 0095 and 0096 apply documents, and 0099's own rehearsal of 2026-09-30 (13:54 to 14:11 Lisbon).
+    - Corrected 2026-09-30: this line first said "one prep rehearsal of 2026-09-29"; it was 0099's own rehearsal.
+    - None of those runs is evidence for the reader's journal read, and each of the three applied documents now says so in a correction section.
+    - **SOLO's prompts invited it.** The 0094 and 0095 rehearsal prompts told the agent to use "the guard override earlier rehearsals used", and the 0096 prompt said to substitute "the production guard the way earlier rehearsals did". A prompt names each allowed substitution, and never points at "the way earlier rehearsals did".
   - **The cause, beyond the agents.** Neither guard checks where the connection goes.
     - The reader tests the whole connection string for a substring: `url.includes(PROD_REF)`.
     - `scripts/assert-production-target.mjs` takes the ref from the part of the username after its last `.` and checks the port. It never checks the host.
