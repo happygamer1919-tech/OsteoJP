@@ -59,7 +59,7 @@
     "scripts/check-journal.mjs": "7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59",
     "scripts/check-openapi-drift.mjs": "8cb6a06668fbc5c3bde25efae34bba3c82530c4307c378e7918b9b581db2d175",
     "scripts/docs-do-not-name-unread-env-vars.test.mjs": "d1463aaee85d96402d3b7f813c8070f866a5be9de999a5e4c26fc3465980b5db",
-    "scripts/dur-01-data-op.test.mjs": "cb044f7cdf75a4e2f68ae779c9ce761fa70495b57b59f023f02ff236f11fcf3a",
+    "scripts/dur-01-data-op.test.mjs": "90085d18a5ec7dea03d8a18826d8546133275f1b7a653069f87620c3c1f72a02",
     "scripts/e2e-is-typechecked.test.mjs": "869d8fbaca19ad71eb41db0d453cef92e6aefbde366837b826f0e180ca814455",
     "scripts/e2e-runs-only-when-armed.test.mjs": "49adfef39cdbf9114d1ffe3c1d974231dae5cc27b75ea31c91176fda850d5c8a",
     "scripts/e2e-spec-days-do-not-collide.test.mjs": "0bb165140e66e4e8c3f9e20940d98f3ddf07bb2c8f5299f959529a9b1a7ffbe3",
