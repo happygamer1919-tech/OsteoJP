@@ -496,8 +496,8 @@ echo "${LT}" | grep -qE '^[0-9]{4}$' || { echo "STOP: the Lisbon clock did not r
 TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
 if awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }'; then
   echo "Lisbon ${LT}: outside 08:00 to 21:00"
-elif [ "${TODAYL}" = "20260930" ]; then
-  echo "OVERRIDE: Lisbon ${LT} is inside 08:00 to 21:00; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on 20260930 only"
+elif [ "${TODAYL}" = "20260930" ] || [ "${TODAYL}" = "20261001" ]; then
+  echo "OVERRIDE: Lisbon ${LT} is inside 08:00 to 21:00; the owner's overrides of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") and 2026-10-01 16:10 Lisbon (\"my decision, my call\") let this sitting run on ${TODAYL}, and only on 20260930 or 20261001"
 else
   echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1
 fi
@@ -570,7 +570,7 @@ the clinics' hours, and both still read and print them:
 - **the clinics' own rows**, in stage 1 (`OVERRIDE_DAY=20260930`). On that date only, an open
   clinic prints an `OVERRIDE:` line quoting him, and the block continues.
 
-On every other day both STOP exactly as before. A read that finds no active clinic, a count
+On 2026-10-01 too, by the owner's ruling of that day (see "Changed 2026-10-01"). On every other day both STOP exactly as before. A read that finds no active clinic, a count
 not written as a plain integer (no sign, no leading zero, nothing after it), or more open
 clinics than active ones, STOPs on every day. The dispatch's dated window is
 unchanged in kind: its CLOCK CHECK still records it, and stages 1 to 3 and the closing read
@@ -690,8 +690,8 @@ echo "${LT}" | grep -qE '^[0-9]{4}$' || { echo "STOP: the Lisbon clock did not r
 TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
 if awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }'; then
   echo "Lisbon ${LT}: outside 08:00 to 21:00"
-elif [ "${TODAYL}" = "20260930" ]; then
-  echo "OVERRIDE: Lisbon ${LT} is inside 08:00 to 21:00; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on 20260930 only"
+elif [ "${TODAYL}" = "20260930" ] || [ "${TODAYL}" = "20261001" ]; then
+  echo "OVERRIDE: Lisbon ${LT} is inside 08:00 to 21:00; the owner's overrides of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") and 2026-10-01 16:10 Lisbon (\"my decision, my call\") let this sitting run on ${TODAYL}, and only on 20260930 or 20261001"
 else
   echo "STOP: it is ${LT} in Lisbon. This sitting runs only before 08:00 or from 21:00 Lisbon time, while both clinics are closed"; exit 1
 fi
@@ -765,11 +765,12 @@ echo "--- the clinics' own hours, READ ONLY: no active clinic may be open now (o
 CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (now() at time zone 'Europe/Lisbon')::time >= opens_at and (now() at time zone 'Europe/Lisbon')::time < closes_at) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1)
 echo "active clinics open now by their own hours: ${CL}"
 OVERRIDE_DAY=20260930
+OVERRIDE_DAY2=20261001
 TODAYL=$(TZ=Europe/Lisbon date '+%Y%m%d')
 if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/) exit 0; exit 1 }'; then
   echo "clinics: every active clinic is closed by its own hours"
-elif [ "${TODAYL}" = "${OVERRIDE_DAY}" ] && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[1-9][0-9]*$/ && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/ && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
-  echo "OVERRIDE: ${CL} active clinics open now by their own hours; the owner's override of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") lets this sitting run on ${OVERRIDE_DAY} only"
+elif { [ "${TODAYL}" = "${OVERRIDE_DAY}" ] || [ "${TODAYL}" = "${OVERRIDE_DAY2}" ]; } && awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[1-9][0-9]*$/ && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/ && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then
+  echo "OVERRIDE: ${CL} active clinics open now by their own hours; the owner's overrides of 2026-09-30 13:13 Lisbon (\"despite the current clinic schedule, we are doing it now\") and 2026-10-01 16:10 Lisbon (\"my decision, my call\") let this sitting run on ${TODAYL}, and only on ${OVERRIDE_DAY} or ${OVERRIDE_DAY2}"
 else
   echo "STOP: a clinic is open now by its own hours, or no active clinic was read [${CL}]. The sitting waits until both are closed"; exit 1
 fi
@@ -1459,6 +1460,27 @@ under the review-loop cap:
 - which production figures are quoted.
 
 Every fenced block is byte-identical to `9b91c52f`'s.
+
+## Changed 2026-10-01: the owner's override extended to that day, the same arms
+
+At 16:10 Lisbon on 2026-10-01 the owner ruled 0097, 0098 and 0099 to run that afternoon. His
+words: "We're doing earlier than 21:00 for today starting 0097 now and 0098 + 0099 right after,
+my decision, my call, no questions about it". The overrides in stages 0 and 1 were locked to
+20260930, so they now also accept 20261001. Nothing else changed:
+- **The Lisbon clock** (stages 0 and 1, still identical): the override arm reads
+  `[ "${TODAYL}" = "20260930" ] || [ "${TODAYL}" = "20261001" ]`. Its OVERRIDE line quotes
+  both rulings and prints the day it ran.
+- **The clinics' own rows** (stage 1): `OVERRIDE_DAY2=20261001` joins `OVERRIDE_DAY`, and the
+  override arm accepts either. The integer-count rules are unchanged.
+
+Proved the same way as before, on the lines cut from this revision, with only `TODAYL` fixed:
+- On 20260930 and 20261001, a daytime clock (16:14, 20:59) prints OVERRIDE, and an open
+  clinic (`1 of 2`, `2 of 2`) prints OVERRIDE.
+- On 20261002 and 20260929 they STOP.
+- `0 of 2` passes on every day.
+- `3 of 2`, `0 of 0` and `x of 2` STOP on every day.
+
+Stages 0 and 1 pass `zsh -n`. Stages 2 and 3 and the closing read are unchanged.
 
 ## Changed after the owner's override, 2026-09-30: the clock and clinic checks, two blocks
 
