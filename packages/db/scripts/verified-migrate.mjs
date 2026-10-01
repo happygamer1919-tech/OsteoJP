@@ -44,15 +44,47 @@
 // applier would be a second migration engine that can disagree with the first.
 //
 // ===========================================================================
+// DRIZZLE'S SESSION ASKS FOR TWO TIMEOUTS, AND THE SERVER'S ANSWER IS PRINTED
+// ===========================================================================
+// Card LOCK-TIMEOUT-verified-migrate: drizzle's connection asks for
+// `lock_timeout=10s` and `statement_timeout=300s`, so a migration waiting on a
+// lock gives up after ten seconds instead of queueing every query behind it, and
+// no statement runs for more than five minutes. The ruling named PGOPTIONS. Two
+// facts, read from the installed code on 2026-09-30, decide how it is carried:
+//
+//   1. drizzle-kit uses postgres.js here (it tries `pg` first, and `pg` is not
+//      installed), and postgres.js NEVER READS PGOPTIONS. Its environment reads
+//      are PGHOST, PGPORT, PGUSER(NAME), PGDATABASE, PGPASSWORD, PGAPPNAME,
+//      PGTARGETSESSIONATTRS and one PG<NAME> per option in its own defaults
+//      table, and `options` is not in that table. What it DOES send is every
+//      unrecognised URL query parameter, as a startup parameter. So the settings
+//      travel as the URL's `options` query parameter, which Postgres reads
+//      exactly as libpq's PGOPTIONS. PGOPTIONS is set as well, for a libpq or
+//      `pg` client; postgres.js ignores it.
+//   2. A POOLER MAY DROP BOTH. Supavisor (Supabase's session pooler) opens its
+//      own server connections and forwards only `search_path` from a client's
+//      `options`. So whether the two settings are in force on the target is not
+//      something this file can know in advance; it ASKS. Its first read goes
+//      through the same URL, the same library and the same startup options as
+//      drizzle's connection, reads both settings from `pg_settings`, and prints
+//      one line: `in force` or `NOT APPLIED`. It does not refuse on NOT APPLIED:
+//      that is today's behaviour, and the line is what makes it visible.
+//
+// A PGOPTIONS already in the environment, or an `options` already in the URL,
+// is REFUSED (exit 3) before any connection. Appending would let the earlier
+// `-c` and the later one fight over the same setting, last one winning, so the
+// session would be neither what the operator set nor what the documents pin.
+//
+// ===========================================================================
 // SAFETY
 // ===========================================================================
 //   * Every read is inside a READ ONLY transaction, so the server itself
 //     refuses any write this file could contain now or later.
-//   * It reads `drizzle.__drizzle_migrations` and nothing else. It never touches
-//     a patient table, so no NIF, phone, email or clinical value can pass
-//     through it.
-//   * It prints tags, integers and hashes. It never prints the connection string
-//     and never logs an environment value.
+//   * It reads `drizzle.__drizzle_migrations` and two server settings from
+//     `pg_settings`, and nothing else. It never touches a patient table, so no
+//     NIF, phone, email or clinical value can pass through it.
+//   * It prints tags, integers, hashes and the two timeout values. It never
+//     prints the connection string and never logs an environment value.
 //
 // USAGE, from the repo root with the prod env sourced:
 //   node packages/db/scripts/verified-migrate.mjs \
@@ -63,7 +95,8 @@
 // EXIT CODES, and 5 is the one this file exists for:
 //   0  the delta matched, the hash is in the journal, both printed
 //   2  bad invocation (missing --tag, --sha256 or --expect-pending)
-//   3  a precondition failed: file missing, hash mismatch, pending count wrong
+//   3  a precondition failed: file missing, hash mismatch, pending count wrong,
+//      or PGOPTIONS / a URL `options` parameter was already set
 //   4  drizzle itself failed - its captured output is reprinted, INCLUDING when
 //      it is empty, which is POST-01's whole symptom
 //   5  drizzle SUCCEEDED and the journal did not move. THE SILENT NO-OP, NAMED.
@@ -116,6 +149,68 @@ export function verdictFor({ before, after, expectedPending, drizzleExit }) {
   if (delta === 0 && expectedPending > 0) return { code: EXIT.SILENT_NOOP, reason: "silent_noop" };
   if (delta !== expectedPending) return { code: EXIT.PRECONDITION, reason: "wrong_delta" };
   return { code: EXIT.OK, reason: "ok" };
+}
+
+/* ------------------------------------------------------ session timeouts -- */
+/** The two settings the card rules, with the value `pg_settings` reports for
+ *  each (both are in milliseconds there). */
+export const SESSION_SETTINGS = Object.freeze([
+  Object.freeze({ name: "lock_timeout", value: "10s", ms: 10_000 }),
+  Object.freeze({ name: "statement_timeout", value: "300s", ms: 300_000 }),
+]);
+
+/** "-c lock_timeout=10s -c statement_timeout=300s", the ruling's string. */
+export const SESSION_OPTIONS = SESSION_SETTINGS.map((s) => `-c ${s.name}=${s.value}`).join(" ");
+
+/** The URL with the settings added as its `options` query parameter, which
+ *  postgres.js sends as a startup parameter. Refuses a URL that already has one.
+ *  Only the query is inspected; the host, the user and the password are never
+ *  parsed, so nothing about them can be reported or altered. */
+export function withSessionOptions(url) {
+  const hashAt = url.indexOf("#");
+  const base = hashAt === -1 ? url : url.slice(0, hashAt);
+  const fragment = hashAt === -1 ? "" : url.slice(hashAt);
+  const queryAt = base.indexOf("?");
+  const query = queryAt === -1 ? "" : base.slice(queryAt + 1);
+  if (new URLSearchParams(query).has("options")) {
+    return { error: "the connection URL already carries an `options` parameter" };
+  }
+  const sep = queryAt === -1 ? "?" : query === "" || query.endsWith("&") ? "" : "&";
+  return { url: `${base}${sep}options=${encodeURIComponent(SESSION_OPTIONS)}${fragment}` };
+}
+
+/** The environment drizzle-kit is spawned with: the parent's, plus PGOPTIONS,
+ *  plus the SAME variable drizzle.config.ts will read (DATABASE_URL_DIRECT,
+ *  else DATABASE_URL, the `??` it uses) carrying the options. Returns the URL
+ *  this script's own reads use too, so the two connections ask identically. */
+export function sessionEnvFor(parentEnv) {
+  if ((parentEnv.PGOPTIONS ?? "").trim() !== "") {
+    return { error: "PGOPTIONS is already set in this environment" };
+  }
+  const urlVar = parentEnv.DATABASE_URL_DIRECT !== undefined ? "DATABASE_URL_DIRECT" : "DATABASE_URL";
+  const parentUrl = parentEnv[urlVar];
+  if (!parentUrl) return { error: "neither DATABASE_URL_DIRECT nor DATABASE_URL is set" };
+  const augmented = withSessionOptions(parentUrl);
+  if (augmented.error) return { error: augmented.error };
+  return {
+    urlVar,
+    url: augmented.url,
+    env: { ...parentEnv, PGOPTIONS: SESSION_OPTIONS, [urlVar]: augmented.url },
+  };
+}
+
+/** What the server says about the two settings, from `pg_settings` rows
+ *  `{ name, setting, unit, shown }`. In force only if BOTH read exactly the
+ *  ruled milliseconds; a missing row is not in force. */
+export function sessionVerdict(rows) {
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  let inForce = true;
+  const shown = SESSION_SETTINGS.map((s) => {
+    const row = byName.get(s.name);
+    if (!row || row.unit !== "ms" || String(row.setting) !== String(s.ms)) inForce = false;
+    return `${s.name}=${row ? row.shown : "(absent)"}`;
+  }).join(" ");
+  return { inForce, shown };
 }
 
 /* ------------------------------------------------------------------ main -- */
@@ -180,11 +275,29 @@ async function main() {
     );
     return EXIT.BAD_INVOCATION;
   }
+
+  /* -- the two timeouts, asked for on drizzle's connection and on ours. ---- */
+  const session = sessionEnvFor(process.env);
+  if (session.error) {
+    // The reason only. Never the value of PGOPTIONS, never the URL.
+    console.error(
+      `PRECONDITION FAILED: ${session.error}.\n` +
+        "  This script sets the drizzle session's options itself, to exactly\n" +
+        `  "${SESSION_OPTIONS}", and will not merge them with settings it did not write.\n` +
+        "  Unset it (or take `options` out of the URL) and run again.",
+    );
+    return EXIT.PRECONDITION;
+  }
+  console.log(
+    `session    ${SESSION_SETTINGS.map((s) => `${s.name}=${s.value}`).join(" ")} requested ` +
+      "(URL `options` startup parameter and PGOPTIONS)",
+  );
   const { default: postgres } = await import("postgres");
 
-  /** READ ONLY, every time. */
+  /** READ ONLY, every time. Through the SAME URL drizzle is handed, so the
+   *  settings it reads are the ones drizzle's connection was offered. */
   const read = async () => {
-    const sql = postgres(url, { prepare: false, max: 1 });
+    const sql = postgres(session.url, { prepare: false, max: 1 });
     try {
       return await sql.begin(async (tx) => {
         await tx`set transaction read only`;
@@ -193,7 +306,15 @@ async function main() {
                                order by created_at desc limit 1`;
         const mine = await tx`select 1 from drizzle.__drizzle_migrations
                                where hash = ${args.sha256} limit 1`;
-        return { n, lastWhen: last[0] ? Number(last[0].created_at) : null, present: mine.length > 0 };
+        const settings = await tx`select name, setting, unit, current_setting(name) as shown
+                                   from pg_settings
+                                   where name in ('lock_timeout', 'statement_timeout')`;
+        return {
+          n,
+          lastWhen: last[0] ? Number(last[0].created_at) : null,
+          present: mine.length > 0,
+          settings,
+        };
       });
     } finally {
       await sql.end();
@@ -201,6 +322,15 @@ async function main() {
   };
 
   const before = await read();
+  const sessionNow = sessionVerdict(before.settings);
+  // Two verdict words that do not contain each other, so a grep for one can
+  // never match the other.
+  console.log(
+    sessionNow.inForce
+      ? `session    in force: ${sessionNow.shown}`
+      : `session    NOT APPLIED: the server reports ${sessionNow.shown}. The connection path ` +
+          "dropped the startup options (a pooler does this); drizzle runs without the two timeouts.",
+  );
   // drizzle's own predicate, restated so the two cannot disagree about
   // "pending". `created_at` holds the journal `when` (dialect.js:67).
   const pending = entries.filter((e) => before.lastWhen === null || before.lastWhen < e.when);
@@ -241,7 +371,7 @@ async function main() {
   const run = spawnSync(
     "pnpm",
     ["--filter", "@osteojp/db", "exec", "drizzle-kit", "migrate"],
-    { cwd: REPO_ROOT, encoding: "utf8" },
+    { cwd: REPO_ROOT, encoding: "utf8", env: session.env },
   );
   const out = (run.stdout ?? "").trim();
   const err = (run.stderr ?? "").trim();
