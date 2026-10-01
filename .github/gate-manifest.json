@@ -98,7 +98,7 @@
     "scripts/perf-project-is-pinned.test.mjs": "02ea02d9624250362393e21c0541a4cd147514779fc775ef5dcaa184ecd7868c",
     "scripts/portal-frozen-locale-is-quarantined.test.mjs": "fff0f73ad106d9f74ea31fb9b4ac09c2c82568b2b0f8ccd12590b438bd93b27f",
     "scripts/portal-i18n-dead-keys.test.mjs": "fef0b33d3fb6a352240130e4ad506fa97f9b33a2ffa31f2feb554f3ece1c8bb8",
-    "scripts/read-applied-migrations-target.test.mjs": "6820e0a93589b2cce0788699f69d33ba9062aec643ef98f279e072627de97990",
+    "scripts/read-applied-migrations-target.test.mjs": "36bf852d991daa908c6c0ac23723f226e38337480c38a9a4a553df0a2087fa50",
     "scripts/required-checks-are-honest.test.mjs": "cc53c16929c324a8fb4acb27caae89359631753ed3f15c413d03589e2699da74",
     "scripts/secret-scan-runs-in-ci.test.mjs": "b6b37eacc805469319727d155e22f8d0bee9888ceedbe4c7fdc14e07630a721e",
     "scripts/secret-scan.mjs": "e21913ea006fecb6bcac037abda465fe051d03e8e40ea8b91fce2486c741f5f4",

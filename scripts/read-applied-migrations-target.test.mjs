@@ -121,8 +121,10 @@ test("reads DATABASE_URL when DATABASE_URL_DIRECT is unset, and refuses it on it
 // the driver loads, and the variable precedence.
 
 test("REFUSES a string that does not parse, before the driver loads", () => {
-  // A host list with a character new URL() rejects. On 127.0.0.1 port 1, so a regression that let it
-  // through would contact nothing real and fail fast.
-  assertRefused(runReader({ DATABASE_URL_DIRECT: `postgres://postgres:${PW}@127.0.0.1:1,x^y/postgres` }));
+  // A host list with a character new URL() rejects. Both hosts are 127.0.0.1 port 1 or a reserved
+  // .invalid name, so a regression that let it through would contact nothing real. It would NOT fail
+  // fast (postgres.js retries for its 30 s connect timeout); this test still fails then, because
+  // runReader's 15 s timeout kills the reader and assertRefused reports the signal.
+  assertRefused(runReader({ DATABASE_URL_DIRECT: `postgres://postgres:${PW}@127.0.0.1:1,x^y.invalid/postgres` }));
 });
 
