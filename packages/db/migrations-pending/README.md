@@ -44,10 +44,10 @@ there later and has since been promoted too, and so has the `0095` conflict-chec
 Promoted table), so the table is empty again on `main`. The four held files of the queue below
 live on their held branches, not on `main`, until each is promoted. CARE-02a was promoted as
 `0096` on #1471, applied on 2026-09-30 and merged. The registo write file was promoted as
-`0097` on #1475, applied on 2026-10-01 and merged. On this branch (#1469) the table holds one
-row, the `0098` staging index, until its promotion; it is promoted here as `0098` (see the
-Promoted table), so the table above is empty on this branch. Other branches hold their own
-pending files, which this table does not list: it is only accurate for the branch you read it on.
+`0097` on #1475 and the staging index as `0098` on #1469, both applied on 2026-10-01 and
+merged. On this branch (#1397) the grants revoke is promoted as `0099` (see the Promoted
+table), so the table above is empty here too. Other branches hold their own pending files, which this table does not
+list: it is only accurate for the branch you read it on.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER AND THE LEAD ON 2026-09-30 (the fifth time).**
 It is **`0090` NESA names · `0091` CARE-01 · `0092` CARE-LOC · `0093` RGPD-01 · `0094`
@@ -113,6 +113,9 @@ GATE-CHANGE (26 to 27), main into #1471, then #1471 merges. `0097`'s keeps the s
 promote, apply from #1475's held head, the count GATE-CHANGE (27 to 28), main into #1475,
 then #1475 merges.
 
+Other branches hold their own pending files that are not listed here, because this
+table is only accurate for the branch you are reading it on.
+
 ## Promoted
 
 | was | became | on |
@@ -127,3 +130,4 @@ then #1475 merges.
 | `NEXT-AFTER-0097_care02a_care_team_reads.sql` | `packages/db/migrations/0096_care02a_care_team_reads.sql`, bytes unchanged (sha256 `fbf8cad1dc959a600b0e8b3ccffb7225e2295919e5dfe08432301faf6b5e9c45`), journal `idx 93`, `when 1788501700000` | 2026-09-30, branch `care/0098-CARE-02a-care-team-reads` (PR #1471; the branch keeps its old number). Promoted after 0095 was applied (journal 93) and merged, under the owner's and the lead's fifth renumbering of 2026-09-30 that put CARE-02a at `0096`; **authored, NOT yet applied**. By that ruling GREEN applies it from #1471's HELD head, before #1471 merges, from `docs/migration-apply-0096.md` (staged in the same commit, with its sidecar and the three check scripts renamed to `0096`); then the owner merges the SECURITY DEFINER count's GATE-CHANGE (26 to 27), main is merged into #1471, and #1471 merges. **The promoted file's own header still reads "RULED NUMBER 0098" and "MUST FOLLOW 0097", and cites the 2026-09-27 queue, and the helper's `COMMENT ON FUNCTION` text, which production will carry, begins "CARE-02a (0098)".** Stale on purpose, for the same reason as 0091's row above: a promotion changes no byte, and the sha256 in this row is what every pin points at. |
 | `NEXT-AFTER-0096_clinical_records_write_matrix.sql` | `packages/db/migrations/0097_clinical_records_write_matrix.sql`, bytes unchanged (sha256 `076481bf1599975e3b1bc25b4f9363901c2c7269df32ec2ef781cb19ba1dc318`), journal `idx 94`, `when 1788501800000` | 2026-09-30, branch `db/0099-registo-write-matrix` (PR #1475; the branch keeps its old name). Promoted after 0096 was applied (2026-09-30 16:08 Lisbon, journal 94) and merged (#1471), under the owner's and the lead's fifth renumbering of 2026-09-30 that put the registo write policies at `0097`; **authored, NOT yet applied**. By 0096's order GREEN applies it from #1475's HELD head, before #1475 merges, from `docs/migration-apply-0097.md`; then the owner merges the SECURITY DEFINER count's GATE-CHANGE (27 to 28), main is merged into #1475, and #1475 merges. Its app half, #1501, merged first. **The promoted file's own header still reads "RULED NUMBER 0099", "must follow 0098 (CARE-02a)" and Q4 open, and the function's `COMMENT ON FUNCTION` text, which production will carry, opens "0099".** Stale on purpose, for the same reason as 0091's row above. |
 | `NEXT-AFTER-0097_migration_staging_imported_entity_idx.sql` | `packages/db/migrations/0098_migration_staging_imported_entity_idx.sql`, bytes unchanged (sha256 `198054aba52cc6a31804559e2bfe1612ed6c3ea53d33cbcfc9599df39fd135b0`), journal `idx 95`, `when 1788501900000` | 2026-10-01, branch `db/0097-staging-imported-entity-index` (PR #1469; the branch keeps its old number). Promoted after 0097 was applied (2026-10-01 16:31 Lisbon, journal 95) and merged (#1475), under the fifth renumbering that put the staging index at `0098`; **authored, NOT yet applied**. The PR merges first and GREEN applies it from `origin/main`, from `docs/migration-apply-0098.md`. |
+| `NEXT-AFTER-0098_revoke_truncate_trigger_references.sql` | `packages/db/migrations/0099_revoke_truncate_trigger_references.sql`, bytes unchanged (sha256 `fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b`), journal `idx 96`, `when 1788502000000` | 2026-10-01, branch `sec/B10-revoke-truncate-trigger-references` (PR #1397). Promoted after 0098 was applied (2026-10-01 18:23 Lisbon, journal 96) and merged (#1469), option 1 as ruled; **authored, NOT yet applied**. The PR merges first and GREEN applies it from `origin/main`, from `docs/migration-apply-0099.md`. |

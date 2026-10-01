@@ -673,6 +673,13 @@
       "when": 1788501900000,
       "tag": "0098_migration_staging_imported_entity_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1788502000000,
+      "tag": "0099_revoke_truncate_trigger_references",
+      "breakpoints": true
     }
   ]
 }
