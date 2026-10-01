@@ -70,6 +70,9 @@ test("the reader runs the shared check, and loads the driver only after it passe
   const exit = src.indexOf("process.exit(2)", check);
   const driver = src.indexOf('await import("postgres")');
   assert.ok(check > 0 && exit > check && driver > exit, "check, then refusal, then the driver: in that order");
+  // The driver connects with the string the check passed, and with nothing else.
+  assert.match(src, /\bpostgres\(url,/, "the reader does not connect with the checked string");
+  assert.equal((src.match(/\bpostgres\(/g) ?? []).length, 1, "the reader opens a second connection");
 });
 
 test("REFUSES the incident: a local database carrying the ref as an application_name label", () => {
@@ -116,4 +119,10 @@ test("reads DATABASE_URL when DATABASE_URL_DIRECT is unset, and refuses it on it
 // assert-production-target.test.mjs, whose guard has no database code. This file
 // pins only what is the reader's own: the shared check is called, it runs before
 // the driver loads, and the variable precedence.
+
+test("REFUSES a string that does not parse, before the driver loads", () => {
+  // A host list with a character new URL() rejects. On 127.0.0.1 port 1, so a regression that let it
+  // through would contact nothing real and fail fast.
+  assertRefused(runReader({ DATABASE_URL_DIRECT: `postgres://postgres:${PW}@127.0.0.1:1,x^y/postgres` }));
+});
 

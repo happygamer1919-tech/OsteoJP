@@ -103,7 +103,7 @@ test("the production constants are the ones pinned here, and the ref is on the s
   assert.equal(PRODUCTION.port, "5432");
   assert.equal(PRODUCTION.database, "postgres");
   assert.ok(readProdRefs().includes(REF), "the ref the guard requires is not one the seeders refuse");
-  assert.deepEqual([...TARGET_QUERY_KEYS], ["host", "hostaddr", "port", "dbname", "database", "user", "service"]);
+  assert.deepEqual([...TARGET_QUERY_KEYS], ["host", "hostaddr", "port", "dbname", "database", "user", "service", "options"]);
 });
 
 test("the guard imports the shared check and nothing else, and the check imports nothing", () => {
@@ -298,8 +298,8 @@ test("NEVER prints a piece of a malformed password: a / or @ in it moves no part
   }
 });
 
-test("REFUSES when PGHOSTADDR, PGSERVICE or PGSERVICEFILE is set, naming the variable and not its value", () => {
-  for (const name of ["PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE"]) {
+test("REFUSES when PGHOSTADDR, PGSERVICE, PGSERVICEFILE or PGOPTIONS is set, naming the variable and not its value", () => {
+  for (const name of ["PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE", "PGOPTIONS"]) {
     const r = runGuard({ DATABASE_URL_DIRECT: url(), [name]: "redirect-target-xyz" });
     assertRefused(r, new RegExp(`REFUSING: ${name} is set`));
     assert.ok(!r.out.includes("redirect-target-xyz"), `${name}'s value was printed`);
@@ -317,8 +317,8 @@ test("REFUSES when PGHOSTADDR, PGSERVICE or PGSERVICEFILE is set, naming the var
 
 test("the three production-guard files are the reviewed ones (re-pin on purpose, in a GATE-CHANGE)", () => {
   const pins = {
-    "scripts/production-target.mjs": "9e48d563147339a2ac677f4ae21df2f0dfb5c6f0148699cce7bff09b28227a1a",
-    "scripts/assert-production-target.mjs": "904010b8df5fc9e2c11d8f89c5d63c74bff815d87499543b19ab0455509b5136",
+    "scripts/production-target.mjs": "e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c",
+    "scripts/assert-production-target.mjs": "6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96",
     "packages/db/scripts/read-applied-migrations.mjs": "825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387",
   };
   for (const [file, want] of Object.entries(pins)) {
@@ -352,6 +352,25 @@ test("the host and the ref are exact matches, never a suffix: a local host first
 test("a query key is compared after decoding, case and padding: %20, + and capitals do not hide a target key", () => {
   for (const q of ["?host%20=127.0.0.1", "?host+=127.0.0.1", "?%20HostAddr=127.0.0.1"]) {
     assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ query: q }) }), /REFUSING: the connection string's query names a connection target/);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// R4 round 3 (2026-10-01): the tenant selector in `options`, an empty port, the
+// ref's case, a path that only starts like /postgres.
+// ---------------------------------------------------------------------------
+
+test("REFUSES ?options=, which Supavisor reads a tenant from before the username", () => {
+  for (const q of ["?options=reference%3Dsomeotherproject", "?options=-c%20search_path%3Dpublic", "?OPTIONS=x"]) {
+    assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ query: q }) }), /REFUSING: the connection string's query names a connection target/);
+  }
+});
+
+test("REFUSES a missing port (libpq would take PGPORT), a ref in other letter case, and a path that only starts as /postgres", () => {
+  assertRefused(runGuard({ DATABASE_URL_DIRECT: url().replace(":5432/", "/") }), /REFUSING: port is ""/);
+  assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ user: `postgres.${REF.toUpperCase()}` }) }), /REFUSING: project ref is "/);
+  for (const path of ["/postgres/../postgres", "/POSTGRES", "/postgres/"]) {
+    assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ path }) }), /REFUSING: the target's database is not postgres\./);
   }
 });
 
