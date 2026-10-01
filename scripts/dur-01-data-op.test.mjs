@@ -717,12 +717,11 @@ test("the doc pins each file by its sha256, and the sidecar pins the doc", () =>
   }
   // THE TRIPWIRE THAT STOOD HERE FIRED ON 2026-10-01, ON PURPOSE. It asserted the
   // guard on disk was still bcc43dfb... ("the target guard moved; re-pin it on
-  // purpose"). The guard fix of that day moved it, and it is re-pinned here on
-  // purpose: this completed op's pin is now GUARD_AS_RUN (above), which the loop
-  // checks against every SHAGUARD in the doc, so a moved guard can no longer make
-  // the doc's record look wrong, and a re-run of the doc on the new guard stops
-  // at its own pin check.
-  assert.equal(pinOf(GUARD), GUARD_AS_RUN, "this completed op's guard pin is not the guard it ran with");
+  // purpose"). The guard fix of that day moved it. This completed op's pin is now
+  // GUARD_AS_RUN (above), which the loop checks against every SHAGUARD in the
+  // doc, and the guard's CURRENT bytes are pinned in
+  // scripts/assert-production-target.test.mjs instead, where a change to any
+  // production guard is a GATE-CHANGE.
   const side = read("docs/data-op-dur-01.sha256");
   assert.equal(side, `${sha256(DOCF)}  ${DOCF}\n`, "the sidecar does not pin the doc");
   assert.doesNotMatch(DOC, /@@[A-Z0-9]+@@/, "the doc still carries a placeholder");

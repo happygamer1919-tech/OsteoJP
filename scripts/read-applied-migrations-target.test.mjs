@@ -103,3 +103,8 @@ test("REFUSES an unset environment, and names no value", () => {
   assert.equal(r.code, 2, r.out);
   assert.match(r.out, /no DATABASE_URL_DIRECT \/ DATABASE_URL in the environment/);
 });
+
+test("REFUSES a ?database= query, which postgres.js would connect to instead of /postgres", () => {
+  assertRefused(runReader({ DATABASE_URL_DIRECT: `postgres://postgres.${REF}:${PW}@db.example.invalid:5432/postgres?database=rehearsal` }));
+});
+

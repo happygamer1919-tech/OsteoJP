@@ -39,6 +39,24 @@ const MODULE = join(HERE, "production-target.mjs");
 const REF = PRODUCTION.ref;
 const HOST = PRODUCTION.host;
 
+// THE GUARD MUST HAVE NO DATABASE CODE, OR NO ARM BELOW MAY RUN IT. The positive
+// arms hand the guard the production host with a fixture password; that is safe
+// only because the guard parses and exits. So the import list is checked HERE, at
+// load, and a guard that imports anything but the shared check (which imports
+// nothing) stops this whole file before any arm starts it.
+{
+  const imports = (src) => [...src.matchAll(/^\s*import\b[^;]*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
+  const guardSrc = readFileSync(GUARD, "utf8");
+  const modSrc = readFileSync(MODULE, "utf8");
+  if (
+    JSON.stringify(imports(guardSrc)) !== JSON.stringify(["./production-target.mjs"]) ||
+    imports(modSrc).length !== 0 ||
+    /\bimport\s*\(|\brequire\s*\(/.test(guardSrc + modSrc)
+  ) {
+    throw new Error("the guard or its check loads code beyond the pure check: no arm may run it against the production host");
+  }
+}
+
 /** Runs the guard with a controlled environment. Returns {code, out}. */
 function runGuard(env) {
   try {
@@ -81,7 +99,7 @@ test("the production constants are the ones pinned here, and the ref is on the s
   assert.equal(PRODUCTION.port, "5432");
   assert.equal(PRODUCTION.database, "postgres");
   assert.ok(readProdRefs().includes(REF), "the ref the guard requires is not one the seeders refuse");
-  assert.deepEqual([...TARGET_QUERY_KEYS], ["host", "hostaddr", "port", "dbname", "user", "service"]);
+  assert.deepEqual([...TARGET_QUERY_KEYS], ["host", "hostaddr", "port", "dbname", "database", "user", "service"]);
 });
 
 test("the guard imports the shared check and nothing else, and the check imports nothing", () => {
@@ -198,7 +216,7 @@ test("REFUSES an unparseable connection string WITHOUT echoing it", () => {
 test("REFUSES a scheme psql does not read as a URL: capitals, or not postgres at all", () => {
   // libpq's URI prefix test is case-sensitive; anything else with no `=` is a
   // database NAME on psql's default host. new URL() reads all three as production.
-  for (const s of [url().replace("postgres://", "POSTGRES://"), url().replace("postgres://", "http://"), ` ${url()}`]) {
+  for (const s of [url().replace("postgres://", "POSTGRES://"), url().replace("postgres://", "http://")]) {
     assertRefused(runGuard({ DATABASE_URL_DIRECT: s }), /REFUSING: the connection string does not begin with postgres:\/\//);
   }
 });
@@ -226,3 +244,79 @@ test("REFUSES a query that names a connection target, which psql applies over th
     assert.ok(!r.out.includes("127.0.0.1"), `${q}: the query is never printed`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// R4 round 1 (2026-10-01): the strings a mutation sweep found unpinned, the
+// database query key, control characters, password pieces, redirecting env.
+// ---------------------------------------------------------------------------
+
+test("REFUSES the incident's shape behind a fragment: a label, then # and a hostaddr psql would read", () => {
+  // new URL() drops the fragment and sees only application_name; libpq reads hostaddr=127.0.0.1.
+  const r = runGuard({ DATABASE_URL_DIRECT: url({ query: "?application_name=x#&hostaddr=127.0.0.1" }) });
+  assertRefused(r, /REFUSING: the target's database is not postgres\./);
+  assert.ok(!r.out.includes("127.0.0.1"));
+});
+
+test("REFUSES whitespace or a control character anywhere: in the host, the port, after the path, in the username", () => {
+  for (const s of [
+    url({ host: `${HOST}\t` }),
+    url({ port: "54\t32" }),
+    `${url()}\n`,
+    ` ${url()}`,
+    url({ user: `postgres.${REF.slice(0, 5)}\t${REF.slice(5)}` }),
+    url({ path: "/post\u007fgres" }),
+  ]) {
+    const r = runGuard({ DATABASE_URL_DIRECT: s });
+    assertRefused(r, /REFUSING: the connection string carries whitespace or a control character/);
+    assert.doesNotMatch(r.out, /^(host|port|ref):/m, "nothing from the string is printed before its shape passes");
+  }
+});
+
+test("REFUSES a ?database= query, which postgres.js would connect to instead of /postgres", () => {
+  for (const q of ["?database=rehearsal", "?DataBase=rehearsal", "?sslmode=require&database=x"]) {
+    assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ query: q }) }), /REFUSING: the connection string's query names a connection target/);
+  }
+});
+
+test("NEVER prints a piece of a malformed password: a / or @ in it moves no part into a printed line", () => {
+  for (const [pw, pieces] of [
+    ["9876/rest-of-pw", ["9876", "rest-of-pw"]],
+    ["p@SECRETPART/w0rd", ["SECRETPART", "w0rd"]],
+    ["a?hostaddr=b", ["hostaddr=b"]],
+  ]) {
+    const r = runGuard({ DATABASE_URL_DIRECT: `postgres://postgres.${REF}:${pw}@${HOST}:5432/postgres` });
+    assert.equal(r.code, 2, r.out);
+    assert.doesNotMatch(r.out, /target verified/);
+    for (const p of pieces) assert.ok(!r.out.includes(p), `printed a piece of the password: ${p}`);
+    assert.doesNotMatch(r.out, /^(host|port|ref):/m, "printed host, port or ref before the shape passed");
+  }
+});
+
+test("REFUSES when PGHOSTADDR, PGSERVICE or PGSERVICEFILE is set, naming the variable and not its value", () => {
+  for (const name of ["PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE"]) {
+    const r = runGuard({ DATABASE_URL_DIRECT: url(), [name]: "redirect-target-xyz" });
+    assertRefused(r, new RegExp(`REFUSING: ${name} is set`));
+    assert.ok(!r.out.includes("redirect-target-xyz"), `${name}'s value was printed`);
+  }
+  assert.equal(runGuard({ DATABASE_URL_DIRECT: url(), PGHOSTADDR: "" }).code, 0, "an empty variable is not set");
+});
+
+// ---------------------------------------------------------------------------
+// THE GUARDS' OWN BYTES, PINNED HERE ON PURPOSE (the reviewer's M3). Until the
+// guard fix, three data-op tests pinned the target guard by its current sha256
+// and went red on any edit; they now pin the guard each completed op RAN with.
+// So this file pins the three production-guard files instead, and any change
+// to one of them is a GATE-CHANGE that re-pins it here, on purpose.
+// ---------------------------------------------------------------------------
+
+test("the three production-guard files are the reviewed ones (re-pin on purpose, in a GATE-CHANGE)", () => {
+  const pins = {
+    "scripts/production-target.mjs": "4e3cc4a5cd38c63aa8f43680fff8d978c2d4b5563ee4409761584a3a4d3cd766",
+    "scripts/assert-production-target.mjs": "904010b8df5fc9e2c11d8f89c5d63c74bff815d87499543b19ab0455509b5136",
+    "packages/db/scripts/read-applied-migrations.mjs": "825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387",
+  };
+  for (const [file, want] of Object.entries(pins)) {
+    assert.equal(sha256(readFileSync(join(HERE, "..", file), "utf8")), want, `${file} moved; re-pin it on purpose`);
+  }
+});
+
