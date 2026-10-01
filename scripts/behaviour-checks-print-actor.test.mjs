@@ -51,9 +51,30 @@ export const FILES = {
   "scripts/db/behaviour-care-team-readonly.sql": [PICKED],
   "scripts/db/behaviour-nesa-names-readonly.sql": [PICKED],
   "scripts/db/behaviour-rgpd-readonly.sql": ["passed in with -v actor_id"],
+  // Up to five actors, each passed; the file reads itself once per actor, so its
+  // one ACTOR line prints once per actor, and each slot names the variable it
+  // came from. CARE-02a v2 (0096) added T4 (on the team at another clinic) and N (a
+  // non-therapist on the team); either may be passed as the word none, and a
+  // slot passed as none prints no ACTOR line and sets no actor at all.
+  "scripts/db/behaviour-care02a-readonly.sql": [
+    "passed in with -v t1_id",
+    "passed in with -v t2_id",
+    "passed in with -v t3_id",
+    "passed in with -v t4_id",
+    "passed in with -v n_id",
+  ],
   "scripts/db/behaviour-conflict-name-readonly.sql": PICKED_OR_PASSED,
   // 0094 (held): the users/tenants/roles policy split. Passed in, like rgpd.
   "scripts/db/behaviour-users-tenants-roles-readonly.sql": ["passed in with -v actor_id"],
+  // 0097 (held): three actors, each passed; the file reads itself once per
+  // actor (the shape of 0096's behaviour-care02a-readonly.sql), so its one
+  // ACTOR line prints once per actor, and each slot names the variable it
+  // came from.
+  "scripts/db/behaviour-registo-writes-readonly.sql": [
+    "passed in with -v t1_id",
+    "passed in with -v t2_id",
+    "passed in with -v t3_id",
+  ],
 };
 
 /** Per file, the exact trimmed lines that may name a personal column. See the header. */
