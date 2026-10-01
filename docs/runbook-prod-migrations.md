@@ -285,6 +285,21 @@ turn that failure into a sentence naming the cause instead of a mystery.
 Before this, exit 5's state was indistinguishable from success. That is the state
 that cost 0038–0041, 0049 and 0058.
 
+**From 0100 on, exit 4 with NOTHING printed can also be a timeout firing.** Every
+migration numbered 0100 or higher starts with `SET LOCAL lock_timeout = '5s'` and
+`SET LOCAL statement_timeout = '60s'` (`scripts/migration-timeouts.test.mjs`, the
+lead's ruling (b) of 2026-10-01). When either fires, Postgres cancels the statement
+("canceling statement due to lock timeout" or "... statement timeout"), drizzle's
+single transaction rolls back, the journal does not move and NOTHING IS APPLIED. But
+drizzle-kit 0.31.10 then exits 1 and prints nothing (measured on a throwaway, R4 of
+#1510), so `verified-migrate.mjs` reports "IT PRINTED NOTHING. That is POST-01" and
+names the pooler. Read that message as two candidates, not one: the POST-01 causes
+it lists, OR a lock or statement timeout. The sitting stops either way (the halt
+rule); a timeout is the safe failure, and whether to re-run, when, or with a ruled
+longer bound is the lead's call. The message itself names only POST-01 until
+`verified-migrate.mjs` is next changed, which is a GATE-CHANGE once #1508 lands,
+because #1508 pins its bytes in `scripts/verified-migrate.test.mjs`.
+
 ### Proved before it was made compulsory
 
 Against a throwaway Postgres 17 seeded to production's **exact** journal position
