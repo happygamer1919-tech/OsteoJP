@@ -67,9 +67,23 @@ test.describe("390 px", () => {
     await page.goto(`${PROFILE}?tab=documentos`);
     const selected = page.locator("[data-tabs-scroller]").first().getByRole("tab", { selected: true });
     await expect(selected).toHaveText(/Documentos/, { timeout: 12_000 });
+    // The server's HTML already marks Documentos selected, so the line above
+    // passes BEFORE React hydrates and the Tabs effect scrolls the row. Measuring
+    // then raced the effect (red on #1515's run of 2026-10-01: x 447 + 96 > 390).
+    // Poll until the row has scrolled; if the effect never runs, this fails with
+    // the last position seen.
+    await expect
+      .poll(
+        async () => {
+          const r = await selected.boundingBox();
+          return r ? Math.round(r.x + r.width) : Number.POSITIVE_INFINITY;
+        },
+        { message: "the URL-selected tab never scrolled into view", timeout: 10_000 },
+      )
+      .toBeLessThanOrEqual(390);
     const r = await selected.boundingBox();
     expect(r).not.toBeNull();
-    expect(r!.x + r!.width, `the selected tab is off screen: ${JSON.stringify(r)}`).toBeLessThanOrEqual(390);
+    expect(r!.x, `the selected tab starts off screen: ${JSON.stringify(r)}`).toBeGreaterThanOrEqual(0);
     const p = await pageOverflow(page);
     expect(p.scrollWidth, `the page scrolls sideways: ${JSON.stringify(p)}`).toBeLessThanOrEqual(p.clientWidth);
   });
