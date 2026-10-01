@@ -155,7 +155,7 @@ The lead's words, character for character: "A script's own REFUSE or STOP line i
     - So a local URL could pass the reader if the ref appeared anywhere in it, and could pass the target guard if its username carried the ref.
     - **The fix** is the pair `sec/INC-guard-parse-host-db` (Tier B) and its GATE-CHANGE, merged after 0097 is applied.
       - Both guards run one shared check, `scripts/production-target.mjs`. It compares the PARSED ref, host, port and database, and refuses any string the parsers would read differently.
-      - The target guard also refuses `PGHOSTADDR`, `PGSERVICE` and `PGSERVICEFILE`.
+      - The target guard also refuses `PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE` and `PGOPTIONS`, and the shared check refuses an `options` query key: Supabase's pooler reads a tenant from `options` before the username.
       - The new pins go into later documents only.
   - The incident card is `INC-rehearsal-subagent-passed-the-reader-guard`.
 
