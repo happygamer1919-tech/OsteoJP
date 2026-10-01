@@ -35,8 +35,8 @@
 //              reads any other string with no `=` in it as a DATABASE NAME on
 //              its default host, the local socket, whatever new URL() reads as
 //              the host. libpq's prefix test is case-sensitive; new URL() is not.
-//   authority  It carries exactly one `@`, and the host and port written after
-//              it are the ones new URL() read. libpq and postgres.js split the
+//   authority  It carries exactly one `@`, inside the authority, and the port
+//              written after it is the one new URL() read. libpq and postgres.js split the
 //              user from the host at the FIRST `@`, new URL() at the LAST, and
 //              libpq and postgres.js read a `,` in the host as a list of hosts
 //              to try in order. Measured with postgres.js 3.4.9 on 2026-09-30,
@@ -152,13 +152,15 @@ export function checkProductionTarget(raw) {
   const authority = /^[^/?#]*/.exec(afterScheme)[0];
   const rest = afterScheme.slice(authority.length);
   const hostPort = authority.slice(authority.lastIndexOf("@") + 1);
+  // The raw PORT is compared to what new URL() read (":05432" reads as 5432 there and as "05432" to
+  // the other parsers). The raw HOST is not compared: once the control check has refused whitespace,
+  // the only host new URL() rewrites is one with non-ASCII, which it percent-encodes and the host
+  // check below refuses anyway. A compare no input can reach cannot be pinned by a test, so it is gone.
   const colon = hostPort.lastIndexOf(":");
-  const rawHost = colon === -1 ? hostPort : hostPort.slice(0, colon);
   const rawPort = colon === -1 ? "" : hostPort.slice(colon + 1);
   if (
     raw.split("@").length !== 2 ||
     !authority.includes("@") ||
-    rawHost.toLowerCase() !== url.hostname.toLowerCase() ||
     rawPort !== url.port
   ) {
     return refuse("authority");
