@@ -166,7 +166,10 @@ export const SESSION_OPTIONS = SESSION_SETTINGS.map((s) => `-c ${s.name}=${s.val
  *  postgres.js sends as a startup parameter. Refuses a URL that already has one.
  *  Only the query is inspected; the host, the user and the password are never
  *  parsed, so nothing about them can be reported or altered. */
-export function withSessionOptions(url) {
+export function withSessionOptions(rawUrl) {
+  // new URL() trims trailing whitespace and C0 controls; postgres.js would read them as part of
+  // the database once a query is appended after them. Trim them, so nothing about the target moves.
+  const url = rawUrl.replace(/[\u0000-\u0020]+$/, "");
   const hashAt = url.indexOf("#");
   const base = hashAt === -1 ? url : url.slice(0, hashAt);
   const fragment = hashAt === -1 ? "" : url.slice(hashAt);
@@ -401,7 +404,13 @@ async function main() {
           "    the SESSION pooler on 5432 rather than the transaction pooler on 6543 (advisory locks),\n" +
           "    drizzle.config.ts's DATABASE_URL_DIRECT fallback,\n" +
           "    running drizzle-kit directly rather than through `pnpm --filter exec`, which swallows\n" +
-          "    output on some failure paths."),
+          "    output on some failure paths.") +
+        (sessionNow.inForce
+          ? `\n  THE TWO TIMEOUTS WERE IN FORCE (${sessionNow.shown}). A migration that waited 10 s for a\n` +
+            "    lock, or ran one statement longer than 300 s, was CANCELLED by the server, and drizzle's one\n" +
+            "    transaction rolled back: the journal delta below says whether anything moved. The server log\n" +
+            "    names it (`canceling statement due to lock timeout` / `statement timeout`); drizzle may not."
+          : ""),
     );
     return verdict.code;
   }

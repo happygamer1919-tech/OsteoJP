@@ -239,3 +239,43 @@ test("run for real: an `options` in the URL stops it at exit 3, URL unprinted", 
   assert.ok(!printed.includes("12345s") && !printed.includes("pooled.invalid") && !printed.includes("not-a-password"));
   assert.ok(!r.stdout.includes("journal "));
 });
+
+// ---------------------------------------------------------------------------
+// R4 round 1 (2026-10-01): the fragment, trailing whitespace, and a real run
+// that would print the URL if any line interpolated it.
+// ---------------------------------------------------------------------------
+
+test("a `#` fragment: the options go before it, and the fragment is kept", () => {
+  const r = withSessionOptions(`${DIRECT}#frag`);
+  assert.equal(r.error, undefined);
+  assert.ok(r.url.endsWith("#frag"), r.url);
+  const u = new URL(r.url);
+  assert.equal(u.searchParams.get("options"), SESSION_OPTIONS);
+  assert.equal(u.hash, "#frag");
+  assert.equal(u.pathname, "/postgres");
+});
+
+test("trailing whitespace and control characters are trimmed, so the database does not move", () => {
+  for (const tail of [" ", "  ", "\t", "\n", "\r\n", " \u0000"]) {
+    const r = withSessionOptions(`${DIRECT}${tail}`);
+    assert.equal(r.error, undefined);
+    const u = new URL(r.url);
+    assert.equal(u.pathname, "/postgres", JSON.stringify(tail));
+    assert.equal(u.searchParams.get("options"), SESSION_OPTIONS);
+    assert.ok(!/[\u0000- ]\?/.test(r.url), `whitespace left before the query: ${JSON.stringify(r.url)}`);
+  }
+});
+
+test("run for real past the session check: the URL and the password never print, whatever fails next", () => {
+  // A unique password on an unresolvable host: the run passes the session check, prints its
+  // `session ... requested` line, then fails to connect. Whatever it prints must not carry either.
+  const PW = "leak-canary-7f3a9c";
+  const r = runWrapper({ DATABASE_URL_DIRECT: `postgresql://someone.example:${PW}@leakcheck.invalid:5432/postgres` });
+  const printed = r.stdout + r.stderr;
+  assert.match(r.stdout, /session {4}lock_timeout=10s statement_timeout=300s requested/, printed);
+  assert.ok(!printed.includes(PW), "the password printed");
+  assert.ok(!printed.includes("options="), "the augmented URL printed");
+  // The HOST may appear: the driver's own DNS error names it ("getaddrinfo ENOTFOUND <host>"), and
+  // main's verified-migrate prints the same line today. A host is not a credential; the URL is.
+  assert.notEqual(r.status, 0);
+});
