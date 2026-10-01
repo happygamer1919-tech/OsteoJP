@@ -48,10 +48,14 @@ const HOST = PRODUCTION.host;
   const imports = (src) => [...src.matchAll(/^\s*import\b[^;]*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
   const guardSrc = readFileSync(GUARD, "utf8");
   const modSrc = readFileSync(MODULE, "utf8");
+  // Any other way to load code counts too: a bare `import "x"`, `export ... from`, a dynamic import,
+  // require, or process.getBuiltinModule (R4 round 2 found the first three got past a narrower test).
+  const otherLoads = /^\s*import\s*["']|^\s*export\b[^;]*\bfrom\b|\bimport\s*\(|\brequire\s*\(|getBuiltinModule/m;
   if (
     JSON.stringify(imports(guardSrc)) !== JSON.stringify(["./production-target.mjs"]) ||
     imports(modSrc).length !== 0 ||
-    /\bimport\s*\(|\brequire\s*\(/.test(guardSrc + modSrc)
+    otherLoads.test(guardSrc) ||
+    otherLoads.test(modSrc)
   ) {
     throw new Error("the guard or its check loads code beyond the pure check: no arm may run it against the production host");
   }
@@ -284,11 +288,13 @@ test("NEVER prints a piece of a malformed password: a / or @ in it moves no part
     ["p@SECRETPART/w0rd", ["SECRETPART", "w0rd"]],
     ["a?hostaddr=b", ["hostaddr=b"]],
   ]) {
-    const r = runGuard({ DATABASE_URL_DIRECT: `postgres://postgres.${REF}:${pw}@${HOST}:5432/postgres` });
+    for (const scheme of ["postgres://", "POSTGRES://", "http://"]) {
+    const r = runGuard({ DATABASE_URL_DIRECT: `${scheme}postgres.${REF}:${pw}@${HOST}:5432/postgres` });
     assert.equal(r.code, 2, r.out);
     assert.doesNotMatch(r.out, /target verified/);
-    for (const p of pieces) assert.ok(!r.out.includes(p), `printed a piece of the password: ${p}`);
-    assert.doesNotMatch(r.out, /^(host|port|ref):/m, "printed host, port or ref before the shape passed");
+    for (const p of pieces) assert.ok(!r.out.includes(p), `${scheme} printed a piece of the password: ${p}`);
+    assert.doesNotMatch(r.out, /^(host|port|ref):/m, `${scheme} printed host, port or ref before the shape passed`);
+    }
   }
 });
 
@@ -311,12 +317,41 @@ test("REFUSES when PGHOSTADDR, PGSERVICE or PGSERVICEFILE is set, naming the var
 
 test("the three production-guard files are the reviewed ones (re-pin on purpose, in a GATE-CHANGE)", () => {
   const pins = {
-    "scripts/production-target.mjs": "4e3cc4a5cd38c63aa8f43680fff8d978c2d4b5563ee4409761584a3a4d3cd766",
+    "scripts/production-target.mjs": "9e48d563147339a2ac677f4ae21df2f0dfb5c6f0148699cce7bff09b28227a1a",
     "scripts/assert-production-target.mjs": "904010b8df5fc9e2c11d8f89c5d63c74bff815d87499543b19ab0455509b5136",
     "packages/db/scripts/read-applied-migrations.mjs": "825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387",
   };
   for (const [file, want] of Object.entries(pins)) {
     assert.equal(sha256(readFileSync(join(HERE, "..", file), "utf8")), want, `${file} moved; re-pin it on purpose`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// R4 round 2 (2026-10-01): the raw path and port compares, the host and ref as
+// exact matches, the query key trim.
+// ---------------------------------------------------------------------------
+
+test("REFUSES a path new URL() normalises to /postgres and libpq does not", () => {
+  // new URL() reads both as /postgres; libpq reads the database as written.
+  for (const path of ["/x/../postgres", "/./postgres", "/%2E/postgres"]) {
+    assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ path }) }), /REFUSING: the target's database is not postgres\./);
+  }
+});
+
+test("REFUSES a port written with a leading zero, which new URL() alone reads as 5432", () => {
+  assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ port: "05432" }) }), /REFUSING: the connection string does not carry exactly one "@" in its authority, or carries a host or port/);
+});
+
+test("the host and the ref are exact matches, never a suffix: a local host first in a list, a longer ref", () => {
+  // libpq tries the first host of a list first: the incident's shape behind the production name.
+  assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ host: `127.0.0.1,${HOST}` }) }), /REFUSING: the target's host is not /);
+  assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ host: `x${HOST}` }) }), /REFUSING: the target's host is not /);
+  assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ user: `postgres.x${REF}` }) }), /REFUSING: project ref is "x/);
+});
+
+test("a query key is compared after decoding, case and padding: %20, + and capitals do not hide a target key", () => {
+  for (const q of ["?host%20=127.0.0.1", "?host+=127.0.0.1", "?%20HostAddr=127.0.0.1"]) {
+    assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ query: q }) }), /REFUSING: the connection string's query names a connection target/);
   }
 });
 

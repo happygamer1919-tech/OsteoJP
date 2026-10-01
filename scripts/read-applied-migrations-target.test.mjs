@@ -95,7 +95,7 @@ test("reads DATABASE_URL_DIRECT before DATABASE_URL, as the target guard does", 
     DATABASE_URL: `postgres://postgres.${REF}:${PW}@db.example.invalid:6543/postgres`,
   });
   assertRefused(r);
-  assert.match(r.out, /the target's ref is not /, "DATABASE_URL_DIRECT (ref postgres) was read, not DATABASE_URL (port 6543)");
+  assert.match(r.out, /the target's ref is not /, "DATABASE_URL_DIRECT (ref postgres) was read first");
 });
 
 test("REFUSES an unset environment, and names no value", () => {
@@ -104,7 +104,16 @@ test("REFUSES an unset environment, and names no value", () => {
   assert.match(r.out, /no DATABASE_URL_DIRECT \/ DATABASE_URL in the environment/);
 });
 
-test("REFUSES a ?database= query, which postgres.js would connect to instead of /postgres", () => {
-  assertRefused(runReader({ DATABASE_URL_DIRECT: `postgres://postgres.${REF}:${PW}@db.example.invalid:5432/postgres?database=rehearsal` }));
+test("reads DATABASE_URL when DATABASE_URL_DIRECT is unset, and refuses it on its own terms", () => {
+  // Only DATABASE_URL is set, to a local host carrying the production ref in the username: the
+  // refusal names the HOST, which proves the reader read this variable rather than finding none.
+  const r = runReader({ DATABASE_URL: `postgres://postgres.${REF}:${PW}@127.0.0.1:1/postgres` });
+  assertRefused(r);
+  assert.match(r.out, /the target's host is not /);
 });
+
+// Every arm of the shared check (the database query key among them) is pinned in
+// assert-production-target.test.mjs, whose guard has no database code. This file
+// pins only what is the reader's own: the shared check is called, it runs before
+// the driver loads, and the variable precedence.
 
