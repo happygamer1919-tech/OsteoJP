@@ -227,7 +227,7 @@ test("REFUSES a second @ or a host list: psql and postgres.js split them where n
     `postgres://postgres.${REF}:x@127.0.0.1:54322,y@${HOST}:5432/postgres`,
     `postgres://postgres.${REF}:x@${PW}@${HOST}:5432/postgres`,
   ]) {
-    assertRefused(runGuard({ DATABASE_URL_DIRECT: s }), /REFUSING: the connection string carries more than one "@"/);
+    assertRefused(runGuard({ DATABASE_URL_DIRECT: s }), /REFUSING: the connection string does not carry exactly one "@" in its authority/);
   }
   // A host list with one `@`: new URL() reads the whole list as the host, so the host check refuses it.
   assertRefused(runGuard({ DATABASE_URL_DIRECT: url({ host: `${HOST},127.0.0.1` }) }), /REFUSING: the target's host is not /);
