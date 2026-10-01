@@ -29,6 +29,8 @@
 // uses another's is the incident again by a different road. So a string is
 // accepted only when all of these hold, checked in this order:
 //
+//   control    No whitespace and no control character anywhere: the parsers
+//              disagree about them (a tab in a username, a newline after a path).
 //   scheme     It begins with exactly `postgres://` or `postgresql://`. libpq
 //              reads any other string with no `=` in it as a DATABASE NAME on
 //              its default host, the local socket, whatever new URL() reads as
@@ -52,7 +54,8 @@
 //              followed by a query, and there is no `#` anywhere. new URL()
 //              drops a `#` fragment from the path; libpq does not.
 //   query      No query key names a connection target: host, hostaddr, port,
-//              dbname, user or service, compared after decoding and without
+//              dbname, database, user or service (postgres.js sends any key it
+//              does not know, `database` included, as a startup parameter), compared after decoding and without
 //              regard to case. libpq applies those OVER the URL's own parts, so
 //              `...:5432/postgres?hostaddr=127.0.0.1` would check as production
 //              and connect to 127.0.0.1. Any other key (sslmode,
@@ -85,7 +88,7 @@ export const PRODUCTION = Object.freeze({
 });
 
 /** Query keys libpq would apply over the URL's own host, port, database or user. */
-export const TARGET_QUERY_KEYS = Object.freeze(["host", "hostaddr", "port", "dbname", "user", "service"]);
+export const TARGET_QUERY_KEYS = Object.freeze(["host", "hostaddr", "port", "dbname", "database", "user", "service"]);
 
 /**
  * Why a string was refused, one sentence per check, NAMING NO VALUE FROM THE
@@ -95,13 +98,16 @@ export const TARGET_QUERY_KEYS = Object.freeze(["host", "hostaddr", "port", "dbn
  */
 export const REASONS = Object.freeze({
   unset: "no connection string is set.",
+  control:
+    "the connection string carries whitespace or a control character, which psql, postgres.js and new URL() " +
+    "read differently.",
   parse: "the connection string could not be parsed as a URL.",
   scheme:
     "the connection string does not begin with postgres:// or postgresql://, and psql reads anything else " +
     "as a database name on its default host.",
   authority:
-    'the connection string carries more than one "@", or a host or port that is not the one parsed, so psql ' +
-    "and postgres.js would not connect where this check reads.",
+    'the connection string does not carry exactly one "@" in its authority, or carries a host or port that is ' +
+    "not the one parsed, so psql and postgres.js would not connect where this check reads.",
   ref: `the target's ref is not ${PRODUCTION.ref}.`,
   host: `the target's host is not ${PRODUCTION.host}, the production session pooler.`,
   port: `the target's port is not ${PRODUCTION.port}, the session pooler.`,
@@ -122,6 +128,11 @@ const SCHEMES = ["postgresql://", "postgres://"];
  */
 export function checkProductionTarget(raw) {
   if (typeof raw !== "string" || raw === "") return { ok: false, failed: "unset", seen: null };
+
+  // control: no whitespace and no C0 or DEL character anywhere. new URL() strips or encodes some of
+  // them, libpq keeps them (a tab in the username, a newline after the path), and postgres.js does
+  // either. A production string has none, so refusing them closes every such disagreement at once.
+  if (/[\u0000-\u0020\u007f]/.test(raw)) return { ok: false, failed: "control", seen: null };
 
   let url;
   try {
@@ -146,6 +157,7 @@ export function checkProductionTarget(raw) {
   const rawPort = colon === -1 ? "" : hostPort.slice(colon + 1);
   if (
     raw.split("@").length !== 2 ||
+    !authority.includes("@") ||
     rawHost.toLowerCase() !== url.hostname.toLowerCase() ||
     rawPort !== url.port
   ) {

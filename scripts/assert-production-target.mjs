@@ -56,11 +56,27 @@ if (!raw) {
   process.exit(2);
 }
 
+// THE ENVIRONMENT CAN REDIRECT psql PAST THE URL. libpq reads PGHOSTADDR, PGSERVICE
+// and PGSERVICEFILE from the shell that runs psql after this guard, and any of them
+// can send the connection somewhere the URL does not name. A production sitting
+// sets none of them, so a set one is refused. NAMES ONLY: the value is never read
+// into a message.
+for (const name of ["PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE"]) {
+  if ((process.env[name] ?? "") !== "") {
+    console.error(`REFUSING: ${name} is set, and psql would use it instead of the URL this guard checks. Unset it.`);
+    process.exit(2);
+  }
+}
+
 const verdict = checkProductionTarget(raw);
-if (verdict.failed === "parse" || verdict.seen === null) {
+// NOTHING FROM THE STRING IS PRINTED UNTIL ITS SHAPE IS PROVEN. A misplaced "/",
+// "?" or "@" in a password moves part of it into what new URL() calls the host or
+// the port, so the three lines below are printed only once the scheme and the
+// authority checks have passed. Before that, the refusal names the check only.
+if (["unset", "control", "parse", "scheme", "authority"].includes(verdict.failed) || verdict.seen === null) {
   // The value is NOT included in the message. A malformed connection string is
   // still a connection string.
-  console.error("REFUSING: the connection string could not be parsed as a URL.");
+  console.error(`REFUSING: ${REASONS[verdict.failed] ?? "the connection string could not be parsed as a URL."}`);
   process.exit(2);
 }
 
