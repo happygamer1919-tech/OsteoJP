@@ -1182,3 +1182,15 @@ R9's proof 2 accepts nothing but the reviewed text, whitespace aside). Its four 
 `ALTER DEFAULT PRIVILEGES` line. The check files write nothing: the pre-check opens its own
 READ ONLY transaction and ends in ROLLBACK, and the post-check runs inside the block's
 `begin read only`.
+
+## Review history
+
+The R4 rounds this document has had, one row each. Each "fixed in" sha is a local commit on
+`db/0100-maintain-revoke`.
+
+- R4 round 1 (0b25ce28): NOT PASS, 3 MAJOR, 4 MINOR; fixed in ded05f71, with the mutation sweep's
+  test-file gaps.
+- R4 round 2 (ded05f71): NOT PASS, 1 MAJOR, 1 MINOR; fixed in daa1e31f.
+- R4 round 3 (daa1e31f): NOT PASS, 1 MAJOR, 3 MINOR; fixed in 4b1754d7, where proof 2 became an
+  exact compare.
+- R4 round 4 (4b1754d7): 0 BLOCKER, 0 MAJOR, 3 MINOR; fixed after the round in 43fcbab2, prose and test only, no apply-block byte changed; not re-reviewed, under the review-loop cap.
