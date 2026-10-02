@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0099_revoke_maintain.sql` | `0099` (applied 2026-10-01 21:15 Lisbon, production journal 97) | 2026-10-02, branch `db/0100-maintain-revoke`: MAINTAIN off `authenticated` on every table in `public` plus the matching default privilege (the lead's ruling S-1001-A R1, measured first under R3), and the first file to open with the two `SET LOCAL` lines. sha256 `80f85018e8ed35922ad546b8a28e96d80e894b04f2a1f09f201d00b601ff6106` | this branch, held. It becomes `0100_revoke_maintain.sql` (S-1001-A R2: "this is 0100 (catalog-only pilot of the SET LOCAL gate). SAT-01 becomes 0101, the episode-policy item 0102."), journal `idx 97`, `when 1788502100000`, and GREEN applies it from `origin/main` by `docs/migration-apply-0100.md` |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
@@ -45,8 +46,9 @@ Promoted table), so the table is empty again on `main`. The four held files of t
 live on their held branches, not on `main`, until each is promoted. CARE-02a was promoted as
 `0096` on #1471, applied on 2026-09-30 and merged. The registo write file was promoted as
 `0097` on #1475 and the staging index as `0098` on #1469, both applied on 2026-10-01 and
-merged. On this branch (#1397) the grants revoke is promoted as `0099` (see the Promoted
-table), so the table above is empty here too. Other branches hold their own pending files, which this table does not
+merged. The grants revoke was promoted as `0099` on #1397 (see the Promoted table), applied on
+2026-10-01 and merged. On the branch `db/0100-maintain-revoke` the table above holds the 0100
+file until its promotion. Other branches hold their own pending files, which this table does not
 list: it is only accurate for the branch you read it on.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER AND THE LEAD ON 2026-09-30 (the fifth time).**
