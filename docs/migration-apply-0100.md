@@ -1,6 +1,6 @@
 # 0100: apply the MAINTAIN revoke from `authenticated`
 
-**NOT READY. Seven things happen first, in order; a sitting inside clinic hours needs three more (steps 6 to 8), all of them before the merge (see "NOT READY" below). Two of the seven are done: the guard pair (#1508, #1509) is on main and merged into this branch (step 1), and 0100 is promoted on it (step 3), both on 2026-10-02. Step 2's fill is made (#1510 merged, `SHAGATE` holds main's gate file sha256); its R8 round is in "Review history".**
+**NOT READY until #1520 is merged and GREEN's dispatch carries its merge sha.** Done on this branch: the guard pair on main (NOT READY step 1); #1510 on main and `SHAGATE` filled, with its two R8 rounds (step 2); the promotion (step 3); every halt in the five blocks made explicit and proven by fault injection, with its R4 rounds. Open: the whole-block rehearsal (step 4) and CI on the rehearsed head (step 5). A sitting inside clinic hours needs steps 6 to 8 as well (see "NOT READY" below).
 
 **Status: PROMOTED. NOT APPLIED.** One migration,
 `packages/db/migrations/0100_revoke_maintain.sql`, which the promotion of 2026-10-02 renamed,
