@@ -1215,3 +1215,7 @@ The R4 rounds this document has had, one row each. Each "fixed in" sha is a loca
   MINORs were this row missing, two "today's placeholders" phrasings, test 12 passing on a
   missing gate file or a reverted placeholder, and a stale test header. All fixed in the next
   commit, prose and test only, no apply-block byte changed; R8 round 2 reviews that delta.
+- R8 round 2 (d5070391): 0 BLOCKER, 0 MAJOR, 2 MINOR, both in the test file (a `gateProblems`
+  rule no test missed; two stale comments). All five round 1 findings confirmed fixed, and every
+  apply block byte-identical. Fixed after the round in 62473329, test only; not re-reviewed, under the
+  review-loop cap.
