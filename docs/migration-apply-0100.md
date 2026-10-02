@@ -613,8 +613,8 @@ HEAD: <sha>`; the sidecar line `docs/migration-apply-0100.md: OK`; then
 then `0099 on disk: 0099_revoke_truncate_trigger_references.sql, sha256 fbc5e545...`; then
 check-journal's line `... 98 .sql files match 98 journal entries in order ...`; then the
 clock: `Lisbon <HHMM>: closed by the clock ...` or `open`, the `catalog-only:` line ending
-`CATALOG-ONLY`, the three proof lines (on today's placeholders: proof 1 `no`, proof 2 `yes`,
-proof 3 `no`), and either `R9: closed hours by the clock ...` or, inside clinic hours, `R9
+`CATALOG-ONLY`, the three proof lines (proof 1 `yes` while main's gate file hashes to
+`SHAGATE`, proof 2 `yes`, proof 3 `no` until `PRECHECK_EARLIER` is filled), and either `R9: closed hours by the clock ...` or, inside clinic hours, `R9
 DAYTIME: ...` only when all three read `yes` (otherwise the STOP); then `running from
 origin/main <sha>, recorded in /tmp/0100-main.sha`; then
 `0100 PROMOTION, NUMBER, FILES AND CLOCK VERIFIED`. Exit 0. It reads no database. The sha it
@@ -1102,8 +1102,8 @@ no `FAIL` row and the summary line, as THE EARLIER PRE-CHECK SITTING writes it.
 
 | Case | Result |
 |---|---|
-| stage 0 with today's placeholders at 0759, 2100, 2230 | exit 0, `R9: closed hours by the clock ...` |
-| stage 0 with today's placeholders at 0800, 1200, 2059 | **STOP**, exit 1: proof 1 `no`, proof 2 `yes`, proof 3 `no` |
+| stage 0 with the placeholders of that run at 0759, 2100, 2230 | exit 0, `R9: closed hours by the clock ...` |
+| stage 0 with the placeholders of that run at 0800, 1200, 2059 | **STOP**, exit 1: proof 1 `no`, proof 2 `yes`, proof 3 `no` |
 | stage 0 at 1200, `SHAGATE` the real gate file's sha256, a valid earlier transcript two hours old | exit 0, `R9 DAYTIME: ...` |
 | stage 0 at 1200, one proof broken at a time: the earlier pin a placeholder; a wrong gate sha256; a wrong earlier sha256; a transcript seconds old; a transcript newer than the start record; a transcript naming another pre-check | **STOP** on each |
 | stage 0 and stage 1 at 1200, the earlier transcript hashing to `PRECHECK_EARLIER` but without the guard's verdict line; without the summary line; with 12 `OK` rows; with 14; with one `FAIL` row | **STOP** on each, proof 3 `no` |
@@ -1154,8 +1154,8 @@ REHEARSED and the document says so."
      document's closing read, will be NOT REHEARSED:** the reader now runs the same parsed-host
      check and refuses any target that is not production, and under the lead's rule it is never
      passed. The same reader runs both reads on production in the sitting.
-   - **The R9 arm runs on the real clock.** Inside clinic hours, with today's placeholders, stages
-     0 and 1 STOP, which is the arm proven in the safe direction; in closed hours they pass by
+   - **The R9 arm runs on the real clock.** Inside clinic hours, with `PRECHECK_EARLIER` still a
+     placeholder (proof 3 `no`; proof 1 reads `yes` since `SHAGATE` was filled), stages 0 and 1 STOP, which is the arm proven in the safe direction; in closed hours they pass by
      the clock. Either is a valid record. The agent never sets `TZ` or the clock to choose.
    - **THE EARLIER PRE-CHECK SITTING runs once, from the PR's head as its block requires** (the
      head it reads from `/tmp/0100-earlier-head.sha` is the one the prompt names), at least 30
@@ -1209,3 +1209,9 @@ The R4 rounds this document has had, one row each. Each "fixed in" sha is a loca
 - R4 round 3 (daa1e31f): NOT PASS, 1 MAJOR, 3 MINOR; fixed in 4b1754d7, where proof 2 became an
   exact compare.
 - R4 round 4 (4b1754d7): 0 BLOCKER, 0 MAJOR, 3 MINOR; fixed after the round in 43fcbab2, prose and test only, no apply-block byte changed; not re-reviewed, under the review-loop cap.
+- R8 round 1 on the SHAGATE fill (53a0f23a, NOT READY step 2): NOT PASS, 0 BLOCKER, 1 MAJOR, 4
+  MINOR. The two `SHAGATE=` lines, the pin value, the arm's behaviour, the sidecar and the suites
+  were confirmed correct. The MAJOR was stage 0's EXPECT still predicting proof 1 `no`; the
+  MINORs were this row missing, two "today's placeholders" phrasings, test 12 passing on a
+  missing gate file or a reverted placeholder, and a stale test header. All fixed in the next
+  commit, prose and test only, no apply-block byte changed; R8 round 2 reviews that delta.

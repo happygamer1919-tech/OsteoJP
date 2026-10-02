@@ -62,7 +62,7 @@
 // WHAT IT DOES NOT PROVE: that any of it runs. That is the rehearsal's job
 // (docs/migration-apply-0100.md, "Rehearsal"), and CI's db-tests once the file is
 // promoted. The SET LOCAL lines are also held by scripts/migration-timeouts.test.mjs
-// (#1510) once it is on main; this file holds them for 0100 on its own meanwhile.
+// (#1510, on main since 2026-10-02), whose sha256 this document pins as SHAGATE.
 //
 // Run: pnpm test:scripts   (node --test, wired into the REQUIRED CI quality job)
 
@@ -234,6 +234,9 @@ export function pinProblems(md, actual) {
     if (name in R9_PLACEHOLDERS && value !== R9_PLACEHOLDERS[name] && !/^[0-9a-f]{64}$/.test(value)) {
       problems.push(`${name} is neither a sha256 nor its documented placeholder: ${value}`);
     }
+    if (name === "SHAGATE" && !/^[0-9a-f]{64}$/.test(value)) {
+      problems.push(`SHAGATE was filled on 2026-10-02 after #1510 merged; ${value} would undo the fill`);
+    }
   }
   for (const name of Object.keys(R9_PLACEHOLDERS)) {
     const values = new Set(pinLines(md).filter(([n]) => n === name).map(([, v]) => v));
@@ -247,6 +250,13 @@ export function pinProblems(md, actual) {
   const names = new Set(pinLines(md).map(([n]) => n));
   for (const n of PIN_NAMES) if (!names.has(n)) problems.push(`no block pins ${n}`);
   return problems;
+}
+
+/** Why SHAGATE fails, or [] when it is the sha256 of the gate file's text (null: the file is missing). */
+export function gateProblems(gate, fileText) {
+  if (!/^[0-9a-f]{64}$/.test(gate)) return [`SHAGATE is not a sha256: ${gate}`];
+  if (fileText === null) return [`${GATE_FILE} is missing, so SHAGATE proves nothing`];
+  return gate === sha256(fileText) ? [] : [`SHAGATE ${gate} is not the sha256 of ${GATE_FILE}`];
 }
 
 /** A block that runs the guard or the reader compares it, and the module both import, BEFORE it runs it. */
@@ -498,12 +508,21 @@ test("every pin is the real file, the given value or an R9 placeholder, and the 
   assert.match(doc, firstGate);
   assert.notDeepEqual(pinProblems(doc.replace(firstGate, "SHAGATE=TODO"), ACTUAL), []);
   assert.notDeepEqual(pinProblems(doc.replace(firstGate, `SHAGATE=${"c".repeat(64)}`), ACTUAL), []);
+  // Both SHAGATE lines reverted to the placeholder (a bad merge): refused, though they agree.
+  assert.notDeepEqual(pinProblems(doc.replace(/^SHAGATE=.*$/gm, `SHAGATE=${R9_PLACEHOLDERS.SHAGATE}`), ACTUAL), []);
 });
 
 test("R9: the placeholders can never match a sha256, and a filled SHAGATE is the gate file's real sha256", () => {
   for (const p of Object.values(R9_PLACEHOLDERS)) assert.doesNotMatch(p, /^[0-9a-f]{64}$/);
   const gate = pinLines(doc).find(([n]) => n === "SHAGATE")[1];
-  if (/^[0-9a-f]{64}$/.test(gate) && existsSync(join(ROOT, GATE_FILE))) assert.equal(gate, sha256(read(GATE_FILE)));
+  // Filled since #1510 merged: the gate file must be on this branch and hash to it. A missing
+  // subject is a failure, never a skip.
+  assert.deepEqual(gateProblems(gate, existsSync(join(ROOT, GATE_FILE)) ? read(GATE_FILE) : null), []);
+  // CONTROLS: the placeholder, a missing file, and one changed byte each fail on their own.
+  const text = read(GATE_FILE);
+  assert.notDeepEqual(gateProblems(R9_PLACEHOLDERS.SHAGATE, text), []);
+  assert.notDeepEqual(gateProblems(gate, null), []);
+  assert.notDeepEqual(gateProblems(gate, `${text} `), []);
 });
 
 test("R9: the daytime arm stands in stage 0 and stage 1, with the same proof lines in both", () => {
