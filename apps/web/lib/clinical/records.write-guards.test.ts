@@ -73,6 +73,7 @@ function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
   const selects = [...opts.selects];
   const read: unknown[] = [];
   const ops: string[] = [];
+  const inserted: unknown[] = [];
   const selectChain = () => {
     const rows = selects.shift();
     if (rows === undefined) throw new Error("fakeTx: an unexpected select");
@@ -98,16 +99,17 @@ function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
     }),
     delete: (table: unknown) => ({ where: () => ({ returning: answer("delete", table) }) }),
     insert: (table: unknown) => ({
-      values: () => ({
+      values: (v: unknown) => ({
         returning: async () => {
           ops.push(table === clinicalRecords ? "insert:clinical_records" : "insert:other");
+          inserted.push(v);
           return [{ id: "66666666-6666-4666-8666-666666666666" }];
         },
       }),
     }),
   };
   mockRunScoped.mockImplementation((_ctx, cb) => Promise.resolve(cb(tx as never)));
-  return { read, ops, pendingSelects: selects };
+  return { read, ops, inserted, pendingSelects: selects };
 }
 
 async function codeOf(p: Promise<unknown>): Promise<string> {
@@ -280,5 +282,17 @@ describe("createAddendum: a new version meets the same test as any registo", () 
     expect(await codeOf(createAddendum(owner, RECORD))).toBe("resolved");
     expect(read).toEqual([clinicalRecords]);
     expect(ops).toEqual(["insert:clinical_records"]);
+  });
+
+  // EPI-01a: the Registos tab keeps a new version in its record's episode group
+  // because the version COPIES the source's episode_id. Pinned here, at the
+  // writer, so a version that stopped copying it (and so fell into "Sem
+  // episódio") is red.
+  it("a new version carries the source's episode, so it stays in that episode's group", async () => {
+    const EPISODE = "77777777-7777-4777-8777-777777777777";
+    const { inserted } = fakeTx({ selects: [[{ ...SOURCE, episodeId: EPISODE }]] });
+    expect(await codeOf(createAddendum(owner, RECORD))).toBe("resolved");
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({ episodeId: EPISODE });
   });
 });

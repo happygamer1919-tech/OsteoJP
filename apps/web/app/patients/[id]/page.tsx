@@ -7,12 +7,14 @@ import {
   StatusChip,
   type StatusTone,
 } from "@osteojp/ui";
-import { ChevronLeft, FileText, Pencil, Plus } from "lucide-react";
+import { ChevronDown, ChevronLeft, FileText, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getRequestContext } from "../../../lib/auth/context";
-import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
+import { type RecordStatus } from "../../../lib/clinical/records";
+import { listFichaRecords } from "../../../lib/clinical/ficha-groups";
+import { groupForFicha } from "../../../lib/clinical/ficha-groups-core";
 import { listActiveLocations, listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { isFichaIncomplete } from "../../../lib/patients/nif";
@@ -88,6 +90,15 @@ const INVOICE_STATUS_KEY: Record<InvoiceStatus, keyof typeof s> = {
 };
 
 const dateFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
+// EPI-01a: an evaluation's DATE, in Lisbon. An imported row's created_at is the
+// evaluation date at Lisbon midnight stored as UTC, so a formatter without a time
+// zone would show the day before for every summer evaluation on a UTC server.
+const evalDateFmt = new Intl.DateTimeFormat("pt-PT", {
+  timeZone: "Europe/Lisbon",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
 // SPEC-ficha-medica.md sec 4: record created_at shown in Europe/Lisbon.
 const dateTimeFmt = new Intl.DateTimeFormat("pt-PT", {
   timeZone: "Europe/Lisbon",
@@ -268,12 +279,16 @@ export default async function PatientProfilePage({
   // Patient notes moved to the append-only Notas tab (W2-11); the profile
   // summary no longer reads patients.notes.
 
-  // Registos clínicos consumes the existing RLS + role-scoped records query.
+  // Registos clínicos: the same RLS + role-scoped reach as listRecords, with
+  // each registo's episode (EPI-01a, lib/clinical/ficha-groups.ts), grouped the
+  // way the Fisiozero ficha was (ficha-groups-core.ts: one group per specialty
+  // for the imported history, one per app episode, and "Sem episódio").
   // W5-30: annulled fichas are hidden unless the "Mostrar anulados" toggle is on.
   const records =
     tab === "registos" && canReadClinical
-      ? await listRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
+      ? await listFichaRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
       : [];
+  const recordGroups = groupForFicha(records);
   // INTAKE-01: the clinical questionnaire(s) this person answered at their first
   // online booking, reaching the ficha once reception converted the request to
   // this patient. Read-only, verbatim, attributed and dated. Every staff role
@@ -693,68 +708,120 @@ export default async function PatientProfilePage({
           {records.length === 0 ? (
             <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} />
           ) : (
-            <div className="flex flex-col gap-3">
-              {records.map((r) => (
-                <div
-                  key={r.id}
-                  data-testid="record-row"
-                  data-record-id={r.id}
-                  data-annulled={r.annulled ? "true" : "false"}
+            /* EPI-01a: the registos grouped the way the Fisiozero ficha was
+               (ficha-groups-core.ts). Every group renders OPEN, so every
+               registo and its actions stay one tap away; a long group (the
+               largest imported one on production holds 51) folds on its
+               summary. The record rows inside are the same rows as before. */
+            <div className="flex flex-col gap-4" data-testid="record-groups">
+              {recordGroups.map((g) => (
+                <details
+                  key={g.key}
+                  open
+                  data-testid="record-group"
+                  data-group-kind={g.kind}
+                  data-group-key={g.key}
+                  className="group rounded-lg border border-border bg-surface"
                 >
-                <Card>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    {/* W7-03: two lines, not three. The title leads; the two
-                        dates collapse into ONE labelled, tabular meta line (the
-                        old row stacked an unlabelled updatedAt under a labelled
-                        createdAt, three lines of near-equal weight). */}
-                    <Link href={`/clinical/${r.id}`} className="flex min-w-0 flex-col gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
-                      <span className="font-medium text-text-primary">
-                        {r.templateTitle ? r.templateTitle[DEFAULT_LOCALE] : s["patients.recordDefaultName"]}
-                      </span>
-                      {/* SPEC-ficha-medica.md sec 4: the record's auto-stamped
-                          creation instant (Lisbon display), never hand-typed. */}
-                      <span className="text-sm tabular-nums text-text-secondary">
-                        {s["clinical.recordCreatedAt"]}: {dateTimeFmt.format(new Date(r.createdAt))}
-                        {" · "}
-                        {s["clinical.recordUpdatedAt"]}: {dateFmt.format(new Date(r.updatedAt))}
-                      </span>
-                    </Link>
-                    {/* Status first, then actions, with a visible gap between the
-                        two groups: state must never read as an action. */}
-                    <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
-                      {/* record_status axis. The ai_review_state second axis is not in
-                          the records list query, so it is not shown here (rule #1). */}
-                      <StatusChip tone={RECORD_TONE[r.status]} dot>
-                        {s[RECORD_KEY[r.status]]}
-                      </StatusChip>
-                      {/* W5-30: ANULADO badge — the signed record row is untouched;
-                          this reflects a record_annulments row. */}
-                      {r.annulled && (
-                        <StatusChip tone="error" dot>
-                          {s["clinical.recordAnulado"]}
-                        </StatusChip>
-                      )}
-                      {/* Per-ficha addendum: reuse the existing versionRecordAction.
-                          A finalized (non-draft) ficha is immutable; changes create a
-                          new version. Author-gated. Not offered on annulled fichas. */}
-                      {canStartEpisode && r.status !== "draft" && !r.annulled && (
-                        <form action={versionRecordAction.bind(null, r.id)}>
-                          <Button type="submit" variant="secondary">{s["clinical.newVersion"]}</Button>
-                        </form>
-                      )}
-                      {/* W5-30: password-gated Eliminar (draft) / Anular (signed). */}
-                      {canStartEpisode && (
-                        <RecordLifecycleActions
-                          recordId={r.id}
-                          patientId={id}
-                          status={r.status}
-                          annulled={r.annulled}
-                        />
-                      )}
-                    </div>
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                    <span className="text-sm font-medium tabular-nums text-text-primary" data-testid="record-group-date">
+                      {evalDateFmt.format(new Date(g.firstAt))}
+                    </span>
+                    {g.kind === "none" ? (
+                      <StatusChip tone="neutral">{s["patients.fichaGroupNoEpisode"]}</StatusChip>
+                    ) : (
+                      g.label && <StatusChip tone="neutral">{g.label}</StatusChip>
+                    )}
+                    {g.imported && <StatusChip tone="info">{s["patients.fichaGroupImported"]}</StatusChip>}
+                    <span className="text-sm tabular-nums text-text-secondary" data-testid="record-group-count">
+                      {g.records.length === 1
+                        ? s["patients.fichaGroupCountOne"]
+                        : s["patients.fichaGroupCountMany"].replace("{n}", String(g.records.length))}
+                    </span>
+                    {/* A flex summary drops the browser's own fold marker, so
+                        the fold is drawn here (the admin danger zone's pattern). */}
+                    <ChevronDown
+                      size={16}
+                      strokeWidth={2}
+                      aria-hidden="true"
+                      data-testid="record-group-chevron"
+                      className="ml-auto shrink-0 text-text-secondary transition-transform duration-fast ease-standard group-open:rotate-180"
+                    />
+                    <span className="min-w-0 basis-full truncate text-sm text-text-secondary">
+                      {g.excerpt ?? s["patients.fichaGroupNoExcerpt"]}
+                    </span>
+                  </summary>
+                  <div className="flex flex-col gap-3 px-4 pb-4">
+                    {g.records.map((r) => (
+                      <div
+                        key={r.id}
+                        data-testid="record-row"
+                        data-record-id={r.id}
+                        data-annulled={r.annulled ? "true" : "false"}
+                      >
+                      <Card>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          {/* W7-03: two lines, not three. The title leads; the two
+                              dates collapse into ONE labelled, tabular meta line (the
+                              old row stacked an unlabelled updatedAt under a labelled
+                              createdAt, three lines of near-equal weight). */}
+                          <Link href={`/clinical/${r.id}`} className="flex min-w-0 flex-col gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                            <span className="font-medium text-text-primary">
+                              {r.templateTitle ?? s["patients.recordDefaultName"]}
+                            </span>
+                            {/* SPEC-ficha-medica.md sec 4: the record's auto-stamped
+                                creation instant (Lisbon display), never hand-typed. */}
+                            <span className="text-sm tabular-nums text-text-secondary">
+                              {s["clinical.recordCreatedAt"]}: {dateTimeFmt.format(new Date(r.createdAt))}
+                              {" · "}
+                              {s["clinical.recordUpdatedAt"]}: {dateFmt.format(new Date(r.updatedAt))}
+                            </span>
+                            {/* EPI-01a: the evaluation's one-line complaint (Q3). */}
+                            {r.excerpt && (
+                              <span className="line-clamp-1 text-sm text-text-secondary" data-testid="record-excerpt">
+                                {r.excerpt}
+                              </span>
+                            )}
+                          </Link>
+                          {/* Status first, then actions, with a visible gap between the
+                              two groups: state must never read as an action. */}
+                          <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
+                            {/* record_status axis. The ai_review_state second axis is not in
+                                the records list query, so it is not shown here (rule #1). */}
+                            <StatusChip tone={RECORD_TONE[r.status]} dot>
+                              {s[RECORD_KEY[r.status]]}
+                            </StatusChip>
+                            {/* W5-30: ANULADO badge — the signed record row is untouched;
+                                this reflects a record_annulments row. */}
+                            {r.annulled && (
+                              <StatusChip tone="error" dot>
+                                {s["clinical.recordAnulado"]}
+                              </StatusChip>
+                            )}
+                            {/* Per-ficha addendum: reuse the existing versionRecordAction.
+                                A finalized (non-draft) ficha is immutable; changes create a
+                                new version. Author-gated. Not offered on annulled fichas. */}
+                            {canStartEpisode && r.status !== "draft" && !r.annulled && (
+                              <form action={versionRecordAction.bind(null, r.id)}>
+                                <Button type="submit" variant="secondary">{s["clinical.newVersion"]}</Button>
+                              </form>
+                            )}
+                            {/* W5-30: password-gated Eliminar (draft) / Anular (signed). */}
+                            {canStartEpisode && (
+                              <RecordLifecycleActions
+                                recordId={r.id}
+                                patientId={id}
+                                status={r.status}
+                                annulled={r.annulled}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                      </div>
+                    ))}
                   </div>
-                </Card>
-                </div>
+                </details>
               ))}
             </div>
           )}
