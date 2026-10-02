@@ -856,6 +856,7 @@
   "clinical.finalized": "Ficha já finalizada; não pode ser alterada.",
   "clinical.error": "A operação falhou.",
   "clinical.episodeMismatch": "O episódio escolhido não pertence a este paciente. O registo não foi criado.",
+  "clinical.episodeClosedRefused": "O episódio escolhido está fechado. O registo não foi criado.",
   "clinical.downloadPdf": "Transferir PDF",
   "clinical.downloadPdfError": "Não foi possível gerar o PDF.",
   "clinical.attachments": "Anexos",

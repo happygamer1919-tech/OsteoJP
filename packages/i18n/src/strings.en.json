@@ -856,6 +856,7 @@
   "clinical.finalized": "Record already finalized; it cannot be changed.",
   "clinical.error": "The operation failed.",
   "clinical.episodeMismatch": "The chosen episode does not belong to this patient. The record was not created.",
+  "clinical.episodeClosedRefused": "The chosen episode is closed. The record was not created.",
   "clinical.downloadPdf": "Download PDF",
   "clinical.downloadPdfError": "Could not generate the PDF.",
   "clinical.attachments": "Attachments",

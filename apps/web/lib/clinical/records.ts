@@ -124,6 +124,9 @@ export function recordDataHash(): SQL<string> {
 }
 
 export type TemplateOption = { id: string; key: string; title: Localized | null; version: number };
+
+/** A uuid's shape; anything else is refused before it reaches a uuid column. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type PatientOption = { id: string; fullName: string };
 export type EpisodeOption = { id: string; title: string };
 
@@ -437,6 +440,11 @@ export async function listEpisodes(
  * is redundant once the list is patient-scoped. The patients inner join is
  * kept so the returned row set is unchanged (episodes without a patient row
  * never appeared and still do not). Same read gate, same tenant scoping.
+ *
+ * EPI-01b (R4 round 1): OPEN EPISODES ONLY. A new registo is never filed in a
+ * closed episode (createDraftRecord refuses it, `episode_closed`), and every
+ * imported episode is closed, so the picker no longer offers one. A deep link
+ * naming a closed episode falls back to "Sem episódio".
  */
 export async function listEpisodesForPicker(
   ctx: RequestContext,
@@ -451,6 +459,7 @@ export async function listEpisodesForPicker(
       })
       .from(clinicalEpisodes)
       .innerJoin(patients, eq(patients.id, clinicalEpisodes.patientId))
+      .where(eq(clinicalEpisodes.status, "open"))
       .orderBy(desc(clinicalEpisodes.openedAt)),
   );
 }
@@ -465,8 +474,18 @@ export async function listEpisodesForPicker(
  * therapist files a registo (a new draft, or a new version of one) only in
  * their own name AND for a patient they treat or created, and
  * `therapistPatientScope` is the same test in the app. The owner files for any
- * patient of the tenant, so only a therapist is asked; for anyone else the
- * answer is yes, with no read.
+ * patient of the tenant.
+ *
+ * EPI-01b (R4 round 1): EVERY ROLE IS ASKED, with one read of the patient
+ * under the caller's own RLS. "Any patient of the tenant" was not something
+ * the database checked for the owner: 0097's owner arm asks only the row's
+ * tenant_id, and the foreign key to patients ignores RLS, so an owner could
+ * file a registo (or open an episode) in their own tenant for ANOTHER tenant's
+ * patient id. patients_select admits the owner to their tenant's patients only,
+ * so the read refuses that id. A malformed id is refused before the read (it
+ * is not a patient, and Postgres would answer with a raw 22P02). The name is
+ * kept from when it asked a therapist only; the scope register
+ * (scope-callers.test.ts) keys on it.
  *
  * Refuses nothing 0097's policy admits. BEFORE 0097 IT REFUSES MORE than the
  * database does: 0045's INSERT admits a therapist filing in their own name for
@@ -475,20 +494,21 @@ export async function listEpisodesForPicker(
  * refused in the app, ahead of the policy.
  */
 async function therapistMayFileFor(tx: DbTx, ctx: RequestContext, patientId: string): Promise<boolean> {
+  if (!UUID_RE.test(patientId)) return false;
   const scope = therapistPatientScope(ctx, patients.id);
-  if (!scope) return true;
   const own = await tx
     .select({ id: patients.id })
     .from(patients)
-    .where(and(eq(patients.id, patientId), scope))
+    .where(scope ? and(eq(patients.id, patientId), scope) : eq(patients.id, patientId))
     .limit(1);
   return own.length > 0;
 }
 
 /**
  * `therapistMayFileFor`, asked first inside the writer's own transaction, so a
- * patient outside that scope (a posted id, or a patient whose last appointment
- * with the caller was deleted since the page rendered) is a clean `not_found`.
+ * patient outside that scope (a posted id, another tenant's patient, or a
+ * patient whose last appointment with the caller was deleted since the page
+ * rendered) is a clean `not_found`, for every role.
  * From 0097 it is also what keeps that INSERT from reaching the policy as a raw
  * row level security error (42501); before 0097 the INSERT would have succeeded,
  * so the refusal is the app's own.
@@ -539,8 +559,6 @@ export function zeroRowRefusal(
   return new ClinicalError(ctx.role === "therapist" && someoneElses ? "not_author" : moved);
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * EPI-01b (S-1002-D P2.2): Q9, THE APP HALF. A registo filed in an episode is
  * filed in an episode of THE SAME PATIENT, IN THE SAME TENANT, or not at all.
@@ -563,29 +581,46 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * log line says it happened, with no identifier in it (CLAUDE.md rule 7): the
  * screens never offer another patient's episode, so this fires only on a posted
  * id or a page gone stale, and that should be visible somewhere.
+ *
+ * `requireOpen` (EPI-01b, R4 round 1): a NEW registo is filed only in an OPEN
+ * episode; a closed one is `episode_closed`. Every imported episode is closed,
+ * so this is what keeps "it never writes into an imported episode" true on the
+ * server and not only on the screen. createDraftRecord asks it; createAddendum
+ * does NOT, because a new version keeps its registo's episode on purpose
+ * (EPI-01a: "Nova versão" of an imported registo stays in its imported group).
  */
 export async function assertEpisodeIsThePatients(
   tx: DbTx,
   ctx: RequestContext,
   episodeId: string,
   patientId: string,
+  opts: { requireOpen?: boolean } = {},
 ): Promise<void> {
   let why: string | null = null;
+  let code: "episode_mismatch" | "episode_closed" = "episode_mismatch";
   if (!UUID_RE.test(episodeId)) {
     why = "the episode id is malformed";
   } else {
     const [episode] = await tx
-      .select({ tenantId: clinicalEpisodes.tenantId, patientId: clinicalEpisodes.patientId })
+      .select({
+        tenantId: clinicalEpisodes.tenantId,
+        patientId: clinicalEpisodes.patientId,
+        status: clinicalEpisodes.status,
+      })
       .from(clinicalEpisodes)
       .where(eq(clinicalEpisodes.id, episodeId))
       .limit(1);
     if (!episode) why = "the episode is not visible in this tenant";
     else if (episode.tenantId !== ctx.tenantId) why = "the episode is another tenant's";
     else if (episode.patientId !== patientId) why = "the episode is another patient's";
+    else if (opts.requireOpen && episode.status !== "open") {
+      why = "the episode is closed";
+      code = "episode_closed";
+    }
   }
   if (why !== null) {
-    console.warn(`[clinical] registo refused: ${why} (episode_mismatch). Nothing written.`);
-    throw new ClinicalError("episode_mismatch");
+    console.warn(`[clinical] registo refused: ${why} (${code}). Nothing written.`);
+    throw new ClinicalError(code);
   }
 }
 
@@ -623,8 +658,9 @@ export async function createDraftRecord(
     await assertTherapistMayFileFor(tx, ctx, input.patientId);
     let episodeId = input.episodeId || null;
     if (episodeId) {
-      // Q9, the app half: the episode is this patient's, in this tenant.
-      await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId);
+      // Q9, the app half: the episode is this patient's, in this tenant, and
+      // (a new registo) OPEN: never a closed or imported one.
+      await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId, { requireOpen: true });
     } else if (specialty !== null) {
       // Q7: a new open episode, through the one episode insert, in THIS
       // transaction: if the registo below is refused, the episode is not left.
@@ -768,7 +804,9 @@ export async function createAddendum(
     await assertTherapistMayFileFor(tx, ctx, s.patientId);
     // EPI-01b, Q9's app half: the version copies its record's episode, so it is
     // held to the same rule as a new registo. A source row already filed in
-    // another patient's episode does not get a second one.
+    // another patient's episode does not get a second one. NOT `requireOpen`:
+    // a version stays in its registo's episode even when that episode is closed
+    // (an imported registo's "Nova versão" stays in its imported group).
     if (s.episodeId) await assertEpisodeIsThePatients(tx, ctx, s.episodeId, s.patientId);
 
     const rows = await tx

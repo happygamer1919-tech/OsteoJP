@@ -27,6 +27,19 @@
  *     of one in its own episode, filed there;
  *   - admin and reception are refused before anything is read.
  *
+ * Added after R4 round 1 on #1526:
+ *   - a NEW registo in the patient's own CLOSED imported episode is refused
+ *     (`episode_closed`), the /clinical/new picker no longer offers a closed
+ *     episode, and "Nova versão" of a registo in a closed episode still files
+ *     there (EPI-01a);
+ *   - Q7's one transaction, proved where it can fail: the episode insert
+ *     SUCCEEDS and the registo insert after it fails (a template that does not
+ *     exist), and no episode is left;
+ *   - the owner with ANOTHER TENANT'S patient id is refused (not_found) by
+ *     createDraftRecord, by its new-episode path and by createEpisode, with a
+ *     control proving the foreign key alone would take it and a passing control
+ *     for the owner's own patient.
+ *
  * Runs in `.github/workflows/db-tests.yml` (it globs `.db.test.ts` in this
  * workspace) and self-skips without DATABASE_URL, like every suite beside it.
  * Invented names only.
@@ -45,6 +58,7 @@ const d = live ? describe : describe.skip;
 d("EPI-01b: the same-patient episode guard under real RLS", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let records: typeof import("./records");
+  let episodes_: typeof import("./episodes");
 
   const tenant = randomUUID();
   const otherTenant = randomUUID();
@@ -63,6 +77,8 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
   const epForeign = randomUUID(); // the other tenant's patient's episode
   const crossSource = randomUUID(); // a registo of A already filed in B's episode
   const ownSource = randomUUID(); // a registo of A in A's own episode
+  const epClosedOwn = randomUUID(); // a closed app episode of A
+  const closedSource = randomUUID(); // a registo of A in that closed episode
 
   const ctx = (userId: string, role: RequestContext["role"]): RequestContext => ({ tenantId: tenant, role, userId });
 
@@ -82,6 +98,22 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     (await rows<{ n: number }>(raw`select count(*)::int as n from clinical_records where tenant_id = ${tenant}::uuid`))[0]!.n;
   const countEpisodes = async (patient: string) =>
     (await rows<{ n: number }>(raw`select count(*)::int as n from clinical_episodes where patient_id = ${patient}::uuid`))[0]!.n;
+  const countEpisodesAll = async () =>
+    (await rows<{ n: number }>(
+      raw`select count(*)::int as n from clinical_episodes where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
+    ))[0]!.n;
+  const countRecordsAll = async () =>
+    (await rows<{ n: number }>(
+      raw`select count(*)::int as n from clinical_records where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
+    ))[0]!.n;
+  const quiet = async <T>(p: Promise<T>): Promise<T> => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      return await p;
+    } finally {
+      warn.mockRestore();
+    }
+  };
   const countAudit = async () =>
     (await rows<{ n: number }>(raw`select count(*)::int as n from audit_log where tenant_id = ${tenant}::uuid`))[0]!.n;
 
@@ -89,6 +121,7 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     const mod = await import("@osteojp/db");
     db = mod.getDbAdmin();
     records = await import("./records");
+    episodes_ = await import("./episodes");
 
     for (const [id, slug] of [
       [tenant, "epi01b"],
@@ -126,6 +159,7 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
       [epB, tenant, patientB, "Episódio (02/09/2026)", "open"],
       [epImported, tenant, patientA, "Osteopatia", "closed"],
       [epForeign, otherTenant, patientForeign, "Episódio (03/09/2026)", "open"],
+      [epClosedOwn, tenant, patientA, "Episódio (01/08/2026)", "closed"],
     ] as const) {
       await db.execute(
         raw`insert into clinical_episodes (id, tenant_id, patient_id, title, status)
@@ -139,6 +173,7 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     for (const [id, ep] of [
       [crossSource, epB],
       [ownSource, epA],
+      [closedSource, epClosedOwn],
     ] as const) {
       await db.execute(
         raw`insert into clinical_records (id, tenant_id, patient_id, episode_id, form_template_id, practitioner_id, source, status, data)
@@ -349,5 +384,100 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
       ).toBe("ForbiddenError");
     }
     expect(await countRecords()).toBe(before);
+  });
+  // ------------------------------------------------------------------ R4 round 1
+
+  it("MAJOR 1: a NEW registo in the patient's own CLOSED imported episode is refused (episode_closed), nothing written", async () => {
+    // Control: the episode is really the patient's, and really closed.
+    expect(
+      await rows(raw`select 1 from clinical_episodes where id = ${epImported}::uuid and patient_id = ${patientA}::uuid and status = 'closed'`),
+    ).toHaveLength(1);
+    const [before, audits] = [await countRecords(), await countAudit()];
+    for (const who of [ctx(therapist, "therapist"), ctx(owner, "owner")]) {
+      expect(
+        await codeOf(
+          quiet(records.createDraftRecord(who, { patientId: patientA, formTemplateId: template, episodeId: epImported })),
+        ),
+      ).toBe("episode_closed");
+    }
+    expect(await countRecords()).toBe(before);
+    expect(await countAudit()).toBe(audits);
+  });
+
+  it("MAJOR 1: the /clinical/new picker offers open episodes only", async () => {
+    const offered = (await records.listEpisodesForPicker(ctx(therapist, "therapist"))).map((e) => e.id);
+    expect(offered).toEqual(expect.arrayContaining([epA, epB]));
+    expect(offered).not.toContain(epImported);
+    expect(offered).not.toContain(epClosedOwn);
+  });
+
+  it("MAJOR 1 control: 'Nova versão' of a registo in a CLOSED episode still files in that episode (EPI-01a)", async () => {
+    const { id } = await records.createAddendum(ctx(therapist, "therapist"), closedSource);
+    const [row] = await rows<{ episode_id: string }>(raw`select episode_id::text from clinical_records where id = ${id}::uuid`);
+    expect(row!.episode_id).toBe(epClosedOwn);
+  });
+
+  it("MAJOR 2: Q7 is one transaction: the episode insert succeeds, the registo insert fails, and no episode is left", async () => {
+    const missingTemplate = randomUUID(); // no such form_templates row: the registo INSERT fails on its foreign key
+    expect(await rows(raw`select 1 from form_templates where id = ${missingTemplate}::uuid`)).toHaveLength(0);
+    const [episodesBefore, recordsBefore] = [await countEpisodes(patientA), await countRecords()];
+    const outcome = await codeOf(
+      records.createDraftRecord(ctx(therapist, "therapist"), {
+        patientId: patientA,
+        formTemplateId: missingTemplate,
+        newEpisodeSpecialty: "Fisioterapia",
+      }),
+    );
+    expect(outcome).not.toBe("resolved");
+    expect(await countEpisodes(patientA)).toBe(episodesBefore);
+    expect(await countRecords()).toBe(recordsBefore);
+  });
+
+  it("MINOR 3: the owner with ANOTHER TENANT'S patient is refused (not_found) on every write path; nothing written", async () => {
+    // Control: the foreign key alone takes an episode for a patient of another
+    // tenant (rolled back), which is the gap.
+    let fkTookIt = false;
+    await db
+      .transaction(async (tx) => {
+        await tx.execute(
+          raw`insert into clinical_episodes (tenant_id, patient_id, title) values (${tenant}::uuid, ${patientForeign}::uuid, 'Osteopatia')`,
+        );
+        fkTookIt = true;
+        throw new Error("rollback");
+      })
+      .catch((e: Error) => {
+        if (e.message !== "rollback") throw e;
+      });
+    expect(fkTookIt).toBe(true);
+
+    const [episodes, recs] = [await countEpisodesAll(), await countRecordsAll()];
+    const asOwner = ctx(owner, "owner");
+    expect(
+      await codeOf(records.createDraftRecord(asOwner, { patientId: patientForeign, formTemplateId: template })),
+    ).toBe("not_found");
+    expect(
+      await codeOf(
+        records.createDraftRecord(asOwner, { patientId: patientForeign, formTemplateId: template, newEpisodeSpecialty: "Osteopatia" }),
+      ),
+    ).toBe("not_found");
+    expect(await codeOf(episodes_.createEpisode(asOwner, { patientId: patientForeign, title: "Osteopatia (02/10/2026)" }))).toBe(
+      "not_found",
+    );
+    expect(await countEpisodesAll()).toBe(episodes);
+    expect(await countRecordsAll()).toBe(recs);
+  });
+
+  it("MINOR 3 control: the owner files for the tenant's own patient, and opens an episode for it", async () => {
+    const asOwner = ctx(owner, "owner");
+    const { id } = await records.createDraftRecord(asOwner, { patientId: patientB, formTemplateId: template });
+    const [row] = await rows<{ patient_id: string; practitioner_id: string }>(
+      raw`select patient_id::text, practitioner_id::text from clinical_records where id = ${id}::uuid`,
+    );
+    expect(row).toEqual({ patient_id: patientB, practitioner_id: owner });
+    const { id: ep } = await episodes_.createEpisode(asOwner, { patientId: patientB, title: "Osteopatia (02/10/2026)" });
+    const [e] = await rows<{ patient_id: string; status: string }>(
+      raw`select patient_id::text, status::text from clinical_episodes where id = ${ep}::uuid`,
+    );
+    expect(e).toEqual({ patient_id: patientB, status: "open" });
   });
 });

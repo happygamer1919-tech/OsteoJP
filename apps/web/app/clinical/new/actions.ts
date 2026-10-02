@@ -21,8 +21,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *     put in the path only when it is a uuid; anything else falls back to
  *     /clinical/new, so no posted text reaches a redirect.
  *
- * A refusal of the episode (`episode_mismatch`) has its own message; every
- * other clinical refusal keeps the generic one it had. Anything that is not a
+ * A refusal of the episode has its own message (`episode_mismatch`: not this
+ * patient's; `episode_closed`: a new registo goes only into an open episode);
+ * every other clinical refusal keeps the generic one it had. Anything that is not a
  * ClinicalError (a ForbiddenError for a role that may not author) propagates to
  * the error boundary, as before.
  */
@@ -42,6 +43,7 @@ export async function createRecordAction(formData: FormData): Promise<void> {
   } catch (e) {
     if (!isClinicalError(e)) throw e;
     if (e.code === "episode_mismatch") target = `${back}episodeMismatch`;
+    if (e.code === "episode_closed") target = `${back}episodeClosed`;
   }
   redirect(target);
 }

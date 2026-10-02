@@ -725,6 +725,11 @@ export default async function PatientProfilePage({
               {s["clinical.episodeMismatch"]}
             </p>
           )}
+          {m === "episodeClosed" && (
+            <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
+              {s["clinical.episodeClosedRefused"]}
+            </p>
+          )}
           {m === "avaliacaoErr" && (
             <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
               {s["patients.fichaGroupAddEvaluationError"]}

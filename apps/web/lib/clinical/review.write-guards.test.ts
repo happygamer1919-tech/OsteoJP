@@ -253,10 +253,13 @@ describe("claimReviewItem, a patient submission: the claimer files only for a pa
     expect(mockAudit).toHaveBeenCalledTimes(2);
   });
 
-  it("the owner is not asked: one read of the submission, the INSERT runs", async () => {
-    const { read, ops } = fakeTx({ selects: [[SUB]] });
+  // EPI-01b (R4 round 1): assertTherapistMayFileFor reads the patient under the
+  // caller's RLS for EVERY role, so the owner is asked too (0097's owner arm
+  // checks only tenant_id, and the foreign key ignores RLS).
+  it("the owner: the submission, then the patient under RLS, then the INSERT", async () => {
+    const { read, ops } = fakeTx({ selects: [[SUB], [{ id: PATIENT }]] });
     expect(await codeOf(claimReviewItem(owner, ref))).toBe("resolved");
-    expect(read).toEqual([patientFormSubmissions]);
+    expect(read).toEqual([patientFormSubmissions, patients]);
     expect(ops).toEqual(["insert:clinical_records", "update:other"]);
   });
 });

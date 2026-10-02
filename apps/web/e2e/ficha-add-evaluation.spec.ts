@@ -8,8 +8,11 @@
  *     titled "<specialty> (<Lisbon date>)", files the registo there, and leaves
  *     the imported episode as it was;
  *   - the "Sem episódio" group has none (a judgment, not a ruling);
- *   - only an author who may write for the patient sees it: an admin reads the
- *     same groups with no button, and reception has no Registos tab at all.
+ *   - only an author who may write for the patient sees it: the owner does; an
+ *     admin reads the same groups with no button, and reception has no
+ *     Registos tab at all. (A care-team therapist, who reads but neither treats
+ *     nor created the patient, is pinned in page-add-evaluation.test.tsx: the
+ *     seed has no care team.)
  *
  * The patient is seed-e2e.mjs's ensureAddEvaluationFixture (ADD_EVALUATION): an
  * invented patient with one group of each kind, created_by the E2E therapist.
@@ -122,6 +125,26 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     await expect(page.getByRole("heading", { name: `Osteopatia (${title![1]})` })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("Aberto", { exact: true })).toBeVisible();
     await expect(page.locator(`a[href="/clinical/${id}"]`)).toBeVisible();
+  });
+});
+
+test.describe("EPI-01b: the owner, an author with the tenant's patients, sees it (R4 round 1)", () => {
+  test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 1280, height: 900 } });
+
+  test("both kinds of group offer '+ Avaliação' to the owner; 'Sem episódio' does not", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.owner);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+    await openTab(page);
+    await expect(group(page, APP_KEY).getByRole("button", { name: `Nova avaliação neste episódio: ${F.appEpisode.title}` })).toBeVisible();
+    await expect(
+      group(page, IMPORTED_KEY).getByRole("button", { name: `Nova avaliação num novo episódio de ${F.imported.specialty}` }),
+    ).toBeVisible();
+    await expect(group(page, "none").locator(`[data-record-id="${F.noEpisode.recordId}"]`)).toBeVisible();
+    await expect(group(page, "none").getByTestId("record-group-add-evaluation")).toHaveCount(0);
   });
 });
 

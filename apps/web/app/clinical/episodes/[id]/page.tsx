@@ -63,7 +63,10 @@ export default async function EpisodePage({
               : ""}
           </p>
         </div>
-        {canAuthor && (
+        {/* EPI-01b (R4 round 1): a new registo goes only into an OPEN episode
+            (createDraftRecord refuses a closed one, and every imported
+            episode is closed), so a closed episode offers no "+ Novo registo". */}
+        {canAuthor && episode.status === "open" && (
           <Link
             href={newRecordHref}
             className="rounded border border-brand-teal px-3 py-1.5 text-sm font-medium text-brand-teal hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"

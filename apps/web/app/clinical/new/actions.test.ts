@@ -98,6 +98,16 @@ describe("createRecordAction: one write path for /clinical/new and '+ Avaliaçã
     );
   });
 
+  it("a CLOSED episode (R4 round 1) lands on its own message, on the page it came from", async () => {
+    h.createDraftRecord.mockRejectedValue(new ClinicalError("episode_closed"));
+    expect(await landing({ patientId: PATIENT, formTemplateId: TEMPLATE, episodeId: EPISODE, from: "ficha" })).toBe(
+      `/patients/${PATIENT}?tab=registos&m=episodeClosed`,
+    );
+    expect(await landing({ patientId: PATIENT, formTemplateId: TEMPLATE, episodeId: EPISODE })).toBe(
+      "/clinical/new?m=episodeClosed",
+    );
+  });
+
   it("any other clinical refusal keeps the generic message, on the page it came from", async () => {
     h.createDraftRecord.mockRejectedValue(new ClinicalError("not_found"));
     expect(await landing({ patientId: PATIENT, formTemplateId: TEMPLATE, from: "ficha" })).toBe(

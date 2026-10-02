@@ -19,6 +19,9 @@ import type { RecordStatus } from "./records";
 
 export type EpisodeStatus = "open" | "closed";
 
+/** A uuid's shape; anything else is refused before it reaches a uuid column. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type EpisodeRecordItem = {
   id: string;
   status: RecordStatus;
@@ -54,7 +57,7 @@ export async function createEpisode(
 ): Promise<{ id: string }> {
   assertCan(ctx.role, "clinical_records:author");
   const title = normalizeEpisodeTitle(input.title);
-  if (!input.patientId || !title) throw new ClinicalError("invalid");
+  if (!UUID_RE.test(input.patientId) || !title) throw new ClinicalError("invalid");
 
   const ip = await clientIp();
   // CARE-02a: a therapist opens an episode only for a patient they treat or
@@ -63,16 +66,20 @@ export async function createEpisode(
   // was unreachable from a screen while the ficha of a patient who was not
   // theirs answered 404. 0098 opens that ficha to the care team for READING, so
   // the write is held to its old reach here. undefined for every other role.
+  //
+  // EPI-01b (R4 round 1): the patient is read for EVERY role, under the
+  // caller's RLS. clinical_episodes is tenant-only and its foreign key to
+  // patients ignores RLS, so without this read an owner could open an episode
+  // in their own tenant for ANOTHER tenant's patient id. patients_select admits
+  // the owner to their own tenant's patients only.
   const writeScope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, async (tx) => {
-    if (writeScope) {
-      const [mine] = await tx
-        .select({ id: patients.id })
-        .from(patients)
-        .where(and(eq(patients.id, input.patientId), writeScope))
-        .limit(1);
-      if (!mine) throw new ClinicalError("not_found");
-    }
+    const [mine] = await tx
+      .select({ id: patients.id })
+      .from(patients)
+      .where(writeScope ? and(eq(patients.id, input.patientId), writeScope) : eq(patients.id, input.patientId))
+      .limit(1);
+    if (!mine) throw new ClinicalError("not_found");
     return insertOpenEpisode(tx, ctx, { patientId: input.patientId, title }, ip);
   });
 }
