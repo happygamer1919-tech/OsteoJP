@@ -62,7 +62,13 @@
 //     harness runs each block in that exact shape with every external command it calls (git,
 //     psql, node, pnpm, shasum and the rest) replaced by a stub, makes each call fail in turn,
 //     and requires the block to exit non-zero, print a STOP line and none of its pass lines,
-//     and write none of its records after the failing point. Its positive control is each
+//     and write none of its records after the failing point. Every clock read and every field
+//     of the window record is also made to exit 0 with EMPTY output (in zsh `[ "" -le n ]` is
+//     true), and the closed-hours runs of stages 0 and 1 hold a 13-hour-old applied marker, so
+//     the marker-age line's find is faulted too. THE WINDOW FEED runs stage 1 whole on nine
+//     run-window records and clocks (before the open, past the last start, at and past the
+//     end, another sha, two malformed records, an empty clock, and a good record) and is run
+//     again with the window-end lines removed, where it must go red. Its positive control is each
 //     block with every stub succeeding, which must reach its last line. No stub touches a real
 //     host, the secrets folder or a database: git, psql and the node programs never run for
 //     real, and the block's cd, its /tmp/0100- paths and its env file are moved into a scratch
@@ -908,7 +914,7 @@ if [ "$n" = tee ]; then ${R("sleep")} 0.05; fi
 inp=
 if [ "$n" = cut ]; then inp=$(${R("cat")}); fi
 ex=
-for m in $HARNESS_MARKERS; do if [ -f "$d/tmp/$m" ]; then ex="$ex $m"; fi; done
+for m in $HARNESS_MARKERS; do if [ -f "$d/tmp/$m" ] && [ "$d/tmp/$m" -nt "$d/t0" ]; then ex="$ex $m"; fi; done
 printf '%s\\n' "$@" > "$d/args.$id"
 if [ -n "$inp" ]; then printf 'STDIN %s\\n' "$inp" >> "$d/args.$id"; fi
 printf '%s|%s\\n' "$id" "$ex" >> "$d/log"
@@ -916,6 +922,7 @@ unexpected() { printf '%s %s\\n' "$id" "$*" >> "$d/unexpected"; echo "harness: u
 for a in "$@"; do case "$a" in *osteojp-secrets*|*osteojp-prod-apply*) unexpected "a real path";; esac; done
 if [ "$HARNESS_FAIL" = "$id" ]; then
   echo "$id" > "$d/fired"
+  if [ "$HARNESS_FAIL_MODE" = empty ]; then ${R("cat")} > /dev/null; exit 0; fi
   case "$n" in
     git) echo "fatal: unable to access 'https://github.invalid/': Could not resolve host (harness fault)" >&2; exit 128;;
     psql) echo "psql: error: connection to server at harness.invalid failed: FATAL: harness fault" >&2; exit 2;;
@@ -1070,7 +1077,11 @@ function runShell(shell, text, env, cwd) {
   });
 }
 
-/** Run one block once. `fault`: { call, code, hookAfter, hookMkdir, noApply, noEnv }, or null for the positive control. */
+/**
+ * Run one block once. `fault`: { call, mode, code, hookAfter, hookMkdir, noApply, noEnv }, or null for the
+ * positive control; mode "empty" makes the call exit 0 and print nothing. A record counts as written by
+ * this run only if it is newer than the reference file t0, which is dated after every record the setup holds.
+ */
 export async function runOnce(cfg, runId, fault) {
   const run = join(cfg.base, "runs", runId);
   rmSync(run, { recursive: true, force: true });
@@ -1078,6 +1089,9 @@ export async function runOnce(cfg, runId, fault) {
   if (!fault?.noApply) symlinkSync(join(cfg.base, "apply"), join(run, "apply"));
   writeFileSync(join(run, "head"), `${cfg.initialHead ?? FAKE_SHA.BEFORE}\n`);
   cfg.setup?.(join(run, "tmp"));
+  const t0 = Date.now() - 30000;
+  writeFileSync(join(run, "t0"), "");
+  utimesSync(join(run, "t0"), new Date(t0), new Date(t0));
   let text = localize(cfg.block, run, fault?.noEnv ? join(run, "no-such.env") : join(cfg.base, "fake-prod.env"));
   for (const [from, to] of cfg.substitute ?? []) text = text.replaceAll(from, to);
   const env = {
@@ -1086,8 +1100,8 @@ export async function runOnce(cfg, runId, fault) {
     HARNESS_MAIN: FAKE_SHA.MAIN, HARNESS_PRHEAD: FAKE_SHA.PRHEAD, HARNESS_MARKERS: cfg.markers.join(" "),
     HARNESS_ROWS: String(cfg.rows ?? 98), HARNESS_CLINICS: cfg.clock.clinics,
     HARNESS_YMD: cfg.clock.ymd, HARNESS_HHMM: cfg.clock.hhmm, HARNESS_HHMM_COLON: `${cfg.clock.hhmm.slice(0, 2)}:${cfg.clock.hhmm.slice(2)}`,
-    HARNESS_STAMP: cfg.clock.ymd.replaceAll("-", "") + cfg.clock.hhmm, HARNESS_DOW: String(cfg.clock.dow),
-    HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3),
+    HARNESS_STAMP: cfg.clock.stamp ?? cfg.clock.ymd.replaceAll("-", "") + cfg.clock.hhmm, HARNESS_DOW: String(cfg.clock.dow),
+    HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3), HARNESS_FAIL_MODE: fault?.mode ?? "",
     HARNESS_HOOK_AFTER: fault?.hookAfter ?? "", HARNESS_HOOK_MKDIR: fault?.hookMkdir ? join(run, "tmp", fault.hookMkdir) : "",
   };
   // The shell starts inside a second copy of the same tree, so a `cd` that fails leaves the block
@@ -1098,7 +1112,9 @@ export async function runOnce(cfg, runId, fault) {
     const [id, ex] = l.split("|");
     return { id, pos, exists: ex.trim() ? ex.trim().split(" ") : [], args: read(`args.${id}`) };
   });
-  const markersAtEnd = cfg.markers.filter((m) => { try { return statSync(join(run, "tmp", m)).isFile(); } catch { return false; } });
+  const markersAtEnd = cfg.markers.filter((m) => {
+    try { const st = statSync(join(run, "tmp", m)); return st.isFile() && st.mtimeMs > t0; } catch { return false; }
+  });
   const result = { ...r, calls, markersAtEnd, unexpected: read("unexpected"), fired: read("fired").trim() };
   rmSync(run, { recursive: true, force: true });
   return result;
@@ -1155,11 +1171,12 @@ export async function sweep(cfg) {
   const rows = await inPool(faults, Math.max(2, cpus().length), async (f, i) => {
     const r = await runOnce(cfg, `${cfg.id}-f${i}`, f);
     const allowed = f.at ? cfg.mayContinue(f.at) : null;
+    const id = f.mode === "empty" ? `${f.call}:empty` : f.call ?? f.kind;
     const halted = r.code !== 0 && !r.out.includes("TOOL-CHAIN-CONTINUED");
     const problems = [];
     if (f.call && r.fired !== f.call) problems.push(`the fault at ${f.call} never fired`);
     if (r.unexpected) problems.push(`unexpected calls: ${r.unexpected.trim()}`);
-    const row = { fault: f.label, call: f.call ?? f.kind, halted, problems, calls: r.calls, code: r.code, out: r.out };
+    const row = { fault: f.label, call: id, halted, problems, calls: r.calls, code: r.code, out: r.out };
     if (allowed) {
       if (halted) problems.push(`expected to continue (${allowed}), but it halted`);
       return { ...row, result: `continues: ${allowed}` };
@@ -1208,7 +1225,12 @@ const HARNESS_BLOCKS = {
   stage0: {
     marker: STAGE0, markers: ["0100-sitting.start", "0100-check-journal.out", "0100-main.sha"],
     success: ["running from origin/main", STAGE0],
-    setup: (scn) => (tmp) => { if (scn === "day") putRecord(tmp, "0100-precheck-earlier.out", earlierTranscript().text, 120); },
+    setup: (scn) => (tmp) => {
+      // In closed hours a previous sitting's applied marker, 13 hours old, is held, so the marker-age
+      // line runs its find (and the sweep faults it); inside clinic hours there is none.
+      if (scn === "closed") putRecord(tmp, "0100-applied.ok", "", 780);
+      if (scn === "day") putRecord(tmp, "0100-precheck-earlier.out", earlierTranscript().text, 120);
+    },
     redirect: "0100-main.sha",
   },
   stage1: {
@@ -1218,6 +1240,7 @@ const HARNESS_BLOCKS = {
       putRecord(tmp, "0100-main.sha", `${FAKE_SHA.MAIN}\n`, 10);
       putRecord(tmp, "0100-sitting.start", "", 60);
       putRecord(tmp, "0100-window.ok", `${FAKE_SHA.MAIN} ${HARNESS_CLOCKS[scn].window}\n`, 5);
+      if (scn === "closed") putRecord(tmp, "0100-applied.ok", "", 780);
       if (scn === "day") putRecord(tmp, "0100-precheck-earlier.out", earlierTranscript().text, 120);
     },
     sources: true, vm: true,
@@ -1286,6 +1309,11 @@ export function harnessConfig(md, name, scn, shell, base) {
         const vm = positive.calls.find((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs"));
         for (const code of [2, 4, 5]) out.push({ kind: `vm-exit-${code}`, label: `node verified-migrate exits ${code}`, call: vm.id, code, pos: vm.pos, at: null });
       }
+      // EXIT 0 WITH EMPTY OUTPUT, for every clock read and every field of the window record: their
+      // output is compared with -ge, -le or -lt, and in zsh `[ "" -le n ]` is true.
+      for (const c of positive.calls.filter((x) => x.id.startsWith("date#") || (x.id.startsWith("cut#") && x.args.includes("0100-window.ok")))) {
+        out.push({ kind: "empty", label: `${describeCall(c)}: exits 0 with empty output`, call: c.id, mode: "empty", pos: c.pos, at: c });
+      }
       return out;
     },
   };
@@ -1301,10 +1329,11 @@ async function sweepAll(t, shell) {
     for (const [name, scn] of HARNESS_PLAN) {
       const r = await sweep(harnessConfig(doc, name, scn, shell, base));
       assert.deepEqual(r.posProblems, [], `${shell} ${name} ${scn}: the positive control did not reach its last line\n${r.positive.out.slice(-2000)}`);
-      // Not vacuous: every call of the positive run was made to fail, and most of them halt the block.
+      // Not vacuous: every call of the positive run was made to fail, and all but the few named in
+      // mayContinue halt the block.
       assert.ok(r.rows.length > r.positive.calls.length, `${shell} ${name} ${scn}: ${r.rows.length} faults`);
       const halts = r.rows.filter((x) => x.halted).length;
-      assert.ok(halts >= r.rows.length - 6, `${shell} ${name} ${scn}: only ${halts} of ${r.rows.length} faults halt`);
+      assert.ok(r.rows.length - halts <= 7, `${shell} ${name} ${scn}: only ${halts} of ${r.rows.length} faults halt`);
       faults += r.rows.length;
       t.diagnostic(`${shell} ${name} (${scn}): positive reaches its last line; ${r.rows.length} faults, ${halts} halt, ${r.rows.length - halts} allowed to continue`);
       for (const row of r.rows) {
@@ -1399,4 +1428,103 @@ test("FAULT INJECTION, bash with errexit off (runs in CI): every external call o
 test("FAULT INJECTION, zsh in GREEN's exact shape: every external call of every block, made to fail, halts it", async (t) => {
   if (!zshOrSkip(t)) return;
   await sweepAll(t, "zsh");
+});
+
+/**
+ * THE WINDOW FEED: stage 1 run whole, in the tool's shape, with one run-window record or clock each.
+ * Every record that must refuse has to STOP before psql runs and write no applied marker; the good
+ * record has to reach the applied line. Returns the cases that did not do what they must.
+ */
+export async function windowFeed(base, shell, block) {
+  const M = FAKE_SHA.MAIN;
+  const now = "202610022230"; // HARNESS_CLOCKS.closed
+  const cases = [
+    ["a good record", `${M} 202610022200 202610022300 202610030000`, null, null],
+    ["now before the window opens", `${M} 202610022240 202610022300 202610030000`, null, /^STOP: Lisbon 202610022230 is before the run window opens at 202610022240/m],
+    ["now past the last minute stage 1 may start", `${M} 202610022200 202610022220 202610030000`, null, /^STOP: Lisbon 202610022230 is past 202610022220, the last minute/m],
+    ["now AT the window's end", `${M} 202610022200 202610022300 ${now}`, null, /^STOP: Lisbon 202610022230 is not before 202610022230, the run window's end/m],
+    ["now PAST the window's end (the previous night's window, as a failed dispatch evening test records it)", `${M} 202610012100 202610022259 202610020800`, null, /^STOP: Lisbon 202610022230 is not before 202610020800, the run window's end/m],
+    ["a record for another sha", `${"2".repeat(40)} 202610022200 202610022300 202610030000`, null, /^STOP: the run window was recorded for 2{40}, not for the sha stage 0 recorded/m],
+    ["a malformed record: an 11-digit time", `${M} 20261002220 202610022300 202610030000`, null, /^STOP: the recorded run window did not parse/m],
+    ["a malformed record: no end", `${M} 202610022200 202610022300`, null, /^STOP: the recorded run window did not parse/m],
+    ["an empty clock", `${M} 202610022200 202610022300 202610030000`, "", /^STOP: /m],
+  ];
+  const failures = [];
+  for (const [i, [name, record, stamp, stop]] of cases.entries()) {
+    const cfg = harnessConfig(doc, "stage1", "closed", shell, base);
+    const setup = cfg.setup;
+    const r = await runOnce({
+      ...cfg, block,
+      clock: stamp === null ? cfg.clock : { ...cfg.clock, stamp },
+      setup: (tmp) => { setup(tmp); putRecord(tmp, "0100-window.ok", `${record}\n`, 5); },
+    }, `${shell}-feed-${i}`, null);
+    const psql = r.calls.some((c) => c.id.startsWith("psql#"));
+    const applied = r.markersAtEnd.includes("0100-applied.ok") || r.out.includes(STAGE1);
+    if (stop === null) {
+      if (r.code !== 0 || !applied || !r.out.includes("TOOL-CHAIN-CONTINUED")) failures.push(`${name}: did not reach the applied line (exit ${r.code})`);
+    } else if (r.code === 0 || applied || psql || !stop.test(r.out)) {
+      failures.push(`${name}: exit ${r.code}, applied ${applied}, psql ran ${psql}, STOP ${(r.out.match(/^STOP: .*$/m) ?? ["none"])[0].slice(0, 90)}`);
+    }
+  }
+  return { cases: cases.length, failures };
+}
+
+/** Stage 1 without 2de0d186's two lines (the clock-format check and `now < end` after the first read). */
+export function withoutWindowEnd(block) {
+  const lines = block.split("\n");
+  const drop = (pred) => {
+    const hits = lines.filter(pred);
+    assert.equal(hits.length, 1, "the line to remove is not there exactly once");
+    lines.splice(lines.indexOf(hits[0]), 1);
+  };
+  drop((l) => l === `echo "\${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. Nothing was applied"; exit 1; }`);
+  drop((l) => l.startsWith('[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is not before ${WEND}'));
+  return lines.join("\n");
+}
+
+test("THE WINDOW FEED: stage 1 refuses every run-window record it must, before psql, and passes a good one", async () => {
+  const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+  const base = mkdtempSync(join(tmpdir(), "fault-0100-feed-"));
+  try {
+    prepareHarness(base, doc);
+    const s1 = blockWith(doc, STAGE1);
+    for (const shell of shells) {
+      const real = await windowFeed(base, shell, s1);
+      assert.equal(real.cases, 9);
+      assert.deepEqual(real.failures, [], `${shell}: ${real.failures.join("\n")}`);
+      // IT BITES: without the window-end lines, the two end cases run on to the applied line.
+      const stripped = await windowFeed(base, shell, withoutWindowEnd(s1));
+      assert.deepEqual(stripped.failures.map((f) => f.split(":")[0]), [
+        "now AT the window's end",
+        "now PAST the window's end (the previous night's window, as a failed dispatch evening test records it)",
+      ], `${shell}: ${stripped.failures.join("\n")}`);
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("THE APPLIED MARKER'S AGE: a marker from this sitting stops stages 0 and 1; one 13 hours old does not", async () => {
+  const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+  const base = mkdtempSync(join(tmpdir(), "fault-0100-marker-"));
+  try {
+    prepareHarness(base, doc);
+    for (const shell of shells) {
+      for (const name of ["stage0", "stage1"]) {
+        const cfg = harnessConfig(doc, name, "closed", shell, base);
+        for (const [age, stops] of [[719, true], [780, false]]) {
+          const r = await runOnce({ ...cfg, setup: (tmp) => { cfg.setup(tmp); putRecord(tmp, "0100-applied.ok", "", age); } }, `${shell}-${name}-age-${age}`, null);
+          if (stops) {
+            assert.notEqual(r.code, 0, `${shell} ${name} ${age}`);
+            assert.match(r.out, /^STOP: stage 1 has ALREADY APPLIED 0100 in this sitting/m);
+            assert.deepEqual(r.calls.filter((c) => c.id.startsWith("git#")), [], `${shell} ${name}: it ran git after the marker`);
+          } else {
+            assert.equal(r.code, 0, `${shell} ${name} ${age}: ${r.out.slice(-600)}`);
+          }
+        }
+      }
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });

@@ -740,6 +740,7 @@ OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0100-precheck.new || true)
 [ "${OKS}" = 13 ] || { echo "STOP: the pre-check printed ${OKS} OK verdicts, not 13. Nothing was applied"; exit 1; }
 
 NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon clock could not be read again before the apply. Nothing was applied"; exit 1; }
+echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM before the apply. Nothing was applied"; exit 1; }
 echo "run window, again before the apply: now ${NOWL}, stage 1 starts by ${WSTART}"
 [ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART} after the pre-check, so the apply does not start. Nothing was applied"; exit 1; }
 
@@ -768,7 +769,7 @@ rm -f /tmp/0100-postcheck.out /tmp/0100-stage2.ok /tmp/0100-journal-after.out /t
 mv /tmp/0100-precheck.new /tmp/0100-precheck.out || { echo "STOP: the pre-check transcript could not be moved to /tmp/0100-precheck.out. Nothing was applied"; exit 1; }
 
 echo "--- the apply. It is the only writing command in this document. Its full output is teed to /tmp/0100-apply.out"
-node packages/db/scripts/verified-migrate.mjs --tag 0100_revoke_maintain --sha256 ${SHA0100} --expect-pending 1 2>&1 | tee /tmp/0100-apply.out || { RC=$?; echo "STOP: the apply exited ${RC}, verified-migrate's own code (or tee's, if verified-migrate exited 0). Do not read this as nothing applied: exit 3 or 4 can follow a committed apply. No applied marker was written. Paste nothing else, not stage 1 again and not the journal read; report this whole output (/tmp/0100-apply.out holds it). Whether 0100 is applied is read only on the owner's or the lead's word"; exit ${RC}; }
+node packages/db/scripts/verified-migrate.mjs --tag 0100_revoke_maintain --sha256 ${SHA0100} --expect-pending 1 2>&1 | tee /tmp/0100-apply.out || { RC=$?; echo "STOP: the apply exited ${RC}: verified-migrate's own code if tee succeeded, tee's code if tee failed (pipefail returns the rightmost failure). Do not read this as nothing applied: exit 3 or 4 can follow a committed apply. No applied marker was written. Paste nothing else, not stage 1 again and not the journal read; report this whole output (/tmp/0100-apply.out holds it). Whether 0100 is applied is read only on the owner's or the lead's word"; exit ${RC}; }
 touch /tmp/0100-applied.ok || { echo "STOP: verified-migrate exited 0, so 0100 IS APPLIED and the write stands, but /tmp/0100-applied.ok could not be written, so stage 2 would refuse. Paste nothing else; stage 2 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 echo "0100 APPLIED. Paste stage 2 now."
 )
@@ -776,7 +777,7 @@ echo "0100 APPLIED. Paste stage 2 now."
 
 **EXPECT, and these are what stage 1 is read for:**
 
-- **`--- THE HEAD CHECK`, then `recorded by stage 0: <sha>` and `origin/main now: <sha>`, the
+- **`--- THE HEAD CHECK`, then `recorded by stage 0: <sha>` and `origin/main now:     <sha>`, the
   same sha twice** (the block halts otherwise, before the environment is loaded), then
   `docs/migration-apply-0100.md: OK`;
 - **`0099: packages/db/migrations/0099_revoke_truncate_trigger_references.sql, sha256 fbc5e545..., journal when 1788502000000`;**
@@ -811,8 +812,9 @@ echo "0100 APPLIED. Paste stage 2 now."
 to stage 2. Any other ending is a `STOP:` line and a non-zero exit. A refusing target guard
 prints `STOP: the target guard refused or failed (its lines are above). Nothing was applied`
 before psql runs the pre-check and before verified-migrate. A failed apply prints
-`STOP: the apply exited <code>, verified-migrate's own code ...`, exits with that same code
-and writes no `/tmp/0100-applied.ok`, so stage 2 refuses. A failed `touch` of that marker
+`STOP: the apply exited <code>: verified-migrate's own code if tee succeeded, tee's code if tee
+failed ...`, exits with that same code and writes no `/tmp/0100-applied.ok`, so stage 2
+refuses. A failed `touch` of that marker
 after an exit-0 apply prints `STOP: verified-migrate exited 0, so 0100 IS APPLIED and the
 write stands, ...`.
 
@@ -822,9 +824,11 @@ write stands, ...`.
 drizzle has run on a journal that moved by the wrong amount or moved without the approved
 sha256; **4** if drizzle itself failed or on any thrown error; **5** if drizzle reports
 success and the journal did not move. Exit 3 can therefore follow a committed apply too.
-The `tee` keeps that exit: `pipefail` makes the pipeline's status verified-migrate's own code
-(or tee's, if verified-migrate exited 0 and tee failed), and the explicit guard after it
-prints the STOP and exits with that code. `set -e` alone would not stop the block here in a
+The `tee` keeps that exit: `pipefail` makes the pipeline's status the code of its rightmost
+command that failed, so it is verified-migrate's own code when tee succeeds, and tee's code
+whenever tee fails, whether verified-migrate exited 0 or not (measured in zsh and bash: a 3
+then a 1 reads 1). The explicit guard after it prints the STOP and exits with that code, so
+when tee fails, verified-migrate's own code is only in its output above. `set -e` alone would not stop the block here in a
 Claude session (see the paragraph after THE HALT RULE).
 
 **Exit 4 does not always mean nothing was applied.** `verified-migrate.mjs` also exits 4 on
@@ -898,6 +902,7 @@ test -f /tmp/0100-window.ok || { echo "STOP: no run window is recorded for this 
 WEND=$(cut -d' ' -f4 /tmp/0100-window.ok)
 echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
 NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon clock could not be read. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
 echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
 [ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
 
@@ -959,8 +964,10 @@ with 0100's sha256 in it exactly once; the last line reads exactly
 A missing carry makes the post-check itself STOP with psql exit 3 before any verdict.
 
 **WHAT THE EXIT MEANS.** Exit 0 with that last line is the only pass, and the only path to the
-closing read. Any other ending is a `STOP:` line and exit 1, and the write of stage 1 stands:
-the STOP lines this block adds say so in those words (`The write of stage 1 stands; ...`). A
+closing read. Any other ending is a `STOP:` line and exit 1, and the write of stage 1 stands.
+The STOP lines added on 2026-10-02 say so: those in the run-window section use that section's
+own words, `The write stands; stage 2 runs only on the owner's or the lead's word`, and every
+other one says `The write of stage 1 stands; ...`. A
 refusing target guard, a failed fetch, a failed psql run and a failed write of the pass mark
 each stop it, and `/tmp/0100-stage2.ok` is written last, so after any STOP the closing read
 refuses.
@@ -993,6 +1000,7 @@ test -f /tmp/0100-window.ok || { echo "STOP: no run window is recorded for this 
 WEND=$(cut -d' ' -f4 /tmp/0100-window.ok)
 echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The journal read has not run"; exit 1; }
 NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon clock could not be read. The journal read has not run"; exit 1; }
+echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. The journal read has not run"; exit 1; }
 echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
 [ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The journal read has not run"; exit 1; }
 test -f scripts/production-target.mjs || { echo "STOP: the reader's target module is not on disk at the recorded sha. The journal read has not run"; exit 1; }
@@ -1201,23 +1209,33 @@ each block with every stub succeeding and requires its last line. Then each call
 fail in turn, and the block must (a) exit non-zero with the tool chain stopped, (b) print none
 of its pass lines, (c) write none of its records after the failing point, and print a `STOP:`
 line. Extra faults: the apply worktree missing (the shell starts in an identical tree, so only
-the guard stops it), the env file missing, a record path that is a directory, and
-verified-migrate exiting 2, 4 and 5 as well as 3. Stages 0 and 1 run twice, at 22:30 (closed)
-and at 12:00 with all three R9 proofs valid. A static rule requires the explicit guard on
-every such line, and a control shows a block with one guard removed runs on to its applied
-line.
+the guard stops it), the env file missing, a record path that is a directory,
+verified-migrate exiting 2, 4 and 5 as well as 3, and every clock read and every field of the
+window record exiting 0 with EMPTY output (in zsh `[ "" -le <n> ]` is true). Stages 0 and 1 run
+twice, at 22:30 (closed, holding a previous sitting's applied marker 13 hours old, so the
+marker-age line's `find` runs and is faulted) and at 12:00 with all three R9 proofs valid. A
+static rule requires the explicit guard on every such line, and a control shows a block with
+one guard removed runs on to its applied line. **THE WINDOW FEED** runs stage 1 whole on nine
+run-window records and clocks: now before the open, now past the last start, now at the end,
+now past the end (the previous night's window, as a failed evening test in the dispatch would
+record it), a record for another sha, two malformed records and an empty clock each STOP
+before psql with no applied marker, and a good record reaches the applied line. Run again with
+the two window-end lines removed (the clock-format check and `now < end` after stage 1's first
+clock read), the two end cases run on to the applied line, so the feed goes red without them.
+A held marker younger than 12 hours stops stages 0 and 1 before any git call.
 
 | Block | Faults | Halt | Allowed to continue, and why |
 |---|---|---|---|
-| THE EARLIER PRE-CHECK SITTING | 38 | 37 | 1: the time in a narration line |
-| stage 0, closed hours | 48 | 42 | 6: the time in a narration line; 5 R9 proof calls, which read `no` and are not required in closed hours |
-| stage 0, inside clinic hours, all proofs valid | 56 | 54 | 2: the narration time; a failed clock test, which reads open and so demands every proof |
-| stage 1, closed hours | 60 | 55 | 5 R9 proof calls, as in stage 0 |
-| stage 1, inside clinic hours, all proofs valid | 69 | 67 | 2: a failed clock test and a failed closed-clinics test, each of which reads open |
-| stage 2 | 48 | 48 | none |
-| the closing journal read | 22 | 22 | none |
+| THE EARLIER PRE-CHECK SITTING | 39 | 37 | 2: the time in a narration line, failed and empty |
+| stage 0, closed hours | 51 | 44 | 7: the narration time, failed and empty; 5 R9 proof calls, which read `no` and are not required in closed hours |
+| stage 0, inside clinic hours, all proofs valid | 58 | 55 | 3: the narration time, failed and empty; a failed clock test, which reads open and so demands every proof |
+| stage 1, closed hours | 70 | 65 | 5 R9 proof calls, as in stage 0 |
+| stage 1, inside clinic hours, all proofs valid | 78 | 76 | 2: a failed clock test and a failed closed-clinics test, each of which reads open |
+| stage 2 | 52 | 52 | none |
+| the closing journal read | 26 | 26 | none |
 
-The same 341 faults ran under zsh in GREEN's exact shape and under bash with errexit forced
+Regenerated on 2026-10-02 at the commit after 2de0d186; the table before it read 341 faults
+(343 once 2de0d186 added its two lines). The same 374 faults ran under zsh in GREEN's exact shape and under bash with errexit forced
 off; every one held. **CI runs the bash arm only:** zsh is not on the ubuntu runner, and the
 repository's convention for that (`scripts/apply-lane/apply-lane-settings.test.mjs`: the zsh
 sweeps are a recorded rehearsal) is followed, so on the GitHub runner alone the zsh arm is a
@@ -1324,7 +1342,19 @@ The R4 rounds this document has had, one row each. Each "fixed in" sha is a loca
   review-loop cap.
 - R4 review of GREEN's dispatch (2026-10-02, reproduced by SOLO): BLOCKER, `set -e` stops no
   block pasted into a Claude session, so the target guard's refusal, a verified-migrate exit
-  3 to 5 and a failed fetch did not halt. Fixed in the commit after 38743df2: an explicit
+  3 to 5 and a failed fetch did not halt. Fixed in baf37a36: an explicit
   `|| { echo "STOP: ..."; exit ...; }` on every command a later step relies on, in all five
   blocks, and the fault-injection harness above as a permanent test. This changes apply-block
   bytes, so under the review-loop cap it gets its own R4 round.
+- 2de0d186 (SOLO, after the fault-injection run on GREEN's dispatch found its CLOCK CHECK could
+  record the previous night's window): stage 1 also stops unless its first clock read parses
+  as YYYYMMDDHHMM and now is before the recorded window's end, so a stale or wrong window stops
+  before the write. Two stage 1 lines.
+- R4 round on 38743df2..2de0d186: 0 BLOCKER, 0 MAJOR, 9 MINOR. Items 1 to 5 fixed in the commit
+  after 2de0d186: a YYYYMMDDHHMM check on stage 1's second clock read, stage 2's and the closing
+  read's (three block lines); the apply's STOP line names tee's code when tee fails (one block
+  line, measured: a 3 then a 1 reads 1); the stage 1 EXPECT spacing, the stage 2 claim about its
+  STOP wording and the pipefail prose; the harness table regenerated; and three test additions
+  (an empty-output fault for every clock read and window field, a held applied marker so its
+  age line's `find` is faulted, and THE WINDOW FEED with its removal control). Items 6 to 9
+  are not in that commit.
