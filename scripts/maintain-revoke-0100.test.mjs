@@ -37,8 +37,10 @@
 //     either a sha256 or the documented placeholder, which can never match one; a
 //     filled SHAGATE is the gate file's real sha256 when the file is on this branch;
 //     and its catalog-only check, RUN here as written in the document, passes the
-//     real migration and refuses planted copies, R4 round 1's five among them, with
-//     a plant for each of its conditions that only that condition refuses;
+//     real migration and refuses planted copies, R4 round 1's five and round 2's four
+//     among them, with a plant for each of its conditions (but the DO-loop count,
+//     which the statement shape already decides) and for each refusal of its
+//     scanner that only that condition or refusal refuses;
 //   * THE EARLIER PRE-CHECK SITTING runs from PR #1520's head as its dispatch names
 //     it, never from main, and writes into its transcript the guard's verdict and
 //     the summary line R9's proof 3 then requires;
@@ -124,7 +126,7 @@ export function migrationProblems(sql) {
   if (!/'REVOKE MAINTAIN ON TABLE %s FROM authenticated'/.test(loop ?? "")) {
     problems.push("the loop does not revoke exactly MAINTAIN from authenticated");
   }
-  if ((loop ?? "").match(/\bEXECUTE\b/g)?.length !== 1) problems.push("the loop does not EXECUTE exactly one string");
+  if ((loop ?? "").match(/\bEXECUTE\b/gi)?.length !== 1) problems.push("the loop does not EXECUTE exactly one string");
   if (!/^ALTER DEFAULT PRIVILEGES IN SCHEMA public\s+REVOKE MAINTAIN ON TABLES FROM authenticated;$/.test(def ?? "")) {
     problems.push("statement 4 is not the ALTER DEFAULT PRIVILEGES revoke of MAINTAIN");
   }
@@ -365,6 +367,7 @@ test("CONTROLS, ONE RULE AT A TIME: each migrationProblems rule is the only one 
     ["the loop's REVOKE string", swap("'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'REVOKE MAINTAIN ON TABLE %s FROM anon'"), /^the loop does not revoke exactly MAINTAIN from authenticated$/],
     ["the EXECUTE count, none", swap("    EXECUTE format(", "    PERFORM format("), /^the loop does not EXECUTE exactly one string$/],
     ["the EXECUTE count, two", inLoop("    EXECUTE 'SELECT 1';"), /^the loop does not EXECUTE exactly one string$/],
+    ["the EXECUTE count, a lowercase second (R4 round 2)", inLoop("    execute 'SELECT 1';"), /^the loop does not EXECUTE exactly one string$/],
     ["statement 4", swap("REVOKE MAINTAIN ON TABLES FROM authenticated;", "REVOKE TRIGGER ON TABLES FROM authenticated;"), /^statement 4 is not the ALTER DEFAULT PRIVILEGES revoke of MAINTAIN$/],
     ["FOR ROLE", inWhere("c.relname <> 'FOR ROLE'"), /^the default privilege names a FOR ROLE/],
     ["SECURITY DEFINER", inWhere("c.relname <> 'SECURITY DEFINER'"), /^the migration names SECURITY DEFINER$/],
@@ -612,11 +615,77 @@ test("R9 proof 2, run as the document writes it, passes the migration and refuse
     assert.match(only.denied.stdout, /forbidden words 1 \[LOCK\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$/m);
     assert.match(only.execs.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 2, its string the MAINTAIN revoke true: NOT PROVEN$/m);
     assert.match(only.revoke.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke false: NOT PROVEN$/m);
-    // PASSING CONTROLS: a comment naming the words, outside the loop or inside it, stays catalog-only.
-    assert.equal(runOn(migration + "\n/* DELETE, TRUNCATE and CREATE TABLE */\n").status, 0);
-    const commented = runOn(inLoop(`    /* ${FORBIDDEN.join(" ")} */\n    -- LOCK TABLE x; GRANT ALL ON x TO anon;`));
-    assert.equal(commented.status, 0, commented.stdout);
-    assert.match(commented.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: CATALOG-ONLY$/m);
+    // The DO-loop count has no plant of its own, and cannot: a second loop, or none, also breaks
+    // the four-statement shape (and empties the body the EXECUTE count reads). A second loop is
+    // refused all the same.
+    const twoLoops = runOn(migration + "DO $$ BEGIN END $$;--> statement-breakpoint\n");
+    assert.equal(twoLoops.status, 1, twoLoops.stdout);
+    assert.match(twoLoops.stdout, /DO loops 2, /);
+    assert.notEqual(statement(twoLoops), realShape);
+
+    // R4 ROUND 2's FOUR PLANTS, and EXECUTE 'SELECT 1': each passed (exit 0) by the second version
+    // of this check, through a case-sensitive EXECUTE count or a comment stripper that read `/*` and
+    // `--` inside a string as comments. Each is now refused, and by the condition named.
+    const TAIL = (forbidden, execs) => new RegExp(`^catalog-only: lexical problems 0 \\[\\], statements \\[[^\\]]*\\], forbidden words ${forbidden}, DO loops 1, EXECUTEs in it ${execs}, its string the MAINTAIN revoke true: NOT PROVEN$`, "m");
+    for (const [line, want] of [
+      ["    execute 'DEL' || 'ETE FROM public.appointments';", TAIL("0 \\[\\]", 2)],
+      ["    execute 'SELECT pg_sleep(3600)';", TAIL("0 \\[\\]", 2)],
+      ["    RAISE NOTICE '/*'; DELETE FROM public.appointments; RAISE NOTICE '*/';", TAIL("1 \\[DELETE\\]", 1)],
+      ["    RAISE NOTICE '--'; DELETE FROM public.appointments;", TAIL("1 \\[DELETE\\]", 1)],
+      ["    EXECUTE 'SELECT 1';", TAIL("0 \\[\\]", 2)],
+    ]) {
+      const r = runOn(inLoop(line));
+      assert.equal(r.status, 1, `not refused: ${line}\n${r.stdout}`);
+      assert.match(r.stdout, want, line);
+    }
+    // A `$$` inside a `--` comment ends the DO body in PostgreSQL, which then runs what follows as
+    // plain SQL. The second version stripped the comment and passed it; the scanner ends the body
+    // at that `$$`, as PostgreSQL does, and sees two loops.
+    const early = runOn(swap("END\n$$;", "END -- $$; SELECT pg_sleep(3600); DO $$ BEGIN\nEND\n$$;"));
+    assert.equal(early.status, 1, early.stdout);
+    assert.match(early.stdout, /DO loops 2, /);
+
+    // THE SCANNER, ONE REFUSAL AT A TIME: each input is refused by the lexical condition ALONE, every
+    // other condition reading as on the real file.
+    const LEX = (problem) => new RegExp(`^catalog-only: lexical problems 1 \\[${problem}\\], statements \\[[^\\]]*\\], forbidden words 0 \\[\\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$`, "m");
+    for (const [name, text, problem] of [
+      ["another dollar-quote tag", inLoop("    RAISE NOTICE $q$x$q$;"), "a dollar quote other than \\$\\$"],
+      ["an E string", inLoop("    RAISE NOTICE E'x';"), "E string"],
+      ["a U& string", inLoop("    RAISE NOTICE U&'x';"), "U& literal"],
+      ["a U& identifier", inLoop("    RAISE NOTICE '%', U&\"x\";"), "U& literal"],
+      ["an unterminated string", `${migration}'x`, "unterminated string"],
+      ["an unterminated identifier", `${migration}"x`, "unterminated identifier"],
+      ["an unterminated comment, closed once but nested twice", `${migration}/* a /* b */`, "unterminated comment"],
+      ["an unterminated dollar quote", `${migration}$$ x`, "unterminated dollar quote"],
+    ]) {
+      const r = runOn(text);
+      assert.equal(r.status, 1, `${name}: not refused\n${r.stdout}`);
+      assert.match(r.stdout, LEX(problem), name);
+      assert.equal(statement(r), realShape, name);
+    }
+
+    // PASSING CONTROLS: the real file, and the real file with a comment holding an apostrophe and
+    // EVERY forbidden word (and EXECUTE), as `--` and as `/* */`, outside the loop and inside it; a
+    // nested comment; and the literal forms the scanner reads as they are.
+    const ALL = `it's not code: ${FORBIDDEN.join(" ")} EXECUTE`;
+    const CATALOG = /^catalog-only: lexical problems 0 \[\], statements \[[^\]]*\], forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: CATALOG-ONLY$/m;
+    for (const [name, text] of [
+      ["the real file", migration],
+      ["a -- comment outside the loop", `${migration}-- ${ALL}\n`],
+      ["a /* */ comment outside the loop", `${migration}/* ${ALL} */\n`],
+      ["a -- comment inside the loop", inLoop(`    -- ${ALL}`)],
+      ["a /* */ comment inside the loop", inLoop(`    /* ${ALL} */`)],
+      ["a nested comment inside the loop", inLoop(`    /* outer /* inner */ still a comment: ${ALL} */`)],
+      ["a doubled quote inside a string", inLoop("    RAISE NOTICE 'it''s';")],
+      ["a doubled quote inside an identifier", inLoop("    RAISE NOTICE '%', \"a\"\"b\";")],
+      ["a typed literal, whose e' is no E string", inLoop("    RAISE NOTICE '%', date'2026-10-02';")],
+      ["an identifier holding $, which is no dollar quote", inLoop("    RAISE NOTICE '%', r$x;")],
+    ]) {
+      const r = runOn(text);
+      assert.equal(r.status, 0, `${name}: ${r.stdout}`);
+      assert.match(r.stdout, CATALOG, name);
+      assert.equal(statement(r), realShape, name);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
