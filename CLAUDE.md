@@ -107,11 +107,15 @@ Standing nevers: clinical authorship never moves; clinical_records_enforce_immut
   | `0093` | RGPD-01's consent table (applied to production, merged) | #1399 |
   | `0094` | the users/tenants/roles policy split (Tier C) (applied to production 2026-09-29, merged) | #1459 |
   | `0095` | the conflict check returns a patient's name only where the caller's own reads would show it (**re-ruled 2026-09-27**, was `0096`) (applied to production 2026-09-29, merged) | #1438 |
-  | `0096` | CARE-02a: the care team reads the ficha and the registos, at the therapist's own clinics (**re-ruled 2026-09-30**, was `0098`) | #1471, held |
-  | `0097` | the registo write policies (ruled onto Tier C 2026-09-27 as the registo write fix; its detail is private until it is applied) (**re-ruled 2026-09-30**, was `0099`) | #1475, held |
-  | `0098` | the index on `migration_staging_rows.imported_entity_id` (the "staging index") (**re-ruled 2026-09-30**, was `0097`) | #1469, held |
-  | `0099` | the TRUNCATE, TRIGGER, REFERENCES revoke (**re-ruled 2026-09-30**, was `0096`; before 2026-09-27 it was `0095`) | #1397, held |
-  | `0100` onward | SAT-01's migrations | not yet authored |
+  | `0096` | CARE-02a: the care team reads the ficha and the registos, at the therapist's own clinics (**re-ruled 2026-09-30**, was `0098`) (applied to production 2026-09-30, merged) | #1471 |
+  | `0097` | the registo write policies: `clinical_records` writes follow the permission matrix (ruled onto Tier C 2026-09-27 as the registo write fix) (**re-ruled 2026-09-30**, was `0099`) (applied to production 2026-10-01, merged) | #1475 |
+  | `0098` | the index on `migration_staging_rows.imported_entity_id` (the "staging index") (**re-ruled 2026-09-30**, was `0097`) (applied to production 2026-10-01, merged) | #1469 |
+  | `0099` | the TRUNCATE, TRIGGER, REFERENCES revoke (**re-ruled 2026-09-30**, was `0096`; before 2026-09-27 it was `0095`) (applied to production 2026-10-01, merged) | #1397 |
+  | `0100` | MAINTAIN off `authenticated` in `public`, plus the matching default privileges, the same shape as `0099`; the catalog-only pilot of the SET LOCAL gate (**ruled 2026-10-01**, strategy S-1001-A R1 and R2). The read-only production measurement ran 2026-10-02 (R3): `authenticated` held MAINTAIN on 41 of 48 tables, and anon and PUBLIC held nothing | #1520, held |
+  | `0101` onward | SAT-01's migrations (**re-ruled 2026-10-01**, was `0100` onward) | not yet authored |
+  | `0102` | the episode-policy item (Tier C; its detail is private until it is applied) (**ruled 2026-10-01**) | not yet authored |
+
+  **2026-10-01: `0100` IS MAINTAIN, AND SAT-01 MOVES TO `0101`.** Strategy's dispatch S-1001-A, its words: "R1 MAINTAIN on authenticated: REVOKE, tables in public plus the matching default privileges, same shape as 0099." "R2 Numbering: this is 0100 (catalog-only pilot of the SET LOCAL gate). SAT-01 becomes 0101, the episode-policy item 0102." "R3 Measurement before build." `0096` to `0099` were all applied by 2026-10-01 21:15 Lisbon (production journal 97). A PR, card or document still naming `0100` for SAT-01 is stale, and is corrected rather than argued with.
 
   **2026-09-30 IS THE FIFTH RENUMBERING, AND FROM IT APPLY ORDER EQUALS FILE ORDER.** Ruled by the owner and the lead on 2026-09-30; their words: "renumber (option 1). CARE-02a 0096 (#1471), registo write policies 0097 (#1475), staging index 0098 (#1469), grants revoke 0099 (#1397), SAT-01 from 0100. Apply order equals file order from now; the lead rules apply order only in number order or after a renumber." Why: `scripts/check-journal.mjs` rule 3 requires the journal's `idx` order to match the numeric order of the files on disk. The apply order ruled on 2026-09-29 (after ANEXO-LINK: CARE-02a, then the registo write policies, then the staging index, then the grants revoke) read `0098, 0099, 0097, 0096` under the old numbers, so the first apply would have put `0098` at journal idx 93, and a later `0096` or `0097` would then sit at a higher idx than a file it sorts before: rule 3 fails, and it cannot be relaxed. Renumbering makes the numbers follow the apply order. The four items keep their content, their bytes and their PRs; only the numbers moved. Their pending files are named for what they follow: CARE-02a follows `0095`, the registo write policies follow `0096`, the staging index follows `0097`, the grants revoke follows `0098` (`packages/db/migrations-pending/README.md` names each file). A file's own header comment may still name its old number, because a rename changes no byte; the file is never edited for it, because its sha256 is what every pin points at. The first sitting under this table is `0096` at journal idx 93, and the same ruling keeps its documented order: "its count GATE-CHANGE (26 to 27) keeps the documented order: promote, apply, count GATE-CHANGE, main into #1471, #1471." A PR title, description, comment, card or file name still naming `0098` for CARE-02a, `0099` for the registo write policies, `0097` for the staging index or `0096` for the grants revoke is stale, and is corrected rather than argued with.
 
@@ -158,6 +162,19 @@ The lead's words, character for character: "A script's own REFUSE or STOP line i
       - The target guard also refuses `PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE` and `PGOPTIONS`, and the shared check refuses an `options` query key: Supabase's pooler reads a tenant from `options` before the username.
       - The new pins go into later documents only.
   - The incident card is `INC-rehearsal-subagent-passed-the-reader-guard`.
+
+### Strategy rulings, 2026-10-01 and 2026-10-02: an amended document is reviewed, and when a sitting may run in clinic hours
+
+Strategy's words, character for character, from dispatch S-1002-A (2026-10-01 23:58 Lisbon):
+
+- "R8 STANDING RULE (V1 defect): a document amended for an owner override gets one R4 round on the changed bytes before the READY line. "Start now" from the owner does not waive it."
+- "R9 DAYTIME APPLIES, owner ruled B, from 0100: a clinic-hours sitting is allowed only when all three hold, each proven in the apply document: (1) the SET LOCAL gate is on main; (2) the migration is catalog-only or touches no table reception writes; (3) the read-only pre-check ran on production in an earlier sitting, output recorded. Else closed hours. Propose the stage 0 arm in 0100's document; R4 covers it."
+- "R10 #1510 values 5s and 60s accepted. Observer stays out; card it as its own GATE-CHANGE pair after 0100."
+
+- *SOLO's record, not strategy's text: why.*
+  - **R8.** On 2026-10-01 the owner ruled 0097, 0098 and 0099 to run that afternoon. His message is timestamped 16:13:42 Lisbon; the documents and dispatches said 16:10, a rounding. `docs/migration-apply-0097.md` was amended at `ac96d859` to accept that date in its clock and clinic overrides, and GREEN ran it on production with no R4 round on the changed bytes. They were proved on the cut lines only. Strategy found it in verification V1 of S-1001-A.
+  - **R9** replaces, from `0100`, the per-day owner overrides of 2026-09-30 and 2026-10-01. Those were date-locked by machine in the 0096 and 0097 documents and do not carry forward. The rule of 2026-09-27, "Sittings only while the clinics are closed", stands for every sitting that does not meet all three conditions.
+  - **R10.** The SET LOCAL gate is `scripts/migration-timeouts.test.mjs` (#1510): from `0100`, the first two statements of every migration are `SET LOCAL lock_timeout = '5s';` and `SET LOCAL statement_timeout = '60s';`. The observer is carded as `VM-observer-gate-change-pair`, and its code is kept on branch `db/VM-observer-pair-code`.
 
 ## Stack
 - Next.js 16 App Router, TypeScript strict
