@@ -52,7 +52,27 @@
 //   * every carry the stage 2 block reads is a row the pre-check prints, and no
 //     carry's name is a substring of another row's check text;
 //   * the blocks carry no `#` line, no `!` but `test !`, and no backslash
-//     continuation.
+//     continuation;
+//   * EVERY HALT IS EXPLICIT, AND A FAULT-INJECTION HARNESS PROVES IT (the R4 BLOCKER of
+//     2026-10-02). GREEN's Bash tool runs a pasted block as `... && eval '<block>' < /dev/null
+//     && pwd -P >| <file>`; the eval sits on the left of `&&`, so zsh ignores errexit inside it,
+//     the block's `( ... )` subshell included, and `set -eo pipefail` stops nothing (pipefail
+//     still sets a pipeline's status). So a static rule requires an explicit
+//     `|| { echo "STOP: ..."; exit 1; }` on every command a later step relies on, and the
+//     harness runs each block in that exact shape with every external command it calls (git,
+//     psql, node, pnpm, shasum and the rest) replaced by a stub, makes each call fail in turn,
+//     and requires the block to exit non-zero, print a STOP line and none of its pass lines,
+//     and write none of its records after the failing point. Its positive control is each
+//     block with every stub succeeding, which must reach its last line. No stub touches a real
+//     host, the secrets folder or a database: git, psql and the node programs never run for
+//     real, and the block's cd, its /tmp/0100- paths and its env file are moved into a scratch
+//     folder first;
+//   * IN CI THE HARNESS RUNS UNDER bash, with errexit forced off as zsh has it inside the
+//     tool's eval; under zsh, the exact shape, it runs wherever zsh is installed. zsh is not on
+//     the CI runner (ubuntu-latest), and the repository's convention for that is
+//     scripts/apply-lane/apply-lane-settings.test.mjs (the zsh sweeps are a recorded
+//     rehearsal, "zsh is not on the CI runner"), so on the GitHub runner alone the zsh arm is
+//     reported as a skip; anywhere else a missing zsh FAILS.
 //
 // Each rule is a function of the texts it reads. The tests run it on the committed
 // files; the CONTROLS run the SAME function on a planted copy and require it to go
@@ -60,7 +80,8 @@
 // ONLY that rule refuses, so dropping any one rule turns a test red (the mutation
 // sweep of 2026-10-02 found 52 rules no test would miss).
 //
-// WHAT IT DOES NOT PROVE: that any of it runs. That is the rehearsal's job
+// WHAT IT DOES NOT PROVE: that any of it runs against a database (the harness runs the blocks
+// against stubs, which proves how they halt and nothing about what they read). That is the rehearsal's job
 // (docs/migration-apply-0100.md, "Rehearsal"), and CI's db-tests once the file is
 // promoted. The SET LOCAL lines are also held by scripts/migration-timeouts.test.mjs
 // (#1510, on main since 2026-10-02), whose sha256 this document pins as SHAGATE.
@@ -69,10 +90,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
+} from "node:fs";
+import { cpus, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -574,8 +597,13 @@ test("THE EARLIER PRE-CHECK SITTING runs from PR #1520's named head, never main,
   assert.doesNotMatch(e, /origin\/main|merge-base/);
   // What the transcript holds is what proof 3 reads: the guard's verdict line and the summary.
   assert.ok(at("node scripts/assert-production-target.mjs 2>&1 | tee -a /tmp/0100-precheck-earlier.new") > 0);
-  const summary = e.match(/^echo "(earlier pre-check summary: [^"]+)" \| tee -a \/tmp\/0100-precheck-earlier\.new$/m)?.[1];
+  const summary = e.match(/^echo "(earlier pre-check summary: [^"]+)" >> \/tmp\/0100-precheck-earlier\.new \|\| \{ echo "STOP: /m)?.[1];
   assert.equal(summary, "earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL");
+  // The transcript is hashed while it is still .new and moved to .out last, so a failure anywhere
+  // before the move leaves no .out; and the summary is shown only after the move.
+  assert.ok(at("PE=$(shasum -a 256 /tmp/0100-precheck-earlier.new") > 0);
+  assert.ok(at("PE=$(shasum -a 256 /tmp/0100-precheck-earlier.new") < at("mv /tmp/0100-precheck-earlier.new /tmp/0100-precheck-earlier.out"));
+  assert.ok(at("mv /tmp/0100-precheck-earlier.new /tmp/0100-precheck-earlier.out") < at(`echo "${summary}"\n`));
   for (const b of [blockWith(doc, STAGE0), blockWith(doc, STAGE1)]) {
     const d3 = b.split("\n").find((l) => l.endsWith("then D3=yes; fi"));
     assert.ok(d3.includes("grep -qxF 'target verified: production, session pooler.' /tmp/0100-precheck-earlier.out"));
@@ -790,4 +818,585 @@ test("the five blocks are there, in order, and carry no # line, no ! but test !,
   assert.notDeepEqual(blockHazards("node -e \"process.exit(a !== b ? 1 : 0)\"\n"), []);
   assert.notDeepEqual(blockHazards("psql x \\\n  -f y\n"), []);
   assert.deepEqual(blockHazards("test ! -f x || exit 1\n"), []);
+});
+
+// =====================================================================================
+// EVERY HALT IS EXPLICIT: the static rule, then the fault-injection harness that proves it.
+// =====================================================================================
+
+/** A command a later step relies on: its failure must halt the block by an explicit guard. */
+const MUST_HALT = [
+  /^cd /, /\bgit (fetch|checkout|status|ls-remote|rev-parse origin\/main)\b/, /^rm -f /, /^mv /, /^touch /, /\| tee /,
+  /^node (scripts|packages)\//, /^node --env-file=/, /\bpsql /, /^(T99|W99|PRHEAD|REC|PE|NOWL)=\$\(/, />>? \/tmp\/0100-/, /^set -o allexport/,
+];
+const EXPLICIT_HALT = /\|\| \{ (RC=\$\?; )?echo "STOP: [^"]+"; exit (1|\$\{RC\}); \}$/;
+
+/** The lines of a block that run a MUST_HALT command without an explicit `|| { echo "STOP: ..."; exit ...; }`. */
+export function unguardedLines(block) {
+  const out = [];
+  block.split("\n").forEach((line, i) => {
+    // R9's proof and decision lines read `no` or STOP on their own; a pure echo is output only.
+    if (/^if /.test(line) || /^echo "[^"]*"$/.test(line)) return;
+    if (MUST_HALT.some((re) => re.test(line)) && !EXPLICIT_HALT.test(line)) out.push(`${i + 1}: ${line.slice(0, 100)}`);
+  });
+  return out;
+}
+
+test("EVERY HALT IS EXPLICIT: each command a later step relies on carries its own || { echo \"STOP: ...\"; exit ...; }", () => {
+  const blocks = blocksOf(doc);
+  for (const b of blocks) assert.deepEqual(unguardedLines(b), [], b.slice(0, 120));
+  // Not vacuous: the rule sees the commands the R4 BLOCKER named, in the blocks that run them.
+  const s1 = blockWith(doc, STAGE1);
+  const guardLine = s1.split("\n").find((l) => l.startsWith("node scripts/assert-production-target.mjs"));
+  const vmLine = s1.split("\n").find((l) => l.startsWith("node packages/db/scripts/verified-migrate.mjs"));
+  assert.ok(guardLine && vmLine);
+  assert.match(vmLine, /\| tee \/tmp\/0100-apply\.out \|\| \{ RC=\$\?; echo "STOP: [^"]+"; exit \$\{RC\}; \}$/);
+  // CONTROLS: each guard the BLOCKER named, removed, goes red; so does a planted fetch, cd or write.
+  const strip = (line) => line.replace(/ \|\| \{ (RC=\$\?; )?echo "STOP: [^"]+"; exit (1|\$\{RC\}); \}$/, "");
+  assert.deepEqual(unguardedLines(s1.replace(guardLine, strip(guardLine))).length, 1);
+  assert.deepEqual(unguardedLines(s1.replace(vmLine, strip(vmLine))).length, 1);
+  for (const planted of ["git fetch origin --prune", "cd /somewhere", 'echo "${MAIN}" > /tmp/0100-main.sha', "rm -f /tmp/0100-x", "touch /tmp/0100-applied.ok",
+    "node scripts/assert-production-target.mjs", "set -o allexport && . /x.env && set +o allexport", 'NOWL=$(TZ=Europe/Lisbon date "+%Y%m%d%H%M")',
+    'psql "${DATABASE_URL_DIRECT}" -f x.sql 2>&1 | tee /tmp/0100-x.out', "node scripts/x.mjs || { echo halt; exit 1; }"]) {
+    assert.equal(unguardedLines(planted).length, 1, planted);
+  }
+  // A pure echo and an R9 proof line are not commands a later step relies on.
+  assert.deepEqual(unguardedLines('echo "--- the pre-check. READ ONLY"\nif node -e "x" m.sql; then D2=yes; fi'), []);
+  assert.deepEqual(unguardedLines('git fetch origin --prune || { echo "STOP: the fetch failed. Nothing was applied"; exit 1; }'), []);
+});
+
+// ---- THE HARNESS. Nothing in it touches a real host, the secrets folder or a database. ----
+
+const STUBBED = ["git", "psql", "node", "pnpm", "shasum", "tee", "mv", "rm", "touch", "cat", "find", "date", "grep", "cut", "awk", "head", "tail", "wc", "tr"];
+/** Never run for real: their stubs answer from fixtures, and node runs for real only as `node -e`. */
+const FAKED = new Set(["git", "psql", "pnpm"]);
+const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+const PROD_APPLY = "/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply";
+const PROD_ENV = "/Users/ivan/osteojp-secrets/new-prod.env";
+const FAKE_DB_URL = "postgresql://postgres.harness:x@harness.invalid:5432/postgres";
+const FAKE_SHA = { MAIN: "1".repeat(40), PRHEAD: "2".repeat(40), BEFORE: "3".repeat(40) };
+
+/** The real program behind a name, resolved by plain sh on the system PATH. A missing one FAILS the test. */
+function realPath(name) {
+  const r = spawnSync("/bin/sh", ["-c", `command -v ${name}`], { encoding: "utf8", env: { PATH: SYSTEM_PATH } });
+  const p = r.stdout.trim();
+  if (r.status !== 0 || !p.startsWith("/")) throw new Error(`the harness needs ${name} on ${SYSTEM_PATH}, and it is not there`);
+  return p;
+}
+
+/** A shell is present when `command -v` finds it on the system PATH. */
+const hasShell = (name) => spawnSync("/bin/sh", ["-c", `command -v ${name}`], { env: { PATH: SYSTEM_PATH } }).status === 0;
+
+const shq = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
+
+/**
+ * One POSIX sh stub. It numbers its own calls per name (no two calls of one name share a pipeline
+ * in these blocks, so the numbering is the same in every run up to the fault), logs the call and
+ * which records exist, fails when it is the call named by HARNESS_FAIL, and otherwise answers.
+ */
+function stubText(name, real) {
+  const R = (n) => shq(real[n]);
+  return `#!/bin/sh
+n=${shq(name)}
+d="$HARNESS_RUN"
+k=0
+if [ -f "$d/cnt.$n" ]; then read -r k < "$d/cnt.$n"; fi
+k=$((k + 1))
+echo "$k" > "$d/cnt.$n"
+id="$n#$k"
+if [ "$n" = tee ]; then ${R("sleep")} 0.05; fi
+inp=
+if [ "$n" = cut ]; then inp=$(${R("cat")}); fi
+ex=
+for m in $HARNESS_MARKERS; do if [ -f "$d/tmp/$m" ]; then ex="$ex $m"; fi; done
+printf '%s\\n' "$@" > "$d/args.$id"
+if [ -n "$inp" ]; then printf 'STDIN %s\\n' "$inp" >> "$d/args.$id"; fi
+printf '%s|%s\\n' "$id" "$ex" >> "$d/log"
+unexpected() { printf '%s %s\\n' "$id" "$*" >> "$d/unexpected"; echo "harness: unexpected call $id" >&2; exit 97; }
+for a in "$@"; do case "$a" in *osteojp-secrets*|*osteojp-prod-apply*) unexpected "a real path";; esac; done
+if [ "$HARNESS_FAIL" = "$id" ]; then
+  echo "$id" > "$d/fired"
+  case "$n" in
+    git) echo "fatal: unable to access 'https://github.invalid/': Could not resolve host (harness fault)" >&2; exit 128;;
+    psql) echo "psql: error: connection to server at harness.invalid failed: FATAL: harness fault" >&2; exit 2;;
+    node) case "$1" in
+        scripts/assert-production-target.mjs) echo "REFUSE: harness fault, the target is not the production session pooler" >&2; exit 2;;
+        packages/db/scripts/verified-migrate.mjs) echo "harness fault: verified-migrate exits \${HARNESS_FAIL_CODE:-3}"; exit "\${HARNESS_FAIL_CODE:-3}";;
+        --env-file=*) echo "REFUSE: harness fault, the reader refuses the target" >&2; exit 2;;
+        *) echo "Error: harness fault" >&2; exit 1;;
+      esac;;
+    tee) ${R("cat")}; echo "tee: harness fault: Permission denied" >&2; exit 1;;
+    grep) ${R("cat")} > /dev/null; echo "grep: harness fault: Input/output error" >&2; exit 2;;
+    cut|awk|head|tail|wc|tr|shasum) ${R("cat")} > /dev/null; echo "$n: harness fault: Input/output error" >&2; exit 1;;
+    *) echo "$n: harness fault: Operation failed" >&2; exit 1;;
+  esac
+fi
+case "$n" in
+  git) case "$1" in
+      status) exit 0;;
+      fetch) exit 0;;
+      rev-parse) if [ "$2" = origin/main ]; then echo "$HARNESS_MAIN"; exit 0; fi
+        if [ "$2" = HEAD ]; then read -r h < "$d/head"; echo "$h"; exit 0; fi;;
+      cat-file) case "$3" in *[!0-9a-f]*) ;; *) if [ "\${#3}" -eq 40 ]; then echo commit; exit 0; fi;; esac
+        echo "fatal: Not a valid object name $3" >&2; exit 128;;
+      ls-remote) printf '%s\\trefs/pull/1520/head\\n' "$HARNESS_PRHEAD"; exit 0;;
+      checkout) for a in "$@"; do last="$a"; done; echo "$last" > "$d/head"; exit 0;;
+      show) exec ${R("cat")} "$d/apply/\${2#*:}";;
+      ls-tree) for f in "$d/apply/$4"*; do echo "$4\${f##*/}"; done; exit 0;;
+    esac
+    unexpected "$@";;
+  psql) if [ -z "$1" ]; then echo "psql: error: connection to server on socket failed: No such file or directory" >&2; exit 2; fi
+    [ "$1" = "$HARNESS_DBURL" ] || unexpected "a database URL that is not the harness's";
+    case "$*" in
+      *precheck-0100-maintain-revoke.sql*) exec ${R("cat")} "$HARNESS_FIX/pre.out";;
+      *postcheck-0100-maintain-revoke.sql*) exec ${R("cat")} "$HARNESS_FIX/post.out";;
+      *public.locations*) printf 'BEGIN\\n%s\\n' "$HARNESS_CLINICS"; exit 0;;
+      *"where hash = "*) printf 'BEGIN\\n1\\n'; exit 0;;
+      *"limit 3"*) exec ${R("cat")} "$HARNESS_FIX/last3.out";;
+      *"select count(*) from drizzle.__drizzle_migrations"*) printf 'BEGIN\\n%s\\n' "$HARNESS_ROWS"; exit 0;;
+    esac
+    unexpected "$@";;
+  pnpm) unexpected "$@";;
+  node) case "$1" in
+      -e) exec ${R("node")} "$@";;
+      scripts/check-journal.mjs) echo "check-journal: 98 .sql files match 98 journal entries in order (harness)"; exit 0;;
+      scripts/assert-production-target.mjs) if [ -z "$DATABASE_URL_DIRECT" ]; then echo "REFUSE: DATABASE_URL_DIRECT is not set" >&2; exit 2; fi
+        [ "$DATABASE_URL_DIRECT" = "$HARNESS_DBURL" ] || unexpected "the guard ran with a URL that is not the harness's";
+        printf 'host: harness.invalid\\nport: 5432\\nref: harness\\ntarget verified: production, session pooler.\\n'; exit 0;;
+      packages/db/scripts/verified-migrate.mjs) exec ${R("cat")} "$HARNESS_FIX/vm.out";;
+      --env-file=*) f="\${1#--env-file=}"; [ -f "$f" ] || { echo "node: $f: not found" >&2; exit 9; }
+        [ "$2" = packages/db/scripts/read-applied-migrations.mjs ] || unexpected "$@";
+        printf 'journal rows on production: %s\\n  APPLIED  0099_revoke_truncate_trigger_references.sql\\n  APPLIED  0100_revoke_maintain.sql\\npending on this ref: 0\\njournal rows with no matching file on this ref: 0\\n' "$HARNESS_ROWS"; exit 0;;
+    esac
+    unexpected "$@";;
+  date) for a in "$@"; do if [ "$a" = -j ]; then exec ${R("date")} "$@"; fi; done
+    case "$1" in
+      '+%Y-%m-%d %H:%M') echo "$HARNESS_YMD $HARNESS_HHMM_COLON";;
+      '+%H%M') echo "$HARNESS_HHMM";;
+      '+%Y%m%d%H%M') echo "$HARNESS_STAMP";;
+      '+%Y%m%d%H%M %u') echo "$HARNESS_STAMP $HARNESS_DOW";;
+      *) unexpected "$@";;
+    esac; exit 0;;
+  cut) if [ -n "$inp" ]; then printf '%s\\n' "$inp" | ${R("cut")} "$@"; exit $?; fi
+    exec ${R("cut")} "$@" < /dev/null;;
+esac
+if [ "$HARNESS_HOOK_AFTER" = "$id" ]; then ${R(name)} "$@"; s=$?; ${R("mkdir")} -p "$HARNESS_HOOK_MKDIR"; exit $s; fi
+exec ${R(name)} "$@"
+`;
+}
+
+/** What the faked programs print: a 13-OK pre-check with its carries, a 12-OK post-check, verified-migrate's success. */
+function harnessFixtures() {
+  const md5 = (s) => createHash("md5").update(s).digest("hex");
+  const row = (a, b, c) => ` ${a.padEnd(40)} | ${String(b).padEnd(30)} | ${c}`;
+  const pre = [
+    row("check", "value", "verdict"), "-".repeat(84),
+    row("0 the transaction is READ ONLY", "on", "OK"), row("1 0100 absent by hash", "0; control 1", "OK"),
+    row("2 0099 present, the newest row", "1", "OK"), row("journal_rows_before", 97, "OK"),
+    row("4 the session is postgres", "postgres", "OK"), row("5 tables owned by the session", "48 of 48", "OK"),
+    row("6 grantor is the session", "41 of 41", "OK"), row("7 the premise", "41 of 48; control 48 of 48", "OK"),
+    row("8 own grant only", "41 41 0 0 false; control 1", "OK"), row("9 the default grants it", "yes", "OK"),
+    row("10 no global default", "0", "OK"), row("11 the five roles", "5", "OK"), row("secdef_functions_before", 5, "OK"),
+    row("tables_before", 48, "CARRY"), row("maintain_before", 41, "CARRY"),
+    ...["policies_md5", "functions_md5", "relation_acl_md5", "column_acl_md5", "default_acl_md5", "dml_profile_md5"].map((k) => row(k, md5(k), "CARRY")),
+    row("INFO other creator defaults", "supabase_admin", "INFO"), row("INFO views with MAINTAIN", 0, "INFO"),
+    row("INFO TRUNCATE TRIGGER REFERENCES", "0, 0, 0", "INFO"), "(26 rows)", "",
+  ].join("\n");
+  const post = [row("check", "value", "verdict"), "-".repeat(84),
+    ...Array.from({ length: 12 }, (_, i) => row(`${i} post-check verdict`, "harness", "OK")), "(12 rows)", ""].join("\n");
+  const vm = [
+    "file       0100_revoke_maintain.sql present, sha256 matches", "journal    97 row(s) applied, last when=1788502000000",
+    "pending    1  [0100_revoke_maintain]", "--- drizzle-kit migrate --- (harness)", "journal    97 -> 98  (delta 1)",
+    "0100_revoke_maintain present by sha256: yes", "OK: the journal moved by exactly the pending count and carries the approved sha256.", "",
+  ].join("\n");
+  const last3 = " id | hash | created_at\n 98 | 80f85018 | 1788502100000\n 97 | fbc5e545 | 1788502000000\n 96 | x | 1\n(3 rows)\n";
+  return { "pre.out": pre, "post.out": post, "last3.out": last3, "vm.out": vm };
+}
+
+/** The repository files the blocks hash or read, copied into the fake apply worktree. */
+const APPLY_FILES = [
+  PROMOTED_PATH, "packages/db/migrations/0099_revoke_truncate_trigger_references.sql", "packages/db/migrations/meta/_journal.json",
+  PRE, POST, "scripts/assert-production-target.mjs", "scripts/production-target.mjs", "scripts/check-journal.mjs", GATE_FILE,
+  "packages/db/scripts/verified-migrate.mjs", "packages/db/scripts/read-applied-migrations.mjs",
+];
+
+/** The shared base of a sweep: the stubs, the fixtures, a fake env file, and a fake apply worktree holding `docText`. */
+export function prepareHarness(base, docText) {
+  for (const d of ["bin", "fix", "apply/docs"]) mkdirSync(join(base, d), { recursive: true });
+  const real = Object.fromEntries([...STUBBED.filter((n) => !FAKED.has(n) && n !== "node"), "sleep", "mkdir"].map((n) => [n, realPath(n)]));
+  real.node = process.execPath;
+  for (const n of STUBBED) {
+    writeFileSync(join(base, "bin", n), stubText(n, real));
+    chmodSync(join(base, "bin", n), 0o755);
+  }
+  for (const [f, t] of Object.entries(harnessFixtures())) writeFileSync(join(base, "fix", f), t);
+  writeFileSync(join(base, "fake-prod.env"), `DATABASE_URL_DIRECT=${FAKE_DB_URL}\nDATABASE_URL=${FAKE_DB_URL}\n`);
+  for (const f of APPLY_FILES) {
+    mkdirSync(dirname(join(base, "apply", f)), { recursive: true });
+    copyFileSync(join(ROOT, f), join(base, "apply", f));
+  }
+  writeFileSync(join(base, "apply", DOC), docText);
+  writeFileSync(join(base, "apply", SIDECAR), `${sha256(docText)}  ${DOC}\n`);
+  return base;
+}
+
+/** The block with its real paths moved into the run folder. A block that still names one is refused unrun. */
+export function localize(block, run, envFile) {
+  const out = block.replaceAll(PROD_APPLY, join(run, "apply")).replaceAll(PROD_ENV, envFile).replaceAll("/tmp/0100-", join(run, "tmp/0100-"));
+  const rest = out.replaceAll(join(run, "tmp/0100-"), "");
+  for (const bad of ["/tmp/0100-", "osteojp-secrets", "osteojp-prod-apply", "/Users/ivan"]) {
+    if (rest.includes(bad)) throw new Error(`the localized block still names ${bad}`);
+  }
+  return out;
+}
+
+/** GREEN's tool shape. zsh: exactly it. bash: the same, with errexit forced off, as zsh has it there. */
+export function shellArgs(shell, text) {
+  const tail = `true && eval '${text.replaceAll("'", `'\\''`)}' < /dev/null && echo TOOL-CHAIN-CONTINUED`;
+  if (shell === "zsh") return ["zsh", ["-f", "-c", tail]];
+  if (shell === "bash") return ["bash", ["-c", `set() { builtin set "$@"; builtin set +e; }; ${tail}`]];
+  throw new Error(`no shell ${shell}`);
+}
+
+function runShell(shell, text, env, cwd) {
+  const [cmd, args] = shellArgs(shell, text);
+  return new Promise((resolve) => {
+    const p = spawn(cmd, args, { env, cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    p.stdout.on("data", (b) => (out += b));
+    p.stderr.on("data", (b) => (out += b));
+    const t = setTimeout(() => p.kill("SIGKILL"), 60000);
+    p.on("close", (code) => { clearTimeout(t); resolve({ code: code ?? 128, out }); });
+  });
+}
+
+/** Run one block once. `fault`: { call, code, hookAfter, hookMkdir, noApply, noEnv }, or null for the positive control. */
+export async function runOnce(cfg, runId, fault) {
+  const run = join(cfg.base, "runs", runId);
+  rmSync(run, { recursive: true, force: true });
+  mkdirSync(join(run, "tmp"), { recursive: true });
+  if (!fault?.noApply) symlinkSync(join(cfg.base, "apply"), join(run, "apply"));
+  writeFileSync(join(run, "head"), `${cfg.initialHead ?? FAKE_SHA.BEFORE}\n`);
+  cfg.setup?.(join(run, "tmp"));
+  let text = localize(cfg.block, run, fault?.noEnv ? join(run, "no-such.env") : join(cfg.base, "fake-prod.env"));
+  for (const [from, to] of cfg.substitute ?? []) text = text.replaceAll(from, to);
+  const env = {
+    PATH: `${join(cfg.base, "bin")}:${SYSTEM_PATH}`, HOME: run, LANG: "C", LC_ALL: "C",
+    HARNESS_RUN: run, HARNESS_FIX: join(cfg.base, "fix"), HARNESS_DBURL: FAKE_DB_URL,
+    HARNESS_MAIN: FAKE_SHA.MAIN, HARNESS_PRHEAD: FAKE_SHA.PRHEAD, HARNESS_MARKERS: cfg.markers.join(" "),
+    HARNESS_ROWS: String(cfg.rows ?? 98), HARNESS_CLINICS: cfg.clock.clinics,
+    HARNESS_YMD: cfg.clock.ymd, HARNESS_HHMM: cfg.clock.hhmm, HARNESS_HHMM_COLON: `${cfg.clock.hhmm.slice(0, 2)}:${cfg.clock.hhmm.slice(2)}`,
+    HARNESS_STAMP: cfg.clock.ymd.replaceAll("-", "") + cfg.clock.hhmm, HARNESS_DOW: String(cfg.clock.dow),
+    HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3),
+    HARNESS_HOOK_AFTER: fault?.hookAfter ?? "", HARNESS_HOOK_MKDIR: fault?.hookMkdir ? join(run, "tmp", fault.hookMkdir) : "",
+  };
+  // The shell starts inside a second copy of the same tree, so a `cd` that fails leaves the block
+  // where every relative path still resolves: the worst case, which only an explicit guard stops.
+  const r = await runShell(cfg.shell, text, env, join(cfg.base, "apply"));
+  const read = (f) => (existsSync(join(run, f)) ? readFileSync(join(run, f), "utf8") : "");
+  const calls = read("log").trim().split("\n").filter(Boolean).map((l, pos) => {
+    const [id, ex] = l.split("|");
+    return { id, pos, exists: ex.trim() ? ex.trim().split(" ") : [], args: read(`args.${id}`) };
+  });
+  const markersAtEnd = cfg.markers.filter((m) => { try { return statSync(join(run, "tmp", m)).isFile(); } catch { return false; } });
+  const result = { ...r, calls, markersAtEnd, unexpected: read("unexpected"), fired: read("fired").trim() };
+  rmSync(run, { recursive: true, force: true });
+  return result;
+}
+
+/** A short, readable name for a call: its program and arguments, long ones cut in the middle. */
+export function describeCall(call) {
+  const lines = call.args.split("\n").filter((l) => l !== "");
+  const stdin = lines.filter((l) => l.startsWith("STDIN ")).map((l) => l.slice(6));
+  const args = lines.filter((l) => !l.startsWith("STDIN ")).map((a) => (a.length > 70 ? `${a.slice(0, 40)}...${a.slice(-25)}` : a));
+  return `${call.id.split("#")[0]} ${args.join(" ")}${stdin.length ? `  <stdin: ${stdin.join(" ").slice(0, 70)}>` : ""}`;
+}
+
+/** Where the positive run first wrote each record: the last call position before it appeared. */
+function writePoints(positive, markers) {
+  const wp = {};
+  for (const m of markers) {
+    // A tee writes its file while its partner runs, so its write point is the pipeline's first slot.
+    const tee = positive.calls.find((c) => c.id.startsWith("tee#") && c.args.includes(`/tmp/${m}`));
+    const first = positive.calls.find((c) => c.exists.includes(m));
+    wp[m] = Math.min(tee ? tee.pos - 1 : Infinity, first ? first.pos - 1 : Infinity);
+  }
+  return wp;
+}
+
+async function inPool(items, n, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  }));
+  return out;
+}
+
+/**
+ * Sweep one block: the positive control, then every external call made to fail in turn, plus the
+ * extra faults (a missing cd target, a missing env file, a write into a directory, other exit
+ * codes). A fault must halt the block with (a) a non-zero exit and the tool chain stopped, (b) none
+ * of its pass lines, (c) none of its records written after the failing point, and a STOP line;
+ * cfg.mayContinue(call) names the few calls allowed not to halt, and why, and those must not halt.
+ */
+export async function sweep(cfg) {
+  const positive = await runOnce(cfg, `${cfg.id}-positive`, null);
+  const posProblems = [];
+  if (positive.code !== 0) posProblems.push(`exit ${positive.code}`);
+  if (!positive.out.includes(cfg.success[cfg.success.length - 1])) posProblems.push("its last line is missing");
+  if (!positive.out.includes("TOOL-CHAIN-CONTINUED")) posProblems.push("the tool chain did not continue");
+  if (positive.unexpected) posProblems.push(`unexpected calls: ${positive.unexpected}`);
+  if (/^STOP: /m.test(positive.out)) posProblems.push("a STOP line");
+  if (posProblems.length) return { positive, posProblems, rows: [] };
+  const wp = writePoints(positive, cfg.markers);
+  const faults = positive.calls.map((c) => ({ call: c.id, label: describeCall(c), pos: c.pos, at: c }));
+  faults.push(...cfg.extraFaults(positive, wp));
+  const rows = await inPool(faults, Math.max(2, cpus().length), async (f, i) => {
+    const r = await runOnce(cfg, `${cfg.id}-f${i}`, f);
+    const allowed = f.at ? cfg.mayContinue(f.at) : null;
+    const halted = r.code !== 0 && !r.out.includes("TOOL-CHAIN-CONTINUED");
+    const problems = [];
+    if (f.call && r.fired !== f.call) problems.push(`the fault at ${f.call} never fired`);
+    if (r.unexpected) problems.push(`unexpected calls: ${r.unexpected.trim()}`);
+    const row = { fault: f.label, call: f.call ?? f.kind, halted, problems, calls: r.calls, code: r.code, out: r.out };
+    if (allowed) {
+      if (halted) problems.push(`expected to continue (${allowed}), but it halted`);
+      return { ...row, result: `continues: ${allowed}` };
+    }
+    if (r.code === 0) problems.push("(a) exit 0");
+    if (r.out.includes("TOOL-CHAIN-CONTINUED")) problems.push("(a) the tool chain continued");
+    for (const s of cfg.success) if (r.out.includes(s)) problems.push(`(b) printed ${s}`);
+    for (const m of r.markersAtEnd) if (wp[m] > f.pos) problems.push(`(c) wrote ${m}`);
+    if (!/^STOP: /m.test(r.out)) problems.push("no STOP line");
+    const stop = (r.out.match(/^STOP: .*$/m) ?? [""])[0];
+    return { ...row, result: halted ? `halts, exit ${r.code}: ${stop.slice(0, 100)}` : `DOES NOT HALT, exit ${r.code}` };
+  });
+  return { positive, posProblems, rows };
+}
+
+// ---- The five blocks as the harness runs them. ----
+
+const HARNESS_CLOCKS = {
+  closed: { ymd: "2026-10-02", hhmm: "2230", dow: 5, window: "202610022200 202610022300 202610030000", clinics: "0 of 2" },
+  day: { ymd: "2026-10-02", hhmm: "1200", dow: 5, window: "202610021100 202610021300 202610021400", clinics: "2 of 2" },
+};
+
+/** A valid earlier transcript, as THE EARLIER PRE-CHECK SITTING writes it (the day runs need proof 3 to read yes). */
+function earlierTranscript() {
+  const text = `earlier pre-check ${ACTUAL[PRE]}\nfrom PR #1520's head ${FAKE_SHA.PRHEAD}, before the merge, Lisbon 2026-10-02 09:00\n` +
+    "host: harness.invalid\nport: 5432\nref: harness\ntarget verified: production, session pooler.\n" + harnessFixtures()["pre.out"] +
+    "earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL\n";
+  return { text, sha: sha256(text) };
+}
+
+const putRecord = (tmp, name, text, minutesAgo) => {
+  const f = join(tmp, name);
+  writeFileSync(f, text);
+  const t = new Date(Date.now() - minutesAgo * 60000);
+  utimesSync(f, t, t);
+};
+
+/** Per block: its pass lines (the last is its last line), its records, and the records its inputs need. */
+const HARNESS_BLOCKS = {
+  earlier: {
+    marker: EARLIER, markers: ["0100-precheck-earlier.new", "0100-precheck-earlier.out"],
+    success: ["earlier pre-check summary:", "PRECHECK_EARLIER=", "0100 EARLIER PRE-CHECK RECORDED"],
+    setup: () => (tmp) => putRecord(tmp, "0100-earlier-head.sha", `${FAKE_SHA.PRHEAD}\n`, 1),
+    redirect: "0100-precheck-earlier.new", sources: true,
+  },
+  stage0: {
+    marker: STAGE0, markers: ["0100-sitting.start", "0100-check-journal.out", "0100-main.sha"],
+    success: ["running from origin/main", STAGE0],
+    setup: (scn) => (tmp) => { if (scn === "day") putRecord(tmp, "0100-precheck-earlier.out", earlierTranscript().text, 120); },
+    redirect: "0100-main.sha",
+  },
+  stage1: {
+    marker: STAGE1, markers: ["0100-precheck.new", "0100-precheck.out", "0100-apply.out", "0100-applied.ok"],
+    success: [STAGE1],
+    setup: (scn) => (tmp) => {
+      putRecord(tmp, "0100-main.sha", `${FAKE_SHA.MAIN}\n`, 10);
+      putRecord(tmp, "0100-sitting.start", "", 60);
+      putRecord(tmp, "0100-window.ok", `${FAKE_SHA.MAIN} ${HARNESS_CLOCKS[scn].window}\n`, 5);
+      if (scn === "day") putRecord(tmp, "0100-precheck-earlier.out", earlierTranscript().text, 120);
+    },
+    sources: true, vm: true,
+  },
+  stage2: {
+    marker: STAGE2, markers: ["0100-postcheck.out", "0100-stage2.ok"], success: [STAGE2],
+    setup: (scn) => (tmp) => {
+      putRecord(tmp, "0100-main.sha", `${FAKE_SHA.MAIN}\n`, 20);
+      putRecord(tmp, "0100-window.ok", `${FAKE_SHA.MAIN} ${HARNESS_CLOCKS[scn].window}\n`, 15);
+      putRecord(tmp, "0100-precheck.out", harnessFixtures()["pre.out"], 6);
+      putRecord(tmp, "0100-applied.ok", "", 5);
+    },
+    redirect: "0100-stage2.ok", sources: true,
+  },
+  closing: {
+    marker: CLOSING, markers: ["0100-journal-after.out"], success: ["CLOSING READ:"], initialHead: FAKE_SHA.MAIN,
+    setup: (scn) => (tmp) => {
+      putRecord(tmp, "0100-main.sha", `${FAKE_SHA.MAIN}\n`, 30);
+      putRecord(tmp, "0100-window.ok", `${FAKE_SHA.MAIN} ${HARNESS_CLOCKS[scn].window}\n`, 25);
+      putRecord(tmp, "0100-applied.ok", "", 10);
+      putRecord(tmp, "0100-stage2.ok", `${FAKE_SHA.MAIN}\n`, 1);
+    },
+    sources: true,
+  },
+};
+
+/** The sweeps: every block in closed hours, and stages 0 and 1 again inside clinic hours with all three R9 proofs valid. */
+const HARNESS_PLAN = [["earlier", "closed"], ["stage0", "closed"], ["stage0", "day"], ["stage1", "closed"], ["stage1", "day"], ["stage2", "closed"], ["closing", "closed"]];
+
+/**
+ * The calls whose failure may leave a block running, each with its reason; every other call must halt it.
+ * A narration line's time; in closed hours, R9's proof lines (a failure reads `no`, and the proofs are
+ * printed, not required); inside clinic hours, a failed clock or closed-clinics test, which reads open
+ * and so demands every proof. Inside clinic hours every proof call must halt the block.
+ */
+export function mayContinue(name, scn) {
+  return (call) => {
+    const prog = call.id.split("#")[0];
+    const a = call.args;
+    if (prog === "date" && a.startsWith("+%Y-%m-%d %H:%M")) return "the time in a narration line";
+    const r9 = name === "stage0" || name === "stage1";
+    if (r9 && scn === "closed" && (a.includes(GATE_FILE) || a.includes("0100-precheck-earlier.out") || a.includes("catalog-only") || (prog === "grep" && a.includes("[0-9a-f]{64}")))) {
+      return "an R9 proof reads no; in closed hours the proofs are printed, not required";
+    }
+    if (r9 && scn === "day" && prog === "awk" && a.includes("(t + 0) < 800")) return "a failed clock test reads open, which demands every proof";
+    if (r9 && scn === "day" && prog === "awk" && a.includes('a[1] == "0"')) return "a failed closed-clinics test falls through to the open-clinics test";
+    return null;
+  };
+}
+
+/** The sweep configuration of one block in one scenario, on one shell. */
+export function harnessConfig(md, name, scn, shell, base) {
+  const spec = HARNESS_BLOCKS[name];
+  return {
+    id: `${shell}-${name}-${scn}`, shell, base, block: blockWith(md, spec.marker), markers: spec.markers, success: spec.success,
+    setup: spec.setup(scn), initialHead: spec.initialHead, clock: HARNESS_CLOCKS[scn], mayContinue: mayContinue(name, scn),
+    substitute: scn === "day" ? [[`PRECHECK_EARLIER=${R9_PLACEHOLDERS.PRECHECK_EARLIER}`, `PRECHECK_EARLIER=${earlierTranscript().sha}`]] : [],
+    extraFaults: (positive, wp) => {
+      const out = [{ kind: "cd", label: "cd: the apply worktree is not there", noApply: true, pos: -1 }];
+      const guard = positive.calls.find((c) => c.id.startsWith("node#") && /assert-production-target|--env-file=/.test(c.args));
+      // Sourced by `.`, the env file fails between two calls; read by `node --env-file`, it fails that call.
+      if (spec.sources) out.push({ kind: "env", label: ". or --env-file: the env file is not there", noEnv: true, pos: guard.args.startsWith("--env-file=") ? guard.pos : guard.pos - 1 });
+      // The failing point of a write into a directory is the write: where the positive run first wrote that file.
+      if (spec.redirect) out.push({ kind: "redirect", label: `> ${spec.redirect}: the path is a directory`, hookAfter: "rm#1", hookMkdir: spec.redirect, pos: Math.min(wp[spec.redirect], positive.calls.length - 1) });
+      if (spec.vm) {
+        const vm = positive.calls.find((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs"));
+        for (const code of [2, 4, 5]) out.push({ kind: `vm-exit-${code}`, label: `node verified-migrate exits ${code}`, call: vm.id, code, pos: vm.pos, at: null });
+      }
+      return out;
+    },
+  };
+}
+
+/** Run every sweep of the plan on one shell, and fail with every problem row. */
+async function sweepAll(t, shell) {
+  const base = mkdtempSync(join(tmpdir(), `fault-0100-${shell}-`));
+  try {
+    prepareHarness(base, doc);
+    const bad = [];
+    let faults = 0;
+    for (const [name, scn] of HARNESS_PLAN) {
+      const r = await sweep(harnessConfig(doc, name, scn, shell, base));
+      assert.deepEqual(r.posProblems, [], `${shell} ${name} ${scn}: the positive control did not reach its last line\n${r.positive.out.slice(-2000)}`);
+      // Not vacuous: every call of the positive run was made to fail, and most of them halt the block.
+      assert.ok(r.rows.length > r.positive.calls.length, `${shell} ${name} ${scn}: ${r.rows.length} faults`);
+      const halts = r.rows.filter((x) => x.halted).length;
+      assert.ok(halts >= r.rows.length - 6, `${shell} ${name} ${scn}: only ${halts} of ${r.rows.length} faults halt`);
+      faults += r.rows.length;
+      t.diagnostic(`${shell} ${name} (${scn}): positive reaches its last line; ${r.rows.length} faults, ${halts} halt, ${r.rows.length - halts} allowed to continue`);
+      for (const row of r.rows) {
+        if (process.env.FAULT_TABLE === "1") t.diagnostic(`  ${name} ${scn} | ${row.call} | ${row.fault.slice(0, 110)} | ${row.result}`);
+        if (row.problems.length) bad.push(`${shell} ${name} ${scn} ${row.call} [${row.fault}]: ${row.problems.join("; ")}`);
+      }
+    }
+    assert.deepEqual(bad, [], `fault rows that broke a rule:\n${bad.join("\n")}`);
+    assert.ok(faults > 300, `only ${faults} faults across the five blocks`);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+}
+
+/** zsh is GREEN's shell. Absent on the GitHub runner by the repository's recorded convention; absent anywhere else, a failure. */
+function zshOrSkip(t) {
+  if (hasShell("zsh")) return true;
+  if (process.env.GITHUB_ACTIONS === "true") {
+    t.skip("zsh is not on the CI runner (ubuntu-latest); the convention is scripts/apply-lane/apply-lane-settings.test.mjs, whose zsh sweeps are a recorded rehearsal. The bash arm ran here instead");
+    return false;
+  }
+  assert.fail("zsh is not on this machine, and the zsh arm of the fault-injection harness must run wherever it is not the GitHub runner");
+}
+
+test("every block parses under bash -n and zsh -n", (t) => {
+  for (const b of blocksOf(doc)) {
+    const r = spawnSync("bash", ["-n", "-c", b], { encoding: "utf8" });
+    assert.equal(r.status, 0, `bash -n: ${r.stderr}\n${b.slice(0, 120)}`);
+  }
+  if (!zshOrSkip(t)) return;
+  for (const b of blocksOf(doc)) {
+    const r = spawnSync("zsh", ["-f", "-n", "-c", b], { encoding: "utf8" });
+    assert.equal(r.status, 0, `zsh -n: ${r.stderr}\n${b.slice(0, 120)}`);
+  }
+});
+
+test("THE HARNESS IS ITS OWN CONTROL: in the tool's shape set -e stops nothing, and a block without its guards runs on", async (t) => {
+  const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+  for (const shell of shells) {
+    // The shape itself: `set -eo pipefail` inside the eval stops nothing, and pipefail still sets a pipeline's status.
+    const [cmd, args] = shellArgs(shell, "( set -eo pipefail; false; echo after-false; false | cat || echo pipefail-holds )");
+    const r = spawnSync(cmd, args, { encoding: "utf8" });
+    assert.equal(r.status, 0, `${shell}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stdout, /after-false\npipefail-holds\nTOOL-CHAIN-CONTINUED/, shell);
+  }
+  const base = mkdtempSync(join(tmpdir(), "fault-0100-control-"));
+  try {
+    prepareHarness(base, doc);
+    for (const shell of shells) {
+      const cfg = harnessConfig(doc, "stage1", "closed", shell, base);
+      const positive = await runOnce(cfg, `${shell}-control-positive`, null);
+      assert.equal(positive.code, 0, positive.out.slice(-1500));
+      const guardCall = positive.calls.find((c) => c.args.startsWith("scripts/assert-production-target.mjs"));
+      const vmCall = positive.calls.find((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs"));
+      const s1 = cfg.block;
+      const strip = (block, start) => {
+        const line = block.split("\n").find((l) => l.startsWith(start));
+        return block.replace(line, line.replace(/ \|\| \{ (RC=\$\?; )?echo "STOP: [^"]+"; exit (1|\$\{RC\}); \}$/, ""));
+      };
+      // THE NAMED NEGATIVE CONTROL: a refusing target guard stops stage 1 before psql runs the
+      // pre-check and before verified-migrate, with no record written.
+      const refused = await runOnce(cfg, `${shell}-control-guard`, { call: guardCall.id });
+      assert.notEqual(refused.code, 0, refused.out);
+      assert.match(refused.out, /^STOP: the target guard refused or failed/m);
+      assert.ok(!refused.out.includes("TOOL-CHAIN-CONTINUED") && !refused.out.includes(STAGE1));
+      assert.deepEqual(refused.calls.filter((c) => c.id.startsWith("psql#") || c.args.startsWith("packages/db/scripts/verified-migrate.mjs")), []);
+      assert.deepEqual(refused.markersAtEnd, []);
+      // verified-migrate's own exit codes 3, 4 and 5 are the block's exit, with no applied marker.
+      for (const code of [3, 4, 5]) {
+        const r = await runOnce(cfg, `${shell}-control-vm-${code}`, { call: vmCall.id, code });
+        assert.equal(r.code, code, r.out);
+        assert.ok(!r.markersAtEnd.includes("0100-applied.ok") && !r.out.includes(STAGE1), r.out);
+      }
+      // CONTROLS: the same faults on the block with that one guard removed run on to the applied line,
+      // so the harness can go red.
+      const noGuard = await runOnce({ ...cfg, block: strip(s1, "node scripts/assert-production-target.mjs") }, `${shell}-control-noguard`, { call: guardCall.id });
+      assert.equal(noGuard.code, 0, noGuard.out.slice(-800));
+      assert.ok(noGuard.out.includes(STAGE1) && noGuard.calls.some((c) => c.id.startsWith("psql#")));
+      const noVm = await runOnce({ ...cfg, block: strip(s1, "node packages/db/scripts/verified-migrate.mjs") }, `${shell}-control-novm`, { call: vmCall.id, code: 3 });
+      assert.equal(noVm.code, 0, noVm.out.slice(-800));
+      assert.ok(noVm.out.includes(STAGE1) && noVm.markersAtEnd.includes("0100-applied.ok"));
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("FAULT INJECTION, bash with errexit off (runs in CI): every external call of every block, made to fail, halts it", async (t) => {
+  await sweepAll(t, "bash");
+});
+
+test("FAULT INJECTION, zsh in GREEN's exact shape: every external call of every block, made to fail, halts it", async (t) => {
+  if (!zshOrSkip(t)) return;
+  await sweepAll(t, "zsh");
 });
