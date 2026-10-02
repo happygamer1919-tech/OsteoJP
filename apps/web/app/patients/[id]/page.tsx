@@ -723,7 +723,7 @@ export default async function PatientProfilePage({
                   data-group-key={g.key}
                   className="rounded-lg border border-border bg-surface"
                 >
-                  <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                     <span className="text-sm font-medium tabular-nums text-text-primary" data-testid="record-group-date">
                       {evalDateFmt.format(new Date(g.firstAt))}
                     </span>

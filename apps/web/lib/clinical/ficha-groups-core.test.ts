@@ -32,6 +32,23 @@ describe("excerpt: the one-line complaint (Q3)", () => {
     expect(excerpt({ diagnostico: "Tendinite" })).toBe("Tendinite");
   });
 
+  it("the full order: with all five filled, each key wins until it is removed (Q3)", () => {
+    const all: Record<string, string> = {
+      consultation_reason: "k1",
+      main_complaints: "k2",
+      queixas: "k3",
+      motivos: "k4",
+      diagnostico: "k5",
+    };
+    const order = ["consultation_reason", "main_complaints", "queixas", "motivos", "diagnostico"];
+    const fields = { ...all };
+    for (const [i, key] of order.entries()) {
+      expect(excerpt(fields)).toBe(`k${i + 1}`);
+      delete fields[key];
+    }
+    expect(excerpt(fields)).toBeNull();
+  });
+
   it("collapses whitespace and cuts a long text at EXCERPT_MAX with an ellipsis", () => {
     expect(excerpt({ motivos: "a\n\n  b\tc" })).toBe("a b c");
     const long = "x".repeat(EXCERPT_MAX + 30);

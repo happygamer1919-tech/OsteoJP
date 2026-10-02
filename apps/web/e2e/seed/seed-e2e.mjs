@@ -1290,7 +1290,7 @@ async function ensureImportedRecord() {
 // registo dated the evaluation day (Lisbon midnight, stored as UTC), and writes
 // a ledger row for the episode and one for the registo. Production, 2026-10-02:
 // 5,632 such episodes. Three of them here, on a patient of their own (so no
-// other spec's counts move): two Osteopatia evaluations two years apart and one
+// other spec's counts move): two Osteopatia evaluations two years apart and two
 // Fisioterapia between them. The Registos tab must show TWO groups (one per
 // specialty, strategy's ruling Q1 (a)), with the dated evaluations beneath.
 // Invented patient and invented text. Upserts on ids; a locked registo that
@@ -1304,6 +1304,20 @@ const FICHA_EPISODES = [
     specialty: "Osteopatia",
     day: "2023-03-12T00:00:00.000Z",
     data: { especialidade: "Osteopatia", motivos: "Cervicalgia apos esforco, inventada" },
+  },
+  {
+    // The longest complaint: more than the 120 characters the tab shows, so the
+    // phone view proves the cut line fits. First in its group, so it is also the
+    // group header's excerpt. Summer date: Lisbon midnight is 23:00 UTC.
+    episode: "00000000-0000-0000-0000-00000000fe24",
+    record: "00000000-0000-0000-0000-00000000fe34",
+    specialty: "Fisioterapia",
+    day: "2024-06-09T23:00:00.000Z",
+    data: {
+      especialidade: "Fisioterapia",
+      queixas:
+        "Dor no ombro esquerdo com irradiacao para o braco, agravada ao levantar o membro acima da cabeca e ao dormir sobre o lado afetado, inventada",
+    },
   },
   {
     episode: "00000000-0000-0000-0000-00000000fe22",
@@ -1362,7 +1376,7 @@ async function ensureFichaEpisodes(therapistId) {
             batch_id: "00000000-0000-0000-0000-00000000fe2b",
             source_system: "fisiozero",
             entity_type: entity,
-            source_id: `e2e-ficha-${i + 1}`,
+            source_id: `e2e-ficha-${e.record.slice(-4)}`,
             raw: {},
             status: "imported",
             imported_entity_id: id,
