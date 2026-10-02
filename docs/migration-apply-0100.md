@@ -1,6 +1,6 @@
 # 0100: apply the MAINTAIN revoke from `authenticated`
 
-**NOT READY until #1520 is merged and GREEN's dispatch carries its merge sha.** Done on this branch: the guard pair on main (NOT READY step 1); #1510 on main and `SHAGATE` filled, with its two R8 rounds (step 2); the promotion (step 3); every halt in the five blocks made explicit and proven by fault injection, with its R4 rounds. Open: the whole-block rehearsal (step 4) and CI on the rehearsed head (step 5). A sitting inside clinic hours needs steps 6 to 8 as well (see "NOT READY" below).
+**NOT READY until #1520 is merged and GREEN's dispatch carries its merge sha.** Done on this branch: the guard pair on main (NOT READY step 1); #1510 on main and `SHAGATE` filled, with its two R8 rounds (step 2); the promotion (step 3); every halt in the five blocks made explicit and proven by fault injection, with its R4 rounds; the whole-block rehearsal, 2026-10-03 00:02 to 00:15 Lisbon (step 4, see "Rehearsal"). Step 5, CI green on the head, is proven by the merge itself: this held PR merges only once every required check is green. A sitting inside clinic hours needs steps 6 to 8 as well (see "NOT READY" below).
 
 **Status: PROMOTED. NOT APPLIED.** One migration,
 `packages/db/migrations/0100_revoke_maintain.sql`, which the promotion of 2026-10-02 renamed,
@@ -83,9 +83,11 @@ migrations"). The lane that wrote this document never runs it.
    the mirror; run `node scripts/check-journal.mjs` (**98 files, 98 entries**); move the README
    row into the Promoted table. The pre-check and the post-check pin the body's sha256 as a
    literal, and a rename does not move it, so neither needs an edit.
-4. **The rehearsal agent runs this document's five blocks and GREEN's two, whole, from the
+4. **DONE 2026-10-03, 00:02 to 00:15 Lisbon, on `a341aa6a`** (see "Rehearsal"). As first written:
+   **The rehearsal agent runs this document's five blocks and GREEN's two, whole, from the
    promoted head,** under the lead's standing rule, verbatim in its prompt (see "Rehearsal").
-5. **CI is green on the promoted head,** the required checks and `db-tests` (which applies 0100
+5. **Proven by the merge:** #1520 is held and merges only on green required checks. As first
+   written: **CI is green on the promoted head,** the required checks and `db-tests` (which applies 0100
    with every other migration on a real Supabase stack), and the SET LOCAL gate reads the
    promoted file in scope and passing.
 6. **ONLY FOR A SITTING INSIDE CLINIC HOURS: R9 is recorded in `CLAUDE.md` on main before any
@@ -1083,10 +1085,179 @@ asserts it.
 
 ## Rehearsal
 
-**NOT YET REHEARSED.** What stands so far is the build lane's synthetic smoke run, below. It is
-not the rehearsal: it proves the check files, the migration body and the mechanisms on a
-database with the Supabase platform default privileges, not on the OsteoJP schema, and it ran
-no block of this document.
+**REHEARSED 2026-10-03, 00:02 to 00:15 Lisbon (stage 0 at 00:11), on the promoted head
+`a341aa6a`, every block whole, under the lead's standing rule; see the next section.** Every
+block that can run on a throwaway exited 0, and strategy's P1.3 EXPECT held: journal 97 to 98,
+`authenticated` MAINTAIN 41 to 0 of 48, the default revoked, the packages/db suite 1414 of 1414
+on the applied throwaway. NOT REHEARSED, each by the lead's rule: the dispatch's journal read
+and this document's closing read (the reader refuses any target but production), and THE
+EARLIER PRE-CHECK SITTING from its guard-verdict check on (only production prints the guard's
+verdict; the closed-hours dispatch never pastes that block, and stage 1 runs the same pinned
+pre-check whole). The build lane's synthetic smoke run, further below, is not the rehearsal.
+
+### The whole blocks on the promoted head, rehearsed 2026-10-02 23:39 to 2026-10-03 00:14 Lisbon
+
+A separate rehearsal agent, whose prompt carried the lead's standing rule verbatim ("A script's
+own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL,
+a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is
+recorded as NOT REHEARSED and the document says so."), ran every block WHOLE, each pasted as
+one Bash tool command (the tool's `... && eval` shape, as GREEN pastes it), from the promoted
+head `a341aa6a` (`a341aa6a39082ca346af8a3ff95e86e4e22e998d`, equal to PR #1520's `headRefOid`
+on GitHub, re-read at 2026-10-03 00:01 Lisbon). Order:
+- THE EARLIER PRE-CHECK SITTING (PHASE A);
+- the dispatch's BEFORE YOU START, whole, then once more with the read left out;
+- stage 0;
+- the dispatch's CLOCK CHECK;
+- stages 1 and 2;
+- the closing read.
+
+The blocks were extracted by machine from that head's `docs/migration-apply-0100.md` (sha256
+`992f36df...2214207`) and from `/Users/ivan/osteojp-handover/green-dispatch-0100.txt` (sha256
+`0d24faf5...ae5dc`, unchanged between the two phases, its DOCSHA equal to the document's
+sha256). Stage 0 began at 00:11 Lisbon, 31 minutes after the earlier sitting ended (23:39:50).
+
+**The throwaway.** A local Supabase stack, project id `r0100`, torn down after (00:15:14 Lisbon;
+no `r0100` container or volume left):
+- Supabase CLI 2.100.0; `supabase/postgres:17.6.1.106` (PostgreSQL 17.6);
+- `gotrue:v2.188.1`, so the full `auth` schema from GoTrue's own migrations (76 rows in
+  `auth.schema_migrations`);
+- also `postgrest:v14.10`, `kong:2.8.1`, `storage-api:v1.54.1`, `postgres-meta:v0.96.4`,
+  `logflare:1.39.1` and `mailpit:v1.22.3`. CLI 2.100.0 rejected the exclude names `storage`,
+  `analytics` and `inbucket`, so those three ran too, bound to 0.0.0.0 (the CLI default);
+- ports, each checked free with `lsof` first: database 55102, API 55101, shadow 55100, pooler
+  55109 (disabled), studio 55103 (not started), mailpit 55104, analytics 55107, edge inspector
+  55183.
+
+It was built 2026-10-02 23:35:56 to 23:36:22 Lisbon at production's position:
+- the head's `supabase/migrations` minus 0100: 97 migrations, `0000` to `0099`, applied by
+  `supabase start` (97 rows in `supabase_migrations.schema_migrations`), then `supabase/seed.sql`
+  (the preview tenant, its four roles, service_role DML grants);
+- a drizzle journal of 97 rows built from the head's `_journal.json` entries idx 0 to 96. Each
+  `hash` is the sha256 of `packages/db/migrations/<tag>.sql` at the head, and each `created_at`
+  its `when`. The newest is 0099, `fbc5e545...`, `when` 1788502000000;
+- the Supabase platform default privileges in place (CLI 2.100.0 predates v2.106.0);
+- two active `public.locations` rows added under the seed tenant, `opens_at` 08:00 and
+  `closes_at` 21:00, production's values.
+
+**The premise, read before any block** (READ ONLY, rolled back, as `postgres`):
+- 48 relations in `public`, every one an ordinary table, every one owned by `postgres`;
+- `authenticated` holds MAINTAIN on **41 of 48**, by `has_table_privilege` and by the ACL alike;
+  it is no member of `pg_maintain`;
+- `anon` and PUBLIC hold nothing on any table in `public` (0 of 48 each);
+- `postgres`'s `public` TABLES default grants `authenticated` `DELETE,INSERT,MAINTAIN,SELECT,UPDATE`;
+  `supabase_admin`'s grants it all eight;
+- `authenticated` TRUNCATE, TRIGGER, REFERENCES `0, 0, 0 of 48`; `service_role` MAINTAIN 47 of
+  48; `patient` MAINTAIN 0 of 48.
+
+Every figure equals production's measurement of 2026-10-02 (section 2a).
+
+**The origin.** The blocks run from `origin/main` at #1520's merge commit, which cannot exist
+before the merge. The clone's origin was a LOCAL bare repository whose `main` is the promoted
+head (fetched from `db/0100-maintain-revoke`). The rehearsal clone was cloned from it and
+`pnpm install --frozen-lockfile` ran in it, leaving `git status` clean. No block's text changed
+for it.
+
+**The substitutions, and nothing else** (strategy S-1002-D P1.3: "your six from the S-1002-B
+report, approved verbatim. The real guard runs once first, its refusal recorded. Both journal
+reads NOT REHEARSED."):
+1. **The apply worktree's `cd`,** to the rehearsal clone.
+2. **The `/tmp/0100-` paths,** to a scratch folder. The apply machine's real `/tmp/0100-*` was
+   untouched: the only such file, `/tmp/0100-measure.out`, read the same size, mtime and sha256
+   (`36b065ea...`) before PHASE A and after PHASE B.
+3. **The production env source,** to a file holding only `DATABASE_URL_DIRECT`, the throwaway
+   URL (127.0.0.1:55102, database `postgres`, no query string).
+4. **The target guard line, in the earlier sitting and stages 1 and 2,** to an assertion of the
+   throwaway's host and port: a `node -e` that prints them and exits 1 unless they read
+   `127.0.0.1` and `55102`.
+   - **The real guard ran once first** (2026-10-02 23:38:57 Lisbon, in the clone at the head,
+     the throwaway env loaded the block's way) and refused, exit 2:
+     `host: 127.0.0.1` / `port: 55102` / `ref:  postgres` /
+     `REFUSING: project ref is "postgres", not the production project.`
+5. **The dispatch's `MERGED`,** to the promoted head.
+6. **For THE EARLIER PRE-CHECK SITTING only,** the local bare origin's `refs/pull/1520/head` at
+   the recorded head, standing in for GitHub's ref.
+
+| block | Lisbon | exit | last line |
+|---|---|---|---|
+| THE EARLIER PRE-CHECK SITTING | 10-02 23:39 | 1 | `STOP: the guard's verdict line is not in the transcript. Nothing is recorded`. **NOT REHEARSED from that check on** (SOLO's ruling, option (a)). Every line before it passed: the PR head twice, the same `a341aa6a...`; the checkout; `docs/migration-apply-0100.md: OK`; every sha256 pin; `0099: ... journal when 1788502000000`; the transcript's two header lines; substitution 4's line. Its pre-check run, 13-OK count, summary line and `PRECHECK_EARLIER` did not run. Nothing was recorded: no `.out` file. |
+| BEFORE YOU START | 10-03 00:02 | 1 | **The reader REFUSED the throwaway: NOT REHEARSED from the journal read on.** `` REFUSED: this script reads drizzle.__drizzle_migrations, which only production uses, and the target's ref is not dfotoodqvmjhbdcxyaxf. A local lane is migrated by `supabase db reset` and records in supabase_migrations.schema_migrations instead, so the answer here would be an error rather than a smaller truth. ``, then `STOP: the journal read failed; its lines are above. Nothing was applied`. Every check before the read passed: the closed clock, the start window, the window `202610022100 202610030629 202610030800`, main as `MERGED`, the clean worktree, the document `992f36df...` and the final banner, the sidecar, the migration, 0099, the two check files, verified-migrate, the guard, check-journal, and the reader and its module. |
+| (the read, its check and the block's last line left out) | 00:03 | 0 | `main head recorded for the CLOCK CHECK: a341aa6a...`. The three lines left out are the `node --env-file=... ${READER}` read, its `grep -qx 'journal rows on production: 97'` check, and `BEFORE YOU START: every check passed, and the journal reads 97.`, which claims a read that did not run. |
+| STAGE 0 | 00:11 | 0 | `0100 PROMOTION, NUMBER, FILES AND CLOCK VERIFIED`. Journal idx 97, when 1788502100000, after idx 96 (0099); check-journal 98 of 98; `Lisbon 0011: closed`; `catalog-only: equal to the reviewed text, whitespace aside: CATALOG-ONLY`; proofs 1 `yes`, 2 `yes`, 3 `no`; `R9: closed hours by the clock. ...` |
+| CLOCK CHECK | 00:11 | 0 | `CLOCK: closed hours by the document's clock test, inside the run window, on the main BEFORE YOU START checked, with the approved document. Paste stage 1 now.` Recorded `a341aa6a... 202610022100 202610030629 202610030800` from the real clock: Saturday, weekday 6, inside 00:00 to 06:29. |
+| STAGE 1 | 00:13 | 0 | `0100 APPLIED. Paste stage 2 now.` Pre-check `13 OK / 0 FAIL`. Clinics `0 of 2`, `closed`; `R9: closed hours, by the clock and by every active clinic's own row. ...`. verified-migrate through pnpm and drizzle-kit: `pending 1 [0100_revoke_maintain]`, the two NOTICEs (42P06, 42P07), `journal 97 -> 98 (delta 1)`, `0100_revoke_maintain present by sha256: yes`. |
+| STAGE 2 | 00:14 | 0 | `0100 POST-CHECK PASSED. 13/13 pre-check OK, 12/12 post-check OK, journal 97 to 98; authenticated MAINTAIN 41 to 0 of 48 tables. Paste the closing journal read now.` |
+| THE CLOSING READ | 00:14 | 1 | **The reader REFUSED the throwaway: the journal read is NOT REHEARSED.** The same `REFUSED:` line, then `STOP: the journal read failed or its target check refused (its lines are above), or its output could not be written. The journal read did not pass`. The HEAD CHECK (`main has not moved since stage 0`), the window (`now 202610030014`, end `202610030800`) and the reader's and module's sha256 line passed first. |
+
+**Profiles.**
+- **Pre-check (stage 1), 13 OK:**
+  - verdict 1 `0; control 1`;
+  - verdict 2 `1 row, newest is 0099, when 1788502000000`;
+  - `journal_rows_before` 97;
+  - verdict 4 `postgres; control false`;
+  - verdict 5 `0 not owned, of 48`;
+  - verdict 6 `0 with another grantor, of 41`;
+  - verdict 7 `41 of 48; control 48 of 48`;
+  - verdict 8 `effective 41, own grant 41, effective without own grant 0, through PUBLIC or an inherited role 0, member of pg_maintain false; control 1`;
+  - verdict 9 `1 entry, authenticated DELETE,INSERT,MAINTAIN,SELECT,UPDATE; control 1`;
+  - verdict 10 `0; control 1`;
+  - verdict 11 `5`;
+  - `secdef_functions_before` 28.
+- **Pre-check carries and INFO:**
+  - CARRY `tables_before` 48 and `maintain_before` 41;
+  - INFO `supabase_admin`; views with MAINTAIN 0; TRUNCATE, TRIGGER, REFERENCES `0, 0, 0 of 48`.
+- **Post-check (stage 2), 12 OK:**
+  - verdict 1 `0 of 48; control 48 of 48`;
+  - verdict 2 `1 entry, authenticated DELETE,INSERT,SELECT,UPDATE; control 1`;
+  - verdict 3 `0; control 1`;
+  - verdicts 4 to 9: every carried md5 unchanged (default ACL, relation ACL, column ACL, the
+    DML profile, policies, functions), and functions 28;
+  - verdict 10 `98`;
+  - verdict 11 `1, newest is 0100`.
+- **FOR THE RECORD, `postgres`'s `public` TABLES default:** `authenticated`
+  `DELETE,INSERT,SELECT,UPDATE`. MAINTAIN is gone; `postgres` and `service_role` are unchanged.
+- **The journal's last three rows:** id 98 `80f85018...` `1788502100000`, id 97 `fbc5e545...`
+  `1788502000000`, id 96 `198054ab...` `1788501900000`.
+
+**Two things GREEN will see that the EXPECT lists do not name:**
+- The reader's refusal text names the production ref, so on a refusal `tee` writes it into
+  `/tmp/0100-journal-before.out` or `-after.out`. On production the reader does not refuse.
+- check-journal prints a leading `✓` before `Migration journal reconciled: 98 .sql files match
+  98 journal entries in order, ...`. Stage 0's `grep -qF` matches inside the line.
+
+**In action on the applied throwaway, as `authenticated`** (00:14:47 Lisbon; each in a
+rolled-back transaction except W2, since VACUUM cannot run in one):
+
+| Arm | After 0100 |
+|---|---|
+| W1: INSERT `users` (parent, admin claims), INSERT `staff_locations` (child, FK to `users` and `locations`), read through the join, UPDATE, DELETE child and parent, rolled back | **all succeed.** The BEFORE UPDATE trigger `users_self_service_columns` fired: as admin it allowed `job_title`; as the row's own therapist it allowed `full_name` and refused `job_title` (`ERROR: users: without users:manage, only full_name may change on your own row, ...`, from `users_self_service_columns() line 15 at RAISE`). 0 rows left after the rollback |
+| W2: `VACUUM public.locations` | **`WARNING: permission denied to vacuum "locations", skipping it`** |
+| W3: `ANALYZE public.locations` | **`WARNING: permission denied to analyze "locations", skipping it`** |
+| W6: `LOCK TABLE public.patient_audit_log IN ACCESS EXCLUSIVE MODE`, where `authenticated` holds SELECT true, INSERT true, UPDATE, DELETE, TRUNCATE and MAINTAIN false | **`ERROR: permission denied for table patient_audit_log`** |
+| W8: the next `CREATE TABLE` by `postgres` | **MAINTAIN false**; SELECT, INSERT, UPDATE, DELETE true; TRUNCATE, REFERENCES, TRIGGER false. The probe table was gone after the rollback |
+
+**Step 4.** The packages/db suite (`pnpm exec vitest run` in `packages/db`, CI's command, with
+`DATABASE_URL` at the applied throwaway), 00:14:57 to 00:15:06 Lisbon: 98 files, **1414 of 1414
+passed**, none skipped, vitest exit 0.
+
+**NOT REHEARSED, and why.**
+- **THE EARLIER PRE-CHECK SITTING, from its guard-verdict check on.**
+  - That check (`grep -qxF 'target verified: production, session pooler.'` on the transcript)
+    reads the real guard's production verdict, which only production prints. Substitution 4
+    replaces the guard line, not the check. Under the lead's rule nothing writes that verdict
+    into a throwaway's transcript.
+  - SOLO ruled option (a): no seventh substitution.
+  - The closed-hours dispatch never pastes this block. Stage 1 runs the same pinned pre-check
+    whole, with the same `-v prev_hash` and `-v prev_when`, 13 of 13 OK.
+  - R9's proof 3 requires the same verdict line, so no throwaway transcript can satisfy it, by
+    design. It read `no` in stages 0 and 1, and the closed-hours path passed without it.
+- **The journal reader's two reads, the dispatch's BEFORE YOU START read and the closing read.**
+  - The reader (`packages/db/scripts/read-applied-migrations.mjs`, pinned `825b7818...`, with
+    `scripts/production-target.mjs`, `e037104d...`) refuses any target that is not production,
+    and under the lead's rule it is never passed.
+  - The same reader runs both reads on production in the sitting. The journal's 97 to 98 is
+    proven on the throwaway by stage 1's verified-migrate and by stage 2's SR-51 count and hash
+    read.
+
 
 ### The build lane's synthetic smoke run, 2026-10-02
 
@@ -1196,7 +1367,10 @@ no `FAIL` row and the summary line, as THE EARLIER PRE-CHECK SITTING writes it.
 pasted block (see the paragraph after THE HALT RULE): a refusing target guard did not stop
 stage 1, and a verified-migrate exit 3, 4 or 5 still wrote `/tmp/0100-applied.ok` and printed
 `0100 APPLIED. Paste stage 2 now.` Every block now halts by explicit guards, and
-`scripts/maintain-revoke-0100.test.mjs` proves it on every CI run.
+`scripts/maintain-revoke-0100.test.mjs` proves it: its bash arm (errexit forced off) on every CI
+run, its zsh arm (GREEN's exact shell) locally, and a static rule, which CI runs, that every
+clock read from `date` is checked as twelve digits before it is next replaced or the block
+ends (the zsh-only case `[ "" -le N ]`, which bash's arm cannot see).
 
 **How.** Each block, extracted verbatim, runs as
 `true && eval '<block>' < /dev/null && echo TOOL-CHAIN-CONTINUED`, with its apostrophes escaped
@@ -1358,3 +1532,15 @@ The R4 rounds this document has had, one row each. Each "fixed in" sha is a loca
   (an empty-output fault for every clock read and window field, a held applied marker so its
   age line's `find` is faulted, and THE WINDOW FEED with its removal control). Items 6 to 9
   are not in that commit.
+- The review of GREEN's dispatch (2026-10-02, round 1): NOT PASS, 1 BLOCKER (`set -e` stops nothing in
+  a Claude-pasted block), 3 MAJOR, 6 MINOR. The BLOCKER was fixed in this document by baf37a36
+  (every halt explicit, proven by fault injection) and 2de0d186 (stage 1 also needs now before the
+  window's end); the dispatch's findings in the dispatch.
+- The focused R4 round on 2de0d186..a341aa6a with the dispatch: 0 BLOCKER, 0 MAJOR, 4 MINOR. Two were
+  the dispatch's EXPECT prose (fixed there); one (the dispatch's banner check reads only the first
+  sentence) needs no block change, because at READY the dispatch pins this document's exact sha256,
+  banner included; one (CI's bash arm cannot see a deleted clock-format line) is fixed after the round
+  by the static rule in the test, with a control. Not re-reviewed, under the review-loop cap; no
+  apply-block byte changed.
+- The whole-block rehearsal, 2026-10-03 00:02 to 00:15 Lisbon, on a341aa6a: every block that can run
+  on a throwaway exited 0; the record is under "Rehearsal".

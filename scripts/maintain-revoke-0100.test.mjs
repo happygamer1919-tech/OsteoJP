@@ -289,6 +289,29 @@ export function gateProblems(gate, fileText) {
   return gate === sha256(fileText) ? [] : [`SHAGATE ${gate} is not the sha256 of ${GATE_FILE}`];
 }
 
+/**
+ * Every clock read taken from `date` (NOWL) is checked as twelve digits before the next read or the
+ * block's end. A static rule CI's bash arm can see: in zsh `[ "" -le N ]` is true, so a `date` that
+ * exits 0 with empty output would pass a window check, and only the zsh arm (not on the CI runner)
+ * catches a deleted format line by running it.
+ */
+export function clockParseProblems(md) {
+  const problems = [];
+  blocksOf(md).forEach((b, bi) => {
+    const lines = b.split("\n");
+    lines.forEach((l, i) => {
+      if (!/^NOWL=\$\(TZ=Europe\/Lisbon date '\+%Y%m%d%H%M'\)/.test(l)) return;
+      let ok = false;
+      for (let j = i + 1; j < lines.length; j += 1) {
+        if (/^NOWL=/.test(lines[j])) break;
+        if (/^echo "\$\{NOWL\}" \| grep -qxE '\[0-9\]\{12\}' \|\| \{ echo "STOP: /.test(lines[j])) { ok = true; break; }
+      }
+      if (!ok) problems.push(`block ${bi + 1}, line ${i + 1}: a clock read from date is not checked as twelve digits before the next read`);
+    });
+  });
+  return problems;
+}
+
 /** A block that runs the guard or the reader compares it, and the module both import, BEFORE it runs it. */
 export function compareFirstProblems(block) {
   const problems = [];
@@ -1357,6 +1380,20 @@ function zshOrSkip(t) {
   }
   assert.fail("zsh is not on this machine, and the zsh arm of the fault-injection harness must run wherever it is not the GitHub runner");
 }
+
+test("EVERY CLOCK READ IS PARSED: each NOWL from date is checked as YYYYMMDDHHMM before the next read (static, so CI sees it)", () => {
+  assert.deepEqual(clockParseProblems(doc), []);
+  const reads = blocksOf(doc).join("\n").split("\n").filter((l) => l.startsWith("NOWL=$(TZ=Europe/Lisbon date"));
+  assert.equal(reads.length, 4, "stage 1 twice, stage 2 and the closing read");
+  // CONTROLS: drop each format line in turn; the rule names a problem every time.
+  const lines = doc.split("\n");
+  const checks = lines.map((l, i) => [l, i]).filter(([l]) => /^echo "\$\{NOWL\}" \| grep -qxE '\[0-9\]\{12\}' \|\|/.test(l));
+  assert.equal(checks.length, 4);
+  for (const [, i] of checks) {
+    const cut = [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n");
+    assert.notDeepEqual(clockParseProblems(cut), [], `dropping line ${i + 1} must be caught`);
+  }
+});
 
 test("every block parses under bash -n and zsh -n", (t) => {
   for (const b of blocksOf(doc)) {
