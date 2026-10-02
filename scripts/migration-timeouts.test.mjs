@@ -54,9 +54,10 @@
 // migration that needs a longer bound for one statement asks the lead for a
 // ruled exception; it does not override the bound silently.
 // WHAT NO STATIC RULE CAN SEE: the match is on the text as written, so a setting
-// name built at run time (concatenation, format(), a name spelled with E'' or
-// U&"" escapes inside an EXECUTEd string) is not seen. Review is what catches that;
-// this rule makes the plain and the accidental forms impossible.
+// name built at run time (concatenation, format()) is not seen, and neither is a
+// name spelled with escapes anywhere, an EXECUTEd string included: a top-level
+// SET U&"..." name, or an E'' or U&'' literal passed to set_config. Review is
+// what catches those; this rule makes the plain and the accidental forms impossible.
 //
 // WHAT IS IN SCOPE, FAILING CLOSED. In packages/db/migrations: every `.sql` file
 // (any case) whose leading number is 100 or more, or that has no leading number at
@@ -406,10 +407,10 @@ test("CONTROL: the gaps R4 round 3 named are closed", () => {
   assert.equal(after("SELECT U&'d\\0061t\\+000061'; COMMIT;"), 1, "COMMIT after a U&'' string");
   assert.equal(after('CREATE TABLE public.U&"d\\0061t" (id int); COMMIT;'), 1, "COMMIT after a U&\"\" name");
   withRoot((root) => {
-    writeFileSync(join(root, PROMOTED_DIR, "no_number.sql"), GOOD);
+    writeFileSync(join(root, PROMOTED_DIR, "no_number.sql"), "REVOKE MAINTAIN ON public.example FROM authenticated;");
     writeFileSync(join(root, PROMOTED_DIR, "10000_five_digits.sql"), "REVOKE MAINTAIN ON public.example FROM authenticated;");
     const result = Object.fromEntries(scan(root));
-    assert.equal(result[`${PROMOTED_DIR}/no_number.sql`].length, 1, "an unnumbered file is read, and refused for its name");
+    assert.equal(result[`${PROMOTED_DIR}/no_number.sql`].length, 3, "an unnumbered file is read: its name and both missing lines");
     assert.equal(result[`${PROMOTED_DIR}/10000_five_digits.sql`].length, 3, "a five-digit file is read: its name and both missing lines");
   });
 });
@@ -433,6 +434,11 @@ test("GREEN: comments, blank lines, breakpoints, CRLF, quotes and spacing around
   assert.deepEqual(timeoutProblems(`-- see packages/db/migrations/*\n${GOOD}\n/* a later block comment */`), [], "a /* inside a header line comment");
   assert.deepEqual(timeoutProblems(GOOD.replace(/\n/g, "\r\n")), [], "CRLF line endings");
   assert.deepEqual(timeoutProblems(`${GOOD}\n--> statement-breakpoint\nCOMMENT ON TABLE public.example IS 'a; b -- c /* d';`), [], "quotes holding ; -- and /*");
+  assert.deepEqual(
+    timeoutProblems(`${GOOD}\n--> statement-breakpoint\nREVOKE MAINTAIN ON public.a FROM authenticated; REVOKE MAINTAIN ON public.b FROM authenticated;`),
+    [],
+    "two real statements in one chunk, as drizzle runs a chunk with several statements",
+  );
 });
 
 test("SCOPE: names fail closed, pending files are read flat, and nothing below 0100 is checked for the lines", () => {
