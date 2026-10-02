@@ -233,6 +233,8 @@ export const FICHA_EPISODES = {
   fisioLong: { recordId: "00000000-0000-0000-0000-00000000fe34", lisbonDay: "10/06/2024", excerptStart: "Dor no ombro esquerdo com irradiacao" },
   fisio: { recordId: "00000000-0000-0000-0000-00000000fe32", lisbonDay: "06/09/2024", excerpt: "Ombro direito doloroso, inventado" },
   osteo2: { recordId: "00000000-0000-0000-0000-00000000fe33", lisbonDay: "20/01/2025", excerpt: "Lombalgia recorrente, inventada" },
+  /** A "Nova versão" of osteo2 (version 2, a draft): listed beneath it, not counted as an evaluation. */
+  osteo2v2: { recordId: "00000000-0000-0000-0000-00000000fe35" },
 } as const;
 
 /**

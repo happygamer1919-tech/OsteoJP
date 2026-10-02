@@ -7,8 +7,8 @@
  * specialty, one locked registo each, and ledger rows for both. Grouped by
  * episode id, three evaluations would read as three "episodes". Strategy's ruling
  * Q1 (a) groups the imported history one group per specialty per patient, so
- * this patient shows TWO groups: Osteopatia (two evaluations, newest group
- * first) and Fisioterapia (two, the first with a complaint longer than 120 characters), each with its dated evaluations beneath, and
+ * this patient shows TWO groups: Osteopatia (two evaluations and a later
+ * version of the second, counted as two; newest group first) and Fisioterapia (two, the first with a complaint longer than 120 characters), each with its dated evaluations beneath, and
  * every imported registo still opens.
  *
  * Runs as the THERAPIST (the patient is created_by the E2E therapist). Keeps a
@@ -43,10 +43,12 @@ test.describe("EPI-01a: the Registos tab, grouped (therapist)", () => {
       await expect(osteo.getByTestId("record-group-count")).toHaveText("2 avaliações");
       await expect(osteo.locator("summary")).toContainText("Importado");
       await expect(osteo.locator("summary")).toContainText(F.osteo1.excerpt);
-      // The evaluations beneath, oldest to newest by the clinical date.
-      await expect(osteo.getByTestId("record-row")).toHaveCount(2);
+      // The evaluations beneath, oldest to newest by the clinical date. The third
+      // row is osteo2's later version: listed, but not counted as an evaluation.
+      await expect(osteo.getByTestId("record-row")).toHaveCount(3);
       await expect(osteo.getByTestId("record-row").nth(0)).toHaveAttribute("data-record-id", F.osteo1.recordId);
       await expect(osteo.getByTestId("record-row").nth(1)).toHaveAttribute("data-record-id", F.osteo2.recordId);
+      await expect(osteo.getByTestId("record-row").nth(2)).toHaveAttribute("data-record-id", F.osteo2v2.recordId);
       await expect(osteo.getByTestId("record-row").nth(1)).toContainText(F.osteo2.excerpt);
       await expect(osteo.getByTestId("record-row").nth(0)).toContainText("Bloqueada");
 
@@ -108,7 +110,8 @@ test.describe("EPI-01a: the Registos tab, grouped (therapist)", () => {
 
     test("the groups fit the phone: no sideways page scroll, every row reachable", async ({ page }, testInfo) => {
       const groups = await openTab(page);
-      await expect(groups.nth(0).getByTestId("record-row")).toHaveCount(2);
+      await expect(groups.nth(0).getByTestId("record-row")).toHaveCount(3);
+      await expect(groups.nth(0).getByTestId("record-group-count")).toHaveText("2 avaliações");
       await expect(groups.nth(1).getByTestId("record-row")).toHaveCount(2);
       // The longest complaint is on screen, cut, and the page still does not scroll sideways.
       await expect(groups.nth(1).locator("summary")).toContainText(F.fisioLong.excerptStart);
