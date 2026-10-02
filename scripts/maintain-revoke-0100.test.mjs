@@ -36,11 +36,10 @@
 //     stage 1 decides closed hours by the clock AND the clinics; its two R9 pins are
 //     either a sha256 or the documented placeholder, which can never match one; a
 //     filled SHAGATE is the gate file's real sha256 when the file is on this branch;
-//     and its catalog-only check, RUN here as written in the document, passes the
-//     real migration and refuses planted copies, R4 round 1's five and round 2's four
-//     among them, with a plant for each of its conditions (but the DO-loop count,
-//     which the statement shape already decides) and for each refusal of its
-//     scanner that only that condition or refusal refuses;
+//     and its catalog-only check, RUN here as written in the document, is an exact
+//     compare: it passes the real migration and the same text with whitespace runs
+//     widened, and refuses every plant R4 rounds 1 to 3 used, a CR, a NUL, a
+//     non-ASCII byte, a one-character change and a space added inside a literal;
 //   * THE EARLIER PRE-CHECK SITTING runs from PR #1520's head as its dispatch names
 //     it, never from main, and writes into its transcript the guard's verdict and
 //     the summary line R9's proof 3 then requires;
@@ -554,9 +553,11 @@ test("THE EARLIER PRE-CHECK SITTING runs from PR #1520's named head, never main,
   }
 });
 
-test("R9 proof 2, run as the document writes it, passes the migration and refuses planted copies", () => {
+test("R9 proof 2, run as the document writes it, passes the reviewed text, whitespace aside, and refuses anything else", () => {
   const program = catalogOnlyProgram(blockWith(doc, STAGE0));
   assert.equal(program, catalogOnlyProgram(blockWith(doc, STAGE1)));
+  // It fits the block's single quotes and its no-! rule: no apostrophe and no ! anywhere in it.
+  assert.doesNotMatch(program, /['!]/);
   const dir = mkdtempSync(join(tmpdir(), "r9-catalog-only-"));
   try {
     const runOn = (text) => {
@@ -564,127 +565,111 @@ test("R9 proof 2, run as the document writes it, passes the migration and refuse
       writeFileSync(f, text);
       return spawnSync(process.execPath, ["-e", program, f], { encoding: "utf8" });
     };
-    const real = runOn(migration);
-    assert.equal(real.status, 0, real.stdout + real.stderr);
-    assert.match(real.stdout, /CATALOG-ONLY$/m);
-    for (const plant of [
+    const normalized = migration.replace(/[ \t\n]+/g, " ").trim();
+    const PASS = /^catalog-only: equal to the reviewed text, whitespace aside: CATALOG-ONLY$/m;
+    const DIFF_AT = (k) => new RegExp(`^catalog-only: differs from the reviewed text at normalized offset ${k} \\(\\d+ characters against ${normalized.length}\\): NOT PROVEN$`, "m");
+    const DIFF = new RegExp(`^catalog-only: differs from the reviewed text at normalized offset \\d+ \\(\\d+ characters against ${normalized.length}\\): NOT PROVEN$`, "m");
+    const BYTE = (hex, at) => new RegExp(`^catalog-only: a byte outside printable ASCII, TAB and LF, 0x${hex} at offset ${at}: NOT PROVEN$`, "m");
+    /** `text` with `from` replaced by `to`; `from` must occur exactly once. */
+    const one = (text, from, to) => {
+      assert.equal(text.split(from).length, 2, `not exactly once: ${from}`);
+      return text.replace(from, () => to);
+    };
+    const at = (text, k, insert) => text.slice(0, k) + insert + text.slice(k);
+
+    // PASSING CONTROLS: the real file; extra spaces, TABs and blank lines where whitespace already
+    // runs between tokens; and a run widened inside the EXECUTEd string, still whitespace to its SQL.
+    let spaced = one(migration, "SET LOCAL lock_timeout = '5s';--> statement-breakpoint\nSET LOCAL statement_timeout",
+      "SET \t LOCAL\tlock_timeout   =\t'5s';--> statement-breakpoint\n\n\n\t SET  LOCAL\n statement_timeout");
+    spaced = one(spaced, "  END LOOP;\nEND\n$$;", "\t\t END \t LOOP;\n\n END\n\n$$;");
+    spaced = one(spaced, "ALTER DEFAULT PRIVILEGES IN SCHEMA public\n  REVOKE", "ALTER\tDEFAULT  PRIVILEGES IN SCHEMA public\n\n\t\tREVOKE");
+    for (const [name, text] of [
+      ["the real file", migration],
+      ["extra spaces, TABs and blank lines between tokens", spaced],
+      ["a widened run inside the EXECUTEd string", one(migration, "'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'REVOKE MAINTAIN\t \tON TABLE %s FROM authenticated'")],
+    ]) {
+      if (name !== "the real file") assert.notEqual(text, migration, `${name}: the control did not change the file`);
+      const r = runOn(text);
+      assert.equal(r.status, 0, `${name}: ${r.stdout}${r.stderr}`);
+      assert.match(r.stdout, PASS, name);
+    }
+
+    // EVERY EARLIER PLANT, each refused. The first version's; R4 round 1's five and round 2's four
+    // with EXECUTE 'SELECT 1'; the $$-in-a-comment plant and a second DO loop; comments the
+    // earlier versions let through, which an exact compare does not; and R4 round 3's, which the
+    // third version's scanner read differently from PostgreSQL.
+    const plants = [
       migration + "\nDELETE FROM public.patients;--> statement-breakpoint\n",
       migration + "\nCREATE TABLE public.x (id int);--> statement-breakpoint\n",
       migration + "\nALTER TABLE public.patients ADD COLUMN x int;--> statement-breakpoint\n",
       migration + "\nUPDATE public.patients SET id = id;--> statement-breakpoint\n",
       migration + "\nGRANT SELECT ON public.patients TO anon;--> statement-breakpoint\n",
-      migration.replace("'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'TRUNCATE %s'"),
-      migration.replace("SET LOCAL lock_timeout = '5s';", ""),
-    ]) {
+      swap("'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'TRUNCATE %s'"),
+      swap("SET LOCAL lock_timeout = '5s';", ""),
+      inLoop("    LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;"),
+      inLoop("    GRANT ALL ON public.appointments TO anon;"),
+      inLoop("    ALTER POLICY p ON public.appointments USING (true);"),
+      inLoop("    REVOKE SELECT ON public.appointments FROM authenticated;"),
+      inLoop("    PERFORM pg_sleep(3600);"),
+      inLoop("    execute 'DEL' || 'ETE FROM public.appointments';"),
+      inLoop("    execute 'SELECT pg_sleep(3600)';"),
+      inLoop("    RAISE NOTICE '/*'; DELETE FROM public.appointments; RAISE NOTICE '*/';"),
+      inLoop("    RAISE NOTICE '--'; DELETE FROM public.appointments;"),
+      inLoop("    EXECUTE 'SELECT 1';"),
+      swap("END\n$$;", "END -- $$; SELECT pg_sleep(3600); DO $$ BEGIN\nEND\n$$;"),
+      migration + "DO $$ BEGIN END $$;--> statement-breakpoint\n",
+      migration + "/* DELETE, TRUNCATE and CREATE TABLE are not here */\n",
+      inLoop("    -- it's not code: LOCK GRANT ALTER"),
+      inLoop("    IF false THEN RAISE NOTICE '%', 1$q$ -- $q$; END IF; DELETE FROM public.appointments; --"),
+      inLoop("    REASSIGN OWNED BY authenticated TO anon;"),
+      inLoop("    SECURITY LABEL ON TABLE public.appointments IS 'x';"),
+      inLoop("    LOAD 'auto_explain';"),
+      inLoop("    NOTIFY ch, 'x';"),
+      inLoop("    IMPORT FOREIGN SCHEMA s FROM SERVER srv INTO public;"),
+      inLoop("    RAISE NOTICE '%', pg_catalog.pg_sleep(3600);"),
+      inLoop("    IF pg_catalog.pg_terminate_backend(1) THEN NULL; END IF;"),
+    ];
+    for (const plant of plants) {
+      assert.notEqual(plant, migration);
       const r = runOn(plant);
-      assert.equal(r.status, 1, `not refused: ${plant.slice(-100)}\n${r.stdout}`);
+      assert.equal(r.status, 1, `not refused: ${plant.slice(-120)}\n${r.stdout}`);
+      assert.match(r.stdout, DIFF, plant.slice(-120));
     }
-    // R4 ROUND 1's FIVE PLANTS, each one line inside the DO loop, each passed (exit 0) by the first
-    // version of this check. Each is now refused, and by the forbidden-word condition.
-    for (const [line, word] of [
-      ["    LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;", "LOCK"],
-      ["    GRANT ALL ON public.appointments TO anon;", "GRANT"],
-      ["    ALTER POLICY p ON public.appointments USING (true);", "ALTER"],
-      ["    REVOKE SELECT ON public.appointments FROM authenticated;", "REVOKE"],
-      ["    PERFORM pg_sleep(3600);", "PERFORM"],
-    ]) {
-      const r = runOn(inLoop(line));
-      assert.equal(r.status, 1, `not refused: ${line}\n${r.stdout}`);
-      assert.match(r.stdout, new RegExp(`forbidden words 1 \\[${word}\\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$`, "m"), line);
-    }
-    // EVERY forbidden word, alone, inside the loop.
-    const FORBIDDEN = ["GRANT", "REVOKE", "LOCK", "PERFORM", "ALTER", "CREATE", "DROP", "COMMENT", "SET", "COPY", "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE", "RESET", "CALL", "VACUUM", "ANALYZE", "CLUSTER", "REINDEX", "REFRESH"];
-    for (const w of FORBIDDEN) {
-      const r = runOn(inLoop(`    ${w} x;`));
-      assert.equal(r.status, 1, `not refused: ${w}\n${r.stdout}`);
-      assert.match(r.stdout, new RegExp(`forbidden words 1 \\[${w}\\]`), w);
-    }
-    // ONE CONDITION AT A TIME: an input that only that condition of `ok` refuses.
-    const statement = (r) => r.stdout.match(/statements \[([^\]]*)\]/)?.[1];
-    const realShape = statement(real);
-    const only = {
-      shape: runOn(migration + "\nSELECT 1;--> statement-breakpoint\n"),
-      denied: runOn(inLoop("    LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;")),
-      execs: runOn(inLoop("    EXECUTE 'SELECT 1';")),
-      revoke: runOn(swap("'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'SELECT 1 FROM %s'")),
-    };
-    for (const [cond, r] of Object.entries(only)) assert.equal(r.status, 1, `${cond}: not refused\n${r.stdout}`);
-    assert.notEqual(statement(only.shape), realShape);
-    assert.match(only.shape.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$/m);
-    for (const cond of ["denied", "execs", "revoke"]) assert.equal(statement(only[cond]), realShape, cond);
-    assert.match(only.denied.stdout, /forbidden words 1 \[LOCK\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$/m);
-    assert.match(only.execs.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 2, its string the MAINTAIN revoke true: NOT PROVEN$/m);
-    assert.match(only.revoke.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke false: NOT PROVEN$/m);
-    // The DO-loop count has no plant of its own, and cannot: a second loop, or none, also breaks
-    // the four-statement shape (and empties the body the EXECUTE count reads). A second loop is
-    // refused all the same.
-    const twoLoops = runOn(migration + "DO $$ BEGIN END $$;--> statement-breakpoint\n");
-    assert.equal(twoLoops.status, 1, twoLoops.stdout);
-    assert.match(twoLoops.stdout, /DO loops 2, /);
-    assert.notEqual(statement(twoLoops), realShape);
-
-    // R4 ROUND 2's FOUR PLANTS, and EXECUTE 'SELECT 1': each passed (exit 0) by the second version
-    // of this check, through a case-sensitive EXECUTE count or a comment stripper that read `/*` and
-    // `--` inside a string as comments. Each is now refused, and by the condition named.
-    const TAIL = (forbidden, execs) => new RegExp(`^catalog-only: lexical problems 0 \\[\\], statements \\[[^\\]]*\\], forbidden words ${forbidden}, DO loops 1, EXECUTEs in it ${execs}, its string the MAINTAIN revoke true: NOT PROVEN$`, "m");
-    for (const [line, want] of [
-      ["    execute 'DEL' || 'ETE FROM public.appointments';", TAIL("0 \\[\\]", 2)],
-      ["    execute 'SELECT pg_sleep(3600)';", TAIL("0 \\[\\]", 2)],
-      ["    RAISE NOTICE '/*'; DELETE FROM public.appointments; RAISE NOTICE '*/';", TAIL("1 \\[DELETE\\]", 1)],
-      ["    RAISE NOTICE '--'; DELETE FROM public.appointments;", TAIL("1 \\[DELETE\\]", 1)],
-      ["    EXECUTE 'SELECT 1';", TAIL("0 \\[\\]", 2)],
-    ]) {
-      const r = runOn(inLoop(line));
-      assert.equal(r.status, 1, `not refused: ${line}\n${r.stdout}`);
-      assert.match(r.stdout, want, line);
-    }
-    // A `$$` inside a `--` comment ends the DO body in PostgreSQL, which then runs what follows as
-    // plain SQL. The second version stripped the comment and passed it; the scanner ends the body
-    // at that `$$`, as PostgreSQL does, and sees two loops.
-    const early = runOn(swap("END\n$$;", "END -- $$; SELECT pg_sleep(3600); DO $$ BEGIN\nEND\n$$;"));
-    assert.equal(early.status, 1, early.stdout);
-    assert.match(early.stdout, /DO loops 2, /);
-
-    // THE SCANNER, ONE REFUSAL AT A TIME: each input is refused by the lexical condition ALONE, every
-    // other condition reading as on the real file.
-    const LEX = (problem) => new RegExp(`^catalog-only: lexical problems 1 \\[${problem}\\], statements \\[[^\\]]*\\], forbidden words 0 \\[\\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$`, "m");
-    for (const [name, text, problem] of [
-      ["another dollar-quote tag", inLoop("    RAISE NOTICE $q$x$q$;"), "a dollar quote other than \\$\\$"],
-      ["an E string", inLoop("    RAISE NOTICE E'x';"), "E string"],
-      ["a U& string", inLoop("    RAISE NOTICE U&'x';"), "U& literal"],
-      ["a U& identifier", inLoop("    RAISE NOTICE '%', U&\"x\";"), "U& literal"],
-      ["an unterminated string", `${migration}'x`, "unterminated string"],
-      ["an unterminated identifier", `${migration}"x`, "unterminated identifier"],
-      ["an unterminated comment, closed once but nested twice", `${migration}/* a /* b */`, "unterminated comment"],
-      ["an unterminated dollar quote", `${migration}$$ x`, "unterminated dollar quote"],
+    // R4 round 3's carriage-return plants: PostgreSQL ends a -- comment at a CR. Refused by the byte rule.
+    for (const [text, from] of [
+      [inLoop("    -- note\rDELETE FROM public.appointments;"), "    -- note\r"],
+      [migration + "-- note\rDELETE FROM public.appointments;\n", "-- note\r"],
+      [inLoop("    -- note\rx := pg_catalog.pg_sleep(3600);"), "    -- note\r"],
     ]) {
       const r = runOn(text);
-      assert.equal(r.status, 1, `${name}: not refused\n${r.stdout}`);
-      assert.match(r.stdout, LEX(problem), name);
-      assert.equal(statement(r), realShape, name);
+      assert.equal(r.status, 1, r.stdout);
+      assert.match(r.stdout, BYTE("0d", text.indexOf(from) + from.length - 1));
     }
 
-    // PASSING CONTROLS: the real file, and the real file with a comment holding an apostrophe and
-    // EVERY forbidden word (and EXECUTE), as `--` and as `/* */`, outside the loop and inside it; a
-    // nested comment; and the literal forms the scanner reads as they are.
-    const ALL = `it's not code: ${FORBIDDEN.join(" ")} EXECUTE`;
-    const CATALOG = /^catalog-only: lexical problems 0 \[\], statements \[[^\]]*\], forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: CATALOG-ONLY$/m;
-    for (const [name, text] of [
-      ["the real file", migration],
-      ["a -- comment outside the loop", `${migration}-- ${ALL}\n`],
-      ["a /* */ comment outside the loop", `${migration}/* ${ALL} */\n`],
-      ["a -- comment inside the loop", inLoop(`    -- ${ALL}`)],
-      ["a /* */ comment inside the loop", inLoop(`    /* ${ALL} */`)],
-      ["a nested comment inside the loop", inLoop(`    /* outer /* inner */ still a comment: ${ALL} */`)],
-      ["a doubled quote inside a string", inLoop("    RAISE NOTICE 'it''s';")],
-      ["a doubled quote inside an identifier", inLoop("    RAISE NOTICE '%', \"a\"\"b\";")],
-      ["a typed literal, whose e' is no E string", inLoop("    RAISE NOTICE '%', date'2026-10-02';")],
-      ["an identifier holding $, which is no dollar quote", inLoop("    RAISE NOTICE '%', r$x;")],
+    // ONE PLANT PER BYTE-CLASS REFUSAL, each at a known offset (the bytes before it are ASCII).
+    const kCode = migration.indexOf("SET LOCAL lock_timeout");
+    const kComment = migration.indexOf("Take MAINTAIN");
+    for (const [name, text, hex, k] of [
+      ["a CR", at(migration, kCode, "\r"), "0d", kCode],
+      ["a NUL", at(migration, kCode, "\0"), "00", kCode],
+      ["a non-ASCII byte, in a comment", at(migration, kComment, "é"), "c3", kComment],
     ]) {
       const r = runOn(text);
-      assert.equal(r.status, 0, `${name}: ${r.stdout}`);
-      assert.match(r.stdout, CATALOG, name);
-      assert.equal(statement(r), realShape, name);
+      assert.equal(r.status, 1, `${name}: ${r.stdout}`);
+      assert.match(r.stdout, BYTE(hex, k), name);
+    }
+
+    // ONE CHARACTER, AND WHITESPACE INSIDE A LITERAL: each is a difference, at the offset expected.
+    const k5 = normalized.indexOf("'5s'");
+    const kSet = normalized.indexOf("SET LOCAL lock_timeout");
+    for (const [name, text, k] of [
+      ["one character changed: '5s' to '4s'", swap("'5s'", "'4s'"), k5 + 1],
+      ["a space added inside a literal, where there was none: '5 s'", swap("'5s'", "'5 s'"), k5 + 2],
+      ["a run of whitespace removed between two tokens", swap("SET LOCAL lock_timeout", "SETLOCAL lock_timeout"), kSet + 3],
+    ]) {
+      const r = runOn(text);
+      assert.equal(r.status, 1, `${name}: ${r.stdout}`);
+      assert.match(r.stdout, DIFF_AT(k), name);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
