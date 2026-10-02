@@ -37,6 +37,10 @@ export default async function NewRecordPage({
     <section className="max-w-xl space-y-4">
       <h2 className="text-base font-semibold">{s["clinical.newTitle"]}</h2>
       {m === "err" && <p className="text-sm text-error">{s["clinical.error"]}</p>}
+      {/* EPI-01b, Q9's app half: the chosen episode was not this patient's. */}
+      {m === "episodeMismatch" && (
+        <p role="alert" className="text-sm text-error">{s["clinical.episodeMismatch"]}</p>
+      )}
 
       <form action={createRecordAction} className="space-y-3">
         {/* W5-02 + W5-04: Paciente is an async search Combobox; the Episódio

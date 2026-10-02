@@ -7,6 +7,7 @@ import {
   formTemplates,
   patients,
   users,
+  type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { therapistPatientScope } from "@/lib/patients/scope";
@@ -72,30 +73,51 @@ export async function createEpisode(
         .limit(1);
       if (!mine) throw new ClinicalError("not_found");
     }
-    const rows = await tx
-      .insert(clinicalEpisodes)
-      .values({
-        tenantId: ctx.tenantId, // required by NOT NULL + RLS WITH CHECK
-        patientId: input.patientId,
-        title,
-        primaryPractitionerId: ctx.userId,
-        status: "open",
-      })
-      .returning({ id: clinicalEpisodes.id });
-    const id = rows[0]!.id;
-
-    await writeClinicalAudit(tx, {
-      tenantId: ctx.tenantId,
-      actorUserId: ctx.userId,
-      action: "clinical_episode.create",
-      entityType: "clinical_episode",
-      entityId: id,
-      // ids only — never patient PII / clinical content (CLAUDE.md rule 7).
-      metadata: { patientId: input.patientId },
-      ip,
-    });
-    return { id };
+    return insertOpenEpisode(tx, ctx, { patientId: input.patientId, title }, ip);
   });
+}
+
+/**
+ * THE ONE EPISODE INSERT: an OPEN episode for the patient, in the caller's
+ * tenant and name, and its `clinical_episode.create` audit row, in the CALLER'S
+ * transaction so the two commit or roll back together.
+ *
+ * Two callers: `createEpisode` above, and EPI-01b's "+ Avaliação" on an imported
+ * group (`createDraftRecord` with `newEpisodeSpecialty`), which opens the episode
+ * and files the registo in it in ONE transaction, so a refused registo leaves no
+ * empty episode behind. It asks nothing about the patient: each caller has
+ * already asked the narrow write scope (`therapistPatientScope`) in the same
+ * transaction, and `title` is already normalised and non-clinical.
+ */
+export async function insertOpenEpisode(
+  tx: DbTx,
+  ctx: RequestContext,
+  input: { patientId: string; title: string },
+  ip: string | null,
+): Promise<{ id: string }> {
+  const rows = await tx
+    .insert(clinicalEpisodes)
+    .values({
+      tenantId: ctx.tenantId, // required by NOT NULL + RLS WITH CHECK
+      patientId: input.patientId,
+      title: input.title,
+      primaryPractitionerId: ctx.userId,
+      status: "open",
+    })
+    .returning({ id: clinicalEpisodes.id });
+  const id = rows[0]!.id;
+
+  await writeClinicalAudit(tx, {
+    tenantId: ctx.tenantId,
+    actorUserId: ctx.userId,
+    action: "clinical_episode.create",
+    entityType: "clinical_episode",
+    entityId: id,
+    // ids only, never patient PII or clinical content (CLAUDE.md rule 7).
+    metadata: { patientId: input.patientId },
+    ip,
+  });
+  return { id };
 }
 
 /* ------------------------------------------------------------------ */

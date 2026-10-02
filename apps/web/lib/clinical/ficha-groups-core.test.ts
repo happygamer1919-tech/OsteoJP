@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXCERPT_MAX, excerpt, groupForFicha, type FichaRecord } from "./ficha-groups-core";
+import { EXCERPT_MAX, addEvaluationTarget, excerpt, groupForFicha, type FichaRecord } from "./ficha-groups-core";
 
 let seq = 0;
 const rec = (over: Partial<FichaRecord> = {}): FichaRecord => {
@@ -198,5 +198,51 @@ describe("groupForFicha: Q1 (a) and the defaults", () => {
   it("an imported episode with an unexpected title is still grouped by that title, never dropped", () => {
     const groups = groupForFicha([rec({ episodeId: "z", episodeTitle: "", episodeImported: true })]);
     expect(groups[0]!.key).toBe("imported:—");
+  });
+});
+
+describe("addEvaluationTarget (EPI-01b): what '+ Avaliação' on a group files", () => {
+  const groupsOf = (records: FichaRecord[]) => Object.fromEntries(groupForFicha(records).map((g) => [g.key, g]));
+
+  it("an APP episode group: the new registo is filed in THAT episode", () => {
+    const g = groupsOf([
+      rec({ episodeId: "ep-app", episodeTitle: "Episódio (01/09/2026)" }),
+      rec({ episodeId: "ep-app", episodeTitle: "Episódio (01/09/2026)" }),
+    ]);
+    expect(addEvaluationTarget(g["episode:ep-app"]!)).toEqual({ kind: "episode", episodeId: "ep-app" });
+  });
+
+  it("an app episode TITLED like a specialty is still filed in itself, never treated as imported", () => {
+    const g = groupsOf([rec({ episodeId: "ep-own", episodeTitle: "Osteopatia" })]);
+    expect(addEvaluationTarget(g["episode:ep-own"]!)).toEqual({ kind: "episode", episodeId: "ep-own" });
+  });
+
+  it("an IMPORTED group: a NEW episode for its specialty, never one of the imported episodes (Q7)", () => {
+    const g = groupsOf([
+      rec({ episodeId: "ep-i1", episodeTitle: "Osteopatia", episodeImported: true }),
+      rec({ episodeId: "ep-i2", episodeTitle: "Osteopatia", episodeImported: true }),
+      rec({ episodeId: "ep-i3", episodeTitle: "Fisioterapia", episodeImported: true }),
+    ]);
+    const osteo = addEvaluationTarget(g["imported:Osteopatia"]!);
+    const fisio = addEvaluationTarget(g["imported:Fisioterapia"]!);
+    expect(osteo).toEqual({ kind: "newEpisode", specialty: "Osteopatia" });
+    expect(fisio).toEqual({ kind: "newEpisode", specialty: "Fisioterapia" });
+    // No imported episode id is carried at all.
+    expect(JSON.stringify([osteo, fisio])).not.toMatch(/ep-i/);
+  });
+
+  it("an imported group whose label is not a known specialty gets NO button", () => {
+    const g = groupsOf([
+      rec({ episodeId: "ep-x", episodeTitle: "Pilates", episodeImported: true }),
+      rec({ episodeId: "ep-y", episodeTitle: null, episodeImported: true }),
+    ]);
+    expect(addEvaluationTarget(g["imported:Pilates"]!)).toBeNull();
+    expect(addEvaluationTarget(g["imported:—"]!)).toBeNull();
+  });
+
+  it("the 'Sem episódio' group gets NO button (a judgment: the design note is silent)", () => {
+    const g = groupsOf([rec(), rec()]);
+    expect(g["none"]!.kind).toBe("none");
+    expect(addEvaluationTarget(g["none"]!)).toBeNull();
   });
 });

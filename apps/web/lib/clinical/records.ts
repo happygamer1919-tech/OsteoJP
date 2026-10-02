@@ -22,6 +22,8 @@ import {
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError, type ClinicalErrorCode } from "./errors";
+import { defaultEpisodeTitle, isEpisodeSpecialty } from "./episode-title";
+import { insertOpenEpisode } from "./episodes";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -537,12 +539,79 @@ export function zeroRowRefusal(
   return new ClinicalError(ctx.role === "therapist" && someoneElses ? "not_author" : moved);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * EPI-01b (S-1002-D P2.2): Q9, THE APP HALF. A registo filed in an episode is
+ * filed in an episode of THE SAME PATIENT, IN THE SAME TENANT, or not at all.
+ *
+ * Nothing in the database ties `clinical_records.episode_id` to the record's
+ * patient: the foreign key checks only that the episode exists, and it checks
+ * that without row level security, so it would accept another tenant's episode
+ * too. The database half (a trigger or a composite key) is Tier C, after 0102;
+ * this is the braces it is the belt to.
+ *
+ * Read in the WRITER'S OWN transaction, under the caller's RLS. clinical_episodes
+ * is tenant-only, so another tenant's episode reads as no row; the tenant is
+ * still compared explicitly, so the refusal does not rest on the policy alone.
+ * A malformed id is the same refusal, before any read (it is not an episode of
+ * this patient, and Postgres would otherwise answer with a raw 22P02).
+ *
+ * REFUSES WITH `episode_mismatch` AND WRITES NOTHING: it throws before the
+ * INSERT, the transaction rolls back, and no audit row is written (audit rows
+ * record a mutation that commits; every refusal in this file writes none). One
+ * log line says it happened, with no identifier in it (CLAUDE.md rule 7): the
+ * screens never offer another patient's episode, so this fires only on a posted
+ * id or a page gone stale, and that should be visible somewhere.
+ */
+export async function assertEpisodeIsThePatients(
+  tx: DbTx,
+  ctx: RequestContext,
+  episodeId: string,
+  patientId: string,
+): Promise<void> {
+  let why: string | null = null;
+  if (!UUID_RE.test(episodeId)) {
+    why = "the episode id is malformed";
+  } else {
+    const [episode] = await tx
+      .select({ tenantId: clinicalEpisodes.tenantId, patientId: clinicalEpisodes.patientId })
+      .from(clinicalEpisodes)
+      .where(eq(clinicalEpisodes.id, episodeId))
+      .limit(1);
+    if (!episode) why = "the episode is not visible in this tenant";
+    else if (episode.tenantId !== ctx.tenantId) why = "the episode is another tenant's";
+    else if (episode.patientId !== patientId) why = "the episode is another patient's";
+  }
+  if (why !== null) {
+    console.warn(`[clinical] registo refused: ${why} (episode_mismatch). Nothing written.`);
+    throw new ClinicalError("episode_mismatch");
+  }
+}
+
 export async function createDraftRecord(
   ctx: RequestContext,
-  input: { patientId: string; formTemplateId: string; episodeId?: string | null; appointmentId?: string | null },
-): Promise<{ id: string }> {
+  input: {
+    patientId: string;
+    formTemplateId: string;
+    episodeId?: string | null;
+    appointmentId?: string | null;
+    /**
+     * EPI-01b (Q7): "+ Avaliação" on an IMPORTED group. Open a NEW episode for
+     * this specialty, titled with it and today's Lisbon date, and file the
+     * registo there, in one transaction. Never an imported episode. Only a word
+     * on EPISODE_SPECIALTIES is accepted, so the title is never clinical text.
+     * Exclusive with `episodeId`.
+     */
+    newEpisodeSpecialty?: string | null;
+  },
+): Promise<{ id: string; episodeId: string | null }> {
   assertCan(ctx.role, "clinical_records:author");
   if (!input.patientId || !input.formTemplateId) {
+    throw new ClinicalError("invalid");
+  }
+  const specialty = input.newEpisodeSpecialty ?? null;
+  if (specialty !== null && (input.episodeId || !isEpisodeSpecialty(specialty))) {
     throw new ClinicalError("invalid");
   }
   const ip = await clientIp();
@@ -552,13 +621,27 @@ export async function createDraftRecord(
     // other patient here, cleanly. Before 0097 the INSERT would succeed (0045
     // admits any patient); from 0097 it would be a raw 42501.
     await assertTherapistMayFileFor(tx, ctx, input.patientId);
+    let episodeId = input.episodeId || null;
+    if (episodeId) {
+      // Q9, the app half: the episode is this patient's, in this tenant.
+      await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId);
+    } else if (specialty !== null) {
+      // Q7: a new open episode, through the one episode insert, in THIS
+      // transaction: if the registo below is refused, the episode is not left.
+      ({ id: episodeId } = await insertOpenEpisode(
+        tx,
+        ctx,
+        { patientId: input.patientId, title: defaultEpisodeTitle(specialty, new Date()) },
+        ip,
+      ));
+    }
     const rows = await tx
       .insert(clinicalRecords)
       .values({
         tenantId: ctx.tenantId,
         patientId: input.patientId,
         formTemplateId: input.formTemplateId,
-        episodeId: input.episodeId ?? null,
+        episodeId,
         appointmentId: input.appointmentId ?? null,
         practitionerId: ctx.userId,
         data: {},
@@ -572,10 +655,10 @@ export async function createDraftRecord(
       action: "clinical_record.create",
       entityType: "clinical_record",
       entityId: id,
-      metadata: { templateId: input.formTemplateId, patientId: input.patientId },
+      metadata: { templateId: input.formTemplateId, patientId: input.patientId, episodeId },
       ip,
     });
-    return { id };
+    return { id, episodeId };
   });
 }
 
@@ -683,6 +766,10 @@ export async function createAddendum(
     // 0097: a new version is filed in the caller's name for the same patient,
     // so it meets the same test as any registo: a patient they treat or created.
     await assertTherapistMayFileFor(tx, ctx, s.patientId);
+    // EPI-01b, Q9's app half: the version copies its record's episode, so it is
+    // held to the same rule as a new registo. A source row already filed in
+    // another patient's episode does not get a second one.
+    if (s.episodeId) await assertEpisodeIsThePatients(tx, ctx, s.episodeId, s.patientId);
 
     const rows = await tx
       .insert(clinicalRecords)

@@ -238,6 +238,34 @@ export const FICHA_EPISODES = {
 } as const;
 
 /**
+ * EPI-01b (2026-10-02, S-1002-D P2.2): "+ Avaliação" on an episode group. A
+ * patient of its own (so the EPI-01a spec's group counts never move), created_by
+ * the E2E therapist, its clinic Linda-a-Velha, seeded by seed-e2e.mjs
+ * (ensureAddEvaluationFixture) with exactly one group of each kind:
+ *   appEpisode  an OPEN app episode (no ledger row) holding one draft registo;
+ *   imported    one closed Osteopatia episode the import ledger names, holding
+ *               one locked registo (the importer's shape);
+ *   noEpisode   one draft registo with no episode ("Sem episódio").
+ * The spec ADDS registos and episodes on every run, so it asserts by the ids it
+ * creates, never by a group's total.
+ */
+export const ADD_EVALUATION = {
+  patientId: "00000000-0000-0000-0000-00000000a3e2",
+  patientName: "Zzz Avaliacao Episodio Teste",
+  appEpisode: {
+    episodeId: "00000000-0000-0000-0000-00000000fe41",
+    title: "Episódio (15/09/2026)",
+    recordId: "00000000-0000-0000-0000-00000000fe51",
+  },
+  imported: {
+    episodeId: "00000000-0000-0000-0000-00000000fe42",
+    specialty: "Osteopatia",
+    recordId: "00000000-0000-0000-0000-00000000fe52",
+  },
+  noEpisode: { recordId: "00000000-0000-0000-0000-00000000fe53" },
+} as const;
+
+/**
  * G-D (2026-09-13): three documents on IMPORTED_RECORD's patient, seeded by
  * seed-e2e.mjs with these ids. Storage objects are NOT created (the lane bucket
  * holds no bytes), so specs assert the lists and the Abrir button, never a download.

@@ -36,12 +36,13 @@ vi.mock("./audit", () => ({
   clientIp: vi.fn(async () => "127.0.0.1"),
 }));
 
-import { clinicalRecords, patients } from "@osteojp/db";
+import { clinicalEpisodes, clinicalRecords, patients } from "@osteojp/db";
 import type { RequestContext } from "@osteojp/auth";
 import { runScoped } from "@/lib/auth/context";
 import { writeClinicalAudit } from "./audit";
 import { isClinicalError } from "./errors";
 import {
+  assertEpisodeIsThePatients,
   createAddendum,
   createDraftRecord,
   hardDeleteClinicalRecord,
@@ -290,9 +291,188 @@ describe("createAddendum: a new version meets the same test as any registo", () 
   // episódio") is red.
   it("a new version carries the source's episode, so it stays in that episode's group", async () => {
     const EPISODE = "77777777-7777-4777-8777-777777777777";
-    const { inserted } = fakeTx({ selects: [[{ ...SOURCE, episodeId: EPISODE }]] });
+    // EPI-01b: the version's episode is now held to Q9's app half, so the
+    // writer also reads the episode (the same patient, in this tenant).
+    const { inserted } = fakeTx({
+      selects: [[{ ...SOURCE, episodeId: EPISODE }], [{ tenantId: TENANT, patientId: PATIENT }]],
+    });
     expect(await codeOf(createAddendum(owner, RECORD))).toBe("resolved");
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).toMatchObject({ episodeId: EPISODE });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EPI-01b (S-1002-D P2.2): Q9, THE APP HALF. A registo with an episode_id is
+// filed only in an episode of the SAME patient, in the SAME tenant. The guard
+// (`assertEpisodeIsThePatients`) reads the episode in the writer's own
+// transaction, before the INSERT: a refusal is `episode_mismatch`, nothing is
+// inserted and no audit row is written. Every refusal arm has a control that
+// differs from it in ONE value and files. The real policies and rows are in
+// records.episode-guard.db.test.ts.
+// ---------------------------------------------------------------------------
+describe("Q9 app half: createDraftRecord files a registo only in the same patient's episode", () => {
+  const EPISODE = "77777777-7777-4777-8777-777777777771";
+  const OTHER_PATIENT = "44444444-4444-4444-8444-444444444445";
+  const OTHER_TENANT = "11111111-1111-4111-8111-111111111112";
+  const input = { patientId: PATIENT, formTemplateId: "77777777-7777-4777-8777-777777777777", episodeId: EPISODE };
+  const mine = { tenantId: TENANT, patientId: PATIENT };
+
+  it("another patient's episode: episode_mismatch, read after the patient test, no INSERT, no audit", async () => {
+    const { read, ops } = fakeTx({ selects: [[{ id: PATIENT }], [{ tenantId: TENANT, patientId: OTHER_PATIENT }]] });
+    expect(await codeOf(createDraftRecord(therapist, input))).toBe("episode_mismatch");
+    expect(read).toEqual([patients, clinicalEpisodes]);
+    expect(ops).toEqual([]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("another tenant's episode (RLS shows no row): episode_mismatch, no INSERT, no audit", async () => {
+    const { ops } = fakeTx({ selects: [[{ id: PATIENT }], []] });
+    expect(await codeOf(createDraftRecord(therapist, input))).toBe("episode_mismatch");
+    expect(ops).toEqual([]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("another tenant's episode READ BACK (the tenant is compared, not left to the policy): episode_mismatch", async () => {
+    const { ops } = fakeTx({ selects: [[{ id: PATIENT }], [{ tenantId: OTHER_TENANT, patientId: PATIENT }]] });
+    expect(await codeOf(createDraftRecord(therapist, input))).toBe("episode_mismatch");
+    expect(ops).toEqual([]);
+  });
+
+  it("a malformed episode id: episode_mismatch before any episode read (never a raw 22P02)", async () => {
+    const { read, ops } = fakeTx({ selects: [[{ id: PATIENT }]] });
+    expect(await codeOf(createDraftRecord(therapist, { ...input, episodeId: "not-a-uuid" }))).toBe("episode_mismatch");
+    expect(read).toEqual([patients]);
+    expect(ops).toEqual([]);
+  });
+
+  it("the owner is held to it too: no patient read, the episode read, refused", async () => {
+    const { read, ops } = fakeTx({ selects: [[{ tenantId: TENANT, patientId: OTHER_PATIENT }]] });
+    expect(await codeOf(createDraftRecord(owner, input))).toBe("episode_mismatch");
+    expect(read).toEqual([clinicalEpisodes]);
+    expect(ops).toEqual([]);
+  });
+
+  it("CONTROL: the same patient's episode in this tenant is filed in it, and audited with it", async () => {
+    const { read, ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }], [mine]] });
+    expect(await codeOf(createDraftRecord(therapist, input))).toBe("resolved");
+    expect(read).toEqual([patients, clinicalEpisodes]);
+    expect(ops).toEqual(["insert:clinical_records"]);
+    expect(inserted[0]).toMatchObject({ patientId: PATIENT, episodeId: EPISODE, practitionerId: THERAPIST_ID });
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0]![1]).toMatchObject({
+      action: "clinical_record.create",
+      metadata: { patientId: PATIENT, episodeId: EPISODE },
+    });
+  });
+
+  it("CONTROL: no episode asks nothing about episodes and files with none", async () => {
+    const { read, inserted } = fakeTx({ selects: [[{ id: PATIENT }]] });
+    expect(await codeOf(createDraftRecord(therapist, { ...input, episodeId: null }))).toBe("resolved");
+    expect(read).toEqual([patients]);
+    expect(inserted[0]).toMatchObject({ episodeId: null });
+  });
+
+  it("the refusal logs one line, and the line carries no identifier (rule 7)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      fakeTx({ selects: [[{ id: PATIENT }], [{ tenantId: TENANT, patientId: OTHER_PATIENT }]] });
+      await codeOf(createDraftRecord(therapist, input));
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0]![0]);
+      expect(line).toContain("episode_mismatch");
+      for (const id of [EPISODE, PATIENT, OTHER_PATIENT, TENANT, THERAPIST_ID]) expect(line).not.toContain(id);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("Q7: '+ Avaliação' on an imported group opens a NEW episode and files the registo there", () => {
+  const input = { patientId: PATIENT, formTemplateId: "77777777-7777-4777-8777-777777777777" };
+  const NEW_ID = "66666666-6666-4666-8666-666666666666"; // fakeTx answers every INSERT with this id
+
+  it("a specialty on the list: one open episode titled with it and the Lisbon date, then the registo in it, both audited", async () => {
+    const { read, ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }]] });
+    expect(await codeOf(createDraftRecord(therapist, { ...input, newEpisodeSpecialty: "Osteopatia" }))).toBe("resolved");
+    expect(read).toEqual([patients]); // no episode is read: none is written into but the new one
+    expect(ops).toEqual(["insert:other", "insert:clinical_records"]);
+    expect(inserted[0]).toMatchObject({
+      tenantId: TENANT,
+      patientId: PATIENT,
+      primaryPractitionerId: THERAPIST_ID,
+      status: "open",
+    });
+    expect((inserted[0] as { title: string }).title).toMatch(/^Osteopatia \(\d{2}\/\d{2}\/\d{4}\)$/);
+    expect(inserted[1]).toMatchObject({ patientId: PATIENT, episodeId: NEW_ID });
+    expect(mockAudit.mock.calls.map((c) => c[1].action)).toEqual(["clinical_episode.create", "clinical_record.create"]);
+  });
+
+  it("a word that is not on the list: invalid, before any transaction, nothing written", async () => {
+    for (const word of ["Lombalgia aguda", "osteopatia", "Osteopatia (02/10/2026)", "Episódio"]) {
+      mockRunScoped.mockReset();
+      expect(await codeOf(createDraftRecord(therapist, { ...input, newEpisodeSpecialty: word })), word).toBe("invalid");
+      expect(mockRunScoped).not.toHaveBeenCalled();
+    }
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("an episode id AND a specialty: invalid, nothing written", async () => {
+    const both = { ...input, episodeId: "77777777-7777-4777-8777-777777777771", newEpisodeSpecialty: "Osteopatia" };
+    expect(await codeOf(createDraftRecord(therapist, both))).toBe("invalid");
+    expect(mockRunScoped).not.toHaveBeenCalled();
+  });
+
+  it("a patient outside the therapist's scope: not_found, and NO episode is opened", async () => {
+    const { ops } = fakeTx({ selects: [[]] });
+    expect(await codeOf(createDraftRecord(therapist, { ...input, newEpisodeSpecialty: "Fisioterapia" }))).toBe("not_found");
+    expect(ops).toEqual([]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("Q9 app half: a new version is held to the same rule as a new registo", () => {
+  const SOURCE_IN = (episodeId: string) => ({
+    patientId: PATIENT,
+    episodeId,
+    formTemplateId: null,
+    appointmentId: null,
+    data: {},
+    version: 1,
+  });
+  const EPISODE = "77777777-7777-4777-8777-777777777772";
+
+  it("a source already filed in another patient's episode: episode_mismatch, no second one", async () => {
+    const { read, ops } = fakeTx({
+      selects: [[SOURCE_IN(EPISODE)], [{ id: PATIENT }], [{ tenantId: TENANT, patientId: "44444444-4444-4444-8444-444444444445" }]],
+    });
+    expect(await codeOf(createAddendum(therapist, RECORD))).toBe("episode_mismatch");
+    expect(read).toEqual([clinicalRecords, patients, clinicalEpisodes]);
+    expect(ops).toEqual([]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("CONTROL: a source in its own patient's episode gets its version, in that episode", async () => {
+    const { ops, inserted } = fakeTx({
+      selects: [[SOURCE_IN(EPISODE)], [{ id: PATIENT }], [{ tenantId: TENANT, patientId: PATIENT }]],
+    });
+    expect(await codeOf(createAddendum(therapist, RECORD))).toBe("resolved");
+    expect(ops).toEqual(["insert:clinical_records"]);
+    expect(inserted[0]).toMatchObject({ episodeId: EPISODE });
+  });
+});
+
+describe("assertEpisodeIsThePatients: the guard on its own", () => {
+  const EPISODE = "77777777-7777-4777-8777-777777777773";
+  const run = (rows: unknown[]) => {
+    const { read } = fakeTx({ selects: [rows] });
+    return { read, p: mockRunScoped(therapist, (tx) => assertEpisodeIsThePatients(tx, therapist, EPISODE, PATIENT)) };
+  };
+
+  it("passes only on a row of this tenant AND this patient", async () => {
+    expect(await codeOf(run([{ tenantId: TENANT, patientId: PATIENT }]).p)).toBe("resolved");
+    expect(await codeOf(run([{ tenantId: TENANT, patientId: RECORD }]).p)).toBe("episode_mismatch");
+    expect(await codeOf(run([{ tenantId: RECORD, patientId: PATIENT }]).p)).toBe("episode_mismatch");
+    expect(await codeOf(run([]).p)).toBe("episode_mismatch");
   });
 });

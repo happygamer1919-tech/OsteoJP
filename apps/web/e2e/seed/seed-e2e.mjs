@@ -1444,6 +1444,137 @@ async function ensureFichaEpisodes(therapistId) {
 }
 
 // ---------------------------------------------------------------------------
+// EPI-01b (2026-10-02, S-1002-D P2.2): "+ Avaliação" ON AN EPISODE GROUP.
+// A patient of its own, so the EPI-01a spec's counts never move, holding ONE
+// group of each kind the Registos tab draws:
+//   - an OPEN app episode (no ledger row) with one draft registo in the
+//     therapist's name: "+ Avaliação" files the new registo in it;
+//   - one imported Osteopatia episode in the importer's shape (closed, ledger
+//     rows for it and its locked registo): "+ Avaliação" opens a NEW episode;
+//   - one draft registo with no episode ("Sem episódio"): no "+ Avaliação".
+// Its clinic is Linda-a-Velha (primary_location_id, no appointments): 0045 shows
+// an admin clinical rows only at their own clinics, so the spec's Linda-a-Velha
+// admin reads every group, which is what makes "an admin sees no button"
+// evidence. Invented patient and invented text. Upserts on ids; an existing registo is
+// left exactly as it is. The spec adds registos and episodes on every run and
+// asserts by the ids it creates.
+// ---------------------------------------------------------------------------
+const ADD_EVALUATION_PATIENT = "00000000-0000-0000-0000-00000000a3e2";
+const ADD_EVALUATION_APP_EPISODE = "00000000-0000-0000-0000-00000000fe41";
+const ADD_EVALUATION_IMPORTED_EPISODE = "00000000-0000-0000-0000-00000000fe42";
+
+async function ensureAddEvaluationFixture(therapistId) {
+  must(
+    (await db.from("patients").upsert(
+      {
+        id: ADD_EVALUATION_PATIENT,
+        tenant_id: TENANT_A,
+        full_name: "Zzz Avaliacao Episodio Teste",
+        created_by: therapistId,
+        primary_location_id: LOCATION_A,
+        deleted_at: null,
+      },
+      { onConflict: "id" },
+    )).error,
+    "add-evaluation patient",
+  );
+  must(
+    (await db.from("clinical_episodes").upsert(
+      [
+        {
+          id: ADD_EVALUATION_APP_EPISODE,
+          tenant_id: TENANT_A,
+          patient_id: ADD_EVALUATION_PATIENT,
+          title: "Episódio (15/09/2026)",
+          primary_practitioner_id: therapistId,
+          status: "open",
+          opened_at: "2026-09-15T09:00:00.000Z",
+          closed_at: null,
+        },
+        {
+          id: ADD_EVALUATION_IMPORTED_EPISODE,
+          tenant_id: TENANT_A,
+          patient_id: ADD_EVALUATION_PATIENT,
+          title: "Osteopatia",
+          primary_practitioner_id: null,
+          status: "closed",
+          opened_at: "2024-05-10T23:00:00.000Z",
+          closed_at: "2024-05-10T23:00:00.000Z",
+        },
+      ],
+      { onConflict: "id" },
+    )).error,
+    "add-evaluation episodes",
+  );
+  const importedRecord = "00000000-0000-0000-0000-00000000fe52";
+  for (const [entity, id] of [
+    ["clinical_episode", ADD_EVALUATION_IMPORTED_EPISODE],
+    ["clinical_record", importedRecord],
+  ]) {
+    must(
+      (await db.from("migration_staging_rows").upsert(
+        {
+          tenant_id: TENANT_A,
+          batch_id: "00000000-0000-0000-0000-00000000fe4b",
+          source_system: "fisiozero",
+          entity_type: entity,
+          source_id: "e2e-avaliacao-fe52",
+          raw: {},
+          status: "imported",
+          imported_entity_id: id,
+        },
+        { onConflict: "tenant_id,source_system,entity_type,source_id" },
+      )).error,
+      `add-evaluation ledger ${entity}`,
+    );
+  }
+  const registos = [
+    {
+      id: "00000000-0000-0000-0000-00000000fe51",
+      episode_id: ADD_EVALUATION_APP_EPISODE,
+      status: "draft",
+      practitioner_id: therapistId,
+      created_at: "2026-09-15T09:30:00.000Z",
+      data: { consultation_reason: "Dor cervical ao acordar, inventada" },
+    },
+    {
+      id: importedRecord,
+      episode_id: ADD_EVALUATION_IMPORTED_EPISODE,
+      status: "locked",
+      practitioner_id: null,
+      created_at: "2024-05-10T23:00:00.000Z",
+      data: { especialidade: "Osteopatia", motivos: "Dorsalgia antiga, inventada" },
+    },
+    {
+      id: "00000000-0000-0000-0000-00000000fe53",
+      episode_id: null,
+      status: "draft",
+      practitioner_id: therapistId,
+      created_at: "2026-08-20T10:00:00.000Z",
+      data: { diagnostico: "Tendinite inventada" },
+    },
+  ];
+  for (const r of registos) {
+    if ((await clinicalRecordStatus(r.id)) !== null) continue;
+    must(
+      (await db.from("clinical_records").insert({
+        ...r,
+        tenant_id: TENANT_A,
+        patient_id: ADD_EVALUATION_PATIENT,
+        source: "manual",
+        ai_review_state: null,
+        form_template_id: null,
+        version: 1,
+        supersedes_id: null,
+        signed_by: null,
+        signed_at: null,
+      })).error,
+      `add-evaluation registo ${r.id.slice(-4)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // G-D (2026-09-13) — THE PATIENT'S IMPORTED ORIGINALS, IN THE SHAPE THE IMPORT
 // WRITES. The importer stores each Fisiozero document at
 // `${tenant}/migration/fisiozero/<file>` (attachmentStoragePath); documentos.csv
@@ -1651,6 +1782,8 @@ async function main() {
   await ensureImportedDocuments(importedRecordId);
   // EPI-01a: an imported history in the importer's shape, on a patient of its own.
   await ensureFichaEpisodes(userIds.therapist);
+  // EPI-01b: one group of each kind, on a patient of its own, for "+ Avaliação".
+  await ensureAddEvaluationFixture(userIds.therapist);
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
