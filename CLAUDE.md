@@ -111,7 +111,7 @@ Standing nevers: clinical authorship never moves; clinical_records_enforce_immut
   | `0097` | the registo write policies: `clinical_records` writes follow the permission matrix (ruled onto Tier C 2026-09-27 as the registo write fix) (**re-ruled 2026-09-30**, was `0099`) (applied to production 2026-10-01, merged) | #1475 |
   | `0098` | the index on `migration_staging_rows.imported_entity_id` (the "staging index") (**re-ruled 2026-09-30**, was `0097`) (applied to production 2026-10-01, merged) | #1469 |
   | `0099` | the TRUNCATE, TRIGGER, REFERENCES revoke (**re-ruled 2026-09-30**, was `0096`; before 2026-09-27 it was `0095`) (applied to production 2026-10-01, merged) | #1397 |
-  | `0100` | MAINTAIN off `authenticated` in `public`, plus the matching default privileges, the same shape as `0099`; the catalog-only pilot of the SET LOCAL gate (**ruled 2026-10-01**, strategy S-1001-A R1 and R2). Not written until the read-only production measurement is back (R3) | not yet authored |
+  | `0100` | MAINTAIN off `authenticated` in `public`, plus the matching default privileges, the same shape as `0099`; the catalog-only pilot of the SET LOCAL gate (**ruled 2026-10-01**, strategy S-1001-A R1 and R2). The read-only production measurement ran 2026-10-02 (R3): `authenticated` held MAINTAIN on 41 of 48 tables, and anon and PUBLIC held nothing | #1520, held |
   | `0101` onward | SAT-01's migrations (**re-ruled 2026-10-01**, was `0100` onward) | not yet authored |
   | `0102` | the episode-policy item (Tier C; its detail is private until it is applied) (**ruled 2026-10-01**) | not yet authored |
 
