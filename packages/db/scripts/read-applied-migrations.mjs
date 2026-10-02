@@ -41,32 +41,56 @@
  *     packages/db/scripts/read-applied-migrations.mjs
  *
  * SELECTs one table. No writes, no DDL, safe to interrupt. It REFUSES any
- * connection string whose ref is not the production project, so it cannot be
+ * connection string that is not the production target, so it cannot be
  * pointed somewhere by accident - and pointing it at a lane would answer about
  * `supabase_migrations.schema_migrations` anyway, which is a different journal
  * (standing rule 7: this repo has two appliers and two journals).
+ *
+ * ==========================================================================
+ * THE TARGET CHECK, AND WHY IT IS NOT A SUBSTRING ANY MORE
+ * ==========================================================================
+ * Until 2026-09-30 it refused unless `url.includes(PROD_REF)`. A local URL
+ * passes that the moment it carries the ref ANYWHERE, and on 2026-09-30 a
+ * rehearsal subagent did exactly that with an `application_name` label
+ * (INC-rehearsal-subagent-passed-the-reader-guard). The same label had passed
+ * it in the rehearsals behind 0094, 0095 and 0096.
+ *
+ * It now runs checkProductionTarget() from scripts/production-target.mjs, the
+ * one the target guard runs: the parsed ref, host, port and database name, and
+ * the parser disagreements that header lists. The port is 5432: the reader is
+ * run with the environment the target guard reads, DATABASE_URL_DIRECT before
+ * DATABASE_URL, the same precedence, so it sees the session pooler the guard
+ * requires. A refusal names no value from the string, and a document that pins
+ * this file by sha256 pins scripts/production-target.mjs beside it.
+ *
+ * THE DRIVER IS LOADED ONLY AFTER THE CHECK PASSES. A refused run never loads
+ * postgres.js, let alone opens a connection; the refusal is exit 2.
  */
-import postgres from "postgres";
 import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
-const PROD_REF = "dfotoodqvmjhbdcxyaxf";
+import { REASONS, checkProductionTarget } from "../../../scripts/production-target.mjs";
+
 const url = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
 
 if (!url) {
   console.error("no DATABASE_URL_DIRECT / DATABASE_URL in the environment");
   process.exit(2);
 }
-if (!url.includes(PROD_REF)) {
+const verdict = checkProductionTarget(url);
+if (verdict.ok !== true) {
   console.error(
-    `REFUSED: this script reads drizzle.__drizzle_migrations, which only production uses. ` +
-      `The target's ref is not ${PROD_REF}. A local lane is migrated by \`supabase db reset\` ` +
+    `REFUSED: this script reads drizzle.__drizzle_migrations, which only production uses, and ` +
+      `${REASONS[verdict.failed] ?? "the target failed a check this reader has no message for."} ` +
+      `A local lane is migrated by \`supabase db reset\` ` +
       `and records in supabase_migrations.schema_migrations instead, so the answer here would ` +
       `be an error rather than a smaller truth.`,
   );
   process.exit(2);
 }
+
+const { default: postgres } = await import("postgres");
 
 const dir = new URL("../migrations/", import.meta.url).pathname;
 const files = readdirSync(dir)

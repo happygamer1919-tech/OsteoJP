@@ -153,11 +153,14 @@ The lead's words, character for character: "A script's own REFUSE or STOP line i
     - Corrected 2026-09-30: this line first said "one prep rehearsal of 2026-09-29"; it was 0099's own rehearsal.
     - None of those runs is evidence for the reader's journal read, and each of the three applied documents now says so in a correction section.
     - **SOLO's prompts invited it.** The 0094 and 0095 rehearsal prompts told the agent to use "the guard override earlier rehearsals used", and the 0096 prompt said to substitute "the production guard the way earlier rehearsals did". A prompt names each allowed substitution, and never points at "the way earlier rehearsals did".
-  - **The cause, beyond the agents.** Neither guard checks where the connection goes.
-    - The reader tests the whole connection string for a substring: `url.includes(PROD_REF)`.
-    - `scripts/assert-production-target.mjs` takes the ref from the part of the username after its last `.` and checks the port. It never checks the host.
-    - So a local URL can pass the reader if the ref appears anywhere in it, and can pass the target guard if its username carries the ref.
-    - The fix is a Tier B PR after 0097 is applied: both compare the PARSED host and database name to production. The new pins go into later documents only.
+  - **The cause, beyond the agents, as it stood until the guard fix merged.** Neither guard checked where the connection went.
+    - The reader tested the whole connection string for a substring: `url.includes(PROD_REF)`.
+    - `scripts/assert-production-target.mjs` took the ref from the part of the username after its last `.` and checked the port. It never checked the host.
+    - So a local URL could pass the reader if the ref appeared anywhere in it, and could pass the target guard if its username carried the ref.
+    - **The fix** is the pair `sec/INC-guard-parse-host-db` (Tier B) and its GATE-CHANGE, merged after 0097 is applied.
+      - Both guards run one shared check, `scripts/production-target.mjs`. It compares the PARSED ref, host, port and database, and refuses any string the parsers would read differently.
+      - The target guard also refuses `PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE` and `PGOPTIONS`, and the shared check refuses an `options` query key: Supabase's pooler reads a tenant from `options` before the username.
+      - The new pins go into later documents only.
   - The incident card is `INC-rehearsal-subagent-passed-the-reader-guard`.
 
 ### Strategy rulings, 2026-10-01 and 2026-10-02: an amended document is reviewed, and when a sitting may run in clinic hours
