@@ -38,8 +38,13 @@
 //     filled SHAGATE is the gate file's real sha256 when the file is on this branch;
 //     and its catalog-only check, RUN here as written in the document, is an exact
 //     compare: it passes the real migration and the same text with whitespace runs
-//     widened, and refuses every plant R4 rounds 1 to 3 used, a CR, a NUL, a
-//     non-ASCII byte, a one-character change and a space added inside a literal;
+//     widened; it refuses the 35 plants this file carries from the first version
+//     and R4 rounds 1 to 3 (32 that differ in text, and round 3's three CR plants),
+//     a CR, a NUL, a non-ASCII byte, a one-character change,
+//     a space added inside a literal and whitespace removed between two tokens; and
+//     it PASSES R4 round 4's four whitespace-kind variants of the statement-breakpoint
+//     markers, each of which hashes to something other than SHA0100, which is its
+//     documented limit (SHA0100, not this check, proves the file is the reviewed file);
 //   * THE EARLIER PRE-CHECK SITTING runs from PR #1520's head as its dispatch names
 //     it, never from main, and writes into its transcript the guard's verdict and
 //     the summary line R9's proof 3 then requires;
@@ -594,16 +599,18 @@ test("R9 proof 2, run as the document writes it, passes the reviewed text, white
       assert.match(r.stdout, PASS, name);
     }
 
-    // EVERY EARLIER PLANT, each refused. The first version's; R4 round 1's five and round 2's four
-    // with EXECUTE 'SELECT 1'; the $$-in-a-comment plant and a second DO loop; comments the
-    // earlier versions let through, which an exact compare does not; and R4 round 3's, which the
-    // third version's scanner read differently from PostgreSQL.
+    // EVERY EARLIER PLANT, each refused: the first version's eight; R4 round 1's five loop plants;
+    // round 2's four with EXECUTE 'SELECT 1'; the $$-in-a-comment plant and a second DO loop; two
+    // comments the earlier versions let through, which an exact compare does not; round 3's eight
+    // that hold no CR (its three CR plants follow); R4 round 1's sixth file, schema_any (`WHERE
+    // true`); and round 3's `DOLOOP;` plant, the DO loop replaced by a literal DOLOOP statement.
     const plants = [
       migration + "\nDELETE FROM public.patients;--> statement-breakpoint\n",
       migration + "\nCREATE TABLE public.x (id int);--> statement-breakpoint\n",
       migration + "\nALTER TABLE public.patients ADD COLUMN x int;--> statement-breakpoint\n",
       migration + "\nUPDATE public.patients SET id = id;--> statement-breakpoint\n",
       migration + "\nGRANT SELECT ON public.patients TO anon;--> statement-breakpoint\n",
+      migration + "\nCOPY public.patients FROM stdin;--> statement-breakpoint\n",
       swap("'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'TRUNCATE %s'"),
       swap("SET LOCAL lock_timeout = '5s';", ""),
       inLoop("    LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;"),
@@ -628,6 +635,8 @@ test("R9 proof 2, run as the document writes it, passes the reviewed text, white
       inLoop("    IMPORT FOREIGN SCHEMA s FROM SERVER srv INTO public;"),
       inLoop("    RAISE NOTICE '%', pg_catalog.pg_sleep(3600);"),
       inLoop("    IF pg_catalog.pg_terminate_backend(1) THEN NULL; END IF;"),
+      swap("WHERE n.nspname = 'public'", "WHERE true"),
+      migration.slice(0, migration.indexOf("DO $$\n")) + "DOLOOP;" + migration.slice(migration.indexOf("$$;--> statement-breakpoint") + 3),
     ];
     for (const plant of plants) {
       assert.notEqual(plant, migration);
@@ -670,6 +679,49 @@ test("R9 proof 2, run as the document writes it, passes the reviewed text, white
       const r = runOn(text);
       assert.equal(r.status, 1, `${name}: ${r.stdout}`);
       assert.match(r.stdout, DIFF_AT(k), name);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("R9 proof 2's documented limit: a whitespace-kind change at a statement-breakpoint marker passes it, and SHA0100 refuses it", () => {
+  // R4 round 4's plants A to D. Each changes only the kind of whitespace (space, TAB, LF), never a
+  // non-whitespace byte, so the exact compare passes it; each breaks one of the four markers drizzle
+  // splits on, so a reviewed statement is dropped into a -- comment (A to C) or `statement-breakpoint`
+  // is left as code (D). SHA0100, asserted before the arm in both stages, is what refuses them.
+  const program = catalogOnlyProgram(blockWith(doc, STAGE0));
+  const MARK = "--> statement-breakpoint";
+  const markers = (t) => t.split(MARK).length - 1;
+  const flat = (t) => t.replace(/\n/g, " ");
+  const doMark = migration.indexOf("$$;" + MARK) + 3;
+  const m2 = migration.indexOf("'60s';" + MARK) + "'60s';".length;
+  const m4 = migration.indexOf("FROM authenticated;" + MARK) + "FROM authenticated;".length;
+  const tab = (t) => t.replace(MARK, () => "-->\tstatement-breakpoint");
+  const plants = {
+    "A, marker 1 with a TAB: SET LOCAL statement_timeout falls into the comment": swap(
+      "'5s';--> statement-breakpoint\nSET LOCAL statement_timeout = '60s';",
+      "'5s';-->\tstatement-breakpoint SET LOCAL statement_timeout = '60s';",
+    ),
+    "B, marker 2 with a TAB, its LFs to the loop's end made spaces: the DO loop falls into the comment":
+      migration.slice(0, m2) + flat(tab(migration.slice(m2, doMark))) + migration.slice(doMark),
+    "C, marker 3 with a TAB, its LFs to the default made spaces: ALTER DEFAULT PRIVILEGES falls into the comment":
+      migration.slice(0, doMark) + flat(tab(migration.slice(doMark, m4))) + migration.slice(m4),
+    "D, an LF inside marker 1: statement-breakpoint is left as code": swap("'5s';--> statement-breakpoint\n", "'5s';-->\nstatement-breakpoint\n"),
+  };
+  assert.equal(markers(migration), 4);
+  const dir = mkdtempSync(join(tmpdir(), "r9-catalog-only-limit-"));
+  try {
+    for (const [name, text] of Object.entries(plants)) {
+      assert.notEqual(text, migration, name);
+      assert.equal(text.replace(/[ \t\n]/g, ""), migration.replace(/[ \t\n]/g, ""), `${name}: a non-whitespace byte changed`);
+      assert.equal(markers(text), 3, `${name}: drizzle would still find four markers`);
+      const f = join(dir, "m.sql");
+      writeFileSync(f, text);
+      const r = spawnSync(process.execPath, ["-e", program, f], { encoding: "utf8" });
+      assert.equal(r.status, 0, `${name}: the documented limit moved, proof 2 now refuses it: ${r.stdout}`);
+      assert.match(r.stdout, /^catalog-only: equal to the reviewed text, whitespace aside: CATALOG-ONLY$/m, name);
+      assert.notEqual(sha256(text), MIGRATION_SHA, `${name}: hashes to SHA0100`);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

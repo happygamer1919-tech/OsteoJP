@@ -270,32 +270,46 @@ closed hours. Propose the stage 0 arm in 0100's document; R4 covers it."
      recorded `origin/main` sha and its sha256 equals `SHAGATE`. #1510 is not merged, so
      `SHAGATE` is a placeholder that can never match: the arm fails closed (closed hours
      only) until SOLO fills it, in an amendment with its own R4 round (NOT READY step 2).
-  2. **The migration is catalog-only. It is proven by `SHA0100`:** every block of the apply
-     sitting asserts, BEFORE the arm runs, that the migration on disk is the pinned, reviewed
-     bytes (sha256 `80f85018...6106`), and those bytes are the four catalog-only statements of
-     section 1, with their comments, and nothing else. **The arm's `node -e` check proves the
-     same thing in a form a reader can hold against section 1: the file is exactly those four
-     statements, whitespace aside.** It refuses the file if it holds any byte outside printable
-     ASCII (0x20 to 0x7E), TAB or LF, which covers a CR, a NUL and any non-ASCII byte. Otherwise
-     it collapses every run of spaces, TABs and LFs to one space, trims the ends, and requires
-     the result to EQUAL the reviewed text the program carries: the whole 0100 file, its
-     comments included, normalized the same way, with its apostrophes written `\x27` so the
-     block's single quotes survive. It prints one line: the verdict and, on a refusal, the bad
-     byte and its offset, or the first offset at which the normalized file differs. It strips no
-     comment, keeps no word list and counts no `EXECUTE`: an added comment, statement, word or
-     dollar quote simply makes the text unequal. **An exact compare has no blind spots beyond
-     whitespace, and whitespace outside a literal is insignificant to SQL.** Of the six literals
-     in the code (`'5s'`, `'60s'`, `'public'`, `'r'`, `'p'` and the string the loop EXECUTEs),
-     only the last holds whitespace. The normalization collapses a run of whitespace to one space
-     and never removes one, so inside that string a collapsed run is still whitespace to the SQL
-     `EXECUTE` runs; a space added where there was none, as in `'5 s'`, is a difference, and is
-     refused. Every plant R4 rounds 1 to 3 used against the earlier versions is refused
-     (`scripts/maintain-revoke-0100.test.mjs`). **A JUDGMENT, NOT A RULING (SOLO's, after R4
+  2. **The migration is catalog-only. `SHA0100` alone proves the file is the reviewed file:**
+     every block of the apply sitting asserts, BEFORE the arm runs, that the migration on disk
+     is the pinned, reviewed bytes (sha256 `80f85018...6106`), and `verified-migrate.mjs` checks
+     the same sha256 again (`--sha256`) before it applies. **The arm's `node -e` check proves the
+     file is catalog-only: its tokens are the reviewed tokens, so no statement can be added.** It
+     refuses the file if it holds any byte outside printable ASCII (0x20 to 0x7E), TAB or LF,
+     which covers a CR, a NUL and any non-ASCII byte. Otherwise it collapses every run of spaces,
+     TABs and LFs to one space, trims the ends, and requires the result to EQUAL the reviewed
+     text the program carries: the whole 0100 file, its comments included, normalized the same
+     way, with its apostrophes written `\x27` so the block's single quotes survive. It prints
+     one line: the verdict and, on a refusal, the bad byte and its offset, or the first offset at
+     which the normalized file differs. It strips no comment, keeps no word list and counts no
+     `EXECUTE`: an added comment, statement, word or dollar quote simply makes the text unequal.
+     **What it does not prove is identity, because whitespace is not always insignificant
+     here.** An LF ends a `--` comment, and the file's only `--` comments are its four
+     `--> statement-breakpoint` markers, which drizzle splits on as that exact text. So a variant
+     that changes only the kind of whitespace passes this check: a TAB or a second space inside a
+     marker, with the LFs after it turned into spaces, leaves drizzle one marker short and puts
+     the next statement inside the `--` comment, and an LF inside a marker leaves
+     `statement-breakpoint` as code. Such a variant drops a reviewed statement or fails to parse;
+     it can never add one, because its tokens are the reviewed tokens. `SHA0100` refuses every
+     such variant, and both arms assert `SHA0100` before this check;
+     `scripts/maintain-revoke-0100.test.mjs` pins four (R4 round 4's A to D), each passing this
+     check and hashing to something other than `SHA0100`. The post-check would also see the loop
+     or the default privilege dropped (verdicts 1 and 2); a dropped `SET LOCAL` line changes
+     nothing it reads. **Whitespace inside the literals.** The code has seven: `'5s'`, `'60s'`,
+     `'public'`, `'r'`, `'p'`, the string the loop EXECUTEs, and the `DO` body itself, since
+     `$$ ... $$` is a string literal; the last two hold whitespace, and the body holds LFs. The
+     normalization collapses a run of whitespace to one space and never removes one, so inside
+     the EXECUTEd string a collapsed run is still whitespace to the SQL `EXECUTE` runs. In the
+     `DO` body that holds too, for this file: an LF there could matter only by ending a `--`
+     comment, and the body has none, or by joining two string literals separated only by
+     whitespace, and it has no such pair. A space added where there was none, as in `'5 s'`, is
+     a difference, and is refused. `scripts/maintain-revoke-0100.test.mjs` carries every plant
+     file R4 rounds 1 to 3 left (six, five and twelve) and refuses each. **A JUDGMENT, NOT A RULING (SOLO's, after R4
      round 3):** this exact compare replaced the earlier versions' comment stripping and word
      list, the last of them a hand-written SQL scanner, because each review round found another
      place where they read SQL differently from PostgreSQL, and the rounds did not converge.
-     **It is not a template:** a later migration
-     that relies on R9 (2) needs its own proof, written and reviewed with it.
+     **It is not a template:** a later migration that relies on R9 (2) needs its own proof,
+     written and reviewed with it.
   3. **The read-only pre-check ran on production in an EARLIER sitting, output recorded.**
      THE EARLIER PRE-CHECK SITTING (below) runs the pinned pre-check against production BEFORE
      the merge, from PR #1520's head, in a sitting of its own, and keeps its transcript at
@@ -1060,7 +1074,7 @@ verified-migrate did not run.
 | R9 proof 2's `node -e` check, first version | `CATALOG-ONLY` on the real file; `NOT PROVEN` (exit 1) on planted copies carrying a DELETE, a CREATE TABLE, an ALTER TABLE, a GRANT, a COPY, a loop that TRUNCATEs, or no lock_timeout line; a comment naming DELETE, TRUNCATE and CREATE TABLE stays `CATALOG-ONLY`. R4 round 1 then planted a `LOCK TABLE`, a `GRANT ALL ... TO anon`, an `ALTER POLICY ... USING (true)`, a `REVOKE SELECT ... FROM authenticated` and a `PERFORM pg_sleep(3600)` inside the loop: each exited 0 |
 | R9 proof 2's `node -e` check, second version (the R4 round 1 fix, at `ded05f71`) | `CATALOG-ONLY` on the real file; `NOT PROVEN` (exit 1) on each of R4 round 1's five plants, on each forbidden word alone inside the loop, and on one plant per condition of its verdict but the DO-loop count (a fifth statement, a second `EXECUTE`, an `EXECUTE` of another string, a `LOCK` in the loop). As controls, a comment naming every forbidden word inside the loop, and a comment naming DELETE, TRUNCATE and CREATE TABLE outside it, stayed `CATALOG-ONLY`. R4 round 2 then found it passed a lowercase second `execute` (twice) and a `DELETE` hidden after a string holding `/*` or `--`; SOLO found it passed a `$$` inside a `--` comment that ends the `DO` body early |
 | R9 proof 2's `node -e` check, third version (the R4 round 2 fix, at `daa1e31f`) | `CATALOG-ONLY` on the real file and on nine controls: a `--` comment and a `/* */` comment, each holding an apostrophe, all 22 forbidden words and EXECUTE, outside the loop and inside it; a nested comment holding the same; a doubled quote inside a string and inside an identifier; a typed literal `date'2026-10-02'`; an identifier holding `$`. `NOT PROVEN` (exit 1) on everything the second version refused; on R4 round 2's four plants and `EXECUTE 'SELECT 1'`; on the `$$`-in-a-comment plant (two loops); on a second `DO` loop; and on one plant per scanner refusal, each refused by the scanner alone with every other condition reading as on the real file (another dollar-quote tag, an `E'` string, a `U&'` string, a `U&"` identifier, and an unterminated string, identifier, comment and dollar quote). The DO-loop count had no plant of its own. The round 2 fix said none could exist because a second loop, or none, breaks the four-statement shape; that was wrong for none, since a literal `DOLOOP;` statement in place of the loop keeps the shape. R4 round 3 then found the scanner passed a `--` comment ended by a CR (PostgreSQL ends one there) and a dollar tag opened right after a digit (`1$q$`), and that its word list held no REASSIGN OWNED, SECURITY LABEL, LOAD, NOTIFY or IMPORT FOREIGN SCHEMA and no function call in an expression |
-| R9 proof 2's `node -e` check, fourth version: an exact compare (the R4 round 3 fix, the version in the blocks above) | `CATALOG-ONLY` on the real file; on the real file with extra spaces, TABs and blank lines where whitespace already ran between tokens; and on the real file with a run widened inside the EXECUTEd string. `NOT PROVEN` (exit 1), each reported as a difference from the reviewed text, on 29 earlier plants: the first version's seven, R4 round 1's five, round 2's four with `EXECUTE 'SELECT 1'`, the `$$`-in-a-comment plant, a second `DO` loop, two comments the earlier versions let through, and round 3's eight that hold no CR. `NOT PROVEN`, each reported as byte 0x0d at its offset, on round 3's three CR plants. One plant per byte class, each reported with its byte and offset: a CR and a NUL in the code, and a non-ASCII byte (`\u00e9`) in a comment. And three differences, each reported at the normalized offset expected: `'5s'` changed to `'4s'`, a space added inside it (`'5 s'`), and the whitespace removed between `SET` and `LOCAL`. `scripts/maintain-revoke-0100.test.mjs` runs all of it on every CI run |
+| R9 proof 2's `node -e` check, fourth version: an exact compare (the R4 round 3 fix, the version in the blocks above) | `CATALOG-ONLY` on the real file; on the real file with extra spaces, TABs and blank lines where whitespace already ran between tokens; and on the real file with a run widened inside the EXECUTEd string. `NOT PROVEN` (exit 1), each reported as a difference from the reviewed text, on 32 earlier plants: the first version's eight (a DELETE, a CREATE TABLE, an ALTER TABLE, an UPDATE, a GRANT, a COPY, a loop that TRUNCATEs, no lock_timeout line), R4 round 1's six files (the five loop plants and `WHERE true` in place of the schema filter), round 2's four with `EXECUTE 'SELECT 1'`, the `$$`-in-a-comment plant, a second `DO` loop, two comments the earlier versions let through, round 3's eight that hold no CR, and round 3's `DOLOOP;` plant (the `DO` loop replaced by a literal `DOLOOP` statement). `NOT PROVEN`, each reported as byte 0x0d at its offset, on round 3's three CR plants. One plant per byte class, each reported with its byte and offset: a CR and a NUL in the code, and a non-ASCII byte (`\u00e9`) in a comment. And three differences, each reported at the normalized offset expected: `'5s'` changed to `'4s'`, a space added inside it (`'5 s'`), and the whitespace removed between `SET` and `LOCAL`. **Its documented limit, pinned:** `CATALOG-ONLY` on R4 round 4's four whitespace-kind variants of the statement-breakpoint markers (A to D: a TAB inside marker 1, 2 or 3 with the LFs after it made spaces, and an LF inside marker 1), each of which hashes to something other than `SHA0100`, which is what refuses them (see R9, proof 2). `scripts/maintain-revoke-0100.test.mjs` runs all of it on every CI run |
 
 **The R9 arm, run in zsh as the blocks are,** extracted verbatim from stage 0 and stage 1 with
 `set -eo pipefail`, and three substitutions for the test only: the `/tmp/0100-` paths moved to a
