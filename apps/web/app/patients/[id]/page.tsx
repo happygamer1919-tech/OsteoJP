@@ -7,7 +7,7 @@ import {
   StatusChip,
   type StatusTone,
 } from "@osteojp/ui";
-import { ChevronLeft, FileText, Pencil, Plus } from "lucide-react";
+import { ChevronDown, ChevronLeft, FileText, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -721,9 +721,9 @@ export default async function PatientProfilePage({
                   data-testid="record-group"
                   data-group-kind={g.kind}
                   data-group-key={g.key}
-                  className="rounded-lg border border-border bg-surface"
+                  className="group rounded-lg border border-border bg-surface"
                 >
-                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                     <span className="text-sm font-medium tabular-nums text-text-primary" data-testid="record-group-date">
                       {evalDateFmt.format(new Date(g.firstAt))}
                     </span>
@@ -738,6 +738,15 @@ export default async function PatientProfilePage({
                         ? s["patients.fichaGroupCountOne"]
                         : s["patients.fichaGroupCountMany"].replace("{n}", String(g.records.length))}
                     </span>
+                    {/* A flex summary drops the browser's own fold marker, so
+                        the fold is drawn here (the admin danger zone's pattern). */}
+                    <ChevronDown
+                      size={16}
+                      strokeWidth={2}
+                      aria-hidden="true"
+                      data-testid="record-group-chevron"
+                      className="ml-auto shrink-0 text-text-secondary transition-transform duration-fast ease-standard group-open:rotate-180"
+                    />
                     <span className="min-w-0 basis-full truncate text-sm text-text-secondary">
                       {g.excerpt ?? s["patients.fichaGroupNoExcerpt"]}
                     </span>
