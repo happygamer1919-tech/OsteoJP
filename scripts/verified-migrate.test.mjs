@@ -28,12 +28,30 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(REPO, "packages/db/scripts/verified-migrate.mjs");
 const src = fs.readFileSync(SRC, "utf8");
 
 const { verdictFor, validateArgs, EXIT } = await import(SRC);
+
+// ---------------------------------------------------------------------------
+// THE APPLIER'S BYTES ARE PINNED HERE, AND MOVE ONLY IN A GATE-CHANGE.
+// verified-migrate.mjs runs every production migration with production
+// credentials. Until 2026-10-01 the only check that went red when its bytes
+// changed was scripts/migration-0098-staging-index.test.mjs, comparing the 0098
+// apply document's pin with the file on disk. That test now compares with the
+// sha256 0098 RAN (the document is the record of an applied migration), so the
+// current bytes are pinned here instead, the way
+// scripts/assert-production-target.test.mjs pins the guard and the reader. A
+// change to the applier re-pins it here on purpose, in a GATE-CHANGE the owner
+// merges by hand; the change itself rides in its own PR (Rule C).
+// ---------------------------------------------------------------------------
+test("verified-migrate.mjs is the reviewed one (re-pin on purpose, in a GATE-CHANGE)", () => {
+  const want = "ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261";
+  assert.equal(createHash("sha256").update(fs.readFileSync(SRC)).digest("hex"), want, "packages/db/scripts/verified-migrate.mjs moved; re-pin it on purpose");
+});
 
 test("EXIT 5 exists and names the silent no-op", () => {
   // The whole point of the file. Today that state is indistinguishable from

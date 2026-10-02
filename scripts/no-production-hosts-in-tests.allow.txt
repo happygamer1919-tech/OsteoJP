@@ -180,8 +180,6 @@ packages/notify/src/env.test.ts	3085c1d0fb37b567398c34136331741444783ce52c8429ba
 packages/notify/src/gate.test.ts	981d3f70117069fdf18540ab7a2ff7c91a03bea3e33db69819e0682c81b3cb2f	sender or recipient address for a mocked mail transport, set in process.env or returned by a stub; nothing is sent
 scripts/apply-lane/apply-lane-settings.test.mjs	8b7334b55db4290c4f856b63d63b4e0d1dc48d44b1fac62bbae80e33f85b1b7b	asserts the apply lane settings name the Supabase production ref; reads a JSON file, connects to nothing
 scripts/apply-lane/apply-lane-settings.test.mjs	d0d6d88e039f5f9f095664366c846377bbc28f5a9a2333cdd71e13d1bb5c9680	asserts the apply lane settings name the Supabase production ref; reads a JSON file, connects to nothing
-scripts/assert-production-target.test.mjs	1d7ab68b14e714eac2286e07fc7cf6e76f1a3c9f529f1e3509ceea5f3979ac9e	the production target guard's own test; its connection host is db.example.invalid, which never resolves
-scripts/assert-production-target.test.mjs	28b3a94f2e6febcb009b0089258211b740924fd443aa9754aa7c9549bed8fa77	the production target guard's own test; its connection host is db.example.invalid, which never resolves
 scripts/import/copy-attachments-gate.test.mjs	f2d447ee305e18b7ab076084a1f0e7f1273c751136105e780ae81ccedea9d04e	the attachment copy gate's own test: pure functions over URL strings and a temporary source file; nothing connects
 scripts/import/copy-attachments-gate.test.mjs	8e0a51db30e7d97c8a1f9d6b14131e50f1c8e71efa7237ed29ca43d73d9d4ed4	the attachment copy gate's own test: pure functions over URL strings and a temporary source file; nothing connects
 scripts/ingestion-sign.test.mjs	41b49e54cbe8e0865dab0f881231646311c16276dea28382148d908fb05c24a6	argv handed to the signer's pure parseArgs; nothing is sent
