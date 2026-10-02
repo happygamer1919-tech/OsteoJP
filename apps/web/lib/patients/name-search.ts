@@ -8,16 +8,16 @@ import { escapeLike } from "./validation";
  * ==========================================================================
  * THE INCIDENT: RECEPTION WAS TOLD A PATIENT DOES NOT EXIST
  * ==========================================================================
- * Reproduced on the reported record - Antonio Armando Ribeiro Galhofo, patient
- * 15824, Castelo Branco. Findable by typing the WHOLE name. NOT findable by
- * typing the first name and the surname, which is what a person actually does.
+ * Reproduced on the reported record - a patient (redacted), at Castelo Branco.
+ * Findable by typing the WHOLE name. NOT findable by typing the first name and
+ * the surname, which is what a person actually does.
  *
  * Both search surfaces did the same thing:
  *
  *     ilike(patients.fullName, `%${text}%`)
  *
- * ONE substring, the WHOLE typed string, in order. So "Antonio Galhofo" became
- * `%Antonio Galhofo%`, and the stored value has "Armando Ribeiro" in between.
+ * ONE substring, the WHOLE typed string, in order. So "<first> <surname>" became
+ * `%<first> <surname>%`, and the stored value has two more names in between.
  * The query is correct SQL and it answers a question nobody asked.
  *
  * THE SECOND DEFECT IS IN THE SAME LINE AND WAS INVISIBLE BEHIND THE FIRST.
@@ -40,8 +40,8 @@ import { escapeLike } from "./validation";
  * in ANY order, accent-insensitively in BOTH directions.
  *
  * AND, NOT OR, AND THAT IS THE WHOLE SAFETY OF IT. Tokens are ANDed. Two tokens
- * that became an OR would turn "Antonio Galhofo" into "every Antonio plus every
- * Galhofo" - which finds the patient, looks like a fix, and hands reception a
+ * that became an OR would turn "Antonio Exemplo" into "every Antonio plus every
+ * Exemplo" - which finds the patient, looks like a fix, and hands reception a
  * list of strangers to pick a medical record from. That is a worse failure than
  * the one being repaired, and `name-search.test.ts` asserts it in both
  * directions rather than trusting this paragraph.

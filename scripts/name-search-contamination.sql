@@ -27,8 +27,8 @@
 -- The old predicate was `full_name ILIKE '%' || <whole typed string> || '%'`.
 -- It fails in two independent ways:
 --
---   A. TOKEN ORDER. Typing "Antonio Galhofo" for "António Armando Ribeiro
---      Galhofo" looks for that pair ADJACENT and IN ORDER. Any name with three
+--   A. TOKEN ORDER. Typing "Antonio Exemplo" for "António Amostra Modelo
+--      Exemplo" looks for that pair ADJACENT and IN ORDER. Any name with three
 --      or more tokens is unreachable by first-plus-surname. A two-token name is
 --      not affected, because first-plus-last IS the whole name.
 --

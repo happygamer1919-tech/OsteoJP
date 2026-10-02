@@ -59,14 +59,15 @@ describe("the accent fold", () => {
     }
   });
 
-  it("AGREES WITH THE CLIENT-SIDE FILTER on the reported record", () => {
-    expect(foldNameToken("António Armando Ribeiro Galhofo")).toBe(
-      normalizeSearchText("António Armando Ribeiro Galhofo"),
+  it("AGREES WITH THE CLIENT-SIDE FILTER on a name shaped like the reported record", () => {
+    // Invented name, with the reported record's shape: four parts, accented first.
+    expect(foldNameToken("António Amostra Modelo Exemplo")).toBe(
+      normalizeSearchText("António Amostra Modelo Exemplo"),
     );
   });
 
   it("leaves unaccented text alone apart from case", () => {
-    expect(foldNameToken("Galhofo")).toBe("galhofo");
+    expect(foldNameToken("Exemplo")).toBe("exemplo");
     expect(foldNameToken("MARIA-JOSE")).toBe("maria-jose");
   });
 
@@ -81,19 +82,19 @@ describe("the accent fold", () => {
 
 describe("the token split", () => {
   it("splits on whitespace", () => {
-    expect(nameTokens("Antonio Galhofo")).toEqual(["Antonio", "Galhofo"]);
+    expect(nameTokens("Antonio Exemplo")).toEqual(["Antonio", "Exemplo"]);
   });
 
   it("collapses runs and drops leading and trailing whitespace", () => {
     // An empty token would become `LIKE '%%'`, which matches everything, and
     // ANDing it in would be harmless - until somebody switched the join to OR.
-    expect(nameTokens("  Antonio    Galhofo  ")).toEqual(["Antonio", "Galhofo"]);
+    expect(nameTokens("  Antonio    Exemplo  ")).toEqual(["Antonio", "Exemplo"]);
     expect(nameTokens("   ")).toEqual([]);
     expect(nameTokens("")).toEqual([]);
   });
 
   it("treats tabs and newlines as whitespace, because a paste carries them", () => {
-    expect(nameTokens("Antonio\tGalhofo\n")).toEqual(["Antonio", "Galhofo"]);
+    expect(nameTokens("Antonio\tExemplo\n")).toEqual(["Antonio", "Exemplo"]);
   });
 
   it("does NOT split on a hyphen or an apostrophe", () => {
