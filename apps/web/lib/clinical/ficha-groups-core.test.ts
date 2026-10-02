@@ -67,6 +67,51 @@ describe("excerpt: the one-line complaint (Q3)", () => {
   });
 });
 
+describe("the group count: evaluations, versions excluded (S-1002-D P2.1)", () => {
+  const imp = { episodeId: "e1", episodeTitle: "Osteopatia", episodeImported: true };
+
+  it("an evaluation and its later versions count once; the rows still list every version", () => {
+    const [g] = groupForFicha([
+      rec({ ...imp, id: "v1", createdAt: day("2025-01-20") }),
+      rec({ ...imp, id: "v2", version: 2, supersedesId: "v1", status: "signed", createdAt: day("2025-02-03") }),
+      rec({ ...imp, id: "v3", version: 3, supersedesId: "v2", status: "draft", createdAt: day("2025-03-01") }),
+    ]);
+    expect(g!.records.map((r) => r.id)).toEqual(["v1", "v2", "v3"]);
+    expect(g!.evaluations).toBe(1);
+  });
+
+  it("two evaluations, one of them with a version, count two", () => {
+    const [g] = groupForFicha([
+      rec({ ...imp, id: "a", createdAt: day("2023-03-12") }),
+      rec({ ...imp, id: "b", createdAt: day("2025-01-20") }),
+      rec({ ...imp, id: "b2", version: 2, supersedesId: "b", status: "draft", createdAt: day("2025-02-03") }),
+    ]);
+    expect(g!.records).toHaveLength(3);
+    expect(g!.evaluations).toBe(2);
+  });
+
+  it("CONTROL: with no versions the count is the row count", () => {
+    const [g] = groupForFicha([rec({ ...imp, id: "x" }), rec({ ...imp, id: "y" })]);
+    expect(g!.evaluations).toBe(2);
+  });
+
+  it("a version whose original is not in the list still counts once", () => {
+    const [g] = groupForFicha([rec({ ...imp, id: "orphan", version: 2, supersedesId: "not-listed" })]);
+    expect(g!.evaluations).toBe(1);
+  });
+
+  it("a version superseding a record in ANOTHER group counts in its own group", () => {
+    const groups = groupForFicha([
+      rec({ id: "free", createdAt: day("2026-09-01") }),
+      rec({ id: "moved", version: 2, supersedesId: "free", episodeId: "app1", episodeTitle: "Episódio (01/09/2026)", createdAt: day("2026-09-02") }),
+    ]);
+    expect(groups.map((g) => [g.key, g.evaluations])).toEqual([
+      ["episode:app1", 1],
+      ["none", 1],
+    ]);
+  });
+});
+
 describe("groupForFicha: Q1 (a) and the defaults", () => {
   it("IMPORTED registos join ONE group per specialty, however many episodes the importer made", () => {
     const groups = groupForFicha([

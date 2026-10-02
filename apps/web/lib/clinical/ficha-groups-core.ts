@@ -64,6 +64,13 @@ export type FichaGroup = {
   imported: boolean;
   /** Oldest to newest by createdAt. */
   records: FichaRecord[];
+  /**
+   * How many EVALUATIONS the group holds, versions excluded (strategy S-1002-D
+   * P2.1): a record that supersedes another record in this group is that
+   * record's later version, not a new evaluation. A version whose original is
+   * not in the list still counts once, so nothing the viewer sees goes uncounted.
+   */
+  evaluations: number;
   /** The first evaluation's date (ISO). */
   firstAt: string;
   /** The most recent evaluation's date (ISO), which orders the groups. */
@@ -136,6 +143,7 @@ export function groupForFicha(records: readonly FichaRecord[]): FichaGroup[] {
   const out: FichaGroup[] = [];
   for (const [key, g] of groups) {
     const sorted = [...g.records].sort(byCreatedThenVersion);
+    const ids = new Set(sorted.map((r) => r.id));
     const first = sorted[0]!;
     const last = sorted[sorted.length - 1]!;
     out.push({
@@ -144,6 +152,7 @@ export function groupForFicha(records: readonly FichaRecord[]): FichaGroup[] {
       label: g.label,
       imported: g.kind === "imported",
       records: sorted,
+      evaluations: sorted.filter((r) => !(r.supersedesId !== null && ids.has(r.supersedesId))).length,
       firstAt: first.createdAt,
       lastAt: last.createdAt,
       excerpt: first.excerpt,

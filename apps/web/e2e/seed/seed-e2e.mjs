@@ -1335,6 +1335,13 @@ const FICHA_EPISODES = [
   },
 ];
 
+/** A "Nova versão" of the newest Osteopatia evaluation (fe33): counted once, listed twice. */
+const FICHA_VERSION = {
+  record: "00000000-0000-0000-0000-00000000fe35",
+  supersedes: "00000000-0000-0000-0000-00000000fe33",
+  day: "2025-02-03T10:00:00.000Z",
+};
+
 async function ensureFichaEpisodes(therapistId) {
   must(
     (await db.from("patients").upsert(
@@ -1405,6 +1412,33 @@ async function ensureFichaEpisodes(therapistId) {
         data: e.data,
       })).error,
       `ficha registo ${i + 1}`,
+    );
+  }
+  // S-1002-D P2.1: a later version of the newest Osteopatia evaluation, filed the
+  // way "Nova versão" files one (createAddendum): same episode, version 2,
+  // supersedes_id the record it replaces, a draft in the therapist's name. The
+  // group lists it beneath, and its count stays at two evaluations.
+  if ((await clinicalRecordStatus(FICHA_VERSION.record)) === null) {
+    const of = FICHA_EPISODES.find((e) => e.record === FICHA_VERSION.supersedes);
+    must(
+      (await db.from("clinical_records").insert({
+        id: FICHA_VERSION.record,
+        tenant_id: TENANT_A,
+        patient_id: FICHA_EPISODES_PATIENT,
+        episode_id: of.episode,
+        source: "manual",
+        status: "draft",
+        ai_review_state: null,
+        form_template_id: null,
+        practitioner_id: therapistId,
+        version: 2,
+        supersedes_id: of.record,
+        signed_by: null,
+        signed_at: null,
+        created_at: FICHA_VERSION.day,
+        data: of.data,
+      })).error,
+      "ficha registo version",
     );
   }
 }
