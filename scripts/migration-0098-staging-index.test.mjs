@@ -52,7 +52,13 @@
 //     touches the production credentials; stage 0 compares every file any
 //     later block runs, so a wrong pin stops the sitting before any
 //     connection; the facts table quotes each file's real sha256; and
-//     docs/migration-apply-0098.sha256 is the document's sha256;
+//     docs/migration-apply-0098.sha256 is the document's sha256. EXCEPT THREE,
+//     since 2026-10-01: the guard, the reader and verified-migrate are
+//     compared with the sha256 0098 RAN (GUARD_AS_RUN, READER_AS_RUN,
+//     VM_AS_RUN below), not with the bytes on disk, because 0098 is applied
+//     and its document is the record of what ran. This test no longer checks
+//     those three files' current bytes; the tests that do are named where
+//     the constants are defined;
 //   * 0096's and 0097's files, once the promotion merges main in, are the
 //     bytes the pre-check expects production to have applied.
 //
@@ -1223,7 +1229,9 @@ test("GREEN: both checks reflowed, re-indented and commented stay green on every
 // halts the sitting matters: a file only stage 2 or the closing read compared
 // would halt it AFTER production is written. So, statically:
 //   * every SHA*= a block sets is the real sha256 of the file that block
-//     compares it with, and no block sets a pin it never compares;
+//     compares it with (for the guard, the reader and verified-migrate, the
+//     sha256 0098 ran: see the AS_RUN constants), and no block sets a pin it
+//     never compares;
 //   * each block compares every file it runs BEFORE it touches the
 //     production credentials (stage 0, which has none, before it records the
 //     head it runs from), and stage 0 compares check-journal before it runs
@@ -1259,7 +1267,27 @@ function assertFollowsOnDisk(shaOf) {
   }
 }
 
-/** The real sha256 of every file the document pins, by the path a block or the facts table names it by. */
+/**
+ * The three programs that run with production credentials, AS 0098 RAN THEM
+ * (GREEN, 2026-10-01 18:23 Lisbon, from main at 2a69ed03). 0098 is applied and
+ * this document is the record of what ran, so its pins stay those bytes. The
+ * guard and the reader changed after it, on the fix the lead ruled after
+ * INC-rehearsal-subagent-passed-the-reader-guard (they compare the parsed host
+ * and database name), and verified-migrate is ruled to change for the lock and
+ * statement timeouts. The lead ruled on 2026-10-01: "0098 and 0099 keep their
+ * current pins (bcc43dfb, 867e2823, ea0902f8), no re-pin before 0100." A re-run
+ * of this document's blocks on the new programs would STOP at its own pin
+ * checks, which is the safe direction. Their CURRENT bytes are pinned where a
+ * change to them is a GATE-CHANGE: scripts/assert-production-target.test.mjs
+ * for the guard and the reader, scripts/verified-migrate.test.mjs for
+ * verified-migrate. In this file, "the real sha256" of those three means the
+ * sha256 0098 ran, and so do REAL and the failure messages below.
+ */
+const VM_AS_RUN = "ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261";
+const GUARD_AS_RUN = "bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093";
+const READER_AS_RUN = "867e2823130b1ec1a9f7790522968924ecd872452c48322884c3e22efb5704d1";
+
+/** The sha256 of every file the document pins, by the path a block or the facts table names it by: the real bytes, and the three programs as 0098 ran them. */
 const REAL = Object.freeze({
   [PROMOTED_PATH]: fileSha(MIGRATION_PATH),
   [PENDING_PATH]: fileSha(MIGRATION_PATH),
@@ -1267,9 +1295,9 @@ const REAL = Object.freeze({
   [PATH_0097]: SHA_0097,
   [PRE]: fileSha(PRE),
   [POST]: fileSha(POST),
-  [VM_PATH]: fileSha(VM_PATH),
-  [GUARD_PATH]: fileSha(GUARD_PATH),
-  [READER_PATH]: fileSha(READER_PATH),
+  [VM_PATH]: VM_AS_RUN,
+  [GUARD_PATH]: GUARD_AS_RUN,
+  [READER_PATH]: READER_AS_RUN,
   [CJ_PATH]: fileSha(CJ_PATH),
 });
 
