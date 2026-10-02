@@ -734,9 +734,9 @@ export default async function PatientProfilePage({
                     )}
                     {g.imported && <StatusChip tone="info">{s["patients.fichaGroupImported"]}</StatusChip>}
                     <span className="text-sm tabular-nums text-text-secondary" data-testid="record-group-count">
-                      {g.records.length === 1
+                      {g.evaluations === 1
                         ? s["patients.fichaGroupCountOne"]
-                        : s["patients.fichaGroupCountMany"].replace("{n}", String(g.records.length))}
+                        : s["patients.fichaGroupCountMany"].replace("{n}", String(g.evaluations))}
                     </span>
                     {/* A flex summary drops the browser's own fold marker, so
                         the fold is drawn here (the admin danger zone's pattern). */}
