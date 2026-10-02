@@ -15,7 +15,8 @@
 //     DROP anywhere in its code, no ALTER TABLE, no GRANT, no function (so the
 //     SECURITY DEFINER count cannot move and no GATE-CHANGE is owed);
 //   * the pre-check and the post-check compare the journal against the pinned
-//     sha256 in CODE, not in a comment;
+//     sha256 in CODE, not in a comment, and in the compares that decide a verdict:
+//     has_0100's count in both files, and the post-check's verdict 11;
 //   * the check files write nothing: no statement in their code begins with a
 //     writing verb, and no string in them is a writing statement. The pre-check
 //     opens READ ONLY itself, the post-check through the stage 2 block's
@@ -31,11 +32,16 @@
 //     every block; and the sidecar pins the document;
 //   * every block that runs the target guard compares the guard AND its module
 //     first, and the closing read compares the reader AND the module first;
-//   * R9's daytime arm stands in stage 0 and stage 1, the same lines in both; its
-//     two R9 pins are either a sha256 or the documented placeholder, which can never
-//     match one; a filled SHAGATE is the gate file's real sha256 when the file is on
-//     this branch; and its catalog-only check, RUN here as written in the document,
-//     passes the real migration and refuses planted copies;
+//   * R9's daytime arm stands in stage 0 and stage 1, the same lines in both, and
+//     stage 1 decides closed hours by the clock AND the clinics; its two R9 pins are
+//     either a sha256 or the documented placeholder, which can never match one; a
+//     filled SHAGATE is the gate file's real sha256 when the file is on this branch;
+//     and its catalog-only check, RUN here as written in the document, passes the
+//     real migration and refuses planted copies, R4 round 1's five among them, with
+//     a plant for each of its conditions that only that condition refuses;
+//   * THE EARLIER PRE-CHECK SITTING runs from PR #1520's head as its dispatch names
+//     it, never from main, and writes into its transcript the guard's verdict and
+//     the summary line R9's proof 3 then requires;
 //   * every carry the stage 2 block reads is a row the pre-check prints, and no
 //     carry's name is a substring of another row's check text;
 //   * the blocks carry no `#` line, no `!` but `test !`, and no backslash
@@ -43,7 +49,9 @@
 //
 // Each rule is a function of the texts it reads. The tests run it on the committed
 // files; the CONTROLS run the SAME function on a planted copy and require it to go
-// red.
+// red. Where a function holds several rules, a table gives each rule an input that
+// ONLY that rule refuses, so dropping any one rule turns a test red (the mutation
+// sweep of 2026-10-02 found 52 rules no test would miss).
 //
 // WHAT IT DOES NOT PROVE: that any of it runs. That is the rehearsal's job
 // (docs/migration-apply-0100.md, "Rehearsal"), and CI's db-tests once the file is
@@ -164,6 +172,23 @@ export function aclDefaultProblems(sql) {
   return problems;
 }
 
+/**
+ * The journal compares that DECIDE a verdict name the pinned sha256 in code: has_0100's count, in
+ * both files, and (post-check) verdict 11's newest-row compare. A display CASE naming the same hash
+ * does not count: it decides nothing.
+ */
+export function journalPinProblems(sql, which) {
+  const problems = [];
+  const code = codeOf(sql);
+  if (!new RegExp(`WHERE hash = '${MIGRATION_SHA}'\\)\\s+AS has_0100,`).test(code)) {
+    problems.push("has_0100 does not count the pinned sha256");
+  }
+  if (which === "post" && !code.includes(`CASE WHEN has_0100 = 1 AND newest_hash = '${MIGRATION_SHA}' THEN 'OK' ELSE 'FAIL' END`)) {
+    problems.push("verdict 11 does not compare the newest row with the pinned sha256");
+  }
+  return problems;
+}
+
 /** Verdicts a check file can print OK for. */
 const okVerdicts = (sql) => (codeOf(sql).match(/THEN 'OK' ELSE 'FAIL' END(?: AS verdict)? FROM j/g) ?? []).length;
 
@@ -242,6 +267,26 @@ export function catalogOnlyProgram(block) {
   return line.slice("if node -e '".length, line.length - `' "\${MIG}"; then D2=yes; fi`.length);
 }
 
+/** Stage 1's R9 arm sits after the pre-check and before the apply. */
+export function armPositionProblems(block) {
+  const problems = [];
+  const arm = block.indexOf("THE CLOCK AND THE CLINICS (R9)");
+  if (!(arm > block.indexOf("precheck-0100-maintain-revoke.sql 2>&1"))) problems.push("the R9 arm does not follow the pre-check");
+  if (!(arm < block.indexOf("node packages/db/scripts/verified-migrate.mjs"))) problems.push("the R9 arm does not precede the apply");
+  return problems;
+}
+
+/** Every carry is a row the pre-check prints, and no other row's name contains it (stage 2's carry() matches with index()). */
+export function carryProblems(carries, rowNames) {
+  const problems = [];
+  for (const c of carries) {
+    const hits = rowNames.filter((r) => r.includes(c));
+    if (!hits.includes(c)) problems.push(`the pre-check prints no row named ${c}`);
+    else if (hits.length !== 1) problems.push(`carry ${c} is a substring of ${hits.join(", ")}`);
+  }
+  return problems;
+}
+
 const MIGRATION_PATH = locateMigration((p) => existsSync(join(ROOT, p)));
 const migration = read(MIGRATION_PATH);
 const pre = read(PRE);
@@ -292,13 +337,76 @@ test("CONTROLS: a planted write, DDL, grant, bound change, or a missing or moved
   assert.deepEqual(migrationProblems(migration + "\n/* DELETE, TRUNCATE and CREATE TABLE are not here */\n"), []);
 });
 
+/** The migration with one line added inside the DO loop, before END LOOP. */
+const inLoop = (line) => {
+  assert.equal(migration.split("  END LOOP;").length, 2);
+  return migration.replace("  END LOOP;", `${line}\n  END LOOP;`);
+};
+/** The migration with one more condition on the loop's query, which changes no rule's anchor. */
+const inWhere = (cond) => {
+  assert.equal(migration.split("c.relkind IN ('r', 'p')").length, 2);
+  return migration.replace("c.relkind IN ('r', 'p')", `c.relkind IN ('r', 'p') AND ${cond}`);
+};
+/** The migration with one exact substring replaced; the substring must be there exactly once. */
+const swap = (from, to) => {
+  assert.equal(migration.split(from).length, 2, `not exactly once: ${from}`);
+  return migration.replace(from, () => to);
+};
+
+test("CONTROLS, ONE RULE AT A TIME: each migrationProblems rule is the only one an input breaks", () => {
+  const W = (w) => [`the word ${w}`, inWhere(`c.relname <> '${w}'`), new RegExp(`^a writing or DDL word in the code: ${w}$`)];
+  const cases = [
+    ["the four-statement count", migration + "\nSELECT 1;--> statement-breakpoint\n", /^expected 4 statements, found 5$/],
+    ["statement 1, lock_timeout", swap("SET LOCAL lock_timeout = '5s';", "SET LOCAL lock_timeout = '50s';"), /^statement 1 is not exactly/],
+    ["statement 2, statement_timeout", swap("SET LOCAL statement_timeout = '60s';", "SET LOCAL statement_timeout = '600s';"), /^statement 2 is not exactly/],
+    ["statement 3 opens DO $$", swap("DO $$\n", "DO $x$\n").replace("END\n$$;", () => "END\n$x$;"), /^statement 3 is not the DO loop$/],
+    ["the loop's relkind", swap("c.relkind IN ('r', 'p')", "c.relkind IN ('r')"), /^the loop does not select ordinary and partitioned tables$/],
+    ["the loop's schema (R4 round 1's schema_any plant)", swap("WHERE n.nspname = 'public'", "WHERE true"), /^the loop does not select schema public$/],
+    ["the loop's REVOKE string", swap("'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'REVOKE MAINTAIN ON TABLE %s FROM anon'"), /^the loop does not revoke exactly MAINTAIN from authenticated$/],
+    ["the EXECUTE count, none", swap("    EXECUTE format(", "    PERFORM format("), /^the loop does not EXECUTE exactly one string$/],
+    ["the EXECUTE count, two", inLoop("    EXECUTE 'SELECT 1';"), /^the loop does not EXECUTE exactly one string$/],
+    ["statement 4", swap("REVOKE MAINTAIN ON TABLES FROM authenticated;", "REVOKE TRIGGER ON TABLES FROM authenticated;"), /^statement 4 is not the ALTER DEFAULT PRIVILEGES revoke of MAINTAIN$/],
+    ["FOR ROLE", inWhere("c.relname <> 'FOR ROLE'"), /^the default privilege names a FOR ROLE/],
+    ["SECURITY DEFINER", inWhere("c.relname <> 'SECURITY DEFINER'"), /^the migration names SECURITY DEFINER$/],
+    ["GRANT", inWhere("c.relname <> 'GRANT'"), /^the migration grants something$/],
+    ...["INSERT", "UPDATE", "DELETE", "TRUNCATE", "COPY", "MERGE", "CREATE", "DROP", "ALTER TABLE"].map(W),
+    ["a later statement names lock_timeout", inWhere("c.relname <> 'lock_timeout'"), /^a later statement touches a bound$/],
+    ["a later statement names statement_timeout", inWhere("c.relname <> 'statement_timeout'"), /^a later statement touches a bound$/],
+  ];
+  for (const [name, input, want] of cases) {
+    assert.notEqual(input, migration, `${name}: the input did not change the file`);
+    const got = migrationProblems(input);
+    assert.equal(got.length, 1, `${name}: expected exactly one problem, got ${JSON.stringify(got)}`);
+    assert.match(got[0], want, name);
+  }
+  // Transaction control can only arrive as a fifth statement, so it always comes with the count;
+  // the list it prints is still exact, so dropping the rule or any one of its words goes red.
+  for (const kw of ["BEGIN", "COMMIT", "ROLLBACK", "END", "ABORT", "START TRANSACTION", "SAVEPOINT x", "RELEASE x", "RESET ALL", "DISCARD ALL"]) {
+    assert.deepEqual(migrationProblems(`${migration}\n${kw};--> statement-breakpoint\n`), ["expected 4 statements, found 5", "transaction control or RESET"], kw);
+  }
+  // CONTROL: the same constructions with nothing a rule names pass.
+  assert.deepEqual(migrationProblems(inWhere("c.relname <> 'x'")), []);
+});
+
 test("the pre-check and the post-check compare the journal with the pinned sha256 in code", () => {
-  assert.match(codeOf(pre), new RegExp(`hash = '${MIGRATION_SHA}'`));
-  assert.match(codeOf(post), new RegExp(`hash = '${MIGRATION_SHA}'`));
-  assert.match(codeOf(post), new RegExp(`newest_hash = '${MIGRATION_SHA}'`));
+  assert.deepEqual(journalPinProblems(pre, "pre"), []);
+  assert.deepEqual(journalPinProblems(post, "post"), []);
+  // CONTROLS, one rule at a time. The post-check also names the hash in a display CASE (verdict
+  // 11's value column), which decides nothing, so a wrong hash in either deciding compare must go
+  // red although that CASE still matches.
+  const zeros = "00000000" + MIGRATION_SHA.slice(8);
+  const one = (sql, from, to) => {
+    assert.equal(sql.split(from).length, 2, `not exactly once: ${from}`);
+    return sql.replace(from, () => to);
+  };
+  const v11 = `CASE WHEN has_0100 = 1 AND newest_hash = '${MIGRATION_SHA}' THEN 'OK'`;
+  const has = `WHERE hash = '${MIGRATION_SHA}')          AS has_0100,`;
+  assert.deepEqual(journalPinProblems(one(post, v11, v11.replace(MIGRATION_SHA, zeros)), "post"), ["verdict 11 does not compare the newest row with the pinned sha256"]);
+  assert.deepEqual(journalPinProblems(one(post, has, has.replace(MIGRATION_SHA, zeros)), "post"), ["has_0100 does not count the pinned sha256"]);
+  assert.deepEqual(journalPinProblems(one(pre, has, has.replace(MIGRATION_SHA, zeros)), "pre"), ["has_0100 does not count the pinned sha256"]);
   // CONTROL: the pin parked in a comment does not count.
   const commented = pre.replaceAll(`hash = '${MIGRATION_SHA}'`, "hash = 'x' /* 80f85018 */");
-  assert.doesNotMatch(codeOf(commented), new RegExp(`hash = '${MIGRATION_SHA}'`));
+  assert.deepEqual(journalPinProblems(commented, "pre"), ["has_0100 does not count the pinned sha256"]);
 });
 
 test("the check files write nothing, and each opens READ ONLY", () => {
@@ -315,6 +423,25 @@ test("the check files write nothing, and each opens READ ONLY", () => {
   assert.notDeepEqual(writeProblems(pre + "\nSELECT 'GRANT MAINTAIN ON public.patients TO authenticated';\n"), []);
 });
 
+test("CONTROLS, ONE RULE AT A TIME: each writing verb and each writing string writeProblems names is refused alone", () => {
+  const verbs = ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "CREATE", "ALTER", "DROP", "GRANT", "REVOKE", "COPY", "MERGE", "CALL", "VACUUM", "ANALYZE", "CLUSTER", "REINDEX", "REFRESH", "LOCK", "COMMIT", "SET", "RESET"];
+  for (const v of verbs) {
+    const got = writeProblems(`${v} x;`);
+    assert.equal(got.length, 1, `${v}: ${JSON.stringify(got)}`);
+    assert.match(got[0], /^a writing statement: /, v);
+  }
+  const strings = ["INSERT INTO x", "DELETE FROM x", "UPDATE x SET y = 1", "TRUNCATE x", "MERGE INTO x", "COPY x", "REVOKE x", "GRANT x", "ALTER x"];
+  for (const s of strings) {
+    const got = writeProblems(`SELECT '${s}';`);
+    assert.equal(got.length, 1, `${s}: ${JSON.stringify(got)}`);
+    assert.match(got[0], /^a writing statement in a string: /, s);
+  }
+  // CONTROLS: a plain read, a plain string and a writing word inside a string that is not a statement pass.
+  assert.deepEqual(writeProblems("SELECT 1;"), []);
+  assert.deepEqual(writeProblems("SELECT 'a plain string';"), []);
+  assert.deepEqual(writeProblems("SELECT 'the INSERT INTO path';"), []);
+});
+
 test("the pre-check and the post-check read a NULL relacl as acldefault of its own object type ('s' for a sequence)", () => {
   assert.deepEqual(aclDefaultProblems(pre), []);
   assert.deepEqual(aclDefaultProblems(post), []);
@@ -322,6 +449,14 @@ test("the pre-check and the post-check read a NULL relacl as acldefault of its o
   assert.notDeepEqual(aclDefaultProblems(foreignServer(pre)), []);
   assert.notDeepEqual(aclDefaultProblems(foreignServer(post)), []);
   assert.notDeepEqual(aclDefaultProblems(pre.replace(REL_DEFAULT, "acldefault('r', c.relowner)")), []);
+  // ONE RULE AT A TIME: with REL_DEFAULT present, each form of the FOREIGN SERVER code is refused
+  // alone; without it, the presence rule is refused alone.
+  const S_RULE = "acldefault is given the FOREIGN SERVER code 'S' where a sequence's code is 's'";
+  assert.deepEqual(aclDefaultProblems(`${REL_DEFAULT}\nSELECT acldefault('S', c.relowner);`), [S_RULE]);
+  assert.deepEqual(aclDefaultProblems(`${REL_DEFAULT}\nSELECT CASE WHEN x THEN 'S'::"char" END;`), [S_RULE]);
+  assert.deepEqual(aclDefaultProblems(`${REL_DEFAULT}\nSELECT CASE WHEN 'S'::"char" ELSE y END;`), [S_RULE]);
+  assert.deepEqual(aclDefaultProblems("SELECT acldefault('r', c.relowner);"), ["rel_items does not read a NULL relacl as acldefault of its own object type"]);
+  assert.deepEqual(aclDefaultProblems(`SELECT ${REL_DEFAULT};`), []);
 });
 
 test("the verdict counts the blocks require are the counts the files print", () => {
@@ -330,6 +465,17 @@ test("the verdict counts the blocks require are the counts the files print", () 
   assert.match(blockWith(doc, EARLIER), /\[ "\$\{OKS\}" = 13 \]/);
   assert.match(blockWith(doc, STAGE1), /\[ "\$\{OKS\}" = 13 \]/);
   assert.match(blockWith(doc, STAGE2), /\[ "\$\{OKS\}" = 12 \]/);
+  // R9 proof 3 recounts the earlier transcript against the same 13, in both stages.
+  for (const b of [blockWith(doc, STAGE0), blockWith(doc, STAGE1)]) {
+    assert.ok(b.includes(`[ "$(grep -cE '\\|[[:space:]]*OK[[:space:]]*$' /tmp/0100-precheck-earlier.out)" = 13 ]`));
+  }
+});
+
+test("blockWith finds exactly one block, and throws on none or two", () => {
+  const fence = (body) => "```\n" + body + "\n```\n";
+  assert.equal(blockWith(fence("a MARK") + fence("b"), "MARK"), "a MARK\n");
+  assert.throws(() => blockWith(fence("a MARK") + fence("b MARK"), "MARK"), /found 2/);
+  assert.throws(() => blockWith(fence("a") + fence("b"), "MARK"), /found 0/);
 });
 
 test("every pin is the real file, the given value or an R9 placeholder, and the sidecar pins the document", () => {
@@ -360,12 +506,49 @@ test("R9: the daytime arm stands in stage 0 and stage 1, with the same proof lin
     assert.match(b, /\(t \+ 0\) < 800 \|\| \(t \+ 0\) >= 2100/);
     assert.match(b, /\[ "\$\{D1\}\$\{D2\}\$\{D3\}" = yesyesyes \]/);
   }
+  // Closed hours: stage 0 decides by the clock, which is all it can read; stage 1 by the clock AND
+  // every active clinic's own row, so a weakening to the clock half alone goes red.
+  const decision = (b) => b.split("\n").filter((l) => l.startsWith('if [ "${CLOCK}'));
+  assert.equal(decision(s0).length, 1);
+  assert.equal(decision(s1).length, 1);
+  assert.ok(decision(s0)[0].startsWith('if [ "${CLOCK}" = closed ]; then echo "R9: closed hours by the clock.'));
+  assert.ok(decision(s1)[0].startsWith('if [ "${CLOCK}${CLINICS}" = closedclosed ]; then echo "R9: closed hours, by the clock and by every active clinic'));
   // Stage 1 also reads the clinics' own rows, and the arm sits after the pre-check and before the apply.
   assert.match(s1, /from public\.locations/);
-  const arm = s1.indexOf("THE CLOCK AND THE CLINICS (R9)");
-  assert.ok(arm > s1.indexOf("precheck-0100-maintain-revoke.sql 2>&1") && arm < s1.indexOf("node packages/db/scripts/verified-migrate.mjs"));
+  assert.deepEqual(armPositionProblems(s1), []);
+  // CONTROLS, one rule at a time: the arm moved before the pre-check, or after the apply.
+  const PRE_RUN = "precheck-0100-maintain-revoke.sql 2>&1";
+  const ARM = "THE CLOCK AND THE CLINICS (R9)";
+  const APPLY = "node packages/db/scripts/verified-migrate.mjs";
+  assert.deepEqual(armPositionProblems([PRE_RUN, ARM, APPLY].join("\n")), []);
+  assert.deepEqual(armPositionProblems([ARM, PRE_RUN, APPLY].join("\n")), ["the R9 arm does not follow the pre-check"]);
+  assert.deepEqual(armPositionProblems([PRE_RUN, APPLY, ARM].join("\n")), ["the R9 arm does not precede the apply"]);
   // No date is written into an arm: no 2026 date in either block's code lines.
   for (const b of [s0, s1]) assert.doesNotMatch(b, /\b2026[01]\d[0-3]\d\b/);
+});
+
+test("THE EARLIER PRE-CHECK SITTING runs from PR #1520's named head, never main, and records what R9's proof 3 requires", () => {
+  const e = blockWith(doc, EARLIER);
+  // The head comes from the dispatch's record, is checked against GitHub's PR ref, and is checked out.
+  const at = (s) => e.indexOf(s);
+  for (const s of [
+    "PRHEAD=$(cat /tmp/0100-earlier-head.sha)",
+    "PRNOW=$(git ls-remote origin refs/pull/1520/head | cut -f1)",
+    '[ "${PRNOW}" = "${PRHEAD}" ] ||',
+    "git checkout -q --detach ${PRHEAD}",
+  ]) assert.ok(at(s) > 0, `the earlier block does not carry: ${s}`);
+  assert.ok(at('[ "${PRNOW}" = "${PRHEAD}" ] ||') < at("git checkout -q --detach ${PRHEAD}"));
+  assert.doesNotMatch(e, /origin\/main|merge-base/);
+  // What the transcript holds is what proof 3 reads: the guard's verdict line and the summary.
+  assert.ok(at("node scripts/assert-production-target.mjs 2>&1 | tee -a /tmp/0100-precheck-earlier.new") > 0);
+  const summary = e.match(/^echo "(earlier pre-check summary: [^"]+)" \| tee -a \/tmp\/0100-precheck-earlier\.new$/m)?.[1];
+  assert.equal(summary, "earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL");
+  for (const b of [blockWith(doc, STAGE0), blockWith(doc, STAGE1)]) {
+    const d3 = b.split("\n").find((l) => l.endsWith("then D3=yes; fi"));
+    assert.ok(d3.includes("grep -qxF 'target verified: production, session pooler.' /tmp/0100-precheck-earlier.out"));
+    assert.ok(d3.includes(`grep -qxF '${summary}' /tmp/0100-precheck-earlier.out`));
+    assert.ok(d3.includes(`[ "$(grep -cE '\\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0100-precheck-earlier.out)" = 0 ]`));
+  }
 });
 
 test("R9 proof 2, run as the document writes it, passes the migration and refuses planted copies", () => {
@@ -393,8 +576,47 @@ test("R9 proof 2, run as the document writes it, passes the migration and refuse
       const r = runOn(plant);
       assert.equal(r.status, 1, `not refused: ${plant.slice(-100)}\n${r.stdout}`);
     }
-    // A comment naming the words stays catalog-only.
+    // R4 ROUND 1's FIVE PLANTS, each one line inside the DO loop, each passed (exit 0) by the first
+    // version of this check. Each is now refused, and by the forbidden-word condition.
+    for (const [line, word] of [
+      ["    LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;", "LOCK"],
+      ["    GRANT ALL ON public.appointments TO anon;", "GRANT"],
+      ["    ALTER POLICY p ON public.appointments USING (true);", "ALTER"],
+      ["    REVOKE SELECT ON public.appointments FROM authenticated;", "REVOKE"],
+      ["    PERFORM pg_sleep(3600);", "PERFORM"],
+    ]) {
+      const r = runOn(inLoop(line));
+      assert.equal(r.status, 1, `not refused: ${line}\n${r.stdout}`);
+      assert.match(r.stdout, new RegExp(`forbidden words 1 \\[${word}\\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$`, "m"), line);
+    }
+    // EVERY forbidden word, alone, inside the loop.
+    const FORBIDDEN = ["GRANT", "REVOKE", "LOCK", "PERFORM", "ALTER", "CREATE", "DROP", "COMMENT", "SET", "COPY", "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE", "RESET", "CALL", "VACUUM", "ANALYZE", "CLUSTER", "REINDEX", "REFRESH"];
+    for (const w of FORBIDDEN) {
+      const r = runOn(inLoop(`    ${w} x;`));
+      assert.equal(r.status, 1, `not refused: ${w}\n${r.stdout}`);
+      assert.match(r.stdout, new RegExp(`forbidden words 1 \\[${w}\\]`), w);
+    }
+    // ONE CONDITION AT A TIME: an input that only that condition of `ok` refuses.
+    const statement = (r) => r.stdout.match(/statements \[([^\]]*)\]/)?.[1];
+    const realShape = statement(real);
+    const only = {
+      shape: runOn(migration + "\nSELECT 1;--> statement-breakpoint\n"),
+      denied: runOn(inLoop("    LOCK TABLE public.appointments IN ACCESS EXCLUSIVE MODE;")),
+      execs: runOn(inLoop("    EXECUTE 'SELECT 1';")),
+      revoke: runOn(swap("'REVOKE MAINTAIN ON TABLE %s FROM authenticated'", "'SELECT 1 FROM %s'")),
+    };
+    for (const [cond, r] of Object.entries(only)) assert.equal(r.status, 1, `${cond}: not refused\n${r.stdout}`);
+    assert.notEqual(statement(only.shape), realShape);
+    assert.match(only.shape.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$/m);
+    for (const cond of ["denied", "execs", "revoke"]) assert.equal(statement(only[cond]), realShape, cond);
+    assert.match(only.denied.stdout, /forbidden words 1 \[LOCK\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: NOT PROVEN$/m);
+    assert.match(only.execs.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 2, its string the MAINTAIN revoke true: NOT PROVEN$/m);
+    assert.match(only.revoke.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke false: NOT PROVEN$/m);
+    // PASSING CONTROLS: a comment naming the words, outside the loop or inside it, stays catalog-only.
     assert.equal(runOn(migration + "\n/* DELETE, TRUNCATE and CREATE TABLE */\n").status, 0);
+    const commented = runOn(inLoop(`    /* ${FORBIDDEN.join(" ")} */\n    -- LOCK TABLE x; GRANT ALL ON x TO anon;`));
+    assert.equal(commented.status, 0, commented.stdout);
+    assert.match(commented.stdout, /forbidden words 0 \[\], DO loops 1, EXECUTEs in it 1, its string the MAINTAIN revoke true: CATALOG-ONLY$/m);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -417,11 +639,12 @@ test("every carry stage 2 reads is a row the pre-check prints, and no carry name
   const carries = [...blockWith(doc, STAGE2).matchAll(/\$\(carry ([a-z0-9_]+)\)/g)].map((m) => m[1]);
   assert.equal(carries.length, 10);
   const rowNames = [...codeOf(pre).matchAll(/SELECT '([^']+)'(?: AS check)?,/g)].map((m) => m[1]);
-  for (const c of carries) {
-    assert.ok(rowNames.includes(c), `the pre-check prints no row named ${c}`);
-    const hits = rowNames.filter((r) => r.includes(c));
-    assert.deepEqual(hits, [c], `carry ${c} is a substring of ${hits.join(", ")}`);
-  }
+  assert.deepEqual(carryProblems(carries, rowNames), []);
+  // CONTROLS, one rule at a time: a carry no row prints, and a carry hidden inside another row's name.
+  assert.deepEqual(carryProblems(["tables_before"], ["tables_count_before"]), ["the pre-check prints no row named tables_before"]);
+  assert.deepEqual(carryProblems(["policies_md5"], ["policies_md5", "INFO policies_md5 again"]), [
+    "carry policies_md5 is a substring of policies_md5, INFO policies_md5 again",
+  ]);
 });
 
 test("the five blocks are there, in order, and carry no # line, no ! but test !, and no backslash continuation", () => {

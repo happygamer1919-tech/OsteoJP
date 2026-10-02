@@ -1,14 +1,15 @@
 # 0100: apply the MAINTAIN revoke from `authenticated`
 
-**NOT READY. Seven things happen first, in order, and an eighth before any sitting inside clinic hours; none of them is GREEN's (see "NOT READY" below). Until the guard pair (#1508, #1509) is on main, stage 0 STOPs on the guard and reader pins, which is the safe direction.**
+**NOT READY. Seven things happen first, in order; a sitting inside clinic hours needs three more (steps 6 to 8), all of them before the merge (see "NOT READY" below). Until the guard pair (#1508, #1509) is on main, stage 0 STOPs on the guard and reader pins, which is the safe direction.**
 
 **Status: AUTHORED, PENDING. NOT PROMOTED. NOT APPLIED.** One migration,
 `packages/db/migrations-pending/NEXT-AFTER-0099_revoke_maintain.sql`, which the promotion
 renames, byte for byte, to `packages/db/migrations/0100_revoke_maintain.sql`. It is applied
 from `origin/main` at the PR's merge commit, after the PR has merged, as 0099 was. It is
 the catalog-only pilot of the SET LOCAL gate (S-1001-A R2). Five blocks, each pasted whole,
-on its own and in order: THE EARLIER PRE-CHECK SITTING (READ ONLY, in its own sitting, and
-needed only for a sitting inside clinic hours), then, in the apply sitting, stage 0 (the
+on its own and in order: THE EARLIER PRE-CHECK SITTING (READ ONLY, in its own sitting BEFORE
+the PR merges, from the PR's head commit, and needed only for a sitting inside clinic hours),
+then, in the apply sitting, from the merge commit, stage 0 (the
 promotion, the files, the clock and the head it runs from), stage 1 (the HEAD CHECK, the
 pre-check, the clock and the clinics, and the apply), stage 2 (the post-check) and the
 closing journal read. One rule governs every halt, in these words here and in GREEN's
@@ -33,7 +34,7 @@ governs THE EARLIER PRE-CHECK SITTING too.
 the owner's dispatch naming this migration by filename (`CLAUDE.md`, "Who applies
 migrations"). The lane that wrote this document never runs it.
 
-## NOT READY: what must happen first, in this order, and none of it by GREEN
+## NOT READY: what must happen first, in this order, and none of it by GREEN but step 7
 
 1. **The guard pair merges: #1508 (the tests, a GATE-CHANGE, branch
    `sec/INC-guard-tests-GATE-CHANGE`) and #1509 (the code, branch `sec/INC-guard-parse-host-db`).** It changes `scripts/assert-production-target.mjs` and
@@ -64,17 +65,35 @@ migrations"). The lane that wrote this document never runs it.
 5. **CI is green on the promoted head,** the required checks and `db-tests` (which applies 0100
    with every other migration on a real Supabase stack), and the SET LOCAL gate reads the
    promoted file in scope and passing.
-6. **The owner merges the PR**, and freezes merges to main from that merge until GREEN's report
+6. **ONLY FOR A SITTING INSIDE CLINIC HOURS: R9 is recorded in `CLAUDE.md` on main before any
+   dispatch on the daytime path,** the earlier pre-check's (step 7) and a daytime apply's
+   (step 10). GREEN reads `CLAUDE.md`, which still says "Sittings only while the clinics are
+   closed." (the owner's ruling of 2026-09-27), and would rightly stop a daytime sitting on it.
+   SOLO's B4 docs PR carries R9 into it, and it opens after #1509; this document does not edit
+   `CLAUDE.md`. **A JUDGMENT, NOT A RULING:** the earlier pre-check's dispatch counts as a
+   daytime dispatch here, because it exists only for a daytime apply and GREEN would read the
+   closed-hours sentence against it; the lead may rule it out of the requirement.
+7. **ONLY FOR A SITTING INSIDE CLINIC HOURS, BEFORE THE MERGE: GREEN runs THE EARLIER PRE-CHECK
+   SITTING from a PINNED COMMIT of this PR's branch,** on its own dispatch, in a sitting of its
+   own, the way the two read-only measurement dispatches ran: the dispatch names PR #1520's
+   recorded head by its full sha and records it in `/tmp/0100-earlier-head.sha`; the block
+   halts unless that sha is PR #1520's head on GitHub, checks it out with
+   `git checkout --detach`, and compares every file it runs by sha256 before it runs any.
+   `git merge-base --is-ancestor` is not required: the commit is not on main yet. GREEN reports
+   the `PRECHECK_EARLIER=<sha256>` line the block prints.
+8. **ONLY FOR A SITTING INSIDE CLINIC HOURS, BEFORE THE MERGE: SOLO records that sha256 in this
+   document, ON THE BRANCH,** as `PRECHECK_EARLIER` in every block that carries it. That is an
+   amendment, and under R8 it gets its own R4 round on the changed bytes, and CI green on the
+   amended head, before the owner merges. The document on main is then final, and the apply
+   sitting runs from the merge commit exactly as a closed-hours sitting does. A closed-hours
+   sitting needs none of steps 6 to 8.
+9. **The owner merges the PR**, and freezes merges to main from that merge until GREEN's report
    is in (SOLO disarms every armed PR first).
-7. **SOLO fills GREEN's dispatch:** the merge commit's sha, this document's sha256, and a run
-   window. A window inside clinic hours is allowed only under R9, and this document's blocks
-   decide it by machine; the dispatch's own CLOCK CHECK must carry the same rule, not the
-   closed-hours-only rule of earlier dispatches, or it will STOP a daytime sitting first.
-8. **ONLY FOR A SITTING INSIDE CLINIC HOURS:** after step 6, GREEN runs THE EARLIER PRE-CHECK
-   SITTING on its own dispatch, in a sitting of its own, and reports the
-   `PRECHECK_EARLIER=<sha256>` line it prints. SOLO records that sha256 here as
-   `PRECHECK_EARLIER` in every block that carries it, which is an amendment with its own R4
-   round (R8), merged before the apply sitting. A closed-hours sitting needs none of this.
+10. **SOLO fills GREEN's dispatch for the apply sitting:** the merge commit's sha, this
+    document's sha256, and a run window. A window inside clinic hours is allowed only under R9,
+    after steps 6 to 8, and this document's blocks decide it by machine; the dispatch's own
+    CLOCK CHECK must carry the same rule, not the closed-hours-only rule of earlier dispatches,
+    or it will STOP a daytime sitting first.
 
 | Fact | Value |
 |---|---|
@@ -84,15 +103,15 @@ migrations"). The lane that wrote this document never runs it.
 | Journal | `idx 97`, tag `0100_revoke_maintain`, `when` 1788502100000 (0099's 1788502000000 plus 100000). Stage 0 asserts both `when` values and the order. Production's journal goes 97 to 98 |
 | Mirror | `supabase/migrations/0100_revoke_maintain.sql`, written by `scripts/sync-supabase-migrations.mjs` and checked by content by `scripts/check-journal.mjs`, which stage 0 runs with `node` directly after asserting its sha256 |
 | Must follow | `0099`, the TRUNCATE, TRIGGER, REFERENCES revoke (#1397), applied 2026-10-01 21:15 Lisbon, body sha256 `fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b`. Stage 0 finds it at `idx 96` by its journal tag and asserts its bytes; the pre-check finds it by hash as production's newest row |
-| Runs from | `origin/main`, when it IS the PR's merge commit. Stage 0 records the sha `origin/main` resolves to in `/tmp/0100-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stage 1 HALTS if `origin/main` has moved since (the HEAD CHECK) |
+| Runs from | **The apply sitting** (stages 0 to 2 and the closing read): `origin/main`, when it IS the PR's merge commit. Stage 0 records the sha `origin/main` resolves to in `/tmp/0100-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stage 1 HALTS if `origin/main` has moved since (the HEAD CHECK). **THE EARLIER PRE-CHECK SITTING** (a daytime sitting only, NOT READY step 7): BEFORE the merge, from PR #1520's head, by the full sha its own dispatch names and records in `/tmp/0100-earlier-head.sha`. The block halts unless `git ls-remote origin refs/pull/1520/head` reads that same sha, checks it out detached, and compares every file it runs by sha256 first. It does not run `git merge-base --is-ancestor`: the commit is not on main yet |
 | This document | `docs/migration-apply-0100.md`, pinned by `docs/migration-apply-0100.sha256` and asserted by every block; GREEN's dispatch pins its sha256 on its own and checks it by machine |
 | Pre-check | `scripts/db/precheck-0100-maintain-revoke.sql`, READ ONLY, 13 verdicts each with its control, 8 carries, 3 INFO rows, `-v prev_hash` and `-v prev_when` required, sha256 `d68ca1a2f791cd9f15b8f5466ae068b6cf0cfd23ab1af6f03891854100264d33` |
 | Post-check | `scripts/db/postcheck-0100-maintain-revoke.sql`, READ ONLY, 12 verdicts, nine carries in, sha256 `3a77cca47927845fa7cc6e3c665597882a35492809cfed2b3633a759e42c846f` |
 | Behaviour check | none, on purpose: see "No behaviour check, and why" |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261` (unchanged since 0099); `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387`; and the module both of the last two import, `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c`. The last three are the guard pair's NEW bytes, read from `origin/sec/INC-guard-parse-host-db` on 2026-10-02; every block that runs one compares it, and the module, first |
 | The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59`. It imports nothing but `node:` builtins |
-| The R9 pins | `SHAGATE`, the sha256 of `scripts/migration-timeouts.test.mjs` on main (a PLACEHOLDER until #1510 merges and SOLO fills it, step 2); `PRECHECK_EARLIER`, the sha256 of the earlier pre-check's recorded output (a PLACEHOLDER until that sitting runs, step 8). Each placeholder carries letters a sha256 never has, so it can never match, and the daytime arm fails closed |
-| Not pinned, and why | what the pinned programs load in turn: drizzle-kit and the rest of `node_modules`, and `packages/db/drizzle.config.ts` (0094 to 0099 did not pin them either). Their tree is fixed instead: GREEN's BEFORE YOU START requires `origin/main` to BE the PR's merge commit, and the HEAD CHECK halts on any other head before the apply |
+| The R9 pins | `SHAGATE`, the sha256 of `scripts/migration-timeouts.test.mjs` on main (a PLACEHOLDER until #1510 merges and SOLO fills it, step 2); `PRECHECK_EARLIER`, the sha256 of the earlier pre-check's recorded output (a PLACEHOLDER until that sitting runs before the merge and SOLO records it on the branch, steps 7 and 8). Each placeholder carries letters a sha256 never has, so it can never match, and the daytime arm fails closed |
+| Not pinned, and why | what the pinned programs load in turn: drizzle-kit and the rest of `node_modules`, and `packages/db/drizzle.config.ts` (0094 to 0099 did not pin them either). Their tree is fixed instead, by commit. **The apply sitting's:** GREEN's BEFORE YOU START requires `origin/main` to BE the PR's merge commit, and the HEAD CHECK halts on any other head before the apply. **THE EARLIER PRE-CHECK SITTING's:** the full sha its dispatch names, which the block checks against PR #1520's head on GitHub before the checkout. That sitting loads no `node_modules`: it runs psql, the guard, and the guard's module, and the guard imports only that module, which imports nothing |
 | Run window | named by GREEN's dispatch, never here: its CLOCK CHECK records it in `/tmp/0100-window.ok` with the sha stage 0 recorded, as three Lisbon times `YYYYMMDDHHMM` (opens, the last minute stage 1 may start, ends). Stage 1 refuses to start outside it and checks again just before the apply; stage 2 and the closing read refuse at or after its end. Stage 0 removes the record |
 | What it changes | Two `SET LOCAL` lines (`lock_timeout` 5s, `statement_timeout` 60s, for this transaction only). On every ordinary and partitioned table in `public`: `REVOKE MAINTAIN ... FROM authenticated`. Then `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE MAINTAIN ON TABLES FROM authenticated`, for the role that runs it (`postgres`), so the next `CREATE TABLE` does not re-grant it |
 | What it never touches | every policy, every function (so the SECURITY DEFINER count stays where it is: **no GATE-CHANGE**), every column, every row, every table's definition, `SELECT`, `INSERT`, `UPDATE` and `DELETE` for every role, and every privilege of every other role. The post-check proves each |
@@ -103,7 +122,9 @@ with `shasum -a 256 -c` before it trusts a pin written here. The sidecar sits on
 head as the document, so a main that moved to a new document and a new sidecar together
 would pass that check. **GREEN's dispatch closes that by machine,** as it did for 0099: it
 pins this document's sha256 on its own and checks it against the `origin/main` it resolves.
-From stage 0 on, the HEAD CHECK halts on any moved main before the apply.
+From stage 0 on, the HEAD CHECK halts on any moved main before the apply. The earlier
+pre-check's dispatch does the same against the PR head it names, whose document is the one
+before `PRECHECK_EARLIER` is filled.
 
 **There is no `#` line inside any block,** every parameter a colon follows is braced,
 there are no backslash continuations and no `!` except `test !`. The blocks are pasted into
@@ -249,29 +270,57 @@ closed hours. Propose the stage 0 arm in 0100's document; R4 covers it."
      recorded `origin/main` sha and its sha256 equals `SHAGATE`. #1510 is not merged, so
      `SHAGATE` is a placeholder that can never match: the arm fails closed (closed hours
      only) until SOLO fills it, in an amendment with its own R4 round (NOT READY step 2).
-  2. **The migration is catalog-only.** A `node -e` check reads the migration file on disk,
-     strips its comments, and requires: exactly four statements, which are the two SET LOCAL
-     lines, the `DO` loop and the `ALTER DEFAULT PRIVILEGES` line, in that order; not one of
-     the words INSERT, UPDATE, DELETE, TRUNCATE, COPY, MERGE, CREATE or DROP, and no
-     `ALTER TABLE`, anywhere in the code; one `DO` loop, one `EXECUTE` in it, and its string
-     the MAINTAIN revoke. The file's bytes are pinned, so this cannot change between sittings;
-     the arm proves it anyway, because R9 says "proven".
+  2. **The migration is catalog-only. It is proven first by `SHA0100`:** every block of the
+     apply sitting asserts, BEFORE the arm runs, that the migration on disk is the pinned,
+     reviewed bytes (sha256 `80f85018...6106`), and those bytes are the four statements of
+     section 1 and nothing else. The arm then runs a `node -e` check on the file. **That check
+     is a shape check, not the proof:** it keeps the arm honest as a template for later
+     migrations, whose bytes will be new. It strips the comments and requires: exactly four
+     statements, which are the two SET LOCAL lines, the `DO` loop and
+     `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE MAINTAIN ON TABLES FROM authenticated`,
+     in that order; one `DO` loop, exactly one `EXECUTE` in it, and that `EXECUTE` the MAINTAIN
+     revoke from `authenticated`; and, with those allowed pieces taken out once each, not one
+     of the words GRANT, REVOKE, LOCK, PERFORM, ALTER, CREATE, DROP, COMMENT, SET, COPY,
+     INSERT, UPDATE, DELETE, MERGE or TRUNCATE anywhere in what is left, the `DO` body
+     included, nor RESET, CALL, VACUUM, ANALYZE, CLUSTER, REINDEX or REFRESH. **A JUDGMENT, NOT
+     A RULING:** those last seven words are SOLO's addition to the list R4 named, because each
+     reaches the session or a table beyond the catalogue (a reset, a procedure call, or the
+     very MAINTAIN commands this migration takes away); the lead may trim them. The five
+     plants R4 round 1 put inside the loop (a `LOCK TABLE`, a `GRANT ALL ... TO anon`, an
+     `ALTER POLICY ... USING (true)`, a `REVOKE SELECT ... FROM authenticated` and a
+     `PERFORM pg_sleep(3600)`), each of which the first version passed, are each refused now
+     (`scripts/maintain-revoke-0100.test.mjs`). **What the shape check cannot see:** a function
+     called through `SELECT ... INTO` inside the loop, or the loop's query widened to another
+     schema. No word list names every function. `SHA0100` refuses both for this file, in every
+     block and in CI.
   3. **The read-only pre-check ran on production in an EARLIER sitting, output recorded.**
-     THE EARLIER PRE-CHECK SITTING (below) runs the pinned pre-check against production in a
-     sitting of its own and keeps its transcript at `/tmp/0100-precheck-earlier.out`. SOLO
-     records that file's sha256 here as `PRECHECK_EARLIER` (a placeholder until then; NOT
-     READY step 8). The arm requires the file to exist, to hash to `PRECHECK_EARLIER`, to open
-     with the line naming the pinned pre-check, to be older than this sitting's start record
-     (`/tmp/0100-sitting.start`, which stage 0 writes first) and to be more than 30 minutes
-     old.
+     THE EARLIER PRE-CHECK SITTING (below) runs the pinned pre-check against production BEFORE
+     the merge, from PR #1520's head, in a sitting of its own, and keeps its transcript at
+     `/tmp/0100-precheck-earlier.out`. SOLO records that file's sha256 here as
+     `PRECHECK_EARLIER`, on the branch, before the merge (a placeholder until then; NOT READY
+     steps 7 and 8). The arm requires the file to exist; to hash to `PRECHECK_EARLIER`; to open
+     with the line naming the pinned pre-check; to carry the target guard's verdict line
+     `target verified: production, session pooler.`; to carry exactly 13 `OK` verdict rows, no
+     `FAIL` row, and the block's summary line
+     `earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL`; to be older than this sitting's
+     start record (`/tmp/0100-sitting.start`, which stage 0 writes first); and to be more than
+     30 minutes old. **A JUDGMENT, NOT A RULING:** the 30-minute floor and the
+     older-than-this-sitting's-start test are SOLO's reading of R9's "an earlier sitting"; they
+     guard against a pre-check run moments before, or inside, the apply sitting being passed off
+     as an earlier one, and the lead may set another value.
 - **A machine restart deletes `/tmp`,** and macOS also clears old files from it. If the earlier
-  transcript is gone or changed, proof 3 reads `no` and the arm fails closed; the cure is a new
-  earlier sitting and a new `PRECHECK_EARLIER`, never a copy from elsewhere.
+  transcript is gone or changed, proof 3 reads `no` and the arm fails closed. Before the merge,
+  the cure is a new earlier sitting and a new `PRECHECK_EARLIER` in the same amendment. After the
+  merge the document on main is final: the sitting waits for closed hours, or a new amendment
+  goes through its own PR and R4 round. Never a copy from elsewhere.
 - **No date is written into any arm.** R9 replaces the date-locked owner override arms of
   0097 to 0099; this document has none.
-- **Why 0100 qualifies on (2) at all:** it is catalog-only by construction (section 1), and it
-  takes no table lock (measured). A sitting that writes rows, or locks a table reception
-  writes, is not what R9 opens.
+- **The arm implements ONLY R9 (2)'s catalog-only option, by SOLO's choice.** 0100 is
+  catalog-only by construction (section 1), and it takes no table lock (measured). R9's other
+  option, "touches no table reception writes", has no machine proof in this arm: a later
+  migration that relies on it needs its own machine proof, in its own document, before a
+  daytime arm may pass on it. A sitting that writes rows, or locks a table reception writes, is
+  not what this arm opens.
 
 ## Merged before the apply, and why that is safe here
 
@@ -306,7 +355,9 @@ on 2026-10-02:
 | `scripts/production-target.mjs` | `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` | absent |
 
 **Until the pair is on main, stage 0 STOPs on those pins,** and so does THE EARLIER PRE-CHECK
-SITTING: the guard module is not on disk, or the guard or the reader is not the approved file.
+SITTING, which runs from this PR's head and so needs the pair merged into the branch as well
+(NOT READY step 3 merges `origin/main` in): the guard module is not on disk, or the guard or
+the reader is not the approved file.
 That is the safe direction: nothing reaches production on the old guard. If the pair changes
 again before it merges (a review fix), these three pins, this document's sha256, its sidecar
 and GREEN's dispatch move together. `verified-migrate.mjs` and `check-journal.mjs` are the same
@@ -318,8 +369,10 @@ and then `target verified: production, session pooler.`; it exits 2 on any refus
 
 ## The HEAD CHECK, and running from main
 
-No block reads a branch, and there is no separate HEAD CHECK to paste: the machine runs it
-inside every block.
+No block of the apply sitting reads a branch, and there is no separate HEAD CHECK to paste:
+the machine runs it inside every block. THE EARLIER PRE-CHECK SITTING reads one ref,
+`refs/pull/1520/head`, and only to prove that the commit its dispatch names is still the PR's
+head before it checks that commit out.
 
 - **Stage 0** refuses once stage 1 has applied, checks that the apply worktree is clean,
   removes the previous sha, run window and start records, writes this sitting's start record,
@@ -342,61 +395,78 @@ inside every block.
 - **A moved main before the apply ends the sitting.** Nothing is applied, both shas go in the
   report, and whether and when to start again is the lead's call.
 
-## THE EARLIER PRE-CHECK SITTING. READ ONLY, any hour, and only for a daytime sitting
+## THE EARLIER PRE-CHECK SITTING. READ ONLY, any hour, BEFORE the merge, and only for a daytime sitting
 
-Run in a sitting of its own, on its own dispatch, after the PR has merged (the files must be on
-main) and before the apply sitting. It writes nothing: the pre-check opens its own READ ONLY
-transaction and rolls it back. Its transcript stays at `/tmp/0100-precheck-earlier.out` on the
-apply machine, untouched, until the apply sitting reads it.
+Run in a sitting of its own, on its own dispatch, BEFORE the PR merges (NOT READY step 7), from
+a PINNED COMMIT of this PR's branch: PR #1520's recorded head, which the dispatch names by its
+full sha and records in `/tmp/0100-earlier-head.sha` before this block is pasted. The block
+halts unless that sha is PR #1520's head on GitHub now, checks it out detached, and compares
+every file it runs by sha256 before it runs any. It does not require the commit to be on main:
+it is not, yet. It writes nothing: the pre-check opens its own READ ONLY transaction and rolls
+it back. Its transcript stays at `/tmp/0100-precheck-earlier.out` on the apply machine,
+untouched, until the apply sitting reads it.
 
 ```
 (
 set -eo pipefail
 DOCPIN=docs/migration-apply-0100.sha256
+MIG=packages/db/migrations/0100_revoke_maintain.sql
+SHA0100=80f85018e8ed35922ad546b8a28e96d80e894b04f2a1f09f201d00b601ff6106
 SHAPREV=fbc5e5458bb6ec3be6a5f2aeb558638b53ce2c49d5d58eca3a576cd231b0163b
 SHAPRE=d68ca1a2f791cd9f15b8f5466ae068b6cf0cfd23ab1af6f03891854100264d33
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-echo "--- 0100 EARLIER PRE-CHECK SITTING: READ ONLY, nothing is applied in this sitting"
+echo "--- 0100 EARLIER PRE-CHECK SITTING: READ ONLY, nothing is applied in this sitting, and it runs BEFORE the merge, from PR #1520's head"
 test ! -f /tmp/0100-applied.ok || { echo "STOP: /tmp/0100-applied.ok exists, so 0100 has been applied on this machine, and an earlier pre-check now proves nothing. Nothing was run"; exit 1; }
 STRAY=$(git status --short)
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean"; echo "${STRAY}"; exit 1; }
 rm -f /tmp/0100-precheck-earlier.new
+test -f /tmp/0100-earlier-head.sha || { echo "STOP: the dispatch recorded no PR head in /tmp/0100-earlier-head.sha. Nothing was run"; exit 1; }
+PRHEAD=$(cat /tmp/0100-earlier-head.sha)
+echo "${PRHEAD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the recorded PR head is not a full 40-character sha [${PRHEAD}]. Nothing was run"; exit 1; }
 git fetch origin --prune
-MAIN=$(git rev-parse origin/main)
-[ "$(git cat-file -t ${MAIN})" = commit ] || { echo "STOP: origin/main does not resolve to a commit"; exit 1; }
-git checkout -q --detach ${MAIN}
-[ "$(git rev-parse HEAD)" = "${MAIN}" ] || { echo "STOP: the worktree is not on origin/main after the checkout"; exit 1; }
-echo "the earlier pre-check runs from origin/main ${MAIN}"
-test -f ${DOCPIN} || { echo "STOP: the document pin is not on disk at origin/main"; exit 1; }
+PRNOW=$(git ls-remote origin refs/pull/1520/head | cut -f1)
+echo "PR #1520's head, as the dispatch names it: ${PRHEAD}"
+echo "PR #1520's head on GitHub now:             ${PRNOW}"
+[ "${PRNOW}" = "${PRHEAD}" ] || { echo "STOP: PR #1520's head on GitHub is not the commit the dispatch names, so the branch moved or the dispatch is stale. Nothing was run"; exit 1; }
+[ "$(git cat-file -t ${PRHEAD})" = commit ] || { echo "STOP: ${PRHEAD} does not resolve to a commit after the fetch. Nothing was run"; exit 1; }
+git checkout -q --detach ${PRHEAD}
+[ "$(git rev-parse HEAD)" = "${PRHEAD}" ] || { echo "STOP: the worktree is not on the PR head after the checkout. Nothing was run"; exit 1; }
+echo "the earlier pre-check runs from PR #1520's head ${PRHEAD}, before the merge"
+test -f ${DOCPIN} || { echo "STOP: the document pin is not on disk at the PR head"; exit 1; }
 shasum -a 256 -c ${DOCPIN} || { echo "STOP: this document is not the approved one"; exit 1; }
-test -f packages/db/migrations/0100_revoke_maintain.sql || { echo "STOP: 0100 is not on disk at origin/main, so the PR has not merged. Nothing was run"; exit 1; }
+test -f ${MIG} || { echo "STOP: 0100 is not promoted at the PR head (NOT READY step 3). Nothing was run"; exit 1; }
 test -f scripts/db/precheck-0100-maintain-revoke.sql || { echo "STOP: the pre-check is not on disk"; exit 1; }
 test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
-test -f scripts/production-target.mjs || { echo "STOP: scripts/production-target.mjs is not on disk, so the guard pair (#1508, #1509) has not merged. Nothing was run"; exit 1; }
+test -f scripts/production-target.mjs || { echo "STOP: scripts/production-target.mjs is not on disk at the PR head, so the guard pair (#1508, #1509) is not merged into the branch. Nothing was run"; exit 1; }
+[ "$(shasum -a 256 ${MIG} | cut -d' ' -f1)" = "${SHA0100}" ] || { echo "STOP: 0100 at the PR head is not the approved body. Nothing was run"; exit 1; }
 [ "$(shasum -a 256 scripts/db/precheck-0100-maintain-revoke.sql | cut -d' ' -f1)" = "${SHAPRE}" ] || { echo "STOP: the pre-check on disk is not the approved file"; exit 1; }
-[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file. Until the guard pair is on main this is expected, and nothing was run"; exit 1; }
+[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file. Until the guard pair is on main and merged into the branch this is expected, and nothing was run"; exit 1; }
 [ "$(shasum -a 256 scripts/production-target.mjs | cut -d' ' -f1)" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the approved file"; exit 1; }
 T99=$(node -e "const j=JSON.parse(require('fs').readFileSync('packages/db/migrations/meta/_journal.json','utf8'));const p=j.entries[96];process.stdout.write(p&&p.idx===96&&p.tag==='0099_revoke_truncate_trigger_references'?p.tag:'none')")
 W99=$(node -e "const j=JSON.parse(require('fs').readFileSync('packages/db/migrations/meta/_journal.json','utf8'));const p=j.entries[96];process.stdout.write(p&&p.idx===96&&p.tag==='0099_revoke_truncate_trigger_references'?String(p.when):'none')")
-echo "${W99}" | grep -qxE '[0-9]{13}' || { echo "STOP: 0099's journal when did not parse from the journal at origin/main. Nothing was run"; exit 1; }
+echo "${W99}" | grep -qxE '[0-9]{13}' || { echo "STOP: 0099's journal when did not parse from the journal at the PR head. Nothing was run"; exit 1; }
 test -f packages/db/migrations/${T99}.sql || { echo "STOP: the file of journal idx 96 is not on disk. Nothing was run"; exit 1; }
 [ "$(shasum -a 256 packages/db/migrations/${T99}.sql | cut -d' ' -f1)" = "${SHAPREV}" ] || { echo "STOP: 0099 on disk is not the file this document pins. Nothing was run"; exit 1; }
 echo "0099: packages/db/migrations/${T99}.sql, sha256 ${SHAPREV}, journal when ${W99}"
 
-echo "--- the production target, asserted by the guard, not by the prompt"
-set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
-node scripts/assert-production-target.mjs
-
-echo "--- the pre-check. READ ONLY. Its transcript is the record R9's proof 3 reads, so it is kept whole"
+echo "--- the transcript R9's proof 3 reads: the pinned pre-check's name, the head, the guard's verdict, the pre-check whole and its summary"
 echo "earlier pre-check ${SHAPRE}" > /tmp/0100-precheck-earlier.new
-echo "from origin/main ${MAIN}, Lisbon $(TZ=Europe/Lisbon date '+%Y-%m-%d %H:%M')" >> /tmp/0100-precheck-earlier.new
+echo "from PR #1520's head ${PRHEAD}, before the merge, Lisbon $(TZ=Europe/Lisbon date '+%Y-%m-%d %H:%M')" >> /tmp/0100-precheck-earlier.new
+
+echo "--- the production target, asserted by the guard, not by the prompt. Its output goes into the transcript"
+set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
+node scripts/assert-production-target.mjs 2>&1 | tee -a /tmp/0100-precheck-earlier.new
+grep -qxF 'target verified: production, session pooler.' /tmp/0100-precheck-earlier.new || { echo "STOP: the guard's verdict line is not in the transcript. Nothing is recorded"; exit 1; }
+
+echo "--- the pre-check. READ ONLY"
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v prev_hash=${SHAPREV} -v prev_when=${W99} -f scripts/db/precheck-0100-maintain-revoke.sql 2>&1 | tee -a /tmp/0100-precheck-earlier.new
 grep -qE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0100-precheck-earlier.new && { echo "STOP: a pre-check verdict read FAIL. Nothing is recorded"; exit 1; }
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0100-precheck-earlier.new || true)
 [ "${OKS}" = 13 ] || { echo "STOP: the pre-check printed ${OKS} OK verdicts, not 13. Nothing is recorded"; exit 1; }
+echo "earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL" | tee -a /tmp/0100-precheck-earlier.new
 mv /tmp/0100-precheck-earlier.new /tmp/0100-precheck-earlier.out
 PE=$(shasum -a 256 /tmp/0100-precheck-earlier.out | cut -d' ' -f1)
 echo "PRECHECK_EARLIER=${PE}"
@@ -404,15 +474,18 @@ echo "0100 EARLIER PRE-CHECK RECORDED: 13/13 OK, READ ONLY, nothing written. Rep
 )
 ```
 
-**EXPECT:** `--- 0100 EARLIER PRE-CHECK SITTING ...`; `the earlier pre-check runs from
-origin/main <sha>`; `docs/migration-apply-0100.md: OK`; `0099: packages/db/migrations/0099_revoke_truncate_trigger_references.sql, sha256 fbc5e545..., journal when 1788502000000`;
+**EXPECT:** `--- 0100 EARLIER PRE-CHECK SITTING ...`; the two `PR #1520's head` lines, the same
+sha twice; `the earlier pre-check runs from PR #1520's head <sha>, before the merge`;
+`docs/migration-apply-0100.md: OK`; `0099: packages/db/migrations/0099_revoke_truncate_trigger_references.sql, sha256 fbc5e545..., journal when 1788502000000`;
 the guard's `host:`, `port:`, `ref:` lines and `target verified: production, session pooler.`;
 the pre-check's 13 OK verdicts, its carries and its three INFO rows (report them as printed;
 on 2026-10-02's numbers verdict 7 reads `41 of 48; control 48 of 48`); then
-`PRECHECK_EARLIER=<64 hex>` and the last line `0100 EARLIER PRE-CHECK RECORDED: ...`. Exit 0.
-SOLO records the printed sha256 as `PRECHECK_EARLIER` in stages 0 and 1, an amendment with its
-own R4 round (NOT READY step 8). A FAIL or a count other than 13 leaves nothing recorded: the
-`.new` file is never moved.
+`earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL`, `PRECHECK_EARLIER=<64 hex>` and the
+last line `0100 EARLIER PRE-CHECK RECORDED: ...`. Exit 0. The transcript holds the guard's
+output, the pre-check's and the summary line, after its two header lines. SOLO records the
+printed sha256 as `PRECHECK_EARLIER` in stages 0 and 1, on the branch, before the merge: an
+amendment with its own R4 round (NOT READY step 8). A FAIL, a count other than 13 or a missing
+guard verdict leaves nothing recorded: the `.new` file is never moved.
 
 ## STAGE 0: the promotion, the files, the clock and the recorded head
 
@@ -488,9 +561,9 @@ echo "Lisbon ${LT}: ${CLOCK} by the clock (closed is before 08:00 or from 21:00)
 D1=no
 if echo "${SHAGATE}" | grep -qxE '[0-9a-f]{64}' && test -f scripts/migration-timeouts.test.mjs && [ "$(shasum -a 256 scripts/migration-timeouts.test.mjs | cut -d' ' -f1)" = "${SHAGATE}" ]; then D1=yes; fi
 D2=no
-if node -e 'const raw=require("fs").readFileSync(process.argv[1],"utf8");const code=raw.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ").replace(/\s+/g," ").trim();const loops=code.match(/DO \$\$[\s\S]*?\$\$/g)||[];const body=loops.length===1?loops[0]:"";const stmts=code.replace(/DO \$\$[\s\S]*?\$\$/g,"DOLOOP").split(";").map((s)=>s.trim()).filter((s)=>s.length>0);const want=["SET LOCAL lock_timeout = \x275s\x27","SET LOCAL statement_timeout = \x2760s\x27","DOLOOP","ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE MAINTAIN ON TABLES FROM authenticated"];const shape=stmts.join(" | ")===want.join(" | ");const denied=code.match(/\b(INSERT|UPDATE|DELETE|TRUNCATE|COPY|MERGE|CREATE|DROP)\b|\bALTER\s+TABLE\b/gi)||[];const execs=(body.match(/\bEXECUTE\b/g)||[]).length;const revoke=body.includes("EXECUTE format( \x27REVOKE MAINTAIN ON TABLE %s FROM authenticated\x27, r.tbl )");const ok=shape&&denied.length===0&&loops.length===1&&execs===1&&revoke;console.log("catalog-only: statements ["+stmts.join(" | ")+"], forbidden words "+denied.length+", DO loops "+loops.length+", EXECUTEs in it "+execs+", its string the MAINTAIN revoke "+revoke+": "+(ok?"CATALOG-ONLY":"NOT PROVEN"));process.exit(ok?0:1)' "${MIG}"; then D2=yes; fi
+if node -e 'const raw=require("fs").readFileSync(process.argv[1],"utf8");const code=raw.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ").replace(/\s+/g," ").trim();const loops=code.match(/DO \$\$[\s\S]*?\$\$/g)||[];const body=loops.length===1?loops[0]:"";const stmts=code.replace(/DO \$\$[\s\S]*?\$\$/g,"DOLOOP").split(";").map((s)=>s.trim()).filter((s)=>s.length>0);const want=["SET LOCAL lock_timeout = \x275s\x27","SET LOCAL statement_timeout = \x2760s\x27","DOLOOP","ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE MAINTAIN ON TABLES FROM authenticated"];const shape=stmts.join(" | ")===want.join(" | ");const allowed="EXECUTE format( \x27REVOKE MAINTAIN ON TABLE %s FROM authenticated\x27, r.tbl )";const rest=[want[0]+";",want[1]+";",want[3]+";",allowed].reduce((t,a)=>t.replace(a," "),code);const denied=rest.match(/\b(GRANT|REVOKE|LOCK|PERFORM|ALTER|CREATE|DROP|COMMENT|SET|COPY|INSERT|UPDATE|DELETE|MERGE|TRUNCATE|RESET|CALL|VACUUM|ANALYZE|CLUSTER|REINDEX|REFRESH)\b/gi)||[];const execs=(body.match(/\bEXECUTE\b/g)||[]).length;const revoke=body.includes(allowed);const ok=shape&&denied.length===0&&loops.length===1&&execs===1&&revoke;console.log("catalog-only: statements ["+stmts.join(" | ")+"], forbidden words "+denied.length+" ["+denied.join(" ")+"], DO loops "+loops.length+", EXECUTEs in it "+execs+", its string the MAINTAIN revoke "+revoke+": "+(ok?"CATALOG-ONLY":"NOT PROVEN"));process.exit(ok?0:1)' "${MIG}"; then D2=yes; fi
 D3=no
-if echo "${PRECHECK_EARLIER}" | grep -qxE '[0-9a-f]{64}' && test -f /tmp/0100-precheck-earlier.out && [ "$(shasum -a 256 /tmp/0100-precheck-earlier.out | cut -d' ' -f1)" = "${PRECHECK_EARLIER}" ] && [ "$(head -1 /tmp/0100-precheck-earlier.out)" = "earlier pre-check ${SHAPRE}" ] && [ /tmp/0100-precheck-earlier.out -ot /tmp/0100-sitting.start ] && [ -n "$(find /tmp/0100-precheck-earlier.out -mmin +30)" ]; then D3=yes; fi
+if echo "${PRECHECK_EARLIER}" | grep -qxE '[0-9a-f]{64}' && test -f /tmp/0100-precheck-earlier.out && [ "$(shasum -a 256 /tmp/0100-precheck-earlier.out | cut -d' ' -f1)" = "${PRECHECK_EARLIER}" ] && [ "$(head -1 /tmp/0100-precheck-earlier.out)" = "earlier pre-check ${SHAPRE}" ] && grep -qxF 'target verified: production, session pooler.' /tmp/0100-precheck-earlier.out && [ "$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0100-precheck-earlier.out)" = 13 ] && [ "$(grep -cE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0100-precheck-earlier.out)" = 0 ] && grep -qxF 'earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL' /tmp/0100-precheck-earlier.out && [ /tmp/0100-precheck-earlier.out -ot /tmp/0100-sitting.start ] && [ -n "$(find /tmp/0100-precheck-earlier.out -mmin +30)" ]; then D3=yes; fi
 echo "R9 proof 1, the SET LOCAL gate is on main (scripts/migration-timeouts.test.mjs at ${MAIN} hashes to SHAGATE): ${D1}"
 echo "R9 proof 2, the migration is catalog-only: ${D2}"
 echo "R9 proof 3, the read-only pre-check ran on production in an earlier sitting, its transcript recorded and older than this sitting: ${D3}"
@@ -514,6 +587,11 @@ DAYTIME: ...` only when all three read `yes` (otherwise the STOP); then `running
 origin/main <sha>, recorded in /tmp/0100-main.sha`; then
 `0100 PROMOTION, NUMBER, FILES AND CLOCK VERIFIED`. Exit 0. It reads no database. The sha it
 prints is the one every later stage runs from.
+
+**Proof 3's two time tests in this block, `-ot /tmp/0100-sitting.start` and `-mmin +30`, are A
+JUDGMENT, NOT A RULING:** SOLO's reading of R9's "an earlier sitting", which guards against a
+pre-check run moments before, or inside, this sitting being passed off as an earlier one; the
+lead may set another value (see R9, proof 3).
 
 **Until the guard pair is on main, this stage ends at** `STOP: scripts/production-target.mjs is
 not on disk, so the guard pair (#1508, #1509) has not merged. Nothing was applied`. That is the
@@ -611,9 +689,9 @@ echo "clinics by their own rows: ${CLINICS}"
 D1=no
 if echo "${SHAGATE}" | grep -qxE '[0-9a-f]{64}' && test -f scripts/migration-timeouts.test.mjs && [ "$(shasum -a 256 scripts/migration-timeouts.test.mjs | cut -d' ' -f1)" = "${SHAGATE}" ]; then D1=yes; fi
 D2=no
-if node -e 'const raw=require("fs").readFileSync(process.argv[1],"utf8");const code=raw.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ").replace(/\s+/g," ").trim();const loops=code.match(/DO \$\$[\s\S]*?\$\$/g)||[];const body=loops.length===1?loops[0]:"";const stmts=code.replace(/DO \$\$[\s\S]*?\$\$/g,"DOLOOP").split(";").map((s)=>s.trim()).filter((s)=>s.length>0);const want=["SET LOCAL lock_timeout = \x275s\x27","SET LOCAL statement_timeout = \x2760s\x27","DOLOOP","ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE MAINTAIN ON TABLES FROM authenticated"];const shape=stmts.join(" | ")===want.join(" | ");const denied=code.match(/\b(INSERT|UPDATE|DELETE|TRUNCATE|COPY|MERGE|CREATE|DROP)\b|\bALTER\s+TABLE\b/gi)||[];const execs=(body.match(/\bEXECUTE\b/g)||[]).length;const revoke=body.includes("EXECUTE format( \x27REVOKE MAINTAIN ON TABLE %s FROM authenticated\x27, r.tbl )");const ok=shape&&denied.length===0&&loops.length===1&&execs===1&&revoke;console.log("catalog-only: statements ["+stmts.join(" | ")+"], forbidden words "+denied.length+", DO loops "+loops.length+", EXECUTEs in it "+execs+", its string the MAINTAIN revoke "+revoke+": "+(ok?"CATALOG-ONLY":"NOT PROVEN"));process.exit(ok?0:1)' "${MIG}"; then D2=yes; fi
+if node -e 'const raw=require("fs").readFileSync(process.argv[1],"utf8");const code=raw.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ").replace(/\s+/g," ").trim();const loops=code.match(/DO \$\$[\s\S]*?\$\$/g)||[];const body=loops.length===1?loops[0]:"";const stmts=code.replace(/DO \$\$[\s\S]*?\$\$/g,"DOLOOP").split(";").map((s)=>s.trim()).filter((s)=>s.length>0);const want=["SET LOCAL lock_timeout = \x275s\x27","SET LOCAL statement_timeout = \x2760s\x27","DOLOOP","ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE MAINTAIN ON TABLES FROM authenticated"];const shape=stmts.join(" | ")===want.join(" | ");const allowed="EXECUTE format( \x27REVOKE MAINTAIN ON TABLE %s FROM authenticated\x27, r.tbl )";const rest=[want[0]+";",want[1]+";",want[3]+";",allowed].reduce((t,a)=>t.replace(a," "),code);const denied=rest.match(/\b(GRANT|REVOKE|LOCK|PERFORM|ALTER|CREATE|DROP|COMMENT|SET|COPY|INSERT|UPDATE|DELETE|MERGE|TRUNCATE|RESET|CALL|VACUUM|ANALYZE|CLUSTER|REINDEX|REFRESH)\b/gi)||[];const execs=(body.match(/\bEXECUTE\b/g)||[]).length;const revoke=body.includes(allowed);const ok=shape&&denied.length===0&&loops.length===1&&execs===1&&revoke;console.log("catalog-only: statements ["+stmts.join(" | ")+"], forbidden words "+denied.length+" ["+denied.join(" ")+"], DO loops "+loops.length+", EXECUTEs in it "+execs+", its string the MAINTAIN revoke "+revoke+": "+(ok?"CATALOG-ONLY":"NOT PROVEN"));process.exit(ok?0:1)' "${MIG}"; then D2=yes; fi
 D3=no
-if echo "${PRECHECK_EARLIER}" | grep -qxE '[0-9a-f]{64}' && test -f /tmp/0100-precheck-earlier.out && [ "$(shasum -a 256 /tmp/0100-precheck-earlier.out | cut -d' ' -f1)" = "${PRECHECK_EARLIER}" ] && [ "$(head -1 /tmp/0100-precheck-earlier.out)" = "earlier pre-check ${SHAPRE}" ] && [ /tmp/0100-precheck-earlier.out -ot /tmp/0100-sitting.start ] && [ -n "$(find /tmp/0100-precheck-earlier.out -mmin +30)" ]; then D3=yes; fi
+if echo "${PRECHECK_EARLIER}" | grep -qxE '[0-9a-f]{64}' && test -f /tmp/0100-precheck-earlier.out && [ "$(shasum -a 256 /tmp/0100-precheck-earlier.out | cut -d' ' -f1)" = "${PRECHECK_EARLIER}" ] && [ "$(head -1 /tmp/0100-precheck-earlier.out)" = "earlier pre-check ${SHAPRE}" ] && grep -qxF 'target verified: production, session pooler.' /tmp/0100-precheck-earlier.out && [ "$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0100-precheck-earlier.out)" = 13 ] && [ "$(grep -cE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0100-precheck-earlier.out)" = 0 ] && grep -qxF 'earlier pre-check summary: 13 of 13 verdicts OK, 0 FAIL' /tmp/0100-precheck-earlier.out && [ /tmp/0100-precheck-earlier.out -ot /tmp/0100-sitting.start ] && [ -n "$(find /tmp/0100-precheck-earlier.out -mmin +30)" ]; then D3=yes; fi
 echo "R9 proof 1, the SET LOCAL gate is on main (scripts/migration-timeouts.test.mjs at ${REC} hashes to SHAGATE): ${D1}"
 echo "R9 proof 2, the migration is catalog-only: ${D2}"
 echo "R9 proof 3, the read-only pre-check ran on production in an earlier sitting, its transcript recorded and older than this sitting: ${D3}"
@@ -648,7 +726,11 @@ echo "0100 APPLIED. Paste stage 2 now."
   `active clinics open now by their own hours: <k> of <n>` with `n` at least 1,
   `clinics by their own rows: closed|open`, the `catalog-only:` line, the three proof lines,
   then `R9: closed hours, ...` or, inside clinic hours and only with all three proofs `yes`,
-  `R9 DAYTIME: ...`; otherwise the STOP, with nothing applied;
+  `R9 DAYTIME: ...`; otherwise the STOP, with nothing applied. Proof 3's two time tests here,
+  `-ot /tmp/0100-sitting.start` and `-mmin +30`, are **A JUDGMENT, NOT A RULING**, the same
+  lines as stage 0's: SOLO's reading of R9's "an earlier sitting", which guards against a
+  pre-check run moments before, or inside, this sitting being passed off as an earlier one; the
+  lead may set another value;
 - **verified-migrate, teed whole to `/tmp/0100-apply.out`:**
   `file       0100_revoke_maintain.sql present, sha256 matches`,
   `journal    97 row(s) applied, last when=1788502000000`,
@@ -677,6 +759,11 @@ the journal read, and reports the exit code and the whole output** (`/tmp/0100-a
 it). The read that answers whether 0100 is applied is
 `packages/db/scripts/read-applied-migrations.mjs`, READ ONLY, and it runs only on the owner's or
 the lead's word.
+
+**An exit 4 whose captured drizzle output is a pnpm error, not drizzle's, means drizzle never
+ran** (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` in a clone whose `node_modules` does not
+match its lockfile). The block then prints `journal    97 -> 97  (delta 0)`: nothing was
+applied. The halt rule governs it all the same.
 
 **A fired bound is a clean failure.** If `lock_timeout` or `statement_timeout` fired, drizzle's
 transaction rolled back: the journal reads `97 -> 97 (delta 0)` and nothing was applied. It is
@@ -967,12 +1054,17 @@ verified-migrate did not run.
 | L1b another session holds an open `INSERT` on one table and `ACCESS EXCLUSIVE` on another | exit 0 in under a second |
 | L2 the body outside a transaction block, as each file runs under the Supabase CLI in CI | exit 0, with the two `SET LOCAL can only be used in transaction blocks` WARNINGs |
 | the SET LOCAL gate, `scripts/migration-timeouts.test.mjs` from #1510, run on a copy of this branch's migration folders | 13 of 13 pass, the pending file in scope with no problem; and again with the file renamed to `0100_revoke_maintain.sql` in `packages/db/migrations` |
-| R9 proof 2's `node -e` check | `CATALOG-ONLY` on the real file; `NOT PROVEN` (exit 1) on planted copies carrying a DELETE, a CREATE TABLE, an ALTER TABLE, a GRANT, a COPY, a loop that TRUNCATEs, or no lock_timeout line; a comment naming DELETE, TRUNCATE and CREATE TABLE stays `CATALOG-ONLY` |
+| R9 proof 2's `node -e` check, first version | `CATALOG-ONLY` on the real file; `NOT PROVEN` (exit 1) on planted copies carrying a DELETE, a CREATE TABLE, an ALTER TABLE, a GRANT, a COPY, a loop that TRUNCATEs, or no lock_timeout line; a comment naming DELETE, TRUNCATE and CREATE TABLE stays `CATALOG-ONLY`. R4 round 1 then planted a `LOCK TABLE`, a `GRANT ALL ... TO anon`, an `ALTER POLICY ... USING (true)`, a `REVOKE SELECT ... FROM authenticated` and a `PERFORM pg_sleep(3600)` inside the loop: each exited 0 |
+| R9 proof 2's `node -e` check, as revised in the R4 round 1 fix (the version in the blocks above) | `CATALOG-ONLY` on the real file; `NOT PROVEN` (exit 1) on each of R4's five plants, on each forbidden word alone inside the loop, and on one plant per condition of its verdict that only that condition refuses (a fifth statement, a second `EXECUTE`, an `EXECUTE` of another string, a `LOCK` in the loop); comments naming every forbidden word, inside the loop or outside it, stay `CATALOG-ONLY`. `scripts/maintain-revoke-0100.test.mjs` runs all of it on every CI run |
 
 **The R9 arm, run in zsh as the blocks are,** extracted verbatim from stage 0 and stage 1 with
 `set -eo pipefail`, and three substitutions for the test only: the `/tmp/0100-` paths moved to a
 scratch folder (never the apply machine's `/tmp` records), the clock command replaced by a fixed
-`HHMM`, and stage 1's clinic read replaced by a fixed string. No database was read.
+`HHMM`, and stage 1's clinic read replaced by a fixed string. No database was read. **Re-run on
+2026-10-02 on the arm as revised in the R4 round 1 fix** (`r9-arm.mjs` below): 119 cases, 48 in
+stage 0 and 71 in stage 1, every one as this table says. A valid earlier transcript is now one
+that opens with the pinned pre-check's line and carries the guard's verdict line, 13 `OK` rows,
+no `FAIL` row and the summary line, as THE EARLIER PRE-CHECK SITTING writes it.
 
 | Case | Result |
 |---|---|
@@ -980,6 +1072,9 @@ scratch folder (never the apply machine's `/tmp` records), the clock command rep
 | stage 0 with today's placeholders at 0800, 1200, 2059 | **STOP**, exit 1: proof 1 `no`, proof 2 `yes`, proof 3 `no` |
 | stage 0 at 1200, `SHAGATE` the real gate file's sha256, a valid earlier transcript two hours old | exit 0, `R9 DAYTIME: ...` |
 | stage 0 at 1200, one proof broken at a time: the earlier pin a placeholder; a wrong gate sha256; a wrong earlier sha256; a transcript seconds old; a transcript newer than the start record; a transcript naming another pre-check | **STOP** on each |
+| stage 0 and stage 1 at 1200, the earlier transcript hashing to `PRECHECK_EARLIER` but without the guard's verdict line; without the summary line; with 12 `OK` rows; with 14; with one `FAIL` row | **STOP** on each, proof 3 `no` |
+| stage 0 and stage 1 at 1200, all else valid, the migration one of R4 round 1's five loop plants, or a fifth statement, a second `EXECUTE`, or an `EXECUTE` of another string | **STOP** on each, proof 2 `no` |
+| stage 0 and stage 1 at 1200, all else valid, comments inside the loop naming LOCK, GRANT, ALTER, REVOKE, PERFORM, SET and COMMENT | exit 0, `R9 DAYTIME: ...`, proof 2 `yes` |
 | stage 1 at 2230 with the clinics `0 of 2` | exit 0, closed by the clock and by every clinic's row |
 | stage 1 at 2230 with `1 of 2`, at 0700 with `2 of 2`, at 1200 with `0 of 2` | **STOP** on each (a clinic open by its row, or the clock inside 08:00 to 21:00) |
 | stage 1 with the clinics `0 of 0`, empty, `3 of 2`, `01 of 2` | **STOP** on each, on every day |
@@ -993,6 +1088,7 @@ scratch folder (never the apply machine's `/tmp` records), the clock command rep
 | `locks.sh`, L1, L1b and L2 | `b50117b4e691ec680004c6a144624ddf2d83afbd31bd338fdb40b1ce0b48673a` |
 | `plants.sh`, R9 proof 2 read out of stage 0 and run on the real file and the planted copies | `faf511e6fe0748a782556b9b91739a2d125c9ab45bfcbc2b536e06f82697718c` |
 | `r9-arm.sh`, the R9 arm cases above | `1272de452a72c16543708ec3c8595b5fb4139735ec6c400daf6e39f306aafc0e` |
+| `r9-arm.mjs`, the re-run of the R9 arm cases above on the revised arm, in SOLO's fix-round scratchpad (not committed); its "real gate file" is `scripts/migration-timeouts.test.mjs` as #1510's branch holds it at `a9395757`, sha256 `e65b7ae0251e2c8350c99fb4d082c8efa19c82074877f76d13513deb1703bf51` | `9dcd75b4b97ff6c25e36d8707dc0349dda308db459b0739ea12b6c2c1334a5b9` |
 
 ### What the rehearsal agent owes before the dispatch is issued
 
@@ -1027,9 +1123,13 @@ REHEARSED and the document says so."
    - **The R9 arm runs on the real clock.** Inside clinic hours, with today's placeholders, stages
      0 and 1 STOP, which is the arm proven in the safe direction; in closed hours they pass by
      the clock. Either is a valid record. The agent never sets `TZ` or the clock to choose.
-   - **THE EARLIER PRE-CHECK SITTING runs once,** at least 30 minutes before stage 0, and its
-     `PRECHECK_EARLIER` line is recorded but never filled into the rehearsal's copy of this
-     document: filling it is an amendment.
+   - **THE EARLIER PRE-CHECK SITTING runs once, from the PR's head as its block requires** (the
+     head it reads from `/tmp/0100-earlier-head.sha` is the one the prompt names), at least 30
+     minutes before stage 0, and its `PRECHECK_EARLIER` line is recorded but never filled into
+     the rehearsal's copy of this document: filling it is an amendment. **The 30 minutes are A
+     JUDGMENT, NOT A RULING,** the same floor as proof 3's: it guards against a pre-check run
+     moments before stage 0 being passed off as an earlier sitting, and the lead may set
+     another value.
 4. **The packages/db suite on the applied throwaway, or CI's `db-tests` on the promoted head,**
    which applies 0100 on a real Supabase stack.
 5. **In action on the applied throwaway, as `authenticated`, in rolled-back transactions where a
@@ -1056,8 +1156,9 @@ REHEARSED and the document says so."
 
 Measured on the migration's code with its comments removed: **0 statements begin with DELETE,
 0 begin with TRUNCATE**, and the words DELETE, TRUNCATE, INSERT, UPDATE, COPY, MERGE, CREATE and
-DROP do not appear in its code at all (`scripts/maintain-revoke-0100.test.mjs` and R9's proof 2
-both require it). Its four statements are two `SET LOCAL` lines, a `DO` loop whose one
+DROP do not appear in its code at all (`scripts/maintain-revoke-0100.test.mjs` requires it, and
+R9's proof 2 refuses those words and more, the `DO` body included). Its four statements are two
+`SET LOCAL` lines, a `DO` loop whose one
 `EXECUTE` is `REVOKE MAINTAIN ON TABLE %s FROM authenticated`, and one
 `ALTER DEFAULT PRIVILEGES` line. The check files write nothing: the pre-check opens its own
 READ ONLY transaction and ends in ROLLBACK, and the post-check runs inside the block's
