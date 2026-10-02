@@ -9202,6 +9202,20 @@
       "notes": "=== 2026-10-02 (SOLO) === Ruled by strategy, dispatch S-1002-A R10: \"#1510 values 5s and 60s accepted. Observer stays out; card it as its own GATE-CHANGE pair after 0100.\" The observer (verified-migrate asks for lock_timeout and statement_timeout on drizzle's session through the URL options parameter and PGOPTIONS, reads both back from pg_settings and prints 'session in force' or 'session NOT APPLIED'; it refuses an existing PGOPTIONS or URL options) was built on #1510 and taken out of it on 2026-10-01, because #1508 pins verified-migrate.mjs's bytes in scripts/verified-migrate.test.mjs, so any change to the applier is a GATE-CHANGE re-pin plus a separate code PR. The code is kept whole on branch db/VM-observer-pair-code (814c7710), with its own session test file on that branch (not on main, so not named here as a path). On production it is expected to print NOT APPLIED (postgres.js ignores PGOPTIONS; Supavisor forwards only search_path), which is why the bound itself is SET LOCAL in each migration from 0100 (#1510). When built: one GATE-CHANGE (re-pin + the session test + manifest) and one code PR; the 0100 and later documents pin the new verified-migrate sha256, never 0099 and earlier. Also fold in: verified-migrate's 'IT PRINTED NOTHING. That is POST-01' message should name a lock or statement timeout as a candidate cause (today the runbook says so, the message does not)."
     },
     {
+      "id": "SEC-anon-sequences-default",
+      "title": "anon's SEQUENCES default in public: postgres's default privileges give anon SELECT, UPDATE and USAGE on every new sequence. Revoke it, Tier C, carded only (no build yet)",
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "status": "todo",
+      "priority": "medium",
+      "owner_terminal": "solo",
+      "gate": "owner_merge",
+      "blocked_on": null,
+      "last_checkpoint": "2026-10-02",
+      "evidence": null,
+      "notes": "=== 2026-10-02 (SOLO) === Found by the read-only 0100 measurement on production (2026-10-02): in schema public, the postgres role's default privileges for SEQUENCES grant anon SELECT, UPDATE and USAGE. No migration creates a sequence today, so the default covers no object, and no apply document records it (the FUNCTIONS default for anon is documented in 0072, 0073 and 0086; supabase_admin's defaults are recorded as untouchable in 0099's document). Carded by strategy's dispatch S-1002-D P1.6: Tier C, no build yet. ORDER (S-1002-D P4.1): after 0102 (the episode-policy item) and the Q9 same-patient database guard, in file-number order, numbered when authored; a read-only measurement and a read-only pre-check sitting on production before it; one Tier C item in flight at a time. SCOPE when built: ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, with the two SET LOCAL lines (#1510), a pre-check and post-check that prove the default before and after and that no existing sequence's ACL moves."
+    },
+    {
       "id": "RGPD-consent-recorded-in-two-places",
       "title": "RGPD consent is recorded in two independent places, and nothing reconciles them",
       "lane": "loose_ends",
@@ -9663,7 +9677,7 @@
     },
     {
       "id": "SAT-01-satisfaction-form",
-      "title": "SAT-01: a four-question satisfaction form after a visit, sent once by the channel the patient allows, answered on a single-use guest page. RULED to its ten defaults, owner and admin only in v1, migrations from 0100. Not started: waits on G1's ruling and tonight's apply chain",
+      "title": "SAT-01: a four-question satisfaction form after a visit, sent once by the channel the patient allows, answered on a single-use guest page. RULED to its ten defaults, owner and admin only in v1, migrations from 0101 (re-ruled 2026-10-01, S-1001-A R2; was 0100). Not started: waits on G1's ruling and tonight's apply chain",
       "lane": "in_flight",
       "home_lane": "in_flight",
       "status": "in_flight",
