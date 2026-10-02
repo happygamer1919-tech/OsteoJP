@@ -33,9 +33,10 @@
 //   * every block that runs the target guard compares the guard AND its module
 //     first, and the closing read compares the reader AND the module first;
 //   * R9's daytime arm stands in stage 0 and stage 1, the same lines in both, and
-//     stage 1 decides closed hours by the clock AND the clinics; its two R9 pins are
-//     either a sha256 or the documented placeholder, which can never match one; a
-//     filled SHAGATE is the gate file's real sha256 when the file is on this branch;
+//     stage 1 decides closed hours by the clock AND the clinics; PRECHECK_EARLIER is
+//     a sha256 or its documented placeholder, which can never match one; SHAGATE,
+//     filled on 2026-10-02 after #1510 merged, must be a sha256, the gate file must be
+//     on this branch, and SHAGATE must be its real sha256 (a missing file fails);
 //     and its catalog-only check, RUN here as written in the document, is an exact
 //     compare: it passes the real migration and the same text with whitespace runs
 //     widened; it refuses the 35 plants this file carries from the first version
@@ -502,8 +503,9 @@ test("every pin is the real file, the given value or an R9 placeholder, and the 
   assert.notDeepEqual(pinProblems(doc.replace(`SHAPRE=${ACTUAL[PRE]}`, `SHAPRE=${"0".repeat(64)}`), ACTUAL), []);
   assert.notDeepEqual(pinProblems(doc, { ...ACTUAL, [POST]: "f".repeat(64) }), []);
   assert.notDeepEqual(pinProblems(doc.replace(`SHAGUARD=${EXTERNAL_PINS.SHAGUARD}`, `SHAGUARD=${"b".repeat(64)}`), ACTUAL), []);
-  // The first SHAGATE line, whatever it holds (the placeholder, or the sha256 filled on
-  // 2026-10-02): a value that is neither, or one block disagreeing with the other.
+  // The first SHAGATE line, whatever it holds: a value that is not a sha256, or one block
+  // disagreeing with the other. (Since the fill of 2026-10-02 the placeholder itself is
+  // refused too; see the both-lines control below.)
   const firstGate = /^SHAGATE=.*$/m;
   assert.match(doc, firstGate);
   assert.notDeepEqual(pinProblems(doc.replace(firstGate, "SHAGATE=TODO"), ACTUAL), []);
@@ -518,11 +520,12 @@ test("R9: the placeholders can never match a sha256, and a filled SHAGATE is the
   // Filled since #1510 merged: the gate file must be on this branch and hash to it. A missing
   // subject is a failure, never a skip.
   assert.deepEqual(gateProblems(gate, existsSync(join(ROOT, GATE_FILE)) ? read(GATE_FILE) : null), []);
-  // CONTROLS: the placeholder, a missing file, and one changed byte each fail on their own.
+  // CONTROLS, each refused by exactly one rule, so dropping any one rule turns this red:
+  // the placeholder, a missing file, and one changed byte.
   const text = read(GATE_FILE);
-  assert.notDeepEqual(gateProblems(R9_PLACEHOLDERS.SHAGATE, text), []);
-  assert.notDeepEqual(gateProblems(gate, null), []);
-  assert.notDeepEqual(gateProblems(gate, `${text} `), []);
+  assert.deepEqual(gateProblems(R9_PLACEHOLDERS.SHAGATE, text), [`SHAGATE is not a sha256: ${R9_PLACEHOLDERS.SHAGATE}`]);
+  assert.deepEqual(gateProblems(gate, null), [`${GATE_FILE} is missing, so SHAGATE proves nothing`]);
+  assert.deepEqual(gateProblems(gate, `${text} `), [`SHAGATE ${gate} is not the sha256 of ${GATE_FILE}`]);
 });
 
 test("R9: the daytime arm stands in stage 0 and stage 1, with the same proof lines in both", () => {
