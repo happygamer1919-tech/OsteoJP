@@ -1,10 +1,11 @@
 # 0100: apply the MAINTAIN revoke from `authenticated`
 
-**NOT READY. Seven things happen first, in order; a sitting inside clinic hours needs three more (steps 6 to 8), all of them before the merge (see "NOT READY" below). Until the guard pair (#1508, #1509) is on main, stage 0 STOPs on the guard and reader pins, which is the safe direction.**
+**NOT READY. Seven things happen first, in order; a sitting inside clinic hours needs three more (steps 6 to 8), all of them before the merge (see "NOT READY" below). Two of the seven are done: the guard pair (#1508, #1509) is on main and merged into this branch (step 1), and 0100 is promoted on it (step 3), both on 2026-10-02.**
 
-**Status: AUTHORED, PENDING. NOT PROMOTED. NOT APPLIED.** One migration,
-`packages/db/migrations-pending/NEXT-AFTER-0099_revoke_maintain.sql`, which the promotion
-renames, byte for byte, to `packages/db/migrations/0100_revoke_maintain.sql`. It is applied
+**Status: PROMOTED. NOT APPLIED.** One migration,
+`packages/db/migrations/0100_revoke_maintain.sql`, which the promotion of 2026-10-02 renamed,
+byte for byte, from the pending file
+`packages/db/migrations-pending/NEXT-AFTER-0099_revoke_maintain.sql`. It is applied
 from `origin/main` at the PR's merge commit, after the PR has merged, as 0099 was. It is
 the catalog-only pilot of the SET LOCAL gate (S-1001-A R2). Five blocks, each pasted whole,
 on its own and in order: THE EARLIER PRE-CHECK SITTING (READ ONLY, in its own sitting BEFORE
@@ -36,7 +37,10 @@ migrations"). The lane that wrote this document never runs it.
 
 ## NOT READY: what must happen first, in this order, and none of it by GREEN but step 7
 
-1. **The guard pair merges: #1508 (the tests, a GATE-CHANGE, branch
+1. **DONE 2026-10-02.** #1508 and #1509 are on main (`13796026`), merged into this branch at
+   `72802013`; the guard, the reader and the module there are the three NEW bytes pinned
+   below. As first written:
+   **The guard pair merges: #1508 (the tests, a GATE-CHANGE, branch
    `sec/INC-guard-tests-GATE-CHANGE`) and #1509 (the code, branch `sec/INC-guard-parse-host-db`).** It changes `scripts/assert-production-target.mjs` and
    `packages/db/scripts/read-applied-migrations.mjs`, and adds `scripts/production-target.mjs`,
    which both now import. This document pins the NEW bytes (see "The guard and the reader
@@ -49,7 +53,11 @@ migrations"). The lane that wrote this document never runs it.
    bytes before the READY line") it gets its own R4 round on the changed bytes before any
    READY line. Until then `SHAGATE` is a placeholder that can never match a sha256, so R9's
    proof 1 fails closed and only a closed-hours sitting can pass.
-3. **SOLO promotes 0100 on this branch, `db/0100-maintain-revoke`:** merge `origin/main` in (no
+3. **DONE 2026-10-02, in the commit on top of `72802013`:** `origin/main` merged in at
+   `72802013`; the rename, bytes `80f85018…` unchanged; journal `idx 97`, `when`
+   1788502100000 (0099's plus 100000); the mirror; check-journal 98 of 98; the README row
+   Promoted. As first written:
+   **SOLO promotes 0100 on this branch, `db/0100-maintain-revoke`:** merge `origin/main` in (no
    rebase); `git mv` the pending file to `packages/db/migrations/0100_revoke_maintain.sql` (a
    rename, not one byte changed: sha256
    `80f85018e8ed35922ad546b8a28e96d80e894b04f2a1f09f201d00b601ff6106` before and after); append
@@ -370,6 +378,9 @@ on 2026-10-02:
 | `scripts/assert-production-target.mjs` | `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` | `bcc43dfb...` (0099's pin) |
 | `packages/db/scripts/read-applied-migrations.mjs` | `825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387` | `867e2823...` (0099's pin) |
 | `scripts/production-target.mjs` | `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` | absent |
+
+**The right-hand column is main before the pair merged.** Main at `13796026` (2026-10-02) holds
+exactly the middle column's three sha256, re-read at the promotion.
 
 **Until the pair is on main, stage 0 STOPs on those pins,** and so does THE EARLIER PRE-CHECK
 SITTING, which runs from this PR's head and so needs the pair merged into the branch as well
