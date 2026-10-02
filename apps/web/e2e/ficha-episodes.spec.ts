@@ -85,11 +85,21 @@ test.describe("EPI-01a: the Registos tab, grouped (therapist)", () => {
       const groups = await openTab(page);
       const osteo = groups.nth(0);
       const first = osteo.getByTestId("record-row").first();
+      // The fold has a visible marker: the chevron points up while open and
+      // down once folded (Tailwind 4's rotate-180 sets `rotate`, only under the
+      // open details).
+      const chevron = osteo.getByTestId("record-group-chevron");
+      const turn = () => chevron.evaluate((el) => getComputedStyle(el).rotate);
+      await expect(chevron).toBeVisible();
       await expect(first).toBeVisible();
+      await expect.poll(turn).toBe("180deg");
       await osteo.locator("summary").click();
       await expect(first).toBeHidden();
+      await expect(chevron).toBeVisible();
+      await expect.poll(turn).toBe("none");
       await osteo.locator("summary").click();
       await expect(first).toBeVisible();
+      await expect.poll(turn).toBe("180deg");
     });
   });
 
