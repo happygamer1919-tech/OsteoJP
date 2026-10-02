@@ -219,6 +219,21 @@ export const IMPORTED_RECORD = {
 } as const;
 
 /**
+ * EPI-01a (2026-10-02): an imported history in the importer's shape, seeded by
+ * seed-e2e.mjs (ensureFichaEpisodes) on a patient of its own, created_by the E2E
+ * therapist. Three closed one-registo episodes, ledger rows for each episode
+ * and registo; the Registos tab groups them one group per specialty (Q1 (a)).
+ * `lisbonDay` is how the tab must print each evaluation date: the Fisioterapia
+ * row is stored at 23:00 UTC on 5 September, which is 6 September in Lisbon.
+ */
+export const FICHA_EPISODES = {
+  patientId: "00000000-0000-0000-0000-00000000a3e1",
+  osteo1: { recordId: "00000000-0000-0000-0000-00000000fe31", lisbonDay: "12/03/2023", excerpt: "Cervicalgia apos esforco, inventada" },
+  fisio: { recordId: "00000000-0000-0000-0000-00000000fe32", lisbonDay: "06/09/2024", excerpt: "Ombro direito doloroso, inventado" },
+  osteo2: { recordId: "00000000-0000-0000-0000-00000000fe33", lisbonDay: "20/01/2025", excerpt: "Lombalgia recorrente, inventada" },
+} as const;
+
+/**
  * G-D (2026-09-13): three documents on IMPORTED_RECORD's patient, seeded by
  * seed-e2e.mjs with these ids. Storage objects are NOT created (the lane bucket
  * holds no bytes), so specs assert the lists and the Abrir button, never a download.

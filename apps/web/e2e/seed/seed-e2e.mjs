@@ -1284,6 +1284,118 @@ async function ensureImportedRecord() {
 }
 
 // ---------------------------------------------------------------------------
+// EPI-01a (2026-10-02) — AN IMPORTED HISTORY IN THE SHAPE THE IMPORTER WRITES.
+// The importer (packages/db/src/migration/sources/fisiozero.ts) makes ONE closed
+// episode per evaluation, titled only with the specialty, holding one locked
+// registo dated the evaluation day (Lisbon midnight, stored as UTC), and writes
+// a ledger row for the episode and one for the registo. Production, 2026-10-02:
+// 5,632 such episodes. Three of them here, on a patient of their own (so no
+// other spec's counts move): two Osteopatia evaluations two years apart and one
+// Fisioterapia between them. The Registos tab must show TWO groups (one per
+// specialty, strategy's ruling Q1 (a)), with the dated evaluations beneath.
+// Invented patient and invented text. Upserts on ids; a locked registo that
+// already exists is left exactly as it is (it is immutable, as in production).
+// ---------------------------------------------------------------------------
+const FICHA_EPISODES_PATIENT = "00000000-0000-0000-0000-00000000a3e1";
+const FICHA_EPISODES = [
+  {
+    episode: "00000000-0000-0000-0000-00000000fe21",
+    record: "00000000-0000-0000-0000-00000000fe31",
+    specialty: "Osteopatia",
+    day: "2023-03-12T00:00:00.000Z",
+    data: { especialidade: "Osteopatia", motivos: "Cervicalgia apos esforco, inventada" },
+  },
+  {
+    episode: "00000000-0000-0000-0000-00000000fe22",
+    record: "00000000-0000-0000-0000-00000000fe32",
+    specialty: "Fisioterapia",
+    day: "2024-09-05T23:00:00.000Z",
+    data: { especialidade: "Fisioterapia", queixas: "Ombro direito doloroso, inventado" },
+  },
+  {
+    episode: "00000000-0000-0000-0000-00000000fe23",
+    record: "00000000-0000-0000-0000-00000000fe33",
+    specialty: "Osteopatia",
+    day: "2025-01-20T00:00:00.000Z",
+    data: { especialidade: "Osteopatia", motivos: "Lombalgia recorrente, inventada" },
+  },
+];
+
+async function ensureFichaEpisodes(therapistId) {
+  must(
+    (await db.from("patients").upsert(
+      {
+        id: FICHA_EPISODES_PATIENT,
+        tenant_id: TENANT_A,
+        full_name: "Zzz Ficha Episodios Teste",
+        created_by: therapistId,
+        deleted_at: null,
+      },
+      { onConflict: "id" },
+    )).error,
+    "ficha episodes patient",
+  );
+  for (const [i, e] of FICHA_EPISODES.entries()) {
+    must(
+      (await db.from("clinical_episodes").upsert(
+        {
+          id: e.episode,
+          tenant_id: TENANT_A,
+          patient_id: FICHA_EPISODES_PATIENT,
+          title: e.specialty,
+          status: "closed",
+          opened_at: e.day,
+          closed_at: e.day,
+        },
+        { onConflict: "id" },
+      )).error,
+      `ficha episode ${i + 1}`,
+    );
+    for (const [entity, id] of [
+      ["clinical_episode", e.episode],
+      ["clinical_record", e.record],
+    ]) {
+      must(
+        (await db.from("migration_staging_rows").upsert(
+          {
+            tenant_id: TENANT_A,
+            batch_id: "00000000-0000-0000-0000-00000000fe2b",
+            source_system: "fisiozero",
+            entity_type: entity,
+            source_id: `e2e-ficha-${i + 1}`,
+            raw: {},
+            status: "imported",
+            imported_entity_id: id,
+          },
+          { onConflict: "tenant_id,source_system,entity_type,source_id" },
+        )).error,
+        `ficha ledger ${entity} ${i + 1}`,
+      );
+    }
+    if ((await clinicalRecordStatus(e.record)) !== null) continue;
+    must(
+      (await db.from("clinical_records").insert({
+        id: e.record,
+        tenant_id: TENANT_A,
+        patient_id: FICHA_EPISODES_PATIENT,
+        episode_id: e.episode,
+        source: "manual",
+        status: "locked",
+        ai_review_state: null,
+        form_template_id: null,
+        version: 1,
+        supersedes_id: null,
+        signed_by: null,
+        signed_at: null,
+        created_at: e.day,
+        data: e.data,
+      })).error,
+      `ficha registo ${i + 1}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // G-D (2026-09-13) — THE PATIENT'S IMPORTED ORIGINALS, IN THE SHAPE THE IMPORT
 // WRITES. The importer stores each Fisiozero document at
 // `${tenant}/migration/fisiozero/<file>` (attachmentStoragePath); documentos.csv
@@ -1489,6 +1601,8 @@ async function main() {
   const importedRecordId = await ensureImportedRecord();
   // G-D: the patient's imported originals (one patient-level, one linked) + one ordinary document.
   await ensureImportedDocuments(importedRecordId);
+  // EPI-01a: an imported history in the importer's shape, on a patient of its own.
+  await ensureFichaEpisodes(userIds.therapist);
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
