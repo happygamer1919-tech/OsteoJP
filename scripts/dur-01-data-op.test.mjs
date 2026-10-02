@@ -17,6 +17,18 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
 const sha256 = (p) => createHash("sha256").update(readFileSync(join(ROOT, p))).digest("hex");
+/**
+ * The target guard's sha256 AS THIS OP RAN IT (DUR-01, applied 2026-09-27). The guard
+ * changed on the fix the lead ruled after INC-rehearsal-subagent-passed-the-reader-guard
+ * (2026-09-30: it compares the parsed host and database name). This op is complete
+ * and its document is the record of what ran, so its pin stays the guard it ran
+ * with. The lead ruled the new guard's pin goes into later documents only. A
+ * re-run of this document's blocks on the new guard would STOP at its own pin
+ * check, which is the safe direction.
+ */
+const GUARD_AS_RUN = "bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093";
+/** The sha256 a block of this document must pin for `file`. */
+const pinOf = (file) => (file === GUARD ? GUARD_AS_RUN : sha256(file));
 
 const F1 = "scripts/data/dur-01-1-measure.sql";
 const F2 = "scripts/data/dur-01-2-write.sql";
@@ -697,13 +709,19 @@ test("stage 2's re-measure stops on any hit, before the audit row", () => {
 test("the doc pins each file by its sha256, and the sidecar pins the doc", () => {
   const pins = { SHA1: F1, SHA2: F2, SHA3: F3, SHAGUARD: GUARD };
   for (const [name, file] of Object.entries(pins)) {
-    const want = sha256(file);
+    const want = pinOf(file);
     const set = [...DOC.matchAll(new RegExp(`^${name}=([0-9a-f]{64})$`, "gm"))].map((m) => m[1]);
     assert.ok(set.length > 0, `no block sets ${name}`);
     for (const v of set) assert.equal(v, want, `${name} in the doc is not the sha256 of ${file}`);
     assert.ok(DOC.includes(`\`${file}\`, `) && DOC.includes(want), `the facts table does not pin ${file}`);
   }
-  assert.equal(sha256(GUARD), "bcc43dfb7b66eeea36bd074bb545d808c3f4524850349914cdfff2d2b3fa3093", "the target guard moved; re-pin it on purpose");
+  // THE TRIPWIRE THAT STOOD HERE FIRED ON 2026-10-01, ON PURPOSE. It asserted the
+  // guard on disk was still bcc43dfb... ("the target guard moved; re-pin it on
+  // purpose"). The guard fix of that day moved it. This completed op's pin is now
+  // GUARD_AS_RUN (above), which the loop checks against every SHAGUARD in the
+  // doc, and the guard's CURRENT bytes are pinned in
+  // scripts/assert-production-target.test.mjs instead, where a change to any
+  // production guard is a GATE-CHANGE.
   const side = read("docs/data-op-dur-01.sha256");
   assert.equal(side, `${sha256(DOCF)}  ${DOCF}\n`, "the sidecar does not pin the doc");
   assert.doesNotMatch(DOC, /@@[A-Z0-9]+@@/, "the doc still carries a placeholder");
@@ -778,7 +796,7 @@ test("every script a block runs is pinned by sha256 in that block and checked be
       const check = l.findIndex((x) => new RegExp(`^\\[ "\\$\\(shasum -a 256 ${esc(file)} \\| cut -d' ' -f1\\)" = "\\$\\{(SHA[A-Z0-9]*)\\}" \\] \\|\\| \\{ echo "STOP: [^"]*"; exit 1; \\}$`).test(x));
       assert.ok(check >= 0 && check < at, `${label} runs ${file} without checking its pin first`);
       const v = l[check].match(/\$\{(SHA[A-Z0-9]*)\}/)[1];
-      assert.equal(l.find((x) => x.startsWith(`${v}=`)), `${v}=${sha256(file)}`, `${label}'s ${v} is not the sha256 of ${file}`);
+      assert.equal(l.find((x) => x.startsWith(`${v}=`)), `${v}=${pinOf(file)}`, `${label}'s ${v} is not the sha256 of ${file}`);
     }
   }
   const s0 = block("STAGE 0");
