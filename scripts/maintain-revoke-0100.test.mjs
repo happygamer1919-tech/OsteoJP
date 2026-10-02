@@ -492,8 +492,12 @@ test("every pin is the real file, the given value or an R9 placeholder, and the 
   assert.notDeepEqual(pinProblems(doc.replace(`SHAPRE=${ACTUAL[PRE]}`, `SHAPRE=${"0".repeat(64)}`), ACTUAL), []);
   assert.notDeepEqual(pinProblems(doc, { ...ACTUAL, [POST]: "f".repeat(64) }), []);
   assert.notDeepEqual(pinProblems(doc.replace(`SHAGUARD=${EXTERNAL_PINS.SHAGUARD}`, `SHAGUARD=${"b".repeat(64)}`), ACTUAL), []);
-  assert.notDeepEqual(pinProblems(doc.replace(`SHAGATE=${R9_PLACEHOLDERS.SHAGATE}`, "SHAGATE=TODO"), ACTUAL), []);
-  assert.notDeepEqual(pinProblems(doc.replace(`SHAGATE=${R9_PLACEHOLDERS.SHAGATE}`, `SHAGATE=${"c".repeat(64)}`), ACTUAL), []);
+  // The first SHAGATE line, whatever it holds (the placeholder, or the sha256 filled on
+  // 2026-10-02): a value that is neither, or one block disagreeing with the other.
+  const firstGate = /^SHAGATE=.*$/m;
+  assert.match(doc, firstGate);
+  assert.notDeepEqual(pinProblems(doc.replace(firstGate, "SHAGATE=TODO"), ACTUAL), []);
+  assert.notDeepEqual(pinProblems(doc.replace(firstGate, `SHAGATE=${"c".repeat(64)}`), ACTUAL), []);
 });
 
 test("R9: the placeholders can never match a sha256, and a filled SHAGATE is the gate file's real sha256", () => {

@@ -1,6 +1,6 @@
 # 0100: apply the MAINTAIN revoke from `authenticated`
 
-**NOT READY. Seven things happen first, in order; a sitting inside clinic hours needs three more (steps 6 to 8), all of them before the merge (see "NOT READY" below). Two of the seven are done: the guard pair (#1508, #1509) is on main and merged into this branch (step 1), and 0100 is promoted on it (step 3), both on 2026-10-02.**
+**NOT READY. Seven things happen first, in order; a sitting inside clinic hours needs three more (steps 6 to 8), all of them before the merge (see "NOT READY" below). Two of the seven are done: the guard pair (#1508, #1509) is on main and merged into this branch (step 1), and 0100 is promoted on it (step 3), both on 2026-10-02. Step 2's fill is made (#1510 merged, `SHAGATE` holds main's gate file sha256); its R8 round is in "Review history".**
 
 **Status: PROMOTED. NOT APPLIED.** One migration,
 `packages/db/migrations/0100_revoke_maintain.sql`, which the promotion of 2026-10-02 renamed,
@@ -46,7 +46,11 @@ migrations"). The lane that wrote this document never runs it.
    which both now import. This document pins the NEW bytes (see "The guard and the reader
    change before 0100 applies"). Until the pair is on main, stage 0 STOPs on those pins and
    nothing reaches production.
-2. **#1510 merges (branch `db/LOCK-TIMEOUT-verified-migrate`, the SET LOCAL gate,
+2. **FILLED 2026-10-02: #1510 merged at 21:06:04 Lisbon (`c2db7a1f`), this branch merged main
+   at `4c906fa1`, and `SHAGATE` in stages 0 and 1 now holds `e150a805...`, the sha256 of
+   `scripts/migration-timeouts.test.mjs` on main, read from `origin/main` and from this branch.
+   Its R8 round on the changed bytes is in "Review history". As first written:**
+   **#1510 merges (branch `db/LOCK-TIMEOUT-verified-migrate`, the SET LOCAL gate,
    `scripts/migration-timeouts.test.mjs`), and SOLO fills `SHAGATE`** with that file's sha256
    as main then holds it, in every block that carries it. That is an amendment, and under
    strategy's R8 ("a document amended for an owner override gets one R4 round on the changed
@@ -118,7 +122,7 @@ migrations"). The lane that wrote this document never runs it.
 | Behaviour check | none, on purpose: see "No behaviour check, and why" |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261` (unchanged since 0099); `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387`; and the module both of the last two import, `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c`. The last three are the guard pair's NEW bytes, read from `origin/sec/INC-guard-parse-host-db` on 2026-10-02; every block that runs one compares it, and the module, first |
 | The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59`. It imports nothing but `node:` builtins |
-| The R9 pins | `SHAGATE`, the sha256 of `scripts/migration-timeouts.test.mjs` on main (a PLACEHOLDER until #1510 merges and SOLO fills it, step 2); `PRECHECK_EARLIER`, the sha256 of the earlier pre-check's recorded output (a PLACEHOLDER until that sitting runs before the merge and SOLO records it on the branch, steps 7 and 8). Each placeholder carries letters a sha256 never has, so it can never match, and the daytime arm fails closed |
+| The R9 pins | `SHAGATE`, the sha256 of `scripts/migration-timeouts.test.mjs` on main (FILLED 2026-10-02 with `e150a805...` after #1510 merged, step 2); `PRECHECK_EARLIER`, the sha256 of the earlier pre-check's recorded output (a PLACEHOLDER until that sitting runs before the merge and SOLO records it on the branch, steps 7 and 8). Each placeholder carries letters a sha256 never has, so it can never match, and the daytime arm fails closed |
 | Not pinned, and why | what the pinned programs load in turn: drizzle-kit and the rest of `node_modules`, and `packages/db/drizzle.config.ts` (0094 to 0099 did not pin them either). Their tree is fixed instead, by commit. **The apply sitting's:** GREEN's BEFORE YOU START requires `origin/main` to BE the PR's merge commit, and the HEAD CHECK halts on any other head before the apply. **THE EARLIER PRE-CHECK SITTING's:** the full sha its dispatch names, which the block checks against PR #1520's head on GitHub before the checkout. That sitting loads no `node_modules`: it runs psql, the guard, and the guard's module, and the guard imports only that module, which imports nothing |
 | Run window | named by GREEN's dispatch, never here: its CLOCK CHECK records it in `/tmp/0100-window.ok` with the sha stage 0 recorded, as three Lisbon times `YYYYMMDDHHMM` (opens, the last minute stage 1 may start, ends). Stage 1 refuses to start outside it and checks again just before the apply; stage 2 and the closing read refuse at or after its end. Stage 0 removes the record |
 | What it changes | Two `SET LOCAL` lines (`lock_timeout` 5s, `statement_timeout` 60s, for this transaction only). On every ordinary and partitioned table in `public`: `REVOKE MAINTAIN ... FROM authenticated`. Then `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE MAINTAIN ON TABLES FROM authenticated`, for the role that runs it (`postgres`), so the next `CREATE TABLE` does not re-grant it |
@@ -275,9 +279,9 @@ closed hours. Propose the stage 0 arm in 0100's document; R4 covers it."
   STOPS WITH NOTHING APPLIED.** Each proof prints `yes` or `no` in every sitting, closed hours
   included, so a reader sees where the document stands:
   1. **The SET LOCAL gate is on main.** `scripts/migration-timeouts.test.mjs` exists at the
-     recorded `origin/main` sha and its sha256 equals `SHAGATE`. #1510 is not merged, so
-     `SHAGATE` is a placeholder that can never match: the arm fails closed (closed hours
-     only) until SOLO fills it, in an amendment with its own R4 round (NOT READY step 2).
+     recorded `origin/main` sha and its sha256 equals `SHAGATE`. #1510 merged on 2026-10-02 and
+     `SHAGATE` holds `e150a805...`, the file's sha256 on main (NOT READY step 2, an amendment with
+     its own R8 round). A gate file that differs, or is missing, fails this proof.
   2. **The migration is catalog-only. `SHA0100` alone proves the file is the reviewed file:**
      every block of the apply sitting asserts, BEFORE the arm runs, that the migration on disk
      is the pinned, reviewed bytes (sha256 `80f85018...6106`), and `verified-migrate.mjs` checks
@@ -532,7 +536,7 @@ SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 SHAREADER=825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387
 SHACJ=7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59
-SHAGATE=PLACEHOLDER-UNTIL-1510-MERGES
+SHAGATE=e150a805983e476ea74bfae609d31c57c184b24e09c2f828eddb9df5a09fcef6
 PRECHECK_EARLIER=PLACEHOLDER-UNTIL-THE-EARLIER-SITTING
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -637,7 +641,7 @@ SHAPRE=d68ca1a2f791cd9f15b8f5466ae068b6cf0cfd23ab1af6f03891854100264d33
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
-SHAGATE=PLACEHOLDER-UNTIL-1510-MERGES
+SHAGATE=e150a805983e476ea74bfae609d31c57c184b24e09c2f828eddb9df5a09fcef6
 PRECHECK_EARLIER=PLACEHOLDER-UNTIL-THE-EARLIER-SITTING
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
