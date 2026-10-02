@@ -62,6 +62,8 @@ journal's `idx` order to match the numeric file order, and the apply order ruled
 2026-09-29 (`0098, 0099, 0097, 0096` under the old numbers) would have broken it at the
 first promotion. The binding table is in `CLAUDE.md` under "SOLO's record".
 
+**Re-ruled 2026-10-01 (strategy S-1001-A R2), after `0096` to `0099` were all applied:** "Numbering: this is 0100 (catalog-only pilot of the SET LOCAL gate). SAT-01 becomes 0101, the episode-policy item 0102." The queue above is the 2026-09-30 ruling as it was written; read its "`0100` onward SAT-01" as `0101` onward.
+
 A pending file's `NEXT-AFTER-` name follows this queue. Named as they will be on their
 held branches:
 
