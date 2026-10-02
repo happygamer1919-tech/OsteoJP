@@ -680,6 +680,13 @@
       "when": 1788502000000,
       "tag": "0099_revoke_truncate_trigger_references",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1788502100000,
+      "tag": "0100_revoke_maintain",
+      "breakpoints": true
     }
   ]
 }
