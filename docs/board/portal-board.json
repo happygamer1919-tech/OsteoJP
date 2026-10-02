@@ -9202,6 +9202,20 @@
       "notes": "=== 2026-10-02 (SOLO) === Ruled by strategy, dispatch S-1002-A R10: \"#1510 values 5s and 60s accepted. Observer stays out; card it as its own GATE-CHANGE pair after 0100.\" The observer (verified-migrate asks for lock_timeout and statement_timeout on drizzle's session through the URL options parameter and PGOPTIONS, reads both back from pg_settings and prints 'session in force' or 'session NOT APPLIED'; it refuses an existing PGOPTIONS or URL options) was built on #1510 and taken out of it on 2026-10-01, because #1508 pins verified-migrate.mjs's bytes in scripts/verified-migrate.test.mjs, so any change to the applier is a GATE-CHANGE re-pin plus a separate code PR. The code is kept whole on branch db/VM-observer-pair-code (814c7710), with its own session test file on that branch (not on main, so not named here as a path). On production it is expected to print NOT APPLIED (postgres.js ignores PGOPTIONS; Supavisor forwards only search_path), which is why the bound itself is SET LOCAL in each migration from 0100 (#1510). When built: one GATE-CHANGE (re-pin + the session test + manifest) and one code PR; the 0100 and later documents pin the new verified-migrate sha256, never 0099 and earlier. Also fold in: verified-migrate's 'IT PRINTED NOTHING. That is POST-01' message should name a lock or statement timeout as a candidate cause (today the runbook says so, the message does not)."
     },
     {
+      "id": "SEC-anon-sequences-default",
+      "title": "anon's SEQUENCES default in public: postgres's default privileges give anon SELECT, UPDATE and USAGE on every new sequence. Revoke it, Tier C, carded only (no build yet)",
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "status": "todo",
+      "priority": "medium",
+      "owner_terminal": "solo",
+      "gate": "owner_merge",
+      "blocked_on": null,
+      "last_checkpoint": "2026-10-02",
+      "evidence": null,
+      "notes": "=== 2026-10-02 (SOLO) === Found by the read-only 0100 measurement on production (2026-10-02): in schema public, the postgres role's default privileges for SEQUENCES grant anon SELECT, UPDATE and USAGE. No migration creates a sequence today, so the default covers no object, and no apply document records it (the FUNCTIONS default for anon is documented in 0072, 0073 and 0086; supabase_admin's defaults are recorded as untouchable in 0099's document). Carded by strategy's dispatch S-1002-D P1.6: Tier C, no build yet. ORDER (S-1002-D P4.1): after 0102 (the episode-policy item) and the Q9 same-patient database guard, in file-number order, numbered when authored; a read-only measurement and a read-only pre-check sitting on production before it; one Tier C item in flight at a time. SCOPE when built: ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, with the two SET LOCAL lines (#1510), a pre-check and post-check that prove the default before and after and that no existing sequence's ACL moves."
+    },
+    {
       "id": "RGPD-consent-recorded-in-two-places",
       "title": "RGPD consent is recorded in two independent places, and nothing reconciles them",
       "lane": "loose_ends",
@@ -9663,7 +9677,7 @@
     },
     {
       "id": "SAT-01-satisfaction-form",
-      "title": "SAT-01: a four-question satisfaction form after a visit, sent once by the channel the patient allows, answered on a single-use guest page. RULED to its ten defaults, owner and admin only in v1, migrations from 0100. Not started: waits on G1's ruling and tonight's apply chain",
+      "title": "SAT-01: \"Avaliação de satisfação\" after a visit, sent automatically 24 h after Concluída (at most one per 60 days) or by staff with \"Enviar avaliação\", answered on a single-use guest page. RULED by strategy S-1002-D (S1 to S12, 2026-10-02): answers carry the patient's identity and are visible, in RLS, to the attending therapist, reception and admin of that clinic, and the owner. Migrations from 0101 (S-1001-A R2). Copy approved by JP",
       "lane": "in_flight",
       "home_lane": "in_flight",
       "status": "in_flight",
@@ -9678,7 +9692,7 @@
         "at": "2026-09-29",
         "ref": "#1496 merged 2026-09-29 as a64e0429: docs/design/SPEC-SAT-01-satisfaction-form.md (migrations from 0100, held) and docs/design/SAT-01-copy-pt.md."
       },
-      "notes": "=== 2026-09-27 (SOLO): RULED, NOT STARTED ===\nThe owner ruled SAT-01 to its ten defaults, with the answers readable by owner and admin only in v1. Numbering, ruled 2026-09-27: SAT-01's migrations start at 0100 (0099 is the registo write fix; #1466 records the table). They are on the ruled Tier C list (#1461).\nORDER, by the owner's dispatch: B15 SAT-01 starts after G1 (Suporte e Guia) is ruled and after T3, tonight's apply chain (0094, 0095, ANEXO-LINK stage 1, then 0097 and 0098), is done. Nothing is built yet.\n\n--- prior notes below ---\n\nMeasured 2026-09-27: there is no Concluir consulta button; closing a visit (Estado Concluida) already schedules a 24 hour after-visit message that has been switched off since 4 September. Proposal: NPS 0 to 10, a 1 to 5 rating, optional free text and an unticked contact consent; a single-use code like the confirm flow (0072, 0074); answers per appointment readable by owner and admin only; a separate survey opt-out; JP reviews every word. About 3 to 4 PRs. Ten open questions with defaults are in the SOLO report of 2026-09-27.\n\n=== 2026-09-29 (SOLO) === Started on the lead's dispatch of 2026-09-29: spec and copy only."
+      "notes": "=== 2026-10-02 (SOLO) === Strategy dispatch S-1002-D rules SAT-01 final (S1 to S12; JP approved sections A to G, the timing block and the new text 7 on 2026-10-02). Supersedes the 2026-09-27 'owner and admin only in v1' visibility and the 'migrations from 0100' numbering. Build order (S-1002-D phase 3): the spec amendment (Tier A), then 0101 (Tier C, held, rehearsed, READY line), then the app PRs behind a live-send flag that is OFF by default, a supervised canary to a ZZ TESTE patient, the owner turning the flag on, and the Platform Guide lesson.\n=== 2026-09-27 (SOLO): RULED, NOT STARTED ===\nThe owner ruled SAT-01 to its ten defaults, with the answers readable by owner and admin only in v1. Numbering, ruled 2026-09-27: SAT-01's migrations start at 0100 (0099 is the registo write fix; #1466 records the table). They are on the ruled Tier C list (#1461).\nORDER, by the owner's dispatch: B15 SAT-01 starts after G1 (Suporte e Guia) is ruled and after T3, tonight's apply chain (0094, 0095, ANEXO-LINK stage 1, then 0097 and 0098), is done. Nothing is built yet.\n\n--- prior notes below ---\n\nMeasured 2026-09-27: there is no Concluir consulta button; closing a visit (Estado Concluida) already schedules a 24 hour after-visit message that has been switched off since 4 September. Proposal: NPS 0 to 10, a 1 to 5 rating, optional free text and an unticked contact consent; a single-use code like the confirm flow (0072, 0074); answers per appointment readable by owner and admin only; a separate survey opt-out; JP reviews every word. About 3 to 4 PRs. Ten open questions with defaults are in the SOLO report of 2026-09-27.\n\n=== 2026-09-29 (SOLO) === Started on the lead's dispatch of 2026-09-29: spec and copy only."
     },
     {
       "id": "RGPD-01-consent-at-creation",
