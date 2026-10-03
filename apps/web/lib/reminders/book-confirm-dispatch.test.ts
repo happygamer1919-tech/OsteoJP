@@ -12,8 +12,9 @@
  *
  *   ./data             the row the dispatch reads (a fixture per test)
  *   ./clients          the two send functions, which capture the whole message
- *   ./dispatch-ledger  an in-memory ledger with the same "handed over" rule as
- *                      the real one, so "approve twice" can be driven for real
+ *   ./dispatch-ledger  an in-memory ledger and hand-over trail with the real
+ *                      rule (one message per appointment AND start), so
+ *                      "approve twice" can be driven for real
  *
  * The real ledger read and the real row shape are proven against Postgres in
  * book-confirm.db.test.ts.
@@ -40,6 +41,8 @@ const h = vi.hoisted(() => ({
   email: [] as Sent[],
   sms: [] as Sent[],
   ledger: [] as LedgerRow[],
+  /** The hand-over trail: which appointment, at which start, on which channel. */
+  handOvers: [] as { appointmentId: string; startsAt: string; channel: string }[],
   /** When true the two sends go to the REAL notify gate instead of the capture. */
   realGate: false,
   /** A gate reason to report for the next held-back results, when simulated. */
@@ -68,26 +71,32 @@ vi.mock("./clients", async (importOriginal) => {
   };
 });
 vi.mock("./dispatch-ledger", () => ({
+  HANDED_OVER_WHILE_LIVE_SEND_OFF: "live_send_disabled",
   recordDispatch: vi.fn(async (row: LedgerRow) => {
     h.ledger.push(row);
   }),
-  // The real rule (dispatch-ledger.ts): a `sent` row, or one the gate held
-  // back because live send is off.
-  hasHandedOverDispatch: vi.fn(
-    async (args: { appointmentId: string; templateIds: readonly string[] }) =>
-      h.ledger.some(
-        (r) =>
-          r.appointmentId === args.appointmentId &&
-          args.templateIds.includes(r.templateId) &&
-          (r.outcome === "sent" ||
-            (r.outcome === "suppressed" && r.suppressionReason === "live_send_disabled")),
-      ),
+  // The hand-over trail, in memory, with the real rule: one entry per
+  // appointment AND start (dispatch-ledger.ts).
+  recordBookingApprovedHandOver: vi.fn(
+    async (args: { appointmentId: string; startsAt: Date; channel: "sms" | "email" }) => {
+      h.handOvers.push({
+        appointmentId: args.appointmentId,
+        startsAt: args.startsAt.toISOString(),
+        channel: args.channel,
+      });
+    },
+  ),
+  hasBookingApprovedHandOver: vi.fn(async (args: { appointmentId: string; startsAt: Date }) =>
+    h.handOvers.some(
+      (o) => o.appointmentId === args.appointmentId && o.startsAt === args.startsAt.toISOString(),
+    ),
   ),
 }));
 
 import {
   BOOKING_APPROVED_EMAIL_TEMPLATE_ID,
   BOOKING_APPROVED_SMS_TEMPLATE_ID,
+  BOOKING_APPROVED_RENDER_REFUSAL,
   bookingApprovedLocationContact,
   buildReminderContext,
   dispatchConfirmation,
@@ -126,7 +135,7 @@ function row(over: Record<string, unknown> = {}) {
     patientReminderEmailEnabled: true,
     patientDeletedAt: null,
     patientHasAcceptedTerms: false,
-    practitionerName: "Dr. Joao Pereira",
+    practitionerName: "Dr. Teste Ficticio",
     locationName: "Castelo Branco",
     locationPhone: LOCATION_PHONE,
     locationAddress: LOCATION_ADDRESS,
@@ -158,6 +167,7 @@ beforeEach(() => {
   h.email.length = 0;
   h.sms.length = 0;
   h.ledger.length = 0;
+  h.handOvers.length = 0;
   h.realGate = false;
   h.simulatedReason = null;
   delete process.env.BOOK_CONFIRM_MODE;
@@ -396,7 +406,7 @@ describe("the channel decision, through the dispatch (mode on, an acceptance)", 
         `Data: ${formatDateLong(STARTS_AT, "pt")}`,
         `Hora: ${formatTime(STARTS_AT, "pt")}`,
         "Serviço: Osteopatia",
-        "Terapeuta: Dr. Joao Pereira",
+        "Terapeuta: Dr. Teste Ficticio",
         `Local: Castelo Branco, ${LOCATION_ADDRESS}`,
         `Para alterar ou cancelar, contacte a clínica: ${LOCATION_PHONE}`,
         "OsteoJP",
@@ -696,15 +706,24 @@ describe("the address and the phone come from the LOCATION row only (mode on, an
 });
 
 /* ==================================================================== */
-/* 5. ONCE PER APPROVAL                                                  */
+/* 5. ONE MESSAGE PER APPOINTMENT AND START                              */
 /* ==================================================================== */
 
-describe("once per approval, at the dispatch (mode on)", () => {
+/**
+ * Lead's decision, 2026-10-03. A second acceptance at the SAME start sends
+ * nothing. An acceptance at a DIFFERENT start sends one new message: a request
+ * accepted at T1, returned to Agendada, moved to T2 and accepted again must
+ * tell the patient T2, or the only message they hold names the wrong hour.
+ */
+describe("one message per appointment and start, at the dispatch (mode on)", () => {
+  const T1 = STARTS_AT;
+  const T2 = new Date(Date.UTC(2031, 4, 16, 9, 0, 0));
+
   beforeEach(() => {
     process.env.BOOK_CONFIRM_MODE = "on";
   });
 
-  it("the same acceptance dispatched twice sends ONE email", async () => {
+  it("the same acceptance dispatched twice at the SAME start sends ONE email", async () => {
     h.loadReminderData.mockResolvedValue(row());
     expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
     expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toEqual({
@@ -716,17 +735,69 @@ describe("once per approval, at the dispatch (mode on)", () => {
       ["sent", null],
       ["suppressed", "already_sent"],
     ]);
+    // The hand-over is recorded for THIS appointment at THIS start.
+    expect(h.handOvers).toEqual([
+      { appointmentId: APPT, startsAt: T1.toISOString(), channel: "email" },
+    ]);
   });
 
-  it("the same acceptance dispatched twice sends ONE fallback SMS", async () => {
+  it("accepted at T1, moved to T2, accepted again: ONE NEW message, and it says T2", async () => {
+    h.loadReminderData.mockResolvedValue(row({ startsAt: T1 }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    h.loadReminderData.mockResolvedValue(row({ startsAt: T2 }));
+    expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
+
+    expect(h.email).toHaveLength(2);
+    expect(h.email[0]!.subject).toContain(formatTime(T1, "pt"));
+    expect(h.email[1]!.subject).toBe(
+      `Consulta confirmada: ${formatDateLong(T2, "pt")} às ${formatTime(T2, "pt")}`,
+    );
+    expect(h.email[1]!.body).toContain(`Data: ${formatDateLong(T2, "pt")}`);
+    expect(h.email[1]!.body).toContain(`Hora: ${formatTime(T2, "pt")}`);
+    expect(h.handOvers.map((o) => o.startsAt)).toEqual([T1.toISOString(), T2.toISOString()]);
+  });
+
+  it("and a THIRD acceptance, still at T2, sends nothing more", async () => {
+    h.loadReminderData.mockResolvedValue(row({ startsAt: T1 }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    h.loadReminderData.mockResolvedValue(row({ startsAt: T2 }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toEqual({
+      dispatched: false,
+      reason: "already_sent",
+    });
+    expect(h.email).toHaveLength(2);
+  });
+
+  it("moved away and BACK to T1, accepted again: nothing, the patient already holds T1", async () => {
+    h.loadReminderData.mockResolvedValue(row({ startsAt: T1 }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    h.loadReminderData.mockResolvedValue(row({ startsAt: T2 }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    h.loadReminderData.mockResolvedValue(row({ startsAt: T1 }));
+    expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ reason: "already_sent" });
+    expect(h.email).toHaveLength(2);
+  });
+
+  it("the same acceptance dispatched three times sends ONE fallback SMS", async () => {
     h.loadReminderData.mockResolvedValue(row({ patientEmail: null }));
     await dispatchConfirmation(TENANT, APPT, ACCEPTED);
     await dispatchConfirmation(TENANT, APPT, ACCEPTED);
     await dispatchConfirmation(TENANT, APPT, ACCEPTED);
     expect(allSent()).toHaveLength(1);
+    expect(h.handOvers).toEqual([{ appointmentId: APPT, startsAt: T1.toISOString(), channel: "sms" }]);
   });
 
-  it("an email added AFTER the SMS went does not earn a second message", async () => {
+  it("the SMS fallback follows the same rule: a different start earns one new SMS", async () => {
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, startsAt: T1 }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, startsAt: T2 }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(h.sms).toHaveLength(2);
+    expect(h.sms[1]!.body).toContain(`${formatDateShort(T2)} as ${formatTime(T2, "pt")}`);
+  });
+
+  it("an email added AFTER the SMS went, same start, does not earn a second message", async () => {
     h.loadReminderData.mockResolvedValue(row({ patientEmail: null }));
     await dispatchConfirmation(TENANT, APPT, ACCEPTED);
     h.loadReminderData.mockResolvedValue(row());
@@ -744,9 +815,43 @@ describe("once per approval, at the dispatch (mode on)", () => {
     expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({
       reason: "location_contact_missing",
     });
+    expect(h.handOvers).toEqual([]);
     h.loadReminderData.mockResolvedValue(row());
     expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
     expect(h.email).toHaveLength(1);
+  });
+
+  it.each(["missing_provider_config", "template_unapproved", "invalid_recipient"] as const)(
+    "a message the gate held back for %s is NOT a hand-over: approving again tries again",
+    async (reason) => {
+      const clients = await import("./clients");
+      h.simulatedReason = reason;
+      vi.mocked(clients.sendEmail).mockResolvedValueOnce({ channel: "email", sandbox: true, id: "sandbox:email" });
+      h.loadReminderData.mockResolvedValue(row());
+      await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+      expect(h.handOvers).toEqual([]);
+      // The cause is fixed; the second acceptance goes out.
+      h.simulatedReason = null;
+      expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
+      expect(h.email).toHaveLength(1);
+    },
+  );
+
+  it("an SMS the provider never received (a landline) is not a hand-over", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, patientPhone: "+351 272 000 123" }));
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(h.handOvers).toEqual([]);
+  });
+
+  it("an email the provider REFUSED is not a hand-over", async () => {
+    const clients = await import("./clients");
+    vi.mocked(clients.sendEmail).mockRejectedValueOnce(
+      new clients.ProviderSendError("email", "validation_error", "reminders/email: Resend send failed"),
+    );
+    h.loadReminderData.mockResolvedValue(row());
+    await expect(dispatchConfirmation(TENANT, APPT, ACCEPTED)).rejects.toThrow();
+    expect(h.handOvers).toEqual([]);
   });
 
   it("another appointment's message does not count", async () => {
@@ -756,6 +861,12 @@ describe("once per approval, at the dispatch (mode on)", () => {
     h.loadReminderData.mockResolvedValue(row({ appointmentId: OTHER_APPT }));
     expect(await dispatchConfirmation(TENANT, OTHER_APPT, ACCEPTED)).toMatchObject({ dispatched: true });
     expect(h.email).toHaveLength(2);
+  });
+
+  it("today's confirmation writes no hand-over record: the rule is the new message's", async () => {
+    h.loadReminderData.mockResolvedValue(row());
+    await dispatchConfirmation(TENANT, APPT);
+    expect(h.handOvers).toEqual([]);
   });
 });
 
@@ -846,6 +957,70 @@ describe("what sends nothing (mode on, an acceptance)", () => {
     expect(h.ledger).toEqual([
       expect.objectContaining({ channel: "sms", suppressionReason: "body_refused" }),
     ]);
+  });
+});
+
+/* ==================================================================== */
+/* 6b. A VALUE THAT LOOKS LIKE A PLACEHOLDER                             */
+/* ==================================================================== */
+
+/**
+ * The renderer throws when a value itself looks like a placeholder, and its
+ * message QUOTES what it found. On the email that can be part of the patient's
+ * name. Uncaught it was a run that retried forever, wrote no row, and put the
+ * fragment in the run history.
+ */
+describe("a name with braces refuses the email as an outcome, and the fragment goes nowhere", () => {
+  const FRAGMENT = "{segredo}";
+
+  beforeEach(() => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+  });
+
+  it.each([
+    ["the patient's first name", { patientName: `${FRAGMENT} Inventada` }],
+    ["the service", { serviceName: `Osteopatia ${FRAGMENT}` }],
+    ["the location name", { locationName: `Clinica ${FRAGMENT}` }],
+    ["the therapist", { practitionerName: `Dr. ${FRAGMENT}` }],
+  ])("%s: nothing is sent, one body_refused row, and nothing thrown", async (_label, over) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.loadReminderData.mockResolvedValue(row(over));
+
+    const out = await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+
+    expect(out).toEqual({
+      dispatched: false,
+      reason: "body_refused",
+      detail: BOOKING_APPROVED_RENDER_REFUSAL,
+    });
+    expect(allSent()).toEqual([]);
+    expect(h.handOvers).toEqual([]);
+    expect(h.ledger).toEqual([
+      expect.objectContaining({
+        channel: "email",
+        templateId: "booking_approved.email",
+        outcome: "suppressed",
+        suppressionReason: "body_refused",
+      }),
+    ]);
+    // THE FRAGMENT IS NOWHERE: not in the outcome, the ledger or the log.
+    const logged = error.mock.calls.map((c) => JSON.stringify(c)).join(" ");
+    expect(logged).toContain("booking-approved refused");
+    expect(logged).toContain(`appointmentId=${APPT}`);
+    for (const where of [JSON.stringify(out), JSON.stringify(h.ledger), logged]) {
+      expect(where).not.toContain("segredo");
+      expect(where).not.toContain("Inventada");
+    }
+  });
+
+  it("the fixed sentence itself names no value", () => {
+    expect(BOOKING_APPROVED_RENDER_REFUSAL).not.toMatch(/segredo|Madalena/);
+  });
+
+  it("an ordinary name still sends: the catch is not swallowing every email", async () => {
+    h.loadReminderData.mockResolvedValue(row());
+    expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
+    expect(h.email).toHaveLength(1);
   });
 });
 
@@ -1094,6 +1269,27 @@ describe("today's confirmation leaves a ledger row for every outcome", () => {
       expect(rows()).toEqual([["email", "confirmation.email", "suppressed", "reschedule_link_error"]]);
     },
   );
+
+  it.each([
+    ["a clinic name with an accent (not GSM-7)", "Clínica do Coração"],
+    ["a clinic name too long for one segment", "Clinica ".repeat(30).trim()],
+  ])("today's SMS body refused, %s: the run still fails, and now ONE sms row says body_refused", async (_l, locationName) => {
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, locationName }));
+    await expect(dispatchConfirmation(TENANT, APPT)).rejects.toThrow(/reminders\/sms/);
+    expect(h.sms).toEqual([]);
+    expect(rows()).toEqual([["sms", "confirmation.sms", "suppressed", "body_refused"]]);
+  });
+
+  it("today's SMS body refused AFTER the email went: the email's row stands, the SMS row says why", async () => {
+    h.loadReminderData.mockResolvedValue(row({ locationName: "Clínica do Coração" }));
+    await expect(dispatchConfirmation(TENANT, APPT)).rejects.toThrow(/reminders\/sms/);
+    // The send behaviour is today's: the email had already gone.
+    expect(h.email.map((m) => m.templateId)).toEqual(["confirmation.email"]);
+    expect(rows()).toEqual([
+      ["email", "confirmation.email", "sent", null],
+      ["sms", "confirmation.sms", "suppressed", "body_refused"],
+    ]);
+  });
 
   it("the booking-approved message signs no link, so the same missing variables cannot stop it", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";

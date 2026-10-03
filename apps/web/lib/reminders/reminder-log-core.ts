@@ -153,6 +153,19 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   body_refused: s["remindersLog.reason.body_refused"],
   patient_deleted: s["remindersLog.reason.patient_deleted"],
   not_found: s["remindersLog.reason.not_found"],
+  // BOOK-CONFIRM. The booking-approved dispatch, and the confirmation rows
+  // that reach the ledger since it.
+  location_contact_missing: s["remindersLog.reason.location_contact_missing"],
+  already_sent: s["remindersLog.reason.already_sent"],
+  service_missing: s["remindersLog.reason.service_missing"],
+  reschedule_link_error: s["remindersLog.reason.reschedule_link_error"],
+  // THE NOTIFY GATE'S OWN REASONS (packages/notify/src/types.ts,
+  // `SuppressionReason`). A confirmation row carries the gate's word instead of
+  // the generic `sandbox`, so the row says WHICH lock held.
+  live_send_disabled: s["remindersLog.reason.live_send_disabled"],
+  template_unapproved: s["remindersLog.reason.template_unapproved"],
+  missing_provider_config: s["remindersLog.reason.missing_provider_config"],
+  invalid_recipient: s["remindersLog.reason.invalid_recipient"],
 };
 
 export const KNOWN_SUPPRESSION_REASONS: readonly string[] = Object.keys(REASON_LABEL);

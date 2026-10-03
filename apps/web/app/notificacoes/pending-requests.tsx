@@ -8,6 +8,8 @@ import { s } from "@/lib/i18n";
 import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import type { ConflictInfo } from "@/lib/scheduling/types";
 
+import { ApprovalNotices, withApprovalNotice, type ApprovalNoticeView } from "./approval-notices";
+
 /**
  * W13-04 — the reception confirm queue.
  *
@@ -49,21 +51,6 @@ type RowError =
   // implies a retry is possible, and this refusal is absolute.
   | { code: "doubleBooked" }
   | { code: "generic" };
-
-/**
- * BOOK-CONFIRM: a request that WAS accepted, whose patient has no email on file.
- *
- * Held here and not in the row, because the row is gone by the time it matters:
- * a successful confirm revalidates the page and the pedido leaves the queue. The
- * name and the time are copied at the click so the notice can still say WHICH
- * patient to ring. It is the one thing this component keeps after a success,
- * and it is not queue data: it is the outcome of an action this session took.
- */
-type ApprovalNoticeView = {
-  appointmentId: string;
-  patientName: string | null;
-  when: string;
-};
 
 const TIME_FMT: Intl.DateTimeFormatOptions = {
   day: "2-digit",
@@ -119,10 +106,13 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
       if (result.ok) {
         // revalidatePath removes the row. The notice outlives it.
         if (result.data.notice === "patient_no_email") {
-          setNotices((prev) => [
-            ...prev.filter((n) => n.appointmentId !== appointmentId),
-            { appointmentId, patientName: row?.patientName ?? null, when: row?.when ?? "" },
-          ]);
+          setNotices((prev) =>
+            withApprovalNotice(prev, {
+              id: appointmentId,
+              patientName: row?.patientName ?? null,
+              when: row?.when ?? "",
+            }),
+          );
         }
         return;
       }
@@ -145,27 +135,12 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
     });
   }
 
-  // Rendered in BOTH branches below: accepting the last pedido empties the
-  // queue, and that is exactly when the notice must still be on screen.
-  const noticeList =
-    notices.length > 0 ? (
-      <ul className="mb-3 flex flex-col gap-2" data-approval-notices>
-        {notices.map((n) => (
-          <li
-            key={n.appointmentId}
-            role="status"
-            className="rounded-v2 border border-v2-border bg-surface-muted p-3"
-          >
-            <p className="text-sm font-semibold text-v2-text-primary">
-              {s["requests.notice.patientNoEmail"]}
-            </p>
-            <p className="mt-1 text-sm text-v2-text-secondary">
-              {[n.patientName ?? s["notifications.noPatient"], n.when].filter(Boolean).join(" · ")}
-            </p>
-          </li>
-        ))}
-      </ul>
-    ) : null;
+  // BOOK-CONFIRM: a request that WAS accepted, whose patient has no email on
+  // file. Rendered in BOTH branches below: accepting the last pedido empties
+  // the queue, and that is exactly when the notice must still be on screen. It
+  // is the one thing this component keeps after a success, and it is not queue
+  // data: it is the outcome of an action this session took.
+  const noticeList = <ApprovalNotices notices={notices} />;
 
   if (items.length === 0) {
     return (

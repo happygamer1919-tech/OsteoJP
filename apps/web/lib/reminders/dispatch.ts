@@ -31,7 +31,12 @@ import {
   suppressionReasonOf,
   type SendResult,
 } from "./clients";
-import { hasHandedOverDispatch, recordDispatch } from "./dispatch-ledger";
+import {
+  HANDED_OVER_WHILE_LIVE_SEND_OFF,
+  hasBookingApprovedHandOver,
+  recordBookingApprovedHandOver,
+  recordDispatch,
+} from "./dispatch-ledger";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
@@ -1122,7 +1127,26 @@ async function dispatchTodaysConfirmation(
     channels.push(result);
   }
   if (sms && data.patientPhone) {
-    const body = renderConfirmationSms(locale, ctx);
+    // `renderConfirmationSms` THROWS on a body that would leave GSM-7 or one
+    // segment (a clinic name with an accent, or a long one). It always has, and
+    // it still does: the run fails exactly as before. What is new is the row,
+    // so "the SMS did not go, and why" is readable instead of a failed run that
+    // expires. The body prints the date, the time, the clinic's name and its
+    // phone and nothing about the patient, so the refusal is safe to keep.
+    let body: string;
+    try {
+      body = renderConfirmationSms(locale, ctx);
+    } catch (e) {
+      await recordDispatch({
+        tenantId,
+        appointmentId,
+        channel: "sms",
+        templateId: "confirmation.sms",
+        outcome: "suppressed",
+        suppressionReason: "body_refused",
+      });
+      throw e;
+    }
     const sent = await sendPatientSms({
       tenantId,
       appointmentId,
@@ -1166,6 +1190,14 @@ export const BOOKING_APPROVED_EMAIL_TEMPLATE_ID = "booking_approved.email";
  * copy exists, so there is none to approve.
  */
 export const BOOKING_APPROVED_SMS_TEMPLATE_ID = "confirmation.sms";
+
+/**
+ * What is recorded, and returned, when the booking-approved email cannot be
+ * rendered. FIXED TEXT on purpose: the renderer's own message quotes the
+ * fragment it tripped on, and that fragment can be part of a patient's name.
+ */
+export const BOOKING_APPROVED_RENDER_REFUSAL =
+  "A value the email prints (first name, service, therapist or location) contains a {placeholder}-shaped word.";
 
 export type BookingApprovedPlan =
   | { send: "email" }
@@ -1288,32 +1320,75 @@ async function dispatchBookingApproved(
     return suppress("location_contact_missing");
   }
 
-  // ONE APPROVAL, ONE MESSAGE, at the dispatch as well as at the trigger.
-  if (
-    await hasHandedOverDispatch({
-      tenantId,
-      appointmentId,
-      templateIds: [BOOKING_APPROVED_EMAIL_TEMPLATE_ID, BOOKING_APPROVED_SMS_TEMPLATE_ID],
-    })
-  ) {
+  // ================================================================== //
+  // ONE MESSAGE PER APPOINTMENT AND START, at the dispatch as well as at
+  // the trigger. Lead's decision, 2026-10-03.
+  // ================================================================== //
+  // A second acceptance at the SAME start sends nothing. An acceptance at a
+  // DIFFERENT start sends one new message: a request accepted at one time,
+  // returned to Agendada, moved and accepted again must tell the patient the
+  // new time, or the only message they hold names an hour that is no longer
+  // true - worse than the switch being off.
+  //
+  // THE START IS NOT IN `reminder_dispatches` (0075 has no column for it and
+  // none may be added here), so the hand-over is ALSO written as an audit row
+  // that carries it; see `recordBookingApprovedHandOver`. This reads that row
+  // for THIS start.
+  if (await hasBookingApprovedHandOver({ tenantId, appointmentId, startsAt: data.startsAt })) {
     return suppress("already_sent");
   }
+
+  /**
+   * Was this result a hand-over? A real send, or one the gate held back only
+   * because live send is OFF: with live send off that is the one trace a
+   * hand-over leaves, so a repeat is a repeat there too. Any other hold
+   * (an unconfigured provider, an unapproved template) is not one, and
+   * approving again after the cause is fixed still sends.
+   */
+  const markHandedOver = async (result: SendResult, handOverChannel: "email" | "sms") => {
+    if (result.sandbox && suppressionReasonOf(result) !== HANDED_OVER_WHILE_LIVE_SEND_OFF) return;
+    await recordBookingApprovedHandOver({
+      tenantId,
+      appointmentId,
+      startsAt: data.startsAt,
+      channel: handOverChannel,
+    });
+  };
 
   const locale = resolveLocale(data.tenantSettings);
 
   if (plan.send === "email") {
     const serviceName = (data.serviceName ?? "").trim();
     if (serviceName === "") return suppress("service_missing");
-    const rendered = renderBookingApprovedEmail(locale, {
-      patientFirstName: firstName(data.patientName),
-      appointmentDateLong: formatDateLong(data.startsAt, locale),
-      appointmentTime: formatTime(data.startsAt, locale),
-      serviceName,
-      practitionerName: data.practitionerName,
-      locationName: data.locationName,
-      locationAddress: contact.address,
-      locationPhone: contact.phone,
-    });
+    // THE RENDER CAN REFUSE, AND ITS OWN WORDS MUST NOT LEAVE THIS FUNCTION.
+    // `assertNoUnfilledPlaceholders` throws when a value itself looks like a
+    // placeholder - a first name, a service or a clinic stored with braces
+    // around a word - and its message QUOTES the fragment it found, which can
+    // be part of the patient's name. Uncaught, that was a run that retried
+    // forever, wrote no row, and put the fragment in the run history.
+    //
+    // So it is an outcome, with a row, and the sentence kept is FIXED TEXT:
+    // nothing from the error reaches the log, the ledger or the return value.
+    let rendered: { subject: string; body: string };
+    try {
+      rendered = renderBookingApprovedEmail(locale, {
+        patientFirstName: firstName(data.patientName),
+        appointmentDateLong: formatDateLong(data.startsAt, locale),
+        appointmentTime: formatTime(data.startsAt, locale),
+        serviceName,
+        practitionerName: data.practitionerName,
+        locationName: data.locationName,
+        locationAddress: contact.address,
+        locationPhone: contact.phone,
+      });
+    } catch {
+      console.error(
+        `[reminders] booking-approved refused: the email could not be rendered, so no message went. ` +
+          `${BOOKING_APPROVED_RENDER_REFUSAL} tenantId=${tenantId} appointmentId=${appointmentId} ` +
+          `patientId=${data.patientId}`,
+      );
+      return suppress("body_refused", BOOKING_APPROVED_RENDER_REFUSAL);
+    }
     const result = await sendRecordingProviderError(
       { tenantId, appointmentId, channel: "email", templateId: "booking_approved.email" },
       () =>
@@ -1334,6 +1409,7 @@ async function dispatchBookingApproved(
       suppressionReason: result.sandbox ? gateSuppressionReason(result) : null,
       providerMessageId: result.sandbox ? null : result.id,
     });
+    await markHandedOver(result, "email");
     return { dispatched: true, channels: [result] };
   }
 
@@ -1383,6 +1459,7 @@ async function dispatchBookingApproved(
     segments: null,
     providerMessageId: handedOver && !handedOver.sandbox ? handedOver.id : null,
   });
+  if (handedOver) await markHandedOver(handedOver, "sms");
   return { dispatched: true, channels: handedOver ? [handedOver] : [] };
 }
 

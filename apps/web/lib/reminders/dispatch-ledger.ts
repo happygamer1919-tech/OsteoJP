@@ -1,7 +1,8 @@
 import "server-only";
-import { reminderDispatches } from "@osteojp/db";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { auditLog, reminderDispatches } from "@osteojp/db";
+import { and, eq, sql } from "drizzle-orm";
 
+import { assertPiiFreeAuditMetadata } from "@/lib/audit/metadata-contract";
 import { withReminderTenantContext } from "./context";
 
 /**
@@ -119,53 +120,116 @@ export async function recordDispatch(row: DispatchLedgerRow): Promise<void> {
   }
 }
 
-/** The one suppression reason that counts as a hand-over. See `hasHandedOverDispatch`. */
+/**
+ * The one gate suppression that counts as a hand-over. With live send OFF it is
+ * the only trace a hand-over leaves, and a second approval of the same request
+ * must read as a repeat there too, or the rule could only ever be checked in
+ * production. Every other hold (an unconfigured provider, an unapproved
+ * template, a missing location contact) is NOT a hand-over.
+ */
 export const HANDED_OVER_WHILE_LIVE_SEND_OFF = "live_send_disabled";
 
+/** The audit action that records a booking-approved hand-over, with its start. */
+export const BOOKING_APPROVED_HANDOVER_ACTION = "appointment.booking_approved_handed_over";
+
 /**
- * BOOK-CONFIRM: has a message under one of these template ids already been
- * handed over for this appointment?
+ * BOOK-CONFIRM: "a booking-approved message was handed over for this
+ * appointment AT THIS START", as a row that can be read back.
  *
- * "Handed over" is a `sent` row, or a row the gate held back because live send
- * is OFF (`live_send_disabled`). That one counts on purpose: with live send off
- * it is the only trace a hand-over leaves, and a second approval of the same
- * request must read as a repeat there too, or the rule could only ever be
- * checked in production. Every other suppression (a missing location contact,
- * a switched-off channel, an unconfigured provider) is NOT a hand-over, so
- * fixing the cause and approving again still sends.
+ * ==========================================================================
+ * WHY AN AUDIT ROW, AND NOT THE LEDGER ROW ABOVE IT
+ * ==========================================================================
+ * The rule is one message per appointment AND start (lead's decision,
+ * 2026-10-03): a second acceptance at the same start sends nothing, an
+ * acceptance at a different start sends one new message. `reminder_dispatches`
+ * cannot say which start a row was for. 0075 gave it no such column, a `sent`
+ * row may carry no free text (the reason is NULL by CHECK, and the provider id
+ * is the provider's), and adding a column is a migration this change may not
+ * make. Nothing else records it either: the start has two writers (reception's
+ * reschedule and the patient's own in the portal) and they share no trail, so
+ * "has it moved since" cannot be derived.
  *
- * THE SECOND LINE, NOT THE FIRST. Inngest's idempotency key on
- * send-appointment-confirmation is what stops a duplicate EVENT; this stops a
- * second approval the key does not cover. It is a read followed by a send, not
- * a lock, so two runs racing inside the same instant are the key's to stop.
+ * So the dispatch writes the fact itself, where a start fits: `audit_log`,
+ * action `appointment.booking_approved_handed_over`, the appointment as the
+ * entity, and the start as an ISO instant in the metadata. Ids and an instant
+ * only, no actor (a background job), exactly as inbound-reply.ts records a
+ * patient's SMS reply from this same context. The ledger row is still written
+ * and still answers "what was attempted"; this row answers "for which start".
  *
- * IT NEVER THROWS INTO THE SEND PATH, the same rule as `recordDispatch`, and it
- * FAILS OPEN: a read that errors answers "not sent". The message this guards is
- * the patient's only confirmation, so an unreadable ledger must cost at most a
- * repeat, never the message. The failure is logged, ids only.
+ * IT NEVER THROWS INTO THE SEND PATH. The message has already gone when this is
+ * written. If the write fails the next acceptance at this start sends again:
+ * a repeat, never a lost message. Logged, ids only.
  */
-export async function hasHandedOverDispatch(args: {
+export async function recordBookingApprovedHandOver(args: {
   tenantId: string;
   appointmentId: string;
-  templateIds: readonly string[];
+  startsAt: Date;
+  channel: "sms" | "email";
+}): Promise<void> {
+  try {
+    const metadata = {
+      source: "book-confirm",
+      startsAt: args.startsAt.toISOString(),
+      channel: args.channel,
+    };
+    // The audit metadata contract, asked of this writer like every other
+    // (lib/audit/metadata-contract.ts): a slug, an instant and an enum, and
+    // nothing a person could be read from. INSIDE the try, so a refusal is
+    // logged below and never thrown into the send path.
+    assertPiiFreeAuditMetadata(metadata, "reminders/recordBookingApprovedHandOver");
+    await withReminderTenantContext(args.tenantId, async (tx) => {
+      await tx.insert(auditLog).values({
+        tenantId: args.tenantId,
+        actorUserId: null,
+        action: BOOKING_APPROVED_HANDOVER_ACTION,
+        entityType: "appointment",
+        entityId: args.appointmentId,
+        metadata,
+        ip: null,
+      });
+    });
+  } catch (e) {
+    console.error(
+      `[reminders] booking-approved hand-over record FAILED tenantId=${args.tenantId} ` +
+        `appointmentId=${args.appointmentId}: ${e instanceof Error ? e.name : "unknown"}`,
+    );
+  }
+}
+
+/**
+ * Has a booking-approved message already been handed over for this appointment
+ * AT THIS START?
+ *
+ * THE SECOND LINE, NOT THE FIRST. Inngest's idempotency key on
+ * send-appointment-confirmation (appointment + start, 24 hours) stops a
+ * duplicate EVENT; this stops a second approval the key no longer covers. It is
+ * a read followed by a send, not a lock, so two runs racing inside the same
+ * instant are the key's to stop.
+ *
+ * IT NEVER THROWS INTO THE SEND PATH AND IT FAILS OPEN: a read that errors
+ * answers "not handed over". The message this guards is the patient's only
+ * confirmation, so an unreadable trail must cost at most a repeat, never the
+ * message. Logged, ids only.
+ */
+export async function hasBookingApprovedHandOver(args: {
+  tenantId: string;
+  appointmentId: string;
+  startsAt: Date;
 }): Promise<boolean> {
   try {
     return await withReminderTenantContext(args.tenantId, async (tx) => {
       const rows = await tx
-        .select({ id: reminderDispatches.id })
-        .from(reminderDispatches)
+        .select({ id: auditLog.id })
+        .from(auditLog)
         .where(
           and(
-            eq(reminderDispatches.tenantId, args.tenantId),
-            eq(reminderDispatches.appointmentId, args.appointmentId),
-            inArray(reminderDispatches.templateId, [...args.templateIds]),
-            or(
-              eq(reminderDispatches.outcome, "sent"),
-              and(
-                eq(reminderDispatches.outcome, "suppressed"),
-                eq(reminderDispatches.suppressionReason, HANDED_OVER_WHILE_LIVE_SEND_OFF),
-              ),
-            ),
+            eq(auditLog.tenantId, args.tenantId),
+            eq(auditLog.entityType, "appointment"),
+            eq(auditLog.entityId, args.appointmentId),
+            eq(auditLog.action, BOOKING_APPROVED_HANDOVER_ACTION),
+            // The start this row was written for. Both sides are the same
+            // `toISOString()` of the same column, so equality is exact.
+            sql`${auditLog.metadata}->>'startsAt' = ${args.startsAt.toISOString()}`,
           ),
         )
         .limit(1);
@@ -173,7 +237,7 @@ export async function hasHandedOverDispatch(args: {
     });
   } catch (e) {
     console.error(
-      `[reminders] dispatch ledger read FAILED tenantId=${args.tenantId} ` +
+      `[reminders] booking-approved hand-over read FAILED tenantId=${args.tenantId} ` +
         `appointmentId=${args.appointmentId}: ${e instanceof Error ? e.name : "unknown"}`,
     );
     return false;

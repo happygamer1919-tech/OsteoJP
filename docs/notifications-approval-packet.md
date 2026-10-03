@@ -547,9 +547,13 @@ OsteoJP - Recebemos a sua mensagem. A recepcao vai confirmar consigo.
 doente passa a receber **uma so** confirmacao: este email, se tiver email na
 ficha. Se nao tiver email e tiver telemovel, recebe em vez dele o SMS da seccao 1
 (`confirmation.sms`), tal como ja estava aprovado. Se nao tiver nem um nem
-outro, nao recebe nada e a recepcao ve o aviso "Paciente sem email: avise por
-telefone". Esta mensagem **substitui** as das seccoes 1 e 2 no momento da
-aprovacao do pedido; uma remarcacao continua a enviar as das seccoes 1 e 2.
+outro, nao recebe nada. **Sempre que o doente nao tem email na ficha**, tenha ou
+nao telemovel, a pessoa que aprovou o pedido ve o aviso "Paciente sem email:
+avise por telefone". Esta mensagem **substitui** as das seccoes 1 e 2 no momento
+da aprovacao do pedido; uma remarcacao continua a enviar as das seccoes 1 e 2.
+E enviada uma vez por consulta e por hora marcada: aprovar duas vezes a mesma
+hora nao repete a mensagem, e aprovar de novo depois de a hora mudar envia uma
+nova com a hora certa.
 
 **A morada e o telefone sao os do local da consulta**, e so esses. Se o local
 nao tiver morada ou nao tiver telefone, nao e enviado nada por nenhum canal e
@@ -586,7 +590,7 @@ Para alterar ou cancelar, contacte a clínica: {{location_phone}}
 OsteoJP
 ```
 
-**Exemplo preenchido** (Madalena, 10/09 as 14:30, Osteopatia, Dr. Joao Pereira; a morada e o telefone sao de exemplo):
+**Exemplo preenchido** (Madalena, 10/09 as 14:30, Osteopatia, Dr. Teste Ficticio; a morada e o telefone sao de exemplo):
 
 ```
 Assunto: Consulta confirmada: 10 de setembro de 2026 às 14:30
@@ -596,7 +600,7 @@ O seu pedido de marcação foi aprovado. A consulta está confirmada:
 Data: 10 de setembro de 2026
 Hora: 14:30
 Serviço: Osteopatia
-Terapeuta: Dr. Joao Pereira
+Terapeuta: Dr. Teste Ficticio
 Local: Castelo Branco, Rua de Exemplo 1, 6000-000 Castelo Branco
 Para alterar ou cancelar, contacte a clínica: +351 272 000 000
 OsteoJP

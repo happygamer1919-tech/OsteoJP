@@ -20,6 +20,18 @@ function code(src: string): string {
 }
 const dispatchSrc = code(readFileSync(new URL("./dispatch.ts", import.meta.url), "utf8"));
 const functionsSrc = code(readFileSync(new URL("./inngest/functions.ts", import.meta.url), "utf8"));
+/**
+ * The notify gate's suppression reasons, read from the union that owns them
+ * (packages/notify/src/types.ts), so a fifth one added there is a reason this
+ * file's guard asks a label for.
+ */
+const GATE_REASONS: readonly string[] = (() => {
+  const src = code(
+    readFileSync(new URL("../../../../packages/notify/src/types.ts", import.meta.url), "utf8"),
+  );
+  const union = /export type SuppressionReason =([\s\S]*?);/.exec(src)?.[1] ?? "";
+  return [...union.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]!);
+})();
 
 describe("kindOf - the kind is derived from template_id (0075 ruling 1)", () => {
   it.each([
@@ -108,12 +120,60 @@ describe("statusOf - Estado in pt-PT", () => {
     const outcomes = [...dispatchSrc.matchAll(/reason: "([a-z_]+)"/g)].map((m) => m[1]!);
     // Deduplicated: the `SmsSkip` type literal names a reason as well as its return.
     const skips = [...new Set([...dispatchSrc.matchAll(/skipped: "([a-z_]+)"/g)].map((m) => m[1]!))];
-    const written = [...new Set([...outcomes, ...skips, "sandbox"])];
-    // Positive controls: both scans found something, so the check below is not
+    // BOOK-CONFIRM ADDED TWO MORE SHAPES, and this guard did not see either: a
+    // reason passed to a helper (`suppress("already_sent")`) and one written
+    // straight into a row (`suppressionReason: "body_refused"`). Four new
+    // reasons reached the ledger with no sentence and this test stayed green.
+    // Both shapes are scanned now, so an unlabelled reason in either fails here.
+    const suppressed = [...dispatchSrc.matchAll(/\bsuppress\(\s*"([a-z_]+)"/g)].map((m) => m[1]!);
+    const rowReasons = [...dispatchSrc.matchAll(/suppressionReason: "([a-z_]+)"/g)].map((m) => m[1]!);
+    // The notify gate's reasons arrive as a VALUE (`gateSuppressionReason`), not
+    // as a literal in dispatch.ts, so they are read from the type that owns them.
+    const gateReasons = [...GATE_REASONS];
+    const written = [
+      ...new Set([...outcomes, ...skips, ...suppressed, ...rowReasons, ...gateReasons, "sandbox"]),
+    ];
+    // Positive controls: every scan found something, so the check below is not
     // an empty list agreeing with itself.
     expect(outcomes.length).toBeGreaterThanOrEqual(8);
     expect(skips.sort()).toEqual(["invalid_phone", "landline"]);
+    expect([...new Set(suppressed)].sort()).toEqual(
+      ["already_sent", "body_refused", "location_contact_missing", "origin", "service_missing", "status", "unconfirmed"].sort(),
+    );
+    expect([...new Set(rowReasons)].sort()).toEqual(["body_refused", "reschedule_link_error"]);
+    expect(gateReasons.sort()).toEqual(
+      ["invalid_recipient", "live_send_disabled", "missing_provider_config", "template_unapproved"],
+    );
     expect(written.filter((r) => !KNOWN_SUPPRESSION_REASONS.includes(r))).toEqual([]);
+  });
+
+  it("the guard really fails on an unlabelled reason, in each shape it scans", () => {
+    // The same scans, run over a line that names a reason nobody labelled.
+    const unlabelled = (src: string, re: RegExp) =>
+      [...src.matchAll(re)].map((m) => m[1]!).filter((r) => !KNOWN_SUPPRESSION_REASONS.includes(r));
+    expect(unlabelled(`return suppress("brand_new_reason");`, /\bsuppress\(\s*"([a-z_]+)"/g)).toEqual([
+      "brand_new_reason",
+    ]);
+    expect(unlabelled(`suppressionReason: "brand_new_reason",`, /suppressionReason: "([a-z_]+)"/g)).toEqual([
+      "brand_new_reason",
+    ]);
+    expect(unlabelled(`{ dispatched: false, reason: "brand_new_reason" }`, /reason: "([a-z_]+)"/g)).toEqual([
+      "brand_new_reason",
+    ]);
+  });
+
+  it.each([
+    ["location_contact_missing", "o local da consulta não tem morada ou telefone"],
+    ["already_sent", "confirmação já enviada para esta data e hora"],
+    ["service_missing", "marcação sem serviço"],
+    ["reschedule_link_error", "ligação de remarcação não configurada"],
+    ["live_send_disabled", "envio real desligado"],
+    ["template_unapproved", "texto da mensagem não aprovado"],
+    ["missing_provider_config", "fornecedor de envio não configurado"],
+    ["invalid_recipient", "destinatário em falta"],
+  ])("BOOK-CONFIRM reason %s has its own sentence", (code, label) => {
+    expect(reasonLabel(code)).toBe(label);
+    expect(statusOf({ outcome: "suppressed", providerStatus: null, suppressionReason: code }).label).toContain(label);
   });
 });
 

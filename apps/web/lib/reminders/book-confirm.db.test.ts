@@ -12,9 +12,10 @@
  *      policy and past 0075's CHECKs, including the reasons this change
  *      introduces. A reason the table refused would lose the row silently
  *      (`recordDispatch` never throws), so the rows are read back.
- *   3. "One approval, one message" is the real ledger READ: the predicate is
- *      SQL, under the pipeline's own SELECT policy, and a unit test cannot run
- *      it.
+ *   3. "One message per appointment AND start" is a real write and a real
+ *      read: the hand-over is an audit row carrying the start (the ledger has
+ *      no column for it), written and read under the reminder job's tenant
+ *      context, and the predicate is SQL over jsonb that a unit test cannot run.
  *
  * The two SEND functions are the only seam replaced: they capture the whole
  * message, so its body can be read. One arm hands the sends back to the real
@@ -30,6 +31,7 @@ import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { addDays, lisbonDateTimeToUtc, todayInLisbon } from "../scheduling/time";
+import { formatDateLong, formatTime } from "./locale";
 
 vi.mock("server-only", () => ({}));
 
@@ -176,6 +178,7 @@ d("BOOK-CONFIRM: the booking-approved dispatch against a real database", () => {
   afterAll(async () => {
     if (!sql) return;
     await sql.execute(raw`delete from reminder_dispatches where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from services where tenant_id = ${tenantId}`);
@@ -261,15 +264,133 @@ d("BOOK-CONFIRM: the booking-approved dispatch against a real database", () => {
     ]);
   });
 
-  it("the hand-over read is tenant-scoped: another tenant asking about this appointment reads nothing", async () => {
+  /* ------------- one message per appointment AND start ------------- */
+  // Lead's decision, 2026-10-03. The start is not a ledger column, so the
+  // hand-over is written as an audit row that carries it and read back for one
+  // start. Everything here is the real write and the real read, under the
+  // reminder job's own tenant context and audit_log's own policies.
+
+  const startOf = async (id: string) =>
+    new Date(String((await rows(raw`select starts_at from appointments where id = ${id}`))[0]?.starts_at));
+  /** Reception moves the appointment. Written directly: the mover is not under test here. */
+  const moveTo = async (id: string, to: Date) => {
+    await sql.execute(raw`update appointments
+      set starts_at = ${to.toISOString()}::timestamptz,
+          ends_at = ${new Date(to.getTime() + 45 * 60_000).toISOString()}::timestamptz
+      where id = ${id}`);
+  };
+  const handOvers = (id: string) =>
+    rows(raw`select action, entity_type, actor_user_id, metadata
+      from audit_log where entity_id = ${id} and action = 'appointment.booking_approved_handed_over'
+      order by created_at, id`);
+
+  it("the hand-over is recorded with its start, and read back for THAT start only", async () => {
     const id = await request({ patientId: patient.withEmail, locationId: loc.lv });
+    const start = await startOf(id);
     await dispatchConfirmation(tenantId, id, ACCEPTED);
-    const { hasHandedOverDispatch } = await import("./dispatch-ledger");
-    const templateIds = ["booking_approved.email", "confirmation.sms"];
-    expect(await hasHandedOverDispatch({ tenantId, appointmentId: id, templateIds })).toBe(true);
-    expect(await hasHandedOverDispatch({ tenantId: otherTenantId, appointmentId: id, templateIds })).toBe(false);
-    // And a template id that was not sent does not match.
-    expect(await hasHandedOverDispatch({ tenantId, appointmentId: id, templateIds: ["confirmation.sms"] })).toBe(false);
+
+    expect(await handOvers(id)).toEqual([
+      {
+        action: "appointment.booking_approved_handed_over",
+        entity_type: "appointment",
+        actor_user_id: null,
+        metadata: { source: "book-confirm", startsAt: start.toISOString(), channel: "email" },
+      },
+    ]);
+
+    const { hasBookingApprovedHandOver } = await import("./dispatch-ledger");
+    expect(await hasBookingApprovedHandOver({ tenantId, appointmentId: id, startsAt: start })).toBe(true);
+    // A different start: no hand-over for it.
+    const other = new Date(start.getTime() + 24 * 3600_000);
+    expect(await hasBookingApprovedHandOver({ tenantId, appointmentId: id, startsAt: other })).toBe(false);
+    // Another appointment at the same start: none.
+    expect(
+      await hasBookingApprovedHandOver({ tenantId, appointmentId: randomUUID(), startsAt: start }),
+    ).toBe(false);
+    // Another tenant asking about this appointment reads nothing.
+    expect(
+      await hasBookingApprovedHandOver({ tenantId: otherTenantId, appointmentId: id, startsAt: start }),
+    ).toBe(false);
+  });
+
+  it("reception's own reschedule audit row carries a start too, and is NOT a hand-over", async () => {
+    // `appointment.reschedule` records the new start in its metadata under the
+    // same key. Without the action in the predicate, moving an accepted
+    // appointment would read as "already told" and the new message would never go.
+    const id = await request({ patientId: patient.withEmail, locationId: loc.lv });
+    const start = await startOf(id);
+    await sql.execute(raw`insert into audit_log (tenant_id, action, entity_type, entity_id, metadata)
+      values (${tenantId}, 'appointment.reschedule', 'appointment', ${id},
+              ${JSON.stringify({ startsAt: start.toISOString(), scope: "one" })}::jsonb)`);
+    const { hasBookingApprovedHandOver } = await import("./dispatch-ledger");
+    expect(await hasBookingApprovedHandOver({ tenantId, appointmentId: id, startsAt: start })).toBe(false);
+    // And so the acceptance sends.
+    expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toMatchObject({ dispatched: true });
+  });
+
+  it("accepted at T1, moved to T2, accepted again: ONE NEW message that says T2; a third at T2 sends nothing", async () => {
+    const id = await request({ patientId: patient.withEmail, locationId: loc.lv });
+    const t1 = await startOf(id);
+    const t2 = lisbonDateTimeToUtc(addDays(day, 5), "16:00");
+
+    expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toMatchObject({ dispatched: true });
+    // Same start again: nothing.
+    expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toEqual({
+      dispatched: false,
+      reason: "already_sent",
+    });
+
+    await moveTo(id, t2);
+    expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toMatchObject({ dispatched: true });
+    expect(h.email).toHaveLength(2);
+    expect(h.email[0]!.body).toContain("Hora: " + formatTime(t1, "pt"));
+    expect(h.email[1]!.subject).toBe(
+      `Consulta confirmada: ${formatDateLong(t2, "pt")} às ${formatTime(t2, "pt")}`,
+    );
+    expect(h.email[1]!.body).toContain(`Data: ${formatDateLong(t2, "pt")}`);
+    expect(h.email[1]!.body).toContain("Hora: 16:00");
+
+    // A third acceptance, still at T2: nothing more.
+    expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toEqual({
+      dispatched: false,
+      reason: "already_sent",
+    });
+    // Moved BACK to T1 and accepted: nothing, the patient already holds T1.
+    await moveTo(id, t1);
+    expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toEqual({
+      dispatched: false,
+      reason: "already_sent",
+    });
+    expect(h.email).toHaveLength(2);
+
+    expect((await handOvers(id)).map((r) => (r.metadata as { startsAt: string }).startsAt)).toEqual([
+      t1.toISOString(),
+      t2.toISOString(),
+    ]);
+    expect((await ledger(id)).map((r) => [r.outcome, r.suppression_reason])).toEqual([
+      ["sent", null],
+      ["suppressed", "already_sent"],
+      ["sent", null],
+      ["suppressed", "already_sent"],
+      ["suppressed", "already_sent"],
+    ]);
+  });
+
+  it("the SMS fallback follows the same rule: a moved start earns one new SMS", async () => {
+    const id = await request({ patientId: patient.noEmail, locationId: loc.cb });
+    await dispatchConfirmation(tenantId, id, ACCEPTED);
+    await dispatchConfirmation(tenantId, id, ACCEPTED);
+    expect(h.sms).toHaveLength(1);
+    await moveTo(id, lisbonDateTimeToUtc(addDays(day, 6), "17:00"));
+    expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toMatchObject({ dispatched: true });
+    expect(h.sms).toHaveLength(2);
+    expect(h.sms[1]!.body).toContain("as 17:00");
+  });
+
+  it("today's confirmation writes no hand-over record", async () => {
+    const id = await request({ patientId: patient.withEmail, locationId: loc.cb });
+    await dispatchConfirmation(tenantId, id);
+    expect(await handOvers(id)).toEqual([]);
   });
 
   it("a patient with NO email gets the SMS fallback with the location's phone, and no email", async () => {

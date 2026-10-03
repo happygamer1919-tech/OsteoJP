@@ -83,8 +83,10 @@ vi.mock("./inngest/client", async () => {
 });
 vi.mock("./data", () => ({ loadReminderData: h.loadReminderData }));
 vi.mock("./dispatch-ledger", () => ({
+  HANDED_OVER_WHILE_LIVE_SEND_OFF: "live_send_disabled",
   recordDispatch: vi.fn(async () => {}),
-  hasHandedOverDispatch: vi.fn(async () => false),
+  recordBookingApprovedHandOver: vi.fn(async () => {}),
+  hasBookingApprovedHandOver: vi.fn(async () => false),
 }));
 vi.mock("./clients", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clients")>();
