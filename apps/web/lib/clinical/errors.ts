@@ -15,6 +15,9 @@ export type ClinicalErrorCode =
   | "stale" // the stored content moved since the signer's form loaded or saved it: nothing signed
   // --- 0097, the registo write matrix ---
   | "not_author" // a therapist writes only a registo they authored: the UPDATE or DELETE touched no row
+  // --- EPI-01b (S-1002-D P2.2), Q9's app half ---
+  | "episode_mismatch" // the episode is not this patient's, in this tenant: nothing written
+  | "episode_closed" // a NEW registo is filed only in an open episode (never an imported one): nothing written
   // --- W5-30 delete / annul ---
   | "not_draft" // hard delete is draft / AI-pending only (locked/signed blocked by trigger)
   | "not_signed" // Anular applies only to a signed record

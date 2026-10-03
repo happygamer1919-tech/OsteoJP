@@ -28,6 +28,7 @@
  * episode title is never clinical text (the clinical_episodes policy is
  * tenant-wide until 0102), so the complaint is read from the registo.
  */
+import { isEpisodeSpecialty, type EpisodeSpecialty } from "./episode-title";
 
 /** The record_status axis, as the list shows it. */
 export type FichaRecordStatus = "draft" | "locked" | "signed";
@@ -164,4 +165,34 @@ export function groupForFicha(records: readonly FichaRecord[]): FichaGroup[] {
     if (a.lastAt !== b.lastAt) return a.lastAt < b.lastAt ? 1 : -1;
     return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
   });
+}
+
+/**
+ * EPI-01b (S-1002-D P2.2, piece 1): WHAT "+ Avaliação" ON A GROUP FILES.
+ *
+ * The design note's section 1 and strategy's Q7 default, as a statement:
+ *   - an APP episode group: the new registo is filed in THAT episode;
+ *   - an IMPORTED group: a NEW open episode for the group's specialty, never the
+ *     imported episodes (they are closed, their registos locked). Only a
+ *     specialty on EPISODE_SPECIALTIES qualifies, because the server builds the
+ *     new title from it and accepts nothing else; any other label gets no button;
+ *   - the "Sem episódio" group: NO button. The design note is silent on it; this
+ *     is a judgment, not a ruling (the PR says so). "Nova ficha" at the top of
+ *     the tab still files a registo with no episode, as before.
+ * Null means the group shows no "+ Avaliação". WHO sees it (an author, on a
+ * patient they may write for) is the page's gate, not this function's.
+ */
+export type AddEvaluationTarget =
+  | { kind: "episode"; episodeId: string }
+  | { kind: "newEpisode"; specialty: EpisodeSpecialty };
+
+export function addEvaluationTarget(group: FichaGroup): AddEvaluationTarget | null {
+  if (group.kind === "episode") {
+    const episodeId = group.records[0]?.episodeId ?? null;
+    return episodeId ? { kind: "episode", episodeId } : null;
+  }
+  if (group.kind === "imported" && isEpisodeSpecialty(group.label)) {
+    return { kind: "newEpisode", specialty: group.label };
+  }
+  return null;
 }

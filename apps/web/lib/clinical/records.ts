@@ -22,6 +22,8 @@ import {
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError, type ClinicalErrorCode } from "./errors";
+import { defaultEpisodeTitle, isEpisodeSpecialty } from "./episode-title";
+import { insertOpenEpisode } from "./episodes";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -122,6 +124,9 @@ export function recordDataHash(): SQL<string> {
 }
 
 export type TemplateOption = { id: string; key: string; title: Localized | null; version: number };
+
+/** A uuid's shape; anything else is refused before it reaches a uuid column. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type PatientOption = { id: string; fullName: string };
 export type EpisodeOption = { id: string; title: string };
 
@@ -435,6 +440,11 @@ export async function listEpisodes(
  * is redundant once the list is patient-scoped. The patients inner join is
  * kept so the returned row set is unchanged (episodes without a patient row
  * never appeared and still do not). Same read gate, same tenant scoping.
+ *
+ * EPI-01b (R4 round 1): OPEN EPISODES ONLY. A new registo is never filed in a
+ * closed episode (createDraftRecord refuses it, `episode_closed`), and every
+ * imported episode is closed, so the picker no longer offers one. A deep link
+ * naming a closed episode falls back to "Sem episódio".
  */
 export async function listEpisodesForPicker(
   ctx: RequestContext,
@@ -449,6 +459,7 @@ export async function listEpisodesForPicker(
       })
       .from(clinicalEpisodes)
       .innerJoin(patients, eq(patients.id, clinicalEpisodes.patientId))
+      .where(eq(clinicalEpisodes.status, "open"))
       .orderBy(desc(clinicalEpisodes.openedAt)),
   );
 }
@@ -463,8 +474,18 @@ export async function listEpisodesForPicker(
  * therapist files a registo (a new draft, or a new version of one) only in
  * their own name AND for a patient they treat or created, and
  * `therapistPatientScope` is the same test in the app. The owner files for any
- * patient of the tenant, so only a therapist is asked; for anyone else the
- * answer is yes, with no read.
+ * patient of the tenant.
+ *
+ * EPI-01b (R4 round 1): EVERY ROLE IS ASKED, with one read of the patient
+ * under the caller's own RLS. "Any patient of the tenant" was not something
+ * the database checked for the owner: 0097's owner arm asks only the row's
+ * tenant_id, and the foreign key to patients ignores RLS, so an owner could
+ * file a registo (or open an episode) in their own tenant for ANOTHER tenant's
+ * patient id. patients_select admits the owner to their tenant's patients only,
+ * so the read refuses that id. A malformed id is refused before the read (it
+ * is not a patient, and Postgres would answer with a raw 22P02). The name is
+ * kept from when it asked a therapist only; the scope register
+ * (scope-callers.test.ts) keys on it.
  *
  * Refuses nothing 0097's policy admits. BEFORE 0097 IT REFUSES MORE than the
  * database does: 0045's INSERT admits a therapist filing in their own name for
@@ -473,20 +494,21 @@ export async function listEpisodesForPicker(
  * refused in the app, ahead of the policy.
  */
 async function therapistMayFileFor(tx: DbTx, ctx: RequestContext, patientId: string): Promise<boolean> {
+  if (!UUID_RE.test(patientId)) return false;
   const scope = therapistPatientScope(ctx, patients.id);
-  if (!scope) return true;
   const own = await tx
     .select({ id: patients.id })
     .from(patients)
-    .where(and(eq(patients.id, patientId), scope))
+    .where(scope ? and(eq(patients.id, patientId), scope) : eq(patients.id, patientId))
     .limit(1);
   return own.length > 0;
 }
 
 /**
  * `therapistMayFileFor`, asked first inside the writer's own transaction, so a
- * patient outside that scope (a posted id, or a patient whose last appointment
- * with the caller was deleted since the page rendered) is a clean `not_found`.
+ * patient outside that scope (a posted id, another tenant's patient, or a
+ * patient whose last appointment with the caller was deleted since the page
+ * rendered) is a clean `not_found`, for every role.
  * From 0097 it is also what keeps that INSERT from reaching the policy as a raw
  * row level security error (42501); before 0097 the INSERT would have succeeded,
  * so the refusal is the app's own.
@@ -537,12 +559,94 @@ export function zeroRowRefusal(
   return new ClinicalError(ctx.role === "therapist" && someoneElses ? "not_author" : moved);
 }
 
+/**
+ * EPI-01b (S-1002-D P2.2): Q9, THE APP HALF. A registo filed in an episode is
+ * filed in an episode of THE SAME PATIENT, IN THE SAME TENANT, or not at all.
+ *
+ * Nothing in the database ties `clinical_records.episode_id` to the record's
+ * patient: the foreign key checks only that the episode exists, and it checks
+ * that without row level security, so it would accept another tenant's episode
+ * too. The database half (a trigger or a composite key) is Tier C, after 0102;
+ * this is the braces it is the belt to.
+ *
+ * Read in the WRITER'S OWN transaction, under the caller's RLS. clinical_episodes
+ * is tenant-only, so another tenant's episode reads as no row; the tenant is
+ * still compared explicitly, so the refusal does not rest on the policy alone.
+ * A malformed id is the same refusal, before any read (it is not an episode of
+ * this patient, and Postgres would otherwise answer with a raw 22P02).
+ *
+ * REFUSES WITH `episode_mismatch` AND WRITES NOTHING: it throws before the
+ * INSERT, the transaction rolls back, and no audit row is written (audit rows
+ * record a mutation that commits; every refusal in this file writes none). One
+ * log line says it happened, with no identifier in it (CLAUDE.md rule 7): the
+ * screens never offer another patient's episode, so this fires only on a posted
+ * id or a page gone stale, and that should be visible somewhere.
+ *
+ * `requireOpen` (EPI-01b, R4 round 1): a NEW registo is filed only in an OPEN
+ * episode; a closed one is `episode_closed`. Every imported episode is closed,
+ * so this is what keeps "it never writes into an imported episode" true on the
+ * server and not only on the screen. createDraftRecord asks it; createAddendum
+ * does NOT, because a new version keeps its registo's episode on purpose
+ * (EPI-01a: "Nova versão" of an imported registo stays in its imported group).
+ */
+export async function assertEpisodeIsThePatients(
+  tx: DbTx,
+  ctx: RequestContext,
+  episodeId: string,
+  patientId: string,
+  opts: { requireOpen?: boolean } = {},
+): Promise<void> {
+  let why: string | null = null;
+  let code: "episode_mismatch" | "episode_closed" = "episode_mismatch";
+  if (!UUID_RE.test(episodeId)) {
+    why = "the episode id is malformed";
+  } else {
+    const [episode] = await tx
+      .select({
+        tenantId: clinicalEpisodes.tenantId,
+        patientId: clinicalEpisodes.patientId,
+        status: clinicalEpisodes.status,
+      })
+      .from(clinicalEpisodes)
+      .where(eq(clinicalEpisodes.id, episodeId))
+      .limit(1);
+    if (!episode) why = "the episode is not visible in this tenant";
+    else if (episode.tenantId !== ctx.tenantId) why = "the episode is another tenant's";
+    else if (episode.patientId !== patientId) why = "the episode is another patient's";
+    else if (opts.requireOpen && episode.status !== "open") {
+      why = "the episode is closed";
+      code = "episode_closed";
+    }
+  }
+  if (why !== null) {
+    console.warn(`[clinical] registo refused: ${why} (${code}). Nothing written.`);
+    throw new ClinicalError(code);
+  }
+}
+
 export async function createDraftRecord(
   ctx: RequestContext,
-  input: { patientId: string; formTemplateId: string; episodeId?: string | null; appointmentId?: string | null },
-): Promise<{ id: string }> {
+  input: {
+    patientId: string;
+    formTemplateId: string;
+    episodeId?: string | null;
+    appointmentId?: string | null;
+    /**
+     * EPI-01b (Q7): "+ Avaliação" on an IMPORTED group. Open a NEW episode for
+     * this specialty, titled with it and today's Lisbon date, and file the
+     * registo there, in one transaction. Never an imported episode. Only a word
+     * on EPISODE_SPECIALTIES is accepted, so the title is never clinical text.
+     * Exclusive with `episodeId`.
+     */
+    newEpisodeSpecialty?: string | null;
+  },
+): Promise<{ id: string; episodeId: string | null }> {
   assertCan(ctx.role, "clinical_records:author");
   if (!input.patientId || !input.formTemplateId) {
+    throw new ClinicalError("invalid");
+  }
+  const specialty = input.newEpisodeSpecialty ?? null;
+  if (specialty !== null && (input.episodeId || !isEpisodeSpecialty(specialty))) {
     throw new ClinicalError("invalid");
   }
   const ip = await clientIp();
@@ -552,13 +656,28 @@ export async function createDraftRecord(
     // other patient here, cleanly. Before 0097 the INSERT would succeed (0045
     // admits any patient); from 0097 it would be a raw 42501.
     await assertTherapistMayFileFor(tx, ctx, input.patientId);
+    let episodeId = input.episodeId || null;
+    if (episodeId) {
+      // Q9, the app half: the episode is this patient's, in this tenant, and
+      // (a new registo) OPEN: never a closed or imported one.
+      await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId, { requireOpen: true });
+    } else if (specialty !== null) {
+      // Q7: a new open episode, through the one episode insert, in THIS
+      // transaction: if the registo below is refused, the episode is not left.
+      ({ id: episodeId } = await insertOpenEpisode(
+        tx,
+        ctx,
+        { patientId: input.patientId, title: defaultEpisodeTitle(specialty, new Date()) },
+        ip,
+      ));
+    }
     const rows = await tx
       .insert(clinicalRecords)
       .values({
         tenantId: ctx.tenantId,
         patientId: input.patientId,
         formTemplateId: input.formTemplateId,
-        episodeId: input.episodeId ?? null,
+        episodeId,
         appointmentId: input.appointmentId ?? null,
         practitionerId: ctx.userId,
         data: {},
@@ -572,10 +691,10 @@ export async function createDraftRecord(
       action: "clinical_record.create",
       entityType: "clinical_record",
       entityId: id,
-      metadata: { templateId: input.formTemplateId, patientId: input.patientId },
+      metadata: { templateId: input.formTemplateId, patientId: input.patientId, episodeId },
       ip,
     });
-    return { id };
+    return { id, episodeId };
   });
 }
 
@@ -683,6 +802,12 @@ export async function createAddendum(
     // 0097: a new version is filed in the caller's name for the same patient,
     // so it meets the same test as any registo: a patient they treat or created.
     await assertTherapistMayFileFor(tx, ctx, s.patientId);
+    // EPI-01b, Q9's app half: the version copies its record's episode, so it is
+    // held to the same rule as a new registo. A source row already filed in
+    // another patient's episode does not get a second one. NOT `requireOpen`:
+    // a version stays in its registo's episode even when that episode is closed
+    // (an imported registo's "Nova versão" stays in its imported group).
+    if (s.episodeId) await assertEpisodeIsThePatients(tx, ctx, s.episodeId, s.patientId);
 
     const rows = await tx
       .insert(clinicalRecords)

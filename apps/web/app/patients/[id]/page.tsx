@@ -12,9 +12,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getRequestContext } from "../../../lib/auth/context";
-import { type RecordStatus } from "../../../lib/clinical/records";
+import { listActiveTemplates, type RecordStatus } from "../../../lib/clinical/records";
 import { listFichaRecords } from "../../../lib/clinical/ficha-groups";
-import { groupForFicha } from "../../../lib/clinical/ficha-groups-core";
+import { addEvaluationTarget, groupForFicha } from "../../../lib/clinical/ficha-groups-core";
 import { listActiveLocations, listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { isFichaIncomplete } from "../../../lib/patients/nif";
@@ -41,6 +41,8 @@ import { NotesComposer } from "./notes-composer";
 import { NotesTab } from "./notes-tab";
 import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
+import { createRecordAction } from "../../clinical/new/actions";
+import { AddEvaluationButton } from "./add-evaluation-button";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
 import { PatientPacks } from "./patient-packs";
@@ -289,6 +291,18 @@ export default async function PatientProfilePage({
       ? await listFichaRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
       : [];
   const recordGroups = groupForFicha(records);
+  // EPI-01b (S-1002-D P2.2): "+ Avaliação" on a group files a new registo
+  // through THE record-creation action (/clinical/new's createRecordAction, so
+  // createDraftRecord: the patient scope, Q9's same-patient episode guard, the
+  // audit row), with the template that form offers (Ficha Médica, the only
+  // one). Shown to whoever sees "Nova ficha": an author (owner or therapist;
+  // admin and reception hold no clinical_records:author) who may write for
+  // this patient (a therapist: treats or created, which is 0097's INSERT
+  // policy). Read only when a group will show it; no template, no button.
+  const addEvaluationTemplateId =
+    tab === "registos" && canStartEpisode && recordGroups.length > 0
+      ? ((await listActiveTemplates(ctx))[0]?.id ?? null)
+      : null;
   // INTAKE-01: the clinical questionnaire(s) this person answered at their first
   // online booking, reaching the ficha once reception converted the request to
   // this patient. Read-only, verbatim, attributed and dated. Every staff role
@@ -705,6 +719,22 @@ export default async function PatientProfilePage({
               </Link>
             )}
           </div>
+          {/* EPI-01b: a "+ Avaliação" that filed nothing says why, here. */}
+          {m === "episodeMismatch" && (
+            <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
+              {s["clinical.episodeMismatch"]}
+            </p>
+          )}
+          {m === "episodeClosed" && (
+            <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
+              {s["clinical.episodeClosedRefused"]}
+            </p>
+          )}
+          {m === "avaliacaoErr" && (
+            <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
+              {s["patients.fichaGroupAddEvaluationError"]}
+            </p>
+          )}
           {records.length === 0 ? (
             <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} />
           ) : (
@@ -714,7 +744,12 @@ export default async function PatientProfilePage({
                largest imported one on production holds 51) folds on its
                summary. The record rows inside are the same rows as before. */
             <div className="flex flex-col gap-4" data-testid="record-groups">
-              {recordGroups.map((g) => (
+              {recordGroups.map((g) => {
+                // EPI-01b: what this group's "+ Avaliação" files (ficha-groups-core
+                // addEvaluationTarget): its own app episode, or a NEW episode for an
+                // imported group's specialty; "Sem episódio" gets none.
+                const add = addEvaluationTemplateId ? addEvaluationTarget(g) : null;
+                return (
                 <details
                   key={g.key}
                   open
@@ -752,6 +787,25 @@ export default async function PatientProfilePage({
                     </span>
                   </summary>
                   <div className="flex flex-col gap-3 px-4 pb-4">
+                    {add && addEvaluationTemplateId && (
+                      <form action={createRecordAction} className="flex justify-end">
+                        <input type="hidden" name="from" value="ficha" />
+                        <input type="hidden" name="patientId" value={patient.id} />
+                        <input type="hidden" name="formTemplateId" value={addEvaluationTemplateId} />
+                        {add.kind === "episode" ? (
+                          <input type="hidden" name="episodeId" value={add.episodeId} />
+                        ) : (
+                          <input type="hidden" name="newEpisodeSpecialty" value={add.specialty} />
+                        )}
+                        <AddEvaluationButton
+                          label={s["patients.fichaGroupAddEvaluation"]}
+                          ariaLabel={(add.kind === "episode"
+                            ? s["patients.fichaGroupAddEvaluationInEpisode"]
+                            : s["patients.fichaGroupAddEvaluationNewEpisode"]
+                          ).replace("{group}", g.label ?? "")}
+                        />
+                      </form>
+                    )}
                     {g.records.map((r) => (
                       <div
                         key={r.id}
@@ -822,7 +876,8 @@ export default async function PatientProfilePage({
                     ))}
                   </div>
                 </details>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

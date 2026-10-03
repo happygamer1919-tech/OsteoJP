@@ -1,0 +1,228 @@
+/**
+ * ficha-add-evaluation.spec.ts - EPI-01b piece 1 (strategy dispatch S-1002-D
+ * P2.2): "+ Avaliação" on an episode group of the Registos tab.
+ *
+ * THE RULES UNDER TEST (design note section 1, Q7 default):
+ *   - on an APP episode group it files the new registo IN THAT EPISODE;
+ *   - on an IMPORTED group it opens a NEW open episode for that specialty,
+ *     titled "<specialty> (<Lisbon date>)", files the registo there, and leaves
+ *     the imported episode as it was;
+ *   - the "Sem episódio" group has none (a judgment, not a ruling);
+ *   - only an author who may write for the patient sees it: the owner does; an
+ *     admin reads the same groups with no button, and reception has no
+ *     Registos tab at all. (A care-team therapist, who reads but neither treats
+ *     nor created the patient, is pinned in page-add-evaluation.test.tsx: the
+ *     seed has no care team.)
+ *
+ * The patient is seed-e2e.mjs's ensureAddEvaluationFixture (ADD_EVALUATION): an
+ * invented patient with one group of each kind, created_by the E2E therapist.
+ * Every run ADDS registos and episodes to it, so each assertion follows the ids
+ * the run itself created, never a group's total. The role arms first prove the
+ * page opened (a 404 would also show no button).
+ *
+ * TWO ADMINS, BECAUSE ONE OF THEM SEES NO REGISTOS. The suite's admin storage
+ * state is "E2E Admin", who holds no clinic on purpose; 0045 shows an admin
+ * clinical rows only for patients at their own clinics, so that admin opens an
+ * EMPTY Registos tab, and "no button" there proves nothing about a group. It is
+ * kept (the dispatch names the suite's storage states) and says so. The arm that
+ * proves it is the seeded Linda-a-Velha admin (USERS.adminRevenueLv, logs in
+ * with E2E_PASSWORD like the revenue spec): the patient's clinic is Linda-a-Velha,
+ * so this admin reads every group, and still has no button. Screenshots at 1280 px and
+ * 390 px are attached for the report. Invented names only.
+ */
+import { test, expect, type Page } from "@playwright/test";
+import { ADD_EVALUATION as F, E2E_PASSWORD, STORAGE, USERS } from "./fixtures";
+
+const TAB = `/patients/${F.patientId}?tab=registos`;
+const APP_KEY = `episode:${F.appEpisode.episodeId}`;
+const IMPORTED_KEY = `imported:${F.imported.specialty}`;
+const NEW_RECORD_URL = /\/clinical\/([0-9a-f-]{36})$/;
+
+/** The clinic's calendar day, dd/mm/yyyy, as the server titles a new episode. */
+const lisbonToday = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date()).split("-").reverse().join("/");
+
+const group = (page: Page, key: string) => page.locator(`[data-testid="record-group"][data-group-key="${key}"]`);
+const addButton = (page: Page) => page.getByTestId("record-group-add-evaluation");
+
+async function openTab(page: Page) {
+  await page.goto(TAB);
+  await expect(group(page, APP_KEY)).toBeVisible({ timeout: 15_000 });
+}
+
+/** Click a group's "+ Avaliação" and return the id of the registo it opened. */
+async function addEvaluation(page: Page, key: string): Promise<string> {
+  await group(page, key).getByTestId("record-group-add-evaluation").click();
+  await expect(page).toHaveURL(NEW_RECORD_URL, { timeout: 30_000 });
+  return NEW_RECORD_URL.exec(page.url())![1]!;
+}
+
+test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => {
+  test.use({ storageState: STORAGE.therapist, viewport: { width: 1280, height: 900 } });
+
+  test("each group of the right kind offers it, and 'Sem episódio' does not", async ({ page }) => {
+    await openTab(page);
+    await expect(group(page, APP_KEY).getByRole("button", { name: `Nova avaliação neste episódio: ${F.appEpisode.title}` })).toBeVisible();
+    await expect(
+      group(page, IMPORTED_KEY).getByRole("button", { name: `Nova avaliação num novo episódio de ${F.imported.specialty}` }),
+    ).toBeVisible();
+    // The "Sem episódio" group is there, with its registo, and has no button.
+    const none = group(page, "none");
+    await expect(none.locator(`[data-record-id="${F.noEpisode.recordId}"]`)).toBeVisible();
+    await expect(none.getByTestId("record-group-add-evaluation")).toHaveCount(0);
+    // The visible label reads "+ Avaliação": a plus icon and the word.
+    await expect(group(page, APP_KEY).getByTestId("record-group-add-evaluation")).toHaveText("Avaliação");
+  });
+
+  test("on an APP episode it files the new registo in that episode", async ({ page }) => {
+    await openTab(page);
+    const id = await addEvaluation(page, APP_KEY);
+
+    await openTab(page);
+    const row = group(page, APP_KEY).locator(`[data-record-id="${id}"]`);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("Rascunho");
+    // The seeded registo is still in the same group, with the new one beneath it.
+    await expect(group(page, APP_KEY).locator(`[data-record-id="${F.appEpisode.recordId}"]`)).toBeVisible();
+  });
+
+  test("on an IMPORTED group it opens a NEW open episode for the specialty and files the registo there", async ({ page }, testInfo) => {
+    await openTab(page);
+    const imported = group(page, IMPORTED_KEY);
+    await expect(imported.getByTestId("record-row")).toHaveCount(1);
+
+    const dayBefore = lisbonToday();
+    const id = await addEvaluation(page, IMPORTED_KEY);
+    const dayAfter = lisbonToday();
+
+    await openTab(page);
+    // The new registo sits in an APP episode group of its own, never the imported one.
+    const row = page.locator(`[data-record-id="${id}"]`);
+    await expect(row).toBeVisible();
+    const newGroup = page.getByTestId("record-group").filter({ has: row });
+    await expect(newGroup).toHaveCount(1);
+    await expect(newGroup).toHaveAttribute("data-group-kind", "episode");
+    const key = (await newGroup.getAttribute("data-group-key"))!;
+    expect(key).toMatch(/^episode:[0-9a-f-]{36}$/);
+    expect(key).not.toBe(APP_KEY);
+    const title = (await newGroup.locator("summary").innerText()).match(/Osteopatia \((\d{2}\/\d{2}\/\d{4})\)/);
+    expect(title, "the new group is labelled with the specialty and the date").not.toBeNull();
+    expect([dayBefore, dayAfter]).toContain(title![1]);
+    await expect(newGroup.locator("summary")).not.toContainText("Importado");
+
+    // The imported group is exactly as it was: one registo, still imported.
+    await expect(imported.getByTestId("record-row")).toHaveCount(1);
+    await expect(imported.locator(`[data-record-id="${F.imported.recordId}"]`)).toBeVisible();
+    await expect(imported.locator("summary")).toContainText("Importado");
+
+    await testInfo.attach("EPI-01b-add-1280", {
+      path: await shot(page, testInfo.outputPath("EPI-01b-add-1280.png")),
+      contentType: "image/png",
+    });
+
+    // The episode itself: open, titled with the specialty and the date, holding the registo.
+    await page.goto(`/clinical/episodes/${key.slice("episode:".length)}`);
+    await expect(page.getByRole("heading", { name: `Osteopatia (${title![1]})` })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Aberto", { exact: true })).toBeVisible();
+    await expect(page.locator(`a[href="/clinical/${id}"]`)).toBeVisible();
+  });
+});
+
+test.describe("EPI-01b: the owner, an author with the tenant's patients, sees it (R4 round 1)", () => {
+  test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 1280, height: 900 } });
+
+  test("both kinds of group offer '+ Avaliação' to the owner; 'Sem episódio' does not", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.owner);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+    await openTab(page);
+    await expect(group(page, APP_KEY).getByRole("button", { name: `Nova avaliação neste episódio: ${F.appEpisode.title}` })).toBeVisible();
+    await expect(
+      group(page, IMPORTED_KEY).getByRole("button", { name: `Nova avaliação num novo episódio de ${F.imported.specialty}` }),
+    ).toBeVisible();
+    await expect(group(page, "none").locator(`[data-record-id="${F.noEpisode.recordId}"]`)).toBeVisible();
+    await expect(group(page, "none").getByTestId("record-group-add-evaluation")).toHaveCount(0);
+  });
+});
+
+test.describe("EPI-01b: the action is not offered to roles that may not author", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test.describe("admin (the suite's storage state: no clinic, so RLS shows it no registo)", () => {
+    test.use({ storageState: STORAGE.admin });
+
+    test("opens the Registos tab, with no '+ Avaliação' and no 'Nova ficha'", async ({ page }) => {
+      await page.goto(TAB);
+      await expect(page.getByRole("heading", { name: F.patientName })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("tabpanel", { name: "Registos clínicos" })).toBeVisible();
+      await expect(addButton(page)).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Nova ficha" })).toHaveCount(0);
+    });
+  });
+
+  test.describe("admin at the patient's clinic (reads every group)", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("reads the same groups and registos, with no '+ Avaliação'", async ({ page }) => {
+      await page.goto("/login");
+      await page.locator('input[name="email"]').fill(USERS.adminRevenueLv);
+      await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+      await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+      await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+      await openTab(page);
+      // Positive control: this admin really reads the groups a button would sit in.
+      await expect(group(page, IMPORTED_KEY).locator(`[data-record-id="${F.imported.recordId}"]`)).toBeVisible();
+      await expect(group(page, APP_KEY).locator(`[data-record-id="${F.appEpisode.recordId}"]`)).toBeVisible();
+      await expect(group(page, "none").locator(`[data-record-id="${F.noEpisode.recordId}"]`)).toBeVisible();
+      await expect(addButton(page)).toHaveCount(0);
+    });
+  });
+
+  test.describe("reception", () => {
+    test.use({ storageState: STORAGE.reception });
+
+    test("opens the ficha, has no Registos tab, and no '+ Avaliação'", async ({ page }) => {
+      await page.goto(TAB);
+      await expect(page.getByRole("heading", { name: F.patientName })).toBeVisible({ timeout: 15_000 });
+      // The tab locator works (Resumo is there); Registos clínicos is not.
+      await expect(page.getByRole("tab", { name: "Resumo" })).toBeVisible();
+      await expect(page.getByRole("tab", { name: "Registos clínicos" })).toHaveCount(0);
+      await expect(page.getByTestId("record-group")).toHaveCount(0);
+      await expect(addButton(page)).toHaveCount(0);
+    });
+  });
+});
+
+test.describe("EPI-01b: '+ Avaliação' at phone width (therapist, 390 px)", () => {
+  test.use({ storageState: STORAGE.therapist, viewport: { width: 390, height: 844 } });
+
+  test("every group's button is on screen and the page does not scroll sideways", async ({ page }, testInfo) => {
+    await openTab(page);
+    for (const key of [APP_KEY, IMPORTED_KEY]) {
+      const button = group(page, key).getByTestId("record-group-add-evaluation");
+      await expect(button).toBeVisible();
+      const box = (await button.boundingBox())!;
+      expect(box.x, `${key}: the button starts on screen`).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, `${key}: the button ends on screen`).toBeLessThanOrEqual(390);
+    }
+    const p = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(p.scrollWidth, `the page scrolls sideways: ${JSON.stringify(p)}`).toBeLessThanOrEqual(p.clientWidth);
+    await testInfo.attach("EPI-01b-add-390", {
+      path: await shot(page, testInfo.outputPath("EPI-01b-add-390.png")),
+      contentType: "image/png",
+    });
+  });
+});
+
+/** A full-page screenshot written under the test's output dir (uploaded with test-results). */
+async function shot(page: Page, path: string): Promise<string> {
+  await page.screenshot({ path, fullPage: true });
+  return path;
+}
