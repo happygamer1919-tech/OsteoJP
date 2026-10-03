@@ -1,6 +1,6 @@
 # 0100: apply the MAINTAIN revoke from `authenticated`
 
-**NOT READY until #1520 is merged and GREEN's dispatch carries its merge sha.** Done on this branch: the guard pair on main (NOT READY step 1); #1510 on main and `SHAGATE` filled, with its two R8 rounds (step 2); the promotion (step 3); every halt in the five blocks made explicit and proven by fault injection, with its R4 rounds; the whole-block rehearsal, 2026-10-03 00:02 to 00:15 Lisbon (step 4, see "Rehearsal"). Step 5, CI green on the head, is proven by the merge itself: this held PR merges only once every required check is green. A sitting inside clinic hours needs steps 6 to 8 as well (see "NOT READY" below).
+**NOT READY until #1520 is merged and GREEN's dispatch carries its merge sha.** Done on this branch: the guard pair on main (NOT READY step 1); #1510 on main and `SHAGATE` filled, with its two R8 rounds (step 2); the promotion (step 3); every halt in the five blocks made explicit and proven by fault injection, with its R4 rounds; the whole-block rehearsal, 2026-10-03 00:02 to 00:15 Lisbon (step 4, see "Rehearsal"). Step 5, CI green on the head, is proven by the merge itself: this held PR merges only once every required check is green. A sitting inside clinic hours needs steps 6 to 8 as well (see "NOT READY" below). **OWNER OVERRIDE 2026-10-03:** on that Lisbon date only, stages 0 and 1 also pass inside clinic hours (see "Changed after the owner's override"); the dispatch that carries this revision's sha256 is the one to run.
 
 **Status: PROMOTED. NOT APPLIED.** One migration,
 `packages/db/migrations/0100_revoke_maintain.sql`, which the promotion of 2026-10-02 renamed,
@@ -275,6 +275,77 @@ DELETE each table. **0100 has none, for three reasons:**
 run inside a transaction, and a READ ONLY transaction refuses strong locks first), so they are
 proven IN ACTION by the build lane's throwaway (W2 to W7 below) and by the rehearsal.
 
+## Changed after the owner's override, 2026-10-03: stages 0 and 1 pass inside clinic hours on that Lisbon date only
+
+**The override.** 0100 merged at 00:53 Lisbon on 2026-10-03 and its dispatch was READY for a
+closed-hours sitting. GREEN was started at 10:57 Lisbon, after the night's start window had
+closed, and stopped before any block, correctly. The owner then ruled that 0100 applies today.
+His words, verbatim:
+- to GREEN: "I authorize, clinic is currently not having any work at all, proceed with the 0100
+  apply and report";
+- to SOLO: "unblock green so he would be able to apply now, no matter the current hour, spoke with
+  owner they don't have any activities going on now";
+- to SOLO, offered tonight's window or an override with its review: "Today, under my ovveride".
+
+SOLO read the clock straight after that third message: 11:33:04 Lisbon. That is SOLO's clock
+reading, not the message's own timestamp, so the OWNER OVERRIDE lines print the date and no
+time. The three quotes are the owner's messages as SOLO received them in its session; the
+owner confirms them in PR #1529 before he merges it.
+
+**What it overrides.** Strategy's R9 ("a clinic-hours sitting is allowed only when all three
+hold ... Else closed hours", which the owner himself ruled) and S-1002-D P1.4's start windows,
+for the Lisbon date 2026-10-03 and no other. R9's proof 3 cannot hold for this document: the
+earlier pre-check sitting had to run before the merge, and #1520 is merged.
+
+**The bytes changed, in stages 0 and 1 and nowhere else:**
+- five lines after the clock line of each stage: a second clock read (`OVRNOW`, Lisbon
+  `YYYYMMDDHHMM`), its twelve-digit check, `OVR=no`, the date test
+  `case "${OVRNOW}" in 20261003*) OVR=yes;; esac`, and a line that prints `yes` or `no`;
+- one `elif [ "${OVR}" = yes ]` arm in each decision line, AFTER closed hours and AFTER R9's three
+  proofs, and BEFORE the STOP. It prints `OWNER OVERRIDE 2026-10-03: ...` with the three proof
+  values, so a reader sees that the sitting passed on the override and not on R9.
+
+**What it does not change.** Every sha256 pin, the target guard, the HEAD CHECK, the pre-check and
+its verdict count, the run-window record that stages 1, 2 and the closing read obey (the
+dispatch's CLOCK CHECK writes one for today), the post-check, the closing read, and every
+explicit halt. On any other Lisbon date both stages behave exactly as before: the test runs
+2026-10-02, 2026-10-04, 2026-11-03 and 2027-10-03 at noon, and each STOPs. In closed hours on
+2026-10-03 the closed-hours arm decides, as before. Stage 1 still reads the clinics' rows and
+prints them; a reading it cannot parse still STOPs.
+
+**Under the override the three proofs are printed, not required.** The arm is
+`elif [ "${OVR}" = yes ]` alone: on 20261003 it passes whatever the three proof lines read, as
+the closed-hours arm does. What proves the migration is the reviewed, catalog-only file is
+`SHA0100`, asserted by machine BEFORE the arm in both stages and again by
+`verified-migrate.mjs --sha256`; proof 2 restates it and is expected to read `yes`. GREEN
+reports the three values the OWNER OVERRIDE line prints; it does not stop on them.
+
+**The fault sweep and the override path.** The harness sweeps every block on 2026-10-02, where
+`OVR` reads `no`. The override arm itself adds no external call (it is a shell test), and its
+two new calls, the `OVRNOW` clock read and its twelve-digit check, are faulted in every sweep
+and STOP. The override's own pass and STOP paths are run whole by the override test.
+
+**Why a daytime apply is tolerable for this migration.** 0100 is catalog-only, proven by
+`SHA0100` as above. It takes no lock on
+any table (section 1; on the rehearsal it applied in under a second while another session held
+ACCESS EXCLUSIVE on two tables), and its first two statements bound any lock wait to 5 s and any
+statement to 60 s. The owner states the clinics have no activity.
+
+**The review (R8).** Strategy's R8: "a document amended for an owner override gets one R4 round
+on the changed bytes before the READY line. "Start now" from the owner does not waive it." The
+round is recorded under "Review history".
+
+**What ran, and what did not.** The changed lines ran whole, in GREEN's tool shape, in the
+fault-injection harness (stubs, both shells): the override passes at 08:00, 12:00 and 20:59 on
+2026-10-03 with R9's placeholders as they stand, every other date STOPs, and with the date test
+moved one day 2026-10-03 STOPs too. The harness's fault count is 386, each new call faulted.
+**NOT REHEARSED on a throwaway:** the whole-block rehearsal of 2026-10-03 00:02 to 00:15 ran the
+blocks before these lines existed. Every other byte of every block is the rehearsed one.
+
+**The harness.** Claude Code's auto-mode classifier twice refused SOLO's steps on this amendment
+("[Security Weaken]"). SOLO stopped and reported each time. The owner switched the session to
+manual mode and approved the steps himself.
+
 ## R9: a sitting inside clinic hours (PROPOSED for R4)
 
 S-1002-A R9, the strategy's words: "DAYTIME APPLIES, owner ruled B, from 0100: a clinic-hours
@@ -291,7 +362,8 @@ closed hours. Propose the stage 0 arm in 0100's document; R4 covers it."
   stage 1 reads it. Both clinics were ruled to 08:00 to 21:00 (AGENDA-2100); the hours are
   data, so the rows are read too.
 - **INSIDE CLINIC HOURS, THE BLOCK PASSES ONLY IF ALL THREE ARE PROVEN BY MACHINE, ELSE IT
-  STOPS WITH NOTHING APPLIED.** Each proof prints `yes` or `no` in every sitting, closed hours
+  STOPS WITH NOTHING APPLIED (the one exception is the owner's override of 2026-10-03, on
+  that Lisbon date only; see "Changed after the owner's override").** Each proof prints `yes` or `no` in every sitting, closed hours
   included, so a reader sees where the document stands:
   1. **The SET LOCAL gate is on main.** `scripts/migration-timeouts.test.mjs` exists at the
      recorded `origin/main` sha and its sha256 equals `SHAGATE`. #1510 merged on 2026-10-02 and
@@ -357,8 +429,10 @@ closed hours. Propose the stage 0 arm in 0100's document; R4 covers it."
   the cure is a new earlier sitting and a new `PRECHECK_EARLIER` in the same amendment. After the
   merge the document on main is final: the sitting waits for closed hours, or a new amendment
   goes through its own PR and R4 round. Never a copy from elsewhere.
-- **No date is written into any arm.** R9 replaces the date-locked owner override arms of
-  0097 to 0099; this document has none.
+- **One date is written into the arms: 20261003, the owner's override of that day.** R9
+  replaced the date-locked owner override arms of 0097 to 0099, and until 2026-10-03 this
+  document had none. The test allows exactly that date, on exactly the date test and the
+  decision line of stages 0 and 1, and exactly one `OVR=yes` line in each.
 - **The arm implements ONLY R9 (2)'s catalog-only option, by SOLO's choice.** 0100 is
   catalog-only by construction (section 1), and it takes no table lock (measured). R9's other
   option, "touches no table reception writes", has no machine proof in this arm: a later
@@ -616,6 +690,11 @@ LT=$(TZ=Europe/Lisbon date +%H%M)
 echo "${LT}" | grep -qxE '[0-9]{4}' || { echo "STOP: the Lisbon clock did not read as HHMM. Nothing was applied"; exit 1; }
 if awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }'; then CLOCK=closed; else CLOCK=open; fi
 echo "Lisbon ${LT}: ${CLOCK} by the clock (closed is before 08:00 or from 21:00)"
+OVRNOW=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon date could not be read for the owner's override check. Nothing was applied"; exit 1; }
+echo "${OVRNOW}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon date did not read as YYYYMMDDHHMM for the owner's override check. Nothing was applied"; exit 1; }
+OVR=no
+case "${OVRNOW}" in 20261003*) OVR=yes;; esac
+echo "owner's override of 2026-10-03 (this Lisbon date only): ${OVR}"
 D1=no
 if echo "${SHAGATE}" | grep -qxE '[0-9a-f]{64}' && test -f scripts/migration-timeouts.test.mjs && [ "$(shasum -a 256 scripts/migration-timeouts.test.mjs | cut -d' ' -f1)" = "${SHAGATE}" ]; then D1=yes; fi
 D2=no
@@ -625,7 +704,7 @@ if echo "${PRECHECK_EARLIER}" | grep -qxE '[0-9a-f]{64}' && test -f /tmp/0100-pr
 echo "R9 proof 1, the SET LOCAL gate is on main (scripts/migration-timeouts.test.mjs at ${MAIN} hashes to SHAGATE): ${D1}"
 echo "R9 proof 2, the migration is catalog-only: ${D2}"
 echo "R9 proof 3, the read-only pre-check ran on production in an earlier sitting, its transcript recorded and older than this sitting: ${D3}"
-if [ "${CLOCK}" = closed ]; then echo "R9: closed hours by the clock. The proofs are printed, not required"; elif [ "${D1}${D2}${D3}" = yesyesyes ]; then echo "R9 DAYTIME: Lisbon ${LT} is inside clinic hours, and all three proofs hold"; else echo "STOP: Lisbon ${LT} is inside clinic hours (08:00 to 21:00), and R9's three proofs do not all hold (gate ${D1}, catalog-only ${D2}, earlier pre-check ${D3}). A sitting inside clinic hours needs all three; this one waits for closed hours. Nothing was applied"; exit 1; fi
+if [ "${CLOCK}" = closed ]; then echo "R9: closed hours by the clock. The proofs are printed, not required"; elif [ "${D1}${D2}${D3}" = yesyesyes ]; then echo "R9 DAYTIME: Lisbon ${LT} is inside clinic hours, and all three proofs hold"; elif [ "${OVR}" = yes ]; then echo "OWNER OVERRIDE 2026-10-03: Lisbon ${LT} is inside clinic hours and R9's three proofs do not all hold (gate ${D1}, catalog-only ${D2}, earlier pre-check ${D3}). The owner ruled on 2026-10-03 that 0100 applies that day under his override, the clinics having no activity. The three proofs are printed, not required. This arm passes on the Lisbon date 20261003 only"; else echo "STOP: Lisbon ${LT} is inside clinic hours (08:00 to 21:00), and R9's three proofs do not all hold (gate ${D1}, catalog-only ${D2}, earlier pre-check ${D3}). A sitting inside clinic hours needs all three; this one waits for closed hours. Nothing was applied"; exit 1; fi
 
 echo "${MAIN}" > /tmp/0100-main.sha || { echo "STOP: the sha could not be recorded in /tmp/0100-main.sha. Nothing was applied"; exit 1; }
 echo "running from origin/main ${MAIN}, recorded in /tmp/0100-main.sha"
@@ -640,8 +719,11 @@ then `0099 on disk: 0099_revoke_truncate_trigger_references.sql, sha256 fbc5e545
 check-journal's line `... 98 .sql files match 98 journal entries in order ...`; then the
 clock: `Lisbon <HHMM>: closed by the clock ...` or `open`, the `catalog-only:` line ending
 `CATALOG-ONLY`, the three proof lines (proof 1 `yes` while main's gate file hashes to
-`SHAGATE`, proof 2 `yes`, proof 3 `no` until `PRECHECK_EARLIER` is filled), and either `R9: closed hours by the clock ...` or, inside clinic hours, `R9
-DAYTIME: ...` only when all three read `yes` (otherwise the STOP); then `running from
+`SHAGATE`, proof 2 `yes`, proof 3 `no` until `PRECHECK_EARLIER` is filled), with
+`owner's override of 2026-10-03 (this Lisbon date only): yes|no` after the clock line, and then
+one of: `R9: closed hours by the clock ...`; inside clinic hours, `R9 DAYTIME: ...` only when
+all three read `yes`; on the Lisbon date 20261003 inside clinic hours,
+`OWNER OVERRIDE 2026-10-03: ...` with the three proof values; otherwise the STOP. Then `running from
 origin/main <sha>, recorded in /tmp/0100-main.sha`; then
 `0100 PROMOTION, NUMBER, FILES AND CLOCK VERIFIED`. Exit 0. It reads no database. The sha it
 prints is the one every later stage runs from.
@@ -651,7 +733,9 @@ prints is the one every later stage runs from.
 check-journal each print their own `STOP:`, and `/tmp/0100-main.sha` is written only after
 every check has passed, so a STOP leaves no new record of the sha. In closed hours a
 proof line that cannot be computed reads `no`, which the closed-hours path prints and does
-not require; inside clinic hours that `no` is the STOP.
+not require; inside clinic hours that `no` is the STOP, except on 20261003, where the
+owner's override prints the proofs and does not require them. A clock read for the override
+that fails or does not parse is its own STOP.
 
 **Proof 3's two time tests in this block, `-ot /tmp/0100-sitting.start` and `-mmin +30`, are A
 JUDGMENT, NOT A RULING:** SOLO's reading of R9's "an earlier sitting", which guards against a
@@ -751,6 +835,11 @@ LT=$(TZ=Europe/Lisbon date +%H%M)
 echo "${LT}" | grep -qxE '[0-9]{4}' || { echo "STOP: the Lisbon clock did not read as HHMM. Nothing was applied"; exit 1; }
 if awk -v t="${LT}" 'BEGIN { if ((t + 0) < 800 || (t + 0) >= 2100) exit 0; exit 1 }'; then CLOCK=closed; else CLOCK=open; fi
 echo "Lisbon ${LT}: ${CLOCK} by the clock (closed is before 08:00 or from 21:00)"
+OVRNOW=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon date could not be read for the owner's override check. Nothing was applied"; exit 1; }
+echo "${OVRNOW}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon date did not read as YYYYMMDDHHMM for the owner's override check. Nothing was applied"; exit 1; }
+OVR=no
+case "${OVRNOW}" in 20261003*) OVR=yes;; esac
+echo "owner's override of 2026-10-03 (this Lisbon date only): ${OVR}"
 CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (now() at time zone 'Europe/Lisbon')::time >= opens_at and (now() at time zone 'Europe/Lisbon')::time < closes_at) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1) || { echo "STOP: the clinics' own hours could not be read (psql's lines are above). Nothing was applied"; exit 1; }
 echo "active clinics open now by their own hours: ${CL}"
 if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/) exit 0; exit 1 }'; then CLINICS=closed; elif awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[1-9][0-9]*$/ && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/ && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then CLINICS=open; else echo "STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic [${CL}]. Nothing was applied"; exit 1; fi
@@ -764,7 +853,7 @@ if echo "${PRECHECK_EARLIER}" | grep -qxE '[0-9a-f]{64}' && test -f /tmp/0100-pr
 echo "R9 proof 1, the SET LOCAL gate is on main (scripts/migration-timeouts.test.mjs at ${REC} hashes to SHAGATE): ${D1}"
 echo "R9 proof 2, the migration is catalog-only: ${D2}"
 echo "R9 proof 3, the read-only pre-check ran on production in an earlier sitting, its transcript recorded and older than this sitting: ${D3}"
-if [ "${CLOCK}${CLINICS}" = closedclosed ]; then echo "R9: closed hours, by the clock and by every active clinic's own row. The proofs are printed, not required"; elif [ "${D1}${D2}${D3}" = yesyesyes ]; then echo "R9 DAYTIME: Lisbon ${LT}, clock ${CLOCK}, clinics ${CLINICS}: inside clinic hours, and all three proofs hold"; else echo "STOP: Lisbon ${LT}, clock ${CLOCK}, clinics ${CLINICS}: inside clinic hours, and R9's three proofs do not all hold (gate ${D1}, catalog-only ${D2}, earlier pre-check ${D3}). A sitting inside clinic hours needs all three; this one waits for closed hours. Nothing was applied"; exit 1; fi
+if [ "${CLOCK}${CLINICS}" = closedclosed ]; then echo "R9: closed hours, by the clock and by every active clinic's own row. The proofs are printed, not required"; elif [ "${D1}${D2}${D3}" = yesyesyes ]; then echo "R9 DAYTIME: Lisbon ${LT}, clock ${CLOCK}, clinics ${CLINICS}: inside clinic hours, and all three proofs hold"; elif [ "${OVR}" = yes ]; then echo "OWNER OVERRIDE 2026-10-03: Lisbon ${LT}, clock ${CLOCK}, clinics ${CLINICS}: inside clinic hours and R9's three proofs do not all hold (gate ${D1}, catalog-only ${D2}, earlier pre-check ${D3}). The owner ruled on 2026-10-03 that 0100 applies that day under his override, the clinics having no activity. The three proofs are printed, not required. This arm passes on the Lisbon date 20261003 only"; else echo "STOP: Lisbon ${LT}, clock ${CLOCK}, clinics ${CLINICS}: inside clinic hours, and R9's three proofs do not all hold (gate ${D1}, catalog-only ${D2}, earlier pre-check ${D3}). A sitting inside clinic hours needs all three; this one waits for closed hours. Nothing was applied"; exit 1; fi
 
 echo "--- only now, with a passing pre-check and the clock decided, does the previous sitting's state go"
 rm -f /tmp/0100-postcheck.out /tmp/0100-stage2.ok /tmp/0100-journal-after.out /tmp/0100-apply.out /tmp/0100-applied.ok || { echo "STOP: the previous sitting's records could not be removed. Nothing was applied"; exit 1; }
@@ -793,9 +882,11 @@ echo "0100 APPLIED. Paste stage 2 now."
 - **`run window, again before the apply: now <t>, stage 1 starts by <t>`;**
 - **the clock and the clinics:** `Lisbon <HHMM>: closed|open by the clock ...`,
   `active clinics open now by their own hours: <k> of <n>` with `n` at least 1,
+  `owner's override of 2026-10-03 (this Lisbon date only): yes|no`,
   `clinics by their own rows: closed|open`, the `catalog-only:` line, the three proof lines,
   then `R9: closed hours, ...` or, inside clinic hours and only with all three proofs `yes`,
-  `R9 DAYTIME: ...`; otherwise the STOP, with nothing applied. Proof 3's two time tests here,
+  `R9 DAYTIME: ...`, or, on the Lisbon date 20261003 with the clock or a clinic open,
+  `OWNER OVERRIDE 2026-10-03: ...`; otherwise the STOP, with nothing applied. Proof 3's two time tests here,
   `-ot /tmp/0100-sitting.start` and `-mmin +30`, are **A JUDGMENT, NOT A RULING**, the same
   lines as stage 0's: SOLO's reading of R9's "an earlier sitting", which guards against a
   pre-check run moments before, or inside, this sitting being passed off as an earlier one; the
@@ -1089,7 +1180,8 @@ asserts it.
 `a341aa6a`, every block whole, under the lead's standing rule; see the next section.** Every
 block that can run on a throwaway exited 0, and strategy's P1.3 EXPECT held: journal 97 to 98,
 `authenticated` MAINTAIN 41 to 0 of 48, the default revoked, the packages/db suite 1414 of 1414
-on the applied throwaway. NOT REHEARSED, each by the lead's rule: the dispatch's journal read
+on the applied throwaway. NOT REHEARSED: the owner's override lines of 2026-10-03, added to
+stages 0 and 1 after this rehearsal (harness only); and, each by the lead's rule: the dispatch's journal read
 and this document's closing read (the reader refuses any target but production), and THE
 EARLIER PRE-CHECK SITTING from its guard-verdict check on (only production prints the guard's
 verdict; the closed-hours dispatch never pastes that block, and stage 1 runs the same pinned
@@ -1240,6 +1332,9 @@ rolled-back transaction except W2, since VACUUM cannot run in one):
 passed**, none skipped, vitest exit 0.
 
 **NOT REHEARSED, and why.**
+- **The owner's override lines of 2026-10-03** (five lines and one `elif` in each of stages 0
+  and 1, added after this rehearsal): they ran whole in the fault-injection harness, with
+  stubs, and never on a throwaway.
 - **THE EARLIER PRE-CHECK SITTING, from its guard-verdict check on.**
   - That check (`grep -qxF 'target verified: production, session pooler.'` on the transcript)
     reads the real guard's production verdict, which only production prints. Substitution 4
@@ -1401,15 +1496,16 @@ A held marker younger than 12 hours stops stages 0 and 1 before any git call.
 | Block | Faults | Halt | Allowed to continue, and why |
 |---|---|---|---|
 | THE EARLIER PRE-CHECK SITTING | 39 | 37 | 2: the time in a narration line, failed and empty |
-| stage 0, closed hours | 51 | 44 | 7: the narration time, failed and empty; 5 R9 proof calls, which read `no` and are not required in closed hours |
-| stage 0, inside clinic hours, all proofs valid | 58 | 55 | 3: the narration time, failed and empty; a failed clock test, which reads open and so demands every proof |
-| stage 1, closed hours | 70 | 65 | 5 R9 proof calls, as in stage 0 |
-| stage 1, inside clinic hours, all proofs valid | 78 | 76 | 2: a failed clock test and a failed closed-clinics test, each of which reads open |
+| stage 0, closed hours | 54 | 47 | 7: the narration time, failed and empty; 5 R9 proof calls, which read `no` and are not required in closed hours |
+| stage 0, inside clinic hours, all proofs valid | 61 | 58 | 3: the narration time, failed and empty; a failed clock test, which reads open and so demands every proof |
+| stage 1, closed hours | 73 | 68 | 5 R9 proof calls, as in stage 0 |
+| stage 1, inside clinic hours, all proofs valid | 81 | 79 | 2: a failed clock test and a failed closed-clinics test, each of which reads open |
 | stage 2 | 52 | 52 | none |
 | the closing journal read | 26 | 26 | none |
 
 Regenerated on 2026-10-02 at the commit after 2de0d186; the table before it read 341 faults
-(343 once 2de0d186 added its two lines). The same 374 faults ran under zsh in GREEN's exact shape and under bash with errexit forced
+(343 once 2de0d186 added its two lines, 374 after the R4 fixes; the owner's override of 2026-10-03
+added a date read and its check to stages 0 and 1, three faults in each of their four runs, so 386). The same 386 faults ran under zsh in GREEN's exact shape and under bash with errexit forced
 off; every one held. **CI runs the bash arm only:** zsh is not on the ubuntu runner, and the
 repository's convention for that (`scripts/apply-lane/apply-lane-settings.test.mjs`: the zsh
 sweeps are a recorded rehearsal) is followed, so on the GitHub runner alone the zsh arm is a
@@ -1544,3 +1640,16 @@ The R4 rounds this document has had, one row each. Each "fixed in" sha is a loca
   apply-block byte changed.
 - The whole-block rehearsal, 2026-10-03 00:02 to 00:15 Lisbon, on a341aa6a: every block that can run
   on a throwaway exited 0; the record is under "Rehearsal".
+- The owner's override of 2026-10-03 (see "Changed after the owner's override"): stages 0 and 1 gain
+  a date-locked arm, five lines and one `elif` each (5379c9d6).
+- R8 round 1 on the override (5379c9d6 and the dispatch): NOT PASS, 0 BLOCKER, 5 MAJOR, 6 MINOR. The
+  changed block bytes were confirmed correct: the override fires only on the Lisbon date 20261003,
+  every new halt is explicit, every other block byte equals c2665f6a's. The MAJORs were statements
+  the amendment made false or unproven: "proof 2 must read yes" (the arm does not require the
+  proofs; now said so, with `SHA0100` named as the machine proof), "no date is written into any
+  arm", the dispatch's rehearsal claim and its "never inside clinic hours" sentence, and the
+  owner's quotes and the 11:33 time, which the reviewer could not check (the OWNER OVERRIDE lines
+  now print no time, and the owner confirms his words in #1529). The MINORs: the no-date test
+  allowed a second date test by a bracket pattern (now exactly one `OVR=yes` line and one `case`
+  per block), stale EXPECT text, the window labelled a judgment, and the dispatch's wording.
+  Fixed in the next commit; R8 round 2 reviews that delta.

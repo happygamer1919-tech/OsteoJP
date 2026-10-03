@@ -608,8 +608,31 @@ test("R9: the daytime arm stands in stage 0 and stage 1, with the same proof lin
   assert.deepEqual(armPositionProblems([PRE_RUN, ARM, APPLY].join("\n")), []);
   assert.deepEqual(armPositionProblems([ARM, PRE_RUN, APPLY].join("\n")), ["the R9 arm does not follow the pre-check"]);
   assert.deepEqual(armPositionProblems([PRE_RUN, APPLY, ARM].join("\n")), ["the R9 arm does not precede the apply"]);
-  // No date is written into an arm: no 2026 date in either block's code lines.
-  for (const b of [s0, s1]) assert.doesNotMatch(b, /\b2026[01]\d[0-3]\d\b/);
+  // No date is written into an arm (R9 replaced the dated overrides), with ONE exception: the owner's
+  // override of 2026-10-03, reviewed under R8. It may stand on exactly two lines of each block, the
+  // date test and the decision line, and the only date either may carry is 20261003.
+  for (const b of [s0, s1]) {
+    const dated = b.split("\n").filter((l) => /\b2026[01]\d[0-3]\d\b/.test(l));
+    assert.equal(dated.length, 2, `dated lines: ${dated.length}`);
+    assert.equal(dated[0], 'case "${OVRNOW}" in 20261003*) OVR=yes;; esac');
+    assert.ok(dated[1].startsWith('if [ "${CLOCK}'), "the second dated line is the decision line");
+    for (const l of dated) assert.deepEqual([...new Set(l.match(/\b2026[01]\d[0-3]\d\b/g))], ["20261003"]);
+    // The override decides nothing unless it follows closed hours and the three proofs, and precedes the STOP.
+    const d = dated[1];
+    const at = (s) => d.indexOf(s);
+    assert.ok(at("= yesyesyes ]") > 0 && at('elif [ "${OVR}" = yes ]') > at("= yesyesyes ]") && at('else echo "STOP: Lisbon') > at('elif [ "${OVR}" = yes ]'));
+    assert.match(b, /^OVRNOW=\$\(TZ=Europe\/Lisbon date '\+%Y%m%d%H%M'\) \|\| \{ echo "STOP: /m);
+    assert.match(b, /^echo "\$\{OVRNOW\}" \| grep -qxE '\[0-9\]\{12\}' \|\| \{ echo "STOP: /m);
+    assert.match(b, /^OVR=no$/m);
+    // Exactly one line can turn the override on, and exactly one `case` stands in the block: a
+    // second date test of any spelling (a bracket pattern, another year) is refused.
+    assert.equal(b.split("\n").filter((l) => l.includes("OVR=yes")).length, 1, "one OVR=yes line");
+    assert.equal(b.split("\n").filter((l) => /(^|[;\s])case\s/.test(l)).length, 1, "one case line");
+  }
+  // CONTROL: a second date test with a bracket pattern, which the 8-digit rule alone cannot see.
+  const sneaky = s1.replace('case "${OVRNOW}" in 20261003*) OVR=yes;; esac', 'case "${OVRNOW}" in 20261003*) OVR=yes;; esac\ncase "${OVRNOW}" in 2026101[0-9]*) OVR=yes;; esac');
+  assert.notEqual(sneaky, s1);
+  assert.equal(sneaky.split("\n").filter((l) => l.includes("OVR=yes")).length, 2);
 });
 
 test("THE EARLIER PRE-CHECK SITTING runs from PR #1520's named head, never main, and records what R9's proof 3 requires", () => {
@@ -1535,6 +1558,71 @@ test("THE WINDOW FEED: stage 1 refuses every run-window record it must, before p
         "now AT the window's end",
         "now PAST the window's end (the previous night's window, as a failed dispatch evening test records it)",
       ], `${shell}: ${stripped.failures.join("\n")}`);
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("THE OWNER'S OVERRIDE OF 2026-10-03: stages 0 and 1 pass inside clinic hours on that Lisbon date only, with R9's placeholders as they stand", async () => {
+  const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+  const base = mkdtempSync(join(tmpdir(), "fault-0100-ovr-"));
+  const M = FAKE_SHA.MAIN;
+  // [Lisbon date, HHMM, scenario, what must happen]
+  const cases = [
+    ["2026-10-03", "1200", "day", "override"],
+    ["2026-10-03", "0800", "day", "override"],
+    ["2026-10-03", "2059", "day", "override"],
+    ["2026-10-02", "1200", "day", "stop"],
+    ["2026-10-04", "1200", "day", "stop"],
+    ["2026-11-03", "1200", "day", "stop"],
+    ["2027-10-03", "1200", "day", "stop"],
+    ["2026-10-03", "2230", "closed", "closed"],
+  ];
+  const run = async (shell, name, [ymd, hhmm, scn], block) => {
+    const cfg = harnessConfig(doc, name, scn, shell, base);
+    const d = ymd.replaceAll("-", "");
+    const hh = Number(hhmm.slice(0, 2));
+    const win = `${d}${String(hh).padStart(2, "0")}00 ${d}${String(hh).padStart(2, "0")}59 ${d}2359`;
+    return runOnce({
+      ...cfg, block: block ?? cfg.block, substitute: [], clock: { ...cfg.clock, ymd, hhmm, stamp: undefined },
+      setup: (tmp) => { cfg.setup(tmp); if (name === "stage1") putRecord(tmp, "0100-window.ok", `${M} ${win}\n`, 5); },
+    }, `${shell}-${name}-ovr-${d}-${hhmm}${block ? "-mut" : ""}`, null);
+  };
+  try {
+    prepareHarness(base, doc);
+    for (const shell of shells) {
+      for (const name of ["stage0", "stage1"]) {
+        const marker = name === "stage0" ? STAGE0 : STAGE1;
+        for (const c of cases) {
+          const r = await run(shell, name, c);
+          const tag = `${shell} ${name} ${c[0]} ${c[1]}`;
+          const applied = r.markersAtEnd.includes("0100-applied.ok");
+          if (c[3] === "override") {
+            assert.equal(r.code, 0, `${tag}: ${r.out.slice(-500)}`);
+            assert.match(r.out, /^OWNER OVERRIDE 2026-10-03: Lisbon .*The three proofs are printed, not required\./m, tag);
+            assert.match(r.out, /^owner's override of 2026-10-03 \(this Lisbon date only\): yes$/m, tag);
+            assert.ok(r.out.includes(marker) && r.out.includes("TOOL-CHAIN-CONTINUED"), tag);
+          } else if (c[3] === "stop") {
+            assert.notEqual(r.code, 0, tag);
+            assert.match(r.out, /^STOP: Lisbon 1200/m, tag);
+            assert.match(r.out, /^owner's override of 2026-10-03 \(this Lisbon date only\): no$/m, tag);
+            assert.doesNotMatch(r.out, /^OWNER OVERRIDE/m, tag);
+            assert.ok(!applied && !r.out.includes(marker), `${tag}: it went on`);
+          } else {
+            assert.equal(r.code, 0, `${tag}: ${r.out.slice(-500)}`);
+            assert.match(r.out, /^R9: closed hours/m, tag);
+            assert.doesNotMatch(r.out, /^OWNER OVERRIDE/m, tag);
+          }
+        }
+        // IT BITES: with the date test moved one day, 2026-10-03 at noon stops like any other day.
+        const real = harnessConfig(doc, name, "day", shell, base).block;
+        const moved = real.replace('in 20261003*) OVR=yes', 'in 20261004*) OVR=yes');
+        assert.notEqual(moved, real);
+        const m = await run(shell, name, cases[0], moved);
+        assert.notEqual(m.code, 0, `${shell} ${name}: the moved date still passed`);
+        assert.match(m.out, /^STOP: Lisbon 1200/m);
+      }
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
