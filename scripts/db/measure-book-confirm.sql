@@ -60,9 +60,19 @@
 --      Every other audit row on an online request is counted beside them as the
 --      comparand. What the audit row does NOT record, for doors 3, 4 and 5, is
 --      that the row was a request at that moment: this file reads it from
---      `origin` = `patient_portal`. C3: requests that left `scheduled` with no
---      row of any of the five shapes, which would be a door this file cannot
---      see. C4: GUEST requests (the public form, `guest_booking_requests`). A
+--      `origin` = `patient_portal`. C2b MEASURES THAT PRESUPPOSITION instead
+--      of assuming it. confirmAppointmentRequest finds a request by its
+--      `staff_notifications` row of kind `appointment_request`, not by origin,
+--      and public.is_unconfirmed_pedido accepts either. So C2b counts the same
+--      five doors on appointments of ANY origin, split by origin, and says how
+--      many of the `staff` ones carry that notification. A `staff` row accepted
+--      through door 1 is a request C2, D and F do not count, and one
+--      dispatchConfirmation sends nothing for (its `origin` gate). C3: requests
+--      that left `scheduled`, split three ways: accepted by one of the five
+--      doors, moved by the drawer from `scheduled` straight to `completed` or
+--      `no_show` (a visible `appointment.update`, not an acceptance), and
+--      neither, which would be a door this file cannot see. C4: GUEST requests
+--      (the public form, `guest_booking_requests`). A
 --      guest request is never accepted into an appointment by any door:
 --      reception converts it to a patient and books by hand, which makes a
 --      `staff` appointment, and dispatchConfirmation sends nothing for a `staff`
@@ -100,7 +110,10 @@
 --   H2 staff per role (`roles.slug`, the role's key, never the person): active
 --      users, how many have NO row in `staff_locations`, and how many have 1, 2,
 --      or 3 or more. A role key that is not a plain lower-case code is counted
---      as "other (not printed)";
+--      as "other (not printed)". A `users` row with `is_shared_resource` true
+--      is a room or a machine, not a person: H2 and H3a print those as their
+--      own row, and H3b and H3d as their own column, outside the staff and
+--      therapist counts;
 --   H3 per location. H3a: `staff_locations` rows by role. H3b:
 --      `availability_templates` rows, active rows, active rows valid today, and
 --      distinct therapists with active hours. H3c: `service_location_prices` and
@@ -198,9 +211,44 @@ from labelled
 group by 1
 order by 1;
 
-\echo '--- C3. A DOOR THIS FILE CANNOT SEE: online requests created in the window that left scheduled, and how many have no acceptance row of the five shapes at any time'
+\echo '--- C2b. THE PRESUPPOSITION, MEASURED: the same five doors on appointments of ANY origin in the last 30 days, by origin (C2, D and F read origin patient_portal only)'
+with acc_all_origins as (
+  select al.entity_id as appointment_id,
+         a.origin = 'patient_portal' as is_online_request,
+         exists (select 1 from staff_notifications n where n.appointment_id = a.id and n.kind = 'appointment_request') as has_request_notification,
+         case
+           when al.action = 'appointment.update' and al.metadata ->> 'via' = 'portal_request_confirm'
+             then '1 Pedidos queue (appointment.update, via portal_request_confirm)'
+           when al.action = 'appointment.update' and al.metadata ->> 'fromStatus' = 'scheduled' and al.metadata ->> 'toStatus' = 'confirmed'
+             then '2 drawer Estado selector (appointment.update, fromStatus scheduled, toStatus confirmed)'
+           when al.action = 'appointment.sms_reply_reviewed' and al.metadata ->> 'resolution' = 'confirmed' and al.metadata -> 'applied' = 'true'::jsonb
+             then '3 SMS review queue (appointment.sms_reply_reviewed, confirmed, applied)'
+           when al.action = 'appointment.patient_sms_reply' and al.metadata ->> 'outcome' = 'confirmed'
+             then '4 patient SMS reply (appointment.patient_sms_reply, confirmed)'
+           when al.action = 'appointment.confirm.sms_code' and al.metadata ->> 'reason' is null
+             then '5 confirm link (appointment.confirm.sms_code), which emits no confirmation event'
+         end as door
+  from audit_log al
+  join appointments a on a.id = al.entity_id
+  where al.entity_type = 'appointment'
+    and al.created_at >= now() - interval '30 days'
+)
+select acc_all_origins.door,
+       count(*) filter (where acc_all_origins.is_online_request) as audit_rows_origin_patient_portal,
+       count(*) filter (where not acc_all_origins.is_online_request) as audit_rows_origin_staff,
+       count(distinct acc_all_origins.appointment_id) filter (where acc_all_origins.is_online_request) as distinct_online_requests,
+       count(distinct acc_all_origins.appointment_id) filter (where not acc_all_origins.is_online_request) as distinct_staff_origin_appointments,
+       count(distinct acc_all_origins.appointment_id) filter (where not acc_all_origins.is_online_request and acc_all_origins.has_request_notification) as staff_origin_with_a_request_notification,
+       count(distinct acc_all_origins.appointment_id) filter (where acc_all_origins.is_online_request and not acc_all_origins.has_request_notification) as online_requests_with_no_request_notification
+from acc_all_origins
+where acc_all_origins.door is not null
+group by 1
+order by 1;
+
+\echo '--- C3. A DOOR THIS FILE CANNOT SEE: online requests created in the window that left scheduled, split into accepted by one of the five doors, moved by the drawer straight to completed or no_show, and neither'
 with acc_of_window_requests as (
   select al.entity_id as appointment_id,
+         (al.action = 'appointment.update' and al.metadata ->> 'fromStatus' = 'scheduled' and al.metadata ->> 'toStatus' in ('completed', 'no_show')) as straight_to_final,
          case
            when al.action = 'appointment.update' and al.metadata ->> 'via' = 'portal_request_confirm'
              then '1 Pedidos queue (appointment.update, via portal_request_confirm)'
@@ -218,10 +266,20 @@ with acc_of_window_requests as (
   where al.entity_type = 'appointment'
     and a.origin = 'patient_portal'
     and a.created_at >= now() - interval '30 days'
+),
+seen as (
+  select x.appointment_id,
+         bool_or(x.door is not null) as accepted,
+         bool_or(x.straight_to_final) as straight_to_final
+  from acc_of_window_requests x
+  group by 1
 )
 select count(*) as now_confirmed_completed_or_no_show,
-       count(*) filter (where not exists (select 1 from acc_of_window_requests x where x.appointment_id = a.id and x.door is not null)) as of_those_with_no_acceptance_row
+       count(*) filter (where coalesce(seen.accepted, false)) as with_an_acceptance_row,
+       count(*) filter (where not coalesce(seen.accepted, false) and coalesce(seen.straight_to_final, false)) as drawer_straight_to_completed_or_no_show_and_no_acceptance_row,
+       count(*) filter (where not coalesce(seen.accepted, false) and not coalesce(seen.straight_to_final, false)) as neither_which_is_the_unseen_door
 from appointments a
+left join seen on seen.appointment_id = a.id
 where a.origin = 'patient_portal'
   and a.created_at >= now() - interval '30 days'
   and a.status in ('confirmed', 'completed', 'no_show');
@@ -428,15 +486,16 @@ from locations l
 join tenants t on t.id = l.tenant_id
 order by 1, 2;
 
-\echo '--- H2. STAFF PER ROLE (the role key, never the person): active users by how many staff_locations rows they hold (none means every location for an admin or a receptionist)'
+\echo '--- H2. STAFF PER ROLE (the role key, never the person): active users by how many staff_locations rows they hold (none means every location for an admin or a receptionist). A shared resource is its own row'
 with staff as (
   select u.role_id,
          u.is_active,
          u.is_bookable,
+         u.is_shared_resource,
          (select count(*) from staff_locations sl where sl.user_id = u.id) as n_locations
   from users u
 )
-select case when r.slug is null then '(no role)' when r.slug ~ '^[a-z][a-z0-9_-]*$' then r.slug else 'other (not printed)' end as role,
+select case when staff.is_shared_resource then '(shared resource, not staff)' when r.slug is null then '(no role)' when r.slug ~ '^[a-z][a-z0-9_-]*$' then r.slug else 'other (not printed)' end as role,
        count(*) filter (where staff.is_active) as active_staff,
        count(*) filter (where staff.is_active and staff.n_locations = 0) as with_no_staff_locations_row,
        count(*) filter (where staff.is_active and staff.n_locations = 1) as with_1_location,
@@ -449,11 +508,11 @@ left join roles r on r.id = staff.role_id
 group by 1
 order by 1;
 
-\echo '--- H3a. PER LOCATION: staff_locations rows by role'
+\echo '--- H3a. PER LOCATION: staff_locations rows by role (a shared resource is its own row)'
 select dense_rank() over (order by t.created_at, t.id) as tenant_n,
        l.name as location_name,
        case when l.is_active then 'yes' else 'no' end as active,
-       case when sl.id is null then '(no staff_locations row)' when r.slug is null then '(no role)' when r.slug ~ '^[a-z][a-z0-9_-]*$' then r.slug else 'other (not printed)' end as role,
+       case when sl.id is null then '(no staff_locations row)' when u.is_shared_resource then '(shared resource, not staff)' when r.slug is null then '(no role)' when r.slug ~ '^[a-z][a-z0-9_-]*$' then r.slug else 'other (not printed)' end as role,
        count(sl.id) as staff_locations_rows,
        count(sl.id) filter (where u.is_active) as of_active_users
 from locations l
@@ -471,10 +530,12 @@ select dense_rank() over (order by t.created_at, t.id) as tenant_n,
        count(av.id) as template_rows,
        count(av.id) filter (where av.is_active) as active_template_rows,
        count(av.id) filter (where av.is_active and coalesce(av.valid_from, current_date) <= current_date and coalesce(av.valid_until, current_date) >= current_date) as active_and_valid_today,
-       count(distinct av.user_id) filter (where av.is_active) as distinct_therapists_with_active_hours
+       count(distinct av.user_id) filter (where av.is_active and not u.is_shared_resource) as distinct_therapists_with_active_hours,
+       count(distinct av.user_id) filter (where av.is_active and u.is_shared_resource) as shared_resources_with_active_hours
 from locations l
 join tenants t on t.id = l.tenant_id
 left join availability_templates av on av.location_id = l.id
+left join users u on u.id = av.user_id
 group by t.id, t.created_at, l.id, l.name, l.is_active
 order by 1, 2;
 
@@ -493,7 +554,7 @@ left join service_pack_location_prices pp on pp.location_id = l.id
 group by t.id, t.created_at, l.id, l.name, l.is_active
 order by 1, 2;
 
-\echo '--- H3d. PER LOCATION: active bookable users with a staff_locations row or active hours there (DISTINCT users)'
+\echo '--- H3d. PER LOCATION: active bookable users with a staff_locations row or active hours there (DISTINCT users, shared resources apart)'
 with presence as (
   select sl.location_id, sl.user_id, true as by_membership, false as by_hours
   from staff_locations sl
@@ -505,10 +566,11 @@ with presence as (
 select dense_rank() over (order by t.created_at, t.id) as tenant_n,
        l.name as location_name,
        case when l.is_active then 'yes' else 'no' end as active,
-       count(distinct u.id) filter (where u.is_active and u.is_bookable) as bookable_users_with_membership_or_hours,
-       count(distinct u.id) filter (where u.is_active and u.is_bookable and presence.by_membership) as of_those_by_membership,
-       count(distinct u.id) filter (where u.is_active and u.is_bookable and presence.by_hours) as of_those_by_active_hours,
-       count(distinct u.id) as all_users_with_membership_or_hours
+       count(distinct u.id) filter (where u.is_active and u.is_bookable and not u.is_shared_resource) as bookable_users_with_membership_or_hours,
+       count(distinct u.id) filter (where u.is_active and u.is_bookable and not u.is_shared_resource and presence.by_membership) as of_those_by_membership,
+       count(distinct u.id) filter (where u.is_active and u.is_bookable and not u.is_shared_resource and presence.by_hours) as of_those_by_active_hours,
+       count(distinct u.id) filter (where u.is_shared_resource) as shared_resources_with_membership_or_hours,
+       count(distinct u.id) as all_rows_of_users_with_membership_or_hours
 from locations l
 join tenants t on t.id = l.tenant_id
 left join presence on presence.location_id = l.id
