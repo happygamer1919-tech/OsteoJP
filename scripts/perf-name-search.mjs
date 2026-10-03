@@ -66,8 +66,8 @@ const outsider = randomUUID();
 /** Accented Portuguese name parts, so the fold is exercised on real shapes. */
 const FIRST = ["António","Maria","João","Ana","Manuel","Fernanda","José","Luísa","Carlos","Cristina",
                "Rui","Sofia","Paulo","Inês","Miguel","Teresa","Nuno","Beatriz","Pedro","Mónica"];
-const MID   = ["Armando","Ribeiro","Alves","Costa","Nunes","Baptista","Sousa","Marques","Lopes","Cardoso"];
-const LAST  = ["Galhofo","Ferreira","Pereira","Rodrigues","Silva","Santos","Oliveira","Martins","Gomes","Correia"];
+const MID   = ["Amostra","Modelo","Alves","Costa","Nunes","Baptista","Sousa","Marques","Lopes","Cardoso"];
+const LAST  = ["Exemplo","Ferreira","Pereira","Rodrigues","Silva","Santos","Oliveira","Martins","Gomes","Correia"];
 
 /** Production carries roughly this many patients. */
 const N = 8400;
@@ -102,7 +102,7 @@ async function main() {
       created_by: outsider,
     });
   }
-  rows[0].full_name = "António Armando Ribeiro Galhofo"; // the reported record
+  rows[0].full_name = "António Amostra Modelo Exemplo"; // the reported record's shape, invented name
   rows[0].primary_location_id = locCB;
   for (let i = 0; i < rows.length; i += 500) await sql`insert into patients ${sql(rows.slice(i, i + 500))}`;
   await sql`analyze patients`;
@@ -151,10 +151,10 @@ async function main() {
   }
 
   const r1 = await ab("=== AS SHIPPED (no extra index) ===", [
-    ["BEFORE one token", OLD, ["galhofo"]],
-    ["AFTER  one token", NEW_1, ["galhofo"]],
-    ["BEFORE two tokens", OLD, ["antonio galhofo"]],
-    ["AFTER  two tokens", NEW_2, ["antonio", "galhofo"]],
+    ["BEFORE one token", OLD, ["exemplo"]],
+    ["AFTER  one token", NEW_1, ["exemplo"]],
+    ["BEFORE two tokens", OLD, ["antonio exemplo"]],
+    ["AFTER  two tokens", NEW_2, ["antonio", "exemplo"]],
   ]);
 
   // DOES A FUNCTIONAL INDEX ON THE FOLDED NAME HELP? Built, measured, dropped.
@@ -164,15 +164,15 @@ async function main() {
   await sql.unsafe(`create index perf_folded_trgm on patients using gin (${FOLD} gin_trgm_ops)`);
   await sql`analyze patients`;
   const r2 = await ab("=== WITH THAT INDEX ===", [
-    ["AFTER  one token", NEW_1, ["galhofo"]],
-    ["AFTER  two tokens", NEW_2, ["antonio", "galhofo"]],
+    ["AFTER  one token", NEW_1, ["exemplo"]],
+    ["AFTER  two tokens", NEW_2, ["antonio", "exemplo"]],
   ]);
   const plan = await sql.begin(async (tx) => {
     await tx.unsafe(`set local role authenticated`);
     await tx`select set_config('request.jwt.claims', ${claims}, true)`;
     const r = await tx.unsafe(`explain (analyze, format text)
       select id from patients where deleted_at is null and (${NEW_1})
-      order by full_name asc limit 25`, ["galhofo"]);
+      order by full_name asc limit 25`, ["exemplo"]);
     return r.map((x) => x["QUERY PLAN"]).join("\n");
   });
   const used = plan.includes("perf_folded_trgm");

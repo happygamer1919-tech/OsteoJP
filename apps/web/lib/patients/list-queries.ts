@@ -136,10 +136,11 @@ function searchMatcher(raw: string): SQL | undefined {
   if (text.length === 0) return undefined;
   // EVERY WHITESPACE TOKEN MUST MATCH, IN ANY ORDER, ACCENT-INSENSITIVELY.
   // This was `ilike(fullName, '%' + text + '%')` - ONE substring of the WHOLE
-  // typed string, in order - which is why "Antonio Galhofo" could not find
-  // "Antonio Armando Ribeiro Galhofo" and reception was told a patient did not
-  // exist. The rule lives in lib/patients/name-search.ts because the OTHER
-  // search surface had the identical line and the identical defect.
+  // typed string, in order - which is why a first name plus a surname could not
+  // find a patient (redacted) with two more names in between, and reception was
+  // told a patient did not exist. The rule lives in lib/patients/name-search.ts
+  // because the OTHER search surface had the identical line and the identical
+  // defect.
   const nameMatch = fullNameMatcher(text);
   const matchers: SQL[] = nameMatch ? [nameMatch] : [];
   if (digits.length > 0) {
