@@ -9176,16 +9176,20 @@
     {
       "id": "MIG-0100-maintain-revoke",
       "title": "0100: take MAINTAIN off authenticated in public, plus the matching default privileges (the same shape as 0099), measured on production first",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "in_flight",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "solo",
       "gate": "owner_merge",
       "blocked_on": null,
-      "last_checkpoint": "2026-10-01",
-      "evidence": null,
-      "notes": "=== 2026-10-01 (SOLO) === Ruled by the lead, dispatch S-1001-A: R1 \"MAINTAIN on authenticated: REVOKE, tables in public plus the matching default privileges, same shape as 0099.\" R2 \"Numbering: this is 0100 (catalog-only pilot of the SET LOCAL gate). SAT-01 becomes 0101, the episode-policy item 0102.\" R3: measurement before build, a read-only SQL and a read-only GREEN dispatch printing, for public, per role (PUBLIC, anon, authenticated, service_role) the count of tables holding each of the 8 privileges, and pg_default_acl per grantor, plus a repository search for VACUUM, ANALYZE, REINDEX, CLUSTER and REFRESH MATERIALIZED run under an app role. The migration is not written until production's output is back; anything found on anon or PUBLIC comes back as a question, not as scope. Context: Postgres 17 added MAINTAIN as the eighth table privilege and the Supabase platform default grants it; 0099 (option 1) revoked the three the card named and left MAINTAIN (41 of 48 tables on the rehearsal throwaway)."
+      "last_checkpoint": "2026-10-03",
+      "evidence": {
+        "kind": "journal",
+        "at": "2026-10-03",
+        "ref": "0100 APPLIED TO PRODUCTION by GREEN, 2026-10-03 16:06 Lisbon, from main at #1529's merge 244f916f (0100 itself merged as #1520, c2665f6a), document f92d4004. Pre-check 13/13 OK (premise: authenticated MAINTAIN on 41 of 48 tables, the public TABLES default holding MAINTAIN); verified-migrate journal 97 -> 98, 0100 present by sha256 80f85018; post-check 12/12 OK: MAINTAIN 0 of 48, the default now DELETE,INSERT,SELECT,UPDATE, and every other privilege, policy, function (28 SECURITY DEFINER) and default unchanged by hash; the closing read gives 98 rows, nothing pending. The sitting ran inside clinic hours under the owner's dated override of 2026-10-03 (#1529, two R8 rounds): stages 0 and 1 passed on the OWNER OVERRIDE line, with R9's proofs printed (gate yes, catalog-only yes, earlier pre-check no). Rehearsed whole on a throwaway on 2026-10-03 00:02 to 00:15 Lisbon; the override lines were not."
+      },
+      "notes": "=== 2026-10-03 (SOLO) === APPLIED and merged; see evidence. First migration under the SET LOCAL gate (#1510): lock_timeout 5s and statement_timeout 60s held. Follow-ups carded elsewhere: the anon SEQUENCES default (SEC-anon-sequences-default). Found on the way and now a rule for every apply block: in a Claude session set -e does not stop a pasted block, so every halt is explicit and proven by fault injection.\n=== 2026-10-01 (SOLO) === Ruled by the lead, dispatch S-1001-A: R1 \"MAINTAIN on authenticated: REVOKE, tables in public plus the matching default privileges, same shape as 0099.\" R2 \"Numbering: this is 0100 (catalog-only pilot of the SET LOCAL gate). SAT-01 becomes 0101, the episode-policy item 0102.\" R3: measurement before build, a read-only SQL and a read-only GREEN dispatch printing, for public, per role (PUBLIC, anon, authenticated, service_role) the count of tables holding each of the 8 privileges, and pg_default_acl per grantor, plus a repository search for VACUUM, ANALYZE, REINDEX, CLUSTER and REFRESH MATERIALIZED run under an app role. The migration is not written until production's output is back; anything found on anon or PUBLIC comes back as a question, not as scope. Context: Postgres 17 added MAINTAIN as the eighth table privilege and the Supabase platform default grants it; 0099 (option 1) revoked the three the card named and left MAINTAIN (41 of 48 tables on the rehearsal throwaway)."
     },
     {
       "id": "VM-observer-gate-change-pair",
