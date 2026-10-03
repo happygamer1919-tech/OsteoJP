@@ -85,6 +85,30 @@
 --   G  the age profile, so a zero is readable: total rows, and the oldest and
 --      newest row as a Lisbon DATE, for `reminder_dispatches` and for the
 --      appointment rows of `audit_log`, and the window's two dates.
+--
+-- SECTION H RIDES IN THE SAME SITTING, for a second question. Strategy's dispatch
+-- S-1003-B, block 2: the clinic opens a third location, Montemor-o-Novo, on
+-- 2026-10-17, and "Measure first". H prints what a location carries today, so
+-- the third one can be given the same. The same rule holds: counts, a
+-- location's name, clinic hours and a role's key. No staff name, no email
+-- address, no phone number and no id.
+--   H1 every location, active AND inactive (an archived Montemor row would show
+--      here): name, active, `opens_at`, `closes_at`, the midday closure pair
+--      (`midday_closed_from`, `midday_closed_to`), `slot_granularity_min`, and
+--      whether an address and a phone are on file. The times are clinic hours,
+--      printed as HH:MM;
+--   H2 staff per role (`roles.slug`, the role's key, never the person): active
+--      users, how many have NO row in `staff_locations`, and how many have 1, 2,
+--      or 3 or more. A role key that is not a plain lower-case code is counted
+--      as "other (not printed)";
+--   H3 per location. H3a: `staff_locations` rows by role. H3b:
+--      `availability_templates` rows, active rows, active rows valid today, and
+--      distinct therapists with active hours. H3c: `service_location_prices` and
+--      `service_pack_location_prices` rows, all and active. H3d: active users
+--      with `is_bookable` true who have a `staff_locations` row or active hours
+--      there, DISTINCT users;
+--   H4 per location: appointments created in the last 30 days by origin, and at
+--      any time, the base H3 is read against.
 
 \echo '=== BOOK-CONFIRM MEASUREMENT: accepted online requests and their confirmation message. READ ONLY, counts only ==='
 
@@ -388,5 +412,122 @@ select 'audit_log, appointment rows',
 from audit_log al
 where al.entity_type = 'appointment'
 order by 1;
+
+\echo '--- H1. EVERY LOCATION, active and inactive: clinic hours, the midday closure, the slot size, and whether an address and a phone are on file'
+select dense_rank() over (order by t.created_at, t.id) as tenant_n,
+       l.name as location_name,
+       case when l.is_active then 'yes' else 'no' end as active,
+       to_char(l.opens_at, 'HH24:MI') as opens_at,
+       to_char(l.closes_at, 'HH24:MI') as closes_at,
+       coalesce(to_char(l.midday_closed_from, 'HH24:MI'), '(none)') as midday_closed_from,
+       coalesce(to_char(l.midday_closed_to, 'HH24:MI'), '(none)') as midday_closed_to,
+       l.slot_granularity_min,
+       case when coalesce(btrim(l.address), '') = '' then 'no' else 'yes' end as address_present,
+       case when coalesce(btrim(l.phone), '') = '' then 'no' else 'yes' end as phone_present
+from locations l
+join tenants t on t.id = l.tenant_id
+order by 1, 2;
+
+\echo '--- H2. STAFF PER ROLE (the role key, never the person): active users by how many staff_locations rows they hold (none means every location for an admin or a receptionist)'
+with staff as (
+  select u.role_id,
+         u.is_active,
+         u.is_bookable,
+         (select count(*) from staff_locations sl where sl.user_id = u.id) as n_locations
+  from users u
+)
+select case when r.slug is null then '(no role)' when r.slug ~ '^[a-z][a-z0-9_-]*$' then r.slug else 'other (not printed)' end as role,
+       count(*) filter (where staff.is_active) as active_staff,
+       count(*) filter (where staff.is_active and staff.n_locations = 0) as with_no_staff_locations_row,
+       count(*) filter (where staff.is_active and staff.n_locations = 1) as with_1_location,
+       count(*) filter (where staff.is_active and staff.n_locations = 2) as with_2_locations,
+       count(*) filter (where staff.is_active and staff.n_locations >= 3) as with_3_or_more_locations,
+       count(*) filter (where staff.is_active and staff.is_bookable) as of_active_bookable,
+       count(*) filter (where not staff.is_active) as inactive_staff
+from staff
+left join roles r on r.id = staff.role_id
+group by 1
+order by 1;
+
+\echo '--- H3a. PER LOCATION: staff_locations rows by role'
+select dense_rank() over (order by t.created_at, t.id) as tenant_n,
+       l.name as location_name,
+       case when l.is_active then 'yes' else 'no' end as active,
+       case when sl.id is null then '(no staff_locations row)' when r.slug is null then '(no role)' when r.slug ~ '^[a-z][a-z0-9_-]*$' then r.slug else 'other (not printed)' end as role,
+       count(sl.id) as staff_locations_rows,
+       count(sl.id) filter (where u.is_active) as of_active_users
+from locations l
+join tenants t on t.id = l.tenant_id
+left join staff_locations sl on sl.location_id = l.id
+left join users u on u.id = sl.user_id
+left join roles r on r.id = u.role_id
+group by t.id, t.created_at, l.id, l.name, l.is_active, 4
+order by 1, 2, 4;
+
+\echo '--- H3b. PER LOCATION: availability_templates rows and the therapists who hold them'
+select dense_rank() over (order by t.created_at, t.id) as tenant_n,
+       l.name as location_name,
+       case when l.is_active then 'yes' else 'no' end as active,
+       count(av.id) as template_rows,
+       count(av.id) filter (where av.is_active) as active_template_rows,
+       count(av.id) filter (where av.is_active and coalesce(av.valid_from, current_date) <= current_date and coalesce(av.valid_until, current_date) >= current_date) as active_and_valid_today,
+       count(distinct av.user_id) filter (where av.is_active) as distinct_therapists_with_active_hours
+from locations l
+join tenants t on t.id = l.tenant_id
+left join availability_templates av on av.location_id = l.id
+group by t.id, t.created_at, l.id, l.name, l.is_active
+order by 1, 2;
+
+\echo '--- H3c. PER LOCATION: service_location_prices and service_pack_location_prices rows'
+select dense_rank() over (order by t.created_at, t.id) as tenant_n,
+       l.name as location_name,
+       case when l.is_active then 'yes' else 'no' end as active,
+       count(distinct sp.id) as service_price_rows,
+       count(distinct sp.id) filter (where sp.is_active) as active_service_price_rows,
+       count(distinct pp.id) as pack_price_rows,
+       count(distinct pp.id) filter (where pp.is_active) as active_pack_price_rows
+from locations l
+join tenants t on t.id = l.tenant_id
+left join service_location_prices sp on sp.location_id = l.id
+left join service_pack_location_prices pp on pp.location_id = l.id
+group by t.id, t.created_at, l.id, l.name, l.is_active
+order by 1, 2;
+
+\echo '--- H3d. PER LOCATION: active bookable users with a staff_locations row or active hours there (DISTINCT users)'
+with presence as (
+  select sl.location_id, sl.user_id, true as by_membership, false as by_hours
+  from staff_locations sl
+  union all
+  select av.location_id, av.user_id, false, true
+  from availability_templates av
+  where av.is_active
+)
+select dense_rank() over (order by t.created_at, t.id) as tenant_n,
+       l.name as location_name,
+       case when l.is_active then 'yes' else 'no' end as active,
+       count(distinct u.id) filter (where u.is_active and u.is_bookable) as bookable_users_with_membership_or_hours,
+       count(distinct u.id) filter (where u.is_active and u.is_bookable and presence.by_membership) as of_those_by_membership,
+       count(distinct u.id) filter (where u.is_active and u.is_bookable and presence.by_hours) as of_those_by_active_hours,
+       count(distinct u.id) as all_users_with_membership_or_hours
+from locations l
+join tenants t on t.id = l.tenant_id
+left join presence on presence.location_id = l.id
+left join users u on u.id = presence.user_id
+group by t.id, t.created_at, l.id, l.name, l.is_active
+order by 1, 2;
+
+\echo '--- H4. PER LOCATION: appointments created in the last 30 days by origin, and at any time (the base for H3)'
+select dense_rank() over (order by t.created_at, t.id) as tenant_n,
+       l.name as location_name,
+       case when l.is_active then 'yes' else 'no' end as active,
+       count(a.id) filter (where a.origin = 'patient_portal' and a.created_at >= now() - interval '30 days') as online_requests_created_in_window,
+       count(a.id) filter (where a.origin <> 'patient_portal' and a.created_at >= now() - interval '30 days') as staff_appointments_created_in_window,
+       count(a.id) filter (where a.created_at >= now() - interval '30 days') as all_created_in_window,
+       count(a.id) as all_at_any_time
+from locations l
+join tenants t on t.id = l.tenant_id
+left join appointments a on a.location_id = l.id
+group by t.id, t.created_at, l.id, l.name, l.is_active
+order by 1, 2;
 
 \echo 'BOOK-CONFIRM MEASUREMENT PRINTED. Nothing was written; the block rolls the transaction back.'
