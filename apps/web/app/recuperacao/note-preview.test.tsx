@@ -45,7 +45,7 @@ import { FollowupList, type FollowupRow } from "./followup-list";
 function mkRow(over: Partial<FollowupRow> = {}): FollowupRow {
   return {
     patientId: "p-1",
-    fullName: "Joao Paulo Baltazar Braz",
+    fullName: "Joao Paulo Ficticio Teste",
     phone: "912 000 001",
     phoneE164: "+351912000001",
     smsCapable: true,
@@ -86,7 +86,7 @@ describe("RB-NOTES: the latest patient note on a Recuperação row", () => {
     expect(html).not.toContain("Nota do paciente");
     expect(html).not.toContain("Nota da marcação");
     // The row itself is still there and still workable.
-    expect(html).toContain("Joao Paulo Baltazar Braz");
+    expect(html).toContain("Joao Paulo Ficticio Teste");
     expect(html).toContain("WhatsApp");
   });
 

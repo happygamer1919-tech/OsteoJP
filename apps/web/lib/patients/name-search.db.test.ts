@@ -7,19 +7,21 @@
  * ==========================================================================
  * Reception was told a patient does not exist. The record exists.
  *
- *   Antonio Armando Ribeiro Galhofo, patient 15824, Castelo Branco.
- *   Findable by typing the WHOLE name. NOT findable by typing "Antonio Galhofo".
+ *   A patient (redacted), at Castelo Branco, with a four-part name.
+ *   Findable by typing the WHOLE name. NOT findable by typing the first name
+ *   and the surname.
  *
  * Both search surfaces ran `ilike(fullName, '%' + typed + '%')` - ONE substring
- * of the WHOLE typed string, IN ORDER. "Armando Ribeiro" sits in between, so
- * the match failed and the platform answered "no patient".
+ * of the WHOLE typed string, IN ORDER. Two more names sit in between, so the
+ * match failed and the platform answered "no patient".
  *
  * ==========================================================================
- * WHY THE FIXTURE CARRIES THE REAL NAME
+ * WHY THE FIXTURE HAS THE REPORTED RECORD'S SHAPE
  * ==========================================================================
- * It is the reported record and it is the shape that matters: FOUR tokens, the
- * typed ones FIRST and LAST, two unrelated ones in the middle. A fixture called
- * "AAA BBB" would satisfy every assertion below and would not be the bug.
+ * The name below is INVENTED. What it keeps from the reported record is the
+ * shape, and the shape is what matters: FOUR tokens, the typed ones FIRST and
+ * LAST, two unrelated ones in the middle. A fixture called "AAA BBB" would
+ * satisfy every assertion below and would not be the bug.
  *
  * The name is stored ACCENTED here, because that is the second half of the
  * defect and the half that was invisible behind the first: `ILIKE` is
@@ -65,16 +67,18 @@ d("patient name search, against a real database", () => {
   const admin = randomUUID();
   const outsider = randomUUID();
 
-  /** THE REPORTED RECORD. Stored accented, at Castelo Branco. */
-  const pGalhofo = randomUUID();
+  /** THE REPORTED RECORD'S SHAPE (invented name), stored accented, at CB. */
+  const pReported = randomUUID();
   /** A second CB patient whose surname is shared, to make the AND load-bearing. */
-  const pOtherGalhofo = randomUUID();
+  const pSameSurname = randomUUID();
   /** An LV patient, stored WITHOUT accents, to prove the fold both ways. */
   const pLV = randomUUID();
   /** Shares the FIRST token with the reported record and nothing else. */
   const pSameFirstName = randomUUID();
 
-  let n = 15820;
+  // An obviously invented range, far above any real patient number (the same
+  // synthetic range scripts/perf-name-search.mjs seeds with).
+  let n = 900000;
   const patient = (id: string, name: string, primary: string) =>
     raw`insert into patients (id, tenant_id, full_name, patient_number, primary_location_id, created_by)
         values (${id}::uuid, ${tenant}::uuid, ${name}, ${n++}, ${primary}::uuid, ${outsider}::uuid)`;
@@ -130,8 +134,8 @@ d("patient name search, against a real database", () => {
       );
     }
 
-    await db.execute(patient(pGalhofo, "António Armando Ribeiro Galhofo", locCB));
-    await db.execute(patient(pOtherGalhofo, "Maria Fernanda Galhofo", locCB));
+    await db.execute(patient(pReported, "António Amostra Modelo Exemplo", locCB));
+    await db.execute(patient(pSameSurname, "Maria Fernanda Exemplo", locCB));
     await db.execute(patient(pLV, "Joao Baptista Sousa Ferreira", locLV));
     await db.execute(patient(pSameFirstName, "António Nunes Pereira", locCB));
   });
@@ -147,19 +151,19 @@ d("patient name search, against a real database", () => {
   it("THE CONTROL: the full name still finds the record, as it always did", async () => {
     // Without this, every assertion below could pass against a search that
     // returns everything. It is also the only query reception had that worked.
-    expect(await found("António Armando Ribeiro Galhofo")).toContain(pGalhofo);
+    expect(await found("António Amostra Modelo Exemplo")).toContain(pReported);
   });
 
   it("FIRST NAME PLUS SURNAME finds it — the query that said the patient does not exist", async () => {
-    expect(await found("Antonio Galhofo")).toEqual([pGalhofo]);
+    expect(await found("Antonio Exemplo")).toEqual([pReported]);
   });
 
   it("ORDER INDEPENDENT: surname first finds it too", async () => {
-    expect(await found("Galhofo Antonio")).toEqual([pGalhofo]);
+    expect(await found("Exemplo Antonio")).toEqual([pReported]);
   });
 
   it("a MIDDLE token pair finds it, so the rule is 'anywhere' and not 'starts with'", async () => {
-    expect(await found("Ribeiro Armando")).toEqual([pGalhofo]);
+    expect(await found("Modelo Amostra")).toEqual([pReported]);
   });
 
   // ------------------------------------------------------------------ //
@@ -169,7 +173,7 @@ d("patient name search, against a real database", () => {
   it("UNACCENTED QUERY finds an ACCENTED record (CB)", async () => {
     // Stored "António", typed "Antonio". This is the half that was invisible
     // behind the token defect.
-    expect(await found("Antonio Galhofo")).toEqual([pGalhofo]);
+    expect(await found("Antonio Exemplo")).toEqual([pReported]);
   });
 
   it("ACCENTED QUERY finds an UNACCENTED record (LV)", async () => {
@@ -179,7 +183,7 @@ d("patient name search, against a real database", () => {
   });
 
   it("ACCENTED QUERY finds an ACCENTED record, which a naive fold can break", async () => {
-    expect(await found("António Galhofo")).toEqual([pGalhofo]);
+    expect(await found("António Exemplo")).toEqual([pReported]);
   });
 
   // ------------------------------------------------------------------ //
@@ -191,30 +195,31 @@ d("patient name search, against a real database", () => {
   });
 
   it("a real token PLUS a token that matches nobody returns zero rows", async () => {
-    // If this returned the Galhofo record, the tokens are being ORed and the
+    // If this returned the reported record, the tokens are being ORed and the
     // search has become "any of these words".
-    expect(await found("Galhofo Zorglub")).toEqual([]);
+    expect(await found("Exemplo Zorglub")).toEqual([]);
   });
 
   it("TWO TOKENS ARE NOT AN OR: tokens matching two DIFFERENT patients return neither", async () => {
-    // "Nunes" is only in pSameFirstName. "Galhofo" is only in the two Galhofos.
-    // An OR would return three rows and would look like a working search while
-    // handing reception a list of strangers to pick a medical record from.
-    const both = await found("Nunes Galhofo");
+    // "Nunes" is only in pSameFirstName. "Exemplo" is only in the two patients
+    // who share that surname. An OR would return three rows and would look like
+    // a working search while handing reception a list of strangers to pick a
+    // medical record from.
+    const both = await found("Nunes Exemplo");
     expect(both).toEqual([]);
   });
 
   it("the AND is load-bearing: each token ALONE matches more than the pair does", async () => {
     // The control for the test above. Without it, "returns []" is also what a
     // search that matches nothing at all produces.
-    expect((await found("Galhofo")).sort()).toEqual([pGalhofo, pOtherGalhofo].sort());
+    expect((await found("Exemplo")).sort()).toEqual([pReported, pSameSurname].sort());
     expect(await found("Nunes")).toEqual([pSameFirstName]);
   });
 
   it("a shared FIRST name alone does not collapse to one patient", async () => {
     // Two patients are "António". Typing just that must return both, or the
     // tokeniser has quietly become an exact match.
-    expect((await found("Antonio")).sort()).toEqual([pGalhofo, pSameFirstName].sort());
+    expect((await found("Antonio")).sort()).toEqual([pReported, pSameFirstName].sort());
   });
 
   it("an empty query is not a name filter and returns the whole visible set", async () => {
@@ -224,12 +229,12 @@ d("patient name search, against a real database", () => {
   });
 
   it("extra whitespace does not create an empty token that matches nothing", async () => {
-    expect(await found("  Antonio    Galhofo  ")).toEqual([pGalhofo]);
+    expect(await found("  Antonio    Exemplo  ")).toEqual([pReported]);
   });
 
   it("a LIKE wildcard typed by a person is a literal, not a pattern", async () => {
     // `%` must not turn into "match anything". escapeLike is applied per token.
-    expect(await found("Antonio% Galhofo")).toEqual([]);
+    expect(await found("Antonio% Exemplo")).toEqual([]);
   });
 
   // ------------------------------------------------------------------ //
@@ -242,21 +247,21 @@ d("patient name search, against a real database", () => {
   // this function. Asserted here rather than assumed.
 
   it("a PATIENT NUMBER still finds its patient", async () => {
-    // The reported record is 15820 in this fixture (the counter starts there).
-    expect(await found("15820")).toEqual([pGalhofo]);
+    // The reported record is 900000 in this fixture (the counter starts there).
+    expect(await found("900000")).toEqual([pReported]);
   });
 
   it("a patient number does NOT prefix-match a longer one", async () => {
-    // "1582" must not return 15820. The number is compared as a NUMBER, which
+    // "90000" must not return 900000. The number is compared as a NUMBER, which
     // is the property that makes typing a short id safe.
-    expect(await found("1582")).toEqual([]);
+    expect(await found("90000")).toEqual([]);
   });
 
   it("NAME PLUS NUMBER still resolves, through the OR rather than the name AND", async () => {
-    // The name AND cannot match ("15820" is not in the name), so this can only
+    // The name AND cannot match ("900000" is not in the name), so this can only
     // succeed via the patient-number arm. If the OR were ever tightened to an
     // AND across the whole matcher, this goes red - and reception types exactly
     // this when they have a card in front of them.
-    expect(await found("Galhofo 15820")).toEqual([pGalhofo]);
+    expect(await found("Exemplo 900000")).toEqual([pReported]);
   });
 });
