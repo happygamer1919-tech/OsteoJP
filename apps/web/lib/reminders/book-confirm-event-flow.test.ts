@@ -186,7 +186,9 @@ describe("the four doors that can accept a pedido build their target with the ma
     (fn) => {
       const b = body("lib/scheduling/actions.ts", fn);
       expect(b.length).toBeGreaterThan(500);
-      expect(b).not.toContain("acceptedPedido");
+      // The marker and its one writer, as whole words: `unacceptedPedidoIds`
+      // (the set a move filters OUT) is a different name and is allowed.
+      expect(b).not.toMatch(/\bacceptedPedido/);
     },
   );
 

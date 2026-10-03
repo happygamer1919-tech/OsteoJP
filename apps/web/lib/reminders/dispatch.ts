@@ -1054,8 +1054,12 @@ async function dispatchTodaysConfirmation(
   // confirmation at BOOKING time for every portal booking. The message becomes
   // deliverable when reception accepts the pedido and the status leaves
   // `scheduled` - at which point the appointment is genuinely confirmed and
-  // the approved body is true. Nothing currently re-emits
-  // `appointment/scheduled` on acceptance; that is carded, not assumed.
+  // the approved body is true. ACCEPTANCE RE-EMITS `appointment/scheduled`:
+  // each of the four doors that can accept a pedido does (W14-07 for the
+  // Pedidos queue, W14-02 for the other three; see
+  // lib/scheduling/pedido-acceptance.ts). This sentence said "nothing currently
+  // re-emits ... that is carded" until 2026-10-03, which stopped being true
+  // when #1085 merged.
   if (isUnacceptedPedido(data)) {
     return { dispatched: false, reason: "unconfirmed" };
   }

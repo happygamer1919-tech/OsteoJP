@@ -72,7 +72,7 @@ import {
   type ReminderEnqueueTarget,
   type StatusNotificationTarget,
 } from "./reminders";
-import { acceptedPedidoTarget } from "./pedido-acceptance";
+import { acceptedPedidoTarget, unconfirmedPedidoIdsAmong } from "./pedido-acceptance";
 import { approvalNoticeAfterAccept, type ApprovalNotice } from "./book-confirm-notice";
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type {
@@ -1924,6 +1924,22 @@ export async function updateAppointment(
         // offsets have passed and it would fire nothing, which the owner ruled
         // is expected, not a defect.
         const nowMs = Date.now();
+        // A ROW BROUGHT BACK AS AN UNACCEPTED PEDIDO EMITS NOTHING. A portal
+        // request returned to Agendada is waiting for reception again; an event
+        // for it could send nothing and would spend the idempotency keys its
+        // acceptance needs (lib/scheduling/pedido-acceptance.ts,
+        // `unconfirmedPedidoIdsAmong`). Its acceptance emits instead.
+        //
+        // READ AFTER THE UPDATE, unlike the acceptance probe above, and that is
+        // not an oversight: before the write these rows are `cancelled`, so
+        // is_unconfirmed_pedido answers false for all of them. The question is
+        // what they have BECOME, and the function reads this transaction's own
+        // write. Only `scheduled` can be a pedido, so nothing is asked when the
+        // row is brought back straight to Confirmada, which emits as before.
+        const backAsPedido =
+          patch.status === "scheduled"
+            ? await unconfirmedPedidoIdsAmong(tx, uncancelling.map((a) => a.id))
+            : new Set<string>();
         acceptedForNotice.ids = acceptedPedidos.map((a) => a.id);
         reminderTargets = [
           // BOOK-CONFIRM: an ACCEPTANCE carries the marker. The rows brought
@@ -1931,6 +1947,7 @@ export async function updateAppointment(
           ...acceptedPedidos.map((a) => acceptedPedidoTarget(a.id, a.startsAt)),
           ...uncancelling
             .filter((a) => a.startsAt.getTime() > nowMs)
+            .filter((a) => !backAsPedido.has(a.id))
             .map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
         ];
         return { ok: true, data: { id } };
@@ -2011,6 +2028,12 @@ export async function rescheduleAppointment(
         // the write, which would return the new value and silently make every
         // notification say it moved from where it now is.
         const before = await readStaffTransitionFanOut(tx, ids);
+
+        // WHICH OF THESE ROWS ARE UNACCEPTED PEDIDOS, read before the write as
+        // the acceptance doors read it. A move does not change the status, so
+        // the answer holds for the whole transaction. Used once, at the bottom,
+        // to keep such a row's move from emitting.
+        const unacceptedPedidoIds = await unconfirmedPedidoIdsAmong(tx, ids);
 
         // scope "one": move to the exact window from input (date may change).
         // scope following/series: keep each occurrence's date, apply the new
@@ -2186,10 +2209,23 @@ export async function rescheduleAppointment(
           slots: "primary",
         });
 
-        reminderTargets = targets.map((t) => ({
-          appointmentId: t.id,
-          startsAt: t.startsAt,
-        }));
+        // MOVING AN UNACCEPTED PEDIDO EMITS NOTHING. It has no reminder run to
+        // supersede (nothing emitted for it when the patient booked), the
+        // dispatch would refuse the confirmation anyway, and the event would
+        // spend the idempotency keys the acceptance needs at this same start -
+        // which is how a request moved and then accepted the same day got no
+        // confirmation and no reminders. The full reasoning, including the row
+        // that was accepted once and brought back, is on
+        // `unconfirmedPedidoIdsAmong` in ./pedido-acceptance.ts.
+        //
+        // An ACCEPTED appointment is not in that set: its move re-emits exactly
+        // as before, and that event is what supersedes its sleeping reminders.
+        reminderTargets = targets
+          .filter((t) => !unacceptedPedidoIds.has(t.id))
+          .map((t) => ({
+            appointmentId: t.id,
+            startsAt: t.startsAt,
+          }));
         // THE OLD INSTANTS, matched to the new ones by id. This is the only kind
         // where the two differ, and it is why staff_notifications carries the
         // column pair at all: a reader needs to know what it moved FROM.
