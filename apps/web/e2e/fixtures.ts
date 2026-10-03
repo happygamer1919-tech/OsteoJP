@@ -266,6 +266,26 @@ export const ADD_EVALUATION = {
 } as const;
 
 /**
+ * EPI-01b, strategy ruling R31 (2026-10-03): "+ Avaliação" on an imported group
+ * reuses the patient's open app episode of that specialty and opens one only
+ * when there is none. A patient of its own, created_by the E2E therapist, seeded
+ * by seed-e2e.mjs (ensureAddEvaluationReuseFixture) with ONE group and nothing
+ * else: a closed Fisioterapia episode the import ledger names, holding one
+ * locked registo. It has no app episode until the spec clicks, so "one app
+ * episode of the specialty" is a count of this patient's app groups, on a fresh
+ * database and on one earlier runs have added registos to.
+ */
+export const ADD_EVALUATION_REUSE = {
+  patientId: "00000000-0000-0000-0000-00000000a3e3",
+  patientName: "Zzz Avaliacao Reutiliza Teste",
+  imported: {
+    episodeId: "00000000-0000-0000-0000-00000000fe43",
+    specialty: "Fisioterapia",
+    recordId: "00000000-0000-0000-0000-00000000fe54",
+  },
+} as const;
+
+/**
  * G-D (2026-09-13): three documents on IMPORTED_RECORD's patient, seeded by
  * seed-e2e.mjs with these ids. Storage objects are NOT created (the lane bucket
  * holds no bytes), so specs assert the lists and the Abrir button, never a download.

@@ -746,8 +746,9 @@ export default async function PatientProfilePage({
             <div className="flex flex-col gap-4" data-testid="record-groups">
               {recordGroups.map((g) => {
                 // EPI-01b: what this group's "+ Avaliação" files (ficha-groups-core
-                // addEvaluationTarget): its own app episode, or a NEW episode for an
-                // imported group's specialty; "Sem episódio" gets none.
+                // addEvaluationTarget): its own app episode, or an imported group's
+                // SPECIALTY, for which the server reuses the patient's open app
+                // episode or opens a new one (R31); "Sem episódio" gets none.
                 const add = addEvaluationTemplateId ? addEvaluationTarget(g) : null;
                 return (
                 <details
@@ -801,7 +802,7 @@ export default async function PatientProfilePage({
                           label={s["patients.fichaGroupAddEvaluation"]}
                           ariaLabel={(add.kind === "episode"
                             ? s["patients.fichaGroupAddEvaluationInEpisode"]
-                            : s["patients.fichaGroupAddEvaluationNewEpisode"]
+                            : s["patients.fichaGroupAddEvaluationOpenOrNewEpisode"]
                           ).replace("{group}", g.label ?? "")}
                         />
                       </form>

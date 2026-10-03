@@ -23,7 +23,7 @@ import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError, type ClinicalErrorCode } from "./errors";
 import { defaultEpisodeTitle, isEpisodeSpecialty } from "./episode-title";
-import { insertOpenEpisode } from "./episodes";
+import { findOpenEpisodeOfSpecialty, insertOpenEpisode } from "./episodes";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -632,11 +632,14 @@ export async function createDraftRecord(
     episodeId?: string | null;
     appointmentId?: string | null;
     /**
-     * EPI-01b (Q7): "+ Avaliação" on an IMPORTED group. Open a NEW episode for
-     * this specialty, titled with it and today's Lisbon date, and file the
-     * registo there, in one transaction. Never an imported episode. Only a word
-     * on EPISODE_SPECIALTIES is accepted, so the title is never clinical text.
-     * Exclusive with `episodeId`.
+     * EPI-01b (Q7, ruling R31): "+ Avaliação" on an IMPORTED group. The registo
+     * is filed in the patient's OPEN APP EPISODE OF THIS SPECIALTY when there is
+     * one; a NEW episode, titled with the specialty and today's Lisbon date, is
+     * opened ONLY WHEN THERE IS NONE. Which of the two is decided here, in the
+     * write's own transaction, never by the page. Never an imported episode.
+     * Only a word on EPISODE_SPECIALTIES is accepted, so a new title is never
+     * clinical text. Exclusive with `episodeId`. (The name is piece 1's, from
+     * when it always opened one.)
      */
     newEpisodeSpecialty?: string | null;
   },
@@ -662,14 +665,24 @@ export async function createDraftRecord(
       // (a new registo) OPEN: never a closed or imported one.
       await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId, { requireOpen: true });
     } else if (specialty !== null) {
-      // Q7: a new open episode, through the one episode insert, in THIS
-      // transaction: if the registo below is refused, the episode is not left.
-      ({ id: episodeId } = await insertOpenEpisode(
-        tx,
-        ctx,
-        { patientId: input.patientId, title: defaultEpisodeTitle(specialty, new Date()) },
-        ip,
-      ));
+      // Q7, ruling R31: the patient's open app episode of this specialty, when
+      // there is one. Decided HERE, under a lock held to the end of this
+      // transaction, so two clicks (or a page that is stale) file in ONE episode.
+      episodeId = await findOpenEpisodeOfSpecialty(tx, ctx, input.patientId, specialty);
+      if (episodeId) {
+        // The reused episode is held to Q9's app half like a posted one: this
+        // patient's, in this tenant, and open.
+        await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId, { requireOpen: true });
+      } else {
+        // None: a new open episode, through the one episode insert, in THIS
+        // transaction: if the registo below is refused, the episode is not left.
+        ({ id: episodeId } = await insertOpenEpisode(
+          tx,
+          ctx,
+          { patientId: input.patientId, title: defaultEpisodeTitle(specialty, new Date()) },
+          ip,
+        ));
+      }
     }
     const rows = await tx
       .insert(clinicalRecords)

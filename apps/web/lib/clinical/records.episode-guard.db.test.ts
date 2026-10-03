@@ -19,10 +19,10 @@
  *     foreign key alone WOULD take it (an admin insert with it succeeds), which
  *     is the gap this guard closes;
  *   - CONTROL: the right episode files the registo in it, with its audit row;
- *   - "+ Avaliação" on an imported group (Q7): a NEW open episode titled with the
- *     specialty and the Lisbon date, the registo in it, the imported episode
- *     untouched; a word off the list files nothing; a refused registo leaves no
- *     episode behind;
+ *   - "+ Avaliação" on an imported group (Q7), the patient having no open
+ *     episode of the specialty: a NEW open episode titled with the specialty and
+ *     the Lisbon date, the registo in it, the imported episode untouched; a word
+ *     off the list files nothing; a refused registo leaves no episode behind;
  *   - "Nova versão" of a registo already in another patient's episode is refused;
  *     of one in its own episode, filed there;
  *   - admin and reception are refused before anything is read.
@@ -39,6 +39,25 @@
  *     createDraftRecord, by its new-episode path and by createEpisode, with a
  *     control proving the foreign key alone would take it and a passing control
  *     for the owner's own patient.
+ *
+ * Added for strategy ruling R31 (Q7): "+ Avaliação" on an imported group
+ * "reuses the patient's open app episode of that specialty and creates one only
+ * when none exists". On a patient of its own (C), so no earlier arm's rows are
+ * in play:
+ *   - CREATE when none: with a closed episode of the specialty, an open episode
+ *     of the OTHER specialty, an open episode naming no specialty, an OPEN
+ *     episode the import ledger names, and ANOTHER PATIENT'S open episode of the
+ *     specialty all really there, none of them is reused and one is opened;
+ *   - REUSE: the next call, and the owner's, file in that one; no episode is
+ *     opened, and the only audit row is the registo's;
+ *   - MORE THAN ONE: the most recently opened;
+ *   - a registo refused after the episode was chosen leaves nothing behind;
+ *   - AT ONCE: several requests for a patient with none open ONE episode, and
+ *     all file in it;
+ *   - THE LOCK, by itself and with no timing luck: while another transaction
+ *     holds the patient-and-specialty lock the write WAITS, and when that
+ *     transaction commits an open episode the write reuses it. A lock on another
+ *     patient or specialty does not make it wait.
  *
  * Runs in `.github/workflows/db-tests.yml` (it globs `.db.test.ts` in this
  * workspace) and self-skips without DATABASE_URL, like every suite beside it.
@@ -79,6 +98,16 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
   const ownSource = randomUUID(); // a registo of A in A's own episode
   const epClosedOwn = randomUUID(); // a closed app episode of A
   const closedSource = randomUUID(); // a registo of A in that closed episode
+  // R31: patients of their own, registered by the therapist (so the therapist treats them).
+  const patientC = randomUUID(); // the reuse arms
+  const patientD = randomUUID(); // "another patient", holding an open Osteopatia episode
+  const patientE = randomUUID(); // the at-once arm: no episode at all
+  const patientF = randomUUID(); // the lock arm: no episode at all
+  const epCClosed = randomUUID(); // C: a CLOSED app episode of the specialty
+  const epCOther = randomUUID(); // C: an open app episode of the OTHER specialty
+  const epCPlain = randomUUID(); // C: an open app episode naming no specialty
+  const epCImportedOpen = randomUUID(); // C: an OPEN episode the import ledger names
+  const epDOpen = randomUUID(); // D: an open app episode of the specialty
 
   const ctx = (userId: string, role: RequestContext["role"]): RequestContext => ({ tenantId: tenant, role, userId });
 
@@ -145,6 +174,10 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
       [patientA, tenant, "Zzz Guarda Episodio Teste A", therapist],
       [patientB, tenant, "Zzz Guarda Episodio Teste B", therapist],
       [patientForeign, otherTenant, "Zzz Guarda Episodio Teste Outro", otherTenantUser],
+      [patientC, tenant, "Zzz Guarda Episodio Teste C", therapist],
+      [patientD, tenant, "Zzz Guarda Episodio Teste D", therapist],
+      [patientE, tenant, "Zzz Guarda Episodio Teste E", therapist],
+      [patientF, tenant, "Zzz Guarda Episodio Teste F", therapist],
     ] as const) {
       await db.execute(
         raw`insert into patients (id, tenant_id, full_name, created_by) values (${id}::uuid, ${t}::uuid, ${name}, ${by}::uuid)`,
@@ -160,12 +193,26 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
       [epImported, tenant, patientA, "Osteopatia", "closed"],
       [epForeign, otherTenant, patientForeign, "Episódio (03/09/2026)", "open"],
       [epClosedOwn, tenant, patientA, "Episódio (01/08/2026)", "closed"],
+      // R31: everything on C and D that must NOT be reused for C's Osteopatia.
+      [epCClosed, tenant, patientC, "Osteopatia (01/08/2026)", "closed"],
+      [epCOther, tenant, patientC, "Fisioterapia (05/09/2026)", "open"],
+      [epCPlain, tenant, patientC, "Episódio (05/09/2026)", "open"],
+      [epCImportedOpen, tenant, patientC, "Osteopatia", "open"],
+      [epDOpen, tenant, patientD, "Osteopatia (06/09/2026)", "open"],
     ] as const) {
       await db.execute(
         raw`insert into clinical_episodes (id, tenant_id, patient_id, title, status)
             values (${id}::uuid, ${t}::uuid, ${patient}::uuid, ${title}, ${status}::episode_status)`,
       );
     }
+    // R31: the import ledger names epCImportedOpen, in the importer's shape. The
+    // importer closes every episode it writes; this one is OPEN on purpose, so
+    // only the ledger can be the reason it is not reused.
+    await db.execute(
+      raw`insert into migration_staging_rows (tenant_id, batch_id, source_system, entity_type, source_id, raw, status, imported_entity_id)
+          values (${tenant}::uuid, ${randomUUID()}::uuid, 'fisiozero', 'clinical_episode'::migration_entity_type,
+                  ${`epi01b-r31-${epCImportedOpen.slice(0, 8)}`}, '{}'::jsonb, 'imported'::migration_staging_status, ${epCImportedOpen}::uuid)`,
+    );
     // Two source registos for "Nova versão", drafts so the cleanup can remove
     // them (createAddendum does not ask the source's status). crossSource is the
     // shape Q9 forbids: patient A's registo in patient B's episode. Only an admin
@@ -189,6 +236,7 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     const statements = [
       raw`delete from audit_log where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
       raw`delete from clinical_records where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
+      raw`delete from migration_staging_rows where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
       raw`delete from clinical_episodes where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
       raw`delete from form_templates where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
       raw`delete from patients where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid)`,
@@ -291,7 +339,11 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     expect(audit).toEqual([{ action: "clinical_record.create", episode: epA }]);
   });
 
-  it("Q7: '+ Avaliação' on an imported group opens a NEW open episode for the specialty and files the registo there", async () => {
+  it("Q7: '+ Avaliação' on an imported group, the patient having NO open episode of the specialty, opens a NEW one and files the registo there", async () => {
+    // Control (R31): patient A really has no open episode naming Osteopatia yet.
+    expect(
+      await rows(raw`select 1 from clinical_episodes where patient_id = ${patientA}::uuid and status = 'open' and title like 'Osteopatia%'`),
+    ).toHaveLength(0);
     const episodesBefore = await countEpisodes(patientA);
     const { id, episodeId } = await records.createDraftRecord(ctx(therapist, "therapist"), {
       patientId: patientA,
@@ -480,4 +532,231 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     );
     expect(e).toEqual({ patient_id: patientB, status: "open" });
   });
+  // ------------------------------------------------------------------ R31 (Q7)
+  // "+ Avaliação" on an imported group "reuses the patient's open app episode of
+  // that specialty and creates one only when none exists". Patient C; the arms
+  // run in order and each builds on the one before it.
+
+  /** C's open episodes whose title names Osteopatia and the ledger does not name. */
+  const openAppOsteopatiaOf = async (patient: string) =>
+    (
+      await rows<{ id: string }>(
+        raw`select e.id::text as id
+              from clinical_episodes e
+             where e.patient_id = ${patient}::uuid
+               and e.status = 'open'
+               and e.title ~ '^Osteopatia( [(][0-9]{2}/[0-9]{2}/[0-9]{4}[)])?$'
+               and not exists (select 1 from migration_staging_rows l
+                                where l.entity_type = 'clinical_episode' and l.imported_entity_id = e.id)
+             order by e.opened_at desc, e.id`,
+      )
+    ).map((r) => r.id);
+  const episodeOf = async (record: string) =>
+    (await rows<{ episode_id: string }>(raw`select episode_id::text from clinical_records where id = ${record}::uuid`))[0]!.episode_id;
+  const osteopatiaFor = (who: RequestContext, patient: string) =>
+    records.createDraftRecord(who, { patientId: patient, formTemplateId: template, newEpisodeSpecialty: "Osteopatia" });
+
+  let reused = ""; // the episode the CREATE arm opens for C, which every later arm must reuse
+  let firstRecord = "";
+
+  it("R31 CREATE: none of the episodes that do not fit is reused (closed, other specialty, no specialty, imported, another patient's); one is opened", async () => {
+    // Controls: every row that must not be reused is really there, as described.
+    const there = await rows<{ id: string; patient_id: string; title: string; status: string; ledger: boolean }>(
+      raw`select e.id::text, e.patient_id::text, e.title, e.status::text,
+                 exists (select 1 from migration_staging_rows l
+                          where l.entity_type = 'clinical_episode' and l.imported_entity_id = e.id) as ledger
+            from clinical_episodes e
+           where e.id in (${epCClosed}::uuid, ${epCOther}::uuid, ${epCPlain}::uuid, ${epCImportedOpen}::uuid, ${epDOpen}::uuid)`,
+    );
+    const byId = Object.fromEntries(there.map((r) => [r.id, r]));
+    expect(byId[epCClosed]).toMatchObject({ patient_id: patientC, title: "Osteopatia (01/08/2026)", status: "closed", ledger: false });
+    expect(byId[epCOther]).toMatchObject({ patient_id: patientC, title: "Fisioterapia (05/09/2026)", status: "open", ledger: false });
+    expect(byId[epCPlain]).toMatchObject({ patient_id: patientC, title: "Episódio (05/09/2026)", status: "open", ledger: false });
+    expect(byId[epCImportedOpen]).toMatchObject({ patient_id: patientC, title: "Osteopatia", status: "open", ledger: true });
+    expect(byId[epDOpen]).toMatchObject({ patient_id: patientD, title: "Osteopatia (06/09/2026)", status: "open", ledger: false });
+    // The therapist may file for both patients, so only the episode can be the reason.
+    expect(await records.mayFileRegistoFor(ctx(therapist, "therapist"), patientC)).toBe(true);
+    expect(await records.mayFileRegistoFor(ctx(therapist, "therapist"), patientD)).toBe(true);
+    expect(await openAppOsteopatiaOf(patientC)).toEqual([]);
+
+    const [episodesC, episodesD] = [await countEpisodes(patientC), await countEpisodes(patientD)];
+    const { id, episodeId } = await osteopatiaFor(ctx(therapist, "therapist"), patientC);
+    expect([epCClosed, epCOther, epCPlain, epCImportedOpen, epDOpen]).not.toContain(episodeId);
+    expect(await countEpisodes(patientC)).toBe(episodesC + 1);
+    expect(await countEpisodes(patientD)).toBe(episodesD);
+    expect(await openAppOsteopatiaOf(patientC)).toEqual([episodeId]);
+    expect(await episodeOf(id)).toBe(episodeId);
+    // Nothing was filed in any of the others.
+    expect(
+      await rows(
+        raw`select 1 from clinical_records
+             where episode_id in (${epCClosed}::uuid, ${epCOther}::uuid, ${epCPlain}::uuid, ${epCImportedOpen}::uuid, ${epDOpen}::uuid)`,
+      ),
+    ).toHaveLength(0);
+    reused = episodeId!;
+    firstRecord = id;
+  });
+
+  it("R31 REUSE: the next '+ Avaliação' files in that episode; no episode is opened and the only audit row is the registo's", async () => {
+    expect(reused).not.toBe("");
+    const [episodesC, audits] = [await countEpisodes(patientC), await countAudit()];
+    const { id, episodeId } = await osteopatiaFor(ctx(therapist, "therapist"), patientC);
+    expect(episodeId).toBe(reused);
+    expect(await episodeOf(id)).toBe(reused);
+    expect(await episodeOf(firstRecord)).toBe(reused);
+    expect(await countEpisodes(patientC)).toBe(episodesC);
+    expect(await openAppOsteopatiaOf(patientC)).toEqual([reused]);
+    expect(await countAudit()).toBe(audits + 1);
+    const audit = await rows<{ action: string; episode: string }>(
+      raw`select action, metadata->>'episodeId' as episode from audit_log where entity_id = ${id}::uuid`,
+    );
+    expect(audit).toEqual([{ action: "clinical_record.create", episode: reused }]);
+    // The reused episode is as it was: open, the therapist's, one create audit row from the arm above.
+    const [ep] = await rows<{ status: string; primary_practitioner_id: string; n: number }>(
+      raw`select e.status::text, e.primary_practitioner_id::text,
+                 (select count(*)::int from audit_log a where a.entity_id = e.id) as n
+            from clinical_episodes e where e.id = ${reused}::uuid`,
+    );
+    expect(ep).toEqual({ status: "open", primary_practitioner_id: therapist, n: 1 });
+  });
+
+  it("R31 REUSE: the owner files in the same episode; a ledger row of ANOTHER entity type carrying its id does not make it imported", async () => {
+    // Only a 'clinical_episode' ledger row says an episode is imported. A row of
+    // another entity type whose id happens to be this episode's is not that fact.
+    await db.execute(
+      raw`insert into migration_staging_rows (tenant_id, batch_id, source_system, entity_type, source_id, raw, status, imported_entity_id)
+          values (${tenant}::uuid, ${randomUUID()}::uuid, 'fisiozero', 'clinical_record'::migration_entity_type,
+                  ${`epi01b-r31-other-${reused.slice(0, 8)}`}, '{}'::jsonb, 'imported'::migration_staging_status, ${reused}::uuid)`,
+    );
+    const episodesC = await countEpisodes(patientC);
+    const { id, episodeId } = await osteopatiaFor(ctx(owner, "owner"), patientC);
+    expect(episodeId).toBe(reused);
+    expect(await episodeOf(id)).toBe(reused);
+    expect(await countEpisodes(patientC)).toBe(episodesC);
+  });
+
+  it("R31: the OTHER specialty has its own open episode on C, and is filed there, not in the Osteopatia one", async () => {
+    const episodesC = await countEpisodes(patientC);
+    const { episodeId } = await records.createDraftRecord(ctx(therapist, "therapist"), {
+      patientId: patientC,
+      formTemplateId: template,
+      newEpisodeSpecialty: "Fisioterapia",
+    });
+    expect(episodeId).toBe(epCOther);
+    expect(await countEpisodes(patientC)).toBe(episodesC);
+  });
+
+  it("R31: another patient's '+ Avaliação' reuses THEIR open episode, never C's", async () => {
+    const episodesD = await countEpisodes(patientD);
+    const { episodeId } = await osteopatiaFor(ctx(therapist, "therapist"), patientD);
+    expect(episodeId).toBe(epDOpen);
+    expect(await countEpisodes(patientD)).toBe(episodesD);
+  });
+
+  it("R31: a registo refused AFTER the episode was chosen leaves nothing: no registo, no new episode", async () => {
+    const missingTemplate = randomUUID();
+    const [episodesC, recs, audits] = [await countEpisodes(patientC), await countRecords(), await countAudit()];
+    const outcome = await codeOf(
+      records.createDraftRecord(ctx(therapist, "therapist"), {
+        patientId: patientC,
+        formTemplateId: missingTemplate,
+        newEpisodeSpecialty: "Osteopatia",
+      }),
+    );
+    expect(outcome).not.toBe("resolved");
+    expect(await countEpisodes(patientC)).toBe(episodesC);
+    expect(await countRecords()).toBe(recs);
+    expect(await countAudit()).toBe(audits);
+  });
+
+  it("R31 MORE THAN ONE: the most recently opened is the one, and the older ones are left as they are", async () => {
+    // A second and a third open app Osteopatia episode on C, as two requests
+    // before this rule would have left them: one opened AFTER the reused one,
+    // one long before it.
+    const [later, earlier] = [randomUUID(), randomUUID()];
+    await db.execute(
+      raw`insert into clinical_episodes (id, tenant_id, patient_id, title, status, opened_at)
+          values (${later}::uuid, ${tenant}::uuid, ${patientC}::uuid, 'Osteopatia (01/01/2020)', 'open', now() + interval '1 day'),
+                 (${earlier}::uuid, ${tenant}::uuid, ${patientC}::uuid, 'Osteopatia (31/12/2099)', 'open', now() - interval '400 days')`,
+    );
+    // Control: three candidates, and `later` is the most recently opened (its
+    // TITLE carries the oldest date, so the title's date cannot be what decides).
+    expect(await openAppOsteopatiaOf(patientC)).toEqual([later, reused, earlier]);
+    const episodesC = await countEpisodes(patientC);
+    for (const who of [ctx(therapist, "therapist"), ctx(owner, "owner")]) {
+      const { id, episodeId } = await osteopatiaFor(who, patientC);
+      expect(episodeId).toBe(later);
+      expect(await episodeOf(id)).toBe(later);
+    }
+    expect(await countEpisodes(patientC)).toBe(episodesC);
+    // Closing the most recent hands the next registo to the next most recent.
+    await db.execute(raw`update clinical_episodes set status = 'closed', closed_at = now() where id = ${later}::uuid`);
+    expect((await osteopatiaFor(ctx(therapist, "therapist"), patientC)).episodeId).toBe(reused);
+    expect(await countEpisodes(patientC)).toBe(episodesC);
+  });
+
+  it("R31 AT ONCE: several requests for a patient with no open episode of the specialty open ONE, and all file in it", async () => {
+    expect(await countEpisodes(patientE)).toBe(0);
+    const who = ctx(therapist, "therapist");
+    // Open the pool's connections first, so the requests below really overlap
+    // (a cold pool hands the first one a connection and makes the rest wait).
+    await Promise.all(Array.from({ length: 5 }, () => records.mayFileRegistoFor(who, patientE)));
+    const filed = await Promise.all(Array.from({ length: 5 }, () => osteopatiaFor(who, patientE)));
+    expect(new Set(filed.map((f) => f.id)).size).toBe(5);
+    expect(new Set(filed.map((f) => f.episodeId)).size).toBe(1);
+    expect(await countEpisodes(patientE)).toBe(1);
+    expect(await openAppOsteopatiaOf(patientE)).toEqual([filed[0]!.episodeId]);
+    const [n] = await rows<{ n: number }>(
+      raw`select count(*)::int as n from clinical_records where patient_id = ${patientE}::uuid and episode_id = ${filed[0]!.episodeId}::uuid`,
+    );
+    expect(n!.n).toBe(5);
+  }, 60_000);
+
+  it("R31 THE LOCK: the write waits for a transaction holding the patient-and-specialty lock, then reuses the episode it committed", async () => {
+    expect(await countEpisodes(patientF)).toBe(0);
+    const who = ctx(therapist, "therapist");
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const held = randomUUID(); // the episode the lock holder commits
+
+    // CONTROL: a lock on ANOTHER specialty, or ANOTHER patient, does not make it
+    // wait. Held by this transaction while a Fisioterapia write for F completes.
+    await db.transaction(async (tx) => {
+      await tx.execute(episodes_.specialtyEpisodeLock(tenant, patientF, "Osteopatia"));
+      await tx.execute(episodes_.specialtyEpisodeLock(tenant, patientE, "Fisioterapia"));
+      const { episodeId } = await records.createDraftRecord(who, {
+        patientId: patientF,
+        formTemplateId: template,
+        newEpisodeSpecialty: "Fisioterapia",
+      });
+      expect(episodeId).not.toBeNull();
+    });
+    expect(await openAppOsteopatiaOf(patientF)).toEqual([]);
+    const episodesF = await countEpisodes(patientF);
+
+    // The same lock: the write does not finish while it is held.
+    let settled = false;
+    let pending: Promise<{ id: string; episodeId: string | null }> | null = null;
+    await db.transaction(async (tx) => {
+      await tx.execute(episodes_.specialtyEpisodeLock(tenant, patientF, "Osteopatia"));
+      pending = osteopatiaFor(who, patientF);
+      pending.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await sleep(750);
+      expect(settled, "the write finished while another transaction held its lock").toBe(false);
+      // Nothing of the write is visible yet either: no episode, as before.
+      expect(await countEpisodes(patientF)).toBe(episodesF);
+      await tx.execute(
+        raw`insert into clinical_episodes (id, tenant_id, patient_id, title, status)
+            values (${held}::uuid, ${tenant}::uuid, ${patientF}::uuid, 'Osteopatia (01/10/2026)', 'open')`,
+      );
+    });
+    // Committed: the write goes on, reads the episode that now exists, and reuses it.
+    const filed = await pending!;
+    expect(filed.episodeId).toBe(held);
+    expect(await episodeOf(filed.id)).toBe(held);
+    expect(await countEpisodes(patientF)).toBe(episodesF + 1); // the holder's, and no second one
+    expect(await openAppOsteopatiaOf(patientF)).toEqual([held]);
+  }, 60_000);
 });

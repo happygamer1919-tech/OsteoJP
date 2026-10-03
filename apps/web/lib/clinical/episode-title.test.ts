@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { EPISODE_SPECIALTIES, defaultEpisodeTitle, isEpisodeSpecialty, normalizeEpisodeTitle } from "./episode-title";
+import {
+  EPISODE_SPECIALTIES,
+  defaultEpisodeTitle,
+  episodeSpecialtyOf,
+  isEpisodeSpecialty,
+  normalizeEpisodeTitle,
+} from "./episode-title";
 
 describe("normalizeEpisodeTitle", () => {
   it("trims and collapses whitespace", () => {
@@ -51,5 +57,55 @@ describe("isEpisodeSpecialty (EPI-01b, Q7): the only words a new episode's title
 
   it("the title built from one is the specialty and the Lisbon date, nothing clinical", () => {
     expect(defaultEpisodeTitle("Osteopatia", new Date("2026-10-02T09:00:00Z"))).toBe("Osteopatia (02/10/2026)");
+  });
+});
+
+describe("episodeSpecialtyOf (EPI-01b, R31): which specialty an episode's title names", () => {
+  it("the title '+ Avaliação' builds names its specialty, for every specialty and any day", () => {
+    for (const specialty of EPISODE_SPECIALTIES) {
+      for (const day of ["2026-01-01T12:00:00Z", "2026-10-03T09:00:00Z", "2027-12-31T23:30:00Z"]) {
+        const title = defaultEpisodeTitle(specialty, new Date(day));
+        expect(episodeSpecialtyOf(title), title).toBe(specialty);
+      }
+    }
+    expect(episodeSpecialtyOf("Osteopatia (03/10/2026)")).toBe("Osteopatia");
+    expect(episodeSpecialtyOf("Fisioterapia (03/10/2026)")).toBe("Fisioterapia");
+  });
+
+  it("the bare specialty word names it: the comparison an imported group's label goes through", () => {
+    for (const specialty of EPISODE_SPECIALTIES) {
+      expect(isEpisodeSpecialty(specialty)).toBe(true);
+      expect(episodeSpecialtyOf(specialty)).toBe(specialty);
+    }
+  });
+
+  it("one specialty's title never names the other", () => {
+    expect(episodeSpecialtyOf("Osteopatia (03/10/2026)")).not.toBe("Fisioterapia");
+    expect(episodeSpecialtyOf("Fisioterapia")).not.toBe("Osteopatia");
+  });
+
+  it("anything else names none: the 'Novo episódio' default, free text, a near miss, a non-string", () => {
+    for (const title of [
+      "",
+      "Episódio (03/10/2026)",
+      "osteopatia (03/10/2026)",
+      "Osteopatia  (03/10/2026)",
+      " Osteopatia (03/10/2026)",
+      "Osteopatia (03/10/2026) ",
+      "Osteopatia (3/10/2026)",
+      "Osteopatia (03/10/26)",
+      "Osteopatia (03-10-2026)",
+      "Osteopatia(03/10/2026)",
+      "Osteopatia 03/10/2026",
+      "Osteopatia (03/10/2026) lombalgia",
+      "Osteopatia lombalgia",
+      "Osteopatias",
+      "Osteopatia ",
+      "Pilates (03/10/2026)",
+    ]) {
+      expect(episodeSpecialtyOf(title), JSON.stringify(title)).toBeNull();
+    }
+    expect(episodeSpecialtyOf(null)).toBeNull();
+    expect(episodeSpecialtyOf(undefined)).toBeNull();
   });
 });

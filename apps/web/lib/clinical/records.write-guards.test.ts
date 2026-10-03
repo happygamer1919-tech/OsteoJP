@@ -39,10 +39,13 @@ vi.mock("./audit", () => ({
   clientIp: vi.fn(async () => "127.0.0.1"),
 }));
 
-import { clinicalEpisodes, clinicalRecords, patients } from "@osteojp/db";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { clinicalEpisodes, clinicalRecords, migrationStagingRows, patients } from "@osteojp/db";
 import type { RequestContext } from "@osteojp/auth";
 import { runScoped } from "@/lib/auth/context";
 import { writeClinicalAudit } from "./audit";
+import { specialtyEpisodeLock } from "./episodes";
 import { isClinicalError } from "./errors";
 import {
   assertEpisodeIsThePatients,
@@ -71,13 +74,17 @@ const HASH = "0123456789abcdef0123456789abcdef";
  * `selects` (and records which table it read); `update(...).returning()` and
  * `delete(...).returning()` on clinical_records answer `written`, on any other
  * table one row; `insert(...).returning()` answers one new id. Every write is
- * recorded in `ops`, in order.
+ * recorded in `ops`, in order. A chain answers at `.limit()`, at `.orderBy()`
+ * or when awaited at `.where()`. `execute(...)` (the R31 advisory lock) answers
+ * nothing and is recorded in `executed`, with how many selects had started
+ * before it.
  */
 function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
   const selects = [...opts.selects];
   const read: unknown[] = [];
   const ops: string[] = [];
   const inserted: unknown[] = [];
+  const executed: { query: unknown; readsBefore: number }[] = [];
   const selectChain = () => {
     const rows = selects.shift();
     if (rows === undefined) throw new Error("fakeTx: an unexpected select");
@@ -89,6 +96,8 @@ function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
     b.leftJoin = () => b;
     b.where = () => b;
     b.limit = async () => rows;
+    b.orderBy = async () => rows;
+    b.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject);
     return b;
   };
   const answer = (verb: string, table: unknown) => async () => {
@@ -98,6 +107,10 @@ function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
   };
   const tx = {
     select: () => selectChain(),
+    execute: async (query: unknown) => {
+      executed.push({ query, readsBefore: read.length });
+      return [];
+    },
     update: (table: unknown) => ({
       set: () => ({ where: () => ({ returning: answer("update", table) }) }),
     }),
@@ -113,7 +126,7 @@ function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
     }),
   };
   mockRunScoped.mockImplementation((_ctx, cb) => Promise.resolve(cb(tx as never)));
-  return { read, ops, inserted, pendingSelects: selects };
+  return { read, ops, inserted, executed, pendingSelects: selects };
 }
 
 async function codeOf(p: Promise<unknown>): Promise<string> {
@@ -416,15 +429,47 @@ describe("Q9 app half: createDraftRecord files a registo only in the same patien
   });
 });
 
-describe("Q7: '+ Avaliação' on an imported group opens a NEW episode and files the registo there", () => {
+// ---------------------------------------------------------------------------
+// EPI-01b, strategy ruling R31 (Q7): "+ Avaliação" on an imported group "reuses
+// the patient's open app episode of that specialty and creates one only when
+// none exists". The decision is the SERVER'S, in the writer's own transaction:
+// after the patient test, under an advisory lock, the patient's open episodes
+// are read, then the import ledger for the ones whose title names the
+// specialty, and the one chosen goes through Q9's guard like a posted id.
+//
+// The fake transaction answers each read with the rows an arm gives it, so an
+// arm can hand the writer a row the real WHERE clause would never return (a
+// closed episode, another patient's): the writer must still not reuse it. The
+// choice itself is pinned value by value in episode-reuse-core.test.ts, and the
+// real rows, RLS and lock in records.episode-guard.db.test.ts.
+// ---------------------------------------------------------------------------
+describe("Q7, R31: '+ Avaliação' on an imported group reuses the open app episode of the specialty, or opens one", () => {
   const input = { patientId: PATIENT, formTemplateId: "77777777-7777-4777-8777-777777777777" };
   const NEW_ID = "66666666-6666-4666-8666-666666666666"; // fakeTx answers every INSERT with this id
+  const OPEN_EP = "77777777-7777-4777-8777-777777777781";
+  const OTHER_PATIENT = "44444444-4444-4444-8444-444444444445";
+  const open = (over: Record<string, unknown> = {}) => ({
+    id: OPEN_EP,
+    tenantId: TENANT,
+    patientId: PATIENT,
+    status: "open",
+    title: "Osteopatia (01/10/2026)",
+    openedAt: new Date("2026-10-01T09:00:00Z"),
+    ...over,
+  });
+  /** What the guard reads back for the chosen episode. */
+  const guardRow = { tenantId: TENANT, patientId: PATIENT, status: "open" };
+  const osteo = { ...input, newEpisodeSpecialty: "Osteopatia" };
+  const OPENED_NEW = ["insert:other", "insert:clinical_records"];
+  const auditActions = () => mockAudit.mock.calls.map((c) => c[1].action);
 
-  it("a specialty on the list: one open episode titled with it and the Lisbon date, then the registo in it, both audited", async () => {
-    const { read, ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }]] });
-    expect(await codeOf(createDraftRecord(therapist, { ...input, newEpisodeSpecialty: "Osteopatia" }))).toBe("resolved");
-    expect(read).toEqual([patients]); // no episode is read: none is written into but the new one
-    expect(ops).toEqual(["insert:other", "insert:clinical_records"]);
+  it("CREATE, none exists: one open episode titled with the specialty and the Lisbon date, then the registo in it, both audited", async () => {
+    const { read, ops, inserted, pendingSelects } = fakeTx({ selects: [[{ id: PATIENT }], []] });
+    expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+    // The patient test, then the patient's open episodes; no ledger read (nothing to ask about).
+    expect(read).toEqual([patients, clinicalEpisodes]);
+    expect(pendingSelects).toEqual([]);
+    expect(ops).toEqual(OPENED_NEW);
     expect(inserted[0]).toMatchObject({
       tenantId: TENANT,
       patientId: PATIENT,
@@ -433,7 +478,134 @@ describe("Q7: '+ Avaliação' on an imported group opens a NEW episode and files
     });
     expect((inserted[0] as { title: string }).title).toMatch(/^Osteopatia \(\d{2}\/\d{2}\/\d{4}\)$/);
     expect(inserted[1]).toMatchObject({ patientId: PATIENT, episodeId: NEW_ID });
-    expect(mockAudit.mock.calls.map((c) => c[1].action)).toEqual(["clinical_episode.create", "clinical_record.create"]);
+    expect(auditActions()).toEqual(["clinical_episode.create", "clinical_record.create"]);
+  });
+
+  it("REUSE, one open app episode of the specialty: the registo is filed in it and NO episode is opened", async () => {
+    const { read, ops, inserted, pendingSelects } = fakeTx({ selects: [[{ id: PATIENT }], [open()], [], [guardRow]] });
+    const filed = await createDraftRecord(therapist, osteo);
+    expect(filed.episodeId).toBe(OPEN_EP);
+    // The patient, the open episodes, the ledger for the candidate, then Q9's guard on the chosen one.
+    expect(read).toEqual([patients, clinicalEpisodes, migrationStagingRows, clinicalEpisodes]);
+    expect(pendingSelects).toEqual([]);
+    expect(ops).toEqual(["insert:clinical_records"]);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({ patientId: PATIENT, episodeId: OPEN_EP, practitionerId: THERAPIST_ID });
+    // One audit row, the registo's, naming the episode it went into; no clinical_episode.create.
+    expect(auditActions()).toEqual(["clinical_record.create"]);
+    expect(mockAudit.mock.calls[0]![1]).toMatchObject({ metadata: { patientId: PATIENT, episodeId: OPEN_EP } });
+  });
+
+  it("the owner reuses it the same way", async () => {
+    const { ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }], [open()], [], [guardRow]] });
+    expect(await codeOf(createDraftRecord(owner, osteo))).toBe("resolved");
+    expect(ops).toEqual(["insert:clinical_records"]);
+    expect(inserted[0]).toMatchObject({ episodeId: OPEN_EP, practitionerId: owner.userId });
+  });
+
+  it("a CLOSED episode of the specialty is not reused: a new one is opened", async () => {
+    const { ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }], [open({ status: "closed" })], []] });
+    expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+    expect(ops).toEqual(OPENED_NEW);
+    expect(inserted[1]).toMatchObject({ episodeId: NEW_ID });
+    expect(JSON.stringify(inserted)).not.toContain(OPEN_EP);
+  });
+
+  it("ANOTHER PATIENT'S open episode of the specialty is never reused: a new one is opened for this patient", async () => {
+    const { ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }], [open({ patientId: OTHER_PATIENT })], []] });
+    expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+    expect(ops).toEqual(OPENED_NEW);
+    expect(inserted[0]).toMatchObject({ patientId: PATIENT });
+    expect(inserted[1]).toMatchObject({ patientId: PATIENT, episodeId: NEW_ID });
+    expect(JSON.stringify(inserted)).not.toContain(OPEN_EP);
+  });
+
+  it("ANOTHER TENANT'S is never reused", async () => {
+    const { ops, inserted } = fakeTx({
+      selects: [[{ id: PATIENT }], [open({ tenantId: "11111111-1111-4111-8111-111111111112" })], []],
+    });
+    expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+    expect(ops).toEqual(OPENED_NEW);
+    expect(JSON.stringify(inserted)).not.toContain(OPEN_EP);
+  });
+
+  it("ANOTHER SPECIALTY'S open episode is not reused: a new one is opened, and the ledger is not even asked", async () => {
+    const { read, ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }], [open({ title: "Fisioterapia (01/10/2026)" })]] });
+    expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+    expect(read).toEqual([patients, clinicalEpisodes]);
+    expect(ops).toEqual(OPENED_NEW);
+    expect((inserted[0] as { title: string }).title).toMatch(/^Osteopatia \(/);
+    expect(JSON.stringify(inserted)).not.toContain(OPEN_EP);
+  });
+
+  it("an open episode that names no specialty (the 'Novo episódio' default) is not reused", async () => {
+    const { ops } = fakeTx({ selects: [[{ id: PATIENT }], [open({ title: "Episódio (01/10/2026)" })]] });
+    expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+    expect(ops).toEqual(OPENED_NEW);
+  });
+
+  it("an episode THE IMPORT LEDGER NAMES is never reused, even open: a new one is opened", async () => {
+    const { read, ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }], [open({ title: "Osteopatia" })], [{ id: OPEN_EP }]] });
+    expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+    expect(read).toEqual([patients, clinicalEpisodes, migrationStagingRows]);
+    expect(ops).toEqual(OPENED_NEW);
+    expect(JSON.stringify(inserted)).not.toContain(OPEN_EP);
+  });
+
+  it("MORE THAN ONE open app episode of the specialty: the most recently opened, whatever order they are read in", async () => {
+    const OLDER = "77777777-7777-4777-8777-77777777778f";
+    const older = open({ id: OLDER, title: "Osteopatia (01/09/2026)", openedAt: new Date("2026-09-01T09:00:00Z") });
+    for (const rows of [
+      [older, open()],
+      [open(), older],
+    ]) {
+      mockAudit.mockReset();
+      const { ops, inserted } = fakeTx({ selects: [[{ id: PATIENT }], rows, [], [guardRow]] });
+      expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("resolved");
+      expect(ops).toEqual(["insert:clinical_records"]);
+      expect(inserted[0]).toMatchObject({ episodeId: OPEN_EP });
+    }
+  });
+
+  it("the reused episode is held to Q9's guard: one the guard reads as another patient's, or closed, files nothing and opens nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const [row, code] of [
+        [{ ...guardRow, patientId: OTHER_PATIENT }, "episode_mismatch"],
+        [{ ...guardRow, status: "closed" }, "episode_closed"],
+      ] as const) {
+        mockAudit.mockReset();
+        const { ops } = fakeTx({ selects: [[{ id: PATIENT }], [open()], [], [row]] });
+        expect(await codeOf(createDraftRecord(therapist, osteo)), code).toBe(code);
+        expect(ops).toEqual([]);
+        expect(mockAudit).not.toHaveBeenCalled();
+      }
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("THE LOCK: one, for this tenant, patient and specialty, taken after the patient test and before the episodes are read", async () => {
+    const { executed } = fakeTx({ selects: [[{ id: PATIENT }], []] });
+    expect(await codeOf(createDraftRecord(therapist, { ...input, newEpisodeSpecialty: "Fisioterapia" }))).toBe("resolved");
+    expect(executed).toHaveLength(1);
+    expect(executed[0]!.readsBefore).toBe(1); // patients only
+    const dialect = new PgDialect();
+    const taken = dialect.sqlToQuery(executed[0]!.query as SQL);
+    expect(taken).toEqual(dialect.sqlToQuery(specialtyEpisodeLock(TENANT, PATIENT, "Fisioterapia")));
+    // Transaction-scoped, and keyed on all three: never table-wide, never session-held.
+    expect(taken.sql.replace(/\s+/g, " ")).toBe("select pg_advisory_xact_lock(hashtextextended($1, 0))");
+    expect(taken.params).toEqual([`clinical-episode-specialty:${TENANT}:${PATIENT}:Fisioterapia`]);
+    // Another patient or specialty is another lock.
+    expect(dialect.sqlToQuery(specialtyEpisodeLock(TENANT, PATIENT, "Osteopatia")).params).not.toEqual(taken.params);
+    expect(dialect.sqlToQuery(specialtyEpisodeLock(TENANT, OTHER_PATIENT, "Fisioterapia")).params).not.toEqual(taken.params);
+  });
+
+  it("no specialty: no lock and no episode read (the /clinical/new form is untouched)", async () => {
+    const { read, executed } = fakeTx({ selects: [[{ id: PATIENT }]] });
+    expect(await codeOf(createDraftRecord(therapist, input))).toBe("resolved");
+    expect(read).toEqual([patients]);
+    expect(executed).toEqual([]);
   });
 
   it("a word that is not on the list: invalid, before any transaction, nothing written", async () => {
@@ -451,9 +623,11 @@ describe("Q7: '+ Avaliação' on an imported group opens a NEW episode and files
     expect(mockRunScoped).not.toHaveBeenCalled();
   });
 
-  it("a patient outside the therapist's scope: not_found, and NO episode is opened", async () => {
-    const { ops } = fakeTx({ selects: [[]] });
+  it("a patient outside the therapist's scope: not_found, NO lock, no episode read, and NO episode is opened or reused", async () => {
+    const { read, ops, executed } = fakeTx({ selects: [[]] });
     expect(await codeOf(createDraftRecord(therapist, { ...input, newEpisodeSpecialty: "Fisioterapia" }))).toBe("not_found");
+    expect(read).toEqual([patients]);
+    expect(executed).toEqual([]);
     expect(ops).toEqual([]);
     expect(mockAudit).not.toHaveBeenCalled();
   });
