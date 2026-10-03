@@ -624,7 +624,15 @@ test("R9: the daytime arm stands in stage 0 and stage 1, with the same proof lin
     assert.match(b, /^OVRNOW=\$\(TZ=Europe\/Lisbon date '\+%Y%m%d%H%M'\) \|\| \{ echo "STOP: /m);
     assert.match(b, /^echo "\$\{OVRNOW\}" \| grep -qxE '\[0-9\]\{12\}' \|\| \{ echo "STOP: /m);
     assert.match(b, /^OVR=no$/m);
+    // Exactly one line can turn the override on, and exactly one `case` stands in the block: a
+    // second date test of any spelling (a bracket pattern, another year) is refused.
+    assert.equal(b.split("\n").filter((l) => l.includes("OVR=yes")).length, 1, "one OVR=yes line");
+    assert.equal(b.split("\n").filter((l) => /(^|[;\s])case\s/.test(l)).length, 1, "one case line");
   }
+  // CONTROL: a second date test with a bracket pattern, which the 8-digit rule alone cannot see.
+  const sneaky = s1.replace('case "${OVRNOW}" in 20261003*) OVR=yes;; esac', 'case "${OVRNOW}" in 20261003*) OVR=yes;; esac\ncase "${OVRNOW}" in 2026101[0-9]*) OVR=yes;; esac');
+  assert.notEqual(sneaky, s1);
+  assert.equal(sneaky.split("\n").filter((l) => l.includes("OVR=yes")).length, 2);
 });
 
 test("THE EARLIER PRE-CHECK SITTING runs from PR #1520's named head, never main, and records what R9's proof 3 requires", () => {
@@ -1592,7 +1600,7 @@ test("THE OWNER'S OVERRIDE OF 2026-10-03: stages 0 and 1 pass inside clinic hour
           const applied = r.markersAtEnd.includes("0100-applied.ok");
           if (c[3] === "override") {
             assert.equal(r.code, 0, `${tag}: ${r.out.slice(-500)}`);
-            assert.match(r.out, /^OWNER OVERRIDE 2026-10-03: Lisbon /m, tag);
+            assert.match(r.out, /^OWNER OVERRIDE 2026-10-03: Lisbon .*The three proofs are printed, not required\./m, tag);
             assert.match(r.out, /^owner's override of 2026-10-03 \(this Lisbon date only\): yes$/m, tag);
             assert.ok(r.out.includes(marker) && r.out.includes("TOOL-CHAIN-CONTINUED"), tag);
           } else if (c[3] === "stop") {
