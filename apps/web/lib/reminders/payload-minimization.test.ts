@@ -67,6 +67,10 @@ describe("Inngest event payloads carry identifiers only", () => {
       "offsetId",
       "channel",
       "confirmationEligible",
+      // BOOK-CONFIRM, added deliberately: a literal `true` saying "this event is
+      // the acceptance of an online request". A flag about the EVENT, not a
+      // fact about a person; it names nobody and carries no value but `true`.
+      "acceptedPedido",
     ]);
 
     const blocks = src.match(/=\s*\{[^}]*\}/g) ?? [];

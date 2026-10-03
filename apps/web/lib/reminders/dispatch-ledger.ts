@@ -1,6 +1,6 @@
 import "server-only";
 import { reminderDispatches } from "@osteojp/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 import { withReminderTenantContext } from "./context";
 
@@ -116,6 +116,67 @@ export async function recordDispatch(row: DispatchLedgerRow): Promise<void> {
         `templateId=${row.templateId} outcome=${row.outcome}: ` +
         `${e instanceof Error ? e.name : "unknown"}`,
     );
+  }
+}
+
+/** The one suppression reason that counts as a hand-over. See `hasHandedOverDispatch`. */
+export const HANDED_OVER_WHILE_LIVE_SEND_OFF = "live_send_disabled";
+
+/**
+ * BOOK-CONFIRM: has a message under one of these template ids already been
+ * handed over for this appointment?
+ *
+ * "Handed over" is a `sent` row, or a row the gate held back because live send
+ * is OFF (`live_send_disabled`). That one counts on purpose: with live send off
+ * it is the only trace a hand-over leaves, and a second approval of the same
+ * request must read as a repeat there too, or the rule could only ever be
+ * checked in production. Every other suppression (a missing location contact,
+ * a switched-off channel, an unconfigured provider) is NOT a hand-over, so
+ * fixing the cause and approving again still sends.
+ *
+ * THE SECOND LINE, NOT THE FIRST. Inngest's idempotency key on
+ * send-appointment-confirmation is what stops a duplicate EVENT; this stops a
+ * second approval the key does not cover. It is a read followed by a send, not
+ * a lock, so two runs racing inside the same instant are the key's to stop.
+ *
+ * IT NEVER THROWS INTO THE SEND PATH, the same rule as `recordDispatch`, and it
+ * FAILS OPEN: a read that errors answers "not sent". The message this guards is
+ * the patient's only confirmation, so an unreadable ledger must cost at most a
+ * repeat, never the message. The failure is logged, ids only.
+ */
+export async function hasHandedOverDispatch(args: {
+  tenantId: string;
+  appointmentId: string;
+  templateIds: readonly string[];
+}): Promise<boolean> {
+  try {
+    return await withReminderTenantContext(args.tenantId, async (tx) => {
+      const rows = await tx
+        .select({ id: reminderDispatches.id })
+        .from(reminderDispatches)
+        .where(
+          and(
+            eq(reminderDispatches.tenantId, args.tenantId),
+            eq(reminderDispatches.appointmentId, args.appointmentId),
+            inArray(reminderDispatches.templateId, [...args.templateIds]),
+            or(
+              eq(reminderDispatches.outcome, "sent"),
+              and(
+                eq(reminderDispatches.outcome, "suppressed"),
+                eq(reminderDispatches.suppressionReason, HANDED_OVER_WHILE_LIVE_SEND_OFF),
+              ),
+            ),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
+    });
+  } catch (e) {
+    console.error(
+      `[reminders] dispatch ledger read FAILED tenantId=${args.tenantId} ` +
+        `appointmentId=${args.appointmentId}: ${e instanceof Error ? e.name : "unknown"}`,
+    );
+    return false;
   }
 }
 

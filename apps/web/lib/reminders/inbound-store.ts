@@ -11,6 +11,7 @@ import {
 
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import {
+  acceptedPedidoTarget,
   emitAcceptedPedidoReminders,
   isUnconfirmedPedido,
 } from "@/lib/scheduling/pedido-acceptance";
@@ -281,7 +282,7 @@ export async function resolveReviewItem(args: {
           .returning({ id: appointments.id, startsAt: appointments.startsAt });
         applied = updated.length > 0;
         if (applied && pedido) {
-          accepted = [{ appointmentId: updated[0]!.id, startsAt: updated[0]!.startsAt }];
+          accepted = [acceptedPedidoTarget(updated[0]!.id, updated[0]!.startsAt)];
         }
       }
 

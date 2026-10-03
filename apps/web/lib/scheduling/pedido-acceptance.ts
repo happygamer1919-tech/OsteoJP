@@ -45,6 +45,20 @@ export async function isUnconfirmedPedido(tx: DbTx, appointmentId: string): Prom
 }
 
 /**
+ * BOOK-CONFIRM: the enqueue target for an ACCEPTED pedido, carrying the marker.
+ *
+ * ONE PLACE WRITES THE MARKER. All four doors that can accept a pedido build
+ * their target here, so the event they emit says "this is an acceptance" in the
+ * same way, and a fifth door inherits it by calling this instead of having to
+ * remember a field. The confirmation dispatch reads it to send the
+ * booking-approved message; a reschedule's target is built by hand, without it,
+ * and keeps today's confirmation.
+ */
+export function acceptedPedidoTarget(appointmentId: string, startsAt: Date): ReminderEnqueueTarget {
+  return { appointmentId, startsAt, acceptedPedido: true };
+}
+
+/**
  * Emit the accepted pedido's `appointment/scheduled` AFTER the commit. One
  * target makes it confirmationEligible (confirmationEligibleIndex over a
  * one-element list), so the confirmation sends exactly once, at acceptance.

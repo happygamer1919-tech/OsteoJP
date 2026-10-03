@@ -7,6 +7,8 @@ vi.mock("server-only", () => ({}));
 const inserted: Record<string, unknown>[] = [];
 const updated: Record<string, unknown>[] = [];
 let failNext = false;
+/** What the BOOK-CONFIRM hand-over read finds. */
+let selected: Record<string, unknown>[] = [];
 
 vi.mock("./context", () => ({
   withReminderTenantContext: async (_t: string, fn: (tx: unknown) => Promise<unknown>) => {
@@ -14,18 +16,21 @@ vi.mock("./context", () => ({
     return fn({
       insert: () => ({ values: async (v: Record<string, unknown>) => void inserted.push(v) }),
       update: () => ({ set: (v: Record<string, unknown>) => ({ where: async () => void updated.push(v) }) }),
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => selected }) }) }),
     });
   },
   withReminderResolverContext: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
   REMINDER_JOB_ROLE: "admin",
 }));
 
-const { recordDispatch, recordProviderStatus } = await import("./dispatch-ledger");
+const { recordDispatch, recordProviderStatus, hasHandedOverDispatch, HANDED_OVER_WHILE_LIVE_SEND_OFF } =
+  await import("./dispatch-ledger");
 
 beforeEach(() => {
   inserted.length = 0;
   updated.length = 0;
   failNext = false;
+  selected = [];
 });
 
 const base = {
@@ -99,5 +104,37 @@ describe("the dispatch ledger", () => {
       recordProviderStatus({ tenantId: "t1", providerMessageId: "SM1", providerStatus: "sent" }),
     ).rejects.toThrow("db down");
     expect(updated).toHaveLength(0);
+  });
+});
+
+/**
+ * BOOK-CONFIRM: the read behind "one approval, one message". The predicate
+ * itself is SQL and is proven against Postgres in book-confirm.db.test.ts;
+ * what is pinned here is the contract around it.
+ */
+describe("hasHandedOverDispatch", () => {
+  const args = { tenantId: "t1", appointmentId: "a1", templateIds: ["booking_approved.email"] };
+
+  it("answers true when the ledger holds a matching row, false when it holds none", async () => {
+    selected = [{ id: "row-1" }];
+    expect(await hasHandedOverDispatch(args)).toBe(true);
+    selected = [];
+    expect(await hasHandedOverDispatch(args)).toBe(false);
+  });
+
+  it("NEVER throws into the send path, and FAILS OPEN: an unreadable ledger answers 'not sent'", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failNext = true;
+    await expect(hasHandedOverDispatch(args)).resolves.toBe(false);
+    const logged = spy.mock.calls.flat().join(" ");
+    expect(logged).toContain("dispatch ledger read FAILED");
+    expect(logged).toContain("appointmentId=a1");
+    // The error NAME, never its message.
+    expect(logged).not.toContain("db down");
+    spy.mockRestore();
+  });
+
+  it("counts a live-send-off suppression as a hand-over, by the gate's own reason", () => {
+    expect(HANDED_OVER_WHILE_LIVE_SEND_OFF).toBe("live_send_disabled");
   });
 });

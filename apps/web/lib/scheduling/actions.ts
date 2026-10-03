@@ -72,6 +72,8 @@ import {
   type ReminderEnqueueTarget,
   type StatusNotificationTarget,
 } from "./reminders";
+import { acceptedPedidoTarget } from "./pedido-acceptance";
+import { approvalNoticeAfterAccept, type ApprovalNotice } from "./book-confirm-notice";
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type {
   ActionResult,
@@ -1408,7 +1410,7 @@ export async function updateAppointment(
   id: string,
   patch: UpdateAppointmentPatch,
   opts?: SeriesOptions,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -1448,8 +1450,12 @@ export async function updateAppointment(
   let statusTargets: StatusNotificationTarget[] = [];
   // W14-02: the portal pedidos this patch ACCEPTS. Same capture-then-emit shape.
   let reminderTargets: ReminderEnqueueTarget[] = [];
+  // BOOK-CONFIRM: the ids of those accepted pedidos, for the approver's notice.
+  // A holder object, so the read after the transaction sees what the callback
+  // wrote (a bare `let` assigned in a closure narrows back to its initialiser).
+  const acceptedForNotice: { ids: string[] } = { ids: [] };
   try {
-    const result = await runScoped<ActionResult<{ id: string }>>(
+    const result = await runScoped<ActionResult<{ id: string; notice?: ApprovalNotice }>>(
       actor,
       async (tx) => {
         const affected = await resolveSeries(tx, id, scope);
@@ -1918,8 +1924,11 @@ export async function updateAppointment(
         // offsets have passed and it would fire nothing, which the owner ruled
         // is expected, not a defect.
         const nowMs = Date.now();
+        acceptedForNotice.ids = acceptedPedidos.map((a) => a.id);
         reminderTargets = [
-          ...acceptedPedidos.map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
+          // BOOK-CONFIRM: an ACCEPTANCE carries the marker. The rows brought
+          // back from Cancelada below do not, and keep today's confirmation.
+          ...acceptedPedidos.map((a) => acceptedPedidoTarget(a.id, a.startsAt)),
           ...uncancelling
             .filter((a) => a.startsAt.getTime() > nowMs)
             .map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
@@ -1941,6 +1950,10 @@ export async function updateAppointment(
           await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
         }
       });
+      // BOOK-CONFIRM: "Paciente sem email: avise por telefone". After the
+      // commit and never throwing, so it cannot fail the save it follows.
+      const notice = await approvalNoticeAfterAccept(actor, acceptedForNotice.ids);
+      if (notice) return { ok: true, data: { ...result.data, notice } };
     }
     return result;
   } catch (e) {
@@ -2264,7 +2277,7 @@ export async function rescheduleAppointment(
  */
 export async function confirmAppointmentRequest(
   id: string,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -2283,7 +2296,7 @@ export async function confirmAppointmentRequest(
   // never run inside an open Postgres transaction).
   let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
-    const result = await runScoped<ActionResult<{ id: string }>>(
+    const result = await runScoped<ActionResult<{ id: string; notice?: ApprovalNotice }>>(
       actor,
       async (tx) => {
         // The pedido, joined to its provenance. Both halves are RLS-scoped: the
@@ -2385,7 +2398,9 @@ export async function confirmAppointmentRequest(
           ),
           startsAt: pedido.startsAt,
         };
-        reminderTargets = [{ appointmentId: pedido.id, startsAt: pedido.startsAt }];
+        // BOOK-CONFIRM: the target carries the acceptance marker, so the
+        // dispatch can tell this event from a reschedule of the same row.
+        reminderTargets = [acceptedPedidoTarget(pedido.id, pedido.startsAt)];
         return { ok: true, data: { id: pedido.id } };
       },
     );
@@ -2452,6 +2467,10 @@ export async function confirmAppointmentRequest(
           });
         }
       });
+      // BOOK-CONFIRM: "Paciente sem email: avise por telefone". After the
+      // commit and never throwing, so it cannot fail the acceptance it follows.
+      const notice = await approvalNoticeAfterAccept(actor, [result.data.id]);
+      if (notice) return { ok: true, data: { ...result.data, notice } };
     }
     return result;
   } catch (e) {

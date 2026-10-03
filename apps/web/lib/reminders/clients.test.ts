@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { liveSendEnabled, sendEmail, sendSms, createSender } from "./clients";
+import { liveSendEnabled, sendEmail, sendSms, createSender, suppressionReasonOf } from "./clients";
 
 // Transport-behaviour tests need an APPROVED template to reach a provider at all
 // — the real bodies are approved:false by ruling and stay that way. This fixture
@@ -242,5 +242,52 @@ describe("live mode (mocked SDKs — verifies wiring, no real network)", () => {
       body: "Body",
     });
     expect(res).toEqual({ channel: "sms", sandbox: false, id: "SM_123" });
+  });
+});
+
+/**
+ * BOOK-CONFIRM: the gate's reason for a held-back message, read BESIDE the
+ * result. The result's own shape is a contract other modules compare whole, so
+ * the reason is not a field on it; these arms pin both halves.
+ */
+describe("suppressionReasonOf", () => {
+  const saved = process.env.REMINDERS_LIVE_SEND;
+  beforeEach(() => {
+    delete process.env.REMINDERS_LIVE_SEND;
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env.REMINDERS_LIVE_SEND;
+    else process.env.REMINDERS_LIVE_SEND = saved;
+  });
+
+  it("live send off: the reason is live_send_disabled, and the result keeps its three fields", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const r = await sendEmail({
+      to: "doente@example.test",
+      subject: "assunto",
+      body: "corpo",
+      templateId: "booking_approved.email",
+    });
+    expect(r).toEqual({ channel: "email", sandbox: true, id: "sandbox:email" });
+    expect(suppressionReasonOf(r)).toBe("live_send_disabled");
+  });
+
+  it("an id nobody registered: the reason is template_unapproved", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await sendSms({ to: "+351912345678", body: "corpo", templateId: "nobody.registered.sms" });
+    expect(r.sandbox).toBe(true);
+    expect(suppressionReasonOf(r)).toBe("template_unapproved");
+  });
+
+  it("a result the gate did not produce has no reason, never a wrong one", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const r = await sendEmail({
+      to: "doente@example.test",
+      subject: "assunto",
+      body: "corpo",
+      templateId: "confirmation.email",
+    });
+    expect(suppressionReasonOf({ ...r })).toBeUndefined();
+    expect(suppressionReasonOf({ channel: "sms", sandbox: false, id: "SM1" })).toBeUndefined();
   });
 });

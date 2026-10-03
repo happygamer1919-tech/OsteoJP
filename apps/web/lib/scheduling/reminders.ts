@@ -15,6 +15,14 @@ export type ReminderEnqueueTarget = {
   appointmentId: string;
   /** The appointment's CURRENT start instant (post-create / post-reschedule). */
   startsAt: Date;
+  /**
+   * BOOK-CONFIRM. True only for the acceptance of an online booking request;
+   * built by `acceptedPedidoTarget` in ./pedido-acceptance.ts and nowhere else.
+   * Carried onto the event so the confirmation dispatch can tell an acceptance
+   * from a reschedule. Per TARGET, not per call: one `updateAppointment` can
+   * accept a pedido and bring another row back from Cancelada in the same list.
+   */
+  acceptedPedido?: boolean;
 };
 
 /**
@@ -80,6 +88,7 @@ export async function enqueueRemindersAfterCommit(
         tenantId,
         startsAt: t.startsAt,
         confirmationEligible: i === eligibleIndex,
+        ...(t.acceptedPedido === true ? { acceptedPedido: true } : {}),
       });
     } catch (e) {
       console.error(

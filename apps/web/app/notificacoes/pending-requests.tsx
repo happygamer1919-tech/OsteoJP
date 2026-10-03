@@ -50,6 +50,21 @@ type RowError =
   | { code: "doubleBooked" }
   | { code: "generic" };
 
+/**
+ * BOOK-CONFIRM: a request that WAS accepted, whose patient has no email on file.
+ *
+ * Held here and not in the row, because the row is gone by the time it matters:
+ * a successful confirm revalidates the page and the pedido leaves the queue. The
+ * name and the time are copied at the click so the notice can still say WHICH
+ * patient to ring. It is the one thing this component keeps after a success,
+ * and it is not queue data: it is the outcome of an action this session took.
+ */
+type ApprovalNoticeView = {
+  appointmentId: string;
+  patientName: string | null;
+  when: string;
+};
+
 const TIME_FMT: Intl.DateTimeFormatOptions = {
   day: "2-digit",
   month: "2-digit",
@@ -87,8 +102,11 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, RowError>>({});
+  const [notices, setNotices] = useState<ApprovalNoticeView[]>([]);
 
   function confirm(appointmentId: string) {
+    // Copied BEFORE the action: on success the row is no longer in `items`.
+    const row = items.find((r) => r.appointmentId === appointmentId);
     setBusyId(appointmentId);
     setErrors((prev) => {
       const next = { ...prev };
@@ -98,7 +116,16 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
     startTransition(async () => {
       const result = await confirmAppointmentRequest(appointmentId);
       setBusyId(null);
-      if (result.ok) return; // revalidatePath removes the row
+      if (result.ok) {
+        // revalidatePath removes the row. The notice outlives it.
+        if (result.data.notice === "patient_no_email") {
+          setNotices((prev) => [
+            ...prev.filter((n) => n.appointmentId !== appointmentId),
+            { appointmentId, patientName: row?.patientName ?? null, when: row?.when ?? "" },
+          ]);
+        }
+        return;
+      }
       if (result.error === "conflict") {
         setErrors((prev) => ({
           ...prev,
@@ -118,16 +145,43 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
     });
   }
 
+  // Rendered in BOTH branches below: accepting the last pedido empties the
+  // queue, and that is exactly when the notice must still be on screen.
+  const noticeList =
+    notices.length > 0 ? (
+      <ul className="mb-3 flex flex-col gap-2" data-approval-notices>
+        {notices.map((n) => (
+          <li
+            key={n.appointmentId}
+            role="status"
+            className="rounded-v2 border border-v2-border bg-surface-muted p-3"
+          >
+            <p className="text-sm font-semibold text-v2-text-primary">
+              {s["requests.notice.patientNoEmail"]}
+            </p>
+            <p className="mt-1 text-sm text-v2-text-secondary">
+              {[n.patientName ?? s["notifications.noPatient"], n.when].filter(Boolean).join(" · ")}
+            </p>
+          </li>
+        ))}
+      </ul>
+    ) : null;
+
   if (items.length === 0) {
     return (
-      <div className="rounded-v2 border border-v2-border bg-surface-muted p-8 text-center">
-        <p className="text-sm font-medium text-v2-text-primary">{s["requests.empty"]}</p>
-        <p className="mt-1 text-sm text-v2-text-secondary">{s["requests.emptyHint"]}</p>
-      </div>
+      <>
+        {noticeList}
+        <div className="rounded-v2 border border-v2-border bg-surface-muted p-8 text-center">
+          <p className="text-sm font-medium text-v2-text-primary">{s["requests.empty"]}</p>
+          <p className="mt-1 text-sm text-v2-text-secondary">{s["requests.emptyHint"]}</p>
+        </div>
+      </>
     );
   }
 
   return (
+    <>
+    {noticeList}
     <ul className="flex flex-col gap-2">
       {items.map((r) => {
         const err = errors[r.appointmentId];
@@ -183,5 +237,6 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
         );
       })}
     </ul>
+    </>
   );
 }

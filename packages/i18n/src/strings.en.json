@@ -1556,6 +1556,7 @@
   "requests.error.forbidden": "You do not have permission to confirm requests.",
   "requests.error.doubleBooked": "This therapist already has a confirmed appointment at this time. Call the patient and offer another time.",
   "requests.error.generic": "The request could not be confirmed. Try again.",
+  "requests.notice.patientNoEmail": "Patient has no email: notify by phone",
   "review.unknownKeysTitle": "Unrecognised fields",
   "review.unknownKeysBody": "The partner sent data this form has nowhere to show. Nothing was lost: it is kept in the original record. Check it before finalising.",
   "consultations.stuck.title": "Recordings that were not processed",

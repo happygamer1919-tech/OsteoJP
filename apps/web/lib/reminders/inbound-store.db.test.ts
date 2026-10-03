@@ -316,8 +316,14 @@ d("the reception reply queue against a real database", () => {
       expect(enqueueSpy).toHaveBeenCalledTimes(1);
       const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
       expect(tenantArg).toBe(tenantId);
+      // BOOK-CONFIRM: reception accepting from the review queue is an
+      // ACCEPTANCE, so its target carries the marker the dispatch reads.
       expect(targets).toEqual([
-        { appointmentId, startsAt: new Date(stored[0]!.starts_at as string | Date) },
+        {
+          appointmentId,
+          startsAt: new Date(stored[0]!.starts_at as string | Date),
+          acceptedPedido: true,
+        },
       ]);
     });
 

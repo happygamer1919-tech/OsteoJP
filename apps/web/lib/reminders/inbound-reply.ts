@@ -5,6 +5,7 @@ import { normalizePhonePT } from "@osteojp/notify";
 
 import { blockingConflicts, findConflictsForWindow } from "@/lib/scheduling/conflict";
 import {
+  acceptedPedidoTarget,
   emitAcceptedPedidoReminders,
   isUnconfirmedPedido,
 } from "@/lib/scheduling/pedido-acceptance";
@@ -431,7 +432,7 @@ export async function applyInboundReply(args: {
       outcome: "confirmed",
       reason: null,
     });
-    if (pedido) accepted = [{ appointmentId: appt.id, startsAt: appt.startsAt }];
+    if (pedido) accepted = [acceptedPedidoTarget(appt.id, appt.startsAt)];
     return { outcome: "confirmed", appointmentId: appt.id, patientId } as const;
   }).catch(async (err: unknown) => {
     if (err instanceof DoubleConfirmedRefusal) {
