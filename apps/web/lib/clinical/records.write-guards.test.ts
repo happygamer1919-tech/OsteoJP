@@ -601,6 +601,83 @@ describe("Q7, R31: '+ Avaliação' on an imported group reuses the open app epis
     expect(dialect.sqlToQuery(specialtyEpisodeLock(TENANT, OTHER_PATIENT, "Fisioterapia")).params).not.toEqual(taken.params);
   });
 
+  // R4 on the R31 commit, MINOR 1: an id posted in UPPERCASE names the same
+  // patient (Postgres reads a uuid in either case, so the patient test passes),
+  // but the choice of episode, the guard and the lock key work on TEXT. The
+  // writer puts the id in its canonical lowercase form once, before any of them.
+  describe("a patient id posted in UPPERCASE is the same patient", () => {
+    const UPPER = PATIENT.toUpperCase().replace(/4/g, "A"); // hex letters, so the two really differ as text
+    const LOWER = UPPER.toLowerCase();
+    const row = open({ patientId: LOWER });
+    const guardOf = { tenantId: TENANT, patientId: LOWER, status: "open" };
+    const dialect = new PgDialect();
+    const lockOf = (q: unknown) => dialect.sqlToQuery(q as SQL).params;
+
+    it("control: the posted id and the row's differ as text", () => {
+      expect(UPPER).not.toBe(LOWER);
+      expect(UPPER).toMatch(/[A-F]/);
+    });
+
+    it("REUSE: the open episode is reused, NO second one is opened, and the registo carries the canonical id", async () => {
+      const { ops, inserted, executed } = fakeTx({ selects: [[{ id: LOWER }], [row], [], [guardOf]] });
+      const filed = await createDraftRecord(therapist, { ...osteo, patientId: UPPER });
+      expect(filed.episodeId).toBe(OPEN_EP);
+      expect(ops).toEqual(["insert:clinical_records"]);
+      expect(inserted[0]).toMatchObject({ patientId: LOWER, episodeId: OPEN_EP });
+      expect(mockAudit.mock.calls[0]![1]).toMatchObject({ metadata: { patientId: LOWER, episodeId: OPEN_EP } });
+      // THE SAME LOCK as the lowercase request: the two wait for each other.
+      expect(executed).toHaveLength(1);
+      expect(lockOf(executed[0]!.query)).toEqual(lockOf(specialtyEpisodeLock(TENANT, LOWER, "Osteopatia")));
+      expect(lockOf(executed[0]!.query)).toEqual([`clinical-episode-specialty:${TENANT}:${LOWER}:Osteopatia`]);
+    });
+
+    it("the lowercase request, for comparison: the same episode and the same lock key", async () => {
+      const { ops, inserted, executed } = fakeTx({ selects: [[{ id: LOWER }], [row], [], [guardOf]] });
+      expect((await createDraftRecord(therapist, { ...osteo, patientId: LOWER })).episodeId).toBe(OPEN_EP);
+      expect(ops).toEqual(["insert:clinical_records"]);
+      expect(inserted[0]).toMatchObject({ patientId: LOWER, episodeId: OPEN_EP });
+      expect(lockOf(executed[0]!.query)).toEqual([`clinical-episode-specialty:${TENANT}:${LOWER}:Osteopatia`]);
+    });
+
+    it("CREATE with an uppercase id: the new episode and the registo carry the canonical id, under the same lock key", async () => {
+      const { ops, inserted, executed } = fakeTx({ selects: [[{ id: LOWER }], []] });
+      expect(await codeOf(createDraftRecord(therapist, { ...osteo, patientId: UPPER }))).toBe("resolved");
+      expect(ops).toEqual(OPENED_NEW);
+      expect(inserted[0]).toMatchObject({ patientId: LOWER });
+      expect(inserted[1]).toMatchObject({ patientId: LOWER, episodeId: NEW_ID });
+      expect(lockOf(executed[0]!.query)).toEqual([`clinical-episode-specialty:${TENANT}:${LOWER}:Osteopatia`]);
+    });
+
+    it("the lock key is canonical whoever builds it: uppercase tenant and patient give the lowercase key", () => {
+      const UPPER_TENANT = "1111ABCD-1111-4111-8111-11111111ABCD"; // TENANT has no hex letter, so it has no uppercase form
+      expect(UPPER_TENANT).not.toBe(UPPER_TENANT.toLowerCase());
+      expect(lockOf(specialtyEpisodeLock(UPPER_TENANT, UPPER, "Osteopatia"))).toEqual([
+        `clinical-episode-specialty:${UPPER_TENANT.toLowerCase()}:${LOWER}:Osteopatia`,
+      ]);
+      expect(lockOf(specialtyEpisodeLock(UPPER_TENANT, LOWER, "Osteopatia"))).toEqual(
+        lockOf(specialtyEpisodeLock(UPPER_TENANT.toLowerCase(), LOWER, "Osteopatia")),
+      );
+      expect(lockOf(specialtyEpisodeLock(TENANT, UPPER, "Osteopatia"))).toEqual(lockOf(specialtyEpisodeLock(TENANT, LOWER, "Osteopatia")));
+    });
+
+    it("a posted EPISODE of the patient is accepted with an uppercase patient id too (the guard gets the canonical id)", async () => {
+      const { ops, inserted } = fakeTx({ selects: [[{ id: LOWER }], [guardOf]] });
+      const posted = { ...input, patientId: UPPER, episodeId: OPEN_EP };
+      expect(await codeOf(createDraftRecord(therapist, posted))).toBe("resolved");
+      expect(ops).toEqual(["insert:clinical_records"]);
+      expect(inserted[0]).toMatchObject({ patientId: LOWER, episodeId: OPEN_EP });
+    });
+
+    it("CONTROL: case is all it forgives. An uppercase id of ANOTHER patient does not reuse this one's episode", async () => {
+      const other = OTHER_PATIENT.toUpperCase();
+      const { ops, inserted } = fakeTx({ selects: [[{ id: OTHER_PATIENT }], [row], []] });
+      expect(await codeOf(createDraftRecord(therapist, { ...osteo, patientId: other }))).toBe("resolved");
+      expect(ops).toEqual(OPENED_NEW);
+      expect(inserted[1]).toMatchObject({ patientId: OTHER_PATIENT, episodeId: NEW_ID });
+      expect(JSON.stringify(inserted)).not.toContain(OPEN_EP);
+    });
+  });
+
   it("no specialty: no lock and no episode read (the /clinical/new form is untouched)", async () => {
     const { read, executed } = fakeTx({ selects: [[{ id: PATIENT }]] });
     expect(await codeOf(createDraftRecord(therapist, input))).toBe("resolved");

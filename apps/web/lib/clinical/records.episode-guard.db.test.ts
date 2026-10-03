@@ -59,6 +59,16 @@
  *     transaction commits an open episode the write reuses it. A lock on another
  *     patient or specialty does not make it wait.
  *
+ * Added after R4 on the R31 commit:
+ *   - MINOR 1: a patient id posted in UPPERCASE is the same patient. It reuses
+ *     the patient's open episode (no second one is opened) and waits on the SAME
+ *     lock as a lowercase request, proved by holding the lowercase key;
+ *   - MINOR 2: the rollback on the CREATE path. On a patient with no episode at
+ *     all the write must open one; the registo insert after it fails; no episode
+ *     row and no audit row is left. (The arm "refused AFTER the episode was
+ *     chosen" runs on a patient who already has the episode, so it is the REUSE
+ *     path and never reaches the episode insert.)
+ *
  * Runs in `.github/workflows/db-tests.yml` (it globs `.db.test.ts` in this
  * workspace) and self-skips without DATABASE_URL, like every suite beside it.
  * Invented names only.
@@ -103,6 +113,7 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
   const patientD = randomUUID(); // "another patient", holding an open Osteopatia episode
   const patientE = randomUUID(); // the at-once arm: no episode at all
   const patientF = randomUUID(); // the lock arm: no episode at all
+  const patientG = randomUUID(); // the rollback arm: no episode at all, so "+ Avaliação" must OPEN one
   const epCClosed = randomUUID(); // C: a CLOSED app episode of the specialty
   const epCOther = randomUUID(); // C: an open app episode of the OTHER specialty
   const epCPlain = randomUUID(); // C: an open app episode naming no specialty
@@ -178,6 +189,7 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
       [patientD, tenant, "Zzz Guarda Episodio Teste D", therapist],
       [patientE, tenant, "Zzz Guarda Episodio Teste E", therapist],
       [patientF, tenant, "Zzz Guarda Episodio Teste F", therapist],
+      [patientG, tenant, "Zzz Guarda Episodio Teste G", therapist],
     ] as const) {
       await db.execute(
         raw`insert into patients (id, tenant_id, full_name, created_by) values (${id}::uuid, ${t}::uuid, ${name}, ${by}::uuid)`,
@@ -758,5 +770,110 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     expect(await episodeOf(filed.id)).toBe(held);
     expect(await countEpisodes(patientF)).toBe(episodesF + 1); // the holder's, and no second one
     expect(await openAppOsteopatiaOf(patientF)).toEqual([held]);
+  }, 60_000);
+  // ------------------------------------------------------------------ R4 on the R31 commit
+
+  it("R31 MINOR 2: on the CREATE path, a registo refused after the NEW episode was inserted rolls the episode back", async () => {
+    // Control: G has no episode at all, so this write cannot reuse: it must open one.
+    expect(await countEpisodes(patientG)).toBe(0);
+    expect(await records.mayFileRegistoFor(ctx(therapist, "therapist"), patientG)).toBe(true);
+    const missingTemplate = randomUUID(); // no such form_templates row: the registo INSERT fails on its foreign key
+    expect(await rows(raw`select 1 from form_templates where id = ${missingTemplate}::uuid`)).toHaveLength(0);
+    const [recs, audits] = [await countRecords(), await countAudit()];
+
+    let failure: unknown = null;
+    try {
+      await records.createDraftRecord(ctx(therapist, "therapist"), {
+        patientId: patientG,
+        formTemplateId: missingTemplate,
+        newEpisodeSpecialty: "Osteopatia",
+      });
+    } catch (e) {
+      failure = e;
+    }
+    // It failed AT THE REGISTO INSERT, which comes after the episode insert: a
+    // foreign key violation (23503) on clinical_records' template, not a refusal
+    // made before anything was written.
+    expect(failure).not.toBeNull();
+    const text = [failure, (failure as { cause?: unknown }).cause]
+      .map((e) => `${(e as { code?: string })?.code ?? ""} ${(e as Error)?.message ?? ""} ${(e as { constraint_name?: string })?.constraint_name ?? ""}`)
+      .join(" ");
+    expect(text).toContain("23503");
+    expect(text).toContain("clinical_records");
+
+    // Nothing is left: no episode (open or otherwise), no registo, no audit row.
+    expect(await countEpisodes(patientG)).toBe(0);
+    expect(await rows(raw`select 1 from clinical_records where patient_id = ${patientG}::uuid`)).toHaveLength(0);
+    expect(await countRecords()).toBe(recs);
+    expect(await countAudit()).toBe(audits);
+
+    // CONTROL: the same call with a template that exists DOES open the episode,
+    // so the arm above really was on the path that inserts one.
+    const { id, episodeId } = await osteopatiaFor(ctx(therapist, "therapist"), patientG);
+    expect(await countEpisodes(patientG)).toBe(1);
+    expect(await openAppOsteopatiaOf(patientG)).toEqual([episodeId]);
+    expect(await episodeOf(id)).toBe(episodeId);
+    const created = await rows<{ action: string }>(
+      raw`select action from audit_log where entity_id in (${id}::uuid, ${episodeId}::uuid) order by action`,
+    );
+    expect(created.map((a) => a.action)).toEqual(["clinical_episode.create", "clinical_record.create"]);
+  });
+
+  it("R31 MINOR 1: a patient id posted in UPPERCASE reuses the open episode and waits on the same lock", async () => {
+    const who = ctx(therapist, "therapist");
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    // F has exactly one open app Osteopatia episode (the lock arm's). Its id in
+    // uppercase is a different TEXT and the same uuid.
+    const [open] = await openAppOsteopatiaOf(patientF);
+    expect(open).toBeTruthy();
+    expect(await openAppOsteopatiaOf(patientF)).toHaveLength(1);
+    const upper = patientF.toUpperCase();
+    expect(upper).not.toBe(patientF);
+    expect(await rows(raw`select 1 from patients where id = ${upper}::uuid and id = ${patientF}::uuid`)).toHaveLength(1);
+
+    // REUSE: no second episode, for the therapist and the owner.
+    const episodesF = await countEpisodes(patientF);
+    for (const asWho of [who, ctx(owner, "owner")]) {
+      const { id, episodeId } = await osteopatiaFor(asWho, upper);
+      expect(episodeId).toBe(open);
+      expect(await episodeOf(id)).toBe(open);
+    }
+    expect(await countEpisodes(patientF)).toBe(episodesF);
+    expect(await openAppOsteopatiaOf(patientF)).toEqual([open]);
+
+    // THE SAME LOCK: held here under the LOWERCASE key, the uppercase request waits.
+    let settled = false;
+    let pending: Promise<{ id: string; episodeId: string | null }> | null = null;
+    await db.transaction(async (tx) => {
+      await tx.execute(episodes_.specialtyEpisodeLock(tenant, patientF, "Osteopatia"));
+      pending = osteopatiaFor(who, upper);
+      pending.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await sleep(750);
+      expect(settled, "the uppercase request did not wait for the lowercase lock").toBe(false);
+    });
+    const filed = await pending!;
+    expect(filed.episodeId).toBe(open);
+    expect(await countEpisodes(patientF)).toBe(episodesF);
+
+    // And on a patient with NO open episode of the specialty: uppercase and
+    // lowercase requests at once still open ONE (Fisioterapia on G, which has none).
+    expect(
+      await rows(raw`select 1 from clinical_episodes where patient_id = ${patientG}::uuid and title like 'Fisioterapia%'`),
+    ).toHaveLength(0);
+    const fisio = (patient: string) =>
+      records.createDraftRecord(who, { patientId: patient, formTemplateId: template, newEpisodeSpecialty: "Fisioterapia" });
+    const before = await countEpisodes(patientG);
+    await Promise.all(Array.from({ length: 5 }, () => records.mayFileRegistoFor(who, patientG)));
+    const mixed = await Promise.all([
+      fisio(patientG.toUpperCase()),
+      fisio(patientG),
+      fisio(patientG.toUpperCase()),
+      fisio(patientG),
+    ]);
+    expect(new Set(mixed.map((f) => f.episodeId)).size).toBe(1);
+    expect(await countEpisodes(patientG)).toBe(before + 1);
   }, 60_000);
 });

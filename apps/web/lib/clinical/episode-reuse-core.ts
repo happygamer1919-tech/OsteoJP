@@ -29,6 +29,14 @@
  * the order the /clinical/new picker already lists episodes in. The others are
  * left exactly as they are.
  *
+ * IDS ARE COMPARED AS UUIDS, NOT AS TEXT. Postgres reads a uuid in either case
+ * and prints it in lowercase, so the rows always carry lowercase ids, while an
+ * id that came from a request can be in uppercase and still name the same
+ * patient (the patient read accepts it). Compared as text it would match no
+ * episode, and a second one would be opened. Every id is therefore put in its
+ * canonical form (`canonicalId`) before it is compared here or put in the lock
+ * key (episodes.ts `specialtyEpisodeLock`).
+ *
  * Null means "none: open a new one".
  */
 import { episodeSpecialtyOf, type EpisodeSpecialty } from "./episode-title";
@@ -45,14 +53,20 @@ export type ReuseCandidate = {
   imported: boolean;
 };
 
+/** A uuid's canonical text: lowercase, the form Postgres prints. */
+export function canonicalId(id: string): string {
+  return id.toLowerCase();
+}
+
 export function pickEpisodeToReuse(
   candidates: readonly ReuseCandidate[],
   want: { tenantId: string; patientId: string; specialty: EpisodeSpecialty },
 ): string | null {
+  const [tenantId, patientId] = [canonicalId(want.tenantId), canonicalId(want.patientId)];
   const fit = candidates.filter(
     (e) =>
-      e.tenantId === want.tenantId &&
-      e.patientId === want.patientId &&
+      canonicalId(e.tenantId) === tenantId &&
+      canonicalId(e.patientId) === patientId &&
       e.status === "open" &&
       !e.imported &&
       episodeSpecialtyOf(e.title) === want.specialty,
@@ -60,7 +74,8 @@ export function pickEpisodeToReuse(
   fit.sort((a, b) => {
     const byOpened = b.openedAt.getTime() - a.openedAt.getTime();
     if (byOpened !== 0) return byOpened;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    const [x, y] = [canonicalId(a.id), canonicalId(b.id)];
+    return x < y ? -1 : x > y ? 1 : 0;
   });
   return fit[0]?.id ?? null;
 }

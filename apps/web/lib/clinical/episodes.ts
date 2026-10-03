@@ -15,7 +15,7 @@ import { therapistPatientScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
 import { episodeSpecialtyOf, normalizeEpisodeTitle, type EpisodeSpecialty } from "./episode-title";
-import { pickEpisodeToReuse } from "./episode-reuse-core";
+import { canonicalId, pickEpisodeToReuse } from "./episode-reuse-core";
 import type { Localized } from "./form-template";
 import type { RecordStatus } from "./records";
 
@@ -137,9 +137,14 @@ export async function insertOpenEpisode(
  * pg_advisory_xact_lock, not pg_advisory_lock: it is released at commit or
  * rollback, so an error path cannot leave it held on a pooled connection (the
  * same choice, for the same reason, as scheduling/slot-lock.ts).
+ *
+ * THE KEY IS BUILT FROM THE IDS' CANONICAL FORM, never from the text a request
+ * carried: the key is hashed as text, so the same patient posted in uppercase
+ * would otherwise take a DIFFERENT lock and not wait for a request that named
+ * it in lowercase.
  */
 export function specialtyEpisodeLock(tenantId: string, patientId: string, specialty: EpisodeSpecialty): SQL {
-  const payload = `clinical-episode-specialty:${tenantId}:${patientId}:${specialty}`;
+  const payload = `clinical-episode-specialty:${canonicalId(tenantId)}:${canonicalId(patientId)}:${specialty}`;
   return sql`select pg_advisory_xact_lock(hashtextextended(${payload}, 0))`;
 }
 

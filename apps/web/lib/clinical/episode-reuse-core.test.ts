@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickEpisodeToReuse, type ReuseCandidate } from "./episode-reuse-core";
+import { canonicalId, pickEpisodeToReuse, type ReuseCandidate } from "./episode-reuse-core";
 
 // EPI-01b, strategy ruling R31 (Q7): "+ Avaliação" on an imported group "reuses
 // the patient's open app episode of that specialty and creates one only when
@@ -79,6 +79,53 @@ describe("pickEpisodeToReuse (R31): the patient's open app episode of the specia
     ];
     expect(pickEpisodeToReuse(all, want)).toBe(RIGHT);
     expect(pickEpisodeToReuse([...all].reverse(), want)).toBe(RIGHT);
+  });
+});
+
+describe("pickEpisodeToReuse (R31): ids are compared as uuids, not as text", () => {
+  // Postgres reads a uuid in either case and prints lowercase. An id that came
+  // from a request in UPPERCASE names the same patient; compared as text it
+  // would match no episode and a second one would be opened.
+  const UPPER_PATIENT = "4444ABCD-4444-4444-8444-44444444ABCD";
+  const UPPER_TENANT = "1111ABCD-1111-4111-8111-11111111ABCD";
+  const row = episode({ patientId: UPPER_PATIENT.toLowerCase(), tenantId: UPPER_TENANT.toLowerCase() });
+
+  it("canonicalId is the lowercase form, and leaves a lowercase id as it is", () => {
+    expect(canonicalId(UPPER_PATIENT)).toBe("4444abcd-4444-4444-8444-44444444abcd");
+    expect(canonicalId(PATIENT)).toBe(PATIENT);
+  });
+
+  it("an UPPERCASE patient id reuses the patient's open episode", () => {
+    // Control: the two differ as text, so a text comparison would answer null.
+    expect(UPPER_PATIENT).not.toBe(row.patientId);
+    expect(pickEpisodeToReuse([row], { tenantId: row.tenantId, patientId: UPPER_PATIENT, specialty: "Osteopatia" })).toBe(row.id);
+  });
+
+  it("an UPPERCASE tenant id does too", () => {
+    expect(pickEpisodeToReuse([row], { tenantId: UPPER_TENANT, patientId: row.patientId, specialty: "Osteopatia" })).toBe(row.id);
+  });
+
+  it("uppercase on the ROW's side is the same answer", () => {
+    const upperRow = { ...row, patientId: UPPER_PATIENT, tenantId: UPPER_TENANT };
+    expect(pickEpisodeToReuse([upperRow], { tenantId: row.tenantId, patientId: row.patientId, specialty: "Osteopatia" })).toBe(row.id);
+  });
+
+  it("CONTROL: case is all it forgives. Another patient's or tenant's id, in uppercase, is still not reused", () => {
+    expect(
+      pickEpisodeToReuse([row], { tenantId: row.tenantId, patientId: OTHER_PATIENT.toUpperCase(), specialty: "Osteopatia" }),
+    ).toBeNull();
+    expect(
+      pickEpisodeToReuse([row], { tenantId: OTHER_TENANT.toUpperCase(), patientId: UPPER_PATIENT, specialty: "Osteopatia" }),
+    ).toBeNull();
+  });
+
+  it("the id tie-break does not depend on case either", () => {
+    // As text "…AC" sorts before "…ab" (uppercase letters come first); as uuids ab < ac.
+    const a = episode({ id: "77777777-7777-4777-8777-7777777777ab" });
+    const b = episode({ id: "77777777-7777-4777-8777-7777777777AC" });
+    expect(b.id < a.id).toBe(true);
+    expect(pickEpisodeToReuse([a, b], want)).toBe(a.id);
+    expect(pickEpisodeToReuse([b, a], want)).toBe(a.id);
   });
 });
 

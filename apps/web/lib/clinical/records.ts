@@ -652,34 +652,41 @@ export async function createDraftRecord(
   if (specialty !== null && (input.episodeId || !isEpisodeSpecialty(specialty))) {
     throw new ClinicalError("invalid");
   }
+  // The patient id in its canonical (lowercase) form, ONCE, for everything
+  // below. Postgres reads a uuid in either case, so an id posted in uppercase
+  // names the same patient and passes the patient test; but the episode guard,
+  // R31's choice of episode and its lock compare or hash ids as TEXT, and the
+  // rows they read carry lowercase. Left as posted, an uppercase id would match
+  // no open episode (a second one would be opened) and take a lock of its own.
+  const patientId = input.patientId.toLowerCase();
   const ip = await clientIp();
   return runScoped(ctx, async (tx) => {
     // A therapist files a registo only for a patient they treat or created
     // (the permission matrix; 0097's INSERT policy once applied). Refuse any
     // other patient here, cleanly. Before 0097 the INSERT would succeed (0045
     // admits any patient); from 0097 it would be a raw 42501.
-    await assertTherapistMayFileFor(tx, ctx, input.patientId);
+    await assertTherapistMayFileFor(tx, ctx, patientId);
     let episodeId = input.episodeId || null;
     if (episodeId) {
       // Q9, the app half: the episode is this patient's, in this tenant, and
       // (a new registo) OPEN: never a closed or imported one.
-      await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId, { requireOpen: true });
+      await assertEpisodeIsThePatients(tx, ctx, episodeId, patientId, { requireOpen: true });
     } else if (specialty !== null) {
       // Q7, ruling R31: the patient's open app episode of this specialty, when
       // there is one. Decided HERE, under a lock held to the end of this
       // transaction, so two clicks (or a page that is stale) file in ONE episode.
-      episodeId = await findOpenEpisodeOfSpecialty(tx, ctx, input.patientId, specialty);
+      episodeId = await findOpenEpisodeOfSpecialty(tx, ctx, patientId, specialty);
       if (episodeId) {
         // The reused episode is held to Q9's app half like a posted one: this
         // patient's, in this tenant, and open.
-        await assertEpisodeIsThePatients(tx, ctx, episodeId, input.patientId, { requireOpen: true });
+        await assertEpisodeIsThePatients(tx, ctx, episodeId, patientId, { requireOpen: true });
       } else {
         // None: a new open episode, through the one episode insert, in THIS
         // transaction: if the registo below is refused, the episode is not left.
         ({ id: episodeId } = await insertOpenEpisode(
           tx,
           ctx,
-          { patientId: input.patientId, title: defaultEpisodeTitle(specialty, new Date()) },
+          { patientId, title: defaultEpisodeTitle(specialty, new Date()) },
           ip,
         ));
       }
@@ -688,7 +695,7 @@ export async function createDraftRecord(
       .insert(clinicalRecords)
       .values({
         tenantId: ctx.tenantId,
-        patientId: input.patientId,
+        patientId,
         formTemplateId: input.formTemplateId,
         episodeId,
         appointmentId: input.appointmentId ?? null,
@@ -704,7 +711,7 @@ export async function createDraftRecord(
       action: "clinical_record.create",
       entityType: "clinical_record",
       entityId: id,
-      metadata: { templateId: input.formTemplateId, patientId: input.patientId, episodeId },
+      metadata: { templateId: input.formTemplateId, patientId, episodeId },
       ip,
     });
     return { id, episodeId };
