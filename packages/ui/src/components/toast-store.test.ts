@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -73,6 +75,7 @@ describe("toast lifecycle: onClose runs once, whichever way a toast leaves", () 
     const closed: number[] = [];
     const ids = [1, 2, 3, 4].map(() => {
       const id: number = store.open({ onClose: () => closed.push(id) }, null);
+      store.entered(id);
       return id;
     });
     const onScreen = ids.reduce<number[]>((stack, id) => appendToStack(stack, id), []);
@@ -88,6 +91,8 @@ describe("toast lifecycle: onClose runs once, whichever way a toast leaves", () 
     const second = vi.fn();
     const a = store.open({ onClose: first }, null);
     const b = store.open({ onClose: second }, null);
+    store.entered(a);
+    store.entered(b);
     // The render holding `a` commits before the one holding `b`.
     store.committed([a]);
     expect(second).not.toHaveBeenCalled();
@@ -95,6 +100,113 @@ describe("toast lifecycle: onClose runs once, whichever way a toast leaves", () 
     store.committed([a, b]);
     expect(first).not.toHaveBeenCalled();
     expect(second).not.toHaveBeenCalled();
+  });
+
+  /**
+   * BOOK-CONFIRM, CI 2026-10-04 (PR #1536, e2e/book-confirm.spec.ts, the guest
+   * booking for a patient with neither contact, failed 3 of 3). The drawer's
+   * save raises TWO toasts in one tick: the approver's notice, then "Marcação
+   * guardada". Toast.tsx, with a drawer open and no toast on screen:
+   *
+   *   notice  raised: the region must MOVE into the drawer, so its add waits a frame
+   *   saved   raised: the region is already there, so it is added at once
+   *   render commits holding [saved]
+   *   one frame later the notice's add runs: `if (!store.isLive(id)) return;`
+   *
+   * The server action had returned `"notice":"patient_no_email"` (read from the
+   * CI trace); the page showed only "Marcação guardada". These arms replay that
+   * sequence against the store, which is where the notice was lost.
+   */
+  it("THE DRAWER'S TWO TOASTS: a toast raised first and added late is not released by the commit of the one added before it", () => {
+    const store = createToastLifecycle<Opts, string>();
+    const noticeClosed = vi.fn();
+    const savedClosed = vi.fn();
+    const notice = store.open({ onClose: noticeClosed, label: "notice" }, "drawer"); // its add is deferred
+    const saved = store.open({ onClose: savedClosed, label: "saved" }, "drawer");
+    store.entered(saved); // added at once
+    store.committed([saved]);
+    // The notice is still on its way: Toast.tsx's deferred add must find it live.
+    expect(store.isLive(notice)).toBe(true);
+    expect(noticeClosed).not.toHaveBeenCalled();
+
+    // One frame later it enters, behind the toast raised after it.
+    store.entered(notice);
+    store.committed([saved, notice]);
+    expect(store.isLive(notice)).toBe(true);
+    expect(store.isLive(saved)).toBe(true);
+    expect(noticeClosed).not.toHaveBeenCalled();
+    expect(savedClosed).not.toHaveBeenCalled();
+    // Both origins still count while both are up.
+    expect([...store.origins()]).toEqual(["drawer", "drawer"]);
+  });
+
+  it("a toast that has not entered is never released by a commit, however many pass", () => {
+    const store = createToastLifecycle<Opts, string>();
+    const onClose = vi.fn();
+    const waiting = store.open({ onClose }, "drawer");
+    const others = [1, 2, 3, 4].map(() => {
+      const id = store.open({}, null);
+      store.entered(id);
+      return id;
+    });
+    store.committed(others.slice(1));
+    store.committed([]);
+    expect(store.isLive(waiting)).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    // Its own exits still work: closed before it was ever added.
+    store.release(waiting);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("a late toast that entered and was then pushed out of the stack is released, once", () => {
+    const store = createToastLifecycle<Opts, string>();
+    const onClose = vi.fn();
+    const late = store.open({ onClose }, "drawer");
+    const first = store.open({}, "drawer");
+    store.entered(first);
+    store.committed([first]);
+    store.entered(late);
+    store.committed([first, late]);
+    // Three newer toasts push both out.
+    const newer = [1, 2, 3].map(() => {
+      const id = store.open({}, null);
+      store.entered(id);
+      return id;
+    });
+    store.committed(newer);
+    store.committed(newer);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(store.isLive(late)).toBe(false);
+    expect(store.isLive(first)).toBe(false);
+  });
+
+  it("entered is idempotent and ignores a toast that has left", () => {
+    const store = createToastLifecycle<Opts, string>();
+    const a = store.open({}, null);
+    const b = store.open({}, null);
+    store.entered(a);
+    store.entered(a);
+    store.entered(b);
+    // `a` entered once, before `b`: the commit holding only `b` has reached it.
+    store.committed([b]);
+    expect(store.isLive(a)).toBe(false);
+    expect(() => store.entered(a)).not.toThrow();
+    expect(store.isLive(a)).toBe(false);
+  });
+
+  it("Toast.tsx announces the entry at the moment it adds the toast, after the liveness check (source arm)", () => {
+    // Toast.tsx needs a DOM, which this package's unit tests do not have, so
+    // the one call that ties it to the rule above is pinned in its source.
+    // Without it a toast pushed out before any render held it would never be
+    // released, and its onClose would never run.
+    const src = readFileSync(join(__dirname, "Toast.tsx"), "utf8");
+    const add = src.slice(src.indexOf("const add = () => {"), src.indexOf("const el = hostRef.current;"));
+    const live = add.indexOf("if (!store.isLive(id)) return;");
+    const entered = add.indexOf("store.entered(id);");
+    const set = add.indexOf("setToasts(");
+    expect(live).toBeGreaterThan(-1);
+    expect(entered).toBeGreaterThan(live);
+    expect(set).toBeGreaterThan(entered);
   });
 
   it("a toast that left the screen after being on it is released by the next commit, once", () => {

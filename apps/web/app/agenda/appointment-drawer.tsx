@@ -1309,6 +1309,12 @@ export function AppointmentDrawer({
   // back when an approval (a pedido accepted here, or a guest request booked
   // from its deep link) is for a patient nothing can be sent to. A toast,
   // because the drawer closes on success and the toast outlives it.
+  //
+  // IT IS RAISED IN THE SAME TICK AS `succeed()`'s "Marcação guardada", and it
+  // is the FIRST toast raised inside this drawer, so the shared Toast adds it a
+  // frame late (its region has to move into the drawer first). The toast store
+  // used to drop exactly that toast; packages/ui toast-store.ts (`entered`)
+  // and its test keep both. e2e/book-confirm.spec.ts reads it in a browser.
   function noticeToast(notice: ApprovalNotice | undefined) {
     if (!notice) return;
     toast({ tone: "info", message: approvalNoticeMessage(notice), duration: 15_000 });
