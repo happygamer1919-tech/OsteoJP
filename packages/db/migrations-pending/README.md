@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0100_guest_request_email.sql` | `0100` (the MAINTAIN revoke, #1520, applied 2026-10-03) | 2026-10-04, the optional email on a public booking request (strategy S-1004-A R40), sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b`; becomes `0101` (S-1004-A R41: "0101 = public-form email column (owner's top priority, small). SAT-01 becomes 0102.") | branch `db/0101-guest-request-email`, no PR yet. Its promotion is preceded by one GATE-CHANGE, to `scripts/maintain-revoke-0100.test.mjs` (`docs/migration-apply-0101.md`, "THE ORDER OF PULL REQUESTS"). The drizzle schema column is NOT on this branch: it travels with the application PR, after the apply (the same document, section 3) |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
