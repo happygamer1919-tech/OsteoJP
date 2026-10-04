@@ -13,6 +13,7 @@ vi.mock("server-only", () => ({}));
 
 import type { RequestContext } from "@osteojp/auth";
 import {
+  GUEST_REQUEST_BOOKED_ACTION,
   acceptedGuestRequestTarget,
   guestLinkOccurrence,
   linkGuestRequestTx,
@@ -45,7 +46,9 @@ let updateRows: { id: string }[] = [];
 let sets: Record<string, unknown>[] = [];
 let selects = 0;
 let savepoints = 0;
-let failIn: "select" | "update" | null = null;
+let failIn: "select" | "update" | "audit" | null = null;
+/** Every audit row the link wrote. */
+let audits: Record<string, unknown>[] = [];
 
 function fakeTx() {
   const sp = {
@@ -61,6 +64,12 @@ function fakeTx() {
       };
       return chain;
     },
+    insert: () => ({
+      values: async (v: Record<string, unknown>) => {
+        if (failIn === "audit") throw new Error("audit insert refused");
+        audits.push(v);
+      },
+    }),
     update: () => ({
       set: (v: Record<string, unknown>) => ({
         where: () => ({
@@ -94,6 +103,7 @@ beforeEach(() => {
   selectRows = [open];
   updateRows = [{ id: REQUEST }];
   sets = [];
+  audits = [];
   selects = 0;
   savepoints = 0;
   failIn = null;
@@ -102,7 +112,39 @@ beforeEach(() => {
 describe("linkGuestRequestTx: the link is written", () => {
   it("an open request converted to this patient: linked, and the status becomes confirmed", async () => {
     expect(await link()).toBe(true);
-    expect(sets).toEqual([{ convertedAppointmentId: APPT, status: "confirmed" }]);
+    expect(sets).toHaveLength(1);
+    expect(sets[0]).toMatchObject({ convertedAppointmentId: APPT, status: "confirmed" });
+  });
+
+  it("the same write records who finished with the request and when", async () => {
+    await link();
+    // Both columns, and nothing else beyond the link and the status.
+    expect(Object.keys(sets[0]!).sort()).toEqual([
+      "convertedAppointmentId",
+      "handledAt",
+      "handledBy",
+      "status",
+    ]);
+  });
+
+  it("writes ONE audit row for the link: the actor, the patient as the entity, ids only", async () => {
+    await link();
+    expect(audits).toEqual([
+      {
+        tenantId: "tenant-A",
+        actorUserId: "user-1",
+        action: "patient.guest_request_booked",
+        entityType: "patient",
+        entityId: PATIENT,
+        metadata: { guestRequestId: REQUEST, appointmentId: APPT },
+      },
+    ]);
+    expect(GUEST_REQUEST_BOOKED_ACTION).toBe("patient.guest_request_booked");
+  });
+
+  it("the audit row is in the SAME savepoint as the link", async () => {
+    await link();
+    expect(savepoints).toBe(1);
   });
 
   it("inside a SAVEPOINT, so a failure here cannot abort the booking around it", async () => {
@@ -114,9 +156,13 @@ describe("linkGuestRequestTx: the link is written", () => {
     expect(await link({ locationScope: ["loc-lv", "loc-cb"] })).toBe(true);
   });
 
-  it("the write never touches handled_at: a dismiss is not a condition and not a consequence", async () => {
-    await link();
-    expect(Object.keys(sets[0]!).sort()).toEqual(["convertedAppointmentId", "status"]);
+  it("an audit row that cannot be written takes the link down with it: false, and nothing thrown", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failIn = "audit";
+    await expect(link()).resolves.toBe(false);
+    expect(audits).toEqual([]);
+    expect(spy.mock.calls.flat().join(" ")).toContain("guest request link failed");
+    spy.mockRestore();
   });
 });
 
@@ -166,9 +212,23 @@ describe("linkGuestRequestTx: a forged or stale id changes nothing and throws no
     expect(sets).toEqual([]);
   });
 
-  it("the conditional write updates ZERO rows (another booking linked it first): false", async () => {
+  it("the conditional write updates ZERO rows (another booking linked it first): false, and NO audit row", async () => {
     updateRows = [];
     expect(await link()).toBe(false);
+    expect(audits).toEqual([]);
+  });
+
+  it("no refusal above writes an audit row: a link that did not happen leaves no trail claiming it did", async () => {
+    for (const bad of [
+      [] as RequestRow[],
+      [{ ...open, status: "declined" }],
+      [{ ...open, convertedPatientId: null }],
+      [{ ...open, convertedAppointmentId: "55555555-5555-4555-8555-555555555555" }],
+    ]) {
+      selectRows = bad;
+      expect(await link()).toBe(false);
+    }
+    expect(audits).toEqual([]);
   });
 
   it.each(["select", "update"] as const)(

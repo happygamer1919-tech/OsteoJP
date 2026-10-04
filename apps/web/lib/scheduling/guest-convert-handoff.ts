@@ -14,6 +14,8 @@
  * is ASKED and where they LAND, which is the product, not the guard.
  */
 
+import { lisbonParts } from "./time";
+
 /** What pressing the convert button on a queue row should do. */
 export type ConvertPress =
   | { kind: "convert_new" }
@@ -86,6 +88,58 @@ export function bookingDeepLink(
     ...(guestRequestId ? { [GUEST_REQUEST_PARAM]: guestRequestId } : {}),
   });
   return `/agenda?${params.toString()}`;
+}
+
+/**
+ * What a guest request prefills the booking drawer with: the service and the
+ * clinic it named, and the DATE it asked for, in Lisbon.
+ *
+ * ONE FUNCTION, TWO CALLERS, and that is the point. `convertGuestRequest`
+ * returns this for the redirect it causes, and the queue builds the same link
+ * again for a request that was converted and not booked at once
+ * (`guestRequestBookingLink`). Two places computing "the date the guest asked
+ * for" would be two places that could disagree about a request at 23:30 UTC.
+ *
+ * NOT THE TIME: under the GUEST-04 Option A ruling the stored window encodes a
+ * date and a PERIOD, and the start instant is an encoding artefact rather than
+ * a time anybody chose.
+ */
+export function guestRequestPrefill(request: {
+  serviceId: string;
+  locationId: string;
+  requestedStartsAt: Date;
+}): { serviceId: string; locationId: string; date: string } {
+  return {
+    serviceId: request.serviceId,
+    locationId: request.locationId,
+    date: lisbonParts(request.requestedStartsAt).date,
+  };
+}
+
+/**
+ * The booking deep link for a request that is ALREADY CONVERTED, built from
+ * the row's own data, or null when it is not converted (there is nobody to
+ * book for yet).
+ *
+ * WHY IT EXISTS. The redirect after a convert was the only place the link was
+ * ever built. A drawer closed, a page refreshed or a booking that failed left
+ * a converted request whose row offered only "Dispensar": reception could book
+ * the patient by hand, but never in a way that LINKED the booking to the
+ * request, so the patient got no confirmation and the request needed a
+ * dismiss. The row now offers the same link again ("Marcar consulta").
+ *
+ * EXACTLY the link the redirect makes: the same builder, the same prefill
+ * function, the same request id.
+ */
+export function guestRequestBookingLink(request: {
+  id: string;
+  convertedPatientId: string | null;
+  serviceId: string;
+  locationId: string;
+  requestedStartsAt: Date;
+}): string | null {
+  if (!request.convertedPatientId) return null;
+  return bookingDeepLink(request.convertedPatientId, guestRequestPrefill(request), request.id);
 }
 
 /** The deep link's name for the guest request id. Read by agenda/page.tsx. */

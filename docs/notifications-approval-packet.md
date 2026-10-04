@@ -549,13 +549,29 @@ OsteoJP - Recebemos a sua mensagem. A recepcao vai confirmar consigo.
 **O que muda.** Quando a recepcao aprova um pedido de marcacao feito online, o
 doente passa a receber **uma so** confirmacao: o email da seccao 15, se tiver
 email na ficha. Se nao tiver email e tiver telemovel, recebe em vez dele o SMS da
-seccao 16 (`booking_approved.sms`). Se nao tiver nem um nem outro, nao recebe
-nada, e **so nesse caso** a pessoa que aprovou o pedido ve o aviso "Paciente sem
-email: avise por telefone" (regra de 2026-10-04: o aviso aparece apenas quando
-nao existe nem email nem um numero para o qual se possa enviar SMS; ate essa
-data aparecia sempre que nao havia email). Estas mensagens **substituem** as das
+seccao 16 (`booking_approved.sms`). Estas mensagens **substituem** as das
 seccoes 1 e 2 no momento da aprovacao do pedido; uma remarcacao continua a
 enviar as das seccoes 1 e 2.
+
+**Quem aprova e avisado sempre que nenhuma mensagem pode sair** por um motivo
+que ja se conhece no momento da aprovacao (regra de 2026-10-04, decisao da
+coordenacao; ate essa data o aviso olhava apenas para o formato do numero):
+
+1. O doente nao tem email **e** o SMS nao pode ser enviado: nao tem um
+   telemovel utilizavel (sem numero, numero invalido ou telefone fixo), **ou** a
+   clinica tem os SMS desligados, **ou** o doente tem os SMS desligados na sua
+   ficha. Aviso: "Paciente sem email: avise por telefone".
+2. O local da consulta nao tem morada ou nao tem telefone (nenhum canal envia a
+   partir de um local assim). Aviso: "Confirmação não enviada: o local não tem
+   morada ou telefone. Avise o paciente por telefone." Em ingles: "Confirmation
+   not sent: the location has no address or phone. Notify the patient by phone."
+
+Quando os dois motivos se aplicam, aparece o primeiro, que e tambem o motivo que
+fica registado. O aviso e o envio usam as mesmas condicoes, no mesmo codigo
+(`lib/reminders/book-confirm-plan.ts`). Um motivo que so se conhece no momento do
+envio **nao** gera aviso: um nome de local com acentos ou demasiado longo para o
+SMS (fica registado como `body_refused`), uma falha do fornecedor, ou o envio
+real desligado.
 
 **Os pedidos do formulario publico tambem contam** (S-1004-A, R40). Quem pede
 uma marcacao no site sem conta fica na fila da recepcao; a recepcao converte o

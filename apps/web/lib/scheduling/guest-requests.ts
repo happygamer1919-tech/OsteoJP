@@ -1,4 +1,5 @@
 import "server-only";
+import { guestRequestBookingLink } from "./guest-convert-handoff";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { guestBookingRequests, locations, patients, services } from "@osteojp/db";
@@ -69,6 +70,13 @@ export type GuestRequestView = {
    * from that link - made by hand, or not made - and it still wants a dismiss.
    */
   converted: boolean;
+  /**
+   * The booking deep link for a CONVERTED request, or null for one that is not
+   * converted. The same link the convert redirects to, built from this row
+   * (lib/scheduling/guest-convert-handoff.ts), so a request that was converted
+   * and not booked at once can still be booked in a way that links it.
+   */
+  bookingLink: string | null;
 };
 
 /**
@@ -155,6 +163,9 @@ export async function listPendingGuestRequests(
         requestedEndsAt: guestBookingRequests.requestedEndsAt,
         createdAt: guestBookingRequests.createdAt,
         convertedPatientId: guestBookingRequests.convertedPatientId,
+        // What the row's own booking link needs (guestRequestBookingLink).
+        serviceId: guestBookingRequests.serviceId,
+        locationId: guestBookingRequests.locationId,
         // COUNTED IN THE SAME QUERY, as a correlated subquery, so the flag and
         // the row come from ONE snapshot. Two round trips could report a match
         // for a patient created between them, or miss one deleted between them.
@@ -197,6 +208,7 @@ export async function listPendingGuestRequests(
       createdAt: r.createdAt,
       possiblePatientMatches: Number(r.matches ?? 0),
       converted: r.convertedPatientId !== null,
+      bookingLink: guestRequestBookingLink(r),
     }));
   });
 }

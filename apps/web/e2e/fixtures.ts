@@ -603,6 +603,15 @@ export const BOOK_CONFIRM_PATIENTS = {
     phone: "272000105",
     listed: true,
   },
+  locationBare: {
+    id: "00000000-0000-4000-8000-0000000bc006",
+    // Reachable on both channels: the only thing in the way is the LOCATION,
+    // which the spec strips of its address for this one acceptance.
+    name: "Ines Semmorada Ficticia",
+    email: "ines.ficticia@example.test",
+    phone: "912000106",
+    listed: true,
+  },
 } as const;
 
 /** The canary list the dev server runs with: the LISTED fixture patients. */

@@ -1,5 +1,7 @@
 "use client";
 
+import { approvalNoticeMessage } from "@/app/notificacoes/approval-notices";
+import type { ApprovalNotice } from "@/lib/scheduling/book-confirm-notice";
 import {
   Banner,
   Button,
@@ -1307,9 +1309,9 @@ export function AppointmentDrawer({
   // back when an approval (a pedido accepted here, or a guest request booked
   // from its deep link) is for a patient nothing can be sent to. A toast,
   // because the drawer closes on success and the toast outlives it.
-  function noticeToast(notice: "patient_no_email" | undefined) {
-    if (notice !== "patient_no_email") return;
-    toast({ tone: "info", message: s["requests.notice.patientNoEmail"], duration: 15_000 });
+  function noticeToast(notice: ApprovalNotice | undefined) {
+    if (!notice) return;
+    toast({ tone: "info", message: approvalNoticeMessage(notice), duration: 15_000 });
   }
 
   // Password-gated hard delete (W3-06). The password is verified SERVER-side;

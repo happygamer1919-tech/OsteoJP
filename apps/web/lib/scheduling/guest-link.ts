@@ -1,8 +1,9 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { guestBookingRequests, type DbTx } from "@osteojp/db";
 import type { RequestContext } from "@osteojp/auth";
 
 import { isLocationBookable } from "@/lib/auth/viewer-locations";
+import { writeAudit } from "@/lib/patients/audit";
 import type { ReminderEnqueueTarget } from "./reminders";
 
 // BOOK-CONFIRM, the public-form (guest) path. Strategy dispatch S-1004-A, R40,
@@ -23,6 +24,9 @@ import type { ReminderEnqueueTarget } from "./reminders";
 // admits the appointment past its origin gate only after reading the row.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The audit action for a guest request linked to the appointment booked for it. */
+export const GUEST_REQUEST_BOOKED_ACTION = "patient.guest_request_booked";
 
 /**
  * Link a converted guest request to the appointment just booked for it.
@@ -64,7 +68,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  *
  * ONCE LINKED THE STATUS IS `confirmed`, which 0063 reserved for "a request
  * that became a booking" and nothing wrote until now. The queue and its count
- * read `pending`, so a linked request leaves both without a dismiss.
+ * read `pending`, so a linked request leaves both without a dismiss. The same
+ * write records who finished with the request and when (`handled_by`,
+ * `handled_at`, kept if a dismiss already set them), and an audit row
+ * (`patient.guest_request_booked`, ids only) is written beside it.
  *
  * IN A SAVEPOINT, AND IT NEVER THROWS. A failure here (a constraint, a lock)
  * would otherwise abort the booking's transaction. The savepoint confines it
@@ -108,7 +115,19 @@ export async function linkGuestRequestTx(
 
       const updated = await sp
         .update(guestBookingRequests)
-        .set({ convertedAppointmentId: args.appointmentId, status: "confirmed" })
+        .set({
+          convertedAppointmentId: args.appointmentId,
+          status: "confirmed",
+          // WHO FINISHED WITH THIS REQUEST, AND WHEN: the meaning 0063 gives
+          // these two columns, and booking the appointment is reception
+          // finishing with it. COALESCE, so a request that was dismissed first
+          // keeps the name and the instant of that dismiss. Nothing reads them
+          // for a `confirmed` request (the queue and its count read `pending`),
+          // so writing them hides nothing; leaving them NULL would have left a
+          // finished request with nobody's name on it.
+          handledAt: sql`coalesce(${guestBookingRequests.handledAt}, now())`,
+          handledBy: sql`coalesce(${guestBookingRequests.handledBy}, ${actor.userId}::uuid)`,
+        })
         .where(
           and(
             eq(guestBookingRequests.id, request.id),
@@ -118,7 +137,20 @@ export async function linkGuestRequestTx(
           ),
         )
         .returning({ id: guestBookingRequests.id });
-      return updated.length > 0;
+      if (updated.length === 0) return false;
+
+      // THE AUDIT ROW, IN THE SAME SAVEPOINT AS THE LINK (rule 6). The request
+      // moves to `confirmed` here, and a status change with no trail is the
+      // thing the convert and the dismiss both refuse to do. Ids only, through
+      // the audit metadata guard (lib/patients/audit.ts), filed on the patient
+      // exactly as those two are. If it cannot be written the link is rolled
+      // back with it: a link nobody can account for is not kept.
+      await writeAudit(sp, actor, {
+        action: GUEST_REQUEST_BOOKED_ACTION,
+        entityId: args.patientId,
+        metadata: { guestRequestId: request.id, appointmentId: args.appointmentId },
+      });
+      return true;
     });
   } catch (e) {
     console.error(

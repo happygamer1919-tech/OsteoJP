@@ -33,6 +33,8 @@ import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { bookingDeepLink } from "./guest-convert-handoff";
+
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn(), revalidateTag: vi.fn() }));
 
@@ -99,6 +101,8 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
   let therapistId: string;
   let loc: string;
   let locOutOfScope: string;
+  let locNoAddress: string;
+  let locNoPhone: string;
   let serviceId: string;
 
   const at = (day: number, hour: number) => new Date(Date.UTC(2027, 2, day, hour, 0, 0)); // March 2027
@@ -138,7 +142,7 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
 
   const requestRow = async (id: string) =>
     (
-      await rows(raw`select status, converted_patient_id, converted_appointment_id, handled_at
+      await rows(raw`select status, converted_patient_id, converted_appointment_id, handled_at, handled_by
         from guest_booking_requests where id = ${id}`)
     )[0]!;
 
@@ -147,7 +151,7 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     const requestId = await guestRequest(over);
     const r = await convert(requestId, { kind: "new_patient" });
     if (!r.ok) throw new Error(`convert refused: ${r.error}`);
-    return { requestId, patientId: r.data.patientId };
+    return { requestId, patientId: r.data.patientId, prefill: r.data.prefill };
   }
 
   /** Reception books from the drawer, through the real action. */
@@ -191,6 +195,12 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     return outcomes;
   }
 
+  /** The audit rows the link wrote for one request. */
+  const linkAudits = (requestId: string) =>
+    rows(raw`select action, entity_type, entity_id, actor_user_id, metadata
+      from audit_log where tenant_id = ${tenantId} and action = 'patient.guest_request_booked'
+        and metadata->>'guestRequestId' = ${requestId}`);
+
   const ledger = (appointmentId: string) =>
     rows(raw`select channel, template_id, outcome, suppression_reason
       from reminder_dispatches where appointment_id = ${appointmentId} order by created_at, id`);
@@ -228,10 +238,20 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
       values (${loc}, ${tenantId}, ${CLINIC.name}, ${CLINIC.address}, ${CLINIC.phone})`);
     await sql.execute(raw`insert into locations (id, tenant_id, name, address, phone)
       values (${locOutOfScope}, ${tenantId}, 'OsteoJP (LV)', 'Avenida Inventada 10', '+351 210 222 222')`);
-    // Reception is assigned to ONE clinic, so the other is outside its scope.
+    // Two more clinics reception CAN book at, each missing one of the two
+    // things the message prints.
+    locNoAddress = randomUUID();
+    locNoPhone = randomUUID();
+    await sql.execute(raw`insert into locations (id, tenant_id, name, phone)
+      values (${locNoAddress}, ${tenantId}, 'OsteoJP (MN)', '+351 266 333 333')`);
+    await sql.execute(raw`insert into locations (id, tenant_id, name, address)
+      values (${locNoPhone}, ${tenantId}, 'Montemor-o-Novo', 'Largo Inventado 2')`);
+    // Reception is assigned to THREE clinics, so `locOutOfScope` is outside its scope.
     for (const u of [receptionId, therapistId]) {
-      await sql.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
-        values (${tenantId}, ${u}, ${loc})`);
+      for (const l of [loc, locNoAddress, locNoPhone]) {
+        await sql.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
+          values (${tenantId}, ${u}, ${l})`);
+      }
     }
     // Agendar lote books only inside declared hours: Wednesdays, all day.
     await sql.execute(raw`insert into availability_templates (tenant_id, user_id, location_id, weekday, start_time, end_time)
@@ -289,12 +309,23 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     }
   });
 
+  it("a request nobody has converted yet has no booking link in the queue: there is nobody to book for", async () => {
+    const requestId = await guestRequest();
+    const queued = (await listQueue(ctx())).find((r) => r.id === requestId);
+    expect(queued).toMatchObject({ converted: false, bookingLink: null });
+  });
+
   /* ============================== GATE G1 ============================== */
 
   it("G1, the usual guest (a mobile, no email): the link is written, the request leaves the queue, and EXACTLY ONE SMS goes", async () => {
-    const { requestId, patientId } = await converted();
-    // Before the booking the converted request is still in the queue.
-    expect((await listQueue(ctx())).map((r) => r.id)).toContain(requestId);
+    const { requestId, patientId, prefill } = await converted();
+    // Before the booking the converted request is still in the queue, and its
+    // row carries the SAME deep link the convert redirected to: booked later
+    // from "Marcar consulta", it is linked exactly as if booked at once.
+    const queued = (await listQueue(ctx())).find((r) => r.id === requestId);
+    expect(queued).toBeDefined();
+    expect(queued?.bookingLink).toBe(bookingDeepLink(patientId, prefill, requestId));
+    expect(queued?.bookingLink).toContain(`pedidoConvidado=${requestId}`);
 
     const booked = await book({ patientId, guestRequestId: requestId });
 
@@ -307,6 +338,21 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     expect((await listQueue(ctx())).map((r) => r.id)).not.toContain(requestId);
     // A mobile is on file, so nobody needs ringing.
     expect(booked.notice).toBeUndefined();
+
+    // WHO FINISHED WITH IT, AND WHEN: reception, by booking it.
+    const linked = await requestRow(requestId);
+    expect(linked.handled_by).toBe(receptionId);
+    expect(linked.handled_at).not.toBeNull();
+    // AND THE AUDIT ROW for the status change: the actor, the patient, ids only.
+    expect(await linkAudits(requestId)).toEqual([
+      {
+        action: "patient.guest_request_booked",
+        entity_type: "patient",
+        entity_id: patientId,
+        actor_user_id: receptionId,
+        metadata: { guestRequestId: requestId, appointmentId: booked.id },
+      },
+    ]);
 
     // ONE event, marked as a guest link and not as a portal acceptance.
     expect(h.events).toHaveLength(1);
@@ -371,6 +417,83 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     ]);
   });
 
+  /* ---- the approver's notice on the guest door: every reason nothing can go ---- */
+
+  it("a mobile and no email, but the PATIENT has SMS switched off: the notice, and nothing is sent", async () => {
+    const { requestId, patientId } = await converted();
+    await sql.execute(raw`update patients set reminder_sms_enabled = false where id = ${patientId}`);
+    const booked = await book({ patientId, guestRequestId: requestId });
+    expect(booked.notice).toBe("patient_no_email");
+    await deliver();
+    expect(allSent()).toEqual([]);
+    // The dispatch and the notice agree, because they ask the same function.
+    expect(await ledger(booked.id)).toEqual([
+      { channel: "sms", template_id: "booking_approved.sms", outcome: "suppressed", suppression_reason: "channels_off" },
+    ]);
+  });
+
+  it("a mobile and no email, but the CLINIC has SMS switched off: the notice, and nothing is sent", async () => {
+    const { requestId, patientId } = await converted();
+    const original = (await rows(raw`select settings from tenants where id = ${tenantId}`))[0]!.settings;
+    await sql.execute(raw`update tenants set settings = ${JSON.stringify({
+      locale: "pt",
+      contacts: { phone: TENANT_PHONE },
+      reminders: { emailEnabled: true, smsEnabled: false, leadTimeHours: [48, 24] },
+    })}::jsonb where id = ${tenantId}`);
+    try {
+      const booked = await book({ patientId, guestRequestId: requestId });
+      expect(booked.notice).toBe("patient_no_email");
+      await deliver();
+      expect(allSent()).toEqual([]);
+      expect((await ledger(booked.id))[0]).toMatchObject({ suppression_reason: "channels_off" });
+    } finally {
+      await sql.execute(raw`update tenants set settings = ${JSON.stringify(original)}::jsonb where id = ${tenantId}`);
+    }
+  });
+
+  it.each([
+    ["no address", () => locNoAddress],
+    ["no phone", () => locNoPhone],
+  ] as const)(
+    "booked at a location with %s: the SECOND notice, nothing sent on either channel, though the patient has an email",
+    async (_label, where) => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { requestId, patientId } = await converted();
+      await sql.execute(raw`update patients set email = 'convidada@example.test' where id = ${patientId}`);
+      const booked = await book({ patientId, guestRequestId: requestId, locationId: where() });
+      expect(booked.notice).toBe("location_contact_missing");
+      // Linked all the same: the appointment is real.
+      expect((await requestRow(requestId)).converted_appointment_id).toBe(booked.id);
+      await deliver();
+      expect(allSent()).toEqual([]);
+      expect(await ledger(booked.id)).toEqual([
+        {
+          channel: "email",
+          template_id: "booking_approved.email",
+          outcome: "suppressed",
+          suppression_reason: "location_contact_missing",
+        },
+      ]);
+    },
+  );
+
+  it("AGENDAR LOTE for a guest nothing can reach: the notice rides the batch result too", async () => {
+    const { requestId, patientId } = await converted();
+    await sql.execute(raw`update patients set phone = '272000123' where id = ${patientId}`);
+    const s = at(WED + 70, 9);
+    const r = await actions.batchScheduleAppointments(
+      {
+        patientId,
+        practitionerId: therapistId,
+        locationId: loc,
+        serviceId,
+        slots: [{ startsAt: s.toISOString(), endsAt: new Date(s.getTime() + 45 * 60_000).toISOString() }],
+      },
+      { guestRequestId: requestId },
+    );
+    expect(r).toMatchObject({ ok: true, data: { notice: "patient_no_email" } });
+  });
+
   it("delivered TWICE, the same start: still exactly one send record", async () => {
     const { requestId, patientId } = await converted();
     const booked = await book({ patientId, guestRequestId: requestId });
@@ -385,13 +508,24 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
   it("DISMISSED before the booking arrives: it still links (a dismiss is not a decline)", async () => {
     const { requestId, patientId } = await converted();
     expect(await dismiss(requestId)).toEqual({ ok: true });
-    expect((await requestRow(requestId)).handled_at).not.toBeNull();
+    const dismissed = await requestRow(requestId);
+    expect(dismissed.handled_at).not.toBeNull();
+    // Somebody else books it afterwards.
+    const otherReception = randomUUID();
+    await sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active)
+      values (${otherReception}, ${tenantId}, ${"r2-" + otherReception.slice(0, 8) + "@t.test"}, 'Rececao Dois', true)`);
+    await sql.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
+      values (${tenantId}, ${otherReception}, ${loc})`);
+    h.requireRequestContext.mockResolvedValue({ tenantId, role: "reception", userId: otherReception });
 
     const booked = await book({ patientId, guestRequestId: requestId });
-    expect(await requestRow(requestId)).toMatchObject({
-      status: "confirmed",
-      converted_appointment_id: booked.id,
-    });
+    const after = await requestRow(requestId);
+    expect(after).toMatchObject({ status: "confirmed", converted_appointment_id: booked.id });
+    // The dismiss's name and instant are KEPT: the link fills them only when empty.
+    expect(after.handled_by).toBe(receptionId);
+    expect(String(after.handled_at)).toBe(String(dismissed.handled_at));
+    // The audit row names who made the booking.
+    expect((await linkAudits(requestId)).map((a) => a.actor_user_id)).toEqual([otherReception]);
     await deliver();
     expect(h.sms).toHaveLength(1);
   });
@@ -450,7 +584,18 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
   describe("a forged or stale guestRequestId: the booking stands, nothing links, nothing is sent", () => {
     /** Book with a bad id and assert the booking is ordinary in every way. */
     async function expectOrdinaryBooking(patientId: string, guestRequestId: string | null) {
+      const auditsBefore = (
+        await rows(raw`select count(*)::int as n from audit_log
+          where tenant_id = ${tenantId} and action = 'patient.guest_request_booked'`)
+      )[0]!.n;
       const booked = await book({ patientId, guestRequestId });
+      // A link that did not happen leaves no audit row claiming it did.
+      expect(
+        (
+          await rows(raw`select count(*)::int as n from audit_log
+            where tenant_id = ${tenantId} and action = 'patient.guest_request_booked'`)
+        )[0]!.n,
+      ).toBe(auditsBefore);
       expect(booked.id).toMatch(/^[0-9a-f-]{36}$/);
       expect(booked.notice).toBeUndefined();
       expect(h.events).toHaveLength(1);

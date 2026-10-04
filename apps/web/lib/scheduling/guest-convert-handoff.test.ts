@@ -3,7 +3,9 @@ import { describe, it, expect } from "vitest";
 import {
   GUEST_REQUEST_PARAM,
   bookingDeepLink,
+  guestRequestBookingLink,
   guestRequestIdFromParam,
+  guestRequestPrefill,
   pressAction,
 } from "./guest-convert-handoff";
 
@@ -136,4 +138,42 @@ describe("guestRequestIdFromParam - shape only, the server decides the rest", ()
       expect(guestRequestIdFromParam(value)).toBeNull();
     },
   );
+});
+
+/**
+ * BOOK-CONFIRM: the link a CONVERTED row offers ("Marcar consulta") is the
+ * link the convert redirects to. Both are built from the same two functions,
+ * and this asserts the result is the same string.
+ */
+describe("guestRequestBookingLink - the row's own link is the redirect's link", () => {
+  const REQUEST = "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f";
+  const request = {
+    id: REQUEST,
+    convertedPatientId: "p-1" as string | null,
+    serviceId: "svc-1",
+    locationId: "loc-lv",
+    // 23:30 UTC on 6 September is 00:30 on the 7th in Lisbon (WEST).
+    requestedStartsAt: new Date("2026-09-06T23:30:00.000Z"),
+  };
+
+  it("the prefill is the service, the clinic and the LISBON date, never the time", () => {
+    expect(guestRequestPrefill(request)).toEqual({
+      serviceId: "svc-1",
+      locationId: "loc-lv",
+      date: "2026-09-07",
+    });
+  });
+
+  it("is exactly what the convert's redirect builds for the same request", () => {
+    const redirect = bookingDeepLink("p-1", guestRequestPrefill(request), REQUEST);
+    expect(guestRequestBookingLink(request)).toBe(redirect);
+    const params = new URL(redirect, "https://x").searchParams;
+    expect(params.get("novaMarcacaoPaciente")).toBe("p-1");
+    expect(params.get("pedidoConvidado")).toBe(REQUEST);
+    expect(params.get("date")).toBe("2026-09-07");
+  });
+
+  it("a request that is NOT converted has no link", () => {
+    expect(guestRequestBookingLink({ ...request, convertedPatientId: null })).toBeNull();
+  });
 });

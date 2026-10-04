@@ -1529,3 +1529,83 @@ describe.each(["off", "", "true"])("GATE G3: BOOK_CONFIRM_MODE=%j", (mode) => {
     expect(h.isGuestLinked).not.toHaveBeenCalled();
   });
 });
+
+/* ==================================================================== */
+/* 11. GATE G2 AT THE DISPATCH: A LOCATION NAME THE SMS CANNOT CARRY     */
+/* ==================================================================== */
+
+/**
+ * The four names the gate measures fit one segment (booking-approved-
+ * template.test.ts). This is the other half: a location NAME that is not
+ * GSM-7, or that pushes the body past one segment. The copy is not shortened
+ * and nothing is split across two segments. The outcome is a recorded
+ * `body_refused`, nothing sent, nothing thrown, on the portal doors and on the
+ * guest booking alike.
+ *
+ * It earns NO approver notice, by decision: it is knowable only by rendering
+ * the message, not from the patient's or the location's contact data.
+ */
+describe("GATE G2: a location name the SMS cannot carry is a recorded body_refused", () => {
+  const NAMES = [
+    ["not GSM-7 (an accent)", "Clínica do Coração"],
+    ["not GSM-7 (a character outside the alphabet)", "OsteoJP ✓"],
+    ["over one segment", "Clinica ".repeat(20).trim()],
+  ] as const;
+
+  beforeEach(() => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it.each(NAMES)("a portal acceptance, %s: nothing sent, one body_refused row, nothing thrown", async (_l, locationName) => {
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, locationName }));
+    const out = await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(out).toMatchObject({ dispatched: false, reason: "body_refused" });
+    expect(allSent()).toEqual([]);
+    expect(h.handOvers).toEqual([]);
+    expect(h.ledger).toEqual([
+      expect.objectContaining({
+        channel: "sms",
+        templateId: "booking_approved.sms",
+        outcome: "suppressed",
+        suppressionReason: "body_refused",
+      }),
+    ]);
+  });
+
+  it.each(NAMES)("a guest booking, %s: the same", async (_l, locationName) => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "scheduled", origin: "staff", patientEmail: null, locationName }),
+    );
+    const out = await dispatchConfirmation(TENANT, APPT, { acceptedGuestRequest: true });
+    expect(out).toMatchObject({ dispatched: false, reason: "body_refused" });
+    expect(allSent()).toEqual([]);
+    expect(h.ledger.map((r) => [r.channel, r.templateId, r.suppressionReason])).toEqual([
+      ["sms", "booking_approved.sms", "body_refused"],
+    ]);
+  });
+
+  it("the refusal's detail says which rule refused, and it is a length or a character, never a person", async () => {
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, locationName: "Clinica ".repeat(20).trim() }));
+    const out = await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(out).toMatchObject({ detail: expect.stringMatching(/exceeds 160-char single segment/) });
+    expect(JSON.stringify(out)).not.toContain("Madalena");
+  });
+
+  it("the EMAIL is untouched by any of them: an accented location name is fine in an email", async () => {
+    h.loadReminderData.mockResolvedValue(row({ locationName: "Clínica do Coração" }));
+    expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
+    expect(h.email[0]!.body).toContain("Local: Clínica do Coração, ");
+  });
+
+  it("the four names the gate measures all SEND", async () => {
+    for (const locationName of ["OsteoJP (CB)", "OsteoJP (LV)", "OsteoJP (MN)", "Montemor-o-Novo"]) {
+      h.sms.length = 0;
+      h.handOvers.length = 0;
+      h.loadReminderData.mockResolvedValue(row({ patientEmail: null, locationName }));
+      expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED), locationName).toMatchObject({ dispatched: true });
+      expect(h.sms[0]!.body).toContain(`em ${locationName}. Duvidas: `);
+    }
+  });
+});

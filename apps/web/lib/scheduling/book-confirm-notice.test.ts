@@ -47,7 +47,7 @@ vi.mock("@/lib/notifications/centre", () => ({
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import type { RequestContext } from "@osteojp/auth";
 import { confirmAppointmentRequest } from "./actions";
-import { approvalNoticeAfterAccept, approvalNoticeFor, smsLegCanUse } from "./book-confirm-notice";
+import { approvalNoticeAfterAccept, approvalNoticeFor } from "./book-confirm-notice";
 import { enqueueRemindersAfterCommit } from "./reminders";
 
 const mockCtx = vi.mocked(requireRequestContext);
@@ -84,72 +84,94 @@ afterEach(() => {
 
 /* ------------------------------ the decision ------------------------------ */
 
+/** A row the actor could read, reachable in every way unless overridden. */
+const reachable = {
+  patientEmail: "a@example.test" as string | null,
+  patientPhone: "912 000 001" as string | null,
+  tenantSmsEnabled: true,
+  patientSmsEnabled: true,
+  locationAddress: "Rua de Exemplo 1" as string | null,
+  locationPhone: "+351 272 111 111" as string | null,
+};
+const MOBILE = "912 000 001";
+const LANDLINE = "272 000 123";
+
 describe("approvalNoticeFor (pure)", () => {
   const on = { BOOK_CONFIRM_MODE: "on" };
   const canary = { BOOK_CONFIRM_MODE: "canary", BOOK_CONFIRM_CANARY_PATIENT_IDS: LISTED };
-  const MOBILE = "912 000 001";
-  const LANDLINE = "272 000 123";
 
   /**
-   * THE RULE SINCE S-1004-A (R40, owner, 2026-10-04): "notice to the approver
-   * only when neither exists". Neither an email NOR a number the SMS leg can
-   * use. Until then the notice appeared whenever there was no email, so the
-   * "no email, a mobile" rows below are the ones that changed answer.
+   * THE RULE (lead's decision, 2026-10-04): the approver is told whenever the
+   * new behaviour applies and NO message can go for a reason knowable now.
+   * The predicates are the dispatch's own (book-confirm-plan.test.ts); what is
+   * asserted here is the switch in front of them and which SENTENCE each
+   * reason earns.
    */
   it.each([
-    // label, env, patient, email, phone, expected
-    ["off, neither", {}, LISTED, null, null, null],
-    ["off, an email", {}, LISTED, "a@example.test", MOBILE, null],
-    ["on, NEITHER an email nor a phone", on, NOT_LISTED, null, null, "patient_no_email"],
-    ["on, a blank email and a blank phone", on, NOT_LISTED, "   ", "  ", "patient_no_email"],
-    ["on, no email, a LANDLINE (the SMS leg cannot use it)", on, NOT_LISTED, null, LANDLINE, "patient_no_email"],
-    ["on, no email, a number that does not normalise", on, NOT_LISTED, null, "12", "patient_no_email"],
-    ["on, no email, a MOBILE: the SMS goes, so no notice", on, NOT_LISTED, null, MOBILE, null],
-    ["on, an email and no phone", on, NOT_LISTED, "a@example.test", null, null],
-    ["on, an email and a landline", on, NOT_LISTED, "a@example.test", LANDLINE, null],
-    ["canary, listed, neither", canary, LISTED, null, null, "patient_no_email"],
-    ["canary, listed, a mobile", canary, LISTED, null, MOBILE, null],
-    ["canary, listed, an email", canary, LISTED, "a@example.test", null, null],
-    ["canary, NOT listed, neither", canary, NOT_LISTED, null, null, null],
-  ] as const)("%s", (_label, env, patientId, email, phone, expected) => {
-    expect(approvalNoticeFor([{ patientId, email, phone }], env)).toBe(expected);
+    // label, env, patient, overrides, expected
+    ["off, nothing on file", {}, LISTED, { patientEmail: null, patientPhone: null }, null],
+    ["off, the location has no address", {}, LISTED, { locationAddress: null }, null],
+
+    ["on, an email and a mobile", on, NOT_LISTED, {}, null],
+    ["on, no email, a mobile: the SMS goes", on, NOT_LISTED, { patientEmail: null }, null],
+
+    ["on, NEITHER an email nor a phone", on, NOT_LISTED, { patientEmail: null, patientPhone: null }, "patient_no_email"],
+    ["on, no email, a LANDLINE", on, NOT_LISTED, { patientEmail: null, patientPhone: LANDLINE }, "patient_no_email"],
+    ["on, no email, a mobile, the CLINIC has SMS off", on, NOT_LISTED, { patientEmail: null, tenantSmsEnabled: false }, "patient_no_email"],
+    ["on, no email, a mobile, the PATIENT has SMS off", on, NOT_LISTED, { patientEmail: null, patientSmsEnabled: false }, "patient_no_email"],
+    ["on, an email, SMS off: the email goes", on, NOT_LISTED, { tenantSmsEnabled: false, patientSmsEnabled: false }, null],
+
+    ["on, an email, the location has NO ADDRESS", on, NOT_LISTED, { locationAddress: null }, "location_contact_missing"],
+    ["on, an email, the location has NO PHONE", on, NOT_LISTED, { locationPhone: null }, "location_contact_missing"],
+    ["on, no email, a mobile, the location has no address", on, NOT_LISTED, { patientEmail: null, locationAddress: " " }, "location_contact_missing"],
+    ["on, nobody to reach AND no location contact: the patient's reason", on, NOT_LISTED, { patientEmail: null, patientPhone: null, locationPhone: null }, "patient_no_email"],
+
+    ["canary, listed, neither", canary, LISTED, { patientEmail: null, patientPhone: null }, "patient_no_email"],
+    ["canary, listed, location without a phone", canary, LISTED, { locationPhone: null }, "location_contact_missing"],
+    ["canary, listed, a mobile", canary, LISTED, { patientEmail: null, patientPhone: MOBILE }, null],
+    ["canary, NOT listed, neither", canary, NOT_LISTED, { patientEmail: null, patientPhone: null }, null],
+    ["canary, NOT listed, location without an address", canary, NOT_LISTED, { locationAddress: null }, null],
+  ] as const)("%s", (_label, env, patientId, over, expected) => {
+    expect(approvalNoticeFor([{ patientId, ...reachable, ...over }], env)).toBe(expected);
   });
 
-  it("a patient the caller could not read is not in the rows, and unknown is not 'unreachable'", () => {
+  it("an appointment the caller could not read is not in the rows, and unknown is never a notice", () => {
     expect(approvalNoticeFor([], on)).toBeNull();
   });
 
-  it("one unreachable patient among several is enough", () => {
+  it("several appointments: one unreachable patient is enough, and it outranks a location reason", () => {
     expect(
       approvalNoticeFor(
         [
-          { patientId: LISTED, email: "a@example.test", phone: null },
-          { patientId: NOT_LISTED, email: null, phone: LANDLINE },
+          { patientId: LISTED, ...reachable, locationAddress: null },
+          { patientId: NOT_LISTED, ...reachable, patientEmail: null, patientPhone: LANDLINE },
         ],
         on,
       ),
     ).toBe("patient_no_email");
-  });
-});
-
-describe("smsLegCanUse: the same two questions the send path asks", () => {
-  it.each([
-    ["912 000 001", true],
-    ["+351 912 000 001", true],
-    ["00351 912 000 001", true],
-    ["272 000 123", false],
-    ["+351 210 000 000", false],
-    ["12", false],
-    ["", false],
-    ["   ", false],
-    [null, false],
-    [undefined, false],
-  ] as const)("%j -> %s", (phone, expected) => {
-    expect(smsLegCanUse(phone)).toBe(expected);
+    expect(
+      approvalNoticeFor(
+        [
+          { patientId: LISTED, ...reachable },
+          { patientId: NOT_LISTED, ...reachable, locationPhone: null },
+        ],
+        on,
+      ),
+    ).toBe("location_contact_missing");
   });
 });
 
 /* ------------------------------ the read ------------------------------ */
+
+/** One row as the notice's own query returns it: the tenant's settings unparsed. */
+const readRow = {
+  patientEmail: "a@example.test" as string | null,
+  patientPhone: "912 000 001" as string | null,
+  patientSmsEnabled: true,
+  locationAddress: "Rua de Exemplo 1" as string | null,
+  locationPhone: "+351 272 111 111" as string | null,
+  tenantSettings: { locale: "pt" } as unknown,
+};
 
 describe("approvalNoticeAfterAccept", () => {
   it("switch off: no read at all", async () => {
@@ -165,14 +187,14 @@ describe("approvalNoticeAfterAccept", () => {
 
   it("switch on, the patient has neither an email nor a usable number: the notice", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, email: null, phone: null }] as never);
+    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, ...readRow, patientEmail: null, patientPhone: null }] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("patient_no_email");
   });
 
   it("switch on, no email but a mobile: nothing, the SMS reaches them", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
     mockRunScoped.mockResolvedValueOnce([
-      { patientId: NOT_LISTED, email: null, phone: "912 000 001" },
+      { patientId: NOT_LISTED, ...readRow, patientEmail: null },
     ] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
   });
@@ -180,7 +202,7 @@ describe("approvalNoticeAfterAccept", () => {
   it("switch on, the patient has an email: nothing", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
     mockRunScoped.mockResolvedValueOnce([
-      { patientId: NOT_LISTED, email: "a@example.test", phone: null },
+      { patientId: NOT_LISTED, ...readRow, patientPhone: null },
     ] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
   });
@@ -188,8 +210,38 @@ describe("approvalNoticeAfterAccept", () => {
   it("canary, the patient is not listed: nothing, though nothing can reach them", async () => {
     process.env.BOOK_CONFIRM_MODE = "canary";
     process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = LISTED;
-    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, email: null, phone: null }] as never);
+    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, ...readRow, patientEmail: null, patientPhone: null }] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
+  });
+
+  it("switch on, the location has no address: the SECOND notice", async () => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, ...readRow, locationAddress: null },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("location_contact_missing");
+  });
+
+  it("switch on, a mobile and no email, but the CLINIC's settings have SMS off: the notice", async () => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([
+      {
+        patientId: NOT_LISTED,
+        ...readRow,
+        patientEmail: null,
+        // The settings column as stored; parsed by the same parser the dispatch uses.
+        tenantSettings: { reminders: { emailEnabled: true, smsEnabled: false, leadTimeHours: [48, 24] } },
+      },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("patient_no_email");
+  });
+
+  it("switch on, a mobile and no email, the PATIENT's SMS preference off: the notice", async () => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, ...readRow, patientEmail: null, patientSmsEnabled: false },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("patient_no_email");
   });
 
   it("NEVER throws: a failed read answers 'no notice' and logs the error name only", async () => {
@@ -247,7 +299,7 @@ describe("confirmAppointmentRequest carries the notice, and never fails because 
 
   it("switch on, no email on file: ok, with the notice", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    accept(async () => [{ patientId: NOT_LISTED, email: null, phone: null }]);
+    accept(async () => [{ patientId: NOT_LISTED, ...readRow, patientEmail: null, patientPhone: null }]);
     expect(await confirmAppointmentRequest(APPT)).toEqual({
       ok: true,
       data: { id: APPT, notice: "patient_no_email" },
@@ -256,7 +308,7 @@ describe("confirmAppointmentRequest carries the notice, and never fails because 
 
   it("switch on, an email on file: ok, and no notice key at all", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    accept(async () => [{ patientId: NOT_LISTED, email: "a@example.test", phone: null }]);
+    accept(async () => [{ patientId: NOT_LISTED, ...readRow, patientPhone: null }]);
     expect(await confirmAppointmentRequest(APPT)).toEqual({ ok: true, data: { id: APPT } });
   });
 

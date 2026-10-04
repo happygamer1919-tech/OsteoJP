@@ -39,9 +39,12 @@ import {
   recordDispatch,
 } from "./dispatch-ledger";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
+import {
+  bookingApprovedLocationContact,
+  planBookingApprovedChannel,
+  smsNumberVerdict,
+} from "./book-confirm-plan";
 import type { Channel } from "@osteojp/notify";
-import { normalizePhonePT } from "@osteojp/notify";
-import { isSmsCapablePT } from "@osteojp/notify";
 import {
   signRescheduleToken,
   rescheduleTokenExpiry,
@@ -315,8 +318,12 @@ async function sendPatientSms(args: {
   body: string;
   templateId: string;
 }): Promise<SendResult | SmsSkip> {
-  const to = normalizePhonePT(args.phone);
-  if (!to) {
+  // ONE VERDICT, SHARED. `smsNumberVerdict` is the two questions this function
+  // has always asked (does it normalise; is it a line that can receive SMS), in
+  // one place, because the approver's notice must give the SAME answer at
+  // approval time that this gives at send time (./book-confirm-plan.ts).
+  const verdict = smsNumberVerdict(args.phone);
+  if (!verdict.ok && verdict.reason === "invalid_phone") {
     console.warn(
       `[reminders] sms skipped: invalid_phone tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}`,
     );
@@ -345,7 +352,7 @@ async function sendPatientSms(args: {
   // other half is the reception surface: `listPatientsUnreachableBySms` derives
   // the patients this WILL happen to from their stored number and their upcoming
   // appointments - BEFORE the reminder is due, rather than logging it after.
-  if (!isSmsCapablePT(to)) {
+  if (!verdict.ok) {
     console.warn(
       `[reminders] sms skipped: landline tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}. ` +
         `The stored number is a Portuguese geographic line and cannot receive SMS. ` +
@@ -353,6 +360,7 @@ async function sendPatientSms(args: {
     );
     return { skipped: "landline" };
   }
+  const to = verdict.e164;
   // A Twilio rejection leaves a `provider_error` row before it propagates, for
   // the reason in sendRecordingProviderError: the ledger write in the caller
   // sits after this await and a throw jumps over it. Function declarations
@@ -1239,60 +1247,15 @@ export const BOOKING_APPROVED_SMS_TEMPLATE_ID = "booking_approved.sms";
 export const BOOKING_APPROVED_RENDER_REFUSAL =
   "A value the email prints (first name, service, therapist or location) contains a {placeholder}-shaped word.";
 
-export type BookingApprovedPlan =
-  | { send: "email" }
-  | { send: "sms" }
-  | { send: "none"; reason: "no_contact" | "channels_off"; channel: "email" | "sms" };
-
-/**
- * Which ONE channel an approval goes out on. Pure, exported for direct testing.
- *
- *   an email on file              -> the email, and NO SMS
- *   no email, a phone on file     -> the SMS fallback, if SMS is switched on
- *   neither                       -> nothing
- *
- * THE EMAIL IS TRANSACTIONAL: it answers a request the patient made, so
- * neither the tenant's reminder email switch nor the patient's reminder email
- * preference is an input here. The SMS fallback still respects the tenant's and
- * the patient's SMS switches.
- *
- * THE FALLBACK IS FOR "NO EMAIL ON FILE" AND NOTHING ELSE. An email that is on
- * file and then fails to send does not turn into an SMS: the patient would get
- * two messages on a retry, and the ruling is one.
- *
- * `channel` on the `none` arm is the channel the ledger row is filed under.
- */
-export function planBookingApprovedChannel(args: {
-  hasEmail: boolean;
-  hasPhone: boolean;
-  tenantSmsEnabled: boolean;
-  patientSmsEnabled: boolean;
-}): BookingApprovedPlan {
-  if (args.hasEmail) return { send: "email" };
-  if (!args.hasPhone) return { send: "none", reason: "no_contact", channel: "email" };
-  if (!args.tenantSmsEnabled || !args.patientSmsEnabled) {
-    return { send: "none", reason: "channels_off", channel: "sms" };
-  }
-  return { send: "sms" };
-}
-
-/**
- * The address and the phone the message prints, from the appointment's
- * LOCATION row only. Null when either is missing or blank.
- *
- * `tenantSettings` is deliberately NOT a parameter: the ruling is that nothing
- * falls back to the tenant's clinic settings, and a function that cannot see
- * them cannot fall back to them.
- */
-export function bookingApprovedLocationContact(location: {
-  locationAddress: string | null;
-  locationPhone: string | null;
-}): { address: string; phone: string } | null {
-  const address = (location.locationAddress ?? "").trim();
-  const phone = (location.locationPhone ?? "").trim();
-  if (address === "" || phone === "") return null;
-  return { address, phone };
-}
+// The channel plan, the location check and the SMS-number verdict are pure and
+// live in ./book-confirm-plan.ts, because the approver's notice asks the SAME
+// three questions at approval time (lib/scheduling/book-confirm-notice.ts).
+// Re-exported here so this file stays the dispatch's one public surface.
+export {
+  planBookingApprovedChannel,
+  bookingApprovedLocationContact,
+  type BookingApprovedPlan,
+} from "./book-confirm-plan";
 
 /**
  * Send the ONE confirmation for an accepted online request.
