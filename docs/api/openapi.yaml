@@ -1510,6 +1510,21 @@ components:
             `encodeGuestPreferredWindow` in @osteojp/db — the window's
             boundaries, not a slot anybody was offered. Reception resolves the
             real time when they telephone.
+        email:
+          type: [string, "null"]
+          maxLength: 320
+          description: >
+            OPTIONAL (migration 0101, strategy ruling R40). The address the
+            visitor may give so the clinic can confirm the appointment by email.
+            Absent, null and the empty string all mean "no email", and a request
+            without one is accepted exactly as before (a portal that predates
+            the field must not break booking). Trimmed server side. A value that
+            is present and is not an email (the staff app's own rule: at most
+            320 characters, `something@something.something`, no whitespace) is
+            refused with `invalid_input`, like every other refusal: it names no
+            field and echoes no value. The response is the same 202 with or
+            without one.
+          examples: ["guest@example.invalid"]
         intake:
           description: >
             INTAKE-01. OPTIONAL: absent and null both mean "no intake", and a

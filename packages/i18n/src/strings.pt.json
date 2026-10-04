@@ -1501,6 +1501,7 @@
   "guest.periodTarde": "tarde",
   "guest.requestedAt": "Pedido em",
   "guest.phone": "Telemóvel",
+  "guest.email": "Email",
   "guest.convert": "Criar paciente e marcar",
   "guest.converting": "A criar…",
   "guest.resolveTitle": "Quem é esta pessoa?",

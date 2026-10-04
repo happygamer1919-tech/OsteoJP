@@ -347,6 +347,8 @@
     "name_label": "Nome completo",
     "phone_label": "Telemóvel",
     "phone_hint": "Número de telemóvel português.",
+    "email_label": "Email (opcional)",
+    "email_hint": "Para receber a confirmação da marcação",
     "consent_required": "É necessário assinalar para enviar o pedido.",
     "submit": "Enviar pedido",
     "review_clinic": "Clínica",

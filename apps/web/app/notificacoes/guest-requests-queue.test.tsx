@@ -40,6 +40,7 @@ const row = (over: Partial<GuestRequestRow> = {}): GuestRequestRow => ({
   id: "g-1",
   fullName: "Maria Convidada",
   phone: "+351912345678",
+  email: null,
   locationName: "Linda-a-Velha",
   // A PREFERENCE, not a slot (GUEST-04 Option A). The string is built by
   // lib/scheduling/guest-preferred-when.ts, which has its own suite; this
@@ -238,5 +239,29 @@ describe("guest queue - converted but not booked", () => {
     const html = render([row({ converted: true })]);
     expect(html).not.toContain("<a ");
     expect(html).not.toContain("/patients/");
+  });
+});
+
+describe("0101, ruling R40 - the visitor's optional email on the queue row", () => {
+  const ADDRESS = "guest.fixture@example.invalid";
+
+  it("a request WITH an email shows it, beside the phone, under the Email label", () => {
+    const html = render([row({ email: ADDRESS })]);
+    expect(html).toContain('data-testid="guest-email"');
+    expect(html).toContain(ADDRESS);
+    expect(html).toContain("Email:");
+    // The phone is still there: the email is added, it replaces nothing.
+    expect(html).toContain("+351912345678");
+  });
+
+  it("a request WITHOUT one renders NO email row at all, not an empty label", () => {
+    const html = render([row({ email: null })]);
+    expect(html).not.toContain("guest-email");
+    expect(html).not.toContain("Email:");
+  });
+
+  it("each row shows ITS OWN address: two rows, one with and one without", () => {
+    const html = render([row({ id: "g-1", email: ADDRESS }), row({ id: "g-2", email: null })]);
+    expect(html.split('data-testid="guest-email"')).toHaveLength(2);
   });
 });

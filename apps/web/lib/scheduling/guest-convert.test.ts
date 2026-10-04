@@ -51,6 +51,8 @@ const H = vi.hoisted(() => ({
   sets: [] as Record<string, unknown>[],
   /** Audit entries written. */
   audits: [] as { action: string; entityId: string; metadata?: unknown }[],
+  /** 0101: the fields the patient insert was handed, so "a new patient gets the email" is observable. */
+  insertFields: null as Record<string, unknown> | null,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -99,8 +101,9 @@ vi.mock("@/lib/auth/viewer-locations", async (orig) => {
 });
 
 vi.mock("@/lib/patients/insert", () => ({
-  insertPatientTx: async () => {
+  insertPatientTx: async (_tx: unknown, _ctx: unknown, fields: Record<string, unknown>) => {
     H.inserted = true;
+    H.insertFields = fields;
     return { id: "p-new" };
   },
 }));
@@ -144,6 +147,7 @@ beforeEach(() => {
   H.updated = false;
   H.sets = [];
   H.audits = [];
+  H.insertFields = null;
 });
 
 describe("the happy path, so every refusal below is a refusal and not a broken fixture", () => {
@@ -510,5 +514,91 @@ describe("option B — the dismiss", () => {
     const serialised = JSON.stringify(H.audits[0]);
     expect(serialised).not.toContain("Maria");
     expect(serialised).not.toContain("912345678");
+  });
+});
+
+/**
+ * 0101, strategy ruling R40 - the email a visitor gave on the public form.
+ *
+ * THE RULE (the lead's assumption for this build): a NEW patient gets it; an
+ * EXISTING matched patient who has no email gets it; an existing patient's email
+ * is NEVER overwritten. What "has no email" means is decided by the WHERE of a
+ * real UPDATE, so THAT half is proven against Postgres in
+ * guest-convert-email.db.test.ts. This file proves the half a database cannot:
+ * what the action attempts, in what order, and what it never writes down.
+ */
+describe("R40: the guest's email on convert", () => {
+  const ADDRESS = "guest.fixture@example.invalid";
+
+  it("a NEW patient is inserted WITH the guest's email", async () => {
+    H.script = [[pendingRequest({ email: ADDRESS })], [{ id: REQUEST_ID }]];
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+    expect(result.ok).toBe(true);
+    expect(H.insertFields?.email).toBe(ADDRESS);
+    // And no second write to patients: the insert carried it.
+    expect(H.sets).toEqual([{ convertedPatientId: "p-new" }]);
+  });
+
+  it.each([null, undefined, ""])("a request with no email (%j) inserts the patient with email NULL", async (email) => {
+    H.script = [[pendingRequest({ email })], [{ id: REQUEST_ID }]];
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+    expect(result.ok).toBe(true);
+    expect(H.insertFields).toHaveProperty("email", null);
+  });
+
+  it("an EXISTING patient: the email is offered in ONE conditional update, AFTER the request is marked, and audited by field name", async () => {
+    H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], [{ id: REQUEST_ID }], [{ id: "p-existing" }]];
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
+    expect(result.ok).toBe(true);
+    expect(H.inserted, "nobody is created").toBe(false);
+    // THE ORDER: the request first (the race guard), the patient's email second.
+    expect(H.sets).toEqual([{ convertedPatientId: "p-existing" }, { email: ADDRESS }]);
+    expect(H.audits.map((a) => a.action)).toEqual(["patient.update", "patient.guest_request_converted"]);
+    expect(H.audits[0]).toEqual({ action: "patient.update", entityId: "p-existing", metadata: { fields: ["email"], source: "guest_request" } });
+  });
+
+  it("an existing patient who ALREADY HAS an email: the update matches no row, nothing is audited as changed, and the convert still succeeds", async () => {
+    // The fourth script entry is what the conditional UPDATE returned: no row.
+    H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], [{ id: REQUEST_ID }], []];
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
+    expect(result.ok).toBe(true);
+    expect(H.audits.map((a) => a.action)).toEqual(["patient.guest_request_converted"]);
+  });
+
+  it("an existing patient and a request with NO email: no update of patients is even attempted", async () => {
+    H.script = [[pendingRequest({ email: null })], [{ id: "p-existing" }], [{ id: REQUEST_ID }]];
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
+    expect(result.ok).toBe(true);
+    expect(H.sets).toEqual([{ convertedPatientId: "p-existing" }]);
+    expect(H.audits.map((a) => a.action)).toEqual(["patient.guest_request_converted"]);
+  });
+
+  it("A LOST RACE writes no email: the request update matched nothing, so the action stops before the patient is touched", async () => {
+    H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], []];
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
+    expect(result).toEqual({ ok: false, error: "already_handled" });
+    expect(H.sets).toEqual([{ convertedPatientId: "p-existing" }]);
+    expect(H.audits).toEqual([]);
+  });
+
+  it("THE ADDRESS IS NEVER IN AN AUDIT ROW OR A LOG LINE, on either branch", async () => {
+    const lines: string[] = [];
+    const spies = (["error", "warn", "info", "log"] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation((...args: unknown[]) => {
+        lines.push(args.map(String).join(" "));
+      }),
+    );
+    try {
+      H.script = [[pendingRequest({ email: ADDRESS })], [{ id: REQUEST_ID }]];
+      await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+      H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], [{ id: REQUEST_ID }], [{ id: "p-existing" }]];
+      await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
+    } finally {
+      for (const s of spies) s.mockRestore();
+    }
+    // THE PREMISE: audit rows were written, so the absence below is not of an empty list.
+    expect(H.audits.length).toBeGreaterThanOrEqual(3);
+    expect(JSON.stringify(H.audits)).not.toContain("example.invalid");
+    expect(lines.join("\n")).not.toContain("example.invalid");
   });
 });

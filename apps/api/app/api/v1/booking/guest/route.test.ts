@@ -766,3 +766,103 @@ describe("(e) INTAKE-01: the clinical intake rides on the same request", () => {
     expect(lines).toEqual(["[guest-booking] write failed (sqlstate P0001); nothing was stored."]);
   });
 });
+
+/**
+ * 0101, strategy ruling R40: the public form's OPTIONAL email.
+ *
+ * FOUR PROPERTIES. It is optional in every spelling of "absent"; what is stored
+ * is the trimmed address or NULL, never an empty string; a malformed one is
+ * refused exactly like every other bad input, with nothing written and nothing
+ * echoed; and the address never reaches a log, even when the write fails.
+ */
+describe("(f) 0101: the optional email", () => {
+  const ADDRESS = "guest.fixture@example.invalid";
+  /** A valid intake, only so the write has a second insert the mock can fail. */
+  const validIntake = () => ({
+    dateOfBirth: "1985-03-02",
+    reason: "Fixture reason",
+    healthConditions: null,
+    medication: null,
+    fallsAccidents: null,
+    surgeries: null,
+    pacemaker: "nao",
+    pregnancy: "nao",
+    consentVersion: "rgpd-intake-2026-09-11",
+  });
+
+  it("stores the address, trimmed, and answers the same 202", async () => {
+    const res = await guestBooking(post(validBody({ email: `  ${ADDRESS}\n` })));
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ status: "received" });
+    expect(H.inserted).toHaveLength(1);
+    expect(H.inserted[0]!.email).toBe(ADDRESS);
+  });
+
+  it("ABSENT, null, empty and whitespace all store NULL and book as before", async () => {
+    for (const over of [{}, { email: null }, { email: "" }, { email: "   " }]) {
+      H.inserted = [];
+      const res = await guestBooking(post(validBody(over)));
+      expect(res.status, JSON.stringify(over)).toBe(202);
+      expect(H.inserted).toHaveLength(1);
+      // NULL, not "": the database's CHECK refuses the empty string, and "no
+      // email" has exactly one representation.
+      expect(H.inserted[0]!.email, JSON.stringify(over)).toBeNull();
+    }
+  });
+
+  it("the response is IDENTICAL with and without an email: it adds no second outcome", async () => {
+    const without = await guestBooking(post(validBody()));
+    const withOne = await guestBooking(post(validBody({ email: ADDRESS })));
+    expect(withOne.status).toBe(without.status);
+    expect(await withOne.json()).toEqual(await without.json());
+  });
+
+  it("REFUSES a malformed or over-long email, a non-string too, and writes NOTHING", async () => {
+    const tooLong = `${"a".repeat(320)}@example.invalid`;
+    for (const email of ["not-an-email", "guest@", "guest@example", "guest @example.invalid", "a@b@c.pt", tooLong, 7, true, {}, [ADDRESS]]) {
+      H.inserted = [];
+      const res = await guestBooking(post(validBody({ email })));
+      expect(res.status, JSON.stringify(email).slice(0, 40)).toBe(400);
+      const body = await res.json();
+      // INDISTINGUISHABLE from every other refusal, and it echoes nothing.
+      expect(body).toEqual({ error: "invalid_input" });
+      expect(H.inserted).toEqual([]);
+    }
+  });
+
+  it("a malformed email NEVER spends the per-phone or the tenant-wide budget", async () => {
+    await guestBooking(post(validBody({ email: "not-an-email" })));
+    expect(H.keys.some((k) => k.includes(":phone:"))).toBe(false);
+    expect(H.keys.some((k) => k.includes("global"))).toBe(false);
+    // THE CONTROL: a valid one does reach both, so the absence above means something.
+    H.keys = [];
+    await guestBooking(post(validBody({ email: ADDRESS })));
+    expect(H.keys.some((k) => k.includes(":phone:"))).toBe(true);
+    expect(H.keys.some((k) => k.includes("global"))).toBe(true);
+  });
+
+  it("THE ADDRESS IS NEVER LOGGED: a failed write logs the SQLSTATE, and no console line carries it", async () => {
+    H.intakeTable = true;
+    H.intakeFailure = Object.assign(new Error(`Failed query: insert ... params: ${ADDRESS}`), {
+      cause: Object.assign(new Error("new row violates check constraint"), {
+        code: "23514",
+        detail: `Failing row contains (${ADDRESS}).`,
+      }),
+    });
+    const lines: string[] = [];
+    const spies = (["error", "warn", "info", "log"] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation((...args: unknown[]) => {
+        lines.push(args.map(String).join(" "));
+      }),
+    );
+    try {
+      const res = await guestBooking(post(validBody({ email: ADDRESS, intake: validIntake() })));
+      expect(res.status).toBe(503);
+      await guestBooking(post(validBody({ email: "not-an-email" })));
+    } finally {
+      for (const s of spies) s.mockRestore();
+    }
+    expect(lines).toEqual(["[guest-booking] write failed (sqlstate 23514); nothing was stored."]);
+    expect(lines.join("\n")).not.toContain("example.invalid");
+  });
+});

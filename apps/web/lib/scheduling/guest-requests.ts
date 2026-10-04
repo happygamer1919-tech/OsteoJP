@@ -37,6 +37,12 @@ export type GuestRequestView = {
   id: string;
   fullName: string;
   phone: string;
+  /**
+   * 0101, ruling R40: the email the visitor MAY have given on the public form.
+   * NULL when they gave none, which is the ordinary case. Shown to reception
+   * beside the phone; never logged.
+   */
+  email: string | null;
   serviceName: string | null;
   locationName: string | null;
   /**
@@ -143,6 +149,7 @@ export async function listPendingGuestRequests(
         id: guestBookingRequests.id,
         fullName: guestBookingRequests.fullName,
         phone: guestBookingRequests.phone,
+        email: guestBookingRequests.email,
         phoneE164: guestBookingRequests.phoneE164,
         serviceName: services.name,
         locationName: locations.name,
@@ -185,6 +192,7 @@ export async function listPendingGuestRequests(
       id: r.id,
       fullName: r.fullName,
       phone: r.phone,
+      email: r.email,
       serviceName: r.serviceName,
       locationName: r.locationName,
       requestedStartsAt: r.requestedStartsAt,

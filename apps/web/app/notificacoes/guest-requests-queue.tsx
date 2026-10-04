@@ -62,6 +62,8 @@ export type GuestRequestRow = {
   id: string;
   fullName: string;
   phone: string;
+  /** 0101, ruling R40. NULL when the visitor gave no email; then no email row renders. */
+  email: string | null;
   locationName: string | null;
   /**
    * THE GUEST'S STATED PREFERENCE, preformatted in Europe/Lisbon by the server —
@@ -261,6 +263,14 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
                   <dt>{s["guest.phone"]}:</dt>
                   <dd className="text-v2-text-primary">{r.phone}</dd>
                 </div>
+                {/* 0101, ruling R40. Only when the visitor gave one: an empty
+                    "Email:" on every row would read as a field somebody forgot. */}
+                {r.email && (
+                  <div className="flex gap-1" data-testid="guest-email">
+                    <dt>{s["guest.email"]}:</dt>
+                    <dd className="break-all text-v2-text-primary">{r.email}</dd>
+                  </div>
+                )}
                 {r.locationName && (
                   <div className="flex gap-1">
                     <dt>{s["admin.workingHours.location"]}:</dt>

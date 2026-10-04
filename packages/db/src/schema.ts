@@ -2496,6 +2496,22 @@ export const guestBookingRequests = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     handledAt: timestamp("handled_at", { withTimezone: true }),
     handledBy: uuid("handled_by").references(() => users.id),
+    /**
+     * 0101 - the email address a visitor MAY give on the public booking form
+     * (strategy ruling R40: optional, "Para receber a confirmação da marcação").
+     *
+     * NULL means the form did not ask or the visitor left it empty. Validated by
+     * `parseGuestEmail` (src/guest-email.ts) before the insert; 0101's CHECK is a
+     * backstop behind that rule and is never stricter than it.
+     *
+     * DECLARED LAST, AFTER 0101 IS APPLIED, AND NEVER BEFORE. drizzle's INSERT
+     * names every column declared here, so this line on a database without the
+     * column makes the public form's write fail with 42703. It ships with the
+     * application change, which merges only after the apply.
+     *
+     * PERSONAL DATA. Never logged, never in audit metadata, never in an error.
+     */
+    email: text("email"),
   },
   (t) => [
     /** Reception's queue: pending first, newest first, per tenant. */

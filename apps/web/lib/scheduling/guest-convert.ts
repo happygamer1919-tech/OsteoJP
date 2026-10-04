@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { guestBookingRequests, patients } from "@osteojp/db";
 import { can, type Role } from "@osteojp/auth";
 import { parsePatientPhone } from "@osteojp/notify";
@@ -284,6 +284,9 @@ export async function convertGuestRequest(
         fullName: guestBookingRequests.fullName,
         phone: guestBookingRequests.phone,
         phoneE164: guestBookingRequests.phoneE164,
+        // 0101, ruling R40: the email the visitor MAY have given. NULL is the
+        // ordinary case. Never logged and never put in audit metadata.
+        email: guestBookingRequests.email,
         serviceId: guestBookingRequests.serviceId,
         locationId: guestBookingRequests.locationId,
         requestedStartsAt: guestBookingRequests.requestedStartsAt,
@@ -293,6 +296,10 @@ export async function convertGuestRequest(
       .limit(1);
 
     if (!request) return { ok: false, error: "not_found" };
+    // `|| null`, not `??`: an empty string is not an address. The public form
+    // stores NULL for "none" and 0101's CHECK refuses '', so this only matters
+    // for a row written some other way; either way nothing empty is carried.
+    const guestEmail = request.email || null;
     // SAME THREE-WAY GUARD AS THE DIALOG ABOVE, and it is the one that stops a
     // second convert creating a SECOND patient for one request now that the
     // status no longer moves out from under it.
@@ -351,6 +358,11 @@ export async function convertGuestRequest(
         fullName: request.fullName,
         phone: parsedPhone.ok ? parsedPhone.e164 : request.phone,
         primaryLocationId: request.locationId,
+        // R40: A NEW PATIENT GETS THE GUEST'S EMAIL. It was validated at the
+        // public form's write by `parseGuestEmail`, which is this app's own
+        // patient email rule (packages/db/tests/guest-email.test.ts compares
+        // the two from source), so it needs no second parse here.
+        email: guestEmail,
       });
       patientId = created.id;
     }
@@ -384,6 +396,50 @@ export async function convertGuestRequest(
       // Roll the patient insert back with it. A half-applied convert is the one
       // outcome worth failing the whole thing for.
       throw new GuestConvertRace();
+    }
+
+    // ================================================================= //
+    // R40 - AN EXISTING PATIENT WITH NO EMAIL GETS THE GUEST'S. AN EXISTING
+    // EMAIL IS NEVER OVERWRITTEN.
+    // ================================================================= //
+    // THE LEAD'S ASSUMPTION, NOT A RULING (dispatch for this build, 2026-10-04):
+    // "a NEW patient gets it; an EXISTING matched patient who has no email gets
+    // it; an existing patient's email is NEVER overwritten". An address the
+    // clinic already holds was given to the clinic by the patient or checked by
+    // staff; one typed into a public form by whoever held the phone is weaker
+    // evidence, and replacing the first with the second would silently redirect
+    // a patient's reminders and documents.
+    //
+    // THE CONDITION IS IN THE WRITE ITSELF, not in a read before it: `email IS
+    // NULL OR email = ''` is the WHERE, so a patient who gained an address
+    // between the match and this statement keeps it. Zero rows updated is the
+    // ordinary outcome for a patient who has one, and is not an error.
+    //
+    // AFTER the request is marked, so a lost race rolls this back with the rest.
+    // It never fails the convert: reception's job here is the booking, and the
+    // address can be typed on the patient's page.
+    if (resolution.kind === "existing_patient" && guestEmail) {
+      const filled = await tx
+        .update(patients)
+        .set({ email: guestEmail })
+        .where(
+          and(
+            eq(patients.id, patientId),
+            eq(patients.tenantId, ctx.tenantId),
+            isNull(patients.deletedAt),
+            or(isNull(patients.email), eq(patients.email, "")),
+          ),
+        )
+        .returning({ id: patients.id });
+      if (filled.length === 1) {
+        // The same audit entry the patient form's update writes: the field's
+        // NAME, never its value (hard rule 7).
+        await writeAudit(tx, ctx, {
+          action: "patient.update",
+          entityId: patientId,
+          metadata: { fields: ["email"], source: "guest_request" },
+        });
+      }
     }
 
     // Ids and the branch taken. No name, no number: hard rule 7.

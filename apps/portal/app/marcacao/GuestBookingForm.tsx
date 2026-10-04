@@ -9,6 +9,7 @@ import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
 import {
+  GUEST_EMAIL_INPUT_MAX,
   GUEST_INTAKE_KEYS,
   GUEST_INTAKE_TEXT_MAX,
   INITIAL_GUEST_STATE,
@@ -23,6 +24,10 @@ import {
  * WHAT IT COLLECTS, AND THE LIST IS CLOSED: a clinic, a service, a preferred
  * date, a preferred period, a name and a mobile number. Nothing else. No NIF
  * (PL-20), no account.
+ *
+ * AMENDED BY ONE OPTIONAL FIELD (strategy ruling R40, 2026-10-04, migration
+ * 0101): an email address, "Email (opcional)", so the clinic can confirm the
+ * appointment by email. The label and the hint are the ruling's own words.
  *
  * INTAKE-01 AMENDS THE CLOSED LIST BY ONE STEP, AND ONLY ONCE 0087 IS APPLIED.
  * When the catalog reports `intakeEnabled`, a fifth step asks JP's clinical
@@ -398,7 +403,7 @@ export function GuestBookingForm({
         {/* ---- 4. DETAILS + RGPD ---------------------------------------- */}
         {step === 4 && (
           <>
-            {hidden(values, ['fullName', 'phone'])}
+            {hidden(values, ['fullName', 'phone', 'email'])}
 
             <dl className="flex flex-col gap-1 rounded-lg border border-border p-4 text-sm">
               <div className="flex gap-2">
@@ -440,6 +445,20 @@ export function GuestBookingForm({
                 autoComplete="tel"
                 required
                 defaultValue={values.phone}
+              />
+            </Field>
+
+            {/* 0101, ruling R40. OPTIONAL: no `required`, and the label says so.
+                `type="email"` is the browser's check; the server action and the
+                API both re-check with the one shared rule. */}
+            <Field label={s.guest.email_label} helperText={s.guest.email_hint}>
+              <Input
+                name="email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                maxLength={GUEST_EMAIL_INPUT_MAX}
+                defaultValue={values.email}
               />
             </Field>
 

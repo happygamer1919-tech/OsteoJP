@@ -17,6 +17,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import en from '../../../../packages/i18n/src/portal/strings.en.json'
 import pt from '../../../../packages/i18n/src/portal/strings.pt.json'
 import staffPt from '../../../../packages/i18n/src/strings.pt.json'
 
@@ -43,13 +44,18 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
     (n) => !['intent', 'step', 'intake'].includes(n as string),
   )
 
-  it('exactly six inputs, the consent box, and INTAKE-01\'s eight step-5 answers', () => {
+  it('exactly six inputs, the ruled optional email, the consent box, and INTAKE-01\'s eight step-5 answers', () => {
     // The closed list from the ruling: name, mobile, service, clinic, preferred
     // date, preferred period. INTAKE-01 adds JP's intake list (SPEC section 3),
     // rendered only on the five-step flow. Anything else has to be argued for here.
+    //
+    // `email` WAS ARGUED FOR, AND RULED: strategy S-1004-A R40 (2026-10-04), "Add
+    // an optional email field to the public form". It was on the forbidden list
+    // below until that ruling, and it is the only name that left it.
     expect(fields.sort()).toEqual([
       'consent',
       'dateOfBirth',
+      'email',
       'fallsAccidents',
       'fullName',
       'healthConditions',
@@ -66,7 +72,7 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
     ])
   })
 
-  it.each(['nif', 'birth', 'nascimento', 'email', 'morada', 'address', 'notes', 'observ'])(
+  it.each(['nif', 'birth', 'nascimento', 'morada', 'address', 'notes', 'observ'])(
     'carries no %s field',
     (forbidden) => {
       // PL-20 (no NIF) and R-GUEST-2 (nothing clinical, nothing beyond the
@@ -75,6 +81,22 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
       expect(FORM.toLowerCase()).not.toContain(`name="${forbidden}`)
     },
   )
+
+  it('R40: ONE email input, optional, with the ruling\'s own label and hint and no other copy', () => {
+    const inputs = [...FORM.matchAll(/<Input\b[^>]*name="email"[^>]*\/>/g)].map((m) => m[0])
+    expect(inputs).toHaveLength(1)
+    // OPTIONAL: the input carries no `required`, and neither does its Field.
+    expect(inputs[0]).not.toContain('required')
+    expect(inputs[0]).toContain('type="email"')
+    expect(inputs[0]).toContain('maxLength={GUEST_EMAIL_INPUT_MAX}')
+    expect(FORM).toContain('<Field label={s.guest.email_label} helperText={s.guest.email_hint}>')
+    // THE WORDS ARE THE RULING'S, character for character, and the English is
+    // written from them. Patient-facing copy is never authored in a component.
+    expect(pt.guest.email_label).toBe('Email (opcional)')
+    expect(pt.guest.email_hint).toBe('Para receber a confirmação da marcação')
+    expect(en.guest.email_label).toBe('Email (optional)')
+    expect(en.guest.email_hint).toBe('To receive your booking confirmation')
+  })
 })
 
 describe('§2 — NO AVAILABILITY IS DISCLOSED (MN-27, MN-28)', () => {

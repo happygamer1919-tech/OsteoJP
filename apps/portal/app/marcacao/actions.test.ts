@@ -483,3 +483,99 @@ describe('INTAKE-01: the fifth step', () => {
     expect(H.submits).toHaveLength(0)
   })
 })
+
+/**
+ * 0101, strategy ruling R40: the OPTIONAL email.
+ *
+ * It is never "missing"; an empty one sends nothing, so the wire is byte for
+ * byte what it was; a malformed one is told at step 4, where it was typed, and
+ * NOTHING is sent; and it is checked on the server whatever the browser did.
+ */
+describe('§R40 — the optional email', () => {
+  const ADDRESS = 'guest.fixture@example.invalid'
+
+  it('a submit WITHOUT an email sends exactly the six fields it always sent', async () => {
+    for (const email of [undefined, '', '   ']) {
+      H.submits = []
+      const out = await run(complete(email === undefined ? {} : { email }))
+      expect(out.received).toBe(true)
+      expect(Object.keys(H.submits[0]!).sort()).toEqual([
+        'fullName',
+        'locationId',
+        'phone',
+        'preferredDate',
+        'preferredPeriod',
+        'serviceId',
+      ])
+    }
+  })
+
+  it('a submit WITH one sends it, trimmed, as a seventh field', async () => {
+    const out = await run(complete({ email: `  ${ADDRESS} ` }))
+    expect(out.received).toBe(true)
+    expect(H.submits).toHaveLength(1)
+    expect(H.submits[0]!.email).toBe(ADDRESS)
+    expect(Object.keys(H.submits[0]!)).toHaveLength(7)
+  })
+
+  it.each(['not-an-email', 'guest@', 'guest@example', 'guest @example.invalid', `${'a'.repeat(320)}@example.invalid`])(
+    'REFUSES %s at step 4 as invalid, and sends NOTHING',
+    async (email) => {
+      const out = await run(complete({ email }))
+      expect(out.step).toBe(4)
+      expect(out.error).toBe('invalid')
+      expect(out.received).toBe(false)
+      expect(H.submits).toEqual([])
+      // What was typed is kept, so the person corrects it rather than retyping.
+      expect(out.values.email).toBe(email)
+    },
+  )
+
+  it('on the five-step flow a malformed email stops the move from step 4 to step 5', async () => {
+    const out = await run(complete({ intent: 'next', intake: '1', email: 'not-an-email' }))
+    expect(out.step).toBe(4)
+    expect(out.error).toBe('invalid')
+    // THE CONTROL: the same post with a good address, or none, advances.
+    for (const email of [ADDRESS, '']) {
+      const ok = await run(complete({ intent: 'next', intake: '1', email }))
+      expect(ok.step).toBe(5)
+      expect(ok.error).toBeNull()
+    }
+  })
+
+  it('an EMPTY email is never a missing field: steps 1 to 4 advance exactly as before', async () => {
+    const out = await run(complete({ intent: 'next', intake: '1' }))
+    expect(out.step).toBe(5)
+    expect(out.error).toBeNull()
+  })
+
+  it('the consent is still required with an email present, and nothing is sent without it', async () => {
+    const { consent: _consent, ...noConsent } = complete({ email: ADDRESS })
+    const out = await run(noConsent)
+    expect(out.error).toBe('consent_required')
+    expect(H.submits).toEqual([])
+  })
+
+  it('NOTHING LOGS THE ADDRESS: a refused submit and an accepted one print no line carrying it', async () => {
+    const lines: string[] = []
+    const spies = (['error', 'warn', 'info', 'log'] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation((...args: unknown[]) => {
+        lines.push(args.map(String).join(' '))
+      }),
+    )
+    try {
+      await run(complete({ email: ADDRESS }))
+      H.copyReady = false
+      await run(complete({ email: ADDRESS }))
+      H.copyReady = true
+      H.approved = []
+      await run(complete({ email: ADDRESS }))
+    } finally {
+      for (const s of spies) s.mockRestore()
+    }
+    // The two gate refusals DO log (their reason, for the operator), so this is
+    // not an assertion over silence.
+    expect(lines.length).toBeGreaterThanOrEqual(2)
+    expect(lines.join('\n')).not.toContain('example.invalid')
+  })
+})

@@ -347,6 +347,8 @@
     "name_label": "Full name",
     "phone_label": "Mobile",
     "phone_hint": "Portuguese mobile number.",
+    "email_label": "Email (optional)",
+    "email_hint": "To receive your booking confirmation",
     "consent_required": "You must tick this to send the request.",
     "submit": "Send request",
     "review_clinic": "Clinic",
