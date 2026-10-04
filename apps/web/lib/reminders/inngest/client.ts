@@ -25,6 +25,18 @@ export type AppointmentScheduledData = {
    * suppressed occurrences never start a run at all.
    */
   confirmationEligible: boolean;
+  /**
+   * BOOK-CONFIRM. Present, and `true`, ONLY when this event is reception (or
+   * the patient's own SMS reply) ACCEPTING an online booking request. The four
+   * acceptance emitters set it (lib/scheduling/pedido-acceptance.ts,
+   * `acceptedPedidoTarget`); a create, a reschedule and an uncancel leave the
+   * key out altogether, so their payload is the one it has always been.
+   *
+   * It is how the confirmation dispatch tells an acceptance from a reschedule
+   * of a portal appointment: both arrive as `appointment/scheduled` for a
+   * `confirmed`, portal-origin row, and nothing on the row distinguishes them.
+   */
+  acceptedPedido?: true;
 };
 
 export type ReminderDueData = {

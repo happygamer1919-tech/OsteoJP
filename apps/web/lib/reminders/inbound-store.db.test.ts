@@ -316,8 +316,14 @@ d("the reception reply queue against a real database", () => {
       expect(enqueueSpy).toHaveBeenCalledTimes(1);
       const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
       expect(tenantArg).toBe(tenantId);
+      // BOOK-CONFIRM: reception accepting from the review queue is an
+      // ACCEPTANCE, so its target carries the marker the dispatch reads.
       expect(targets).toEqual([
-        { appointmentId, startsAt: new Date(stored[0]!.starts_at as string | Date) },
+        {
+          appointmentId,
+          startsAt: new Date(stored[0]!.starts_at as string | Date),
+          acceptedPedido: true,
+        },
       ]);
     });
 
@@ -353,6 +359,90 @@ d("the reception reply queue against a real database", () => {
 
       expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: false });
       expect(enqueueSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  /* ------- BOOK-CONFIRM: the approver's notice, through this door too ------- */
+  // The review queue emitted the marked event and told the reviewer nothing, so
+  // with the switch on a request was accepted here for a patient with no email
+  // and nobody was told to ring them. The notice is asked after the commit,
+  // under the reviewer's own scope, and never fails the resolution.
+  describe("BOOK-CONFIRM — the review queue tells the reviewer when the patient has no email", () => {
+    const saved: Record<string, string | undefined> = {};
+    beforeEach(() => {
+      saved.mode = process.env.BOOK_CONFIRM_MODE;
+      saved.list = process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS;
+      delete process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS;
+      process.env.BOOK_CONFIRM_MODE = "on";
+      return () => {
+        for (const [k, name] of [
+          ["mode", "BOOK_CONFIRM_MODE"],
+          ["list", "BOOK_CONFIRM_CANARY_PATIENT_IDS"],
+        ] as const) {
+          if (saved[k] === undefined) delete process.env[name];
+          else process.env[name] = saved[k];
+        }
+      };
+    });
+
+    /** A pedido filed for review, for a patient with or without an email. */
+    async function pedidoForReview(body: string, email: string | null) {
+      const patientId = await seedPatient("Paciente Ficticio");
+      if (email) {
+        await sql.execute(raw`update patients set email = ${email} where id = ${patientId}`);
+      }
+      const appointmentId = await seedAppointment({ patientId, origin: "patient_portal" });
+      await file({ patientId, appointmentId, body });
+      return { patientId, item: (await queue()).find((r) => r.body === body)! };
+    }
+
+    it("switch ON, no email on file: the resolution carries the notice", async () => {
+      const { item } = await pedidoForReview("bc aviso sem email", null);
+      expect(await resolve(item.id, "confirmed")).toEqual({
+        ok: true,
+        applied: true,
+        notice: "patient_no_email",
+      });
+    });
+
+    it("switch ON, an email on file: no notice key at all", async () => {
+      const { item } = await pedidoForReview("bc aviso com email", "ficticio@example.test");
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("switch OFF: no notice, though there is no email", async () => {
+      process.env.BOOK_CONFIRM_MODE = "off";
+      const { item } = await pedidoForReview("bc aviso desligado", null);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("CANARY, the patient is not on the list: no notice", async () => {
+      process.env.BOOK_CONFIRM_MODE = "canary";
+      process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = randomUUID();
+      const { item } = await pedidoForReview("bc aviso fora da lista", null);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("CANARY, the patient IS on the list: the notice", async () => {
+      process.env.BOOK_CONFIRM_MODE = "canary";
+      const { patientId, item } = await pedidoForReview("bc aviso na lista", null);
+      process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = patientId;
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("a STAFF booking confirmed here is not an acceptance: no notice, switch on, no email", async () => {
+      const patientId = await seedPatient("Paciente Ficticio");
+      const appointmentId = await seedAppointment({ patientId });
+      await file({ patientId, appointmentId, body: "bc aviso marcacao da rececao" });
+      const item = (await queue()).find((r) => r.body === "bc aviso marcacao da rececao")!;
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("CANCELADA and LIDA never carry it", async () => {
+      const a = await pedidoForReview("bc aviso cancelada", null);
+      expect(await resolve(a.item.id, "cancelled")).toEqual({ ok: true, applied: true });
+      const b = await pedidoForReview("bc aviso lida", null);
+      expect(await resolve(b.item.id, "read")).toEqual({ ok: true, applied: false });
     });
   });
 

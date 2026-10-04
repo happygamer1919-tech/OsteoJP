@@ -11,6 +11,11 @@ import type {
   ReviewResolution,
 } from "@/lib/reminders/inbound-store";
 import type { AppointmentStatusValue } from "@/lib/scheduling/types";
+import {
+  ApprovalNotices,
+  withApprovalNotice,
+  type ApprovalNoticeView,
+} from "@/app/notificacoes/approval-notices";
 
 // Reception review list for inbound patient SMS replies (W14-06).
 //
@@ -59,10 +64,32 @@ function statusSuffix(status: string | null): string {
   return ` · ${s[STATUS_KEY[status as AppointmentStatusValue]]}`;
 }
 
+/**
+ * The notice a resolved reply earns, or null. Pure, so the rule is testable
+ * without a click: only an outcome that carries the server's `notice`, and the
+ * patient and the appointment time are copied from the item as it was shown.
+ */
+export function reviewApprovalNotice(
+  items: readonly InboundReviewItem[],
+  itemId: string,
+  outcome: ResolveOutcome,
+): ApprovalNoticeView | null {
+  if (!outcome.ok || outcome.notice !== "patient_no_email") return null;
+  const item = items.find((i) => i.id === itemId);
+  return {
+    id: itemId,
+    patientName: item?.patientName ?? null,
+    when: item?.appointmentStartsAt ? stamp(item.appointmentStartsAt) : "",
+  };
+}
+
 export function InboundReviewList({
   items,
   onResolve,
+  initialNotices,
 }: {
+  /** Notices to show from the first render. The page passes none; a test does. */
+  initialNotices?: ApprovalNoticeView[];
   items: InboundReviewItem[];
   /** Resolve a review item. A server action when mounted by the page. */
   onResolve?: (
@@ -72,14 +99,22 @@ export function InboundReviewList({
 }) {
   const [pending, startTransition] = useTransition();
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
+  // BOOK-CONFIRM: "Paciente sem email: avise por telefone", for a reply this
+  // session resolved as confirmada when that ACCEPTED an online request. Kept
+  // beside the list, not in the row, and rendered above the empty state too:
+  // the item it is about is the one that has just been resolved.
+  const [notices, setNotices] = useState<ApprovalNoticeView[]>(initialNotices ?? []);
 
   if (items.length === 0) {
     return (
-      <EmptyState
-        icon={Inbox}
-        title={s["remindersReview.emptyTitle"]}
-        description={s["remindersReview.emptyHelp"]}
-      />
+      <>
+        <ApprovalNotices notices={notices} />
+        <EmptyState
+          icon={Inbox}
+          title={s["remindersReview.emptyTitle"]}
+          description={s["remindersReview.emptyHelp"]}
+        />
+      </>
     );
   }
 
@@ -101,10 +136,14 @@ export function InboundReviewList({
       if (resolution !== "read" && !outcome.applied) {
         setRowState((prev) => ({ ...prev, [itemId]: "no_appointment" }));
       }
+      const notice = reviewApprovalNotice(items, itemId, outcome);
+      if (notice) setNotices((prev) => withApprovalNotice(prev, notice));
     });
   }
 
   return (
+    <>
+    <ApprovalNotices notices={notices} />
     <ul className="flex flex-col gap-3" data-testid="inbound-review-list">
       {items.map((item) => (
         <li key={item.id}>
@@ -190,5 +229,6 @@ export function InboundReviewList({
         </li>
       ))}
     </ul>
+    </>
   );
 }

@@ -6,6 +6,7 @@ import {
   renderEmail,
   renderConfirmationEmail,
   renderConfirmationSms,
+  renderBookingApprovedEmail,
   renderFollowUpEmail,
   renderFollowUpSms,
   renderNoShowEmail,
@@ -23,8 +24,20 @@ import {
 import { confirmLinkEnabled, generateConfirmCode } from "./confirm-code";
 import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
 import { renderReminderSmsBody } from "./sms-body";
-import { ProviderSendError, sendEmail, sendSms, type SendResult } from "./clients";
-import { recordDispatch } from "./dispatch-ledger";
+import {
+  ProviderSendError,
+  sendEmail,
+  sendSms,
+  suppressionReasonOf,
+  type SendResult,
+} from "./clients";
+import {
+  HANDED_OVER_WHILE_LIVE_SEND_OFF,
+  hasBookingApprovedHandOver,
+  recordBookingApprovedHandOver,
+  recordDispatch,
+} from "./dispatch-ledger";
+import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
 import { isSmsCapablePT } from "@osteojp/notify";
@@ -156,7 +169,32 @@ export type DispatchOutcome =
          * Inngest's own output beside the other skip reasons, and no row is
          * written in front of it.
          */
-        | "body_refused";
+        | "body_refused"
+        /**
+         * BOOK-CONFIRM only. The appointment's LOCATION row has no address, or
+         * no phone. The booking-approved message prints both and takes them
+         * from that row alone, so nothing is sent on either channel and
+         * nothing falls back to the tenant's clinic settings.
+         */
+        | "location_contact_missing"
+        /**
+         * BOOK-CONFIRM only. The appointment carries no service, and the
+         * approved email names one. Refused for the same reason a missing
+         * location contact is: the copy is final and has no wording for it.
+         */
+        | "service_missing"
+        /**
+         * BOOK-CONFIRM only. A booking-approved message was already handed over
+         * for this appointment. One approval, one message.
+         */
+        | "already_sent"
+        /**
+         * Today's confirmation only. Building the reschedule link threw (its
+         * base URL or its signing secret is not configured), so neither the
+         * email nor the SMS was attempted. The error still propagates; this is
+         * the row it leaves behind.
+         */
+        | "reschedule_link_error";
       /**
        * The refusing sentence, for `body_refused`. Operator-facing and safe:
        * a length and a rule, never a recipient, a patient field or a code.
@@ -333,6 +371,16 @@ async function sendPatientSms(args: {
         appointmentId: args.appointmentId,
       }),
   );
+}
+
+/**
+ * The ledger reason for a message the notify gate held back: its own reason
+ * (`live_send_disabled`, `template_unapproved`, `missing_provider_config`,
+ * `invalid_recipient`), so a row says WHICH lock held. `sandbox` only when a
+ * result carries none, which is the vocabulary the reminder rows already use.
+ */
+function gateSuppressionReason(result: SendResult): string {
+  return suppressionReasonOf(result) ?? "sandbox";
 }
 
 function tenantPhone(settings: unknown): string {
@@ -536,7 +584,9 @@ export function buildReminderContext(
  */
 type Dispatchable =
   | { ok: true; data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>> }
-  | { ok: false; outcome: DispatchOutcome };
+  /** `patientId` is present when the row WAS read (a soft-deleted patient), and
+   *  absent for `not_found`. An id, never a name. */
+  | { ok: false; outcome: DispatchOutcome; patientId?: string };
 
 async function loadDispatchable(
   tenantId: string,
@@ -559,7 +609,11 @@ async function loadDispatchable(
         `appointmentId=${appointmentId} patientId=${data.patientId}. ` +
         `The patient was soft-deleted after this message was scheduled; nothing was sent.`,
     );
-    return { ok: false, outcome: { dispatched: false, reason: "patient_deleted" } };
+    return {
+      ok: false,
+      outcome: { dispatched: false, reason: "patient_deleted" },
+      patientId: data.patientId,
+    };
   }
 
   return { ok: true, data };
@@ -876,10 +930,104 @@ const CONFIRMATION_ORIGINS = new Set(["patient_portal"]);
 export async function dispatchConfirmation(
   tenantId: string,
   appointmentId: string,
+  /**
+   * BOOK-CONFIRM. `acceptedPedido` is the marker the four acceptance emitters
+   * put on `appointment/scheduled` (lib/scheduling/pedido-acceptance.ts). A
+   * reschedule, a create and an uncancel do not carry it, so they take the
+   * path below exactly as before, whatever the switch says.
+   */
+  opts: { acceptedPedido?: boolean } = {},
 ): Promise<DispatchOutcome> {
   const gate = await loadDispatchable(tenantId, appointmentId, "confirmation");
-  if (!gate.ok) return gate.outcome;
+  if (!gate.ok) {
+    // THE ROW COULD NOT BE USED (`not_found`, `patient_deleted`). Recorded,
+    // like every other outcome of this function, under the id the message
+    // WOULD have gone out under. For `not_found` that cannot be known (the
+    // patient decides it and was not read), so it is today's id.
+    //
+    // A `not_found` row lands only if the appointment EXISTS: 0075 makes
+    // `appointment_id` a foreign key. When it does not, `recordDispatch`
+    // logs the failed write and returns, which is its contract.
+    const wouldBeApproved =
+      opts.acceptedPedido === true &&
+      gate.patientId !== undefined &&
+      bookConfirmAppliesTo(gate.patientId).applies;
+    if (!gate.outcome.dispatched) {
+      await recordDispatch({
+        tenantId,
+        appointmentId,
+        channel: "email",
+        templateId: wouldBeApproved ? BOOKING_APPROVED_EMAIL_TEMPLATE_ID : "confirmation.email",
+        outcome: "suppressed",
+        suppressionReason: gate.outcome.reason,
+      });
+    }
+    return gate.outcome;
+  }
   const data = gate.data;
+
+  // ================================================================== //
+  // BOOK-CONFIRM: AN ACCEPTANCE, UNDER THE SWITCH, TAKES ITS OWN PATH.
+  // ================================================================== //
+  // `=== true`, not truthiness: the value arrives from an event payload, and
+  // only the literal the emitters write may select the new message.
+  if (opts.acceptedPedido === true) {
+    const decision = bookConfirmAppliesTo(data.patientId);
+    if (decision.applies) return dispatchBookingApproved(tenantId, appointmentId, data);
+    if (decision.mode === "canary") {
+      // IDS ONLY (rule 7). The canary is on and this patient is not on the
+      // list, so the acceptance falls through to today's confirmation.
+      console.info(
+        `[reminders] book-confirm canary: patient not on the list, the existing confirmation is used ` +
+          `tenantId=${tenantId} appointmentId=${appointmentId} patientId=${data.patientId}`,
+      );
+    }
+  }
+
+  // ================================================================== //
+  // TODAY'S CONFIRMATION, AND ITS LEDGER ROW WHEN A GATE HOLDS IT BACK.
+  // ================================================================== //
+  // Until BOOK-CONFIRM this function wrote NOTHING to `reminder_dispatches`:
+  // not a confirmation that went out, not one a gate held back, not an email
+  // the provider refused. Only a refused SMS left a row. So "did the
+  // confirmation go out for this approval" could not be answered from data.
+  //
+  // The same wrapper shape as `dispatchReminder`, for its reason: the inner
+  // function has seven return points, and a row written by hand at each would
+  // miss one. A channel that WAS tried records its own row inside, because
+  // only the inner function knows the provider id; this records the outcomes
+  // where no channel was tried.
+  //
+  // FILED UNDER THE EMAIL ID AND THE EMAIL CHANNEL. A gate return is about the
+  // confirmation as a whole and the table needs one channel; `email` keeps
+  // these rows (one per staff booking, for `origin`) off reception's Lembretes
+  // SMS screen, which lists the `sms` channel only.
+  const outcome = await dispatchTodaysConfirmation(tenantId, appointmentId, data);
+  if (!outcome.dispatched) {
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "email",
+      templateId: "confirmation.email",
+      outcome: "suppressed",
+      suppressionReason: outcome.reason,
+    });
+  }
+  return outcome;
+}
+
+/**
+ * Today's confirmation: the email AND the SMS, each behind the tenant's and the
+ * patient's switch. What a reschedule of a portal appointment sends, and what an
+ * acceptance sends while BOOK_CONFIRM_MODE does not apply to the patient. The
+ * messages are the ones it has always sent; what is new is that each channel
+ * tried leaves a ledger row.
+ */
+async function dispatchTodaysConfirmation(
+  tenantId: string,
+  appointmentId: string,
+  data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>>,
+): Promise<DispatchOutcome> {
   if (!CONFIRMABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
   }
@@ -911,8 +1059,12 @@ export async function dispatchConfirmation(
   // confirmation at BOOKING time for every portal booking. The message becomes
   // deliverable when reception accepts the pedido and the status leaves
   // `scheduled` - at which point the appointment is genuinely confirmed and
-  // the approved body is true. Nothing currently re-emits
-  // `appointment/scheduled` on acceptance; that is carded, not assumed.
+  // the approved body is true. ACCEPTANCE RE-EMITS `appointment/scheduled`:
+  // each of the four doors that can accept a pedido does (W14-07 for the
+  // Pedidos queue, W14-02 for the other three; see
+  // lib/scheduling/pedido-acceptance.ts). This sentence said "nothing currently
+  // re-emits ... that is carded" until 2026-10-03, which stopped being true
+  // when #1085 merged.
   if (isUnacceptedPedido(data)) {
     return { dispatched: false, reason: "unconfirmed" };
   }
@@ -926,33 +1078,389 @@ export async function dispatchConfirmation(
   if (!email && !sms) return { dispatched: false, reason: "channels_off" };
 
   const locale = resolveLocale(data.tenantSettings);
-  const ctx = buildReminderContext({ ...data, tenantId }, locale);
+  // THE CONTEXT SIGNS A RESCHEDULE LINK, AND SIGNING CAN THROW: with
+  // REMINDERS_RESCHEDULE_BASE_URL or REMINDERS_LINK_SECRET unset,
+  // `buildReminderContext` throws here, BEFORE either send, and the SMS (which
+  // carries no link) is lost with the email. The run still fails, because a
+  // missing variable must stay loud and Inngest's retry is the recovery; what
+  // changes is that the attempt now leaves a row saying why nothing went.
+  let ctx: ReminderContext;
+  try {
+    ctx = buildReminderContext({ ...data, tenantId }, locale);
+  } catch (e) {
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: email ? "email" : "sms",
+      templateId: email ? "confirmation.email" : "confirmation.sms",
+      outcome: "suppressed",
+      suppressionReason: "reschedule_link_error",
+    });
+    throw e;
+  }
 
   const channels: SendResult[] = [];
   if (email && data.patientEmail) {
     const rendered = renderConfirmationEmail(locale, ctx);
-    channels.push(
-      await sendEmail({
-        to: data.patientEmail,
-        subject: rendered.subject,
-        body: rendered.body,
-        templateId: "confirmation.email",
-        appointmentId,
-      }),
+    // A refusal (Resend's, or the armed-but-incomplete environment the gate
+    // throws on) leaves a `provider_error` row before it propagates.
+    const result = await sendRecordingProviderError(
+      { tenantId, appointmentId, channel: "email", templateId: "confirmation.email" },
+      () =>
+        sendEmail({
+          to: data.patientEmail!,
+          subject: rendered.subject,
+          body: rendered.body,
+          templateId: "confirmation.email",
+          appointmentId,
+        }),
     );
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "email",
+      templateId: "confirmation.email",
+      outcome: result.sandbox ? "suppressed" : "sent",
+      suppressionReason: result.sandbox ? gateSuppressionReason(result) : null,
+      providerMessageId: result.sandbox ? null : result.id,
+    });
+    channels.push(result);
   }
   if (sms && data.patientPhone) {
+    // `renderConfirmationSms` THROWS on a body that would leave GSM-7 or one
+    // segment (a clinic name with an accent, or a long one). It always has, and
+    // it still does: the run fails exactly as before. What is new is the row,
+    // so "the SMS did not go, and why" is readable instead of a failed run that
+    // expires. The body prints the date, the time, the clinic's name and its
+    // phone and nothing about the patient, so the refusal is safe to keep.
+    let body: string;
+    try {
+      body = renderConfirmationSms(locale, ctx);
+    } catch (e) {
+      await recordDispatch({
+        tenantId,
+        appointmentId,
+        channel: "sms",
+        templateId: "confirmation.sms",
+        outcome: "suppressed",
+        suppressionReason: "body_refused",
+      });
+      throw e;
+    }
     const sent = await sendPatientSms({
       tenantId,
       appointmentId,
       patientId: data.patientId,
       phone: data.patientPhone,
-      body: renderConfirmationSms(locale, ctx),
+      body,
       templateId: "confirmation.sms",
     });
-    if (!isSmsSkip(sent)) channels.push(sent);
+    const handedOver = isSmsSkip(sent) ? null : sent;
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "sms",
+      templateId: "confirmation.sms",
+      outcome: handedOver && !handedOver.sandbox ? "sent" : "suppressed",
+      suppressionReason: handedOver
+        ? handedOver.sandbox
+          ? gateSuppressionReason(handedOver)
+          : null
+        : isSmsSkip(sent)
+          ? sent.skipped
+          : null,
+      bodyLength: body.length,
+      segments: null,
+      providerMessageId: handedOver && !handedOver.sandbox ? handedOver.id : null,
+    });
+    if (handedOver) channels.push(handedOver);
   }
   return { dispatched: true, channels };
+}
+
+/* ================================================================== */
+/* BOOK-CONFIRM: the booking-approved dispatch                         */
+/* ================================================================== */
+
+/** The registry id of the approved email. */
+export const BOOKING_APPROVED_EMAIL_TEMPLATE_ID = "booking_approved.email";
+/**
+ * The SMS fallback is the EXISTING `confirmation.sms` body, under its existing
+ * registry id (the owner's words: "SMS as fallback if no email"). No new SMS
+ * copy exists, so there is none to approve.
+ */
+export const BOOKING_APPROVED_SMS_TEMPLATE_ID = "confirmation.sms";
+
+/**
+ * What is recorded, and returned, when the booking-approved email cannot be
+ * rendered. FIXED TEXT on purpose: the renderer's own message quotes the
+ * fragment it tripped on, and that fragment can be part of a patient's name.
+ */
+export const BOOKING_APPROVED_RENDER_REFUSAL =
+  "A value the email prints (first name, service, therapist or location) contains a {placeholder}-shaped word.";
+
+export type BookingApprovedPlan =
+  | { send: "email" }
+  | { send: "sms" }
+  | { send: "none"; reason: "no_contact" | "channels_off"; channel: "email" | "sms" };
+
+/**
+ * Which ONE channel an approval goes out on. Pure, exported for direct testing.
+ *
+ *   an email on file              -> the email, and NO SMS
+ *   no email, a phone on file     -> the SMS fallback, if SMS is switched on
+ *   neither                       -> nothing
+ *
+ * THE EMAIL IS TRANSACTIONAL: it answers a request the patient made, so
+ * neither the tenant's reminder email switch nor the patient's reminder email
+ * preference is an input here. The SMS fallback still respects the tenant's and
+ * the patient's SMS switches.
+ *
+ * THE FALLBACK IS FOR "NO EMAIL ON FILE" AND NOTHING ELSE. An email that is on
+ * file and then fails to send does not turn into an SMS: the patient would get
+ * two messages on a retry, and the ruling is one.
+ *
+ * `channel` on the `none` arm is the channel the ledger row is filed under.
+ */
+export function planBookingApprovedChannel(args: {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  tenantSmsEnabled: boolean;
+  patientSmsEnabled: boolean;
+}): BookingApprovedPlan {
+  if (args.hasEmail) return { send: "email" };
+  if (!args.hasPhone) return { send: "none", reason: "no_contact", channel: "email" };
+  if (!args.tenantSmsEnabled || !args.patientSmsEnabled) {
+    return { send: "none", reason: "channels_off", channel: "sms" };
+  }
+  return { send: "sms" };
+}
+
+/**
+ * The address and the phone the message prints, from the appointment's
+ * LOCATION row only. Null when either is missing or blank.
+ *
+ * `tenantSettings` is deliberately NOT a parameter: the ruling is that nothing
+ * falls back to the tenant's clinic settings, and a function that cannot see
+ * them cannot fall back to them.
+ */
+export function bookingApprovedLocationContact(location: {
+  locationAddress: string | null;
+  locationPhone: string | null;
+}): { address: string; phone: string } | null {
+  const address = (location.locationAddress ?? "").trim();
+  const phone = (location.locationPhone ?? "").trim();
+  if (address === "" || phone === "") return null;
+  return { address, phone };
+}
+
+/**
+ * Send the ONE confirmation for an accepted online request.
+ *
+ * EVERY OUTCOME LEAVES A LEDGER ROW, sent or suppressed with its reason. The
+ * confirmation path above writes none (only a provider refusal of its SMS is
+ * recorded), which is why "did the confirmation go out" cannot be answered from
+ * `reminder_dispatches` for it. This path can be answered from the table.
+ *
+ * IT IS STILL GATED BY REMINDERS_LIVE_SEND AND BY THE TEMPLATE REGISTRY: both
+ * sends go through `sendEmail` / `sendPatientSms`, and the notify gate is the
+ * only way to a provider.
+ */
+async function dispatchBookingApproved(
+  tenantId: string,
+  appointmentId: string,
+  data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>>,
+): Promise<DispatchOutcome> {
+  const { reminders } = parseTenantConfig(data.tenantSettings);
+  const email = (data.patientEmail ?? "").trim();
+  const phone = (data.patientPhone ?? "").trim();
+  const plan = planBookingApprovedChannel({
+    hasEmail: email !== "",
+    hasPhone: phone !== "",
+    tenantSmsEnabled: reminders.smsEnabled,
+    patientSmsEnabled: data.patientReminderSmsEnabled,
+  });
+  const channel = plan.send === "none" ? plan.channel : plan.send;
+  const templateId =
+    channel === "email" ? BOOKING_APPROVED_EMAIL_TEMPLATE_ID : BOOKING_APPROVED_SMS_TEMPLATE_ID;
+
+  /** Nothing was sent, and the ledger says why. */
+  const suppress = async (
+    reason: Extract<DispatchOutcome, { dispatched: false }>["reason"],
+    detail?: string,
+  ): Promise<DispatchOutcome> => {
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel,
+      templateId,
+      outcome: "suppressed",
+      suppressionReason: reason,
+    });
+    return { dispatched: false, reason, ...(detail ? { detail } : {}) };
+  };
+
+  // The three gates the confirmation above applies, in its order. A REJECTED
+  // request is `cancelled`, so it stops at the first one and sends nothing.
+  if (!CONFIRMABLE_STATUSES.has(data.status)) return suppress("status");
+  if (!CONFIRMATION_ORIGINS.has(data.origin)) return suppress("origin");
+  if (isUnacceptedPedido(data)) return suppress("unconfirmed");
+
+  if (plan.send === "none") return suppress(plan.reason);
+
+  const contact = bookingApprovedLocationContact(data);
+  if (!contact) {
+    // IDS ONLY. A DATA problem on the clinic's own row, and the fix is the
+    // location's address or phone - not this message.
+    console.warn(
+      `[reminders] booking-approved skipped: location_contact_missing tenantId=${tenantId} ` +
+        `appointmentId=${appointmentId} patientId=${data.patientId}. ` +
+        `The appointment's location has no address or no phone; nothing was sent on either channel.`,
+    );
+    return suppress("location_contact_missing");
+  }
+
+  // ================================================================== //
+  // ONE MESSAGE PER APPOINTMENT AND START, at the dispatch as well as at
+  // the trigger. Lead's decision, 2026-10-03.
+  // ================================================================== //
+  // A second acceptance at the SAME start sends nothing. An acceptance at a
+  // DIFFERENT start sends one new message: a request accepted at one time,
+  // returned to Agendada, moved and accepted again must tell the patient the
+  // new time, or the only message they hold names an hour that is no longer
+  // true - worse than the switch being off.
+  //
+  // THE START IS NOT IN `reminder_dispatches` (0075 has no column for it and
+  // none may be added here), so the hand-over is ALSO written as an audit row
+  // that carries it; see `recordBookingApprovedHandOver`. This reads that row
+  // for THIS start.
+  if (await hasBookingApprovedHandOver({ tenantId, appointmentId, startsAt: data.startsAt })) {
+    return suppress("already_sent");
+  }
+
+  /**
+   * Was this result a hand-over? A real send, or one the gate held back only
+   * because live send is OFF: with live send off that is the one trace a
+   * hand-over leaves, so a repeat is a repeat there too. Any other hold
+   * (an unconfigured provider, an unapproved template) is not one, and
+   * approving again after the cause is fixed still sends.
+   */
+  const markHandedOver = async (result: SendResult, handOverChannel: "email" | "sms") => {
+    if (result.sandbox && suppressionReasonOf(result) !== HANDED_OVER_WHILE_LIVE_SEND_OFF) return;
+    await recordBookingApprovedHandOver({
+      tenantId,
+      appointmentId,
+      startsAt: data.startsAt,
+      channel: handOverChannel,
+    });
+  };
+
+  const locale = resolveLocale(data.tenantSettings);
+
+  if (plan.send === "email") {
+    const serviceName = (data.serviceName ?? "").trim();
+    if (serviceName === "") return suppress("service_missing");
+    // THE RENDER CAN REFUSE, AND ITS OWN WORDS MUST NOT LEAVE THIS FUNCTION.
+    // `assertNoUnfilledPlaceholders` throws when a value itself looks like a
+    // placeholder - a first name, a service or a clinic stored with braces
+    // around a word - and its message QUOTES the fragment it found, which can
+    // be part of the patient's name. Uncaught, that was a run that retried
+    // forever, wrote no row, and put the fragment in the run history.
+    //
+    // So it is an outcome, with a row, and the sentence kept is FIXED TEXT:
+    // nothing from the error reaches the log, the ledger or the return value.
+    let rendered: { subject: string; body: string };
+    try {
+      rendered = renderBookingApprovedEmail(locale, {
+        patientFirstName: firstName(data.patientName),
+        appointmentDateLong: formatDateLong(data.startsAt, locale),
+        appointmentTime: formatTime(data.startsAt, locale),
+        serviceName,
+        practitionerName: data.practitionerName,
+        locationName: data.locationName,
+        locationAddress: contact.address,
+        locationPhone: contact.phone,
+      });
+    } catch {
+      console.error(
+        `[reminders] booking-approved refused: the email could not be rendered, so no message went. ` +
+          `${BOOKING_APPROVED_RENDER_REFUSAL} tenantId=${tenantId} appointmentId=${appointmentId} ` +
+          `patientId=${data.patientId}`,
+      );
+      return suppress("body_refused", BOOKING_APPROVED_RENDER_REFUSAL);
+    }
+    const result = await sendRecordingProviderError(
+      { tenantId, appointmentId, channel: "email", templateId: "booking_approved.email" },
+      () =>
+        sendEmail({
+          to: email,
+          subject: rendered.subject,
+          body: rendered.body,
+          templateId: "booking_approved.email",
+          appointmentId,
+        }),
+    );
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "email",
+      templateId: "booking_approved.email",
+      outcome: result.sandbox ? "suppressed" : "sent",
+      suppressionReason: result.sandbox ? gateSuppressionReason(result) : null,
+      providerMessageId: result.sandbox ? null : result.id,
+    });
+    await markHandedOver(result, "email");
+    return { dispatched: true, channels: [result] };
+  }
+
+  // THE SMS FALLBACK: the existing `confirmation.sms` body, with the LOCATION's
+  // phone on its last line. `renderConfirmationSms` throws on a body that would
+  // leave GSM-7 or one segment; here that is an outcome with a ledger row, not
+  // a run that retries forever and records nothing.
+  let body: string;
+  try {
+    body = renderConfirmationSms(locale, {
+      appointmentDateShort: formatDateShort(data.startsAt),
+      appointmentTime: formatTime(data.startsAt, locale),
+      clinicLocation: data.locationName,
+      clinicPhone: contact.phone,
+    });
+  } catch (e) {
+    const refusal = e instanceof Error ? e.message : "unknown";
+    console.error(
+      `[reminders] booking-approved refused: the sms fallback body was not sendable, so no message went. ${refusal}`,
+      { tenantId, appointmentId },
+    );
+    return suppress("body_refused", refusal);
+  }
+  const sent = await sendPatientSms({
+    tenantId,
+    appointmentId,
+    patientId: data.patientId,
+    phone,
+    body,
+    templateId: "confirmation.sms",
+  });
+  const handedOver = isSmsSkip(sent) ? null : sent;
+  await recordDispatch({
+    tenantId,
+    appointmentId,
+    channel: "sms",
+    templateId: "confirmation.sms",
+    outcome: handedOver && !handedOver.sandbox ? "sent" : "suppressed",
+    suppressionReason: handedOver
+      ? handedOver.sandbox
+        ? gateSuppressionReason(handedOver)
+        : null
+      : isSmsSkip(sent)
+        ? sent.skipped
+        : null,
+    bodyLength: body.length,
+    segments: null,
+    providerMessageId: handedOver && !handedOver.sandbox ? handedOver.id : null,
+  });
+  if (handedOver) await markHandedOver(handedOver, "sms");
+  return { dispatched: true, channels: handedOver ? [handedOver] : [] };
 }
 
 /* ================================================================== */

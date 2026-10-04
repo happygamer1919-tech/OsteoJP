@@ -23,6 +23,7 @@ import {
   warnNotificationEnv,
   type Channel,
   type SendOutcome,
+  type SuppressionReason,
   type TemplateRegistry,
   type Transport,
 } from "@osteojp/notify";
@@ -275,8 +276,31 @@ const providerTransport: Transport = {
   },
 };
 
+/**
+ * WHY the gate held a message back, kept BESIDE the result instead of on it.
+ *
+ * `toSendResult` has always dropped the gate's reason, so a ledger row could
+ * only say `sandbox` and could not tell "live send is off" from "the template
+ * is not approved" or "the provider is not configured". BOOK-CONFIRM needs the
+ * row to say which.
+ *
+ * A side table rather than a fourth field, because `SendResult`'s shape is a
+ * contract ("kept structurally identical", above): the invite module and the
+ * Twilio delivery proof compare it whole. Keyed weakly on the result object, so
+ * it holds nothing alive and a result that was copied or rebuilt simply has no
+ * reason, which reads as "unknown" and never as a wrong one.
+ */
+const SUPPRESSION_REASONS = new WeakMap<SendResult, SuppressionReason>();
+
+/** The gate's reason for a held-back result, or undefined for a real send. */
+export function suppressionReasonOf(result: SendResult): SuppressionReason | undefined {
+  return SUPPRESSION_REASONS.get(result);
+}
+
 function toSendResult(o: SendOutcome): SendResult {
-  return { channel: o.channel, sandbox: o.sandbox, id: o.id };
+  const result: SendResult = { channel: o.channel, sandbox: o.sandbox, id: o.id };
+  if (!o.sent) SUPPRESSION_REASONS.set(result, o.reason);
+  return result;
 }
 
 /**

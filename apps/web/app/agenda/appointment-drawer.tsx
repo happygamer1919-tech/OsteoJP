@@ -1278,6 +1278,12 @@ export function AppointmentDrawer({
           if (movedFirst) setError(s["appointment.movedButDetailsNotSaved"]);
           return;
         }
+        // BOOK-CONFIRM: moving a pedido's Estado to Confirmada here IS accepting
+        // it. When its patient has no email on file, say so. A toast, because
+        // the drawer closes on success and the toast outlives it.
+        if (out.value.ok && out.value.data.notice === "patient_no_email") {
+          toast({ tone: "info", message: s["requests.notice.patientNoEmail"], duration: 15_000 });
+        }
       }
       succeed();
     } finally {

@@ -11,10 +11,15 @@ import {
 
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import {
+  acceptedPedidoTarget,
   emitAcceptedPedidoReminders,
   isUnconfirmedPedido,
 } from "@/lib/scheduling/pedido-acceptance";
 import type { ReminderEnqueueTarget } from "@/lib/scheduling/reminders";
+import {
+  approvalNoticeAfterAccept,
+  type ApprovalNotice,
+} from "@/lib/scheduling/book-confirm-notice";
 import { withReminderTenantContext } from "./context";
 import { isExclusionViolation } from "./inbound-reply";
 
@@ -187,8 +192,14 @@ export async function countReviewQueue(ctx: RequestContext): Promise<number> {
 
 /** What actually happened when reception pressed a button. */
 export type ResolveOutcome =
-  /** Marked resolved. `applied` says whether an appointment also moved. */
-  | { ok: true; applied: boolean }
+  /**
+   * Marked resolved. `applied` says whether an appointment also moved.
+   *
+   * `notice` is BOOK-CONFIRM's: present only when this resolution ACCEPTED an
+   * online request, the booking-approved message applies to its patient, and
+   * that patient has no email on file - the reviewer is told to ring them.
+   */
+  | { ok: true; applied: boolean; notice?: ApprovalNotice }
   /** The row is not in this tenant's queue, or is already resolved. */
   | { ok: false; reason: "not_found" }
   /** Confirming would have created a second confirmed overlap (0061). */
@@ -281,7 +292,7 @@ export async function resolveReviewItem(args: {
           .returning({ id: appointments.id, startsAt: appointments.startsAt });
         applied = updated.length > 0;
         if (applied && pedido) {
-          accepted = [{ appointmentId: updated[0]!.id, startsAt: updated[0]!.startsAt }];
+          accepted = [acceptedPedidoTarget(updated[0]!.id, updated[0]!.startsAt)];
         }
       }
 
@@ -304,7 +315,19 @@ export async function resolveReviewItem(args: {
     });
     // Post-commit and best-effort: the pedido really is accepted by now, so a
     // failed enqueue never turns a committed resolution into a reported failure.
-    if (outcome.ok) await emitAcceptedPedidoReminders("reviewResolve", ctx.tenantId, accepted);
+    if (outcome.ok) {
+      await emitAcceptedPedidoReminders("reviewResolve", ctx.tenantId, accepted);
+      // BOOK-CONFIRM: the same notice the other three doors give. This door
+      // emitted the marked event and said nothing, so with the switch on a
+      // reviewer accepted a request for a patient with no email and was never
+      // told. Asked AFTER the commit, it never throws, and it is read under the
+      // REVIEWER'S own scope: a patient they cannot read yields no notice.
+      const notice = await approvalNoticeAfterAccept(
+        ctx,
+        accepted.map((t) => t.appointmentId),
+      );
+      if (notice) return { ...outcome, notice };
+    }
     return outcome;
   } catch (err) {
     // 0061 refused a second confirmed overlap. The whole transaction rolled
