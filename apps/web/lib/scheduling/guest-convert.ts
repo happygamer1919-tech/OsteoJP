@@ -89,10 +89,18 @@ import { patientPhoneMatchConds } from "./guest-match";
  * accepted, and it buys the case that has no other guard - the one where the
  * second step never happens.
  *
- * `converted_appointment_id` IS STILL LEFT NULL, and nothing in the repository
- * has ever written it. Filling it is the threading of a request id through
- * `createAppointment` - the change this whole shape exists to avoid - and that
- * was option A, which the owner declined.
+ * `converted_appointment_id` IS NOT WRITTEN HERE, AND IT IS WRITTEN NOW. Until
+ * 2026-10-04 this paragraph said nothing in the repository had ever written
+ * it, because filling it meant threading a request id through
+ * `createAppointment`, "option A, which the owner declined" on 2026-09-06.
+ * THE OWNER RULED IT IN ON 2026-10-04 (strategy dispatch S-1004-A, R40):
+ * "public-form requests get linked to the appointment reception books for
+ * them, and that link is the approval trigger." The request id now rides the
+ * deep link this action's result becomes, and `createAppointment` links the
+ * booking to the request inside its own transaction
+ * (lib/scheduling/guest-link.ts). The link moves the status to `confirmed`,
+ * so a booked request leaves the queue by itself; the dismiss below remains
+ * for a converted request that is never booked.
  */
 
 /** Internal: the only way to abort the transaction after the patient insert. */

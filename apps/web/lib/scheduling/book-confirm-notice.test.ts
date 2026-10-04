@@ -47,7 +47,7 @@ vi.mock("@/lib/notifications/centre", () => ({
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import type { RequestContext } from "@osteojp/auth";
 import { confirmAppointmentRequest } from "./actions";
-import { approvalNoticeAfterAccept, approvalNoticeFor } from "./book-confirm-notice";
+import { approvalNoticeAfterAccept, approvalNoticeFor, smsLegCanUse } from "./book-confirm-notice";
 import { enqueueRemindersAfterCommit } from "./reminders";
 
 const mockCtx = vi.mocked(requireRequestContext);
@@ -87,34 +87,65 @@ afterEach(() => {
 describe("approvalNoticeFor (pure)", () => {
   const on = { BOOK_CONFIRM_MODE: "on" };
   const canary = { BOOK_CONFIRM_MODE: "canary", BOOK_CONFIRM_CANARY_PATIENT_IDS: LISTED };
+  const MOBILE = "912 000 001";
+  const LANDLINE = "272 000 123";
 
+  /**
+   * THE RULE SINCE S-1004-A (R40, owner, 2026-10-04): "notice to the approver
+   * only when neither exists". Neither an email NOR a number the SMS leg can
+   * use. Until then the notice appeared whenever there was no email, so the
+   * "no email, a mobile" rows below are the ones that changed answer.
+   */
   it.each([
-    ["off, no email", {}, LISTED, null, null],
-    ["off, an email", {}, LISTED, "a@example.test", null],
-    ["on, no email", on, NOT_LISTED, null, "patient_no_email"],
-    ["on, a blank email", on, NOT_LISTED, "   ", "patient_no_email"],
-    ["on, an email", on, NOT_LISTED, "a@example.test", null],
-    ["canary, listed, no email", canary, LISTED, null, "patient_no_email"],
-    ["canary, listed, an email", canary, LISTED, "a@example.test", null],
-    ["canary, NOT listed, no email", canary, NOT_LISTED, null, null],
-  ] as const)("%s", (_label, env, patientId, email, expected) => {
-    expect(approvalNoticeFor([{ patientId, email }], env)).toBe(expected);
+    // label, env, patient, email, phone, expected
+    ["off, neither", {}, LISTED, null, null, null],
+    ["off, an email", {}, LISTED, "a@example.test", MOBILE, null],
+    ["on, NEITHER an email nor a phone", on, NOT_LISTED, null, null, "patient_no_email"],
+    ["on, a blank email and a blank phone", on, NOT_LISTED, "   ", "  ", "patient_no_email"],
+    ["on, no email, a LANDLINE (the SMS leg cannot use it)", on, NOT_LISTED, null, LANDLINE, "patient_no_email"],
+    ["on, no email, a number that does not normalise", on, NOT_LISTED, null, "12", "patient_no_email"],
+    ["on, no email, a MOBILE: the SMS goes, so no notice", on, NOT_LISTED, null, MOBILE, null],
+    ["on, an email and no phone", on, NOT_LISTED, "a@example.test", null, null],
+    ["on, an email and a landline", on, NOT_LISTED, "a@example.test", LANDLINE, null],
+    ["canary, listed, neither", canary, LISTED, null, null, "patient_no_email"],
+    ["canary, listed, a mobile", canary, LISTED, null, MOBILE, null],
+    ["canary, listed, an email", canary, LISTED, "a@example.test", null, null],
+    ["canary, NOT listed, neither", canary, NOT_LISTED, null, null, null],
+  ] as const)("%s", (_label, env, patientId, email, phone, expected) => {
+    expect(approvalNoticeFor([{ patientId, email, phone }], env)).toBe(expected);
   });
 
-  it("a patient the caller could not read is not in the rows, and unknown is not 'no email'", () => {
+  it("a patient the caller could not read is not in the rows, and unknown is not 'unreachable'", () => {
     expect(approvalNoticeFor([], on)).toBeNull();
   });
 
-  it("one patient without an email among several is enough", () => {
+  it("one unreachable patient among several is enough", () => {
     expect(
       approvalNoticeFor(
         [
-          { patientId: LISTED, email: "a@example.test" },
-          { patientId: NOT_LISTED, email: null },
+          { patientId: LISTED, email: "a@example.test", phone: null },
+          { patientId: NOT_LISTED, email: null, phone: LANDLINE },
         ],
         on,
       ),
     ).toBe("patient_no_email");
+  });
+});
+
+describe("smsLegCanUse: the same two questions the send path asks", () => {
+  it.each([
+    ["912 000 001", true],
+    ["+351 912 000 001", true],
+    ["00351 912 000 001", true],
+    ["272 000 123", false],
+    ["+351 210 000 000", false],
+    ["12", false],
+    ["", false],
+    ["   ", false],
+    [null, false],
+    [undefined, false],
+  ] as const)("%j -> %s", (phone, expected) => {
+    expect(smsLegCanUse(phone)).toBe(expected);
   });
 });
 
@@ -132,22 +163,32 @@ describe("approvalNoticeAfterAccept", () => {
     expect(mockRunScoped).not.toHaveBeenCalled();
   });
 
-  it("switch on, the patient has no email: the notice", async () => {
+  it("switch on, the patient has neither an email nor a usable number: the notice", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, email: null }] as never);
+    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, email: null, phone: null }] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("patient_no_email");
+  });
+
+  it("switch on, no email but a mobile: nothing, the SMS reaches them", async () => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, email: null, phone: "912 000 001" },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
   });
 
   it("switch on, the patient has an email: nothing", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, email: "a@example.test" }] as never);
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, email: "a@example.test", phone: null },
+    ] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
   });
 
-  it("canary, the patient is not listed: nothing, though there is no email", async () => {
+  it("canary, the patient is not listed: nothing, though nothing can reach them", async () => {
     process.env.BOOK_CONFIRM_MODE = "canary";
     process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = LISTED;
-    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, email: null }] as never);
+    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, email: null, phone: null }] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
   });
 
@@ -206,7 +247,7 @@ describe("confirmAppointmentRequest carries the notice, and never fails because 
 
   it("switch on, no email on file: ok, with the notice", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    accept(async () => [{ patientId: NOT_LISTED, email: null }]);
+    accept(async () => [{ patientId: NOT_LISTED, email: null, phone: null }]);
     expect(await confirmAppointmentRequest(APPT)).toEqual({
       ok: true,
       data: { id: APPT, notice: "patient_no_email" },
@@ -215,7 +256,7 @@ describe("confirmAppointmentRequest carries the notice, and never fails because 
 
   it("switch on, an email on file: ok, and no notice key at all", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    accept(async () => [{ patientId: NOT_LISTED, email: "a@example.test" }]);
+    accept(async () => [{ patientId: NOT_LISTED, email: "a@example.test", phone: null }]);
     expect(await confirmAppointmentRequest(APPT)).toEqual({ ok: true, data: { id: APPT } });
   });
 

@@ -559,8 +559,11 @@ export const CONFIRM_CODE_SECRET = "e2e-confirm-code-hmac-key-not-a-secret";
  * configuration only; these are fixtures in a throwaway database.
  *
  *   emailLv, emailB   listed, an email on file: no notice for the approver
- *   noEmail           listed, NO email: the approver is told to ring them
- *   notListed         NOT listed, no email: today's behaviour, so no notice
+ *   noEmail           listed, NO email but a MOBILE: the SMS reaches them, so
+ *                     no notice (the rule since S-1004-A, 2026-10-04)
+ *   neither           listed, no email and only a LANDLINE: nothing can be
+ *                     sent, so the approver is told to ring them
+ *   notListed         NOT listed, nothing on file: today's behaviour, no notice
  */
 export const BOOK_CONFIRM_PATIENTS = {
   emailLv: {
@@ -588,8 +591,17 @@ export const BOOK_CONFIRM_PATIENTS = {
     id: "00000000-0000-4000-8000-0000000bc004",
     name: "Helena Foralista Ficticia",
     email: null,
-    phone: "912000104",
+    // A landline too: the only thing keeping the notice away is the list.
+    phone: "272000104",
     listed: false,
+  },
+  neither: {
+    id: "00000000-0000-4000-8000-0000000bc005",
+    name: "Olga Semcontacto Ficticia",
+    email: null,
+    // A geographic line: a perfectly good number the SMS leg cannot use.
+    phone: "272000105",
+    listed: true,
   },
 } as const;
 

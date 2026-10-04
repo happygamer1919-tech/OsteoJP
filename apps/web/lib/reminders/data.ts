@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import {
   appointments,
+  guestBookingRequests,
   locations,
   patientTermsAcceptances,
   patients,
@@ -180,5 +181,43 @@ export async function loadReminderData(
       .limit(1);
 
     return { ...row, patientHasAcceptedTerms: accepted.length > 0 };
+  });
+}
+
+/**
+ * BOOK-CONFIRM, the public-form path: is this appointment the one a guest
+ * request was LINKED to, for this patient?
+ *
+ * THE ROW IS THE AUTHORITY. The event that asks this carries a marker, and a
+ * marker is a claim: events can be hand-fired, replayed, or built by a future
+ * caller. The confirmation for a staff-origin appointment is admitted past the
+ * origin gate only when `guest_booking_requests` itself says so:
+ * `converted_appointment_id` is this appointment, `converted_patient_id` is
+ * this patient, and the status is `confirmed`, which only the link writes
+ * (lib/scheduling/guest-link.ts).
+ *
+ * Tenant-scoped by the same seam as every read here (0063's select policy).
+ * IT THROWS on a database error instead of answering false: the run then fails
+ * and Inngest retries it, which is the recovery for a transient failure. A
+ * swallowed error would be a confirmation silently never sent.
+ */
+export async function isGuestLinkedAppointment(
+  tenantId: string,
+  appointmentId: string,
+  patientId: string,
+): Promise<boolean> {
+  return withReminderTenantContext(tenantId, async (tx) => {
+    const rows = await tx
+      .select({ id: guestBookingRequests.id })
+      .from(guestBookingRequests)
+      .where(
+        and(
+          eq(guestBookingRequests.convertedAppointmentId, appointmentId),
+          eq(guestBookingRequests.convertedPatientId, patientId),
+          eq(guestBookingRequests.status, "confirmed"),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   });
 }

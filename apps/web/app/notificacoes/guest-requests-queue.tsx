@@ -155,7 +155,9 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
       // opens with the patient locked and the service, clinic and preferred date
       // filled in. Every booking guard lives on that path and none is duplicated
       // here. `push`, not `replace`: reception can come back to the queue.
-      router.push(bookingDeepLink(result.data.patientId, result.data.prefill));
+      // BOOK-CONFIRM: the request id rides the link, so the booking made from
+      // it is linked to this request (S-1004-A, R40).
+      router.push(bookingDeepLink(result.data.patientId, result.data.prefill, requestId));
     });
   }
 

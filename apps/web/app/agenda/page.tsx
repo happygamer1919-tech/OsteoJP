@@ -1,4 +1,5 @@
 import { assertCan, can, ForbiddenError } from "@osteojp/auth";
+import { GUEST_REQUEST_PARAM, guestRequestIdFromParam } from "@/lib/scheduling/guest-convert-handoff";
 import { requireRequestContext } from "@/lib/auth/context";
 import { scopedLocationId } from "@/lib/auth/location-choice";
 import { resolveViewerLocationIds, viewerLocationScope } from "@/lib/auth/viewer-locations";
@@ -237,6 +238,12 @@ export default async function AgendaPage({
   // ==========================================================================
   const requestedServiceId = firstParam(sp.novaMarcacaoServico);
   const requestedLocationId = firstParam(sp.novaMarcacaoLocal);
+  // BOOK-CONFIRM: the guest request a converted request's deep link names.
+  // Shape-checked only; `createAppointment` verifies it. Meaningless without
+  // the locked patient the same link carries, so it is dropped without one.
+  const guestRequestId = lockedPatientRow
+    ? guestRequestIdFromParam(firstParam(sp[GUEST_REQUEST_PARAM]))
+    : null;
   const prefill = {
     serviceId:
       requestedServiceId && options.services.some((o) => o.id === requestedServiceId)
@@ -312,6 +319,7 @@ export default async function AgendaPage({
       closure={closure}
       lockedPatient={lockedPatient}
       prefill={prefill}
+      guestRequestId={guestRequestId}
       canHardDelete={can(actor.role, "settings:manage")}
       // W12-28: same capability createTimeOffBlock server-enforces (settings:manage).
       // PL-27 (owner report 2026-07-31: "reception doesn't have that button I

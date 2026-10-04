@@ -65,6 +65,17 @@ export function pressAction(possiblePatientMatches: number): ConvertPress {
 export function bookingDeepLink(
   patientId: string,
   prefill: { serviceId: string; locationId: string; date: string },
+  /**
+   * BOOK-CONFIRM (S-1004-A, R40): the guest request this booking will answer.
+   * It rides the link as `pedidoConvidado` so the booking action can LINK the
+   * appointment to the request, which is what sends the patient their
+   * confirmation and takes the request off the queue. Optional: a link built
+   * without it opens the same drawer and books an ordinary appointment.
+   *
+   * It is an id in a URL and is treated as untrusted at the other end:
+   * `createAppointment` verifies it inside its transaction.
+   */
+  guestRequestId?: string,
 ): string {
   const params = new URLSearchParams({
     novaMarcacaoPaciente: patientId,
@@ -72,6 +83,23 @@ export function bookingDeepLink(
     novaMarcacaoLocal: prefill.locationId,
     date: prefill.date,
     view: "day",
+    ...(guestRequestId ? { [GUEST_REQUEST_PARAM]: guestRequestId } : {}),
   });
   return `/agenda?${params.toString()}`;
+}
+
+/** The deep link's name for the guest request id. Read by agenda/page.tsx. */
+export const GUEST_REQUEST_PARAM = "pedidoConvidado";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The request id the agenda hands to the drawer: the param's value when it is
+ * uuid-shaped, else null. SHAPE ONLY. Whether the request exists, is this
+ * tenant's, is still open and was converted to the patient being booked is the
+ * server's to decide, inside the booking's transaction; nothing here is a guard.
+ */
+export function guestRequestIdFromParam(value: string | null | undefined): string | null {
+  const v = (value ?? "").trim();
+  return UUID.test(v) ? v : null;
 }

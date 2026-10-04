@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 
-import { bookingDeepLink, pressAction } from "./guest-convert-handoff";
+import {
+  GUEST_REQUEST_PARAM,
+  bookingDeepLink,
+  guestRequestIdFromParam,
+  pressAction,
+} from "./guest-convert-handoff";
 
 /**
  * GUEST-06 — the two client rules of the convert.
@@ -88,4 +93,47 @@ describe("bookingDeepLink - the four param names the agenda reads back", () => {
     expect(params.get("novaMarcacaoServico")).toBe("s 1");
     expect(params.get("novaMarcacaoLocal")).toBe("l#1");
   });
+});
+
+/**
+ * BOOK-CONFIRM, S-1004-A (R40): the deep link carries the guest request, so the
+ * booking made from it can be linked to the request.
+ */
+describe("bookingDeepLink - the guest request id rides the link", () => {
+  const REQUEST = "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f";
+  const prefill = { serviceId: "svc-1", locationId: "loc-lv", date: "2026-08-21" };
+
+  it("carries the request id under the name the agenda reads, asserted literally", () => {
+    const params = new URL(bookingDeepLink("p-1", prefill, REQUEST), "https://x").searchParams;
+    expect(GUEST_REQUEST_PARAM).toBe("pedidoConvidado");
+    expect(params.get("pedidoConvidado")).toBe(REQUEST);
+    // And the four it always carried are untouched.
+    expect(params.get("novaMarcacaoPaciente")).toBe("p-1");
+    expect(params.get("novaMarcacaoServico")).toBe("svc-1");
+    expect(params.get("novaMarcacaoLocal")).toBe("loc-lv");
+    expect(params.get("date")).toBe("2026-08-21");
+  });
+
+  it("a link built WITHOUT a request is exactly the link it was before", () => {
+    const link = bookingDeepLink("p-1", prefill);
+    expect(new URL(link, "https://x").searchParams.has("pedidoConvidado")).toBe(false);
+    expect(link).toBe(
+      "/agenda?novaMarcacaoPaciente=p-1&novaMarcacaoServico=svc-1&novaMarcacaoLocal=loc-lv&date=2026-08-21&view=day",
+    );
+  });
+});
+
+describe("guestRequestIdFromParam - shape only, the server decides the rest", () => {
+  it("passes a uuid through, trimmed", () => {
+    expect(guestRequestIdFromParam(" 0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f ")).toBe(
+      "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f",
+    );
+  });
+
+  it.each([null, undefined, "", "abc", "0f0f0f0f-0f0f-4f0f-8f0f", "'; drop table x; --", "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f0"])(
+    "%j is not a request id",
+    (value) => {
+      expect(guestRequestIdFromParam(value)).toBeNull();
+    },
+  );
 });

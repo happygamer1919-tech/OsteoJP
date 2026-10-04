@@ -57,11 +57,16 @@ export type GuestRequestView = {
    * LE-guest-convert-abandoned-booking, option B: reception created the person
    * and the row STAYED HERE, because nothing has recorded a booking for them.
    *
-   * It is derived from `converted_patient_id`, which is the only fact this
-   * table holds about it. It deliberately does NOT mean "has no appointment" -
-   * nothing writes `converted_appointment_id`, so the system cannot know that -
-   * it means "this queue has no booking recorded against this request", which
-   * is what the row says on screen and is true by construction.
+   * It is derived from `converted_patient_id`. It means "this queue has no
+   * booking recorded against this request", which is what the row says on
+   * screen and is true by construction.
+   *
+   * SINCE 2026-10-04 (S-1004-A, R40) A BOOKING IS RECORDED: the appointment
+   * reception books from the request's deep link is linked to it
+   * (`converted_appointment_id`, lib/scheduling/guest-link.ts) and the status
+   * moves to `confirmed`, so such a request is no longer in this list at all.
+   * A row that is still here and converted is one whose booking was never made
+   * from that link - made by hand, or not made - and it still wants a dismiss.
    */
   converted: boolean;
 };

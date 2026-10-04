@@ -41,9 +41,10 @@ describe("kindOf - the kind is derived from template_id (0075 ruling 1)", () => 
     ["confirmation.sms", "confirmation"],
     ["follow_up.sms", "follow_up"],
     ["no_show.sms", "no_show"],
-    // BOOK-CONFIRM: the booking-approved email is a confirmation. No SMS twin.
+    // BOOK-CONFIRM: the booking-approved pair is a confirmation.
     ["booking_approved.email", "confirmation"],
-    ["booking_approved.sms", "unknown"],
+    ["booking_approved.sms", "confirmation"],
+    ["booking_approved.whatsapp", "unknown"],
     ["reminder.12h.sms", "unknown"],
     ["something.new", "unknown"],
   ] as const)("%s -> %s", (id, kind) => {

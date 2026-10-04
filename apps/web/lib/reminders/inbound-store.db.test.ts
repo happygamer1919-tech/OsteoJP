@@ -396,7 +396,20 @@ d("the reception reply queue against a real database", () => {
       return { patientId, item: (await queue()).find((r) => r.body === body)! };
     }
 
-    it("switch ON, no email on file: the resolution carries the notice", async () => {
+    it("switch ON, no email but a MOBILE on file: no notice, the SMS reaches them (S-1004-A)", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso com telemovel", null);
+      // Written before the resolve: the notice is asked after the commit.
+      await sql.execute(raw`update patients set phone = '912000555' where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("switch ON, no email and only a LANDLINE: the notice, the SMS leg cannot use it", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso com fixo", null);
+      await sql.execute(raw`update patients set phone = '272000123' where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("switch ON, NEITHER an email nor a phone: the resolution carries the notice", async () => {
       const { item } = await pedidoForReview("bc aviso sem email", null);
       expect(await resolve(item.id, "confirmed")).toEqual({
         ok: true,

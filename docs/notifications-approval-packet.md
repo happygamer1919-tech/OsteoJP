@@ -542,15 +542,27 @@ OsteoJP - Recebemos a sua mensagem. A recepcao vai confirmar consigo.
 > S-1003-B, bloco 1, alterado pelo proprietario no mesmo dia). E a seccao 15
 > abaixo. O texto em portugues foi escrito por eles e esta aqui caracter a
 > caracter; a versao em ingles foi escrita a partir dele.
+>
+> **O SMS DA SECCAO 16 E DE 2026-10-04** (despacho S-1004-A, R40, decidido pelo
+> proprietario): texto da estrategia, caracter a caracter.
 
 **O que muda.** Quando a recepcao aprova um pedido de marcacao feito online, o
-doente passa a receber **uma so** confirmacao: este email, se tiver email na
-ficha. Se nao tiver email e tiver telemovel, recebe em vez dele o SMS da seccao 1
-(`confirmation.sms`), tal como ja estava aprovado. Se nao tiver nem um nem
-outro, nao recebe nada. **Sempre que o doente nao tem email na ficha**, tenha ou
-nao telemovel, a pessoa que aprovou o pedido ve o aviso "Paciente sem email:
-avise por telefone". Esta mensagem **substitui** as das seccoes 1 e 2 no momento
-da aprovacao do pedido; uma remarcacao continua a enviar as das seccoes 1 e 2.
+doente passa a receber **uma so** confirmacao: o email da seccao 15, se tiver
+email na ficha. Se nao tiver email e tiver telemovel, recebe em vez dele o SMS da
+seccao 16 (`booking_approved.sms`). Se nao tiver nem um nem outro, nao recebe
+nada, e **so nesse caso** a pessoa que aprovou o pedido ve o aviso "Paciente sem
+email: avise por telefone" (regra de 2026-10-04: o aviso aparece apenas quando
+nao existe nem email nem um numero para o qual se possa enviar SMS; ate essa
+data aparecia sempre que nao havia email). Estas mensagens **substituem** as das
+seccoes 1 e 2 no momento da aprovacao do pedido; uma remarcacao continua a
+enviar as das seccoes 1 e 2.
+
+**Os pedidos do formulario publico tambem contam** (S-1004-A, R40). Quem pede
+uma marcacao no site sem conta fica na fila da recepcao; a recepcao converte o
+pedido num doente e marca a consulta. Essa marcacao fica agora ligada ao pedido,
+e e essa ligacao que envia a confirmacao, com as mesmas regras. Com o
+interruptor desligado, uma marcacao feita para um pedido do formulario publico
+nao envia nada, como ate aqui.
 E enviada uma vez por consulta e por hora marcada: aprovar duas vezes a mesma
 hora nao repete a mensagem, e aprovar de novo depois de a hora mudar envia uma
 nova com a hora certa.
@@ -604,6 +616,26 @@ Terapeuta: Dr. Teste Ficticio
 Local: Castelo Branco, Rua de Exemplo 1, 6000-000 Castelo Branco
 Para alterar ou cancelar, contacte a clínica: +351 272 000 000
 OsteoJP
+```
+
+### 16. Pedido de marcacao aprovado — SMS
+
+- **Identificador:** `booking_approved.sms`
+- **Quando:** no mesmo momento que a seccao 15, e **so** quando o doente nao tem email na ficha e tem um telemovel. Continua a respeitar o interruptor de SMS da clinica e a preferencia de SMS do doente.
+- **Estado:** aprovado (`approved: true`) — texto da estrategia, despacho S-1004-A, **2026-10-04**. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND` e por `BOOK_CONFIRM_MODE`.
+- **Codificacao:** GSM-7 (sem acentos), 1 segmento. No pior caso medido (data e hora mais longas, local "Montemor-o-Novo", telefone "+351 912 345 678") tem 95 caracteres.
+- **Nota:** `{local}` e o nome do local da consulta e `{telefone}` o telefone desse local. Nunca o telefone geral da clinica.
+
+**Texto tal como esta programado:**
+
+```
+OsteoJP: marcacao confirmada para {data} as {hora} em {local}. Duvidas: {telefone}.
+```
+
+**Exemplo preenchido** (10/09 as 14:30, local e telefone de exemplo):
+
+```
+OsteoJP: marcacao confirmada para 10/09 as 14:30 em OsteoJP (CB). Duvidas: +351 272 000 000.
 ```
 
 ### O lembrete de 24 horas ainda NAO diz ao doente que pode responder
