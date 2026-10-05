@@ -43,10 +43,9 @@ export function kindOf(templateId: string): ReminderLogKind {
     return "unknown";
   }
   if (/^confirmation\.(sms|email)$/.test(templateId)) return "confirmation";
-  // BOOK-CONFIRM: the booking-approved email IS the confirmation of an accepted
-  // online request, sent at once like the other two. Email only; its SMS
-  // fallback is `confirmation.sms` and is matched by the line above.
-  if (templateId === "booking_approved.email") return "confirmation";
+  // BOOK-CONFIRM: the booking-approved pair IS the confirmation of an accepted
+  // online request, sent at once like the other two.
+  if (/^booking_approved\.(sms|email)$/.test(templateId)) return "confirmation";
   if (/^follow_up\.(sms|email)$/.test(templateId)) return "follow_up";
   if (/^no_show\.(sms|email)$/.test(templateId)) return "no_show";
   return "unknown";

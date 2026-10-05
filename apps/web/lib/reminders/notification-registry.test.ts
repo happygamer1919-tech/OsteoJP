@@ -92,10 +92,12 @@ const APPROVED_TEMPLATES = REMINDER_TEMPLATES.filter((t) => t.approved);
 /** The approved bodies whose approver is not JP, by id. BOOK-CONFIRM added the first. */
 const APPROVER: Record<string, string> = {
   "booking_approved.email": "owner and strategy, dispatch S-1003-B",
+  // S-1004-A, R40 (2026-10-04): the booking-approved SMS is strategy's copy.
+  "booking_approved.sms": "strategy copy, dispatch S-1004-A",
 };
 
 describe("registry contents", () => {
-  it("registers 15 patient-facing bodies: 10 approved, 5 unapproved", () => {
+  it("registers 16 patient-facing bodies: 11 approved, 5 unapproved", () => {
     // 10 -> 11 (W13-05, the fee line) -> 14 (W14-04, the three acks, all
     // unapproved) -> 13 approved (WF-18, JP approved the three acks on
     // 2026-09-01) -> 9 approved (owner ruling B, 2026-09-04: the two follow-up
@@ -106,8 +108,10 @@ describe("registry contents", () => {
     // email IS a new body, so this time the total moves. It arrives approved,
     // by the owner and strategy in dispatch S-1003-B, and the unapproved set
     // below is unchanged.
-    expect(REMINDER_TEMPLATES).toHaveLength(15);
-    expect(APPROVED_TEMPLATES).toHaveLength(10);
+    // -> 16 total, 11 approved (S-1004-A, 2026-10-04): the booking-approved
+    // SMS, strategy's copy, again a NEW body arriving approved.
+    expect(REMINDER_TEMPLATES).toHaveLength(16);
+    expect(APPROVED_TEMPLATES).toHaveLength(11);
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
   });
 
@@ -157,22 +161,23 @@ describe("registry contents", () => {
   // The reconciliation is kept rather than deleted with the entries it counted:
   // its value was never the number, it is that a body cannot appear in either
   // app without this count changing and someone noticing.
-  it("totals 15 entries over 15 bodies across both apps", async () => {
+  it("totals 16 entries over 16 bodies across both apps", async () => {
     const { API_TEMPLATES } = await import("../../../../apps/api/lib/notify/registry");
 
     // W13-05 moved this from 10 to 11. The reconciliation's value was never the
     // number - it is that a body cannot appear in either app without this count
     // changing and someone noticing. It just noticed.
     // BOOK-CONFIRM moved it from 14 to 15, and it noticed again.
-    expect(REMINDER_TEMPLATES).toHaveLength(15);
+    // ...and from 15 to 16 with the booking-approved SMS (S-1004-A).
+    expect(REMINDER_TEMPLATES).toHaveLength(16);
     expect(API_TEMPLATES).toHaveLength(0);
-    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(15);
+    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(16);
 
     // One body per entry. The fee-notice entry is a DISTINCT body (the 24h body
     // plus the fee line), not a duplicate of the approved one - which is exactly
     // why it needs its own id and its own approval.
     const bodies = new Set(REMINDER_TEMPLATES.map((t) => t.body));
-    expect(bodies.size).toBe(15);
+    expect(bodies.size).toBe(16);
   });
 
   it("apps/api can send nothing at all, which is the fail-closed state", async () => {
@@ -203,6 +208,7 @@ describe("registry contents", () => {
     }
     expect(APPROVED_TEMPLATES.filter((t) => t.approvedBy !== "JP").map((t) => t.id)).toEqual([
       "booking_approved.email",
+      "booking_approved.sms",
     ]);
   });
 
@@ -236,6 +242,8 @@ describe("registry contents", () => {
       "reply_ack.review.sms": "2026-09-01",
       // BOOK-CONFIRM: the owner's and strategy's dispatch S-1003-B.
       "booking_approved.email": "2026-10-03",
+      // S-1004-A: strategy's SMS copy, the day after.
+      "booking_approved.sms": "2026-10-04",
     };
     for (const t of APPROVED_TEMPLATES) {
       expect(t.approvedAt, t.id).toBe(DATED[t.id] ?? "2026-08-03");
@@ -260,8 +268,9 @@ describe("registry contents", () => {
 
   it("covers both channels for all five notification kinds", () => {
     expect([...REMINDER_TEMPLATES].map((t) => t.id).sort()).toEqual([
-      // BOOK-CONFIRM: email only. Its SMS fallback is `confirmation.sms` below.
+      // BOOK-CONFIRM: the email, and since S-1004-A its own SMS.
       "booking_approved.email",
+      "booking_approved.sms",
       "confirmation.email",
       "confirmation.sms",
       "follow_up.email",
@@ -293,7 +302,7 @@ describe("registry contents", () => {
 });
 
 describe("the approval gate now passes, and the kill switch still holds", () => {
-  it("passes all 10 approved bodies through when live send is armed", async () => {
+  it("passes all 11 approved bodies through when live send is armed", async () => {
     const { notifier, sink } = harness(LIVE);
 
     const outcomes = await Promise.all(
@@ -317,8 +326,9 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
     // fee notice, which has never been approved, and the four darkened bodies.
     // TEN since BOOK-CONFIRM (2026-10-03) registered the booking-approved email
     // approved. The refused five below are unchanged.
-    expect(outcomes.filter((o) => o.sent)).toHaveLength(10);
-    expect(sink.records).toHaveLength(10);
+    // ELEVEN since S-1004-A registered the booking-approved SMS approved.
+    expect(outcomes.filter((o) => o.sent)).toHaveLength(11);
+    expect(sink.records).toHaveLength(11);
     // FIVE refused since owner ruling B, and they are refused for the same
     // MECHANISM but two different REASONS in the human sense: the fee line has
     // never been approved, and the four darkened bodies were approved and then
@@ -338,7 +348,7 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
   // THE LOAD-BEARING TEST NOW. Approval removed one of the two gates; this is the
   // other, and it is the only thing standing between an approved body and a real
   // patient's phone. It must fail loudly if the kill switch ever stops holding.
-  it("sends NOTHING with live send off, even though all 10 are approved", async () => {
+  it("sends NOTHING with live send off, even though all 11 are approved", async () => {
     const { notifier, sink } = harness({});
 
     const outcomes = await Promise.all(
@@ -367,7 +377,8 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
     // silent extra message.
     // TEN since BOOK-CONFIRM: the booking-approved email is approved, so with
     // live send off it is refused by the FLAG, like the other nine.
-    expect(refused).toHaveLength(10);
+    // ELEVEN since S-1004-A: the booking-approved SMS is refused by the flag too.
+    expect(refused).toHaveLength(11);
     expect(sink.records).toHaveLength(0);
   });
 

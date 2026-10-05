@@ -1,4 +1,5 @@
 import "server-only";
+import { guestRequestBookingLink } from "./guest-convert-handoff";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { guestBookingRequests, locations, patients, services } from "@osteojp/db";
@@ -63,13 +64,25 @@ export type GuestRequestView = {
    * LE-guest-convert-abandoned-booking, option B: reception created the person
    * and the row STAYED HERE, because nothing has recorded a booking for them.
    *
-   * It is derived from `converted_patient_id`, which is the only fact this
-   * table holds about it. It deliberately does NOT mean "has no appointment" -
-   * nothing writes `converted_appointment_id`, so the system cannot know that -
-   * it means "this queue has no booking recorded against this request", which
-   * is what the row says on screen and is true by construction.
+   * It is derived from `converted_patient_id`. It means "this queue has no
+   * booking recorded against this request", which is what the row says on
+   * screen and is true by construction.
+   *
+   * SINCE 2026-10-04 (S-1004-A, R40) A BOOKING IS RECORDED: the appointment
+   * reception books from the request's deep link is linked to it
+   * (`converted_appointment_id`, lib/scheduling/guest-link.ts) and the status
+   * moves to `confirmed`, so such a request is no longer in this list at all.
+   * A row that is still here and converted is one whose booking was never made
+   * from that link - made by hand, or not made - and it still wants a dismiss.
    */
   converted: boolean;
+  /**
+   * The booking deep link for a CONVERTED request, or null for one that is not
+   * converted. The same link the convert redirects to, built from this row
+   * (lib/scheduling/guest-convert-handoff.ts), so a request that was converted
+   * and not booked at once can still be booked in a way that links it.
+   */
+  bookingLink: string | null;
 };
 
 /**
@@ -157,6 +170,9 @@ export async function listPendingGuestRequests(
         requestedEndsAt: guestBookingRequests.requestedEndsAt,
         createdAt: guestBookingRequests.createdAt,
         convertedPatientId: guestBookingRequests.convertedPatientId,
+        // What the row's own booking link needs (guestRequestBookingLink).
+        serviceId: guestBookingRequests.serviceId,
+        locationId: guestBookingRequests.locationId,
         // COUNTED IN THE SAME QUERY, as a correlated subquery, so the flag and
         // the row come from ONE snapshot. Two round trips could report a match
         // for a patient created between them, or miss one deleted between them.
@@ -200,6 +216,7 @@ export async function listPendingGuestRequests(
       createdAt: r.createdAt,
       possiblePatientMatches: Number(r.matches ?? 0),
       converted: r.convertedPatientId !== null,
+      bookingLink: guestRequestBookingLink(r),
     }));
   });
 }

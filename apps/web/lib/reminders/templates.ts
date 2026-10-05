@@ -562,6 +562,46 @@ OsteoJP`,
   },
 };
 
+/**
+ * The SMS for the same moment, sent ONLY when the patient has no email on file.
+ * Strategy copy, dispatch S-1004-A (2026-10-04), character for character in
+ * pt-PT; the English is written from it. It replaces `confirmation.sms` as the
+ * fallback on the booking-approved path.
+ *
+ * The 24h SMS's conventions: single-brace placeholders, NO ACCENTS (an accent
+ * leaves GSM-7 and drops the segment to 70 characters), sent under the same
+ * sender. `{local}` is the appointment's LOCATION name and `{telefone}` its
+ * phone, from the location row only; the dispatch refuses to send when the
+ * location has no phone and never falls back to the tenant's.
+ *
+ * ONE SEGMENT, MEASURED: 95 characters at the longest inputs the clinic has
+ * (booking-approved-template.test.ts prints and pins it). The render still
+ * asserts it, so a location renamed to something long or accented fails the
+ * render instead of sending two segments.
+ */
+export const BOOKING_APPROVED_SMS: Record<Locale, string> = {
+  pt: "OsteoJP: marcacao confirmada para {data} as {hora} em {local}. Duvidas: {telefone}.",
+  en: "OsteoJP: appointment confirmed for {data} at {hora} at {local}. Questions: {telefone}.",
+};
+
+export function renderBookingApprovedSms(
+  locale: Locale,
+  ctx: Pick<BookingApprovedContext, "appointmentTime" | "locationName" | "locationPhone"> & {
+    /** Terse dd/mm, as every SMS here prints the date. */
+    appointmentDateShort: string;
+  },
+): string {
+  const message = fill(BOOKING_APPROVED_SMS[locale], {
+    data: ctx.appointmentDateShort,
+    hora: ctx.appointmentTime,
+    local: ctx.locationName,
+    telefone: ctx.locationPhone,
+  });
+  assertNoUnfilledPlaceholders("sms/booking_approved", message);
+  assertSmsCompliant(message);
+  return message;
+}
+
 export function renderBookingApprovedEmail(
   locale: Locale,
   ctx: BookingApprovedContext,

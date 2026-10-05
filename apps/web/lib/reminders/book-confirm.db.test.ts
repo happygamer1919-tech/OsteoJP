@@ -398,12 +398,12 @@ d("BOOK-CONFIRM: the booking-approved dispatch against a real database", () => {
     expect(await dispatchConfirmation(tenantId, id, ACCEPTED)).toMatchObject({ dispatched: true });
     expect(h.email).toEqual([]);
     expect(h.sms).toHaveLength(1);
-    expect(h.sms[0]!.templateId).toBe("confirmation.sms");
-    expect(h.sms[0]!.body).toContain(`Local: ${CB.name}`);
-    expect(h.sms[0]!.body).toContain(`Remarcar: ${CB.phone}`);
+    expect(h.sms[0]!.templateId).toBe("booking_approved.sms");
+    expect(h.sms[0]!.body).toContain(`em ${CB.name}. Duvidas: ${CB.phone}.`);
+    expect(h.sms[0]!.body).not.toContain("Remarcar");
     expect(h.sms[0]!.body).not.toContain(TENANT_PHONE);
     expect(await ledger(id)).toEqual([
-      { channel: "sms", template_id: "confirmation.sms", outcome: "sent", suppression_reason: null },
+      { channel: "sms", template_id: "booking_approved.sms", outcome: "sent", suppression_reason: null },
     ]);
   });
 
@@ -443,7 +443,7 @@ d("BOOK-CONFIRM: the booking-approved dispatch against a real database", () => {
 
   it.each([
     ["an email on file", () => patient.withEmail, "email", "booking_approved.email"],
-    ["no email, a mobile on file", () => patient.noEmail, "sms", "confirmation.sms"],
+    ["no email, a mobile on file", () => patient.noEmail, "sms", "booking_approved.sms"],
   ] as const)(
     "a location with NO ADDRESS (%s): nothing on either channel, nothing from the tenant, and a row says why",
     async (_label, who, channel, templateId) => {

@@ -30,6 +30,7 @@ import {
   batchSchedule,
   ClinicHoursRefused,
   PackBatchRefused,
+  type BatchGuestLink,
   type BatchScheduleInput,
   type BatchScheduleResult,
 } from "./batch";
@@ -73,6 +74,7 @@ import {
   type StatusNotificationTarget,
 } from "./reminders";
 import { acceptedPedidoTarget, unconfirmedPedidoIdsAmong } from "./pedido-acceptance";
+import { acceptedGuestRequestTarget, guestLinkOccurrence, linkGuestRequestTx } from "./guest-link";
 import { approvalNoticeAfterAccept, type ApprovalNotice } from "./book-confirm-notice";
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type {
@@ -615,7 +617,7 @@ export async function getTherapistLocations(
 
 export async function createAppointment(
   input: CreateAppointmentInput,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -639,7 +641,10 @@ export async function createAppointment(
   // what made the bug visible.
   //
   // OWNER IS EXCEPTED via `bookingLocationScope`, which returns null for them.
-  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+  // Kept, not recomputed: the guest-request link below asks the same scope
+  // about the REQUEST's clinic.
+  const locationScope = await bookingLocationScope(actor);
+  if (!isLocationBookable(locationScope, input.locationId)) {
     return { ok: false, error: "location_not_assigned" };
   }
   // PL-10 (defense in depth): a therapist self-books ONLY. The create form hides
@@ -731,8 +736,11 @@ export async function createAppointment(
   let reminderTargets: ReminderEnqueueTarget[] = [];
   // CARE-02c: the care-team rows this booking wrote, notified AFTER commit.
   let careTeamAdded: CareTeamAddition[] = [];
+  // BOOK-CONFIRM: the occurrence a guest request was linked to, if any. A
+  // holder, so the read after the transaction sees what the callback wrote.
+  const guestLinked: { appointmentId: string | null } = { appointmentId: null };
   try {
-    const result = await runScoped<ActionResult<{ id: string }>>(
+    const result = await runScoped<ActionResult<{ id: string; notice?: ApprovalNotice }>>(
       actor,
       async (tx) => {
         // RB-03 — AVAILABILITY IS ENFORCED, AND IT IS CHECKED BEFORE THE
@@ -993,10 +1001,39 @@ export async function createAppointment(
           created.map((c) => c.id),
         );
 
-        reminderTargets = created.map((c) => ({
-          appointmentId: c.id,
-          startsAt: c.startsAt,
-        }));
+        // ============================================================== //
+        // BOOK-CONFIRM, THE PUBLIC-FORM PATH. S-1004-A, R40 (owner,
+        // 2026-10-04): "public-form requests get linked to the appointment
+        // reception books for them, and that link is the approval trigger."
+        // ============================================================== //
+        // When the drawer was opened from a converted guest request, the
+        // request id rides the input. It is UNTRUSTED (it came from a URL), so
+        // it is verified here, inside this transaction, and a value that does
+        // not verify changes nothing and never fails the booking
+        // (lib/scheduling/guest-link.ts says why).
+        //
+        // ONE occurrence is linked: the earliest. A series booked for a guest
+        // is one answer to one request.
+        const linkTarget = input.guestRequestId ? guestLinkOccurrence(created) : null;
+        if (
+          linkTarget &&
+          (await linkGuestRequestTx(tx, actor, {
+            guestRequestId: input.guestRequestId,
+            patientId: input.patientId,
+            appointmentId: linkTarget.id,
+            locationScope,
+          }))
+        ) {
+          guestLinked.appointmentId = linkTarget.id;
+        }
+
+        reminderTargets = created.map((c) =>
+          // The LINKED occurrence carries the marker, and only it. The marker
+          // asks the dispatch to read the link row; it decides nothing itself.
+          c.id === guestLinked.appointmentId
+            ? acceptedGuestRequestTarget(c.id, c.startsAt)
+            : { appointmentId: c.id, startsAt: c.startsAt },
+        );
         return { ok: true, data: { id: parent.id } };
       },
     );
@@ -1005,9 +1042,19 @@ export async function createAppointment(
       // post-commit; safe with REMINDERS_LIVE_SEND off (sandbox downstream).
       await afterCommit("create", async () => {
         revalidateAppointmentSurfaces();
+        // A linked request has just left reception's queue.
+        if (guestLinked.appointmentId) revalidatePath("/notificacoes");
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
       });
       await afterCommit("createCareTeam", () => emitCareTeamNotices(actor, careTeamAdded));
+      // BOOK-CONFIRM: "Paciente sem email: avise por telefone", when nothing
+      // can be sent to the guest. After the commit and never throwing, and only
+      // for a booking that really was linked.
+      const notice = await approvalNoticeAfterAccept(
+        actor,
+        guestLinked.appointmentId ? [guestLinked.appointmentId] : [],
+      );
+      if (notice) return { ok: true, data: { ...result.data, notice } };
     }
     return result;
   } catch (e) {
@@ -1025,7 +1072,14 @@ export async function createAppointment(
  */
 export async function batchScheduleAppointments(
   input: BatchScheduleInput,
-): Promise<ActionResult<BatchScheduleResult>> {
+  /**
+   * BOOK-CONFIRM, the public-form path. The guest request this batch answers,
+   * when the drawer was opened from a converted request's deep link. UNTRUSTED,
+   * verified inside the batch's transaction exactly as `createAppointment`
+   * verifies it; a value that does not verify changes nothing.
+   */
+  opts?: { guestRequestId?: string | null },
+): Promise<ActionResult<BatchScheduleResult & { notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -1043,7 +1097,8 @@ export async function batchScheduleAppointments(
   }
   // STAFF-02: the batch path is a create path and is guarded identically. It
   // would otherwise be the obvious way around the single-create check.
-  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+  const locationScope = await bookingLocationScope(actor);
+  if (!isLocationBookable(locationScope, input.locationId)) {
     return { ok: false, error: "location_not_assigned" };
   }
   // PL-10 (defense in depth): the "Agendar lote" path is also a create form —
@@ -1059,7 +1114,12 @@ export async function batchScheduleAppointments(
     return { ok: false, error: "forbidden" };
   }
   try {
-    const result = await batchSchedule(actor, input);
+    const guestLink: BatchGuestLink = {
+      guestRequestId: opts?.guestRequestId ?? null,
+      locationScope,
+      linkedAppointmentId: null,
+    };
+    const result = await batchSchedule(actor, input, guestLink);
     /**
      * OBS-05 — THE BATCH PATH NOW EMITS, AND IT IS THE FOURTH CREATION PATH TO
      * DO SO RATHER THAN THE FIRST TO NEED IT.
@@ -1091,15 +1151,24 @@ export async function batchScheduleAppointments(
       revalidateAppointmentSurfaces();
       await enqueueRemindersAfterCommit(
         actor.tenantId,
-        result.booked.map((b) => ({
-          appointmentId: b.appointmentId,
+        result.booked.map((b) =>
           // `BatchBooked.startsAt` is an ISO string (it crosses the server-action
           // boundary to the client); the enqueue takes the instant.
-          startsAt: new Date(b.startsAt),
-        })),
+          //
+          // BOOK-CONFIRM: the ONE occurrence a guest request was linked to
+          // carries the marker; every other target is what it always was.
+          b.appointmentId === guestLink.linkedAppointmentId
+            ? acceptedGuestRequestTarget(b.appointmentId, new Date(b.startsAt))
+            : { appointmentId: b.appointmentId, startsAt: new Date(b.startsAt) },
+        ),
       );
+      if (guestLink.linkedAppointmentId) revalidatePath("/notificacoes");
     });
-    return { ok: true, data: result };
+    const notice = await approvalNoticeAfterAccept(
+      actor,
+      guestLink.linkedAppointmentId ? [guestLink.linkedAppointmentId] : [],
+    );
+    return { ok: true, data: notice ? { ...result, notice } : result };
   } catch (e) {
     /**
      * RB-02b — a pacote batch refusal is a VERDICT, not a crash.

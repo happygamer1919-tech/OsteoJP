@@ -1,5 +1,7 @@
 "use client";
 
+import { approvalNoticeMessage } from "@/app/notificacoes/approval-notices";
+import type { ApprovalNotice } from "@/lib/scheduling/book-confirm-notice";
 import {
   Banner,
   Button,
@@ -103,6 +105,9 @@ export type ModalState =
       // agenda/page.tsx before it gets here, so it always has a matching
       // <option> (STAFF-01).
       prefill?: { serviceId: string | null; locationId: string | null };
+      // BOOK-CONFIRM (S-1004-A, R40): the guest request this drawer was opened
+      // for. Handed to the booking action, which links the appointment to it.
+      guestRequestId?: string;
     }
   | { mode: "edit"; appt: AgendaAppointment };
 
@@ -366,6 +371,7 @@ export function AppointmentDrawer({
   // user cannot change the patient in this flow (they pick only therapist +
   // date/time). `presetPatient` unifies both preset sources for the combobox.
   const lockedPatient = state.mode === "create" ? state.lockedPatient ?? null : null;
+  const guestRequestId = state.mode === "create" ? state.guestRequestId ?? null : null;
   const patientLocked = lockedPatient !== null;
   // SEC-appointment-vanishes-with-patient-scope: on a withheld patient the
   // combobox shows the same "reserved" label the grid does. It is NOT a
@@ -1128,13 +1134,14 @@ export function AppointmentDrawer({
             serviceId: form.serviceId || null,
             packId: form.packId,
             slots: packBatchSlots,
-          }), { kind: "write", retry: retrySubmit, owner: actionOwner });
+          }, { guestRequestId }), { kind: "write", retry: retrySubmit, owner: actionOwner });
           if (out.failed) return;
           const r = out.value;
           if (!r.ok) {
             handleResult(r);
             return;
           }
+          noticeToast(r.data.notice);
           if (r.data.failures.length === 0) {
             succeed();
             return;
@@ -1155,13 +1162,14 @@ export function AppointmentDrawer({
             locationId: form.locationId,
             serviceId: form.serviceId || null,
             slots,
-          }), { kind: "write", retry: retrySubmit, owner: actionOwner });
+          }, { guestRequestId }), { kind: "write", retry: retrySubmit, owner: actionOwner });
           if (out.failed) return;
           const r = out.value;
           if (!r.ok) {
             handleResult(r);
             return;
           }
+          noticeToast(r.data.notice);
           if (r.data.failures.length === 0) {
             succeed();
             return;
@@ -1192,9 +1200,13 @@ export function AppointmentDrawer({
           // service and registers/decrements a pack session in the same tx.
           packId: form.packId || null,
           allowConflict,
+          // BOOK-CONFIRM: present only when this drawer was opened from a
+          // converted guest request's deep link.
+          guestRequestId,
         }), { kind: "write", retry: retrySubmit, owner: actionOwner });
         if (out.failed) return;
         if (!handleResult(out.value)) return;
+        if (out.value.ok) noticeToast(out.value.data.notice);
         succeed();
         return;
       }
@@ -1279,11 +1291,8 @@ export function AppointmentDrawer({
           return;
         }
         // BOOK-CONFIRM: moving a pedido's Estado to Confirmada here IS accepting
-        // it. When its patient has no email on file, say so. A toast, because
-        // the drawer closes on success and the toast outlives it.
-        if (out.value.ok && out.value.data.notice === "patient_no_email") {
-          toast({ tone: "info", message: s["requests.notice.patientNoEmail"], duration: 15_000 });
-        }
+        // it. When nothing can be sent to its patient, say so.
+        if (out.value.ok) noticeToast(out.value.data.notice);
       }
       succeed();
     } finally {
@@ -1294,6 +1303,21 @@ export function AppointmentDrawer({
   function succeed() {
     toast({ tone: "success", message: s["appointment.saved"] });
     onDone();
+  }
+
+  // BOOK-CONFIRM: "Paciente sem email: avise por telefone". The server sends it
+  // back when an approval (a pedido accepted here, or a guest request booked
+  // from its deep link) is for a patient nothing can be sent to. A toast,
+  // because the drawer closes on success and the toast outlives it.
+  //
+  // IT IS RAISED IN THE SAME TICK AS `succeed()`'s "Marcação guardada", and it
+  // is the FIRST toast raised inside this drawer, so the shared Toast adds it a
+  // frame late (its region has to move into the drawer first). The toast store
+  // used to drop exactly that toast; packages/ui toast-store.ts (`entered`)
+  // and its test keep both. e2e/book-confirm.spec.ts reads it in a browser.
+  function noticeToast(notice: ApprovalNotice | undefined) {
+    if (!notice) return;
+    toast({ tone: "info", message: approvalNoticeMessage(notice), duration: 15_000 });
   }
 
   // Password-gated hard delete (W3-06). The password is verified SERVER-side;

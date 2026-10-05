@@ -31,6 +31,12 @@ export interface ToastLifecycle<O extends ClosableToast, M> {
   /** True from `open` until the toast has left. */
   isLive(id: number): boolean;
   /**
+   * The toast was handed to the stack: its render is queued. Toast.tsx calls
+   * this at the moment it adds the toast, which is NOT always the moment it was
+   * raised (see `committed`).
+   */
+  entered(id: number): void;
+  /**
    * The toast left, for whatever reason. Its `onClose` runs here, once: a
    * second release of the same id (two exits racing) does nothing, and an
    * `onClose` that throws does not escape.
@@ -39,8 +45,19 @@ export interface ToastLifecycle<O extends ClosableToast, M> {
   /**
    * A render committed with `onScreen` on screen. A live toast that a committed
    * render had already reached and that is no longer on screen was pushed out
-   * of the stack, so it is released. A toast raised after the newest committed
-   * render is still on its way, not gone, and is left alone.
+   * of the stack, so it is released. A toast that entered after the newest
+   * committed render is still on its way, not gone, and is left alone. So is a
+   * toast that has not entered at all.
+   *
+   * "REACHED" IS COUNTED IN THE ORDER TOASTS ENTER THE STACK, NOT IN THE ORDER
+   * THEY WERE RAISED. The two differ: a toast whose region has to move first
+   * (the first toast raised inside an open drawer) is added one frame late,
+   * and a toast raised in the same tick, after it, is added at once. This used
+   * to compare ids, which are in RAISE order, so the render holding only the
+   * second toast "had already reached" the first, released it as pushed out,
+   * and the late add then found it dead and dropped it. BOOK-CONFIRM lost its
+   * approver notice that way (raised just before "Marcação guardada" as the
+   * drawer saves), on CI, 2026-10-04, in all three attempts.
    */
   committed(onScreen: readonly number[]): void;
   /** The provider is going away: every live toast leaves. */
@@ -51,21 +68,32 @@ export interface ToastLifecycle<O extends ClosableToast, M> {
 
 export function createToastLifecycle<O extends ClosableToast, M>(): ToastLifecycle<O, M> {
   let lastId = 0;
-  /** The highest id any committed render has held. */
+  /** Counts toasts in the order they ENTER the stack. */
+  let lastEntry = 0;
+  /** The latest entry any committed render has held. */
   let committedUpTo = 0;
   const live = new Map<number, O>();
   const originOf = new Map<number, M | null>();
+  /** Each live toast's place in the entry order; absent until it enters. */
+  const entryOf = new Map<number, number>();
 
   function release(id: number): void {
     const options = live.get(id);
     if (!options) return;
     live.delete(id);
     originOf.delete(id);
+    entryOf.delete(id);
     try {
       options.onClose?.();
     } catch {
       // A caller's close handler must not break the toast stack.
     }
+  }
+
+  function entered(id: number): void {
+    if (!live.has(id) || entryOf.has(id)) return;
+    lastEntry += 1;
+    entryOf.set(id, lastEntry);
   }
 
   return {
@@ -76,12 +104,18 @@ export function createToastLifecycle<O extends ClosableToast, M>(): ToastLifecyc
       return lastId;
     },
     isLive: (id) => live.has(id),
+    entered,
     release,
     committed(onScreen) {
-      for (const id of onScreen) if (id > committedUpTo) committedUpTo = id;
+      for (const id of onScreen) {
+        // On screen without having been announced: it has entered, now.
+        entered(id);
+        const entry = entryOf.get(id);
+        if (entry !== undefined && entry > committedUpTo) committedUpTo = entry;
+      }
       const present = new Set(onScreen);
-      for (const id of [...live.keys()]) {
-        if (id <= committedUpTo && !present.has(id)) release(id);
+      for (const [id, entry] of [...entryOf]) {
+        if (entry <= committedUpTo && !present.has(id)) release(id);
       }
     },
     releaseAll() {

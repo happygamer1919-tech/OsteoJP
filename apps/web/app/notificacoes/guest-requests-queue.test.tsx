@@ -1,6 +1,8 @@
 /* eslint-disable react/display-name -- inline @osteojp/ui stand-in for a render test */
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -239,6 +241,57 @@ describe("guest queue - converted but not booked", () => {
     const html = render([row({ converted: true })]);
     expect(html).not.toContain("<a ");
     expect(html).not.toContain("/patients/");
+  });
+});
+
+/**
+ * BOOK-CONFIRM (S-1004-A): a request that was converted and NOT booked at once.
+ * The convert's redirect used to be the only way to the linking deep link, so a
+ * closed drawer left a row that offered only a dismiss. The row now carries the
+ * same link again.
+ */
+describe("guest queue - a converted request can still be booked from its row", () => {
+  const LINK =
+    "/agenda?novaMarcacaoPaciente=p-1&novaMarcacaoServico=svc-1&novaMarcacaoLocal=loc-lv&date=2026-09-07&view=day&pedidoConvidado=g-1";
+
+  it("a CONVERTED row offers Marcar consulta, pointing at its own deep link, beside the dismiss", () => {
+    const html = render([row({ converted: true, bookingLink: LINK })]);
+    expect(html).toContain('data-testid="guest-book-button"');
+    expect(html).toContain(">Marcar consulta</a>");
+    // The href is the row's link, exactly (the & is escaped in markup).
+    expect(html).toContain(`href="${LINK.replace(/&/g, "&amp;")}"`);
+    // BESIDE the dismiss, not instead of it.
+    expect(html).toContain('data-testid="guest-dismiss-button"');
+    expect(html.indexOf("guest-book-button")).toBeLessThan(html.indexOf("guest-dismiss-button"));
+    // And a converted row still offers no second convert.
+    expect(html).not.toContain('data-testid="guest-convert-button"');
+  });
+
+  it("a row that is NOT converted offers no booking link: there is nobody to book for yet", () => {
+    const html = render([row({ converted: false, bookingLink: null })]);
+    expect(html).not.toContain("guest-book-button");
+    expect(html).toContain('data-testid="guest-convert-button"');
+  });
+
+  it("a converted row with no link (an older caller) still renders its dismiss and nothing broken", () => {
+    const html = render([row({ converted: true })]);
+    expect(html).not.toContain("guest-book-button");
+    expect(html).toContain('data-testid="guest-dismiss-button"');
+  });
+
+  it("the STATE decides, not the link: an unconverted row handed a link still offers only the convert", () => {
+    const html = render([row({ converted: false, bookingLink: LINK })]);
+    expect(html).not.toContain("guest-book-button");
+    expect(html).not.toContain('data-testid="guest-dismiss-button"');
+    expect(html).toContain('data-testid="guest-convert-button"');
+  });
+
+  it("the page hands each row the link its view computed (source arm: the page is a server component)", () => {
+    // This repo renders components without a DOM and does not render pages at
+    // all, so the one line that carries the link from the view to the row is
+    // pinned here. e2e/book-confirm.spec.ts presses the button in a browser.
+    const page = readFileSync(join(__dirname, "page.tsx"), "utf8");
+    expect(page).toMatch(/guestRequests\.map\(\(g\) => \(\{[\s\S]*?bookingLink: g\.bookingLink,/);
   });
 });
 
