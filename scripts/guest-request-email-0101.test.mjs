@@ -355,9 +355,14 @@ const STOP_TEXT = /echo "STOP: ([^"]+)"/;
  * "0101 IS APPLIED": it has just read that the journal does not hold it, or holds one row too few.
  */
 export const STATE_UNKNOWN = "Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report";
-/** The STOPs where a contradicting read is possible, each named by how its line starts. Five, and no other. */
+/**
+ * The STOPs where a contradicting read is possible, each named by how its line starts. Six, and no other.
+ * The first is the post-check's own psql run: the post-check names the new column in its one statement, so
+ * on a database WITHOUT the column the statement is refused, psql exits 3 and THIS is the STOP that fires,
+ * before any verdict prints. It has confirmed nothing, so it cannot say the write stands.
+ */
 export const CONTRADICTING_READS = Object.freeze({
-  stage2: ['[ "${FAILS}" = 0 ] || ', '[ "${JA}" = "$((J + 1))" ] || ', '[ "${HN}" = 1 ] || '],
+  stage2: ['psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before=', '[ "${FAILS}" = 0 ] || ', '[ "${JA}" = "$((J + 1))" ] || ', '[ "${HN}" = 1 ] || '],
   closing: ["grep -qx 'journal rows on production: 99' ", "grep -qE '^[[:space:]]*APPLIED[[:space:]]+0101_guest_request_email[.]sql$' "],
 });
 
@@ -730,7 +735,7 @@ test("EVERY date CALL READS LISBON TIME AND ITS ZONE, and the next line refuses 
   assert.deepEqual(dateProblems('echo "the date is not a call"\nNOW=$(date +%s)'), ["line 2: a date call without TZ=Europe/Lisbon", "line 2: a date call that does not read the zone, alone on its line, into a variable, with its halt"]);
 });
 
-test("A POST-COMMIT STOP SAYS WHAT STANDS: the write, on every STOP of stage 2 and the closing read; UNKNOWN on the five whose own read contradicts the marker; and stage 1's after the apply", () => {
+test("A POST-COMMIT STOP SAYS WHAT STANDS: the write, on every STOP of stage 2 and the closing read; UNKNOWN on the six whose own read contradicts the marker or did not finish; and stage 1's after the apply", () => {
   const s1 = blockWith(doc, STAGE1);
   const s2 = blockWith(doc, STAGE2);
   const cl = blockWith(doc, CLOSING);
@@ -746,8 +751,9 @@ test("A POST-COMMIT STOP SAYS WHAT STANDS: the write, on every STOP of stage 2 a
   // Three STOPs of stage 2 come before or at the marker read and are conditional; two of the closing read's.
   assert.equal(s2.split("If stage 1 ended with its line 0101 APPLIED, then").length - 1, 3);
   assert.equal(cl.split("If stage 1 ended with its line 0101 APPLIED, then").length - 1, 2);
-  // EXACTLY FIVE STOPs say UNKNOWN, three and two; and stages 0 and 1, which run before the commit, never do.
-  assert.equal(s2.split(STATE_UNKNOWN).length - 1, 3);
+  // EXACTLY SIX STOPs say UNKNOWN, four and two; and stages 0 and 1, which run before the commit, never do.
+  assert.equal(s2.split(STATE_UNKNOWN).length - 1, 4);
+  assert.equal(C2.length + C3.length, 6);
   assert.equal(cl.split(STATE_UNKNOWN).length - 1, 2);
   for (const b of [blockWith(doc, STAGE0), s1]) assert.ok(!b.includes("Treat the state as UNKNOWN"));
   const clean = (list) => list.map((x) => x.replace(/^line \d+: /, ""));
@@ -763,7 +769,7 @@ test("A POST-COMMIT STOP SAYS WHAT STANDS: the write, on every STOP of stage 2 a
   assert.match(postCommitProblems(swap(cl, `STOP: stage 2 left no pass mark, so it did not pass. ${WRITE_STANDS}`, `STOP: stage 2 left no pass mark, so it did not pass. If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`), M3, C3)[0], /still conditional after the block has read the applied marker/);
   assert.deepEqual(postCommitProblems(s2.replace(M2, '[ -n "$(find /tmp/0101-other.ok -mmin -60 2>/dev/null)" ]'), M2, C2), ["the block never reads stage 1's applied marker"]);
 
-  // RED ARMS, the five. Each one as the second review found it: "the sha256 of 0101 is in the journal 0
+  // RED ARMS, the six. Each one as the second and third reviews found it: "the sha256 of 0101 is in the journal 0
   // times, not once. 0101 IS APPLIED and the write stands".
   for (const [b, marker, set] of [[s2, M2, C2], [cl, M3, C3]]) {
     for (const start of set) {
@@ -793,7 +799,9 @@ test("A POST-COMMIT STOP SAYS WHAT STANDS: the write, on every STOP of stage 2 a
   assert.notEqual(soft, s2);
   assert.deepEqual(clean(postCommitProblems(soft, M2, C2)), ["a STOP calls the state UNKNOWN though its own read contradicts nothing"]);
   // The rule is told which five: told none, it refuses each of them as it would a flat STOP gone wrong.
-  assert.equal(postCommitProblems(s2, M2, []).length, 3);
+  assert.equal(postCommitProblems(s2, M2, []).length, 4);
+  // And told only the first five, it refuses the sixth: the post-check's own psql STOP is in the list on purpose.
+  assert.equal(postCommitProblems(s2, M2, C2.slice(1)).length, 1);
   assert.equal(postCommitProblems(cl, M3, []).length, 2);
 
   // Stage 1: the marker's STOP, and the apply's own.
@@ -1738,6 +1746,28 @@ test("A READ THAT CONTRADICTS THE MARKER: stage 2 and the closing read, run whol
         // No pass mark: after a contradicting read in stage 2 the closing read refuses.
         assert.ok(!r.markersAtEnd.includes("0101-stage2.ok"), tag);
       }
+      // THE POST-CHECK ITSELF DOES NOT COMPLETE: psql exits non-zero on it. This is where a database
+      // WITHOUT the column lands, because the post-check names the column in its one statement and
+      // Postgres refuses the statement before any verdict prints. The STOP says UNKNOWN, and nothing
+      // runs after it: no journal read, no pass mark.
+      const s2cfg = harnessConfig(doc, "stage2", CLOSED, shell, base);
+      const positive = await runOnce(s2cfg, `${shell}-contra-psql-positive`, null);
+      assert.equal(positive.code, 0, positive.out.slice(-400));
+      const postCall = positive.calls.find((c) => c.id.startsWith("psql#") && c.args.includes("postcheck-0101-guest-request-email.sql"));
+      assert.ok(postCall, "stage 2 did not run the post-check through psql");
+      assert.ok(positive.calls.some((c) => c.id.startsWith("psql#") && c.pos > postCall.pos), "the positive run reads the journal after the post-check");
+      const failed = await runOnce(s2cfg, `${shell}-contra-psql-fails`, { call: postCall.id });
+      assert.equal(failed.fired, postCall.id);
+      assert.equal(failed.code, 1, failed.out.slice(-500));
+      const stops = failed.out.split("\n").filter((l) => l.startsWith("STOP: "));
+      assert.equal(stops.length, 1, stops.join(" | "));
+      assert.ok(stops[0].startsWith("STOP: the post-check did not complete (psql's lines are above), or its transcript could not be written, so it has confirmed nothing;"), stops[0]);
+      assert.ok(stops[0].includes(STATE_UNKNOWN), stops[0]);
+      assert.ok(!stops[0].includes("IS APPLIED") && !stops[0].includes("the write stands"), stops[0]);
+      assert.ok(!failed.out.includes("TOOL-CHAIN-CONTINUED") && !failed.out.includes(STAGE2));
+      // NOTHING RUNS AFTER IT: the post-check is the last psql call, and no pass mark is written.
+      assert.deepEqual(failed.calls.filter((c) => c.id.startsWith("psql#") && c.pos > failed.calls.find((x) => x.id === postCall.id).pos), []);
+      assert.ok(!failed.markersAtEnd.includes("0101-stage2.ok"));
       // THE CONTROLS: the same blocks with a database that DOES hold it pass (hash once, 99 rows, 0101 listed).
       for (const name of ["stage2", "closing"]) {
         const ok = await runOnce(harnessConfig(doc, name, CLOSED, shell, base), `${shell}-contra-${name}-control`, null);

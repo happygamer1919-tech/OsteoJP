@@ -738,7 +738,7 @@ node scripts/assert-production-target.mjs || { echo "STOP: the target guard refu
 
 echo "--- the post-check, inside one READ ONLY transaction, so the server is what refuses a write"
 rm -f /tmp/0101-postcheck.out || { echo "STOP: the old post-check transcript could not be removed. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before="${J}" -v tables_before="${T}" -v secdef_before="${S}" -v relfilenode_before="${RF}" -v table_columns_md5="${TC}" -v table_constraints_md5="${TK}" -v table_indexes_md5="${TI}" -v policies_md5="${PM}" -v functions_md5="${FM}" -v relation_acl_md5="${RM}" -v column_acl_md5="${CM}" -v default_acl_md5="${DM}" -v dml_profile_md5="${DP}" -c "begin read only" -f scripts/db/postcheck-0101-guest-request-email.sql -c "rollback" 2>&1 | tee /tmp/0101-postcheck.out || { echo "STOP: the post-check did not complete (psql's lines are above), or its transcript could not be written. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before="${J}" -v tables_before="${T}" -v secdef_before="${S}" -v relfilenode_before="${RF}" -v table_columns_md5="${TC}" -v table_constraints_md5="${TK}" -v table_indexes_md5="${TI}" -v policies_md5="${PM}" -v functions_md5="${FM}" -v relation_acl_md5="${RM}" -v column_acl_md5="${CM}" -v default_acl_md5="${DM}" -v dml_profile_md5="${DP}" -c "begin read only" -f scripts/db/postcheck-0101-guest-request-email.sql -c "rollback" 2>&1 | tee /tmp/0101-postcheck.out || { echo "STOP: the post-check did not complete (psql's lines are above), or its transcript could not be written, so it has confirmed nothing; a column or a row it reads that is not there ends it this way. Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report; the lead rules"; exit 1; }
 FAILS=$(grep -cE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0101-postcheck.out || true)
 [ "${FAILS}" = 0 ] || { echo "STOP: the post-check printed [${FAILS}] FAIL verdicts, or its transcript could not be read. Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report; the lead rules"; exit 1; }
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0101-postcheck.out || true)
@@ -780,16 +780,19 @@ commit and is read by somebody deciding what to do next: `0101 IS APPLIED and th
 nothing again, not stage 0 and not stage 1`. The first three STOPs of stage 2 and the first two of
 the closing read come before the block has read stage 1's applied marker, so they say it
 conditionally (`If stage 1 ended with its line 0101 APPLIED, then ...`); every later one says it
-flatly, **with five exceptions, where the block's own read of the database CONTRADICTS the
-marker.** A STOP cannot say "the sha256 of 0101 is in the journal 0 times" and "0101 IS APPLIED" in
-one breath. On those five the STOP says exactly this and no more: `Stage 1 recorded that it applied
+flatly, **with six exceptions, where the block's own read of the database CONTRADICTS the
+marker, or did not finish and so confirmed nothing.** A STOP cannot say "the sha256 of 0101 is in the journal 0 times" and "0101 IS APPLIED" in
+one breath. On those six the STOP says exactly this and no more: `Stage 1 recorded that it applied
 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and
-not stage 1, and report; the lead rules`. They are, in stage 2, a FAIL verdict of the post-check (a
+not stage 1, and report; the lead rules`. They are, in stage 2, the post-check itself not completing (psql exits non-zero: the post-check
+names the new column in its one statement, so on a database WITHOUT the column Postgres refuses the
+whole statement, psql exits 3, and this is the STOP that fires, before any verdict can print), a
+FAIL verdict of the post-check (a
 FAIL of verdict 1, 2, 17 or 18 is such a contradiction, and the block does not know which verdict
 failed), the journal count that is not the pre-check's plus one, and the count of 0101's sha256 in
 the journal that is not 1; and in the closing read, a journal that does not read 99 and a read that
 does not list 0101 as APPLIED. The script test requires the flat sentence on every other post-commit
-STOP, the UNKNOWN sentence on exactly those five, and never both on one line.
+STOP, the UNKNOWN sentence on exactly those six, and never both on one line.
 
 ## THE CLOSING JOURNAL READ. READ ONLY
 
@@ -972,6 +975,7 @@ FAIL in every arm, the transaction being writable):
 | U16 a SECURITY DEFINER function not owned by `postgres` | COULD NOT BE PLANTED (`42501 permission denied for schema public`): that half of `secdef_functions_before` was not broken on purpose |
 | N1 the pre-check on the APPLIED database | FAIL on 1, 2, `journal_rows_before`, 5, 12 (a second apply is refused before it starts) |
 | N12 the pre-check without `prev_hash` | STOP, before any verdict |
+| the post-check on a database WITHOUT the column | not run as an arm; by construction a statement error (`column "email" does not exist`), psql exit 3, no verdict printed: a missing subject is a STOP, and stage 2's STOP for it says the state is UNKNOWN |
 | P0 the post-check, nothing planted | FAIL on 0 only |
 | P1 the column given a default | FAIL on 0, 1 |
 | P2 the CHECK replaced by a looser one of the same name | FAIL on 0, 2 |
@@ -1258,3 +1262,14 @@ The sidecar was regenerated for every document mutant.
   as the second review read it (`dfca0530`) was run the same way and failed on exactly the reviewed
   line, `[10730 Europe]` where `[10730 UTC]` was pinned. CI runs Node 22 on ubuntu; the container
   was Node 20, the one Linux image already on the build machine.
+
+**A third independent review, of `33fb83f6`, 2026-10-05, the last under the review-loop cap: one
+MINOR, fixed in the commit after it and NOT RE-REVIEWED.** The post-check's own psql STOP still said
+`0101 IS APPLIED`, and it is where the likeliest contradiction lands: with the column absent the
+post-check's statement is refused and psql exits 3, so verdict 1's "no column" FAIL can never print.
+That STOP now carries the UNKNOWN sentence, the static rule requires it there, and a harness arm
+runs stage 2 whole with psql exiting non-zero on the post-check. **The post-check's SQL is
+unchanged:** it is pinned by sha256 here, in the script test and in GREEN's dispatch, it names the
+column in three places (the column-privilege read as well as the two counts), and its 19 verdicts
+and 23 arms were run on these bytes. No sweep was run over this one line beyond the rule's own red
+arms, which cover it.
