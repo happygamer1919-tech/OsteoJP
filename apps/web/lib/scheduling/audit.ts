@@ -26,8 +26,8 @@ export type AppointmentAuditAction =
  * The guard moved to `lib/audit/metadata-contract.ts` so the other three audit
  * helpers enforce the SAME rule rather than restating it in a comment. Read that
  * file's header before adding a metadata key: it carries the reasoning, and the
- * one documented exception (`reminders/messaging-check.ts`, which bypasses every
- * helper and writes the provider's own error text on purpose).
+ * history of the one exception it used to name (`reminders/messaging-check.ts`
+ * wrote the provider's own error text; that was withdrawn, and why is there).
  */
 /**
  * Append an audit row for an appointment mutation. MUST be called inside the
