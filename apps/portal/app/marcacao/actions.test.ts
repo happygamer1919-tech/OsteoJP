@@ -543,6 +543,22 @@ describe('§R40 — the optional email', () => {
     }
   })
 
+  it('a malformed email is told ON step 4 and nowhere earlier: going back and forward through steps 1 to 3 is not blocked by it', async () => {
+    // A visitor types a bad address on step 4 and presses back. The value travels
+    // with the form, so every earlier step posts it. Those steps must still
+    // advance one at a time, with no error: the address is step 4's question.
+    for (const step of ['1', '2', '3']) {
+      const out = await run(complete({ intent: 'next', step, email: 'not-an-email' }))
+      expect(out.step, `next from step ${step}`).toBe(Number(step) + 1)
+      expect(out.error, `next from step ${step}`).toBeNull()
+      expect(out.values.email).toBe('not-an-email')
+    }
+    // THE CONTROL: the same value does stop the step it belongs to.
+    const at4 = await run(complete({ intent: 'next', step: '4', intake: '1', email: 'not-an-email' }))
+    expect(at4.step).toBe(4)
+    expect(at4.error).toBe('invalid')
+  })
+
   it('an EMPTY email is never a missing field: steps 1 to 4 advance exactly as before', async () => {
     const out = await run(complete({ intent: 'next', intake: '1' }))
     expect(out.step).toBe(5)

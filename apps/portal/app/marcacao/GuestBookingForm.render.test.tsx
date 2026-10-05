@@ -43,7 +43,7 @@ const EN_SENTENCE =
 const LOCATION = 'aaaaaaaa-0000-0000-0000-000000000001'
 const SERVICE = 'bbbbbbbb-0000-0000-0000-000000000001'
 
-function render(locale: 'pt' | 'en', step: GuestStep, intake: boolean): string {
+function render(locale: 'pt' | 'en', step: GuestStep, intake: boolean, over: Partial<typeof EMPTY_GUEST_VALUES> = {}): string {
   const state: GuestFormState = {
     ...INITIAL_GUEST_STATE,
     step,
@@ -54,6 +54,7 @@ function render(locale: 'pt' | 'en', step: GuestStep, intake: boolean): string {
       serviceId: SERVICE,
       preferredDate: '2030-01-07',
       preferredPeriod: 'manha',
+      ...over,
     },
   }
   H.state = state
@@ -138,5 +139,40 @@ describe('the sentence about what the contacts are used for (owner-approved, 202
   it('THE CONTROL: the render really is the step it was asked for (step 4 has the email field, step 1 does not)', () => {
     expect(render('pt', 4, false)).toContain('type="email"')
     expect(render('pt', 1, false)).not.toContain('type="email"')
+  })
+})
+
+/**
+ * THE EMAIL A VISITOR TYPED MUST SURVIVE THE STEPS. The form has no client state:
+ * every answer travels as a field of the next post. So the address is the visible
+ * input on step 4 and a hidden field on every other step, and it is never both.
+ * Losing it on step 5 would drop it from every booking made on the five-step flow.
+ */
+describe('the typed email travels through the steps', () => {
+  const ADDRESS = 'guest.fixture@example.invalid'
+  const fieldsNamedEmail = (html: string): string[] => html.match(/<input[^>]*name="email"[^>]*>/g) ?? []
+
+  it('on step 4 it is ONE field, the visible input, holding what was typed', () => {
+    for (const intake of [false, true]) {
+      const fields = fieldsNamedEmail(render('pt', 4, intake, { email: ADDRESS }))
+      expect(fields).toHaveLength(1)
+      expect(fields[0]).toContain('type="email"')
+      expect(fields[0]).toContain(`value="${ADDRESS}"`)
+    }
+  })
+
+  it('on every other step it is ONE hidden field holding the same address, step 5 included', () => {
+    for (const [step, intake] of [[1, false], [2, false], [3, false], [1, true], [2, true], [3, true], [5, true]] as const) {
+      const fields = fieldsNamedEmail(render('pt', step, intake, { email: ADDRESS }))
+      expect(fields, `step ${step}`).toHaveLength(1)
+      expect(fields[0], `step ${step}`).toContain('type="hidden"')
+      expect(fields[0], `step ${step}`).toContain(`value="${ADDRESS}"`)
+    }
+  })
+
+  it('THE CONTROL: with no email typed the field is still there, empty, so the post always names it', () => {
+    const fields = fieldsNamedEmail(render('pt', 5, true))
+    expect(fields).toHaveLength(1)
+    expect(fields[0]).toContain('value=""')
   })
 })
