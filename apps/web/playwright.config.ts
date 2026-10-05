@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { CONFIRM_CODE_SECRET } from "./e2e/fixtures";
+import { BOOK_CONFIRM_CANARY_IDS, CONFIRM_CODE_SECRET } from "./e2e/fixtures";
 
 /**
  * OsteoJP — Playwright E2E configuration
@@ -247,6 +247,14 @@ export default defineConfig({
             // one. One constant in e2e/fixtures.ts, injected here, asserted by
             // confirm-code.spec.ts before it asserts anything else.
             REMINDERS_CONFIRM_CODE_SECRET: CONFIRM_CODE_SECRET,
+            // BOOK-CONFIRM: CANARY, not on, and that is the isolation. The new
+            // behaviour applies only to book-confirm.spec.ts's own invented
+            // patients, so every other spec that accepts a pedido keeps today's
+            // behaviour exactly, and the same run exercises the "not on the
+            // list" arm. The ids are fixtures in a throwaway database, never a
+            // real patient's.
+            BOOK_CONFIRM_MODE: "canary",
+            BOOK_CONFIRM_CANARY_PATIENT_IDS: BOOK_CONFIRM_CANARY_IDS,
           },
           // LE-e2e-shard2-404-is-an-unmatched-route-not-a-hidden-row: CAPTURE ONLY.
           // The api and portal servers already pipe their output; this one did

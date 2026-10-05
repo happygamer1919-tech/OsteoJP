@@ -30,6 +30,7 @@ import {
   batchSchedule,
   ClinicHoursRefused,
   PackBatchRefused,
+  type BatchGuestLink,
   type BatchScheduleInput,
   type BatchScheduleResult,
 } from "./batch";
@@ -72,6 +73,9 @@ import {
   type ReminderEnqueueTarget,
   type StatusNotificationTarget,
 } from "./reminders";
+import { acceptedPedidoTarget, unconfirmedPedidoIdsAmong } from "./pedido-acceptance";
+import { acceptedGuestRequestTarget, guestLinkOccurrence, linkGuestRequestTx } from "./guest-link";
+import { approvalNoticeAfterAccept, type ApprovalNotice } from "./book-confirm-notice";
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type {
   ActionResult,
@@ -613,7 +617,7 @@ export async function getTherapistLocations(
 
 export async function createAppointment(
   input: CreateAppointmentInput,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -637,7 +641,10 @@ export async function createAppointment(
   // what made the bug visible.
   //
   // OWNER IS EXCEPTED via `bookingLocationScope`, which returns null for them.
-  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+  // Kept, not recomputed: the guest-request link below asks the same scope
+  // about the REQUEST's clinic.
+  const locationScope = await bookingLocationScope(actor);
+  if (!isLocationBookable(locationScope, input.locationId)) {
     return { ok: false, error: "location_not_assigned" };
   }
   // PL-10 (defense in depth): a therapist self-books ONLY. The create form hides
@@ -729,8 +736,11 @@ export async function createAppointment(
   let reminderTargets: ReminderEnqueueTarget[] = [];
   // CARE-02c: the care-team rows this booking wrote, notified AFTER commit.
   let careTeamAdded: CareTeamAddition[] = [];
+  // BOOK-CONFIRM: the occurrence a guest request was linked to, if any. A
+  // holder, so the read after the transaction sees what the callback wrote.
+  const guestLinked: { appointmentId: string | null } = { appointmentId: null };
   try {
-    const result = await runScoped<ActionResult<{ id: string }>>(
+    const result = await runScoped<ActionResult<{ id: string; notice?: ApprovalNotice }>>(
       actor,
       async (tx) => {
         // RB-03 — AVAILABILITY IS ENFORCED, AND IT IS CHECKED BEFORE THE
@@ -991,10 +1001,39 @@ export async function createAppointment(
           created.map((c) => c.id),
         );
 
-        reminderTargets = created.map((c) => ({
-          appointmentId: c.id,
-          startsAt: c.startsAt,
-        }));
+        // ============================================================== //
+        // BOOK-CONFIRM, THE PUBLIC-FORM PATH. S-1004-A, R40 (owner,
+        // 2026-10-04): "public-form requests get linked to the appointment
+        // reception books for them, and that link is the approval trigger."
+        // ============================================================== //
+        // When the drawer was opened from a converted guest request, the
+        // request id rides the input. It is UNTRUSTED (it came from a URL), so
+        // it is verified here, inside this transaction, and a value that does
+        // not verify changes nothing and never fails the booking
+        // (lib/scheduling/guest-link.ts says why).
+        //
+        // ONE occurrence is linked: the earliest. A series booked for a guest
+        // is one answer to one request.
+        const linkTarget = input.guestRequestId ? guestLinkOccurrence(created) : null;
+        if (
+          linkTarget &&
+          (await linkGuestRequestTx(tx, actor, {
+            guestRequestId: input.guestRequestId,
+            patientId: input.patientId,
+            appointmentId: linkTarget.id,
+            locationScope,
+          }))
+        ) {
+          guestLinked.appointmentId = linkTarget.id;
+        }
+
+        reminderTargets = created.map((c) =>
+          // The LINKED occurrence carries the marker, and only it. The marker
+          // asks the dispatch to read the link row; it decides nothing itself.
+          c.id === guestLinked.appointmentId
+            ? acceptedGuestRequestTarget(c.id, c.startsAt)
+            : { appointmentId: c.id, startsAt: c.startsAt },
+        );
         return { ok: true, data: { id: parent.id } };
       },
     );
@@ -1003,9 +1042,19 @@ export async function createAppointment(
       // post-commit; safe with REMINDERS_LIVE_SEND off (sandbox downstream).
       await afterCommit("create", async () => {
         revalidateAppointmentSurfaces();
+        // A linked request has just left reception's queue.
+        if (guestLinked.appointmentId) revalidatePath("/notificacoes");
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
       });
       await afterCommit("createCareTeam", () => emitCareTeamNotices(actor, careTeamAdded));
+      // BOOK-CONFIRM: "Paciente sem email: avise por telefone", when nothing
+      // can be sent to the guest. After the commit and never throwing, and only
+      // for a booking that really was linked.
+      const notice = await approvalNoticeAfterAccept(
+        actor,
+        guestLinked.appointmentId ? [guestLinked.appointmentId] : [],
+      );
+      if (notice) return { ok: true, data: { ...result.data, notice } };
     }
     return result;
   } catch (e) {
@@ -1023,7 +1072,14 @@ export async function createAppointment(
  */
 export async function batchScheduleAppointments(
   input: BatchScheduleInput,
-): Promise<ActionResult<BatchScheduleResult>> {
+  /**
+   * BOOK-CONFIRM, the public-form path. The guest request this batch answers,
+   * when the drawer was opened from a converted request's deep link. UNTRUSTED,
+   * verified inside the batch's transaction exactly as `createAppointment`
+   * verifies it; a value that does not verify changes nothing.
+   */
+  opts?: { guestRequestId?: string | null },
+): Promise<ActionResult<BatchScheduleResult & { notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -1041,7 +1097,8 @@ export async function batchScheduleAppointments(
   }
   // STAFF-02: the batch path is a create path and is guarded identically. It
   // would otherwise be the obvious way around the single-create check.
-  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+  const locationScope = await bookingLocationScope(actor);
+  if (!isLocationBookable(locationScope, input.locationId)) {
     return { ok: false, error: "location_not_assigned" };
   }
   // PL-10 (defense in depth): the "Agendar lote" path is also a create form —
@@ -1057,7 +1114,12 @@ export async function batchScheduleAppointments(
     return { ok: false, error: "forbidden" };
   }
   try {
-    const result = await batchSchedule(actor, input);
+    const guestLink: BatchGuestLink = {
+      guestRequestId: opts?.guestRequestId ?? null,
+      locationScope,
+      linkedAppointmentId: null,
+    };
+    const result = await batchSchedule(actor, input, guestLink);
     /**
      * OBS-05 — THE BATCH PATH NOW EMITS, AND IT IS THE FOURTH CREATION PATH TO
      * DO SO RATHER THAN THE FIRST TO NEED IT.
@@ -1089,15 +1151,24 @@ export async function batchScheduleAppointments(
       revalidateAppointmentSurfaces();
       await enqueueRemindersAfterCommit(
         actor.tenantId,
-        result.booked.map((b) => ({
-          appointmentId: b.appointmentId,
+        result.booked.map((b) =>
           // `BatchBooked.startsAt` is an ISO string (it crosses the server-action
           // boundary to the client); the enqueue takes the instant.
-          startsAt: new Date(b.startsAt),
-        })),
+          //
+          // BOOK-CONFIRM: the ONE occurrence a guest request was linked to
+          // carries the marker; every other target is what it always was.
+          b.appointmentId === guestLink.linkedAppointmentId
+            ? acceptedGuestRequestTarget(b.appointmentId, new Date(b.startsAt))
+            : { appointmentId: b.appointmentId, startsAt: new Date(b.startsAt) },
+        ),
       );
+      if (guestLink.linkedAppointmentId) revalidatePath("/notificacoes");
     });
-    return { ok: true, data: result };
+    const notice = await approvalNoticeAfterAccept(
+      actor,
+      guestLink.linkedAppointmentId ? [guestLink.linkedAppointmentId] : [],
+    );
+    return { ok: true, data: notice ? { ...result, notice } : result };
   } catch (e) {
     /**
      * RB-02b — a pacote batch refusal is a VERDICT, not a crash.
@@ -1408,7 +1479,7 @@ export async function updateAppointment(
   id: string,
   patch: UpdateAppointmentPatch,
   opts?: SeriesOptions,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -1448,8 +1519,12 @@ export async function updateAppointment(
   let statusTargets: StatusNotificationTarget[] = [];
   // W14-02: the portal pedidos this patch ACCEPTS. Same capture-then-emit shape.
   let reminderTargets: ReminderEnqueueTarget[] = [];
+  // BOOK-CONFIRM: the ids of those accepted pedidos, for the approver's notice.
+  // A holder object, so the read after the transaction sees what the callback
+  // wrote (a bare `let` assigned in a closure narrows back to its initialiser).
+  const acceptedForNotice: { ids: string[] } = { ids: [] };
   try {
-    const result = await runScoped<ActionResult<{ id: string }>>(
+    const result = await runScoped<ActionResult<{ id: string; notice?: ApprovalNotice }>>(
       actor,
       async (tx) => {
         const affected = await resolveSeries(tx, id, scope);
@@ -1918,10 +1993,30 @@ export async function updateAppointment(
         // offsets have passed and it would fire nothing, which the owner ruled
         // is expected, not a defect.
         const nowMs = Date.now();
+        // A ROW BROUGHT BACK AS AN UNACCEPTED PEDIDO EMITS NOTHING. A portal
+        // request returned to Agendada is waiting for reception again; an event
+        // for it could send nothing and would spend the idempotency keys its
+        // acceptance needs (lib/scheduling/pedido-acceptance.ts,
+        // `unconfirmedPedidoIdsAmong`). Its acceptance emits instead.
+        //
+        // READ AFTER THE UPDATE, unlike the acceptance probe above, and that is
+        // not an oversight: before the write these rows are `cancelled`, so
+        // is_unconfirmed_pedido answers false for all of them. The question is
+        // what they have BECOME, and the function reads this transaction's own
+        // write. Only `scheduled` can be a pedido, so nothing is asked when the
+        // row is brought back straight to Confirmada, which emits as before.
+        const backAsPedido =
+          patch.status === "scheduled"
+            ? await unconfirmedPedidoIdsAmong(tx, uncancelling.map((a) => a.id))
+            : new Set<string>();
+        acceptedForNotice.ids = acceptedPedidos.map((a) => a.id);
         reminderTargets = [
-          ...acceptedPedidos.map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
+          // BOOK-CONFIRM: an ACCEPTANCE carries the marker. The rows brought
+          // back from Cancelada below do not, and keep today's confirmation.
+          ...acceptedPedidos.map((a) => acceptedPedidoTarget(a.id, a.startsAt)),
           ...uncancelling
             .filter((a) => a.startsAt.getTime() > nowMs)
+            .filter((a) => !backAsPedido.has(a.id))
             .map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
         ];
         return { ok: true, data: { id } };
@@ -1941,6 +2036,10 @@ export async function updateAppointment(
           await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
         }
       });
+      // BOOK-CONFIRM: "Paciente sem email: avise por telefone". After the
+      // commit and never throwing, so it cannot fail the save it follows.
+      const notice = await approvalNoticeAfterAccept(actor, acceptedForNotice.ids);
+      if (notice) return { ok: true, data: { ...result.data, notice } };
     }
     return result;
   } catch (e) {
@@ -1998,6 +2097,12 @@ export async function rescheduleAppointment(
         // the write, which would return the new value and silently make every
         // notification say it moved from where it now is.
         const before = await readStaffTransitionFanOut(tx, ids);
+
+        // WHICH OF THESE ROWS ARE UNACCEPTED PEDIDOS, read before the write as
+        // the acceptance doors read it. A move does not change the status, so
+        // the answer holds for the whole transaction. Used once, at the bottom,
+        // to keep such a row's move from emitting.
+        const unacceptedPedidoIds = await unconfirmedPedidoIdsAmong(tx, ids);
 
         // scope "one": move to the exact window from input (date may change).
         // scope following/series: keep each occurrence's date, apply the new
@@ -2173,10 +2278,23 @@ export async function rescheduleAppointment(
           slots: "primary",
         });
 
-        reminderTargets = targets.map((t) => ({
-          appointmentId: t.id,
-          startsAt: t.startsAt,
-        }));
+        // MOVING AN UNACCEPTED PEDIDO EMITS NOTHING. It has no reminder run to
+        // supersede (nothing emitted for it when the patient booked), the
+        // dispatch would refuse the confirmation anyway, and the event would
+        // spend the idempotency keys the acceptance needs at this same start -
+        // which is how a request moved and then accepted the same day got no
+        // confirmation and no reminders. The full reasoning, including the row
+        // that was accepted once and brought back, is on
+        // `unconfirmedPedidoIdsAmong` in ./pedido-acceptance.ts.
+        //
+        // An ACCEPTED appointment is not in that set: its move re-emits exactly
+        // as before, and that event is what supersedes its sleeping reminders.
+        reminderTargets = targets
+          .filter((t) => !unacceptedPedidoIds.has(t.id))
+          .map((t) => ({
+            appointmentId: t.id,
+            startsAt: t.startsAt,
+          }));
         // THE OLD INSTANTS, matched to the new ones by id. This is the only kind
         // where the two differ, and it is why staff_notifications carries the
         // column pair at all: a reader needs to know what it moved FROM.
@@ -2264,7 +2382,7 @@ export async function rescheduleAppointment(
  */
 export async function confirmAppointmentRequest(
   id: string,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; notice?: ApprovalNotice }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
   const { actor } = auth;
@@ -2283,7 +2401,7 @@ export async function confirmAppointmentRequest(
   // never run inside an open Postgres transaction).
   let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
-    const result = await runScoped<ActionResult<{ id: string }>>(
+    const result = await runScoped<ActionResult<{ id: string; notice?: ApprovalNotice }>>(
       actor,
       async (tx) => {
         // The pedido, joined to its provenance. Both halves are RLS-scoped: the
@@ -2385,7 +2503,9 @@ export async function confirmAppointmentRequest(
           ),
           startsAt: pedido.startsAt,
         };
-        reminderTargets = [{ appointmentId: pedido.id, startsAt: pedido.startsAt }];
+        // BOOK-CONFIRM: the target carries the acceptance marker, so the
+        // dispatch can tell this event from a reschedule of the same row.
+        reminderTargets = [acceptedPedidoTarget(pedido.id, pedido.startsAt)];
         return { ok: true, data: { id: pedido.id } };
       },
     );
@@ -2452,6 +2572,10 @@ export async function confirmAppointmentRequest(
           });
         }
       });
+      // BOOK-CONFIRM: "Paciente sem email: avise por telefone". After the
+      // commit and never throwing, so it cannot fail the acceptance it follows.
+      const notice = await approvalNoticeAfterAccept(actor, [result.data.id]);
+      if (notice) return { ok: true, data: { ...result.data, notice } };
     }
     return result;
   } catch (e) {

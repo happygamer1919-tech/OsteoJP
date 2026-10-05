@@ -1,5 +1,6 @@
 "use client";
 
+import { approvalNoticeMessage } from "@/app/notificacoes/approval-notices";
 import {
   Banner,
   Button,
@@ -400,6 +401,11 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
     if (r.ok) {
       setConflicts(null);
       toast({ tone: "success", message: s["appointment.saved"] });
+      // BOOK-CONFIRM: the same Estado control as the agenda drawer, so the
+      // same notice when this save accepted a pedido whose patient has no email.
+      if (r.data.notice) {
+        toast({ tone: "info", message: approvalNoticeMessage(r.data.notice), duration: 15_000 });
+      }
       router.refresh();
       return;
     }

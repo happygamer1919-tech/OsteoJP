@@ -687,6 +687,13 @@
       "when": 1788502100000,
       "tag": "0100_revoke_maintain",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1788502200000,
+      "tag": "0101_guest_request_email",
+      "breakpoints": true
     }
   ]
 }

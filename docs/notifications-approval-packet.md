@@ -534,6 +534,126 @@ OsteoJP - Recebemos a sua mensagem. A recepcao vai confirmar consigo.
 
 **Aprova? [ ] sim  [ ] nao  [ ] outra redaccao:**
 
+---
+
+## NOVO — a confirmacao do pedido de marcacao aprovado
+
+> **APROVADA PELO PROPRIETARIO E PELA ESTRATEGIA EM 2026-10-03** (despacho
+> S-1003-B, bloco 1, alterado pelo proprietario no mesmo dia). E a seccao 15
+> abaixo. O texto em portugues foi escrito por eles e esta aqui caracter a
+> caracter; a versao em ingles foi escrita a partir dele.
+>
+> **O SMS DA SECCAO 16 E DE 2026-10-04** (despacho S-1004-A, R40, decidido pelo
+> proprietario): texto da estrategia, caracter a caracter.
+
+**O que muda.** Quando a recepcao aprova um pedido de marcacao feito online, o
+doente passa a receber **uma so** confirmacao: o email da seccao 15, se tiver
+email na ficha. Se nao tiver email e tiver telemovel, recebe em vez dele o SMS da
+seccao 16 (`booking_approved.sms`). Estas mensagens **substituem** as das
+seccoes 1 e 2 no momento da aprovacao do pedido; uma remarcacao continua a
+enviar as das seccoes 1 e 2.
+
+**Quem aprova e avisado sempre que nenhuma mensagem pode sair** por um motivo
+que ja se conhece no momento da aprovacao (regra de 2026-10-04, decisao da
+coordenacao; ate essa data o aviso olhava apenas para o formato do numero):
+
+1. O doente nao tem email **e** o SMS nao pode ser enviado: nao tem um
+   telemovel utilizavel (sem numero, numero invalido ou telefone fixo), **ou** a
+   clinica tem os SMS desligados, **ou** o doente tem os SMS desligados na sua
+   ficha. Aviso: "Paciente sem email: avise por telefone".
+2. O local da consulta nao tem morada ou nao tem telefone (nenhum canal envia a
+   partir de um local assim). Aviso: "Confirmação não enviada: o local não tem
+   morada ou telefone. Avise o paciente por telefone." Em ingles: "Confirmation
+   not sent: the location has no address or phone. Notify the patient by phone."
+
+Quando os dois motivos se aplicam, aparece o primeiro, que e tambem o motivo que
+fica registado. O aviso e o envio usam as mesmas condicoes, no mesmo codigo
+(`lib/reminders/book-confirm-plan.ts`). Um motivo que so se conhece no momento do
+envio **nao** gera aviso: um nome de local com acentos ou demasiado longo para o
+SMS (fica registado como `body_refused`), uma falha do fornecedor, ou o envio
+real desligado.
+
+**Os pedidos do formulario publico tambem contam** (S-1004-A, R40). Quem pede
+uma marcacao no site sem conta fica na fila da recepcao; a recepcao converte o
+pedido num doente e marca a consulta. Essa marcacao fica agora ligada ao pedido,
+e e essa ligacao que envia a confirmacao, com as mesmas regras. Com o
+interruptor desligado, uma marcacao feita para um pedido do formulario publico
+nao envia nada, como ate aqui.
+E enviada uma vez por consulta e por hora marcada: aprovar duas vezes a mesma
+hora nao repete a mensagem, e aprovar de novo depois de a hora mudar envia uma
+nova com a hora certa.
+
+**A morada e o telefone sao os do local da consulta**, e so esses. Se o local
+nao tiver morada ou nao tiver telefone, nao e enviado nada por nenhum canal e
+fica registado o motivo. Nunca e usado o telefone geral da clinica.
+
+**Tres travoes, nao um.** `REMINDERS_LIVE_SEND`, a aprovacao deste texto, e o
+interruptor `BOOK_CONFIRM_MODE` (`off`, `canary` ou `on`; por omissao `off`, em
+que tudo fica como estava).
+
+### 15. Pedido de marcacao aprovado — Email
+
+- **Identificador:** `booking_approved.email`
+- **Quando:** no momento em que a recepcao aprova um pedido de marcacao feito online, e so com `BOOK_CONFIRM_MODE` em `canary` (para os doentes da lista) ou `on`.
+- **Estado:** aprovado (`approved: true`) — proprietario e estrategia, despacho S-1003-B, **2026-10-03**. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND` e por `BOOK_CONFIRM_MODE`.
+- **Nota:** nao depende do interruptor de lembretes por email da clinica nem da preferencia de lembretes por email do doente. E a resposta a um pedido que o doente fez.
+
+**Assunto:**
+
+```
+Consulta confirmada: {{appointment_date}} às {{appointment_time}}
+```
+
+**Texto tal como esta programado:**
+
+```
+Olá {{patient_first_name}},
+O seu pedido de marcação foi aprovado. A consulta está confirmada:
+Data: {{appointment_date}}
+Hora: {{appointment_time}}
+Serviço: {{service_name}}
+Terapeuta: {{practitioner_name}}
+Local: {{location_name}}, {{location_address}}
+Para alterar ou cancelar, contacte a clínica: {{location_phone}}
+OsteoJP
+```
+
+**Exemplo preenchido** (Madalena, 10/09 as 14:30, Osteopatia, Dr. Teste Ficticio; a morada e o telefone sao de exemplo):
+
+```
+Assunto: Consulta confirmada: 10 de setembro de 2026 às 14:30
+
+Olá Madalena,
+O seu pedido de marcação foi aprovado. A consulta está confirmada:
+Data: 10 de setembro de 2026
+Hora: 14:30
+Serviço: Osteopatia
+Terapeuta: Dr. Teste Ficticio
+Local: Castelo Branco, Rua de Exemplo 1, 6000-000 Castelo Branco
+Para alterar ou cancelar, contacte a clínica: +351 272 000 000
+OsteoJP
+```
+
+### 16. Pedido de marcacao aprovado — SMS
+
+- **Identificador:** `booking_approved.sms`
+- **Quando:** no mesmo momento que a seccao 15, e **so** quando o doente nao tem email na ficha e tem um telemovel. Continua a respeitar o interruptor de SMS da clinica e a preferencia de SMS do doente.
+- **Estado:** aprovado (`approved: true`) — texto da estrategia, despacho S-1004-A, **2026-10-04**. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND` e por `BOOK_CONFIRM_MODE`.
+- **Codificacao:** GSM-7 (sem acentos), 1 segmento. No pior caso medido (data e hora mais longas, local "Montemor-o-Novo", telefone "+351 912 345 678") tem 95 caracteres.
+- **Nota:** `{local}` e o nome do local da consulta e `{telefone}` o telefone desse local. Nunca o telefone geral da clinica.
+
+**Texto tal como esta programado:**
+
+```
+OsteoJP: marcacao confirmada para {data} as {hora} em {local}. Duvidas: {telefone}.
+```
+
+**Exemplo preenchido** (10/09 as 14:30, local e telefone de exemplo):
+
+```
+OsteoJP: marcacao confirmada para 10/09 as 14:30 em OsteoJP (CB). Duvidas: +351 272 000 000.
+```
+
 ### O lembrete de 24 horas ainda NAO diz ao doente que pode responder
 
 Isto e uma pergunta separada e tambem e sua. A mensagem das 24 horas que

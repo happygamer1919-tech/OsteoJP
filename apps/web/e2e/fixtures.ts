@@ -570,6 +570,77 @@ export const PORTAL_OTP_PATIENT = {
 export const CONFIRM_CODE_SECRET = "e2e-confirm-code-hmac-key-not-a-secret";
 
 /**
+ * BOOK-CONFIRM: the patients book-confirm.spec.ts accepts requests for.
+ *
+ * INVENTED PEOPLE, fixed ids, private to that spec. The ids are here, and not
+ * minted per run, because `playwright.config.ts` hands the two LISTED ones to
+ * the dev server as the canary list (BOOK_CONFIRM_CANARY_PATIENT_IDS) before
+ * any spec runs. The real canary list holds real patient ids and lives in
+ * configuration only; these are fixtures in a throwaway database.
+ *
+ *   emailLv, emailB   listed, an email on file: no notice for the approver
+ *   noEmail           listed, NO email but a MOBILE: the SMS reaches them, so
+ *                     no notice (the rule since S-1004-A, 2026-10-04)
+ *   neither           listed, no email and only a LANDLINE: nothing can be
+ *                     sent, so the approver is told to ring them
+ *   notListed         NOT listed, nothing on file: today's behaviour, no notice
+ */
+export const BOOK_CONFIRM_PATIENTS = {
+  emailLv: {
+    id: "00000000-0000-4000-8000-0000000bc001",
+    name: "Beatriz Aprovada Ficticia",
+    email: "beatriz.ficticia@example.test",
+    phone: "912000101",
+    listed: true,
+  },
+  emailB: {
+    id: "00000000-0000-4000-8000-0000000bc002",
+    name: "Tomas Aprovado Ficticio",
+    email: "tomas.ficticio@example.test",
+    phone: "912000102",
+    listed: true,
+  },
+  noEmail: {
+    id: "00000000-0000-4000-8000-0000000bc003",
+    name: "Duarte Semcorreio Ficticio",
+    email: null,
+    phone: "912000103",
+    listed: true,
+  },
+  notListed: {
+    id: "00000000-0000-4000-8000-0000000bc004",
+    name: "Helena Foralista Ficticia",
+    email: null,
+    // A landline too: the only thing keeping the notice away is the list.
+    phone: "272000104",
+    listed: false,
+  },
+  neither: {
+    id: "00000000-0000-4000-8000-0000000bc005",
+    name: "Olga Semcontacto Ficticia",
+    email: null,
+    // A geographic line: a perfectly good number the SMS leg cannot use.
+    phone: "272000105",
+    listed: true,
+  },
+  locationBare: {
+    id: "00000000-0000-4000-8000-0000000bc006",
+    // Reachable on both channels: the only thing in the way is the LOCATION,
+    // which the spec strips of its address for this one acceptance.
+    name: "Ines Semmorada Ficticia",
+    email: "ines.ficticia@example.test",
+    phone: "912000106",
+    listed: true,
+  },
+} as const;
+
+/** The canary list the dev server runs with: the LISTED fixture patients. */
+export const BOOK_CONFIRM_CANARY_IDS = Object.values(BOOK_CONFIRM_PATIENTS)
+  .filter((p) => p.listed)
+  .map((p) => p.id)
+  .join(",");
+
+/**
  * The confirm page's OWN patient, and it has one for the reason SCHED-12 and
  * SCHED-10 each have their own therapist: this spec WRITES appointments, and a
  * spec that writes must not share a fixture with a spec that reads.

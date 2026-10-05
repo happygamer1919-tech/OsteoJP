@@ -133,8 +133,11 @@ describe("W14-02 — the Estado selector accepting a portal pedido emits, like P
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
     // ONE target, so enqueueRemindersAfterCommit makes it confirmationEligible:
     // the confirmation sends at acceptance, exactly as confirmAppointmentRequest.
+    //
+    // BOOK-CONFIRM: and it carries the ACCEPTANCE MARKER, which is how the
+    // dispatch tells this event from a reschedule of the same row.
     expect(mockEnqueue).toHaveBeenCalledWith("tenant-A", [
-      { appointmentId: "appt-1", startsAt: STARTS },
+      { appointmentId: "appt-1", startsAt: STARTS, acceptedPedido: true },
     ]);
   });
 

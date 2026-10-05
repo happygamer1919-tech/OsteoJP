@@ -8,6 +8,8 @@ import { s } from "@/lib/i18n";
 import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import type { ConflictInfo } from "@/lib/scheduling/types";
 
+import { ApprovalNotices, withApprovalNotice, type ApprovalNoticeView } from "./approval-notices";
+
 /**
  * W13-04 — the reception confirm queue.
  *
@@ -87,8 +89,11 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, RowError>>({});
+  const [notices, setNotices] = useState<ApprovalNoticeView[]>([]);
 
   function confirm(appointmentId: string) {
+    // Copied BEFORE the action: on success the row is no longer in `items`.
+    const row = items.find((r) => r.appointmentId === appointmentId);
     setBusyId(appointmentId);
     setErrors((prev) => {
       const next = { ...prev };
@@ -98,7 +103,21 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
     startTransition(async () => {
       const result = await confirmAppointmentRequest(appointmentId);
       setBusyId(null);
-      if (result.ok) return; // revalidatePath removes the row
+      if (result.ok) {
+        // revalidatePath removes the row. The notice outlives it.
+        const kind = result.data.notice;
+        if (kind) {
+          setNotices((prev) =>
+            withApprovalNotice(prev, {
+              id: appointmentId,
+              kind,
+              patientName: row?.patientName ?? null,
+              when: row?.when ?? "",
+            }),
+          );
+        }
+        return;
+      }
       if (result.error === "conflict") {
         setErrors((prev) => ({
           ...prev,
@@ -118,16 +137,28 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
     });
   }
 
+  // BOOK-CONFIRM: a request that WAS accepted, whose patient has no email on
+  // file. Rendered in BOTH branches below: accepting the last pedido empties
+  // the queue, and that is exactly when the notice must still be on screen. It
+  // is the one thing this component keeps after a success, and it is not queue
+  // data: it is the outcome of an action this session took.
+  const noticeList = <ApprovalNotices notices={notices} />;
+
   if (items.length === 0) {
     return (
-      <div className="rounded-v2 border border-v2-border bg-surface-muted p-8 text-center">
-        <p className="text-sm font-medium text-v2-text-primary">{s["requests.empty"]}</p>
-        <p className="mt-1 text-sm text-v2-text-secondary">{s["requests.emptyHint"]}</p>
-      </div>
+      <>
+        {noticeList}
+        <div className="rounded-v2 border border-v2-border bg-surface-muted p-8 text-center">
+          <p className="text-sm font-medium text-v2-text-primary">{s["requests.empty"]}</p>
+          <p className="mt-1 text-sm text-v2-text-secondary">{s["requests.emptyHint"]}</p>
+        </div>
+      </>
     );
   }
 
   return (
+    <>
+    {noticeList}
     <ul className="flex flex-col gap-2">
       {items.map((r) => {
         const err = errors[r.appointmentId];
@@ -183,5 +214,6 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
         );
       })}
     </ul>
+    </>
   );
 }

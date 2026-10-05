@@ -415,7 +415,7 @@ Nota: eliminar definitivamente não se desfaz. O botão fica desativado enquanto
 
 ## Administração: Teste de envio
 
-**Teste de envio** manda uma mensagem real, pela via de produção, para o número que indicar. Serve para ver no telemóvel o que o paciente recebe: o remetente, a quebra de linha, a ligação e se a mensagem cabe num só segmento. O quadro **Remetente em uso** mostra o remetente configurado e se a linha de resposta está ativa. Só o Proprietário vê este separador.
+**Teste de envio** manda um SMS real para o número que indicar: o lembrete das 24 horas que os pacientes recebem, com dados de exemplo, enviado pelo mesmo caminho. Serve para ver no telemóvel o que o paciente vê: o remetente, as quebras de linha, a ligação de confirmação e se a mensagem chega num só SMS. Não envia nada a nenhum paciente e, com o campo do id da consulta em branco, não altera nenhuma consulta. O quadro **Mensagem que vai ser enviada** mostra o texto antes do envio, com o número de caracteres. O quadro **Remetente em uso** mostra o remetente configurado e se a linha de resposta está ativa. Só o Proprietário vê este separador.
 
 ### Como fazer: enviar uma mensagem de teste
 
@@ -426,7 +426,7 @@ Nota: eliminar definitivamente não se desfaz. O botão fica desativado enquanto
 ![Teste de envio no telemóvel](../screens/proprietario/admin-teste-envio-390.png)
 ![Teste de envio no computador](../screens/proprietario/admin-teste-envio-desktop.png)
 
-Nota: com um id de consulta, o código enviado é real e gasta o único código dessa consulta, por isso deixe o campo em branco num simples teste. Se o botão estiver desativado, a ligação de confirmação está desligada na configuração e não há nada para testar. O ecrã mostra sempre, em inglês, duas indicações técnicas para quem configura os envios: uma por baixo da explicação e outra no quadro **Remetente em uso**. As imagens foram feitas numa instalação de teste sem remetente configurado, por isso o botão aparece desativado. Há um limite diário de envios.
+Nota: com um id de consulta, a ligação do SMS é real, quem a abrir pode confirmar essa consulta, e gasta o único código dessa consulta, por isso deixe o campo em branco num simples teste. Um pedido online ainda por aceitar é recusado. Se o botão estiver desativado, a ligação de confirmação está desligada na configuração e não há nada para testar. Quando o envio é recusado, o ecrã diz porquê numa frase. No quadro **Remetente em uso**, a secção **Detalhe técnico, para quem configura os envios (em inglês)** abre duas indicações técnicas em inglês. As imagens são da versão anterior do ecrã e foram feitas numa instalação de teste sem remetente configurado, por isso o botão aparece desativado. O limite é de 5 tentativas em cada 24 horas, contadas por ligação à internet.
 
 ## Notificações
 

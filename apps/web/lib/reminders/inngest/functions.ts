@@ -152,9 +152,16 @@ export const sendAppointmentConfirmation = inngest.createFunction(
     idempotency: CONFIRMATION_IDEMPOTENCY_KEY,
   },
   async ({ event, step }) => {
-    const { appointmentId, tenantId } = event.data as AppointmentScheduledData;
+    const { appointmentId, tenantId, acceptedPedido, acceptedGuestRequest } =
+      event.data as AppointmentScheduledData;
     const outcome = await step.run("dispatch-confirmation", () =>
-      dispatchConfirmation(tenantId, appointmentId),
+      // BOOK-CONFIRM: the acceptance marker travels from the event to the
+      // dispatch. `=== true`, so a payload without the key (every reschedule,
+      // create and uncancel) reads as false and keeps today's confirmation.
+      dispatchConfirmation(tenantId, appointmentId, {
+        acceptedPedido: acceptedPedido === true,
+        acceptedGuestRequest: acceptedGuestRequest === true,
+      }),
     );
     return { appointmentId, ...outcome };
   },

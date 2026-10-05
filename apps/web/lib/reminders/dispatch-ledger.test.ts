@@ -7,6 +7,8 @@ vi.mock("server-only", () => ({}));
 const inserted: Record<string, unknown>[] = [];
 const updated: Record<string, unknown>[] = [];
 let failNext = false;
+/** What the BOOK-CONFIRM hand-over read finds. */
+let selected: Record<string, unknown>[] = [];
 
 vi.mock("./context", () => ({
   withReminderTenantContext: async (_t: string, fn: (tx: unknown) => Promise<unknown>) => {
@@ -14,18 +16,27 @@ vi.mock("./context", () => ({
     return fn({
       insert: () => ({ values: async (v: Record<string, unknown>) => void inserted.push(v) }),
       update: () => ({ set: (v: Record<string, unknown>) => ({ where: async () => void updated.push(v) }) }),
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => selected }) }) }),
     });
   },
   withReminderResolverContext: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
   REMINDER_JOB_ROLE: "admin",
 }));
 
-const { recordDispatch, recordProviderStatus } = await import("./dispatch-ledger");
+const {
+  recordDispatch,
+  recordProviderStatus,
+  recordBookingApprovedHandOver,
+  hasBookingApprovedHandOver,
+  BOOKING_APPROVED_HANDOVER_ACTION,
+  HANDED_OVER_WHILE_LIVE_SEND_OFF,
+} = await import("./dispatch-ledger");
 
 beforeEach(() => {
   inserted.length = 0;
   updated.length = 0;
   failNext = false;
+  selected = [];
 });
 
 const base = {
@@ -99,5 +110,71 @@ describe("the dispatch ledger", () => {
       recordProviderStatus({ tenantId: "t1", providerMessageId: "SM1", providerStatus: "sent" }),
     ).rejects.toThrow("db down");
     expect(updated).toHaveLength(0);
+  });
+});
+
+/**
+ * BOOK-CONFIRM: "one message per appointment AND start". The start is not a
+ * ledger column, so the hand-over is written as an audit row that carries it,
+ * and read back for one start. The SQL predicate is proven against Postgres in
+ * book-confirm.db.test.ts; what is pinned here is the contract around it.
+ */
+describe("the booking-approved hand-over record", () => {
+  const START = new Date("2031-05-14T10:00:00.000Z");
+  const args = { tenantId: "t1", appointmentId: "a1", startsAt: START };
+
+  it("writes an audit row: the appointment as the entity, the start as an ISO instant, no actor", async () => {
+    await recordBookingApprovedHandOver({ ...args, channel: "email" });
+    expect(inserted).toEqual([
+      {
+        tenantId: "t1",
+        actorUserId: null,
+        action: "appointment.booking_approved_handed_over",
+        entityType: "appointment",
+        entityId: "a1",
+        metadata: { source: "book-confirm", startsAt: "2031-05-14T10:00:00.000Z", channel: "email" },
+        ip: null,
+      },
+    ]);
+    expect(BOOKING_APPROVED_HANDOVER_ACTION).toBe("appointment.booking_approved_handed_over");
+  });
+
+  it("carries ids and an instant only: nothing about the patient", async () => {
+    await recordBookingApprovedHandOver({ ...args, channel: "sms" });
+    expect(Object.keys(inserted[0]!.metadata as object).sort()).toEqual(["channel", "source", "startsAt"]);
+  });
+
+  it("the write NEVER throws into the send path: the message has already gone", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failNext = true;
+    await expect(recordBookingApprovedHandOver({ ...args, channel: "email" })).resolves.toBeUndefined();
+    const logged = spy.mock.calls.flat().join(" ");
+    expect(logged).toContain("hand-over record FAILED");
+    expect(logged).toContain("appointmentId=a1");
+    expect(logged).not.toContain("db down");
+    spy.mockRestore();
+  });
+
+  it("the read answers true when a row matches, false when none does", async () => {
+    selected = [{ id: "row-1" }];
+    expect(await hasBookingApprovedHandOver(args)).toBe(true);
+    selected = [];
+    expect(await hasBookingApprovedHandOver(args)).toBe(false);
+  });
+
+  it("the read NEVER throws, and FAILS OPEN: an unreadable trail answers 'not handed over'", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failNext = true;
+    await expect(hasBookingApprovedHandOver(args)).resolves.toBe(false);
+    const logged = spy.mock.calls.flat().join(" ");
+    expect(logged).toContain("hand-over read FAILED");
+    expect(logged).toContain("appointmentId=a1");
+    // The error NAME, never its message.
+    expect(logged).not.toContain("db down");
+    spy.mockRestore();
+  });
+
+  it("a live-send-off suppression is the one hold that counts as a hand-over", () => {
+    expect(HANDED_OVER_WHILE_LIVE_SEND_OFF).toBe("live_send_disabled");
   });
 });

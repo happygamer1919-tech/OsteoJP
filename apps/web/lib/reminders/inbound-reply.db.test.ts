@@ -211,7 +211,11 @@ d("applyInboundReply against a real database", () => {
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
     const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
     expect(tenantArg).toBe(tenantId);
-    expect(targets).toEqual([{ appointmentId: apptId, startsAt: expect.any(Date) }]);
+    // BOOK-CONFIRM: the patient's own SIM is an ACCEPTANCE, so its target
+    // carries the marker the confirmation dispatch reads.
+    expect(targets).toEqual([
+      { appointmentId: apptId, startsAt: expect.any(Date), acceptedPedido: true },
+    ]);
   });
 
   it("W14-02: SIM on a STAFF booking emits NOTHING - it already has its run", async () => {

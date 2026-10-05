@@ -327,8 +327,14 @@ describe("registry gating", () => {
     // fee line is ever swept into somebody else's approval sitting - and the
     // fee entry is still unapproved for its own reasons, which are counsel's
     // and not JP's alone.
+    // 9 -> 10 on 2026-10-03, BOOK-CONFIRM: the booking-approved email was
+    // registered approved by the owner and strategy (dispatch S-1003-B). A new
+    // body with its own approval, not a sitting that could sweep the fee line
+    // along, and the line below still says the fee entry is not in the set.
     const approved = REMINDER_TEMPLATES.filter((t) => t.approved);
-    expect(approved).toHaveLength(9);
+    // 10 -> 11 on 2026-10-04, S-1004-A: the booking-approved SMS, strategy's
+    // copy, its own approval. The line below still says the fee entry is out.
+    expect(approved).toHaveLength(11);
     expect(approved.some((t) => t.id === FEE_NOTICE_TEMPLATE_ID)).toBe(false);
   });
 

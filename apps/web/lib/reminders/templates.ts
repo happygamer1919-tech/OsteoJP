@@ -482,7 +482,16 @@ export function renderConfirmationEmail(locale: Locale, ctx: ReminderContext): R
   return { subject, body };
 }
 
-export function renderConfirmationSms(locale: Locale, ctx: ReminderContext): string {
+export function renderConfirmationSms(
+  locale: Locale,
+  // The four fields the body prints, and no more. BOOK-CONFIRM sends this same
+  // body as its SMS fallback with a context that has no reschedule link, so the
+  // parameter names what the function reads instead of the whole context.
+  ctx: Pick<
+    ReminderContext,
+    "appointmentDateShort" | "appointmentTime" | "clinicLocation" | "clinicPhone"
+  >,
+): string {
   const message = fill(CONFIRMATION_SMS[locale], {
     date: ctx.appointmentDateShort,
     time: ctx.appointmentTime,
@@ -492,6 +501,127 @@ export function renderConfirmationSms(locale: Locale, ctx: ReminderContext): str
   assertNoUnfilledPlaceholders("sms/confirmation", message);
   assertSmsCompliant(message);
   return message;
+}
+
+/* ================================================================== */
+/* Booking approved — sent when reception accepts an online request    */
+/* ================================================================== */
+//
+// BOOK-CONFIRM. Strategy dispatch S-1003-B block 1, amended by the owner on
+// 2026-10-03. The pt-PT subject and body are FINAL, character for character, as
+// the owner and strategy wrote them: single line breaks, no blank lines, no
+// dash before the signature. The English is written from the Portuguese.
+//
+// It names the service, the address and the clinic phone, none of which the
+// confirmation email above carries, so it has its own context type. The
+// address and the phone are the appointment's LOCATION row and nothing else:
+// the dispatch refuses to send when either is missing, and it never falls back
+// to the tenant's clinic settings.
+//
+// No reschedule link: the copy tells the patient to contact the clinic.
+
+export type BookingApprovedContext = {
+  patientFirstName: string;
+  /** Localised long date, e.g. "23 de maio de 2026". */
+  appointmentDateLong: string;
+  /** "HH:mm" Lisbon wall-clock. */
+  appointmentTime: string;
+  serviceName: string;
+  practitionerName: string;
+  locationName: string;
+  /** `locations.address`, never a tenant-level address. */
+  locationAddress: string;
+  /** `locations.phone`, never the tenant-level phone. */
+  locationPhone: string;
+};
+
+export const BOOKING_APPROVED_EMAIL: Record<Locale, EmailTemplate> = {
+  pt: {
+    subject: "Consulta confirmada: {{appointment_date}} às {{appointment_time}}",
+    body: `Olá {{patient_first_name}},
+O seu pedido de marcação foi aprovado. A consulta está confirmada:
+Data: {{appointment_date}}
+Hora: {{appointment_time}}
+Serviço: {{service_name}}
+Terapeuta: {{practitioner_name}}
+Local: {{location_name}}, {{location_address}}
+Para alterar ou cancelar, contacte a clínica: {{location_phone}}
+OsteoJP`,
+  },
+  en: {
+    subject: "Appointment confirmed: {{appointment_date}} at {{appointment_time}}",
+    body: `Dear {{patient_first_name}},
+Your booking request has been approved. The appointment is confirmed:
+Date: {{appointment_date}}
+Time: {{appointment_time}}
+Service: {{service_name}}
+Therapist: {{practitioner_name}}
+Location: {{location_name}}, {{location_address}}
+To change or cancel, contact the clinic: {{location_phone}}
+OsteoJP`,
+  },
+};
+
+/**
+ * The SMS for the same moment, sent ONLY when the patient has no email on file.
+ * Strategy copy, dispatch S-1004-A (2026-10-04), character for character in
+ * pt-PT; the English is written from it. It replaces `confirmation.sms` as the
+ * fallback on the booking-approved path.
+ *
+ * The 24h SMS's conventions: single-brace placeholders, NO ACCENTS (an accent
+ * leaves GSM-7 and drops the segment to 70 characters), sent under the same
+ * sender. `{local}` is the appointment's LOCATION name and `{telefone}` its
+ * phone, from the location row only; the dispatch refuses to send when the
+ * location has no phone and never falls back to the tenant's.
+ *
+ * ONE SEGMENT, MEASURED: 95 characters at the longest inputs the clinic has
+ * (booking-approved-template.test.ts prints and pins it). The render still
+ * asserts it, so a location renamed to something long or accented fails the
+ * render instead of sending two segments.
+ */
+export const BOOKING_APPROVED_SMS: Record<Locale, string> = {
+  pt: "OsteoJP: marcacao confirmada para {data} as {hora} em {local}. Duvidas: {telefone}.",
+  en: "OsteoJP: appointment confirmed for {data} at {hora} at {local}. Questions: {telefone}.",
+};
+
+export function renderBookingApprovedSms(
+  locale: Locale,
+  ctx: Pick<BookingApprovedContext, "appointmentTime" | "locationName" | "locationPhone"> & {
+    /** Terse dd/mm, as every SMS here prints the date. */
+    appointmentDateShort: string;
+  },
+): string {
+  const message = fill(BOOKING_APPROVED_SMS[locale], {
+    data: ctx.appointmentDateShort,
+    hora: ctx.appointmentTime,
+    local: ctx.locationName,
+    telefone: ctx.locationPhone,
+  });
+  assertNoUnfilledPlaceholders("sms/booking_approved", message);
+  assertSmsCompliant(message);
+  return message;
+}
+
+export function renderBookingApprovedEmail(
+  locale: Locale,
+  ctx: BookingApprovedContext,
+): RenderedEmail {
+  const tpl = BOOKING_APPROVED_EMAIL[locale];
+  const tokens = {
+    patient_first_name: ctx.patientFirstName,
+    appointment_date: ctx.appointmentDateLong,
+    appointment_time: ctx.appointmentTime,
+    service_name: ctx.serviceName,
+    practitioner_name: ctx.practitionerName,
+    location_name: ctx.locationName,
+    location_address: ctx.locationAddress,
+    location_phone: ctx.locationPhone,
+  };
+  const subject = fill(tpl.subject, tokens);
+  const body = fill(tpl.body, tokens);
+  assertNoUnfilledPlaceholders("email/booking_approved", subject);
+  assertNoUnfilledPlaceholders("email/booking_approved", body);
+  return { subject, body };
 }
 
 /* ================================================================== */

@@ -42,6 +42,8 @@ import {
   SMS,
   CONFIRMATION_EMAIL,
   CONFIRMATION_SMS,
+  BOOKING_APPROVED_EMAIL,
+  BOOKING_APPROVED_SMS,
   FOLLOW_UP_EMAIL,
   FOLLOW_UP_SMS,
   NO_SHOW_EMAIL,
@@ -132,6 +134,29 @@ const JP_APPROVAL_48H_EMAIL = { approvedBy: "JP", approvedAt: "2026-08-05" } as 
  */
 const JP_APPROVAL_WF18 = { approvedBy: "JP", approvedAt: "2026-09-01" } as const;
 
+/**
+ * BOOK-CONFIRM, 2026-10-03. The booking-approved email is the first body in
+ * this registry that JP did not approve: the owner and strategy wrote its
+ * pt-PT text, character for character, in dispatch S-1003-B block 1 (amended by
+ * the owner the same day). The approver is recorded as the dispatch names it,
+ * and it gets its own constant for the reason the two above exist: one body,
+ * one approval, one date.
+ */
+const OWNER_STRATEGY_APPROVAL_S1003B = {
+  approvedBy: "owner and strategy, dispatch S-1003-B",
+  approvedAt: "2026-10-03",
+} as const;
+
+/**
+ * BOOK-CONFIRM, 2026-10-04. The booking-approved SMS is strategy's copy, given
+ * word for word in dispatch S-1004-A (R40, which the owner ruled). Its own
+ * constant, for the reason every constant above exists.
+ */
+const STRATEGY_APPROVAL_S1004A = {
+  approvedBy: "strategy copy, dispatch S-1004-A",
+  approvedAt: "2026-10-04",
+} as const;
+
 /** The ten patient-facing reminder bodies. Nine approved by JP 2026-08-03; the
  *  48h email re-approved 2026-08-05 for the WF-02 amendment above. */
 export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
@@ -196,6 +221,40 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
   },
   patientTemplate("confirmation.email", "email", EV_SCHEDULED, CONFIRMATION_EMAIL.pt.body),
   patientTemplate("confirmation.sms", "sms", EV_SCHEDULED, CONFIRMATION_SMS.pt),
+  {
+    /**
+     * FIFTEENTH BODY: the booking-approved email. BOOK-CONFIRM.
+     *
+     * Sent when reception accepts an online booking request, INSTEAD of the two
+     * confirmation bodies above, and only while BOOK_CONFIRM_MODE says so
+     * (lib/reminders/book-confirm-mode.ts). A patient with no email on file
+     * gets `booking_approved.sms`, the entry below, instead.
+     *
+     * The same live-send flag as every other patient body, through
+     * `patientTemplate`. Approval removes one lock; REMINDERS_LIVE_SEND and the
+     * mode switch are the other two.
+     */
+    ...patientTemplate(
+      "booking_approved.email",
+      "email",
+      EV_SCHEDULED,
+      BOOKING_APPROVED_EMAIL.pt.body,
+    ),
+    ...OWNER_STRATEGY_APPROVAL_S1003B,
+  },
+  {
+    /**
+     * SIXTEENTH BODY: the booking-approved SMS. BOOK-CONFIRM, S-1004-A.
+     *
+     * The fallback for a patient with no email on file, on the same path and
+     * behind the same switch as the email above. It REPLACES `confirmation.sms`
+     * there: until this entry the fallback borrowed that body, whose last line
+     * says "Remarcar", which is not what an approved request should be told.
+     * `confirmation.sms` is unchanged and still what a reschedule sends.
+     */
+    ...patientTemplate("booking_approved.sms", "sms", EV_SCHEDULED, BOOKING_APPROVED_SMS.pt),
+    ...STRATEGY_APPROVAL_S1004A,
+  },
 
   /**
    * ==================================================================

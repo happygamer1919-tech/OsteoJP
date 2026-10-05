@@ -316,8 +316,14 @@ d("the reception reply queue against a real database", () => {
       expect(enqueueSpy).toHaveBeenCalledTimes(1);
       const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
       expect(tenantArg).toBe(tenantId);
+      // BOOK-CONFIRM: reception accepting from the review queue is an
+      // ACCEPTANCE, so its target carries the marker the dispatch reads.
       expect(targets).toEqual([
-        { appointmentId, startsAt: new Date(stored[0]!.starts_at as string | Date) },
+        {
+          appointmentId,
+          startsAt: new Date(stored[0]!.starts_at as string | Date),
+          acceptedPedido: true,
+        },
       ]);
     });
 
@@ -353,6 +359,164 @@ d("the reception reply queue against a real database", () => {
 
       expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: false });
       expect(enqueueSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  /* ------- BOOK-CONFIRM: the approver's notice, through this door too ------- */
+  // The review queue emitted the marked event and told the reviewer nothing, so
+  // with the switch on a request was accepted here for a patient with no email
+  // and nobody was told to ring them. The notice is asked after the commit,
+  // under the reviewer's own scope, and never fails the resolution.
+  describe("BOOK-CONFIRM — the review queue tells the reviewer when the patient has no email", () => {
+    const saved: Record<string, string | undefined> = {};
+    beforeEach(() => {
+      saved.mode = process.env.BOOK_CONFIRM_MODE;
+      saved.list = process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS;
+      delete process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS;
+      process.env.BOOK_CONFIRM_MODE = "on";
+      return async () => {
+        // Whatever an arm did to the clinic or to its settings is undone.
+        await clinicContact(true);
+        await sql.execute(raw`update tenants set settings = '{}'::jsonb where id = ${tenantId}`);
+        for (const [k, name] of [
+          ["mode", "BOOK_CONFIRM_MODE"],
+          ["list", "BOOK_CONFIRM_CANARY_PATIENT_IDS"],
+        ] as const) {
+          if (saved[k] === undefined) delete process.env[name];
+          else process.env[name] = saved[k];
+        }
+      };
+    });
+
+    /**
+     * The suite's one location, with or without the address and phone the
+     * booking-approved message prints. WITH them unless an arm says otherwise:
+     * a location with neither is the SECOND notice, and every arm that is about
+     * the patient would otherwise be answered by the location.
+     */
+    async function clinicContact(present: boolean, missing: "address" | "phone" = "address") {
+      await sql.execute(raw`update locations set
+          address = ${present || missing !== "address" ? "Rua de Exemplo 1, 6000-000 Castelo Branco" : null},
+          phone = ${present || missing !== "phone" ? "+351 272 111 111" : null}
+        where id = ${locationId}`);
+    }
+    beforeEach(() => clinicContact(true));
+
+    /** A pedido filed for review, for a patient with or without an email. */
+    async function pedidoForReview(body: string, email: string | null) {
+      const patientId = await seedPatient("Paciente Ficticio");
+      if (email) {
+        await sql.execute(raw`update patients set email = ${email} where id = ${patientId}`);
+      }
+      const appointmentId = await seedAppointment({ patientId, origin: "patient_portal" });
+      await file({ patientId, appointmentId, body });
+      return { patientId, item: (await queue()).find((r) => r.body === body)! };
+    }
+
+    it("switch ON, no email but a MOBILE on file: no notice, the SMS reaches them (S-1004-A)", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso com telemovel", null);
+      // Written before the resolve: the notice is asked after the commit.
+      await sql.execute(raw`update patients set phone = '912000555' where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("switch ON, no email and only a LANDLINE: the notice, the SMS leg cannot use it", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso com fixo", null);
+      await sql.execute(raw`update patients set phone = '272000123' where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("switch ON, NEITHER an email nor a phone: the resolution carries the notice", async () => {
+      const { item } = await pedidoForReview("bc aviso sem email", null);
+      expect(await resolve(item.id, "confirmed")).toEqual({
+        ok: true,
+        applied: true,
+        notice: "patient_no_email",
+      });
+    });
+
+    it("switch ON, an email on file: no notice key at all", async () => {
+      const { item } = await pedidoForReview("bc aviso com email", "ficticio@example.test");
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("switch OFF: no notice, though there is no email", async () => {
+      process.env.BOOK_CONFIRM_MODE = "off";
+      const { item } = await pedidoForReview("bc aviso desligado", null);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("CANARY, the patient is not on the list: no notice", async () => {
+      process.env.BOOK_CONFIRM_MODE = "canary";
+      process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = randomUUID();
+      const { item } = await pedidoForReview("bc aviso fora da lista", null);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("CANARY, the patient IS on the list: the notice", async () => {
+      process.env.BOOK_CONFIRM_MODE = "canary";
+      const { patientId, item } = await pedidoForReview("bc aviso na lista", null);
+      process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = patientId;
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    /* ---- the lead's decision, 2026-10-04: every reason nothing can go ---- */
+
+    it("no email, a MOBILE, but the PATIENT has SMS switched off: the notice", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso sms doente desligado", null);
+      await sql.execute(raw`update patients set phone = '912000556', reminder_sms_enabled = false
+        where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("no email, a MOBILE, but the CLINIC has SMS switched off: the notice", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso sms clinica desligado", null);
+      await sql.execute(raw`update patients set phone = '912000557' where id = ${patientId}`);
+      await sql.execute(raw`update tenants set settings = ${JSON.stringify({
+        reminders: { emailEnabled: true, smsEnabled: false, leadTimeHours: [48, 24] },
+      })}::jsonb where id = ${tenantId}`);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it.each(["address", "phone"] as const)(
+      "an email on file, but the location has no %s: the SECOND notice",
+      async (missing) => {
+        const { item } = await pedidoForReview(`bc aviso local sem ${missing}`, "ficticio@example.test");
+        await clinicContact(false, missing);
+        expect(await resolve(item.id, "confirmed")).toEqual({
+          ok: true,
+          applied: true,
+          notice: "location_contact_missing",
+        });
+      },
+    );
+
+    it("nobody to reach AND no location contact: the patient's notice, as the dispatch checks the patient first", async () => {
+      const { item } = await pedidoForReview("bc aviso tudo em falta", null);
+      await clinicContact(false);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("switch OFF: no notice for a location with no address either", async () => {
+      process.env.BOOK_CONFIRM_MODE = "off";
+      const { item } = await pedidoForReview("bc aviso local desligado", "ficticio@example.test");
+      await clinicContact(false);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("a STAFF booking confirmed here is not an acceptance: no notice, switch on, no email", async () => {
+      const patientId = await seedPatient("Paciente Ficticio");
+      const appointmentId = await seedAppointment({ patientId });
+      await file({ patientId, appointmentId, body: "bc aviso marcacao da rececao" });
+      const item = (await queue()).find((r) => r.body === "bc aviso marcacao da rececao")!;
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("CANCELADA and LIDA never carry it", async () => {
+      const a = await pedidoForReview("bc aviso cancelada", null);
+      expect(await resolve(a.item.id, "cancelled")).toEqual({ ok: true, applied: true });
+      const b = await pedidoForReview("bc aviso lida", null);
+      expect(await resolve(b.item.id, "read")).toEqual({ ok: true, applied: false });
     });
   });
 
