@@ -71,6 +71,10 @@ describe("Inngest event payloads carry identifiers only", () => {
       // the acceptance of an online request". A flag about the EVENT, not a
       // fact about a person; it names nobody and carries no value but `true`.
       "acceptedPedido",
+      // S-1004-A, added deliberately: the same kind of flag, for the booking
+      // reception made for a public-form request. A literal `true` about the
+      // EVENT. The dispatch does not act on it without reading the link row.
+      "acceptedGuestRequest",
     ]);
 
     const blocks = src.match(/=\s*\{[^}]*\}/g) ?? [];

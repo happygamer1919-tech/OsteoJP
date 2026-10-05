@@ -1,4 +1,5 @@
 import { s } from "@/lib/i18n";
+import type { ApprovalNotice } from "@/lib/scheduling/book-confirm-notice";
 
 /**
  * BOOK-CONFIRM: "Paciente sem email: avise por telefone", as a list.
@@ -19,6 +20,8 @@ import { s } from "@/lib/i18n";
 export type ApprovalNoticeView = {
   /** What the notice is keyed on: the appointment, or the review item. */
   id: string;
+  /** Which of the two reasons nothing could be sent. */
+  kind: ApprovalNotice;
   /** Copied at the click: the row is gone by the time the notice shows. */
   patientName: string | null;
   /** The appointment's time, already formatted for Lisbon. May be empty. */
@@ -31,6 +34,20 @@ export function withApprovalNotice(
   notice: ApprovalNoticeView,
 ): ApprovalNoticeView[] {
   return [...prev.filter((n) => n.id !== notice.id), notice];
+}
+
+/**
+ * The sentence for each reason, in ONE place, for the two lists and the two
+ * toasts alike. A `switch` with no default over the union, so a third reason
+ * added to `ApprovalNotice` is a type error here instead of a blank notice.
+ */
+export function approvalNoticeMessage(kind: ApprovalNotice): string {
+  switch (kind) {
+    case "patient_no_email":
+      return s["requests.notice.patientNoEmail"];
+    case "location_contact_missing":
+      return s["requests.notice.locationContactMissing"];
+  }
 }
 
 /** The second line: who to ring and for when. Never an empty separator. */
@@ -49,7 +66,7 @@ export function ApprovalNotices({ notices }: { notices: readonly ApprovalNoticeV
           className="rounded-v2 border border-v2-border bg-surface-muted p-3"
         >
           <p className="text-sm font-semibold text-v2-text-primary">
-            {s["requests.notice.patientNoEmail"]}
+            {approvalNoticeMessage(n.kind)}
           </p>
           <p className="mt-1 text-sm text-v2-text-secondary">{approvalNoticeDetail(n)}</p>
         </li>

@@ -23,6 +23,13 @@ export type ReminderEnqueueTarget = {
    * accept a pedido and bring another row back from Cancelada in the same list.
    */
   acceptedPedido?: boolean;
+  /**
+   * BOOK-CONFIRM, the public-form path. True only for the ONE occurrence a
+   * guest request was linked to; built by `acceptedGuestRequestTarget` in
+   * ./guest-link.ts and nowhere else. It asks the confirmation dispatch to read
+   * the link row; the dispatch never acts on the marker alone.
+   */
+  acceptedGuestRequest?: boolean;
 };
 
 /**
@@ -89,6 +96,7 @@ export async function enqueueRemindersAfterCommit(
         startsAt: t.startsAt,
         confirmationEligible: i === eligibleIndex,
         ...(t.acceptedPedido === true ? { acceptedPedido: true } : {}),
+        ...(t.acceptedGuestRequest === true ? { acceptedGuestRequest: true } : {}),
       });
     } catch (e) {
       console.error(

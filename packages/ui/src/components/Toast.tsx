@@ -225,6 +225,9 @@ export function ToastProvider({ children, regionLabel = "Notificações" }: Toas
       const add = () => {
         // Closed before it was ever added (see afterRegionSettles).
         if (!store.isLive(id)) return;
+        // It enters the stack NOW, which for a toast that waited for the region
+        // is later than toasts raised after it (toast-store.ts, `committed`).
+        store.entered(id);
         setToasts((prev) => appendToStack(prev, { ...options, id }));
       };
       const el = hostRef.current;

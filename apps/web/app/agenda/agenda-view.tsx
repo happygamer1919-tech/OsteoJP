@@ -1,5 +1,6 @@
 "use client";
 
+import { GUEST_REQUEST_PARAM } from "@/lib/scheduling/guest-convert-handoff";
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { Ban, ChevronLeft, ChevronRight, MapPin, Plus, RotateCw } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -77,6 +78,7 @@ export function AgendaView({
   closure,
   lockedPatient,
   prefill,
+  guestRequestId,
   canHardDelete,
   canBlockTime,
   renderedAt,
@@ -117,6 +119,8 @@ export function AgendaView({
    *  there for why that guarantee, and not the raw URL value, is what crosses
    *  this boundary. Both null on a normal agenda visit. */
   prefill: { serviceId: string | null; locationId: string | null };
+  /** BOOK-CONFIRM: the guest request the deep link names, or null. */
+  guestRequestId?: string | null;
   canHardDelete: boolean;
   /** W12-28, regated by PL-27: gates the "Bloquear horário" affordance =
    *  can(role,"schedule:manage") - the capability createTimeOffBlock ACTUALLY
@@ -205,13 +209,17 @@ export function AgendaView({
       mode: "create",
       lockedPatient,
       prefill: prefill.serviceId || prefill.locationId ? prefill : undefined,
+      // BOOK-CONFIRM: only THIS drawer, opened by the deep link, carries the
+      // request. A drawer opened afterwards by hand is an ordinary booking.
+      guestRequestId: guestRequestId ?? undefined,
     });
     const url = new URL(window.location.href);
     url.searchParams.delete("novaMarcacaoPaciente");
     url.searchParams.delete("novaMarcacaoServico");
     url.searchParams.delete("novaMarcacaoLocal");
+    url.searchParams.delete(GUEST_REQUEST_PARAM);
     window.history.replaceState(null, "", url.pathname + url.search);
-  }, [lockedPatient, prefill]);
+  }, [lockedPatient, prefill, guestRequestId]);
 
   /* AGMOB-01 - THE MOBILE DAY-COLLAPSE IS GONE, AND WITH IT THE ONLY
    * matchMedia IN THIS REPOSITORY.
