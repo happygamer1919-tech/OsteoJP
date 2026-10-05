@@ -195,16 +195,16 @@ describe("no module writes audit_log without either the guard or a named excepti
    * Modules that INSERT into audit_log directly, bypassing every helper, with
    * the reason each is allowed to.
    *
-   * SIX OF THE SEVEN WRITE ONLY IDS, ENUMS, COUNTS AND HASHES. THE SEVENTH IS
-   * THE REASON THE GUARD LIVES IN THE HELPERS AND NOT AT THE TABLE:
-   * `messaging-check.ts` writes the PROVIDER'S OWN ERROR TEXT, trimmed to 300
-   * characters, because Twilio's wording is the whole diagnostic value of that
-   * page. It is free text and it is NOT patient PII, and those are different
-   * things. A table-level guard would refuse it and break the owner's messaging
-   * diagnostic.
+   * EVERY ONE WRITES ONLY IDS, ENUMS, COUNTS AND HASHES.
+   *
+   * `messaging-check.ts` USED TO BE ON THIS LIST, as the one entry that was not
+   * "ids only": it wrote the provider's own error text, and the reason given
+   * was that the text held no patient field. It held the recipient - Twilio
+   * writes the number into its message. It now writes a closed reason and a
+   * numeric code and calls the guard itself, so by the rule in the third test
+   * below ("grows a guard of its own, its entry must go") it is gone from here.
    */
   const DIRECT_WRITERS = new Map([
-    ["lib/reminders/messaging-check.ts", "DELIBERATE: metadata.failure is the provider's own error text"],
     ["lib/reminders/inbound-store.ts", "ids, enums and booleans only"],
     ["lib/reminders/confirm-redeem.ts", "a single slug, via: 'confirm_code'"],
     ["lib/reminders/inbound-reply.ts", "bounded ReviewReason enum, ids and outcome slugs"],
@@ -250,13 +250,23 @@ describe("no module writes audit_log without either the guard or a named excepti
     }
   });
 
-  it("the documented exception is REAL: messaging-check still writes the provider's text", () => {
-    // The one entry that is not "ids only" must keep earning its place. If this
-    // stops being true, the guard belongs at the table and the exception list
-    // can go.
+  it("the withdrawn exception STAYS withdrawn: messaging-check is guarded and keeps no provider text", () => {
+    // THIS TEST ASSERTED THE OPPOSITE: that messaging-check still wrote
+    // `err.message.slice(0, 300)` into `metadata.failure`, so that the
+    // exception "kept earning its place". The exception was the defect.
     const src = readFileSync(join(WEB, "lib/reminders/messaging-check.ts"), "utf8");
-    expect(src).toMatch(/failure = err instanceof Error \? err\.message\.slice\(0, 300\)/);
-    expect(src).toMatch(/failure: failure \?\? null/);
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(DIRECT_WRITERS.has("lib/reminders/messaging-check.ts")).toBe(false);
+    expect(code).toMatch(/insert\(auditLog\)/);
+    // Guarded, and the guard runs on the object that is then written.
+    expect(code).toMatch(/assertPiiFreeAuditMetadata\(metadata, "messaging-check"\);/);
+    expect(code).toMatch(/\n\s+metadata,\n/);
+    expect(code.indexOf("assertPiiFreeAuditMetadata(metadata")).toBeLessThan(
+      code.indexOf("insert(auditLog)"),
+    );
+    // And the route the text used to take is closed.
+    expect(code).not.toMatch(/err\.message|\.message\.slice/);
+    expect(code).toMatch(/failure: refusal,/);
   });
 
   it("the contract file names every exception, so the two lists cannot drift", () => {
