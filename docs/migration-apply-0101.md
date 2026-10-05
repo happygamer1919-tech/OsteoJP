@@ -218,9 +218,14 @@ weekday dimension:
 
 **The arm, in stage 0 and again in stage 1 right before the apply:**
 
-- It reads the Lisbon weekday and time in ONE `date` call (`TZ=Europe/Lisbon date +%u%H%M`, the
-  ISO weekday 1 to 7 and then HHMM), refuses a reading that is not five such digits, and decides
-  `closed` or `open` by the table. A boundary minute belongs to the hour it starts: Friday 20:59 is
+- It reads the Lisbon weekday, the time AND THE ZONE in ONE `date` call
+  (`TZ=Europe/Lisbon date '+%u%H%M %Z'`: the ISO weekday 1 to 7, HHMM, then the zone's name), and
+  STOPs unless the zone reads exactly `WET` or `WEST`. **A zone that cannot be loaded does not
+  fail: `date` answers in UTC with exit 0** (measured: `TZ=Europe/Lisbonn date +%Z` prints `UTC`),
+  and in summer UTC is an hour behind Lisbon, so Monday 08:30 would read 07:30, "closed". The
+  zone's name in the same call is what refuses that. It then refuses a reading that is not five
+  such digits, and decides `closed` or `open` by the table. **Every other clock read in every
+  block (the run window's `YYYYMMDDHHMM`) reads the zone the same way and stops the same way.** A boundary minute belongs to the hour it starts: Friday 20:59 is
   open and Friday 21:00 is closed; Saturday 12:59 is open and Saturday 13:00 is closed; Sunday
   15:00 is closed; Monday 07:59 is closed. `scripts/guest-request-email-0101.test.mjs` runs both
   stages whole at each of those six minutes, and at every boundary of every weekday.
@@ -281,7 +286,7 @@ before the promotion; a post-apply count edit merges after GREEN reports.
 
 | Order | Pull request | What it carries | Who merges |
 |---|---|---|---|
-| 1 | **GATE-CHANGE, before the promotion** | `scripts/maintain-revoke-0100.test.mjs`: its harness builds the fake apply tree's journal AS OF 0100 (the live journal cut after 0100's entry) instead of copying the live journal; and `.github/gate-manifest.json`, regenerated. Nothing else | the owner, on green |
+| 1 | **GATE-CHANGE, before the promotion** (branch `ci/GATE-CHANGE-0100-harness-journal`) | `scripts/maintain-revoke-0100.test.mjs`: its harness builds the fake apply tree's journal AS OF 0100 (the live journal cut after 0100's entry) instead of copying the live journal; and `.github/gate-manifest.json`, regenerated. Nothing else | the owner, on green |
 | 2 | this branch, `db/0101-guest-request-email`, promoted, `held-for-apply` | the migration, this document and its sidecar, the two check files, the DB-gated suite, the script test, the pending README. No gate file is edited: the script test is a NEW file, which the freeze allows | the owner (label off, then merge), after R4, the rehearsal and CI |
 | 3 | the sitting | GREEN applies from the merge commit. No pull request, and no gate edit | - |
 | 4 | **no post-apply GATE-CHANGE** | 0101 creates no function, so the SECURITY DEFINER count (28) and the 0079 ACL lists do not move | - |
@@ -330,6 +335,11 @@ that report is correct, and it is informational.
 No block reads a branch, and there is no separate HEAD CHECK to paste: the machine runs it inside
 every block.
 
+- **Two shas are compared only as checked variables.** Every sha a block compares (the recorded
+  sha, `origin/main`, the worktree's HEAD, the sha in the run window record, stage 2's pass mark)
+  is first read into a variable and refused unless it is 40 hex characters. An inline
+  `[ "$(git rev-parse HEAD)" = "${REC}" ]` is true when both sides are empty, which is a record
+  that reads empty and a git that fails; no block compares that way.
 - **Stage 0** refuses once stage 1 has applied, checks that the apply worktree is clean, removes the
   previous sha and run-window records, fetches, resolves `origin/main`, checks that sha out detached
   and verifies HEAD is it, verifies the sidecar, the promotion, the journal, 0100's bytes and every
@@ -373,10 +383,13 @@ STRAY=$(git status --short) || { echo "STOP: git status failed in the apply work
 rm -f /tmp/0101-main.sha /tmp/0101-window.ok || { echo "STOP: the previous sitting's records could not be removed. Nothing was applied"; exit 1; }
 git fetch origin --prune || { echo "STOP: git fetch failed, so origin/main may be stale. Nothing was applied"; exit 1; }
 MAIN=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. Nothing was applied"; exit 1; }
+echo "${MAIN}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: origin/main did not read as a full 40-character sha [${MAIN}]. Nothing was applied"; exit 1; }
 [ "$(git cat-file -t ${MAIN})" = commit ] || { echo "STOP: origin/main does not resolve to a commit"; exit 1; }
 git checkout -q --detach ${MAIN} || { echo "STOP: the checkout of origin/main failed. Nothing was applied"; exit 1; }
 echo "--- THE HEAD CHECK: the worktree must be on the origin/main this stage records"
-[ "$(git rev-parse HEAD)" = "${MAIN}" ] || { echo "STOP: the worktree is not on origin/main after the checkout"; exit 1; }
+HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read. Nothing was applied"; exit 1; }
+echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. Nothing was applied"; exit 1; }
+[ "${HD}" = "${MAIN}" ] || { echo "STOP: the worktree is not on origin/main after the checkout. Nothing was applied"; exit 1; }
 echo "origin/main and HEAD: ${MAIN}"
 
 test -f ${DOCPIN} || { echo "STOP: the document pin is not on disk at origin/main"; exit 1; }
@@ -411,10 +424,12 @@ node scripts/check-journal.mjs 2>&1 | tee /tmp/0101-check-journal.out || { echo 
 grep -qF '99 .sql files match 99 journal entries' /tmp/0101-check-journal.out || { echo "STOP: check-journal did not reconcile 99 files with 99 journal entries"; exit 1; }
 
 echo "--- THE CLOCK (R9): 0101 alters a table reception writes, so only closed hours pass. The weekday table, Lisbon time: Monday to Friday 08:00 to 21:00, Saturday 08:00 to 13:00, Sunday closed"
-DT=$(TZ=Europe/Lisbon date +%u%H%M) || { echo "STOP: the Lisbon clock could not be read. Nothing was applied"; exit 1; }
-echo "${DT}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo "STOP: the Lisbon clock did not read as a weekday (1 to 7) and HHMM. Nothing was applied"; exit 1; }
+DTZ=$(TZ=Europe/Lisbon date '+%u%H%M %Z') || { echo "STOP: the Lisbon clock could not be read. Nothing was applied"; exit 1; }
+echo "${DTZ}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9] (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as a weekday (1 to 7), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded [${DTZ}]. Nothing was applied"; exit 1; }
+DT=$(echo "${DTZ}" | cut -c1-5)
+echo "${DT}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo "STOP: the Lisbon weekday and time did not split out of the clock reading. Nothing was applied"; exit 1; }
 if awk -v s="${DT}" 'BEGIN { d = substr(s, 1, 1) + 0; t = substr(s, 2, 4) + 0; if (d == 7) exit 0; if (d >= 1 && d <= 5 && (t < 800 || t >= 2100)) exit 0; if (d == 6 && (t < 800 || t >= 1300)) exit 0; exit 1 }'; then CLOCK=closed; else CLOCK=open; fi
-echo "Lisbon weekday and time ${DT} (the first digit is the weekday, 1 Monday to 7 Sunday, then HHMM): ${CLOCK} by the weekday table"
+echo "Lisbon weekday and time ${DT} (the first digit is the weekday, 1 Monday to 7 Sunday, then HHMM; the clock read ${DTZ}): ${CLOCK} by the weekday table"
 D1=no
 if echo "${SHAGATE}" | grep -qxE '[0-9a-f]{64}' && test -f scripts/migration-timeouts.test.mjs && [ "$(shasum -a 256 scripts/migration-timeouts.test.mjs | cut -d' ' -f1)" = "${SHAGATE}" ]; then D1=yes; fi
 D2=no
@@ -476,14 +491,18 @@ STRAY=$(git status --short) || { echo "STOP: git status failed in the apply work
 echo "--- THE HEAD CHECK: origin/main must still be the sha stage 0 recorded."
 test -f /tmp/0101-main.sha || { echo "STOP: stage 0 recorded no sha in this sitting. The sitting stops"; exit 1; }
 REC=$(cat /tmp/0101-main.sha) || { echo "STOP: stage 0's record /tmp/0101-main.sha could not be read. Nothing was applied"; exit 1; }
-[ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit"; exit 1; }
+echo "${REC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: stage 0's record did not read as a full 40-character sha [${REC}]. Nothing was applied"; exit 1; }
+[ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit. Nothing was applied"; exit 1; }
 git fetch origin --prune || { echo "STOP: git fetch failed, so whether main moved is not known. Nothing was applied"; exit 1; }
 NOW=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. Nothing was applied"; exit 1; }
+echo "${NOW}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: origin/main did not read as a full 40-character sha [${NOW}]. Nothing was applied"; exit 1; }
 echo "recorded by stage 0: ${REC}"
 echo "origin/main now:     ${NOW}"
 [ "${NOW}" = "${REC}" ] || { echo "STOP: main moved since stage 0, the merge freeze was broken. The sitting halts and nothing is applied. Report both shas above"; exit 1; }
 git checkout -q --detach ${REC} || { echo "STOP: the checkout of the recorded sha failed. Nothing was applied"; exit 1; }
-[ "$(git rev-parse HEAD)" = "${REC}" ] || { echo "STOP: the worktree is not on the recorded sha after the checkout. Nothing was applied"; exit 1; }
+HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read. Nothing was applied"; exit 1; }
+echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. Nothing was applied"; exit 1; }
+[ "${HD}" = "${REC}" ] || { echo "STOP: the worktree is not on the recorded sha after the checkout. Nothing was applied"; exit 1; }
 shasum -a 256 -c docs/migration-apply-0101.sha256 || { echo "STOP: this document is not the approved one"; exit 1; }
 test -f ${MIG} || { echo "STOP: 0101 is not on disk"; exit 1; }
 test -f scripts/db/precheck-0101-guest-request-email.sql || { echo "STOP: the pre-check is not on disk"; exit 1; }
@@ -510,13 +529,16 @@ WREC=$(cut -d' ' -f1 /tmp/0101-window.ok)
 WOPEN=$(cut -d' ' -f2 /tmp/0101-window.ok)
 WSTART=$(cut -d' ' -f3 /tmp/0101-window.ok)
 WEND=$(cut -d' ' -f4 /tmp/0101-window.ok)
+echo "${WREC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the sha in the run window record did not read as a full 40-character sha [${WREC}]. Nothing was applied"; exit 1; }
 [ "${WREC}" = "${REC}" ] || { echo "STOP: the run window was recorded for ${WREC}, not for the sha stage 0 recorded. Nothing was applied"; exit 1; }
 echo "${WOPEN} ${WSTART} ${WEND}" | grep -qxE '[0-9]{12} [0-9]{12} [0-9]{12}' || { echo "STOP: the recorded run window did not parse. Nothing was applied"; exit 1; }
-NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon clock could not be read. Nothing was applied"; exit 1; }
+NOWZ=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %Z') || { echo "STOP: the Lisbon clock could not be read. Nothing was applied"; exit 1; }
+echo "${NOWZ}" | grep -qxE '[0-9]{12} (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST, so the Lisbon zone may not have loaded [${NOWZ}]. Nothing was applied"; exit 1; }
+NOWL=$(echo "${NOWZ}" | cut -c1-12)
+echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. Nothing was applied"; exit 1; }
 echo "run window, Lisbon YYYYMMDDHHMM: opens ${WOPEN}, stage 1 starts by ${WSTART}, everything ends before ${WEND}; now ${NOWL}"
 [ "${NOWL}" -ge "${WOPEN}" ] || { echo "STOP: Lisbon ${NOWL} is before the run window opens at ${WOPEN}. Nothing was applied"; exit 1; }
 [ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART}, the last minute the run window lets stage 1 start. Nothing was applied"; exit 1; }
-echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. Nothing was applied"; exit 1; }
 [ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is not before ${WEND}, the run window's end, so the recorded window is not this sitting's. Nothing was applied"; exit 1; }
 
 echo "--- the production target, asserted by the guard, not by the prompt"
@@ -530,16 +552,20 @@ FAILS=$(grep -cE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0101-precheck.new || tru
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0101-precheck.new || true)
 [ "${OKS}" = 13 ] || { echo "STOP: the pre-check printed ${OKS} OK verdicts, not 13. Nothing was applied"; exit 1; }
 
-NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon clock could not be read again before the apply. Nothing was applied"; exit 1; }
-echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM before the apply. Nothing was applied"; exit 1; }
+NOWZ=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %Z') || { echo "STOP: the Lisbon clock could not be read again before the apply. Nothing was applied"; exit 1; }
+echo "${NOWZ}" | grep -qxE '[0-9]{12} (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST again before the apply, so the Lisbon zone may not have loaded [${NOWZ}]. Nothing was applied"; exit 1; }
+NOWL=$(echo "${NOWZ}" | cut -c1-12)
+echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM again before the apply. Nothing was applied"; exit 1; }
 echo "run window, again before the apply: now ${NOWL}, stage 1 starts by ${WSTART}"
 [ "${NOWL}" -le "${WSTART}" ] || { echo "STOP: Lisbon ${NOWL} is past ${WSTART} after the pre-check, so the apply does not start. Nothing was applied"; exit 1; }
 
 echo "--- THE CLOCK AND THE CLINICS (R9), again, right before the apply: only closed hours pass. The weekday table, Lisbon time: Monday to Friday 08:00 to 21:00, Saturday 08:00 to 13:00, Sunday closed"
-DT=$(TZ=Europe/Lisbon date +%u%H%M) || { echo "STOP: the Lisbon clock could not be read. Nothing was applied"; exit 1; }
-echo "${DT}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo "STOP: the Lisbon clock did not read as a weekday (1 to 7) and HHMM. Nothing was applied"; exit 1; }
+DTZ=$(TZ=Europe/Lisbon date '+%u%H%M %Z') || { echo "STOP: the Lisbon clock could not be read. Nothing was applied"; exit 1; }
+echo "${DTZ}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9] (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as a weekday (1 to 7), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded [${DTZ}]. Nothing was applied"; exit 1; }
+DT=$(echo "${DTZ}" | cut -c1-5)
+echo "${DT}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo "STOP: the Lisbon weekday and time did not split out of the clock reading. Nothing was applied"; exit 1; }
 if awk -v s="${DT}" 'BEGIN { d = substr(s, 1, 1) + 0; t = substr(s, 2, 4) + 0; if (d == 7) exit 0; if (d >= 1 && d <= 5 && (t < 800 || t >= 2100)) exit 0; if (d == 6 && (t < 800 || t >= 1300)) exit 0; exit 1 }'; then CLOCK=closed; else CLOCK=open; fi
-echo "Lisbon weekday and time ${DT} (the first digit is the weekday, 1 Monday to 7 Sunday, then HHMM): ${CLOCK} by the weekday table"
+echo "Lisbon weekday and time ${DT} (the first digit is the weekday, 1 Monday to 7 Sunday, then HHMM; the clock read ${DTZ}): ${CLOCK} by the weekday table"
 CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (opens_at < time '08:00' or closes_at > time '21:00')) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1) || { echo "STOP: the clinics' own hours could not be read (psql's lines are above). Nothing was applied"; exit 1; }
 echo "active clinics whose own hours reach outside 08:00 to 21:00, the table's widest row: ${CL}"
 if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/) exit 0; exit 1 }'; then CLINICS=inside; elif awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[1-9][0-9]*$/ && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/ && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then CLINICS=outside; else echo "STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic [${CL}]. Nothing was applied"; exit 1; fi
@@ -559,7 +585,7 @@ mv /tmp/0101-precheck.new /tmp/0101-precheck.out || { echo "STOP: the pre-check 
 
 echo "--- the apply. It is the only writing command in this document. Its full output is teed to /tmp/0101-apply.out"
 node packages/db/scripts/verified-migrate.mjs --tag 0101_guest_request_email --sha256 ${SHA0101} --expect-pending 1 2>&1 | tee /tmp/0101-apply.out || { RC=$?; echo "STOP: the apply exited ${RC}: verified-migrate's own code if tee succeeded, tee's code if tee failed (pipefail returns the rightmost failure). Do not read this as nothing applied: exit 3 or 4 can follow a committed apply. No applied marker was written. Paste nothing else, not stage 1 again and not the journal read; report this whole output (/tmp/0101-apply.out holds it). Whether 0101 is applied is read only on the owner's or the lead's word"; exit ${RC}; }
-touch /tmp/0101-applied.ok || { echo "STOP: verified-migrate exited 0, so 0101 IS APPLIED and the write stands, but /tmp/0101-applied.ok could not be written, so stage 2 would refuse. Paste nothing else; stage 2 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
+touch /tmp/0101-applied.ok || { echo "STOP: verified-migrate exited 0, so 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. /tmp/0101-applied.ok could not be written, so stage 2 would refuse; stage 2 (READ ONLY) runs only on the owner's or the lead's word"; exit 1; }
 echo "0101 APPLIED. Paste stage 2 now."
 )
 ```
@@ -640,45 +666,52 @@ SHAPOST=9970e0e9155c2b36730ddb2130319bbe25468f7bf8446e114e71e375a4d5f702
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 
-rm -f /tmp/0101-stage2.ok || { echo "STOP: the old stage 2 pass mark could not be removed. The write of stage 1 stands; stage 2 did not run"; exit 1; }
-cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. The write of stage 1 stands; stage 2 did not run"; exit 1; }
+rm -f /tmp/0101-stage2.ok || { echo "STOP: the old stage 2 pass mark could not be removed. If stage 1 ended with its line 0101 APPLIED, then 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; the lead rules"; exit 1; }
+cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. If stage 1 ended with its line 0101 APPLIED, then 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; the lead rules"; exit 1; }
+echo "--- stage 1 must have APPLIED, in this sitting, not merely run"
+[ -n "$(find /tmp/0101-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 left no applied marker in this sitting, or left it over an hour ago. If stage 1 ended with its line 0101 APPLIED, then 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; the lead rules"; exit 1; }
 echo "--- THE HEAD CHECK: stage 2 runs from the recorded sha, and reports whether main moved"
-test -f /tmp/0101-main.sha || { echo "STOP: stage 0 recorded no sha in this sitting, and stage 2 runs only from the recorded sha. The lead rules"; exit 1; }
-REC=$(cat /tmp/0101-main.sha) || { echo "STOP: stage 0's record /tmp/0101-main.sha could not be read. The write of stage 1 stands; stage 2 did not run"; exit 1; }
-[ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit"; exit 1; }
-git fetch origin --prune || { echo "STOP: git fetch failed, so whether main moved is not known. The write of stage 1 stands; stage 2 did not run"; exit 1; }
-NOW=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. The write of stage 1 stands; stage 2 did not run"; exit 1; }
+test -f /tmp/0101-main.sha || { echo "STOP: stage 0 recorded no sha in this sitting, and stage 2 runs only from the recorded sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+REC=$(cat /tmp/0101-main.sha) || { echo "STOP: stage 0's record /tmp/0101-main.sha could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+echo "${REC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: stage 0's record did not read as a full 40-character sha [${REC}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "$(git cat-file -t ${REC})" = commit ] || { echo "STOP: the recorded sha ${REC} does not resolve to a commit. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+git fetch origin --prune || { echo "STOP: git fetch failed, so whether main moved is not known. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+NOW=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+echo "${NOW}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: origin/main did not read as a full 40-character sha [${NOW}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 echo "checking from the recorded sha ${REC}"
 echo "origin/main now: ${NOW}"
 if [ "${NOW}" = "${REC}" ]; then echo "main has not moved since stage 0"; else echo "MAIN MOVED since stage 0: recorded ${REC}, origin/main now ${NOW}. Stage 2 still runs from the recorded sha. Report both"; fi
-git checkout -q --detach ${REC} || { echo "STOP: the checkout of the recorded sha failed. The write of stage 1 stands; stage 2 did not run"; exit 1; }
-[ "$(git rev-parse HEAD)" = "${REC}" ] || { echo "STOP: the worktree is not on the recorded sha after the checkout"; exit 1; }
-shasum -a 256 -c docs/migration-apply-0101.sha256 || { echo "STOP: this document is not the approved one"; exit 1; }
-test -f packages/db/migrations/0101_guest_request_email.sql || { echo "STOP: 0101 is not on disk"; exit 1; }
-test -f scripts/db/postcheck-0101-guest-request-email.sql || { echo "STOP: the post-check is not on disk"; exit 1; }
-test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk"; exit 1; }
-test -f scripts/production-target.mjs || { echo "STOP: the guard's module is not on disk"; exit 1; }
-[ "$(shasum -a 256 packages/db/migrations/0101_guest_request_email.sql | cut -d' ' -f1)" = "${SHA0101}" ] || { echo "STOP: 0101 on disk is not the approved file"; exit 1; }
-[ "$(shasum -a 256 scripts/db/postcheck-0101-guest-request-email.sql | cut -d' ' -f1)" = "${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
-[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file"; exit 1; }
-[ "$(shasum -a 256 scripts/production-target.mjs | cut -d' ' -f1)" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the approved file"; exit 1; }
-
-echo "--- stage 1 must have APPLIED, in this sitting, not merely run"
-[ -n "$(find /tmp/0101-applied.ok -mmin -60 2>/dev/null)" ] || { echo "STOP: stage 1 did not complete an apply in this sitting, or completed it over an hour ago"; exit 1; }
+git checkout -q --detach ${REC} || { echo "STOP: the checkout of the recorded sha failed. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "${HD}" = "${REC}" ] || { echo "STOP: the worktree is not on the recorded sha after the checkout. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+shasum -a 256 -c docs/migration-apply-0101.sha256 || { echo "STOP: this document is not the approved one. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+test -f packages/db/migrations/0101_guest_request_email.sql || { echo "STOP: 0101 is not on disk. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+test -f scripts/db/postcheck-0101-guest-request-email.sql || { echo "STOP: the post-check is not on disk. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+test -f scripts/assert-production-target.mjs || { echo "STOP: the target guard is not on disk. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+test -f scripts/production-target.mjs || { echo "STOP: the guard's module is not on disk. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "$(shasum -a 256 packages/db/migrations/0101_guest_request_email.sql | cut -d' ' -f1)" = "${SHA0101}" ] || { echo "STOP: 0101 on disk is not the approved file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "$(shasum -a 256 scripts/db/postcheck-0101-guest-request-email.sql | cut -d' ' -f1)" = "${SHAPOST}" ] || { echo "STOP: the post-check on disk is not the approved file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "$(shasum -a 256 scripts/assert-production-target.mjs | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the approved file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "$(shasum -a 256 scripts/production-target.mjs | cut -d' ' -f1)" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the approved file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 
 echo "--- THE RUN WINDOW: nothing runs at or after its end"
-test -f /tmp/0101-window.ok || { echo "STOP: no run window is recorded for this sitting. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
-[ "$(cut -d' ' -f1 /tmp/0101-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+test -f /tmp/0101-window.ok || { echo "STOP: no run window is recorded for this sitting. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+WREC=$(cut -d' ' -f1 /tmp/0101-window.ok)
+echo "${WREC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the sha in the run window record did not read as a full 40-character sha [${WREC}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "${WREC}" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 WEND=$(cut -d' ' -f4 /tmp/0101-window.ok)
-echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
-NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon clock could not be read. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
-echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+NOWZ=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %Z') || { echo "STOP: the Lisbon clock could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+echo "${NOWZ}" | grep -qxE '[0-9]{12} (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST, so the Lisbon zone may not have loaded [${NOWZ}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+NOWL=$(echo "${NOWZ}" | cut -c1-12)
+echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
-[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The write stands; stage 2 runs only on the owner's or the lead's word"; exit 1; }
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 
 echo "--- SR-59: the carries come out of THIS SITTING's pre-check transcript"
-test -f /tmp/0101-precheck.out || { echo "STOP: stage 1's pre-check transcript is missing"; exit 1; }
-[ -n "$(find /tmp/0101-precheck.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's"; exit 1; }
+test -f /tmp/0101-precheck.out || { echo "STOP: stage 1's pre-check transcript is missing. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ -n "$(find /tmp/0101-precheck.out -mmin -60)" ] || { echo "STOP: stage 1's transcript is over an hour old; it is not this sitting's. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 carry() { awk -F'|' -v k="$1" 'index($1,k)>0 {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' /tmp/0101-precheck.out; }
 J=$(carry journal_rows_before)
 T=$(carry tables_before)
@@ -693,35 +726,35 @@ RM=$(carry relation_acl_md5)
 CM=$(carry column_acl_md5)
 DM=$(carry default_acl_md5)
 DP=$(carry dml_profile_md5)
-[ -n "${J}" ] && [ -n "${T}" ] && [ -n "${S}" ] && [ -n "${RF}" ] && [ -n "${TC}" ] && [ -n "${TK}" ] && [ -n "${TI}" ] && [ -n "${PM}" ] && [ -n "${FM}" ] && [ -n "${RM}" ] && [ -n "${CM}" ] && [ -n "${DM}" ] && [ -n "${DP}" ] || { echo "STOP: a carry did not parse out of the transcript"; exit 1; }
-echo "${J} ${T} ${S} ${RF}" | grep -qxE '[0-9]+ [0-9]+ [0-9]+ [0-9]+' || { echo "STOP: a count carry is not a number"; exit 1; }
-echo "${TC} ${TK} ${TI} ${PM} ${FM} ${RM} ${CM} ${DM} ${DP}" | grep -qxE '[0-9a-f]{32}( [0-9a-f]{32}){8}' || { echo "STOP: an md5 carry is not 32 hex characters"; exit 1; }
+[ -n "${J}" ] && [ -n "${T}" ] && [ -n "${S}" ] && [ -n "${RF}" ] && [ -n "${TC}" ] && [ -n "${TK}" ] && [ -n "${TI}" ] && [ -n "${PM}" ] && [ -n "${FM}" ] && [ -n "${RM}" ] && [ -n "${CM}" ] && [ -n "${DM}" ] && [ -n "${DP}" ] || { echo "STOP: a carry did not parse out of the transcript. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+echo "${J} ${T} ${S} ${RF}" | grep -qxE '[0-9]+ [0-9]+ [0-9]+ [0-9]+' || { echo "STOP: a count carry is not a number. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+echo "${TC} ${TK} ${TI} ${PM} ${FM} ${RM} ${CM} ${DM} ${DP}" | grep -qxE '[0-9a-f]{32}( [0-9a-f]{32}){8}' || { echo "STOP: an md5 carry is not 32 hex characters. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 echo "carries from this run: journal_before=${J} tables_before=${T} secdef_before=${S} relfilenode_before=${RF} table_columns=${TC} table_constraints=${TK} table_indexes=${TI} policies=${PM} functions=${FM} relation_acl=${RM} column_acl=${CM} default_acl=${DM} dml_profile=${DP}"
 
-set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport || { echo "STOP: the production environment file could not be loaded. The write of stage 1 stands; the post-check did not run"; exit 1; }
-node scripts/assert-production-target.mjs || { echo "STOP: the target guard refused or failed (its lines are above). The write of stage 1 stands; the post-check did not run"; exit 1; }
+set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport || { echo "STOP: the production environment file could not be loaded. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+node scripts/assert-production-target.mjs || { echo "STOP: the target guard refused or failed (its lines are above). 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 
 echo "--- the post-check, inside one READ ONLY transaction, so the server is what refuses a write"
-rm -f /tmp/0101-postcheck.out || { echo "STOP: the old post-check transcript could not be removed. The write of stage 1 stands; the post-check did not run"; exit 1; }
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before="${J}" -v tables_before="${T}" -v secdef_before="${S}" -v relfilenode_before="${RF}" -v table_columns_md5="${TC}" -v table_constraints_md5="${TK}" -v table_indexes_md5="${TI}" -v policies_md5="${PM}" -v functions_md5="${FM}" -v relation_acl_md5="${RM}" -v column_acl_md5="${CM}" -v default_acl_md5="${DM}" -v dml_profile_md5="${DP}" -c "begin read only" -f scripts/db/postcheck-0101-guest-request-email.sql -c "rollback" 2>&1 | tee /tmp/0101-postcheck.out || { echo "STOP: the post-check did not complete (psql's lines are above), or its transcript could not be written. The write of stage 1 stands; stage 2 did not pass"; exit 1; }
+rm -f /tmp/0101-postcheck.out || { echo "STOP: the old post-check transcript could not be removed. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before="${J}" -v tables_before="${T}" -v secdef_before="${S}" -v relfilenode_before="${RF}" -v table_columns_md5="${TC}" -v table_constraints_md5="${TK}" -v table_indexes_md5="${TI}" -v policies_md5="${PM}" -v functions_md5="${FM}" -v relation_acl_md5="${RM}" -v column_acl_md5="${CM}" -v default_acl_md5="${DM}" -v dml_profile_md5="${DP}" -c "begin read only" -f scripts/db/postcheck-0101-guest-request-email.sql -c "rollback" 2>&1 | tee /tmp/0101-postcheck.out || { echo "STOP: the post-check did not complete (psql's lines are above), or its transcript could not be written. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 FAILS=$(grep -cE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0101-postcheck.out || true)
-[ "${FAILS}" = 0 ] || { echo "STOP: the post-check printed [${FAILS}] FAIL verdicts, or its transcript could not be read. The write of stage 1 stands; stage 2 did not pass"; exit 1; }
+[ "${FAILS}" = 0 ] || { echo "STOP: the post-check printed [${FAILS}] FAIL verdicts, or its transcript could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0101-postcheck.out || true)
-[ "${OKS}" = 19 ] || { echo "STOP: the post-check printed ${OKS} OK verdicts, not 19. A verdict that is missing prints no FAIL"; exit 1; }
+[ "${OKS}" = 19 ] || { echo "STOP: the post-check printed ${OKS} OK verdicts, not 19. A verdict that is missing prints no FAIL. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 
 echo "--- SR-51: the journal grew by exactly one, and the row is 0101 by hash"
-JA=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations") || { echo "STOP: the journal count could not be read (psql's lines are above). The write of stage 1 stands; stage 2 did not pass"; exit 1; }
+JA=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations") || { echo "STOP: the journal count could not be read (psql's lines are above). 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 JA=$(echo "${JA}" | tail -1)
-[ "${JA}" = "$((J + 1))" ] || { echo "STOP: the journal reads ${JA} rows, not ${J} plus one"; exit 1; }
-HN=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations where hash = '${SHA0101}'") || { echo "STOP: the journal could not be read by hash (psql's lines are above). The write of stage 1 stands; stage 2 did not pass"; exit 1; }
+[ "${JA}" = "$((J + 1))" ] || { echo "STOP: the journal reads ${JA} rows, not ${J} plus one. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+HN=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations where hash = '${SHA0101}'") || { echo "STOP: the journal could not be read by hash (psql's lines are above). 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 HN=$(echo "${HN}" | tail -1)
-[ "${HN}" = 1 ] || { echo "STOP: the sha256 of 0101 is in the journal ${HN} times, not once"; exit 1; }
+[ "${HN}" = 1 ] || { echo "STOP: the sha256 of 0101 is in the journal ${HN} times, not once. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 echo "journal rows before=${J} after=${JA}, 0101 present by hash"
 
 echo "--- the journal read: the last three rows, as applied"
-psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -c "select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 3;" || { echo "STOP: the last three journal rows could not be read (psql's lines are above). The write of stage 1 stands; stage 2 did not pass"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -c "select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 3;" || { echo "STOP: the last three journal rows could not be read (psql's lines are above). 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 
-echo "${REC}" > /tmp/0101-stage2.ok || { echo "STOP: the pass mark /tmp/0101-stage2.ok could not be written. The write of stage 1 stands; the closing read would refuse"; exit 1; }
+echo "${REC}" > /tmp/0101-stage2.ok || { echo "STOP: the pass mark /tmp/0101-stage2.ok could not be written, so the closing read would refuse. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 echo "0101 POST-CHECK PASSED. 13/13 pre-check OK, 19/19 post-check OK, journal ${J} to ${JA}; guest_booking_requests has its email column, tables ${T} and SECURITY DEFINER functions ${S} unchanged. Paste the closing journal read now."
 )
 ```
@@ -740,6 +773,13 @@ A missing carry makes the post-check itself STOP with psql exit 3 before any ver
 closing read. Any other ending is a `STOP:` line and exit 1, and the write of stage 1 stands.
 `/tmp/0101-stage2.ok` is written last, so after any STOP the closing read refuses.
 
+**EVERY STOP OF STAGE 2 AND OF THE CLOSING READ SAYS SO ITSELF,** because each fires after the
+commit and is read by somebody deciding what to do next: `0101 IS APPLIED and the write stands. Run
+nothing again, not stage 0 and not stage 1`. The first three STOPs of stage 2 and the first two of
+the closing read come before the block has read stage 1's applied marker, so they say it
+conditionally (`If stage 1 ended with its line 0101 APPLIED, then ...`); every later one says it
+flatly. The script test fails a post-commit STOP that lacks the sentence.
+
 ## THE CLOSING JOURNAL READ. READ ONLY
 
 Paste this on its own, and **only** after stage 2 exited 0 with its last line
@@ -751,37 +791,48 @@ set -eo pipefail
 SHAREADER=825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READER=packages/db/scripts/read-applied-migrations.mjs
-cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. The journal read has not run"; exit 1; }
+cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. If stage 1 ended with its line 0101 APPLIED, then 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read has not run; the lead rules"; exit 1; }
+test -f /tmp/0101-applied.ok || { echo "STOP: stage 1 left no applied marker. If stage 1 ended with its line 0101 APPLIED, then 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read has not run; the lead rules"; exit 1; }
 echo "--- THE HEAD CHECK: the read runs from the recorded sha, and reports whether main moved"
-test -f /tmp/0101-main.sha || { echo "STOP: stage 0 recorded no sha in this sitting. The journal read has not run"; exit 1; }
-REC=$(cat /tmp/0101-main.sha) || { echo "STOP: stage 0's record /tmp/0101-main.sha could not be read. The journal read has not run"; exit 1; }
-[ "$(git rev-parse HEAD)" = "${REC}" ] || { echo "STOP: the apply worktree is not on the sha stage 0 recorded. The journal read has not run"; exit 1; }
-git fetch origin --prune || { echo "STOP: git fetch failed, so whether main moved is not known. The journal read has not run"; exit 1; }
-NOW=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. The journal read has not run"; exit 1; }
+test -f /tmp/0101-main.sha || { echo "STOP: stage 0 recorded no sha in this sitting. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+REC=$(cat /tmp/0101-main.sha) || { echo "STOP: stage 0's record /tmp/0101-main.sha could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+echo "${REC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: stage 0's record did not read as a full 40-character sha [${REC}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+[ "${HD}" = "${REC}" ] || { echo "STOP: the apply worktree is not on the sha stage 0 recorded. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+shasum -a 256 -c docs/migration-apply-0101.sha256 || { echo "STOP: this document is not the approved one. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+git fetch origin --prune || { echo "STOP: git fetch failed, so whether main moved is not known. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+NOW=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+echo "${NOW}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: origin/main did not read as a full 40-character sha [${NOW}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 if [ "${NOW}" = "${REC}" ]; then echo "main has not moved since stage 0: ${REC}"; else echo "MAIN MOVED since stage 0: recorded ${REC}, origin/main now ${NOW}. The read still runs from the recorded sha. Report both"; fi
-test -f /tmp/0101-applied.ok || { echo "STOP: stage 1 left no applied marker. The journal read has not run"; exit 1; }
-test -f /tmp/0101-stage2.ok || { echo "STOP: stage 2 left no pass mark, so it did not pass. The journal read has not run"; exit 1; }
-[ "$(cat /tmp/0101-stage2.ok)" = "${REC}" ] || { echo "STOP: stage 2's pass mark does not name the sha stage 0 recorded. The journal read has not run"; exit 1; }
-[ -n "$(find /tmp/0101-stage2.ok -newer /tmp/0101-applied.ok)" ] || { echo "STOP: stage 2's pass mark is older than the apply. The journal read has not run"; exit 1; }
-test -f /tmp/0101-window.ok || { echo "STOP: no run window is recorded for this sitting. The journal read has not run"; exit 1; }
-[ "$(cut -d' ' -f1 /tmp/0101-window.ok)" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. The journal read has not run"; exit 1; }
+test -f /tmp/0101-stage2.ok || { echo "STOP: stage 2 left no pass mark, so it did not pass. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+S2=$(cat /tmp/0101-stage2.ok) || { echo "STOP: stage 2's pass mark could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+echo "${S2}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: stage 2's pass mark did not read as a full 40-character sha [${S2}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+[ "${S2}" = "${REC}" ] || { echo "STOP: stage 2's pass mark does not name the sha stage 0 recorded. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+[ -n "$(find /tmp/0101-stage2.ok -newer /tmp/0101-applied.ok)" ] || { echo "STOP: stage 2's pass mark is older than the apply. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+test -f /tmp/0101-window.ok || { echo "STOP: no run window is recorded for this sitting. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+WREC=$(cut -d' ' -f1 /tmp/0101-window.ok)
+echo "${WREC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the sha in the run window record did not read as a full 40-character sha [${WREC}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+[ "${WREC}" = "${REC}" ] || { echo "STOP: the run window was recorded for another sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 WEND=$(cut -d' ' -f4 /tmp/0101-window.ok)
-echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. The journal read has not run"; exit 1; }
-NOWL=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M') || { echo "STOP: the Lisbon clock could not be read. The journal read has not run"; exit 1; }
-echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. The journal read has not run"; exit 1; }
+echo "${WEND}" | grep -qxE '[0-9]{12}' || { echo "STOP: the recorded run window did not parse. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+NOWZ=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %Z') || { echo "STOP: the Lisbon clock could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+echo "${NOWZ}" | grep -qxE '[0-9]{12} (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST, so the Lisbon zone may not have loaded [${NOWZ}]. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+NOWL=$(echo "${NOWZ}" | cut -c1-12)
+echo "${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 echo "run window, Lisbon YYYYMMDDHHMM: everything ends before ${WEND}; now ${NOWL}"
-[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. The journal read has not run"; exit 1; }
-test -f scripts/production-target.mjs || { echo "STOP: the reader's target module is not on disk at the recorded sha. The journal read has not run"; exit 1; }
+[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is at or past ${WEND}, the end of the run window. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+test -f scripts/production-target.mjs || { echo "STOP: the reader's target module is not on disk at the recorded sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 RW=$(shasum -a 256 ${READER} | cut -d' ' -f1)
 MW=$(shasum -a 256 scripts/production-target.mjs | cut -d' ' -f1)
 echo "reader: ${RW}, its target module: ${MW} (at the recorded sha ${REC})"
-[ "${RW}" = "${SHAREADER}" ] || { echo "STOP: the migration reader at the recorded sha is not the pinned file. The journal read has not run"; exit 1; }
-[ "${MW}" = "${SHAPTM}" ] || { echo "STOP: the reader's target module at the recorded sha is not the pinned file. The journal read has not run"; exit 1; }
-node --env-file=/Users/ivan/osteojp-secrets/new-prod.env ${READER} 2>&1 | tee /tmp/0101-journal-after.out || { echo "STOP: the journal read failed or its target check refused (its lines are above), or its output could not be written. The journal read did not pass"; exit 1; }
-grep -qx 'journal rows on production: 99' /tmp/0101-journal-after.out || { echo "STOP: the journal read after the apply does not say 99"; exit 1; }
-grep -qE '^[[:space:]]*APPLIED[[:space:]]+0101_guest_request_email[.]sql$' /tmp/0101-journal-after.out || { echo "STOP: the journal read does not list 0101 as APPLIED"; exit 1; }
-grep -qx 'pending on this ref: 0' /tmp/0101-journal-after.out || { echo "STOP: the journal read finds a migration pending on the recorded sha"; exit 1; }
-grep -qx 'journal rows with no matching file on this ref: 0' /tmp/0101-journal-after.out || { echo "STOP: the journal holds a row with no matching file on the recorded sha"; exit 1; }
+[ "${RW}" = "${SHAREADER}" ] || { echo "STOP: the migration reader at the recorded sha is not the pinned file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+[ "${MW}" = "${SHAPTM}" ] || { echo "STOP: the reader's target module at the recorded sha is not the pinned file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+node --env-file=/Users/ivan/osteojp-secrets/new-prod.env ${READER} 2>&1 | tee /tmp/0101-journal-after.out || { echo "STOP: the journal read failed or its target check refused (its lines are above), or its output could not be written. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+grep -qx 'journal rows on production: 99' /tmp/0101-journal-after.out || { echo "STOP: the journal read after the apply does not say 99. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+grep -qE '^[[:space:]]*APPLIED[[:space:]]+0101_guest_request_email[.]sql$' /tmp/0101-journal-after.out || { echo "STOP: the journal read does not list 0101 as APPLIED. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+grep -qx 'pending on this ref: 0' /tmp/0101-journal-after.out || { echo "STOP: the journal read finds a migration pending on the recorded sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+grep -qx 'journal rows with no matching file on this ref: 0' /tmp/0101-journal-after.out || { echo "STOP: the journal holds a row with no matching file on the recorded sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 echo "CLOSING READ: the journal reads 99, 0101 is APPLIED, and nothing is pending on the recorded sha."
 )
 ```
@@ -793,7 +844,10 @@ last, `pending on this ref: 0`, `journal rows with no matching file on this ref:
 line, exactly,
 `CLOSING READ: the journal reads 99, 0101 is APPLIED, and nothing is pending on the recorded sha.`
 After any halt at any stage it is not pasted. **WHAT THE EXIT MEANS:** exit 0 with that last line is
-the only pass; any other ending is a `STOP:` line and exit 1, and the write of stage 1 stands.
+the only pass; any other ending is a `STOP:` line and exit 1, and the write of stage 1 stands, which
+the STOP line itself says. The closing read asserts the sidecar like every other block, and reads
+the worktree's HEAD, the recorded sha and stage 2's pass mark into checked variables before it
+compares them.
 
 ## What every verdict must read
 
@@ -976,7 +1030,17 @@ made to fail in turn, and the block must (a) exit non-zero with the tool chain s
 none of its pass lines, (c) write none of its records after the failing point, and print a `STOP:`
 line. Extra faults: the apply worktree missing, the env file missing, a record path that is a
 directory, verified-migrate exiting 2, 4 and 5 as well as 3, and every clock read and every field
-of the window record exiting 0 with EMPTY output.
+of the window record exiting 0 with EMPTY output. The stub `date` refuses to answer unless the block
+called it with `TZ=Europe/Lisbon`.
+
+**A ZONE THAT DID NOT LOAD** runs every block whole with a clock that answers `UTC`, `GMT`, `CET`,
+`west` or no zone at all: each STOPs at the clock, with nothing recorded and no guard, psql, apply or
+reader run after it; and with `WET` each passes as with `WEST`. In stage 1, with only the last of its
+three reads answering `UTC`, the block STOPs at the arm, after the pre-check and before the apply.
+**THE REAL `date`** is not stubbed in one test: the blocks' own clock lines run against the system's
+`date` at ten fixed instants (the six ruled minutes, Monday 08:30 summer time, and three in winter
+time), in a process whose own zone is Tokyo; a misspelt zone reads `UTC` and STOPs, and a line with
+no `TZ=` reads `JST` and STOPs.
 
 **THE WEEKDAY TABLE** runs stage 0 and stage 1 whole at the six minutes the ruling names (Friday
 20:59 open, Friday 21:00 closed, Saturday 12:59 open, Saturday 13:00 closed, Sunday 15:00 closed,
@@ -991,12 +1055,12 @@ before any git call.
 
 | Block | Faults | Halt | Allowed to continue, and why |
 |---|---|---|---|
-| stage 0, closed hours | 46 | 43 | 3 R9 proof 1 calls, which read `no` and decide nothing |
-| stage 1, closed hours | 68 | 65 | 3 R9 proof 1 calls, as in stage 0 |
-| stage 2 | 55 | 55 | none |
-| the closing journal read | 26 | 26 | none |
+| stage 0, closed hours | 50 | 47 | 3 R9 proof 1 calls, which read `no` and decide nothing |
+| stage 1, closed hours | 78 | 75 | 3 R9 proof 1 calls, as in stage 0 |
+| stage 2 | 61 | 61 | none |
+| the closing journal read | 34 | 34 | none |
 
-195 faults, run on 2026-10-04 under zsh in GREEN's exact shape and under bash with errexit forced
+223 faults, run on 2026-10-05 (Lisbon) under zsh in GREEN's exact shape and under bash with errexit forced
 off; every one held. **CI runs the bash arm only:** zsh is not on the ubuntu runner, and the
 repository's convention for that (`scripts/apply-lane/apply-lane-settings.test.mjs`) is followed, so
 on the GitHub runner alone the zsh arm is a reported skip, and anywhere else a missing zsh fails the
@@ -1071,7 +1135,25 @@ ends in ROLLBACK, and the post-check runs inside the block's `begin read only`.
 
 ## Review history
 
-**R4 has not run** (NOT READY step 3).
+**R4 on the promoted pull request has not run** (NOT READY step 3).
+
+**An independent review of the first commit (`7bd92132`) and of the draft dispatch, 2026-10-04:
+DEFECTS, no BLOCKER, no MAJOR, four MINOR. All four are fixed in the commit after it:**
+
+1. **A zone that cannot be loaded passed instead of stopping.** `date` answers UTC with exit 0 for
+   a zone it cannot load. Every clock read now reads `%Z` in the same call and STOPs unless it is
+   `WET` or `WEST` (section 4); fault-injected ("A ZONE THAT DID NOT LOAD") and run against the real
+   `date`.
+2. **Stage 2 STOPs that fire after the commit did not say the write stands.** Every STOP of stage 2
+   and of the closing read now says `0101 IS APPLIED and the write stands. Run nothing again, not
+   stage 0 and not stage 1`, and the script test fails one that does not.
+3. **The closing read did not assert the sidecar, though the fact table said every block does;
+   and it compared `git rev-parse HEAD` with the recorded sha inline,** which is true when both are
+   empty. It now asserts the sidecar, and every block compares shas only as variables each checked
+   to be 40 hex characters.
+4. **The harness's `date` stub ignored `TZ`,** so dropping `TZ=Europe/Lisbon` from a clock read was
+   seen by the byte pin alone. Now a static rule requires it on every `date` call, the stub refuses a
+   call without it, and one test runs the real `date`.
 
 **The mutation sweep, 2026-10-04, one pass, mechanical.** Every mutant was run against the tests that should catch it, and the sidecar's byte pin was
 regenerated for every document mutant, so it killed none of them.
@@ -1108,3 +1190,26 @@ regenerated for every document mutant, so it killed none of them.
   because it moved the other way. In the READ ONLY runs it read OK.
 - **Not swept:** the two blocks of GREEN's dispatch (a draft, outside the repository), and the
   application pull request, which has its own tests.
+
+**The second sweep, 2026-10-05, over the block lines the review changed and the new test rules.**
+The sidecar was regenerated for every document mutant.
+
+| Part | Mutants | Killed | Survived |
+|---|---|---|---|
+| S1. an explicit halt stripped from a block line, over the four blocks as they now stand, against the static rules | 185 | 185 | 0 |
+| S2. the six clock reads: `TZ=Europe/Lisbon` dropped; the zone changed to UTC; `%Z` dropped; UTC admitted by the zone check; any zone name admitted; the zone check line removed | 36 | 36 | 0 |
+| S3. the post-commit sentence: removed from each STOP of stage 2 and the closing read (81); "Run nothing again" alone removed (81); a STOP before the marker read made unconditional (5) | 167 | 167 | 0 |
+| S4. the sha checks: a 40-hex check removed (15); one that admits the empty string (15); HEAD compared inline again (4); the pass mark compared inline again (1); the sidecar assertion removed from a block (4) | 39 | 39 | 0 |
+| S5. IN STEP, the block line changed AND the static rule that would see it disabled, so only a run can: `TZ=` dropped from a block's reads; any zone admitted; the recorded sha's check removed (stage 1, stage 2 and the closing read each) | 9 | 9 | 0 |
+| S6. a new rule of the script test loosened, against its own controls | 17 | 16 | 0 after the fix below |
+
+- **S5 is the part that answers the review's fourth finding:** with the static date rule switched
+  off, a block that lost `TZ=Europe/Lisbon` is still caught, by the stub (which no longer answers by
+  format string alone) and by the real `date`; one that admits any zone is caught by A ZONE THAT DID
+  NOT LOAD; one that lost the recorded sha's check is caught by A RECORD THAT READS EMPTY.
+- **S6 found one weak control, fixed in this sweep:** the rule that a 40-hex check counts only if it
+  ends in an explicit halt was removed and nothing failed, because the control planted a line the
+  rule refused for another reason. The control now plants the check with its `exit` removed; the
+  mutant was re-run and killed.
+- **Not swept:** the two blocks of GREEN's draft dispatch, which are outside the repository. They
+  were re-run on 14 clock points and with a clock answering UTC, GMT and no zone, in both shells.

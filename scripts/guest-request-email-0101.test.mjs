@@ -23,13 +23,21 @@
 //     hours: Monday to Friday 08:00 to 21:00, Saturday 08:00 to 13:00, Sunday closed, in Lisbon
 //     time. R9's proofs 2 and 3 are fixed `no`, nothing can turn either to yes, there is no
 //     override arm, and no block carries a date;
+//   * EVERY CLOCK READ carries TZ=Europe/Lisbon and reads the zone's name in the same `date` call, and
+//     the next line stops unless it is WET or WEST (a zone that cannot be loaded answers UTC with exit
+//     0); one test runs the REAL `date` at fixed instants through the blocks' own clock lines;
+//   * EVERY STOP THAT CAN FIRE AFTER THE COMMIT (all of stage 2 and of the closing read, and stage 1's
+//     after the apply) says that 0101 is applied, that the write stands and that nothing is run again;
+//   * two shas are compared only as variables each checked to be 40 hex characters, never inline, and
+//     every block asserts the document's sidecar, the closing read included;
 //   * every carry stage 2 reads is a row the pre-check prints, and no carry name hides in another;
 //   * the blocks carry no `#` line, no `!` but `test !`, no backslash continuation, and never the
 //     apply worktree's old place;
 //   * EVERY HALT IS EXPLICIT, and a fault-injection harness proves it, as for 0100: each block runs
 //     in GREEN's tool shape (`true && eval '<block>' < /dev/null && ...`, where zsh ignores errexit)
 //     with every external command a stub, each call made to fail in turn; THE WEEKDAY TABLE (the
-//     six minutes the ruling names and one green arm, each through stage 0 and stage 1 whole); THE
+//     six minutes the ruling names and one green arm, each through stage 0 and stage 1 whole); A ZONE
+//     THAT DID NOT LOAD (every block, a clock answering UTC); A RECORD THAT READS EMPTY; THE
 //     CLINICS' ROWS; THE WINDOW FEED; the applied marker's age; and the harness's own control. In
 //     CI the harness runs under bash with errexit forced off; under zsh wherever zsh is installed
 //     (scripts/apply-lane/apply-lane-settings.test.mjs is the convention: zsh is not on the runner).
@@ -274,8 +282,11 @@ export const WEEKDAY_TABLE = Object.freeze([
 export const closedByTable = (d, t) => !WEEKDAY_TABLE.some(([a, b, open, close]) => d >= a && d <= b && t >= open && t < close);
 
 /** The clock lines, exactly as both stages carry them. */
-export const CLOCK_READ = "DT=$(TZ=Europe/Lisbon date +%u%H%M) || { echo \"STOP: the Lisbon clock could not be read. Nothing was applied\"; exit 1; }";
-export const CLOCK_FORMAT = "echo \"${DT}\" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo \"STOP: the Lisbon clock did not read as a weekday (1 to 7) and HHMM. Nothing was applied\"; exit 1; }";
+export const CLOCK_READ = "DTZ=$(TZ=Europe/Lisbon date '+%u%H%M %Z') || { echo \"STOP: the Lisbon clock could not be read. Nothing was applied\"; exit 1; }";
+/** The zone is read in the SAME date call and must be Lisbon's: a zone that cannot be loaded reads UTC with exit 0, and UTC is an hour off in summer. */
+export const CLOCK_ZONE = "echo \"${DTZ}\" | grep -qxE '[1-7][0-2][0-9][0-5][0-9] (WET|WEST)' || { echo \"STOP: the Lisbon clock did not read as a weekday (1 to 7), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded [${DTZ}]. Nothing was applied\"; exit 1; }";
+export const CLOCK_SPLIT = 'DT=$(echo "${DTZ}" | cut -c1-5)';
+export const CLOCK_FORMAT = "echo \"${DT}\" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo \"STOP: the Lisbon weekday and time did not split out of the clock reading. Nothing was applied\"; exit 1; }";
 export const CLOCK_AWK =
   "BEGIN { d = substr(s, 1, 1) + 0; t = substr(s, 2, 4) + 0; if (d == 7) exit 0; if (d >= 1 && d <= 5 && (t < 800 || t >= 2100)) exit 0; if (d == 6 && (t < 800 || t >= 1300)) exit 0; exit 1 }";
 export const CLOCK_DECIDE = `if awk -v s="\${DT}" '${CLOCK_AWK}'; then CLOCK=closed; else CLOCK=open; fi`;
@@ -298,9 +309,14 @@ export function armProblems(block, stage) {
   if (/D2=yes|D3=yes/.test(block)) problems.push("something can turn proof 2 or 3 to yes");
   if (/yesyesyes/.test(block)) problems.push("a daytime path that opens on all three proofs");
   if (/\bOVR\b|override/i.test(block)) problems.push("an override arm");
-  if (!lines.includes(CLOCK_READ)) problems.push("the Lisbon weekday and time are not read in one date call, with its halt");
+  if (!lines.includes(CLOCK_READ)) problems.push("the Lisbon weekday, time and zone are not read in one date call, with its halt");
+  if (!lines.includes(CLOCK_ZONE)) problems.push("the clock reading is not refused unless its zone is WET or WEST");
   if (!lines.includes(CLOCK_FORMAT)) problems.push("the clock reading is not refused unless it is a weekday and HHMM");
   if (!lines.includes(CLOCK_DECIDE)) problems.push("closed is not decided by the weekday table");
+  // The five lines stand together, in order, with nothing between them: read, zone, split, format, decide.
+  const at = lines.indexOf(CLOCK_READ);
+  const five = [CLOCK_READ, CLOCK_ZONE, CLOCK_SPLIT, CLOCK_FORMAT, CLOCK_DECIDE];
+  if (at >= 0 && five.some((l, k) => lines[at + k] !== l) && five.every((l) => lines.includes(l))) problems.push("the clock's five lines are not together and in order");
   if (lines.filter((l) => /CLOCK=closed/.test(l)).length !== 1) problems.push("more than one line can set CLOCK=closed");
   const decision = lines.filter((l) => l.startsWith('if [ "${CLOCK}'));
   const want = stage === 0
@@ -322,6 +338,95 @@ export function armPositionProblems(block) {
   const arm = block.indexOf("THE CLOCK AND THE CLINICS (R9)");
   if (!(arm > block.indexOf("precheck-0101-guest-request-email.sql 2>&1"))) problems.push("the arm does not follow the pre-check");
   if (!(arm < block.indexOf("node packages/db/scripts/verified-migrate.mjs"))) problems.push("the arm does not precede the apply");
+  return problems;
+}
+
+/** An explicit halt, as the last thing on a line. */
+const EXPLICIT_HALT = /\|\| \{ (RC=\$\?; )?echo "STOP: [^"]+";( echo "\$\{STRAY\}";)? exit (1|\$\{RC\}); \}$/;
+
+/** The sentence every STOP that can fire AFTER stage 1 committed must carry. */
+export const WRITE_STANDS = "0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1";
+/** Before a block has seen the applied marker it cannot know, so it says it conditionally. */
+const WRITE_STANDS_IF = `If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`;
+const STOP_TEXT = /echo "STOP: ([^"]+)"/;
+
+/**
+ * Stage 2 and the closing read run AFTER the commit. Every STOP of theirs says that 0101 is applied and
+ * that nothing is to be run again; and it says so unconditionally only once the block has seen stage
+ * 1's applied marker. `markerLine` is the start of the line that reads the marker.
+ */
+export function postCommitProblems(block, markerLine) {
+  const problems = [];
+  const lines = block.split("\n");
+  const marker = lines.findIndex((l) => l.startsWith(markerLine));
+  if (marker < 0) return ["the block never reads stage 1's applied marker"];
+  lines.forEach((l, i) => {
+    const m = STOP_TEXT.exec(l);
+    if (!m) return;
+    if (!m[1].includes(WRITE_STANDS)) problems.push(`line ${i + 1}: a post-commit STOP that does not say the write stands: ${m[1].slice(0, 70)}`);
+    else if (i <= marker && !m[1].includes(WRITE_STANDS_IF)) problems.push(`line ${i + 1}: a STOP says 0101 is applied before the block has read the applied marker`);
+    else if (i > marker && m[1].includes(WRITE_STANDS_IF)) problems.push(`line ${i + 1}: a STOP is still conditional after the block has read the applied marker`);
+  });
+  return problems;
+}
+
+/** Stage 1's two STOPs after the apply command: the apply's own (uncertain) and the marker's (certain). */
+export function stageOnePostApplyProblems(block) {
+  const problems = [];
+  const lines = block.split("\n");
+  const vm = lines.findIndex((l) => l.startsWith("node packages/db/scripts/verified-migrate.mjs"));
+  if (vm < 0) return ["stage 1 does not run verified-migrate"];
+  if (!/Do not read this as nothing applied: [^"]*Paste nothing else, not stage 1 again/.test(lines[vm])) problems.push("the apply's STOP does not say it may have applied and that nothing else is pasted");
+  const after = lines.slice(vm + 1).filter((l) => STOP_TEXT.test(l));
+  if (after.length !== 1 || !STOP_TEXT.exec(after[0])[1].includes(WRITE_STANDS)) problems.push("the STOP after a committed apply does not say the write stands and nothing is run again");
+  return problems;
+}
+
+/** The variables a block holds a commit sha in. */
+const SHA_VARS = ["MAIN", "REC", "NOW", "HD", "WREC", "S2"];
+const hexCheckOf = (v) => `echo "\${${v}}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: `;
+
+/**
+ * Two shas are compared only as VARIABLES, each already refused unless it is 40 hex characters. An
+ * inline `[ "$(git rev-parse HEAD)" = "${REC}" ]` is true when both sides are empty: a record that
+ * reads empty and a git that fails. And every block asserts the document's sidecar.
+ */
+export function shaCompareProblems(block) {
+  const problems = [];
+  const lines = block.split("\n");
+  lines.forEach((l, i) => {
+    if (/\[ "\$\((git rev-parse|cat \/tmp\/|cut -d' ' -f1 \/tmp\/)/.test(l)) problems.push(`line ${i + 1}: a sha is compared inline, without being read into a variable and checked`);
+    for (const m of l.matchAll(/\[ "\$\{(\w+)\}" = "\$\{(\w+)\}" \]/g)) {
+      for (const v of [m[1], m[2]]) {
+        if (!SHA_VARS.includes(v)) continue;
+        const checked = lines.slice(0, i).some((x) => x.startsWith(hexCheckOf(v)) && EXPLICIT_HALT.test(x));
+        if (!checked) problems.push(`line ${i + 1}: \${${v}} is compared before it is checked to be 40 hex characters`);
+      }
+    }
+  });
+  if (!lines.some((l) => /^shasum -a 256 -c (\$\{DOCPIN\}|docs\/migration-apply-0101\.sha256) \|\| \{ echo "STOP: /.test(l))) problems.push("the block does not assert the document's sidecar");
+  return problems;
+}
+
+/**
+ * Every `date` call of a block reads LISBON time and the ZONE it read, and the next line refuses any
+ * zone but WET or WEST. The harness's `date` is a stub, so a block that dropped `TZ=Europe/Lisbon`
+ * would pass every stubbed run; this rule, the stub's own TZ check and the real-date arm are what see it.
+ */
+export function dateProblems(block) {
+  const problems = [];
+  const lines = block.split("\n");
+  lines.forEach((l, i) => {
+    const calls = (l.match(/\bdate (?=['+-])/g) ?? []).length;
+    if (calls === 0) return;
+    if ((l.match(/\bTZ=Europe\/Lisbon date (?=['+-])/g) ?? []).length !== calls) problems.push(`line ${i + 1}: a date call without TZ=Europe/Lisbon`);
+    const m = /^(\w+)=\$\(TZ=Europe\/Lisbon date '\+[%A-Za-z]+ %Z'\) \|\| \{ echo "STOP: /.exec(l);
+    if (!m || calls !== 1) { problems.push(`line ${i + 1}: a date call that does not read the zone, alone on its line, into a variable, with its halt`); return; }
+    const next = lines[i + 1] ?? "";
+    if (!(next.startsWith(`echo "\${${m[1]}}" | grep -qxE '`) && /\(WET\|WEST\)' \|\| \{ echo "STOP: /.test(next) && EXPLICIT_HALT.test(next))) {
+      problems.push(`line ${i + 1}: the zone \${${m[1]}} read is not required, on the next line, to be WET or WEST`);
+    }
+  });
   return problems;
 }
 
@@ -522,8 +627,12 @@ test("THE WEEKDAY TABLE: the arm stands in stage 0 and stage 1, with no override
     assert.deepEqual(one(s1, 1, from, to), ["closed is not decided by the weekday table"], from);
     assert.deepEqual(one(s0, 0, from, to), ["closed is not decided by the weekday table"], from);
   }
-  assert.deepEqual(one(s0, 0, "date +%u%H%M", "date +%H%M"), ["the Lisbon weekday and time are not read in one date call, with its halt"]);
-  assert.deepEqual(one(s0, 0, "'[1-7][0-2][0-9][0-5][0-9]'", "'[0-9]{5}'"), ["the clock reading is not refused unless it is a weekday and HHMM"]);
+  assert.deepEqual(one(s0, 0, "date '+%u%H%M %Z'", "date '+%H%M %Z'"), ["the Lisbon weekday, time and zone are not read in one date call, with its halt"]);
+  assert.deepEqual(one(s0, 0, "date '+%u%H%M %Z'", "date '+%u%H%M'"), ["the Lisbon weekday, time and zone are not read in one date call, with its halt"]);
+  assert.deepEqual(one(s0, 0, "[0-5][0-9] (WET|WEST)' ||", "[0-5][0-9] (WET|WEST|UTC)' ||"), ["the clock reading is not refused unless its zone is WET or WEST"]);
+  assert.deepEqual(one(s1, 1, "[0-5][0-9] (WET|WEST)' ||", "[0-5][0-9] [A-Z]+' ||"), ["the clock reading is not refused unless its zone is WET or WEST"]);
+  assert.deepEqual(one(s0, 0, `echo "\${DT}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' ||`, `echo "\${DT}" | grep -qxE '[0-9]{5}' ||`), ["the clock reading is not refused unless it is a weekday and HHMM"]);
+  assert.deepEqual(one(s0, 0, `${CLOCK_ZONE}\n${CLOCK_SPLIT}\n`, `${CLOCK_SPLIT}\n${CLOCK_ZONE}\n`), ["the clock's five lines are not together and in order"]);
   assert.deepEqual(one(s1, 1, "(opens_at < time '08:00' or closes_at > time '21:00')", "(opens_at < time '08:00')"), ["stage 1 does not hold the clinics' own rows against the table's widest row"]);
   assert.deepEqual(armProblems(`${s0}\nif [ "\${DT}" = 31200 ]; then CLOCK=closed; fi\n`, 0), ["more than one line can set CLOCK=closed"]);
   assert.deepEqual(armProblems(`${s0}\nOVR=no\n`, 0), ["an override arm"]);
@@ -573,6 +682,152 @@ test("THE WEEKDAY TABLE, the arm's own program: the six ruled minutes, and every
   assert.equal(runClock(CLOCK_AWK, ""), "open");
   assert.equal(runClock(CLOCK_AWK, "01200"), "open");
   assert.equal(runClock(CLOCK_AWK, "81200"), "open");
+});
+
+test("EVERY date CALL READS LISBON TIME AND ITS ZONE, and the next line refuses any zone but WET or WEST", () => {
+  let calls = 0;
+  for (const b of blocksOf(doc)) {
+    assert.deepEqual(dateProblems(b), [], b.slice(0, 80));
+    calls += (b.match(/\bdate (?=['+-])/g) ?? []).length;
+  }
+  // One in stage 0, three in stage 1 (two window reads and the arm), one each in stage 2 and the closing read.
+  assert.equal(calls, 6);
+  const s1 = blockWith(doc, STAGE1);
+  const s2 = blockWith(doc, STAGE2);
+  // RED ARMS, one rule at a time. Dropping TZ from BOTH window reads of stage 1 is the case the
+  // harness's stub alone would never have seen: the stub answers by format string.
+  const noTz = s1.replaceAll("NOWZ=$(TZ=Europe/Lisbon date ", "NOWZ=$(date ");
+  assert.notEqual(noTz, s1);
+  assert.deepEqual(dateProblems(noTz).map((x) => x.replace(/^line \d+: /, "")), Array(4).fill(null).map((_, k) => (k % 2 === 0 ? "a date call without TZ=Europe/Lisbon" : "a date call that does not read the zone, alone on its line, into a variable, with its halt")));
+  assert.deepEqual(dateProblems(swap(s2, "NOWZ=$(TZ=Europe/Lisbon date ", "NOWZ=$(TZ=UTC date ")).length, 2);
+  assert.deepEqual(dateProblems(swap(s2, "date '+%Y%m%d%H%M %Z'", "date '+%Y%m%d%H%M'")).map((x) => x.replace(/^line \d+: /, "")), ["a date call that does not read the zone, alone on its line, into a variable, with its halt"]);
+  assert.deepEqual(dateProblems(swap(s2, "grep -qxE '[0-9]{12} (WET|WEST)' ||", "grep -qxE '[0-9]{12} [A-Z]+' ||")).map((x) => x.replace(/^line \d+: /, "")), ["the zone ${NOWZ} read is not required, on the next line, to be WET or WEST"]);
+  const zoneLine = s2.split("\n").find((l) => l.startsWith('echo "${NOWZ}" | grep -qxE'));
+  assert.equal(dateProblems(s2.replace(`${zoneLine}\n`, "")).length, 1);
+  assert.deepEqual(dateProblems('echo "the date is not a call"\nNOW=$(date +%s)'), ["line 2: a date call without TZ=Europe/Lisbon", "line 2: a date call that does not read the zone, alone on its line, into a variable, with its halt"]);
+});
+
+test("A POST-COMMIT STOP SAYS THE WRITE STANDS: every STOP of stage 2 and of the closing read, and stage 1's after the apply", () => {
+  const s1 = blockWith(doc, STAGE1);
+  const s2 = blockWith(doc, STAGE2);
+  const cl = blockWith(doc, CLOSING);
+  const M2 = '[ -n "$(find /tmp/0101-applied.ok -mmin -60 2>/dev/null)" ]';
+  const M3 = "test -f /tmp/0101-applied.ok";
+  assert.deepEqual(postCommitProblems(s2, M2), []);
+  assert.deepEqual(postCommitProblems(cl, M3), []);
+  assert.deepEqual(stageOnePostApplyProblems(s1), []);
+  const stops = (b) => b.split("\n").filter((l) => l.includes('echo "STOP: ')).length;
+  assert.ok(stops(s2) >= 40 && stops(cl) >= 25, `${stops(s2)} and ${stops(cl)} STOP lines`);
+  // Three STOPs of stage 2 come before or at the marker read and are conditional; two of the closing read's.
+  assert.equal(s2.split("If stage 1 ended with its line 0101 APPLIED, then").length - 1, 3);
+  assert.equal(cl.split("If stage 1 ended with its line 0101 APPLIED, then").length - 1, 2);
+  // RED ARMS. One STOP that only says what failed, as the first draft's did.
+  const bare = swap(s2, `STOP: the journal reads \${JA} rows, not \${J} plus one. ${WRITE_STANDS}`, "STOP: the journal reads ${JA} rows, not ${J} plus one");
+  assert.match(postCommitProblems(bare, M2)[0], /a post-commit STOP that does not say the write stands: the journal reads/);
+  assert.equal(postCommitProblems(bare, M2).length, 1);
+  // "The write stands" without "run nothing again" is not enough.
+  assert.equal(postCommitProblems(s2.replaceAll(". Run nothing again, not stage 0 and not stage 1", ""), M2).length, stops(s2));
+  // An unconditional claim before the marker has been read, and a conditional one after it.
+  assert.match(postCommitProblems(swap(cl, `STOP: the apply worktree is not there. If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`, `STOP: the apply worktree is not there. ${WRITE_STANDS}`), M3)[0], /says 0101 is applied before the block has read the applied marker/);
+  assert.match(postCommitProblems(swap(cl, `STOP: stage 2 left no pass mark, so it did not pass. ${WRITE_STANDS}`, `STOP: stage 2 left no pass mark, so it did not pass. If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`), M3)[0], /still conditional after the block has read the applied marker/);
+  assert.deepEqual(postCommitProblems(s2.replace(M2, '[ -n "$(find /tmp/0101-other.ok -mmin -60 2>/dev/null)" ]'), M2), ["the block never reads stage 1's applied marker"]);
+  // Stage 1: the marker's STOP, and the apply's own.
+  assert.deepEqual(stageOnePostApplyProblems(swap(s1, `so 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1.`, "so 0101 is applied.")), ["the STOP after a committed apply does not say the write stands and nothing is run again"]);
+  assert.deepEqual(stageOnePostApplyProblems(swap(s1, "Do not read this as nothing applied: ", "")), ["the apply's STOP does not say it may have applied and that nothing else is pasted"]);
+});
+
+test("TWO SHAS ARE COMPARED ONLY AS CHECKED VARIABLES, and every block asserts the sidecar, the closing read included", () => {
+  for (const b of blocksOf(doc)) assert.deepEqual(shaCompareProblems(b), [], b.slice(0, 80));
+  const cl = blockWith(doc, CLOSING);
+  const s1 = blockWith(doc, STAGE1);
+  const rm = (b, start) => {
+    const line = b.split("\n").find((l) => l.startsWith(start));
+    assert.ok(line, start);
+    return b.replace(`${line}\n`, "");
+  };
+  // RED ARMS. The closing read as first written: an inline compare, true when both sides are empty.
+  assert.match(shaCompareProblems(`${cl}\n[ "$(git rev-parse HEAD)" = "\${REC}" ] || { echo "STOP: x"; exit 1; }`).at(-1), /a sha is compared inline/);
+  assert.match(shaCompareProblems(`${cl}\n[ "$(cat /tmp/0101-stage2.ok)" = "\${REC}" ] || { echo "STOP: x"; exit 1; }`).at(-1), /a sha is compared inline/);
+  assert.match(shaCompareProblems(`${cl}\n[ "$(cut -d' ' -f1 /tmp/0101-window.ok)" = "\${REC}" ] || { echo "STOP: x"; exit 1; }`).at(-1), /a sha is compared inline/);
+  // Each variable's check removed, one at a time: REC is compared four times in the closing read.
+  assert.equal(shaCompareProblems(rm(cl, 'echo "${REC}" | grep -qxE')).filter((x) => x.includes("${REC} is compared before")).length, 4);
+  for (const v of ["HD", "S2", "WREC", "NOW"]) assert.match(shaCompareProblems(rm(cl, `echo "\${${v}}" | grep -qxE`))[0], new RegExp(`\\$\\{${v}\\} is compared before it is checked`), v);
+  for (const v of ["REC", "NOW", "HD", "WREC"]) assert.ok(shaCompareProblems(rm(s1, `echo "\${${v}}" | grep -qxE`)).length >= 1, `stage 1 ${v}`);
+  assert.ok(shaCompareProblems(rm(blockWith(doc, STAGE0), 'echo "${MAIN}" | grep -qxE')).length >= 1);
+  // A check that prints and goes on is not a check: the same line without its halt does not count.
+  const s2check = cl.split("\n").find((l) => l.startsWith('echo "${S2}" | grep -qxE'));
+  const noHalt = s2check.replace(/; exit 1; \}$/, "; }");
+  assert.notEqual(noHalt, s2check);
+  assert.deepEqual(shaCompareProblems(cl.replace(s2check, noHalt)).map((x) => x.replace(/^line \d+: /, "")), ["${S2} is compared before it is checked to be 40 hex characters"]);
+  // The sidecar, in the closing read too.
+  assert.deepEqual(shaCompareProblems(rm(cl, "shasum -a 256 -c docs/migration-apply-0101.sha256")), ["the block does not assert the document's sidecar"]);
+  for (const b of blocksOf(doc)) assert.equal(b.split("\n").filter((l) => l.startsWith("shasum -a 256 -c ")).length, 1);
+});
+
+/** A `date` on PATH that is the REAL date at one fixed instant: GNU's `-d @epoch`, or BSD's `-r epoch`. It keeps the caller's TZ. */
+function fixedDateDir(realDate) {
+  const dir = mkdtempSync(join(tmpdir(), "real-date-0101-"));
+  writeFileSync(join(dir, "date"), `#!/bin/sh\nif ${shq(realDate)} -d @0 +%s >/dev/null 2>&1; then exec ${shq(realDate)} -d "@$FIXED_EPOCH" "$@"; fi\nexec ${shq(realDate)} -r "$FIXED_EPOCH" "$@"\n`);
+  chmodSync(join(dir, "date"), 0o755);
+  return dir;
+}
+
+test("THE REAL date, at fixed instants, through the blocks' own clock lines: the Lisbon reading, summer and winter, and a zone that is not Lisbon's STOPS", () => {
+  const dir = fixedDateDir(realPath("date"));
+  try {
+    const epoch = (iso) => String(Date.parse(iso) / 1000);
+    // The process's own zone is Tokyo, so a line that lost its TZ= reads Tokyo's clock, not Lisbon's.
+    const run = (script, iso) => spawnSync("bash", ["-c", script], { encoding: "utf8", env: { PATH: `${dir}:${SYSTEM_PATH}`, TZ: "Asia/Tokyo", FIXED_EPOCH: epoch(iso), LANG: "C" } });
+    const s0 = blockWith(doc, STAGE0);
+    const five = [CLOCK_READ, CLOCK_ZONE, CLOCK_SPLIT, CLOCK_FORMAT, CLOCK_DECIDE];
+    for (const l of five) assert.ok(s0.split("\n").includes(l));
+    const clock = `${five.join("\n")}\necho "READ \${DTZ} \${DT} \${CLOCK}"\n`;
+    const cases = [
+      ["2026-10-09T19:59:00Z", "READ 52059 WEST 52059 open"], // Friday 20:59 in Lisbon, summer time
+      ["2026-10-09T20:00:00Z", "READ 52100 WEST 52100 closed"], // Friday 21:00
+      ["2026-10-10T11:59:00Z", "READ 61259 WEST 61259 open"], // Saturday 12:59
+      ["2026-10-10T12:00:00Z", "READ 61300 WEST 61300 closed"], // Saturday 13:00
+      ["2026-10-11T14:00:00Z", "READ 71500 WEST 71500 closed"], // Sunday 15:00
+      ["2026-10-12T06:59:00Z", "READ 10759 WEST 10759 closed"], // Monday 07:59
+      ["2026-10-12T07:30:00Z", "READ 10830 WEST 10830 open"], // Monday 08:30 summer time: 07:30 UTC, which UTC would read as closed
+      ["2026-10-26T07:59:00Z", "READ 10759 WET 10759 closed"], // the first Monday of winter time: Lisbon is UTC
+      ["2026-10-26T08:00:00Z", "READ 10800 WET 10800 open"],
+      ["2026-12-12T13:00:00Z", "READ 61300 WET 61300 closed"], // a winter Saturday
+    ];
+    for (const [iso, want] of cases) {
+      const r = run(clock, iso);
+      assert.equal(r.status, 0, `${iso}: ${r.stdout}${r.stderr}`);
+      assert.equal(r.stdout.trim(), want, iso);
+    }
+    // RED ARMS, with the real date. A zone name that cannot be loaded reads UTC with exit 0: at Monday
+    // 08:30 Lisbon summer time that is 07:30, "closed". The zone check is what stops it.
+    const stop = /^STOP: the Lisbon clock did not read as a weekday \(1 to 7\), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded \[10730 UTC\]/m;
+    const typo = run(clock.replace("TZ=Europe/Lisbon date", "TZ=Europe/Lisbonn date"), "2026-10-12T07:30:00Z");
+    assert.equal(typo.status, 1, typo.stdout);
+    assert.match(typo.stdout, stop);
+    assert.doesNotMatch(typo.stdout, /READ/);
+    // The same line with no TZ at all reads the process's zone, here Tokyo's.
+    const none = run(clock.replace("TZ=Europe/Lisbon date", "date"), "2026-10-12T07:30:00Z");
+    assert.equal(none.status, 1, none.stdout);
+    assert.match(none.stdout, /may not have loaded \[11630 JST\]/);
+    // THE CONTROL OF THE RED ARMS: without the zone line, the misspelt zone reads 07:30 and says closed.
+    const blind = run(clock.replace("TZ=Europe/Lisbon date", "TZ=Europe/Lisbonn date").replace(`${CLOCK_ZONE}\n`, ""), "2026-10-12T07:30:00Z");
+    assert.equal(blind.stdout.trim(), "READ 10730 UTC 10730 closed");
+    // The YYYYMMDDHHMM reads of stages 1, 2 and the closing read: the same four lines in each.
+    for (const marker of [STAGE1, STAGE2, CLOSING]) {
+      const lines = blockWith(doc, marker).split("\n");
+      const at = lines.findIndex((l) => l.startsWith("NOWZ=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %Z')"));
+      assert.ok(at > 0, marker);
+      const four = `${lines.slice(at, at + 4).join("\n")}\necho "READ \${NOWL}"\n`;
+      assert.equal(run(four, "2026-10-09T19:59:00Z").stdout.trim(), "READ 202610092059", marker);
+      assert.equal(run(four, "2026-12-31T23:30:00Z").stdout.trim(), "READ 202612312330", marker);
+      const bad = run(four.replace("TZ=Europe/Lisbon date", "TZ=Europe/Lisbonn date"), "2026-10-09T19:59:00Z");
+      assert.equal(bad.status, 1, marker);
+      assert.match(bad.stdout, /^STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST[^\n]*\[202610091959 UTC\]/m, marker);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("every block that runs the guard or the reader compares it, and its module, first", () => {
@@ -627,13 +882,12 @@ test("the four blocks are there, in order, and carry no # line, no ! but test !,
 /** A command a later step relies on: its failure must halt the block by an explicit guard. */
 const MUST_HALT = [
   /^cd /, /\bgit (fetch|checkout|status|ls-remote|rev-parse origin\/main)\b/, /^rm -f /, /^mv /, /^touch /, /\| tee /,
-  /^node (scripts|packages)\//, /^node --env-file=/, /^node -e /, /\bpsql /, /^(T100|W100|REC|NOWL|DT)=\$\(/, />>? \/tmp\/0101-/, /^set -o allexport/,
+  /^node (scripts|packages)\//, /^node --env-file=/, /^node -e /, /\bpsql /, /^(T100|W100|REC|NOWZ|DTZ|HD|S2)=\$\(/, />>? \/tmp\/0101-/, /^set -o allexport/,
   // A TEST IS A GUARD TOO. A `test`, a `[ ... ]`, a `shasum -c` or a `grep -q` on a line of its own decides
   // whether the block may go on, and the harness cannot make a shell builtin fail. So the rule is static:
   // every such line carries its own explicit halt.
   /^test /, /^\[ /, /^shasum -a 256 -c /, /^grep -q/, /^echo "[^"]*" \| grep -q/,
 ];
-const EXPLICIT_HALT = /\|\| \{ (RC=\$\?; )?echo "STOP: [^"]+";( echo "\$\{STRAY\}";)? exit (1|\$\{RC\}); \}$/;
 
 /** The lines of a block that run a MUST_HALT command without an explicit `|| { echo "STOP: ..."; exit ...; }`. */
 export function unguardedLines(block) {
@@ -662,9 +916,10 @@ test("EVERY HALT IS EXPLICIT: each command a later step relies on carries its ow
   assert.equal(unguardedLines(s1.replace(guardLine, strip(guardLine))).length, 1);
   assert.equal(unguardedLines(s1.replace(vmLine, strip(vmLine))).length, 1);
   assert.equal(unguardedLines(s1.replace(CLOCK_READ, strip(CLOCK_READ))).length, 1);
+  assert.equal(unguardedLines(s1.replace(CLOCK_ZONE, strip(CLOCK_ZONE))).length, 1);
   for (const planted of ["git fetch origin --prune", "cd /somewhere", 'echo "${MAIN}" > /tmp/0101-main.sha', "rm -f /tmp/0101-x", "touch /tmp/0101-applied.ok",
-    "node scripts/assert-production-target.mjs", "set -o allexport && . /x.env && set +o allexport", 'NOWL=$(TZ=Europe/Lisbon date "+%Y%m%d%H%M")',
-    "DT=$(TZ=Europe/Lisbon date +%u%H%M)", 'psql "${DATABASE_URL_DIRECT}" -f x.sql 2>&1 | tee /tmp/0101-x.out', "node scripts/x.mjs || { echo halt; exit 1; }",
+    "node scripts/assert-production-target.mjs", "set -o allexport && . /x.env && set +o allexport", "NOWZ=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %Z')",
+    "DTZ=$(TZ=Europe/Lisbon date '+%u%H%M %Z')", "HD=$(git rev-parse HEAD)", "S2=$(cat /tmp/0101-stage2.ok)", 'psql "${DATABASE_URL_DIRECT}" -f x.sql 2>&1 | tee /tmp/0101-x.out', "node scripts/x.mjs || { echo halt; exit 1; }",
     // The guards a fault cannot be injected into: each is caught by the static rule alone.
     "test -f docs/x.sha256", "test ! -f /tmp/0101-x", '[ "${NOW}" = "${REC}" ]', '[ -z "${STRAY}" ] || echo dirty', "shasum -a 256 -c docs/x.sha256",
     "grep -qx 'journal rows on production: 99' /tmp/0101-x.out", "echo \"${NOWL}\" | grep -qxE '[0-9]{12}'", 'node -e "process.exit(1)"']) {
@@ -773,9 +1028,10 @@ case "$n" in
         printf 'journal rows on production: %s\\n  APPLIED  0100_revoke_maintain.sql\\n  APPLIED  0101_guest_request_email.sql\\npending on this ref: 0\\njournal rows with no matching file on this ref: 0\\n' "$HARNESS_ROWS"; exit 0;;
     esac
     unexpected "$@";;
-  date) case "$1" in
-      '+%u%H%M') echo "$HARNESS_DHHMM";;
-      '+%Y%m%d%H%M') echo "$HARNESS_STAMP";;
+  date) [ "$TZ" = Europe/Lisbon ] || unexpected "date ran without TZ=Europe/Lisbon [TZ=$TZ]";
+    case "$1" in
+      '+%u%H%M %Z') echo "$HARNESS_DHHMM $HARNESS_ZONE";;
+      '+%Y%m%d%H%M %Z') echo "$HARNESS_STAMP $HARNESS_ZONE";;
       *) unexpected "$@";;
     esac; exit 0;;
   cut) if [ -n "$inp" ]; then printf '%s\\n' "$inp" | ${R("cut")} "$@"; exit $?; fi
@@ -903,7 +1159,7 @@ export async function runOnce(cfg, runId, fault) {
     HARNESS_RUN: run, HARNESS_FIX: join(cfg.base, "fix"), HARNESS_DBURL: FAKE_DB_URL,
     HARNESS_MAIN: FAKE_SHA.MAIN, HARNESS_MARKERS: cfg.markers.join(" "),
     HARNESS_ROWS: String(cfg.rows ?? 99), HARNESS_CLINICS: cfg.clock.clinics,
-    HARNESS_DHHMM: cfg.clock.dhhmm, HARNESS_STAMP: cfg.clock.stamp,
+    HARNESS_DHHMM: cfg.clock.dhhmm, HARNESS_STAMP: cfg.clock.stamp, HARNESS_ZONE: cfg.clock.zone ?? "WEST",
     HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3), HARNESS_FAIL_MODE: fault?.mode ?? "",
     HARNESS_HOOK_AFTER: fault?.hookAfter ?? "", HARNESS_HOOK_MKDIR: fault?.hookMkdir ? join(run, "tmp", fault.hookMkdir) : "",
   };
@@ -995,8 +1251,8 @@ export async function sweep(cfg) {
  */
 const DAY_OF = { 1: "20261005", 2: "20261006", 3: "20261007", 4: "20261008", 5: "20261009", 6: "20261010", 7: "20261011" };
 /** A clock at weekday `d`, `hhmm`, with a run window that holds it, so a STOP is the arm's own. */
-export const clockAt = (d, hhmm, clinics = "0 of 2") => ({
-  dhhmm: `${d}${hhmm}`, stamp: `${DAY_OF[d]}${hhmm}`, window: `${DAY_OF[d]}0000 ${DAY_OF[d]}2359 209912310000`, clinics,
+export const clockAt = (d, hhmm, clinics = "0 of 2", zone = "WEST") => ({
+  dhhmm: `${d}${hhmm}`, stamp: `${DAY_OF[d]}${hhmm}`, window: `${DAY_OF[d]}0000 ${DAY_OF[d]}2359 209912310000`, clinics, zone,
 });
 const CLOSED = clockAt(2, "2230");
 
@@ -1287,6 +1543,90 @@ test("THE CLINICS' ROWS: a clinic whose own hours reach outside the table, or no
   }
 });
 
+test("A ZONE THAT DID NOT LOAD: every block, run whole with a clock that answers UTC, GMT or no zone, STOPS with nothing recorded and nothing run after it", async () => {
+  const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+  const base = mkdtempSync(join(tmpdir(), "fault-0101-zone-"));
+  try {
+    prepareHarness(base, doc);
+    for (const shell of shells) {
+      for (const name of HARNESS_PLAN) {
+        const spec = HARNESS_BLOCKS[name];
+        // THE CONTROL: Lisbon's winter name passes exactly as its summer name does.
+        const wet = await runOnce(harnessConfig(doc, name, clockAt(2, "2230", "0 of 2", "WET"), shell, base), `${shell}-zone-${name}-WET`, null);
+        assert.equal(wet.code, 0, `${shell} ${name} WET: ${wet.out.slice(-500)}`);
+        assert.ok(wet.out.includes(spec.success.at(-1)));
+        for (const zone of ["UTC", "GMT", "", "CET", "west"]) {
+          const r = await runOnce(harnessConfig(doc, name, clockAt(2, "2230", "0 of 2", zone), shell, base), `${shell}-zone-${name}-${zone || "none"}`, null);
+          const tag = `${shell} ${name} zone [${zone}]`;
+          assert.equal(r.code, 1, `${tag}: ${r.out.slice(-500)}`);
+          assert.match(r.out, /^STOP: the Lisbon clock did not read as [^\n]* and the zone WET or WEST[^\n]*so the Lisbon zone may not have loaded \[/m, tag);
+          assert.ok(!r.out.includes("TOOL-CHAIN-CONTINUED") && !spec.success.some((x) => r.out.includes(x)), tag);
+          // Nothing after the clock ran: no apply, no guard, no reader, and no psql.
+          assert.deepEqual(r.calls.filter((c) => c.id.startsWith("psql#") || (c.id.startsWith("node#") && /^(packages\/db\/scripts\/verified-migrate|scripts\/assert-production-target|--env-file=)/.test(c.args))), [], tag);
+          // Stage 0 keeps its check-journal transcript, written before the clock; no other record is written.
+          assert.deepEqual(r.markersAtEnd.filter((m) => m !== "0101-check-journal.out"), [], tag);
+        }
+      }
+      // In stage 1 the zone is asked three times. With only the LAST read answering UTC, the block has
+      // passed the run window and the pre-check, and STOPs at the arm, before the apply.
+      const cfg = harnessConfig(doc, "stage1", CLOSED, shell, base);
+      const late = await runOnce({ ...cfg, block: swap(cfg.block, "DTZ=$(TZ=Europe/Lisbon date '+%u%H%M %Z')", "DTZ=$(TZ=Europe/Lisbon date '+%u%H%M %Z' | sed 's/WEST/UTC/')") }, `${shell}-zone-late`, null);
+      assert.equal(late.code, 1, late.out.slice(-500));
+      assert.match(late.out, /^STOP: the Lisbon clock did not read as a weekday \(1 to 7\), HHMM and the zone WET or WEST[^\n]*\[22230 UTC\]/m);
+      assert.ok(late.calls.some((c) => c.args.includes("precheck-0101-guest-request-email.sql")));
+      assert.deepEqual(late.calls.filter((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs")), []);
+      assert.ok(!late.markersAtEnd.includes("0101-applied.ok"));
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("A RECORD THAT READS EMPTY OR SHORT, and a clock call without its zone: each block STOPS on it, and the harness itself sees a date call that lost TZ=Europe/Lisbon", async () => {
+  const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+  const base = mkdtempSync(join(tmpdir(), "fault-0101-record-"));
+  try {
+    prepareHarness(base, doc);
+    for (const shell of shells) {
+      // The recorded sha, empty and cut short: the case in which an inline compare of two empty strings was true.
+      for (const name of ["stage1", "stage2", "closing"]) {
+        for (const [label, text] of [["empty", ""], ["a blank line", "\n"], ["39 characters", `${"1".repeat(39)}\n`], ["not hex", `${"g".repeat(40)}\n`]]) {
+          const cfg = harnessConfig(doc, name, CLOSED, shell, base);
+          const r = await runOnce({ ...cfg, setup: (tmp) => { cfg.setup(tmp); putRecord(tmp, "0101-main.sha", text, 10); } }, `${shell}-record-${name}-${label.replace(/\W+/g, "-")}`, null);
+          const tag = `${shell} ${name}, the recorded sha ${label}`;
+          assert.equal(r.code, 1, `${tag}: ${r.out.slice(-400)}`);
+          assert.match(r.out, /^STOP: stage 0's record did not read as a full 40-character sha \[/m, tag);
+          assert.ok(!r.out.includes("TOOL-CHAIN-CONTINUED") && !HARNESS_BLOCKS[name].success.some((x) => r.out.includes(x)), tag);
+          assert.deepEqual(r.calls.filter((c) => c.id.startsWith("psql#") || (c.id.startsWith("node#") && !c.args.startsWith("-e"))), [], tag);
+        }
+      }
+      // Stage 2's pass mark, empty, in the closing read: it used to be compared inline.
+      const cl = harnessConfig(doc, "closing", CLOSED, shell, base);
+      const mark = await runOnce({ ...cl, setup: (tmp) => { cl.setup(tmp); putRecord(tmp, "0101-stage2.ok", "", 1); } }, `${shell}-record-mark`, null);
+      assert.equal(mark.code, 1, mark.out.slice(-400));
+      assert.match(mark.out, /^STOP: stage 2's pass mark did not read as a full 40-character sha \[\]\. 0101 IS APPLIED and the write stands\. Run nothing again/m);
+      // The run window's sha, short, in stage 2.
+      const s2 = harnessConfig(doc, "stage2", CLOSED, shell, base);
+      const win = await runOnce({ ...s2, setup: (tmp) => { s2.setup(tmp); putRecord(tmp, "0101-window.ok", `abc ${CLOSED.window}\n`, 15); } }, `${shell}-record-window`, null);
+      assert.equal(win.code, 1, win.out.slice(-400));
+      assert.match(win.out, /^STOP: the sha in the run window record did not read as a full 40-character sha \[abc\]/m);
+      // THE STUB'S OWN CONTROL. A block whose clock read lost TZ=Europe/Lisbon does not get an answer from
+      // the stub, so every sweep above would have gone red on it: the stub does not answer by format alone.
+      for (const name of HARNESS_PLAN) {
+        const cfg = harnessConfig(doc, name, CLOSED, shell, base);
+        const stripped = cfg.block.replaceAll("$(TZ=Europe/Lisbon date ", "$(date ");
+        assert.notEqual(stripped, cfg.block);
+        const r = await runOnce({ ...cfg, block: stripped }, `${shell}-notz-${name}`, null);
+        assert.notEqual(r.code, 0, `${shell} ${name} without TZ: ${r.out.slice(-300)}`);
+        assert.match(r.unexpected, /date ran without TZ=Europe\/Lisbon/, `${shell} ${name}`);
+        assert.ok(!HARNESS_BLOCKS[name].success.some((x) => r.out.includes(x)), `${shell} ${name}`);
+      }
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 /** THE WINDOW FEED: stage 1 run whole with one run-window record or clock each. */
 export async function windowFeed(base, shell, block) {
   const M = FAKE_SHA.MAIN;
@@ -1326,16 +1666,12 @@ export async function windowFeed(base, shell, block) {
   return { cases: cases.length, failures };
 }
 
-/** Stage 1 without its two window-end lines (the clock-format check and `now < end` after the first read). */
+/** Stage 1 without its window-end line (`now < end`, after the first clock read). */
 export function withoutWindowEnd(block) {
   const lines = block.split("\n");
-  const drop = (pred) => {
-    const hits = lines.filter(pred);
-    assert.equal(hits.length, 1, "the line to remove is not there exactly once");
-    lines.splice(lines.indexOf(hits[0]), 1);
-  };
-  drop((l) => l === `echo "\${NOWL}" | grep -qxE '[0-9]{12}' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM. Nothing was applied"; exit 1; }`);
-  drop((l) => l.startsWith('[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is not before ${WEND}'));
+  const hits = lines.filter((l) => l.startsWith('[ "${NOWL}" -lt "${WEND}" ] || { echo "STOP: Lisbon ${NOWL} is not before ${WEND}'));
+  assert.equal(hits.length, 1, "the line to remove is not there exactly once");
+  lines.splice(lines.indexOf(hits[0]), 1);
   return lines.join("\n");
 }
 
