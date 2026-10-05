@@ -74,6 +74,19 @@ export const GUEST_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   U+3002, U+FF0E, U+FF61  the ideographic and fullwidth full stops: domain
  *           name processing (IDNA) turns each into ".", so the domain mail is
  *           routed to is not the one that is read.
+ *   EVERY OTHER CHARACTER WHOSE COMPATIBILITY FORM (NFKC) HOLDS A FULL STOP,
+ *           for the same reason: U+FE52 SMALL FULL STOP and U+2024 ONE DOT
+ *           LEADER (each becomes "."), U+2025 and U+2026 (".." and "..."),
+ *           U+2488 to U+249B and U+1F100 (a number and a full stop, "1."),
+ *           U+33C2, U+33C7, U+33D8 ("a.m.", "Co.", "p.m.") and the vertical
+ *           forms U+FE12, U+FE19, U+FE30. `tests/guest-email.test.ts` walks
+ *           every code point and fails if one such character is admitted, so
+ *           the list is complete for the engine's Unicode version. U+FF20 and
+ *           U+FE6B are the only ones whose form holds an "@".
+ *   U+0701, U+0702, U+A60E, U+10A50, U+1D16D  punctuation of other scripts and
+ *           notations that is drawn as a dot on the baseline (the Syriac full
+ *           stops, the Vai full stop, the Kharoshthi dot, a musical dot). Not
+ *           letters of an address, and they read as ".".
  *   ( ) < > [ ] : ; , \ "  the characters with a structural meaning in a
  *           mail header (RFC 5322 "specials", "@" and "." apart). They are
  *           legal only inside a quoted local part or a domain literal, which
@@ -82,13 +95,16 @@ export const GUEST_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *           as a list of recipients.
  *
  * NOT IN THE SET, ON PURPOSE: letters of any script (a non-ASCII local part
- * and an internationalised domain are real addresses), combining marks, and
+ * and an internationalised domain are real addresses), digits of any script
+ * (the Arabic-Indic zero, U+0660 and U+06F0, is drawn as a dot and is still a
+ * digit), the RAISED dots, which do not read as a full stop (U+00B7 MIDDLE
+ * DOT, U+0387, U+2027, U+2219, U+22C5, U+30FB), combining marks, and
  * the other ASCII punctuation an address may carry (+ - _ ' ! # $ % & * / = ?
  * ^ ` { | } ~). The Unicode line and paragraph separators (U+2028, U+2029) and
  * every Unicode space are already refused by the staff pattern's `\s`.
  */
 export const GUEST_EMAIL_UNSAFE =
-  /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\uFDD0-\uFDEF\uFFFC\uFFFD\uFF20\uFE6B\u3002\uFF0E\uFF61()<>[\]:;,\\"]|[\uFFFE\uFFFF]|[\u{1FFFE}\u{1FFFF}\u{2FFFE}\u{2FFFF}\u{3FFFE}\u{3FFFF}\u{4FFFE}\u{4FFFF}\u{5FFFE}\u{5FFFF}\u{6FFFE}\u{6FFFF}\u{7FFFE}\u{7FFFF}\u{8FFFE}\u{8FFFF}\u{9FFFE}\u{9FFFF}\u{AFFFE}\u{AFFFF}\u{BFFFE}\u{BFFFF}\u{CFFFE}\u{CFFFF}\u{DFFFE}\u{DFFFF}\u{EFFFE}\u{EFFFF}\u{FFFFE}\u{FFFFF}\u{10FFFE}\u{10FFFF}]/u;
+  /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\uFDD0-\uFDEF\uFFFC\uFFFD\uFF20\uFE6B\u3002\uFF0E\uFF61\u2024-\u2026\u2488-\u249B\u33C2\u33C7\u33D8\uFE12\uFE19\uFE30\uFE52\u{1F100}\u0701\u0702\uA60E\u{10A50}\u{1D16D}()<>[\]:;,\\"]|[\uFFFE\uFFFF]|[\u{1FFFE}\u{1FFFF}\u{2FFFE}\u{2FFFF}\u{3FFFE}\u{3FFFF}\u{4FFFE}\u{4FFFF}\u{5FFFE}\u{5FFFF}\u{6FFFE}\u{6FFFF}\u{7FFFE}\u{7FFFF}\u{8FFFE}\u{8FFFF}\u{9FFFE}\u{9FFFF}\u{AFFFE}\u{AFFFF}\u{BFFFE}\u{BFFFF}\u{CFFFE}\u{CFFFF}\u{DFFFE}\u{DFFFF}\u{EFFFE}\u{EFFFF}\u{FFFFE}\u{FFFFF}\u{10FFFE}\u{10FFFF}]/u;
 
 export type GuestEmailResult = { ok: true; email: string | null } | { ok: false };
 

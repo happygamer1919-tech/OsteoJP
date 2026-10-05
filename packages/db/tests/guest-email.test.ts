@@ -146,6 +146,32 @@ describe("the guest email rule", () => {
     expect(parseGuestEmail("a\u{1F600}b@example.invalid").ok).toBe(true);
   });
 
+  it("EVERY character whose compatibility form holds a full stop or an at sign is refused, and the two requested by review are among them", () => {
+    // Every code point: the claim is that NO look-alike of this kind is left, not that a list was typed in.
+    const found: number[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp += 1) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const ch = String.fromCodePoint(cp);
+      if (ch === "." || ch === "@") continue;
+      const compat = ch.normalize("NFKC");
+      if (!compat.includes(".") && !compat.includes("@") && !compat.includes("\u3002")) continue;
+      found.push(cp);
+      expect(parseGuestEmail(`a${ch}b@example.invalid`).ok, `U+${cp.toString(16)} in the local part`).toBe(false);
+      expect(parseGuestEmail(`ab@exa${ch}mple.invalid`).ok, `U+${cp.toString(16)} in the domain`).toBe(false);
+    }
+    // 36 in Unicode 16 and 17. A later version that adds one fails the loop above, not this line.
+    expect(found.length).toBeGreaterThanOrEqual(36);
+    for (const cp of [0xfe52, 0x2024, 0xff0e, 0xff61, 0x3002, 0xff20, 0xfe6b, 0x2026, 0x2488, 0x1f100]) expect(found, `U+${cp.toString(16)}`).toContain(cp);
+    // Drawn as a dot on the baseline, though no compatibility form says so.
+    for (const cp of [0x0701, 0x0702, 0xa60e, 0x10a50, 0x1d16d]) {
+      expect(parseGuestEmail(`ab@exa${String.fromCodePoint(cp)}mple.invalid`).ok, `U+${cp.toString(16)}`).toBe(false);
+    }
+    // LEFT ACCEPTED ON PURPOSE: raised dots, and digits of a living script that some fonts draw as a dot.
+    for (const cp of [0x00b7, 0x0387, 0x2027, 0x2219, 0x22c5, 0x30fb, 0x0660, 0x06f0]) {
+      expect(parseGuestEmail(`a${String.fromCodePoint(cp)}b@example.invalid`).ok, `U+${cp.toString(16)}`).toBe(true);
+    }
+  });
+
   it("the look-alikes and the mail-header characters are refused one by one, and ordinary punctuation is not", () => {
     for (const ch of ["\ufffd", "\ufffc", "\uff20", "\ufe6b", "\u3002", "\uff0e", "\uff61", "(", ")", "<", ">", "[", "]", ":", ";", ",", "\\", '"']) {
       expect(parseGuestEmail(`a${ch}b@example.invalid`).ok, `U+${ch.codePointAt(0)!.toString(16)}`).toBe(false);

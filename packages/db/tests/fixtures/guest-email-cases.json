@@ -66,6 +66,12 @@
   "why": "the ASCII punctuation an address may carry"
  },
  {
+  "value": "gu\u00b7est@example.invalid",
+  "ok": true,
+  "stored": "gu\u00b7est@example.invalid",
+  "why": "U+00B7 MIDDLE DOT is a raised dot, not a full stop, and stays accepted"
+ },
+ {
   "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.invalid",
   "ok": true,
   "stored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.invalid",
@@ -236,6 +242,36 @@
   "value": "guest@example\uff61invalid.example.invalid",
   "ok": false,
   "why": "U+FF61 HALFWIDTH IDEOGRAPHIC FULL STOP"
+ },
+ {
+  "value": "guest@example\ufe52invalid.example.invalid",
+  "ok": false,
+  "why": "U+FE52 SMALL FULL STOP: its compatibility form is a full stop"
+ },
+ {
+  "value": "guest@example\u2024invalid.example.invalid",
+  "ok": false,
+  "why": "U+2024 ONE DOT LEADER: its compatibility form is a full stop"
+ },
+ {
+  "value": "guest@example\u2026invalid.example.invalid",
+  "ok": false,
+  "why": "U+2026 HORIZONTAL ELLIPSIS: three full stops to compatibility processing"
+ },
+ {
+  "value": "guest@example\u2488invalid.example.invalid",
+  "ok": false,
+  "why": "U+2488 DIGIT ONE FULL STOP: reads as 1. and becomes 1."
+ },
+ {
+  "value": "guest@example\u0701invalid.example.invalid",
+  "ok": false,
+  "why": "U+0701 SYRIAC SUPRALINEAR FULL STOP, drawn as a dot"
+ },
+ {
+  "value": "guest@example\ua60einvalid.example.invalid",
+  "ok": false,
+  "why": "U+A60E VAI FULL STOP, drawn as a dot"
  },
  {
   "value": "x<guest@example.invalid>",

@@ -1531,7 +1531,10 @@ components:
             (Unicode categories Cc and Cf, NUL and the zero-width and
             bidirectional characters among them), a lone surrogate, a private
             use character, a noncharacter, U+FFFC or U+FFFD, the look-alikes
-            U+FF20 and U+FE6B of "@" and U+3002, U+FF0E and U+FF61 of ".", or
+            U+FF20 and U+FE6B of "@", a look-alike of "." (U+3002, U+FF0E, U+FF61,
+            U+FE52, U+2024 and every other character whose compatibility form
+            holds a full stop, and the dot-shaped U+0701, U+0702, U+A60E,
+            U+10A50 and U+1D16D), or
             one of `( ) < > [ ] : ; , \ "`. A non-ASCII local part or domain is
             accepted. The response is the same 202 with or without one.
           examples: ["guest@example.invalid"]
