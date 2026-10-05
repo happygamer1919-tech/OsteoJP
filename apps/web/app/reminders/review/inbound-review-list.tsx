@@ -74,10 +74,11 @@ export function reviewApprovalNotice(
   itemId: string,
   outcome: ResolveOutcome,
 ): ApprovalNoticeView | null {
-  if (!outcome.ok || outcome.notice !== "patient_no_email") return null;
+  if (!outcome.ok || !outcome.notice) return null;
   const item = items.find((i) => i.id === itemId);
   return {
     id: itemId,
+    kind: outcome.notice,
     patientName: item?.patientName ?? null,
     when: item?.appointmentStartsAt ? stamp(item.appointmentStartsAt) : "",
   };

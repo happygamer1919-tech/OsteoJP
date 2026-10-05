@@ -105,10 +105,12 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
       setBusyId(null);
       if (result.ok) {
         // revalidatePath removes the row. The notice outlives it.
-        if (result.data.notice === "patient_no_email") {
+        const kind = result.data.notice;
+        if (kind) {
           setNotices((prev) =>
             withApprovalNotice(prev, {
               id: appointmentId,
+              kind,
               patientName: row?.patientName ?? null,
               when: row?.when ?? "",
             }),

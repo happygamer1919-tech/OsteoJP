@@ -40,8 +40,10 @@ function code(src: string): string {
 
 describe("the reminder path skips a landline", () => {
   let src: string;
+  let planSrc: string;
   beforeEach(() => {
     src = code(dispatchSrc());
+    planSrc = code(readFileSync(new URL("./book-confirm-plan.ts", import.meta.url), "utf8"));
   });
 
   it("the stripper leaves the code and removes the prose", () => {
@@ -50,18 +52,34 @@ describe("the reminder path skips a landline", () => {
     expect(src).not.toContain("Q-LE-REMINDERS-LANDLINE-1");
   });
 
-  it("calls isSmsCapablePT on the dispatch path at all", () => {
-    expect(src).toContain("isSmsCapablePT(");
+  /**
+   * 2026-10-04, BOOK-CONFIRM: THE TWO QUESTIONS MOVED INTO ONE FUNCTION, AND
+   * THESE ARMS FOLLOWED THEM. `sendPatientSms` used to call `normalizePhonePT`
+   * and `isSmsCapablePT` itself. Both calls now live in `smsNumberVerdict`
+   * (./book-confirm-plan.ts), because the approver's notice has to give the
+   * same answer at approval time that the send gives at send time, and two
+   * copies of the pair had already disagreed once. Every property asserted
+   * here is the one it was: the verdict is asked on the dispatch path, it
+   * normalises BEFORE it checks capability, it is asked BEFORE the send, and
+   * the landline branch returns.
+   */
+  it("asks the shared verdict on the dispatch path, and the verdict calls isSmsCapablePT", () => {
+    expect(src).toContain("smsNumberVerdict(args.phone)");
+    expect(planSrc).toContain("isSmsCapablePT(");
   });
 
   it("checks capability AFTER normalising, never before", () => {
     // isSmsCapablePT returns false for anything that is not already E.164, so
     // running it on the raw stored number would refuse EVERY patient - the
     // total-outage failure, and it would look exactly like "no landlines found".
-    const norm = src.indexOf("normalizePhonePT(args.phone)");
-    const cap = src.indexOf("isSmsCapablePT(");
-    expect(norm).toBeGreaterThan(-1);
+    const verdictAt = planSrc.indexOf("export function smsNumberVerdict(");
+    const norm = planSrc.indexOf("normalizePhonePT(", verdictAt);
+    const cap = planSrc.indexOf("isSmsCapablePT(", verdictAt);
+    expect(verdictAt).toBeGreaterThan(-1);
+    expect(norm).toBeGreaterThan(verdictAt);
     expect(cap).toBeGreaterThan(norm);
+    // And it is the NORMALISED value that capability is asked about.
+    expect(planSrc.slice(verdictAt)).toContain("isSmsCapablePT(e164)");
   });
 
   it("checks capability BEFORE sendSms, which is the point of the ruling", () => {
@@ -75,7 +93,7 @@ describe("the reminder path skips a landline", () => {
     // refactors and passes on regressions; pinning it to the CALL keeps it
     // asserting the ordering it was written for. Both spellings are accepted so
     // the guard survives the shape moving back, too.
-    const cap = src.indexOf("isSmsCapablePT(");
+    const cap = src.indexOf("smsNumberVerdict(args.phone)");
     const send = src.indexOf("sendSms({");
     expect(cap).toBeGreaterThan(-1);
     expect(send).toBeGreaterThan(-1);
@@ -90,9 +108,13 @@ describe("the reminder path skips a landline", () => {
     // COMMS-01 (2026-09-14): it returns `{ skipped: "landline" }` rather than
     // `null`, so the ledger row can name the reason. The property is unchanged:
     // the branch returns before any send.
-    const cap = src.indexOf("isSmsCapablePT(");
-    const after = src.slice(cap, cap + 900);
-    expect(after).toContain('return { skipped: "landline" };');
+    const cap = src.indexOf("smsNumberVerdict(args.phone)");
+    const send = src.indexOf("sendSms({");
+    const between = src.slice(cap, send);
+    expect(between).toContain('return { skipped: "invalid_phone" };');
+    expect(between).toContain('return { skipped: "landline" };');
+    // The number handed to the provider is the verdict's own E.164.
+    expect(between).toContain("const to = verdict.e164;");
   });
 
   it("gives the landline skip its OWN reason, not invalid_phone", () => {
@@ -123,5 +145,20 @@ describe("the predicate the skip relies on", () => {
     for (const mobile of ["969472111", "969877553"]) {
       expect(isSmsCapablePT(normalizePhonePT(mobile)!), mobile).toBe(true);
     }
+  });
+});
+
+describe("the shared verdict gives the two reasons the skip logs", () => {
+  it.each([
+    ["969472111", { ok: true, e164: "+351969472111" }],
+    ["+351 969 877 553", { ok: true, e164: "+351969877553" }],
+    ["214191988", { ok: false, reason: "landline" }],
+    ["272328221", { ok: false, reason: "landline" }],
+    ["12", { ok: false, reason: "invalid_phone" }],
+    ["", { ok: false, reason: "invalid_phone" }],
+    [null, { ok: false, reason: "invalid_phone" }],
+  ] as const)("%j", async (phone, expected) => {
+    const { smsNumberVerdict } = await import("./book-confirm-plan");
+    expect(smsNumberVerdict(phone)).toEqual(expected);
   });
 });

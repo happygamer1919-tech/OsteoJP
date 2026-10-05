@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { GlassCard } from "@osteojp/ui";
@@ -85,6 +86,8 @@ export type GuestRequestRow = {
    * the thing to show - what is left to do is.
    */
   converted: boolean;
+  /** The booking deep link for a converted request; null when not converted. */
+  bookingLink?: string | null;
   /**
    * INTAKE-01: the clinical questionnaire the guest answered with THIS request,
    * shown beside it. THREE STATES, and the difference is load-bearing:
@@ -155,7 +158,9 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
       // opens with the patient locked and the service, clinic and preferred date
       // filled in. Every booking guard lives on that path and none is duplicated
       // here. `push`, not `replace`: reception can come back to the queue.
-      router.push(bookingDeepLink(result.data.patientId, result.data.prefill));
+      // BOOK-CONFIRM: the request id rides the link, so the booking made from
+      // it is linked to this request (S-1004-A, R40).
+      router.push(bookingDeepLink(result.data.patientId, result.data.prefill, requestId));
     });
   }
 
@@ -315,21 +320,39 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
               )}
 
               <div className="flex justify-end">
-                {/* ONE ACTION PER ROW, AND WHICH ONE IS DECIDED BY THE STATE
-                    RATHER THAN OFFERED AS A PAIR. A converted row cannot be
-                    converted again - the server refuses it as `already_handled`
-                    - so showing the convert button beside the dismiss would be
-                    offering a press that can only fail. */}
+                {/* WHICH ACTIONS A ROW OFFERS IS DECIDED BY ITS STATE. A
+                    converted row cannot be converted again - the server refuses
+                    it as `already_handled` - so showing the convert button
+                    beside the dismiss would be offering a press that can only
+                    fail. What a converted row offers instead is the booking
+                    (below) and the dismiss. */}
                 {r.converted ? (
-                  <button
-                    type="button"
-                    data-testid="guest-dismiss-button"
-                    disabled={busy}
-                    onClick={() => dismiss(r.id)}
-                    className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                  >
-                    {busy ? s["guest.dismissing"] : s["guest.dismiss"]}
-                  </button>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {/* BOOK-CONFIRM: a converted request that was not booked at
+                        once. The same deep link the convert redirects to, so the
+                        booking made from it is LINKED to this request: the
+                        patient gets their confirmation and the request leaves the
+                        queue by itself. Beside the dismiss, not instead of it:
+                        a request that will never be booked still needs one. */}
+                    {r.bookingLink && (
+                      <Link
+                        href={r.bookingLink}
+                        data-testid="guest-book-button"
+                        className="inline-flex h-11 items-center rounded-v2 bg-v2-green-700 px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                      >
+                        {s["guest.bookAppointment"]}
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      data-testid="guest-dismiss-button"
+                      disabled={busy}
+                      onClick={() => dismiss(r.id)}
+                      className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                    >
+                      {busy ? s["guest.dismissing"] : s["guest.dismiss"]}
+                    </button>
+                  </div>
                 ) : (
                   <button
                     type="button"

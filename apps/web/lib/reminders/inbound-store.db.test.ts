@@ -374,7 +374,10 @@ d("the reception reply queue against a real database", () => {
       saved.list = process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS;
       delete process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS;
       process.env.BOOK_CONFIRM_MODE = "on";
-      return () => {
+      return async () => {
+        // Whatever an arm did to the clinic or to its settings is undone.
+        await clinicContact(true);
+        await sql.execute(raw`update tenants set settings = '{}'::jsonb where id = ${tenantId}`);
         for (const [k, name] of [
           ["mode", "BOOK_CONFIRM_MODE"],
           ["list", "BOOK_CONFIRM_CANARY_PATIENT_IDS"],
@@ -384,6 +387,20 @@ d("the reception reply queue against a real database", () => {
         }
       };
     });
+
+    /**
+     * The suite's one location, with or without the address and phone the
+     * booking-approved message prints. WITH them unless an arm says otherwise:
+     * a location with neither is the SECOND notice, and every arm that is about
+     * the patient would otherwise be answered by the location.
+     */
+    async function clinicContact(present: boolean, missing: "address" | "phone" = "address") {
+      await sql.execute(raw`update locations set
+          address = ${present || missing !== "address" ? "Rua de Exemplo 1, 6000-000 Castelo Branco" : null},
+          phone = ${present || missing !== "phone" ? "+351 272 111 111" : null}
+        where id = ${locationId}`);
+    }
+    beforeEach(() => clinicContact(true));
 
     /** A pedido filed for review, for a patient with or without an email. */
     async function pedidoForReview(body: string, email: string | null) {
@@ -396,7 +413,20 @@ d("the reception reply queue against a real database", () => {
       return { patientId, item: (await queue()).find((r) => r.body === body)! };
     }
 
-    it("switch ON, no email on file: the resolution carries the notice", async () => {
+    it("switch ON, no email but a MOBILE on file: no notice, the SMS reaches them (S-1004-A)", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso com telemovel", null);
+      // Written before the resolve: the notice is asked after the commit.
+      await sql.execute(raw`update patients set phone = '912000555' where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("switch ON, no email and only a LANDLINE: the notice, the SMS leg cannot use it", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso com fixo", null);
+      await sql.execute(raw`update patients set phone = '272000123' where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("switch ON, NEITHER an email nor a phone: the resolution carries the notice", async () => {
       const { item } = await pedidoForReview("bc aviso sem email", null);
       expect(await resolve(item.id, "confirmed")).toEqual({
         ok: true,
@@ -428,6 +458,50 @@ d("the reception reply queue against a real database", () => {
       const { patientId, item } = await pedidoForReview("bc aviso na lista", null);
       process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = patientId;
       expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    /* ---- the lead's decision, 2026-10-04: every reason nothing can go ---- */
+
+    it("no email, a MOBILE, but the PATIENT has SMS switched off: the notice", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso sms doente desligado", null);
+      await sql.execute(raw`update patients set phone = '912000556', reminder_sms_enabled = false
+        where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("no email, a MOBILE, but the CLINIC has SMS switched off: the notice", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso sms clinica desligado", null);
+      await sql.execute(raw`update patients set phone = '912000557' where id = ${patientId}`);
+      await sql.execute(raw`update tenants set settings = ${JSON.stringify({
+        reminders: { emailEnabled: true, smsEnabled: false, leadTimeHours: [48, 24] },
+      })}::jsonb where id = ${tenantId}`);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it.each(["address", "phone"] as const)(
+      "an email on file, but the location has no %s: the SECOND notice",
+      async (missing) => {
+        const { item } = await pedidoForReview(`bc aviso local sem ${missing}`, "ficticio@example.test");
+        await clinicContact(false, missing);
+        expect(await resolve(item.id, "confirmed")).toEqual({
+          ok: true,
+          applied: true,
+          notice: "location_contact_missing",
+        });
+      },
+    );
+
+    it("nobody to reach AND no location contact: the patient's notice, as the dispatch checks the patient first", async () => {
+      const { item } = await pedidoForReview("bc aviso tudo em falta", null);
+      await clinicContact(false);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "patient_no_email" });
+    });
+
+    it("switch OFF: no notice for a location with no address either", async () => {
+      process.env.BOOK_CONFIRM_MODE = "off";
+      const { item } = await pedidoForReview("bc aviso local desligado", "ficticio@example.test");
+      await clinicContact(false);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
     });
 
     it("a STAFF booking confirmed here is not an acceptance: no notice, switch on, no email", async () => {

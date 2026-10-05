@@ -38,6 +38,8 @@ type LedgerRow = {
 
 const h = vi.hoisted(() => ({
   loadReminderData: vi.fn(),
+  /** What the link-row read answers. Reset to "no link row" before every test. */
+  isGuestLinked: vi.fn(async (): Promise<boolean> => false),
   email: [] as Sent[],
   sms: [] as Sent[],
   ledger: [] as LedgerRow[],
@@ -50,7 +52,11 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("./data", () => ({ loadReminderData: h.loadReminderData }));
+vi.mock("./data", () => ({
+  loadReminderData: h.loadReminderData,
+  // The guest-request LINK ROW, as the dispatch reads it.
+  isGuestLinkedAppointment: h.isGuestLinked,
+}));
 vi.mock("./clients", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clients")>();
   return {
@@ -164,6 +170,8 @@ const saved: Record<string, string | undefined> = {};
 beforeEach(() => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   h.loadReminderData.mockReset();
+  h.isGuestLinked.mockReset();
+  h.isGuestLinked.mockResolvedValue(false);
   h.email.length = 0;
   h.sms.length = 0;
   h.ledger.length = 0;
@@ -456,27 +464,25 @@ describe("the channel decision, through the dispatch (mode on, an acceptance)", 
     expect(allSent()).toEqual([]);
   });
 
-  it("no email, a mobile on file: the EXISTING confirmation SMS body as the fallback, and no email", async () => {
+  it("no email, a mobile on file: the booking-approved SMS, strategy's copy, and no email", async () => {
     const data = row({ patientEmail: null });
     h.loadReminderData.mockResolvedValue(data);
     const out = await dispatchConfirmation(TENANT, APPT, ACCEPTED);
     expect(out.dispatched).toBe(true);
     expect(h.email).toEqual([]);
     expect(h.sms).toHaveLength(1);
-    expect(h.sms[0]!.templateId).toBe("confirmation.sms");
-    // The existing body, with the LOCATION's phone on its last line.
+    expect(h.sms[0]!.templateId).toBe("booking_approved.sms");
+    // S-1004-A, word for word, with the LOCATION's name and the LOCATION's phone.
     expect(h.sms[0]!.body).toBe(
-      renderConfirmationSms("pt", {
-        appointmentDateShort: formatDateShort(STARTS_AT),
-        appointmentTime: formatTime(STARTS_AT, "pt"),
-        clinicLocation: "Castelo Branco",
-        clinicPhone: LOCATION_PHONE,
-      }),
+      `OsteoJP: marcacao confirmada para ${formatDateShort(STARTS_AT)} as ${formatTime(STARTS_AT, "pt")} ` +
+        `em Castelo Branco. Duvidas: ${LOCATION_PHONE}.`,
     );
+    // And it is NOT the body a reschedule sends.
+    expect(h.sms[0]!.body).not.toContain("Remarcar");
     expect(h.ledger).toEqual([
       expect.objectContaining({
         channel: "sms",
-        templateId: "confirmation.sms",
+        templateId: "booking_approved.sms",
         outcome: "sent",
         bodyLength: h.sms[0]!.body.length,
       }),
@@ -487,7 +493,7 @@ describe("the channel decision, through the dispatch (mode on, an acceptance)", 
     h.loadReminderData.mockResolvedValue(row({ patientEmail: "   " }));
     await dispatchConfirmation(TENANT, APPT, ACCEPTED);
     expect(h.email).toEqual([]);
-    expect(h.sms.map((m) => m.templateId)).toEqual(["confirmation.sms"]);
+    expect(h.sms.map((m) => m.templateId)).toEqual(["booking_approved.sms"]);
   });
 
   it("no email, and the TENANT has SMS switched off: nothing, and the ledger says channels_off", async () => {
@@ -508,7 +514,7 @@ describe("the channel decision, through the dispatch (mode on, an acceptance)", 
     expect(h.ledger).toEqual([
       expect.objectContaining({
         channel: "sms",
-        templateId: "confirmation.sms",
+        templateId: "booking_approved.sms",
         outcome: "suppressed",
         suppressionReason: "channels_off",
       }),
@@ -794,7 +800,7 @@ describe("one message per appointment and start, at the dispatch (mode on)", () 
     h.loadReminderData.mockResolvedValue(row({ patientEmail: null, startsAt: T2 }));
     await dispatchConfirmation(TENANT, APPT, ACCEPTED);
     expect(h.sms).toHaveLength(2);
-    expect(h.sms[1]!.body).toContain(`${formatDateShort(T2)} as ${formatTime(T2, "pt")}`);
+    expect(h.sms[1]!.body).toContain(`para ${formatDateShort(T2)} as ${formatTime(T2, "pt")} em`);
   });
 
   it("an email added AFTER the SMS went, same start, does not earn a second message", async () => {
@@ -1044,9 +1050,18 @@ describe("the two gates the email is NOT exempt from", () => {
       approvedBy: "owner and strategy, dispatch S-1003-B",
       approvedAt: "2026-10-03",
     });
-    // The fallback is the existing approved SMS, under its existing id.
-    expect(BOOKING_APPROVED_SMS_TEMPLATE_ID).toBe("confirmation.sms");
-    expect(webRegistry.get("confirmation.sms")?.approved).toBe(true);
+    // The SMS is its own approved body since S-1004-A, no longer a borrowed one.
+    expect(BOOKING_APPROVED_SMS_TEMPLATE_ID).toBe("booking_approved.sms");
+    expect(webRegistry.get(BOOKING_APPROVED_SMS_TEMPLATE_ID)).toMatchObject({
+      channel: "sms",
+      audience: "patient",
+      triggerEvent: "appointment/scheduled",
+      liveSendFlag: "REMINDERS_LIVE_SEND",
+      approved: true,
+      approvedBy: "strategy copy, dispatch S-1004-A",
+      approvedAt: "2026-10-04",
+      body: "OsteoJP: marcacao confirmada para {data} as {hora} em {local}. Duvidas: {telefone}.",
+    });
   });
 
   it("with REMINDERS_LIVE_SEND off, the REAL gate suppresses the email and the ledger says sandbox", async () => {
@@ -1298,5 +1313,299 @@ describe("today's confirmation leaves a ledger row for every outcome", () => {
     h.loadReminderData.mockResolvedValue(row());
     expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
     expect(h.email.map((m) => m.templateId)).toEqual(["booking_approved.email"]);
+  });
+});
+
+/* ==================================================================== */
+/* 9. THE PUBLIC-FORM (GUEST) PATH. S-1004-A, R40.                       */
+/* ==================================================================== */
+
+/**
+ * Reception books an appointment FOR a public-form request. It is a STAFF
+ * booking (origin `staff`), so the origin gate would refuse it. The booking
+ * action links it to the request and marks the event; the dispatch admits it
+ * past the origin gate ONLY after reading the link row.
+ */
+describe("the guest-request link is the approval trigger (mode on)", () => {
+  const GUEST = { acceptedGuestRequest: true } as const;
+  /** What reception's booking for a guest looks like when the dispatch reads it. */
+  const guestRow = (over: Record<string, unknown> = {}) =>
+    row({ status: "scheduled", origin: "staff", patientEmail: null, ...over });
+
+  beforeEach(() => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+  });
+
+  it("linked, a mobile and no email (the usual guest): ONE message, the booking-approved SMS", async () => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(guestRow());
+    const out = await dispatchConfirmation(TENANT, APPT, GUEST);
+    expect(out).toMatchObject({ dispatched: true });
+    expect(h.email).toEqual([]);
+    expect(h.sms.map((m) => m.templateId)).toEqual(["booking_approved.sms"]);
+    expect(h.sms[0]!.body).toContain(`em Castelo Branco. Duvidas: ${LOCATION_PHONE}.`);
+    expect(h.ledger.map((r) => [r.channel, r.templateId, r.outcome])).toEqual([
+      ["sms", "booking_approved.sms", "sent"],
+    ]);
+    // The row was asked about THIS appointment and THIS patient.
+    expect(h.isGuestLinked).toHaveBeenCalledWith(TENANT, APPT, PATIENT);
+  });
+
+  it("linked, the patient record HAS an email at booking time: the email, and no SMS", async () => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(guestRow({ patientEmail: "madalena@example.test" }));
+    await dispatchConfirmation(TENANT, APPT, GUEST);
+    expect(h.email.map((m) => m.templateId)).toEqual(["booking_approved.email"]);
+    expect(h.sms).toEqual([]);
+  });
+
+  it("linked, neither an email nor a phone: nothing, and the ledger says no_contact", async () => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(guestRow({ patientPhone: null }));
+    expect(await dispatchConfirmation(TENANT, APPT, GUEST)).toEqual({
+      dispatched: false,
+      reason: "no_contact",
+    });
+    expect(allSent()).toEqual([]);
+  });
+
+  it("THE MARKER ALONE SENDS NOTHING: no link row, so the origin gate refuses it as today", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    h.isGuestLinked.mockResolvedValue(false);
+    h.loadReminderData.mockResolvedValue(guestRow({ patientEmail: "madalena@example.test" }));
+    expect(await dispatchConfirmation(TENANT, APPT, GUEST)).toEqual({
+      dispatched: false,
+      reason: "origin",
+    });
+    expect(allSent()).toEqual([]);
+    // Filed as today's gate, under today's id: nothing of BOOK-CONFIRM ran.
+    expect(h.ledger.map((r) => [r.templateId, r.suppressionReason])).toEqual([
+      ["confirmation.email", "origin"],
+    ]);
+    const line = warn.mock.calls.map((c) => c.join(" ")).find((l) => l.includes("no link row"));
+    expect(line).toContain(`appointmentId=${APPT}`);
+    expect(line).not.toContain("Madalena");
+  });
+
+  it("a STAFF booking with NO marker never asks about a link and sends nothing, as today", async () => {
+    h.isGuestLinked.mockResolvedValue(true); // even if a row existed
+    h.loadReminderData.mockResolvedValue(guestRow({ patientEmail: "madalena@example.test" }));
+    expect(await dispatchConfirmation(TENANT, APPT)).toEqual({ dispatched: false, reason: "origin" });
+    expect(h.isGuestLinked).not.toHaveBeenCalled();
+    expect(allSent()).toEqual([]);
+  });
+
+  it("the pedido marker does NOT admit a staff-origin row: only the link row does", async () => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(guestRow());
+    expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({
+      dispatched: false,
+      reason: "origin",
+    });
+    expect(h.isGuestLinked).not.toHaveBeenCalled();
+  });
+
+  it("a link read that FAILS fails the run (Inngest retries); nothing is sent on the marker", async () => {
+    h.isGuestLinked.mockRejectedValue(new Error("connection reset"));
+    h.loadReminderData.mockResolvedValue(guestRow());
+    await expect(dispatchConfirmation(TENANT, APPT, GUEST)).rejects.toThrow("connection reset");
+    expect(allSent()).toEqual([]);
+  });
+
+  it("linked but CANCELLED since: nothing, the status gate still applies", async () => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(guestRow({ status: "cancelled" }));
+    expect(await dispatchConfirmation(TENANT, APPT, GUEST)).toMatchObject({ reason: "status" });
+    expect(allSent()).toEqual([]);
+  });
+
+  it("linked, same start twice: ONE message", async () => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(guestRow());
+    await dispatchConfirmation(TENANT, APPT, GUEST);
+    expect(await dispatchConfirmation(TENANT, APPT, GUEST)).toMatchObject({ reason: "already_sent" });
+    expect(h.sms).toHaveLength(1);
+  });
+
+  it("linked, the location has no phone: nothing, location_contact_missing, tenant phone unused", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(guestRow({ locationPhone: null }));
+    expect(await dispatchConfirmation(TENANT, APPT, GUEST)).toMatchObject({
+      reason: "location_contact_missing",
+    });
+    expect(everything()).not.toContain(TENANT_PHONE);
+  });
+});
+
+describe("the canary, for a guest booking", () => {
+  const GUEST = { acceptedGuestRequest: true } as const;
+  const guestRow = () => row({ status: "scheduled", origin: "staff", patientEmail: null });
+
+  beforeEach(() => {
+    process.env.BOOK_CONFIRM_MODE = "canary";
+    h.isGuestLinked.mockResolvedValue(true);
+  });
+
+  it("a LISTED patient gets the new behaviour", async () => {
+    process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = PATIENT;
+    h.loadReminderData.mockResolvedValue(guestRow());
+    expect(await dispatchConfirmation(TENANT, APPT, GUEST)).toMatchObject({ dispatched: true });
+    expect(h.sms.map((m) => m.templateId)).toEqual(["booking_approved.sms"]);
+  });
+
+  it("a NON-LISTED patient gets nothing, the link row is not even read, and one id-only line says so", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = OTHER_PATIENT;
+    h.loadReminderData.mockResolvedValue(guestRow());
+    expect(await dispatchConfirmation(TENANT, APPT, GUEST)).toEqual({ dispatched: false, reason: "origin" });
+    expect(allSent()).toEqual([]);
+    expect(h.isGuestLinked).not.toHaveBeenCalled();
+    const lines = info.mock.calls.map((c) => c.join(" ")).filter((l) => l.includes("book-confirm canary"));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`patientId=${PATIENT}`);
+  });
+});
+
+/* ==================================================================== */
+/* 10. GATE G3: WITH THE SWITCH OFF, NOTHING OF BOOK-CONFIRM IS SENT     */
+/* ==================================================================== */
+
+/**
+ * Every door reaches the dispatch as one of two markers (book-confirm-event-
+ * flow.test.ts proves which door writes which), so the switch is tested per
+ * marker, with each kind of contact. "Nothing of BOOK-CONFIRM" is exact: no
+ * `booking_approved.email`, no `booking_approved.sms`, no hand-over record.
+ *
+ * WHAT OFF STILL SENDS IS STATED, NOT HIDDEN. A portal request accepted with
+ * the switch off sends TODAY'S confirmation pair (`confirmation.email` and
+ * `confirmation.sms`), which is the behaviour before BOOK-CONFIRM and is not
+ * changed here. A guest booking sends nothing at all, as today.
+ */
+describe.each(["off", "", "true"])("GATE G3: BOOK_CONFIRM_MODE=%j", (mode) => {
+  const isBookConfirm = (m: Sent) => m.templateId.startsWith("booking_approved.");
+
+  beforeEach(() => {
+    if (mode === "") delete process.env.BOOK_CONFIRM_MODE;
+    else process.env.BOOK_CONFIRM_MODE = mode;
+    process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = PATIENT; // a populated list changes nothing
+    h.isGuestLinked.mockResolvedValue(true); // a real link row changes nothing either
+  });
+
+  it.each([
+    ["email and mobile", {}],
+    ["mobile only", { patientEmail: null }],
+    ["email only", { patientPhone: null }],
+  ])("the four PORTAL doors (acceptedPedido), %s: no booking_approved.*, today's pair instead", async (_l, over) => {
+    const data = row(over);
+    h.loadReminderData.mockResolvedValue(data);
+    await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(allSent().filter(isBookConfirm)).toEqual([]);
+    expect(h.handOvers).toEqual([]);
+    expect(h.ledger.filter((r) => r.templateId.startsWith("booking_approved."))).toEqual([]);
+    // The fact for the lead: what off DOES send on these doors.
+    expect(allSent().map((m) => m.templateId).sort()).toEqual(
+      [data.patientEmail ? "confirmation.email" : null, data.patientPhone ? "confirmation.sms" : null]
+        .filter(Boolean)
+        .sort(),
+    );
+  });
+
+  it.each([
+    ["email and mobile", { patientEmail: "madalena@example.test" }],
+    ["mobile only", {}],
+    ["neither", { patientPhone: null }],
+  ])("the GUEST booking (acceptedGuestRequest), %s: NOTHING is sent at all", async (_l, over) => {
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "scheduled", origin: "staff", patientEmail: null, ...over }),
+    );
+    expect(await dispatchConfirmation(TENANT, APPT, { acceptedGuestRequest: true })).toEqual({
+      dispatched: false,
+      reason: "origin",
+    });
+    expect(allSent()).toEqual([]);
+    expect(h.handOvers).toEqual([]);
+    // The link row is not even read with the switch off.
+    expect(h.isGuestLinked).not.toHaveBeenCalled();
+  });
+});
+
+/* ==================================================================== */
+/* 11. GATE G2 AT THE DISPATCH: A LOCATION NAME THE SMS CANNOT CARRY     */
+/* ==================================================================== */
+
+/**
+ * The four names the gate measures fit one segment (booking-approved-
+ * template.test.ts). This is the other half: a location NAME that is not
+ * GSM-7, or that pushes the body past one segment. The copy is not shortened
+ * and nothing is split across two segments. The outcome is a recorded
+ * `body_refused`, nothing sent, nothing thrown, on the portal doors and on the
+ * guest booking alike.
+ *
+ * It earns NO approver notice, by decision: it is knowable only by rendering
+ * the message, not from the patient's or the location's contact data.
+ */
+describe("GATE G2: a location name the SMS cannot carry is a recorded body_refused", () => {
+  const NAMES = [
+    ["not GSM-7 (an accent)", "Clínica do Coração"],
+    ["not GSM-7 (a character outside the alphabet)", "OsteoJP ✓"],
+    ["over one segment", "Clinica ".repeat(20).trim()],
+  ] as const;
+
+  beforeEach(() => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it.each(NAMES)("a portal acceptance, %s: nothing sent, one body_refused row, nothing thrown", async (_l, locationName) => {
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, locationName }));
+    const out = await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(out).toMatchObject({ dispatched: false, reason: "body_refused" });
+    expect(allSent()).toEqual([]);
+    expect(h.handOvers).toEqual([]);
+    expect(h.ledger).toEqual([
+      expect.objectContaining({
+        channel: "sms",
+        templateId: "booking_approved.sms",
+        outcome: "suppressed",
+        suppressionReason: "body_refused",
+      }),
+    ]);
+  });
+
+  it.each(NAMES)("a guest booking, %s: the same", async (_l, locationName) => {
+    h.isGuestLinked.mockResolvedValue(true);
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "scheduled", origin: "staff", patientEmail: null, locationName }),
+    );
+    const out = await dispatchConfirmation(TENANT, APPT, { acceptedGuestRequest: true });
+    expect(out).toMatchObject({ dispatched: false, reason: "body_refused" });
+    expect(allSent()).toEqual([]);
+    expect(h.ledger.map((r) => [r.channel, r.templateId, r.suppressionReason])).toEqual([
+      ["sms", "booking_approved.sms", "body_refused"],
+    ]);
+  });
+
+  it("the refusal's detail says which rule refused, and it is a length or a character, never a person", async () => {
+    h.loadReminderData.mockResolvedValue(row({ patientEmail: null, locationName: "Clinica ".repeat(20).trim() }));
+    const out = await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(out).toMatchObject({ detail: expect.stringMatching(/exceeds 160-char single segment/) });
+    expect(JSON.stringify(out)).not.toContain("Madalena");
+  });
+
+  it("the EMAIL is untouched by any of them: an accented location name is fine in an email", async () => {
+    h.loadReminderData.mockResolvedValue(row({ locationName: "Clínica do Coração" }));
+    expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
+    expect(h.email[0]!.body).toContain("Local: Clínica do Coração, ");
+  });
+
+  it("the four names the gate measures all SEND", async () => {
+    for (const locationName of ["OsteoJP (CB)", "OsteoJP (LV)", "OsteoJP (MN)", "Montemor-o-Novo"]) {
+      h.sms.length = 0;
+      h.handOvers.length = 0;
+      h.loadReminderData.mockResolvedValue(row({ patientEmail: null, locationName }));
+      expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED), locationName).toMatchObject({ dispatched: true });
+      expect(h.sms[0]!.body).toContain(`em ${locationName}. Duvidas: `);
+    }
   });
 });

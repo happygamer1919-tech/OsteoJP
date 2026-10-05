@@ -223,6 +223,14 @@ export type CreateAppointmentInput = {
   // the SAME tx. Pack booking is single-session: it is rejected with recurrence
   // (a pack session is one appointment). NULL = a normal service booking.
   packId?: string | null;
+  /**
+   * BOOK-CONFIRM, the public-form path (S-1004-A, R40). The guest request this
+   * booking answers, when the drawer was opened from a converted request's
+   * deep link. UNTRUSTED: it comes from a URL. `createAppointment` verifies it
+   * inside its transaction (lib/scheduling/guest-link.ts) and a value that
+   * does not verify changes nothing and never fails the booking.
+   */
+  guestRequestId?: string | null;
 };
 
 /** Non-temporal field edits. Time/therapist/location changes go via reschedule. */

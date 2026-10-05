@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 
-import { bookingDeepLink, pressAction } from "./guest-convert-handoff";
+import {
+  GUEST_REQUEST_PARAM,
+  bookingDeepLink,
+  guestRequestBookingLink,
+  guestRequestIdFromParam,
+  guestRequestPrefill,
+  pressAction,
+} from "./guest-convert-handoff";
 
 /**
  * GUEST-06 — the two client rules of the convert.
@@ -87,5 +94,86 @@ describe("bookingDeepLink - the four param names the agenda reads back", () => {
     expect(params.get("novaMarcacaoPaciente")).toBe("p&x=1");
     expect(params.get("novaMarcacaoServico")).toBe("s 1");
     expect(params.get("novaMarcacaoLocal")).toBe("l#1");
+  });
+});
+
+/**
+ * BOOK-CONFIRM, S-1004-A (R40): the deep link carries the guest request, so the
+ * booking made from it can be linked to the request.
+ */
+describe("bookingDeepLink - the guest request id rides the link", () => {
+  const REQUEST = "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f";
+  const prefill = { serviceId: "svc-1", locationId: "loc-lv", date: "2026-08-21" };
+
+  it("carries the request id under the name the agenda reads, asserted literally", () => {
+    const params = new URL(bookingDeepLink("p-1", prefill, REQUEST), "https://x").searchParams;
+    expect(GUEST_REQUEST_PARAM).toBe("pedidoConvidado");
+    expect(params.get("pedidoConvidado")).toBe(REQUEST);
+    // And the four it always carried are untouched.
+    expect(params.get("novaMarcacaoPaciente")).toBe("p-1");
+    expect(params.get("novaMarcacaoServico")).toBe("svc-1");
+    expect(params.get("novaMarcacaoLocal")).toBe("loc-lv");
+    expect(params.get("date")).toBe("2026-08-21");
+  });
+
+  it("a link built WITHOUT a request is exactly the link it was before", () => {
+    const link = bookingDeepLink("p-1", prefill);
+    expect(new URL(link, "https://x").searchParams.has("pedidoConvidado")).toBe(false);
+    expect(link).toBe(
+      "/agenda?novaMarcacaoPaciente=p-1&novaMarcacaoServico=svc-1&novaMarcacaoLocal=loc-lv&date=2026-08-21&view=day",
+    );
+  });
+});
+
+describe("guestRequestIdFromParam - shape only, the server decides the rest", () => {
+  it("passes a uuid through, trimmed", () => {
+    expect(guestRequestIdFromParam(" 0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f ")).toBe(
+      "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f",
+    );
+  });
+
+  it.each([null, undefined, "", "abc", "0f0f0f0f-0f0f-4f0f-8f0f", "'; drop table x; --", "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f0"])(
+    "%j is not a request id",
+    (value) => {
+      expect(guestRequestIdFromParam(value)).toBeNull();
+    },
+  );
+});
+
+/**
+ * BOOK-CONFIRM: the link a CONVERTED row offers ("Marcar consulta") is the
+ * link the convert redirects to. Both are built from the same two functions,
+ * and this asserts the result is the same string.
+ */
+describe("guestRequestBookingLink - the row's own link is the redirect's link", () => {
+  const REQUEST = "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f";
+  const request = {
+    id: REQUEST,
+    convertedPatientId: "p-1" as string | null,
+    serviceId: "svc-1",
+    locationId: "loc-lv",
+    // 23:30 UTC on 6 September is 00:30 on the 7th in Lisbon (WEST).
+    requestedStartsAt: new Date("2026-09-06T23:30:00.000Z"),
+  };
+
+  it("the prefill is the service, the clinic and the LISBON date, never the time", () => {
+    expect(guestRequestPrefill(request)).toEqual({
+      serviceId: "svc-1",
+      locationId: "loc-lv",
+      date: "2026-09-07",
+    });
+  });
+
+  it("is exactly what the convert's redirect builds for the same request", () => {
+    const redirect = bookingDeepLink("p-1", guestRequestPrefill(request), REQUEST);
+    expect(guestRequestBookingLink(request)).toBe(redirect);
+    const params = new URL(redirect, "https://x").searchParams;
+    expect(params.get("novaMarcacaoPaciente")).toBe("p-1");
+    expect(params.get("pedidoConvidado")).toBe(REQUEST);
+    expect(params.get("date")).toBe("2026-09-07");
+  });
+
+  it("a request that is NOT converted has no link", () => {
+    expect(guestRequestBookingLink({ ...request, convertedPatientId: null })).toBeNull();
   });
 });

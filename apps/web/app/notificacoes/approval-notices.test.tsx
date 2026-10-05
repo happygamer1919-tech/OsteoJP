@@ -16,13 +16,21 @@ import type { InboundReviewItem, ResolveOutcome } from "@/lib/reminders/inbound-
 import {
   ApprovalNotices,
   approvalNoticeDetail,
+  approvalNoticeMessage,
   withApprovalNotice,
   type ApprovalNoticeView,
 } from "./approval-notices";
 
 const NOTICE = "Paciente sem email: avise por telefone";
 
-const one: ApprovalNoticeView = { id: "appt-1", patientName: "Duarte Ficticio", when: "14/05/2031 11:00" };
+const one: ApprovalNoticeView = {
+  id: "appt-1",
+  kind: "patient_no_email",
+  patientName: "Duarte Ficticio",
+  when: "14/05/2031 11:00",
+};
+const LOCATION_NOTICE =
+  "Confirmação não enviada: o local não tem morada ou telefone. Avise o paciente por telefone.";
 
 describe("ApprovalNotices", () => {
   it("renders nothing at all for an empty list", () => {
@@ -39,10 +47,34 @@ describe("ApprovalNotices", () => {
 
   it("one notice per accepted request", () => {
     const html = renderToStaticMarkup(
-      <ApprovalNotices notices={[one, { id: "appt-2", patientName: "Helena Ficticia", when: "" }]} />,
+      <ApprovalNotices
+        notices={[one, { id: "appt-2", kind: "patient_no_email", patientName: "Helena Ficticia", when: "" }]}
+      />,
     );
     expect(html.split(NOTICE)).toHaveLength(3);
     expect(html).toContain("Helena Ficticia</p>");
+  });
+});
+
+describe("the second sentence: the location has no address or phone", () => {
+  const location: ApprovalNoticeView = { ...one, id: "appt-9", kind: "location_contact_missing" };
+
+  it("is shown EXACTLY, as its own element, and it is not the patient sentence", () => {
+    const html = renderToStaticMarkup(<ApprovalNotices notices={[location]} />);
+    expect(html).toContain(`>${LOCATION_NOTICE}</p>`);
+    expect(html).not.toContain(NOTICE);
+    expect(html).toContain("Duarte Ficticio · 14/05/2031 11:00");
+  });
+
+  it("each reason has its own sentence, in both languages' source of truth", () => {
+    expect(approvalNoticeMessage("patient_no_email")).toBe(NOTICE);
+    expect(approvalNoticeMessage("location_contact_missing")).toBe(LOCATION_NOTICE);
+  });
+
+  it("the two can sit side by side, each with its own text", () => {
+    const html = renderToStaticMarkup(<ApprovalNotices notices={[one, location]} />);
+    expect(html.indexOf(NOTICE)).toBeGreaterThan(-1);
+    expect(html.indexOf(LOCATION_NOTICE)).toBeGreaterThan(html.indexOf(NOTICE));
   });
 });
 
@@ -90,6 +122,7 @@ describe("reviewApprovalNotice: what a resolved reply earns", () => {
   it("the server's notice becomes one for THAT item, with its patient and its appointment time", () => {
     expect(reviewApprovalNotice([item()], "item-1", withNotice)).toEqual({
       id: "item-1",
+      kind: "patient_no_email",
       patientName: "Duarte Ficticio",
       // Lisbon wall clock: 10:00Z in May is 11:00.
       when: "14/05/2031, 11:00",
@@ -105,9 +138,16 @@ describe("reviewApprovalNotice: what a resolved reply earns", () => {
     expect(reviewApprovalNotice([item()], "item-1", outcome as ResolveOutcome)).toBeNull();
   });
 
+  it("the LOCATION notice from the server becomes the location notice on screen", () => {
+    expect(
+      reviewApprovalNotice([item()], "item-1", { ok: true, applied: true, notice: "location_contact_missing" }),
+    ).toMatchObject({ id: "item-1", kind: "location_contact_missing" });
+  });
+
   it("an item that is no longer in the list still gets its notice, without a name or a time", () => {
     expect(reviewApprovalNotice([], "item-1", withNotice)).toEqual({
       id: "item-1",
+      kind: "patient_no_email",
       patientName: null,
       when: "",
     });
