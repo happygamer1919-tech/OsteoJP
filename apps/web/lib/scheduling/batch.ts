@@ -21,6 +21,7 @@ import {
   type BatchFailure,
 } from "./batch-core";
 import { acquireSlotLocksForMany } from "./slot-lock";
+import { guestLinkOccurrence, linkGuestRequestTx } from "./guest-link";
 
 /**
  * Batch scheduling engine (SPEC-appointments §4). Given a recurrence rule, it
@@ -122,9 +123,24 @@ export class ClinicHoursRefused extends Error {
 }
 
 /** Orchestrator: expand → check availability → book free → report failures. */
+/**
+ * BOOK-CONFIRM, the public-form path. A holder the caller passes in and reads
+ * back, so the linked appointment's id reaches the server action without
+ * widening `BatchScheduleResult`, which is sent to the client.
+ */
+export type BatchGuestLink = {
+  /** UNTRUSTED, from a URL. Verified by `linkGuestRequestTx`. */
+  guestRequestId: string | null | undefined;
+  /** `bookingLocationScope(actor)`. */
+  locationScope: string[] | null;
+  /** Written here when the link lands: the EARLIEST booked occurrence. */
+  linkedAppointmentId: string | null;
+};
+
 export async function batchSchedule(
   ctx: RequestContext,
   input: BatchScheduleInput,
+  guestLink?: BatchGuestLink,
 ): Promise<BatchScheduleResult> {
   // Both input modes converge on one concrete slot list.
   const slots = resolveBatchSlots(input);
@@ -319,6 +335,26 @@ export async function batchSchedule(
         ctx,
         out.map((b) => b.appointmentId),
       );
+
+      // BOOK-CONFIRM: a batch booked from a converted guest request's deep
+      // link. ONE occurrence is linked, the earliest, in this transaction. It
+      // never fails the batch (guest-link.ts confines itself to a savepoint).
+      if (guestLink?.guestRequestId) {
+        const first = guestLinkOccurrence(
+          out.map((b) => ({ id: b.appointmentId, startsAt: new Date(b.startsAt) })),
+        );
+        if (
+          first &&
+          (await linkGuestRequestTx(tx, ctx, {
+            guestRequestId: guestLink.guestRequestId,
+            patientId: input.patientId,
+            appointmentId: first.id,
+            locationScope: guestLink.locationScope,
+          }))
+        ) {
+          guestLink.linkedAppointmentId = first.id;
+        }
+      }
       return out;
     });
   }

@@ -1,12 +1,13 @@
 import "server-only";
 import { parseTenantConfig, type ReminderConfig } from "@/lib/admin/settings-config";
-import { loadReminderData } from "./data";
+import { isGuestLinkedAppointment, loadReminderData } from "./data";
 import { resolveLocale, formatTime, formatDateLong, formatDateShort } from "./locale";
 import {
   renderEmail,
   renderConfirmationEmail,
   renderConfirmationSms,
   renderBookingApprovedEmail,
+  renderBookingApprovedSms,
   renderFollowUpEmail,
   renderFollowUpSms,
   renderNoShowEmail,
@@ -38,9 +39,12 @@ import {
   recordDispatch,
 } from "./dispatch-ledger";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
+import {
+  bookingApprovedLocationContact,
+  planBookingApprovedChannel,
+  smsNumberVerdict,
+} from "./book-confirm-plan";
 import type { Channel } from "@osteojp/notify";
-import { normalizePhonePT } from "@osteojp/notify";
-import { isSmsCapablePT } from "@osteojp/notify";
 import {
   signRescheduleToken,
   rescheduleTokenExpiry,
@@ -314,8 +318,12 @@ async function sendPatientSms(args: {
   body: string;
   templateId: string;
 }): Promise<SendResult | SmsSkip> {
-  const to = normalizePhonePT(args.phone);
-  if (!to) {
+  // ONE VERDICT, SHARED. `smsNumberVerdict` is the two questions this function
+  // has always asked (does it normalise; is it a line that can receive SMS), in
+  // one place, because the approver's notice must give the SAME answer at
+  // approval time that this gives at send time (./book-confirm-plan.ts).
+  const verdict = smsNumberVerdict(args.phone);
+  if (!verdict.ok && verdict.reason === "invalid_phone") {
     console.warn(
       `[reminders] sms skipped: invalid_phone tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}`,
     );
@@ -344,7 +352,7 @@ async function sendPatientSms(args: {
   // other half is the reception surface: `listPatientsUnreachableBySms` derives
   // the patients this WILL happen to from their stored number and their upcoming
   // appointments - BEFORE the reminder is due, rather than logging it after.
-  if (!isSmsCapablePT(to)) {
+  if (!verdict.ok) {
     console.warn(
       `[reminders] sms skipped: landline tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}. ` +
         `The stored number is a Portuguese geographic line and cannot receive SMS. ` +
@@ -352,6 +360,7 @@ async function sendPatientSms(args: {
     );
     return { skipped: "landline" };
   }
+  const to = verdict.e164;
   // A Twilio rejection leaves a `provider_error` row before it propagates, for
   // the reason in sendRecordingProviderError: the ledger write in the caller
   // sits after this await and a throw jumps over it. Function declarations
@@ -927,16 +936,31 @@ const CONFIRMATION_ORIGINS = new Set(["patient_portal"]);
  * reminder config apply — the same emailEnabled / smsEnabled switches gate all
  * outbound patient notifications.
  */
+/**
+ * What the EVENT said this confirmation is for. Both arrive from an event
+ * payload, so each is honoured only as the literal `true`.
+ */
+export type ConfirmationDispatchOptions = {
+  /**
+   * BOOK-CONFIRM. The marker the four acceptance emitters put on
+   * `appointment/scheduled` (lib/scheduling/pedido-acceptance.ts). A
+   * reschedule, a create and an uncancel do not carry it, so they take today's
+   * path exactly as before, whatever the switch says.
+   */
+  acceptedPedido?: boolean;
+  /**
+   * BOOK-CONFIRM, the public-form path (S-1004-A, R40). The marker the booking
+   * actions put on the event for the appointment a GUEST request was linked
+   * to. It only asks the dispatch to look: nothing is sent on the marker
+   * alone, the link row is read first.
+   */
+  acceptedGuestRequest?: boolean;
+};
+
 export async function dispatchConfirmation(
   tenantId: string,
   appointmentId: string,
-  /**
-   * BOOK-CONFIRM. `acceptedPedido` is the marker the four acceptance emitters
-   * put on `appointment/scheduled` (lib/scheduling/pedido-acceptance.ts). A
-   * reschedule, a create and an uncancel do not carry it, so they take the
-   * path below exactly as before, whatever the switch says.
-   */
-  opts: { acceptedPedido?: boolean } = {},
+  opts: ConfirmationDispatchOptions = {},
 ): Promise<DispatchOutcome> {
   const gate = await loadDispatchable(tenantId, appointmentId, "confirmation");
   if (!gate.ok) {
@@ -949,7 +973,7 @@ export async function dispatchConfirmation(
     // `appointment_id` a foreign key. When it does not, `recordDispatch`
     // logs the failed write and returns, which is its contract.
     const wouldBeApproved =
-      opts.acceptedPedido === true &&
+      (opts.acceptedPedido === true || opts.acceptedGuestRequest === true) &&
       gate.patientId !== undefined &&
       bookConfirmAppliesTo(gate.patientId).applies;
     if (!gate.outcome.dispatched) {
@@ -971,12 +995,36 @@ export async function dispatchConfirmation(
   // ================================================================== //
   // `=== true`, not truthiness: the value arrives from an event payload, and
   // only the literal the emitters write may select the new message.
-  if (opts.acceptedPedido === true) {
+  const acceptedPedido = opts.acceptedPedido === true;
+  const acceptedGuestRequest = opts.acceptedGuestRequest === true;
+  if (acceptedPedido || acceptedGuestRequest) {
     const decision = bookConfirmAppliesTo(data.patientId);
-    if (decision.applies) return dispatchBookingApproved(tenantId, appointmentId, data);
-    if (decision.mode === "canary") {
+    if (decision.applies) {
+      if (acceptedPedido) {
+        return dispatchBookingApproved(tenantId, appointmentId, data, { guestLinked: false });
+      }
+      // ============================================================== //
+      // THE PUBLIC-FORM PATH. THE LINK ROW IS THE AUTHORITY, NOT THE EVENT.
+      // ============================================================== //
+      // The appointment reception booked for a guest request is a STAFF
+      // booking, so the origin gate below would refuse it. It is admitted
+      // past that gate only when `guest_booking_requests` itself says this
+      // appointment answers a request for this patient. A marker with no row
+      // behind it (a hand-fired event, a replay, a future caller) changes
+      // nothing: it falls through to today's path, which sends a staff
+      // booking nothing, and says so once, ids only.
+      if (await isGuestLinkedAppointment(tenantId, appointmentId, data.patientId)) {
+        return dispatchBookingApproved(tenantId, appointmentId, data, { guestLinked: true });
+      }
+      console.warn(
+        `[reminders] book-confirm: a guest-request marker with no link row behind it; ` +
+          `treated as an ordinary booking tenantId=${tenantId} appointmentId=${appointmentId} ` +
+          `patientId=${data.patientId}`,
+      );
+    } else if (decision.mode === "canary") {
       // IDS ONLY (rule 7). The canary is on and this patient is not on the
-      // list, so the acceptance falls through to today's confirmation.
+      // list, so this falls through to today's path: today's confirmation for
+      // an accepted portal request, and nothing for a guest booking.
       console.info(
         `[reminders] book-confirm canary: patient not on the list, the existing confirmation is used ` +
           `tenantId=${tenantId} appointmentId=${appointmentId} patientId=${data.patientId}`,
@@ -1185,11 +1233,11 @@ async function dispatchTodaysConfirmation(
 /** The registry id of the approved email. */
 export const BOOKING_APPROVED_EMAIL_TEMPLATE_ID = "booking_approved.email";
 /**
- * The SMS fallback is the EXISTING `confirmation.sms` body, under its existing
- * registry id (the owner's words: "SMS as fallback if no email"). No new SMS
- * copy exists, so there is none to approve.
+ * The SMS for a patient with no email on file: strategy's copy, dispatch
+ * S-1004-A. Until 2026-10-04 the fallback borrowed `confirmation.sms`; that id
+ * is today's confirmation again and nothing on this path sends it.
  */
-export const BOOKING_APPROVED_SMS_TEMPLATE_ID = "confirmation.sms";
+export const BOOKING_APPROVED_SMS_TEMPLATE_ID = "booking_approved.sms";
 
 /**
  * What is recorded, and returned, when the booking-approved email cannot be
@@ -1199,60 +1247,15 @@ export const BOOKING_APPROVED_SMS_TEMPLATE_ID = "confirmation.sms";
 export const BOOKING_APPROVED_RENDER_REFUSAL =
   "A value the email prints (first name, service, therapist or location) contains a {placeholder}-shaped word.";
 
-export type BookingApprovedPlan =
-  | { send: "email" }
-  | { send: "sms" }
-  | { send: "none"; reason: "no_contact" | "channels_off"; channel: "email" | "sms" };
-
-/**
- * Which ONE channel an approval goes out on. Pure, exported for direct testing.
- *
- *   an email on file              -> the email, and NO SMS
- *   no email, a phone on file     -> the SMS fallback, if SMS is switched on
- *   neither                       -> nothing
- *
- * THE EMAIL IS TRANSACTIONAL: it answers a request the patient made, so
- * neither the tenant's reminder email switch nor the patient's reminder email
- * preference is an input here. The SMS fallback still respects the tenant's and
- * the patient's SMS switches.
- *
- * THE FALLBACK IS FOR "NO EMAIL ON FILE" AND NOTHING ELSE. An email that is on
- * file and then fails to send does not turn into an SMS: the patient would get
- * two messages on a retry, and the ruling is one.
- *
- * `channel` on the `none` arm is the channel the ledger row is filed under.
- */
-export function planBookingApprovedChannel(args: {
-  hasEmail: boolean;
-  hasPhone: boolean;
-  tenantSmsEnabled: boolean;
-  patientSmsEnabled: boolean;
-}): BookingApprovedPlan {
-  if (args.hasEmail) return { send: "email" };
-  if (!args.hasPhone) return { send: "none", reason: "no_contact", channel: "email" };
-  if (!args.tenantSmsEnabled || !args.patientSmsEnabled) {
-    return { send: "none", reason: "channels_off", channel: "sms" };
-  }
-  return { send: "sms" };
-}
-
-/**
- * The address and the phone the message prints, from the appointment's
- * LOCATION row only. Null when either is missing or blank.
- *
- * `tenantSettings` is deliberately NOT a parameter: the ruling is that nothing
- * falls back to the tenant's clinic settings, and a function that cannot see
- * them cannot fall back to them.
- */
-export function bookingApprovedLocationContact(location: {
-  locationAddress: string | null;
-  locationPhone: string | null;
-}): { address: string; phone: string } | null {
-  const address = (location.locationAddress ?? "").trim();
-  const phone = (location.locationPhone ?? "").trim();
-  if (address === "" || phone === "") return null;
-  return { address, phone };
-}
+// The channel plan, the location check and the SMS-number verdict are pure and
+// live in ./book-confirm-plan.ts, because the approver's notice asks the SAME
+// three questions at approval time (lib/scheduling/book-confirm-notice.ts).
+// Re-exported here so this file stays the dispatch's one public surface.
+export {
+  planBookingApprovedChannel,
+  bookingApprovedLocationContact,
+  type BookingApprovedPlan,
+} from "./book-confirm-plan";
 
 /**
  * Send the ONE confirmation for an accepted online request.
@@ -1270,6 +1273,12 @@ async function dispatchBookingApproved(
   tenantId: string,
   appointmentId: string,
   data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>>,
+  /**
+   * `guestLinked` is true ONLY when the caller has read the link row
+   * (`isGuestLinkedAppointment`). It admits a staff-origin appointment past
+   * the origin gate below, and nothing else about the path changes.
+   */
+  admit: { guestLinked: boolean },
 ): Promise<DispatchOutcome> {
   const { reminders } = parseTenantConfig(data.tenantSettings);
   const email = (data.patientEmail ?? "").trim();
@@ -1303,7 +1312,9 @@ async function dispatchBookingApproved(
   // The three gates the confirmation above applies, in its order. A REJECTED
   // request is `cancelled`, so it stops at the first one and sends nothing.
   if (!CONFIRMABLE_STATUSES.has(data.status)) return suppress("status");
-  if (!CONFIRMATION_ORIGINS.has(data.origin)) return suppress("origin");
+  // THE ORIGIN GATE, with its one exception: an appointment the caller has
+  // read a guest-request LINK ROW for. Everything else of staff origin stops.
+  if (!admit.guestLinked && !CONFIRMATION_ORIGINS.has(data.origin)) return suppress("origin");
   if (isUnacceptedPedido(data)) return suppress("unconfirmed");
 
   if (plan.send === "none") return suppress(plan.reason);
@@ -1413,17 +1424,20 @@ async function dispatchBookingApproved(
     return { dispatched: true, channels: [result] };
   }
 
-  // THE SMS FALLBACK: the existing `confirmation.sms` body, with the LOCATION's
-  // phone on its last line. `renderConfirmationSms` throws on a body that would
-  // leave GSM-7 or one segment; here that is an outcome with a ledger row, not
-  // a run that retries forever and records nothing.
+  // THE SMS, for a patient with no email on file: `booking_approved.sms`,
+  // strategy's copy (S-1004-A), with the LOCATION's name and the LOCATION's
+  // phone. It replaced the borrowed `confirmation.sms` body on 2026-10-04. The
+  // render throws on a body that would leave GSM-7 or one segment (a clinic
+  // renamed to something accented or long); here that is an outcome with a
+  // ledger row, not a run that retries forever and records nothing. The body
+  // prints nothing about the patient, so the refusal's own words are safe.
   let body: string;
   try {
-    body = renderConfirmationSms(locale, {
+    body = renderBookingApprovedSms(locale, {
       appointmentDateShort: formatDateShort(data.startsAt),
       appointmentTime: formatTime(data.startsAt, locale),
-      clinicLocation: data.locationName,
-      clinicPhone: contact.phone,
+      locationName: data.locationName,
+      locationPhone: contact.phone,
     });
   } catch (e) {
     const refusal = e instanceof Error ? e.message : "unknown";
@@ -1439,14 +1453,14 @@ async function dispatchBookingApproved(
     patientId: data.patientId,
     phone,
     body,
-    templateId: "confirmation.sms",
+    templateId: "booking_approved.sms",
   });
   const handedOver = isSmsSkip(sent) ? null : sent;
   await recordDispatch({
     tenantId,
     appointmentId,
     channel: "sms",
-    templateId: "confirmation.sms",
+    templateId: "booking_approved.sms",
     outcome: handedOver && !handedOver.sandbox ? "sent" : "suppressed",
     suppressionReason: handedOver
       ? handedOver.sandbox

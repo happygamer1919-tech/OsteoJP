@@ -231,6 +231,7 @@ export default async function NotificacoesPage() {
     requestedAt: stamp(g.createdAt),
     possiblePatientMatches: g.possiblePatientMatches,
     converted: g.converted,
+    bookingLink: g.bookingLink,
     // INTAKE-01: undefined = feature off; null = on, and no intake on this request.
     intake:
       intakesByRequest === null

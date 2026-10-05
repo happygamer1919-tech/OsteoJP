@@ -45,6 +45,7 @@ vi.mock("./dispatch", () => ({
 
 import { enqueueRemindersAfterCommit } from "@/lib/scheduling/reminders";
 import { acceptedPedidoTarget } from "@/lib/scheduling/pedido-acceptance";
+import { acceptedGuestRequestTarget } from "@/lib/scheduling/guest-link";
 import {
   CONFIRMATION_IDEMPOTENCY_KEY,
   CONFIRMATION_TRIGGER_FILTER,
@@ -108,6 +109,29 @@ describe("the acceptance target carries the marker, and only it does", () => {
     expect("acceptedPedido" in h.sent[0]!.data).toBe(false);
   });
 
+  it("a GUEST-LINKED booking emits appointment/scheduled with acceptedGuestRequest: true, and no pedido marker", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [acceptedGuestRequestTarget(APPT, STARTS_AT)]);
+    expect(h.sent[0]!.data).toEqual({
+      appointmentId: APPT,
+      tenantId: TENANT,
+      startsAt: STARTS_AT.toISOString(),
+      confirmationEligible: true,
+      acceptedGuestRequest: true,
+    });
+  });
+
+  it("a series booked for a guest marks ONE occurrence, the earliest, which is also the one that confirms", async () => {
+    const later = new Date(STARTS_AT.getTime() + 7 * 24 * 3600_000);
+    await enqueueRemindersAfterCommit(TENANT, [
+      { appointmentId: OTHER, startsAt: later },
+      acceptedGuestRequestTarget(APPT, STARTS_AT),
+    ]);
+    const byId = new Map(h.sent.map((e) => [e.data.appointmentId, e.data]));
+    expect(byId.get(APPT)).toMatchObject({ confirmationEligible: true, acceptedGuestRequest: true });
+    expect(byId.get(OTHER)!.confirmationEligible).toBe(false);
+    expect("acceptedGuestRequest" in byId.get(OTHER)!).toBe(false);
+  });
+
   it("the marker is PER TARGET: an acceptance and an uncancel in one list stay distinct", async () => {
     const later = new Date(STARTS_AT.getTime() + 60 * 60_000);
     await enqueueRemindersAfterCommit(TENANT, [
@@ -123,17 +147,39 @@ describe("the acceptance target carries the marker, and only it does", () => {
 describe("send-appointment-confirmation hands the marker to the dispatch", () => {
   it("an acceptance event dispatches with acceptedPedido true", async () => {
     await runConfirmation({ appointmentId: APPT, tenantId: TENANT, acceptedPedido: true });
-    expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, { acceptedPedido: true });
+    expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
+      acceptedPedido: true,
+      acceptedGuestRequest: false,
+    });
   });
 
-  it("an event without the key dispatches with acceptedPedido false", async () => {
+  it("a GUEST-LINK event dispatches with acceptedGuestRequest true", async () => {
+    await runConfirmation({ appointmentId: APPT, tenantId: TENANT, acceptedGuestRequest: true });
+    expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
+      acceptedPedido: false,
+      acceptedGuestRequest: true,
+    });
+  });
+
+  it("an event without either key dispatches with both false", async () => {
     await runConfirmation({ appointmentId: APPT, tenantId: TENANT });
-    expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, { acceptedPedido: false });
+    expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
+      acceptedPedido: false,
+      acceptedGuestRequest: false,
+    });
   });
 
-  it.each(["true", 1, {}, null])("a non-literal %j in the field is NOT an acceptance", async (value) => {
-    await runConfirmation({ appointmentId: APPT, tenantId: TENANT, acceptedPedido: value });
-    expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, { acceptedPedido: false });
+  it.each(["true", 1, {}, null])("a non-literal %j in either field is NOT an approval", async (value) => {
+    await runConfirmation({
+      appointmentId: APPT,
+      tenantId: TENANT,
+      acceptedPedido: value,
+      acceptedGuestRequest: value,
+    });
+    expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
+      acceptedPedido: false,
+      acceptedGuestRequest: false,
+    });
   });
 
   it("the trigger filter and the idempotency key are the ones that were there", () => {
@@ -191,6 +237,38 @@ describe("the four doors that can accept a pedido build their target with the ma
       expect(b).not.toMatch(/\bacceptedPedido/);
     },
   );
+
+  it("the two BOOKING actions build the guest-linked target with its marker, and only they do", () => {
+    const create = body("lib/scheduling/actions.ts", "createAppointment");
+    const batch = body("lib/scheduling/actions.ts", "batchScheduleAppointments");
+    expect(create).toContain("acceptedGuestRequestTarget(c.id, c.startsAt)");
+    expect(create).toContain("c.id === guestLinked.appointmentId");
+    expect(batch).toContain("acceptedGuestRequestTarget(b.appointmentId, new Date(b.startsAt))");
+    expect(batch).toContain("b.appointmentId === guestLink.linkedAppointmentId");
+    for (const fn of ["cloneAppointment", "rescheduleAppointment", "updateAppointment", "confirmAppointmentRequest"]) {
+      const b = body("lib/scheduling/actions.ts", fn);
+      expect(b.length).toBeGreaterThan(500);
+      expect(b, fn).not.toContain("acceptedGuestRequest");
+    }
+  });
+
+  it("the guest marker is written in exactly one function", () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name === ".next" || entry.name === "e2e") continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          const src = strip(readFileSync(full, "utf8"));
+          if (/acceptedGuestRequest:\s*true(?!\s*as const)/.test(src)) offenders.push(full.slice(ROOT.length + 1));
+        }
+      }
+    };
+    walk(join(ROOT, "lib"));
+    walk(join(ROOT, "app"));
+    expect(offenders.sort()).toEqual(["lib/scheduling/guest-link.ts", "lib/scheduling/reminders.ts"]);
+  });
 
   it("nothing else in the app writes the marker by hand", () => {
     // The marker is written in exactly one function. A literal elsewhere would

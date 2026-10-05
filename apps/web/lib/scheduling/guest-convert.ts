@@ -10,7 +10,7 @@ import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
 import { insertPatientTx } from "@/lib/patients/insert";
 import { writeAudit } from "@/lib/patients/audit";
-import { lisbonParts } from "./time";
+import { guestRequestPrefill } from "./guest-convert-handoff";
 import { patientPhoneMatchConds } from "./guest-match";
 
 /**
@@ -82,17 +82,28 @@ import { patientPhoneMatchConds } from "./guest-match";
  * row, not a status change on the request." `handled_at` / `handled_by` are the
  * only columns 0063 gives that meaning to - "who finished with this, and when" -
  * they are read by nothing else in the codebase, and using them costs no
- * migration. `dismissGuestRequest` below is the only writer.
+ * migration. `dismissGuestRequest` below writes them for a request that is
+ * dismissed; since 2026-10-04 the booking link writes them too, for a request
+ * that was finished by being BOOKED (lib/scheduling/guest-link.ts), and only
+ * when a dismiss had not already set them.
  *
  * THE CONSEQUENCE, STATED SO NOBODY READS IT AS A BUG: the happy path is now
  * two actions. Convert, book, come back, dismiss. That is the cost the owner
  * accepted, and it buys the case that has no other guard - the one where the
  * second step never happens.
  *
- * `converted_appointment_id` IS STILL LEFT NULL, and nothing in the repository
- * has ever written it. Filling it is the threading of a request id through
- * `createAppointment` - the change this whole shape exists to avoid - and that
- * was option A, which the owner declined.
+ * `converted_appointment_id` IS NOT WRITTEN HERE, AND IT IS WRITTEN NOW. Until
+ * 2026-10-04 this paragraph said nothing in the repository had ever written
+ * it, because filling it meant threading a request id through
+ * `createAppointment`, "option A, which the owner declined" on 2026-09-06.
+ * THE OWNER RULED IT IN ON 2026-10-04 (strategy dispatch S-1004-A, R40):
+ * "public-form requests get linked to the appointment reception books for
+ * them, and that link is the approval trigger." The request id now rides the
+ * deep link this action's result becomes, and `createAppointment` links the
+ * booking to the request inside its own transaction
+ * (lib/scheduling/guest-link.ts). The link moves the status to `confirmed`,
+ * so a booked request leaves the queue by itself; the dismiss below remains
+ * for a converted request that is never booked.
  */
 
 /** Internal: the only way to abort the transaction after the patient insert. */
@@ -397,16 +408,10 @@ export async function convertGuestRequest(
       ok: true,
       data: {
         patientId,
-        prefill: {
-          serviceId: request.serviceId,
-          locationId: request.locationId,
-          // The DATE the guest asked for, in Lisbon. Not the time: under the
-          // GUEST-04 Option A ruling the stored window encodes a date and a
-          // PERIOD, and the start instant is an encoding artefact rather than a
-          // time anybody chose. Prefilling 09:00 from it would put an invented
-          // choice in the one field reception is there to decide.
-          date: lisbonParts(request.requestedStartsAt).date,
-        },
+        // Service, clinic and the DATE the guest asked for. The function is
+        // shared with the queue's "Marcar consulta" link, so the redirect and
+        // the link opened later can never prefill differently.
+        prefill: guestRequestPrefill(request),
       },
     };
   }).catch((e: unknown) => {

@@ -54,6 +54,8 @@ export async function enqueueAppointmentReminders(args: {
   confirmationEligible: boolean;
   /** BOOK-CONFIRM: true only when this is the acceptance of an online request. */
   acceptedPedido?: boolean;
+  /** BOOK-CONFIRM: true only for the occurrence a guest request was linked to. */
+  acceptedGuestRequest?: boolean;
 }): Promise<void> {
   await inngest.send({
     name: EVENT_APPOINTMENT_SCHEDULED,
@@ -65,6 +67,7 @@ export async function enqueueAppointmentReminders(args: {
       // The key is ABSENT unless this is an acceptance, so every other event
       // keeps the exact payload it had before the marker existed.
       ...(args.acceptedPedido === true ? { acceptedPedido: true as const } : {}),
+      ...(args.acceptedGuestRequest === true ? { acceptedGuestRequest: true as const } : {}),
     } satisfies AppointmentScheduledData,
   });
 }

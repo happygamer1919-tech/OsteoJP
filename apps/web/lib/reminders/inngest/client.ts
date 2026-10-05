@@ -37,6 +37,16 @@ export type AppointmentScheduledData = {
    * `confirmed`, portal-origin row, and nothing on the row distinguishes them.
    */
   acceptedPedido?: true;
+  /**
+   * BOOK-CONFIRM, the public-form path (S-1004-A, R40). Present, and `true`,
+   * ONLY on the event for the appointment reception booked FOR a guest request
+   * and that the booking action linked to it (`acceptedGuestRequestTarget`,
+   * lib/scheduling/guest-link.ts). The appointment is a staff booking, so
+   * without this the confirmation dispatch stops at its origin gate. With it
+   * the dispatch READS the link row and only then sends: the marker is a
+   * request to look, never the authority.
+   */
+  acceptedGuestRequest?: true;
 };
 
 export type ReminderDueData = {
