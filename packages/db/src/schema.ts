@@ -2504,10 +2504,11 @@ export const guestBookingRequests = pgTable(
      * `parseGuestEmail` (src/guest-email.ts) before the insert; 0101's CHECK is a
      * backstop behind that rule and is never stricter than it.
      *
-     * DECLARED LAST, AFTER 0101 IS APPLIED, AND NEVER BEFORE. drizzle's INSERT
-     * names every column declared here, so this line on a database without the
-     * column makes the public form's write fail with 42703. It ships with the
-     * application change, which merges only after the apply.
+     * DECLARED LAST, AND ONLY ONCE 0101 WAS APPLIED (production, 2026-10-05).
+     * drizzle's INSERT names every column declared here, so this line on a
+     * database without the column makes the public form's write fail with 42703.
+     * That is why it shipped with the application change and not with the
+     * migration: the rule for the next column added to a table the app writes.
      *
      * PERSONAL DATA. Never logged, never in audit metadata, never in an error.
      */

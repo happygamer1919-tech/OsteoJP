@@ -17,8 +17,9 @@
  * vitest worker has no Supabase session, and `next/cache`. `runScoped`, RLS, the
  * patient insert, both UPDATEs and the audit writes are real.
  *
- * IT NEEDS 0101 (the column): this change merges only after 0101 is applied and
- * promoted. No real name, number or address: every address is under
+ * IT NEEDS 0101 (the column), which is on main as
+ * packages/db/migrations/0101_guest_request_email.sql and applied to production
+ * (2026-10-05). No real name, number or address: every address is under
  * example.invalid, and every row is found by this file's own tenant id.
  */
 import { randomUUID } from "node:crypto";

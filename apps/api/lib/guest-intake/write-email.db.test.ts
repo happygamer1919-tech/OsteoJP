@@ -8,9 +8,11 @@
  * request without one stores NULL (never the empty string, which 0101's CHECK
  * refuses), and everything `parseGuestEmail` admits, the CHECK admits.
  *
- * IT NEEDS 0101. `schema.ts` declares the column on this branch, so on a
- * database without it every INSERT here fails with 42703, which is the correct
- * answer: this change merges only after 0101 is applied and promoted.
+ * IT NEEDS 0101, WHICH IS APPLIED. The migration is
+ * packages/db/migrations/0101_guest_request_email.sql, on main and applied to
+ * production on 2026-10-05, so every stack built from the migrations has the
+ * column. `schema.ts` declares it, and on a database without it every INSERT
+ * here would fail with 42703: a red run, never a skip.
  *
  * SHARED DATABASE: every assertion is about rows this file created, found by its
  * own tenant id. No real name, number or address: the addresses are under

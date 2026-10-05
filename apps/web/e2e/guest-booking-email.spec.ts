@@ -11,8 +11,9 @@
  * at step 4 rather than lost, and that reception then SEES the address on the
  * request's row.
  *
- * IT NEEDS 0101 APPLIED on the stack it runs against, as the application change
- * does. Anonymous on the portal for the form; the default staff session for the
+ * IT NEEDS 0101 on the stack it runs against, as the application change does:
+ * the migration is on main and applied, so a stack built from the migrations
+ * has the column. Anonymous on the portal for the form; the default staff session for the
  * queue. Every address is unique per run and under example.invalid.
  *
  * FOUR STEPS OR FIVE, AND THE PAGE DECIDES (INTAKE-01), exactly as
