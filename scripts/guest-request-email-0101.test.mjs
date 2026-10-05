@@ -24,7 +24,7 @@
 //     time. R9's proofs 2 and 3 are fixed `no`, nothing can turn either to yes, there is no
 //     override arm, and no block carries a date;
 //   * EVERY CLOCK READ carries TZ=Europe/Lisbon and reads the zone's name in the same `date` call, and
-//     the next line stops unless it is WET or WEST (a zone that cannot be loaded answers UTC with exit
+//     the next line stops unless it is WET or WEST (a zone that cannot be loaded answers UTC's clock, exit
 //     0); one test runs the REAL `date` at fixed instants through the blocks' own clock lines;
 //   * EVERY STOP THAT CAN FIRE AFTER THE COMMIT (all of stage 2 and of the closing read, and stage 1's
 //     after the apply) says that 0101 is applied, that the write stands and that nothing is run again;
@@ -283,7 +283,7 @@ export const closedByTable = (d, t) => !WEEKDAY_TABLE.some(([a, b, open, close])
 
 /** The clock lines, exactly as both stages carry them. */
 export const CLOCK_READ = "DTZ=$(TZ=Europe/Lisbon date '+%u%H%M %Z') || { echo \"STOP: the Lisbon clock could not be read. Nothing was applied\"; exit 1; }";
-/** The zone is read in the SAME date call and must be Lisbon's: a zone that cannot be loaded reads UTC with exit 0, and UTC is an hour off in summer. */
+/** The zone is read in the SAME date call and must be Lisbon's: a zone that cannot be loaded answers with UTC's clock and exit 0, under a name that is not Lisbon's, and UTC is an hour off in summer. */
 export const CLOCK_ZONE = "echo \"${DTZ}\" | grep -qxE '[1-7][0-2][0-9][0-5][0-9] (WET|WEST)' || { echo \"STOP: the Lisbon clock did not read as a weekday (1 to 7), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded [${DTZ}]. Nothing was applied\"; exit 1; }";
 export const CLOCK_SPLIT = 'DT=$(echo "${DTZ}" | cut -c1-5)';
 export const CLOCK_FORMAT = "echo \"${DT}\" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo \"STOP: the Lisbon weekday and time did not split out of the clock reading. Nothing was applied\"; exit 1; }";
@@ -351,19 +351,42 @@ const WRITE_STANDS_IF = `If stage 1 ended with its line 0101 APPLIED, then ${WRI
 const STOP_TEXT = /echo "STOP: ([^"]+)"/;
 
 /**
+ * The sentence of a STOP whose OWN READ contradicts stage 1's marker. Such a STOP cannot also say
+ * "0101 IS APPLIED": it has just read that the journal does not hold it, or holds one row too few.
+ */
+export const STATE_UNKNOWN = "Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report";
+/** The STOPs where a contradicting read is possible, each named by how its line starts. Five, and no other. */
+export const CONTRADICTING_READS = Object.freeze({
+  stage2: ['[ "${FAILS}" = 0 ] || ', '[ "${JA}" = "$((J + 1))" ] || ', '[ "${HN}" = 1 ] || '],
+  closing: ["grep -qx 'journal rows on production: 99' ", "grep -qE '^[[:space:]]*APPLIED[[:space:]]+0101_guest_request_email[.]sql$' "],
+});
+
+/**
  * Stage 2 and the closing read run AFTER the commit. Every STOP of theirs says that 0101 is applied and
  * that nothing is to be run again; and it says so unconditionally only once the block has seen stage
- * 1's applied marker. `markerLine` is the start of the line that reads the marker.
+ * 1's applied marker. `markerLine` is the start of the line that reads the marker. The STOPs named in
+ * `contradicting` are the exception: there the block's own read disagrees with the marker, so the
+ * STOP says the state is UNKNOWN, and never that 0101 is applied.
  */
-export function postCommitProblems(block, markerLine) {
+export function postCommitProblems(block, markerLine, contradicting) {
   const problems = [];
   const lines = block.split("\n");
   const marker = lines.findIndex((l) => l.startsWith(markerLine));
   if (marker < 0) return ["the block never reads stage 1's applied marker"];
+  for (const start of contradicting) {
+    if (lines.filter((l) => l.startsWith(start) && STOP_TEXT.test(l)).length !== 1) problems.push(`the block has not exactly one STOP for the contradicting read ${start.slice(0, 40)}`);
+  }
   lines.forEach((l, i) => {
     const m = STOP_TEXT.exec(l);
     if (!m) return;
-    if (!m[1].includes(WRITE_STANDS)) problems.push(`line ${i + 1}: a post-commit STOP that does not say the write stands: ${m[1].slice(0, 70)}`);
+    if (contradicting.some((start) => l.startsWith(start))) {
+      if (i <= marker) problems.push(`line ${i + 1}: a contradicting read before the block has read the applied marker`);
+      else if (!m[1].includes(STATE_UNKNOWN)) problems.push(`line ${i + 1}: a STOP whose own read can contradict the marker does not say the state is UNKNOWN: ${m[1].slice(0, 60)}`);
+      else if (m[1].includes("IS APPLIED")) problems.push(`line ${i + 1}: a STOP says 0101 IS APPLIED while its own read says otherwise`);
+      return;
+    }
+    if (m[1].includes("Treat the state as UNKNOWN")) problems.push(`line ${i + 1}: a STOP calls the state UNKNOWN though its own read contradicts nothing`);
+    else if (!m[1].includes(WRITE_STANDS)) problems.push(`line ${i + 1}: a post-commit STOP that does not say the write stands: ${m[1].slice(0, 70)}`);
     else if (i <= marker && !m[1].includes(WRITE_STANDS_IF)) problems.push(`line ${i + 1}: a STOP says 0101 is applied before the block has read the applied marker`);
     else if (i > marker && m[1].includes(WRITE_STANDS_IF)) problems.push(`line ${i + 1}: a STOP is still conditional after the block has read the applied marker`);
   });
@@ -707,30 +730,72 @@ test("EVERY date CALL READS LISBON TIME AND ITS ZONE, and the next line refuses 
   assert.deepEqual(dateProblems('echo "the date is not a call"\nNOW=$(date +%s)'), ["line 2: a date call without TZ=Europe/Lisbon", "line 2: a date call that does not read the zone, alone on its line, into a variable, with its halt"]);
 });
 
-test("A POST-COMMIT STOP SAYS THE WRITE STANDS: every STOP of stage 2 and of the closing read, and stage 1's after the apply", () => {
+test("A POST-COMMIT STOP SAYS WHAT STANDS: the write, on every STOP of stage 2 and the closing read; UNKNOWN on the five whose own read contradicts the marker; and stage 1's after the apply", () => {
   const s1 = blockWith(doc, STAGE1);
   const s2 = blockWith(doc, STAGE2);
   const cl = blockWith(doc, CLOSING);
   const M2 = '[ -n "$(find /tmp/0101-applied.ok -mmin -60 2>/dev/null)" ]';
   const M3 = "test -f /tmp/0101-applied.ok";
-  assert.deepEqual(postCommitProblems(s2, M2), []);
-  assert.deepEqual(postCommitProblems(cl, M3), []);
+  const C2 = CONTRADICTING_READS.stage2;
+  const C3 = CONTRADICTING_READS.closing;
+  assert.deepEqual(postCommitProblems(s2, M2, C2), []);
+  assert.deepEqual(postCommitProblems(cl, M3, C3), []);
   assert.deepEqual(stageOnePostApplyProblems(s1), []);
   const stops = (b) => b.split("\n").filter((l) => l.includes('echo "STOP: ')).length;
   assert.ok(stops(s2) >= 40 && stops(cl) >= 25, `${stops(s2)} and ${stops(cl)} STOP lines`);
   // Three STOPs of stage 2 come before or at the marker read and are conditional; two of the closing read's.
   assert.equal(s2.split("If stage 1 ended with its line 0101 APPLIED, then").length - 1, 3);
   assert.equal(cl.split("If stage 1 ended with its line 0101 APPLIED, then").length - 1, 2);
-  // RED ARMS. One STOP that only says what failed, as the first draft's did.
-  const bare = swap(s2, `STOP: the journal reads \${JA} rows, not \${J} plus one. ${WRITE_STANDS}`, "STOP: the journal reads ${JA} rows, not ${J} plus one");
-  assert.match(postCommitProblems(bare, M2)[0], /a post-commit STOP that does not say the write stands: the journal reads/);
-  assert.equal(postCommitProblems(bare, M2).length, 1);
-  // "The write stands" without "run nothing again" is not enough.
-  assert.equal(postCommitProblems(s2.replaceAll(". Run nothing again, not stage 0 and not stage 1", ""), M2).length, stops(s2));
+  // EXACTLY FIVE STOPs say UNKNOWN, three and two; and stages 0 and 1, which run before the commit, never do.
+  assert.equal(s2.split(STATE_UNKNOWN).length - 1, 3);
+  assert.equal(cl.split(STATE_UNKNOWN).length - 1, 2);
+  for (const b of [blockWith(doc, STAGE0), s1]) assert.ok(!b.includes("Treat the state as UNKNOWN"));
+  const clean = (list) => list.map((x) => x.replace(/^line \d+: /, ""));
+
+  // RED ARMS, the flat sentence. One STOP that only says what failed, as the first draft's did.
+  const bare = swap(s2, `STOP: a count carry is not a number. ${WRITE_STANDS}`, "STOP: a count carry is not a number");
+  assert.match(postCommitProblems(bare, M2, C2)[0], /a post-commit STOP that does not say the write stands: a count carry/);
+  assert.equal(postCommitProblems(bare, M2, C2).length, 1);
+  // "The write stands" without "run nothing again" is not enough, on any STOP of either kind.
+  assert.equal(postCommitProblems(s2.replaceAll(". Run nothing again, not stage 0 and not stage 1", ""), M2, C2).length, stops(s2));
   // An unconditional claim before the marker has been read, and a conditional one after it.
-  assert.match(postCommitProblems(swap(cl, `STOP: the apply worktree is not there. If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`, `STOP: the apply worktree is not there. ${WRITE_STANDS}`), M3)[0], /says 0101 is applied before the block has read the applied marker/);
-  assert.match(postCommitProblems(swap(cl, `STOP: stage 2 left no pass mark, so it did not pass. ${WRITE_STANDS}`, `STOP: stage 2 left no pass mark, so it did not pass. If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`), M3)[0], /still conditional after the block has read the applied marker/);
-  assert.deepEqual(postCommitProblems(s2.replace(M2, '[ -n "$(find /tmp/0101-other.ok -mmin -60 2>/dev/null)" ]'), M2), ["the block never reads stage 1's applied marker"]);
+  assert.match(postCommitProblems(swap(cl, `STOP: the apply worktree is not there. If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`, `STOP: the apply worktree is not there. ${WRITE_STANDS}`), M3, C3)[0], /says 0101 is applied before the block has read the applied marker/);
+  assert.match(postCommitProblems(swap(cl, `STOP: stage 2 left no pass mark, so it did not pass. ${WRITE_STANDS}`, `STOP: stage 2 left no pass mark, so it did not pass. If stage 1 ended with its line 0101 APPLIED, then ${WRITE_STANDS}`), M3, C3)[0], /still conditional after the block has read the applied marker/);
+  assert.deepEqual(postCommitProblems(s2.replace(M2, '[ -n "$(find /tmp/0101-other.ok -mmin -60 2>/dev/null)" ]'), M2, C2), ["the block never reads stage 1's applied marker"]);
+
+  // RED ARMS, the five. Each one as the second review found it: "the sha256 of 0101 is in the journal 0
+  // times, not once. 0101 IS APPLIED and the write stands".
+  for (const [b, marker, set] of [[s2, M2, C2], [cl, M3, C3]]) {
+    for (const start of set) {
+      const line = b.split("\n").find((l) => l.startsWith(start));
+      assert.ok(line && line.includes(STATE_UNKNOWN), start);
+      // Replacements are FUNCTIONS here: the closing read's grep line holds `$'`, which a replacement STRING reads as "the text after the match".
+      const flat = line.replace(/Stage 1 recorded that it applied 0101[^"]*/, () => `${WRITE_STANDS}; the lead rules`);
+      assert.notEqual(flat, line);
+      const flatProblems = clean(postCommitProblems(b.replace(line, () => flat), marker, set));
+      assert.equal(flatProblems.length, 1, start);
+      assert.ok(flatProblems[0].startsWith("a STOP whose own read can contradict the marker does not say the state is UNKNOWN: "), flatProblems[0]);
+      // Both sentences on one line is the contradiction itself.
+      const both = line.replace(STATE_UNKNOWN, () => `0101 IS APPLIED and the write stands. ${STATE_UNKNOWN}`);
+      assert.deepEqual(clean(postCommitProblems(b.replace(line, () => both), marker, set)), ["a STOP says 0101 IS APPLIED while its own read says otherwise"], start);
+      // The line gone: the rule does not quietly lose it.
+      assert.ok(postCommitProblems(b.replace(`${line}\n`, ""), marker, set).some((x) => x.startsWith("the block has not exactly one STOP for the contradicting read")), start);
+    }
+  }
+  // A contradicting read placed BEFORE the marker read has no marker to contradict: refused.
+  const hn = s2.split("\n").find((l) => l.startsWith('[ "${HN}" = 1 ] || '));
+  const moved = s2.replace(`${hn}\n`, () => "").replace(M2, () => `${hn}\n${M2}`);
+  assert.notEqual(moved, s2);
+  assert.deepEqual(clean(postCommitProblems(moved, M2, C2)), ["a contradicting read before the block has read the applied marker"]);
+  // UNKNOWN is not a softer sentence to reach for: on a STOP whose read contradicts nothing it is refused.
+  const carryLine = s2.split("\n").find((l) => l.includes("STOP: a count carry is not a number. "));
+  const soft = s2.replace(carryLine, () => carryLine.replace(/0101 IS APPLIED and the write stands[^"]*/, () => `${STATE_UNKNOWN}; the lead rules`));
+  assert.notEqual(soft, s2);
+  assert.deepEqual(clean(postCommitProblems(soft, M2, C2)), ["a STOP calls the state UNKNOWN though its own read contradicts nothing"]);
+  // The rule is told which five: told none, it refuses each of them as it would a flat STOP gone wrong.
+  assert.equal(postCommitProblems(s2, M2, []).length, 3);
+  assert.equal(postCommitProblems(cl, M3, []).length, 2);
+
   // Stage 1: the marker's STOP, and the apply's own.
   assert.deepEqual(stageOnePostApplyProblems(swap(s1, `so 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1.`, "so 0101 is applied.")), ["the STOP after a committed apply does not say the write stands and nothing is run again"]);
   assert.deepEqual(stageOnePostApplyProblems(swap(s1, "Do not read this as nothing applied: ", "")), ["the apply's STOP does not say it may have applied and that nothing else is pasted"]);
@@ -799,20 +864,30 @@ test("THE REAL date, at fixed instants, through the blocks' own clock lines: the
       assert.equal(r.status, 0, `${iso}: ${r.stdout}${r.stderr}`);
       assert.equal(r.stdout.trim(), want, iso);
     }
-    // RED ARMS, with the real date. A zone name that cannot be loaded reads UTC with exit 0: at Monday
-    // 08:30 Lisbon summer time that is 07:30, "closed". The zone check is what stops it.
-    const stop = /^STOP: the Lisbon clock did not read as a weekday \(1 to 7\), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded \[10730 UTC\]/m;
+    // RED ARMS, with the real date. A zone name that cannot be loaded does not fail: date answers with
+    // UTC's clock and exit 0. At Monday 08:30 Lisbon summer time that is 07:30, "closed". WHAT IS
+    // ASSERTED IS THE PROPERTY, NOT ONE SYSTEM'S SPELLING: the zone's name is then neither WET nor WEST
+    // (BSD date prints UTC, GNU date prints the first letters of the misspelt name, "Europe"), and the
+    // block STOPs with nothing after it. This test runs under GNU date in CI and BSD date on a Mac.
+    const zoneIn = (out) => (/may not have loaded \[(?:[1-7][0-9]{4}|[0-9]{12}) ?([^\]\n]*)\]/.exec(out) ?? [])[1];
+    const notLisbon = (z) => typeof z === "string" && z !== "WET" && z !== "WEST";
     const typo = run(clock.replace("TZ=Europe/Lisbon date", "TZ=Europe/Lisbonn date"), "2026-10-12T07:30:00Z");
     assert.equal(typo.status, 1, typo.stdout);
-    assert.match(typo.stdout, stop);
-    assert.doesNotMatch(typo.stdout, /READ/);
-    // The same line with no TZ at all reads the process's zone, here Tokyo's.
+    assert.match(typo.stdout, /^STOP: the Lisbon clock did not read as a weekday \(1 to 7\), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded \[10730 /m);
+    assert.ok(notLisbon(zoneIn(typo.stdout)), `the misspelt zone read [${zoneIn(typo.stdout)}]`);
+    assert.doesNotMatch(typo.stdout, /^READ /m);
+    // The same line with no TZ at all reads the process's own zone, which is not Lisbon's.
     const none = run(clock.replace("TZ=Europe/Lisbon date", "date"), "2026-10-12T07:30:00Z");
     assert.equal(none.status, 1, none.stdout);
-    assert.match(none.stdout, /may not have loaded \[11630 JST\]/);
-    // THE CONTROL OF THE RED ARMS: without the zone line, the misspelt zone reads 07:30 and says closed.
+    assert.match(none.stdout, /^STOP: the Lisbon clock did not read as a weekday/m);
+    assert.ok(notLisbon(zoneIn(none.stdout)), `with no TZ the zone read [${zoneIn(none.stdout)}]`);
+    assert.doesNotMatch(none.stdout, /^READ /m);
+    // THE CONTROL OF THE RED ARMS: without the zone line, the misspelt zone reads 07:30 and says closed,
+    // under whatever name the system gave it.
     const blind = run(clock.replace("TZ=Europe/Lisbon date", "TZ=Europe/Lisbonn date").replace(`${CLOCK_ZONE}\n`, ""), "2026-10-12T07:30:00Z");
-    assert.equal(blind.stdout.trim(), "READ 10730 UTC 10730 closed");
+    assert.equal(blind.status, 0, blind.stdout);
+    const read = /^READ 10730 (\S*) 10730 closed$/.exec(blind.stdout.trim());
+    assert.ok(read && notLisbon(read[1]), `the misspelt zone, unchecked, read [${blind.stdout.trim()}]`);
     // The YYYYMMDDHHMM reads of stages 1, 2 and the closing read: the same four lines in each.
     for (const marker of [STAGE1, STAGE2, CLOSING]) {
       const lines = blockWith(doc, marker).split("\n");
@@ -823,7 +898,9 @@ test("THE REAL date, at fixed instants, through the blocks' own clock lines: the
       assert.equal(run(four, "2026-12-31T23:30:00Z").stdout.trim(), "READ 202612312330", marker);
       const bad = run(four.replace("TZ=Europe/Lisbon date", "TZ=Europe/Lisbonn date"), "2026-10-09T19:59:00Z");
       assert.equal(bad.status, 1, marker);
-      assert.match(bad.stdout, /^STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST[^\n]*\[202610091959 UTC\]/m, marker);
+      assert.match(bad.stdout, /^STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST[^\n]*\[202610091959 /m, marker);
+      assert.ok(notLisbon(zoneIn(bad.stdout)), `${marker}: the misspelt zone read [${zoneIn(bad.stdout)}]`);
+      assert.doesNotMatch(bad.stdout, /^READ /m, marker);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -1008,9 +1085,9 @@ case "$n" in
     [ "$1" = "$HARNESS_DBURL" ] || unexpected "a database URL that is not the harness's";
     case "$*" in
       *precheck-0101-guest-request-email.sql*) exec ${R("cat")} "$HARNESS_FIX/pre.out";;
-      *postcheck-0101-guest-request-email.sql*) exec ${R("cat")} "$HARNESS_FIX/post.out";;
+      *postcheck-0101-guest-request-email.sql*) exec ${R("cat")} "$HARNESS_FIX/\${HARNESS_POST:-post.out}";;
       *public.locations*) printf 'BEGIN\\n%s\\n' "$HARNESS_CLINICS"; exit 0;;
-      *"where hash = "*) printf 'BEGIN\\n1\\n'; exit 0;;
+      *"where hash = "*) printf 'BEGIN\\n%s\\n' "\${HARNESS_HASHN:-1}"; exit 0;;
       *"limit 3"*) exec ${R("cat")} "$HARNESS_FIX/last3.out";;
       *"select count(*) from drizzle.__drizzle_migrations"*) printf 'BEGIN\\n%s\\n' "$HARNESS_ROWS"; exit 0;;
     esac
@@ -1025,6 +1102,7 @@ case "$n" in
       packages/db/scripts/verified-migrate.mjs) exec ${R("cat")} "$HARNESS_FIX/vm.out";;
       --env-file=*) f="\${1#--env-file=}"; [ -f "$f" ] || { echo "node: $f: not found" >&2; exit 9; }
         [ "$2" = packages/db/scripts/read-applied-migrations.mjs ] || unexpected "$@";
+        if [ "$HARNESS_READER" = without-0101 ]; then printf 'journal rows on production: %s\\n  APPLIED  0100_revoke_maintain.sql\\n  PENDING  0101_guest_request_email.sql\\npending on this ref: 1\\njournal rows with no matching file on this ref: 0\\n' "$HARNESS_ROWS"; exit 0; fi
         printf 'journal rows on production: %s\\n  APPLIED  0100_revoke_maintain.sql\\n  APPLIED  0101_guest_request_email.sql\\npending on this ref: 0\\njournal rows with no matching file on this ref: 0\\n' "$HARNESS_ROWS"; exit 0;;
     esac
     unexpected "$@";;
@@ -1068,7 +1146,9 @@ function harnessFixtures() {
     `${TAG} present by sha256: yes`, "OK: the journal moved by exactly the pending count and carries the approved sha256.", "",
   ].join("\n");
   const last3 = " id | hash | created_at\n 99 | 36a1ed54 | 1788502200000\n 98 | 80f85018 | 1788502100000\n 97 | fbc5e545 | 1788502000000\n(3 rows)\n";
-  return { "pre.out": preOut, "post.out": postOut, "last3.out": last3, "vm.out": vm };
+  // A post-check in which one verdict reads FAIL: eighteen OK and verdict 18, "0101 is in the journal by hash".
+  const postFail = postOut.replace(row("18. post-check verdict", "harness", "OK"), row("18. post-check verdict", "harness", "FAIL"));
+  return { "pre.out": preOut, "post.out": postOut, "post-fail.out": postFail, "last3.out": last3, "vm.out": vm };
 }
 
 /** The repository files the blocks hash or read, copied into the fake apply worktree as they are. */
@@ -1161,6 +1241,7 @@ export async function runOnce(cfg, runId, fault) {
     HARNESS_ROWS: String(cfg.rows ?? 99), HARNESS_CLINICS: cfg.clock.clinics,
     HARNESS_DHHMM: cfg.clock.dhhmm, HARNESS_STAMP: cfg.clock.stamp, HARNESS_ZONE: cfg.clock.zone ?? "WEST",
     HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3), HARNESS_FAIL_MODE: fault?.mode ?? "",
+    HARNESS_HASHN: cfg.db?.hashN ?? "1", HARNESS_POST: cfg.db?.post ?? "post.out", HARNESS_READER: cfg.db?.reader ?? "",
     HARNESS_HOOK_AFTER: fault?.hookAfter ?? "", HARNESS_HOOK_MKDIR: fault?.hookMkdir ? join(run, "tmp", fault.hookMkdir) : "",
   };
   const r = await runShell(cfg.shell, text, env, join(cfg.base, "apply"));
@@ -1620,6 +1701,48 @@ test("A RECORD THAT READS EMPTY OR SHORT, and a clock call without its zone: eac
         assert.notEqual(r.code, 0, `${shell} ${name} without TZ: ${r.out.slice(-300)}`);
         assert.match(r.unexpected, /date ran without TZ=Europe\/Lisbon/, `${shell} ${name}`);
         assert.ok(!HARNESS_BLOCKS[name].success.some((x) => r.out.includes(x)), `${shell} ${name}`);
+      }
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("A READ THAT CONTRADICTS THE MARKER: stage 2 and the closing read, run whole with a database that does not hold 0101, STOP saying the state is UNKNOWN and never that 0101 is applied", async () => {
+  const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+  const base = mkdtempSync(join(tmpdir(), "fault-0101-contra-"));
+  try {
+    prepareHarness(base, doc);
+    for (const shell of shells) {
+      // [block, what the faked database answers, the start of the STOP]. In each the applied marker is
+      // there (the harness's records), so the block's own read is the only thing that disagrees.
+      const cases = [
+        ["stage2", { hashN: "0" }, "STOP: the sha256 of 0101 is in the journal 0 times, not once. "],
+        ["stage2", { hashN: "2" }, "STOP: the sha256 of 0101 is in the journal 2 times, not once. "],
+        ["stage2", { rows: 98 }, "STOP: the journal reads 98 rows, not 98 plus one. "],
+        ["stage2", { rows: 100 }, "STOP: the journal reads 100 rows, not 98 plus one. "],
+        ["stage2", { post: "post-fail.out" }, "STOP: the post-check printed [1] FAIL verdicts, or its transcript could not be read. "],
+        ["closing", { rows: 98 }, "STOP: the journal read after the apply does not say 99. "],
+        ["closing", { reader: "without-0101" }, "STOP: the journal read does not list 0101 as APPLIED. "],
+      ];
+      for (const [name, db, start] of cases) {
+        const cfg = harnessConfig(doc, name, CLOSED, shell, base);
+        const r = await runOnce({ ...cfg, rows: db.rows, db }, `${shell}-contra-${name}-${JSON.stringify(db).replace(/\W+/g, "-")}`, null);
+        const tag = `${shell} ${name} ${JSON.stringify(db)}`;
+        assert.equal(r.code, 1, `${tag}: ${r.out.slice(-500)}`);
+        const stop = r.out.split("\n").filter((l) => l.startsWith("STOP: "));
+        assert.equal(stop.length, 1, `${tag}: ${stop.join(" | ")}`);
+        assert.ok(stop[0].startsWith(`${start}${STATE_UNKNOWN}`), `${tag}: ${stop[0]}`);
+        assert.ok(!stop[0].includes("IS APPLIED") && !stop[0].includes("the write stands"), `${tag}: ${stop[0]}`);
+        assert.ok(!r.out.includes("TOOL-CHAIN-CONTINUED") && !HARNESS_BLOCKS[name].success.some((x) => r.out.includes(x)), tag);
+        // No pass mark: after a contradicting read in stage 2 the closing read refuses.
+        assert.ok(!r.markersAtEnd.includes("0101-stage2.ok"), tag);
+      }
+      // THE CONTROLS: the same blocks with a database that DOES hold it pass (hash once, 99 rows, 0101 listed).
+      for (const name of ["stage2", "closing"]) {
+        const ok = await runOnce(harnessConfig(doc, name, CLOSED, shell, base), `${shell}-contra-${name}-control`, null);
+        assert.equal(ok.code, 0, `${shell} ${name}: ${ok.out.slice(-400)}`);
+        assert.ok(!ok.out.includes("UNKNOWN"));
       }
     }
   } finally {

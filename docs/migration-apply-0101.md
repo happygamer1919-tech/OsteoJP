@@ -221,9 +221,11 @@ weekday dimension:
 - It reads the Lisbon weekday, the time AND THE ZONE in ONE `date` call
   (`TZ=Europe/Lisbon date '+%u%H%M %Z'`: the ISO weekday 1 to 7, HHMM, then the zone's name), and
   STOPs unless the zone reads exactly `WET` or `WEST`. **A zone that cannot be loaded does not
-  fail: `date` answers in UTC with exit 0** (measured: `TZ=Europe/Lisbonn date +%Z` prints `UTC`),
-  and in summer UTC is an hour behind Lisbon, so Monday 08:30 would read 07:30, "closed". The
-  zone's name in the same call is what refuses that. It then refuses a reading that is not five
+  fail: `date` answers with UTC's clock and exit 0, under a zone name that is not Lisbon's**
+  (measured with a misspelt zone, `TZ=Europe/Lisbonn date +%Z`: BSD `date` on macOS prints `UTC`,
+  GNU `date` on Linux prints `Europe`; neither prints `WET` or `WEST`). In summer UTC is an hour
+  behind Lisbon, so Monday 08:30 would read 07:30, "closed". The zone's name in the same call is
+  what refuses that, on either system. It then refuses a reading that is not five
   such digits, and decides `closed` or `open` by the table. **Every other clock read in every
   block (the run window's `YYYYMMDDHHMM`) reads the zone the same way and stops the same way.** A boundary minute belongs to the hour it starts: Friday 20:59 is
   open and Friday 21:00 is closed; Saturday 12:59 is open and Saturday 13:00 is closed; Sunday
@@ -738,17 +740,17 @@ echo "--- the post-check, inside one READ ONLY transaction, so the server is wha
 rm -f /tmp/0101-postcheck.out || { echo "STOP: the old post-check transcript could not be removed. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before="${J}" -v tables_before="${T}" -v secdef_before="${S}" -v relfilenode_before="${RF}" -v table_columns_md5="${TC}" -v table_constraints_md5="${TK}" -v table_indexes_md5="${TI}" -v policies_md5="${PM}" -v functions_md5="${FM}" -v relation_acl_md5="${RM}" -v column_acl_md5="${CM}" -v default_acl_md5="${DM}" -v dml_profile_md5="${DP}" -c "begin read only" -f scripts/db/postcheck-0101-guest-request-email.sql -c "rollback" 2>&1 | tee /tmp/0101-postcheck.out || { echo "STOP: the post-check did not complete (psql's lines are above), or its transcript could not be written. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 FAILS=$(grep -cE '\|[[:space:]]*FAIL[[:space:]]*$' /tmp/0101-postcheck.out || true)
-[ "${FAILS}" = 0 ] || { echo "STOP: the post-check printed [${FAILS}] FAIL verdicts, or its transcript could not be read. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "${FAILS}" = 0 ] || { echo "STOP: the post-check printed [${FAILS}] FAIL verdicts, or its transcript could not be read. Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report; the lead rules"; exit 1; }
 OKS=$(grep -cE '\|[[:space:]]*OK[[:space:]]*$' /tmp/0101-postcheck.out || true)
 [ "${OKS}" = 19 ] || { echo "STOP: the post-check printed ${OKS} OK verdicts, not 19. A verdict that is missing prints no FAIL. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 
 echo "--- SR-51: the journal grew by exactly one, and the row is 0101 by hash"
 JA=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations") || { echo "STOP: the journal count could not be read (psql's lines are above). 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 JA=$(echo "${JA}" | tail -1)
-[ "${JA}" = "$((J + 1))" ] || { echo "STOP: the journal reads ${JA} rows, not ${J} plus one. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "${JA}" = "$((J + 1))" ] || { echo "STOP: the journal reads ${JA} rows, not ${J} plus one. Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report; the lead rules"; exit 1; }
 HN=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) from drizzle.__drizzle_migrations where hash = '${SHA0101}'") || { echo "STOP: the journal could not be read by hash (psql's lines are above). 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
 HN=$(echo "${HN}" | tail -1)
-[ "${HN}" = 1 ] || { echo "STOP: the sha256 of 0101 is in the journal ${HN} times, not once. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; stage 2 did not pass, and it and the closing read (READ ONLY) run again only on the owner's or the lead's word"; exit 1; }
+[ "${HN}" = 1 ] || { echo "STOP: the sha256 of 0101 is in the journal ${HN} times, not once. Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report; the lead rules"; exit 1; }
 echo "journal rows before=${J} after=${JA}, 0101 present by hash"
 
 echo "--- the journal read: the last three rows, as applied"
@@ -773,12 +775,21 @@ A missing carry makes the post-check itself STOP with psql exit 3 before any ver
 closing read. Any other ending is a `STOP:` line and exit 1, and the write of stage 1 stands.
 `/tmp/0101-stage2.ok` is written last, so after any STOP the closing read refuses.
 
-**EVERY STOP OF STAGE 2 AND OF THE CLOSING READ SAYS SO ITSELF,** because each fires after the
+**EVERY STOP OF STAGE 2 AND OF THE CLOSING READ SAYS WHAT STANDS,** because each fires after the
 commit and is read by somebody deciding what to do next: `0101 IS APPLIED and the write stands. Run
 nothing again, not stage 0 and not stage 1`. The first three STOPs of stage 2 and the first two of
 the closing read come before the block has read stage 1's applied marker, so they say it
 conditionally (`If stage 1 ended with its line 0101 APPLIED, then ...`); every later one says it
-flatly. The script test fails a post-commit STOP that lacks the sentence.
+flatly, **with five exceptions, where the block's own read of the database CONTRADICTS the
+marker.** A STOP cannot say "the sha256 of 0101 is in the journal 0 times" and "0101 IS APPLIED" in
+one breath. On those five the STOP says exactly this and no more: `Stage 1 recorded that it applied
+0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and
+not stage 1, and report; the lead rules`. They are, in stage 2, a FAIL verdict of the post-check (a
+FAIL of verdict 1, 2, 17 or 18 is such a contradiction, and the block does not know which verdict
+failed), the journal count that is not the pre-check's plus one, and the count of 0101's sha256 in
+the journal that is not 1; and in the closing read, a journal that does not read 99 and a read that
+does not list 0101 as APPLIED. The script test requires the flat sentence on every other post-commit
+STOP, the UNKNOWN sentence on exactly those five, and never both on one line.
 
 ## THE CLOSING JOURNAL READ. READ ONLY
 
@@ -829,8 +840,8 @@ echo "reader: ${RW}, its target module: ${MW} (at the recorded sha ${REC})"
 [ "${RW}" = "${SHAREADER}" ] || { echo "STOP: the migration reader at the recorded sha is not the pinned file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 [ "${MW}" = "${SHAPTM}" ] || { echo "STOP: the reader's target module at the recorded sha is not the pinned file. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 node --env-file=/Users/ivan/osteojp-secrets/new-prod.env ${READER} 2>&1 | tee /tmp/0101-journal-after.out || { echo "STOP: the journal read failed or its target check refused (its lines are above), or its output could not be written. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
-grep -qx 'journal rows on production: 99' /tmp/0101-journal-after.out || { echo "STOP: the journal read after the apply does not say 99. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
-grep -qE '^[[:space:]]*APPLIED[[:space:]]+0101_guest_request_email[.]sql$' /tmp/0101-journal-after.out || { echo "STOP: the journal read does not list 0101 as APPLIED. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
+grep -qx 'journal rows on production: 99' /tmp/0101-journal-after.out || { echo "STOP: the journal read after the apply does not say 99. Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report; the lead rules"; exit 1; }
+grep -qE '^[[:space:]]*APPLIED[[:space:]]+0101_guest_request_email[.]sql$' /tmp/0101-journal-after.out || { echo "STOP: the journal read does not list 0101 as APPLIED. Stage 1 recorded that it applied 0101, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report; the lead rules"; exit 1; }
 grep -qx 'pending on this ref: 0' /tmp/0101-journal-after.out || { echo "STOP: the journal read finds a migration pending on the recorded sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 grep -qx 'journal rows with no matching file on this ref: 0' /tmp/0101-journal-after.out || { echo "STOP: the journal holds a row with no matching file on the recorded sha. 0101 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word"; exit 1; }
 echo "CLOSING READ: the journal reads 99, 0101 is APPLIED, and nothing is pending on the recorded sha."
@@ -1039,8 +1050,10 @@ reader run after it; and with `WET` each passes as with `WEST`. In stage 1, with
 three reads answering `UTC`, the block STOPs at the arm, after the pre-check and before the apply.
 **THE REAL `date`** is not stubbed in one test: the blocks' own clock lines run against the system's
 `date` at ten fixed instants (the six ruled minutes, Monday 08:30 summer time, and three in winter
-time), in a process whose own zone is Tokyo; a misspelt zone reads `UTC` and STOPs, and a line with
-no `TZ=` reads `JST` and STOPs.
+time), in a process whose own zone is Tokyo; a misspelt zone reads a zone name that is neither
+`WET` nor `WEST` and STOPs, and so does a line with no `TZ=` at all. The test asserts that
+property, not one system's spelling of the name: it runs under GNU `date` in CI and under BSD
+`date` on the apply machine.
 
 **THE WEEKDAY TABLE** runs stage 0 and stage 1 whole at the six minutes the ruling names (Friday
 20:59 open, Friday 21:00 closed, Saturday 12:59 open, Saturday 13:00 closed, Sunday 15:00 closed,
@@ -1137,11 +1150,18 @@ ends in ROLLBACK, and the post-check runs inside the block's `begin read only`.
 
 **R4 on the promoted pull request has not run** (NOT READY step 3).
 
+**A second independent review, of `dfca0530`, 2026-10-05: one MAJOR and one MINOR, both fixed in
+the commit after it.** MAJOR, in CI only: the real-`date` test pinned BSD's answer for a misspelt
+zone (`UTC`), and GNU `date` answers `Europe`, so the test would have been red on the ubuntu runner
+though every block is right on both. It now asserts the property (the zone is neither `WET` nor
+`WEST`, and the block STOPs). MINOR: five post-commit STOPs said `0101 IS APPLIED` while their own
+read said otherwise; they now say the state is UNKNOWN (see "WHAT THE EXIT MEANS" under stage 2).
+
 **An independent review of the first commit (`7bd92132`) and of the draft dispatch, 2026-10-04:
 DEFECTS, no BLOCKER, no MAJOR, four MINOR. All four are fixed in the commit after it:**
 
-1. **A zone that cannot be loaded passed instead of stopping.** `date` answers UTC with exit 0 for
-   a zone it cannot load. Every clock read now reads `%Z` in the same call and STOPs unless it is
+1. **A zone that cannot be loaded passed instead of stopping.** `date` answers with UTC's clock and
+   exit 0 for a zone it cannot load. Every clock read now reads `%Z` in the same call and STOPs unless it is
    `WET` or `WEST` (section 4); fault-injected ("A ZONE THAT DID NOT LOAD") and run against the real
    `date`.
 2. **Stage 2 STOPs that fire after the commit did not say the write stands.** Every STOP of stage 2
@@ -1213,3 +1233,28 @@ The sidecar was regenerated for every document mutant.
   mutant was re-run and killed.
 - **Not swept:** the two blocks of GREEN's draft dispatch, which are outside the repository. They
   were re-run on 14 clock points and with a clock answering UTC, GMT and no zone, in both shells.
+
+**The third sweep, 2026-10-05, over the lines the second review changed only.** The sidecar was regenerated for every document mutant.
+
+| Part | Mutants | Killed | Survived |
+|---|---|---|---|
+| T1. each of the five contradicting-read STOPs: made flat again; given both sentences; its UNKNOWN sentence removed; "Run nothing again ... and report" removed; "Treat the state as UNKNOWN" removed; its halt stripped | 30 | 30 | 0 |
+| T2. each flat post-commit STOP of stage 2 and the closing read softened to the UNKNOWN sentence | 71 | 71 | 0 |
+| T3. IN STEP: a contradicting-read STOP made flat AND dropped from the test's list, static test not run, so only the whole-block arm can see it | 5 | 5 | 0 |
+| T3b. a contradicting-read STOP that says UNKNOWN and then `0101 IS APPLIED` as well, against the whole-block arm | 1 | 1 | 0 |
+| T4. a new rule or assertion of the script test loosened | 9 | 5 | 1 fixed and re-run killed; 3 that are not mutants of a rule, below |
+| T5. IN STEP: the clock's zone check admits a name that is not Lisbon's, in the document and the test's pin together, static date rule off, against the real-`date` arm | 2 | 2 | 0 |
+
+- **T4, one real gap, fixed in this sweep:** the rule "a contradicting read before the marker read
+  is refused" had no control. One was added (the hash-count STOP moved above the marker read), and
+  the rule was removed again: killed.
+- **T4, three survivors that are assertions removed from a passing test,** which nothing can kill
+  on an unmutated document: the two assertions of the whole-block arm and the zone-name check of the
+  real-`date` arm. Each was therefore tried the right way round, with the DOCUMENT mutated and the
+  assertion in place: T3, T3b and T5, all killed.
+- **Linux.** The script test was run whole inside a Linux container (`node:20-bookworm`, GNU
+  coreutils 9.1, a read-only bind mount, `GITHUB_ACTIONS=true` as on the runner): 34 tests, 32
+  passed, 2 skipped (the two zsh arms, by the repository's recorded convention), 0 failed. The test
+  as the second review read it (`dfca0530`) was run the same way and failed on exactly the reviewed
+  line, `[10730 Europe]` where `[10730 UTC]` was pinned. CI runs Node 22 on ubuntu; the container
+  was Node 20, the one Linux image already on the build machine.
