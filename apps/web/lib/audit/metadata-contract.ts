@@ -83,27 +83,39 @@ import "server-only";
  * ==========================================================================
  * WHAT IT DOES NOT COVER, STATED SO THE GAP IS KNOWN RATHER THAN ASSUMED
  * ==========================================================================
- * SEVEN MODULES INSERT INTO `audit_log` DIRECTLY, without going through any
- * helper, and this guard cannot see them: reminders/messaging-check.ts,
- * reminders/inbound-store.ts, reminders/confirm-redeem.ts,
- * reminders/inbound-reply.ts, integrations/ifthenpay/ledger-drizzle.ts,
- * apps/admin/lib/tenants.ts and packages/db/src/provision.ts.
+ * SIX MODULES INSERT INTO `audit_log` DIRECTLY, without going through any
+ * helper, and this guard cannot see them: reminders/inbound-store.ts,
+ * reminders/confirm-redeem.ts, reminders/inbound-reply.ts,
+ * integrations/ifthenpay/ledger-drizzle.ts, apps/admin/lib/tenants.ts and
+ * packages/db/src/provision.ts. ALL SIX WRITE ONLY IDS, ENUMS, COUNTS AND
+ * HASHES - checked, not assumed.
  *
- * SIX OF THE SEVEN WRITE ONLY IDS, ENUMS, COUNTS AND HASHES - checked, not
- * assumed. THE SEVENTH IS A DELIBERATE, DOCUMENTED EXCEPTION AND IT IS THE
- * REASON THIS GUARD LIVES IN THE HELPERS RATHER THAN AT THE TABLE:
+ * ==========================================================================
+ * THERE USED TO BE A SEVENTH, AND IT WAS A NAMED EXCEPTION. IT IS WITHDRAWN.
+ * ==========================================================================
+ * `reminders/messaging-check.ts` wrote `metadata.failure` - THE PROVIDER'S OWN
+ * ERROR MESSAGE, trimmed to 300 characters - and this header defended it: "it
+ * contains no patient field: the only interpolated value is the provider's
+ * message. It is free text and it is NOT patient PII."
  *
- *   `reminders/messaging-check.ts` writes `metadata.failure` - THE PROVIDER'S
- *   OWN ERROR MESSAGE, trimmed to 300 characters. Twilio's wording is the whole
- *   diagnostic value of that page ("is not a valid phone number", "is not
- *   currently reachable"), its own comment reasons about it, and it contains no
- *   patient field: the only interpolated value is the provider's message. It is
- *   free text and it is NOT patient PII, and those are different things.
+ * THAT REASONING WAS WRONG, AND THE EVIDENCE WAS IN THE SAME DIRECTORY. Twilio
+ * writes the RECIPIENT into its error message ("The 'To' number +351... is not
+ * a mobile number"), which clients.ts states above `ProviderSendError` and
+ * which messaging-check's own test fixture reproduced. So the number an owner
+ * typed went, in clear, into an append-only table. The exception was "free
+ * text that happens to be safe", and free text is never that: nobody controls
+ * what a third party puts in a sentence.
  *
- * A guard at the table level would refuse it and break the owner's messaging
- * diagnostic. So the boundary is the shared helper, and the exception is named
- * here instead of being discovered later as a mystery. It is also what a
- * non-zero result from `scripts/audit-free-text-count.sql` will mostly contain.
+ * Since 2026-10-04 that file writes a reason from a closed list, the
+ * provider's numeric error code and its HTTP status, and passes the row
+ * through `assertPiiFreeAuditMetadata` itself, so it is a GUARDED writer and
+ * is no longer on the list above. Rows written before that date may still hold
+ * provider text; they are what a non-zero result from
+ * `scripts/audit-free-text-count.sql` will mostly contain.
+ *
+ * WHY THE GUARD STILL LIVES IN THE HELPERS AND NOT AT THE TABLE: the six
+ * modules above are not all in this app, and a table-level rule would have to
+ * be a database constraint - a migration, and a different decision.
  */
 
 const AUDIT_STRING_MAX = 64;
