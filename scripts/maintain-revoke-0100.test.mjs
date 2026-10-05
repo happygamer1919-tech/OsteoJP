@@ -1088,6 +1088,12 @@ export function prepareHarness(base, docText) {
     mkdirSync(dirname(join(base, "apply", f)), { recursive: true });
     copyFileSync(join(ROOT, f), join(base, "apply", f));
   }
+  // The apply tree's journal is the journal AS OF 0100: the live one, cut after 0100's entry. A copy of the live
+  // journal moves the "newest entry" this document's stage 0 asserts the day a later migration is promoted.
+  const live = JSON.parse(readFileSync(join(ROOT, "packages/db/migrations/meta/_journal.json"), "utf8"));
+  const at = live.entries.findIndex((e) => e.tag === "0100_revoke_maintain");
+  assert.ok(at >= 0, "the live journal no longer holds 0100");
+  writeFileSync(join(base, "apply", "packages/db/migrations/meta/_journal.json"), `${JSON.stringify({ ...live, entries: live.entries.slice(0, at + 1) }, null, 2)}\n`);
   writeFileSync(join(base, "apply", DOC), docText);
   writeFileSync(join(base, "apply", SIDECAR), `${sha256(docText)}  ${DOC}\n`);
   return base;
