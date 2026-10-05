@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { GUEST_EMAIL_MAX, GUEST_EMAIL_PATTERN, parseGuestEmail } from "../src/guest-email";
+import { GUEST_EMAIL_MAX, GUEST_EMAIL_PATTERN, GUEST_EMAIL_UNSAFE, parseGuestEmail } from "../src/guest-email";
+import CASES from "./fixtures/guest-email-cases.json";
 
 /**
  * The public form's optional email (0101, strategy ruling R40): the one rule the
@@ -11,6 +12,14 @@ import { GUEST_EMAIL_MAX, GUEST_EMAIL_PATTERN, parseGuestEmail } from "../src/gu
  * admits must be convertible into a patient by the staff app, whose own rule is
  * in apps/web/lib/patients/validation.ts. So the two are compared from SOURCE,
  * not by a copy that could drift with them.
+ *
+ * THE PUBLIC PATH IS STRICTER, NEVER LOOSER (review of 2026-10-05). The value
+ * comes from anybody on the internet, so on top of the staff rule it refuses
+ * control and format characters, look-alikes of "@" and ".", and the characters
+ * a mail header gives a meaning to. `fixtures/guest-email-cases.json` is the ONE
+ * table of values: this file, the API route's suite and the portal's suite all
+ * read it, so the client, the server action and the route are held to the same
+ * answers.
  */
 describe("the guest email rule", () => {
   it("IS THE STAFF APP'S RULE: the same pattern and the same length bound, read from its source", () => {
@@ -58,6 +67,96 @@ describe("the guest email rule", () => {
   it("refuses a value that is not a string rather than coercing it", () => {
     for (const value of [1, 0, true, false, {}, [], ["guest@example.invalid"], { email: "guest@example.invalid" }]) {
       expect(parseGuestEmail(value), JSON.stringify(value)).toEqual({ ok: false });
+    }
+  });
+
+  const staffRule = (): RegExp => {
+    const src = readFileSync(join(__dirname, "..", "..", "..", "apps", "web", "lib", "patients", "validation.ts"), "utf8");
+    return new RegExp(/^const EMAIL_RE = \/(.+)\/;$/m.exec(src)![1]!);
+  };
+
+  it("THE TABLE: every case reads as the table says, and a refusal carries nothing", () => {
+    expect(CASES.length).toBeGreaterThanOrEqual(50);
+    expect(CASES.filter((c) => c.ok).length).toBeGreaterThanOrEqual(12);
+    for (const c of CASES) {
+      const r = parseGuestEmail(c.value);
+      if (c.ok) expect(r, c.why).toEqual({ ok: true, email: c.stored });
+      else {
+        expect(r, c.why).toEqual({ ok: false });
+        expect(Object.keys(r), c.why).toEqual(["ok"]);
+      }
+    }
+  });
+
+  it("NEVER LOOSER THAN THE STAFF RULE: everything the public rule admits, the staff rule admits", () => {
+    const staff = staffRule();
+    let admitted = 0;
+    for (const c of CASES) {
+      const r = parseGuestEmail(c.value);
+      if (!r.ok || r.email === null) continue;
+      admitted += 1;
+      expect(staff.test(r.email), c.why).toBe(true);
+      expect(r.email.length, c.why).toBeLessThanOrEqual(GUEST_EMAIL_MAX);
+    }
+    expect(admitted).toBeGreaterThanOrEqual(12);
+  });
+
+  it("STRICTER THAN THE STAFF RULE WHERE IT MUST BE: the staff rule admits these, the public rule does not", () => {
+    // THE PREMISE of the extra set: each of these is a value the staff pattern lets through.
+    const staff = staffRule();
+    for (const value of ["a\u0000b@c.pt", "gu\u0085est@c.pt", "a\u200bb@c.pt", "a\u202eb@c.pt", "a\uff20b@c.pt", "a@b\uff0ept.c", "x<a@b.pt>", "a,b@c.pt"]) {
+      expect(staff.test(value), JSON.stringify(value)).toBe(true);
+      expect(parseGuestEmail(value), JSON.stringify(value)).toEqual({ ok: false });
+    }
+  });
+
+  it("EVERY control and format character of Unicode is refused, each one, wherever it stands inside the value", () => {
+    // Every code point, so the claim is not about a sample. The category is asked of the
+    // engine by a SEPARATE expression from the rule's own.
+    const isCcOrCf = /^[\p{Cc}\p{Cf}]$/u;
+    let controls = 0;
+    for (let cp = 0; cp <= 0x10ffff; cp += 1) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue; // surrogates: the next test
+      const ch = String.fromCodePoint(cp);
+      if (!isCcOrCf.test(ch)) continue;
+      controls += 1;
+      expect(parseGuestEmail(`a${ch}b@example.invalid`).ok, `U+${cp.toString(16)} in the local part`).toBe(false);
+      expect(parseGuestEmail(`ab@exa${ch}mple.invalid`).ok, `U+${cp.toString(16)} in the domain`).toBe(false);
+    }
+    // 65 controls (Cc) and well over a hundred format characters: the loop measured something.
+    expect(controls).toBeGreaterThanOrEqual(200);
+  });
+
+  it("every lone surrogate, every private use character and every noncharacter is refused", () => {
+    let n = 0;
+    const refused = (ch: string, what: string): void => {
+      n += 1;
+      expect(parseGuestEmail(`a${ch}b@example.invalid`).ok, what).toBe(false);
+    };
+    for (let cu = 0xd800; cu <= 0xdfff; cu += 1) refused(String.fromCharCode(cu), `lone surrogate ${cu.toString(16)}`);
+    for (let cp = 0xe000; cp <= 0xf8ff; cp += 1) refused(String.fromCodePoint(cp), `private use ${cp.toString(16)}`);
+    for (const cp of [0xf0000, 0xffffd, 0x100000, 0x10fffd]) refused(String.fromCodePoint(cp), `private use ${cp.toString(16)}`);
+    for (let cp = 0xfdd0; cp <= 0xfdef; cp += 1) refused(String.fromCodePoint(cp), `noncharacter ${cp.toString(16)}`);
+    for (let plane = 0; plane <= 16; plane += 1) {
+      refused(String.fromCodePoint(plane * 0x10000 + 0xfffe), `noncharacter of plane ${plane}`);
+      refused(String.fromCodePoint(plane * 0x10000 + 0xffff), `noncharacter of plane ${plane}`);
+    }
+    expect(n).toBe(2048 + 6400 + 4 + 32 + 34);
+    // THE CONTROL: a well-formed pair is a character like any other.
+    expect(parseGuestEmail("a\u{1F600}b@example.invalid").ok).toBe(true);
+  });
+
+  it("the look-alikes and the mail-header characters are refused one by one, and ordinary punctuation is not", () => {
+    for (const ch of ["\ufffd", "\ufffc", "\uff20", "\ufe6b", "\u3002", "\uff0e", "\uff61", "(", ")", "<", ">", "[", "]", ":", ";", ",", "\\", '"']) {
+      expect(parseGuestEmail(`a${ch}b@example.invalid`).ok, `U+${ch.codePointAt(0)!.toString(16)}`).toBe(false);
+      expect(GUEST_EMAIL_UNSAFE.test(ch), `U+${ch.codePointAt(0)!.toString(16)}`).toBe(true);
+    }
+    for (const ch of "+-_'!#$%&*/=?^`{|}~.") {
+      expect(parseGuestEmail(`a${ch}b@example.invalid`).ok, ch).toBe(true);
+    }
+    // Letters of any script, and a combining mark, are not "unsafe".
+    for (const ch of ["\u00e9", "\u00e7", "\u0301", "\u7528", "\u0430", "\u05d0"]) {
+      expect(GUEST_EMAIL_UNSAFE.test(ch), `U+${ch.codePointAt(0)!.toString(16)}`).toBe(false);
     }
   });
 });

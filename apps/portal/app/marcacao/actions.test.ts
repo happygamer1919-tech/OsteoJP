@@ -66,6 +66,7 @@ import {
   INITIAL_GUEST_STATE,
   type GuestFormState,
 } from './state'
+import EMAIL_CASES from '../../../../packages/db/tests/fixtures/guest-email-cases.json'
 
 const LV = 'aaaaaaaa-0000-0000-0000-000000000001'
 const SVC = 'bbbbbbbb-0000-0000-0000-000000000001'
@@ -557,6 +558,38 @@ describe('§R40 — the optional email', () => {
     const at4 = await run(complete({ intent: 'next', step: '4', intake: '1', email: 'not-an-email' }))
     expect(at4.step).toBe(4)
     expect(at4.error).toBe('invalid')
+  })
+
+  it('THE CLIENT AND THE SERVER AGREE, value by value: what the field stops in the browser is exactly what the action refuses', async () => {
+    const { guestEmailFieldMessage } = await import('./email-field')
+    // The shared table (the route's suite reads the same file), plus the one value JSON cannot hold.
+    const cases = [...EMAIL_CASES, { value: 'a\ud800b@example.invalid', ok: false, stored: undefined, why: 'a lone surrogate' }]
+    let sent = 0
+    let stopped = 0
+    for (const c of cases) {
+      H.submits = []
+      const client = guestEmailFieldMessage(c.value, 'MESSAGE')
+      const server = await run(complete({ email: c.value }))
+      if (c.ok) {
+        sent += 1
+        expect(client, c.why).toBe('')
+        expect(server.received, c.why).toBe(true)
+        expect(H.submits[0]!.email, c.why).toBe(c.stored)
+      } else {
+        stopped += 1
+        expect(client, c.why).toBe('MESSAGE')
+        expect(server.error, c.why).toBe('invalid')
+        expect(server.step, c.why).toBe(4)
+        expect(H.submits, c.why).toEqual([])
+      }
+    }
+    expect(sent).toBeGreaterThanOrEqual(12)
+    expect(stopped).toBeGreaterThanOrEqual(38)
+    // THE ONE THE BROWSER'S OWN CHECK GOT WRONG IN EACH DIRECTION.
+    expect(guestEmailFieldMessage('coração@exemplo.invalid', 'MESSAGE')).toBe('')
+    expect(guestEmailFieldMessage('a@b', 'MESSAGE')).toBe('MESSAGE')
+    // And an empty field is never stopped: the email is optional.
+    for (const none of ['', '   ']) expect(guestEmailFieldMessage(none, 'MESSAGE')).toBe('')
   })
 
   it('an EMPTY email is never a missing field: steps 1 to 4 advance exactly as before', async () => {

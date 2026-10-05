@@ -520,12 +520,15 @@ describe("option B — the dismiss", () => {
 /**
  * 0101, strategy ruling R40 - the email a visitor gave on the public form.
  *
- * THE RULE (the lead's assumption for this build): a NEW patient gets it; an
- * EXISTING matched patient who has no email gets it; an existing patient's email
- * is NEVER overwritten. What "has no email" means is decided by the WHERE of a
- * real UPDATE, so THAT half is proven against Postgres in
- * guest-convert-email.db.test.ts. This file proves the half a database cannot:
- * what the action attempts, in what order, and what it never writes down.
+ * THE RULE (the lead's decision of 2026-10-05, after review): ONLY A NEW PATIENT
+ * gets it. The convert NEVER writes the form's address to an EXISTING patient's
+ * record, whether that record has an address or not: the form is public and the
+ * address unverified, so filling an empty record from it would let whoever
+ * posted the form with somebody else's mobile take over that person's
+ * confirmations and reminders. What the row looks like afterwards is proven
+ * against Postgres in guest-convert-email.db.test.ts and followed through the
+ * booking and the dispatch in guest-link.db.test.ts. This file proves what a
+ * database cannot: what the action attempts, and what it never writes down.
  */
 describe("R40: the guest's email on convert", () => {
   const ADDRESS = "guest.fixture@example.invalid";
@@ -539,33 +542,37 @@ describe("R40: the guest's email on convert", () => {
     expect(H.sets).toEqual([{ convertedPatientId: "p-new" }]);
   });
 
-  it.each([null, undefined, ""])("a request with no email (%j) inserts the patient with email NULL", async (email) => {
+  it.each([null, undefined, "", "   ", "\t\n"])("a request with no email (%j) inserts the patient with email NULL: none means NULL or nothing after a trim", async (email) => {
     H.script = [[pendingRequest({ email })], [{ id: REQUEST_ID }]];
     const result = await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
     expect(result.ok).toBe(true);
     expect(H.insertFields).toHaveProperty("email", null);
   });
 
-  it("an EXISTING patient: the email is offered in ONE conditional update, AFTER the request is marked, and audited by field name", async () => {
+  it("a padded address is carried TRIMMED to the new patient", async () => {
+    H.script = [[pendingRequest({ email: `  ${ADDRESS}  ` })], [{ id: REQUEST_ID }]];
+    await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+    expect(H.insertFields?.email).toBe(ADDRESS);
+  });
+
+  it("AN EXISTING PATIENT IS NEVER WRITTEN TO: one update, of the REQUEST, and no patient.update audit", async () => {
+    // Had the action tried a second update, the harness would have recorded its `.set()`.
     H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], [{ id: REQUEST_ID }], [{ id: "p-existing" }]];
     const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
     expect(result.ok).toBe(true);
     expect(H.inserted, "nobody is created").toBe(false);
-    // THE ORDER: the request first (the race guard), the patient's email second.
-    expect(H.sets).toEqual([{ convertedPatientId: "p-existing" }, { email: ADDRESS }]);
-    expect(H.audits.map((a) => a.action)).toEqual(["patient.update", "patient.guest_request_converted"]);
-    expect(H.audits[0]).toEqual({ action: "patient.update", entityId: "p-existing", metadata: { fields: ["email"], source: "guest_request" } });
-  });
-
-  it("an existing patient who ALREADY HAS an email: the update matches no row, nothing is audited as changed, and the convert still succeeds", async () => {
-    // The fourth script entry is what the conditional UPDATE returned: no row.
-    H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], [{ id: REQUEST_ID }], []];
-    const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
-    expect(result.ok).toBe(true);
+    expect(H.sets).toEqual([{ convertedPatientId: "p-existing" }]);
+    expect(H.sets.some((set) => "email" in set)).toBe(false);
     expect(H.audits.map((a) => a.action)).toEqual(["patient.guest_request_converted"]);
   });
 
-  it("an existing patient and a request with NO email: no update of patients is even attempted", async () => {
+  it("THE CONTROL for the arm above: the SAME request converted to a NEW patient does carry the address, so its absence there is the rule", async () => {
+    H.script = [[pendingRequest({ email: ADDRESS })], [{ id: REQUEST_ID }]];
+    await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+    expect(H.insertFields?.email).toBe(ADDRESS);
+  });
+
+  it("an existing patient and a request with NO email: the same single update", async () => {
     H.script = [[pendingRequest({ email: null })], [{ id: "p-existing" }], [{ id: REQUEST_ID }]];
     const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
     expect(result.ok).toBe(true);
@@ -573,12 +580,33 @@ describe("R40: the guest's email on convert", () => {
     expect(H.audits.map((a) => a.action)).toEqual(["patient.guest_request_converted"]);
   });
 
-  it("A LOST RACE writes no email: the request update matched nothing, so the action stops before the patient is touched", async () => {
-    H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], []];
-    const result = await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
-    expect(result).toEqual({ ok: false, error: "already_handled" });
-    expect(H.sets).toEqual([{ convertedPatientId: "p-existing" }]);
-    expect(H.audits).toEqual([]);
+  it("THE MATCH LIST says, per patient, whether the form's address is NOT on the record, and never returns the patient's own address", async () => {
+    H.script = [
+      [pendingRequest({ email: ADDRESS })],
+      [
+        { id: "p-none", fullName: "A", nif: null, patientNumber: 1, email: null },
+        { id: "p-blank", fullName: "B", nif: null, patientNumber: 2, email: "   " },
+        { id: "p-other", fullName: "C", nif: null, patientNumber: 3, email: "held.fixture@example.invalid" },
+        { id: "p-same", fullName: "D", nif: null, patientNumber: 4, email: " GUEST.fixture@example.invalid " },
+      ],
+    ];
+    const result = await listGuestRequestMatches(REQUEST_ID);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.map((m) => [m.id, m.formEmailNotOnRecord])).toEqual([
+      ["p-none", true],
+      ["p-blank", true],
+      ["p-other", true],
+      ["p-same", false],
+    ]);
+    for (const m of result.data) expect(Object.keys(m).sort()).toEqual(["formEmailNotOnRecord", "fullName", "id", "nif", "patientNumber"]);
+    expect(JSON.stringify(result.data)).not.toContain("held.fixture");
+  });
+
+  it("a request with NO email flags nobody: there is nothing to warn about", async () => {
+    H.script = [[pendingRequest({ email: null })], [{ id: "p-none", fullName: "A", nif: null, patientNumber: 1, email: null }]];
+    const result = await listGuestRequestMatches(REQUEST_ID);
+    expect(result).toEqual({ ok: true, data: [{ id: "p-none", fullName: "A", nif: null, patientNumber: 1, formEmailNotOnRecord: false }] });
   });
 
   it("THE ADDRESS IS NEVER IN AN AUDIT ROW OR A LOG LINE, on either branch", async () => {
@@ -591,13 +619,13 @@ describe("R40: the guest's email on convert", () => {
     try {
       H.script = [[pendingRequest({ email: ADDRESS })], [{ id: REQUEST_ID }]];
       await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
-      H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], [{ id: REQUEST_ID }], [{ id: "p-existing" }]];
+      H.script = [[pendingRequest({ email: ADDRESS })], [{ id: "p-existing" }], [{ id: REQUEST_ID }]];
       await convertGuestRequest(REQUEST_ID, { kind: "existing_patient", patientId: "p-existing" });
     } finally {
       for (const s of spies) s.mockRestore();
     }
     // THE PREMISE: audit rows were written, so the absence below is not of an empty list.
-    expect(H.audits.length).toBeGreaterThanOrEqual(3);
+    expect(H.audits.length).toBeGreaterThanOrEqual(2);
     expect(JSON.stringify(H.audits)).not.toContain("example.invalid");
     expect(lines.join("\n")).not.toContain("example.invalid");
   });

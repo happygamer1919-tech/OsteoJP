@@ -23,7 +23,8 @@ vi.mock("@/lib/scheduling/guest-convert", () => ({
   listGuestRequestMatches: async () => ({ ok: true, data: [] }),
 }));
 
-import { GuestRequestsQueue, type GuestRequestRow } from "./guest-requests-queue";
+import type { GuestPatientMatch } from "@/lib/scheduling/guest-convert";
+import { GuestRequestsQueue, GuestResolvePanel, type GuestRequestRow } from "./guest-requests-queue";
 
 /**
  * ITEM 6 — the new-client mark on reception's guest queue.
@@ -297,24 +298,111 @@ describe("guest queue - a converted request can still be booked from its row", (
 
 describe("0101, ruling R40 - the visitor's optional email on the queue row", () => {
   const ADDRESS = "guest.fixture@example.invalid";
+  const LABEL = "Email indicado no formulário (não verificado):";
 
-  it("a request WITH an email shows it, beside the phone, under the Email label", () => {
+  it("a request WITH an email shows it, beside the phone, LABELLED AS WHAT IT IS: given on the form, not verified", () => {
     const html = render([row({ email: ADDRESS })]);
     expect(html).toContain('data-testid="guest-email"');
     expect(html).toContain(ADDRESS);
-    expect(html).toContain("Email:");
+    expect(html).toContain(`<dt>${LABEL}</dt>`);
+    // NEVER under a bare "Email": that would read as the person's verified address.
+    expect(html).not.toContain("<dt>Email:</dt>");
     // The phone is still there: the email is added, it replaces nothing.
     expect(html).toContain("+351912345678");
+  });
+
+  it("the label is the string the dictionary holds, in both languages", () => {
+    const dict = (lang: "pt" | "en") =>
+      JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "..", "packages", "i18n", "src", `strings.${lang}.json`), "utf8")) as Record<string, string>;
+    expect(dict("pt")["guest.emailFromForm"]).toBe("Email indicado no formulário (não verificado)");
+    expect(dict("en")["guest.emailFromForm"]).toBe("Email given on the form (not verified)");
+    // The plain label this branch first added is gone from both, so nothing can render it.
+    expect(dict("pt")).not.toHaveProperty("guest.email");
+    expect(dict("en")).not.toHaveProperty("guest.email");
   });
 
   it("a request WITHOUT one renders NO email row at all, not an empty label", () => {
     const html = render([row({ email: null })]);
     expect(html).not.toContain("guest-email");
-    expect(html).not.toContain("Email:");
+    expect(html).not.toContain("não verificado");
   });
 
   it("each row shows ITS OWN address: two rows, one with and one without", () => {
     const html = render([row({ id: "g-1", email: ADDRESS }), row({ id: "g-2", email: null })]);
     expect(html.split('data-testid="guest-email"')).toHaveLength(2);
+  });
+});
+
+/**
+ * WHAT RECEPTION IS TOLD ABOUT THE FORM'S EMAIL BEFORE IT CHOOSES A PERSON (the
+ * lead's decision, 2026-10-05). The convert writes the address to a NEW patient
+ * only. So the choice that saves it says so, and the choice that does not says
+ * that instead, with what to do about it.
+ */
+describe("the form's email in the resolution dialog and on a one-press row", () => {
+  const ADDRESS = "guest.fixture@example.invalid";
+  const NOT_SAVED = `O pedido indica o email ${ADDRESS}. Não foi verificado e não é guardado na ficha deste paciente. Confirme por telefone antes de o acrescentar.`;
+  const SAVED_NEW = `O email indicado no formulário (${ADDRESS}) é guardado na ficha do novo paciente. Não foi verificado.`;
+  const match = (over: Partial<GuestPatientMatch> = {}): GuestPatientMatch => ({
+    id: "p-1",
+    fullName: "Cliente Inventada",
+    nif: null,
+    patientNumber: 7,
+    formEmailNotOnRecord: true,
+    ...over,
+  });
+  const panel = (formEmail: string | null, matches: GuestPatientMatch[] | null) =>
+    renderToStaticMarkup(
+      <GuestResolvePanel formEmail={formEmail} matches={matches} busy={false} onUseExisting={() => {}} onCreateNew={() => {}} onCancel={() => {}} />,
+    );
+  const noteOf = (html: string, testId: string): string[] =>
+    [...html.matchAll(new RegExp(`<p data-testid="${testId}"[^>]*>([^<]*)</p>`, "g"))].map((m) => m[1]!);
+
+  it("an EXISTING patient whose record does not hold the address: NOT SAVED, confirm by phone, in the owner's words", () => {
+    const html = panel(ADDRESS, [match()]);
+    expect(noteOf(html, "guest-email-note-existing")).toEqual([NOT_SAVED]);
+  });
+
+  it("the note is PER PATIENT: only the ones whose record lacks the address carry it", () => {
+    const html = panel(ADDRESS, [match({ id: "p-1" }), match({ id: "p-2", formEmailNotOnRecord: false }), match({ id: "p-3" })]);
+    expect(html.split('data-testid="guest-resolve-match"')).toHaveLength(4);
+    expect(noteOf(html, "guest-email-note-existing")).toEqual([NOT_SAVED, NOT_SAVED]);
+  });
+
+  it("CREATE NEW says the address IS saved on the new record, unverified", () => {
+    const html = panel(ADDRESS, [match()]);
+    expect(noteOf(html, "guest-email-note-new")).toEqual([SAVED_NEW]);
+  });
+
+  it("a request WITHOUT an email says nothing about email anywhere in the dialog", () => {
+    for (const none of [null, "", "   "]) {
+      const html = panel(none, [match()]);
+      expect(html).not.toContain("guest-email-note");
+      expect(html).not.toContain("verificado");
+    }
+  });
+
+  it("the dialog never shows a PATIENT'S address, only the form's", () => {
+    const html = panel(ADDRESS, [match()]);
+    expect(html.match(/@/g)).toHaveLength(2); // the form's address, once in each note
+  });
+
+  it("A ONE-PRESS ROW (no match, so no dialog) carries the new-patient note before the press", () => {
+    const html = render([row({ email: ADDRESS, possiblePatientMatches: 0 })]);
+    expect(noteOf(html, "guest-email-note-new")).toEqual([SAVED_NEW]);
+  });
+
+  it("a row that will OPEN THE DIALOG, a converted row, and a row with no email carry no note in the first paint", () => {
+    expect(render([row({ email: ADDRESS, possiblePatientMatches: 1 })])).not.toContain("guest-email-note");
+    expect(render([row({ email: ADDRESS, converted: true })])).not.toContain("guest-email-note");
+    expect(render([row({ email: null })])).not.toContain("guest-email-note");
+  });
+
+  it("the ENGLISH sentences are written from the Portuguese and keep the placeholder", () => {
+    const en = JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "..", "packages", "i18n", "src", "strings.en.json"), "utf8")) as Record<string, string>;
+    expect(en["guest.formEmailNotSaved"]).toBe(
+      "The request gives the email {email}. It has not been verified and is not saved to this patient's record. Confirm by phone before adding it.",
+    );
+    expect(en["guest.formEmailNewPatient"]).toBe("The email given on the form ({email}) is saved to the new patient's record. It has not been verified.");
   });
 });

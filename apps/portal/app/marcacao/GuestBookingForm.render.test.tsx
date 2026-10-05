@@ -137,8 +137,9 @@ describe('the sentence about what the contacts are used for (owner-approved, 202
   })
 
   it('THE CONTROL: the render really is the step it was asked for (step 4 has the email field, step 1 does not)', () => {
-    expect(render('pt', 4, false)).toContain('type="email"')
-    expect(render('pt', 1, false)).not.toContain('type="email"')
+    expect(render('pt', 4, false)).not.toContain('type="email"')
+    expect(render('pt', 4, false)).toContain('inputMode="email"')
+    expect(render('pt', 1, false)).not.toContain('inputMode="email"')
   })
 })
 
@@ -156,7 +157,10 @@ describe('the typed email travels through the steps', () => {
     for (const intake of [false, true]) {
       const fields = fieldsNamedEmail(render('pt', 4, intake, { email: ADDRESS }))
       expect(fields).toHaveLength(1)
-      expect(fields[0]).toContain('type="email"')
+      // A text field with the email keyboard, never the browser's own email check.
+      expect(fields[0]).toContain('type="text"')
+      expect(fields[0]).toContain('inputMode="email"')
+      expect(fields[0]).toContain('autoComplete="email"')
       expect(fields[0]).toContain(`value="${ADDRESS}"`)
     }
   })

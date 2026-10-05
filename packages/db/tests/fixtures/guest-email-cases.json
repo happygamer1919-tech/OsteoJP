@@ -1,0 +1,285 @@
+[
+ {
+  "value": "guest@example.invalid",
+  "ok": true,
+  "stored": "guest@example.invalid",
+  "why": "an ordinary address"
+ },
+ {
+  "value": "  guest@example.invalid  ",
+  "ok": true,
+  "stored": "guest@example.invalid",
+  "why": "trimmed"
+ },
+ {
+  "value": "UPPER@EXAMPLE.INVALID",
+  "ok": true,
+  "stored": "UPPER@EXAMPLE.INVALID",
+  "why": "case is kept"
+ },
+ {
+  "value": "first.last+tag@sub.example.invalid",
+  "ok": true,
+  "stored": "first.last+tag@sub.example.invalid",
+  "why": "plus tag and subdomain"
+ },
+ {
+  "value": "o'neil@example.invalid",
+  "ok": true,
+  "stored": "o'neil@example.invalid",
+  "why": "an apostrophe"
+ },
+ {
+  "value": "cora\u00e7\u00e3o@exemplo.invalid",
+  "ok": true,
+  "stored": "cora\u00e7\u00e3o@exemplo.invalid",
+  "why": "a NON-ASCII local part, which a browser's type=email refuses"
+ },
+ {
+  "value": "utilizador.\u00e7\u00e3o@exemplo.invalid",
+  "ok": true,
+  "stored": "utilizador.\u00e7\u00e3o@exemplo.invalid",
+  "why": "more non-ASCII letters"
+ },
+ {
+  "value": "cafe\u0301@exemplo.invalid",
+  "ok": true,
+  "stored": "cafe\u0301@exemplo.invalid",
+  "why": "a combining mark (decomposed e acute)"
+ },
+ {
+  "value": "\u7528\u6237@\u4f8b\u5b50.invalid",
+  "ok": true,
+  "stored": "\u7528\u6237@\u4f8b\u5b50.invalid",
+  "why": "another script, local part and domain"
+ },
+ {
+  "value": "\ud83d\ude00@example.invalid",
+  "ok": true,
+  "stored": "\ud83d\ude00@example.invalid",
+  "why": "an astral character is a well-formed pair, not a lone surrogate"
+ },
+ {
+  "value": "a!#$%&*/=?^_`{|}~-@example.invalid",
+  "ok": true,
+  "stored": "a!#$%&*/=?^_`{|}~-@example.invalid",
+  "why": "the ASCII punctuation an address may carry"
+ },
+ {
+  "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.invalid",
+  "ok": true,
+  "stored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.invalid",
+  "why": "exactly 320 characters"
+ },
+ {
+  "value": "\ufeffguest@example.invalid",
+  "ok": true,
+  "stored": "guest@example.invalid",
+  "why": "a byte order mark at the START is whitespace to trim, and is trimmed away"
+ },
+ {
+  "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.invalid",
+  "ok": false,
+  "why": "321 characters"
+ },
+ {
+  "value": "not-an-email",
+  "ok": false,
+  "why": "no @"
+ },
+ {
+  "value": "guest@",
+  "ok": false,
+  "why": "nothing after the @"
+ },
+ {
+  "value": "guest@example",
+  "ok": false,
+  "why": "no dot after the @"
+ },
+ {
+  "value": "two@@example.invalid",
+  "ok": false,
+  "why": "two @"
+ },
+ {
+  "value": "guest @example.invalid",
+  "ok": false,
+  "why": "a space inside"
+ },
+ {
+  "value": "gu\u00a0est@example.invalid",
+  "ok": false,
+  "why": "a no-break space inside (whitespace to the staff pattern)"
+ },
+ {
+  "value": "gu\u2028est@example.invalid",
+  "ok": false,
+  "why": "U+2028 LINE SEPARATOR (whitespace to the staff pattern)"
+ },
+ {
+  "value": "a\u0000b@example.invalid",
+  "ok": false,
+  "why": "U+0000 NUL: Postgres cannot store it"
+ },
+ {
+  "value": "a\u0007b@example.invalid",
+  "ok": false,
+  "why": "U+0007 BEL, a C0 control"
+ },
+ {
+  "value": "a\u007fb@example.invalid",
+  "ok": false,
+  "why": "U+007F DELETE"
+ },
+ {
+  "value": "gu\u0085est@example.invalid",
+  "ok": false,
+  "why": "U+0085 NEXT LINE, a C1 control the staff pattern admits"
+ },
+ {
+  "value": "a\u00adb@example.invalid",
+  "ok": false,
+  "why": "U+00AD SOFT HYPHEN (format)"
+ },
+ {
+  "value": "a\u200bb@example.invalid",
+  "ok": false,
+  "why": "U+200B ZERO WIDTH SPACE (format)"
+ },
+ {
+  "value": "guest@example.invalid\u200b",
+  "ok": false,
+  "why": "U+200B at the END, which trim does not remove"
+ },
+ {
+  "value": "a\u200db@example.invalid",
+  "ok": false,
+  "why": "U+200D ZERO WIDTH JOINER (format)"
+ },
+ {
+  "value": "a\u202eb@example.invalid",
+  "ok": false,
+  "why": "U+202E RIGHT-TO-LEFT OVERRIDE (format)"
+ },
+ {
+  "value": "a\u2066b@example.invalid",
+  "ok": false,
+  "why": "U+2066 LEFT-TO-RIGHT ISOLATE (format)"
+ },
+ {
+  "value": "a\ufeffb@example.invalid",
+  "ok": false,
+  "why": "U+FEFF inside the value (format)"
+ },
+ {
+  "value": "a\udb40\udc41b@example.invalid",
+  "ok": false,
+  "why": "U+E0041 TAG LATIN CAPITAL LETTER A (format)"
+ },
+ {
+  "value": "a\ue000b@example.invalid",
+  "ok": false,
+  "why": "U+E000 PRIVATE USE"
+ },
+ {
+  "value": "a\udb80\udc00b@example.invalid",
+  "ok": false,
+  "why": "U+F0000 PRIVATE USE, plane 15"
+ },
+ {
+  "value": "a\ufdd0b@example.invalid",
+  "ok": false,
+  "why": "U+FDD0, a noncharacter"
+ },
+ {
+  "value": "a\ufffeb@example.invalid",
+  "ok": false,
+  "why": "U+FFFE, a noncharacter"
+ },
+ {
+  "value": "a\ud83f\udfffb@example.invalid",
+  "ok": false,
+  "why": "U+1FFFF, a noncharacter of plane 1"
+ },
+ {
+  "value": "a\ufffdb@example.invalid",
+  "ok": false,
+  "why": "U+FFFD REPLACEMENT CHARACTER: what a lone surrogate becomes in a form post"
+ },
+ {
+  "value": "a\ufffcb@example.invalid",
+  "ok": false,
+  "why": "U+FFFC OBJECT REPLACEMENT CHARACTER"
+ },
+ {
+  "value": "guest\uff20example.invalid@example.invalid",
+  "ok": false,
+  "why": "U+FF20 FULLWIDTH COMMERCIAL AT"
+ },
+ {
+  "value": "guest\ufe6bexample.invalid@example.invalid",
+  "ok": false,
+  "why": "U+FE6B SMALL COMMERCIAL AT"
+ },
+ {
+  "value": "guest@example\u3002invalid.example.invalid",
+  "ok": false,
+  "why": "U+3002 IDEOGRAPHIC FULL STOP"
+ },
+ {
+  "value": "guest@example\uff0einvalid.example.invalid",
+  "ok": false,
+  "why": "U+FF0E FULLWIDTH FULL STOP"
+ },
+ {
+  "value": "guest@example\uff61invalid.example.invalid",
+  "ok": false,
+  "why": "U+FF61 HALFWIDTH IDEOGRAPHIC FULL STOP"
+ },
+ {
+  "value": "x<guest@example.invalid>",
+  "ok": false,
+  "why": "angle brackets: a display name and another address to a mail header"
+ },
+ {
+  "value": "guest@example.invalid,other",
+  "ok": false,
+  "why": "a comma: a list of recipients to a mail header"
+ },
+ {
+  "value": "guest;other@example.invalid",
+  "ok": false,
+  "why": "a semicolon"
+ },
+ {
+  "value": "\"gu est\"@example.invalid",
+  "ok": false,
+  "why": "a quoted local part (and a space)"
+ },
+ {
+  "value": "\"guest\"@example.invalid",
+  "ok": false,
+  "why": "a double quote"
+ },
+ {
+  "value": "guest(comment)@example.invalid",
+  "ok": false,
+  "why": "parentheses: a comment to a mail header"
+ },
+ {
+  "value": "guest@[192.0.2.1].invalid",
+  "ok": false,
+  "why": "square brackets: a domain literal"
+ },
+ {
+  "value": "gu:est@example.invalid",
+  "ok": false,
+  "why": "a colon"
+ },
+ {
+  "value": "gu\\est@example.invalid",
+  "ok": false,
+  "why": "a backslash"
+ }
+]

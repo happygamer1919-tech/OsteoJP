@@ -23,6 +23,8 @@ import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import EMAIL_CASES from "../../../../packages/db/tests/fixtures/guest-email-cases.json";
+
 vi.mock("server-only", () => ({}));
 
 const live = Boolean(process.env.DATABASE_URL);
@@ -84,26 +86,31 @@ dLive("0101: the guest write stores the optional email", () => {
     expect(await stored("Fixture Without")).toEqual([{ email: null }]);
   });
 
-  it("everything parseGuestEmail admits, the database admits: the CHECK is never the stricter one", async () => {
-    const typed = [
-      "  spaced@example.invalid  ",
-      "UPPER@EXAMPLE.INVALID",
-      "first.last+tag@sub.example.invalid",
-      "o'neil@example.invalid",
-      "utilizador.ção@exemplo.invalid",
-      "gu\u0085est@example.invalid",
-      `${"a".repeat(304)}@example.invalid`,
-    ];
+  it("everything parseGuestEmail admits, the database admits and stores unchanged: the rule never accepts what the database refuses", async () => {
+    // THE SHARED TABLE (packages/db/tests/fixtures), every admitted case, through the real writer.
     let n = 0;
-    for (const t of typed) {
-      const parsed = parseGuestEmail(t);
-      expect(parsed.ok, JSON.stringify(t).slice(0, 40)).toBe(true);
-      if (!parsed.ok) continue;
+    for (const c of EMAIL_CASES) {
+      const parsed = parseGuestEmail(c.value);
+      expect(parsed.ok, c.why).toBe(c.ok);
+      if (!parsed.ok || parsed.email === null) continue;
       n += 1;
       await writeGuestBooking(db, request(`Fixture Parity ${n}`, parsed.email), null);
-      expect(await stored(`Fixture Parity ${n}`)).toEqual([{ email: parsed.email }]);
+      expect(await stored(`Fixture Parity ${n}`), c.why).toEqual([{ email: parsed.email }]);
     }
-    expect(n).toBe(typed.length);
+    expect(n).toBeGreaterThanOrEqual(12);
+  });
+
+  it("WHY THE RULE REFUSES A NUL: the database cannot store one, and it is not the CHECK that says so", async () => {
+    const nul = "a\u0000b@example.invalid";
+    expect(parseGuestEmail(nul).ok).toBe(false);
+    // Without the rule this is what the route would have met: a driver error, which it answers with 503.
+    const err = await writeGuestBooking(db, request("Fixture Nul", nul), null).then(
+      () => null,
+      (e: unknown) => e as { cause?: { constraint_name?: string } },
+    );
+    expect(err).not.toBeNull();
+    expect(err?.cause?.constraint_name).not.toBe("guest_booking_requests_email_check");
+    expect(await stored("Fixture Nul")).toEqual([]);
   });
 
   it("THE BACKSTOP HOLDS: a value the rule refuses is refused by the CHECK too, by name, and nothing is stored", async () => {

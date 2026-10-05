@@ -8,6 +8,7 @@ import { CLINIC_CONTACTS } from '@/lib/clinics'
 import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
+import { guestEmailFieldMessage } from './email-field'
 import {
   GUEST_EMAIL_INPUT_MAX,
   GUEST_INTAKE_KEYS,
@@ -449,16 +450,31 @@ export function GuestBookingForm({
             </Field>
 
             {/* 0101, ruling R40. OPTIONAL: no `required`, and the label says so.
-                `type="email"` is the browser's check; the server action and the
-                API both re-check with the one shared rule. */}
+                NOT `type="email"`: the browser's own check refuses a non-ASCII
+                local part the server accepts, and admits `a@b`, which it
+                refuses. The keyboard and autofill hints stay, and the check is
+                the SHARED rule (`email-field.ts`), set as the field's validity
+                so the browser stops "next" and "submit", lets "back" through
+                (`formNoValidate`), and shows the form's own message. The ref
+                covers a value the page arrived with; the server action and the
+                API re-check whatever happened here. */}
             <Field label={s.guest.email_label} helperText={s.guest.email_hint}>
               <Input
                 name="email"
-                type="email"
+                type="text"
                 inputMode="email"
                 autoComplete="email"
+                autoCapitalize="none"
+                spellCheck={false}
                 maxLength={GUEST_EMAIL_INPUT_MAX}
                 defaultValue={values.email}
+                ref={(el) => {
+                  el?.setCustomValidity(guestEmailFieldMessage(el.value, s.guest.error_invalid))
+                }}
+                onInput={(e) => {
+                  const el = e.currentTarget
+                  el.setCustomValidity(guestEmailFieldMessage(el.value, s.guest.error_invalid))
+                }}
               />
             </Field>
 

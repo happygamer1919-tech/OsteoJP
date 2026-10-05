@@ -56,9 +56,10 @@ export const GUEST_FORM_HORIZON_DAYS = 90
 
 /**
  * The longest email the form's input takes (0101). The staff app's bound, and
- * `parseGuestEmail` (@osteojp/db) is what actually decides: this constant only
- * feeds the input's `maxLength`, because this file is imported by a client
- * component and must not pull @osteojp/db into the browser bundle.
+ * `parseGuestEmail` is what actually decides, in the browser too
+ * (`email-field.ts`). This constant only feeds the input's `maxLength`: this
+ * file is imported by a client component and must not import the root of
+ * @osteojp/db, which would bring the database driver into the browser bundle.
  * `state.test.ts` requires the two numbers to be equal.
  */
 export const GUEST_EMAIL_INPUT_MAX = 320

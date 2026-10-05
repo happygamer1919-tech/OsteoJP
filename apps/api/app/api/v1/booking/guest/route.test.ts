@@ -18,6 +18,7 @@
  * defect - so every test that matters counts `inserted`.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import EMAIL_CASES from "../../../../../../../packages/db/tests/fixtures/guest-email-cases.json";
 
 vi.mock("server-only", () => ({}));
 
@@ -828,6 +829,43 @@ describe("(f) 0101: the optional email", () => {
       expect(body).toEqual({ error: "invalid_input" });
       expect(H.inserted).toEqual([]);
     }
+  });
+
+  it("THE SHARED TABLE: every value is stored as the one rule says or refused with the SAME 400 a bad phone gets, and never a 503", async () => {
+    // What a bad phone gets, measured here rather than assumed.
+    const badPhone = await guestBooking(post(validBody({ phone: "12" })));
+    expect(badPhone.status).toBe(400);
+    const refusal = await badPhone.json();
+    expect(refusal).toEqual({ error: "invalid_input" });
+
+    let stored = 0;
+    let refused = 0;
+    // The lone surrogate cannot stand in a JSON file, so it is added here.
+    const cases = [...EMAIL_CASES, { value: "a\ud800b@example.invalid", ok: false, stored: undefined, why: "a lone surrogate" }];
+    for (const c of cases) {
+      H.inserted = [];
+      const res = await guestBooking(post(validBody({ email: c.value })));
+      if (c.ok) {
+        stored += 1;
+        expect(res.status, c.why).toBe(202);
+        expect(H.inserted, c.why).toHaveLength(1);
+        expect(H.inserted[0]!.email, c.why).toBe(c.stored);
+      } else {
+        refused += 1;
+        expect(res.status, c.why).toBe(badPhone.status);
+        expect(await res.json(), c.why).toEqual(refusal);
+        expect(H.inserted, c.why).toEqual([]);
+      }
+    }
+    expect(stored).toBeGreaterThanOrEqual(12);
+    expect(refused).toBeGreaterThanOrEqual(38);
+  });
+
+  it("A NUL IS A 400, NOT A 503: the value Postgres cannot store never reaches the write", async () => {
+    H.inserted = [];
+    const res = await guestBooking(post(validBody({ email: "a\u0000b@example.invalid" })));
+    expect(res.status).toBe(400);
+    expect(H.inserted).toEqual([]);
   });
 
   it("a malformed email NEVER spends the per-phone or the tenant-wide budget", async () => {

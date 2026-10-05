@@ -2,20 +2,24 @@
  * guest-convert-email.db.test.ts - 0101, strategy ruling R40. WHAT HAPPENS TO THE
  * EMAIL A VISITOR GAVE ON THE PUBLIC FORM WHEN RECEPTION CONVERTS THE REQUEST.
  *
- * THE RULE (the lead's assumption for this build, not a ruling):
- *   a NEW patient gets the guest's email;
- *   an EXISTING matched patient who has NO email gets it;
- *   an existing patient's email is NEVER overwritten.
+ * THE RULE (the lead's decision of 2026-10-05, after review):
+ *   a NEW patient created from the request gets the guest's email;
+ *   an EXISTING patient's record is NEVER written by the convert, whether it
+ *   holds an address or not. The address stays on the request row.
  *
- * WHY A REAL DATABASE. "Never overwritten" is a claim about a row after a
- * conditional UPDATE under RLS. A mocked query builder can only show that
- * `.update()` was called with a WHERE; whether that WHERE spares a patient who
- * has an address is decided by Postgres. Every assertion below reads `patients`
- * and `audit_log` back on an admin connection.
+ * WHY. The form is public and the address unverified. Filling an existing
+ * patient's empty email from it would let anybody who posts the form with that
+ * patient's mobile and their own address receive the patient's confirmation and
+ * reminders (guest-link.db.test.ts follows that sequence to the dispatch).
+ *
+ * WHY A REAL DATABASE. "Never written" is a claim about a row after the real
+ * transaction under RLS, and "the audit log names no address" is a claim about
+ * rows a mock never writes. Every assertion below reads `patients`,
+ * `guest_booking_requests` and `audit_log` back on an admin connection.
  *
  * WHAT IS STUBBED, AND NEITHER IS UNDER TEST: `requireRequestContext`, because a
  * vitest worker has no Supabase session, and `next/cache`. `runScoped`, RLS, the
- * patient insert, both UPDATEs and the audit writes are real.
+ * patient insert, the request's UPDATE and the audit writes are real.
  *
  * IT NEEDS 0101 (the column), which is on main as
  * packages/db/migrations/0101_guest_request_email.sql and applied to production
@@ -51,7 +55,7 @@ vi.mock("@/lib/auth/context", async (importOriginal) => {
 const live = Boolean(process.env.DATABASE_URL);
 const d = live ? describe : describe.skip;
 
-d("0101 / R40: the guest's email on convert - new patient gets it, an empty one is filled, an existing one is never overwritten", () => {
+d("0101 / R40: the guest's email on convert - a new patient gets it, an existing patient's record is never written", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let convertGuestRequest: typeof import("./guest-convert").convertGuestRequest;
 
@@ -157,35 +161,37 @@ d("0101 / R40: the guest's email on convert - new patient gets it, an empty one 
     expect(await emailOf((await convertedPatientOf(requestId))!)).toBeNull();
   });
 
-  it("AN EXISTING PATIENT WITH NO EMAIL gets the guest's, and the change is audited by field NAME", async () => {
+  /** The address the REQUEST row still holds after the convert. */
+  const requestEmailOf = async (requestId: string): Promise<string | null> => {
+    const rows = (await db.execute(raw`select email from guest_booking_requests where id = ${requestId}::uuid`)) as unknown as { email: string | null }[];
+    return rows[0]!.email;
+  };
+
+  it.each([
+    ["NO email (NULL)", null],
+    ["an EMPTY STRING for an email", ""],
+    ["only SPACES for an email", "   "],
+  ])("THE ABUSE CASE: an EXISTING patient with %s is NOT given the form's address, nothing is audited as changed, and the request keeps it", async (_what, held) => {
     const phone = nextPhone();
-    const patientId = await seedPatient(phone, null);
+    const patientId = await seedPatient(phone, held);
     const requestId = await seedRequest(phone, GUEST);
     const r = await convert(requestId, { kind: "existing_patient", patientId });
     expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
+    // The request WAS converted onto this patient, so this is the branch under test.
     expect(await convertedPatientOf(requestId)).toBe(patientId);
-    expect(await emailOf(patientId)).toBe(GUEST);
-    const audits = await updateAuditsOf(patientId);
-    expect(audits).toHaveLength(1);
-    expect(JSON.parse(audits[0]!)).toEqual({ fields: ["email"], source: "guest_request" });
+    // THE RECORD IS BYTE FOR BYTE WHAT IT WAS.
+    expect(await emailOf(patientId)).toBe(held);
+    expect(await updateAuditsOf(patientId)).toEqual([]);
+    // And the address is not lost: it is where reception reads it.
+    expect(await requestEmailOf(requestId)).toBe(GUEST);
   });
 
-  it("an existing patient whose email is the EMPTY STRING counts as having none, and gets it", async () => {
-    const phone = nextPhone();
-    const patientId = await seedPatient(phone, "");
-    const requestId = await seedRequest(phone, GUEST);
-    const r = await convert(requestId, { kind: "existing_patient", patientId });
-    expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
-    expect(await emailOf(patientId)).toBe(GUEST);
-  });
-
-  it("AN EXISTING PATIENT'S EMAIL IS NEVER OVERWRITTEN: the convert succeeds, the held address stays, and nothing is audited as changed", async () => {
+  it("an existing patient who HAS an email keeps it, and nothing is audited as changed", async () => {
     const phone = nextPhone();
     const patientId = await seedPatient(phone, HELD);
     const requestId = await seedRequest(phone, GUEST);
     const r = await convert(requestId, { kind: "existing_patient", patientId });
     expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
-    // The request WAS converted onto this patient, so the email step ran against them.
     expect(await convertedPatientOf(requestId)).toBe(patientId);
     expect(await emailOf(patientId)).toBe(HELD);
     expect(await updateAuditsOf(patientId)).toEqual([]);
@@ -201,6 +207,38 @@ d("0101 / R40: the guest's email on convert - new patient gets it, an empty one 
       expect(await emailOf(patientId)).toBe(held);
       expect(await updateAuditsOf(patientId)).toEqual([]);
     }
+  });
+
+  it("THE CONTROL: with the SAME request, choosing CREATE NEW does save the address, so its absence above is the rule and not a dead column", async () => {
+    const phone = nextPhone();
+    const existing = await seedPatient(phone, null);
+    const requestId = await seedRequest(phone, GUEST);
+    const r = await convert(requestId, { kind: "new_patient" });
+    expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
+    const created = await convertedPatientOf(requestId);
+    expect(created).not.toBe(existing);
+    expect(await emailOf(created!)).toBe(GUEST);
+    // The household member who was already on file is untouched.
+    expect(await emailOf(existing)).toBeNull();
+  });
+
+  it("THE DIALOG'S FLAG, under real RLS: true for a record with no address or another, false for the same address, and the patient's own address is not returned", async () => {
+    const { listGuestRequestMatches } = await import("./guest-convert");
+    const phone = nextPhone();
+    const none = await seedPatient(phone, null);
+    const blank = await seedPatient(phone, "  ");
+    const other = await seedPatient(phone, HELD);
+    const same = await seedPatient(phone, GUEST.toUpperCase());
+    const requestId = await seedRequest(phone, GUEST);
+    acting.ctx = { tenantId: tenant, role: "reception", userId: reception };
+    const listed = await listGuestRequestMatches(requestId).finally(() => {
+      acting.ctx = null;
+    });
+    expect(listed.ok, JSON.stringify(listed)).toBe(true);
+    if (!listed.ok) return;
+    const flag = new Map(listed.data.map((m) => [m.id, m.formEmailNotOnRecord]));
+    expect([flag.get(none), flag.get(blank), flag.get(other), flag.get(same)]).toEqual([true, true, true, false]);
+    expect(JSON.stringify(listed.data)).not.toContain("@");
   });
 
   it("RECEPTION'S QUEUE shows each pending request's own email, and null where the visitor gave none", async () => {
@@ -223,7 +261,8 @@ d("0101 / R40: the guest's email on convert - new patient gets it, an empty one 
     const actions = new Set(rows.map((r) => r.action));
     expect(actions.has("patient.guest_request_converted")).toBe(true);
     expect(actions.has("patient.create")).toBe(true);
-    expect(actions.has("patient.update")).toBe(true);
+    // NO CONVERT UPDATES A PATIENT ANY MORE, so no such row exists for this tenant at all.
+    expect(actions.has("patient.update")).toBe(false);
     for (const r of rows) {
       expect(r.m, r.action).not.toContain("example.invalid");
       expect(r.m, r.action).not.toContain("@");

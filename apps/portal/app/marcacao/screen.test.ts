@@ -85,12 +85,35 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
     },
   )
 
+  it('THE BROWSER RUNS THE SERVER\'S RULE AND NOT THE DATABASE DRIVER: the helper imports the package\'s dependency-free entry, and the form never imports its root', () => {
+    const helper = code(join(HERE, 'email-field.ts'))
+    expect(helper.match(/^import .*$/gm)).toEqual(["import { parseGuestEmail } from '@osteojp/db/guest-email'"])
+    expect(helper).toContain("return parseGuestEmail(typed).ok ? '' : message")
+    // The root of @osteojp/db in a client component is the `postgres` driver in the browser bundle.
+    expect(FORM).toContain("import { guestEmailFieldMessage } from './email-field'")
+    expect(FORM).not.toMatch(/from '@osteojp\/db'/)
+    // The entry itself imports nothing at all.
+    const rule = readFileSync(join(HERE, '..', '..', '..', '..', 'packages', 'db', 'src', 'guest-email.ts'), 'utf8')
+    expect(rule).not.toMatch(/^import /m)
+    const pkg = JSON.parse(readFileSync(join(HERE, '..', '..', '..', '..', 'packages', 'db', 'package.json'), 'utf8')) as { exports: Record<string, string> }
+    expect(pkg.exports['./guest-email']).toBe('./src/guest-email.ts')
+  })
+
   it('R40: ONE email input, optional, with the ruling\'s own label and hint and no other copy', () => {
-    const inputs = [...FORM.matchAll(/<Input\b[^>]*name="email"[^>]*\/>/g)].map((m) => m[0])
+    // From `<Input` to the `/>` on its own line: the element carries arrow
+    // functions now, so "up to the next >" would stop inside it.
+    const inputs = [...FORM.matchAll(/<Input\n\s+name="email"\n[\s\S]*?\n\s+\/>/g)].map((m) => m[0])
     expect(inputs).toHaveLength(1)
+    expect(FORM.match(/name="email"/g)).toHaveLength(1)
     // OPTIONAL: the input carries no `required`, and neither does its Field.
     expect(inputs[0]).not.toContain('required')
-    expect(inputs[0]).toContain('type="email"')
+    // NOT THE BROWSER'S EMAIL CHECK, which refuses `coração@exemplo.pt` and admits
+    // `a@b`. The keyboard and the autofill stay; the SHARED rule decides.
+    expect(inputs[0]).toContain('type="text"')
+    expect(FORM).not.toContain('type="email"')
+    expect(inputs[0]).toContain('inputMode="email"')
+    expect(inputs[0]).toContain('autoComplete="email"')
+    expect(inputs[0]!.match(/setCustomValidity\(guestEmailFieldMessage\(el\.value, s\.guest\.error_invalid\)\)/g)).toHaveLength(2)
     expect(inputs[0]).toContain('maxLength={GUEST_EMAIL_INPUT_MAX}')
     expect(FORM).toContain('<Field label={s.guest.email_label} helperText={s.guest.email_hint}>')
     // THE WORDS ARE THE RULING'S, character for character, and the English is

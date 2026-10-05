@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { guestBookingRequests, patients } from "@osteojp/db";
 import { can, type Role } from "@osteojp/auth";
 import { parsePatientPhone } from "@osteojp/notify";
@@ -10,7 +10,7 @@ import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
 import { insertPatientTx } from "@/lib/patients/insert";
 import { writeAudit } from "@/lib/patients/audit";
-import { guestRequestPrefill } from "./guest-convert-handoff";
+import { emailOrNull, formEmailNotOnRecord, guestRequestPrefill } from "./guest-convert-handoff";
 import { patientPhoneMatchConds } from "./guest-match";
 
 /**
@@ -159,6 +159,13 @@ export type GuestPatientMatch = {
    *  reception do the same. Null for a stub patient that has none. */
   nif: string | null;
   patientNumber: number;
+  /**
+   * 0101: the request carries an email this patient's record does not hold
+   * (it has none, or another). A BOOLEAN, decided on the server: the dialog
+   * needs to know whether to warn, and has no need of the patient's own
+   * address, so that address never reaches the browser.
+   */
+  formEmailNotOnRecord: boolean;
 };
 
 /**
@@ -219,6 +226,7 @@ export async function listGuestRequestMatches(
         handledAt: guestBookingRequests.handledAt,
         phoneE164: guestBookingRequests.phoneE164,
         locationId: guestBookingRequests.locationId,
+        email: guestBookingRequests.email,
       })
       .from(guestBookingRequests)
       .where(eq(guestBookingRequests.id, requestId))
@@ -252,12 +260,20 @@ export async function listGuestRequestMatches(
         fullName: patients.fullName,
         nif: patients.nif,
         patientNumber: patients.patientNumber,
+        email: patients.email,
       })
       .from(patients)
       .where(and(...patientPhoneMatchConds(ctx.tenantId, request.phoneE164)))
       .orderBy(asc(patients.fullName));
 
-    return { ok: true as const, data: rows };
+    // The patient's own address is read to COMPARE and is not returned.
+    return {
+      ok: true as const,
+      data: rows.map(({ email, ...match }) => ({
+        ...match,
+        formEmailNotOnRecord: formEmailNotOnRecord(request.email, email),
+      })),
+    };
   });
 }
 
@@ -307,10 +323,11 @@ export async function convertGuestRequest(
       .limit(1);
 
     if (!request) return { ok: false, error: "not_found" };
-    // `|| null`, not `??`: an empty string is not an address. The public form
-    // stores NULL for "none" and 0101's CHECK refuses '', so this only matters
-    // for a row written some other way; either way nothing empty is carried.
-    const guestEmail = request.email || null;
+    // NULL, or nothing after a trim, is "no email" (`emailOrNull`, the one
+    // definition). The public form stores NULL for "none" and 0101's CHECK
+    // refuses '', so this only matters for a row written some other way;
+    // either way nothing empty and nothing padded is carried.
+    const guestEmail = emailOrNull(request.email);
     // SAME THREE-WAY GUARD AS THE DIALOG ABOVE, and it is the one that stops a
     // second convert creating a SECOND patient for one request now that the
     // status no longer moves out from under it.
@@ -369,10 +386,13 @@ export async function convertGuestRequest(
         fullName: request.fullName,
         phone: parsedPhone.ok ? parsedPhone.e164 : request.phone,
         primaryLocationId: request.locationId,
-        // R40: A NEW PATIENT GETS THE GUEST'S EMAIL. It was validated at the
-        // public form's write by `parseGuestEmail`, which is this app's own
-        // patient email rule (packages/db/tests/guest-email.test.ts compares
-        // the two from source), so it needs no second parse here.
+        // R40: A NEW PATIENT GETS THE GUEST'S EMAIL, AND ONLY A NEW PATIENT.
+        // The record is made from this request, so there is nobody else's
+        // address to displace, and reception is told in the dialog that it is
+        // saved unverified. It was validated at the public form's write by
+        // `parseGuestEmail`, which admits nothing this app's own patient email
+        // rule refuses (packages/db/tests/guest-email.test.ts), so it needs no
+        // second parse here.
         email: guestEmail,
       });
       patientId = created.id;
@@ -410,48 +430,24 @@ export async function convertGuestRequest(
     }
 
     // ================================================================= //
-    // R40 - AN EXISTING PATIENT WITH NO EMAIL GETS THE GUEST'S. AN EXISTING
-    // EMAIL IS NEVER OVERWRITTEN.
+    // R40 - AN EXISTING PATIENT'S RECORD IS NOT TOUCHED BY THE FORM'S EMAIL.
     // ================================================================= //
-    // THE LEAD'S ASSUMPTION, NOT A RULING (dispatch for this build, 2026-10-04):
-    // "a NEW patient gets it; an EXISTING matched patient who has no email gets
-    // it; an existing patient's email is NEVER overwritten". An address the
-    // clinic already holds was given to the clinic by the patient or checked by
-    // staff; one typed into a public form by whoever held the phone is weaker
-    // evidence, and replacing the first with the second would silently redirect
-    // a patient's reminders and documents.
+    // THE LEAD'S DECISION (2026-10-05, after review). An address typed into
+    // the public form is unverified, and the form is public: whoever posts it
+    // with another person's mobile and their own email would otherwise have
+    // their address saved on that person's record the moment reception matched
+    // the request, and would then receive that patient's confirmation, the
+    // reminder with its signed confirm and cancel link, the follow-up and the
+    // no-show notice, while the patient got no SMS.
     //
-    // THE CONDITION IS IN THE WRITE ITSELF, not in a read before it: `email IS
-    // NULL OR email = ''` is the WHERE, so a patient who gained an address
-    // between the match and this statement keeps it. Zero rows updated is the
-    // ordinary outcome for a patient who has one, and is not an error.
+    // SO THERE IS NO WRITE TO `patients` HERE, whatever the record holds: not
+    // when it has an address, not when it has none. The address stays on the
+    // request row, reception is shown it as unverified in the dialog, and adds
+    // it on the patient's own page after confirming with the patient.
     //
-    // AFTER the request is marked, so a lost race rolls this back with the rest.
-    // It never fails the convert: reception's job here is the booking, and the
-    // address can be typed on the patient's page.
-    if (resolution.kind === "existing_patient" && guestEmail) {
-      const filled = await tx
-        .update(patients)
-        .set({ email: guestEmail })
-        .where(
-          and(
-            eq(patients.id, patientId),
-            eq(patients.tenantId, ctx.tenantId),
-            isNull(patients.deletedAt),
-            or(isNull(patients.email), eq(patients.email, "")),
-          ),
-        )
-        .returning({ id: patients.id });
-      if (filled.length === 1) {
-        // The same audit entry the patient form's update writes: the field's
-        // NAME, never its value (hard rule 7).
-        await writeAudit(tx, ctx, {
-          action: "patient.update",
-          entityId: patientId,
-          metadata: { fields: ["email"], source: "guest_request" },
-        });
-      }
-    }
+    // THE CONSEQUENCE, WHICH IS THE POINT: an existing patient with no email
+    // is confirmed by SMS to the number the clinic holds, exactly as before
+    // the form had an email field (guest-link.db.test.ts follows it through).
 
     // Ids and the branch taken. No name, no number: hard rule 7.
     await writeAudit(tx, ctx, {

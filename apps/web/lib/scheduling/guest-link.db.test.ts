@@ -403,11 +403,13 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
   });
 
   /* ============ R40: THE EMAIL THE VISITOR TYPED ON THE PUBLIC FORM ============ */
-  // The arm above puts an address on the patient by hand. These three do not: the
-  // address is on the REQUEST, as the public form writes it (0101), and only the
-  // real convert can carry it to the patient. What they prove is the whole chain a
-  // visitor who gave an email goes through: form row -> convert -> booking -> link
-  // -> dispatch, ending in the EMAIL confirmation and not the SMS.
+  // The arm above puts an address on the patient by hand. These do not: the address
+  // is on the REQUEST, as the public form writes it (0101), and only the real
+  // convert decides what becomes of it. They follow the whole chain, form row ->
+  // convert -> booking -> link -> dispatch, for the three people a request can be:
+  // a NEW patient (gets the address and the email confirmation), an EXISTING
+  // patient with no email (record untouched, SMS as before the form had the field),
+  // and an existing patient with their own email (record untouched, their email).
 
   it("R40, the visitor GAVE an email on the form: the convert carries it to the new patient, and the EMAIL confirmation goes, not the SMS", async () => {
     const typed = `convidada-${randomUUID().slice(0, 8)}@example.invalid`;
@@ -441,28 +443,38 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     ]);
   });
 
-  it("R40, an EXISTING patient with no email, matched by phone: the convert fills it from the form, and the EMAIL goes", async () => {
-    const typed = `convidada-${randomUUID().slice(0, 8)}@example.invalid`;
+  it("R40, THE ABUSE SEQUENCE: the form posted with a PATIENT'S mobile and SOMEBODY ELSE'S email. The patient has no email. Nothing is written to the record, the patient gets the SMS on their own number, and no email goes anywhere", async () => {
+    // What an attacker controls: the public form. The mobile is the victim's, the address is theirs.
+    const attacker = `outra-pessoa-${randomUUID().slice(0, 8)}@example.invalid`;
     const mobile = `91${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`;
-    const existing = randomUUID();
+    const victim = randomUUID();
     await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone, email, primary_location_id, created_by)
-      values (${existing}, ${tenantId}, 'Cliente Inventada', ${`+351${mobile}`}, null, ${loc}, ${receptionId})`);
-    const requestId = await guestRequest({ phone: mobile, email: typed });
-    const r = await convert(requestId, { kind: "existing_patient", patientId: existing });
-    expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
-    expect((await rows(raw`select email from patients where id = ${existing}`))[0]).toEqual({ email: typed });
+      values (${victim}, ${tenantId}, 'Cliente Inventada', ${`+351${mobile}`}, null, ${loc}, ${receptionId})`);
+    const requestId = await guestRequest({ phone: mobile, email: attacker });
 
-    const booked = await book({ patientId: existing, guestRequestId: requestId });
+    // Reception picks the patient the number matches, as the dialog invites.
+    const r = await convert(requestId, { kind: "existing_patient", patientId: victim });
+    expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
+    // THE RECORD HOLDS NO ADDRESS, as before the request existed.
+    expect((await rows(raw`select email from patients where id = ${victim}`))[0]).toEqual({ email: null });
+
+    const booked = await book({ patientId: victim, guestRequestId: requestId });
+    expect(await requestRow(requestId)).toMatchObject({ status: "confirmed", converted_appointment_id: booked.id });
     await deliver();
-    expect(h.sms).toEqual([]);
-    expect(h.email).toHaveLength(1);
-    expect(h.email[0]).toMatchObject({ templateId: "booking_approved.email", to: typed });
+
+    // THE CONFIRMATION IS THE SMS, TO THE NUMBER THE CLINIC HOLDS FOR THE PATIENT.
+    expect(h.email).toEqual([]);
+    expect(h.sms).toHaveLength(1);
+    expect(h.sms[0]!.to).toBe(`+351${mobile}`);
     expect(await ledger(booked.id)).toEqual([
-      { channel: "email", template_id: "booking_approved.email", outcome: "sent", suppression_reason: null },
+      { channel: "sms", template_id: "booking_approved.sms", outcome: "sent", suppression_reason: null },
     ]);
+    // The typed address was used for NOTHING, on any channel.
+    expect(JSON.stringify(allSent())).not.toContain(attacker);
+    expect((await rows(raw`select email from patients where id = ${victim}`))[0]).toEqual({ email: null });
   });
 
-  it("R40, an EXISTING patient who already HAS an email: it is never overwritten, and the confirmation goes to the address the clinic holds", async () => {
+  it("R40, an EXISTING patient who HAS an email: the record is untouched, and their OWN address gets the email confirmation", async () => {
     const typed = `convidada-${randomUUID().slice(0, 8)}@example.invalid`;
     const held = `cliente-${randomUUID().slice(0, 8)}@example.invalid`;
     const mobile = `91${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`;

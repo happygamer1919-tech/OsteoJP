@@ -12,7 +12,12 @@ import {
   type GuestConvertError,
   type GuestPatientMatch,
 } from "@/lib/scheduling/guest-convert";
-import { bookingDeepLink, pressAction } from "@/lib/scheduling/guest-convert-handoff";
+import {
+  bookingDeepLink,
+  formEmailNote,
+  pressAction,
+  withFormEmail,
+} from "@/lib/scheduling/guest-convert-handoff";
 import { s } from "@/lib/i18n";
 // A TYPE and a hook-free component only. The intake is read and shaped on the
 // server (notificacoes/page.tsx); nothing that touches the database is imported
@@ -63,7 +68,11 @@ export type GuestRequestRow = {
   id: string;
   fullName: string;
   phone: string;
-  /** 0101, ruling R40. NULL when the visitor gave no email; then no email row renders. */
+  /**
+   * 0101, ruling R40. NULL when the visitor gave no email; then no email row
+   * renders. UNVERIFIED: anybody can type any address into a public form, so the
+   * row labels it as what the form said, never as the person's email.
+   */
   email: string | null;
   locationName: string | null;
   /**
@@ -269,10 +278,12 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
                   <dd className="text-v2-text-primary">{r.phone}</dd>
                 </div>
                 {/* 0101, ruling R40. Only when the visitor gave one: an empty
-                    "Email:" on every row would read as a field somebody forgot. */}
+                    label on every row would read as a field somebody forgot.
+                    THE LABEL SAYS WHAT IT IS: an address typed into a public
+                    form, which nobody has verified. */}
                 {r.email && (
                   <div className="flex gap-1" data-testid="guest-email">
-                    <dt>{s["guest.email"]}:</dt>
+                    <dt>{s["guest.emailFromForm"]}:</dt>
                     <dd className="break-all text-v2-text-primary">{r.email}</dd>
                   </div>
                 )}
@@ -384,88 +395,156 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
                 )}
               </div>
 
-              {dialogOpen && (
-                <div
-                  data-testid="guest-resolve-panel"
-                  className="rounded-v2 border border-v2-border bg-surface-muted p-4"
-                >
-                  <p className="text-sm font-semibold text-v2-text-primary">
-                    {s["guest.resolveTitle"]}
+              {/* A ROW THAT CONVERTS IN ONE PRESS creates a NEW patient with no
+                  dialog, so the note about the form's email is here, before the
+                  press. A row that opens the dialog carries its notes there. */}
+              {!r.converted &&
+                pressAction(r.possiblePatientMatches).kind === "convert_new" &&
+                formEmailNote(r.email, { kind: "new_patient" }) === "new_patient_saved" && (
+                  <p data-testid="guest-email-note-new" className="text-xs text-v2-text-secondary">
+                    {withFormEmail(s["guest.formEmailNewPatient"], r.email ?? "")}
                   </p>
-                  <p className="mt-1 text-sm text-v2-text-secondary">{s["guest.resolveHelp"]}</p>
+                )}
 
-                  {resolving.matches === null ? (
-                    <p className="mt-3 text-sm text-v2-text-secondary">
-                      {s["guest.resolveLoading"]}
-                    </p>
-                  ) : resolving.matches.length === 0 ? (
-                    // The count said there was a match and the list has none.
-                    // Said plainly rather than silently converting: the row was
-                    // rendered from an older snapshot, and the honest answer is
-                    // that the record it referred to is gone.
-                    <p className="mt-3 text-sm text-v2-text-secondary">
-                      {s["guest.resolveNoneFound"]}
-                    </p>
-                  ) : (
-                    <ul className="mt-3 flex flex-col gap-2">
-                      {resolving.matches.map((m) => (
-                        <li
-                          key={m.id}
-                          data-testid="guest-resolve-match"
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-v2 border border-v2-border bg-surface-base p-3"
-                        >
-                          <span className="text-sm text-v2-text-primary">
-                            {m.fullName}
-                            <span className="ml-2 text-xs text-v2-text-secondary">
-                              {s["guest.patientNumber"]} {m.patientNumber}
-                              {m.nif ? ` · NIF ${m.nif}` : ""}
-                            </span>
-                          </span>
-                          <button
-                            type="button"
-                            data-testid="guest-resolve-use-existing"
-                            disabled={busy}
-                            onClick={() =>
-                              convert(r.id, { kind: "existing_patient", patientId: m.id })
-                            }
-                            className="inline-flex h-11 items-center rounded-v2 bg-v2-green-700 px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-v2-green-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                          >
-                            {s["guest.resolveUseExisting"]}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="mt-3 flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setResolving(null)}
-                      className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                    >
-                      {s["guest.resolveCancel"]}
-                    </button>
-                    {/* CREATE-NEW STAYS AVAILABLE WITH A MATCH ON SCREEN, and it
-                        is not a trap door. Households share a number: a mother
-                        booking for her son is not a duplicate. What the dialog
-                        removes is the ability to reach this WITHOUT having seen
-                        the alternatives. */}
-                    <button
-                      type="button"
-                      data-testid="guest-resolve-create-new"
-                      disabled={busy || resolving.matches === null}
-                      onClick={() => convert(r.id, { kind: "new_patient" })}
-                      className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                    >
-                      {s["guest.resolveCreateNew"]}
-                    </button>
-                  </div>
-                </div>
+              {dialogOpen && (
+                <GuestResolvePanel
+                  formEmail={r.email}
+                  matches={resolving.matches}
+                  busy={busy}
+                  onUseExisting={(patientId) => convert(r.id, { kind: "existing_patient", patientId })}
+                  onCreateNew={() => convert(r.id, { kind: "new_patient" })}
+                  onCancel={() => setResolving(null)}
+                />
               )}
             </GlassCard>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * THE RESOLUTION DIALOG: who is this person? Its own component, and EXPORTED, so
+ * a suite can render it with a match list. Inside the queue it exists only after
+ * a press, and this repository renders components without a DOM, so as a branch
+ * of the queue's JSX nothing could assert what it shows.
+ *
+ * THE FORM'S EMAIL, AND WHAT BECOMES OF IT (the lead's decision, 2026-10-05).
+ * Beside each existing patient whose record does not hold the address the
+ * request gives: it is NOT saved on that record, and reception is told to
+ * confirm by phone before adding it. Beside "create new": it IS saved on the
+ * new record, unverified. Showing either line writes nothing.
+ */
+export function GuestResolvePanel({
+  formEmail,
+  matches,
+  busy,
+  onUseExisting,
+  onCreateNew,
+  onCancel,
+}: {
+  formEmail: string | null;
+  /** `null` while the match list is still being fetched. */
+  matches: GuestPatientMatch[] | null;
+  busy: boolean;
+  onUseExisting: (patientId: string) => void;
+  onCreateNew: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      data-testid="guest-resolve-panel"
+      className="rounded-v2 border border-v2-border bg-surface-muted p-4"
+    >
+      <p className="text-sm font-semibold text-v2-text-primary">
+        {s["guest.resolveTitle"]}
+      </p>
+      <p className="mt-1 text-sm text-v2-text-secondary">{s["guest.resolveHelp"]}</p>
+
+      {matches === null ? (
+        <p className="mt-3 text-sm text-v2-text-secondary">
+          {s["guest.resolveLoading"]}
+        </p>
+      ) : matches.length === 0 ? (
+        // The count said there was a match and the list has none.
+        // Said plainly rather than silently converting: the row was
+        // rendered from an older snapshot, and the honest answer is
+        // that the record it referred to is gone.
+        <p className="mt-3 text-sm text-v2-text-secondary">
+          {s["guest.resolveNoneFound"]}
+        </p>
+      ) : (
+        <ul className="mt-3 flex flex-col gap-2">
+          {matches.map((m) => (
+            <li
+              key={m.id}
+              data-testid="guest-resolve-match"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-v2 border border-v2-border bg-surface-base p-3"
+            >
+              <span className="text-sm text-v2-text-primary">
+                {m.fullName}
+                <span className="ml-2 text-xs text-v2-text-secondary">
+                  {s["guest.patientNumber"]} {m.patientNumber}
+                  {m.nif ? ` · NIF ${m.nif}` : ""}
+                </span>
+              </span>
+              <button
+                type="button"
+                data-testid="guest-resolve-use-existing"
+                disabled={busy}
+                onClick={() => onUseExisting(m.id)}
+                className="inline-flex h-11 items-center rounded-v2 bg-v2-green-700 px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-v2-green-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              >
+                {s["guest.resolveUseExisting"]}
+              </button>
+              {formEmailNote(formEmail, {
+                kind: "existing_patient",
+                formEmailNotOnRecord: m.formEmailNotOnRecord,
+              }) === "existing_not_saved" && (
+                <p
+                  data-testid="guest-email-note-existing"
+                  className="w-full text-xs text-v2-text-secondary"
+                >
+                  {withFormEmail(s["guest.formEmailNotSaved"], formEmail ?? "")}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          {s["guest.resolveCancel"]}
+        </button>
+        {/* CREATE-NEW STAYS AVAILABLE WITH A MATCH ON SCREEN, and it
+            is not a trap door. Households share a number: a mother
+            booking for her son is not a duplicate. What the dialog
+            removes is the ability to reach this WITHOUT having seen
+            the alternatives. */}
+        <button
+          type="button"
+          data-testid="guest-resolve-create-new"
+          disabled={busy || matches === null}
+          onClick={onCreateNew}
+          className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          {s["guest.resolveCreateNew"]}
+        </button>
+      </div>
+      {formEmailNote(formEmail, { kind: "new_patient" }) === "new_patient_saved" && (
+        <p
+          data-testid="guest-email-note-new"
+          className="mt-2 text-right text-xs text-v2-text-secondary"
+        >
+          {withFormEmail(s["guest.formEmailNewPatient"], formEmail ?? "")}
+        </p>
+      )}
+    </div>
   );
 }

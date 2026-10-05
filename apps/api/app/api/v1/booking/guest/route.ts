@@ -249,9 +249,12 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // 0101, RULING R40 - THE OPTIONAL EMAIL. Validated here, with the other pure
-  // checks, by the one rule the portal also calls (`parseGuestEmail`, which is
-  // the staff app's own email rule), so it spends no per-phone budget and no
-  // tenant-wide one. ABSENT, NULL AND EMPTY ALL MEAN "NO EMAIL": a request
+  // checks, by the one rule the portal also calls (`parseGuestEmail`: the staff
+  // app's own email rule, and on this public path also no control or format
+  // character, no look-alike of "@" or ".", and none of the characters a mail
+  // header gives a meaning to), so it spends no per-phone budget and no
+  // tenant-wide one. A NUL is refused there too, which is what keeps it a 400:
+  // Postgres cannot store one, and the write would have answered 503. ABSENT, NULL AND EMPTY ALL MEAN "NO EMAIL": a request
   // without one is accepted exactly as before, so a portal that predates the
   // field cannot break booking. A value that is present and is not an email is
   // refused with the same `invalid_input` as every other refusal: it names no

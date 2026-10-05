@@ -7,9 +7,10 @@
  * reads what a visitor reads: that step 4 carries ONE more field, labelled
  * "Email (opcional)" with the hint "Para receber a confirmação da marcação" (the
  * ruling's own words), that leaving it empty changes nothing, that an address
- * the browser's own `type="email"` lets through and the server does not is told
- * at step 4 rather than lost, and that reception then SEES the address on the
- * request's row.
+ * the rule refuses keeps the visitor on step 4 with what they typed, that an
+ * address with an ACCENT in it (which a browser's own `type="email"` would have
+ * refused) books, and that reception then SEES the address on the request's row,
+ * labelled as given on the form and not verified.
  *
  * IT NEEDS 0101 on the stack it runs against, as the application change does:
  * the migration is on main and applied, so a stack built from the migrations
@@ -23,7 +24,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { LOCATION, PORTAL_BASE_URL } from "./fixtures";
 
 const RUN = Date.now();
-const ADDRESS = `e2e-guest-${RUN}@example.invalid`;
+// A non-ASCII local part on purpose (see the first test).
+const ADDRESS = `e2e-ação-${RUN}@example.invalid`;
 const NAME = `E2E Convidado Email ${RUN}`;
 
 /** Walk steps 1 to 3 and stop on step 4. Returns the step total the page showed. */
@@ -70,7 +72,11 @@ test.describe("the public form's optional email (R40, 0101)", () => {
 
       const email = page.locator('input[name="email"]');
       await expect(email).toHaveCount(1);
-      await expect(email).toHaveAttribute("type", "email");
+      // NOT the browser's own email check: a text field with the email keyboard,
+      // and the form's shared rule deciding (email-field.ts).
+      await expect(email).toHaveAttribute("type", "text");
+      await expect(email).toHaveAttribute("inputmode", "email");
+      await expect(email).toHaveAttribute("autocomplete", "email");
       // OPTIONAL: the name and the phone are required, this is not.
       await expect(email).not.toHaveAttribute("required", /.*/);
       await expect(page.locator('input[name="fullName"]')).toHaveAttribute("required", /.*/);
@@ -84,17 +90,28 @@ test.describe("the public form's optional email (R40, 0101)", () => {
       await page.getByLabel("Nome completo").fill(NAME);
       await page.getByLabel("Telemóvel").fill("+351 916 000 124");
 
-      // `a@b` PASSES THE BROWSER (type="email" asks for no dot) AND FAILS THE
-      // SERVER'S RULE. So this is the server action speaking, not the input.
+      // `a@b` FAILS THE SHARED RULE. Once the page has hydrated the field itself
+      // stops the post, with the form's own message as its validity; before
+      // that, or with no JavaScript, the server action answers the same thing.
+      // Either way the visitor is still on step 4, nothing was booked, and the
+      // message is the form's: asserted on what both paths have in common.
       await email.fill("a@b");
       await finish(page, total);
       await expect(page.getByText(`Passo 4 de ${total}`)).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByText("Verifique os dados introduzidos.")).toBeVisible();
+      await expect
+        .poll(async () => {
+          const onField = await page.locator('input[name="email"]').evaluate((el) => (el as HTMLInputElement).validationMessage);
+          const banner = await page.getByText("Verifique os dados introduzidos.").count();
+          return onField === "Verifique os dados introduzidos." || banner > 0;
+        })
+        .toBe(true);
       await expect(page.getByTestId("guest-confirmation")).toHaveCount(0);
       // What was typed is kept, so the person corrects it rather than starting over.
       await expect(page.locator('input[name="email"]')).toHaveValue("a@b");
       await expect(page.getByLabel("Nome completo")).toHaveValue(NAME);
 
+      // AN ACCENT IN THE LOCAL PART IS AN ADDRESS. `type="email"` would have
+      // refused this in the browser, and the visitor could not have sent the form.
       await page.locator('input[name="email"]').fill(ADDRESS);
       await finish(page, total);
       await expect(page.getByTestId("guest-confirmation")).toBeVisible({ timeout: 15_000 });
@@ -121,6 +138,8 @@ test.describe("the public form's optional email (R40, 0101)", () => {
     await expect(withEmail).toHaveCount(1, { timeout: 15_000 });
     await expect(withEmail).toContainText(NAME);
     await expect(withEmail.getByTestId("guest-email")).toContainText(ADDRESS);
+    // LABELLED AS WHAT IT IS, never as a bare "Email".
+    await expect(withEmail.getByTestId("guest-email")).toContainText("Email indicado no formulário (não verificado)");
     const without = page.getByTestId("guest-request-row").filter({ hasText: `${NAME} sem email` });
     await expect(without).toHaveCount(1);
     await expect(without.getByTestId("guest-email")).toHaveCount(0);
