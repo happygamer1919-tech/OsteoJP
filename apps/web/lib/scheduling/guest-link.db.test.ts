@@ -127,16 +127,19 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
   const ctx = () => ({ tenantId, role: "reception" as const, userId: receptionId });
 
   /** A request as the public form writes it: a name and a mobile, nothing else. */
-  async function guestRequest(over: { locationId?: string; tenant?: string; phone?: string } = {}) {
+  async function guestRequest(
+    over: { locationId?: string; tenant?: string; phone?: string; email?: string | null } = {},
+  ) {
     const id = randomUUID();
     // A distinct mobile per request, so no request "possibly matches" another's patient.
     const phone = over.phone ?? `91${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`;
+    // `email` is 0101's column: NULL unless the visitor gave one on the public form (R40).
     await sql.execute(raw`insert into guest_booking_requests
         (id, tenant_id, full_name, phone, service_id, location_id,
-         requested_starts_at, requested_ends_at)
+         requested_starts_at, requested_ends_at, email)
       values (${id}, ${over.tenant ?? tenantId}, 'Convidada Inventada', ${phone},
               ${serviceId}, ${over.locationId ?? loc},
-              '2027-03-10T08:00:00Z'::timestamptz, '2027-03-10T12:00:00Z'::timestamptz)`);
+              '2027-03-10T08:00:00Z'::timestamptz, '2027-03-10T12:00:00Z'::timestamptz, ${over.email ?? null})`);
     return id;
   }
 
@@ -397,6 +400,87 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     expect(await ledger(booked.id)).toEqual([
       { channel: "email", template_id: "booking_approved.email", outcome: "sent", suppression_reason: null },
     ]);
+  });
+
+  /* ============ R40: THE EMAIL THE VISITOR TYPED ON THE PUBLIC FORM ============ */
+  // The arm above puts an address on the patient by hand. These three do not: the
+  // address is on the REQUEST, as the public form writes it (0101), and only the
+  // real convert can carry it to the patient. What they prove is the whole chain a
+  // visitor who gave an email goes through: form row -> convert -> booking -> link
+  // -> dispatch, ending in the EMAIL confirmation and not the SMS.
+
+  it("R40, the visitor GAVE an email on the form: the convert carries it to the new patient, and the EMAIL confirmation goes, not the SMS", async () => {
+    const typed = `convidada-${randomUUID().slice(0, 8)}@example.invalid`;
+    const { requestId, patientId } = await converted({ email: typed });
+    // The patient the convert created holds the address. Nobody wrote it by hand.
+    expect((await rows(raw`select email from patients where id = ${patientId}`))[0]).toEqual({ email: typed });
+
+    const booked = await book({ patientId, guestRequestId: requestId });
+    expect(booked.notice).toBeUndefined();
+    expect(await requestRow(requestId)).toMatchObject({ status: "confirmed", converted_appointment_id: booked.id });
+    expect(await deliver()).toEqual([expect.objectContaining({ dispatched: true })]);
+
+    // THE EMAIL, EXACTLY ONE, TO THE ADDRESS THE VISITOR TYPED. And no SMS, though a mobile is on file.
+    expect(h.sms).toEqual([]);
+    expect(h.email).toHaveLength(1);
+    expect(h.email[0]).toMatchObject({ templateId: "booking_approved.email", to: typed });
+    expect(await ledger(booked.id)).toEqual([
+      { channel: "email", template_id: "booking_approved.email", outcome: "sent", suppression_reason: null },
+    ]);
+  });
+
+  it("R40, THE CONTROL: the same visitor WITHOUT an email gets the SMS, so the email above is the form's doing", async () => {
+    const { requestId, patientId } = await converted({ email: null });
+    expect((await rows(raw`select email from patients where id = ${patientId}`))[0]).toEqual({ email: null });
+    const booked = await book({ patientId, guestRequestId: requestId });
+    await deliver();
+    expect(h.email).toEqual([]);
+    expect(h.sms).toHaveLength(1);
+    expect(await ledger(booked.id)).toEqual([
+      { channel: "sms", template_id: "booking_approved.sms", outcome: "sent", suppression_reason: null },
+    ]);
+  });
+
+  it("R40, an EXISTING patient with no email, matched by phone: the convert fills it from the form, and the EMAIL goes", async () => {
+    const typed = `convidada-${randomUUID().slice(0, 8)}@example.invalid`;
+    const mobile = `91${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`;
+    const existing = randomUUID();
+    await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone, email, primary_location_id, created_by)
+      values (${existing}, ${tenantId}, 'Cliente Inventada', ${`+351${mobile}`}, null, ${loc}, ${receptionId})`);
+    const requestId = await guestRequest({ phone: mobile, email: typed });
+    const r = await convert(requestId, { kind: "existing_patient", patientId: existing });
+    expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
+    expect((await rows(raw`select email from patients where id = ${existing}`))[0]).toEqual({ email: typed });
+
+    const booked = await book({ patientId: existing, guestRequestId: requestId });
+    await deliver();
+    expect(h.sms).toEqual([]);
+    expect(h.email).toHaveLength(1);
+    expect(h.email[0]).toMatchObject({ templateId: "booking_approved.email", to: typed });
+    expect(await ledger(booked.id)).toEqual([
+      { channel: "email", template_id: "booking_approved.email", outcome: "sent", suppression_reason: null },
+    ]);
+  });
+
+  it("R40, an EXISTING patient who already HAS an email: it is never overwritten, and the confirmation goes to the address the clinic holds", async () => {
+    const typed = `convidada-${randomUUID().slice(0, 8)}@example.invalid`;
+    const held = `cliente-${randomUUID().slice(0, 8)}@example.invalid`;
+    const mobile = `91${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`;
+    const existing = randomUUID();
+    await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone, email, primary_location_id, created_by)
+      values (${existing}, ${tenantId}, 'Cliente Inventada', ${`+351${mobile}`}, ${held}, ${loc}, ${receptionId})`);
+    const requestId = await guestRequest({ phone: mobile, email: typed });
+    const r = await convert(requestId, { kind: "existing_patient", patientId: existing });
+    expect(r.ok, `convert refused: ${JSON.stringify(r)}`).toBe(true);
+    expect((await rows(raw`select email from patients where id = ${existing}`))[0]).toEqual({ email: held });
+
+    await book({ patientId: existing, guestRequestId: requestId });
+    await deliver();
+    expect(h.sms).toEqual([]);
+    expect(h.email).toHaveLength(1);
+    expect(h.email[0]!.to).toBe(held);
+    // The typed address was used for nothing.
+    expect(JSON.stringify(allSent())).not.toContain(typed);
   });
 
   it("G1, NEITHER an email nor a number the SMS leg can use: the approver's notice, and nothing is sent", async () => {

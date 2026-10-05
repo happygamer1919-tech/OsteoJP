@@ -75,6 +75,10 @@ test.describe("the public form's optional email (R40, 0101)", () => {
       await expect(page.locator('input[name="fullName"]')).toHaveAttribute("required", /.*/);
       await expect(page.getByLabel("Email (opcional)")).toHaveCount(1);
       await expect(page.getByText("Para receber a confirmação da marcação")).toBeVisible();
+      // The owner-approved sentence about what the contacts are used for, under the two contact fields.
+      await expect(page.getByTestId("guest-contact-use")).toHaveText(
+        "Os contactos que indicar (telemóvel e, se o fornecer, email) são usados para confirmar e gerir a sua marcação.",
+      );
 
       await page.getByLabel("Nome completo").fill(NAME);
       await page.getByLabel("Telemóvel").fill("+351 916 000 124");

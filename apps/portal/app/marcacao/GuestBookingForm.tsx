@@ -462,6 +462,21 @@ export function GuestBookingForm({
               />
             </Field>
 
+            {/* WHAT THE CONTACTS ARE USED FOR. Owner-approved copy (2026-10-05),
+                its OWN key, directly under the two contact fields it speaks
+                about, on step 4 of both flows. It is NOT part of the consent
+                paragraph below and must never be folded into it: that
+                paragraph is `clinical.consent.rgpd.body`, whose wording is
+                pinned word for word and recorded against a version label
+                (`rgpd-v1-2026`), so one added sentence there would make every
+                recorded acceptance a claim about text nobody was shown. */}
+            <p
+              data-testid="guest-contact-use"
+              className="text-xs leading-relaxed text-text-secondary"
+            >
+              {s.guest.contact_use}
+            </p>
+
             {/* On the five-step flow the RGPD panel moves to step 5: consent
                 that covers the clinical answers cannot come before them. */}
             {!state.intake && rgpdPanel}
