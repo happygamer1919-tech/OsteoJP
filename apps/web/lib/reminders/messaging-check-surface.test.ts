@@ -32,10 +32,16 @@ import { describe, expect, it } from "vitest";
 import { senderLabel } from "./sender";
 import { replyCapabilityReason, senderCanReceiveReplies } from "./reply-capability";
 
-const PAGE = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../../app/admin/messaging-check/page.tsx"),
-  "utf8",
-);
+const SCREEN_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../app/admin/messaging-check");
+/** The page: the gate, and every question asked of the environment. */
+const PAGE = readFileSync(join(SCREEN_DIR, "page.tsx"), "utf8");
+/**
+ * The view: every slot the owner sees. The screen was split in two so the part
+ * that draws could be rendered by a test; the QUESTIONS stayed in the page and
+ * the SLOTS moved here, so each assertion below reads the file its subject is
+ * in, and the last one reads both.
+ */
+const VIEW = readFileSync(join(SCREEN_DIR, "messaging-check-view.tsx"), "utf8");
 
 /** The environment as it stood during the incident. */
 const BROKEN = { TWILIO_SMS_FROM: "+351969123456" };
@@ -80,20 +86,35 @@ describe("the page renders those answers rather than deriving its own", () => {
   });
 
   it("carries both slots, so deleting one is a visible change", () => {
-    expect(PAGE).toContain('data-testid="messaging-check-sender"');
-    expect(PAGE).toContain('data-testid="messaging-check-reply-state"');
+    expect(VIEW).toContain('data-testid="messaging-check-sender"');
+    expect(VIEW).toContain('data-testid="messaging-check-reply-state"');
+  });
+
+  it("the page hands the view those answers, and the view draws what it is handed", () => {
+    // The split must not open a gap between the question and the slot: the
+    // label, the reply state and its reason all travel as props.
+    expect(PAGE).toMatch(/sender=\{\{ label: senderLabel\(\), isNumber: senderIsNumber \}\}/);
+    expect(PAGE).toMatch(/replyArmed=\{replyArmed\}/);
+    expect(PAGE).toMatch(/reply: replyCapabilityReason\(\)/);
+    expect(VIEW).toMatch(/\{sender\.label\}/);
+    expect(VIEW).toMatch(/value=\{tech\.reply\}/);
   });
 
   it("warns when the sender is a NUMBER, which is always wrong here", () => {
     // The approved sender is the alphanumeric name, so a number means somebody
     // set the wrong value. This is the shape that cost two days.
-    expect(PAGE).toContain('data-testid="messaging-check-sender-warning"');
+    expect(VIEW).toContain('data-testid="messaging-check-sender-warning"');
+    expect(VIEW).toMatch(/sender\.isNumber \?/);
     expect(PAGE).toMatch(/sender\.kind === "number"/);
   });
 
   it("NEVER prints the raw variable, on any path", () => {
     // The page may read env NAMES and answers; it may not interpolate a value.
-    expect(PAGE).not.toMatch(/process\.env\.TWILIO/);
-    expect(PAGE).not.toMatch(/outboundSenderValue/);
+    for (const source of [PAGE, VIEW]) {
+      expect(source).not.toMatch(/process\.env\.TWILIO/);
+      expect(source).not.toMatch(/outboundSenderValue/);
+    }
+    // The view reads no environment at all: it draws props.
+    expect(VIEW).not.toMatch(/process\.env/);
   });
 });

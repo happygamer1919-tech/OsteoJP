@@ -2,11 +2,17 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { auditLog, getDbAdmin } from "@osteojp/db";
 import { isSmsCapablePT, normalizePhonePT } from "@osteojp/notify";
-import { sendSms } from "./clients";
-import type { ReminderContext } from "./templates";
+import { sendSms, suppressionReasonOf } from "./clients";
 import { confirmLinkEnabled, generateConfirmCode } from "./confirm-code";
 import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
-import { renderReminderSmsBody } from "./sms-body";
+import { renderMessagingCheckBody, smsSegments } from "./messaging-check-body";
+import {
+  isAppointmentIdShape,
+  isUnacceptedOnlineRequest,
+  refusalFromSuppression,
+  type MessagingCheckRefusal,
+} from "./messaging-check-reasons";
+import { loadMessagingCheckTarget } from "./messaging-check-target";
 
 // THE OWNER'S DELIVERY TEST. One real 24h reminder body, to one number he types.
 //
@@ -45,22 +51,25 @@ export type MessagingCheckResult =
   | { ok: true; segments: number; length: number; codeWasLive: boolean; body: string }
   | {
       ok: false;
-      reason:
-        | "invalid_phone"
-        | "landline"
-        | "rate_limited"
-        | "send_failed"
-        | "no_link"
-        /**
-         * THE RENDERER REFUSED THE BODY, and nothing was sent or written.
-         *
-         * This is the outcome the owner hit on 2026-09-02 as a 500. The body
-         * came to 185 characters - the 136 of the approved 24h body plus the
-         * confirm link, plus 49 for a reply instruction the environment had
-         * armed - and the single-segment rule refused it. The refusal is
-         * correct; a diagnostic page reporting it as a crash is not.
-         */
-        | "body_refused";
+      /**
+       * The closed list lives in `messaging-check-reasons.ts`, where the page
+       * can walk it. Three of them, said here because they are easy to misread:
+       *
+       * `body_refused` - THE RENDERER REFUSED THE BODY, and nothing was sent
+       * or written. This is the outcome the owner hit on 2026-09-02 as a 500.
+       * The body came to 185 characters - the 136 of the approved 24h body
+       * plus the confirm link, plus 49 for a reply instruction the environment
+       * had armed - and the single-segment rule refused it. The refusal is
+       * correct; a diagnostic page reporting it as a crash is not.
+       *
+       * `live_send_disabled`, `missing_provider_config`, `template_unapproved`
+       * - THE NOTIFICATION GATE HELD THE MESSAGE BACK and no provider was
+       * called. Not `send_failed`: nothing was attempted.
+       *
+       * `pending_request` - the appointment named is an online request
+       * reception has not accepted, and nothing was sent or minted.
+       */
+      reason: MessagingCheckRefusal;
       /**
        * What the provider said, for the OWNER'S OWN SCREEN only. A diagnostic
        * page whose only output is "not sent" sends the person who ran it to a
@@ -71,21 +80,9 @@ export type MessagingCheckResult =
       detail?: string;
     };
 
-/** The body a 24h reminder would carry today, for a fixed sample appointment. */
-function sampleContext(): ReminderContext {
-  return {
-    patientFirstName: "Teste",
-    appointmentDateLong: "amanha",
-    appointmentDateShort: "23/05",
-    appointmentTime: "14:30",
-    practitionerName: "Equipa OsteoJP",
-    // The longest real clinic name, so the test measures the WORST case rather
-    // than a comfortable one.
-    clinicLocation: "Castelo Branco",
-    clinicPhone: "+351 210 000 000",
-    rescheduleLink: "https://osteojp.pt/r/sample",
-  };
-}
+// The sample appointment the body describes lives in `messaging-check-body.ts`
+// (`messagingCheckSampleContext`), beside the one function that renders it, so
+// the page can SHOW the body through the same code this file SENDS it through.
 
 /**
  * Send one test message.
@@ -126,16 +123,41 @@ export async function sendMessagingCheck(args: {
   // what makes this page a delivery test rather than a lookalike: the two
   // cannot drift, and `sms-body.test.ts` asserts the equality.
   const code = generateConfirmCode();
-  const rendered = renderReminderSmsBody({
-    offset: "24h",
-    locale: "pt",
-    ctx: sampleContext(),
-    confirmCode: code,
-  });
+  const rendered = renderMessagingCheckBody(code);
   if (!rendered.ok) {
     return { ok: false, reason: "body_refused", detail: rendered.refusal };
   }
   const body = rendered.body;
+
+  // ==========================================================================
+  // A LIVE CODE IS NEVER MINTED FOR AN ONLINE REQUEST RECEPTION HAS NOT ACCEPTED
+  // ==========================================================================
+  // With an appointment id the code below is LIVE: the link in the test message
+  // opens /c/<code>, and pressing Confirmar there moves that appointment from
+  // `scheduled` to `confirmed` (confirm-redeem.ts). For an online request that
+  // is the acceptance itself, taken from a text message instead of from
+  // reception, with none of what an acceptance does.
+  //
+  // The reminder job refuses exactly this row before it sends anything
+  // (`isUnacceptedPedido`, dispatch.ts, R10), so no real reminder ever carries
+  // a live code for one. This page was the only path that could. It now
+  // refuses, BEFORE the mint and BEFORE the send, so nothing is written and
+  // nothing reaches a handset.
+  //
+  // The id's shape is checked first because a string that is not a uuid
+  // reaches Postgres as a cast and raises, and A DIAGNOSTIC PAGE MUST NEVER
+  // 500 (see below). An id that names no visible appointment is not refused
+  // here: it behaves as it always has, and the message carries a code that
+  // names no row.
+  if (args.appointmentId) {
+    if (!isAppointmentIdShape(args.appointmentId)) {
+      return { ok: false, reason: "invalid_appointment" };
+    }
+    const target = await loadMessagingCheckTarget(args.tenantId, args.appointmentId);
+    if (target && isUnacceptedOnlineRequest(target)) {
+      return { ok: false, reason: "pending_request" };
+    }
+  }
 
   // A LIVE code only when the owner named an appointment to spend one on, and
   // only now that there is a body worth sending. `issueConfirmCode` returns null
@@ -175,12 +197,27 @@ export async function sendMessagingCheck(args: {
     // interpolated value is the provider's message.
     failure = err instanceof Error ? err.message.slice(0, 300) : "unknown transport error";
   }
-  const delivered = sent !== null && !sent.id.startsWith("skipped:");
-  // A SUPPRESSION IS NOT A FAILURE AND MUST NOT READ AS ONE. `skipped:` means a
-  // gate refused - live send off, template unapproved, no provider configured -
-  // and the marker names which, so the owner reads a sentence rather than
-  // guessing at a silent no-op.
-  if (!failure && sent && !delivered) failure = sent.id;
+  // ==========================================================================
+  // DELIVERED MEANS A PROVIDER TOOK IT. `sandbox` IS THE FIELD THAT SAYS SO.
+  // ==========================================================================
+  // This used to read `!sent.id.startsWith("skipped:")`, and the comment beside
+  // it said `skipped:` is what a gate refusal looks like. It is not: the gate
+  // in packages/notify marks a held-back message `sandbox:sms`, and `skipped:`
+  // is only the E.164 guard in clients.ts, which this function's own
+  // normalisation makes unreachable. So with live sending off, the template
+  // unapproved or no sender configured, NO MESSAGE LEFT and this returned
+  // `ok: true` - the page said "sent, check the handset" - and a live code
+  // minted for a named appointment was left in place for a message nobody
+  // received.
+  //
+  // `sandbox` is true exactly when no network call was made (clients.ts), so
+  // it is the question being asked.
+  const delivered = sent !== null && !sent.sandbox;
+  // A SUPPRESSION IS NOT A FAILURE AND MUST NOT READ AS ONE. The gate's own
+  // reason travels back as a named refusal, so the owner reads which switch is
+  // off rather than guessing at a silent no-op.
+  const suppression = sent && !delivered ? suppressionReasonOf(sent) : undefined;
+  if (!failure && sent && !delivered) failure = suppression ?? sent.id;
 
   // Same compensation the dispatcher uses: a code that never went cannot be
   // allowed to block the appointment's real reminder from minting one.
@@ -209,10 +246,13 @@ export async function sendMessagingCheck(args: {
       ip: args.ip,
     });
 
+  // A message the gate held back names its own reason and needs no detail: the
+  // sentence on the page says which switch is off.
+  if (suppression) return { ok: false, reason: refusalFromSuppression(suppression) };
   if (!delivered) return { ok: false, reason: "send_failed", detail: failure };
   return {
     ok: true,
-    segments: Math.ceil(body.length / 160),
+    segments: smsSegments(body.length),
     length: body.length,
     codeWasLive: Boolean(issued),
     body,

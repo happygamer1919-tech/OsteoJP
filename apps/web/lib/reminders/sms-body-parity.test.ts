@@ -60,6 +60,14 @@ vi.mock("./confirm-code-store", () => ({
   withdrawConfirmCode: async () => true,
 }));
 
+// The one appointment read messaging-check makes when it is handed an id: is
+// it an online request reception has not accepted? The fixture below is a
+// staff booking that is already confirmed, so the answer is no and the send
+// goes on to the body, which is the subject here.
+vi.mock("./messaging-check-target", () => ({
+  loadMessagingCheckTarget: async () => ({ status: "confirmed", origin: "staff" }),
+}));
+
 // The audit insert messaging-check writes. Nothing here is under test.
 vi.mock("@osteojp/db", () => ({
   auditLog: {},
