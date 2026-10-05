@@ -319,7 +319,10 @@ describe("with a replyable sender the body is 185 and both paths refuse", () => 
     expect(check.ok).toBe(false);
     if (check.ok) throw new Error("unreachable");
     expect(check.reason).toBe("body_refused");
-    expect(check.detail).toContain("185 chars");
+    // THE LENGTH, AS A NUMBER. The page's result carries no sentence any more:
+    // nothing on it is free text, so nothing on it can reach a URL as text.
+    expect(check.length).toBe(185);
+    expect(JSON.stringify(check)).not.toContain("chars");
   });
 
   it("NO CODE IS MINTED BY EITHER PATH, which is the whole reorder", async () => {

@@ -171,8 +171,8 @@ describe("the preview equals what the send hands to the transport", () => {
     expect(result.ok).toBe(false);
     if (preview.ok || result.ok) throw new Error("unreachable");
     expect(result.reason).toBe("body_refused");
-    // The screen's technical line is the send's own refusal sentence.
-    expect(result.detail).toBe(preview.refusal);
+    // The send reports the same length the preview refused at, as a number.
+    expect(result.length).toBe(preview.length);
     expect(sent).toEqual([]);
   });
 });

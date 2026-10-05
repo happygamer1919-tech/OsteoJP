@@ -37,7 +37,16 @@ export const MESSAGING_CHECK_REFUSALS = [
   "missing_provider_config",
   /** The gate held it: the reminder template is not approved for sending. */
   "template_unapproved",
-  /** The provider was called and rejected the message. `detail` says why. */
+  /**
+   * Live sending is armed but a required variable is missing, so the gate
+   * raised before any provider was called (`NotificationEnvError`).
+   */
+  "config_incomplete",
+  /**
+   * The send threw: the provider rejected the message, or the call to it
+   * failed. `providerCode` carries the provider's own error code when it gave
+   * one. NEVER its words: see `providerFailureOf`.
+   */
   "send_failed",
 ] as const;
 
@@ -90,4 +99,76 @@ export const ONLINE_REQUEST_ORIGINS: ReadonlySet<string> = new Set(["patient_por
 
 export function isUnacceptedOnlineRequest(row: { status: string; origin: string }): boolean {
   return row.status === "scheduled" && ONLINE_REQUEST_ORIGINS.has(row.origin);
+}
+
+/* ================================================================== */
+/* A THROWN SEND, REDUCED TO A CLOSED VALUE                            */
+/* ================================================================== */
+
+/**
+ * What a thrown send is allowed to leave behind: a reason from the closed
+ * list, and the provider's error code when it has the shape of one.
+ *
+ * ==========================================================================
+ * THE PROVIDER'S MESSAGE IS NEVER READ. THAT IS THE WHOLE OF THIS FUNCTION.
+ * ==========================================================================
+ * Twilio puts the recipient in its error text ("The 'To' number +351... is
+ * not a mobile number"), and clients.ts says so above `ProviderSendError`.
+ * This screen used to carry that text, trimmed to 300 characters, into three
+ * places: `audit_log.metadata.failure`, the redirect URL (`?d=...`, so browser
+ * history and request logs) and the page. The number the owner typed is a
+ * contact detail, and rule 7 has no exception for an owner's own screen.
+ *
+ * So nothing here touches `err.message`. A Twilio SDK error carries a numeric
+ * `code` (21211, 21614) and an HTTP `status` beside its message; those are a
+ * reason class, and they are what travels. dispatch.ts makes the same choice
+ * for the reminder ledger (`providerErrorCode`).
+ */
+export type ProviderFailure = {
+  reason: Extract<MessagingCheckRefusal, "send_failed" | "config_incomplete">;
+  /** The provider's error code, or null when the error carried none. */
+  code: string | null;
+  /** The provider's HTTP status, or null. A number, so it cannot be prose. */
+  status: number | null;
+};
+
+/**
+ * Is this the shape of an error code, and nothing else?
+ *
+ * TWO SHAPES, BOTH CLOSED, and the bounds are the point. Digits, at most six:
+ * a Twilio code is five, and nine digits would be room for a subscriber
+ * number. Or capital letters and underscores with NO DIGIT AT ALL, which is
+ * what Node's own network errors look like (ECONNRESET, ETIMEDOUT). A value
+ * that fits neither is dropped, not trimmed: a trimmed secret is still part of
+ * one.
+ */
+export function isProviderCode(value: string): boolean {
+  return /^\d{1,6}$/.test(value) || /^[A-Z_]{2,32}$/.test(value);
+}
+
+/** `NotificationEnvError.name`, as packages/notify/src/env.ts sets it. */
+const NOTIFICATION_ENV_ERROR = "NotificationEnvError";
+
+export function providerFailureOf(err: unknown): ProviderFailure {
+  // The gate's own refusal to run with an incomplete environment. Its message
+  // names variables, not people, and it is still not carried: the sentence on
+  // the page says what it means.
+  //
+  // BY NAME, not `instanceof`: this module stays free of the notify runtime so
+  // the page's pure code can import it, and the class sets its own name.
+  if (err instanceof Error && err.name === NOTIFICATION_ENV_ERROR) {
+    return { reason: "config_incomplete", code: null, status: null };
+  }
+  let code: string | null = null;
+  let status: number | null = null;
+  if (typeof err === "object" && err !== null) {
+    const raw = (err as { code?: unknown }).code;
+    const candidate =
+      typeof raw === "number" && Number.isInteger(raw) ? String(raw) : typeof raw === "string" ? raw : null;
+    if (candidate !== null && isProviderCode(candidate)) code = candidate;
+
+    const s = (err as { status?: unknown }).status;
+    if (typeof s === "number" && Number.isInteger(s) && s >= 100 && s <= 599) status = s;
+  }
+  return { reason: "send_failed", code, status };
 }

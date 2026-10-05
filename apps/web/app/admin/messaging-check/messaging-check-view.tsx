@@ -106,12 +106,28 @@ export function MessagingCheckView({
               <p className="font-medium text-error-800">
                 {fill(s[outcome.sentence], { limit: attemptLimit })}
               </p>
-              {outcome.detail ? (
-                <p className="text-v2-text-secondary">
-                  {s["admin.messagingCheck.detailLabel"]}{" "}
-                  <span lang="en" className="break-words font-mono text-xs text-v2-text-primary">
-                    {outcome.detail}
-                  </span>
+              {/* A CODE, NEVER THE PROVIDER'S WORDS. Its message holds the
+                  number that was typed, so it reaches neither this page nor
+                  the address that leads to it; `outcome.ts` lets through only
+                  a value shaped like an error code. */}
+              {outcome.providerCode ? (
+                <p data-testid="messaging-check-provider-code">
+                  {fill(s["admin.messagingCheck.providerCodeLine"], {
+                    code: outcome.providerCode,
+                  })}
+                </p>
+              ) : null}
+              {outcome.length !== null ? (
+                <p>
+                  {fill(s["admin.messagingCheck.bodyRefusedLength"], {
+                    length: outcome.length,
+                    limit: preview.limit,
+                  })}
+                </p>
+              ) : null}
+              {outcome.linkNotWithdrawn ? (
+                <p data-testid="messaging-check-link-not-withdrawn" className="font-medium">
+                  {s["admin.messagingCheck.linkNotWithdrawn"]}
                 </p>
               ) : null}
             </div>
@@ -146,12 +162,16 @@ export function MessagingCheckView({
         </dl>
       </GlassPanel>
 
+      {/* `min-w-0` ON EVERY GRID CHILD. A grid item's minimum width is its
+          content's, and `break-words` does not lower that: one long token (a
+          confirm link on a long host) would widen the column past a 390 px
+          screen and scroll the whole page sideways. */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <GlassPanel title={s["admin.messagingCheck.previewTitle"]}>
+        <GlassPanel className="min-w-0" title={s["admin.messagingCheck.previewTitle"]}>
           <Preview s={s} preview={preview} armed={armed} senderLabel={sender.label} />
         </GlassPanel>
 
-        <GlassPanel title={s["admin.messagingCheck.formTitle"]}>
+        <GlassPanel className="min-w-0" title={s["admin.messagingCheck.formTitle"]}>
           <form action={action} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1">
               <label htmlFor={PHONE_ID} className={adminLabel}>
@@ -281,7 +301,7 @@ export function MessagingCheckView({
 
 function Fact({ term, children }: { term: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <dt className="text-sm font-semibold text-v2-text-primary">{term}</dt>
       <dd className="flex flex-col gap-1 text-sm text-v2-text-secondary">{children}</dd>
     </div>
@@ -292,7 +312,7 @@ function TechLine({ term, value }: { term: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="font-medium text-v2-text-primary">{term}</dt>
-      <dd lang="en" className="break-words font-mono">
+      <dd lang="en" className="min-w-0 wrap-anywhere font-mono">
         {value}
       </dd>
     </div>
@@ -344,21 +364,25 @@ function Preview({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div data-testid="messaging-check-preview-box" className="flex min-w-0 flex-col gap-3">
       <p className="text-sm text-v2-text-secondary">{s["admin.messagingCheck.previewIntro"]}</p>
-      <figure className="flex flex-col gap-1">
+      <figure className="flex min-w-0 flex-col gap-1">
         <figcaption className={adminHelp}>
           {s["admin.messagingCheck.previewFrom"]}{" "}
           <span className="font-medium text-v2-text-primary">{senderLabel}</span>
         </figcaption>
         {/* `pre-wrap` keeps the message's own line breaks, which are part of
-            what is being tested, and still wraps rather than overflowing. The
-            smaller type and padding below `sm` are so the longest line, the
-            confirm link, fits at 390 px: a line the screen wrapped would read
-            as a line break the message does not have. */}
+            what is being tested. The smaller type and padding below `sm` are so
+            the longest line, the confirm link, fits at 390 px: a line the
+            screen wrapped would read as a line break the message does not
+            have. `wrap-anywhere` is the floor under that: a link too long to
+            fit breaks inside the token, and (unlike `break-words`) it also
+            lowers the element's minimum width, so it can never push the page
+            wider than the screen. `min-w-0` and `max-w-full` are the same
+            promise made to the flex column it sits in. */}
         <pre
           data-testid="messaging-check-preview"
-          className="whitespace-pre-wrap break-words rounded-v2 border border-v2-border bg-v2-surface p-3 font-mono text-xs text-v2-text-primary sm:p-4 sm:text-sm"
+          className="max-w-full min-w-0 whitespace-pre-wrap wrap-anywhere rounded-v2 border border-v2-border bg-v2-surface p-3 font-mono text-xs text-v2-text-primary sm:p-4 sm:text-sm"
         >
           {preview.body}
         </pre>

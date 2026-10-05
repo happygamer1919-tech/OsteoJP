@@ -10,6 +10,7 @@ import {
 } from "@osteojp/rate-limit";
 import { getRequestContext } from "@/lib/auth/context";
 import { sendMessagingCheck } from "@/lib/reminders/messaging-check";
+import { messagingCheckRedirect } from "./outcome";
 
 // The owner's delivery test, as a server action.
 //
@@ -54,16 +55,15 @@ export async function sendMessagingCheckAction(formData: FormData): Promise<void
     ip,
   });
 
-  if (!result.ok) {
-    // The provider's reason travels back on the URL so the owner reads it on
-    // the page rather than in a dashboard. Encoded, and capped, because it is
-    // provider text rather than ours.
-    const detail = result.detail ? `&d=${encodeURIComponent(result.detail.slice(0, 200))}` : "";
-    redirect(`/admin/messaging-check?m=${result.reason}${detail}`);
-  }
-  // The outcome carries the two numbers worth reading on the way back: how long
-  // the body was and whether the code was live.
-  redirect(
-    `/admin/messaging-check?m=sent&len=${result.length}&live=${result.codeWasLive ? "1" : "0"}`,
-  );
+  // ==========================================================================
+  // THE WAY BACK CARRIES MARKERS, NEVER WORDS.
+  // ==========================================================================
+  // This used to put the provider's own error text on the URL as `&d=...`, so
+  // the owner could read it on the page. Twilio writes the recipient into that
+  // text, and a URL is the least private place in the system: browser history,
+  // the platform's request logs, a pasted link. `messagingCheckRedirect` builds
+  // the address from a closed set of values - a reason from the list, a
+  // provider error code, a length, two flags - and the page turns them back
+  // into sentences.
+  redirect(messagingCheckRedirect(result));
 }

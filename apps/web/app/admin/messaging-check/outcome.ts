@@ -12,9 +12,11 @@
 
 import type { StringKey } from "@osteojp/i18n";
 
+import type { MessagingCheckResult } from "@/lib/reminders/messaging-check";
 import { smsSegments } from "@/lib/reminders/messaging-check-body";
 import {
   isMessagingCheckRefusal,
+  isProviderCode,
   type MessagingCheckRefusal,
 } from "@/lib/reminders/messaging-check-reasons";
 
@@ -30,15 +32,24 @@ export const REFUSAL_SENTENCE: Record<MessagingCheckRefusal, StringKey> = {
   live_send_disabled: "admin.messagingCheck.liveSendDisabled",
   missing_provider_config: "admin.messagingCheck.missingProviderConfig",
   template_unapproved: "admin.messagingCheck.templateUnapproved",
+  config_incomplete: "admin.messagingCheck.configIncomplete",
   send_failed: "admin.messagingCheck.sendFailed",
 };
 
 /**
- * The refusals whose technical detail is worth printing under the sentence:
- * the provider's own words, and the rule that refused the body. Every other
- * refusal is fully said by its sentence, and a `d` on the URL is ignored.
+ * Provider error codes this screen can explain, and the sentence for each.
+ *
+ * DELIBERATELY SHORT: the two codes Twilio publishes for a refused recipient.
+ * 21211 is the one clients.ts documents (a number that is not E.164), and
+ * 21614 is a number that is not a mobile. Every other code gets the general
+ * sentence and the code itself, which the owner or whoever configures sending
+ * can look up. A longer table of remembered meanings would be a confident
+ * sentence about the wrong thing.
  */
-const CARRIES_DETAIL: ReadonlySet<MessagingCheckRefusal> = new Set(["send_failed", "body_refused"]);
+export const PROVIDER_CODE_SENTENCE: Readonly<Record<string, StringKey>> = {
+  "21211": "admin.messagingCheck.sendFailedRecipient",
+  "21614": "admin.messagingCheck.sendFailedRecipient",
+};
 
 /** The action's own marker for its rate limit, which it checks before the send. */
 const ACTION_LIMITED = "limited";
@@ -57,15 +68,32 @@ export type MessagingCheckOutcome =
   | {
       kind: "refused";
       sentence: StringKey;
-      /** Provider or rule text, shown UNDER the sentence, never instead of it. */
-      detail: string | null;
+      /**
+       * The provider's error code, printed UNDER the sentence as a code.
+       * Already checked against `isProviderCode`: never the provider's words.
+       */
+      providerCode: string | null;
+      /** For a refused body: how long it was, when the send knew. */
+      length: number | null;
+      /** A live code was minted, the message did not go, and it is still live. */
+      linkNotWithdrawn: boolean;
     };
 
+/**
+ * What the URL may carry. NO FREE TEXT: there is no `d`.
+ *
+ *   m     a reason from the closed list, `sent`, or the action's `limited`
+ *   len   a body length, digits
+ *   live  `1` when the code in a sent message names a real appointment
+ *   c     a provider error code (`isProviderCode`)
+ *   w     `1` when a minted code could not be withdrawn
+ */
 export type MessagingCheckSearchParams = {
   m?: string;
   len?: string;
   live?: string;
-  d?: string;
+  c?: string;
+  w?: string;
 };
 
 /** A length from the URL: digits only, and no longer than any SMS could be. */
@@ -75,8 +103,32 @@ function readLength(raw: string | undefined): number | null {
   return n > 0 ? n : null;
 }
 
+/**
+ * The address the action redirects to, for one result.
+ *
+ * EVERY VALUE IS FROM A CLOSED SET, AND THE TYPE IS WHY: a refusal result has
+ * no string on it but a reason from the list and a provider code, and the code
+ * is checked again here so that a value that is not shaped like a code cannot
+ * reach a URL whatever a later edit puts in the field.
+ */
+export function messagingCheckRedirect(result: MessagingCheckResult): string {
+  const base = "/admin/messaging-check";
+  if (result.ok) {
+    return `${base}?m=sent&len=${result.length}&live=${result.codeWasLive ? "1" : "0"}`;
+  }
+  const params = [`m=${result.reason}`];
+  if (result.providerCode && isProviderCode(result.providerCode)) {
+    params.push(`c=${result.providerCode}`);
+  }
+  if (typeof result.length === "number" && Number.isInteger(result.length) && result.length > 0) {
+    params.push(`len=${result.length}`);
+  }
+  if (result.linkNotWithdrawn) params.push("w=1");
+  return `${base}?${params.join("&")}`;
+}
+
 export function messagingCheckOutcome(params: MessagingCheckSearchParams): MessagingCheckOutcome {
-  const { m, len, live, d } = params;
+  const { m, len, live, c, w } = params;
   if (!m) return { kind: "idle" };
 
   if (m === "sent") {
@@ -89,20 +141,30 @@ export function messagingCheckOutcome(params: MessagingCheckSearchParams): Messa
     };
   }
 
+  const plain = { providerCode: null, length: null, linkNotWithdrawn: false } as const;
+
   if (m === ACTION_LIMITED) {
-    return { kind: "refused", sentence: REFUSAL_SENTENCE.rate_limited, detail: null };
+    return { kind: "refused", sentence: REFUSAL_SENTENCE.rate_limited, ...plain };
   }
 
   if (isMessagingCheckRefusal(m)) {
+    // A code is read only where a provider was called, and only when it has
+    // the shape of one. Anything else typed onto the URL is ignored, not shown.
+    const providerCode = m === "send_failed" && c && isProviderCode(c) ? c : null;
     return {
       kind: "refused",
-      sentence: REFUSAL_SENTENCE[m],
-      detail: CARRIES_DETAIL.has(m) && d ? d : null,
+      sentence:
+        providerCode === null
+          ? REFUSAL_SENTENCE[m]
+          : (PROVIDER_CODE_SENTENCE[providerCode] ?? "admin.messagingCheck.sendFailedCode"),
+      providerCode,
+      length: m === "body_refused" ? readLength(len) : null,
+      linkNotWithdrawn: w === "1",
     };
   }
 
   // A marker this page does not know. It is NOT printed: a raw code on the
   // screen is the thing this module exists to prevent. The owner reads that
   // nothing was sent, which is the only safe reading of an unknown outcome.
-  return { kind: "refused", sentence: "admin.messagingCheck.failed", detail: null };
+  return { kind: "refused", sentence: "admin.messagingCheck.failed", ...plain };
 }

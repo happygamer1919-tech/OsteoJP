@@ -26,7 +26,7 @@ import {
 import { MESSAGING_CHECK_REFUSALS } from "@/lib/reminders/messaging-check-reasons";
 
 import { MessagingCheckView, type MessagingCheckViewProps } from "./messaging-check-view";
-import { messagingCheckOutcome, REFUSAL_SENTENCE } from "./outcome";
+import { messagingCheckOutcome, messagingCheckRedirect, REFUSAL_SENTENCE } from "./outcome";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const P = "admin.messagingCheck.";
@@ -132,6 +132,9 @@ describe("what the screen is for, at the top, in both languages", () => {
         { outcome: { kind: "sent", length: 157, segments: 1, live: true } },
         { outcome: { kind: "sent", length: null, segments: null, live: false } },
         { outcome: messagingCheckOutcome({ m: "limited" }) },
+        { outcome: messagingCheckOutcome({ m: "send_failed", c: "21614", w: "1" }) },
+        { outcome: messagingCheckOutcome({ m: "send_failed", c: "30001" }) },
+        { outcome: messagingCheckOutcome({ m: "body_refused", len: "185" }) },
         { preview: previewMessagingCheck({ ...ENV, TWILIO_SMS_FROM: "+351900000000" }) },
         { preview: previewMessagingCheck({ TWILIO_SMS_FROM: "OsteoJP" }) },
       ];
@@ -153,6 +156,97 @@ describe("what the screen is for, at the top, in both languages", () => {
   it("the tab keeps its name", () => {
     expect(getStrings("pt")[k("title")]).toBe("Teste de envio");
     expect(render("pt")).toContain('<h2 class="text-xl text-v2-text-primary">Teste de envio</h2>');
+  });
+});
+
+describe("the limit is said the way it is counted", () => {
+  it("per internet connection, in both languages, in the cost line and in the refusal", () => {
+    // The limiter is keyed on the source address (actions.ts hands it the
+    // request headers and no subject), not on the owner or the clinic. A
+    // sentence that said "5 attempts" and stopped would promise something the
+    // code does not do.
+    const action = readFileSync(join(HERE, "actions.ts"), "utf8");
+    expect(action).toContain('clientKeyFromHeaders(await headers(), "messaging-check"),');
+
+    const pt = getStrings("pt");
+    const en = getStrings("en");
+    for (const name of ["costBody", "limited"]) {
+      expect(pt[k(name)], name).toMatch(/ligação à internet/);
+      expect(en[k(name)], name).toMatch(/internet connection/);
+      expect(pt[k(name)], name).toContain("{limit}");
+    }
+    expect(pt[k("costBody")]).toMatch(/não por pessoa/);
+    // And the refusal does not claim the limit was reached when the store
+    // that counts it could not be read: the limiter refuses then too.
+    expect(pt[k("limited")]).toMatch(/ou não foi possível verificá-lo/);
+  });
+});
+
+describe("the record sentence is true of the code", () => {
+  it("says what is kept, and that the number is kept nowhere", () => {
+    const pt = getStrings("pt")[k("auditBody")];
+    expect(pt).toMatch(/endereço IP/);
+    expect(pt).toMatch(/O número não é guardado/);
+    expect(pt).toMatch(/impressão digital \(hash\)/);
+    // The claim rests on these, each proved where it lives: the audit row
+    // (messaging-check.test.ts), the redirect (actions.test.ts), and here, the
+    // page having no free-text parameter to print.
+    const page = readFileSync(join(HERE, "page.tsx"), "utf8");
+    expect(page).toContain("const { m, len, live, c, w } = await searchParams;");
+    // Code only: the comments in actions.ts describe the old `d` parameter.
+    const actionCode = readFileSync(join(HERE, "actions.ts"), "utf8").replace(/^\s*\/\/.*$/gm, "");
+    expect(actionCode).not.toMatch(/[?&]d=|\.detail\b|encodeURIComponent/);
+    expect(actionCode).toContain("redirect(messagingCheckRedirect(result));");
+  });
+});
+
+describe("nothing on the screen can widen the page at 390 px", () => {
+  const html = render("pt");
+
+  it("the preview breaks a long token and may shrink below its content", () => {
+    const pre = /<pre[^>]*data-testid="messaging-check-preview"[^>]*>/.exec(html)?.[0] ?? "";
+    const classes = (/class="([^"]*)"/.exec(pre)?.[1] ?? "").split(/\s+/);
+    // `wrap-anywhere` is overflow-wrap:anywhere: it breaks inside a token AND
+    // lowers the minimum width, which `break-words` does not.
+    for (const needed of ["wrap-anywhere", "min-w-0", "max-w-full", "whitespace-pre-wrap"]) {
+      expect(classes, needed).toContain(needed);
+    }
+    expect(classes).not.toContain("break-words");
+    expect(classes).not.toContain("whitespace-nowrap");
+    expect(classes).not.toContain("overflow-x-auto");
+
+    const box = /<div[^>]*data-testid="messaging-check-preview-box"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(box).toMatch(/class="[^"]*\bmin-w-0\b/);
+    expect(html).toMatch(/<figure class="[^"]*\bmin-w-0\b/);
+  });
+
+  it("both columns of the message and form grid may shrink", () => {
+    // The two panels are the grid's children. A grid item is as wide as its
+    // content by default; `min-w-0` is what lets it be as narrow as the screen.
+    const panels = [...html.matchAll(/<section class="(glass-card[^"]*)">/g)].map((m) => m[1]);
+    expect(panels).toHaveLength(4);
+    const [, preview, form] = panels;
+    expect(preview.split(/\s+/)).toContain("min-w-0");
+    expect(form.split(/\s+/)).toContain("min-w-0");
+  });
+
+  it("every cell of the facts grid may shrink", () => {
+    const facts = /<dl class="grid[^"]*">([\s\S]*?)<\/dl>/.exec(html)?.[1] ?? "";
+    const cells = [...facts.matchAll(/<div class="([^"]*)"><dt/g)].map((m) => m[1]);
+    expect(cells).toHaveLength(5);
+    for (const cell of cells) expect(cell.split(/\s+/)).toContain("min-w-0");
+  });
+
+  it("a confirm link far longer than any real one is still inside a breakable element", () => {
+    const long = previewMessagingCheck({
+      ...ENV,
+      REMINDERS_RESCHEDULE_BASE_URL: "https://a.invalid",
+    });
+    if (!long.ok) throw new Error("unreachable");
+    const stretched = { ...long, body: long.body.replace("a.invalid", "a".repeat(120) + ".invalid") };
+    const out = render("pt", { preview: stretched });
+    expect(slot(out, "messaging-check-preview")).toBe(stretched.body);
+    expect(out).toMatch(/<pre[^>]*class="[^"]*\bwrap-anywhere\b/);
   });
 });
 
@@ -281,7 +375,7 @@ describe("every state is said in a sentence", () => {
     // the closed list, plus the action's own rate-limit marker.
     for (const reason of [...MESSAGING_CHECK_REFUSALS, "limited"]) {
       it(`${locale}: REFUSED (${reason}) is a sentence, and the code is not on the screen`, () => {
-        const outcome = messagingCheckOutcome({ m: reason, d: "DETAIL-FROM-THE-URL" });
+        const outcome = messagingCheckOutcome({ m: reason });
         expect(outcome.kind).toBe("refused");
         if (outcome.kind !== "refused") throw new Error("unreachable");
 
@@ -307,11 +401,13 @@ describe("every state is said in a sentence", () => {
 
     it(`${locale}: an UNKNOWN marker reads as not sent, and is never printed`, () => {
       const html = render(locale, {
-        outcome: messagingCheckOutcome({ m: "zz_not_a_reason", d: "DETAIL-FROM-THE-URL" }),
+        outcome: messagingCheckOutcome({ m: "zz_not_a_reason", c: "21614", w: "1", len: "185" }),
       });
+      // The sentence alone. Nothing else on the URL is believed for a marker
+      // this page does not know.
       expect(slot(html, "messaging-check-result")).toBe(s[k("failed")]);
       expect(html).not.toContain("zz_not_a_reason");
-      expect(html).not.toContain("DETAIL-FROM-THE-URL");
+      expect(html).not.toContain("21614");
     });
   }
 
@@ -333,28 +429,133 @@ describe("every state is said in a sentence", () => {
     expect(new Set(sentences).size).toBe(sentences.length);
   });
 
-  it("the technical detail is printed UNDER its sentence, and only where it explains something", () => {
-    const pt = getStrings("pt");
-    const withDetail = (reason: string) =>
-      slot(
-        render("pt", { outcome: messagingCheckOutcome({ m: reason, d: "DETAIL-FROM-THE-URL" }) }),
-        "messaging-check-result",
-      ) ?? "";
+  for (const locale of LOCALES) {
+    const s = getStrings(locale);
+    const result = (params: Parameters<typeof messagingCheckOutcome>[0]) =>
+      slot(render(locale, { outcome: messagingCheckOutcome(params) }), "messaging-check-result") ?? "";
 
-    for (const reason of ["send_failed", "body_refused"]) {
-      const result = withDetail(reason);
-      expect(result).toContain(pt[k("detailLabel")]);
-      expect(result.indexOf(pt[REFUSAL_SENTENCE[reason as "send_failed"]])).toBeLessThan(
-        result.indexOf("DETAIL-FROM-THE-URL"),
+    it(`${locale}: a provider error shows a sentence and the provider's CODE, never its words`, () => {
+      // A code this screen can explain: the sentence says what was refused.
+      const known = result({ m: "send_failed", c: "21614" });
+      expect(known).toContain(s[k("sendFailedRecipient")]);
+      expect(known).toContain(fill(s[k("providerCodeLine")], { code: "21614" }));
+
+      // A code it cannot: the general sentence, and the code to look up.
+      const unknown = result({ m: "send_failed", c: "30001" });
+      expect(unknown).toContain(s[k("sendFailedCode")]);
+      expect(unknown).toContain(fill(s[k("providerCodeLine")], { code: "30001" }));
+      expect(unknown).not.toContain(s[k("sendFailedRecipient")]);
+
+      // No code at all: its own sentence, and no code line.
+      const none = result({ m: "send_failed" });
+      expect(none).toBe(s[k("sendFailed")]);
+    });
+
+    it(`${locale}: a refused body shows how long it was`, () => {
+      const refused = result({ m: "body_refused", len: "185" });
+      expect(refused).toContain(s[k("bodyRefused")]);
+      expect(refused).toContain(fill(s[k("bodyRefusedLength")], { length: 185, limit: 160 }));
+      // No length known, no length line.
+      expect(result({ m: "body_refused" })).toBe(s[k("bodyRefused")]);
+    });
+
+    it(`${locale}: a link that could not be withdrawn is said, beside the reason nothing went`, () => {
+      const html = render(locale, {
+        outcome: messagingCheckOutcome({ m: "send_failed", c: "21614", w: "1" }),
+      });
+      // Not sent AND the link is still live: both sentences, in that order.
+      const box = slot(html, "messaging-check-result") ?? "";
+      expect(box.indexOf(s[k("sendFailedRecipient")])).toBeGreaterThan(-1);
+      expect(box.indexOf(s[k("sendFailedRecipient")])).toBeLessThan(
+        box.indexOf(s[k("linkNotWithdrawn")]),
       );
+      expect(slot(html, "messaging-check-link-not-withdrawn")).toBe(s[k("linkNotWithdrawn")]);
+      // And it is absent when the withdrawal worked.
+      expect(result({ m: "send_failed", c: "21614" })).not.toContain(s[k("linkNotWithdrawn")]);
+    });
+  }
+
+  it("NOTHING TYPED ONTO THE URL IS ECHOED unless it is shaped like an error code", () => {
+    // The address is the one input to this page anybody can write. A value
+    // that is not digits (at most six) or capitals and underscores is ignored,
+    // so no text, and no phone number, can be put on the screen through it.
+    const hostile = [
+      "The 'To' number +351 987 654 321 is not a mobile number",
+      "+351987654321",
+      "987654321",
+      "1234567",
+      "<script>x</script>",
+      "E987654321",
+      "abc",
+      "",
+    ];
+    for (const c of hostile) {
+      const outcome = messagingCheckOutcome({ m: "send_failed", c });
+      expect(outcome, c).toMatchObject({ providerCode: null, sentence: k("sendFailed") });
+      const html = render("pt", { outcome });
+      expect(slot(html, "messaging-check-provider-code")).toBeNull();
+      if (c) expect(html, c).not.toContain(c);
     }
-    // Every other refusal is fully said by its sentence; a `d` typed onto the
-    // URL by hand is not echoed back.
-    for (const reason of MESSAGING_CHECK_REFUSALS.filter(
-      (r) => r !== "send_failed" && r !== "body_refused",
-    )) {
-      expect(withDetail(reason), reason).not.toContain("DETAIL-FROM-THE-URL");
+    // There is no free-text parameter left to try: `d` is not read.
+    const stray = messagingCheckOutcome({ m: "send_failed", d: "987654321" } as never);
+    expect(JSON.stringify(stray)).not.toContain("987654321");
+  });
+
+  it("a code is read only for a provider error, and a length only for a refused body", () => {
+    for (const reason of MESSAGING_CHECK_REFUSALS.filter((r) => r !== "send_failed")) {
+      expect(messagingCheckOutcome({ m: reason, c: "21614" }), reason).toMatchObject({
+        providerCode: null,
+        sentence: REFUSAL_SENTENCE[reason],
+      });
     }
+    for (const reason of MESSAGING_CHECK_REFUSALS.filter((r) => r !== "body_refused")) {
+      expect(messagingCheckOutcome({ m: reason, len: "185" }), reason).toMatchObject({
+        length: null,
+      });
+    }
+  });
+
+  it("the redirect and the reader agree: every result round-trips to its sentence", () => {
+    const cases: [Parameters<typeof messagingCheckRedirect>[0], string, StringKey][] = [
+      [
+        { ok: false, reason: "send_failed", providerCode: "21211", linkNotWithdrawn: true },
+        "/admin/messaging-check?m=send_failed&c=21211&w=1",
+        k("sendFailedRecipient"),
+      ],
+      [
+        { ok: false, reason: "send_failed", providerCode: null, linkNotWithdrawn: false },
+        "/admin/messaging-check?m=send_failed",
+        k("sendFailed"),
+      ],
+      [
+        { ok: false, reason: "body_refused", length: 185 },
+        "/admin/messaging-check?m=body_refused&len=185",
+        k("bodyRefused"),
+      ],
+      [
+        { ok: false, reason: "config_incomplete", providerCode: null, linkNotWithdrawn: false },
+        "/admin/messaging-check?m=config_incomplete",
+        k("configIncomplete"),
+      ],
+      [{ ok: false, reason: "pending_request" }, "/admin/messaging-check?m=pending_request", k("pendingRequest")],
+    ];
+    for (const [result, url, sentence] of cases) {
+      expect(messagingCheckRedirect(result)).toBe(url);
+      const params = Object.fromEntries(new URL(url, "https://x.invalid").searchParams);
+      expect(messagingCheckOutcome(params)).toMatchObject({ kind: "refused", sentence });
+    }
+    // A code that is not shaped like one never reaches the URL, even if a
+    // later edit put one on the result.
+    expect(
+      messagingCheckRedirect({
+        ok: false,
+        reason: "send_failed",
+        providerCode: "The number +351987654321 is bad",
+      }),
+    ).toBe("/admin/messaging-check?m=send_failed");
+    expect(
+      messagingCheckRedirect({ ok: true, segments: 1, length: 156, codeWasLive: true, body: "x" }),
+    ).toBe("/admin/messaging-check?m=sent&len=156&live=1");
   });
 
   it("a length on the URL that is not a number is not printed", () => {

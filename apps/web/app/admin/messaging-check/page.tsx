@@ -32,13 +32,13 @@ export const metadata = { title: s["admin.messagingCheck.title"] };
 export default async function MessagingCheckPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; len?: string; live?: string; d?: string }>;
+  searchParams: Promise<{ m?: string; len?: string; live?: string; c?: string; w?: string }>;
 }) {
   const actor = await getRequestContext();
   if (!actor) redirect("/login");
   if (actor.role !== "owner") redirect("/dashboard");
 
-  const { m, len, live, d } = await searchParams;
+  const { m, len, live, c, w } = await searchParams;
   const armed = confirmLinkEnabled();
 
   // ==========================================================================
@@ -69,8 +69,8 @@ export default async function MessagingCheckPage({
 
   // WHAT THE LAST SEND DID, AS A SENTENCE. `outcome.ts` maps every reason the
   // send can refuse with to a string key; a marker it does not know is never
-  // printed.
-  const outcome = messagingCheckOutcome({ m, len, live, d });
+  // printed. The URL carries markers only: there is no free text on it to show.
+  const outcome = messagingCheckOutcome({ m, len, live, c, w });
 
   // THE MESSAGE, BEFORE IT IS SENT, FROM THE SEND'S OWN CODE.
   // `previewMessagingCheck` calls the function `sendMessagingCheck` calls, with
