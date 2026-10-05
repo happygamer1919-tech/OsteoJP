@@ -1,10 +1,14 @@
 # 0101: apply the optional email on a public booking request
 
-**NOT READY: 0101 is PENDING, not promoted, not reviewed and not rehearsed.** It stays `packages/db/migrations-pending/NEXT-AFTER-0100_guest_request_email.sql` until the promotion, and every block below STOPs at its first file check, because the promoted file is not on `origin/main`. Open, in order: the GATE-CHANGE the promotion forces (NOT READY step 1), the promotion (step 2), R4 (step 3), the whole-block rehearsal (step 4), CI on the promoted head (step 5), the merge (step 6) and GREEN's dispatch (step 7). **The sitting is closed hours only, by the weekday table** (see "R9").
+**NOT READY until the pull request is merged and GREEN's dispatch carries its merge sha.** Done on this branch: the GATE-CHANGE the promotion needed (#1537, merged by the owner; NOT READY step 1) and the promotion (step 2): 0101 is `packages/db/migrations/0101_guest_request_email.sql`, journal `idx 98`, on #1538, held under `held-for-apply`. Open, in order: R4 on the promoted pull request (step 3), the whole-block rehearsal (step 4), CI on the promoted head (step 5), the merge (step 6) and GREEN's dispatch (step 7). Until the merge every block below STOPs at its first file check, because the promoted file is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
 
-**Status: AUTHORED. PENDING. NOT PROMOTED. NOT APPLIED.** One migration, the pending file above,
-sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b`, to be promoted to
-`packages/db/migrations/0101_guest_request_email.sql` by a rename that changes no byte. It adds one
+**Status: PROMOTED. NOT APPLIED.** One migration,
+`packages/db/migrations/0101_guest_request_email.sql`, sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b`,
+which the promotion renamed, byte for byte, from the pending file
+`packages/db/migrations-pending/NEXT-AFTER-0100_guest_request_email.sql`. The file's own header still
+reads "PENDING" and "parked in packages/db/migrations-pending", and the pre-check's header still
+names the pending path: stale on purpose, because a promotion changes no byte and that sha256 is
+what every pin points at (the pending README's Promoted table says the same). It adds one
 nullable column, `email`, with one CHECK, to `public.guest_booking_requests` (strategy's ruling R40,
 dispatch S-1004-A; numbered `0101` by R41). Four blocks, each pasted whole, on its own and in
 order: stage 0 (the promotion, the files, the clock and the head it runs from), stage 1 (the HEAD
@@ -43,12 +47,18 @@ lane that wrote this document never runs it.
 
 ## NOT READY: what must happen first, in this order, and none of it by GREEN
 
-1. **The GATE-CHANGE the promotion forces merges first, as its own pull request, by the owner
-   on green** (see "THE ORDER OF PULL REQUESTS"). It changes one gate file,
+1. **DONE: #1537, merged by the owner on green (main `1c6a1fa0`), and merged into this branch
+   before the promotion.** As first written: **The GATE-CHANGE the promotion forces merges first,
+   as its own pull request, by the owner on green** (see "THE ORDER OF PULL REQUESTS"). It changes
+   one gate file,
    `scripts/maintain-revoke-0100.test.mjs`, and the manifest. Without it the promotion commit
    reddens that test on every branch.
-2. **SOLO promotes 0101 on its branch, `db/0101-guest-request-email`,** and opens the held PR
-   with the `held-for-apply` label: merge `origin/main` in (no rebase); `git mv` the pending file
+2. **DONE on this branch, which is #1538, held under `held-for-apply`:** the rename left sha256
+   `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b` as it was, the journal
+   entry is `idx 98`, tag `0101_guest_request_email`, `when` 1788502200000, the mirror is
+   `supabase/migrations/0101_guest_request_email.sql`, and `node scripts/check-journal.mjs` read 99
+   files and 99 entries (see "The promotion's run"). As first written: **SOLO promotes 0101 on its
+   branch, `db/0101-guest-request-email`,** and opens the held PR with the `held-for-apply` label: merge `origin/main` in (no rebase); `git mv` the pending file
    to `packages/db/migrations/0101_guest_request_email.sql` (a rename: sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b` before
    and after); append its journal entry at **`idx 98`**, tag `0101_guest_request_email`,
    **`when` 1788502200000** (0100's 1788502100000 plus 100000; a `when` equal or lower makes
@@ -76,7 +86,7 @@ lane that wrote this document never runs it.
 |---|---|
 | Card | the public form's optional email (R40), database half. No card number yet: the board card is its own PR (SR-44) |
 | Ruling | Strategy's dispatch S-1004-A (2026-10-04). R40: "Add an optional email field to the public form, label "Email (opcional)", hint "Para receber a confirmação da marcação"." R41: "0101 = public-form email column (owner's top priority, small). SAT-01 becomes 0102." G4: "0101 lock read on the throwaway, statement by statement. EXPECT: no auth table locked. Anything else, halt." S-1002-A R9 and R10 |
-| Migration | `packages/db/migrations-pending/NEXT-AFTER-0100_guest_request_email.sql` until the promotion, then `packages/db/migrations/0101_guest_request_email.sql`. sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b` in both places |
+| Migration | `packages/db/migrations/0101_guest_request_email.sql`, promoted by a rename from `packages/db/migrations-pending/NEXT-AFTER-0100_guest_request_email.sql`. sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b` in both places |
 | Journal | `idx 98`, tag `0101_guest_request_email`, `when` 1788502200000. Stage 0 asserts it and 0100's entry before it. Production's journal goes 98 to 99 |
 | Mirror | `supabase/migrations/0101_guest_request_email.sql`, written by `scripts/sync-supabase-migrations.mjs` and checked by content by `scripts/check-journal.mjs`, which stage 0 runs |
 | Must follow | `0100`, the MAINTAIN revoke (#1520), applied 2026-10-03, body sha256 `80f85018e8ed35922ad546b8a28e96d80e894b04f2a1f09f201d00b601ff6106`, journal `idx 97`, `when` 1788502100000. Stage 0 finds it by its journal tag and asserts its bytes; the pre-check finds it by hash as production's newest row |
@@ -288,8 +298,8 @@ before the promotion; a post-apply count edit merges after GREEN reports.
 
 | Order | Pull request | What it carries | Who merges |
 |---|---|---|---|
-| 1 | **GATE-CHANGE, before the promotion** (branch `ci/GATE-CHANGE-0100-harness-journal`) | `scripts/maintain-revoke-0100.test.mjs`: its harness builds the fake apply tree's journal AS OF 0100 (the live journal cut after 0100's entry) instead of copying the live journal; and `.github/gate-manifest.json`, regenerated. Nothing else | the owner, on green |
-| 2 | this branch, `db/0101-guest-request-email`, promoted, `held-for-apply` | the migration, this document and its sidecar, the two check files, the DB-gated suite, the script test, the pending README. No gate file is edited: the script test is a NEW file, which the freeze allows | the owner (label off, then merge), after R4, the rehearsal and CI |
+| 1 | **GATE-CHANGE, before the promotion: #1537, MERGED** (branch `ci/GATE-CHANGE-0100-harness-journal`) | `scripts/maintain-revoke-0100.test.mjs`: its harness builds the fake apply tree's journal AS OF 0100 (the live journal cut after 0100's entry) instead of copying the live journal; and `.github/gate-manifest.json`, regenerated. Nothing else | the owner, on green |
+| 2 | this branch, `db/0101-guest-request-email`, promoted, `held-for-apply`: #1538 | the migration, this document and its sidecar, the two check files, the DB-gated suite, the script test, the pending README. No gate file is edited: the script test is a NEW file, which the freeze allows | the owner (label off, then merge), after R4, the rehearsal and CI |
 | 3 | the sitting | GREEN applies from the merge commit. No pull request, and no gate edit | - |
 | 4 | **no post-apply GATE-CHANGE** | 0101 creates no function, so the SECURITY DEFINER count (28) and the 0079 ACL lists do not move | - |
 | 5 | `portal/GUEST-EMAIL-optional-field` | the application half: the form's field, the route, the schema column, the convert, the queue. After GREEN's report | SOLO, R4 PASS plus green (Tier B) |
@@ -302,6 +312,8 @@ the newest journal entry to be `idx 97, tag 0100_revoke_maintain, of 98`. The pr
 its last line ... STOP: the newest journal entry is not idx 97"). With the six-line edit of row 1
 applied to that scratch copy, the file read 28 of 28. The file is in the manifest, so the edit is a
 GATE-CHANGE; it passes on today's main too, where cutting after 0100 changes nothing.
+**And after it:** with #1537 merged in and 0101 promoted on this branch, `pnpm test:scripts` read
+1385 of 1385 passed, none skipped, 54 suites, the 0100 file among them.
 
 **This document's own script test does not repeat that.** Its harness builds the journal it needs
 (the live entries up to 0100, then 0101's), so a later promotion does not redden it.
@@ -920,8 +932,11 @@ this apply.
 
 **NOT YET REHEARSED.** What stands is the build lane's run below. It is not the rehearsal: it ran the
 check files' SQL, the migration body and the suite on a local Supabase stack at production's
-position, and it ran no block of this document against a database, because 0101 is not promoted and
-every block STOPs at its first file check.
+position, and it ran no block of this document against a database. Before the promotion every
+block STOPped at its first file check. Since the promotion the blocks read `origin/main`, which
+holds 0101 only after the merge, so running them whole from the promoted head is the rehearsal
+agent's work ("What the rehearsal agent owes"), under the substitutions the lead rules. The
+promotion's own run is recorded after the build lane's.
 
 ### The build lane's run, 2026-10-04
 
@@ -950,6 +965,31 @@ runner that substitutes the `-v` values and drops psql's own backslash lines.
 | L1: another session holds an open read on the table | the ALTER TABLE failed after 5.0 s, `55P03 canceling statement due to lock timeout`; the columns unchanged |
 | the schema column before the database column | with `email` declared in `schema.ts`, drizzle's INSERT for the public form's row names `"email"` with `default`; on a stack without 0101 it fails `42703`. So the schema column travels with the application PR |
 | the promotion, on a scratch copy | check-journal 99 of 99; `pnpm test:scripts` 4 failures, all in `scripts/maintain-revoke-0100.test.mjs` (see "THE ORDER OF PULL REQUESTS") |
+
+### The promotion's run, 2026-10-05
+
+After `origin/main` (`1c6a1fa0`, #1537) was merged into this branch and 0101 was promoted on it. No
+block of this document ran here either.
+
+| Run | Result |
+|---|---|
+| the migration's sha256, before the rename and after it | `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b` both times |
+| `node scripts/check-journal.mjs` | exit 0: 99 files, 99 entries, in order, `when` strictly increasing, the mirror matching by content |
+| `node scripts/sync-supabase-migrations.mjs --check` | exit 0: 99 files in sync |
+| `GATE_BASE_REF=main node scripts/assert-gates-unchanged.mjs` | exit 0: 97 gate files match their pins; the one file the manifest does not name is this branch's new script test |
+| `pnpm test:scripts` | exit 0: 1385 of 1385 passed, none skipped, 54 suites; `scripts/migration-timeouts.test.mjs` among them, with the promoted file in its scope |
+| `pnpm lint`, `pnpm typecheck`, `pnpm test` | exit 0 each: lint 4 of 4 tasks with no error, typecheck 11 of 11 tasks, test 8 of 8 tasks with 7906 tests passed and none failed (its 1470 skips are the DB-gated tests, which `pnpm test` runs with no database) |
+| the lane stack `amber` (127.0.0.1:54722), `node scripts/lane-stack.mjs up --lane amber` | `supabase db reset` applied the mirror, 0000 to 0101, and printed for 0101 the two 25P01 WARNING lines a SET LOCAL prints outside a transaction block, as it does for 0100. Stopped afterwards |
+| the SECURITY DEFINER count on it | 28, all owned by postgres: 0101 moved nothing there |
+| the whole `packages/db` suite on it | 99 files, 1425 of 1425 passed, none skipped; `guest-request-email.db.test.ts` 9 of 9, the applied arms, registered because the promoted file is found |
+| `scripts/guest-request-email-0101.test.mjs` on macOS | 34 of 34 passed, 223 injected faults in each shell, as before the promotion |
+| the same in a Linux container (node 20, the tree mounted read-only) | 34 tests: 32 passed, 2 skipped (the zsh arms, the reported skip of a runner without zsh), none failed |
+
+**What this run is not.** `supabase db reset` applies each mirror file outside a transaction and
+through no drizzle journal. It says nothing about `verified-migrate.mjs`, drizzle-kit, the journal
+row or the two timeouts taking effect. Those stay with the rehearsal.
+
+### The build lane's controls, 2026-10-04
 
 **Every control broken on purpose, each in its own rolled-back transaction** (so verdict 0 reads
 FAIL in every arm, the transaction being writable):
@@ -1009,8 +1049,9 @@ are in the build lane's scratchpad and not committed.
 
 ### NOT REHEARSED, said one by one
 
-- **Every block of this document against a database.** 0101 is not promoted, so each block STOPs
-  at its first file check. The blocks ran whole only in the fault-injection harness, on stubs.
+- **Every block of this document against a database.** Before the promotion each block STOPped at
+  its first file check; since it, each still does on the real `origin/main` until the merge. The
+  blocks ran whole only in the fault-injection harness, on stubs.
 - **psql.** No psql ran on the build lane. The check files' SQL ran through a node runner, so
   psql's own behaviour is not rehearsed: `-v` substitution, `\if :{?name}`, `ON_ERROR_STOP`, the
   aligned output the blocks' `grep` and `carry()` read. In particular the post-check's
@@ -1023,7 +1064,8 @@ are in the build lane's scratchpad and not committed.
 - **Production's platform configuration.** G4 was measured on two local stacks; production's
   `supautils` settings and locks were not read.
 - **CI's `db-tests` on the promoted head,** which applies 0101 from the mirror (each file outside
-  a transaction block, so the two SET LOCAL lines print their 25P01 WARNING, as 0100's do).
+  a transaction block, so the two SET LOCAL lines print their 25P01 WARNING, as 0100's do). The
+  promotion's run did the same on a lane stack, locally; CI itself has not run on the promoted head.
 - **GREEN's two dispatch blocks** (BEFORE YOU START and the CLOCK CHECK): drafted, not run.
 
 ### The fault-injection harness (not a rehearsal)
@@ -1153,6 +1195,12 @@ ends in ROLLBACK, and the post-check runs inside the block's `begin read only`.
 ## Review history
 
 **R4 on the promoted pull request has not run** (NOT READY step 3).
+
+**The promotion commit, 2026-10-05, changed no byte of any block.** It changed this document's
+banner, its status, NOT READY steps 1 and 2, the Migration row, rows 1 and 2 of the order table and
+the sentence after it, the opening of "Rehearsal", two NOT REHEARSED entries, and it added "The
+promotion's run" and this paragraph. The four blocks are the ones the third review's fix left
+(`045214f0`): every fenced block of this document was compared with that commit's, byte for byte, and none differs.
 
 **A second independent review, of `dfca0530`, 2026-10-05: one MAJOR and one MINOR, both fixed in
 the commit after it.** MAJOR, in CI only: the real-`date` test pinned BSD's answer for a misspelt
