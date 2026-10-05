@@ -134,6 +134,7 @@ describe("what the screen is for, at the top, in both languages", () => {
         { outcome: messagingCheckOutcome({ m: "limited" }) },
         { outcome: messagingCheckOutcome({ m: "send_failed", c: "21614", w: "1" }) },
         { outcome: messagingCheckOutcome({ m: "send_failed", c: "30001" }) },
+        { outcome: messagingCheckOutcome({ m: "send_failed", c: "ETIMEDOUT", w: "1" }) },
         { outcome: messagingCheckOutcome({ m: "body_refused", len: "185" }) },
         { preview: previewMessagingCheck({ ...ENV, TWILIO_SMS_FROM: "+351900000000" }) },
         { preview: previewMessagingCheck({ TWILIO_SMS_FROM: "OsteoJP" }) },
@@ -183,11 +184,18 @@ describe("the limit is said the way it is counted", () => {
 });
 
 describe("the record sentence is true of the code", () => {
-  it("says what is kept, and that the number is kept nowhere", () => {
+  it("says what is kept, and claims no more for the hash than a hash gives", () => {
     const pt = getStrings("pt")[k("auditBody")];
+    const en = getStrings("en")[k("auditBody")];
     expect(pt).toMatch(/endereço IP/);
-    expect(pt).toMatch(/O número não é guardado/);
-    expect(pt).toMatch(/impressão digital \(hash\)/);
+    // NOT IN CLEAR, and no further. `toHash` is an unsalted sha256 of the
+    // number, and a Portuguese mobile has few enough candidates to enumerate,
+    // so whoever can read the audit log could recover it. The sentence may say
+    // what is stored; it may not say, or imply, that the number is gone.
+    expect(pt).toMatch(/O número não fica guardado em claro: fica só uma impressão digital \(hash\) dele\./);
+    expect(en).toMatch(/The number is not stored in clear: only a fingerprint \(hash\) of it is kept\./);
+    expect(pt).not.toMatch(/não é guardado|não pode ser|irrecuper|anónim|nunca/i);
+    expect(en).not.toMatch(/is not stored[,:.]|cannot be|irrecover|anonym|never/i);
     // The claim rests on these, each proved where it lives: the audit row
     // (messaging-check.test.ts), the redirect (actions.test.ts), and here, the
     // page having no free-text parameter to print.
@@ -451,6 +459,71 @@ describe("every state is said in a sentence", () => {
       expect(none).toBe(s[k("sendFailed")]);
     });
 
+    it(`${locale}: a numeric code, a capitals code and no code each get their own reading`, () => {
+      // NUMERIC: the provider answered, and refused. Its code, named as its.
+      for (const [code, sentence] of [
+        ["21211", "sendFailedRecipient"],
+        ["30001", "sendFailedCode"],
+      ] as const) {
+        const html = render(locale, { outcome: messagingCheckOutcome({ m: "send_failed", c: code }) });
+        const box = slot(html, "messaging-check-result") ?? "";
+        expect(box, code).toContain(s[k(sentence)]);
+        expect(slot(html, "messaging-check-provider-code")).toBe(
+          fill(s[k("providerCodeLine")], { code }),
+        );
+        expect(slot(html, "messaging-check-connection-code")).toBeNull();
+      }
+
+      // CAPITALS: the HTTP client's error (the twilio client rethrows it). Not
+      // a refusal and not a Twilio code: the not-known sentence, and the code
+      // as a plain technical detail.
+      for (const code of ["ETIMEDOUT", "ECONNRESET", "EAI_AGAIN"]) {
+        const outcome = messagingCheckOutcome({ m: "send_failed", c: code });
+        expect(outcome, code).toMatchObject({
+          sentence: k("sendFailed"),
+          providerCode: null,
+          connectionCode: code,
+        });
+        const html = render(locale, { outcome });
+        const box = slot(html, "messaging-check-result") ?? "";
+        expect(box).toContain(s[k("sendFailed")]);
+        expect(slot(html, "messaging-check-connection-code")).toBe(
+          fill(s[k("connectionCodeLine")], { code }),
+        );
+        expect(slot(html, "messaging-check-provider-code")).toBeNull();
+        expect(box).not.toContain("Twilio");
+        expect(box).not.toContain(s[k("sendFailedCode")]);
+      }
+
+      // NO CODE: the same not-known sentence, and no code line of either kind.
+      const none = render(locale, { outcome: messagingCheckOutcome({ m: "send_failed" }) });
+      expect(slot(none, "messaging-check-result")).toBe(s[k("sendFailed")]);
+    });
+
+    it(`${locale}: a connection error NEVER reads as certain that nothing was sent`, () => {
+      // On a timeout the provider may have accepted the message before the
+      // answer was lost. With or without a stranded link, and with or without
+      // a code, the box may not say "not sent", "nothing was sent" or "sent to
+      // nobody" - and it must say that it is not known.
+      const CERTAIN =
+        /Não foi enviad|Nada foi enviad|não foi enviada a ninguém|a ninguém|Not sent|Nothing was sent|sent to nobody|to nobody|recusou|refused/i;
+      for (const params of [
+        { m: "send_failed", c: "ETIMEDOUT" },
+        { m: "send_failed", c: "ETIMEDOUT", w: "1" },
+        { m: "send_failed" },
+        { m: "send_failed", w: "1" },
+      ]) {
+        const box = result(params);
+        expect(box, JSON.stringify(params)).not.toMatch(CERTAIN);
+        expect(box).toMatch(locale === "pt" ? /Não se sabe se a mensagem foi enviada/ : /It is not known whether the message was sent/);
+        expect(box).toMatch(locale === "pt" ? /pode ter saído/ : /may have gone out/);
+      }
+      // CONTROL: the pattern does match the certain sentences it is guarding
+      // against, so the loop above is not passing on a pattern that finds nothing.
+      expect(result({ m: "send_failed", c: "21211" })).toMatch(CERTAIN);
+      expect(result({ m: "landline" })).toMatch(CERTAIN);
+    });
+
     it(`${locale}: a refused body shows how long it was`, () => {
       const refused = result({ m: "body_refused", len: "185" });
       expect(refused).toContain(s[k("bodyRefused")]);
@@ -491,7 +564,11 @@ describe("every state is said in a sentence", () => {
     ];
     for (const c of hostile) {
       const outcome = messagingCheckOutcome({ m: "send_failed", c });
-      expect(outcome, c).toMatchObject({ providerCode: null, sentence: k("sendFailed") });
+      expect(outcome, c).toMatchObject({
+        providerCode: null,
+        connectionCode: null,
+        sentence: k("sendFailed"),
+      });
       const html = render("pt", { outcome });
       expect(slot(html, "messaging-check-provider-code")).toBeNull();
       if (c) expect(html, c).not.toContain(c);

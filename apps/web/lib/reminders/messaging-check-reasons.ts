@@ -146,6 +146,19 @@ export function isProviderCode(value: string): boolean {
   return /^\d{1,6}$/.test(value) || /^[A-Z_]{2,32}$/.test(value);
 }
 
+/**
+ * Of the two closed shapes, ONLY THE NUMERIC ONE IS THE PROVIDER'S.
+ *
+ * A capitals code (ETIMEDOUT, ECONNRESET) is the HTTP client's: the twilio
+ * client rethrows it unchanged. It is not a refusal and not a Twilio code, and
+ * on a timeout the provider may have ACCEPTED the message before the answer
+ * was lost. So it must never be worded as "the provider refused", and the page
+ * may not say for certain that nothing was sent.
+ */
+export function isNumericProviderCode(value: string): boolean {
+  return /^\d{1,6}$/.test(value);
+}
+
 /** `NotificationEnvError.name`, as packages/notify/src/env.ts sets it. */
 const NOTIFICATION_ENV_ERROR = "NotificationEnvError";
 

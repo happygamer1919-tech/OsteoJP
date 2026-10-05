@@ -117,6 +117,13 @@ export function MessagingCheckView({
                   })}
                 </p>
               ) : null}
+              {outcome.connectionCode ? (
+                <p data-testid="messaging-check-connection-code">
+                  {fill(s["admin.messagingCheck.connectionCodeLine"], {
+                    code: outcome.connectionCode,
+                  })}
+                </p>
+              ) : null}
               {outcome.length !== null ? (
                 <p>
                   {fill(s["admin.messagingCheck.bodyRefusedLength"], {

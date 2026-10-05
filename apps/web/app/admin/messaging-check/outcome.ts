@@ -16,6 +16,7 @@ import type { MessagingCheckResult } from "@/lib/reminders/messaging-check";
 import { smsSegments } from "@/lib/reminders/messaging-check-body";
 import {
   isMessagingCheckRefusal,
+  isNumericProviderCode,
   isProviderCode,
   type MessagingCheckRefusal,
 } from "@/lib/reminders/messaging-check-reasons";
@@ -73,9 +74,15 @@ export type MessagingCheckOutcome =
        * Already checked against `isProviderCode`: never the provider's words.
        */
       providerCode: string | null;
+      /**
+       * A CONNECTION error's code (ETIMEDOUT), printed as a plain technical
+       * detail. Never called the provider's: it is the HTTP client's, and with
+       * it the page does not know whether the message went.
+       */
+      connectionCode: string | null;
       /** For a refused body: how long it was, when the send knew. */
       length: number | null;
-      /** A live code was minted, the message did not go, and it is still live. */
+      /** A live code was minted, could not be withdrawn, and is still live. */
       linkNotWithdrawn: boolean;
     };
 
@@ -141,7 +148,12 @@ export function messagingCheckOutcome(params: MessagingCheckSearchParams): Messa
     };
   }
 
-  const plain = { providerCode: null, length: null, linkNotWithdrawn: false } as const;
+  const plain = {
+    providerCode: null,
+    connectionCode: null,
+    length: null,
+    linkNotWithdrawn: false,
+  } as const;
 
   if (m === ACTION_LIMITED) {
     return { kind: "refused", sentence: REFUSAL_SENTENCE.rate_limited, ...plain };
@@ -150,7 +162,13 @@ export function messagingCheckOutcome(params: MessagingCheckSearchParams): Messa
   if (isMessagingCheckRefusal(m)) {
     // A code is read only where a provider was called, and only when it has
     // the shape of one. Anything else typed onto the URL is ignored, not shown.
-    const providerCode = m === "send_failed" && c && isProviderCode(c) ? c : null;
+    const code = m === "send_failed" && c && isProviderCode(c) ? c : null;
+    // ONLY A NUMERIC CODE IS THE PROVIDER REFUSING. A capitals code is a
+    // connection error, and so is no code at all as far as this page can tell:
+    // both keep the sentence that says it is NOT KNOWN whether the message
+    // went, and the capitals code is shown beside it as a technical detail.
+    const providerCode = code !== null && isNumericProviderCode(code) ? code : null;
+    const connectionCode = code !== null && providerCode === null ? code : null;
     return {
       kind: "refused",
       sentence:
@@ -158,6 +176,7 @@ export function messagingCheckOutcome(params: MessagingCheckSearchParams): Messa
           ? REFUSAL_SENTENCE[m]
           : (PROVIDER_CODE_SENTENCE[providerCode] ?? "admin.messagingCheck.sendFailedCode"),
       providerCode,
+      connectionCode,
       length: m === "body_refused" ? readLength(len) : null,
       linkNotWithdrawn: w === "1",
     };
