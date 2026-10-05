@@ -1,6 +1,6 @@
 # 0101: apply the optional email on a public booking request
 
-**NOT READY until the pull request is merged and GREEN's dispatch carries its merge sha.** Done on this branch: the GATE-CHANGE the promotion needed (#1537, merged by the owner; NOT READY step 1) and the promotion (step 2): 0101 is `packages/db/migrations/0101_guest_request_email.sql`, journal `idx 98`, on #1538, held under `held-for-apply`. Open, in order: R4 on the promoted pull request (step 3), the whole-block rehearsal (step 4), CI on the promoted head (step 5), the merge (step 6) and GREEN's dispatch (step 7). Until the merge every block below STOPs at its first file check, because the promoted file is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
+**NOT READY until the pull request is merged and GREEN's dispatch carries its merge sha.** Done: the GATE-CHANGE the promotion needed (#1537, merged by the owner; NOT READY step 1); the promotion (step 2): 0101 is `packages/db/migrations/0101_guest_request_email.sql`, journal `idx 98`, on #1538, held under `held-for-apply`; R4 on the promotion commit, PASS (step 3); and the rehearsal, with its limits (step 4): one block of six ran whole, and the five that did not are NOT REHEARSED as whole blocks (see "Rehearsal"). Open, in order: CI on the head that merges (step 5), the merge (step 6) and GREEN's dispatch (step 7). Until the merge every block below STOPs at its first file check, because the promoted file is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
 
 **Status: PROMOTED. NOT APPLIED.** One migration,
 `packages/db/migrations/0101_guest_request_email.sql`, sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b`,
@@ -68,11 +68,16 @@ lane that wrote this document never runs it.
    banner and status, with its sidecar. The pre-check and the post-check pin the body's sha256 as
    a literal, and a rename does not move it, so neither needs an edit; nor does the script test,
    which finds the file in either place.
-3. **R4** on the promoted PR's diff and the card acceptance, at most three rounds (the review-loop
-   cap). NOT DONE.
-4. **The rehearsal agent runs this document's four blocks and GREEN's two, whole, from the
-   promoted head,** under the lead's standing rule, verbatim in its prompt (see "Rehearsal").
-   NOT DONE.
+3. **DONE: PASS on 2026-10-05, an independent review of the promotion commit `840ec04e`.** The
+   SQL is byte-identical (`36a1ed54...`), one journal entry was added (`idx 98`), the four fenced
+   blocks are byte-identical to `045214f0`'s, the mirror differs from the migration only by the
+   generated four-line header, and nothing open was claimed as done. As first written: **R4** on
+   the promoted PR's diff and the card acceptance, at most three rounds (the review-loop cap).
+4. **DONE on 2026-10-05, WITH ITS LIMITS** (see "Rehearsal"): of the six blocks only the
+   dispatch's CLOCK CHECK ran whole; the other five stopped at their own STOP where this document
+   predicts and are NOT REHEARSED as whole blocks; the remaining lines of each ran as fragments.
+   As first written: **The rehearsal agent runs this document's four blocks and GREEN's two,
+   whole, from the promoted head,** under the lead's standing rule, verbatim in its prompt.
 5. **CI is green on the promoted head,** the required checks and `db-tests`, which then applies
    0101 with every other migration and runs `packages/db/tests/guest-request-email.db.test.ts`
    for real; and the SET LOCAL gate reads the promoted file in scope and passing.
@@ -304,6 +309,13 @@ before the promotion; a post-apply count edit merges after GREEN reports.
 | 4 | **no post-apply GATE-CHANGE** | 0101 creates no function, so the SECURITY DEFINER count (28) and the 0079 ACL lists do not move | - |
 | 5 | `portal/GUEST-EMAIL-optional-field` | the application half: the form's field, the route, the schema column, the convert, the queue. After GREEN's report | SOLO, R4 PASS plus green (Tier B) |
 
+**Merge first, then the sitting from the merge commit, as with 0100.** R4 established it as a
+fact of the blocks: all four name `origin/main` (on 22 lines), so none can run from the pull
+request's head before the merge without a change to block bytes. Strategy's dispatch S-1004-A
+carries a line that reads the other way ("Any held-for-apply PR waits for the owner's label removal
+after GREEN reports"); this lane followed the applied precedent and the reviewed blocks, and
+reported the difference.
+
 **Why step 1 is forced, measured on 2026-10-04.** 0100's script test copies the LIVE
 `packages/db/migrations/meta/_journal.json` into its fake apply tree, and 0100's stage 0 requires
 the newest journal entry to be `idx 97, tag 0100_revoke_maintain, of 98`. The promotion appends
@@ -370,6 +382,13 @@ every block.
 - **Stage 2 and the closing read are READ ONLY** and run from the recorded sha whatever main has
   done since: each prints whether main moved, with both shas, and never stops on it. **A fetch that
   fails is a STOP in every block, these two included,** because whether main moved is then not known.
+
+**The sitting runs from the MERGE commit, and the rehearsal ran from the promoted head
+`840ec04e`.** The two trees differ by whatever main gained in between (on 2026-10-05, #1539, a staff
+screen under `apps/web`, `packages/i18n` and `docs/guide`). No file this document pins by sha256
+differs: the migrate program, the target guard and its module, the journal reader, check-journal,
+the SET LOCAL gate, 0100, 0101 and the two checks read the same on both (compared on 2026-10-05,
+`package.json` too). Stage 0 asserts every one of those pins again from the merge commit.
 
 ## STAGE 0: the promotion, the files, the clock and the recorded head
 
@@ -661,6 +680,17 @@ holding an open read on the table, the ALTER TABLE failed after 5.0 seconds with
 due to lock timeout`, and the table's columns were unchanged. On production it would read
 `journal    98 -> 98  (delta 0)`. It is still a halt, and the lead rules on it.
 
+**WHEN A BOUND FIRES, GREEN'S TRANSCRIPT DOES NOT NAME IT** (the rehearsal, 2026-10-05, with a held
+lock). drizzle-kit prints `undefined`, and pnpm prints
+`[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: drizzle-kit migrate`. The
+text `canceling statement due to lock timeout` is only in the server's log. What the transcript does
+show is enough to read it: the apply exits 4, the journal reads 98 to 98, there is no applied
+marker, and nothing was applied. GREEN reports those lines as printed and names no cause.
+
+**AN EMPTY `prev_when` IS A FAIL, NOT A STOP** (the rehearsal). Handed an empty `prev_when`, the
+pre-check does not take psql's missing-carry STOP: it prints a FAIL on verdict 2. In the sitting the
+block refuses an empty value before psql runs, so the pre-check never sees one.
+
 **drizzle-kit prints two NOTICE objects between its banner and its success line,**
 `42P06 schema "drizzle" already exists, skipping` and `42P07 relation "__drizzle_migrations" already
 exists, skipping` (measured in 0099's rehearsal). They are not a halt.
@@ -930,13 +960,73 @@ this apply.
 
 ## Rehearsal
 
-**NOT YET REHEARSED.** What stands is the build lane's run below. It is not the rehearsal: it ran the
-check files' SQL, the migration body and the suite on a local Supabase stack at production's
-position, and it ran no block of this document against a database. Before the promotion every
-block STOPped at its first file check. Since the promotion the blocks read `origin/main`, which
-holds 0101 only after the merge, so running them whole from the promoted head is the rehearsal
-agent's work ("What the rehearsal agent owes"), under the substitutions the lead rules. The
-promotion's own run is recorded after the build lane's.
+**REHEARSED ON 2026-10-05, WITH LIMITS.** Of the six blocks (this document's four and the
+dispatch's two) one ran whole to its last line. The other five stopped at their own STOP, where this
+document predicts, and are NOT REHEARSED as whole blocks; the remaining lines of each ran as
+fragments. The record comes first, as the rehearsal agent reported it. The build lane's run and the
+promotion's run follow it, and neither is the rehearsal: they ran the check files' SQL, the
+migration body and the suite on a local Supabase stack at production's position, and no block of
+this document against a database.
+
+### The rehearsal, 2026-10-05, as the rehearsal agent reported it
+
+**Where and when.** About 03:14 to 03:24 Lisbon, closed hours, from a fresh clone at the promoted
+head `840ec04e`, against a throwaway stack at production's position: the mirror to 0100, a drizzle
+journal of 98 rows, 60 invented guest requests (no real name or number), the psql client 18.6
+against server 17.6. Run under the lead's standing rule, verbatim in its prompt.
+
+**WHOLE BLOCKS: ONE OF SIX.** The dispatch's CLOCK CHECK ran whole to its last line, exit 0. The
+other five stopped at their own STOP, exactly where this document predicts before a merge or on a
+target that is not production:
+
+| Block | Where it stopped |
+|---|---|
+| the dispatch's BEFORE YOU START | on `origin/main`: the merge does not exist yet |
+| stage 0 | on `origin/main`, for the same reason |
+| stage 1 | on "main moved since stage 0" |
+| stage 2 | at the target guard: `REFUSING: project ref is "postgres", not the production project.` |
+| the closing read | at the journal reader's REFUSED |
+
+No substitution was made for the merge ref, for the target guard or for the journal reader. **So
+those five are NOT REHEARSED as whole blocks.**
+
+**FRAGMENTS: the remaining lines of each block, verbatim, with the head set by hand.**
+
+| Fragment | Result |
+|---|---|
+| stage 0 | exit 0, with check-journal 99 of 99 |
+| the pre-check, under psql | 13 OK, 0 VACUOUS, 0 FAIL |
+| verified-migrate | `journal 98 -> 99 (delta 1)`, `present by sha256: yes`, and journal row 99 holds the file's sha256 |
+| stage 1's last line | `0101 APPLIED. Paste stage 2 now.` |
+| the post-check, under psql | 19 OK, 0 VACUOUS, 0 FAIL, and the last line as this document's EXPECT |
+| no row rewritten | 60 rows, the same `xmin` and `ctid` before and after |
+| the real apply | begin, both SET LOCAL, the ALTER, the COMMENT, the journal insert and commit, on one backend, in about 5 ms |
+
+**STOPS THAT FIRED AS THEY SHOULD.**
+
+- **A held lock.** The ALTER failed with `canceling statement due to lock timeout` after 5.006 s;
+  the journal read 98 to 98; verified-migrate exited 4 and the block exited 4; no applied marker.
+- **Pasted again after the apply.** Stage 0 and stage 1 stop on the marker, and verified-migrate
+  exits 3.
+- **A missing `-v` carry.** psql exits 3 with its STOP and 0 verdicts.
+- **The post-check on a database without the column.** Exit 3 with `column "email" does not exist`.
+
+**SUBSTITUTIONS, ONLY THESE.** The `cd` to the prod-apply checkout became the scratch clone; the
+`/tmp/0101-` paths became scratch paths (93 occurrences); the production env file became a scratch
+env file holding the 127.0.0.1 URL (4 lines); and in a scratch COPY of the dispatch, the 12 PENDING
+lines were filled from the clone.
+
+**THREE OBSERVATIONS, each written again where it is read.**
+
+1. **When a timeout fires, GREEN's transcript does not name it.** drizzle-kit prints `undefined`
+   and pnpm prints `[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: drizzle-kit migrate`;
+   the lock-timeout text is only in the server's log. The apply exits 4, the journal reads 98 to 98,
+   and nothing was applied. (Stage 1, "WHEN A BOUND FIRES", and the dispatch beside its halt rule.)
+2. **An EMPTY `prev_when` carry yields a FAIL on verdict 2, not a STOP,** and the block refuses an
+   empty value before psql. (Stage 1, "AN EMPTY `prev_when`".)
+3. **The sitting runs from the MERGE commit,** whose tree differs from the rehearsed head by
+   whatever main gained, on 2026-10-05 #1539; no pinned file differs. ("The HEAD CHECK, and running
+   from main".)
 
 ### The build lane's run, 2026-10-04
 
@@ -1049,24 +1139,28 @@ are in the build lane's scratchpad and not committed.
 
 ### NOT REHEARSED, said one by one
 
-- **Every block of this document against a database.** Before the promotion each block STOPped at
-  its first file check; since it, each still does on the real `origin/main` until the merge. The
-  blocks ran whole only in the fault-injection harness, on stubs.
-- **psql.** No psql ran on the build lane. The check files' SQL ran through a node runner, so
-  psql's own behaviour is not rehearsed: `-v` substitution, `\if :{?name}`, `ON_ERROR_STOP`, the
-  aligned output the blocks' `grep` and `carry()` read. In particular the post-check's
-  missing-carry STOP was not exercised: the runner sends the file as one query, and the server
-  refuses the unsubstituted `:name` at parse, before the `DO` block can raise. The constructs are
-  0100's, which was rehearsed under psql.
-- **`verified-migrate.mjs` and drizzle-kit.** The body was applied by node in one transaction.
-- **The target guard and the journal reader.** Both refuse any target but production, so on a
-  throwaway every block that runs one halts at that line unless the lead rules a substitution.
-- **Production's platform configuration.** G4 was measured on two local stacks; production's
+After the rehearsal of 2026-10-05 these stay NOT REHEARSED:
+
+- **Stages 0, 1, 2, the closing read and the dispatch's BEFORE YOU START, as whole blocks.** Each
+  stopped at its own STOP ("The rehearsal"), and nothing was substituted to carry it past. Their
+  remaining lines ran as fragments, with the head set by hand. Whole, this document's four have run
+  only in the fault-injection harness, on stubs.
+- **The target guard passing.** It refuses any target but production, and it refused the
+  throwaway. Its pass is first seen in the sitting.
+- **Both journal-reader reads,** and so the `98` and `99` greps and both of the closing read's last
+  lines. The reader refuses any target but production too.
+- **A clock STOP.** The rehearsal ran in closed hours, so the clock arm passed and no clock STOP
+  fired on a real clock. The harness fires each of them, on stubs.
+- **Production's platform configuration.** G4 was measured on local stacks; production's
   `supautils` settings and locks were not read.
-- **CI's `db-tests` on the promoted head,** which applies 0101 from the mirror (each file outside
-  a transaction block, so the two SET LOCAL lines print their 25P01 WARNING, as 0100's do). The
-  promotion's run did the same on a lane stack, locally; CI itself has not run on the promoted head.
-- **GREEN's two dispatch blocks** (BEFORE YOU START and the CLOCK CHECK): drafted, not run.
+
+**Off this list since the rehearsal:** psql itself (the pre-check, the post-check and the
+missing-carry STOP, under psql 18.6 against server 17.6); `verified-migrate.mjs` reaching drizzle-kit
+(98 to 99, with the file's sha256 in row 99); and the dispatch's CLOCK CHECK, whole. **And since CI
+ran:** `db-tests` on the promoted head `840ec04e` applied 0101 from the mirror and passed, with the
+other required checks (read from the pull request's checks on 2026-10-05; `held-for-apply-blocks-merge`
+is red there, which is the label doing its work). That is NOT READY step 5, and it is read again on
+the head that merges.
 
 ### The fault-injection harness (not a rehearsal)
 
@@ -1126,6 +1220,10 @@ on the GitHub runner alone the zsh arm is a reported skip, and anywhere else a m
 test.
 
 ### What the rehearsal agent owes before the dispatch is issued
+
+**Owed when this was written, and run on 2026-10-05 with the limits recorded under "The
+rehearsal".** Item 3's whole-block runs are the part that is not discharged: no substitution was
+ruled for the merge ref, the target guard or the journal reader, and none was made.
 
 Run under the lead's standing rule, verbatim in its prompt: "A script's own REFUSE or STOP line is a
 halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to
@@ -1194,7 +1292,16 @@ ends in ROLLBACK, and the post-check runs inside the block's `begin read only`.
 
 ## Review history
 
-**R4 on the promoted pull request has not run** (NOT READY step 3).
+**R4 on the promotion commit `840ec04e`, 2026-10-05, an independent review: PASS** (NOT READY
+step 3). The SQL byte-identical (`36a1ed54...`); one journal entry added (`idx 98`); the four fenced
+blocks byte-identical to `045214f0`'s; the mirror different only by the generated four-line header;
+nothing open claimed as done. It also established the order of "THE ORDER OF PULL REQUESTS": the
+blocks name `origin/main`, so the pull request merges first.
+
+**The commit that recorded R4 and the rehearsal, 2026-10-05, changed no byte of any block.** It
+changed the banner, NOT READY steps 3 and 4, one paragraph of the order section, one of "The HEAD
+CHECK", two of stage 1's prose, the opening of "Rehearsal" and its NOT REHEARSED list, a note under
+"What the rehearsal agent owes" and this history, and it added "The rehearsal". The four are still `045214f0`'s, compared again byte for byte.
 
 **The promotion commit, 2026-10-05, changed no byte of any block.** It changed this document's
 banner, its status, NOT READY steps 1 and 2, the Migration row, rows 1 and 2 of the order table and
