@@ -33,7 +33,25 @@
  * with E2E_PASSWORD like the revenue spec): the patient's clinic is Linda-a-Velha,
  * so this admin reads every group, and still has no button. Screenshots at 1280 px and
  * 390 px are attached for the report. Invented names only.
+ *
+ * EPI-01b piece 3, ONE ARM: "PDF do episódio". The seeded app episode holds a
+ * draft and a locked registo, so its group offers the button and says the file
+ * leaves the draft out; pressing it downloads one PDF named after the episode.
+ * The imported group and "Sem episódio" are not episodes and offer none. Which
+ * registos the file holds, per role and status, is pinned in the unit and
+ * DB-backed suites (episode-export*.test.ts).
+ *
+ * THAT ARM IS A REAL DOWNLOAD, AND IT NEEDS NOTHING ANOTHER SPEC LEFT BEHIND.
+ * The app renders the file, stores it in the `clinical-attachments` bucket and
+ * sends the browser to a signed URL. The bucket is provisioned by the seed
+ * (seed-e2e.mjs, ensureAttachmentsBucket), so the arm passes on a fresh
+ * database whichever shard it lands on. It downloads bytes its own click made
+ * the app write: the seeded documents of other fixtures hold no bytes
+ * (fixtures.ts, IMPORTED_DOCUMENTS) and are still never downloaded. Playwright
+ * accepts downloads by default and the config does not turn that off; the file
+ * is read from the path Playwright saved it to and must begin as a PDF does.
  */
+import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { ADD_EVALUATION as F, ADD_EVALUATION_REUSE as R, E2E_PASSWORD, STORAGE, USERS } from "./fixtures";
 
@@ -78,6 +96,35 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     await expect(none.getByTestId("record-group-add-evaluation")).toHaveCount(0);
     // The visible label reads "+ Avaliação": a plus icon and the word.
     await expect(group(page, APP_KEY).getByTestId("record-group-add-evaluation")).toHaveText("Avaliação");
+  });
+
+  test("piece 3: the app episode offers 'PDF do episódio' and it downloads; the imported group and 'Sem episódio' offer none", async ({ page }) => {
+    await openTab(page);
+    const app = group(page, APP_KEY);
+    await expect(app.locator(`[data-record-id="${F.appEpisode.finalizedRecordId}"]`)).toContainText("Bloqueada");
+    const pdf = app.getByRole("button", { name: `Transferir o PDF do episódio: ${F.appEpisode.title}` });
+    await expect(pdf).toBeVisible();
+    await expect(pdf).toHaveText("PDF do episódio");
+    // The episode also holds a draft: the group says the file leaves it out.
+    await expect(app.getByTestId("record-group-episode-pdf-partial")).toBeVisible();
+
+    // Not an episode: no button, on a group that really rendered its registo.
+    await expect(group(page, IMPORTED_KEY).locator(`[data-record-id="${F.imported.recordId}"]`)).toBeVisible();
+    await expect(group(page, IMPORTED_KEY).getByTestId("record-group-episode-pdf")).toHaveCount(0);
+    await expect(group(page, "none").locator(`[data-record-id="${F.noEpisode.recordId}"]`)).toBeVisible();
+    await expect(group(page, "none").getByTestId("record-group-episode-pdf")).toHaveCount(0);
+
+    // The signed URL names the file (Content-Disposition), so the browser
+    // downloads it and the tab stays on the ficha.
+    const downloading = page.waitForEvent("download", { timeout: 30_000 });
+    await pdf.click();
+    const download = await downloading;
+    expect(download.suggestedFilename()).toBe(`relatorio-episodio-${F.appEpisode.episodeId.slice(0, 8)}.pdf`);
+    expect(await download.failure()).toBeNull();
+    expect(readFileSync(await download.path()).subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    // The tab is still the ficha: the group is there, with no error line.
+    await expect(app.getByTestId("record-group-episode-pdf-error")).toHaveCount(0);
+    await expect(pdf).toBeVisible();
   });
 
   test("on an APP episode it files the new registo in that episode", async ({ page }) => {

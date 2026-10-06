@@ -1448,7 +1448,9 @@ async function ensureFichaEpisodes(therapistId) {
 // A patient of its own, so the EPI-01a spec's counts never move, holding ONE
 // group of each kind the Registos tab draws:
 //   - an OPEN app episode (no ledger row) with one draft registo in the
-//     therapist's name: "+ Avaliação" files the new registo in it;
+//     therapist's name: "+ Avaliação" files the new registo in it. EPI-01b
+//     piece 3: it also holds one LOCKED registo, dated the day after the draft,
+//     so "PDF do episódio" has a finalized registo to export;
 //   - one imported Osteopatia episode in the importer's shape (closed, ledger
 //     rows for it and its locked registo): "+ Avaliação" files in the open app
 //     episode of that specialty, opening one when there is none (R31);
@@ -1460,6 +1462,32 @@ async function ensureFichaEpisodes(therapistId) {
 // left exactly as it is. The spec adds registos and episodes on every run and
 // asserts by the ids it creates.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE `clinical-attachments` BUCKET. No migration creates it, so a freshly
+// reset stack has none, and a spec whose flow makes the APP store a file needs
+// it before its first click: EPI-01b piece 3's "PDF do episódio" arm
+// (ficha-add-evaluation.spec.ts) uploads the file it then downloads. Created
+// here, once, so that arm does not depend on another spec having run first
+// (CI runs three shards, each on its own fresh database). Private, as the app
+// expects: every read is a signed URL. Re-runnable: a bucket that is already
+// there is left exactly as it is. The same two calls, with the same
+// service-role client, as patient-documents-soft-delete.spec.ts makes for
+// itself. Storage not running is an error here, by name, and not a timeout in
+// a spec later.
+// ---------------------------------------------------------------------------
+const ATTACHMENTS_BUCKET = "clinical-attachments";
+async function ensureAttachmentsBucket() {
+  const { data: bucket } = await db.storage.getBucket(ATTACHMENTS_BUCKET);
+  if (bucket) return;
+  const { error } = await db.storage.createBucket(ATTACHMENTS_BUCKET, { public: false });
+  if (error && !/already exists/i.test(error.message)) {
+    throw new Error(
+      `bucket ${ATTACHMENTS_BUCKET}: ${error.message ?? JSON.stringify(error)} ` +
+        "(the specs that store a file need Supabase Storage running)",
+    );
+  }
+}
+
 const ADD_EVALUATION_PATIENT = "00000000-0000-0000-0000-00000000a3e2";
 const ADD_EVALUATION_APP_EPISODE = "00000000-0000-0000-0000-00000000fe41";
 const ADD_EVALUATION_IMPORTED_EPISODE = "00000000-0000-0000-0000-00000000fe42";
@@ -1537,6 +1565,14 @@ async function ensureAddEvaluationFixture(therapistId) {
       practitioner_id: therapistId,
       created_at: "2026-09-15T09:30:00.000Z",
       data: { consultation_reason: "Dor cervical ao acordar, inventada" },
+    },
+    {
+      id: "00000000-0000-0000-0000-00000000fe55",
+      episode_id: ADD_EVALUATION_APP_EPISODE,
+      status: "locked",
+      practitioner_id: therapistId,
+      created_at: "2026-09-16T09:30:00.000Z",
+      data: { consultation_reason: "Dor cervical em melhoria, inventada" },
     },
     {
       id: importedRecord,
@@ -1901,6 +1937,8 @@ async function main() {
   await ensureImportedDocuments(importedRecordId);
   // EPI-01a: an imported history in the importer's shape, on a patient of its own.
   await ensureFichaEpisodes(userIds.therapist);
+  // EPI-01b piece 3: the bucket "PDF do episódio" stores its file in.
+  await ensureAttachmentsBucket();
   // EPI-01b: one group of each kind, on a patient of its own, for "+ Avaliação".
   await ensureAddEvaluationFixture(userIds.therapist);
   // EPI-01b R31: a patient with one imported group and no app episode (two clicks, one episode).
@@ -1925,6 +1963,7 @@ async function main() {
   );
   console.log("[seed-e2e] ai delete draft:", AI_DELETE_DRAFT_ID, "(+ ingestion back-pointer)");
   console.log("[seed-e2e] templates:", templates.join(", "));
+  console.log("[seed-e2e] storage bucket:", ATTACHMENTS_BUCKET, "(private)");
   console.log("[seed-e2e] done.");
 }
 

@@ -20,8 +20,9 @@
  *
  * Runs as admin (patients:write) on a FRESH synthetic patient and a document
  * this spec creates, so nothing another spec writes can be deleted here. The
- * e2e seed does not provision the `clinical-attachments` bucket (see
- * camera-to-ficha.spec.ts), so this spec creates it when missing. No day offset.
+ * e2e seed provisions the `clinical-attachments` bucket since EPI-01b piece 3;
+ * this spec still creates it when missing, so it also runs on a stack seeded
+ * before that. No day offset.
  *
  * REQUIRES packages/db/migrations/0089_attachments_soft_delete.sql to be
  * APPLIED to the lane database. Before that, the tab's read names a column that
@@ -41,7 +42,7 @@ test("Documentos Eliminar: a reason is required, the document leaves the tab, th
 }) => {
   const db = serviceClient();
 
-  /* ---- the bucket the seed does not create ---- */
+  /* ---- the bucket, when a stack seeded before EPI-01b piece 3 lacks it ---- */
   const { data: bucket } = await db.storage.getBucket(BUCKET);
   if (!bucket) {
     const { error } = await db.storage.createBucket(BUCKET, { public: false });

@@ -11,9 +11,10 @@
  * capture (track.stop); and that a permission denial shows the pt-PT message
  * with NO gallery-persisting fallback. The actual upload landing (Supabase
  * Storage bucket) is covered by the unit tests (attachment-upload.test.ts) +
- * the Rodica real-device close-out; it is not asserted here because the CI seed
- * does not provision the clinical-attachments bucket (the pre-existing
- * file-input upload is uncovered for the same reason).
+ * the Rodica real-device close-out; it is not asserted here. (When this was
+ * written the e2e seed did not provision the clinical-attachments bucket. It
+ * does since EPI-01b piece 3; this spec still does not assert the upload, and
+ * neither does the pre-existing file-input one.)
  *
  * NOTE ON THE TWO "Tirar foto" BUTTONS: the anexos toolbar has an entry-point
  * "Tirar foto" (clinical.attachmentTakePhoto) that opens the camera panel, and
