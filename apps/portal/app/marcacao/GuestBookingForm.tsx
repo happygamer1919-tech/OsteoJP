@@ -8,7 +8,7 @@ import { CLINIC_CONTACTS } from '@/lib/clinics'
 import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
-import { guestEmailFieldMessage } from './email-field'
+import { syncEmailFieldValidity } from './email-field'
 import {
   GUEST_EMAIL_INPUT_MAX,
   GUEST_INTAKE_KEYS,
@@ -281,7 +281,16 @@ export function GuestBookingForm({
         </div>
       )}
 
-      <form action={formAction} className="flex flex-col gap-4">
+      <form
+        action={formAction}
+        className="flex flex-col gap-4"
+        // BEFORE THE BROWSER VALIDATES, judge the email as it stands now (see
+        // `syncEmailFieldValidity`): a click on any button passes here first.
+        onClickCapture={(e) => {
+          const field = e.currentTarget.elements.namedItem('email')
+          syncEmailFieldValidity(field instanceof HTMLInputElement ? field : null, s.guest.error_invalid)
+        }}
+      >
         <input type="hidden" name="step" value={step} />
         {/* INTAKE-01: whether this flow has the fifth step, carried like every
             other value so the server and the screen agree on the step count
@@ -456,8 +465,10 @@ export function GuestBookingForm({
                 the SHARED rule (`email-field.ts`), set as the field's validity
                 so the browser stops "next" and "submit", lets "back" through
                 (`formNoValidate`), and shows the form's own message. The ref
-                covers a value the page arrived with; the server action and the
-                API re-check whatever happened here. */}
+                covers a value the page arrived with, and the form's
+                `onClickCapture` judges the value again before every press, so
+                a message can never outlive the value it was about. The server
+                action and the API re-check whatever happened here. */}
             <Field label={s.guest.email_label} helperText={s.guest.email_hint}>
               <Input
                 name="email"
@@ -468,13 +479,8 @@ export function GuestBookingForm({
                 spellCheck={false}
                 maxLength={GUEST_EMAIL_INPUT_MAX}
                 defaultValue={values.email}
-                ref={(el) => {
-                  el?.setCustomValidity(guestEmailFieldMessage(el.value, s.guest.error_invalid))
-                }}
-                onInput={(e) => {
-                  const el = e.currentTarget
-                  el.setCustomValidity(guestEmailFieldMessage(el.value, s.guest.error_invalid))
-                }}
+                ref={(el) => syncEmailFieldValidity(el, s.guest.error_invalid)}
+                onInput={(e) => syncEmailFieldValidity(e.currentTarget, s.guest.error_invalid)}
               />
             </Field>
 

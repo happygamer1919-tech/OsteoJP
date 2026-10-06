@@ -201,7 +201,10 @@ export function formEmailNotOnRecord(
   const typed = emailOrNull(formEmail);
   if (typed === null) return false;
   const held = emailOrNull(patientEmail);
-  return held === null || held.toLowerCase() !== typed.toLowerCase();
+  // NFC on both sides: the form's address is stored composed, and an address a
+  // member of staff typed on a Mac may not be. The same address is the same.
+  const fold = (v: string): string => v.normalize("NFC").toLowerCase();
+  return held === null || fold(held) !== fold(typed);
 }
 
 /** What reception is told about the form's address, beside the choice it is about to make. */

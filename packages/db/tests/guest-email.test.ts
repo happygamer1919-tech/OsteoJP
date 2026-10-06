@@ -44,6 +44,30 @@ describe("the guest email rule", () => {
     expect(parseGuestEmail("First.Last+tag@sub.example.invalid")).toEqual({ ok: true, email: "First.Last+tag@sub.example.invalid" });
   });
 
+  it("NFC: a decomposed spelling and a composed one of the same address are ONE stored string", () => {
+    const composed = "a\u00e7\u00e3o.caf\u00e9@exemplo.invalid";
+    const decomposed = composed.normalize("NFD");
+    // THE PREMISE: the two really are different strings that draw the same.
+    expect(decomposed).not.toBe(composed);
+    expect(decomposed.length).toBeGreaterThan(composed.length);
+    expect(parseGuestEmail(decomposed)).toEqual({ ok: true, email: composed });
+    expect(parseGuestEmail(composed)).toEqual({ ok: true, email: composed });
+    // Whatever is stored IS in NFC, for every admitted value of the table.
+    for (const c of CASES) {
+      const r = parseGuestEmail(c.value);
+      if (r.ok && r.email !== null) expect(r.email, c.why).toBe(r.email.normalize("NFC"));
+    }
+  });
+
+  it("the bound is counted on what is STORED: a decomposed value over 320 that composes to 320 passes, and one that composes to 321 does not", () => {
+    const tail = "@example.invalid";
+    const composed = (n: number): string => `${"\u00e9".repeat(n - tail.length)}${tail}`;
+    const typed = composed(GUEST_EMAIL_MAX).normalize("NFD");
+    expect(typed.length).toBeGreaterThan(GUEST_EMAIL_MAX);
+    expect(parseGuestEmail(typed)).toEqual({ ok: true, email: composed(GUEST_EMAIL_MAX) });
+    expect(parseGuestEmail(composed(GUEST_EMAIL_MAX + 1).normalize("NFD"))).toEqual({ ok: false });
+  });
+
   it("the length bound is 320, counted after the trim: 320 passes and 321 does not", () => {
     const at = (n: number): string => `${"a".repeat(n - "@example.invalid".length)}@example.invalid`;
     expect(at(GUEST_EMAIL_MAX)).toHaveLength(320);

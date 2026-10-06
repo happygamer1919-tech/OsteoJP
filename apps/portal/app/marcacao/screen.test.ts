@@ -89,8 +89,9 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
     const helper = code(join(HERE, 'email-field.ts'))
     expect(helper.match(/^import .*$/gm)).toEqual(["import { parseGuestEmail } from '@osteojp/db/guest-email'"])
     expect(helper).toContain("return parseGuestEmail(typed).ok ? '' : message")
+    expect(helper).toContain('field.setCustomValidity(guestEmailFieldMessage(field.value, message))')
     // The root of @osteojp/db in a client component is the `postgres` driver in the browser bundle.
-    expect(FORM).toContain("import { guestEmailFieldMessage } from './email-field'")
+    expect(FORM).toContain("import { syncEmailFieldValidity } from './email-field'")
     expect(FORM).not.toMatch(/from '@osteojp\/db'/)
     // The entry itself imports nothing at all.
     const rule = readFileSync(join(HERE, '..', '..', '..', '..', 'packages', 'db', 'src', 'guest-email.ts'), 'utf8')
@@ -113,7 +114,14 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
     expect(FORM).not.toContain('type="email"')
     expect(inputs[0]).toContain('inputMode="email"')
     expect(inputs[0]).toContain('autoComplete="email"')
-    expect(inputs[0]!.match(/setCustomValidity\(guestEmailFieldMessage\(el\.value, s\.guest\.error_invalid\)\)/g)).toHaveLength(2)
+    // THE VALIDITY IS SET FROM THE LIVE VALUE in three places: on mount and re-render,
+    // on every input event, and on every click inside the form before the browser validates.
+    expect(inputs[0]).toContain('ref={(el) => syncEmailFieldValidity(el, s.guest.error_invalid)}')
+    expect(inputs[0]).toContain('onInput={(e) => syncEmailFieldValidity(e.currentTarget, s.guest.error_invalid)}')
+    expect(FORM).toMatch(
+      /<form\n\s+action=\{formAction\}[\s\S]{0,200}onClickCapture=\{\(e\) => \{\n\s+const field = e\.currentTarget\.elements\.namedItem\('email'\)\n\s+syncEmailFieldValidity\(field instanceof HTMLInputElement \? field : null, s\.guest\.error_invalid\)/,
+    )
+    expect(FORM.match(/setCustomValidity/g)).toBeNull()
     expect(inputs[0]).toContain('maxLength={GUEST_EMAIL_INPUT_MAX}')
     expect(FORM).toContain('<Field label={s.guest.email_label} helperText={s.guest.email_hint}>')
     // THE WORDS ARE THE RULING'S, character for character, and the English is

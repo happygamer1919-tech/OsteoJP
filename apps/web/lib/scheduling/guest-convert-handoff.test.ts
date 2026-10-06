@@ -203,6 +203,11 @@ describe("the form's email: one meaning of 'none', and what reception is told", 
     for (const held of [ADDRESS, ADDRESS.toUpperCase(), `  ${ADDRESS}  `]) {
       expect(formEmailNotOnRecord(ADDRESS, held), JSON.stringify(held)).toBe(false);
     }
+    // AND WHATEVER ITS UNICODE FORM: composed on one side, decomposed on the other.
+    const accented = "a\u00e7\u00e3o.fixture@example.invalid";
+    expect(accented.normalize("NFD")).not.toBe(accented);
+    expect(formEmailNotOnRecord(accented, accented.normalize("NFD"))).toBe(false);
+    expect(formEmailNotOnRecord(accented.normalize("NFD"), accented)).toBe(false);
     // A request WITHOUT an address has nothing that could be missing from a record.
     for (const typed of [null, undefined, "", "   "]) {
       expect(formEmailNotOnRecord(typed, null)).toBe(false);

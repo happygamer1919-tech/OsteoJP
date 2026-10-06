@@ -44,8 +44,14 @@
  {
   "value": "cafe\u0301@exemplo.invalid",
   "ok": true,
-  "stored": "cafe\u0301@exemplo.invalid",
-  "why": "a combining mark (decomposed e acute)"
+  "stored": "caf\u00e9@exemplo.invalid",
+  "why": "a DECOMPOSED letter (e and a combining acute) is stored COMPOSED, in NFC"
+ },
+ {
+  "value": "ac\u0327a\u0303o@exemplo.invalid",
+  "ok": true,
+  "stored": "a\u00e7\u00e3o@exemplo.invalid",
+  "why": "a decomposed cedilla and tilde, as a Mac or phone keyboard may send them: stored in NFC"
  },
  {
   "value": "\u7528\u6237@\u4f8b\u5b50.invalid",

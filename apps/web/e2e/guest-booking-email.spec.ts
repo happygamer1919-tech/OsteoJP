@@ -49,6 +49,23 @@ async function toStepFour(page: Page): Promise<number> {
   return total;
 }
 
+/**
+ * Press step 4's forward button and expect NOTHING: "Continuar" on the five-step
+ * flow, the consent and "Enviar pedido" on the four-step one. For the press that
+ * must NOT advance. `finish` below demands the next step, so it cannot be used
+ * for a value the form refuses: that was this spec's own defect on its first CI
+ * run (it asked for "Passo 5 de 5" after typing `a@b`, which the form rightly
+ * never showed).
+ */
+async function pressForward(page: Page, total: number): Promise<void> {
+  if (total === 5) {
+    await page.getByRole("button", { name: "Continuar" }).click();
+    return;
+  }
+  await page.locator('input[name="consent"]').check();
+  await page.getByRole("button", { name: "Enviar pedido" }).click();
+}
+
 /** Leave step 4 and send: through step 5 when the page has one. */
 async function finish(page: Page, total: number): Promise<void> {
   if (total === 5) {
@@ -96,8 +113,9 @@ test.describe("the public form's optional email (R40, 0101)", () => {
       // Either way the visitor is still on step 4, nothing was booked, and the
       // message is the form's: asserted on what both paths have in common.
       await email.fill("a@b");
-      await finish(page, total);
+      await pressForward(page, total);
       await expect(page.getByText(`Passo 4 de ${total}`)).toBeVisible({ timeout: 10_000 });
+      if (total === 5) await expect(page.getByText("Passo 5 de 5")).toHaveCount(0);
       await expect
         .poll(async () => {
           const onField = await page.locator('input[name="email"]').evaluate((el) => (el as HTMLInputElement).validationMessage);

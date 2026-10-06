@@ -112,7 +112,7 @@ export type GuestEmailResult = { ok: true; email: string | null } | { ok: false 
  * What a typed or posted value means.
  *
  *   absent, null, or only whitespace  ->  ok, no email (stored as NULL)
- *   a string that is an email         ->  ok, trimmed
+ *   a string that is an email         ->  ok, in NFC and trimmed
  *   anything else                     ->  not ok
  *
  * "Anything else" includes a non-string, so a hand-rolled client posting
@@ -124,7 +124,15 @@ export type GuestEmailResult = { ok: true; email: string | null } | { ok: false 
 export function parseGuestEmail(value: unknown): GuestEmailResult {
   if (value === undefined || value === null) return { ok: true, email: null };
   if (typeof value !== "string") return { ok: false };
-  const trimmed = value.trim();
+  // NFC FIRST, before the checks and before anything is stored. A Mac or a phone
+  // keyboard may send "ç" as a "c" and a combining cedilla; both spellings are the
+  // same address and draw the same, but they are different strings, so a stored
+  // decomposed form would not equal what reception types when searching, nor the
+  // same address already on a patient's record. NFC is also what mail expects of a
+  // non-ASCII address (RFC 6532) and what a domain must be in (IDNA). It is done
+  // HERE, in the one function, so the browser, the server action and the route
+  // cannot disagree about it. The length bound is counted on what is stored.
+  const trimmed = value.normalize("NFC").trim();
   if (trimmed.length === 0) return { ok: true, email: null };
   if (trimmed.length > GUEST_EMAIL_MAX) return { ok: false };
   if (!GUEST_EMAIL_PATTERN.test(trimmed)) return { ok: false };

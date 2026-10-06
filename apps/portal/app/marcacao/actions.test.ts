@@ -585,11 +585,42 @@ describe('§R40 — the optional email', () => {
     }
     expect(sent).toBeGreaterThanOrEqual(12)
     expect(stopped).toBeGreaterThanOrEqual(38)
+    // WHAT IS SENT IS THE PARSED VALUE, NOT THE TYPED ONE: a decomposed address goes out composed (NFC).
+    H.submits = []
+    const typedNfd = 'a\u00e7\u00e3o.fixture@example.invalid'.normalize('NFD')
+    expect(guestEmailFieldMessage(typedNfd, 'MESSAGE')).toBe('')
+    expect((await run(complete({ email: typedNfd }))).received).toBe(true)
+    expect(H.submits[0]!.email).toBe('a\u00e7\u00e3o.fixture@example.invalid')
+    expect(H.submits[0]!.email).not.toBe(typedNfd)
     // THE ONE THE BROWSER'S OWN CHECK GOT WRONG IN EACH DIRECTION.
     expect(guestEmailFieldMessage('coração@exemplo.invalid', 'MESSAGE')).toBe('')
     expect(guestEmailFieldMessage('a@b', 'MESSAGE')).toBe('MESSAGE')
     // And an empty field is never stopped: the email is optional.
     for (const none of ['', '   ']) expect(guestEmailFieldMessage(none, 'MESSAGE')).toBe('')
+  })
+
+  it('A VALIDITY MESSAGE NEVER OUTLIVES THE VALUE IT WAS ABOUT: set by a bad address, it is cleared as soon as the field is judged again with a good one', async () => {
+    const { syncEmailFieldValidity } = await import('./email-field')
+    const field = { type: 'text', value: 'a@b', validity: 'unset', setCustomValidity(m: string) { this.validity = m } }
+    syncEmailFieldValidity(field, 'MESSAGE')
+    expect(field.validity).toBe('MESSAGE')
+    // The visitor corrects it. However the value changed (typing, autofill, a script
+    // that fired no input event), the next judgement reads the value as it is NOW.
+    for (const good of ['guest@example.invalid', 'a\u00e7\u00e3o@exemplo.invalid', 'ac\u0327a\u0303o@exemplo.invalid', '', '   ']) {
+      field.validity = 'MESSAGE'
+      field.value = good
+      syncEmailFieldValidity(field, 'MESSAGE')
+      expect(field.validity, JSON.stringify(good)).toBe('')
+    }
+    // And back to bad is caught again.
+    field.value = 'still@bad'
+    syncEmailFieldValidity(field, 'MESSAGE')
+    expect(field.validity).toBe('MESSAGE')
+    // A HIDDEN field (every step but 4) and a missing one are left alone.
+    const hidden = { type: 'hidden', value: 'a@b', validity: 'unset', setCustomValidity(m: string) { this.validity = m } }
+    syncEmailFieldValidity(hidden, 'MESSAGE')
+    expect(hidden.validity).toBe('unset')
+    expect(() => syncEmailFieldValidity(null, 'MESSAGE')).not.toThrow()
   })
 
   it('an EMPTY email is never a missing field: steps 1 to 4 advance exactly as before', async () => {
