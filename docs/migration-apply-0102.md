@@ -1,10 +1,11 @@
 # 0102: apply SAT-01's tables, doors, switch audit and policies
 
-**NOT READY: 0102 is PENDING, not promoted, not reviewed and not rehearsed.** Its predecessor is there: `0101` (the public form's email column, #1538) is promoted on `main` (merge commit `a0e96a99`) and, by the lead's dispatch to this lane, was applied to production by GREEN on 2026-10-05, 21:01 to 21:06 Lisbon, production's journal going 98 to 99 (this lane read `main`, not production). 0102 stays `packages/db/migrations-pending/NEXT-AFTER-0101_sat01_satisfaction_survey.sql`, and every block below STOPs at its first check, because the held branch does not carry the promoted file. Open, in order: the GATE-CHANGE the promotion forces, which the promotion simulation of 2026-10-05 found and named (NOT READY step 2), the promotion (step 3), R4 (step 4), the whole-block rehearsal (step 5), CI on the promoted head (step 6) and GREEN's dispatch (step 7). **The sitting is closed hours only, by the weekday table** (see "R9"), **and it runs from this pull request's HELD head, before the merge** (see "THE ORDER OF PULL REQUESTS").
+**NOT READY: 0102 is PROMOTED on its held branch (2026-10-06), and it is not yet rehearsed on these bytes, not reviewed as promoted (R4) and not applied.** Its predecessor is there: `0101` (the public form's email column, #1538) is promoted on `main` (merge commit `a0e96a99`) and, by the lead's dispatch to this lane, was applied to production by GREEN on 2026-10-05, 21:01 to 21:06 Lisbon, production's journal going 98 to 99 (this lane read `main`, not production). 0102 is `packages/db/migrations/0102_sat01_satisfaction_survey.sql`, at journal `idx 99`: the bytes of the pending file it was (`packages/db/migrations-pending/NEXT-AFTER-0101_sat01_satisfaction_survey.sql`), the same sha256 before and after the rename. The blocks below read the held head: from a head that does not carry the promotion commit, stage 0 STOPs at its promotion check. DONE: the GATE-CHANGE the promotion forced, which the promotion simulation of 2026-10-05 found and named (#1544, merged 2026-10-06 at `129860b3`; NOT READY step 2), and the promotion (step 3; "The promotion's run, 2026-10-06"). Open, in order: R4 (step 4), the whole-block rehearsal (step 5), CI on the promoted head (step 6) and GREEN's dispatch (step 7). **The sitting is closed hours only, by the weekday table** (see "R9"), **and it runs from this pull request's HELD head, before the merge** (see "THE ORDER OF PULL REQUESTS").
 
-**Status: AUTHORED. PENDING. NOT PROMOTED. NOT APPLIED.** One migration, the pending file above,
-sha256 `db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1`, to be promoted to
-`packages/db/migrations/0102_sat01_satisfaction_survey.sql` by a rename that changes no byte. It is
+**Status: AUTHORED. PROMOTED ON ITS HELD BRANCH. NOT REHEARSED ON THESE BYTES. NOT APPLIED.** One
+migration, `packages/db/migrations/0102_sat01_satisfaction_survey.sql`, sha256
+`db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1`, promoted on 2026-10-06 from the
+pending file named above by a rename that changed no byte. It is
 SAT-01's database half (strategy S-1002-D; numbered `0102` by S-1004-A R41: "0101 = public-form
 email column ... SAT-01 becomes 0102"; spec `docs/design/SPEC-SAT-01-satisfaction-form.md`,
 section 6 and the amendment of 2026-10-04). Four blocks, each pasted whole, on its own and in
@@ -54,32 +55,36 @@ lane that wrote this document never runs it.
    scripts/check-journal.mjs` reconciles 99 files with 99 entries. As first written: **`0101` is
    applied to production and merged (#1538).** One Tier C item in checks at a time, and apply order
    equals file order (2026-09-30).
-2. **The GATE-CHANGE the promotion forces merges first, as its own pull request, by the owner on
-   green** (order table, row 1). **Measured on 2026-10-05 by promoting on a scratch branch** (see
-   "The promotion, simulated"): one frozen script test goes red at the promotion,
-   `scripts/import/cleanup-test-patients.test.mjs`, because the three new tables have a foreign-key
-   path to `patients` and its delete order does not list them. Its GATE-CHANGE has the shape of
-   #1436 (RGPD-01): the three tables enter `DELETE_ORDER` and `AHEAD_OF_MIGRATION`, and the
-   manifest is regenerated. That edit alone is green on today's tree (26 of 26).
-3. **SOLO promotes 0102 on its branch, `db/0102-sat01-tables`,** and opens the held PR with the
-   `held-for-apply` label: merge `origin/main` in (no rebase); `git mv` the pending file to
+2. **DONE: the GATE-CHANGE the promotion forced merged first, as its own pull request, by the owner
+   on green: #1544, merged 2026-10-06 at `129860b3`** (order table, row 1). **Measured on
+   2026-10-05 by promoting on a scratch branch** (see "The promotion, simulated"): one frozen script
+   test went red at the promotion, `scripts/import/cleanup-test-patients.test.mjs`, because the
+   three new tables have a foreign-key path to `patients` and its delete order did not list them.
+   Its GATE-CHANGE has the shape of #1436 (RGPD-01): the three tables entered `DELETE_ORDER` and
+   `AHEAD_OF_MIGRATION`, and the manifest was regenerated. That edit alone was green on the
+   unpromoted tree (26 of 26, read again on this branch on 2026-10-06, before the rename).
+3. **DONE, 2026-10-06: SOLO promoted 0102 on its branch, `db/0102-sat01-tables`,** the branch of
+   the held pull request #1551 (`held-for-apply`). Each measurement is under "The promotion's run,
+   2026-10-06". What was done: `origin/main` was already in the branch (it stood one commit above
+   `dbe63d87`, so there was nothing to merge in, and nothing was rebased); `git mv` of the pending
+   file to
    `packages/db/migrations/0102_sat01_satisfaction_survey.sql` (a rename: sha256 `db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1`
-   before and after); append its journal entry at **`idx 99`**, tag
+   before and after); its journal entry appended at **`idx 99`**, tag
    `0102_sat01_satisfaction_survey`, **`when` 1788502300000** (0101's 1788502200000 plus 100000; a
    `when` equal or lower makes drizzle skip the file in silence, which is why
-   `scripts/check-journal.mjs` refuses one); run `node scripts/sync-supabase-migrations.mjs` for
-   the mirror; run `node scripts/check-journal.mjs` (**100 files, 100 entries**; the simulation
-   read exactly that); move the README row into the Promoted table; **and three ordinary edits the
-   frozen tests force at the promotion, none of them a gate file:** add
-   `purge_expired_survey_comments` and `patients_survey_switch_audit` to the list of functions
+   `scripts/check-journal.mjs` refuses one); `node scripts/sync-supabase-migrations.mjs` for
+   the mirror; `node scripts/check-journal.mjs` (**100 files, 100 entries**, as the simulation
+   read); the README row moved into the Promoted table; **and three ordinary edits the
+   frozen tests force at the promotion, none of them a gate file:**
+   `purge_expired_survey_comments` and `patients_survey_switch_audit` added to the list of functions
    `authenticated` may not execute in `packages/db/tests/security-definer-execute-acl.db.test.ts`;
-   add the three deletes to `scripts/import/cleanup-test-patients.sql` (answers, then codes, then
+   the three deletes added to `scripts/import/cleanup-test-patients.sql` (answers, then codes, then
    sends, all before `appointments`, because an answer blocks its appointment's delete); and
-   declare the three tables in `packages/db/src/schema.ts` (the cleanup test refuses a table the
-   script deletes from that `schema.ts` does not name; #1399 did the same for RGPD-01). Amend this
-   document's banner and status, with its sidecar.
+   the three tables declared in `packages/db/src/schema.ts` (the cleanup test refuses a table the
+   script deletes from that `schema.ts` does not name; #1399 did the same for RGPD-01). This
+   document's banner and status were amended, with its sidecar.
    The pre-check and the post-check pin the body's sha256 as a literal, and a rename does not move
-   it, so neither needs an edit; nor does the script test, which finds the file in either place.
+   it, so neither was edited; nor was the script test, which finds the file in either place.
    **From that commit the PR reads red on the SECURITY DEFINER count, in two required checks, by
    construction, until step 4 of the order table.**
 4. **R4** on the promoted PR's diff and the card acceptance, at most three rounds (the review-loop
@@ -101,7 +106,7 @@ lane that wrote this document never runs it.
 |---|---|
 | Card | SAT-01, the satisfaction form (`SAT-01-satisfaction-form`) |
 | Ruling | Strategy's dispatch S-1002-D: S3 to S12 and the build order. S-1004-A (2026-10-04): R41 (the number), R39 (the policies last, the `supautils.policy_grants` read, closed hours only), G6 (the lock re-measurement), R29 (the weekday table), R30 (explicit halts), R32 (O9), R33 (O10), R34 (O11), R35 (O12). S-1002-A R9 and R10 |
-| Migration | `packages/db/migrations-pending/NEXT-AFTER-0101_sat01_satisfaction_survey.sql` until the promotion, then `packages/db/migrations/0102_sat01_satisfaction_survey.sql`. sha256 `db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1` in both places |
+| Migration | `packages/db/migrations/0102_sat01_satisfaction_survey.sql`, promoted on 2026-10-06 by a rename; until then it was `packages/db/migrations-pending/NEXT-AFTER-0101_sat01_satisfaction_survey.sql`. sha256 `db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1` in both places |
 | Journal | `idx 99`, tag `0102_sat01_satisfaction_survey`, `when` 1788502300000. Stage 0 asserts it and 0101's entry before it. Production's journal goes 99 to 100 |
 | Mirror | `supabase/migrations/0102_sat01_satisfaction_survey.sql`, written by `scripts/sync-supabase-migrations.mjs` and checked by content by `scripts/check-journal.mjs`, which stage 0 runs |
 | Must follow | `0101`, the optional email on a public booking request (#1538), **promoted on `main` and applied to production on 2026-10-05**: `packages/db/migrations/0101_guest_request_email.sql`, sha256 `36a1ed543133fea9b27b2449dcc1de62a50e41c4a29d80987dc8db0b4241cb5b`, journal `idx 98`, `when` 1788502200000, the newest of main's 99 entries. Stage 0 finds it by its journal tag and asserts its bytes; the pre-check finds it by hash as production's newest row, at that `when`, and reads `journal_rows_before` 99 |
@@ -133,7 +138,11 @@ backslash continuations and no `!` except `test !`. The blocks are pasted into z
 `echo`. Every halt is an explicit `STOP:` line followed by a non-zero exit, never `set -e`.
 
 **The migration's own header names no number of its own,** only 0101's, as the migration it
-follows, so the rename leaves nothing stale in it.
+follows. **Since the promotion two things in pinned bytes are stale, and are left so on purpose:**
+the header still opens "PENDING" and says the file "carries no number of its own", and the
+pre-check's header still names the pending path. A promotion changes no byte, and each file's
+sha256 is what every pin points at (this document said until 2026-10-06 that the rename leaves
+nothing stale in the header; the word "PENDING" is).
 
 ## 1. What it does
 
@@ -774,10 +783,12 @@ is UNKNOWN, was already in them).
 
 ## Applied from the held head, before the merge, and why that is safe here
 
-**The PR carries no app code.** It carries the migration, this document and its sidecar, the two
-check files, the DB-gated suite, a script test, the pending README, the spec amendment and one test
-list. Nothing in the application reads the new tables, the new column or the new functions, so the
-application behaves the same before and after the apply.
+**The PR carries no app code.** It carries the migration (promoted, with its journal entry and its
+mirror), this document and its sidecar, the two check files, the DB-gated suite, a script test, the
+pending README, the spec amendment, and the promotion's three ordinary edits: one test list, the
+cleanup script's three deletes, and the three table declarations in `schema.ts` (types; nothing
+queries them). Nothing in the application reads the new tables, the new column or the new
+functions, so the application behaves the same before and after the apply.
 
 **What can exist from the COMMIT on, before any application code ships (a precision the second
 review asked for):**
@@ -804,9 +815,10 @@ the three TABLES are declared in the promotion commit, because the frozen cleanu
 (order table); nothing queries them, and the commit reaches main only at row 6, after the apply.
 The `patients.survey_enabled` COLUMN is the one that matters: drizzle's `insert` names every
 column of the table it was given, so a `schema.ts` that declares it makes every patient INSERT
-name it (0101's lesson, measured there). It is safe on this pull request for the same reason, the
-merge follows the apply; it must never reach main before production holds 0102, and the held
-label is what guarantees that.
+name it (0101's lesson, measured there). **The promotion commit does not declare it** (NOT READY
+step 3 names the three tables only). A declaration of it is safe on this pull request for the same
+reason, the merge follows the apply; it must never reach main before production holds 0102, and
+the held label is what guarantees that.
 
 **The trigger is the one thing that acts on an existing table from the apply on.** It fires on an
 UPDATE of `patients` only when `survey_enabled` changes, and no application code changes it yet
@@ -972,11 +984,13 @@ print their own `STOP:`, and `/tmp/0102-head.sha` is written only after every ch
 a STOP leaves no new record of the sha. Inside clinic hours the clock's STOP is the arm working. A
 proof 1 line that cannot be computed reads `no`, and decides nothing.
 
-**Until the promotion is on the held branch, this stage ends at its first file check,**
-`STOP: the document pin is not on disk at the held head` (or, with the document there and no
-promotion, `STOP: 0102 is not on disk at the held head, so the promotion is not on it`); and until
-the branch is pushed at all, at `STOP: the held head, origin/db/0102-sat01-tables, could not be
-read`. That is the safe direction, and the halt rule governs it.
+**The promotion is on this branch since 2026-10-06. From a held head that does not carry it, this
+stage still ends at a file check:** with the document there and no promotion (the head of #1551 as
+it stood before the promotion commit),
+`STOP: 0102 is not on disk at the held head, so the promotion is not on it`; with no document,
+`STOP: the document pin is not on disk at the held head`; and with no such branch on origin,
+`STOP: the held head, origin/db/0102-sat01-tables, could not be read`. That is the safe direction,
+and the halt rule governs it.
 
 ## STAGE 1: the HEAD CHECK, the pre-check, the clock and the clinics, the apply
 
@@ -1694,9 +1708,10 @@ with an unanswered send deletes and takes the send and its code; one with an ans
 
 **NOT YET REHEARSED.** What stands is: what 0101's rehearsal and 0101's sitting on production
 proved about the machinery 0102 shares with it (first below); the build lane's run of 0102's own
-SQL (second); and the promotion, simulated (third). None of them is 0102's rehearsal: no block of
-this document has run against a database, because 0102 is not promoted and every block STOPs at
-its first check.
+SQL (second) and the re-pin's run (third); the promotion, simulated (fourth); and the promotion's
+own run of 2026-10-06 (fifth). None of them is 0102's rehearsal: no block of this document has
+run against a database. 0102 is promoted since 2026-10-06, and the whole-block rehearsal from the
+promoted head (NOT READY step 5) is a separate agent's and has not run.
 
 ### What 0101's rehearsal and 0101's sitting proved, which 0102 inherits
 
@@ -1964,13 +1979,60 @@ the three tables; but the sentence above, "It sees the eight late foreign keys",
 third review's bytes and not of these. The test is a gate file and was not edited. Whether its
 graph should read every clause is a question for its own GATE-CHANGE, not for this branch.
 
+### The promotion's run, 2026-10-06
+
+**The real promotion, on the re-pinned bytes** (`db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1`,
+70 statements), on the branch `db/0102-sat01-tables` at `1bb0a195`, one commit above `origin/main`
+(`dbe63d87`, which holds #1544). **It is not the rehearsal: no block of this document ran, psql did
+not run and verified-migrate did not run.** What it proves is the promotion itself: the rename, the
+journal, the mirror, and the suites that read them.
+
+**Where the database runs were made.** The lane stack `purple` (127.0.0.1:54522), found at 0101:
+`supabase/postgres` 17.6, 48 tables, 28 SECURITY DEFINER functions, 47 patients and 255
+appointments (seed rows, no real name), no drizzle journal. The promoted file was applied to it
+with node and the `postgres` package, in ONE transaction, one statement per
+`--> statement-breakpoint` chunk (70 statements, 60.9 ms), with no journal row: CI's database is
+built from the mirror and has no drizzle journal either. Only 127.0.0.1 was contacted. **0102 was
+taken off the throwaway again afterwards** (the trigger, the column, the three tables and the nine
+functions dropped in one transaction), and it then read 48 tables, 28 SECURITY DEFINER functions,
+no survey relation, column, function, trigger or policy, and the row counts it had before
+(`patients` carries one more dropped-column slot, four where it had three, which no check reads).
+
+| Run | Result |
+|---|---|
+| 0101's journal entry, read from the journal before the append | `idx 98`, `when` 1788502200000, tag `0101_guest_request_email`, the newest of 99: the values this document pins |
+| the migration's sha256 before and after `git mv` | `db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1`, unchanged |
+| `node scripts/sync-supabase-migrations.mjs`, then `node scripts/check-journal.mjs` | `Synced 100 migration(s)`; exit 0: 100 files, 100 entries, in order, `when` strictly increasing, the mirror matching by content |
+| the frozen cleanup test (as #1544 left it) on the promoted tree, before the ordinary edits | **exit 1: 24 of 26.** `appointment_survey_sends is in DELETE_ORDER but the script has no delete from it`, and `appointment_survey_codes is deleted but is not in schema.ts` |
+| the same, with the three deletes in the cleanup script | **exit 1: 25 of 26.** `appointment_survey_codes is deleted but is not in schema.ts`. **The simulation read `appointment_survey_responses` in that message, and this run reads `appointment_survey_codes`:** the arm names the first table of the test's `DELETE_ORDER` that `schema.ts` lacks, and #1544 lists the codes first where the simulation's scratch edit listed the answers. The same arm, for the same cause |
+| the same, with the three tables declared in `schema.ts` | exit 0: 26 of 26 |
+| the three new deletes of the cleanup script, on the applied throwaway, each run in a transaction that was rolled back | As written (the script's tenant is not on the lane): 0 rows each, no error. With one send, its code and its answer planted for a seed appointment, and the lane's tenant in place of the script's literal: 1, 1 and 1 row deleted, in the script's order (answers, codes, sends), none left. The control, the sends before the answers: refused, 23503, `appointment_survey_responses_send_id_fkey` |
+| `check-security-definer-owner.mjs` on the applied throwaway | **exit 1, BY DESIGN:** `36 SECURITY DEFINER function(s) in public.`, then `expected exactly 28 SECURITY DEFINER function(s) in public, found 36`; each of the 36 is owned by `postgres`. Owed after the apply (order table, row 4) |
+| the whole `packages/db` suite on the applied throwaway, BEFORE the ACL list gained its two names | exit 1: 101 files, 1545 of 1553 passed, 8 failed. One is the 0079 ACL test's denied list (it received `patients_survey_switch_audit` and `purge_expired_survey_comments`, which it did not expect); seven are the count arms of `security-definer-owner.test.ts` |
+| the same, with the two names in the list | **exit 1, BY DESIGN:** 101 files, 1546 of 1553 passed, 7 failed, **all seven the count**, in `security-definer-owner.test.ts` (21 of its 28 arms pass; the simulation read the same 7 of 28). `sat01-survey-rls.db.test.ts` 111 of 111, the ACL test 7 of 7, none skipped in the three files |
+| `node --test scripts/sat01-tables-0102.test.mjs`, the file not edited | exit 0: 40 of 40, none skipped (macOS, zsh installed): it finds the migration at its promoted path, and its fault-injection sweeps pass under bash and under zsh on the four blocks, which the promotion did not touch |
+| `node --test scripts/migration-timeouts.test.mjs`, the gate, not edited | exit 0: 13 of 13; three files in scope, this one under its promoted name |
+| `pnpm test:scripts` | exit 0: 1425 of 1425, none skipped |
+| `GATE_BASE_REF=main node scripts/assert-gates-unchanged.mjs` | exit 0: 98 gate files match their pins. One gate file the manifest does not name yet, which the freeze allows: this document's script test |
+| `pnpm typecheck`, `pnpm lint` | exit 0 each: 11 of 11 tasks, and 4 of 4 tasks (no error) |
+| `pnpm test` (every unit test of every package, no database) | **exit 1, BY DESIGN:** with turbo told to continue, 7 of 8 tasks pass and `@osteojp/db` fails on the same seven count arms and on nothing else (558 passed, 870 skipped for want of a database). This is the second of the two required checks that read the count |
+
+**What it shows.** The promotion owed exactly what the simulation said it would: the rename, the
+journal entry, the mirror, and the three ordinary edits, with no gate file touched. From this
+commit two checks read red, both on the count and on nothing else, until the count's GATE-CHANGE
+(order table, row 4). **What it does not show:** the seven count arms were not read at 36 on this
+tree, because the count is a gate file and was not edited (that they read zero at 36 is the
+simulation's measurement, on the third review's bytes); the two check files and the blocks did not
+run; and CI did not run.
+
 ### NOT REHEARSED, said one by one
 
 - **A deadlock or a fired bound that ends the apply, through `verified-migrate.mjs`.** Both were
   measured with node on the lane ("G6"). What GREEN's transcript shows for a statement that fails
   inside drizzle's transaction is 0101's rehearsal's, read for a lock timeout.
-- **Every block of this document against a database.** 0102 is not promoted, so each block STOPs
-  at its first check. The blocks ran whole only in the fault-injection harness, on stubs.
+- **Every block of this document against a database.** 0102 is promoted since 2026-10-06, and no
+  block has run against a database yet: that is the rehearsal's (NOT READY step 5). The blocks ran
+  whole only in the fault-injection harness, on stubs.
 - **0102's check files under psql, INSIDE THE BLOCKS.** On 2026-10-06 both files ran under psql
   18.6 on the throwaway, with the flags the blocks give psql and the block's own `carry()` program
   ("The re-pin's run": 16 OK, then 27 OK). What has not run is the blocks around them. The control
@@ -1986,17 +2048,23 @@ graph should read every clause is a question for its own GATE-CHANGE, not for th
 - **The target guard and the journal reader, on a throwaway.** Both refuse any target but
   production, so on a throwaway every block that runs one halts at that line unless the lead rules
   a substitution. Both passed on production in 0101's sitting (above).
-- **The held head, for real.** No block resolved `origin/db/0102-sat01-tables` against a real
-  remote: the branch is not pushed. In the harness, on stubs, each block resolved it, stage 1
-  halted on a moved head, and each block stopped on a branch that was gone.
+- **The held head, for real.** No block has resolved `origin/db/0102-sat01-tables` against a real
+  remote. The branch is on origin since the held pull request, #1551, was opened (read on
+  2026-10-06, at the promotion: the branch and `refs/pull/1551/head` both resolved to `1bb0a195`,
+  the commit before the promotion commit); no block has been run against it. In the harness, on
+  stubs, each block resolved it, stage 1 halted on a moved head, and each block stopped on a
+  branch that was gone.
 - **Production's own journal row for 0101.** This lane read `main`: the promoted file, its sha256
   and its journal entry. That production's newest row is that hash at that `when` is the lead's
   report of the sitting; pre-check verdict 2 reads it for itself, and FAILs if it is not so.
 - **Production's platform configuration.** G6 was measured on two local stacks; production's
   `supautils.policy_grants` was not read. The pre-check's INFO row is its first read.
-- **The promotion's three ordinary edits** (the cleanup script's deletes, the `schema.ts`
-  declarations, the ACL list): named and measured as owed in "The promotion, simulated", not
-  written.
+- **The cleanup script, whole.** The promotion's three ordinary edits are written since 2026-10-06
+  (the cleanup script's deletes, the `schema.ts` declarations, the ACL list) and measured in "The
+  promotion's run". Of the cleanup script, only its three new deletes ran, on the throwaway, in
+  transactions that were rolled back. The script itself is the owner's, for one tenant of another
+  database, and was not run. Its STEP 1 preview counts none of the three tables: the promotion
+  added the three deletes and nothing else.
 - **CI's `db-tests` on the promoted head:** by construction it stops at the count step until row 5.
 - **GREEN's two dispatch blocks** (BEFORE YOU START and the CLOCK CHECK): not drafted for 0102.
 
@@ -2240,6 +2308,28 @@ pre-check opens its own READ ONLY transaction and ends in ROLLBACK, and the post
 the block's `begin read only`.
 
 ## Review history
+
+**The promotion, 2026-10-06: no block byte, no SQL byte, no check-file byte and no script-test byte
+changed in it.** The migration is the pending file renamed
+(`db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1` before and after); the two
+check files and `scripts/sat01-tables-0102.test.mjs` have the sha256 they had at `1bb0a195`; and
+the four fenced blocks of this document are byte for byte those of `1bb0a195`, compared after the
+edit. **NOT REVIEWED YET: R4 on the promoted pull request (NOT READY step 4) has not run, and it
+is not the build's to run.** What changed in this document, all of it prose and tables: the
+banner and the status line; NOT READY steps 2 and 3 (both DONE); the Migration row; the paragraph
+on the migration's header (it said the rename leaves nothing stale there, and the header's first
+word, "PENDING", is); two paragraphs of "Applied from the held head" (what the pull request
+carries, and that `patients.survey_enabled` is not declared in `schema.ts`); the paragraph after
+stage 0's WHAT THE EXIT MEANS; the opening of "Rehearsal"; the new subsection "The promotion's
+run, 2026-10-06"; three entries of "NOT REHEARSED, said one by one"; and this entry. Outside this
+document the commit carries the rename, the journal entry, the mirror, the README row, and the
+three ordinary edits (the ACL test's list, the cleanup script's three deletes, the three table
+declarations). **No mutation sweep was run over the promotion:** nothing a sweep mutates changed
+(no SQL, no predicate, no block line, no rule of the script test). **Left as they were, because
+they are not this step's to change:** the sentences under "Applied from the held head" and "What
+this does NOT do" that say `CLAUDE.md` does not yet record R41 (on this branch it does); judgment
+17's "the PR number is not known when this is written" (it is #1551); and the re-pin entry's "NOT
+REVIEWED YET" just below, which the promotion did not check either way.
 
 **The re-pin of 2026-10-06, under strategy's dispatch S-1006-A (R44, and Q5): three changes to the
 migration and what follows from them, and nothing else.** The migration's sha256 moved from

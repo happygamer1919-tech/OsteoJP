@@ -2684,3 +2684,108 @@ export const patientCareTeam = pgTable("patient_care_team", {
   /** Set to revoke. The access helper filters on it, so this IS the revocation. */
   removedAt: timestamp("removed_at", { withTimezone: true }),
 });
+
+/**
+ * SAT-01 (migration 0102) - the satisfaction survey's three tables: one row per
+ * send, the code a link carries, and one answer per send.
+ *
+ * TYPES ONLY. Nothing in the application queries them in this commit. They are
+ * declared with 0102's promotion because `scripts/import/cleanup-test-patients.sql`
+ * deletes from all three, and its test requires every table that script deletes
+ * from to be named here (RGPD-01's table arrived the same way, with 0093).
+ *
+ * NO APPLICATION ROLE WRITES ANY OF THE THREE. The functions 0102 creates are
+ * the only writers, the codes table is read by nobody, and the other two are
+ * read through 0102's two SELECT policies (`docs/migration-apply-0102.md`,
+ * section 3). Do not add an insert, update or delete helper for them.
+ *
+ * NO INDEXES AND NO CHECKS DECLARED HERE, for `patientCareTeam`'s reason: the
+ * migration is the source of truth for DDL, and drizzle is used in this repo to
+ * query the schema, never to generate it.
+ *
+ * ITS MIGRATION IS `packages/db/migrations/0102_sat01_satisfaction_survey.sql`,
+ * promoted on 2026-10-06, so a database built from this branch has the tables.
+ * Production does not until 0102 is applied, and these declarations are types
+ * rather than a promise that the tables are there.
+ *
+ * `patients.survey_enabled`, the column 0102 adds, is NOT declared in this
+ * commit (the same document, "Applied from the held head").
+ */
+export const appointmentSurveySends = pgTable("appointment_survey_sends", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  /** An unanswered send goes with its appointment's hard delete. */
+  appointmentId: uuid("appointment_id")
+    .notNull()
+    .references(() => appointments.id, { onDelete: "cascade" }),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  /** A COPY of the appointment's clinic at the send. No foreign key. */
+  locationId: uuid("location_id").notNull(),
+  /** `email` or `sms`. */
+  channel: text("channel").notNull(),
+  /** `automatic` or `manual`. */
+  origin: text("origin").notNull(),
+  /** The staff member who pressed the button. NULL for an automatic send. */
+  sentBy: uuid("sent_by").references(() => users.id),
+  /** A link lives 14 days from here. There is no expiry column. */
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  /** `answered` or `opted_out`; NULL while the link is open. */
+  outcome: text("outcome"),
+});
+
+export const appointmentSurveyCodes = pgTable("appointment_survey_codes", {
+  /** HMAC-SHA256 of the code, hex. Never the code. */
+  codeHash: text("code_hash").primaryKey(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  /** One code per send, and it goes with its send. */
+  sendId: uuid("send_id")
+    .notNull()
+    .unique()
+    .references(() => appointmentSurveySends.id, { onDelete: "cascade" }),
+});
+
+export const appointmentSurveyResponses = pgTable("appointment_survey_responses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  /** One answer per send. No cascade. */
+  sendId: uuid("send_id")
+    .notNull()
+    .unique()
+    .references(() => appointmentSurveySends.id),
+  /** One answer per visit. No cascade: an answered appointment is not hard-deleted. */
+  appointmentId: uuid("appointment_id")
+    .notNull()
+    .unique()
+    .references(() => appointments.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  /** COPIES of the appointment's clinic and practitioners at the submit. No foreign keys. */
+  locationId: uuid("location_id").notNull(),
+  practitionerId: uuid("practitioner_id").notNull(),
+  practitioner2Id: uuid("practitioner_2_id"),
+  /** 0 to 10. */
+  nps: smallint("nps").notNull(),
+  /** 1 to 5. */
+  rating: smallint("rating").notNull(),
+  /** NULL, or 1 to 1000 characters. NULL once purged. */
+  comment: text("comment"),
+  commentPurgedAt: timestamp("comment_purged_at", { withTimezone: true }),
+  contactConsent: boolean("contact_consent").notNull(),
+  /** The identity of the consent text, never the text. At most 64 characters. */
+  consentVersion: text("consent_version").notNull(),
+  /** Copied from the send: `email` or `sms`. */
+  channel: text("channel").notNull(),
+  /** Copied from the send. */
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+});

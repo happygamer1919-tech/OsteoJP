@@ -452,6 +452,22 @@ delete from invoices
 delete from appointment_reschedule_requests
  where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
 
+-- 0102 (SAT-01) - the satisfaction survey's three tables. A send and an answer
+-- are children of BOTH appointments and patients, and a code is a child of its
+-- send. An answer's foreign keys to its appointment, its send and its patient
+-- are ON DELETE NO ACTION, so the answers go first, then the codes, then the
+-- sends, and all three before appointments.
+delete from appointment_survey_responses
+ where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
+
+delete from appointment_survey_codes
+ where send_id in (
+   select id from appointment_survey_sends
+    where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560'));
+
+delete from appointment_survey_sends
+ where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
+
 -- depth 2 - appointments reference patient_pack_instances (migration 0067),
 -- so they MUST go before the pack instances below.
 delete from appointments

@@ -694,6 +694,13 @@
       "when": 1788502200000,
       "tag": "0101_guest_request_email",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1788502300000,
+      "tag": "0102_sat01_satisfaction_survey",
+      "breakpoints": true
     }
   ]
 }
