@@ -5,6 +5,7 @@ import { Banner, Button, Field, Input, Textarea } from '@osteojp/ui'
 import type { PortalLocale, PortalStrings } from '@osteojp/i18n'
 
 import type { ClinicPhone } from '@/lib/clinics'
+import { locationDisplayName } from '@/lib/locationLabel'
 import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
@@ -326,7 +327,11 @@ export function GuestBookingForm({
                     defaultChecked={values.locationId === l.id}
                     className="size-4 accent-accent-2-700"
                   />
-                  <span>{l.name}</span>
+                  {/* The patient-facing name, the same function every other
+                      patient screen uses: "OsteoJP (LV)" is stored, the city is
+                      shown. The telephone block at the foot of this form
+                      already showed the city; the choice above it did not. */}
+                  <span>{locationDisplayName(l.name)}</span>
                 </label>
               ))}
             </fieldset>
@@ -427,7 +432,7 @@ export function GuestBookingForm({
             <dl className="flex flex-col gap-1 rounded-lg border border-border p-4 text-sm">
               <div className="flex gap-2">
                 <dt className="text-text-secondary">{s.guest.review_clinic}:</dt>
-                <dd className="text-text-primary">{location?.name ?? ''}</dd>
+                <dd className="text-text-primary">{locationDisplayName(location?.name) ?? ''}</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="text-text-secondary">{s.guest.review_service}:</dt>

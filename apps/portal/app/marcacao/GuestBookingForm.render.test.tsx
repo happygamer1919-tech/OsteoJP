@@ -43,7 +43,13 @@ const EN_SENTENCE =
 const LOCATION = 'aaaaaaaa-0000-0000-0000-000000000001'
 const SERVICE = 'bbbbbbbb-0000-0000-0000-000000000001'
 
-function render(locale: 'pt' | 'en', step: GuestStep, intake: boolean, over: Partial<typeof EMPTY_GUEST_VALUES> = {}): string {
+function render(
+  locale: 'pt' | 'en',
+  step: GuestStep,
+  intake: boolean,
+  over: Partial<typeof EMPTY_GUEST_VALUES> = {},
+  locationName = 'Fixture Clinic',
+): string {
   const state: GuestFormState = {
     ...INITIAL_GUEST_STATE,
     step,
@@ -64,7 +70,7 @@ function render(locale: 'pt' | 'en', step: GuestStep, intake: boolean, over: Par
       locale={locale}
       localeLinks={[]}
       catalog={{
-        locations: [{ id: LOCATION, name: 'Fixture Clinic' }],
+        locations: [{ id: LOCATION, name: locationName }],
         services: [{ id: SERVICE, name: 'Fixture Service', locationIds: [] }],
       } as unknown as Parameters<typeof GuestBookingForm>[0]['catalog']}
       minDate="2030-01-01"
@@ -81,6 +87,32 @@ function render(locale: 'pt' | 'en', step: GuestStep, intake: boolean, over: Par
     />,
   )
 }
+
+describe('the clinic is shown by its patient-facing name, as on every other patient screen', () => {
+  // Strategy, addendum S-1006-A1 (2026-10-06), on finding 3.3: "the public form
+  // shows the city, same display function as the other patient screens."
+  it.each([
+    ['OsteoJP (LV)', pt.clinics.linda_velha_name],
+    ['OsteoJP (CB)', pt.clinics.castelo_branco_name],
+    ['OsteoJP (Vila Nova)', 'Vila Nova'],
+    ['Fixture Clinic', 'Fixture Clinic'],
+  ])('a location stored as %j is offered as %j on step 1', (stored, shown) => {
+    const html = render('pt', 1, false, {}, stored)
+    expect(html).toContain(`<span>${shown}</span>`)
+    if (stored !== shown) expect(html).not.toContain(stored)
+    // The choice still posts the location's id, never its name.
+    const radio = html.match(/<input[^>]*name="locationId"[^>]*>/)?.[0] ?? ''
+    expect(radio).toContain(`value="${LOCATION}"`)
+    expect(radio).not.toContain(shown)
+  })
+
+  it('the summary before sending names the clinic the same way', () => {
+    const [step1, step4] = [render('pt', 1, false, {}, 'OsteoJP (LV)'), render('pt', 4, false, {}, 'OsteoJP (LV)')]
+    expect(step1).toContain(pt.clinics.linda_velha_name)
+    expect(step4).toContain(`>${pt.clinics.linda_velha_name}</dd>`)
+    expect(step4).not.toContain('OsteoJP (LV)')
+  })
+})
 
 describe('R45: the telephones under the form are the ones the page resolved', () => {
   it('lists each clinic it is given with its number as a tel: link, on every step', () => {
