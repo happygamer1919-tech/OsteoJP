@@ -17,7 +17,11 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { createHash } from 'node:crypto'
+
+import en from '../../../../packages/i18n/src/portal/strings.en.json'
 import pt from '../../../../packages/i18n/src/portal/strings.pt.json'
+import staffEn from '../../../../packages/i18n/src/strings.en.json'
 import staffPt from '../../../../packages/i18n/src/strings.pt.json'
 
 const HERE = __dirname
@@ -43,13 +47,18 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
     (n) => !['intent', 'step', 'intake'].includes(n as string),
   )
 
-  it('exactly six inputs, the consent box, and INTAKE-01\'s eight step-5 answers', () => {
+  it('exactly six inputs, the ruled optional email, the consent box, and INTAKE-01\'s eight step-5 answers', () => {
     // The closed list from the ruling: name, mobile, service, clinic, preferred
     // date, preferred period. INTAKE-01 adds JP's intake list (SPEC section 3),
     // rendered only on the five-step flow. Anything else has to be argued for here.
+    //
+    // `email` WAS ARGUED FOR, AND RULED: strategy S-1004-A R40 (2026-10-04), "Add
+    // an optional email field to the public form". It was on the forbidden list
+    // below until that ruling, and it is the only name that left it.
     expect(fields.sort()).toEqual([
       'consent',
       'dateOfBirth',
+      'email',
       'fallsAccidents',
       'fullName',
       'healthConditions',
@@ -66,7 +75,7 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
     ])
   })
 
-  it.each(['nif', 'birth', 'nascimento', 'email', 'morada', 'address', 'notes', 'observ'])(
+  it.each(['nif', 'birth', 'nascimento', 'morada', 'address', 'notes', 'observ'])(
     'carries no %s field',
     (forbidden) => {
       // PL-20 (no NIF) and R-GUEST-2 (nothing clinical, nothing beyond the
@@ -75,6 +84,53 @@ describe('§1 — the form collects R-GUEST-2 + the ruling, and NOTHING else', (
       expect(FORM.toLowerCase()).not.toContain(`name="${forbidden}`)
     },
   )
+
+  it('THE BROWSER RUNS THE SERVER\'S RULE AND NOT THE DATABASE DRIVER: the helper imports the package\'s dependency-free entry, and the form never imports its root', () => {
+    const helper = code(join(HERE, 'email-field.ts'))
+    expect(helper.match(/^import .*$/gm)).toEqual(["import { parseGuestEmail } from '@osteojp/db/guest-email'"])
+    expect(helper).toContain("return parseGuestEmail(typed).ok ? '' : message")
+    expect(helper).toContain('field.setCustomValidity(guestEmailFieldMessage(field.value, message))')
+    // The root of @osteojp/db in a client component is the `postgres` driver in the browser bundle.
+    expect(FORM).toContain("import { syncEmailFieldValidity } from './email-field'")
+    expect(FORM).not.toMatch(/from '@osteojp\/db'/)
+    // The entry itself imports nothing at all.
+    const rule = readFileSync(join(HERE, '..', '..', '..', '..', 'packages', 'db', 'src', 'guest-email.ts'), 'utf8')
+    expect(rule).not.toMatch(/^import /m)
+    const pkg = JSON.parse(readFileSync(join(HERE, '..', '..', '..', '..', 'packages', 'db', 'package.json'), 'utf8')) as { exports: Record<string, string> }
+    expect(pkg.exports['./guest-email']).toBe('./src/guest-email.ts')
+  })
+
+  it('R40: ONE email input, optional, with the ruling\'s own label and hint and no other copy', () => {
+    // From `<Input` to the `/>` on its own line: the element carries arrow
+    // functions now, so "up to the next >" would stop inside it.
+    const inputs = [...FORM.matchAll(/<Input\n\s+name="email"\n[\s\S]*?\n\s+\/>/g)].map((m) => m[0])
+    expect(inputs).toHaveLength(1)
+    expect(FORM.match(/name="email"/g)).toHaveLength(1)
+    // OPTIONAL: the input carries no `required`, and neither does its Field.
+    expect(inputs[0]).not.toContain('required')
+    // NOT THE BROWSER'S EMAIL CHECK, which refuses `coração@exemplo.pt` and admits
+    // `a@b`. The keyboard and the autofill stay; the SHARED rule decides.
+    expect(inputs[0]).toContain('type="text"')
+    expect(FORM).not.toContain('type="email"')
+    expect(inputs[0]).toContain('inputMode="email"')
+    expect(inputs[0]).toContain('autoComplete="email"')
+    // THE VALIDITY IS SET FROM THE LIVE VALUE in three places: on mount and re-render,
+    // on every input event, and on every click inside the form before the browser validates.
+    expect(inputs[0]).toContain('ref={(el) => syncEmailFieldValidity(el, s.guest.error_invalid)}')
+    expect(inputs[0]).toContain('onInput={(e) => syncEmailFieldValidity(e.currentTarget, s.guest.error_invalid)}')
+    expect(FORM).toMatch(
+      /<form\n\s+action=\{formAction\}[\s\S]{0,200}onClickCapture=\{\(e\) => \{\n\s+const field = e\.currentTarget\.elements\.namedItem\('email'\)\n\s+syncEmailFieldValidity\(field instanceof HTMLInputElement \? field : null, s\.guest\.error_invalid\)/,
+    )
+    expect(FORM.match(/setCustomValidity/g)).toBeNull()
+    expect(inputs[0]).toContain('maxLength={GUEST_EMAIL_INPUT_MAX}')
+    expect(FORM).toContain('<Field label={s.guest.email_label} helperText={s.guest.email_hint}>')
+    // THE WORDS ARE THE RULING'S, character for character, and the English is
+    // written from them. Patient-facing copy is never authored in a component.
+    expect(pt.guest.email_label).toBe('Email (opcional)')
+    expect(pt.guest.email_hint).toBe('Para receber a confirmação da marcação')
+    expect(en.guest.email_label).toBe('Email (optional)')
+    expect(en.guest.email_hint).toBe('To receive your booking confirmation')
+  })
 })
 
 describe('§2 — NO AVAILABILITY IS DISCLOSED (MN-27, MN-28)', () => {
@@ -273,5 +329,58 @@ describe('§7 — NEGATIVE ARMS: every matcher above can fail', () => {
 
   it('the pre-checked matcher would catch a defaulted "nao"', () => {
     expect('name="pacemaker" value="nao" checked').toMatch(/name="pacemaker"[^>]*\schecked/)
+  })
+})
+
+/**
+ * THE SENTENCE ABOUT WHAT THE CONTACTS ARE USED FOR. Owner-approved copy (his
+ * "yes" of 2026-10-05 to the wording proposed under strategy gate G5), so it is
+ * pinned word for word in both languages: an edit to either string is a new
+ * decision, and this test is where it has to be made.
+ */
+describe('the contact-use sentence: owner-approved copy, its own key, outside the consent', () => {
+  it('BOTH STRINGS, WORD FOR WORD', () => {
+    expect(pt.guest.contact_use).toBe(
+      'Os contactos que indicar (telemóvel e, se o fornecer, email) são usados para confirmar e gerir a sua marcação.',
+    )
+    expect(en.guest.contact_use).toBe(
+      'The contact details you give (mobile and, if provided, email) are used to confirm and manage your booking.',
+    )
+  })
+
+  it('the form renders it ONCE, from its own key, after the email field and before the consent panel', () => {
+    expect(FORM.split('{s.guest.contact_use}')).toHaveLength(2)
+    const email = FORM.indexOf('name="email"')
+    const sentence = FORM.indexOf('{s.guest.contact_use}')
+    const panel = FORM.indexOf('{!state.intake && rgpdPanel}')
+    expect(email).toBeGreaterThan(0)
+    expect(sentence).toBeGreaterThan(email)
+    expect(panel).toBeGreaterThan(sentence)
+    // NOT INSIDE THE CONSENT PANEL: the panel's own markup never names the key.
+    const panelSource = FORM.slice(FORM.indexOf('const rgpdPanel = ('), FORM.indexOf('if (state.received'))
+    expect(panelSource.length).toBeGreaterThan(200)
+    expect(panelSource).not.toContain('contact_use')
+    // And it is authored nowhere but the dictionary.
+    expect(FORM).not.toContain('são usados para confirmar')
+    expect(FORM).not.toContain('are used to confirm')
+  })
+
+  it('THE CONSENT TEXTS ARE BYTE-IDENTICAL TO WHAT THEY WERE: the sentence was added beside them, never to them', () => {
+    // sha256 of each string as it stands on main at f475b14b (2026-10-05). The RGPD
+    // body is the text `rgpd-v1-2026` names in every recorded acceptance
+    // (apps/web/lib/patients/rgpd-acceptance.ts), and apps/web/lib/clinical/consent.test.ts
+    // pins its Portuguese word for word; the intake body is pinned to its own label by
+    // intake-consent-pin.test.ts. These four are here so that THIS change, which adds a
+    // sentence about data use a few lines away, is provably not an edit to either.
+    const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
+    expect(sha(staffPt['clinical.consent.rgpd.label'])).toBe('69696b1d58af354ad2cae96b8d02192371536fa23c576975bf9e5df126fb91e3')
+    expect(sha(staffPt['clinical.consent.rgpd.body'])).toBe('75be41bce70c2e9d30e87a8075485f66783b5695ffa3ebae98f473d453c99e02')
+    expect(sha(staffEn['clinical.consent.rgpd.label'])).toBe('eafa24d51dad84dc4c37784fb10038906f1d8b174d9fdacf47bcbdb38ede20cd')
+    expect(sha(staffEn['clinical.consent.rgpd.body'])).toBe('9a63e66109b7015499fc922c2c11612507e4651a48545cefd0bc9d3200356da9')
+    // The sentence is not a fragment of any consent text, in either language.
+    for (const body of [staffPt['clinical.consent.rgpd.body'], staffEn['clinical.consent.rgpd.body'], pt.guest.intake_consent_body, en.guest.intake_consent_body]) {
+      expect(body).not.toContain('confirmar e gerir')
+      expect(body).not.toContain('confirm and manage')
+    }
   })
 })

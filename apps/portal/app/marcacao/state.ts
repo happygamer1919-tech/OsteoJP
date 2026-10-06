@@ -55,6 +55,16 @@ export const GUEST_INTAKE_EARLIEST_BIRTH = '1900-01-01'
 export const GUEST_FORM_HORIZON_DAYS = 90
 
 /**
+ * The longest email the form's input takes (0101). The staff app's bound, and
+ * `parseGuestEmail` is what actually decides, in the browser too
+ * (`email-field.ts`). This constant only feeds the input's `maxLength`: this
+ * file is imported by a client component and must not import the root of
+ * @osteojp/db, which would bring the database driver into the browser bundle.
+ * `state.test.ts` requires the two numbers to be equal.
+ */
+export const GUEST_EMAIL_INPUT_MAX = 320
+
+/**
  * Everything the form has collected. Carried through every post as hidden
  * fields, so the flow behaves identically with and without JavaScript and no
  * value lives only in client memory.
@@ -66,6 +76,12 @@ export type GuestValues = {
   preferredPeriod: string
   fullName: string
   phone: string
+  /**
+   * 0101, ruling R40: OPTIONAL. '' when the visitor left it empty, which is the
+   * ordinary case and is never sent. An email address is personal data: like the
+   * name and the phone it travels in the POST body only, and nothing logs it.
+   */
+  email: string
   /* INTAKE-01, step 5. Named EXACTLY as the wire keys of the `intake` object on
      POST /api/v1/booking/guest, so the Article 9 source guard, which reads its
      vocabulary from the wire, recognises every one of them in this app too.
@@ -100,6 +116,7 @@ export const EMPTY_GUEST_VALUES: GuestValues = {
   preferredPeriod: '',
   fullName: '',
   phone: '',
+  email: '',
   dateOfBirth: '',
   reason: '',
   healthConditions: '',

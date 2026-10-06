@@ -10,6 +10,7 @@ import {
   isGuestPreferredPeriod,
   lisbonToday,
   parseCalendarDate,
+  parseGuestEmail,
 } from "@osteojp/db";
 
 import { hashPhone } from "@/lib/auth/otp";
@@ -133,6 +134,8 @@ type GuestBody = {
   preferredDate?: unknown;
   /** "manha" | "tarde". */
   preferredPeriod?: unknown;
+  /** 0101, ruling R40. OPTIONAL: absent, null and "" all mean no email. */
+  email?: unknown;
   /** INTAKE-01. Optional; see `lib/guest-intake/validate.ts` for the shape. */
   intake?: unknown;
 };
@@ -242,6 +245,22 @@ export async function POST(req: Request): Promise<Response> {
   // action. Refusing at entry is better than a dead row in the queue.
   const phone = normalizePhonePT(rawPhone);
   if (!phone || !isSmsCapablePT(phone)) {
+    return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+
+  // 0101, RULING R40 - THE OPTIONAL EMAIL. Validated here, with the other pure
+  // checks, by the one rule the portal also calls (`parseGuestEmail`: the staff
+  // app's own email rule, and on this public path also no control or format
+  // character, no look-alike of "@" or ".", and none of the characters a mail
+  // header gives a meaning to), so it spends no per-phone budget and no
+  // tenant-wide one. A NUL is refused there too, which is what keeps it a 400:
+  // Postgres cannot store one, and the write would have answered 503. ABSENT, NULL AND EMPTY ALL MEAN "NO EMAIL": a request
+  // without one is accepted exactly as before, so a portal that predates the
+  // field cannot break booking. A value that is present and is not an email is
+  // refused with the same `invalid_input` as every other refusal: it names no
+  // field and echoes no value, and the address is never logged.
+  const parsedEmail = parseGuestEmail(body?.email);
+  if (!parsedEmail.ok) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
@@ -358,6 +377,9 @@ export async function POST(req: Request): Promise<Response> {
         requestedStartsAt: start,
         requestedEndsAt: end,
         sourceIpHash: hashClientIp(req),
+        // NULL unless the visitor gave one (0101). The response is the same 202
+        // either way, so this field adds no second outcome to a public endpoint.
+        email: parsedEmail.email,
         // `status` is NOT set. The database defaults it to 'pending' and a CHECK
         // pins the vocabulary, so R-GUEST-1 cannot be broken by adding a field to
         // this object.

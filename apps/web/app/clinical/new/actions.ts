@@ -13,9 +13,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * same patient and tenant (Q9's app half), and audits.
  *
  * EPI-01b adds two optional fields, both posted by the Registos tab only:
- *   - `newEpisodeSpecialty`: "+ Avaliação" on an IMPORTED group (Q7). The
- *     registo is filed in a NEW open episode for that specialty, never in the
- *     imported one. createDraftRecord accepts only a word on its closed list.
+ *   - `newEpisodeSpecialty`: "+ Avaliação" on an IMPORTED group (Q7, ruling
+ *     R31). The registo is filed in the patient's open app episode of that
+ *     specialty, or in a NEW open episode when there is none; never in the
+ *     imported one. createDraftRecord decides which, in the write's transaction,
+ *     and accepts only a word on its closed list.
  *   - `from=ficha`: a refusal lands back on that patient's Registos tab, with
  *     its message, instead of on an empty /clinical/new form. The patient id is
  *     put in the path only when it is a uuid; anything else falls back to

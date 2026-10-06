@@ -89,6 +89,12 @@ export type GuestRequestInput = {
   /** 'manha' | 'tarde'. Validated by the API against its own union. */
   preferredPeriod: string
   /**
+   * 0101, ruling R40: the OPTIONAL email. Absent when the visitor gave none. It
+   * travels in the POST BODY only, never in a URL, and nothing in this file
+   * logs it.
+   */
+  email?: string
+  /**
    * INTAKE-01: the clinical intake, ONE nested object on the same POST, so the
    * request and its answers are one write in one transaction (SPEC section 6.2).
    * Sent only on the five-step flow; absent on the four-step one.
