@@ -25,7 +25,9 @@ export type ClinicalErrorCode =
   // --- SR-62 PU-4 patient document soft delete ---
   | "already_deleted" // the document is already soft-deleted
   | "reason_required" // blank or missing reason
-  | "reason_too_long"; // reason over DOCUMENT_DELETE_REASON_MAX after trimming
+  | "reason_too_long" // reason over DOCUMENT_DELETE_REASON_MAX after trimming
+  // --- R45, the Declaração de Presença ---
+  | "no_stamp"; // the declaration's location has no carimbo asset: nothing rendered
 
 export class ClinicalError extends Error {
   override readonly name = "ClinicalError";

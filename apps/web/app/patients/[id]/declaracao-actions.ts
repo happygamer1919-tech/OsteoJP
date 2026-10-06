@@ -1,9 +1,13 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { can, toClaims } from "@osteojp/auth";
+import { can } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
-import { generateDeclaracaoPdf } from "@/lib/clinical/declaracao/generate";
+import {
+  declaracaoAvailability,
+  generateDeclaracaoPdf,
+} from "@/lib/clinical/declaracao/generate";
+import { isClinicalError } from "@/lib/clinical/errors";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPatient } from "@/lib/patients/queries";
 import { updatePatient } from "@/lib/patients/actions";
@@ -22,19 +26,57 @@ export type DeclaracaoRequest = {
   date: string; // YYYY-MM-DD (Europe/Lisbon)
   startTime: string; // HH:MM
   endTime: string; // HH:MM
+  // R45 - REQUIRED: the marcação's location, or the one chosen in the dialog
+  // for a manual entry. Left optional in the type because the value comes from
+  // the browser; a request without one is refused below as malformed.
   locationId?: string | null;
   nif?: string | null; // W12-24 - editable NIF, prefilled from patients.nif
   observacoes?: string | null; // PL-03a - optional free text, transient
 };
 
+/**
+ * What the dialog gets back. `url` is the signed URL, or null when nothing was
+ * produced. `refused` names the one failure the screen words differently:
+ *
+ * R45 (strategy, 2026-10-06): "no_stamp" - the location this declaration is for
+ * has no carimbo asset, so it is not issued ("Never issue one without a
+ * stamp"). The dialog shows `documents.declaracao.noStamp` for it; every other
+ * failure keeps the generic message.
+ */
+export type DeclaracaoResult = { url: string | null; refused?: "no_stamp" };
+
 export async function generateDeclaracaoUrlAction(
   input: DeclaracaoRequest,
-): Promise<{ url: string | null }> {
+): Promise<DeclaracaoResult> {
   const ctx = await requireRequestContext();
   // Any staff who can view a patient may print an attendance declaration
   // (reception front-desk task). Reception has patients:read.
   if (!can(ctx.role, "patients:read")) return { url: null };
-  if (!input.patientId || !input.date || !input.startTime || !input.endTime) {
+  // R45: a declaration is made for a location that was GIVEN. A request with
+  // none is malformed, like one with no date; there is no default location to
+  // issue it for.
+  if (
+    !input.patientId ||
+    !input.date ||
+    !input.startTime ||
+    !input.endTime ||
+    typeof input.locationId !== "string" ||
+    !input.locationId
+  ) {
+    return { url: null };
+  }
+
+  // R45: decided HERE, before the ceiling below. A location that is not an
+  // active one this staff member may act in is malformed input as well, and a
+  // location with no carimbo asset is refused by name. Neither request can
+  // produce a document, and the ceiling's own rule is that such a request does
+  // not spend the caller's allowance. A read that fails is not a refusal: it
+  // takes the generic path, and still produces nothing.
+  try {
+    const availability = await declaracaoAvailability(ctx, input.locationId);
+    if (availability === "invalid") return { url: null };
+    if (availability === "no_stamp") return { url: null, refused: "no_stamp" };
+  } catch {
     return { url: null };
   }
 
@@ -46,7 +88,7 @@ export async function generateDeclaracaoUrlAction(
   }
 
   try {
-    const pdf = await generateDeclaracaoPdf(toClaims(ctx), input);
+    const pdf = await generateDeclaracaoPdf(ctx, input);
 
     // PL-20: a NIF captured on a document that the PATIENT RECORD did not have
     // is written back, so the next document does not ask for it a third time.
@@ -100,7 +142,11 @@ export async function generateDeclaracaoUrlAction(
       .createSignedUrl(path, 60);
     if (signed.error || !signed.data) return { url: null };
     return { url: signed.data.signedUrl };
-  } catch {
+  } catch (e) {
+    // R45: the generator refuses a location with no carimbo on its own, before
+    // it renders. Reported as the same refusal as the check above. Its refusal
+    // of a missing or unusable location is malformed input, the generic result.
+    if (isClinicalError(e) && e.code === "no_stamp") return { url: null, refused: "no_stamp" };
     return { url: null };
   }
 }

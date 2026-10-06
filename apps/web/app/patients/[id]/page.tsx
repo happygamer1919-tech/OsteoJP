@@ -58,6 +58,7 @@ import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
 import { PatientDocuments } from "./PatientDocuments";
 import { DeclaracaoDialog, type DeclaracaoAppointment } from "./DeclaracaoDialog";
+import { listDeclaracaoLocations } from "../../../lib/clinical/declaracao/declaracao-locations";
 import { listGuestIntakesForPatient } from "../../../lib/guest-intake/queries";
 import { toGuestIntakeDisplay } from "../../../lib/guest-intake/view";
 import { GuestIntakeAnswers } from "../../../components/guest-intake-answers";
@@ -525,6 +526,9 @@ export default async function PatientProfilePage({
           locationName: a.locationName,
         }))
       : [];
+  // R45: a manual declaration has no marcação to take its location from, so the
+  // dialog asks, over the active locations this staff member may act in.
+  const declaracaoLocations = tab === "documentos" ? await listDeclaracaoLocations(ctx) : [];
 
   return (
     <main>
@@ -1036,7 +1040,12 @@ export default async function PatientProfilePage({
             </div>
           ) : (
             <div className="mb-4 flex justify-end">
-              <DeclaracaoDialog patientId={patient.id} appointments={declaracaoAppointments} patientNif={patient.nif} />
+              <DeclaracaoDialog
+                patientId={patient.id}
+                appointments={declaracaoAppointments}
+                locations={declaracaoLocations}
+                patientNif={patient.nif}
+              />
             </div>
           )}
           <PatientDocuments
