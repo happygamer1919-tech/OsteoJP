@@ -258,3 +258,80 @@ describe("addEvaluationTarget (EPI-01b): what '+ Avaliação' on a group files",
     expect(addEvaluationTarget(g["none"]!)).toBeNull();
   });
 });
+
+describe("groupForFicha with open episodes that hold no registo yet (EPI-01b, piece 2: '+ Episódio')", () => {
+  const opened = { id: "ep-new", title: "Osteopatia (05/10/2026)", openedAt: "2026-10-05T10:00:00.000Z" };
+
+  it("an open episode with no registo is a group of its own: no rows, no evaluations, dated the day it was opened, titled as the episode is", () => {
+    const groups = groupForFicha([], [opened]);
+    expect(groups).toEqual([
+      {
+        key: "episode:ep-new",
+        kind: "episode",
+        label: "Osteopatia (05/10/2026)",
+        imported: false,
+        episodeId: "ep-new",
+        records: [],
+        evaluations: 0,
+        firstAt: "2026-10-05T10:00:00.000Z",
+        lastAt: "2026-10-05T10:00:00.000Z",
+        excerpt: null,
+      },
+    ]);
+  });
+
+  it("'+ Avaliação' on it files in THAT episode", () => {
+    const [g] = groupForFicha([], [opened]);
+    expect(addEvaluationTarget(g!)).toEqual({ kind: "episode", episodeId: "ep-new" });
+  });
+
+  it("it is the first group when it is the newest, and 'Sem episódio' still comes last", () => {
+    const groups = groupForFicha(
+      [
+        rec({ episodeId: "ep-app", episodeTitle: "Episódio (01/09/2026)", createdAt: day("2026-09-01") }),
+        rec({ episodeId: "ep-i1", episodeTitle: "Osteopatia", episodeImported: true, createdAt: day("2024-05-10") }),
+        rec({ createdAt: day("2026-10-06") }),
+      ],
+      [opened],
+    );
+    expect(groups.map((g) => g.key)).toEqual(["episode:ep-new", "episode:ep-app", "imported:Osteopatia", "none"]);
+  });
+
+  it("an older one is ordered by the day it was opened, among the groups with registos", () => {
+    const groups = groupForFicha(
+      [
+        rec({ episodeId: "ep-app", episodeTitle: "Episódio (01/09/2026)", createdAt: day("2026-09-01") }),
+        rec({ episodeId: "ep-old", episodeTitle: "Episódio (01/07/2026)", createdAt: day("2026-07-01") }),
+      ],
+      [{ id: "ep-mid", title: "Fisioterapia (01/08/2026)", openedAt: day("2026-08-01") }],
+    );
+    expect(groups.map((g) => g.key)).toEqual(["episode:ep-app", "episode:ep-mid", "episode:ep-old"]);
+  });
+
+  it("an episode that already has a group from its registos is never given a second one", () => {
+    const groups = groupForFicha(
+      [rec({ id: "r-in", episodeId: "ep-new", episodeTitle: "Osteopatia (05/10/2026)", createdAt: day("2026-10-05") })],
+      [opened, opened],
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.records.map((r) => r.id)).toEqual(["r-in"]);
+    expect(groups[0]!.evaluations).toBe(1);
+  });
+
+  it("the same empty episode listed twice is one group; two empty episodes are two", () => {
+    expect(groupForFicha([], [opened, opened])).toHaveLength(1);
+    const two = groupForFicha([], [opened, { id: "ep-two", title: "Fisioterapia (04/10/2026)", openedAt: day("2026-10-04") }]);
+    expect(two.map((g) => g.key)).toEqual(["episode:ep-new", "episode:ep-two"]);
+  });
+
+  it("CONTROL: with none passed the groups are exactly the registos' groups, and each carries its episode id or null", () => {
+    const records = [
+      rec({ episodeId: "ep-app", episodeTitle: "Episódio (01/09/2026)" }),
+      rec({ episodeId: "ep-i1", episodeTitle: "Osteopatia", episodeImported: true }),
+      rec(),
+    ];
+    expect(groupForFicha(records)).toEqual(groupForFicha(records, []));
+    const byKey = Object.fromEntries(groupForFicha(records).map((g) => [g.key, g.episodeId]));
+    expect(byKey).toEqual({ "episode:ep-app": "ep-app", "imported:Osteopatia": null, none: null });
+  });
+});

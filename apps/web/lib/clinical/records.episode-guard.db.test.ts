@@ -36,7 +36,8 @@
  *     SUCCEEDS and the registo insert after it fails (a template that does not
  *     exist), and no episode is left;
  *   - the owner with ANOTHER TENANT'S patient id is refused (not_found) by
- *     createDraftRecord, by its new-episode path and by createEpisode, with a
+ *     createDraftRecord and by its new-episode path (createEpisode, the
+ *     therapist's alone since piece 2, refuses the owner by role), with a
  *     control proving the foreign key alone would take it and a passing control
  *     for the owner's own patient.
  *
@@ -524,23 +525,30 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
         records.createDraftRecord(asOwner, { patientId: patientForeign, formTemplateId: template, newEpisodeSpecialty: "Osteopatia" }),
       ),
     ).toBe("not_found");
-    expect(await codeOf(episodes_.createEpisode(asOwner, { patientId: patientForeign, title: "Osteopatia (02/10/2026)" }))).toBe(
-      "not_found",
+    // "+ Episódio" (createEpisode) is the therapist's alone since EPI-01b piece 2:
+    // the owner is refused by role, and the therapist by the patient read. Its
+    // own arms are in episodes.create.db.test.ts.
+    expect(await codeOf(episodes_.createEpisode(asOwner, { patientId: patientForeign, specialty: "Osteopatia" }))).toBe(
+      "ForbiddenError",
     );
+    expect(
+      await codeOf(episodes_.createEpisode(ctx(therapist, "therapist"), { patientId: patientForeign, specialty: "Osteopatia" })),
+    ).toBe("not_found");
     expect(await countEpisodesAll()).toBe(episodes);
     expect(await countRecordsAll()).toBe(recs);
   });
 
-  it("MINOR 3 control: the owner files for the tenant's own patient, and opens an episode for it", async () => {
+  it("MINOR 3 control: the owner files for the tenant's own patient, and the therapist opens an episode for it", async () => {
     const asOwner = ctx(owner, "owner");
     const { id } = await records.createDraftRecord(asOwner, { patientId: patientB, formTemplateId: template });
     const [row] = await rows<{ patient_id: string; practitioner_id: string }>(
       raw`select patient_id::text, practitioner_id::text from clinical_records where id = ${id}::uuid`,
     );
     expect(row).toEqual({ patient_id: patientB, practitioner_id: owner });
-    const { id: ep } = await episodes_.createEpisode(asOwner, { patientId: patientB, title: "Osteopatia (02/10/2026)" });
+    const opened = await episodes_.createEpisode(ctx(therapist, "therapist"), { patientId: patientB, specialty: "Osteopatia" });
+    if (opened.kind !== "created") throw new Error(`expected a new episode, got ${opened.kind}`);
     const [e] = await rows<{ patient_id: string; status: string }>(
-      raw`select patient_id::text, status::text from clinical_episodes where id = ${ep}::uuid`,
+      raw`select patient_id::text, status::text from clinical_episodes where id = ${opened.id}::uuid`,
     );
     expect(e).toEqual({ patient_id: patientB, status: "open" });
   });

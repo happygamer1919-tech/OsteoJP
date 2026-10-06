@@ -1,7 +1,7 @@
 ---
 id: registos.episodios
 title: Agrupar registos num episódio
-goal: Criar um episódio e ligar-lhe registos.
+goal: Juntar os registos de um mesmo problema num episódio.
 roles: terapeuta, proprietario
 order: terapeuta 5, proprietario 5
 capability: clinical_records:author
@@ -9,10 +9,20 @@ screens: ficha-paciente
 ---
 ## Agrupar registos num episódio
 
-Um episódio junta os registos de um mesmo problema do paciente.
+Um episódio junta os registos de um mesmo problema do paciente. O título de um episódio é uma especialidade e uma data.
 
-1. Na ficha do paciente, clique em **Novo episódio**, no topo. O episódio é criado logo, com a data de hoje, e abre a página desse episódio.
-2. Em **Fichas do episódio**, clique em **Nova ficha neste episódio**. Abre **Nova ficha clínica** com o paciente e o episódio já escolhidos.
-3. Preencha e guarde o registo como habitualmente.
+::: terapeuta
+Abrir um episódio:
 
-Também pode ligar um registo novo a um episódio que já existe: em **Nova ficha clínica**, escolha-o no campo **Episódio** antes de clicar em **Criar ficha**.
+1. Na ficha do paciente, abra o separador **Registos clínicos**.
+2. Em **Especialidade do novo episódio**, escolha Osteopatia ou Fisioterapia e clique em **Episódio**, o botão com o sinal de mais.
+3. O episódio aparece na lista, com a especialidade e a data de hoje no título e a indicação **Sem avaliações**. Clique em **Avaliação**, nesse episódio, para criar o primeiro registo.
+
+Se o paciente já tiver um episódio aberto dessa especialidade, nenhum é aberto: o ecrã mostra esse episódio e pergunta. **Ver o episódio aberto** leva até ele, **Cancelar** não abre nada, e o botão para abrir outro episódio abre um segundo.
+:::
+
+::: proprietario
+O Proprietário não tem o botão **Episódio**. Em **Registos clínicos**, cria registos com **Avaliação**, num grupo da lista, ou com **Nova ficha**.
+:::
+
+Num episódio que já existe, **Avaliação** cria um registo ligado a ele. Também pode escolhê-lo no campo **Episódio** de **Nova ficha clínica**, antes de clicar em **Criar ficha**.

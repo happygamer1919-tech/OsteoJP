@@ -92,12 +92,12 @@ Nota: quando a lista tem várias páginas, os botões **Anterior** e **Seguinte*
 
 ## Ficha do paciente
 
-A ficha reúne o que a sua conta pode ver sobre um paciente. No cabeçalho estão o nome, o NIF, os contactos e os botões **Nova marcação** (abre a agenda com o paciente já escolhido) e **Novo episódio**. A etiqueta **RGPD em falta** indica que não há consentimento RGPD registado para este paciente. Por baixo há seis separadores:
+A ficha reúne o que a sua conta pode ver sobre um paciente. No cabeçalho estão o nome, o NIF, os contactos e o botão **Nova marcação** (abre a agenda com o paciente já escolhido). A etiqueta **RGPD em falta** indica que não há consentimento RGPD registado para este paciente. Por baixo há seis separadores:
 
 * **Resumo**: os **Dados pessoais**, com **Editar dados** e, se o paciente fez o pedido de marcação pela internet, o **Questionário clínico do pedido online**.
 * **Marcações**: o histórico de marcações, com os filtros **De**, **Até**, **Estado**, **Terapeuta**, **Clínica**, **Serviço**, **Sem nota** e **Ordenar**.
 * **Notas**: as notas do paciente e das marcações.
-* **Registos clínicos**: os registos do paciente, cada um com o estado **Rascunho**, **Bloqueada** ou **Assinada**.
+* **Registos clínicos**: os registos do paciente, cada um com o estado **Rascunho**, **Bloqueada** ou **Assinada**. É também aqui que abre um episódio novo, com o botão **Episódio**.
 * **Documentos**: os ficheiros do paciente e a **Declaração de Presença**.
 * **Faturação**: as faturas do paciente, só para consulta.
 
@@ -125,7 +125,7 @@ Nas marcações ainda por realizar, **Gerir marcação** mostra **Reagendar**, a
 ![Ficha do paciente no telemóvel](../screens/terapeuta/ficha-paciente-390.png)
 ![Ficha do paciente no computador](../screens/terapeuta/ficha-paciente-desktop.png)
 
-Nota: um registo com o estado **Assinada** já não pode ser alterado; para corrigir, use **Nova versão (adenda)**. **Eliminar** (só em rascunho) e **Anular** (só em registos assinados) pedem a palavra-passe de eliminação da clínica, que não é a sua palavra-passe de acesso. Um registo anulado fica com a etiqueta **ANULADO** e só aparece depois de carregar em **Mostrar anulados**. Sem NIF na ficha, a **Declaração de Presença** não pode ser emitida.
+Nota: um registo com o estado **Assinada** já não pode ser alterado; para corrigir, use **Nova versão (adenda)**. **Eliminar** (só em rascunho) e **Anular** (só em registos assinados) pedem a palavra-passe de eliminação da clínica, que não é a sua palavra-passe de acesso. Um registo anulado fica com a etiqueta **ANULADO** e só aparece depois de carregar em **Mostrar anulados**. Sem NIF na ficha, a **Declaração de Presença** não pode ser emitida. As imagens são da versão anterior do ecrã, que ainda mostra o botão Novo episódio no cabeçalho; esse botão já não existe.
 
 ## Nova ficha clínica
 
@@ -147,7 +147,7 @@ Fechar o registo:
 1. Quando o registo estiver completo e guardado, carregue em **Assinar e bloquear**.
 2. Depois de assinado, **Transferir PDF** gera o relatório em PDF. Para alterar alguma coisa, use **Nova versão (adenda)**.
 
-Agrupar registos num episódio: na ficha do paciente, **Novo episódio** cria logo um episódio com a data de hoje e abre a página desse episódio, onde **Nova ficha neste episódio** cria um registo já ligado a ele.
+Agrupar registos num episódio: na ficha do paciente, abra **Registos clínicos**, escolha Osteopatia ou Fisioterapia em **Especialidade do novo episódio** e carregue em **Episódio**, o botão com o sinal de mais. O episódio fica com a especialidade e a data de hoje como título e aparece na lista com a indicação **Sem avaliações**; **Avaliação**, nesse episódio, cria um registo já ligado a ele. Se o paciente já tiver um episódio aberto dessa especialidade, nenhum é aberto: o ecrã mostra esse episódio e pergunta. **Ver o episódio aberto** leva até ele, **Cancelar** não abre nada, e o botão para abrir outro episódio abre um segundo.
 
 ![Nova ficha clínica no telemóvel](../screens/terapeuta/nova-ficha-390.png)
 ![Nova ficha clínica no computador](../screens/terapeuta/nova-ficha-desktop.png)

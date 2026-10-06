@@ -4,6 +4,8 @@ import {
   Button,
   Card,
   EmptyState,
+  Field,
+  Select,
   StatusChip,
   type StatusTone,
 } from "@osteojp/ui";
@@ -15,6 +17,10 @@ import { getRequestContext } from "../../../lib/auth/context";
 import { listActiveTemplates, type RecordStatus } from "../../../lib/clinical/records";
 import { listFichaRecords } from "../../../lib/clinical/ficha-groups";
 import { addEvaluationTarget, groupForFicha } from "../../../lib/clinical/ficha-groups-core";
+import { listOpenAppEpisodes } from "../../../lib/clinical/episodes";
+import { mayOpenEpisode } from "../../../lib/clinical/episode-open-core";
+import { pickEpisodeToReuse } from "../../../lib/clinical/episode-reuse-core";
+import { EPISODE_SPECIALTIES, isEpisodeSpecialty } from "../../../lib/clinical/episode-title";
 import { listActiveLocations, listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { isFichaIncomplete } from "../../../lib/patients/nif";
@@ -43,6 +49,8 @@ import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
 import { createRecordAction } from "../../clinical/new/actions";
 import { AddEvaluationButton } from "./add-evaluation-button";
+import { AddEpisodeButton } from "./add-episode-button";
+import { FocusOnArrive } from "./focus-on-arrive.client";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
 import { PatientPacks } from "./patient-packs";
@@ -91,6 +99,9 @@ const INVOICE_STATUS_KEY: Record<InvoiceStatus, keyof typeof s> = {
   void: "invoicing.statusVoid",
 };
 
+/** A uuid's shape: the only form of `episodio` the Registos tab reads. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const dateFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
 // EPI-01a: an evaluation's DATE, in Lisbon. An imported row's created_at is the
 // evaluation date at Lisbon midnight stored as UTC, so a formatter without a time
@@ -128,6 +139,10 @@ export default async function PatientProfilePage({
     servico?: string;
     semnota?: string;
     ordem?: string;
+    // EPI-01b, piece 2: where "+ Episódio" lands. `episodio` is the episode it
+    // opened; `esp` is the specialty it was asked for when one is already open.
+    episodio?: string;
+    esp?: string;
   }>;
 }) {
   const { id } = await params;
@@ -143,6 +158,8 @@ export default async function PatientProfilePage({
     servico,
     semnota,
     ordem,
+    episodio,
+    esp,
   } = await searchParams;
   // W5-30: the "Mostrar anulados" toggle (default off) surfaces annulled fichas.
   const showAnnulled = anulados === "1";
@@ -290,7 +307,39 @@ export default async function PatientProfilePage({
     tab === "registos" && canReadClinical
       ? await listFichaRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
       : [];
-  const recordGroups = groupForFicha(records);
+  // EPI-01b, piece 2: "+ Episódio". A therapist who may write for this patient
+  // (createEpisode asks the same on the server, whatever is drawn here).
+  const canAddEpisode = canStartEpisode && mayOpenEpisode(ctx.role);
+  // The patient's open app episodes, for a viewer who may write here: an
+  // episode with no registo yet has no group of its own, and this is what
+  // draws it, with "+ Avaliação" at hand.
+  const openEpisodes =
+    tab === "registos" && canStartEpisode ? await listOpenAppEpisodes(ctx, patient.id) : [];
+  const recordGroups = groupForFicha(
+    records,
+    openEpisodes
+      .filter((e) => e.empty)
+      .map((e) => ({ id: e.id, title: e.title, openedAt: e.openedAt.toISOString() })),
+  );
+  // "+ Episódio" opened nothing because an episode of that specialty is open:
+  // the one to show is R31's choice (the most recently opened), read again
+  // here, never taken from the address. Nothing to show: no question.
+  const confirmSpecialty =
+    canAddEpisode && m === "episodioAberto" && isEpisodeSpecialty(esp) ? esp : null;
+  const confirmEpisodeId = confirmSpecialty
+    ? pickEpisodeToReuse(openEpisodes, {
+        tenantId: ctx.tenantId,
+        patientId: patient.id,
+        specialty: confirmSpecialty,
+      })
+    : null;
+  const confirmEpisode = openEpisodes.find((e) => e.id === confirmEpisodeId) ?? null;
+  // "+ Episódio" opened this one: named only while it holds no registo yet.
+  const openedId = typeof episodio === "string" && UUID_RE.test(episodio) ? episodio.toLowerCase() : null;
+  const openedGroup =
+    (openedId &&
+      recordGroups.find((g) => g.kind === "episode" && g.episodeId === openedId && g.records.length === 0)) ||
+    null;
   // EPI-01b (S-1002-D P2.2): "+ Avaliação" on a group files a new registo
   // through THE record-creation action (/clinical/new's createRecordAction, so
   // createDraftRecord: the patient scope, Q9's same-patient episode guard, the
@@ -525,19 +574,8 @@ export default async function PatientProfilePage({
                 {s["patients.newAppointment"]}
               </Link>
             )}
-            {canStartEpisode && (
-              <form action={createEpisodeAction}>
-                <input type="hidden" name="patientId" value={patient.id} />
-                <Button type="submit" variant="secondary" iconLeft={Plus}>
-                  {s["patients.newEpisode"]}
-                </Button>
-              </form>
-            )}
           </div>
         </div>
-        {m === "episodeErr" && (
-          <p role="alert" className="mt-3 text-sm text-error">{s["patients.episodeError"]}</p>
-        )}
       </Card>
 
       {/* PL-31 — the ficha is short a NIF. Shown above the tabs, not inside the
@@ -704,7 +742,7 @@ export default async function PatientProfilePage({
           {/* Fichas placement (ruling F): all clinical-record entry points live
               here. "Nova ficha" reuses the /clinical/new creation flow, pre-scoped
               to this patient. */}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             {/* W5-30: "Mostrar anulados" toggle — a link that flips the ?anulados param. */}
             <Link
               href={`/patients/${id}?tab=registos${showAnnulled ? "" : "&anulados=1"}`}
@@ -712,13 +750,104 @@ export default async function PatientProfilePage({
             >
               {showAnnulled ? s["clinical.hideAnnulled"] : s["clinical.showAnnulled"]}
             </Link>
-            {canStartEpisode && (
-              <Link href={`/clinical/new?patientId=${id}`} className={primaryLink}>
-                <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-                {s["clinical.new"]}
-              </Link>
-            )}
+            <div className="flex flex-wrap items-end justify-end gap-3">
+              {/* EPI-01b, piece 2: "+ Episódio". The therapist picks a specialty
+                  from the closed list and nothing else: the title is a specialty
+                  and a date, by ruling, and the server builds it. */}
+              {canAddEpisode && (
+                <form
+                  action={createEpisodeAction}
+                  className="flex flex-wrap items-end gap-2"
+                  data-testid="add-episode-form"
+                >
+                  <input type="hidden" name="patientId" value={patient.id} />
+                  <Field label={s["patients.fichaAddEpisodeSpecialty"]} required className="min-w-48">
+                    <Select name="specialty" defaultValue="" data-testid="add-episode-specialty">
+                      <option value="" disabled>
+                        {s["patients.fichaAddEpisodeChoose"]}
+                      </option>
+                      {EPISODE_SPECIALTIES.map((specialty) => (
+                        <option key={specialty} value={specialty}>
+                          {specialty}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <AddEpisodeButton
+                    plus
+                    label={s["patients.fichaAddEpisode"]}
+                    ariaLabel={s["patients.fichaAddEpisodeAria"]}
+                    testId="add-episode-submit"
+                  />
+                </form>
+              )}
+              {canStartEpisode && (
+                <Link href={`/clinical/new?patientId=${id}`} className={primaryLink}>
+                  <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+                  {s["clinical.new"]}
+                </Link>
+              )}
+            </div>
           </div>
+          {/* EPI-01b, piece 2: what "+ Episódio" did, said here. */}
+          {m === "episodeErr" && (
+            <p role="alert" className="mb-4 text-sm text-error" data-testid="add-episode-error">
+              {s["patients.episodeError"]}
+            </p>
+          )}
+          {openedGroup && (
+            <p role="status" className="mb-4 text-sm text-text-primary" data-testid="add-episode-opened">
+              {s["patients.fichaAddEpisodeOpened"].replace("{title}", openedGroup.label ?? "")}
+              <FocusOnArrive targetId={`episodio-${openedGroup.episodeId}-resumo`} />
+            </p>
+          )}
+          {confirmEpisode && confirmSpecialty && (
+            /* An episode of that specialty is open: it is shown, and another
+               is opened only on an explicit confirmation that names it. */
+            <div
+              role="group"
+              aria-labelledby="add-episode-confirm-title"
+              data-testid="add-episode-confirm"
+              className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+            >
+              <h3
+                id="add-episode-confirm-title"
+                tabIndex={-1}
+                className="font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                {s["patients.fichaAddEpisodeExistsTitle"].replace("{specialty}", confirmSpecialty)}
+              </h3>
+              <FocusOnArrive targetId="add-episode-confirm-title" />
+              <p className="mt-1" data-testid="add-episode-confirm-existing">
+                {s["patients.fichaAddEpisodeExistsBody"].replace("{title}", confirmEpisode.title)}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Link
+                  href={
+                    recordGroups.some((g) => g.kind === "episode" && g.episodeId === confirmEpisode.id)
+                      ? `#episodio-${confirmEpisode.id}`
+                      : `/clinical/episodes/${confirmEpisode.id}`
+                  }
+                  className={ghostLink}
+                  data-testid="add-episode-confirm-view"
+                >
+                  {s["patients.fichaAddEpisodeExistsView"]}
+                </Link>
+                <form action={createEpisodeAction}>
+                  <input type="hidden" name="patientId" value={patient.id} />
+                  <input type="hidden" name="specialty" value={confirmSpecialty} />
+                  <input type="hidden" name="confirmOpenEpisodeId" value={confirmEpisode.id} />
+                  <AddEpisodeButton
+                    label={s["patients.fichaAddEpisodeExistsConfirm"].replace("{specialty}", confirmSpecialty)}
+                    testId="add-episode-confirm-submit"
+                  />
+                </form>
+                <Link href={`/patients/${id}?tab=registos`} className={ghostLink} data-testid="add-episode-confirm-cancel">
+                  {s["common.cancel"]}
+                </Link>
+              </div>
+            </div>
+          )}
           {/* EPI-01b: a "+ Avaliação" that filed nothing says why, here. */}
           {m === "episodeMismatch" && (
             <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
@@ -735,7 +864,7 @@ export default async function PatientProfilePage({
               {s["patients.fichaGroupAddEvaluationError"]}
             </p>
           )}
-          {records.length === 0 ? (
+          {recordGroups.length === 0 ? (
             <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} />
           ) : (
             /* EPI-01a: the registos grouped the way the Fisiozero ficha was
@@ -753,13 +882,17 @@ export default async function PatientProfilePage({
                 return (
                 <details
                   key={g.key}
+                  id={g.episodeId ? `episodio-${g.episodeId}` : undefined}
                   open
                   data-testid="record-group"
                   data-group-kind={g.kind}
                   data-group-key={g.key}
                   className="group rounded-lg border border-border bg-surface"
                 >
-                  <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  <summary
+                    id={g.episodeId ? `episodio-${g.episodeId}-resumo` : undefined}
+                    className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
                     <span className="text-sm font-medium tabular-nums text-text-primary" data-testid="record-group-date">
                       {evalDateFmt.format(new Date(g.firstAt))}
                     </span>
@@ -770,9 +903,11 @@ export default async function PatientProfilePage({
                     )}
                     {g.imported && <StatusChip tone="info">{s["patients.fichaGroupImported"]}</StatusChip>}
                     <span className="text-sm tabular-nums text-text-secondary" data-testid="record-group-count">
-                      {g.evaluations === 1
-                        ? s["patients.fichaGroupCountOne"]
-                        : s["patients.fichaGroupCountMany"].replace("{n}", String(g.evaluations))}
+                      {g.evaluations === 0
+                        ? s["patients.fichaGroupCountNone"]
+                        : g.evaluations === 1
+                          ? s["patients.fichaGroupCountOne"]
+                          : s["patients.fichaGroupCountMany"].replace("{n}", String(g.evaluations))}
                     </span>
                     {/* A flex summary drops the browser's own fold marker, so
                         the fold is drawn here (the admin danger zone's pattern). */}

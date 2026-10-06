@@ -20,7 +20,7 @@ No topo da ficha estão o nome, o NIF, os contactos e o botão **Nova marcação
 * **Faturação**: as faturas do paciente, só para consulta.
 
 ::: terapeuta proprietario
-Há também o separador **Registos clínicos**. Quem escreve registos clínicos tem ainda o botão **Novo episódio** no topo.
+Há também o separador **Registos clínicos**.
 :::
 
 ::: proprietario
@@ -30,7 +30,7 @@ No fundo da página fica a **Zona de risco**, para juntar ou eliminar a ficha.
 Por cima dos separadores podem aparecer avisos: **Ficha incompleta: falta o NIF.**, **RGPD em falta** (não há consentimento registado) ou um aviso de que o telefone guardado não recebe SMS.
 
 ::: terapeuta
-Pacientes visíveis: só abre a ficha dos pacientes da sua lista **Pacientes**. Em **Registos clínicos** vê todos os registos do paciente, incluindo os de colegas.
+Pacientes visíveis: só abre a ficha dos pacientes da sua lista **Pacientes**. Em **Registos clínicos** vê todos os registos do paciente, incluindo os de colegas, e abre um episódio novo com o botão **Episódio**.
 :::
 
 ![A ficha do paciente no telemóvel](../../../../apps/web/public/ajuda/pacientes/ficha-do-paciente-390.png)
