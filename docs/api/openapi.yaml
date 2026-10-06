@@ -1510,6 +1510,35 @@ components:
             `encodeGuestPreferredWindow` in @osteojp/db — the window's
             boundaries, not a slot anybody was offered. Reception resolves the
             real time when they telephone.
+        email:
+          type: [string, "null"]
+          maxLength: 320
+          description: >
+            OPTIONAL (migration 0101, strategy ruling R40). The address the
+            visitor may give so the clinic can confirm the appointment by email.
+            UNVERIFIED: it is stored on the request, shown to reception as
+            "given on the form (not verified)", and saved to a patient record
+            only when reception creates a NEW patient from the request. It is
+            never written to an existing patient's record. Absent, null and the
+            empty string all mean "no email", and a request without one is
+            accepted exactly as before (a portal that predates the field must
+            not break booking). Normalised to Unicode NFC and trimmed server side,
+            so a decomposed and a composed spelling are stored as one string. A value that is present
+            and is not an acceptable email is refused with `invalid_input`
+            (400), like every other refusal: it names no field and echoes no
+            value. Acceptable means the staff app's own rule (at most 320
+            characters, `something@something.something`, no whitespace) and,
+            on this public path, none of: a control or format character
+            (Unicode categories Cc and Cf, NUL and the zero-width and
+            bidirectional characters among them), a lone surrogate, a private
+            use character, a noncharacter, U+FFFC or U+FFFD, the look-alikes
+            U+FF20 and U+FE6B of "@", a look-alike of "." (U+3002, U+FF0E, U+FF61,
+            U+FE52, U+2024 and every other character whose compatibility form
+            holds a full stop, and the dot-shaped U+0701, U+0702, U+A60E,
+            U+10A50 and U+1D16D), or
+            one of `( ) < > [ ] : ; , \ "`. A non-ASCII local part or domain is
+            accepted. The response is the same 202 with or without one.
+          examples: ["guest@example.invalid"]
         intake:
           description: >
             INTAKE-01. OPTIONAL: absent and null both mean "no intake", and a

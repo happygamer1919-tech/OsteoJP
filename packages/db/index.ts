@@ -32,6 +32,9 @@ export * from "./src/migration";
 // because apps/api writes the pair and apps/web reads it, and a copy in each is
 // how the two would come to disagree about what a window says.
 export * from "./src/guest-preferred-window";
+// The public form's optional email (0101): the portal and the API validate with
+// this one rule, and it is the staff app's rule (tests/guest-email.test.ts).
+export * from "./src/guest-email";
 
 // RB-01 — the recuperacao selection predicate. Exported from the package for
 // the reason `guest-preferred-window` above is: its two readers are the staff

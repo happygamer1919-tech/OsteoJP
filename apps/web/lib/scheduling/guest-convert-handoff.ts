@@ -157,3 +157,79 @@ export function guestRequestIdFromParam(value: string | null | undefined): strin
   const v = (value ?? "").trim();
   return UUID.test(v) ? v : null;
 }
+
+/* ====================================================================== */
+/* THE EMAIL A VISITOR TYPED ON THE PUBLIC FORM (0101, ruling R40).        */
+/* ====================================================================== */
+/*
+ * THE LEAD'S DECISION (2026-10-05, after review): an address typed into the
+ * public form is NEVER written to an EXISTING patient's record by the convert.
+ * Only a NEW patient created from the request gets it.
+ *
+ * WHY. The form is public and the address is unverified. Somebody who posts
+ * the form with ANOTHER person's mobile and their OWN email would, once
+ * reception matched the request to that person's record, have had their
+ * address saved on it: the booking confirmation, the reminder with its signed
+ * confirm and cancel link, the follow-up and the no-show notice would all have
+ * gone to them, and the real patient would have had no SMS, because the email
+ * replaces it. So for an existing patient the address stays on the request row.
+ * Reception sees it, labelled as unverified, and may add it on the patient's
+ * own page after confirming with the patient.
+ *
+ * These are pure so a suite can reach them: this repository renders components
+ * without a DOM, so a rule inside JSX is a rule nothing can assert.
+ */
+
+/**
+ * "NO EMAIL" HAS ONE MEANING: NULL, or nothing left after a trim. Every reader
+ * that asks whether a request or a patient has an address asks through this.
+ */
+export function emailOrNull(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * Whether the request carries an address the patient's record does not already
+ * hold: the request has one, and the patient has none or a different one
+ * (compared without case, after a trim). False when the request has none.
+ */
+export function formEmailNotOnRecord(
+  formEmail: string | null | undefined,
+  patientEmail: string | null | undefined,
+): boolean {
+  const typed = emailOrNull(formEmail);
+  if (typed === null) return false;
+  const held = emailOrNull(patientEmail);
+  // NFC on both sides: the form's address is stored composed, and an address a
+  // member of staff typed on a Mac may not be. The same address is the same.
+  const fold = (v: string): string => v.normalize("NFC").toLowerCase();
+  return held === null || fold(held) !== fold(typed);
+}
+
+/** What reception is told about the form's address, beside the choice it is about to make. */
+export type FormEmailNote =
+  /** Nothing to say: the request has no address, or the record already holds it. */
+  | "none"
+  /** A NEW patient will be created and WILL get the address. */
+  | "new_patient_saved"
+  /** An EXISTING patient was offered, and the address will NOT be saved on the record. */
+  | "existing_not_saved";
+
+export function formEmailNote(
+  formEmail: string | null | undefined,
+  target: { kind: "new_patient" } | { kind: "existing_patient"; formEmailNotOnRecord: boolean },
+): FormEmailNote {
+  if (emailOrNull(formEmail) === null) return "none";
+  if (target.kind === "new_patient") return "new_patient_saved";
+  return target.formEmailNotOnRecord ? "existing_not_saved" : "none";
+}
+
+/**
+ * Put the address into a sentence that names it as `{email}`. `split`/`join`,
+ * never `String.replace`: an address may hold `$&` or `$1`, which `replace`
+ * would expand.
+ */
+export function withFormEmail(template: string, email: string): string {
+  return template.split("{email}").join(email);
+}
