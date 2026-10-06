@@ -10408,10 +10408,10 @@
       "last_checkpoint": "2026-10-06",
       "evidence": {
         "kind": "pr",
-        "at": "2026-10-05",
-        "ref": "#1533 merged 2026-10-03 as 5ccd3ee1, #1534 merged 2026-10-04 as b42ec927, #1535 merged 2026-10-04 as f6192d42, #1536 merged 2026-10-05 as f475b14b. All four are on main with the switch off."
+        "at": "2026-10-06",
+        "ref": "#1533 merged 2026-10-03 as 5ccd3ee1, #1534 merged 2026-10-04 as b42ec927, #1535 merged 2026-10-04 as f6192d42, #1536 merged 2026-10-05 as f475b14b, #1549 merged 2026-10-06 as dbe63d87. All five are on main with the switch off in code."
       },
-      "notes": "=== 2026-10-06 (SOLO) === MERGED, in order: #1533 the read-only production count; #1534 the gate change for the two setting names; #1535 the confirmation for logged-in portal requests, every attempt now leaving a send record, and a moved request no longer losing its confirmation; #1536 the public-form request linked to the booking reception makes for it, the new SMS text, and the approver's notice when no message can go.\nMEASURED: the production count showed that every appointment to date was created by staff, and that the only online requests are public-form ones.\nTHE SWITCH: BOOK_CONFIRM_MODE is off in code, and the owner has set canary for the test patient.\nWHAT CLOSES IT: the owner's canary on the deployed build (a public-form request for the test patient, converted and booked, with the confirmation arriving) and his word to switch it on.",
+      "notes": "=== 2026-10-06 evening (SOLO) === #1549 MERGED: when the confirmation cannot go because the appointment has no service, the approver is told (\"Confirmação não enviada: a marcação não tem serviço. Avise o paciente por telefone.\").\nTHE OWNER'S FIRST CANARY, 2026-10-06 about 17:00 Lisbon, SENT NOTHING, and the switch did what it says: in canary mode a confirmation goes only to a patient on the canary list, and the patient that request became was not on it. Read from the production log. Nothing in code changes. He repeats it with that patient on the list, a real therapist and a service chosen.\n\n=== 2026-10-06 (SOLO) === MERGED, in order: #1533 the read-only production count; #1534 the gate change for the two setting names; #1535 the confirmation for logged-in portal requests, every attempt now leaving a send record, and a moved request no longer losing its confirmation; #1536 the public-form request linked to the booking reception makes for it, the new SMS text, and the approver's notice when no message can go.\nMEASURED: the production count showed that every appointment to date was created by staff, and that the only online requests are public-form ones.\nTHE SWITCH: BOOK_CONFIRM_MODE is off in code, and the owner has set canary for the test patient.\nWHAT CLOSES IT: the owner's canary on the deployed build (a public-form request for the test patient, converted and booked, with the confirmation arriving) and his word to switch it on.",
       "open_on_purpose": "Merged switched off. It closes on the owner's canary on the deployed build (a public-form request for the test patient, converted and booked, with the confirmation arriving) and on his word to switch it on. Staff- and patient-visible (WF-03)."
     },
     {
@@ -10443,10 +10443,10 @@
       "evidence": {
         "kind": "pr",
         "at": "2026-10-06",
-        "ref": "#1526 merged 2026-10-03 as 9d5d4f70: \"+ Avaliação\" on an episode group (S-1002-D P2.2, piece 1). Ruling R31 (reuse of the open episode) merged as #1541 (3bc171b8, 2026-10-06). #1546 merged 2026-10-06 as e862cfb6: piece 2, \"+ Episódio\" in the Registos tab with a server-built title."
+        "ref": "#1526 merged 2026-10-03 as 9d5d4f70: \"+ Avaliação\" on an episode group (S-1002-D P2.2, piece 1). Ruling R31 (reuse of the open episode) merged as #1541 (3bc171b8, 2026-10-06). #1546 merged 2026-10-06 as e862cfb6: piece 2, \"+ Episódio\" in the Registos tab with a server-built title. #1555 merged 2026-10-06 as f01039d4: piece 3, one PDF for a whole episode."
       },
-      "notes": "=== 2026-10-06 (SOLO) === Carded on this date; the board had no EPI-01b card. Piece 1 merged as #1526 on 2026-10-03. Strategy ruling R31 is built and reviewed as #1541 (open): \"+ Avaliação\" on an imported group reuses the patient's open episode of that specialty and creates one only when none exists.\n\n=== 2026-10-06 (SOLO) === #1541 merged 2026-10-06 as 3bc171b8, with its browser test (two clicks, one episode) green in CI. The card stays open for the owner's deployed screen (WF-03).",
-      "open_on_purpose": "#1526, #1541 and #1546 are merged. Staff-visible: it closes on the owner's deployed screen (WF-03), not on a merge, and piece 3 (the PDF per episode) is not built. Set 2026-10-06 by SOLO."
+      "notes": "=== 2026-10-06 evening (SOLO) === PIECE 3 MERGED as #1555 (f01039d4): one PDF for a whole episode, from the episode group in the Registos tab. It is offered to whoever the per-record PDF button admits. It holds the finalized registos only, oldest first, every finalized version; annulled registos are left out. One audit entry per file names the registos in it. No migration. Three review rounds; its browser test is the suite's first download.\nDECISIONS MADE BY THE BUILD LANE, WITH STRATEGY TO CONFIRM: annulled registos left out; every finalized version included; closed episodes can be exported.\nFOLLOW-UPS CARDED: EPI-01b-episode-pdf-ceiling and GUIDE-episode-pdf-lesson.\n\n=== 2026-10-06 (SOLO) === Carded on this date; the board had no EPI-01b card. Piece 1 merged as #1526 on 2026-10-03. Strategy ruling R31 is built and reviewed as #1541 (open): \"+ Avaliação\" on an imported group reuses the patient's open episode of that specialty and creates one only when none exists.\n\n=== 2026-10-06 (SOLO) === #1541 merged 2026-10-06 as 3bc171b8, with its browser test (two clicks, one episode) green in CI. The card stays open for the owner's deployed screen (WF-03).",
+      "open_on_purpose": "#1526, #1541, #1546 and #1555 are merged: all three pieces are built. Staff-visible: it closes on the owner's deployed screen (WF-03), not on a merge. Set 2026-10-06 by SOLO."
     },
     {
       "id": "MN-third-location-montemor-o-novo",
@@ -10462,10 +10462,10 @@
       "evidence": {
         "kind": "pr",
         "at": "2026-10-06",
-        "ref": "#1547 merged 2026-10-06 as b36c7437 (R45 item 1), #1548 merged 2026-10-06 as ed5dcf6b (R45 items 2 and 3). Both deployed; the live portal was read after each."
+        "ref": "#1547 merged 2026-10-06 as b36c7437 (R45 item 1), #1548 merged 2026-10-06 as ed5dcf6b (R45 items 2 and 3), #1553 merged 2026-10-06 as 010169a2 (R45 item 4). Also #1552 merged 2026-10-06 as 01212bb5 (the public form shows the place) and #1554 merged 2026-10-06 as 4ef982da (the guide's two Declaração lessons). All deployed; the live portal was read after items 1 to 3."
       },
-      "notes": "=== 2026-10-06 afternoon (SOLO), strategy ruling R45 (dispatch S-1006-A) === ITEMS 1 TO 3 OF 6 ARE ON MAIN AND LIVE.\nITEM 1 (#1547): a location with no bookable therapist is offered to no patient. One rule, read by the logged-in booking list and its write guard and by the public form's list and its submit check: an active schedule row at the location, held by an active, bookable user who is not a shared resource. Proven on a real database, one fixture location per term of the rule. The rule reads no date, on purpose: a new location becomes visible from the day a bookable therapist's hours are entered there. Whether to tighten that is a question with strategy.\nITEMS 2 AND 3 (#1548): the portal no longer has the list of clinics written into it. The Clínicas page, the telephones on the login screen and the public form, and the footers read the locations the API offers to patients. Two strings that listed the clinics are removed in both languages; no sentence is added. The six auth email templates say OsteoJP with no list of clinics: THEY REACH PRODUCTION ONLY WHEN THE OWNER PASTES THEM into the Supabase dashboard (docs/supabase-auth-email-templates.md). The two tests that expected exactly two clinics no longer do; a new scan refuses any patient-facing string, template or nearby lines of code that name two clinics.\nWHAT A NEW LOCATION SHOWS: its name, address and telephone from Locais. No email and no reception hours, which a location row does not hold. A name typed as \"OsteoJP (Place)\" is shown to patients as the place; a short code the app does not know is shown as typed. The two existing clinics keep their published details (second telephone, email, map, hours) from code until Locais can hold them (LOC-SET-01).\nNOT DONE: item 4 (no Declaração for a location with no stamp) is BLOCKED on a question to strategy and one check by the owner. Item 5 (the opening hours) waits for the owner to relay them; nothing assumes 08:00 to 21:00. Item 6 (the row) is the owner's, after item 4.\n\n=== 2026-10-06 (SOLO) === MEASURED, NOT BUILT. From the code measurement of 2026-10-03 and the production count of 2026-10-04.\nWHAT IT TAKES: no migration is needed. A location is created in Administração > Locais (name, address, phone). Opening hours have no screen and default to 08:00 to 20:00, so 08:00 to 21:00 needs a data operation through GREEN. Production has two locations and no Montemor row. A general admin needs no build: Equipa > Gerir already lets an admin hold several locations.\nWORK OWED BEFORE THE ROW IS CREATED: (1) the logged-in portal lists every active location, so a new one would show to patients with no slots; (2) the Declaração has no stamp for it; (3) the portal's clinics page, login and public-form phone numbers and footer name two clinics; (4) six auth email templates name two clinics; (5) two tests expect exactly two clinics.\nCONTACT DETAILS: the MN admin fills them; until then confirmations for MN send nothing and the approver is told.\nSee also LE-montemor-ground-truth (shipped 2026-08-07), which took the name out of the repository when the clinic had two locations.",
-      "open_on_purpose": "Three of six ruled items are on main. It closes when the location exists on production with its hours, its staff and its prices, and the Declaração rule (item 4) is on main. Items 5 and 6 are the owner's: he relays the opening hours and creates the row in Administração > Locais."
+      "notes": "=== 2026-10-06 evening (SOLO), strategy addendum S-1006-A1 === ITEMS 1 TO 4 OF 6 ARE ON MAIN AND LIVE.\nITEM 4 (#1553): a Declaração is never produced without the clinic's stamp and never with another clinic's. The stamp and the place line are found from the location's name whether it is written out or as \"OsteoJP (LV)\" and \"OsteoJP (CB)\". At a location with no stamp the request is refused with the approved notice, \"Declaração indisponível neste local: falta o carimbo. Contacte a administração.\", and no document is made. Manual entry now asks for the Localização, because it used to carry none. Tests cover short-code names for the Declaração, the clinical report and the RGPD form.\nALSO (#1552): the public form shows a clinic by its place, as the other patient screens do. (#1554): the guide's two Declaração lessons say what the dialog now does.\nRULED BY STRATEGY: the rule that hides a location stays date-free, so a new location is visible to patients from the moment the first bookable therapist's hours are entered there. The owner types the name \"OsteoJP (Montemor-o-Novo)\".\nTHE OWNER HAS THE CLICK LIST (sent 2026-10-06): create the row in Administração > Locais, tick the staff in Equipa > Gerir, set the prices in Serviços.\nNOT DONE: item 5 (the opening hours) waits for the owner to relay them and is a data operation through GREEN; nothing assumes 08:00 to 21:00. Item 6 (the row) is the owner's. Until the stamp image for the new location arrives, a Declaração there is refused with the notice.\n\n=== 2026-10-06 afternoon (SOLO), strategy ruling R45 (dispatch S-1006-A) === ITEMS 1 TO 3 OF 6 ARE ON MAIN AND LIVE.\nITEM 1 (#1547): a location with no bookable therapist is offered to no patient. One rule, read by the logged-in booking list and its write guard and by the public form's list and its submit check: an active schedule row at the location, held by an active, bookable user who is not a shared resource. Proven on a real database, one fixture location per term of the rule. The rule reads no date, on purpose: a new location becomes visible from the day a bookable therapist's hours are entered there. Whether to tighten that is a question with strategy.\nITEMS 2 AND 3 (#1548): the portal no longer has the list of clinics written into it. The Clínicas page, the telephones on the login screen and the public form, and the footers read the locations the API offers to patients. Two strings that listed the clinics are removed in both languages; no sentence is added. The six auth email templates say OsteoJP with no list of clinics: THEY REACH PRODUCTION ONLY WHEN THE OWNER PASTES THEM into the Supabase dashboard (docs/supabase-auth-email-templates.md). The two tests that expected exactly two clinics no longer do; a new scan refuses any patient-facing string, template or nearby lines of code that name two clinics.\nWHAT A NEW LOCATION SHOWS: its name, address and telephone from Locais. No email and no reception hours, which a location row does not hold. A name typed as \"OsteoJP (Place)\" is shown to patients as the place; a short code the app does not know is shown as typed. The two existing clinics keep their published details (second telephone, email, map, hours) from code until Locais can hold them (LOC-SET-01).\nNOT DONE: item 4 (no Declaração for a location with no stamp) is BLOCKED on a question to strategy and one check by the owner. Item 5 (the opening hours) waits for the owner to relay them; nothing assumes 08:00 to 21:00. Item 6 (the row) is the owner's, after item 4.\n\n=== 2026-10-06 (SOLO) === MEASURED, NOT BUILT. From the code measurement of 2026-10-03 and the production count of 2026-10-04.\nWHAT IT TAKES: no migration is needed. A location is created in Administração > Locais (name, address, phone). Opening hours have no screen and default to 08:00 to 20:00, so 08:00 to 21:00 needs a data operation through GREEN. Production has two locations and no Montemor row. A general admin needs no build: Equipa > Gerir already lets an admin hold several locations.\nWORK OWED BEFORE THE ROW IS CREATED: (1) the logged-in portal lists every active location, so a new one would show to patients with no slots; (2) the Declaração has no stamp for it; (3) the portal's clinics page, login and public-form phone numbers and footer name two clinics; (4) six auth email templates name two clinics; (5) two tests expect exactly two clinics.\nCONTACT DETAILS: the MN admin fills them; until then confirmations for MN send nothing and the approver is told.\nSee also LE-montemor-ground-truth (shipped 2026-08-07), which took the name out of the repository when the clinic had two locations.",
+      "open_on_purpose": "Four of six ruled items are on main. It closes when the location exists on production with its hours, its staff, its prices and its stamp. Items 5 and 6 are the owner's: he relays the opening hours and the stamp image and creates the row in Administração > Locais."
     },
     {
       "id": "LOC-SET-01-settings-per-location",
@@ -10508,6 +10508,64 @@
       "last_checkpoint": "2026-10-06",
       "evidence": null,
       "notes": "=== 2026-10-06 (SOLO) === Card only (strategy S-1003-B block 5). Not started."
+    },
+    {
+      "id": "E2E-marcar-novamente-not-retry-safe",
+      "title": "The Marcar novamente browser test is not safe to retry: one slow toast fails a whole shard",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "owner_terminal": "solo",
+      "blocked_on": null,
+      "last_checkpoint": "2026-10-06",
+      "evidence": null,
+      "priority": "medium",
+      "gate": "green_self_merge",
+      "notes": "=== 2026-10-06 (SOLO) === SEEN, NOT BUILT. marcar-novamente.spec.ts, the test at line 303, waits 5 seconds for the toast \"Nova marcação criada.\". On a slow run the booking is created and the toast is late. The two retries then fail for a different reason: they find the first attempt's booking. So one slow toast fails the shard and the whole run.\nSEEN ON: the second run of #1554 (a docs-only change) on 2026-10-06, and once before on #1535.\nWHAT TO BUILD: wait on the booking, not the toast, and make each attempt use a slot of its own so a retry starts clean.",
+      "open_on_purpose": "#1554 and #1535 are the runs where the failure was seen, not deliveries. Nothing is built yet. Set 2026-10-06 by SOLO."
+    },
+    {
+      "id": "CI-e2e-lean-stack-leaves-out-five-wrong-names",
+      "title": "The browser-test workflow's lean stack is not lean: five of the ten services it means to leave out start anyway, and the upload tests depend on one of them",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "owner_terminal": "solo",
+      "blocked_on": null,
+      "last_checkpoint": "2026-10-06",
+      "evidence": null,
+      "priority": "medium",
+      "gate": "owner_merge",
+      "notes": "=== 2026-10-06 (SOLO) === SEEN, NOT CHANGED. The \"Start Supabase (lean stack)\" step of .github/workflows/e2e.yml lists ten services to leave out. The CLI in CI (v2.107.0) prints on every run: \"The following container names are not valid to exclude: analytics, storage, functions, inbucket, meta\", and names the valid ones (logflare, storage-api, mailpit, postgres-meta among them). So those services start on every shard.\nTWO CONSEQUENCES, PULLING OPPOSITE WAYS:\n  1. Storage starts by accident, and every browser test that uploads or downloads a file works because of it, the episode PDF test included. Correcting `storage` to the valid name would turn Storage off and break them.\n  2. The mail catcher starts by accident too, and can fail the start. On 2026-10-06 one shard of #1555 failed before any test ran: the mail container could not bind host port 54324, on the first start and on the retry.\nWHAT TO DECIDE AND BUILD: say which services the browser tests need (Storage, on purpose; the mail catcher only if a test reads mail), write the list with the CLI's own names, and prove on a run that the start is faster and the upload tests still pass.\nTHE FILE IS A GATE FILE: it changes only in its own GATE-CHANGE pull request, merged by the owner.",
+      "open_on_purpose": "#1555 is the run where the failed start was seen, not a delivery. Nothing is built yet. Set 2026-10-06 by SOLO."
+    },
+    {
+      "id": "EPI-01b-episode-pdf-ceiling",
+      "title": "Episode PDF: rule a ceiling on how many registos one file may hold",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "owner_terminal": "solo",
+      "blocked_on": null,
+      "last_checkpoint": "2026-10-06",
+      "evidence": null,
+      "priority": "low",
+      "gate": "owner_merge",
+      "notes": "=== 2026-10-06 (SOLO) === A QUESTION FOR STRATEGY, NOT BUILT. The episode PDF holds every finalized registo of the episode in one file. The longest episodes on production have not been counted. A ceiling, and what the screen says above it (for example a file per range of dates), is a product decision and is not guessed.\nFIRST STEP: a read-only count, through GREEN, of finalized registos per episode on production."
+    },
+    {
+      "id": "GUIDE-episode-pdf-lesson",
+      "title": "Guide: the Registos lessons do not mention the episode PDF yet",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "owner_terminal": "solo",
+      "blocked_on": null,
+      "last_checkpoint": "2026-10-06",
+      "evidence": null,
+      "priority": "low",
+      "gate": "green_self_merge",
+      "notes": "=== 2026-10-06 (SOLO) === NOT BUILT. The in-app guide and its PDF describe the per-record PDF only. Add the episode button: where it is, who sees it, what the file holds (finalized registos, oldest first, annulled ones left out), and rebuild the guide data and the PDF."
     }
   ]
 }
