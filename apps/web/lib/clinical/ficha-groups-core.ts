@@ -172,10 +172,16 @@ export function groupForFicha(records: readonly FichaRecord[]): FichaGroup[] {
  *
  * The design note's section 1 and strategy's Q7 default, as a statement:
  *   - an APP episode group: the new registo is filed in THAT episode;
- *   - an IMPORTED group: a NEW open episode for the group's specialty, never the
- *     imported episodes (they are closed, their registos locked). Only a
- *     specialty on EPISODE_SPECIALTIES qualifies, because the server builds the
- *     new title from it and accepts nothing else; any other label gets no button;
+ *   - an IMPORTED group: the group's SPECIALTY, and nothing else. The server
+ *     files the registo in the patient's open app episode of that specialty, or
+ *     in a NEW open episode when there is none (ruling R31; records.ts
+ *     `createDraftRecord`, episodes.ts `findOpenEpisodeOfSpecialty`), never in
+ *     the imported episodes (they are closed, their registos locked). Which of
+ *     the two is NOT decided here or on the page: a page can be stale, so no
+ *     episode id is carried, and the kind keeps piece 1's name, `newEpisode`.
+ *     Only a specialty on EPISODE_SPECIALTIES qualifies, because the server
+ *     builds a new title from it and accepts nothing else; any other label gets
+ *     no button;
  *   - the "Sem episódio" group: NO button. The design note is silent on it; this
  *     is a judgment, not a ruling (the PR says so). "Nova ficha" at the top of
  *     the tab still files a registo with no episode, as before.
