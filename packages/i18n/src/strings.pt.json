@@ -1360,7 +1360,7 @@
   "patients.fichaGroupNoExcerpt": "Sem queixa registada",
   "patients.fichaGroupAddEvaluation": "Avaliação",
   "patients.fichaGroupAddEvaluationInEpisode": "Nova avaliação neste episódio: {group}",
-  "patients.fichaGroupAddEvaluationNewEpisode": "Nova avaliação num novo episódio de {group}",
+  "patients.fichaGroupAddEvaluationOpenOrNewEpisode": "Nova avaliação de {group}, no episódio aberto ou num novo",
   "patients.fichaGroupAddEvaluationError": "Não foi possível iniciar a avaliação.",
   "patients.emptyConsultasTitle": "Sem consultas",
   "patients.emptyConsultasHelp": "As consultas deste paciente aparecem aqui.",

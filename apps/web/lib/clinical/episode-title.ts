@@ -29,6 +29,33 @@ export function isEpisodeSpecialty(value: unknown): value is EpisodeSpecialty {
   return typeof value === "string" && (EPISODE_SPECIALTIES as readonly string[]).includes(value);
 }
 
+/** The date part `defaultEpisodeTitle` appends: " (dd/mm/yyyy)". */
+const DATED_SUFFIX = /^ \(\d{2}\/\d{2}\/\d{4}\)$/;
+
+/**
+ * EPI-01b (strategy ruling R31, Q7): WHICH SPECIALTY AN EPISODE'S TITLE NAMES.
+ *
+ * `clinical_episodes` has no specialty column: the title is the only place a
+ * specialty is written. Two titles name one, and nothing else does:
+ *   - the specialty word itself ("Osteopatia"): the comparison an imported
+ *     group's label already goes through (`isEpisodeSpecialty`: exact, no
+ *     trimming, no case folding);
+ *   - the title "+ Avaliação" itself builds for a new episode,
+ *     `defaultEpisodeTitle(<specialty>, <day>)`: "Osteopatia (03/10/2026)".
+ * Anything else is null: "Episódio (03/10/2026)" (the "Novo episódio" default),
+ * a free title that merely starts with the word, another case or spacing.
+ * WHETHER the episode is an app episode, open, and this patient's is not this
+ * function's question (see `pickEpisodeToReuse`, episode-reuse-core.ts).
+ */
+export function episodeSpecialtyOf(title: string | null | undefined): EpisodeSpecialty | null {
+  if (typeof title !== "string") return null;
+  for (const specialty of EPISODE_SPECIALTIES) {
+    if (title === specialty) return specialty;
+    if (title.startsWith(specialty) && DATED_SUFFIX.test(title.slice(specialty.length))) return specialty;
+  }
+  return null;
+}
+
 /** Trim and collapse whitespace, then clamp a title to a sane length. */
 export function normalizeEpisodeTitle(raw: string): string {
   return raw.trim().replace(/\s+/g, " ").slice(0, MAX_TITLE_LEN);

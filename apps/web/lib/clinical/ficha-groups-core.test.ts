@@ -217,7 +217,7 @@ describe("addEvaluationTarget (EPI-01b): what '+ Avaliação' on a group files",
     expect(addEvaluationTarget(g["episode:ep-own"]!)).toEqual({ kind: "episode", episodeId: "ep-own" });
   });
 
-  it("an IMPORTED group: a NEW episode for its specialty, never one of the imported episodes (Q7)", () => {
+  it("an IMPORTED group: its SPECIALTY and no episode id (the server reuses or opens one, R31), never an imported episode (Q7)", () => {
     const g = groupsOf([
       rec({ episodeId: "ep-i1", episodeTitle: "Osteopatia", episodeImported: true }),
       rec({ episodeId: "ep-i2", episodeTitle: "Osteopatia", episodeImported: true }),
@@ -229,6 +229,18 @@ describe("addEvaluationTarget (EPI-01b): what '+ Avaliação' on a group files",
     expect(fisio).toEqual({ kind: "newEpisode", specialty: "Fisioterapia" });
     // No imported episode id is carried at all.
     expect(JSON.stringify([osteo, fisio])).not.toMatch(/ep-i/);
+  });
+
+  it("R31: the imported group's target carries NO episode id even when the patient's open app episode of it is on the page", () => {
+    // The open "Osteopatia (date)" app episode is a group of its own, filed in
+    // itself. The imported group still posts only the specialty: WHICH episode
+    // is the server's decision at the write, so a stale page cannot pick wrong.
+    const g = groupsOf([
+      rec({ episodeId: "ep-i1", episodeTitle: "Osteopatia", episodeImported: true }),
+      rec({ episodeId: "ep-open", episodeTitle: "Osteopatia (03/10/2026)" }),
+    ]);
+    expect(addEvaluationTarget(g["imported:Osteopatia"]!)).toEqual({ kind: "newEpisode", specialty: "Osteopatia" });
+    expect(addEvaluationTarget(g["episode:ep-open"]!)).toEqual({ kind: "episode", episodeId: "ep-open" });
   });
 
   it("an imported group whose label is not a known specialty gets NO button", () => {

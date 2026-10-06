@@ -1450,7 +1450,8 @@ async function ensureFichaEpisodes(therapistId) {
 //   - an OPEN app episode (no ledger row) with one draft registo in the
 //     therapist's name: "+ Avaliação" files the new registo in it;
 //   - one imported Osteopatia episode in the importer's shape (closed, ledger
-//     rows for it and its locked registo): "+ Avaliação" opens a NEW episode;
+//     rows for it and its locked registo): "+ Avaliação" files in the open app
+//     episode of that specialty, opening one when there is none (R31);
 //   - one draft registo with no episode ("Sem episódio"): no "+ Avaliação".
 // Its clinic is Linda-a-Velha (primary_location_id, no appointments): 0045 shows
 // an admin clinical rows only at their own clinics, so the spec's Linda-a-Velha
@@ -1572,6 +1573,97 @@ async function ensureAddEvaluationFixture(therapistId) {
       `add-evaluation registo ${r.id.slice(-4)}`,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// EPI-01b, strategy ruling R31 (2026-10-03): "+ Avaliação" ON AN IMPORTED GROUP
+// REUSES THE OPEN APP EPISODE OF ITS SPECIALTY. A patient of its own, holding
+// ONE group and nothing else: an imported Fisioterapia episode in the
+// importer's shape (closed, ledger rows for it and its locked registo). No app
+// episode is seeded: the spec's first click opens it and the second must file
+// in it, so the patient ends with exactly one app episode of the specialty,
+// whether the database is fresh or earlier runs have clicked before. Created_by
+// the E2E therapist (who may therefore write for it), clinic Linda-a-Velha.
+// Invented patient and invented text. Upserts on ids; an existing registo is
+// left exactly as it is.
+// ---------------------------------------------------------------------------
+const ADD_EVALUATION_REUSE_PATIENT = "00000000-0000-0000-0000-00000000a3e3";
+const ADD_EVALUATION_REUSE_IMPORTED_EPISODE = "00000000-0000-0000-0000-00000000fe43";
+
+async function ensureAddEvaluationReuseFixture(therapistId) {
+  must(
+    (await db.from("patients").upsert(
+      {
+        id: ADD_EVALUATION_REUSE_PATIENT,
+        tenant_id: TENANT_A,
+        full_name: "Zzz Avaliacao Reutiliza Teste",
+        created_by: therapistId,
+        primary_location_id: LOCATION_A,
+        deleted_at: null,
+      },
+      { onConflict: "id" },
+    )).error,
+    "add-evaluation reuse patient",
+  );
+  must(
+    (await db.from("clinical_episodes").upsert(
+      {
+        id: ADD_EVALUATION_REUSE_IMPORTED_EPISODE,
+        tenant_id: TENANT_A,
+        patient_id: ADD_EVALUATION_REUSE_PATIENT,
+        title: "Fisioterapia",
+        primary_practitioner_id: null,
+        status: "closed",
+        opened_at: "2024-03-04T23:00:00.000Z",
+        closed_at: "2024-03-04T23:00:00.000Z",
+      },
+      { onConflict: "id" },
+    )).error,
+    "add-evaluation reuse episode",
+  );
+  const importedRecord = "00000000-0000-0000-0000-00000000fe54";
+  for (const [entity, id] of [
+    ["clinical_episode", ADD_EVALUATION_REUSE_IMPORTED_EPISODE],
+    ["clinical_record", importedRecord],
+  ]) {
+    must(
+      (await db.from("migration_staging_rows").upsert(
+        {
+          tenant_id: TENANT_A,
+          batch_id: "00000000-0000-0000-0000-00000000fe4c",
+          source_system: "fisiozero",
+          entity_type: entity,
+          source_id: "e2e-avaliacao-reutiliza-fe54",
+          raw: {},
+          status: "imported",
+          imported_entity_id: id,
+        },
+        { onConflict: "tenant_id,source_system,entity_type,source_id" },
+      )).error,
+      `add-evaluation reuse ledger ${entity}`,
+    );
+  }
+  if ((await clinicalRecordStatus(importedRecord)) !== null) return;
+  must(
+    (await db.from("clinical_records").insert({
+      id: importedRecord,
+      tenant_id: TENANT_A,
+      patient_id: ADD_EVALUATION_REUSE_PATIENT,
+      episode_id: ADD_EVALUATION_REUSE_IMPORTED_EPISODE,
+      status: "locked",
+      practitioner_id: null,
+      created_at: "2024-03-04T23:00:00.000Z",
+      data: { especialidade: "Fisioterapia", queixas: "Entorse antiga do tornozelo, inventada" },
+      source: "manual",
+      ai_review_state: null,
+      form_template_id: null,
+      version: 1,
+      supersedes_id: null,
+      signed_by: null,
+      signed_at: null,
+    })).error,
+    "add-evaluation reuse registo fe54",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1784,6 +1876,8 @@ async function main() {
   await ensureFichaEpisodes(userIds.therapist);
   // EPI-01b: one group of each kind, on a patient of its own, for "+ Avaliação".
   await ensureAddEvaluationFixture(userIds.therapist);
+  // EPI-01b R31: a patient with one imported group and no app episode (two clicks, one episode).
+  await ensureAddEvaluationReuseFixture(userIds.therapist);
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);

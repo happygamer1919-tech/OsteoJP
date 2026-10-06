@@ -1360,7 +1360,7 @@
   "patients.fichaGroupNoExcerpt": "No complaint recorded",
   "patients.fichaGroupAddEvaluation": "Evaluation",
   "patients.fichaGroupAddEvaluationInEpisode": "New evaluation in this episode: {group}",
-  "patients.fichaGroupAddEvaluationNewEpisode": "New evaluation in a new {group} episode",
+  "patients.fichaGroupAddEvaluationOpenOrNewEpisode": "New {group} evaluation, in the open episode or a new one",
   "patients.fichaGroupAddEvaluationError": "Could not start the evaluation.",
   "patients.emptyConsultasTitle": "No appointments",
   "patients.emptyConsultasHelp": "This patient's appointments will appear here.",
