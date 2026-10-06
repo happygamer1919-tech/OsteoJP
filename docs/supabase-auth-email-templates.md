@@ -68,7 +68,9 @@ asserts on prose, so the encoding is not what is being tested.
 
 **Tone and brand.** Serious, precise, not warm. No emoji (asserted). Teal
 `#45B9A7` rule above the wordmark, magenta `#8B1863` on the fallback link, grey
-`#98B2C2` footer with the three clinic names.
+`#98B2C2` footer with the name OsteoJP and no list of clinics (strategy ruling
+R45, 2026-10-06: a footer that lists the clinics is wrong each time one opens,
+and these templates are pasted by hand).
 
 ---
 

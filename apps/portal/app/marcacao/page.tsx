@@ -5,6 +5,7 @@ import { formatCalendarDate, lisbonToday } from '@osteojp/db'
 import { PORTAL_LOCALES, type PortalLocale } from '@osteojp/i18n'
 import { localeHref } from '@/lib/locale'
 import { resolvePortalStrings } from '@/lib/locale-server'
+import { PUBLISHED_CLINIC_CARDS, clinicCardsFor } from '@/lib/clinics'
 import { fetchPublicCatalog } from '@/lib/guest/api'
 import {
   guestConfirmationCopy,
@@ -152,6 +153,19 @@ export default async function GuestBookingPage({
    */
   const staff = getStrings(DEFAULT_LOCALE)
 
+  // R45: THE TELEPHONES UNDER THE FORM ARE THOSE OF THE CLINICS THE FORM OFFERS.
+  // Built from the catalogue already in hand, so there is no second read and no
+  // way for the list of numbers to name a clinic the list of choices does not.
+  // A clinic with no number on file is left out of this block (it would be a
+  // name with nothing to call); if that leaves nothing, the published numbers
+  // are shown, as they were before the form could read any.
+  const reachable = clinicCardsFor(catalog.locations).filter((c) => c.phone.length > 0)
+  const clinicPhones = (reachable.length > 0 ? reachable : PUBLISHED_CLINIC_CARDS).map((c) => ({
+    id: c.id,
+    name: c.name,
+    phone: c.phone,
+  }))
+
   return (
     <main className="mx-auto w-full max-w-xl px-4 py-10">
       <GuestBookingForm
@@ -182,6 +196,7 @@ export default async function GuestBookingPage({
         intakeEnabled={catalog.intakeEnabled === true}
         dobMin={GUEST_INTAKE_EARLIEST_BIRTH}
         dobMax={formatCalendarDate(today)}
+        clinicPhones={clinicPhones}
         /**
          * null while the commitment copy is unwritten OR UNRATIFIED for this
          * language. The submit is refused before either matters (actions.ts),
