@@ -20,7 +20,7 @@ import type { ApprovalNotice } from "@/lib/scheduling/book-confirm-notice";
 export type ApprovalNoticeView = {
   /** What the notice is keyed on: the appointment, or the review item. */
   id: string;
-  /** Which of the two reasons nothing could be sent. */
+  /** Which of the reasons nothing could be sent. */
   kind: ApprovalNotice;
   /** Copied at the click: the row is gone by the time the notice shows. */
   patientName: string | null;
@@ -38,8 +38,8 @@ export function withApprovalNotice(
 
 /**
  * The sentence for each reason, in ONE place, for the two lists and the two
- * toasts alike. A `switch` with no default over the union, so a third reason
- * added to `ApprovalNotice` is a type error here instead of a blank notice.
+ * toasts alike. A `switch` with no default over the union, so a reason added
+ * to `ApprovalNotice` is a type error here instead of a blank notice.
  */
 export function approvalNoticeMessage(kind: ApprovalNotice): string {
   switch (kind) {
@@ -47,6 +47,8 @@ export function approvalNoticeMessage(kind: ApprovalNotice): string {
       return s["requests.notice.patientNoEmail"];
     case "location_contact_missing":
       return s["requests.notice.locationContactMissing"];
+    case "service_missing":
+      return s["requests.notice.serviceMissing"];
   }
 }
 

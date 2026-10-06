@@ -5,6 +5,7 @@
 //
 //   lib/reminders/dispatch.ts            at SEND time, to choose the channel and
 //                                        to refuse a location with no contact
+//                                        or an email with no service to name
 //   lib/scheduling/book-confirm-notice.ts at APPROVAL time, to tell the approver
 //                                        "nothing can be sent, ring the patient"
 //
@@ -93,7 +94,21 @@ export function bookingApprovedLocationContact(location: {
   return { address, phone };
 }
 
-/** Everything the three questions need, about one appointment. */
+/**
+ * The service name the EMAIL prints, or null when the appointment carries no
+ * service (`appointments.service_id` is nullable) or its name is blank.
+ *
+ * THE EMAIL LEG ONLY. The SMS fallback prints no service, so an appointment
+ * with no service still gets its SMS; only the email is refused for it.
+ */
+export function bookingApprovedServiceName(appointment: {
+  serviceName: string | null;
+}): string | null {
+  const name = (appointment.serviceName ?? "").trim();
+  return name === "" ? null : name;
+}
+
+/** Everything the four questions need, about one appointment. */
 export type BookingApprovedReachInput = {
   patientEmail: string | null;
   patientPhone: string | null;
@@ -101,7 +116,21 @@ export type BookingApprovedReachInput = {
   patientSmsEnabled: boolean;
   locationAddress: string | null;
   locationPhone: string | null;
+  serviceName: string | null;
 };
+
+/**
+ * Every reason `bookingApprovedBlocker` can give, IN THE ORDER THE DISPATCH
+ * CHECKS THEM. The type is derived from the list, so a reason cannot exist
+ * without a place in the order, and a `Record` keyed on the type (the notice's
+ * mapping) stops compiling until a new reason is given its sentence.
+ */
+export const BOOKING_APPROVED_BLOCKERS = [
+  "patient_unreachable",
+  "location_contact_missing",
+  "service_missing",
+] as const;
+export type BookingApprovedBlocker = (typeof BOOKING_APPROVED_BLOCKERS)[number];
 
 /**
  * Why NO booking-approved message can go for this appointment, for a reason
@@ -115,6 +144,9 @@ export type BookingApprovedReachInput = {
  *                             this patient, or a number the SMS leg cannot use
  *   location_contact_missing  the appointment's location has no address or no
  *                             phone, so neither channel sends
+ *   service_missing           the EMAIL is the channel and the appointment has
+ *                             no service for it to name. Never for the SMS
+ *                             fallback, which prints no service and still goes
  *
  * WHAT IS DELIBERATELY NOT HERE: a refusal that only exists at send time. A
  * location NAME with an accent or too long for one segment makes the SMS body
@@ -123,10 +155,13 @@ export type BookingApprovedReachInput = {
  * the patient's or the location's contact data that reception could act on at
  * the desk, and predicting them here would mean rendering the message twice.
  * They leave a ledger row and no notice.
+ *
+ * ONE SEND-TIME GATE SITS BETWEEN THE LAST TWO: the dispatch asks "was a
+ * message already handed over for this start" (`already_sent`) after the
+ * location and before the service. That is a read, not a fact about this
+ * input, so it is not here either.
  */
-export function bookingApprovedBlocker(
-  input: BookingApprovedReachInput,
-): "patient_unreachable" | "location_contact_missing" | null {
+export function bookingApprovedBlocker(input: BookingApprovedReachInput): BookingApprovedBlocker | null {
   const email = (input.patientEmail ?? "").trim();
   const phone = (input.patientPhone ?? "").trim();
   const plan = planBookingApprovedChannel({
@@ -138,5 +173,6 @@ export function bookingApprovedBlocker(
   if (plan.send === "none") return "patient_unreachable";
   if (plan.send === "sms" && !smsNumberVerdict(phone).ok) return "patient_unreachable";
   if (bookingApprovedLocationContact(input) === null) return "location_contact_missing";
+  if (plan.send === "email" && bookingApprovedServiceName(input) === null) return "service_missing";
   return null;
 }
