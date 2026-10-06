@@ -37,6 +37,14 @@ const DELETE_ORDER = [
   "invoices",
   // 0080 — a child of BOTH appointments and patients, so it precedes appointments.
   "appointment_reschedule_requests",
+  // 0102 (SAT-01), named here BEFORE its migration is promoted (see
+  // AHEAD_OF_MIGRATION): the satisfaction survey's three tables. A send and an
+  // answer are children of BOTH appointments and patients; a code is a child of
+  // its send. An answer's foreign keys to its appointment, its send and its
+  // patient are ON DELETE NO ACTION, so the answers go before all three.
+  "appointment_survey_codes",
+  "appointment_survey_responses",
+  "appointment_survey_sends",
   "appointments",
   "analytics_events",
   "clinical_episodes",
@@ -217,14 +225,27 @@ const CREATED = new Set(
  * migration is promoted onto main the table is in CREATED and its entry is
  * inert; delete it in the next GATE-CHANGE that touches this file.
  *
- * EMPTY, AND IT HAS HELD ONE ENTRY: patient_rgpd_acceptances, added by the
+ * IT HAS HELD ONE ENTRY BEFORE: patient_rgpd_acceptances, added by the
  * GATE-CHANGE #1436 so the cleanup could list RGPD-01's table before
  * 0093_patient_rgpd_acceptances.sql reached main. #1399 promoted that migration
  * on 2026-09-23, the entry went inert, and it was removed in the GATE-CHANGE
- * the owner ruled on 2026-09-24, after 0093's apply to production. With the set
- * empty, every table in DELETE_ORDER must be created by a numbered migration.
+ * the owner ruled on 2026-09-24, after 0093's apply to production.
+ *
+ * NOW IT HOLDS THREE, the same shape: SAT-01's tables, which the pending
+ * migration (to be numbered 0102) creates. Its promotion is an ordinary pull
+ * request and cannot carry this file, so this file goes first. Until the
+ * promotion, no migration creates them, schema.ts does not name them and the
+ * script has no delete from them: the entries change nothing the script does.
+ * From the promotion on they are in CREATED and inert, and the tests below
+ * require schema.ts to name them and the script to delete from them. Remove the
+ * three in the GATE-CHANGE that follows 0102's apply to production. Every other
+ * table in DELETE_ORDER must be created by a numbered migration.
  */
-const AHEAD_OF_MIGRATION = new Set([]);
+const AHEAD_OF_MIGRATION = new Set([
+  "appointment_survey_codes",
+  "appointment_survey_responses",
+  "appointment_survey_sends",
+]);
 
 test("every table it deletes from still exists in schema.ts", () => {
   // A renamed or dropped table lands here as a red test rather than as a failed
@@ -320,6 +341,20 @@ test("the delete order is deepest-first, and appointments precede pack instances
   ]) {
     assert.ok(pos(earlier) > -1 && pos(later) > -1, `${earlier}/${later} missing`);
     assert.ok(pos(earlier) < pos(later), `${earlier} must be deleted before ${later}`);
+  }
+  // 0102 (SAT-01): an answer is ON DELETE NO ACTION to its appointment and to
+  // its send, so once the script deletes from them the answers must go first.
+  // Read only when both statements exist: until 0102 is promoted the script has
+  // neither, and a pair that is half there fails the FK-path test above instead.
+  for (const [earlier, later] of [
+    ["appointment_survey_responses", "appointment_survey_sends"],
+    ["appointment_survey_responses", "appointments"],
+    ["appointment_survey_codes", "appointment_survey_sends"],
+    ["appointment_survey_sends", "appointments"],
+  ]) {
+    if (pos(earlier) > -1 && pos(later) > -1) {
+      assert.ok(pos(earlier) < pos(later), `${earlier} must be deleted before ${later}`);
+    }
   }
   // patients last of all.
   const last = pos("patients");
