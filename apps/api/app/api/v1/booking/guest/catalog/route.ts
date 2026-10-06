@@ -8,6 +8,7 @@ import {
   services,
 } from "@osteojp/db";
 
+import { locationHasBookableTherapist } from "@/lib/booking/location-bookable";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
 
@@ -37,6 +38,11 @@ import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
  * through it — no patient, no therapist, no appointment, no schedule. The
  * projection is `id` and `name` and nothing else: no price, no duration, no
  * internal flag.
+ *
+ * ONE THING ABOUT STAFFING IS NOW IMPLIED, AND ONLY ONE (R45, 2026-10-06). A
+ * clinic is listed only when somebody bookable has hours there, so a clinic's
+ * PRESENCE says that much. It says nothing about who, how many, or when: no
+ * name, no count and no hour leaves this route, and MN-27 and MN-28 stand.
  *
  * `tenantId` IS AN UNVERIFIED QUERY PARAMETER, and that is unavoidable rather
  * than careless — the route runs before any authentication, exactly as
@@ -101,7 +107,17 @@ export async function GET(req: Request): Promise<Response> {
     db
       .select({ id: locations.id, name: locations.name })
       .from(locations)
-      .where(and(eq(locations.tenantId, tenantId), eq(locations.isActive, true)))
+      // R45: a clinic is listed only when somebody bookable has hours there.
+      // `locations.isActive` alone listed a location from the moment its row
+      // was created. Every list below is built from these rows, so a service
+      // offered ONLY at such a location drops out with it.
+      .where(
+        and(
+          eq(locations.tenantId, tenantId),
+          eq(locations.isActive, true),
+          locationHasBookableTherapist(),
+        ),
+      )
       .orderBy(asc(locations.name)),
     db
       .select({

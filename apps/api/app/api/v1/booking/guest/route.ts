@@ -290,8 +290,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // ==========================================================================
-  // GUEST-08 ON THE WRITE PATH. The catalogue's five conditions, enforced here
-  // as well as where they are listed.
+  // GUEST-08 ON THE WRITE PATH. The catalogue's conditions (five from GUEST-08,
+  // a sixth from R45, 2026-10-06), enforced here as well as where they are
+  // listed.
   // ==========================================================================
   // WHAT THIS CLOSES. Until now this route validated `serviceId` and
   // `locationId` as non-empty strings and inserted. The foreign keys enforce
@@ -319,7 +320,8 @@ export async function POST(req: Request): Promise<Response> {
     console.warn(
       `[guest-booking] refused: service ${serviceId} is not sellable at location ${locationId} ` +
         `for tenant ${tenantId}. GUEST-08 requires active + not internal_only + patient_bookable, ` +
-        "an ACTIVE service_location_prices row at that location, and an active location.",
+        "an ACTIVE service_location_prices row at that location, and an active location. " +
+        "R45 also requires a bookable therapist with active hours at that location.",
     );
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
