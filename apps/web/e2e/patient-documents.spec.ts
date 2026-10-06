@@ -8,9 +8,10 @@
  * column (migration-free). All work is on a FRESH SYNTHETIC patient created in
  * the test (never a real patient).
  *
- * As in camera-to-ficha.spec.ts, the CI/local seed does NOT provision the
- * `clinical-attachments` Storage bucket, so the actual upload landing (direct
- * signed PUT -> confirm -> signed GET) is covered by the unit tests
+ * As in camera-to-ficha.spec.ts, this spec does not assert the upload landing
+ * (the e2e seed provisions the `clinical-attachments` bucket only since EPI-01b
+ * piece 3): the direct signed PUT -> confirm -> signed GET is covered by the
+ * unit tests
  * (lib/patients/document-validation.test.ts + the shared signed-URL helpers);
  * this e2e asserts the tab UI: the empty state, the upload affordance for a
  * writer role, and that the file input advertises the accepted document types.

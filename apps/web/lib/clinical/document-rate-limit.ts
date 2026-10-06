@@ -13,7 +13,10 @@ import {
  * ONE HELPER AND NOT THREE COPIES, FOR THE REASON THE PACKAGE ITSELF EXISTS
  * ==========================================================================
  * Three call sites share this - `downloadReportUrlAction`,
- * `generateRgpdFormUrlAction` and `generateDeclaracaoUrlAction`. The rate-limit
+ * `generateRgpdFormUrlAction` and `generateDeclaracaoUrlAction` - and, since
+ * EPI-01b piece 3, a fourth: `downloadEpisodeReportUrlAction`, which renders
+ * one PDF for a whole episode and writes ONE object, so it asks once per
+ * export. What is said of "three" below holds for all four. The rate-limit
  * package's own header records why a security control must not be copied: "two
  * copies drift, and the drift is silent - nobody would know which app enforced
  * what until an incident asked." Three copies of a bucket-key derivation would

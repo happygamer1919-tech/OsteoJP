@@ -4,9 +4,9 @@
  *
  * Asserts the signature + consent section that lands after the ficha body (5.13):
  *  - the on-screen SIGNATURE canvas + Guardar/Limpar controls are present on a
- *    draft (the actual Storage landing is covered by the unit tests — the CI
- *    seed does not provision the clinical-attachments bucket, exactly as the
- *    camera-to-ficha and patient-documents specs note);
+ *    draft (the actual Storage landing is covered by the unit tests; the e2e
+ *    seed provisions the clinical-attachments bucket since EPI-01b piece 3,
+ *    and this spec still does not assert the upload);
  *  - GERAR PDF is present (the A4 RGPD form action);
  *  - each of the three CONSINTO items toggles between an explicit check (granted)
  *    and X (denied) state, and the state PERSISTS across a Guardar + reload
@@ -139,8 +139,8 @@ test.describe("ficha signature + consent (therapist)", () => {
  * exactly the condition that aborted the old handler before the first point was
  * recorded) must register a stroke: the pad stops being empty, so "Guardar
  * assinatura" (disabled while empty) becomes enabled. Bucket-independent - it
- * asserts the DRAWING registered, not the Storage upload (the CI seed provisions
- * no clinical-attachments bucket, as this spec's header notes).
+ * asserts the DRAWING registered, not the Storage upload (see this spec's
+ * header).
  */
 test.describe("ficha signature TOUCH drawing (therapist, phone)", () => {
   test.use({
