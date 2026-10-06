@@ -72,9 +72,9 @@ export type DeclaracaoInputs = {
    *  generation. Trimmed; null/empty -> the body has no observações block.
    *  Transient (never persisted). */
   observacoes?: string | null;
-  /** W12-30 C1: the clinic this declaration is FOR (the marcação's location,
-   *  else the tenant default), resolved to the print-ready contact block for the
-   *  branded footer. null -> no contact block (the fiscal identity still prints). */
+  /** W12-30 C1: the location this declaration is FOR, the one the request
+   *  named, resolved to the print-ready contact block for the branded footer.
+   *  null -> no contact block (the fiscal identity still prints). */
   sourceLocation?: SourceLocation | null;
   /** W12-30 C1: clinic fiscal identity source (tenants.name / tenants.nif),
    *  resolved via resolveClinicFiscal into the footer fiscal line. Falls back to
