@@ -226,6 +226,7 @@ export default async function NotificacoesPage() {
     id: g.id,
     fullName: g.fullName,
     phone: g.phone,
+    email: g.email,
     locationName: g.locationName,
     when: formatGuestPreferredWhen(g.requestedStartsAt, g.requestedEndsAt),
     requestedAt: stamp(g.createdAt),

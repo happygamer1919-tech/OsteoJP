@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  emailOrNull,
+  formEmailNote,
+  formEmailNotOnRecord,
+  withFormEmail,
   GUEST_REQUEST_PARAM,
   bookingDeepLink,
   guestRequestBookingLink,
@@ -177,3 +181,55 @@ describe("guestRequestBookingLink - the row's own link is the redirect's link", 
     expect(guestRequestBookingLink({ ...request, convertedPatientId: null })).toBeNull();
   });
 });
+
+/**
+ * 0101, ruling R40 - what reception is told about the email a visitor typed.
+ * The lead's decision of 2026-10-05: a NEW patient gets the address; an EXISTING
+ * patient's record is never written, and reception is told so.
+ */
+describe("the form's email: one meaning of 'none', and what reception is told", () => {
+  const ADDRESS = "guest.fixture@example.invalid";
+
+  it("NO EMAIL is NULL, absent, or nothing after a trim, and an address comes back trimmed", () => {
+    for (const none of [null, undefined, "", " ", "\t\n  "]) expect(emailOrNull(none)).toBeNull();
+    expect(emailOrNull(`  ${ADDRESS} `)).toBe(ADDRESS);
+  });
+
+  it("NOT ON THE RECORD: the request has one, and the patient has none, a blank one, or another", () => {
+    for (const held of [null, undefined, "", "   ", "held.fixture@example.invalid"]) {
+      expect(formEmailNotOnRecord(ADDRESS, held), JSON.stringify(held)).toBe(true);
+    }
+    // THE SAME ADDRESS is on the record already, whatever its case and padding.
+    for (const held of [ADDRESS, ADDRESS.toUpperCase(), `  ${ADDRESS}  `]) {
+      expect(formEmailNotOnRecord(ADDRESS, held), JSON.stringify(held)).toBe(false);
+    }
+    // AND WHATEVER ITS UNICODE FORM: composed on one side, decomposed on the other.
+    const accented = "a\u00e7\u00e3o.fixture@example.invalid";
+    expect(accented.normalize("NFD")).not.toBe(accented);
+    expect(formEmailNotOnRecord(accented, accented.normalize("NFD"))).toBe(false);
+    expect(formEmailNotOnRecord(accented.normalize("NFD"), accented)).toBe(false);
+    // A request WITHOUT an address has nothing that could be missing from a record.
+    for (const typed of [null, undefined, "", "   "]) {
+      expect(formEmailNotOnRecord(typed, null)).toBe(false);
+      expect(formEmailNotOnRecord(typed, "held.fixture@example.invalid")).toBe(false);
+    }
+  });
+
+  it("THE NOTE: a new patient is told it is SAVED, an existing one that it is NOT, and nothing is said when there is nothing to say", () => {
+    expect(formEmailNote(ADDRESS, { kind: "new_patient" })).toBe("new_patient_saved");
+    expect(formEmailNote(ADDRESS, { kind: "existing_patient", formEmailNotOnRecord: true })).toBe("existing_not_saved");
+    expect(formEmailNote(ADDRESS, { kind: "existing_patient", formEmailNotOnRecord: false })).toBe("none");
+    for (const none of [null, undefined, "", "  "]) {
+      expect(formEmailNote(none, { kind: "new_patient" })).toBe("none");
+      // Even if a stale flag said otherwise: no address, no note.
+      expect(formEmailNote(none, { kind: "existing_patient", formEmailNotOnRecord: true })).toBe("none");
+    }
+  });
+
+  it("the address is put into the sentence LITERALLY: a `$&` in it is not a replacement pattern", () => {
+    expect(withFormEmail("O pedido indica o email {email}.", ADDRESS)).toBe(`O pedido indica o email ${ADDRESS}.`);
+    expect(withFormEmail("({email})", "a$&b$1@example.invalid")).toBe("(a$&b$1@example.invalid)");
+    expect(withFormEmail("no placeholder", ADDRESS)).toBe("no placeholder");
+  });
+});
+

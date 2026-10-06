@@ -8,7 +8,9 @@ import { CLINIC_CONTACTS } from '@/lib/clinics'
 import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
+import { syncEmailFieldValidity } from './email-field'
 import {
+  GUEST_EMAIL_INPUT_MAX,
   GUEST_INTAKE_KEYS,
   GUEST_INTAKE_TEXT_MAX,
   INITIAL_GUEST_STATE,
@@ -23,6 +25,10 @@ import {
  * WHAT IT COLLECTS, AND THE LIST IS CLOSED: a clinic, a service, a preferred
  * date, a preferred period, a name and a mobile number. Nothing else. No NIF
  * (PL-20), no account.
+ *
+ * AMENDED BY ONE OPTIONAL FIELD (strategy ruling R40, 2026-10-04, migration
+ * 0101): an email address, "Email (opcional)", so the clinic can confirm the
+ * appointment by email. The label and the hint are the ruling's own words.
  *
  * INTAKE-01 AMENDS THE CLOSED LIST BY ONE STEP, AND ONLY ONCE 0087 IS APPLIED.
  * When the catalog reports `intakeEnabled`, a fifth step asks JP's clinical
@@ -275,7 +281,16 @@ export function GuestBookingForm({
         </div>
       )}
 
-      <form action={formAction} className="flex flex-col gap-4">
+      <form
+        action={formAction}
+        className="flex flex-col gap-4"
+        // BEFORE THE BROWSER VALIDATES, judge the email as it stands now (see
+        // `syncEmailFieldValidity`): a click on any button passes here first.
+        onClickCapture={(e) => {
+          const field = e.currentTarget.elements.namedItem('email')
+          syncEmailFieldValidity(field instanceof HTMLInputElement ? field : null, s.guest.error_invalid)
+        }}
+      >
         <input type="hidden" name="step" value={step} />
         {/* INTAKE-01: whether this flow has the fifth step, carried like every
             other value so the server and the screen agree on the step count
@@ -398,7 +413,7 @@ export function GuestBookingForm({
         {/* ---- 4. DETAILS + RGPD ---------------------------------------- */}
         {step === 4 && (
           <>
-            {hidden(values, ['fullName', 'phone'])}
+            {hidden(values, ['fullName', 'phone', 'email'])}
 
             <dl className="flex flex-col gap-1 rounded-lg border border-border p-4 text-sm">
               <div className="flex gap-2">
@@ -442,6 +457,47 @@ export function GuestBookingForm({
                 defaultValue={values.phone}
               />
             </Field>
+
+            {/* 0101, ruling R40. OPTIONAL: no `required`, and the label says so.
+                NOT `type="email"`: the browser's own check refuses a non-ASCII
+                local part the server accepts, and admits `a@b`, which it
+                refuses. The keyboard and autofill hints stay, and the check is
+                the SHARED rule (`email-field.ts`), set as the field's validity
+                so the browser stops "next" and "submit", lets "back" through
+                (`formNoValidate`), and shows the form's own message. The ref
+                covers a value the page arrived with, and the form's
+                `onClickCapture` judges the value again before every press, so
+                a message can never outlive the value it was about. The server
+                action and the API re-check whatever happened here. */}
+            <Field label={s.guest.email_label} helperText={s.guest.email_hint}>
+              <Input
+                name="email"
+                type="text"
+                inputMode="email"
+                autoComplete="email"
+                autoCapitalize="none"
+                spellCheck={false}
+                maxLength={GUEST_EMAIL_INPUT_MAX}
+                defaultValue={values.email}
+                ref={(el) => syncEmailFieldValidity(el, s.guest.error_invalid)}
+                onInput={(e) => syncEmailFieldValidity(e.currentTarget, s.guest.error_invalid)}
+              />
+            </Field>
+
+            {/* WHAT THE CONTACTS ARE USED FOR. Owner-approved copy (2026-10-05),
+                its OWN key, directly under the two contact fields it speaks
+                about, on step 4 of both flows. It is NOT part of the consent
+                paragraph below and must never be folded into it: that
+                paragraph is `clinical.consent.rgpd.body`, whose wording is
+                pinned word for word and recorded against a version label
+                (`rgpd-v1-2026`), so one added sentence there would make every
+                recorded acceptance a claim about text nobody was shown. */}
+            <p
+              data-testid="guest-contact-use"
+              className="text-xs leading-relaxed text-text-secondary"
+            >
+              {s.guest.contact_use}
+            </p>
 
             {/* On the five-step flow the RGPD panel moves to step 5: consent
                 that covers the clinical answers cannot come before them. */}

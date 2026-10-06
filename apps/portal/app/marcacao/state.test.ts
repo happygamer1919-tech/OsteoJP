@@ -50,3 +50,17 @@ describe('servicesForClinic', () => {
     expect(list).toHaveLength(2)
   })
 })
+
+describe('0101 — the optional email in the form state', () => {
+  it('starts empty, and is one of the values carried through every post', async () => {
+    const { EMPTY_GUEST_VALUES } = await import('./state')
+    expect(EMPTY_GUEST_VALUES.email).toBe('')
+    expect(Object.keys(EMPTY_GUEST_VALUES)).toContain('email')
+  })
+
+  it("the input's maxLength is the shared rule's bound, so the browser never cuts an address the server would take", async () => {
+    const { GUEST_EMAIL_INPUT_MAX } = await import('./state')
+    const { GUEST_EMAIL_MAX } = await import('@osteojp/db')
+    expect(GUEST_EMAIL_INPUT_MAX).toBe(GUEST_EMAIL_MAX)
+  })
+})

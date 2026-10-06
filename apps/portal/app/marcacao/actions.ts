@@ -6,6 +6,7 @@ import {
   isGuestPreferredPeriod,
   lisbonToday,
   parseCalendarDate,
+  parseGuestEmail,
 } from '@osteojp/db'
 import { CURRENT_INTAKE_CONSENT_VERSION } from '@osteojp/i18n'
 
@@ -63,6 +64,7 @@ function readValues(form: FormData): GuestValues {
     preferredPeriod: str(form, 'preferredPeriod'),
     fullName: str(form, 'fullName'),
     phone: str(form, 'phone'),
+    email: str(form, 'email'),
     dateOfBirth: str(form, 'dateOfBirth'),
     reason: str(form, 'reason'),
     healthConditions: str(form, 'healthConditions'),
@@ -180,6 +182,12 @@ export async function guestBookingAction(
     if (incomplete !== null && incomplete <= step) {
       return at(incomplete, 'missing_field')
     }
+    // 0101: the email is OPTIONAL, so it is never "missing". A value that was
+    // typed and is not an email is told at step 4, where it was typed, rather
+    // than as one flat refusal after the last step.
+    if (step >= 4 && !parseGuestEmail(values.email).ok) {
+      return at(4, 'invalid')
+    }
     return at(clampStep(step + 1), null)
   }
 
@@ -187,6 +195,15 @@ export async function guestBookingAction(
   const incomplete = firstIncompleteStep(values, intake)
   if (incomplete !== null) {
     return at(incomplete, 'missing_field')
+  }
+
+  // 0101, ruling R40 - THE OPTIONAL EMAIL. Empty is fine and sends nothing.
+  // Checked HERE, on the server, whatever the browser's `type="email"` did: the
+  // same rule the API applies (`parseGuestEmail`), so a value this lets through
+  // is one the API accepts. The API re-checks and is the boundary.
+  const email = parseGuestEmail(values.email)
+  if (!email.ok) {
+    return at(4, 'invalid')
   }
 
   // RGPD. The acknowledgement is required and is checked HERE, on the server,
@@ -256,6 +273,9 @@ export async function guestBookingAction(
     locationId: values.locationId,
     preferredDate: values.preferredDate,
     preferredPeriod: values.preferredPeriod,
+    // Only when the visitor gave one, so a submit without an email sends byte
+    // for byte what it sent before the field existed.
+    ...(email.email ? { email: email.email } : {}),
     ...(answers ? { intake: answers } : {}),
   })
 

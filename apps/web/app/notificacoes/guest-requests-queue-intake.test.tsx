@@ -29,6 +29,7 @@ const row = (over: Partial<GuestRequestRow> = {}): GuestRequestRow => ({
   id: "g-1",
   fullName: "Maria Convidada",
   phone: "+351912345678",
+  email: null,
   locationName: "Linda-a-Velha",
   when: "07/09/2026, manhã",
   requestedAt: "14/08/2026 18:20",
