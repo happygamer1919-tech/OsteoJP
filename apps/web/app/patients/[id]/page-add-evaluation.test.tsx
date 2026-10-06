@@ -12,8 +12,9 @@
  *     group has the button. The treating therapist and the owner do have it;
  *     an admin reads the groups without it;
  *   - each group's form posts what addEvaluationTarget decides: its own app
- *     episode, or a new episode for an imported group's specialty; "Sem
- *     episódio" has none;
+ *     episode, or an imported group's specialty and NO episode id (the server
+ *     reuses the patient's open app episode of it or opens one, ruling R31, so
+ *     the label promises neither); "Sem episódio" has none;
  *   - each refusal the action can send back (m=episodeMismatch,
  *     m=episodeClosed, m=avaliacaoErr) renders its own pt-PT alert, and an
  *     unrelated m renders none.
@@ -147,6 +148,7 @@ function rec(id: string, over: Record<string, unknown> = {}) {
 import PatientProfilePage from "./page";
 
 const s = getStrings("pt");
+const en = getStrings("en");
 
 async function render(role: string, opts: { mayWrite?: boolean; m?: string } = {}): Promise<string> {
   h.ctx = { ...h.ctx, role };
@@ -187,7 +189,7 @@ describe("EPI-01b: who sees '+ Avaliação' (the page's gate, canStartEpisode)",
     expect(count(g["none"]!, BUTTON)).toBe(0);
   });
 
-  it("what each form posts: its own app episode; a new episode for the imported specialty; the template; from=ficha", async () => {
+  it("what each form posts: its own app episode; the imported group's specialty and no episode; the template; from=ficha", async () => {
     const g = groups(await render("therapist"));
     const app = g[`episode:${EP_APP}`]!;
     expect(app).toContain(`name="episodeId" value="${EP_APP}"`);
@@ -200,7 +202,13 @@ describe("EPI-01b: who sees '+ Avaliação' (the page's gate, canStartEpisode)",
     expect(imp).not.toContain('name="episodeId"');
     expect(imp).not.toContain(EP_IMPORTED);
     expect(unescape(app)).toContain('aria-label="Nova avaliação neste episódio: Episódio (15/09/2026)"');
-    expect(unescape(imp)).toContain('aria-label="Nova avaliação num novo episódio de Osteopatia"');
+    // R31: the server reuses the open episode or opens one, so the label says
+    // both and is true either way; it never promises "a new episode".
+    expect(unescape(imp)).toContain('aria-label="Nova avaliação de Osteopatia, no episódio aberto ou num novo"');
+    expect(unescape(imp)).not.toContain("num novo episódio de");
+    expect(en["patients.fichaGroupAddEvaluationOpenOrNewEpisode"]).toBe(
+      "New {group} evaluation, in the open episode or a new one",
+    );
   });
 
   it("a CARE-TEAM therapist (reads the ficha, neither treats nor created the patient): the groups render, no button anywhere", async () => {

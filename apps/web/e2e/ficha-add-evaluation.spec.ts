@@ -4,9 +4,13 @@
  *
  * THE RULES UNDER TEST (design note section 1, Q7 default):
  *   - on an APP episode group it files the new registo IN THAT EPISODE;
- *   - on an IMPORTED group it opens a NEW open episode for that specialty,
- *     titled "<specialty> (<Lisbon date>)", files the registo there, and leaves
- *     the imported episode as it was;
+ *   - on an IMPORTED group it files the registo in the patient's OPEN APP
+ *     EPISODE OF THAT SPECIALTY, and opens one, titled "<specialty> (<Lisbon
+ *     date>)", only when there is none (strategy ruling R31); the imported
+ *     episode is left as it was. TWO CLICKS, ONE EPISODE: the R31 describe below,
+ *     on a patient of its own (ADD_EVALUATION_REUSE), where the second click
+ *     comes from a page loaded before the first, so the page cannot be what
+ *     decides;
  *   - the "Sem episódio" group has none (a judgment, not a ruling);
  *   - only an author who may write for the patient sees it: the owner does; an
  *     admin reads the same groups with no button, and reception has no
@@ -31,12 +35,14 @@
  * 390 px are attached for the report. Invented names only.
  */
 import { test, expect, type Page } from "@playwright/test";
-import { ADD_EVALUATION as F, E2E_PASSWORD, STORAGE, USERS } from "./fixtures";
+import { ADD_EVALUATION as F, ADD_EVALUATION_REUSE as R, E2E_PASSWORD, STORAGE, USERS } from "./fixtures";
 
 const TAB = `/patients/${F.patientId}?tab=registos`;
 const APP_KEY = `episode:${F.appEpisode.episodeId}`;
 const IMPORTED_KEY = `imported:${F.imported.specialty}`;
 const NEW_RECORD_URL = /\/clinical\/([0-9a-f-]{36})$/;
+/** R31: the label says both outcomes, so it is true whether the episode is reused or opened. */
+const importedLabel = (specialty: string) => `Nova avaliação de ${specialty}, no episódio aberto ou num novo`;
 
 /** The clinic's calendar day, dd/mm/yyyy, as the server titles a new episode. */
 const lisbonToday = () =>
@@ -64,7 +70,7 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     await openTab(page);
     await expect(group(page, APP_KEY).getByRole("button", { name: `Nova avaliação neste episódio: ${F.appEpisode.title}` })).toBeVisible();
     await expect(
-      group(page, IMPORTED_KEY).getByRole("button", { name: `Nova avaliação num novo episódio de ${F.imported.specialty}` }),
+      group(page, IMPORTED_KEY).getByRole("button", { name: importedLabel(F.imported.specialty) }),
     ).toBeVisible();
     // The "Sem episódio" group is there, with its registo, and has no button.
     const none = group(page, "none");
@@ -86,7 +92,7 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     await expect(group(page, APP_KEY).locator(`[data-record-id="${F.appEpisode.recordId}"]`)).toBeVisible();
   });
 
-  test("on an IMPORTED group it opens a NEW open episode for the specialty and files the registo there", async ({ page }, testInfo) => {
+  test("on an IMPORTED group it files the registo in an OPEN APP episode of the specialty, never the imported one", async ({ page }, testInfo) => {
     await openTab(page);
     const imported = group(page, IMPORTED_KEY);
     await expect(imported.getByTestId("record-row")).toHaveCount(1);
@@ -96,7 +102,7 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     const dayAfter = lisbonToday();
 
     await openTab(page);
-    // The new registo sits in an APP episode group of its own, never the imported one.
+    // The new registo sits in an APP episode group, never the imported one.
     const row = page.locator(`[data-record-id="${id}"]`);
     await expect(row).toBeVisible();
     const newGroup = page.getByTestId("record-group").filter({ has: row });
@@ -106,8 +112,13 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     expect(key).toMatch(/^episode:[0-9a-f-]{36}$/);
     expect(key).not.toBe(APP_KEY);
     const title = (await newGroup.locator("summary").innerText()).match(/Osteopatia \((\d{2}\/\d{2}\/\d{4})\)/);
-    expect(title, "the new group is labelled with the specialty and the date").not.toBeNull();
-    expect([dayBefore, dayAfter]).toContain(title![1]);
+    expect(title, "the group is labelled with the specialty and a date").not.toBeNull();
+    // R31: an open Osteopatia episode an earlier run (or a retry) opened is
+    // REUSED, and keeps the day it was opened. Only an episode this click opened
+    // (it holds this registo and no other) must carry today's Lisbon date.
+    if ((await newGroup.getByTestId("record-row").count()) === 1) {
+      expect([dayBefore, dayAfter]).toContain(title![1]);
+    }
     await expect(newGroup.locator("summary")).not.toContainText("Importado");
 
     // The imported group is exactly as it was: one registo, still imported.
@@ -128,6 +139,67 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
   });
 });
 
+test.describe("EPI-01b R31: two clicks on an imported group, ONE episode (therapist)", () => {
+  test.use({ storageState: STORAGE.therapist, viewport: { width: 1280, height: 900 } });
+
+  const TAB_R = `/patients/${R.patientId}?tab=registos`;
+  const KEY_R = `imported:${R.imported.specialty}`;
+  const appGroups = (page: Page) => page.locator('[data-testid="record-group"][data-group-kind="episode"]');
+
+  test("two separate submissions, the second from a page loaded before the first: both registos are in ONE app episode of the specialty", async ({
+    page,
+    context,
+  }) => {
+    // Two tabs on the same Registos tab, BOTH loaded before any click. The
+    // second is stale by the time it is clicked: it was drawn when the patient
+    // had (on a fresh database) no app episode at all.
+    await page.goto(TAB_R);
+    await expect(group(page, KEY_R)).toBeVisible({ timeout: 15_000 });
+    await expect(group(page, KEY_R).getByRole("button", { name: importedLabel(R.imported.specialty) })).toBeVisible();
+    const stale = await context.newPage();
+    await stale.goto(TAB_R);
+    await expect(group(stale, KEY_R)).toBeVisible({ timeout: 15_000 });
+    const appGroupsOnTheStalePage = await appGroups(stale).count();
+
+    // Click 1, then click 2 on the page that never saw click 1.
+    const first = await addEvaluation(page, KEY_R);
+    await expect(appGroups(stale)).toHaveCount(appGroupsOnTheStalePage); // still the old drawing
+    const second = await addEvaluation(stale, KEY_R);
+    expect(second).not.toBe(first);
+    await stale.close();
+
+    // The patient has exactly ONE app episode, of the specialty, holding BOTH.
+    await page.goto(TAB_R);
+    await expect(group(page, KEY_R)).toBeVisible({ timeout: 15_000 });
+    await expect(appGroups(page)).toHaveCount(1);
+    const one = appGroups(page);
+    await expect(one.locator("summary")).toContainText(/Fisioterapia \(\d{2}\/\d{2}\/\d{4}\)/);
+    await expect(one.locator("summary")).not.toContainText("Importado");
+    await expect(one.locator(`[data-record-id="${first}"]`)).toBeVisible();
+    await expect(one.locator(`[data-record-id="${second}"]`)).toBeVisible();
+    await expect(one.locator(`[data-record-id="${first}"]`)).toContainText("Rascunho");
+    await expect(one.locator(`[data-record-id="${second}"]`)).toContainText("Rascunho");
+    const key = (await one.getAttribute("data-group-key"))!;
+    expect(key).toMatch(/^episode:[0-9a-f-]{36}$/);
+    expect(key).not.toBe(`episode:${R.imported.episodeId}`);
+
+    // The imported group is exactly as it was: one registo, still imported, neither new one in it.
+    const imported = group(page, KEY_R);
+    await expect(imported.getByTestId("record-row")).toHaveCount(1);
+    await expect(imported.locator(`[data-record-id="${R.imported.recordId}"]`)).toBeVisible();
+    await expect(imported.locator("summary")).toContainText("Importado");
+    // And nothing fell into "Sem episódio".
+    await expect(group(page, "none")).toHaveCount(0);
+
+    // The episode itself: open, and holding both registos.
+    await page.goto(`/clinical/episodes/${key.slice("episode:".length)}`);
+    await expect(page.getByRole("heading", { name: /Fisioterapia \(\d{2}\/\d{2}\/\d{4}\)/ })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Aberto", { exact: true })).toBeVisible();
+    await expect(page.locator(`a[href="/clinical/${first}"]`)).toBeVisible();
+    await expect(page.locator(`a[href="/clinical/${second}"]`)).toBeVisible();
+  });
+});
+
 test.describe("EPI-01b: the owner, an author with the tenant's patients, sees it (R4 round 1)", () => {
   test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 1280, height: 900 } });
 
@@ -141,7 +213,7 @@ test.describe("EPI-01b: the owner, an author with the tenant's patients, sees it
     await openTab(page);
     await expect(group(page, APP_KEY).getByRole("button", { name: `Nova avaliação neste episódio: ${F.appEpisode.title}` })).toBeVisible();
     await expect(
-      group(page, IMPORTED_KEY).getByRole("button", { name: `Nova avaliação num novo episódio de ${F.imported.specialty}` }),
+      group(page, IMPORTED_KEY).getByRole("button", { name: importedLabel(F.imported.specialty) }),
     ).toBeVisible();
     await expect(group(page, "none").locator(`[data-record-id="${F.noEpisode.recordId}"]`)).toBeVisible();
     await expect(group(page, "none").getByTestId("record-group-add-evaluation")).toHaveCount(0);
