@@ -17,10 +17,10 @@
  * property: before this change they did not, and a patient with SMS switched
  * off, or at a location with no address, got nothing while nobody was told.
  *
- * Why a database: the notice is a read under the ACTOR's own scope across four
- * tables (appointment, patient, location, tenant), and the tenant's SMS switch
- * is a jsonb column read through 0094's policy. A unit test hands the helper
- * the rows; only here are they read.
+ * Why a database: the notice is a read under the ACTOR's own scope across five
+ * tables (appointment, patient, location, tenant, and the service by a LEFT
+ * join), and the tenant's SMS switch is a jsonb column read through 0094's
+ * policy. A unit test hands the helper the rows; only here are they read.
  *
  * Replaced: the request context, the client IP, `inngest.send` and the two
  * send functions. Fixtures are pinned to January 2027 at a clinic hour. Names
@@ -110,8 +110,11 @@ d("BOOK-CONFIRM: the approver is told whenever no message can go", () => {
     smsEnabled?: boolean;
   };
 
-  /** An unaccepted online request for a patient of the given shape, at the given location. */
-  async function pedido(p: PatientShape, locationId = loc.full) {
+  /**
+   * An unaccepted online request for a patient of the given shape, at the given
+   * location. `service: false` leaves `appointments.service_id` null.
+   */
+  async function pedido(p: PatientShape, locationId = loc.full, service = true) {
     const patientId = randomUUID();
     await sql.execute(raw`insert into patients (id, tenant_id, full_name, email, phone, reminder_sms_enabled)
       values (${patientId}, ${tenantId}, 'Paciente Inventado', ${p.email ?? null}, ${p.phone ?? null},
@@ -120,7 +123,7 @@ d("BOOK-CONFIRM: the approver is told whenever no message can go", () => {
     const startsAt = nextStart();
     await sql.execute(raw`insert into appointments
         (id, tenant_id, patient_id, practitioner_id, location_id, service_id, starts_at, ends_at, status, origin)
-      values (${id}, ${tenantId}, ${patientId}, ${therapistId}, ${locationId}, ${serviceId},
+      values (${id}, ${tenantId}, ${patientId}, ${therapistId}, ${locationId}, ${service ? serviceId : null},
               ${startsAt.toISOString()}::timestamptz,
               ${new Date(startsAt.getTime() + 45 * 60_000).toISOString()}::timestamptz,
               'scheduled', 'patient_portal')`);
@@ -314,20 +317,58 @@ d("BOOK-CONFIRM: the approver is told whenever no message can go", () => {
       expect(ledger.map((r) => r.suppression_reason)).toEqual(["no_contact"]);
     });
 
+    /* ------- (c) the email is the channel and there is no service: the third sentence ------- */
+
+    it("an email on file, the appointment has NO SERVICE: the THIRD notice, and the dispatch sends nothing", async () => {
+      const id = await pedido({ email: "a@example.test", phone: "912000009" }, loc.full, false);
+      expect(await noticeFor(id)).toBe("service_missing");
+      await deliver();
+      expect(h.sent).toEqual([]);
+      const ledger = await rows(raw`select suppression_reason from reminder_dispatches where appointment_id = ${id}`);
+      expect(ledger.map((r) => r.suppression_reason)).toEqual(["service_missing"]);
+    });
+
+    it("no email, a mobile, no service: NO notice, because the SMS names no service and goes", async () => {
+      const id = await pedido({ phone: "912000010" }, loc.full, false);
+      expect(await noticeFor(id)).toBeUndefined();
+      await deliver();
+      expect(h.sent.map((m) => m.templateId)).toEqual(["booking_approved.sms"]);
+    });
+
+    it("no location address AND no service: the SECOND notice, the order the dispatch checks in", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const id = await pedido({ email: "a@example.test", phone: "912000011" }, loc.noAddress, false);
+      expect(await noticeFor(id)).toBe("location_contact_missing");
+      await deliver();
+      expect(h.sent).toEqual([]);
+      const ledger = await rows(raw`select suppression_reason from reminder_dispatches where appointment_id = ${id}`);
+      expect(ledger.map((r) => r.suppression_reason)).toEqual(["location_contact_missing"]);
+    });
+
+    it("nobody to reach AND no service: the patient's notice", async () => {
+      const id = await pedido({ phone: null }, loc.full, false);
+      expect(await noticeFor(id)).toBe("patient_no_email");
+      await deliver();
+      const ledger = await rows(raw`select suppression_reason from reminder_dispatches where appointment_id = ${id}`);
+      expect(ledger.map((r) => r.suppression_reason)).toEqual(["no_contact"]);
+    });
+
     /* ---------------- the switch in front of all of it ---------------- */
 
     it("switch OFF: no notice for any of them", async () => {
       process.env.BOOK_CONFIRM_MODE = "off";
       expect(await noticeFor(await pedido({ phone: null }))).toBeUndefined();
       expect(await noticeFor(await pedido({ email: "a@example.test" }, loc.noAddress))).toBeUndefined();
+      expect(await noticeFor(await pedido({ email: "a@example.test" }, loc.full, false))).toBeUndefined();
     });
 
-    it("CANARY, a patient NOT on the list: no notice for either reason", async () => {
+    it("CANARY, a patient NOT on the list: no notice for any reason", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       process.env.BOOK_CONFIRM_MODE = "canary";
       process.env.BOOK_CONFIRM_CANARY_PATIENT_IDS = randomUUID();
       expect(await noticeFor(await pedido({ phone: null }))).toBeUndefined();
       expect(await noticeFor(await pedido({ email: "a@example.test" }, loc.noPhone))).toBeUndefined();
+      expect(await noticeFor(await pedido({ email: "a@example.test" }, loc.full, false))).toBeUndefined();
     });
 
     /* ---------------- send-time only: no notice, by decision ---------------- */

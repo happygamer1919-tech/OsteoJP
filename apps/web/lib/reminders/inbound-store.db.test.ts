@@ -99,6 +99,7 @@ d("the reception reply queue against a real database", () => {
     if (!sql) return;
     await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
+    await sql.execute(raw`delete from services where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from locations where tenant_id = ${tenantId}`);
   });
 
@@ -402,13 +403,32 @@ d("the reception reply queue against a real database", () => {
     }
     beforeEach(() => clinicContact(true));
 
+    /**
+     * The suite's one service, made on first use. WITH one unless an arm says
+     * otherwise: the email names the service, so an appointment with none is
+     * the THIRD notice, and every arm about a patient with an email would
+     * otherwise be answered by the missing service.
+     */
+    let serviceId: string | null = null;
+    async function service(): Promise<string> {
+      if (!serviceId) {
+        serviceId = randomUUID();
+        await sql.execute(raw`insert into services (id, tenant_id, name)
+          values (${serviceId}, ${tenantId}, 'Osteopatia')`);
+      }
+      return serviceId;
+    }
+
     /** A pedido filed for review, for a patient with or without an email. */
-    async function pedidoForReview(body: string, email: string | null) {
+    async function pedidoForReview(body: string, email: string | null, withService = true) {
       const patientId = await seedPatient("Paciente Ficticio");
       if (email) {
         await sql.execute(raw`update patients set email = ${email} where id = ${patientId}`);
       }
       const appointmentId = await seedAppointment({ patientId, origin: "patient_portal" });
+      if (withService) {
+        await sql.execute(raw`update appointments set service_id = ${await service()} where id = ${appointmentId}`);
+      }
       await file({ patientId, appointmentId, body });
       return { patientId, item: (await queue()).find((r) => r.body === body)! };
     }
@@ -490,6 +510,29 @@ d("the reception reply queue against a real database", () => {
         });
       },
     );
+
+    /* ---- strategy's ruling, 2026-10-06 (S-1006-A): an email with no service to name ---- */
+
+    it("an email on file, but the appointment has NO SERVICE: the THIRD notice", async () => {
+      const { item } = await pedidoForReview("bc aviso sem servico", "ficticio@example.test", false);
+      expect(await resolve(item.id, "confirmed")).toEqual({
+        ok: true,
+        applied: true,
+        notice: "service_missing",
+      });
+    });
+
+    it("no email, a MOBILE, no service: no notice, the SMS names no service and goes", async () => {
+      const { patientId, item } = await pedidoForReview("bc aviso sms sem servico", null, false);
+      await sql.execute(raw`update patients set phone = '912000558' where id = ${patientId}`);
+      expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
+    });
+
+    it("no location contact AND no service: the SECOND notice, as the dispatch checks the location first", async () => {
+      const { item } = await pedidoForReview("bc aviso local e servico em falta", "ficticio@example.test", false);
+      await clinicContact(false);
+      expect(await resolve(item.id, "confirmed")).toMatchObject({ notice: "location_contact_missing" });
+    });
 
     it("nobody to reach AND no location contact: the patient's notice, as the dispatch checks the patient first", async () => {
       const { item } = await pedidoForReview("bc aviso tudo em falta", null);

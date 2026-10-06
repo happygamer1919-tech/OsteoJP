@@ -92,6 +92,7 @@ const reachable = {
   patientSmsEnabled: true,
   locationAddress: "Rua de Exemplo 1" as string | null,
   locationPhone: "+351 272 111 111" as string | null,
+  serviceName: "Osteopatia" as string | null,
 };
 const MOBILE = "912 000 001";
 const LANDLINE = "272 000 123";
@@ -111,6 +112,7 @@ describe("approvalNoticeFor (pure)", () => {
     // label, env, patient, overrides, expected
     ["off, nothing on file", {}, LISTED, { patientEmail: null, patientPhone: null }, null],
     ["off, the location has no address", {}, LISTED, { locationAddress: null }, null],
+    ["off, the appointment has no service", {}, LISTED, { serviceName: null }, null],
 
     ["on, an email and a mobile", on, NOT_LISTED, {}, null],
     ["on, no email, a mobile: the SMS goes", on, NOT_LISTED, { patientEmail: null }, null],
@@ -126,11 +128,19 @@ describe("approvalNoticeFor (pure)", () => {
     ["on, no email, a mobile, the location has no address", on, NOT_LISTED, { patientEmail: null, locationAddress: " " }, "location_contact_missing"],
     ["on, nobody to reach AND no location contact: the patient's reason", on, NOT_LISTED, { patientEmail: null, patientPhone: null, locationPhone: null }, "patient_no_email"],
 
+    ["on, an email, the appointment has NO SERVICE", on, NOT_LISTED, { serviceName: null }, "service_missing"],
+    ["on, an email, a BLANK service name", on, NOT_LISTED, { serviceName: " " }, "service_missing"],
+    ["on, no email, a mobile, no service: the SMS goes, it names no service", on, NOT_LISTED, { patientEmail: null, serviceName: null }, null],
+    ["on, no location contact AND no service: the location's reason", on, NOT_LISTED, { locationAddress: null, serviceName: null }, "location_contact_missing"],
+    ["on, nobody to reach AND no service: the patient's reason", on, NOT_LISTED, { patientEmail: null, patientPhone: null, serviceName: null }, "patient_no_email"],
+
     ["canary, listed, neither", canary, LISTED, { patientEmail: null, patientPhone: null }, "patient_no_email"],
     ["canary, listed, location without a phone", canary, LISTED, { locationPhone: null }, "location_contact_missing"],
     ["canary, listed, a mobile", canary, LISTED, { patientEmail: null, patientPhone: MOBILE }, null],
     ["canary, NOT listed, neither", canary, NOT_LISTED, { patientEmail: null, patientPhone: null }, null],
     ["canary, NOT listed, location without an address", canary, NOT_LISTED, { locationAddress: null }, null],
+    ["canary, listed, no service", canary, LISTED, { serviceName: null }, "service_missing"],
+    ["canary, NOT listed, no service", canary, NOT_LISTED, { serviceName: null }, null],
   ] as const)("%s", (_label, env, patientId, over, expected) => {
     expect(approvalNoticeFor([{ patientId, ...reachable, ...over }], env)).toBe(expected);
   });
@@ -159,6 +169,18 @@ describe("approvalNoticeFor (pure)", () => {
       ),
     ).toBe("location_contact_missing");
   });
+
+  it("several appointments: a missing service is told when it is the only reason, and both older reasons outrank it", () => {
+    const noService = { patientId: LISTED, ...reachable, serviceName: null };
+    expect(approvalNoticeFor([{ patientId: NOT_LISTED, ...reachable }, noService], on)).toBe("service_missing");
+    // The order of the ROWS is not the order of the reasons.
+    expect(
+      approvalNoticeFor([noService, { patientId: NOT_LISTED, ...reachable, locationPhone: null }], on),
+    ).toBe("location_contact_missing");
+    expect(
+      approvalNoticeFor([noService, { patientId: NOT_LISTED, ...reachable, patientEmail: null, patientPhone: null }], on),
+    ).toBe("patient_no_email");
+  });
 });
 
 /* ------------------------------ the read ------------------------------ */
@@ -170,6 +192,7 @@ const readRow = {
   patientSmsEnabled: true,
   locationAddress: "Rua de Exemplo 1" as string | null,
   locationPhone: "+351 272 111 111" as string | null,
+  serviceName: "Osteopatia" as string | null,
   tenantSettings: { locale: "pt" } as unknown,
 };
 
@@ -218,6 +241,42 @@ describe("approvalNoticeAfterAccept", () => {
     process.env.BOOK_CONFIRM_MODE = "on";
     mockRunScoped.mockResolvedValueOnce([
       { patientId: NOT_LISTED, ...readRow, locationAddress: null },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("location_contact_missing");
+  });
+
+  it("switch on, an email, the appointment has NO SERVICE: the THIRD notice", async () => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, ...readRow, serviceName: null },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("service_missing");
+  });
+
+  it("switch on, no email but a mobile, no service: nothing, the SMS names no service and goes", async () => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, ...readRow, patientEmail: null, serviceName: null },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
+  });
+
+  it("a service name that did not come back is read as the dispatch reads it, and the other reasons survive", async () => {
+    // The notice adds no rule of its own about the service row: a null name is
+    // what the dispatch's read would also see, and it would stop there on the
+    // email leg. And it never costs a row its OTHER reason, which a filter on
+    // the service once did.
+    process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, ...readRow, serviceName: null }] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("service_missing");
+
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, ...readRow, serviceName: null, patientEmail: null, patientPhone: null },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("patient_no_email");
+
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, ...readRow, serviceName: null, locationAddress: null },
     ] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("location_contact_missing");
   });
@@ -310,6 +369,15 @@ describe("confirmAppointmentRequest carries the notice, and never fails because 
     process.env.BOOK_CONFIRM_MODE = "on";
     accept(async () => [{ patientId: NOT_LISTED, ...readRow, patientPhone: null }]);
     expect(await confirmAppointmentRequest(APPT)).toEqual({ ok: true, data: { id: APPT } });
+  });
+
+  it("switch on, an email on file, no service: ok, with the THIRD notice", async () => {
+    process.env.BOOK_CONFIRM_MODE = "on";
+    accept(async () => [{ patientId: NOT_LISTED, ...readRow, serviceName: null }]);
+    expect(await confirmAppointmentRequest(APPT)).toEqual({
+      ok: true,
+      data: { id: APPT, notice: "service_missing" },
+    });
   });
 
   it("switch off: ok, no notice, and exactly ONE scoped call (the acceptance itself)", async () => {

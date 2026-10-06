@@ -41,6 +41,7 @@ import {
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import {
   bookingApprovedLocationContact,
+  bookingApprovedServiceName,
   planBookingApprovedChannel,
   smsNumberVerdict,
 } from "./book-confirm-plan";
@@ -1247,9 +1248,10 @@ export const BOOKING_APPROVED_SMS_TEMPLATE_ID = "booking_approved.sms";
 export const BOOKING_APPROVED_RENDER_REFUSAL =
   "A value the email prints (first name, service, therapist or location) contains a {placeholder}-shaped word.";
 
-// The channel plan, the location check and the SMS-number verdict are pure and
-// live in ./book-confirm-plan.ts, because the approver's notice asks the SAME
-// three questions at approval time (lib/scheduling/book-confirm-notice.ts).
+// The channel plan, the location check, the service check and the SMS-number
+// verdict are pure and live in ./book-confirm-plan.ts, because the approver's
+// notice asks the SAME four questions at approval time
+// (lib/scheduling/book-confirm-notice.ts).
 // Re-exported here so this file stays the dispatch's one public surface.
 export {
   planBookingApprovedChannel,
@@ -1369,8 +1371,10 @@ async function dispatchBookingApproved(
   const locale = resolveLocale(data.tenantSettings);
 
   if (plan.send === "email") {
-    const serviceName = (data.serviceName ?? "").trim();
-    if (serviceName === "") return suppress("service_missing");
+    // THE EMAIL NAMES THE SERVICE, so an appointment with none sends nothing
+    // on this leg. The approver's notice asks the same function.
+    const serviceName = bookingApprovedServiceName(data);
+    if (serviceName === null) return suppress("service_missing");
     // THE RENDER CAN REFUSE, AND ITS OWN WORDS MUST NOT LEAVE THIS FUNCTION.
     // `assertNoUnfilledPlaceholders` throws when a value itself looks like a
     // placeholder - a first name, a service or a clinic stored with braces
