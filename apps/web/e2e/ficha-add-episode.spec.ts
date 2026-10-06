@@ -80,8 +80,9 @@ test.describe("EPI-01b piece 2: '+ Episódio' on the Registos tab (therapist)", 
     await expect(page.getByTestId("add-episode-submit")).toHaveText("Episódio");
     // No field takes text: the only inputs are hidden, and there is no textarea.
     await expect(form(page).locator('input:not([type="hidden"]), textarea, [contenteditable]')).toHaveCount(0);
-    // One entry point: the header no longer has a "Novo episódio" button.
-    await expect(page.getByRole("button", { name: "Novo episódio" })).toHaveCount(0);
+    // One entry point: the header no longer has a "Novo episódio" button. By
+    // its exact name: "+ Episódio"'s own accessible name contains those words.
+    await expect(page.getByRole("button", { name: "Novo episódio", exact: true })).toHaveCount(0);
     // With no specialty chosen the browser keeps the form: nothing is posted.
     await page.getByTestId("add-episode-submit").click();
     await expect(page).toHaveURL(new RegExp(`/patients/${F.patientId}\\?tab=registos$`));
@@ -190,7 +191,7 @@ test.describe("EPI-01b piece 2: '+ Episódio' is the therapist's alone", () => {
       await expect(page.getByRole("link", { name: "Nova ficha" })).toBeVisible();
       await expect(form(page)).toHaveCount(0);
       await expect(page.getByTestId("add-episode-submit")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Novo episódio" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Novo episódio", exact: true })).toHaveCount(0);
     });
   });
 
@@ -205,7 +206,7 @@ test.describe("EPI-01b piece 2: '+ Episódio' is the therapist's alone", () => {
       await expect(page.getByRole("tab", { name: "Registos clínicos" })).toHaveCount(0);
       await expect(form(page)).toHaveCount(0);
       await expect(page.getByTestId("add-episode-submit")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Novo episódio" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Novo episódio", exact: true })).toHaveCount(0);
     });
   });
 });
