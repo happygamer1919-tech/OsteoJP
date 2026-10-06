@@ -1,10 +1,11 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   clinicalEpisodes,
   clinicalRecords,
   formTemplates,
+  migrationStagingRows,
   patients,
   users,
   type DbTx,
@@ -13,7 +14,8 @@ import { runScoped } from "@/lib/auth/context";
 import { therapistPatientScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
-import { normalizeEpisodeTitle } from "./episode-title";
+import { episodeSpecialtyOf, normalizeEpisodeTitle, type EpisodeSpecialty } from "./episode-title";
+import { canonicalId, pickEpisodeToReuse } from "./episode-reuse-core";
 import type { Localized } from "./form-template";
 import type { RecordStatus } from "./records";
 
@@ -90,9 +92,10 @@ export async function createEpisode(
  * transaction so the two commit or roll back together.
  *
  * Two callers: `createEpisode` above, and EPI-01b's "+ Avaliação" on an imported
- * group (`createDraftRecord` with `newEpisodeSpecialty`), which opens the episode
- * and files the registo in it in ONE transaction, so a refused registo leaves no
- * empty episode behind. It asks nothing about the patient: each caller has
+ * group (`createDraftRecord` with `newEpisodeSpecialty`) WHEN THE PATIENT HAS NO
+ * OPEN APP EPISODE OF THAT SPECIALTY (R31; `findOpenEpisodeOfSpecialty` below),
+ * which opens the episode and files the registo in it in ONE transaction, so a
+ * refused registo leaves no empty episode behind. It asks nothing about the patient: each caller has
  * already asked the narrow write scope (`therapistPatientScope`) in the same
  * transaction, and `title` is already normalised and non-clinical.
  */
@@ -125,6 +128,104 @@ export async function insertOpenEpisode(
     ip,
   });
   return { id };
+}
+
+/**
+ * The advisory lock `findOpenEpisodeOfSpecialty` takes: one per tenant, patient
+ * and specialty, never table-wide. Exported so a test can read its payload.
+ *
+ * pg_advisory_xact_lock, not pg_advisory_lock: it is released at commit or
+ * rollback, so an error path cannot leave it held on a pooled connection (the
+ * same choice, for the same reason, as scheduling/slot-lock.ts).
+ *
+ * THE KEY IS BUILT FROM THE IDS' CANONICAL FORM, never from the text a request
+ * carried: the key is hashed as text, so the same patient posted in uppercase
+ * would otherwise take a DIFFERENT lock and not wait for a request that named
+ * it in lowercase.
+ */
+export function specialtyEpisodeLock(tenantId: string, patientId: string, specialty: EpisodeSpecialty): SQL {
+  const payload = `clinical-episode-specialty:${canonicalId(tenantId)}:${canonicalId(patientId)}:${specialty}`;
+  return sql`select pg_advisory_xact_lock(hashtextextended(${payload}, 0))`;
+}
+
+/**
+ * EPI-01b (strategy ruling R31, Q7): THE EPISODE "+ Avaliação" ON AN IMPORTED
+ * GROUP REUSES. The ruling: it "reuses the patient's open app episode of that
+ * specialty and creates one only when none exists".
+ *
+ * Asked ON THE SERVER, IN THE WRITER'S OWN TRANSACTION (`createDraftRecord`),
+ * so a page rendered before the episode existed, or a second tab, cannot open a
+ * second one: the page posts only the specialty, and what it files in is decided
+ * here, at the moment of the write. Returns the episode's id, or null for "none:
+ * open a new one". The caller still passes the id through
+ * `assertEpisodeIsThePatients` (records.ts), like any other episode id.
+ *
+ * THREE STEPS:
+ *   1. THE LOCK (`specialtyEpisodeLock`), held to the end of the transaction.
+ *      Two requests for the same patient and specialty run one after the other:
+ *      the second waits, then reads the episode the first one committed (each
+ *      statement of a READ COMMITTED transaction sees what was committed before
+ *      it), and reuses it. Without it both would read "none" and both would open
+ *      one, and no constraint in the database would object;
+ *   2. the patient's OPEN episodes in this tenant, read under the caller's RLS
+ *      (clinical_episodes is tenant-only; the tenant is asked explicitly too);
+ *   3. for those whose title names the specialty, WHETHER THE IMPORT LEDGER
+ *      NAMES THEM: the same fact ficha-groups.ts reads to call a group imported.
+ *      Every imported episode is closed today, so step 2 already leaves them
+ *      out; this is what keeps "never an imported episode" true if one is ever
+ *      open.
+ * `pickEpisodeToReuse` (episode-reuse-core.ts) then decides, and holds the
+ * tie-break rule: the most recently opened.
+ *
+ * It writes nothing and audits nothing: a reused episode is not a mutation of
+ * the episode. The registo's own `clinical_record.create` audit row names the
+ * episode it was filed in.
+ */
+export async function findOpenEpisodeOfSpecialty(
+  tx: DbTx,
+  ctx: RequestContext,
+  patientId: string,
+  specialty: EpisodeSpecialty,
+): Promise<string | null> {
+  await tx.execute(specialtyEpisodeLock(ctx.tenantId, patientId, specialty));
+  const open = await tx
+    .select({
+      id: clinicalEpisodes.id,
+      tenantId: clinicalEpisodes.tenantId,
+      patientId: clinicalEpisodes.patientId,
+      status: clinicalEpisodes.status,
+      title: clinicalEpisodes.title,
+      openedAt: clinicalEpisodes.openedAt,
+    })
+    .from(clinicalEpisodes)
+    .where(
+      and(
+        eq(clinicalEpisodes.tenantId, ctx.tenantId),
+        eq(clinicalEpisodes.patientId, patientId),
+        eq(clinicalEpisodes.status, "open"),
+      ),
+    )
+    .orderBy(desc(clinicalEpisodes.openedAt), asc(clinicalEpisodes.id));
+  const named = open.filter((e) => episodeSpecialtyOf(e.title) === specialty);
+  if (named.length === 0) return null;
+
+  const ledger = await tx
+    .select({ id: migrationStagingRows.importedEntityId })
+    .from(migrationStagingRows)
+    .where(
+      and(
+        eq(migrationStagingRows.entityType, "clinical_episode"),
+        inArray(
+          migrationStagingRows.importedEntityId,
+          named.map((e) => e.id),
+        ),
+      ),
+    );
+  const imported = new Set(ledger.map((row) => row.id));
+  return pickEpisodeToReuse(
+    named.map((e) => ({ ...e, imported: imported.has(e.id) })),
+    { tenantId: ctx.tenantId, patientId, specialty },
+  );
 }
 
 /* ------------------------------------------------------------------ */
