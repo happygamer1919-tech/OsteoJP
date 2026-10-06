@@ -286,6 +286,20 @@ export const ADD_EVALUATION_REUSE = {
 } as const;
 
 /**
+ * EPI-01b, piece 2: "+ Episódio" on the Registos tab. A patient of its own,
+ * created_by the E2E therapist (who may therefore write for it), clinic
+ * Linda-a-Velha, seeded by seed-e2e.mjs (ensureAddEpisodeFixture) with NO
+ * episode and NO registo. The spec opens episodes on every run and they stay
+ * open, so on a database earlier runs have used the first click may already be
+ * answered with the confirmation; the spec follows the ids the run itself
+ * creates, never a total.
+ */
+export const ADD_EPISODE = {
+  patientId: "00000000-0000-0000-0000-00000000a3e4",
+  patientName: "Zzz Novo Episodio Teste",
+} as const;
+
+/**
  * G-D (2026-09-13): three documents on IMPORTED_RECORD's patient, seeded by
  * seed-e2e.mjs with these ids. Storage objects are NOT created (the lane bucket
  * holds no bytes), so specs assert the lists and the Abrir button, never a download.

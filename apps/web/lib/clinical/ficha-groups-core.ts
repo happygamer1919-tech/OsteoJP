@@ -63,7 +63,9 @@ export type FichaGroup = {
   /** The specialty (imported) or the episode title (app); null for "none". */
   label: string | null;
   imported: boolean;
-  /** Oldest to newest by createdAt. */
+  /** The app episode this group is (kind "episode"); null for the other kinds. */
+  episodeId: string | null;
+  /** Oldest to newest by createdAt. Empty only for an open episode with no registo yet. */
   records: FichaRecord[];
   /**
    * How many EVALUATIONS the group holds, versions excluded (strategy S-1002-D
@@ -72,9 +74,9 @@ export type FichaGroup = {
    * not in the list still counts once, so nothing the viewer sees goes uncounted.
    */
   evaluations: number;
-  /** The first evaluation's date (ISO). */
+  /** The first evaluation's date (ISO); for an episode with no registo yet, the day it was opened. */
   firstAt: string;
-  /** The most recent evaluation's date (ISO), which orders the groups. */
+  /** The most recent evaluation's date (ISO), which orders the groups; with no registo yet, the day it was opened. */
   lastAt: string;
   /** The first evaluation's excerpt (Q2), or null. */
   excerpt: string | null;
@@ -130,10 +132,31 @@ function groupKeyOf(r: FichaRecord): { key: string; kind: FichaGroupKind; label:
 }
 
 /**
+ * EPI-01b, piece 2: an OPEN APP EPISODE WITH NO REGISTO YET, which "+ Episódio"
+ * has just opened. The groups are drawn from registos, so without this it would
+ * not be on the tab until its first evaluation is filed.
+ */
+export type FichaEmptyEpisode = {
+  id: string;
+  /** The episode's title: a specialty and a date. */
+  title: string;
+  /** ISO instant the episode was opened. */
+  openedAt: string;
+};
+
+/**
  * The groups for a patient's registos (see the rule above). Every input record
  * appears in exactly one group; no record is dropped or duplicated.
+ *
+ * `emptyEpisodes` (EPI-01b, piece 2) adds one group, with no registos, per open
+ * app episode that has none yet. An episode that already has a group from its
+ * registos is never given a second one. It is dated by the day it was opened,
+ * so a new episode is the first group on the tab.
  */
-export function groupForFicha(records: readonly FichaRecord[]): FichaGroup[] {
+export function groupForFicha(
+  records: readonly FichaRecord[],
+  emptyEpisodes: readonly FichaEmptyEpisode[] = [],
+): FichaGroup[] {
   const groups = new Map<string, { kind: FichaGroupKind; label: string | null; records: FichaRecord[] }>();
   for (const r of records) {
     const { key, kind, label } = groupKeyOf(r);
@@ -152,11 +175,29 @@ export function groupForFicha(records: readonly FichaRecord[]): FichaGroup[] {
       kind: g.kind,
       label: g.label,
       imported: g.kind === "imported",
+      episodeId: g.kind === "episode" ? first.episodeId : null,
       records: sorted,
       evaluations: sorted.filter((r) => !(r.supersedesId !== null && ids.has(r.supersedesId))).length,
       firstAt: first.createdAt,
       lastAt: last.createdAt,
       excerpt: first.excerpt,
+    });
+  }
+  for (const e of emptyEpisodes) {
+    const key = `episode:${e.id}`;
+    // Already a group: from its registos, or listed twice.
+    if (out.some((g) => g.key === key)) continue;
+    out.push({
+      key,
+      kind: "episode",
+      label: e.title,
+      imported: false,
+      episodeId: e.id,
+      records: [],
+      evaluations: 0,
+      firstAt: e.openedAt,
+      lastAt: e.openedAt,
+      excerpt: null,
     });
   }
   return out.sort((a, b) => {
@@ -194,8 +235,8 @@ export type AddEvaluationTarget =
 
 export function addEvaluationTarget(group: FichaGroup): AddEvaluationTarget | null {
   if (group.kind === "episode") {
-    const episodeId = group.records[0]?.episodeId ?? null;
-    return episodeId ? { kind: "episode", episodeId } : null;
+    // The group's own episode: also when it holds no registo yet ("+ Episódio").
+    return group.episodeId ? { kind: "episode", episodeId: group.episodeId } : null;
   }
   if (group.kind === "imported" && isEpisodeSpecialty(group.label)) {
     return { kind: "newEpisode", specialty: group.label };

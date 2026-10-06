@@ -579,11 +579,15 @@ test.describe("authoring (therapist)", () => {
   test("Episodio picker lists only the selected patient's episodes plus Sem episodio", async ({
     page,
   }) => {
-    // Ensure patient A (Maria) has at least one episode: one-click "Novo
-    // episódio" on her profile (dated default title, lands on the episode).
-    await page.goto(`/patients/${PATIENTS.maria.id}`);
-    await page.getByRole("button", { name: "Novo episódio" }).click();
-    await expect(page).toHaveURL(/\/clinical\/episodes\/[0-9a-f-]{36}/, { timeout: 15_000 });
+    // Ensure patient A (Maria) has at least one open episode: "+ Episódio" on
+    // her Registos tab (EPI-01b piece 2: a specialty from the list, titled by
+    // the server with the specialty and the date). Either it opens one, or she
+    // already has an open Osteopatia episode from an earlier run and the tab
+    // asks before opening another: both leave her with one.
+    await page.goto(`/patients/${PATIENTS.maria.id}?tab=registos`);
+    await page.getByTestId("add-episode-specialty").selectOption("Osteopatia");
+    await page.getByTestId("add-episode-submit").click();
+    await expect(page).toHaveURL(/[?&](episodio=[0-9a-f-]{36}|m=episodioAberto)/, { timeout: 15_000 });
 
     await page.goto("/clinical/new");
     // Scope to the Episódio <select> by name: getByLabel(/Episódio/i) also
@@ -603,7 +607,7 @@ test.describe("authoring (therapist)", () => {
     await page.getByRole("option", { name: PATIENTS.maria.name }).click();
     await expect(episodio.locator("option", { hasText: "Sem episódio" })).toHaveCount(1);
     // Options inside a closed native select are not "visible" — assert attachment.
-    await expect(episodio.locator("option", { hasText: /Episódio \(/ }).first()).toBeAttached();
+    await expect(episodio.locator("option", { hasText: /Osteopatia \(/ }).first()).toBeAttached();
 
     // Patient B (João — no spec ever opens episodes for him): none of Maria's
     // episodes leak through; only "Sem episódio" remains.

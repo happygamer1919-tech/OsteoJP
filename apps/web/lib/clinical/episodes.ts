@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
-import { assertCan, type RequestContext } from "@osteojp/auth";
+import { assertCan, ForbiddenError, type RequestContext } from "@osteojp/auth";
 import {
   clinicalEpisodes,
   clinicalRecords,
@@ -14,8 +14,9 @@ import { runScoped } from "@/lib/auth/context";
 import { therapistPatientScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
-import { episodeSpecialtyOf, normalizeEpisodeTitle, type EpisodeSpecialty } from "./episode-title";
-import { canonicalId, pickEpisodeToReuse } from "./episode-reuse-core";
+import { episodeSpecialtyOf, isEpisodeSpecialty, specialtyEpisodeTitle, type EpisodeSpecialty } from "./episode-title";
+import { decideOpenEpisode, mayOpenEpisode } from "./episode-open-core";
+import { canonicalId, pickEpisodeToReuse, type ReuseCandidate } from "./episode-reuse-core";
 import type { Localized } from "./form-template";
 import type { RecordStatus } from "./records";
 
@@ -48,41 +49,71 @@ export type EpisodeDetail = {
 /* ------------------------------------------------------------------ */
 
 /**
- * Open a new clinical episode for a patient. Authoring-gated (owner/therapist;
- * admin reads clinical but does not author, reception has no clinical access at
- * all). Tenant-scoped via runScoped; RLS keys isolation on the tenant claim and
- * the role gate is enforced here, since clinical_episodes RLS is tenant-only.
+ * EPI-01b, piece 2: "+ Episódio" ON THE REGISTOS TAB. Opens a NEW open episode
+ * for a patient. It never closes, edits, merges or removes an episode.
+ *
+ * THE TITLE IS A SPECIALTY AND A DATE, BY RULING. The input carries a specialty
+ * and nothing else that could become a title: the server builds
+ * "<specialty> (dd/mm/yyyy)" from a word on EPISODE_SPECIALTIES and the clinic's
+ * Lisbon day (`specialtyEpisodeTitle`). A word off the list is `invalid`; any
+ * other property a caller adds to the input is never read.
+ *
+ * WHO, asked here, on the server, whatever the screen drew:
+ *   1. the authoring capability the registo writers ask (`clinical_records:author`);
+ *   2. the therapist role (`mayOpenEpisode`). Every other role is refused with
+ *      the same ForbiddenError a missing capability raises (its message names
+ *      the capability; the reason here is the role);
+ *   3. a patient the therapist may write registos for: the narrow write scope
+ *      (`therapistPatientScope`: treats or created), read under the caller's
+ *      own tenant-scoped context, so a patient outside it, or of another
+ *      tenant, is a clean `not_found`.
+ *
+ * AN OPEN EPISODE OF THE SAME SPECIALTY (`decideOpenEpisode`, episode-open-core.ts).
+ * Read with `findOpenEpisodeOfSpecialty`, so under the same lock and by the
+ * same rule as "+ Avaliação" on an imported group (ruling R31: the most
+ * recently opened). When there is one and the call does not confirm against
+ * it, nothing is written and the answer names it (`open_exists`); the page
+ * shows it and asks. A confirmed call opens another, which is then the most
+ * recently opened, so it is the one R31 files in from then on.
+ *
+ * The audit row is `insertOpenEpisode`'s `clinical_episode.create`: ids only.
  */
+export type CreateEpisodeResult =
+  | { kind: "created"; id: string }
+  | { kind: "open_exists"; episodeId: string };
+
 export async function createEpisode(
   ctx: RequestContext,
-  input: { patientId: string; title: string },
-): Promise<{ id: string }> {
+  input: { patientId: string; specialty: string; confirmedOpenEpisodeId?: string | null },
+): Promise<CreateEpisodeResult> {
   assertCan(ctx.role, "clinical_records:author");
-  const title = normalizeEpisodeTitle(input.title);
-  if (!UUID_RE.test(input.patientId) || !title) throw new ClinicalError("invalid");
+  if (!mayOpenEpisode(ctx.role)) throw new ForbiddenError(ctx.role, "clinical_records:author");
+  const specialty = input.specialty;
+  const confirmed = input.confirmedOpenEpisodeId ?? null;
+  if (!UUID_RE.test(input.patientId) || !isEpisodeSpecialty(specialty)) throw new ClinicalError("invalid");
+  if (confirmed !== null && !UUID_RE.test(confirmed)) throw new ClinicalError("invalid");
+  // The canonical (lowercase) form, once, for the patient read, the lock, the
+  // choice of episode, the insert and the audit row (as createDraftRecord does).
+  const patientId = canonicalId(input.patientId);
 
   const ip = await clientIp();
-  // CARE-02a: a therapist opens an episode only for a patient they treat or
-  // created, the narrow scope. clinical_episodes is tenant-only (its narrowing
-  // is the N5 wave) and this function checked nothing about the patient, which
-  // was unreachable from a screen while the ficha of a patient who was not
-  // theirs answered 404. 0098 opens that ficha to the care team for READING, so
-  // the write is held to its old reach here. undefined for every other role.
-  //
-  // EPI-01b (R4 round 1): the patient is read for EVERY role, under the
-  // caller's RLS. clinical_episodes is tenant-only and its foreign key to
-  // patients ignores RLS, so without this read an owner could open an episode
-  // in their own tenant for ANOTHER tenant's patient id. patients_select admits
-  // the owner to their own tenant's patients only.
   const writeScope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, async (tx) => {
     const [mine] = await tx
       .select({ id: patients.id })
       .from(patients)
-      .where(writeScope ? and(eq(patients.id, input.patientId), writeScope) : eq(patients.id, input.patientId))
+      .where(writeScope ? and(eq(patients.id, patientId), writeScope) : eq(patients.id, patientId))
       .limit(1);
     if (!mine) throw new ClinicalError("not_found");
-    return insertOpenEpisode(tx, ctx, { patientId: input.patientId, title }, ip);
+
+    const open = await findOpenEpisodeOfSpecialty(tx, ctx, patientId, specialty);
+    const decision = decideOpenEpisode(open, confirmed);
+    if (decision.kind === "confirm") return { kind: "open_exists", episodeId: decision.episodeId };
+
+    const title = specialtyEpisodeTitle(specialty, new Date());
+    if (title === null) throw new ClinicalError("invalid");
+    const { id } = await insertOpenEpisode(tx, ctx, { patientId, title }, ip);
+    return { kind: "created", id };
   });
 }
 
@@ -91,7 +122,7 @@ export async function createEpisode(
  * tenant and name, and its `clinical_episode.create` audit row, in the CALLER'S
  * transaction so the two commit or roll back together.
  *
- * Two callers: `createEpisode` above, and EPI-01b's "+ Avaliação" on an imported
+ * Two callers: `createEpisode` above ("+ Episódio"), and EPI-01b's "+ Avaliação" on an imported
  * group (`createDraftRecord` with `newEpisodeSpecialty`) WHEN THE PATIENT HAS NO
  * OPEN APP EPISODE OF THAT SPECIALTY (R31; `findOpenEpisodeOfSpecialty` below),
  * which opens the episode and files the registo in it in ONE transaction, so a
@@ -231,6 +262,86 @@ export async function findOpenEpisodeOfSpecialty(
 /* ------------------------------------------------------------------ */
 /* Reads                                                              */
 /* ------------------------------------------------------------------ */
+
+/** One open app episode of a patient, as the Registos tab needs it. */
+export type OpenAppEpisode = ReuseCandidate & {
+  /** True when no registo the viewer can read is filed in it. */
+  empty: boolean;
+};
+
+/**
+ * EPI-01b, piece 2: THE PATIENT'S OPEN APP EPISODES, FOR THE REGISTOS TAB OF A
+ * VIEWER WHO MAY WRITE THERE. The tab draws its groups from registos, so an
+ * episode "+ Episódio" has just opened, which holds none yet, would not appear;
+ * this is what lets the tab draw it (with "+ Avaliação" at hand), and what it
+ * shows the therapist when the patient already has an open episode of the
+ * specialty they chose.
+ *
+ * It feeds a write, so it keeps the write's reach: the authoring capability,
+ * and for a therapist the narrow write scope on the patient (treats or
+ * created), under the caller's own tenant-scoped context. A patient outside
+ * that reach answers an empty list. Open (`status = 'open'`), this patient's,
+ * in this tenant, and not named by the import ledger: the same four facts
+ * `pickEpisodeToReuse` asks, in the same order (most recently opened first).
+ * It writes nothing.
+ */
+export async function listOpenAppEpisodes(ctx: RequestContext, patientId: string): Promise<OpenAppEpisode[]> {
+  assertCan(ctx.role, "clinical_records:author");
+  if (!UUID_RE.test(patientId)) return [];
+  const id = canonicalId(patientId);
+  const writeScope = therapistPatientScope(ctx, patients.id);
+  return runScoped(
+    ctx,
+    async (tx) => {
+      const [mine] = await tx
+        .select({ id: patients.id })
+        .from(patients)
+        .where(writeScope ? and(eq(patients.id, id), writeScope) : eq(patients.id, id))
+        .limit(1);
+      if (!mine) return [];
+
+      const open = await tx
+        .select({
+          id: clinicalEpisodes.id,
+          tenantId: clinicalEpisodes.tenantId,
+          patientId: clinicalEpisodes.patientId,
+          status: clinicalEpisodes.status,
+          title: clinicalEpisodes.title,
+          openedAt: clinicalEpisodes.openedAt,
+        })
+        .from(clinicalEpisodes)
+        .where(
+          and(
+            eq(clinicalEpisodes.tenantId, ctx.tenantId),
+            eq(clinicalEpisodes.patientId, id),
+            eq(clinicalEpisodes.status, "open"),
+          ),
+        )
+        .orderBy(desc(clinicalEpisodes.openedAt), asc(clinicalEpisodes.id));
+      if (open.length === 0) return [];
+      const ids = open.map((e) => e.id);
+
+      const ledger = await tx
+        .select({ id: migrationStagingRows.importedEntityId })
+        .from(migrationStagingRows)
+        .where(
+          and(eq(migrationStagingRows.entityType, "clinical_episode"), inArray(migrationStagingRows.importedEntityId, ids)),
+        );
+      const imported = new Set(ledger.map((row) => row.id));
+
+      const filed = await tx
+        .selectDistinct({ episodeId: clinicalRecords.episodeId })
+        .from(clinicalRecords)
+        .where(inArray(clinicalRecords.episodeId, ids));
+      const holdsRegistos = new Set(filed.map((row) => row.episodeId));
+
+      return open
+        .filter((e) => !imported.has(e.id))
+        .map((e) => ({ ...e, imported: false, empty: !holdsRegistos.has(e.id) }));
+    },
+    "clinical:open-app-episodes",
+  );
+}
 
 /** Episode header + the clinical records filed under it. Null if not visible. */
 export async function getEpisodeDetail(

@@ -79,3 +79,18 @@ export function defaultEpisodeTitle(word: string, now: Date): string {
   const [y, m, d] = iso.split("-");
   return `${word} (${d}/${m}/${y})`;
 }
+
+/**
+ * EPI-01b, piece 2: THE TITLE OF AN EPISODE OPENED BY "+ Episódio".
+ *
+ * The title is a specialty and a date, by ruling. Built here, on the server,
+ * from a word on EPISODE_SPECIALTIES and the clinic's Lisbon calendar day, in
+ * the shape "+ Avaliação" already builds (`defaultEpisodeTitle`): "Osteopatia
+ * (05/10/2026)". Null for anything that is not exactly one of those words (no
+ * trimming, no case folding, no other type), and the caller then opens nothing.
+ * There is no other input: nothing a request carries reaches the title.
+ */
+export function specialtyEpisodeTitle(specialty: unknown, now: Date): string | null {
+  if (!isEpisodeSpecialty(specialty)) return null;
+  return defaultEpisodeTitle(specialty, now);
+}

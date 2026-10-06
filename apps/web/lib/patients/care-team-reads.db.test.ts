@@ -633,11 +633,11 @@ d("CARE-02a: the care team reads the ficha and the registos (0098)", () => {
 
     it("a NEW EPISODE for the patient: refused to T1, opened for T2 (the control)", async () => {
       await expect(
-        episodes.createEpisode(ctx(t1, "therapist"), { patientId: patient, title: "Episodio T1" }),
+        episodes.createEpisode(ctx(t1, "therapist"), { patientId: patient, specialty: "Osteopatia" }),
       ).rejects.toMatchObject({ code: "not_found" });
       await expect(
-        episodes.createEpisode(ctx(t2, "therapist"), { patientId: patient, title: "Episodio T2" }),
-      ).resolves.toMatchObject({ id: expect.any(String) });
+        episodes.createEpisode(ctx(t2, "therapist"), { patientId: patient, specialty: "Osteopatia" }),
+      ).resolves.toMatchObject({ kind: "created", id: expect.any(String) });
     });
 
     it("none of T1's refused attempts left a row: no version, no annulment, no episode, no audit", async () => {

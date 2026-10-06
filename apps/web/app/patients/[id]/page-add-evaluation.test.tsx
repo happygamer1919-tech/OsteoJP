@@ -100,6 +100,9 @@ vi.mock("../../../lib/clinical/ficha-groups", () => ({
     rec("r-free", { createdAt: "2026-08-20T10:00:00.000Z" }),
   ],
 }));
+// EPI-01b, piece 2: the tab also reads the patient's open app episodes for a
+// viewer who may write. None here: these arms are about groups that hold registos.
+vi.mock("../../../lib/clinical/episodes", () => ({ listOpenAppEpisodes: async () => [] }));
 vi.mock("../../../lib/clinical/records", () => ({
   listActiveTemplates: async () => [{ id: TEMPLATE, key: "ficha_medica", title: null, version: 1 }],
 }));

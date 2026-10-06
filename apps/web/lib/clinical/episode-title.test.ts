@@ -5,6 +5,7 @@ import {
   episodeSpecialtyOf,
   isEpisodeSpecialty,
   normalizeEpisodeTitle,
+  specialtyEpisodeTitle,
 } from "./episode-title";
 
 describe("normalizeEpisodeTitle", () => {
@@ -107,5 +108,68 @@ describe("episodeSpecialtyOf (EPI-01b, R31): which specialty an episode's title 
     }
     expect(episodeSpecialtyOf(null)).toBeNull();
     expect(episodeSpecialtyOf(undefined)).toBeNull();
+  });
+});
+
+describe("specialtyEpisodeTitle (EPI-01b, piece 2): the title '+ Episódio' gives a new episode", () => {
+  const noon = new Date("2026-10-05T12:00:00Z");
+
+  it("a word on the list and the Lisbon day, in the shape '+ Avaliação' builds", () => {
+    expect(specialtyEpisodeTitle("Osteopatia", noon)).toBe("Osteopatia (05/10/2026)");
+    expect(specialtyEpisodeTitle("Fisioterapia", noon)).toBe("Fisioterapia (05/10/2026)");
+    for (const specialty of EPISODE_SPECIALTIES) {
+      const title = specialtyEpisodeTitle(specialty, noon)!;
+      expect(title).toBe(defaultEpisodeTitle(specialty, noon));
+      // What it builds is what R31 reads back as that specialty.
+      expect(episodeSpecialtyOf(title)).toBe(specialty);
+    }
+  });
+
+  it("anything that is not exactly a word on the list builds no title", () => {
+    for (const v of [
+      "",
+      "Episódio",
+      "osteopatia",
+      "OSTEOPATIA",
+      " Osteopatia",
+      "Osteopatia ",
+      "Osteopatia (02/10/2026)",
+      "Osteopatia\nTexto",
+      "Texto escrito pelo cliente",
+    ]) {
+      expect(specialtyEpisodeTitle(v, noon), JSON.stringify(v)).toBeNull();
+    }
+    for (const v of [null, undefined, 1, true, ["Osteopatia"], { specialty: "Osteopatia" }]) {
+      expect(specialtyEpisodeTitle(v, noon)).toBeNull();
+    }
+  });
+
+  it("the date is the clinic's Lisbon day ACROSS MIDNIGHT, in summer and in winter", () => {
+    // Summer time (UTC+1): Lisbon's midnight is 23:00 UTC.
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-07-14T22:59:59Z"))).toBe("Osteopatia (14/07/2026)");
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-07-14T23:00:00Z"))).toBe("Osteopatia (15/07/2026)");
+    // Winter time (UTC+0): Lisbon's midnight is 00:00 UTC.
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-01-14T23:59:59Z"))).toBe("Osteopatia (14/01/2026)");
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-01-15T00:00:00Z"))).toBe("Osteopatia (15/01/2026)");
+    // The year turns at Lisbon's midnight too.
+    expect(specialtyEpisodeTitle("Fisioterapia", new Date("2026-12-31T23:59:59Z"))).toBe("Fisioterapia (31/12/2026)");
+    expect(specialtyEpisodeTitle("Fisioterapia", new Date("2027-01-01T00:00:00Z"))).toBe("Fisioterapia (01/01/2027)");
+  });
+
+  it("ACROSS A DAYLIGHT-SAVING CHANGE: the day follows Lisbon's clock on both sides of each change", () => {
+    // 29 March 2026, 01:00 UTC: Lisbon moves from UTC+0 to UTC+1.
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-03-28T23:30:00Z"))).toBe("Osteopatia (28/03/2026)"); // 23:30, winter time
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-03-29T00:30:00Z"))).toBe("Osteopatia (29/03/2026)"); // 00:30, before the change
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-03-29T01:30:00Z"))).toBe("Osteopatia (29/03/2026)"); // 02:30, after it
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-03-29T22:59:59Z"))).toBe("Osteopatia (29/03/2026)"); // 23:59:59, summer time
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-03-29T23:00:00Z"))).toBe("Osteopatia (30/03/2026)"); // midnight is now 23:00 UTC
+    // 25 October 2026, 01:00 UTC: Lisbon moves back from UTC+1 to UTC+0.
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-10-24T22:59:59Z"))).toBe("Osteopatia (24/10/2026)"); // 23:59:59, summer time
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-10-24T23:00:00Z"))).toBe("Osteopatia (25/10/2026)"); // 00:00, summer time
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-10-25T00:30:00Z"))).toBe("Osteopatia (25/10/2026)"); // 01:30, the first time
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-10-25T01:30:00Z"))).toBe("Osteopatia (25/10/2026)"); // 01:30, the second time
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-10-25T23:00:00Z"))).toBe("Osteopatia (25/10/2026)"); // 23:00: midnight is 00:00 UTC again
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-10-25T23:59:59Z"))).toBe("Osteopatia (25/10/2026)");
+    expect(specialtyEpisodeTitle("Osteopatia", new Date("2026-10-26T00:00:00Z"))).toBe("Osteopatia (26/10/2026)");
   });
 });
