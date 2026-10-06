@@ -245,7 +245,7 @@ async function proof1() {
   }
   if (process.env.TWILIO_SENDER_ID && !process.env.TWILIO_SMS_FROM) {
     console.warn(
-      "[proof1] WARN — TWILIO_SENDER_ID is set but the code reads TWILIO_SMS_FROM (docs/cutover-runbook.md names the wrong var). Set TWILIO_SMS_FROM.",
+      "[proof1] WARN — TWILIO_SENDER_ID is set but the code reads TWILIO_SMS_FROM. Set TWILIO_SMS_FROM.",
     );
   }
 }
