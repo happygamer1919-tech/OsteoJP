@@ -111,6 +111,46 @@ describe("episodeSpecialtyOf (EPI-01b, R31): which specialty an episode's title 
   });
 });
 
+/** A word in fullwidth letters (U+FF21.., U+FF41..): what NFKC folds back to the ASCII word. */
+const fullwidth = (word: string) => [...word].map((c) => String.fromCodePoint(c.codePointAt(0)! + 0xfee0)).join("");
+
+/**
+ * Words that LOOK like a listed specialty and are not one, written with escapes
+ * so the difference is in the source: fullwidth letters, a zero-width space
+ * inside the word (no listed word has an accent, so there is no NFD form to
+ * try), and a Cyrillic or Greek letter in place of a Latin one.
+ */
+const LOOK_ALIKES: [string, string][] = [
+  ["fullwidth Osteopatia", fullwidth("Osteopatia")],
+  ["fullwidth Fisioterapia", fullwidth("Fisioterapia")],
+  ["Osteopatia with a zero-width space inside", "Osteo\u200bpatia"],
+  ["Fisioterapia with a zero-width space inside", "Fisio\u200bterapia"],
+  ["Osteopatia with a Cyrillic capital O", "\u041esteopatia"],
+  ["Osteopatia with a Greek capital omicron", "\u039fsteopatia"],
+  ["Fisioterapia with a Cyrillic small a", "Fisioter\u0430pia"],
+];
+
+describe("look-alikes of a listed specialty (EPI-01b, piece 2): the list is compared exactly, never normalised", () => {
+  it("CONTROL: each look-alike differs from every listed word, and the fullwidth forms are what NFKC would fold into one", () => {
+    for (const [label, v] of LOOK_ALIKES) {
+      expect((EPISODE_SPECIALTIES as readonly string[]).includes(v), label).toBe(false);
+    }
+    expect(fullwidth("Osteopatia")).toBe("\uff2f\uff53\uff54\uff45\uff4f\uff50\uff41\uff54\uff49\uff41");
+    expect(fullwidth("Osteopatia").normalize("NFKC")).toBe("Osteopatia");
+    expect(fullwidth("Fisioterapia").normalize("NFKC")).toBe("Fisioterapia");
+  });
+
+  it("none is a specialty, none builds a title, and none is read back as a specialty from a title", () => {
+    const noon = new Date("2026-10-05T12:00:00Z");
+    for (const [label, v] of LOOK_ALIKES) {
+      expect(isEpisodeSpecialty(v), label).toBe(false);
+      expect(specialtyEpisodeTitle(v, noon), label).toBeNull();
+      expect(episodeSpecialtyOf(v), label).toBeNull();
+      expect(episodeSpecialtyOf(`${v} (05/10/2026)`), label).toBeNull();
+    }
+  });
+});
+
 describe("specialtyEpisodeTitle (EPI-01b, piece 2): the title '+ Episódio' gives a new episode", () => {
   const noon = new Date("2026-10-05T12:00:00Z");
 
@@ -138,6 +178,9 @@ describe("specialtyEpisodeTitle (EPI-01b, piece 2): the title '+ Episódio' give
       "Texto escrito pelo cliente",
     ]) {
       expect(specialtyEpisodeTitle(v, noon), JSON.stringify(v)).toBeNull();
+    }
+    for (const [label, v] of LOOK_ALIKES) {
+      expect(specialtyEpisodeTitle(v, noon), label).toBeNull();
     }
     for (const v of [null, undefined, 1, true, ["Osteopatia"], { specialty: "Osteopatia" }]) {
       expect(specialtyEpisodeTitle(v, noon)).toBeNull();

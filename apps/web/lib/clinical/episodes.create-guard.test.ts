@@ -248,6 +248,27 @@ describe("createEpisode: the title is a specialty and a date, built on the serve
       expect(await codeOf(createEpisode(therapist, { patientId: PATIENT, specialty: bad })), JSON.stringify(bad)).toBe("invalid");
       expect(mockRunScoped).not.toHaveBeenCalled();
     }
+    // Look-alikes of a listed word, written with escapes: fullwidth letters (what
+    // NFKC would fold into the word), a zero-width space inside it (no listed
+    // word has an accent, so there is no NFD form), and a Cyrillic or Greek
+    // letter in place of a Latin one. The list is compared exactly.
+    const fullwidth = (word: string) => [...word].map((c) => String.fromCodePoint(c.codePointAt(0)! + 0xfee0)).join("");
+    expect(fullwidth("Osteopatia").normalize("NFKC")).toBe("Osteopatia");
+    for (const [label, bad] of [
+      ["fullwidth Osteopatia", fullwidth("Osteopatia")],
+      ["fullwidth Fisioterapia", fullwidth("Fisioterapia")],
+      ["Osteopatia with a zero-width space inside", "Osteo\u200bpatia"],
+      ["Fisioterapia with a zero-width space inside", "Fisio\u200bterapia"],
+      ["Osteopatia with a Cyrillic capital O", "\u041esteopatia"],
+      ["Osteopatia with a Greek capital omicron", "\u039fsteopatia"],
+      ["Fisioterapia with a Cyrillic small a", "Fisioter\u0430pia"],
+    ] as const) {
+      mockRunScoped.mockReset();
+      expect(bad, label).not.toBe("Osteopatia");
+      expect(bad, label).not.toBe("Fisioterapia");
+      expect(await codeOf(createEpisode(therapist, { patientId: PATIENT, specialty: bad })), label).toBe("invalid");
+      expect(mockRunScoped, label).not.toHaveBeenCalled();
+    }
     for (const bad of [null, undefined, 7, ["Osteopatia"], { specialty: "Osteopatia" }]) {
       expect(await codeOf(createEpisode(therapist, { patientId: PATIENT, specialty: bad as never }))).toBe("invalid");
     }
