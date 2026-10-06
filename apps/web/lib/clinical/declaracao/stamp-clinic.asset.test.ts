@@ -19,7 +19,7 @@ import { resolveStampClinicKey } from "./stamp-clinic";
 describe("a clinic the table names, with an EMPTY carimbo slot, is not a clinic with a stamp", () => {
   it.each(["OsteoJP (LV)", "Linda-a-Velha", "osteojp (lv)"])("%s resolves to no key", (name) => {
     expect(resolveStampClinicKey(name)).toBeNull();
-    expect(resolveStampLocationKey({ name, address: null, phone: null }, null)).toBeNull();
+    expect(resolveStampLocationKey({ name, address: null, phone: null })).toBeNull();
   });
 
   it.each(["OsteoJP (CB)", "Castelo Branco"])("%s, whose slot is filled, still resolves", (name) => {

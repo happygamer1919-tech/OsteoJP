@@ -21,35 +21,20 @@ import { resolveStampClinicKey, stampClinicCity } from "./stamp-clinic";
 // whether the signature/stamp image is embedded.
 
 /**
- * The location a declaration is FOR: the selected marcação's location, else the
- * tenant's default location. One answer, read by the localidade line, the
- * carimbo and the footer contact block, so the three describe the same row.
- */
-export function resolveDeclaracaoLocation(
-  appointmentLocation: SourceLocation | null,
-  tenantDefaultLocation: SourceLocation | null,
-): SourceLocation | null {
-  return appointmentLocation ?? tenantDefaultLocation;
-}
-
-/**
  * Localidade for the "{localidade}, {dia}" line: the city of the clinic the
  * declaration's location is (Linda-a-Velha / Castelo Branco), whichever way that
  * location is spelled, "Linda-a-Velha" or "OsteoJP (LV)". A location that is
  * not one of those clinics gives its own NAME. Never a fixed "Lisboa".
  *
  * R45: resolved through `resolveStampClinicKey`, the resolver the carimbo uses,
- * on the same location. The line and the stamp therefore always describe the
- * SAME clinic; the line never borrows the city of a different location.
+ * on the ONE location the declaration is for. The line and the stamp therefore
+ * always describe the SAME clinic, and neither has a second location to fall
+ * back to.
  */
-export function resolveLocalidade(
-  appointmentLocation: SourceLocation | null,
-  tenantDefaultLocation: SourceLocation | null,
-): string {
-  const loc = resolveDeclaracaoLocation(appointmentLocation, tenantDefaultLocation);
-  if (!loc) return "";
-  const key = resolveStampClinicKey(loc.name);
-  return (key && stampClinicCity(key)) || loc.name.trim();
+export function resolveLocalidade(location: SourceLocation | null): string {
+  if (!location) return "";
+  const key = resolveStampClinicKey(location.name);
+  return (key && stampClinicCity(key)) || location.name.trim();
 }
 
 /**
@@ -62,13 +47,8 @@ export function resolveLocalidade(
  * all. generate.ts refuses the declaration on null; nothing falls back to some
  * other clinic's stamp.
  */
-export function resolveStampLocationKey(
-  appointmentLocation: SourceLocation | null,
-  tenantDefaultLocation: SourceLocation | null,
-): string | null {
-  return resolveStampClinicKey(
-    resolveDeclaracaoLocation(appointmentLocation, tenantDefaultLocation)?.name,
-  );
+export function resolveStampLocationKey(location: SourceLocation | null): string | null {
+  return resolveStampClinicKey(location?.name);
 }
 
 export type DeclaracaoInputs = {

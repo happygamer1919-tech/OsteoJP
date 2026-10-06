@@ -5,7 +5,6 @@ vi.mock("server-only", () => ({}));
 import { DEFAULT_RESPONSAVEL, readDeclaracaoSettings } from "./declaracao-settings";
 import {
   buildDeclaracaoModel,
-  resolveDeclaracaoLocation,
   resolveLocalidade,
   resolveStampLocationKey,
 } from "./declaracao-model";
@@ -23,38 +22,24 @@ const base = {
   stampLocationKey: "linda-a-velha",
 };
 
-describe("resolveLocalidade — marcação city, tenant-default fallback, never fixed Lisboa", () => {
-  it("uses the marcação location's canonical city (Linda-a-Velha)", () => {
-    expect(resolveLocalidade({ name: "Linda-a-Velha", address: null, phone: null }, null)).toBe(
-      "Linda-a-Velha",
-    );
+describe("resolveLocalidade — the declaration's own location, never fixed Lisboa", () => {
+  it("uses the location's canonical city (Linda-a-Velha)", () => {
+    expect(resolveLocalidade({ name: "Linda-a-Velha", address: null, phone: null })).toBe("Linda-a-Velha");
   });
   it("uses Castelo Branco from the canonical dataset", () => {
-    expect(resolveLocalidade({ name: "Castelo Branco", address: null, phone: null }, null)).toBe(
-      "Castelo Branco",
-    );
+    expect(resolveLocalidade({ name: "Castelo Branco", address: null, phone: null })).toBe("Castelo Branco");
   });
-  it("falls back to the tenant default location's city when there is NO marcação location", () => {
-    expect(resolveLocalidade(null, { name: "Castelo Branco", address: null, phone: null })).toBe(
-      "Castelo Branco",
-    );
-  });
-  it("R45: a marcação at another location never borrows the tenant default's city", () => {
-    // Until R45 this returned "Castelo Branco": the line named the default
-    // clinic while the carimbo was resolved for "Sala X". The line now reads
-    // the same location as the stamp, and generate.ts refuses this declaration.
-    expect(
-      resolveLocalidade(
-        { name: "Sala X", address: null, phone: null },
-        { name: "Castelo Branco", address: null, phone: null },
-      ),
-    ).toBe("Sala X");
+  // R45: until this change the function took a SECOND location, the tenant's
+  // default, and borrowed its city when the marcação's had none ("Sala X" at a
+  // tenant whose default was Castelo Branco printed "Castelo Branco"). A
+  // declaration is now made for one given location; there is no second one.
+  it("R45: takes ONE location, so there is no other location's city to borrow", () => {
+    expect(resolveLocalidade.length).toBe(1);
+    expect(resolveLocalidade({ name: "Sala X", address: null, phone: null })).toBe("Sala X");
   });
   it("falls back to the location NAME (never a fixed Lisboa) when no city resolves", () => {
-    expect(resolveLocalidade({ name: "Clínica Central", address: null, phone: null }, null)).toBe(
-      "Clínica Central",
-    );
-    expect(resolveLocalidade(null, null)).toBe("");
+    expect(resolveLocalidade({ name: "Clínica Central", address: null, phone: null })).toBe("Clínica Central");
+    expect(resolveLocalidade(null)).toBe("");
   });
 });
 
@@ -139,25 +124,24 @@ describe("W12-30 C1 — branded footer sources (contact + fiscal), reusing the r
 // ALWAYS a blank stamp area and NEVER another clinic's carimbo.
 // ---------------------------------------------------------------------------
 
-describe("resolveStampLocationKey - mirrors the localidade resolution", () => {
+describe("resolveStampLocationKey - the same location the localidade line reads", () => {
   const LV = { name: "Linda-a-Velha", address: null, phone: null };
-  const CB = { name: "OsteoJP (CB)", address: null, phone: null };
 
-  it("prefers the marcação's location over the tenant default", () => {
-    expect(resolveStampLocationKey(LV, CB)).toBe("linda-a-velha");
+  it("resolves the declaration's location", () => {
+    expect(resolveStampLocationKey(LV)).toBe("linda-a-velha");
   });
-  it("falls back to the tenant default when the marcação has no location", () => {
-    expect(resolveStampLocationKey(null, LV)).toBe("linda-a-velha");
+  it("R45: takes ONE location: no tenant default to fall back to", () => {
+    expect(resolveStampLocationKey.length).toBe(1);
   });
-  it("returns null when neither location is known (-> blank stamp, never a guess)", () => {
-    expect(resolveStampLocationKey(null, null)).toBeNull();
+  it("returns null when the location is not known (never a guess)", () => {
+    expect(resolveStampLocationKey(null)).toBeNull();
   });
   it("normalizes exactly like the localidade line, so the two always agree", () => {
     // Same canonical key helper: accents stripped, lowercased, hyphenated.
-    expect(resolveStampLocationKey({ name: "LINDA-A-VELHA", address: null, phone: null }, null)).toBe(
+    expect(resolveStampLocationKey({ name: "LINDA-A-VELHA", address: null, phone: null })).toBe(
       "linda-a-velha",
     );
-    expect(resolveStampLocationKey({ name: "Castelo Branco", address: null, phone: null }, null)).toBe(
+    expect(resolveStampLocationKey({ name: "Castelo Branco", address: null, phone: null })).toBe(
       "castelo-branco",
     );
   });
@@ -253,8 +237,8 @@ describe("R45 G7 - a location prints ITS OWN carimbo and its city, short code or
     { name: "Castelo Branco", key: "castelo-branco", city: "Castelo Branco", own: CB_BYTES, other: LV_BYTES },
   ])("$name: stamp of $key, place line $city", ({ name, key, city, own, other }) => {
     const location = row(name);
-    const stampLocationKey = resolveStampLocationKey(location, null);
-    const localidade = resolveLocalidade(location, null);
+    const stampLocationKey = resolveStampLocationKey(location);
+    const localidade = resolveLocalidade(location);
     expect(stampLocationKey).toBe(key);
     expect(localidade).toBe(city);
 
@@ -271,22 +255,9 @@ describe("R45 G7 - a location prints ITS OWN carimbo and its city, short code or
     expect(sameBytes(LV_BYTES, CB_BYTES)).toBe(false);
   });
 
-  it("the manual path: the tenant default, under its short-code name, is stamped the same way", () => {
-    expect(resolveStampLocationKey(null, row("OsteoJP (CB)"))).toBe("castelo-branco");
-    expect(resolveLocalidade(null, row("OsteoJP (CB)"))).toBe("Castelo Branco");
-  });
-
-  it("the marcação's clinic wins over the tenant default, for the stamp AND the line", () => {
-    const [cb, lv] = [row("OsteoJP (CB)"), row("OsteoJP (LV)")];
-    expect(resolveStampLocationKey(cb, lv)).toBe("castelo-branco");
-    expect(resolveLocalidade(cb, lv)).toBe("Castelo Branco");
-    expect(resolveStampLocationKey(lv, cb)).toBe("linda-a-velha");
-    expect(resolveLocalidade(lv, cb)).toBe("Linda-a-Velha");
-  });
-
   it("the place line is the city recorded for the key, not a second copy of it", () => {
-    expect(resolveLocalidade(row("OsteoJP (LV)"), null)).toBe(OSTEOJP_LOCATION_CONTACTS["linda-a-velha"]?.city);
-    expect(resolveLocalidade(row("OsteoJP (CB)"), null)).toBe(OSTEOJP_LOCATION_CONTACTS["castelo-branco"]?.city);
+    expect(resolveLocalidade(row("OsteoJP (LV)"))).toBe(OSTEOJP_LOCATION_CONTACTS["linda-a-velha"]?.city);
+    expect(resolveLocalidade(row("OsteoJP (CB)"))).toBe(OSTEOJP_LOCATION_CONTACTS["castelo-branco"]?.city);
   });
 });
 
@@ -298,24 +269,14 @@ describe("R45 G8 - a location with no carimbo resolves to NO key (generate.ts re
     // Ends in a known code, without the brand: a room, not the clinic.
     "Sala de testes (LV)",
   ])("%s", (name) => {
-    expect(resolveStampLocationKey(row(name), null)).toBeNull();
+    expect(resolveStampLocationKey(row(name))).toBeNull();
     // The line still names the location itself, never a clinic it is not.
-    expect(resolveLocalidade(row(name), null)).toBe(name);
+    expect(resolveLocalidade(row(name))).toBe(name);
   });
 
   it("no location at all", () => {
-    expect(resolveDeclaracaoLocation(null, null)).toBeNull();
-    expect(resolveStampLocationKey(null, null)).toBeNull();
-    expect(resolveLocalidade(null, null)).toBe("");
-  });
-
-  it("a marcação at a location with no carimbo is NOT rescued by a stamped tenant default", () => {
-    // The declaration is for the marcação's location. Falling through to the
-    // default here would print Linda-a-Velha's carimbo for another place.
-    const [mn, lv] = [row("OsteoJP (Montemor-o-Novo)"), row("OsteoJP (LV)")];
-    expect(resolveDeclaracaoLocation(mn, lv)).toBe(mn);
-    expect(resolveStampLocationKey(mn, lv)).toBeNull();
-    expect(resolveLocalidade(mn, lv)).toBe("OsteoJP (Montemor-o-Novo)");
+    expect(resolveStampLocationKey(null)).toBeNull();
+    expect(resolveLocalidade(null)).toBe("");
   });
 });
 
@@ -333,8 +294,8 @@ describe("R45 - the Declaração footer of a short-code location is its own row,
     const location = row(name);
     const m = buildDeclaracaoModel({
       ...base,
-      localidade: resolveLocalidade(location, null),
-      stampLocationKey: resolveStampLocationKey(location, null),
+      localidade: resolveLocalidade(location),
+      stampLocationKey: resolveStampLocationKey(location),
       sourceLocation: location,
       tenantSettings: {},
     });
