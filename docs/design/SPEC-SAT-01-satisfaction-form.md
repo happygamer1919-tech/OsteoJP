@@ -19,6 +19,14 @@ earlier, by S-1001-A R2: SAT-01 is `0101`. Where this amendment had to choose
 something no ruling decides, the text says "SOLO's reading, not a ruling", so a
 reader can tell the two apart. Section 4 was not re-measured for the amendment.
 
+**Amended 2026-10-04** by SOLO to strategy's dispatch S-1004-A: rulings R32 to
+R35 (which rule O9 and O10 of section 11 and add O11 and O12), R39 and R41,
+stated in section 3.5. **The migration number moved again: SAT-01 is `0102`**
+(R41), and its pending file follows `0101`, the public form's email column.
+Where this document still reads `0101` for SAT-01 it is a quotation of a ruling
+or of an earlier revision, marked superseded; every statement in the present
+tense reads `0102`.
+
 **The name (S1).** In every Portuguese string the feature is the "Avaliação de
 satisfação" (plural "Avaliações de satisfação", never bare "Avaliações", which on
 this platform means the clinical evaluations). This English document keeps
@@ -46,7 +54,7 @@ at their clinics, and by the owner; by no other therapist (S7). The patient can
 opt out on the page, in the portal, or through staff on the patient profile, and
 no send path overrides it (S8). The message replaces the post-visit "thank you,
 book your next visit" message that has been switched off since 2026-09-04. The
-database half is one held Tier C migration, `0101`. The app half is seven pull
+database half is one held Tier C migration, `0102` (*`0101` until 2026-10-04, superseded by S-1004-A R41*). The app half is seven pull
 requests, each sending nothing to a patient while a SAT live-send flag, off by
 default, stays off; the owner turns it on after a supervised canary send to a
 ZZ TESTE patient (section 7.5).
@@ -235,7 +243,104 @@ approved sections A to G and the timing block of SAT-01-copy-pt-for-JP.md on
 > - The first live send is a supervised canary to a ZZ TESTE patient. The owner turns the flag on after the canary.
 > - Platform Guide: one lesson "Avaliação de satisfação" (how to send, where the status shows, who sees answers), stating: SMS is paid and used only when the patient has no email; always collect the patient's email.
 
-Section 10 is this order as pull requests.
+Section 10 is this order as pull requests. *The build order's "0101" is
+superseded 2026-10-04 by S-1004-A R41: the migration is `0102`.*
+
+### 3.5 The rulings of 2026-10-04 (S-1004-A), as dispatched to the build lane
+
+Each is quoted as the lead's dispatch for the migration's rework carried it. The
+first two are strategy's own words; R29 and R32 to R35 are the dispatch's
+statement of the ruling.
+
+| Ruling | Text | Where it lands |
+|---|---|---|
+| R41 | "0101 = public-form email column ... SAT-01 becomes 0102. ... Rename the SAT-01 draft and branch now, while nothing is pinned." | 6.1; the pending file, the checks, the document and the branch, renamed |
+| R39 | "Move the two CREATE POLICY statements to the end of the SAT-01 file. Add one read of supautils.policy_grants to its production pre-check. Standing: any migration that creates a policy is closed-hours only, never eligible for R9." | 6.1, 6.5; the migration's last two statements; the pre-check's INFO row; the apply document, section 4 |
+| G6 | "SAT-01 pg_locks rerun after the re-order. EXPECT: auth locks appear only at the last two statements." | the apply document, "G6": PASS, 2 of 70 statements since the re-pin of 2026-10-06 (2 of 74 before it), against 40 of 62 in the draft |
+| R29 | Clinic hours in every apply document are a weekday table in Lisbon time: open weekdays 08:00 to 21:00, Saturday 08:00 to 13:00, closed Sunday. | the apply document, section 4 and its blocks |
+| R32 (O9) | A fifth disabled reason: the last concluded visit already has an answer. | 5.4, 6.6: reason `answered` in `survey_manual_verdict`, copy text 82; one answer per visit stays (`appointment_id` UNIQUE on the answers) |
+| R33 (O10) | The send flag has three states: off, canary, on. Canary sends only to patient ids on an allow-list held in configuration, not in the repo. Check: under canary, a send to a non-listed patient is refused and logged. | 7.5; application configuration only, nothing in the migration |
+| R34 (O11) | The survey switch is settable by the patient and by the same staff roles that edit reminder preferences, same clinic scope, with an audit row per change, in RLS. | 6.2, 6.7; the migration's trigger `patients_survey_switch_audit` |
+| R35 (O12) | No gate edit inside a sitting. Each gate edit is its own GATE-CHANGE PR merged by the owner on green (promotion ones before the promotion; a post-apply count edit after the applier reports). The exact order goes into the apply document. | the apply document, "THE ORDER OF PULL REQUESTS" |
+
+**What R34 means in the database, measured.** The two reminder switches are
+protected by grants and two UPDATE policies, not by a function: `authenticated`
+holds a table-level UPDATE on `patients` and the row gate is `patients_update`
+(0047: the owner; admin and reception within their clinic scope; a therapist
+for a patient they treat; the row's creator); the `patient` role holds a
+column-level UPDATE and the row gate `patients_patient_update_selfscope` (0019:
+their own row). `survey_enabled` is one more column behind the same two gates,
+so its principals are the same by construction. The audit row is written by an
+AFTER UPDATE trigger on `patients` that fires only when the value changes:
+`audit_log`, action `survey.switch_changed`, the patient, the new value, and
+the acting staff user or the acting patient's id. Two facts inherited from the
+reminder switches and left as they are: a server-side session with a tenant and
+no user can set it (as the SMS STOP reply sets `reminder_sms_enabled`), and the
+staff application does not yet show any of the three switches on the patient
+file (7.8 adds the survey one).
+
+### 3.6 The review of 2026-10-05: what the database now does, and what the application owes it
+
+An independent review of the held migration (`4474ff84`) found six defects. All
+six were fixed in the SQL before anything was pinned; the apply document's
+"The review of 2026-10-05" lists each. This section records what changes for
+the application, and the application work the fixes leave owed. **None of it is
+written yet: no application code is in the migration's pull request.**
+
+**What the database now refuses.**
+
+* **The page's three doors answer only the server's own session.**
+  `resolve_survey_code`, `submit_survey_response` and `opt_out_survey` return
+  what an unknown code returns (no row, false, false) to every session that
+  carries a user (`auth.uid()`) or a patient claim (`jwt_patient_id()`).
+  `issue_survey_automatic` refuses a patient claim as it already refused a
+  user. A member of staff, a patient signed in to the portal, and anyone
+  holding either token therefore cannot read, answer or opt out through the
+  database, even with a live code in hand. Before the fix a staff member could
+  issue a manual send with a hash of their own choosing and answer it
+  themselves, the patient's consent included.
+* **A code that is not 64 lower-case hex characters** gets the answer a wrong
+  code gets, from every door that takes one. It raises nothing.
+* **`consent_version` is at most 64 characters** (today's label is 22).
+* **A patient who has a send or an answer cannot be deleted** (foreign keys
+  NO ACTION, 23503). Decided, not defaulted: a cascade would erase a
+  patient's answers and consent as a side effect of a delete, with no audit row.
+
+**Owed application work, each with the pull request of section 10 it belongs to.**
+
+| # | Work | Why | Where |
+|---|---|---|---|
+| A1 | The public page `/s/<code>` and its actions call the three doors through `withReminderTenantContext` (tenant, role `authenticated`, no user, no patient claim), as `confirm-code-store.ts` calls 0074's doors. They never use the visitor's own session, so a visitor who is also signed in as staff or in the portal still gets the page. A test with a staff session and a portal session in the browser. | The doors refuse any other session. A page that passed the visitor's session would show "link not valid" to every signed-in visitor. | 7.2, 9.3 |
+| A2 | **MUST LAND BEFORE THE LIVE-SEND FLAG LEAVES `off`.** The manual send records its hand-over to the channel in `reminder_dispatches` (or the ledger the send path uses), in the same request as `issue_survey_manual`, and the Comunicações list shows a send with no hand-over as not sent. | The database cannot tell the application's manual send from a staff member's direct call of `issue_survey_manual`. Such a call is attributable (`sent_by`, the `survey.sent` audit row) and can attach only to a patient that member may send to, but it records a send with no message leaving, blocks the button for 14 days (`open_link`) and consumes the patient's 60-day window for the automatic send. The hand-over record is the only thing that shows the difference. | 7.6, 9.2; a condition of 7.5's flag leaving `off`, with A7 and A8 |
+| A3 | **Merge.** `merge_patients` (0005) does not know the three tables. After a merge the appointment is the survivor's and its send and answer still name the merged-away patient: the live link stops resolving, the survivor can be sent a second survey for the same visit, and the answer is missing from the survivor's file. The merge must either re-point `appointment_survey_sends.patient_id` and `appointment_survey_responses.patient_id` to the survivor in the same transaction, or refuse a merge whose source has survey rows. A ruling is needed on which (O13). It is a change to a SECURITY DEFINER function: its own migration and review. | Recorded as a gap by one arm of the DB-gated suite, which changes when this lands. | new; before the live-send flag leaves `off` |
+| A4 | **Hard delete.** `hardDeletePatient` (`apps/web/lib/patients/actions.ts`) counts the patient's rows in the two tables in its reference guard, so it answers `has_references`. | Without it the delete of a merged-away patient with survey rows fails at the foreign key and the screen shows the generic error. A patient who was never merged is already stopped by the appointment the send belongs to. | 7.7 or its own small pull request |
+| A5 | The consent label list (7.2) refuses a label longer than 64 characters, in its test. | The CHECK. | 7.2 |
+| A6 | An erasure request (RGPD, a patient asking for their answers to be deleted) has no path: the purge nulls comments after 24 months and nothing deletes an answer. | The foreign keys make that explicit. Out of scope in v1 unless ruled otherwise (O14). | 8 |
+| A7 | **The survey link is never stored and never shown to staff.** The application keeps only the code's HMAC (as `confirm-code-store.ts` does); the link is built in the send path, handed to the provider and dropped. No staff screen, log line, audit row, dispatch record or error message carries the link or the code; the Comunicações list shows that a send exists and its status, never its link. A test that greps the rendered staff pages and the dispatch ledger for the code. | The page's doors answer the server's own session for whoever presents a live code. The code is therefore the whole of the patient's authority: a staff member who can read it can answer as the patient through the page itself, which no database rule can tell from the patient. | 7.1, 7.3, 7.6, 9.2 |
+| A8 | **A staff member who edits a patient's email (or phone) can receive a real link:** change the address to their own, press the manual send, answer as the patient, change it back. The database permits each step to the roles S4 and the patients policy name. The application must make it visible, not possible to hide: the send records the address it went to as a salted hash or a masked form in the dispatch ledger; a manual send to a contact changed in the last 24 hours asks for confirmation and writes an audit row naming both the change and the send; and the list flags an answer whose send went to a contact later changed back. Whether to block instead of flag is a ruling (O15). | The second review's note. The contact change is already audited (`patient.update`); nothing ties it to the send today. | 7.6, 7.3, 9.2; before the live-send flag leaves `off` |
+
+**Before any application code ships.** From the migration's COMMIT a send row can exist: a staff
+member S4 lets send to a patient can call `issue_survey_manual` directly. An answer cannot exist
+until the page ships, because only the application's server makes the session the page's doors
+answer. A send alone breaks nothing reception does today; after a merge it makes the settings
+tier's hard delete of the merged-away patient fail (A4).
+
+**The second review (2026-10-05) changed the migration's shape, not its meaning:** the eight
+foreign keys to `tenants`, `appointments`, `patients` and `users` are added at the end of the
+file under the same names; `resolve_survey_code` is plpgsql with the same query; no lock on an
+existing table is taken before the last fourteen statements of that file. Nothing in sections 5 to
+7 changes.
+
+**The re-pin of 2026-10-06 (strategy S-1006-A: R44, and Q5) changed its shape again, not its
+meaning:** the eight are folded into three `ALTER TABLE` statements, one per new table, with the
+same names and definitions; a third first line, `SET LOCAL idle_in_transaction_session_timeout =
+'15s'`, makes the server end a session that stalls with the transaction open and release its
+locks; and no lock on an existing table is taken before the last nine statements of seventy.
+Nothing in sections 5 to 7 changes.
+
+**One fact for the record.** The trigger function is SECURITY DEFINER because
+the `patient` role, which changes the switch from the portal, holds no INSERT
+on `audit_log`. This migration does not change the audit insert policy.
 
 ## 4. What exists today (measured at `f8b3f32d`)
 
@@ -359,8 +464,10 @@ by S8:
 * in the portal account screen, a third switch beside the two reminder switches
   (default 4);
 * on the survey page, the "stop sending me surveys" button;
-* by asking the clinic: staff turn off the toggle on the patient profile (owner,
-  admin and reception, the O1 (c) proposal; S8 does not name the roles).
+* by asking the clinic: staff turn off the toggle on the patient profile.
+  ~~(owner, admin and reception, the O1 (c) proposal; S8 does not name the
+  roles)~~ *Superseded 2026-10-04 by S-1004-A R34:* the same staff roles that
+  edit reminder preferences, in the same clinic scope, enforced in RLS.
 
 **No send path overrides it (S8).** With the switch off, the automatic send is
 suppressed with its reason and the manual button is disabled with copy text 71;
@@ -407,8 +514,11 @@ depends on the sender (`reply-capability.ts`), which SAT-01 does not change.
   manual issue door re-checks every condition above under the same per-patient
   lock as 5.1, records `sent_by` from `auth.uid()` (never from the caller) and
   writes one `audit_log` row (6.7). Two staff pressing at once produce one send.
-* **Open question O9 (section 11):** the four reasons do not cover a most recent
-  concluded appointment that is already answered.
+* **A fifth reason, ruled 2026-10-04 by S-1004-A R32 (O9):** the patient's last
+  concluded visit already has an answer. The button is disabled with reason
+  `answered` (copy text 82, to be added to the copy file with the manual-send
+  pull request). ~~Open question O9: the four reasons do not cover a most recent
+  concluded appointment that is already answered.~~
 
 ### 5.5 The send status (S5)
 
@@ -422,23 +532,32 @@ automático" for an automatic one, then "Canal: email" or "Canal: SMS", then
 resposta"; the opt-out itself shows as the button's disabled reason (text 71).
 Who sees the status is section 2.
 
-## 6. The data model: a held migration plan, numbered `0101`
+## 6. The data model: a held migration plan, numbered `0102`
 
 ### 6.1 Numbering and holding
 
 * SAT-01's migrations are on the ruled Tier C list (#1461). **One migration,
-  `0101`, is planned** (S-1001-A R2: `0100` is the MAINTAIN revoke, #1520, and
-  `0102` is the episode-policy item). A split by the R4 review cannot take
-  `0102`; it needs a number from the owner.
+  `0102`, is planned** (S-1004-A R41: `0100` is the MAINTAIN revoke, applied;
+  `0101` is the public form's email column, #1538). A split by the R4 review
+  needs a number from the owner. *Until 2026-10-04 this bullet read `0101` for
+  SAT-01 and `0102` for the episode-policy item (S-1001-A R2); superseded by
+  R41.*
 * It is authored as
-  `packages/db/migrations-pending/NEXT-AFTER-0100_sat01_satisfaction_survey.sql`
+  `packages/db/migrations-pending/NEXT-AFTER-0101_sat01_satisfaction_survey.sql`
   (the README's rule: the name says what it must follow, and it carries no
-  number of its own). It is promoted to `0101` only when `0100` is applied to
+  number of its own). It is promoted to `0102` only when `0101` is applied to
   production and merged. Apply order equals file order (2026-09-30).
+* **Its last two statements are the two `CREATE POLICY` statements** (R39), and
+  a migration that creates a policy is closed-hours only.
 * **Its first two statements are the SET LOCAL lines** (S-1002-A R10, the gate
   `scripts/migration-timeouts.test.mjs`): `SET LOCAL lock_timeout = '5s';` and
   `SET LOCAL statement_timeout = '60s';`.
-* **The apply document** `docs/migration-apply-0101.md`, with its sha256
+* **Its third statement is `SET LOCAL idle_in_transaction_session_timeout =
+  '15s';`** (strategy S-1006-A, Q5, 2026-10-06): a session that stalls with the
+  transaction open is ended by the server and its locks are released. The gate
+  allows the line as it stands; requiring it of every migration is a
+  GATE-CHANGE of its own.
+* **The apply document** `docs/migration-apply-0102.md`, with its sha256
   sidecar, carries:
   * **a stage 0 R9 arm** (S-1002-A R9): it proves, or fails to prove, each of
     the three conditions for a clinic-hours sitting (the SET LOCAL gate on main;
@@ -486,6 +605,15 @@ the column grants of 0019 and 0082 and is row-scoped by the existing
 because a table-level REVOKE drops every column grant with it. Staff change it
 through the existing patient update path (S8, 6.7). Every send path reads it
 (S8).
+
+**Who may set it, and the audit row (S-1004-A R34, 2026-10-04):** the patient,
+and the same staff roles that edit reminder preferences, in the same clinic
+scope, enforced in RLS: the column sits behind `authenticated`'s table-level
+UPDATE and the `patients_update` policy (0047), exactly as
+`reminder_sms_enabled` and `reminder_email_enabled` do. Every change writes one
+`audit_log` row (`survey.switch_changed`: the patient, the new value, the acting
+staff user or the acting patient's id) from an AFTER UPDATE trigger,
+`patients_survey_switch_audit`, in the transaction of the change. Section 3.5.
 
 ### 6.3 `appointment_survey_sends` and `appointment_survey_codes`
 
@@ -544,7 +672,7 @@ the send.
 | `id` | uuid PRIMARY KEY DEFAULT gen_random_uuid() | |
 | `tenant_id` | uuid NOT NULL | REFERENCES `tenants(id)` |
 | `send_id` | uuid NOT NULL UNIQUE | REFERENCES `appointment_survey_sends(id)`, **no cascade** (O6); one answer per send |
-| `appointment_id` | uuid NOT NULL UNIQUE | REFERENCES `appointments(id)`, **no cascade** (O6). UNIQUE holds while O9 is (a), the recommendation; under O9 (b) it is dropped and `send_id` alone is unique |
+| `appointment_id` | uuid NOT NULL UNIQUE | REFERENCES `appointments(id)`, **no cascade** (O6). UNIQUE holds: O9 was ruled (a) by S-1004-A R32 (*until 2026-10-04: "while O9 is (a), the recommendation; under O9 (b) it is dropped"*) and `send_id` alone is unique |
 | `patient_id` | uuid NOT NULL | REFERENCES `patients(id)`, no cascade, as 0093 |
 | `nps` | smallint NOT NULL | CHECK BETWEEN 0 AND 10 |
 | `rating` | smallint NOT NULL | CHECK BETWEEN 1 AND 5 |
@@ -629,6 +757,8 @@ The app calls `issue_survey_automatic`, `resolve_survey_code`,
 `withReminderTenantContext`, as `confirm-code-store.ts` calls 0074's doors, and
 `issue_survey_manual` and `survey_send_state` with the staff member's own
 session (`runScoped`), so `auth.uid()` is the sender. No service-role handle.
+**Since the review of 2026-10-05 the first four refuse every other session**
+(3.6): a user or a patient claim gets what an unknown code gets.
 
 The existing tests that count SECURITY DEFINER functions move by six callable
 doors plus one owner-only function; the expected count is a sum and is updated
@@ -655,6 +785,13 @@ one owner-only function".
   through the existing patient update path; the held PR's rehearsal proves
   that path's roles can write the new column and no role outside it can.
   ~~(if O1 (c) is ruled)~~ *superseded 2026-10-02 by S-1002-D S8.*
+* **Every change of the switch, by anyone, writes `survey.switch_changed`**
+  (S-1004-A R34, 2026-10-04): entity `patient`, actor the staff member when a
+  staff session made it, metadata `{ "survey_enabled": <new value>,
+  "actor_patient_id": <the patient's own id when the portal made it, else
+  null> }`. Written by the database trigger in the transaction of the change,
+  so no path can change the switch without it: the portal, the patient file,
+  and the survey page's opt-out, whose own `survey.opt_out` row stays beside it.
 * Retention (default 10, S12): the purge function above, driven once per tenant
   by a daily job modelled on `apps/web/lib/guest-intake/retention.ts` (checks
   the table exists first, lists tenants, one call per tenant, logs counts only).
@@ -738,7 +875,10 @@ matching its default.
   ruling, fixed in the manual-send pull request.** Recommended: the flag reads
   off, canary or on; in canary a send goes out only to a patient on a
   one-entry list the owner sets, and everything else is suppressed with its
-  reason. Open question O10.
+  reason. ~~Open question O10.~~ **Ruled 2026-10-04 by S-1004-A R33:** the flag
+  has three states, off, canary, on; canary sends only to patient ids on an
+  allow-list held in configuration, not in the repo; under canary, a send to a
+  non-listed patient is refused and logged. Nothing of it is in the migration.
 
 As written on 2026-09-29, *superseded 2026-10-02 by S-1002-D S9a*: "Merged code
 sends nothing: the entries are unapproved and the flag is off. Going live is
@@ -853,7 +993,7 @@ Taken out of this list 2026-10-02:
   switch and not another patient's.
 * **Appointment delete**: an appointment with an unanswered send deletes and
   takes the send with it; one with an answer is refused (O6 (a)).
-* **Rehearsal**: applies clean at production's position; the first two
+* **Rehearsal**: applies clean at production's position; the first three
   statements are the SET LOCAL lines; a before/after profile of `patients`
   shows no row changed; one mutation sweep over every predicate of the doors
   and policies, survivors listed (the owner's "one mutation sweep per op").
@@ -912,8 +1052,8 @@ plus one being built (R3).
 | # | Pull request | Tier | Opens when |
 |---|---|---|---|
 | 1 | The spec and the pt-PT copy (#1496, merged 2026-09-29), and **this amendment** | A (docs) | now |
-| 2 | The held migration `0101`: the pending file, DB tests, rehearsal record, apply document with the R9 arm and its sha256 sidecar, pre-check, post-check, the behaviour check per role, GREEN dispatch, question block | C, held unarmed, `held-for-apply` | after `0100` is applied and merged; O6 and O9 can be authored to their recommendations and held |
-| 3 | The guest page with the single-use 14-day token (7.2) | B, R4 | after `0101` is applied |
+| 2 | The held migration `0102`: the pending file, DB tests, rehearsal record, apply document with the R9 arm and its sha256 sidecar, pre-check, post-check, the behaviour check per role, GREEN dispatch, question block | C, held unarmed, `held-for-apply` | after `0101` is applied and merged; O6 and O9 can be authored to their recommendations and held |
+| 3 | The guest page with the single-use 14-day token (7.2) | B, R4 | after `0102` is applied and merged |
 | 4 | The automatic job: send path, templates and the flag (7.1) | B, R4 | after 3 |
 | 5 | The manual send with its S5 status (7.6) | B, R4 | after 4 |
 | 6 | The list in Comunicações (7.3) | B, R4 | after 5 |
@@ -924,7 +1064,7 @@ plus one being built (R3).
 | 11 | The supervised canary to a ZZ TESTE patient, then the flag (7.5) | D, the owner | after 9 |
 | 12 | The retention job (6.7) | B, R4 | any time before the oldest answer is 24 months old |
 
-Pull requests 3 to 9 merge only after `0101` is on production, because a call
+Pull requests 3 to 9 merge only after `0102` is on production, because a call
 to a function that does not exist yet raises 42883 and aborts its caller; each
 also checks that the tables exist and fails closed to "not sent" when they do
 not.
@@ -945,7 +1085,8 @@ order and S9a*:
 ## 11. Open questions for the owner
 
 Each has a recommended default. The rulings of 2026-10-02 closed O1 and O2 and
-answered O3; the rest stay open.
+answered O3; those of 2026-10-04 ruled O9 to O12; O13 and O14 were added by
+the reviews of 2026-10-05, with O15; the rest stay open.
 
 | # | Question | Options | Recommended | Status 2026-10-02 |
 |---|---|---|---|---|
@@ -957,8 +1098,13 @@ answered O3; the rest stay open.
 | O6 | Deleting an appointment that has an answer | (a) refuse, as for notes, records and invoices; (b) delete the answer with it | (a): an answer is something a patient gave and is not lost silently | Open; the held PR is authored to (a). |
 | O7 | The key for survey codes | (a) the confirm code key with a `survey:` prefix; (b) a new secret | (a): no new secret to set | Open. |
 | O8 | Corrigir estado to Concluída | (a) sends nothing, as today; (b) sends a survey | (a) in v1; a manual send covers the case | Open. |
-| O9 | **New 2026-10-02.** The manual button when the patient's most recent concluded appointment is already answered. S4's four reasons do not cover it, and a link sent for it would open the generic invalid page. | (a) disable the button with a fifth reason ("Indisponível: a avaliação da consulta mais recente já foi respondida.", to be added to the copy as text 82); (b) allow a second answer for the same appointment, one per send | (a): one answer per visit keeps the list's numbers comparable | Open; the held PR is authored to (a) and the copy waits for the ruling. |
-| O10 | **New 2026-10-02.** How the canary passes a flag that is off (7.5) | (a) a canary state that sends only to one listed patient; (b) the owner turns the flag on for the canary and off again if it fails | (a): the flag never opens for every patient before the canary has passed | Open; decided in the manual-send pull request. |
+| O9 | **New 2026-10-02.** The manual button when the patient's most recent concluded appointment is already answered. S4's four reasons do not cover it, and a link sent for it would open the generic invalid page. | (a) disable the button with a fifth reason ("Indisponível: a avaliação da consulta mais recente já foi respondida.", to be added to the copy as text 82); (b) allow a second answer for the same appointment, one per send | (a): one answer per visit keeps the list's numbers comparable | **Ruled by S-1004-A R32: (a).** The fifth reason is `answered`; copy text 82. |
+| O10 | **New 2026-10-02.** How the canary passes a flag that is off (7.5) | (a) a canary state that sends only to one listed patient; (b) the owner turns the flag on for the canary and off again if it fails | (a): the flag never opens for every patient before the canary has passed | **Ruled by S-1004-A R33:** three states, off, canary, on; the allow-list in configuration, not in the repo; a canary send to a non-listed patient is refused and logged. |
+| O11 | **New 2026-10-04.** Who may set the survey switch at the database, and is it audited? | (a) leave it to the application's toggle, as the reminder switches are; (b) narrow it to owner, admin and reception by a column-level split | (a) | **Ruled by S-1004-A R34:** the patient and the same staff roles that edit reminder preferences, same clinic scope, with an audit row per change, in RLS. Section 3.5. |
+| O12 | **New 2026-10-04.** The order of the sitting and of the gate edits the migration forces | (a) one PR carrying the gate edits, merged before the apply; (b) 0096's order | (a) | **Ruled by S-1004-A R35:** no gate edit inside a sitting; each is its own GATE-CHANGE PR; the count edit after the applier reports. The order is in `docs/migration-apply-0102.md`. |
+| O13 | **New 2026-10-05.** What a merge does with the merged-away patient's sends and answers (3.6, A3) | (a) `merge_patients` re-points both tables to the survivor in the same transaction; (b) a merge whose source has survey rows is refused | (a): the answer belongs to the visit, and the visit is the survivor's after a merge | Open. Not in the held migration; it must land before the live-send flag leaves `off`. |
+| O14 | **New 2026-10-05.** A patient asks for their answers to be erased (3.6, A6) | (a) no path in v1, handled by hand under an owner ruling when it happens; (b) an owner-only erase door with an audit row | (a) in v1 | Open. The foreign keys are NO ACTION, so nothing erases an answer as a side effect. |
+| O15 | **New 2026-10-05.** A manual send to a contact a staff member changed shortly before (3.6, A8) | (a) flag it: confirmation, an audit row tying the change to the send, a mark on the list; (b) block a manual send for 24 hours after a contact change by anyone but the patient | (a): a legitimate correction of a mistyped address followed by a send is the common case | Open. Application work; must be ruled before the live-send flag leaves `off`. |
 
 ## 12. The copy
 

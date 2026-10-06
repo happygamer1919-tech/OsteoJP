@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0101_sat01_satisfaction_survey.sql` | `0101` (the optional email on a public booking request, #1538: promoted on main and applied to production on 2026-10-05) | 2026-10-02, reworked 2026-10-05 to S-1004-A: SAT-01's tables, doors, the survey switch's audit trigger (R34) and, as its last two statements, its two policies (R39); revised 2026-10-05 after the first review (the page's doors answer only the server's own session, no owner pin on the helper) and after the second (no lock on an existing table before the final group: the eight foreign keys to existing tables are added at the end, `patients` first, and all nine functions are plpgsql); re-pinned 2026-10-06 under strategy's S-1006-A, R44 and Q5 (a third first line, `SET LOCAL idle_in_transaction_session_timeout = '15s'`; the eight foreign keys folded into three statements, one per new table; no lock on an existing table before statement 62 of 70), sha256 `db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1`; becomes `0102` (S-1004-A R41; it was to be `0101` until then) | branch `db/0102-sat01-tables`, not pushed, no PR yet. 0101 is applied and merged, so what comes first is the cleanup test's GATE-CHANGE (`scripts/import/cleanup-test-patients.test.mjs` learns the three tables, the shape of #1436), then the promotion. It is applied from the PR's HELD head, and its SECURITY DEFINER count (28 to 36) is a GATE-CHANGE of its own after the apply; the 0079 ACL test's list rides in the promotion commit (`docs/migration-apply-0102.md`, "THE ORDER OF PULL REQUESTS") |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
@@ -65,6 +66,8 @@ journal's `idx` order to match the numeric file order, and the apply order ruled
 first promotion. The binding table is in `CLAUDE.md` under "SOLO's record".
 
 **Re-ruled 2026-10-01 (strategy S-1001-A R2), after `0096` to `0099` were all applied:** "Numbering: this is 0100 (catalog-only pilot of the SET LOCAL gate). SAT-01 becomes 0101, the episode-policy item 0102." The queue above is the 2026-09-30 ruling as it was written; read its "`0100` onward SAT-01" as `0101` onward.
+
+**Re-ruled 2026-10-04 (strategy S-1004-A R41):** "0101 = public-form email column ... SAT-01 becomes 0102." So read "SAT-01 becomes 0101" above as superseded: `0101` is the optional email on a public booking request (#1538), and SAT-01 is `0102`, pending after it. `CLAUDE.md`'s table and the board still read `0101` for SAT-01 until their own pull requests record R41.
 
 A pending file's `NEXT-AFTER-` name follows this queue. Named as they will be on their
 held branches:
