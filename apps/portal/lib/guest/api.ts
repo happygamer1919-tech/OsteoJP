@@ -23,7 +23,17 @@ function logUnavailable(where: string, e: unknown): void {
 }
 
 export type PublicService = { id: string; name: string; locationIds: string[] }
-export type PublicLocation = { id: string; name: string }
+/**
+ * `address` and `phone` arrived with R45 (2026-10-06) and are OPTIONAL here on
+ * purpose: the portal and the API deploy separately, and an API that predates
+ * the change omits both. Absent reads as "none on file".
+ */
+export type PublicLocation = {
+  id: string
+  name: string
+  address?: string | null
+  phone?: string | null
+}
 export type PublicCatalog = {
   locations: PublicLocation[]
   services: PublicService[]

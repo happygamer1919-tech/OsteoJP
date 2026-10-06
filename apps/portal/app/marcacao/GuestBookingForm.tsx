@@ -4,7 +4,7 @@ import { useActionState } from 'react'
 import { Banner, Button, Field, Input, Textarea } from '@osteojp/ui'
 import type { PortalLocale, PortalStrings } from '@osteojp/i18n'
 
-import { CLINIC_CONTACTS } from '@/lib/clinics'
+import type { ClinicPhone } from '@/lib/clinics'
 import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
@@ -91,6 +91,14 @@ export type GuestBookingFormProps = {
   /** YYYY-MM-DD bounds of the date of birth: 0087's floor, and today in Lisbon. */
   dobMin: string
   dobMax: string
+  /**
+   * R45 (strategy, 2026-10-06): the clinics to list under "Telefone", each with
+   * the numbers that reach it. Resolved by the page from the SAME catalogue
+   * this form offers, so the telephones shown are the telephones of the clinics
+   * that can be chosen; the published list stands in when none of them has a
+   * number on file. Never empty.
+   */
+  clinicPhones: readonly { id: string; name: string; phone: readonly ClinicPhone[] }[]
 }
 
 const CHOICE_ROW =
@@ -117,6 +125,7 @@ export function GuestBookingForm({
   intakeEnabled,
   dobMin,
   dobMax,
+  clinicPhones,
 }: GuestBookingFormProps) {
   const [state, formAction, pending] = useActionState(guestBookingAction, {
     ...INITIAL_GUEST_STATE,
@@ -680,9 +689,10 @@ export function GuestBookingForm({
           somebody gives up on the form was unusable at that moment.
 
           NO SENTENCE IS AUTHORED HERE. The heading is `clinics.phone_label`,
-          which already existed; the clinic names and the numbers are both data
-          from lib/clinics.ts. Structuring data that was already on the screen
-          is presentation, not copy - the same reasoning ClinicPhones records.
+          which already existed; the clinic names and the numbers are both data,
+          read from the active locations since R45 (see `clinicPhones` above).
+          Structuring data that was already on the screen is presentation, not
+          copy - the same reasoning ClinicPhones records.
 
           WHY NOT THE SHARED ClinicPhones COMPONENT: it renders the deliberately
           FLAT list on the login screen and on every error boundary, where the
@@ -694,7 +704,7 @@ export function GuestBookingForm({
       <div className="mt-6 text-sm text-text-secondary">
         <p className="font-medium text-text-primary">{s.clinics.phone_label}</p>
         <ul className="mt-2 flex flex-col gap-2">
-          {CLINIC_CONTACTS.map((clinic) => (
+          {clinicPhones.map((clinic) => (
             <li key={clinic.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="font-medium text-text-primary">{clinic.name}</span>
               <span className="flex flex-wrap items-center gap-x-3">

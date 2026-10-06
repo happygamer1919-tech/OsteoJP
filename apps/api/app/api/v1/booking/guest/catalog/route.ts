@@ -33,11 +33,23 @@ import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
  *
  * WHY DISCLOSING THIS IS SAFE, AND IT IS AN ARGUMENT ABOUT THE DATA RATHER THAN
  * ABOUT THE CALLER. Every row here is already published: the services are on
- * osteojp.pt, and both clinics are on the portal's own public Clínicas page with
- * their addresses and telephone numbers. Nothing about any PERSON is reachable
- * through it — no patient, no therapist, no appointment, no schedule. The
- * projection is `id` and `name` and nothing else: no price, no duration, no
- * internal flag.
+ * osteojp.pt, and the clinics are on the portal's own public Clínicas page.
+ * Nothing about any PERSON is reachable
+ * through it — no patient, no therapist, no appointment, no schedule. A service
+ * is `id` and `name` and nothing else: no price, no duration, no internal flag.
+ *
+ * A CLINIC IS `id`, `name`, `address` AND `phone` SINCE R45 (strategy,
+ * 2026-10-06), AND THE WIDENING IS DELIBERATE. The ruling: the portal's Clínicas
+ * page and the telephone numbers on its login screen and on the public form
+ * read from the active locations, so that a clinic the owner adds needs no code
+ * change. Two of those three screens run before any sign-in, so the address and
+ * the telephone have to travel on a read that needs none, and this is the one
+ * the project has. They are the two fields the clinic types in Administração >
+ * Locais as its own address and telephone, and what a patient is already
+ * given from that row: the telephone on every reminder, the address in the
+ * booking-approved email, and both on a printed declaration, report or RGPD
+ * form when the clinic has no fuller entry. No other column of the row
+ * leaves: not the opening hours, not the active flag, not the slot size.
  *
  * ONE THING ABOUT STAFFING IS NOW IMPLIED, AND ONLY ONE (R45, 2026-10-06). A
  * clinic is listed only when somebody bookable has hours there, so a clinic's
@@ -61,7 +73,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export type PublicBookingCatalog = {
-  locations: { id: string; name: string }[];
+  /**
+   * `address` and `phone` are what the clinic typed in Administração > Locais,
+   * unformatted, and either may be null. R45: see the header.
+   */
+  locations: { id: string; name: string; address: string | null; phone: string | null }[];
   services: {
     id: string;
     name: string;
@@ -105,7 +121,12 @@ export async function GET(req: Request): Promise<Response> {
   const db = getDbAdmin();
   const [locationRows, serviceRows, intakeEnabled] = await Promise.all([
     db
-      .select({ id: locations.id, name: locations.name })
+      .select({
+        id: locations.id,
+        name: locations.name,
+        address: locations.address,
+        phone: locations.phone,
+      })
       .from(locations)
       // R45: a clinic is listed only when somebody bookable has hours there.
       // `locations.isActive` alone listed a location from the moment its row
@@ -206,11 +227,17 @@ export async function GET(req: Request): Promise<Response> {
     // MAPPED EXPLICITLY, not passed through, and the difference is not stylistic
     // on a public endpoint. Passing `locationRows` straight out makes the SELECT
     // above the only thing standing between the internet and whatever a future
-    // edit adds to it - `address`, `isActive`, a phone number - and that edit
-    // would read as harmless in a diff because the response line would not
+    // edit adds to it - `isActive`, the opening hours, the slot size - and that
+    // edit would read as harmless in a diff because the response line would not
     // change at all. The projection is stated in the place the response is
-    // built, and `catalog/route.test.ts` §2 pins both key sets.
-    locations: locationRows.map((l) => ({ id: l.id, name: l.name })),
+    // built, and `catalog/route.test.ts` §2 pins both key sets. `address` and
+    // `phone` are named here on purpose (R45, see the header).
+    locations: locationRows.map((l) => ({
+      id: l.id,
+      name: l.name,
+      address: l.address ?? null,
+      phone: l.phone ?? null,
+    })),
     services: serviceRows
       .map((s) => ({
         id: s.id,

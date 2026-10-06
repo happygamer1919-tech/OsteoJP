@@ -180,11 +180,14 @@ describe("every Supabase Auth template that can send mail has a pt-PT body", () 
     }
   });
 
-  it.each(files)("%s carries the brand teal and the clinic footer", (f) => {
+  it.each(files)("%s carries the brand teal and the footer names OsteoJP alone", (f) => {
     const body = read(f);
     expect(body).toContain("#45B9A7");
-    expect(body).toContain("Linda-a-Velha");
-    expect(body).toContain("Castelo Branco");
+    // R45 (strategy, 2026-10-06): "The six auth templates say "OsteoJP" with no
+    // list of clinics." The footer used to read "OsteoJP - Linda-a-Velha e
+    // Castelo Branco", and this arm used to REQUIRE both names. The exact
+    // paragraph is pinned so the footer cannot quietly lose the name as well.
+    expect(body).toContain('<p style="margin:0;">OsteoJP</p>');
   });
 
   it.each(files)("%s has NO malformed entity fragment", (f) => {
@@ -213,14 +216,24 @@ describe("every Supabase Auth template that can send mail has a pt-PT body", () 
     expect(read(f)).not.toContain("&middot");
   });
 
-  it.each(files)("%s names TWO clinics, and never a third", (f) => {
-    // OWNER CORRECTION 2026-08-06: the clinic has exactly two locations.
-    // Montemor-o-Novo does NOT exist. It is named in CLAUDE.md:4, README.md:3
-    // and 45 other committed files as a third location, which is how it reached
-    // these footers; the owner is authoritative and those files are wrong.
-    // Pinned here so a future edit that copies the stale three-location line out
-    // of CLAUDE.md fails instead of mailing a nonexistent clinic to a patient.
-    expect(read(f)).not.toContain("Montemor");
+  it.each(files)("%s names no clinic at all, so a new one never makes it wrong", (f) => {
+    // R45 (strategy, 2026-10-06). This arm was "names TWO clinics, and never a
+    // third": it forbade the word Montemor, on the owner's correction of
+    // 2026-08-06 that the clinic had exactly two locations. A third is now
+    // planned, and the lesson of that correction is kept in a stronger form: a
+    // template that lists the clinics is wrong every time the list changes, and
+    // these are pasted into a dashboard by hand, so they would stay wrong. They
+    // name the brand and no place.
+    //
+    // A PLACE NAME IS RECOGNISED BY SHAPE AS WELL AS BY LIST. The three names
+    // the product has ever used are refused outright, and so is any footer
+    // paragraph that carries more than the brand, which is how a fourth name
+    // would arrive.
+    const body = decoded(f);
+    for (const place of ["Linda-a-Velha", "Castelo Branco", "Montemor"]) {
+      expect(body, `${f} names ${place}`).not.toContain(place);
+    }
+    expect(read(f)).not.toMatch(/<p style="margin:0;">OsteoJP\s*[-–—·,:|]/);
   });
 
   it.each(files)("%s uses no emoji — product tone is serious, not warm", (f) => {

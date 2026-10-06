@@ -109,8 +109,8 @@ describe("§1 — it answers the guest form, and only the guest form", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       locations: [
-        { id: LV, name: "Linda-a-Velha" },
-        { id: CB, name: "Castelo Branco" },
+        { id: LV, name: "Linda-a-Velha", address: null, phone: null },
+        { id: CB, name: "Castelo Branco", address: null, phone: null },
       ],
       services: [
         // A service bound to no location is offered at every ACTIVE clinic, so
@@ -178,15 +178,71 @@ describe("§2 — THE PROJECTION, pinned key by key", () => {
     expect(Object.keys(body.services[0]!).sort()).toEqual(["id", "locationIds", "name"]);
   });
 
-  it("a location row carries EXACTLY id and name", async () => {
+  it("a location row carries EXACTLY id, name, address and phone", async () => {
+    // R45 (strategy, 2026-10-06) WIDENED THIS ON PURPOSE, from `id` and `name`:
+    // the portal's Clínicas page and the telephones on its login screen and on
+    // the public form read from the active locations. The row the database
+    // hands back still carries more than the response may, and none of the
+    // rest leaves.
     H.results = [
-      [{ id: LV, name: "Linda-a-Velha", address: "Praça Central Plaza", isActive: true }],
+      [
+        {
+          id: LV,
+          name: "Linda-a-Velha",
+          address: "Praça Central Plaza",
+          phone: "969 472 111",
+          isActive: true,
+          opensAt: "08:00",
+          closesAt: "21:00",
+          slotGranularityMin: 60,
+          middayClosedFrom: "13:00",
+          tenantId: T,
+        },
+      ],
       [],
     ];
     const body = (await (await guestCatalog(get())).json()) as {
       locations: Record<string, unknown>[];
     };
-    expect(Object.keys(body.locations[0]!).sort()).toEqual(["id", "name"]);
+    expect(Object.keys(body.locations[0]!).sort()).toEqual(["address", "id", "name", "phone"]);
+    expect(body.locations[0]).toEqual({
+      id: LV,
+      name: "Linda-a-Velha",
+      address: "Praça Central Plaza",
+      phone: "969 472 111",
+    });
+  });
+
+  it("a location with no address or telephone on file answers null for each, never undefined", async () => {
+    // `undefined` would drop the key from the JSON, and the portal would then be
+    // reading a shape the key pin above does not describe.
+    H.results = [[{ id: LV, name: "Linda-a-Velha" }], []];
+    const body = (await (await guestCatalog(get())).json()) as {
+      locations: Record<string, unknown>[];
+    };
+    expect(body.locations[0]).toEqual({ id: LV, name: "Linda-a-Velha", address: null, phone: null });
+  });
+
+  it("no opening hour, active flag or slot size reaches the wire, whatever the row held", async () => {
+    H.results = [
+      [
+        {
+          id: LV,
+          name: "Linda-a-Velha",
+          address: null,
+          phone: null,
+          isActive: true,
+          opensAt: "08:00",
+          closesAt: "21:00",
+          slotGranularityMin: 60,
+        },
+      ],
+      [],
+    ];
+    const raw = await (await guestCatalog(get())).text();
+    for (const forbidden of ["isActive", "opensAt", "closesAt", "08:00", "21:00", "slotGranularityMin"]) {
+      expect(raw, forbidden).not.toContain(forbidden);
+    }
   });
 
   it("no price, duration or internal flag reaches the wire, whatever the row held", async () => {

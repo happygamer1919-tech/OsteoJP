@@ -5,7 +5,7 @@ import { useActionState, useEffect, useState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
 
 import { s } from '@/lib/i18n'
-import { ALL_CLINIC_PHONES } from '@/lib/clinics'
+import type { ClinicPhone } from '@/lib/clinics'
 
 import { loginAction, trustedDeviceAction } from './actions'
 import { INITIAL_LOGIN_STATE } from './state'
@@ -25,7 +25,21 @@ import { INITIAL_LOGIN_STATE } from './state'
  * of both credentials in `httpOnly` cookies. No token, code or number is ever
  * readable by script on this page.
  */
-export function LoginOtp({ deviceKnown }: { deviceKnown: boolean }) {
+export function LoginOtp({
+  deviceKnown,
+  phones,
+  places,
+}: {
+  deviceKnown: boolean
+  /**
+   * R45: the telephones to offer under "contacte a clínica". Resolved by the
+   * page, from the active locations or from the published list when those
+   * cannot be read; never empty.
+   */
+  phones: readonly ClinicPhone[]
+  /** R45: the clinics' names for the footer, or none when they cannot be read. */
+  places: readonly string[]
+}) {
   const [state, formAction, pending] = useActionState(loginAction, INITIAL_LOGIN_STATE)
 
   /**
@@ -190,7 +204,7 @@ export function LoginOtp({ deviceKnown }: { deviceKnown: boolean }) {
               discloses nothing. */}
           <p className="mt-3 text-sm font-medium text-text-primary">{s.clinics.phone_label}</p>
           <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-            {ALL_CLINIC_PHONES.map((p) => (
+            {phones.map((p) => (
               <li key={p.number}>
                 <a
                   href={`tel:${p.number}`}
@@ -204,8 +218,10 @@ export function LoginOtp({ deviceKnown }: { deviceKnown: boolean }) {
         </section>
       )}
 
+      {/* R45: the places are DATA, the active locations by their patient-facing
+          names. It was a string naming two. */}
       <p className="mt-8 text-center text-xs text-text-secondary">
-        {s.common.app_name} · {s.common.footer_locations}
+        {[s.common.app_name, ...places].join(' · ')}
       </p>
     </>
   )

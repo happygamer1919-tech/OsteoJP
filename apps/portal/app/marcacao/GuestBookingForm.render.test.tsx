@@ -75,9 +75,33 @@ function render(locale: 'pt' | 'en', step: GuestStep, intake: boolean, over: Par
       intakeEnabled={intake}
       dobMin="1900-01-01"
       dobMax="2030-01-01"
+      clinicPhones={[
+        { id: LOCATION, name: 'Fixture Clinic', phone: [{ number: '+351210000000', display: '210 000 000' }] },
+      ]}
     />,
   )
 }
+
+describe('R45: the telephones under the form are the ones the page resolved', () => {
+  it('lists each clinic it is given with its number as a tel: link, on every step', () => {
+    for (const step of [1, 2, 3, 4] as const) {
+      const html = render('pt', step, false)
+      expect(html, `step ${step}`).toContain('Fixture Clinic')
+      expect(html, `step ${step}`).toContain('href="tel:+351210000000"')
+      expect(html, `step ${step}`).toContain('210 000 000')
+    }
+  })
+
+  it('names no clinic it was not given', () => {
+    // The form used to import the list of clinics itself. Now a clinic reaches
+    // this block only through the prop, which the page builds from the
+    // catalogue of active locations.
+    const html = render('pt', 4, false)
+    for (const place of ['Linda-a-Velha', 'Castelo Branco', 'Montemor']) {
+      expect(html, place).not.toContain(place)
+    }
+  })
+})
 
 /** The text of the one element carrying a test id, or null. */
 const textOf = (html: string, testId: string): string | null => {
