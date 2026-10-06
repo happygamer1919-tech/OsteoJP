@@ -1667,6 +1667,33 @@ async function ensureAddEvaluationReuseFixture(therapistId) {
 }
 
 // ---------------------------------------------------------------------------
+// EPI-01b, piece 2: THE PATIENT "+ Episódio" IS CLICKED ON. A patient of its
+// own, with no episode and no registo, so the Registos tab starts empty and
+// every group on it is one the spec opened. Created_by the E2E therapist (who
+// may therefore write for it), clinic Linda-a-Velha. Invented name. Upserts on
+// the id; whatever earlier runs opened is left exactly as it is. The id mirrors
+// ADD_EPISODE in ../fixtures.ts.
+// ---------------------------------------------------------------------------
+const ADD_EPISODE_PATIENT = "00000000-0000-0000-0000-00000000a3e4";
+
+async function ensureAddEpisodeFixture(therapistId) {
+  must(
+    (await db.from("patients").upsert(
+      {
+        id: ADD_EPISODE_PATIENT,
+        tenant_id: TENANT_A,
+        full_name: "Zzz Novo Episodio Teste",
+        created_by: therapistId,
+        primary_location_id: LOCATION_A,
+        deleted_at: null,
+      },
+      { onConflict: "id" },
+    )).error,
+    "add-episode patient",
+  );
+}
+
+// ---------------------------------------------------------------------------
 // G-D (2026-09-13) — THE PATIENT'S IMPORTED ORIGINALS, IN THE SHAPE THE IMPORT
 // WRITES. The importer stores each Fisiozero document at
 // `${tenant}/migration/fisiozero/<file>` (attachmentStoragePath); documentos.csv
@@ -1878,6 +1905,8 @@ async function main() {
   await ensureAddEvaluationFixture(userIds.therapist);
   // EPI-01b R31: a patient with one imported group and no app episode (two clicks, one episode).
   await ensureAddEvaluationReuseFixture(userIds.therapist);
+  // EPI-01b piece 2: a patient with no episode and no registo, for "+ Episódio".
+  await ensureAddEpisodeFixture(userIds.therapist);
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);

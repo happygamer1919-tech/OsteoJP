@@ -4063,13 +4063,7 @@
                   "strong": "Registos clínicos"
                 },
                 {
-                  "text": ". Quem escreve registos clínicos tem ainda o botão "
-                },
-                {
-                  "strong": "Novo episódio"
-                },
-                {
-                  "text": " no topo."
+                  "text": "."
                 }
               ],
               "type": "para"
@@ -4140,7 +4134,13 @@
                   "strong": "Registos clínicos"
                 },
                 {
-                  "text": " vê todos os registos do paciente, incluindo os de colegas."
+                  "text": " vê todos os registos do paciente, incluindo os de colegas, e abre um episódio novo com o botão "
+                },
+                {
+                  "strong": "Episódio"
+                },
+                {
+                  "text": "."
                 }
               ],
               "type": "para"
@@ -4189,7 +4189,7 @@
       "see": [],
       "shots": "pacientes.ficha-do-paciente",
       "title": "A ficha do paciente",
-      "words": 167
+      "words": 164
     },
     {
       "answers": [],
@@ -6157,73 +6157,161 @@
         {
           "spans": [
             {
-              "text": "Um episódio junta os registos de um mesmo problema do paciente."
+              "text": "Um episódio junta os registos de um mesmo problema do paciente. O título de um episódio é uma especialidade e uma data."
             }
           ],
           "type": "para"
         },
         {
-          "items": [
-            [
-              {
-                "text": "Na ficha do paciente, clique em "
-              },
-              {
-                "strong": "Novo episódio"
-              },
-              {
-                "text": ", no topo. O episódio é criado logo, com a data de hoje, e abre a página desse episódio."
-              }
-            ],
-            [
-              {
-                "text": "Em "
-              },
-              {
-                "strong": "Fichas do episódio"
-              },
-              {
-                "text": ", clique em "
-              },
-              {
-                "strong": "Nova ficha neste episódio"
-              },
-              {
-                "text": ". Abre "
-              },
-              {
-                "strong": "Nova ficha clínica"
-              },
-              {
-                "text": " com o paciente e o episódio já escolhidos."
-              }
-            ],
-            [
-              {
-                "text": "Preencha e guarde o registo como habitualmente."
-              }
-            ]
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "Abrir um episódio:"
+                }
+              ],
+              "type": "para"
+            },
+            {
+              "items": [
+                [
+                  {
+                    "text": "Na ficha do paciente, abra o separador "
+                  },
+                  {
+                    "strong": "Registos clínicos"
+                  },
+                  {
+                    "text": "."
+                  }
+                ],
+                [
+                  {
+                    "text": "Em "
+                  },
+                  {
+                    "strong": "Especialidade do novo episódio"
+                  },
+                  {
+                    "text": ", escolha Osteopatia ou Fisioterapia e clique em "
+                  },
+                  {
+                    "strong": "Episódio"
+                  },
+                  {
+                    "text": ", o botão com o sinal de mais."
+                  }
+                ],
+                [
+                  {
+                    "text": "O episódio aparece na lista, com a especialidade e a data de hoje no título e a indicação "
+                  },
+                  {
+                    "strong": "Sem avaliações"
+                  },
+                  {
+                    "text": ". Clique em "
+                  },
+                  {
+                    "strong": "Avaliação"
+                  },
+                  {
+                    "text": ", nesse episódio, para criar o primeiro registo."
+                  }
+                ]
+              ],
+              "kind": "ol",
+              "start": 1,
+              "type": "list"
+            },
+            {
+              "spans": [
+                {
+                  "text": "Se o paciente já tiver um episódio aberto dessa especialidade, nenhum é aberto: o ecrã mostra esse episódio e pergunta. "
+                },
+                {
+                  "strong": "Ver o episódio aberto"
+                },
+                {
+                  "text": " leva até ele, "
+                },
+                {
+                  "strong": "Cancelar"
+                },
+                {
+                  "text": " não abre nada, e o botão para abrir outro episódio abre um segundo."
+                }
+              ],
+              "type": "para"
+            }
           ],
-          "kind": "ol",
-          "start": 1,
-          "type": "list"
+          "roles": [
+            "terapeuta"
+          ],
+          "type": "role"
+        },
+        {
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "O Proprietário não tem o botão "
+                },
+                {
+                  "strong": "Episódio"
+                },
+                {
+                  "text": ". Em "
+                },
+                {
+                  "strong": "Registos clínicos"
+                },
+                {
+                  "text": ", cria registos com "
+                },
+                {
+                  "strong": "Avaliação"
+                },
+                {
+                  "text": ", num grupo da lista, ou com "
+                },
+                {
+                  "strong": "Nova ficha"
+                },
+                {
+                  "text": "."
+                }
+              ],
+              "type": "para"
+            }
+          ],
+          "roles": [
+            "proprietario"
+          ],
+          "type": "role"
         },
         {
           "spans": [
             {
-              "text": "Também pode ligar um registo novo a um episódio que já existe: em "
+              "text": "Num episódio que já existe, "
             },
             {
-              "strong": "Nova ficha clínica"
+              "strong": "Avaliação"
             },
             {
-              "text": ", escolha-o no campo "
+              "text": " cria um registo ligado a ele. Também pode escolhê-lo no campo "
             },
             {
               "strong": "Episódio"
             },
             {
-              "text": " antes de clicar em "
+              "text": " de "
+            },
+            {
+              "strong": "Nova ficha clínica"
+            },
+            {
+              "text": ", antes de clicar em "
             },
             {
               "strong": "Criar ficha"
@@ -6238,7 +6326,7 @@
       "capability": "clinical_records:author",
       "faq": [],
       "file": "04-registos/05-episodios.md",
-      "goal": "Criar um episódio e ligar-lhe registos.",
+      "goal": "Juntar os registos de um mesmo problema num episódio.",
       "id": "registos.episodios",
       "images": null,
       "order": {
@@ -6258,7 +6346,7 @@
       "see": [],
       "shots": null,
       "title": "Agrupar registos num episódio",
-      "words": 96
+      "words": 179
     },
     {
       "answers": [],

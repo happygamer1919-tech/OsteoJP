@@ -90,7 +90,7 @@ Nota: pesquise sempre antes de criar um paciente, para não abrir uma segunda fi
 
 ## Ficha do paciente
 
-A ficha reúne tudo sobre um paciente. No topo estão o nome, o NIF, os contactos e avisos como **RGPD em falta**, com os botões **Nova marcação** e **Novo episódio**. Por baixo há seis separadores: **Resumo** (**Dados pessoais**, com **Editar dados**, e **Terapeutas atribuídos**), **Marcações** (as consultas do paciente e os pacotes), **Notas**, **Registos clínicos**, **Documentos** (**Carregar documento** e **Imprimir Declaração de Presença**) e **Faturação**. No fundo da página fica a **Zona de risco**.
+A ficha reúne tudo sobre um paciente. No topo estão o nome, o NIF, os contactos e avisos como **RGPD em falta**, com o botão **Nova marcação**. Por baixo há seis separadores: **Resumo** (**Dados pessoais**, com **Editar dados**, e **Terapeutas atribuídos**), **Marcações** (as consultas do paciente e os pacotes), **Notas**, **Registos clínicos**, **Documentos** (**Carregar documento** e **Imprimir Declaração de Presença**) e **Faturação**. No fundo da página fica a **Zona de risco**.
 
 ### Como fazer: marcar a partir da ficha
 
@@ -112,7 +112,7 @@ A ficha reúne tudo sobre um paciente. No topo estão o nome, o NIF, os contacto
 ![Ficha do paciente no telemóvel](../screens/proprietario/ficha-paciente-390.png)
 ![Ficha do paciente no computador](../screens/proprietario/ficha-paciente-desktop.png)
 
-Nota: na **Zona de risco**, **Eliminar** retira o paciente da lista e pode ser desfeito em Administração, Pacientes eliminados. **Eliminar definitivamente** pede a palavra-passe de eliminação, não se desfaz e só funciona num paciente sem dados associados; um paciente com registos clínicos nunca pode ser eliminado definitivamente.
+Nota: na **Zona de risco**, **Eliminar** retira o paciente da lista e pode ser desfeito em Administração, Pacientes eliminados. **Eliminar definitivamente** pede a palavra-passe de eliminação, não se desfaz e só funciona num paciente sem dados associados; um paciente com registos clínicos nunca pode ser eliminado definitivamente. Abrir um episódio novo é do Terapeuta, no separador **Registos clínicos**; o Proprietário cria registos nesse separador com **Avaliação**, num grupo da lista, ou com **Nova ficha**. As imagens são da versão anterior do ecrã, que ainda mostra o botão Novo episódio no topo; esse botão já não existe.
 
 ## Marcações
 
