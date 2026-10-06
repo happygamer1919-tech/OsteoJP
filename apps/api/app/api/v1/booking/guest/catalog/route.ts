@@ -39,6 +39,11 @@ import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
  * projection is `id` and `name` and nothing else: no price, no duration, no
  * internal flag.
  *
+ * ONE THING ABOUT STAFFING IS NOW IMPLIED, AND ONLY ONE (R45, 2026-10-06). A
+ * clinic is listed only when somebody bookable has hours there, so a clinic's
+ * PRESENCE says that much. It says nothing about who, how many, or when: no
+ * name, no count and no hour leaves this route, and MN-27 and MN-28 stand.
+ *
  * `tenantId` IS AN UNVERIFIED QUERY PARAMETER, and that is unavoidable rather
  * than careless — the route runs before any authentication, exactly as
  * `auth/otp/request` does, so there is no token to derive a tenant from. What

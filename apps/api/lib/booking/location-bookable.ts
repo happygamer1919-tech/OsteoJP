@@ -33,19 +33,29 @@ import { locations } from "@osteojp/db";
  * the submit accepts.
  *
  * ==========================================================================
- * NO DATE IN IT, ON PURPOSE
+ * NO DATE IN IT, ON PURPOSE, AND WHAT THAT COSTS
  * ==========================================================================
- * The therapist step's roster (`listBookableTherapists`) also requires the
- * schedule row's validity window to cover today. This fragment deliberately
- * does not. A schedule is often entered as dated rows, so on a given day most
- * of a working clinic's active rows can sit outside their window; a date test
- * here could take a clinic that is open off the booking form for a day because
- * of how its hours were typed. "Does anybody bookable have hours here" answers
- * the question the ruling asks, and it does not change with the calendar.
+ * A schedule row can carry a validity window. This fragment reads neither end
+ * of it: a row that has not started yet counts, and so does one that has
+ * expired.
  *
- * So a location can be listed while the therapist step, or the slot grid, is
- * empty for the moment. That is what every location did before this rule, and
- * the roster and the slot query are unchanged.
+ * NOT STARTED YET COUNTS because that is somebody bookable with hours there. A
+ * `valid_from <= today` test, which the therapist step's roster applies, would
+ * take a working clinic off the form on any day that falls between one dated
+ * row and the next.
+ *
+ * EXPIRED COUNTS TOO, AND THAT HALF IS A CHOICE WITH A COST. A location whose
+ * every schedule row has expired can offer no slot until somebody enters hours,
+ * and it stays listed: the wizard shows it with nothing to pick, and the public
+ * form accepts a request for it. Before this rule every active location behaved
+ * that way. The alternative is an expiry test here, which is exact, and which
+ * would also take a working clinic off the PUBLIC form on the first morning
+ * its entered hours ran out, although that form needs no schedule at all:
+ * reception answers those requests by telephone. Staying listed fails towards
+ * the clinic being reachable. Which failure is preferred is the clinic's to
+ * say, so the choice is recorded in the pull request for strategy, and
+ * `location-bookable.db.test.ts` pins both halves so that changing either is a
+ * decision rather than a tidy-up.
  *
  * ==========================================================================
  * THE CALLER MUST HAVE `locations` IN SCOPE

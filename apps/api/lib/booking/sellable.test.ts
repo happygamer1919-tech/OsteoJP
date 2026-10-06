@@ -35,8 +35,25 @@ const CATALOG = join(API, "app/api/v1/booking/guest/catalog/route.ts");
 const CHECKER = join(API, "lib/booking/sellable.ts");
 const POST_ROUTE = join(API, "app/api/v1/booking/guest/route.ts");
 
-const catalog = readFileSync(CATALOG, "utf8");
-const checker = readFileSync(CHECKER, "utf8");
+/**
+ * CODE ONLY: comments out, and the clause list itself out of the checker.
+ *
+ * Both were ways to pass this scan without applying a clause. A comment that
+ * NAMES a clause is not a query that applies it. And the checker is the file
+ * that DECLARES `GUEST_SELLABILITY_CLAUSES`, so every clause string is in it by
+ * construction: scanning the whole file, the "CHECKER still applies" arms below
+ * could not fail, whatever the join did. Found in review of R45's sixth clause,
+ * and true of the first five since the day they were written.
+ */
+const codeOnly = (src: string): string =>
+  src
+    .replace(/export const GUEST_SELLABILITY_CLAUSES = \[[\s\S]*?\] as const;/, "")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+const catalog = codeOnly(readFileSync(CATALOG, "utf8"));
+const checkerSource = readFileSync(CHECKER, "utf8");
+const checker = codeOnly(checkerSource);
 const postRoute = readFileSync(POST_ROUTE, "utf8");
 
 describe("GUEST-08 is one rule", () => {
@@ -103,5 +120,12 @@ describe("GUEST-08 is one rule", () => {
     expect(catalog.includes("services.thisClauseDoesNotExist")).toBe(false);
     expect(catalog.length).toBeGreaterThan(1000);
     expect(checker.length).toBeGreaterThan(1000);
+    // And the scan reads CODE: the declared list is in the file and not in what
+    // is scanned, so a clause can only be found where it is applied.
+    expect(checkerSource).toContain("export const GUEST_SELLABILITY_CLAUSES = [");
+    expect(checker).not.toContain("GUEST_SELLABILITY_CLAUSES = [");
+    expect(codeOnly('// eq(services.isActive, true)\nconst a = 1; /* locations.isActive */')).not.toMatch(
+      /isActive/,
+    );
   });
 });

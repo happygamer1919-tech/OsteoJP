@@ -23,11 +23,11 @@
  * ONE LOCATION PER REASON
  * ==========================================================================
  * Each hidden location fails exactly one term of the rule and passes every
- * other, so removing a term from the fragment turns exactly one arm red. Two
+ * other, so removing a term from the fragment turns exactly one arm red. Three
  * locations are listed: the staffed one, which is the positive control without
- * which every "is hidden" assertion would pass on an empty result, and the one
- * whose only schedule row has expired, which pins the decision that the rule
- * carries no date.
+ * which every "is hidden" assertion would pass on an empty result, and the two
+ * whose only schedule row has expired or has not started yet, which pin both
+ * halves of the decision that the rule carries no date.
  *
  * GATING: needs a live DATABASE_URL with migrations applied (see
  * .github/workflows/db-tests.yml, which runs `vitest run .db.test.ts` in this
@@ -47,6 +47,7 @@ const d = live ? describe : describe.skip;
 const CASES = [
   { key: "staffed", listed: true, why: "a bookable therapist has active hours there" },
   { key: "expiredHours", listed: true, why: "the rule carries no date, so an expired window still counts" },
+  { key: "notStartedHours", listed: true, why: "the rule carries no date, so hours that start later already count" },
   { key: "noHours", listed: false, why: "nobody has a schedule row there" },
   { key: "inactiveHours", listed: false, why: "the only schedule row is switched off" },
   { key: "inactiveUser", listed: false, why: "the only person with hours is deactivated" },
@@ -99,12 +100,13 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
     tenant: string,
     userId: string,
     locationId: string,
-    row: { isActive?: boolean; validUntil?: string | null } = {},
+    row: { isActive?: boolean; validFrom?: string | null; validUntil?: string | null } = {},
   ): Promise<void> {
     await db.execute(raw`insert into availability_templates
-        (id, tenant_id, user_id, location_id, weekday, start_time, end_time, is_active, valid_until)
+        (id, tenant_id, user_id, location_id, weekday, start_time, end_time, is_active,
+         valid_from, valid_until)
       values (${randomUUID()}, ${tenant}, ${userId}, ${locationId}, 1, '09:00', '18:00',
-              ${row.isActive ?? true}, ${row.validUntil ?? null}::date)`);
+              ${row.isActive ?? true}, ${row.validFrom ?? null}::date, ${row.validUntil ?? null}::date)`);
   }
 
   async function publicCatalog(): Promise<{
@@ -157,6 +159,9 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
     await insertHours(tenantId, await insertUser(tenantId), loc.staffed);
     await insertHours(tenantId, await insertUser(tenantId), loc.expiredHours, {
       validUntil: "2020-01-01",
+    });
+    await insertHours(tenantId, await insertUser(tenantId), loc.notStartedHours, {
+      validFrom: "2999-01-01",
     });
     await insertHours(tenantId, await insertUser(tenantId), loc.inactiveHours, { isActive: false });
     await insertHours(tenantId, await insertUser(tenantId, { isActive: false }), loc.inactiveUser);
@@ -228,7 +233,7 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
     expect(counts).toEqual({ locations: CASES.length, hours: CASES.length - 2, prices: CASES.length + 1 });
   });
 
-  it("door 1, the logged-in catalogue lists exactly the two staffed locations", async () => {
+  it("door 1, the logged-in catalogue lists exactly the staffed locations", async () => {
     const catalog = await store.getCatalog(principal());
     expect(listedKeys(catalog.locations.map((l) => l.id)).sort()).toEqual([...expectedListed].sort());
     expect(catalog.locations.map((l) => l.id)).not.toContain(otherTenantLocationId);
@@ -247,7 +252,7 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
     expect(await store.isBookableLocation(principal(), otherTenantLocationId)).toBe(false);
   });
 
-  it("door 3, the public catalogue lists exactly the two staffed locations", async () => {
+  it("door 3, the public catalogue lists exactly the staffed locations", async () => {
     const body = await publicCatalog();
     expect(listedKeys(body.locations.map((l) => l.id)).sort()).toEqual([...expectedListed].sort());
     expect(body.locations.map((l) => l.id)).not.toContain(otherTenantLocationId);
