@@ -259,10 +259,12 @@ d("the episode PDF's reads and audit row under real RLS", () => {
   });
 
   it("a therapist with no relation to the patient has nothing to export from the episode", async () => {
+    expect((await mod.readEpisodeExportRows(ctx(therapistUnrelated, "therapist"), ask)) ?? []).toEqual([]);
     expect(await mod.readEpisodeExportSelection(ctx(therapistUnrelated, "therapist"), ask)).toBeNull();
   });
 
   it("an admin assigned to no clinic has nothing to export from the episode", async () => {
+    expect((await mod.readEpisodeExportRows(ctx(adminUnassigned, "admin"), ask)) ?? []).toEqual([]);
     expect(await mod.readEpisodeExportSelection(ctx(adminUnassigned, "admin"), ask)).toBeNull();
   });
 
