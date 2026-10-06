@@ -1,7 +1,7 @@
 /**
  * book-confirm-plan.test.ts - BOOK-CONFIRM: can a booking-approved message go?
  *
- * The three questions here are asked twice: by the dispatch when it sends, and
+ * The four questions here are asked twice: by the dispatch when it sends, and
  * by the approver's notice when a request is approved. They are one set of
  * functions so the two can never answer differently, which they did once: the
  * notice looked only at the shape of the number, so a patient whose SMS was
@@ -15,8 +15,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BOOKING_APPROVED_BLOCKERS,
   bookingApprovedBlocker,
   bookingApprovedLocationContact,
+  bookingApprovedServiceName,
   planBookingApprovedChannel,
   smsNumberVerdict,
   type BookingApprovedReachInput,
@@ -32,7 +34,20 @@ const reachable: BookingApprovedReachInput = {
   patientSmsEnabled: true,
   locationAddress: "Rua de Exemplo 1",
   locationPhone: "+351 272 111 111",
+  serviceName: "Osteopatia",
 };
+
+describe("bookingApprovedServiceName: what the email prints, or null", () => {
+  it.each([
+    ["a name", "Osteopatia", "Osteopatia"],
+    ["a name with spaces around it, trimmed as the dispatch always trimmed it", "  Osteopatia ", "Osteopatia"],
+    ["no service on the appointment", null, null],
+    ["an empty name", "", null],
+    ["a blank name", "   ", null],
+  ] as const)("%s", (_label, serviceName, expected) => {
+    expect(bookingApprovedServiceName({ serviceName })).toBe(expected);
+  });
+});
 
 describe("bookingApprovedBlocker: nothing can go, and why", () => {
   it.each([
@@ -60,11 +75,64 @@ describe("bookingApprovedBlocker: nothing can go, and why", () => {
 
     // The dispatch checks the patient first, so the notice does too.
     ["nobody to reach AND no location contact", { patientEmail: null, patientPhone: null, locationAddress: null }, "patient_unreachable"],
+
+    // The EMAIL names the service, so the email leg sends nothing without one.
+    ["an email, NO SERVICE", { serviceName: null }, "service_missing"],
+    ["an email, a BLANK service name", { serviceName: "  " }, "service_missing"],
+    ["an email and a mobile, no service: the email is still the channel, so nothing goes", { patientPhone: MOBILE, serviceName: null }, "service_missing"],
+    // The SMS names no service: the dispatch sends it, so there is nothing to tell.
+    ["no email, a mobile, NO SERVICE: the SMS goes", { patientEmail: null, serviceName: null }, null],
+    ["a blank email, a mobile, no service: the SMS goes", { patientEmail: "  ", serviceName: null }, null],
+
+    // The dispatch's order: the patient, then the location, then the service.
+    ["nobody to reach AND no service", { patientEmail: null, patientPhone: null, serviceName: null }, "patient_unreachable"],
+    ["no email, a LANDLINE, no service", { patientEmail: null, patientPhone: LANDLINE, serviceName: null }, "patient_unreachable"],
+    ["an email, no location contact AND no service", { locationAddress: null, serviceName: null }, "location_contact_missing"],
+    ["no email, a mobile, no location phone AND no service", { patientEmail: null, locationPhone: null, serviceName: null }, "location_contact_missing"],
+    ["everything missing", { patientEmail: null, patientPhone: null, locationAddress: null, locationPhone: null, serviceName: null }, "patient_unreachable"],
   ] as const)("%s -> %s", (_label, over, expected) => {
     expect(bookingApprovedBlocker({ ...reachable, ...over })).toBe(expected);
   });
 
-  it("agrees with the three functions it is made of, for every combination", () => {
+  it("the list of reasons is in the order the dispatch checks them", () => {
+    expect(BOOKING_APPROVED_BLOCKERS).toEqual(["patient_unreachable", "location_contact_missing", "service_missing"]);
+  });
+
+  it("agrees with the four functions it is made of, for every combination", () => {
+    for (const patientEmail of [null, "a@example.test"]) {
+      for (const patientPhone of [null, MOBILE, LANDLINE, "12"]) {
+        for (const tenantSmsEnabled of [true, false]) {
+          for (const patientSmsEnabled of [true, false]) {
+            for (const locationAddress of [null, "Rua A 1"]) {
+              for (const locationPhone of [null, "210 000 000"]) {
+                for (const serviceName of [null, "Osteopatia"]) {
+                  const input = { patientEmail, patientPhone, tenantSmsEnabled, patientSmsEnabled, locationAddress, locationPhone, serviceName };
+                  const plan = planBookingApprovedChannel({
+                    hasEmail: !!patientEmail,
+                    hasPhone: !!patientPhone,
+                    tenantSmsEnabled,
+                    patientSmsEnabled,
+                  });
+                  const patientBlocked =
+                    plan.send === "none" || (plan.send === "sms" && !smsNumberVerdict(patientPhone).ok);
+                  const expected = patientBlocked
+                    ? "patient_unreachable"
+                    : bookingApprovedLocationContact(input) === null
+                      ? "location_contact_missing"
+                      : plan.send === "email" && bookingApprovedServiceName(input) === null
+                        ? "service_missing"
+                        : null;
+                  expect(bookingApprovedBlocker(input), JSON.stringify(input)).toBe(expected);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("the service changes NOTHING about the two older reasons: with or without one, they answer the same", () => {
     for (const patientEmail of [null, "a@example.test"]) {
       for (const patientPhone of [null, MOBILE, LANDLINE, "12"]) {
         for (const tenantSmsEnabled of [true, false]) {
@@ -72,20 +140,13 @@ describe("bookingApprovedBlocker: nothing can go, and why", () => {
             for (const locationAddress of [null, "Rua A 1"]) {
               for (const locationPhone of [null, "210 000 000"]) {
                 const input = { patientEmail, patientPhone, tenantSmsEnabled, patientSmsEnabled, locationAddress, locationPhone };
-                const plan = planBookingApprovedChannel({
-                  hasEmail: !!patientEmail,
-                  hasPhone: !!patientPhone,
-                  tenantSmsEnabled,
-                  patientSmsEnabled,
-                });
-                const patientBlocked =
-                  plan.send === "none" || (plan.send === "sms" && !smsNumberVerdict(patientPhone).ok);
-                const expected = patientBlocked
-                  ? "patient_unreachable"
-                  : bookingApprovedLocationContact(input) === null
-                    ? "location_contact_missing"
-                    : null;
-                expect(bookingApprovedBlocker(input), JSON.stringify(input)).toBe(expected);
+                const withService = bookingApprovedBlocker({ ...input, serviceName: "Osteopatia" });
+                const without = bookingApprovedBlocker({ ...input, serviceName: null });
+                // With a service the answer is never the new reason...
+                expect(withService, JSON.stringify(input)).not.toBe("service_missing");
+                // ...and taking the service away only ever turns "a message can go" into the new reason.
+                if (withService !== null) expect(without, JSON.stringify(input)).toBe(withService);
+                else expect([null, "service_missing"], JSON.stringify(input)).toContain(without);
               }
             }
           }
