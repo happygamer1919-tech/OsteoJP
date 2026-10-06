@@ -1571,6 +1571,7 @@
   "requests.error.generic": "The request could not be confirmed. Try again.",
   "requests.notice.patientNoEmail": "Patient has no email: notify by phone",
   "requests.notice.locationContactMissing": "Confirmation not sent: the location has no address or phone. Notify the patient by phone.",
+  "requests.notice.serviceMissing": "Confirmation not sent: the appointment has no service. Tell the patient by phone.",
   "review.unknownKeysTitle": "Unrecognised fields",
   "review.unknownKeysBody": "The partner sent data this form has nowhere to show. Nothing was lost: it is kept in the original record. Check it before finalising.",
   "consultations.stuck.title": "Recordings that were not processed",

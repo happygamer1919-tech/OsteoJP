@@ -1,11 +1,13 @@
 import { eq, inArray } from "drizzle-orm";
-import { appointments, locations, patients, tenants } from "@osteojp/db";
+import { appointments, locations, patients, services, tenants } from "@osteojp/db";
 
 import { parseTenantConfig } from "@/lib/admin/settings-config";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { bookConfirmAppliesTo, bookConfirmMode } from "@/lib/reminders/book-confirm-mode";
 import {
+  BOOKING_APPROVED_BLOCKERS,
   bookingApprovedBlocker,
+  type BookingApprovedBlocker,
   type BookingApprovedReachInput,
 } from "@/lib/reminders/book-confirm-plan";
 
@@ -14,7 +16,8 @@ import {
 // THE RULE, as decided by the lead on 2026-10-04 on top of S-1003-B and
 // S-1004-A (R40): the person who approves is told whenever the booking-approved
 // message applies to this patient and NO message can go, for a reason that is
-// knowable at approval time. Two reasons, two sentences:
+// knowable at approval time. Three reasons, three sentences (the third by
+// strategy's ruling of 2026-10-06, S-1006-A, Q2 item 4):
 //
 //   patient_no_email          no email on file AND the SMS leg cannot send:
 //                             no usable mobile, or SMS switched off for the
@@ -24,6 +27,12 @@ import {
 //                             phone, so neither channel sends.
 //                             "Confirmação não enviada: o local não tem morada
 //                             ou telefone. Avise o paciente por telefone."
+//   service_missing           the patient has an email, so the email is the
+//                             channel, and the appointment has no service for
+//                             it to name. A patient reached by SMS gets the SMS
+//                             and no notice: that message names no service.
+//                             "Confirmação não enviada: a marcação não tem
+//                             serviço. Avise o paciente por telefone."
 //
 // THE PREDICATES ARE THE DISPATCH'S OWN, IMPORTED, NOT RESTATED
 // (`bookingApprovedBlocker`, lib/reminders/book-confirm-plan.ts). This file
@@ -48,7 +57,11 @@ import {
 // IT REVEALS NOTHING THE ACTOR CANNOT READ. The read runs under the actor's own
 // scope, and the patient, the location and the tenant are INNER joins: a row
 // the actor cannot see is not a row, and "unknown" is never reported as
-// "unreachable" or as "the location has no address".
+// "unreachable" or as "the location has no address". The service is a LEFT
+// join, exactly as the dispatch's own read has it, because an appointment may
+// have none and that is the third reason. The notice and the dispatch
+// therefore read the same service name and ask the same function about it;
+// neither adds a rule of its own about a service row that did not come back.
 //
 // IT ASKS THE SAME SWITCH THE DISPATCH ASKS (`bookConfirmAppliesTo`), so the
 // notice appears for exactly the patients the new message applies to. With the
@@ -57,7 +70,17 @@ import {
 // No "server-only" here, the same choice ./reminders.ts and
 // ./pedido-acceptance.ts make, so the helper stays unit-testable under vitest.
 
-export type ApprovalNotice = "patient_no_email" | "location_contact_missing";
+export type ApprovalNotice = "patient_no_email" | "location_contact_missing" | "service_missing";
+
+/**
+ * The sentence each of the dispatch's reasons earns. A `Record` over the
+ * blocker union, so a fourth reason does not compile until it is given one.
+ */
+const NOTICE_FOR_BLOCKER: Record<BookingApprovedBlocker, ApprovalNotice> = {
+  patient_unreachable: "patient_no_email",
+  location_contact_missing: "location_contact_missing",
+  service_missing: "service_missing",
+};
 
 /** One approved appointment, as the ACTOR can read it. */
 export type ApprovalNoticeRow = BookingApprovedReachInput & { patientId: string };
@@ -67,9 +90,9 @@ export type ApprovalNoticeRow = BookingApprovedReachInput & { patientId: string 
  * read them; an appointment whose patient or location the caller cannot read
  * is simply not in `rows`.
  *
- * Over several rows (a series accepted at once) the patient's own reason wins:
- * it is checked first for every row, the way the dispatch checks it first for
- * one.
+ * Over several rows (a series accepted at once) the patient's own reason wins,
+ * then the location's, then the service's: each is checked for every row in
+ * the order the dispatch checks them for one.
  */
 export function approvalNoticeFor(
   rows: readonly ApprovalNoticeRow[],
@@ -78,8 +101,9 @@ export function approvalNoticeFor(
   const blockers = rows
     .filter((r) => bookConfirmAppliesTo(r.patientId, env).applies)
     .map((r) => bookingApprovedBlocker(r));
-  if (blockers.includes("patient_unreachable")) return "patient_no_email";
-  if (blockers.includes("location_contact_missing")) return "location_contact_missing";
+  for (const blocker of BOOKING_APPROVED_BLOCKERS) {
+    if (blockers.includes(blocker)) return NOTICE_FOR_BLOCKER[blocker];
+  }
   return null;
 }
 
@@ -103,12 +127,16 @@ export async function approvalNoticeAfterAccept(
           patientSmsEnabled: patients.reminderSmsEnabled,
           locationAddress: locations.address,
           locationPhone: locations.phone,
+          serviceName: services.name,
           tenantSettings: tenants.settings,
         })
         .from(appointments)
         .innerJoin(patients, eq(patients.id, appointments.patientId))
         .innerJoin(locations, eq(locations.id, appointments.locationId))
         .innerJoin(tenants, eq(tenants.id, appointments.tenantId))
+        // LEFT, as the dispatch's own read has it: no service is a reason, not
+        // a missing appointment.
+        .leftJoin(services, eq(services.id, appointments.serviceId))
         .where(inArray(appointments.id, [...appointmentIds])),
     );
     return approvalNoticeFor(

@@ -108,6 +108,7 @@ import {
   dispatchConfirmation,
   planBookingApprovedChannel,
 } from "./dispatch";
+import { bookingApprovedBlocker } from "./book-confirm-plan";
 import { normalizePhonePT } from "@osteojp/notify";
 import { webRegistry } from "./notification-registry";
 import { formatDateLong, formatDateShort, formatTime } from "./locale";
@@ -950,6 +951,40 @@ describe("what sends nothing (mode on, an acceptance)", () => {
     h.loadReminderData.mockResolvedValue(row({ patientEmail: null, serviceName: null }));
     expect(await dispatchConfirmation(TENANT, APPT, ACCEPTED)).toMatchObject({ dispatched: true });
     expect(h.sms).toHaveLength(1);
+  });
+
+  /**
+   * THE APPROVER'S NOTICE READS `bookingApprovedBlocker`, AND THE DISPATCH IS
+   * THE AUTHORITY. Each row is run through the real dispatch, and the blocker
+   * is asked about the same appointment: where the dispatch stops for a reason
+   * knowable in advance, the blocker names that reason, and where a message
+   * goes it names none.
+   */
+  it.each([
+    ["an email, no service", { serviceName: null }, "service_missing", "service_missing"],
+    ["an email, a BLANK service name", { serviceName: "  " }, "service_missing", "service_missing"],
+    ["an email, no location address AND no service: the location is asked first", { locationAddress: null, serviceName: null }, "location_contact_missing", "location_contact_missing"],
+    ["nobody to reach AND no service: the patient is asked first", { patientEmail: null, patientPhone: null, serviceName: null }, "no_contact", "patient_unreachable"],
+    ["no email, a mobile, no service: the SMS goes", { patientEmail: null, serviceName: null }, null, null],
+    ["an email and a service: the email goes", {}, null, null],
+  ] as const)("the dispatch and the approver's blocker agree: %s", async (_label, over, stopsOn, blocker) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const data = { ...row(), ...over };
+    h.loadReminderData.mockResolvedValue(data);
+    const out = await dispatchConfirmation(TENANT, APPT, ACCEPTED);
+    expect(out.dispatched ? null : out.reason).toBe(stopsOn);
+    expect(allSent()).toHaveLength(stopsOn === null ? 1 : 0);
+    expect(
+      bookingApprovedBlocker({
+        patientEmail: data.patientEmail,
+        patientPhone: data.patientPhone,
+        tenantSmsEnabled: true,
+        patientSmsEnabled: data.patientReminderSmsEnabled,
+        locationAddress: data.locationAddress,
+        locationPhone: data.locationPhone,
+        serviceName: data.serviceName,
+      }),
+    ).toBe(blocker);
   });
 
   it("an SMS body that would not fit one segment is an outcome with a row, not a thrown run", async () => {

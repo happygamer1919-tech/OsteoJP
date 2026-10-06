@@ -164,13 +164,15 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     start?: Date;
     recurrence?: { freq: "weekly"; count: number } | null;
     locationId?: string;
+    /** `false` books with no service, as the drawer does when none is chosen. */
+    service?: boolean;
   }) {
     const start = args.start ?? nextSlot();
     const result = await actions.createAppointment({
       patientId: args.patientId,
       practitionerId: therapistId,
       locationId: args.locationId ?? loc,
-      serviceId,
+      serviceId: args.service === false ? null : serviceId,
       room: null,
       startsAt: start.toISOString(),
       endsAt: new Date(start.getTime() + 45 * 60_000).toISOString(),
@@ -572,6 +574,34 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
       ]);
     },
   );
+
+  it("booked with NO SERVICE for a guest with an email: the THIRD notice, and the email is not sent", async () => {
+    const { requestId, patientId } = await converted();
+    await sql.execute(raw`update patients set email = 'convidada@example.test' where id = ${patientId}`);
+    const booked = await book({ patientId, guestRequestId: requestId, service: false });
+    expect(booked.notice).toBe("service_missing");
+    // Linked all the same: the appointment is real.
+    expect((await requestRow(requestId)).converted_appointment_id).toBe(booked.id);
+    await deliver();
+    expect(allSent()).toEqual([]);
+    expect(await ledger(booked.id)).toEqual([
+      {
+        channel: "email",
+        template_id: "booking_approved.email",
+        outcome: "suppressed",
+        suppression_reason: "service_missing",
+      },
+    ]);
+  });
+
+  it("booked with NO SERVICE for a guest with a mobile and no email: no notice, and the SMS goes", async () => {
+    const { requestId, patientId } = await converted();
+    const booked = await book({ patientId, guestRequestId: requestId, service: false });
+    expect(booked.notice).toBeUndefined();
+    await deliver();
+    expect(h.email).toEqual([]);
+    expect(h.sms.map((m) => m.templateId)).toEqual(["booking_approved.sms"]);
+  });
 
   it("AGENDAR LOTE for a guest nothing can reach: the notice rides the batch result too", async () => {
     const { requestId, patientId } = await converted();

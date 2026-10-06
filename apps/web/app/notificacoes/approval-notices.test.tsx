@@ -8,6 +8,7 @@
  * Rendered with `renderToStaticMarkup`, as every component test here is. The
  * names are invented.
  */
+import { getStrings } from "@osteojp/i18n";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -31,6 +32,7 @@ const one: ApprovalNoticeView = {
 };
 const LOCATION_NOTICE =
   "Confirmação não enviada: o local não tem morada ou telefone. Avise o paciente por telefone.";
+const SERVICE_NOTICE = "Confirmação não enviada: a marcação não tem serviço. Avise o paciente por telefone.";
 
 describe("ApprovalNotices", () => {
   it("renders nothing at all for an empty list", () => {
@@ -75,6 +77,38 @@ describe("the second sentence: the location has no address or phone", () => {
     const html = renderToStaticMarkup(<ApprovalNotices notices={[one, location]} />);
     expect(html.indexOf(NOTICE)).toBeGreaterThan(-1);
     expect(html.indexOf(LOCATION_NOTICE)).toBeGreaterThan(html.indexOf(NOTICE));
+  });
+});
+
+describe("the third sentence: the appointment has no service", () => {
+  const service: ApprovalNoticeView = { ...one, id: "appt-12", kind: "service_missing" };
+
+  it("is shown EXACTLY, as its own element, and it is neither of the other two", () => {
+    const html = renderToStaticMarkup(<ApprovalNotices notices={[service]} />);
+    expect(html).toContain(`>${SERVICE_NOTICE}</p>`);
+    expect(html).not.toContain(NOTICE);
+    expect(html).not.toContain(LOCATION_NOTICE);
+    expect(html).toContain("Duarte Ficticio · 14/05/2031 11:00");
+    expect(html).toContain('role="status"');
+  });
+
+  it("has its own sentence, word for word, in both languages", () => {
+    // The one function the two lists AND the two toasts (the agenda drawer and
+    // the patient's appointments list) take their text from.
+    expect(approvalNoticeMessage("service_missing")).toBe(SERVICE_NOTICE);
+    expect(getStrings("pt")["requests.notice.serviceMissing"]).toBe(SERVICE_NOTICE);
+    expect(getStrings("en")["requests.notice.serviceMissing"]).toBe(
+      "Confirmation not sent: the appointment has no service. Tell the patient by phone.",
+    );
+  });
+
+  it("the three can sit side by side, each with its own text", () => {
+    const html = renderToStaticMarkup(
+      <ApprovalNotices notices={[one, { ...one, id: "appt-9", kind: "location_contact_missing" }, service]} />,
+    );
+    expect(html.indexOf(NOTICE)).toBeGreaterThan(-1);
+    expect(html.indexOf(LOCATION_NOTICE)).toBeGreaterThan(html.indexOf(NOTICE));
+    expect(html.indexOf(SERVICE_NOTICE)).toBeGreaterThan(html.indexOf(LOCATION_NOTICE));
   });
 });
 
@@ -144,6 +178,12 @@ describe("reviewApprovalNotice: what a resolved reply earns", () => {
     ).toMatchObject({ id: "item-1", kind: "location_contact_missing" });
   });
 
+  it("the SERVICE notice from the server becomes the service notice on screen", () => {
+    expect(
+      reviewApprovalNotice([item()], "item-1", { ok: true, applied: true, notice: "service_missing" }),
+    ).toMatchObject({ id: "item-1", kind: "service_missing" });
+  });
+
   it("an item that is no longer in the list still gets its notice, without a name or a time", () => {
     expect(reviewApprovalNotice([], "item-1", withNotice)).toEqual({
       id: "item-1",
@@ -165,6 +205,14 @@ describe("InboundReviewList shows the notice", () => {
     const html = renderToStaticMarkup(<InboundReviewList items={[]} initialNotices={[one]} />);
     expect(html).toContain(`>${NOTICE}</p>`);
     expect(html).toContain("Duarte Ficticio");
+  });
+
+  it("the service notice too, above the list", () => {
+    const html = renderToStaticMarkup(
+      <InboundReviewList items={[item()]} initialNotices={[{ ...one, kind: "service_missing" }]} />,
+    );
+    expect(html).toContain(`>${SERVICE_NOTICE}</p>`);
+    expect(html.indexOf(SERVICE_NOTICE)).toBeLessThan(html.indexOf('data-testid="inbound-review-list"'));
   });
 
   it("no notice, no notice markup", () => {
