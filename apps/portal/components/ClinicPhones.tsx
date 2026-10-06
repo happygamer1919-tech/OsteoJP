@@ -1,4 +1,4 @@
-import { ALL_CLINIC_PHONES } from '@/lib/clinics'
+import { PUBLISHED_CLINIC_PHONES } from '@/lib/clinics'
 import { s } from '@/lib/i18n'
 
 /**
@@ -21,6 +21,12 @@ import { s } from '@/lib/i18n'
  * membership the OTP endpoint refuses to disclose. The numbers are published on
  * osteojp.pt, so showing all of them discloses nothing.
  *
+ * THE PUBLISHED LIST, NOT THE LIVE ONE, AND R45 LEFT THAT ALONE ON PURPOSE.
+ * The other screens now read which clinics exist from the active locations.
+ * This component renders inside error boundaries, which exist because a read
+ * just failed; making "call us" depend on another read would put the dead end
+ * back exactly where it is most likely.
+ *
  * `min-h-11` is 44px, the target size PG9 audits for.
  */
 export function ClinicPhones({ className }: { className?: string }) {
@@ -30,7 +36,7 @@ export function ClinicPhones({ className }: { className?: string }) {
         {s.clinics.phone_label}
       </span>
       <span className="mt-1 flex flex-wrap justify-center gap-x-4 gap-y-1">
-        {ALL_CLINIC_PHONES.map((p) => (
+        {PUBLISHED_CLINIC_PHONES.map((p) => (
           <a
             key={p.number}
             href={`tel:${p.number}`}

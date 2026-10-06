@@ -25,8 +25,7 @@
     "retry": "Try again",
     "skip_to_content": "Skip to main content",
     "toast_region": "Notifications",
-    "version": "Version",
-    "footer_locations": "Linda-a-Velha · Castelo Branco"
+    "version": "Version"
   },
   "nav": {
     "home": "Home",
@@ -237,7 +236,6 @@
   },
   "clinics": {
     "title": "Our clinics",
-    "subtitle": "We are present in Linda-a-Velha and Castelo Branco.",
     "contacts_heading": "Contacts",
     "hours_heading": "Opening hours",
     "weekend_closed": "Saturday and Sunday closed",

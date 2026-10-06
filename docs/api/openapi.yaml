@@ -111,11 +111,22 @@ paths:
 
 
         WHAT IT DISCLOSES IS ALREADY PUBLISHED. Service names are on osteojp.pt
-        and both clinics are on the portal's own public Clínicas page with their
-        addresses and telephone numbers. The projection is `id` and `name` and
-        nothing else — no price, no duration, no internal flag — and nothing
-        about any PERSON is reachable through it: no patient, no therapist, no
-        appointment, no schedule.
+        and the clinics are on the portal's own public Clínicas page. A service
+        is `id` and `name` and nothing else — no price, no duration, no
+        internal flag. A clinic is `id`, `name`, `address` and `phone` (R45,
+        2026-10-06: the portal's Clínicas page and the telephones on its login
+        screen and public form read from the active locations). The address
+        and the telephone are what the clinic typed in Administração > Locais,
+        and patients are already given both from that row: the telephone on
+        every reminder, the address in the booking-approved email, and both on
+        a printed declaration, report or RGPD form when the clinic has no
+        fuller entry. Nothing about any PERSON is reachable through it: no
+        patient, no therapist, no appointment, no schedule.
+
+
+        A CLINIC IS LISTED ONLY WHEN SOMEBODY BOOKABLE HAS HOURS THERE (R45).
+        An active location with no bookable therapist is absent from
+        `locations` and from every service's `locationIds`.
 
 
         THE TWO READS THIS IS NOT. `booking/therapists` and `booking/slots` stay
@@ -172,13 +183,23 @@ paths:
                     items:
                       type: object
                       additionalProperties: false
-                      required: [id, name]
+                      required: [id, name, address, phone]
                       properties:
                         id:
                           type: string
                           format: uuid
                         name:
                           type: string
+                        address:
+                          type: [string, "null"]
+                          description: >
+                            The clinic's address as typed in Administração >
+                            Locais, unformatted. Null when none is on file.
+                        phone:
+                          type: [string, "null"]
+                          description: >
+                            The clinic's telephone as typed in Administração >
+                            Locais, unformatted. Null when none is on file.
                   services:
                     type: array
                     items:
