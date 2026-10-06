@@ -1,8 +1,8 @@
 # 0102: apply SAT-01's tables, doors, switch audit and policies
 
-**NOT READY: 0102 is PROMOTED on its held branch (2026-10-06), and it is not yet rehearsed on these bytes, not reviewed as promoted (R4) and not applied.** Its predecessor is there: `0101` (the public form's email column, #1538) is promoted on `main` (merge commit `a0e96a99`) and, by the lead's dispatch to this lane, was applied to production by GREEN on 2026-10-05, 21:01 to 21:06 Lisbon, production's journal going 98 to 99 (this lane read `main`, not production). 0102 is `packages/db/migrations/0102_sat01_satisfaction_survey.sql`, at journal `idx 99`: the bytes of the pending file it was (`packages/db/migrations-pending/NEXT-AFTER-0101_sat01_satisfaction_survey.sql`), the same sha256 before and after the rename. The blocks below read the held head: from a head that does not carry the promotion commit, stage 0 STOPs at its promotion check. DONE: the GATE-CHANGE the promotion forced, which the promotion simulation of 2026-10-05 found and named (#1544, merged 2026-10-06 at `129860b3`; NOT READY step 2), and the promotion (step 3; "The promotion's run, 2026-10-06"). Open, in order: R4 (step 4), the whole-block rehearsal (step 5), CI on the promoted head (step 6) and GREEN's dispatch (step 7). **The sitting is closed hours only, by the weekday table** (see "R9"), **and it runs from this pull request's HELD head, before the merge** (see "THE ORDER OF PULL REQUESTS").
+**NOT READY until the dispatch GREEN runs carries the sha of the held head.** Done: its predecessor, `0101` (the public form's email column, #1538), is promoted on `main` (merge commit `a0e96a99`) and, by the lead's dispatch to this lane, was applied to production by GREEN on 2026-10-05, 21:01 to 21:06 Lisbon, production's journal going 98 to 99 (this lane read `main`, not production; NOT READY step 1); the GATE-CHANGE the promotion forced, which the promotion simulation of 2026-10-05 found and named (#1544, merged 2026-10-06 at `129860b3`; step 2); the promotion, on its held branch, 2026-10-06 (step 3; "The promotion's run, 2026-10-06"): 0102 is `packages/db/migrations/0102_sat01_satisfaction_survey.sql`, at journal `idx 99`, the bytes of the pending file it was (`packages/db/migrations-pending/NEXT-AFTER-0101_sat01_satisfaction_survey.sql`), the same sha256 before and after the rename; and the rehearsal of 2026-10-06 from the promoted head, with its limits (step 5): on a throwaway 0102 applied through `verified-migrate.mjs`, journal 99 to 100, and the two journal-reader reads are NOT REHEARSED, because the reader refused the throwaway, as its guard should (see "Rehearsal"). Open, in order: the one review round on the promoted bytes and on this record (ruling R44 allows one round, under R8; step 4), CI on the held head (step 6) and GREEN's dispatch (step 7). The blocks below read the held head: from a head that does not carry the promotion commit, stage 0 STOPs at its promotion check. **The sitting is closed hours only, by the weekday table** (see "R9"), **and it runs from this pull request's HELD head, before the merge** (see "THE ORDER OF PULL REQUESTS").
 
-**Status: AUTHORED. PROMOTED ON ITS HELD BRANCH. NOT REHEARSED ON THESE BYTES. NOT APPLIED.** One
+**Status: AUTHORED. PROMOTED ON ITS HELD BRANCH. REHEARSED ON 2026-10-06, WITH LIMITS. NOT APPLIED.** One
 migration, `packages/db/migrations/0102_sat01_satisfaction_survey.sql`, sha256
 `db12b967d4f67bfbfeaff5447cf5fa41ae74e007112a26f97b345e9e3fb7d9c1`, promoted on 2026-10-06 from the
 pending file named above by a rename that changed no byte. It is
@@ -89,9 +89,16 @@ lane that wrote this document never runs it.
    construction, until step 4 of the order table.**
 4. **R4** on the promoted PR's diff and the card acceptance, at most three rounds (the review-loop
    cap). NOT DONE.
-5. **The rehearsal agent runs this document's four blocks and GREEN's two, whole, from the
-   promoted head,** under the lead's standing rule, verbatim in its prompt (see "Rehearsal").
-   NOT DONE.
+5. **DONE on 2026-10-06, WITH ITS LIMITS** (see "Rehearsal"; it ran before step 4, which is still
+   open). From the promoted head `68fcd861`, on a throwaway at production's position: stage 0, the
+   dispatch's CLOCK CHECK, stage 1 and stage 2 ran whole to their last lines, exit 0, and 0102
+   applied through `verified-migrate.mjs`, journal 99 to 100. The dispatch's BEFORE YOU START and
+   the closing read ran whole as far as the journal reader, which refused the throwaway, as its
+   guard should: both of its reads are NOT REHEARSED, and the CLOCK CHECK's input came from a
+   fragment of BEFORE YOU START. In stages 1 and 2 the target guard's line was substituted, so the
+   guard program itself did not run. As first written: **The rehearsal agent runs this document's
+   four blocks and GREEN's two, whole, from the promoted head,** under the lead's standing rule,
+   verbatim in its prompt.
 6. **CI on the promoted head:** every required check green except the two that read the count,
    which read `expected exactly 28 ... found 36` and nothing else. The DB-gated job stops at that
    step and runs no suite, so `packages/db/tests/sat01-survey-rls.db.test.ts` does NOT run in CI
@@ -610,7 +617,10 @@ statements and a re-pin; nothing else changes.** A JUDGMENT, NOT A RULING (21).
   exits 4, drizzle-kit prints `undefined`, the journal reads `99 -> 99`, no applied marker); the
   SQLSTATE is only in the server's log. Nothing is applied, it is a halt, and the lead rules. (A
   deadlock that ends the apply was measured with node on the lane; it was not run through
-  `verified-migrate.mjs`, whose transcript for a failed statement is 0101's rehearsal's.)
+  `verified-migrate.mjs`, and is still NOT REHEARSED. The program's transcript for a failed
+  statement is 0101's rehearsal's and, since 2026-10-06, 0102's own on these bytes, for a lock
+  wait that ran out and for a session the server ended while idle: "The rehearsal, 2026-10-06",
+  3b and 3a.)
   **The window in which a transaction can enter that shape is the group: 9 statements, 8 to 14
   ms on the lane, longer on production by 10 network round trips (14 statements and 15 round trips
   until the fold).** One statement that does both
@@ -663,7 +673,11 @@ statements and a re-pin; nothing else changes.** A JUDGMENT, NOT A RULING (21).
 
   **What it does not show, and what it costs.** `SET LOCAL` holds only inside a transaction: it is
   drizzle's one transaction that carries the third line, as it carries the other two, and this
-  line was not run through drizzle-kit or `verified-migrate.mjs` (NOT REHEARSED). The timer runs
+  measurement did not run the line through drizzle-kit or `verified-migrate.mjs`. **The rehearsal
+  of 2026-10-06 did, and read it by its effect:** with stage 1 run whole and the client paused, the
+  server ended drizzle-kit's session 15.000 s after it went idle inside the transaction, on a
+  database whose own value is `0` ("The rehearsal, 2026-10-06", 3a). A client that stays stalled
+  past those 15 s is still NOT REHEARSED. The timer runs
   whenever the session is inside the transaction and idle, so ONE gap between two statements longer
   than 15 seconds (a slow round trip from the apply machine, a pause of drizzle-kit) ends a healthy
   apply: a clean failure and a new sitting, never a half apply. The gaps measured locally are under
@@ -1178,12 +1192,15 @@ only on the owner's or the lead's word.
 **A fired bound is a clean failure, measured for each of the five locks that can be waited for, at
 the three statements that ask for them** (62; 66, which asks for three in turn; 69; "G6"): the body
 failed after 5.0 seconds with `55P03 canceling statement due to lock timeout`, and nothing of 0102
-existed afterwards (node, on the lane). It is still a halt, and
+existed afterwards (node, on the lane). One of them was read again through `verified-migrate.mjs`
+in 0102's rehearsal: the wait for `patients` ran out after 5 s, the apply exited 4 and nothing of
+0102 existed afterwards ("The rehearsal, 2026-10-06", 3b). It is still a halt, and
 the lead rules on it.
 
 **WHEN A BOUND FIRES, GREEN'S TRANSCRIPT DOES NOT NAME IT** (0101's rehearsal, 2026-10-05, under
-verified-migrate with a held lock; the same program and the same two bounds run here). drizzle-kit
-prints `undefined`, and pnpm prints
+verified-migrate with a held lock; read again on these bytes in 0102's rehearsal, 2026-10-06, with
+stage 1 run whole and another session holding `patients`: "The rehearsal, 2026-10-06", 3b).
+drizzle-kit prints `undefined`, and pnpm prints
 `[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: drizzle-kit migrate`. The
 text `canceling statement due to lock timeout` is only in the server's log. What the transcript
 does show is enough to read it: the apply exits 4, the journal reads `99 -> 99  (delta 0)`, there
@@ -1195,8 +1212,25 @@ nothing applied,** and reads the same in the transcript, without the word deadlo
 whichever of the two began to wait first within a second: the application's transaction, or the
 apply ("G6", four runs). **A stalled apply is the third:** the server ends a session that sits idle
 inside the transaction for 15 seconds (statement 3), the transaction is rolled back and nothing is
-applied ("G6", measured with node). What GREEN's transcript shows for that ending was not run
-through `verified-migrate.mjs` (NOT REHEARSED); it is a halt, reported as it stands.
+applied ("G6", measured with node; and 0102's rehearsal, 3a, under drizzle-kit with stage 1 run
+whole). There the paused client was resumed about 0.4 s after the server had ended its session, and
+the transcript then read exactly as it does for a lock wait that ran out: `undefined`, pnpm's ERR
+line, the apply exits 4, the journal reads `99 -> 99  (delta 0)`, no applied marker. **What a client
+that STAYS stalled past the server's 15 seconds shows, an apply that does not return, is NOT
+REHEARSED;** it is a halt, reported as it stands.
+
+**WHAT A FAILED APPLY PRINTS BESIDE THOSE TWO LINES** (0102's rehearsal, 2026-10-06, both failed
+applies; this document quoted only `undefined` and the ERR line). `undefined` is not on a line of
+its own. It ends ONE LONG LINE of drizzle-kit's spinner frames, each of them
+`[<frame>] applying migrations...` after two terminal escape sequences: 40 frames and 1449 bytes
+on that line during the 5 s lock wait, 5 frames with the client paused. Then pnpm prints a line
+this document did not mention, the path of the package it ran in, ending in a colon (in the
+sitting, the apply worktree's `packages/db`), and only then its ERR line. After them come
+`stderr: (nothing)`, `exit:   1`, `--- end drizzle-kit migrate ---`,
+`journal    99 -> 99  (delta 0)`, `0102_sat01_satisfaction_survey present by sha256: NO`,
+`FAIL: drizzle-kit migrate exited 1.` and the block's own `STOP: the apply exited 4: ...`. The
+two NOTICE objects (below) print before the spinner line, as in a clean apply. None of this is a
+second error, and GREEN reports all of it as printed.
 
 **AN EMPTY `prev_when` IS A FAIL, NOT A STOP** (0101's rehearsal under psql; read again here with
 the node runner on this pre-check: `15 OK, 1 FAIL`, the FAIL on verdict 2). Handed an empty
@@ -1205,7 +1239,8 @@ a `W101` that is not thirteen digits before psql runs, so the pre-check never se
 
 **drizzle-kit prints two NOTICE objects between its banner and its success line,**
 `42P06 schema "drizzle" already exists, skipping` and `42P07 relation "__drizzle_migrations" already
-exists, skipping` (measured in 0099's rehearsal). They are not a halt.
+exists, skipping` (measured in 0099's rehearsal; read again in 0102's, in the clean apply and in
+both failed ones). They are not a halt.
 
 **Every `STOP:` this block prints before the `--- the apply` line means nothing was applied,** and
 before the `--- only now` line the previous sitting's transcripts are untouched. **After that line,
@@ -1341,7 +1376,9 @@ stage 2: the post-check itself not completing (psql exits non-zero: the post-che
 new tables, the new column and the new functions by name, so on a database WITHOUT them Postgres
 refuses the statement, psql exits 3, and this is the STOP that fires, before any verdict can
 print; measured by the node runner, which read `42883 function "public.resolve_survey_code(text)"
-does not exist`); a FAIL verdict of the post-check (the block does not know which verdict failed,
+does not exist`, and read again under psql in 0102's rehearsal, with the post-check run on its own
+before the apply: psql exit 3, no verdict, the same message; stage 2 itself was not run against a
+database without 0102); a FAIL verdict of the post-check (the block does not know which verdict failed,
 and a FAIL of 1, 6, 22 or 23 is such a contradiction); the journal count that is not the
 pre-check's plus one; and the count of 0102's sha256 in the journal that is not 1. And in the
 closing read: a journal that does not read 100, and a read that does not list 0102 as APPLIED. The
@@ -1489,6 +1526,14 @@ privileges on `survey_enabled` equal those on `reminder_sms_enabled` and on
 over SELECT, INSERT, UPDATE and REFERENCES (16 cells), with `authenticated` and `patient` holding
 UPDATE and `anon` nothing (control: `id` differs); 26 every other trigger in `public` unchanged, by
 md5 against the carry.
+
+**psql's own lines surround both tables, and none of them is a verdict** (0102's rehearsal,
+2026-10-06, each file on its own and inside stages 1 and 2; the EXPECT lists of stages 1 and 2 do
+not name them). The pre-check prints `Pager usage is off.`, `Timing is off.`, `BEGIN` and `DO`
+before its heading and its table, and `(30 rows)` and `ROLLBACK` after them. The post-check prints
+`BEGIN`, `Pager usage is off.` and `Timing is off.`, then its heading, `DO` four times and its
+table, and `(27 rows)` and `ROLLBACK` after them. Stage 2's journal read prints one more `BEGIN`
+before its three rows, and `(3 rows)` after them.
 
 **The post-check is not a standing invariant for 11 to 16 and 26:** the next migration that grants,
 creates a function, a trigger or a policy moves them. It is an assertion about this apply.
@@ -1706,12 +1751,216 @@ with an unanswered send deletes and takes the send and its code; one with an ans
 
 ## Rehearsal
 
-**NOT YET REHEARSED.** What stands is: what 0101's rehearsal and 0101's sitting on production
-proved about the machinery 0102 shares with it (first below); the build lane's run of 0102's own
-SQL (second) and the re-pin's run (third); the promotion, simulated (fourth); and the promotion's
-own run of 2026-10-06 (fifth). None of them is 0102's rehearsal: no block of this document has
-run against a database. 0102 is promoted since 2026-10-06, and the whole-block rehearsal from the
-promoted head (NOT READY step 5) is a separate agent's and has not run.
+**REHEARSED ON 2026-10-06, WITH LIMITS.** From the promoted head `68fcd861`, on a throwaway at
+production's position, stage 0, the dispatch's CLOCK CHECK, stage 1 and stage 2 ran whole to their
+last lines, and 0102 applied through `verified-migrate.mjs`, journal 99 to 100. **Two reads are
+NOT REHEARSED:** the journal reader refused the throwaway, in the dispatch's BEFORE YOU START and
+in the closing read, as its guard should, and nothing was substituted to carry either block past
+it. In stages 1 and 2 the target guard's line was substituted, so that program did not run
+either. The record comes first, as the rehearsal agent reported it. After it stand, as they were
+written: what 0101's rehearsal and 0101's sitting on production proved about the machinery 0102
+shares with it; the build lane's run of 0102's own SQL and the re-pin's run; the promotion,
+simulated; and the promotion's own run of 2026-10-06. None of those is 0102's rehearsal: in none of
+them did a block of this document run against a database.
+
+### The rehearsal, 2026-10-06, as the rehearsal agent reported it
+
+**How this record was written.** From the agent's report and from its transcripts, by a documenter
+that ran no block. A line quoted below was compared with the transcript that holds it; where the
+text says "the report", the agent's report is the only source.
+
+**Where and when.** A throwaway stack named `r0102` at 127.0.0.1:56322, never production, and a
+fresh clone on the promoted head `68fcd86199b138fbd60ca52ea5d741bd91ecfb31`, clean. **The clone's
+origin was the local repository, not GitHub:** the head is not pushed. The agent's first clock read
+was 2026-10-06 21:03:24 WEST, a Tuesday, closed hours, by machine (the report); the transcripts'
+own lines run from 21:04:11 to 21:07:40 WEST. Every block ran under `/bin/zsh -f`, in a clean
+environment whose two database variables named the throwaway, with psql 18.6 (all three are the
+report's), against server 17.6. A block that passed ends its transcript with the runner's own line,
+`TOOL-CHAIN-CONTINUED`; no block that stopped does. The report says the harness refused nothing in
+the resumed run, which is the run recorded here.
+
+**The position before any block.** The journal held 99 rows, the newest `36a1ed54...` at
+1788502200000; `public` held 48 tables and 28 SECURITY DEFINER functions; and nothing of 0102
+existed: `0 relations, 0 column, 0 functions, 0 policies, 0 trigger, 0102 hash in journal 0`. The
+fixtures were 47 patients, 255 appointments and 2 active clinics (local fixtures, by the report),
+and the database's own `idle_in_transaction_session_timeout` read `0`. The report gives the clinics'
+hours as 08:00 to 20:00.
+
+**THE SIX BLOCKS.** The word is the report's. WHOLE means every line of the block ran, with the
+substitutions listed under SUBSTITUTED LINES below; in stages 1 and 2 one of them is the target
+guard's line.
+
+| Block | Word | Exit | Last line |
+|---|---|---|---|
+| the dispatch's BEFORE YOU START | FRAGMENTS | 1 | `STOP: the journal read failed; its lines are above. Nothing was applied` |
+| stage 0 | WHOLE | 0 | `0102 PROMOTION, NUMBER, FILES AND CLOCK VERIFIED` |
+| the dispatch's CLOCK CHECK | WHOLE | 0 | `CLOCK: closed hours by the weekday table, inside the run window, on the held head BEFORE YOU START checked, with the approved document. Paste stage 1 now.` |
+| stage 1 | WHOLE | 0 | `0102 APPLIED. Paste stage 2 now.` |
+| stage 2 | WHOLE | 0 | `0102 POST-CHECK PASSED. 16/16 pre-check OK, 27/27 post-check OK, journal 99 to 100; tables 48 to 51, SECURITY DEFINER functions 28 to 36. Paste the closing journal read now.` |
+| the closing read | NOT REHEARSED | 1 | `STOP: the journal read failed or its target check refused (its lines are above), or its output could not be written. 0102 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read did not pass; it runs again only on the owner's or the lead's word` |
+
+- **BEFORE YOU START ran whole as far as the reader.** Every line through
+  `every check passed. The journal read runs now` printed. Then the reader refused, with a line
+  that begins `REFUSED: this script reads drizzle.__drizzle_migrations, which only production uses,`
+  and goes on to say that the target's ref is not production's, and the block stopped, exit 1.
+  **NOT REHEARSED: the read, the grep that requires the journal to read 99, and the block's last
+  line.**
+- **The fragment.** The block was run once more with three lines of the dispatch draft skipped
+  (563, the reader; 564, that grep; 567, the last line), so that line 565 wrote the record the
+  CLOCK CHECK reads: exit 0, `held head recorded for the CLOCK CHECK: 68fcd861...`. **The CLOCK
+  CHECK's input therefore came from a fragment, not from a BEFORE YOU START that passed.**
+- **The CLOCK CHECK recorded**
+  `68fcd86199b138fbd60ca52ea5d741bd91ecfb31 202610062100 202610062229 202610070800`: the held
+  head, then the window's opening, the last minute stage 1 may start, and its end.
+- **Stage 0** read
+  `newest journal entry: idx 99, when 1788502300000, tag 0102_sat01_satisfaction_survey, of 100`,
+  check-journal's `100 .sql files match 100 journal entries`, the clock at `22104 WEST`,
+  `closed by the weekday table`, proof 1 `yes` and proofs 2 and 3 `no, by construction`.
+- **Stage 1's clinic read** printed `0 of 2` and `inside`, with the same three proof lines.
+- **The closing read ran whole as far as the reader:** the HEAD CHECK,
+  `docs/migration-apply-0102.md: OK`, `the held head has not moved since stage 0: 68fcd861...`,
+  `run window, Lisbon YYYYMMDDHHMM: everything ends before 202610070800; now 202610062106`, and the
+  line with the reader's and its module's sha256. Then the same REFUSED line and the block's STOP,
+  exit 1. **NOT REHEARSED: the read, its four greps (the report's count) and the last line.**
+- **Not ordered by this document:** after the apply, stage 0 and stage 1 were each pasted again,
+  and each stopped at its first check, exit 1, with
+  `STOP: stage 1 has ALREADY APPLIED 0102 in this sitting, ...`. The report says no record was
+  removed.
+
+**THE VERDICT PROFILES.** A count is never read alone: each run is its four counts and psql's exit.
+
+| Run | OK | FAIL | CARRY | INFO | psql's exit |
+|---|---|---|---|---|---|
+| the pre-check, on its own, before the apply | 16 | 0 | 8 | 6 | 0 |
+| the pre-check, inside stage 1 (three runs: the two failed applies and the clean one) | 16 | 0 | 8 | 6 | 0 (the report; each block went on past it) |
+| the post-check, on its own, before the apply | 0 | 0 | 0 | 0 | 3 |
+| the post-check, inside stage 2 | 27 | 0 | 0 | 0 | 0 (the report; the block went on past it) |
+| the post-check, on its own, after the apply | 27 | 0 | 0 | 0 | 0 |
+| the pre-check, on its own, after the apply | 11 | 5 | 8 | 6 | 0 |
+
+- **The pre-check's rows, before the apply:** `journal_rows_before` 99; verdict 2
+  `1 row, newest is 0101, when 1788502200000`; verdict 10 the eight columns
+  (`address,city,locale,phone,postal_code,reminder_email_enabled,reminder_sms_enabled,updated_at`);
+  verdict 15 exactly as stage 1's EXPECT prints it.
+- **Its last two INFO rows:** `INFO idle_in_transaction_session_timeout (0 is no limit)` read `0`,
+  and R39's row read `postgres: 24 tables, auth.users yes`.
+- **The post-check before the apply printed no verdict:** psql exit 3 at
+  `ERROR:  function "public.resolve_survey_code(text)" does not exist`, as this document says of a
+  database without 0102 (arm P34 of "The build lane's run", read there through a node runner).
+- **The post-check's rows, after the apply:** verdict 3 `appointment_survey_codes 5 b6cb26b5...`,
+  `appointment_survey_responses 14 e2bc43fe...`, `appointment_survey_sends 10 1f14d0db...`; verdict
+  6 `9 of 9; not as pinned: none`; verdict 16 `51 tables, 36 secdef, 0 not postgres`; verdict 24
+  `patients:17:O::patients_survey_switch_audit():when the value changed; control 7`; verdict 25
+  `0 cells differ of 16`. **The post-check run on its own after the apply is row for row stage
+  2's:** the 27 verdict rows of the two transcripts are the same bytes.
+- **The pre-check after the apply reads FAIL on 1, 2, `journal_rows_before`, 5 and 10,** with psql
+  exit 0. That is arm N1 of "The build lane's run", read there through a node runner: what the
+  pre-check prints on a database that already holds 0102.
+
+**VERIFIED-MIGRATE'S LINES IN THE CLEAN APPLY,** in the order stage 1 printed them:
+`file       0102_sat01_satisfaction_survey.sql present, sha256 matches`;
+`journal    99 row(s) applied, last when=1788502200000`;
+`pending    1  [0102_sat01_satisfaction_survey]`; the drizzle-kit banner, with both NOTICE objects
+(42P06 and 42P07) and `migrations applied successfully!`; `stderr: (nothing)`; `exit:   0`;
+`journal    99 -> 100  (delta 1)`; `0102_sat01_satisfaction_survey present by sha256: yes`;
+`OK: the journal moved by exactly the pending count and carries the approved sha256.` Stage 2's
+last three journal rows read id 100 `db12b967...` at 1788502300000, id 99 `36a1ed54...` at
+1788502200000 and id 98 `80f85018...` at 1788502100000.
+
+**HOW LONG IT TOOK.** `verified-migrate.mjs` and drizzle-kit print no timing. In the server's log
+the apply's backend logged 69 statements between 20:06:07.447 and 20:06:07.497 UTC, about 50 ms;
+the report puts statements 62 to 70 between .486 and .497, about 11 ms. The whole stage 1 block
+started at 21:06:06 and ended at 21:06:07 WEST.
+
+**3a, THE THIRD `SET LOCAL` UNDER THE REAL TOOL: REHEARSED, BY ITS EFFECT.** No script was edited,
+and stage 1 ran whole. Another session held ACCESS SHARE on `patients`, so drizzle's transaction
+waited for it; the agent then paused its own drizzle-kit and pnpm processes (SIGSTOP) and released
+the lock (the report).
+
+- The apply's session read `idle in transaction`, holding `AccessExclusiveLock` on `patients`, at
+  each of 54 polls, the last 14.87 s after it went idle.
+- It went idle at 20:05:35.073 UTC, and the server's log reads
+  `2026-10-06 20:05:50.073 UTC [13142] postgres@postgres FATAL:  terminating connection due to idle-in-transaction timeout`.
+  That is 15.000 s, on a database whose own value is `0`: the 15 s was the migration's third
+  statement.
+- At the next poll the session and its lock were gone (the report).
+- Once the client was resumed (SIGCONT), the transcript read exactly as it does for a lock wait
+  that ran out: `undefined`, pnpm's ERR line, `exit:   1`, `journal    99 -> 99  (delta 0)`,
+  `0102_sat01_satisfaction_survey present by sha256: NO`, `FAIL: drizzle-kit migrate exited 1.`,
+  then the block's `STOP: the apply exited 4: ...`, and the block exited 4.
+- Afterwards: journal 99, 48 tables, 28 functions, nothing of 0102, and no applied marker (the
+  report, for the marker).
+- **The limit.** The client was resumed about 0.4 s after the server ended the session (the
+  report). What a client that STAYS stalled shows, an apply that does not return, is NOT REHEARSED.
+
+**3b, A LOCK WAIT THAT RUNS OUT: REHEARSED, THROUGH STAGE 1 WHOLE.** Another local session held
+ACCESS SHARE on `public.patients`.
+
+- The apply's session waited for `AccessExclusiveLock` from 20:05:15.1 UTC, and the server's log
+  reads `2026-10-06 20:05:20.123 UTC [13053] postgres@postgres ERROR:  canceling statement due to lock timeout`.
+- drizzle-kit's stdout ended in `undefined`, at the end of its long spinner line. Then came pnpm's
+  path line, `[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: drizzle-kit migrate`,
+  `stderr: (nothing)`, `exit:   1`, `journal    99 -> 99  (delta 0)`,
+  `0102_sat01_satisfaction_survey present by sha256: NO`, `FAIL: drizzle-kit migrate exited 1.`
+  and `STOP: the apply exited 4: verified-migrate's own code if tee succeeded, ...`.
+- The block exited 4. Afterwards: journal 99, 48 tables, 28 functions,
+  `0 relations, 0 column, 0 functions, 0 policies, 0 trigger`, and no applied marker (the report,
+  for the marker).
+
+**3c, THE CHECK FILES UNDER PSQL: REHEARSED.** Both files ran under psql 18.6 with the blocks' own
+flags (the report), each on its own before and after the apply, and inside stages 1 and 2. The
+results are the profile table above.
+
+**AFTER THE APPLY.**
+
+- **The count check exits 1, by design.** `check-security-definer-owner.mjs` printed 36 rows that
+  read `postgres OK`, then `36 SECURITY DEFINER function(s) in public.`, `FAIL: 1 problem(s):` and
+  a line that begins
+  `  - expected exactly 28 SECURITY DEFINER function(s) in public, found 36`. That is the count
+  GATE-CHANGE owed after the apply (order table), not a defect of 0102.
+- **`tests/sat01-survey-rls.db.test.ts`:** 111 passed of 111, exit 0.
+- **`tests/security-definer-execute-acl.db.test.ts`:** 7 passed of 7, exit 0.
+
+**FOUR THINGS PRINT THAT THE EXPECT LISTS DO NOT MENTION.** None contradicts a line of them.
+
+1. **Fetch lines in BEFORE YOU START.** git's fetch lines print between `run window:` and
+   `held head:`. The dispatch's EXPECT for that block does not say so (the report).
+2. **A long spinner line on a failed apply, and pnpm's path line before its ERR line.** Written
+   again where it is read: stage 1, "WHAT A FAILED APPLY PRINTS BESIDE THOSE TWO LINES".
+3. **`banner:        final (its third line begins with the words this dispatch names)` printed on
+   a banner that read NOT READY.** The dispatch's check compares the opening of line 3 with the
+   words SOLO fills in and nothing else, so it reads any banner that begins with those words as
+   final. What makes a banner final is SOLO's fill, not that line.
+4. **psql's own lines** (`Pager usage is off.`, `Timing is off.`, `BEGIN`, `DO`, `ROLLBACK`)
+   surround both tables. Written again where it is read: "What every verdict must read".
+
+**SUBSTITUTED LINES, ONLY THESE** (the report, and the agent's substitution log). Document lines
+are numbered in the bytes that were rehearsed, sha256 `e6943aa5...`; this record moved the lines
+below its first edit, and it changed no line inside a block. Dispatch lines are those of the
+dispatch draft the agent read, which is not in the repository.
+
+- **The `cd` to the apply worktree became the scratch clone (6 lines):** dispatch 486 and 648;
+  document 900, 1009, 1226 and 1362.
+- **`/tmp/0102-` became a scratch folder's `0102-`:** 69 lines.
+- **The production env file became the agent's own, holding the 127.0.0.1 URL (4 lines):**
+  document 1069 and 1288; dispatch 563; document 1399.
+- **The target guard's line (2 lines): document 1070 and 1289,**
+  `node scripts/assert-production-target.mjs`, replaced by a `node -e` line that passes only on
+  host 127.0.0.1, port 56322 and database `postgres`, with each line's own STOP tail kept. It printed
+  `host: 127.0.0.1`, `port: 56322` and
+  `target verified: the r0102 THROWAWAY at 127.0.0.1:56322, never production.` **So the guard
+  program did not run, and neither its pass nor its refusal was read.**
+- **The dispatch's four PENDING lines, filled in a scratch copy:** 464, the held head's sha; 465
+  and 645, the sha256 of the document as rehearsed; 466, the bold sentence that then opened line 3
+  of this document, which this record's edit replaced.
+- **Skipped, in the one fragment run only:** dispatch 563, 564 and 567. The substitution log also
+  lists skipped lines for other fragment copies of the blocks; the transcripts hold a run of this
+  fragment only, and the report names no other.
+
+**TEARDOWN** (the report). The stack was stopped without a backup, exit 0; no container, volume or
+network named `r0102` remained, and its two ports were free. The clone was deleted. No
+`/tmp/0102-*` path was written. Production, the secrets folder, the apply worktree and the build
+lane's worktrees were not touched, and the agent authored no change to the repository.
 
 ### What 0101's rehearsal and 0101's sitting proved, which 0102 inherits
 
@@ -1738,12 +1987,16 @@ throwaway, psql 18.6 against server 17.6):
 
 - **psql runs the shared constructs:** `-v` substitution, `\if :{?name}`, `ON_ERROR_STOP`, the
   aligned output that `grep` and `carry()` read, and the missing-carry STOP (psql exit 3, no
-  verdict). 0102's two check FILES have not run under psql; their constructs have.
+  verdict). When this was written 0102's two check FILES had not run under psql. They have
+  since: on their own ("The re-pin's run") and inside stages 1 and 2 ("The rehearsal,
+  2026-10-06").
 - **The timeouts take effect under drizzle's own transaction,** and a fired one reads as stage 1's
   "WHEN A BOUND FIRES" says.
 - **Of 0101's six blocks one ran whole; the five others stopped at their own STOP** (the merge
-  ref, the target guard, the reader), and nothing was substituted to carry them past. 0102's
-  rehearsal will meet the same three walls, the first at the held ref instead of the merge.
+  ref, the target guard, the reader), and nothing was substituted to carry them past. This said
+  that 0102's rehearsal would meet the same three walls. It met one, the reader, twice: the held
+  ref resolved, because the clone's origin was the local repository, which holds the head; and
+  the target guard's line was substituted in stages 1 and 2 ("The rehearsal, 2026-10-06").
 
 ### The build lane's run, 2026-10-05
 
@@ -1894,7 +2147,9 @@ file:
 - the whole `packages/db` suite on the applied stack, and `check-security-definer-owner.mjs`;
 - the control arms of the two check files (U0 to U17, N1, N12, P0 to P34, F1 to F10, G1), R39's
   read on twelve values of the setting, and the empty `prev_when`. The check files changed in
-  their pinned sha256 literal and in two comments, and in no predicate;
+  their pinned sha256 literal and in two comments, and in no predicate. (Two of those arms were
+  read on these bytes since, under psql, in the rehearsal of 2026-10-06: N1 and P34. The others
+  were not);
 - the "foreign keys first" column of the order table in "G6", which is not this file's order;
 - the promotion, simulated (next subsection);
 - the four mutation sweeps ("Review history"). **No sweep was run over this re-pin.** What a sweep
@@ -2027,38 +2282,48 @@ run; and CI did not run.
 
 ### NOT REHEARSED, said one by one
 
-- **A deadlock or a fired bound that ends the apply, through `verified-migrate.mjs`.** Both were
-  measured with node on the lane ("G6"). What GREEN's transcript shows for a statement that fails
-  inside drizzle's transaction is 0101's rehearsal's, read for a lock timeout.
-- **Every block of this document against a database.** 0102 is promoted since 2026-10-06, and no
-  block has run against a database yet: that is the rehearsal's (NOT READY step 5). The blocks ran
-  whole only in the fault-injection harness, on stubs.
-- **0102's check files under psql, INSIDE THE BLOCKS.** On 2026-10-06 both files ran under psql
-  18.6 on the throwaway, with the flags the blocks give psql and the block's own `carry()` program
-  ("The re-pin's run": 16 OK, then 27 OK). What has not run is the blocks around them. The control
-  arms of 2026-10-05 ran through a node runner, on the third review's bytes, and were not run
-  again.
-- **The third `SET LOCAL` under drizzle-kit, and a stalled apply through `verified-migrate.mjs`.**
-  The stall was measured with node, one round trip per statement ("G6"). That drizzle's one
-  transaction carries the third line as it carries the other two, and what GREEN's transcript shows
-  when the server ends a stalled apply, were not run.
-- **`verified-migrate.mjs` and drizzle-kit, on 0102's body.** The body was applied by node in one
-  transaction. The program itself reached drizzle-kit and recorded the hash on production for 0101
-  (above); 0102's 70 statements have not gone through it.
-- **The target guard and the journal reader, on a throwaway.** Both refuse any target but
-  production, so on a throwaway every block that runs one halts at that line unless the lead rules
-  a substitution. Both passed on production in 0101's sitting (above).
-- **The held head, for real.** No block has resolved `origin/db/0102-sat01-tables` against a real
-  remote. The branch is on origin since the held pull request, #1551, was opened (read on
+After the rehearsal of 2026-10-06 these stay NOT REHEARSED:
+
+- **Both journal-reader reads, and the reader's own target check passing.** The reader refuses any
+  target but production, and it refused the throwaway twice ("The rehearsal, 2026-10-06"). So in
+  the dispatch's BEFORE YOU START: the read, the grep that requires the journal to read 99, and
+  the last line. And in the closing read: the read, its four greps and the last line,
+  `CLOSING READ: the journal reads 100, 0102 is APPLIED, and nothing is pending on the recorded sha.`
+  Both passed on production in 0101's sitting (above), for 0101.
+- **The target guard, `scripts/assert-production-target.mjs`, passing or refusing.** Its line was
+  substituted in stages 1 and 2, so the program did not run in the rehearsal, and its `ref:` line
+  and `target verified: production, session pooler.` were not printed. It passed on production in
+  0101's sitting (above).
+- **The CLOCK CHECK on the input a passing BEFORE YOU START writes.** The record it read was
+  written by a fragment of BEFORE YOU START, run with the reader, its grep and the last line
+  skipped. The CLOCK CHECK itself ran whole.
+- **The held head, for real.** No block has resolved `origin/db/0102-sat01-tables` against the
+  real remote: the rehearsal's origin was the local repository, and the promoted head is not
+  pushed. The branch is on origin since the held pull request, #1551, was opened (read on
   2026-10-06, at the promotion: the branch and `refs/pull/1551/head` both resolved to `1bb0a195`,
-  the commit before the promotion commit); no block has been run against it. In the harness, on
-  stubs, each block resolved it, stage 1 halted on a moved head, and each block stopped on a
-  branch that was gone.
+  the commit before the promotion commit). In the harness, on stubs, each block resolved it, stage
+  1 halted on a moved head, and each block stopped on a branch that was gone.
+- **A deadlock that ends the apply, through `verified-migrate.mjs`.** Measured with node on the
+  lane ("G6"), and not run in the rehearsal. What GREEN's transcript shows for a statement that
+  fails inside drizzle's transaction is now read on these bytes for a lock wait that ran out (3b);
+  that a deadlock reads the same is an inference from that, not a run.
+- **A client that stays stalled past the server's 15 seconds.** In 3a the paused client was resumed
+  about 0.4 s after the server ended its session. What stage 1 prints, and when, if the client does
+  not come back (an apply that does not return) was not run.
+- **The pass direction of the Saturday and Sunday windows, and any clock STOP, on a real clock.**
+  The rehearsal ran on a Tuesday between 21:04 and 21:07 Lisbon, so every clock arm passed on the
+  Monday to Friday row, the dispatch's start-window line read `inside strategy's start windows`
+  for weekday 2, and no clock STOP fired. No block has passed on a real clock on a Saturday after
+  13:00 or on a Sunday. The harness runs those minutes, and each STOP, on stubs.
+- **The whole `packages/db` suite on these bytes as drizzle-kit applied them.** The rehearsal ran
+  two of its files after the apply (111 of 111, and 7 of 7). The whole suite was last run in "The
+  promotion's run", on a throwaway the body had reached through node.
 - **Production's own journal row for 0101.** This lane read `main`: the promoted file, its sha256
   and its journal entry. That production's newest row is that hash at that `when` is the lead's
   report of the sitting; pre-check verdict 2 reads it for itself, and FAILs if it is not so.
 - **Production's platform configuration.** G6 was measured on two local stacks; production's
-  `supautils.policy_grants` was not read. The pre-check's INFO row is its first read.
+  `supautils.policy_grants` was not read. The pre-check's INFO row is its first read. On the
+  rehearsal's throwaway that row read `postgres: 24 tables, auth.users yes`.
 - **The cleanup script, whole.** The promotion's three ordinary edits are written since 2026-10-06
   (the cleanup script's deletes, the `schema.ts` declarations, the ACL list) and measured in "The
   promotion's run". Of the cleanup script, only its three new deletes ran, on the throwaway, in
@@ -2066,7 +2331,29 @@ run; and CI did not run.
   database, and was not run. Its STEP 1 preview counts none of the three tables: the promotion
   added the three deletes and nothing else.
 - **CI's `db-tests` on the promoted head:** by construction it stops at the count step until row 5.
-- **GREEN's two dispatch blocks** (BEFORE YOU START and the CLOCK CHECK): not drafted for 0102.
+- **GREEN's dispatch as issued.** Its two blocks were run from a draft, with its four PENDING
+  lines filled in a scratch copy. The dispatch is not issued (NOT READY step 7), and the banner
+  sentence, the document's sha256 and the head it will name are not the ones the rehearsal filled
+  in: this record changed the first two, and its commit moves the head. **So the sitting runs from
+  a later head than the rehearsed one.** When this is written the two differ in this document and
+  its sidecar only, and in no fenced block ("Review history").
+
+**Off this list since the rehearsal of 2026-10-06,** each with its limit in "The rehearsal,
+2026-10-06":
+
+- **Every block of this document against a database, bar the closing read's journal read.**
+  Stages 0, 1 and 2 ran whole to their last lines, with the substitutions listed there; until then
+  the blocks had run whole only in the fault-injection harness, on stubs.
+- **0102's check files under psql, INSIDE THE BLOCKS:** 16 OK and 0 FAIL in stage 1, 27 OK and 0
+  FAIL in stage 2 (the whole profiles are in the table there), and the block's own `carry()`
+  program fed stage 2 from stage 1's transcript.
+- **`verified-migrate.mjs` and drizzle-kit, on 0102's body:** journal 99 to 100, with the file's
+  sha256 in row 100.
+- **A fired bound that ends the apply, through `verified-migrate.mjs`:** one lock wait, at
+  `patients`, through stage 1 whole (3b). The four other locks stand as measured with node ("G6").
+- **The third `SET LOCAL` under drizzle-kit, and a stalled apply through `verified-migrate.mjs`:**
+  by its effect, with the limit that the client was resumed (3a).
+- **The dispatch's CLOCK CHECK, whole,** on a fragment's input.
 
 ### The fault-injection harness (not a rehearsal)
 
@@ -2150,6 +2437,26 @@ zsh fails the test.
 **Linux.** The script test was run whole inside a Linux container (`node:20-bookworm`, Node 20.20.2, GNU coreutils 9.1, the worktree as a read-only bind mount, `GITHUB_ACTIONS=true` as on the runner): 40 tests, 38 passed, 2 skipped (the two zsh arms, by the repository's recorded convention), 0 failed. CI runs Node 22 on ubuntu; the container was Node 20, the one Linux image already on the build machine.
 
 ### What the rehearsal agent owes before the dispatch is issued
+
+**Owed when this was written, and run on 2026-10-06 with the limits recorded under "The rehearsal,
+2026-10-06".** What was delivered and what was not, item by item:
+
+- **Item 1, delivered as far as the report and the transcripts show.** The position was read
+  before any block: 99 journal rows, the newest 0101 at 1788502200000, 48 tables, 28 SECURITY
+  DEFINER functions, nothing of 0102. The premise was read by the pre-check run on its own: 16 OK,
+  verdicts 8, 9, 10 and 15 among them, and R39's row `postgres: 24 tables, auth.users yes`. How
+  the stack was built is not in the report.
+- **Item 2, delivered:** 2 active clinics, stage 1's `0 of 2` and `inside`, and 47 patients.
+- **Item 3, delivered in part.** Stage 0, stage 1, stage 2 and the dispatch's CLOCK CHECK ran
+  whole, under psql, with `verified-migrate.mjs` reaching drizzle-kit through pnpm. **Not
+  delivered:** the dispatch's BEFORE YOU START and the closing read past the reader, which refused
+  and for which nothing was substituted; and the target guard, whose line was substituted in
+  stages 1 and 2 (the report lists that substitution; the prompt that would name it is not among
+  this record's sources). The clock arm ran on the real clock, in closed hours, and passed; no
+  clock STOP fired.
+- **Item 4, delivered in part:** one lock wait that ran out, and the 15 s idle bound, each under
+  drizzle's own transaction through stage 1 whole (3b and 3a). The lock table of "G6" and its
+  deadlock runs were not read again.
 
 Run under the lead's standing rule, verbatim in its prompt: "A script's own REFUSE or STOP line is a
 halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to
@@ -2308,6 +2615,48 @@ pre-check opens its own READ ONLY transaction and ends in ROLLBACK, and the post
 the block's `begin read only`.
 
 ## Review history
+
+**The rehearsal's record, 2026-10-06: prose and tables only, and no byte of any fenced block.**
+This edit recorded the rehearsal of 2026-10-06 and corrected each sentence the rehearsal made
+false. **NOT REVIEWED YET: the one round on the promoted bytes and on this record has not run when
+this entry is written; its verdict is added below by a record-only edit.** What changed, all of it
+in this document:
+
+- the banner (line 3) and the status sentence;
+- NOT READY step 5;
+- in "G6": the note on a deadlock's transcript, and the paragraph "What it does not show, and what
+  it costs";
+- in stage 1's prose: "A fired bound is a clean failure", "WHEN A BOUND FIRES", the sentence on the
+  two NOTICE objects, and the new paragraph "WHAT A FAILED APPLY PRINTS BESIDE THOSE TWO LINES";
+- in stage 2's prose: one clause of "EVERY STOP OF STAGE 2 AND OF THE CLOSING READ SAYS WHAT
+  STANDS", on the post-check run against a database without 0102;
+- under "What every verdict must read": the new paragraph on psql's own lines;
+- the opening of "Rehearsal", and the new subsection "The rehearsal, 2026-10-06, as the rehearsal
+  agent reported it";
+- two sentences of "What 0101's rehearsal and 0101's sitting proved", and one bullet of the
+  re-pin's "NOT RUN AGAIN ON THESE BYTES";
+- "NOT REHEARSED, said one by one", rewritten, with what left the list named under it;
+- a note at the head of "What the rehearsal agent owes";
+- and this entry.
+
+**No fenced block changed, and that was proven with a control.** The fenced blocks were extracted
+from this document at `68fcd861` and from this version by one extractor, the script test's own
+`blocksOf` (`scripts/sat01-tables-0102.test.mjs`), and again by a second one that reads the fence
+lines one by one. Each finds four blocks in both versions, with the same sha256 in the same order:
+
+1. stage 0, `d9405de2d1926ce145ce06d2d753ed6f15ea94a1e1cb07e6f7a56a9104c0b9d9`;
+2. stage 1, `faca57c6cd8ba6aadb212db27aa8746fcf81030d74cf68682fe4acfda03ef802`;
+3. stage 2, `a0a39f1ac3d3c7ad135af6b14083e5abcf6311a043d17c7ce25a95a752852ffd`;
+4. the closing read, `4c30b03f0268a548ed5bb617e0134db7ee8b3d7dc017671279fbb891d16f3c25`.
+
+**The control:** on a scratch copy with one byte altered inside stage 1's block, both extractors
+gave that block another sha256 and the other three the same. The rehearsal ran the blocks of the
+document whose sha256 was `e6943aa5...`, at `68fcd861`: they are these four. Outside this
+document the commit carries its sidecar and nothing else: no SQL, no check file, no script and no
+test. **No mutation sweep was run:** nothing a sweep mutates changed. **Left as they were, because
+they are not this edit's to change:** NOT READY step 4, which still says "at most three rounds"
+where the banner names the one round R44 allows; and the two "NOT REVIEWED YET" sentences just
+below, which this edit did not check either way.
 
 **The promotion, 2026-10-06: no block byte, no SQL byte, no check-file byte and no script-test byte
 changed in it.** The migration is the pending file renamed
