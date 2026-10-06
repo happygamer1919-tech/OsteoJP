@@ -119,7 +119,7 @@ export function DeclaracaoDialog({
     }
     setError(null);
     startTransition(async () => {
-      const { url } = await generateDeclaracaoUrlAction({
+      const { url, refused } = await generateDeclaracaoUrlAction({
         patientId,
         date,
         startTime,
@@ -132,7 +132,13 @@ export function DeclaracaoDialog({
         window.open(url, "_blank", "noopener,noreferrer");
         setOpen(false);
       } else {
-        setError(s["documents.declaracao.error"]);
+        // R45: a location with no carimbo is told so, in the approved wording;
+        // nothing was generated. Any other failure keeps the generic message.
+        setError(
+          refused === "no_stamp"
+            ? s["documents.declaracao.noStamp"]
+            : s["documents.declaracao.error"],
+        );
       }
     });
   }

@@ -222,6 +222,7 @@
   "documents.declaracao.incomplete": "Fill in the date and times.",
   "documents.declaracao.endBeforeStart": "The end time must be after the start time.",
   "documents.declaracao.error": "Could not generate the declaration.",
+  "documents.declaracao.noStamp": "Declaração unavailable at this location: the stamp is missing. Contact the administration.",
   "patients.tabInvoicing": "Invoicing",
   "patients.alertsRedFlags": "Alerts / Red Flags",
   "patients.nextAppointment": "Next Appointment",

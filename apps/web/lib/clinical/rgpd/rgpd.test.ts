@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { OSTEOJP_LOCATION_CONTACTS } from "../report/location-contacts";
 import { buildRgpdFormModel, type RgpdFormInputs } from "./rgpd-model";
 import { renderRgpdFormPdf } from "./rgpd-pdf";
 
@@ -30,6 +31,47 @@ describe("buildRgpdFormModel (SPEC 7.2)", () => {
     });
     expect(model.clinic.fiscalName).toContain("por confirmar");
     expect(model.clinic.nif).toBe("000000000");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R45 (strategy, 2026-10-06), option (b) REFUSED: "switching LV and CB to the
+// fuller contact block in code" waits until the real Linda-a-Velha email is
+// supplied (the code table carries a placeholder for it). The clinic's rows are
+// named "OsteoJP (LV)" and "OsteoJP (CB)", and for those names the RGPD form
+// prints the location's OWN row. This pins that. It fails the day a short-code
+// name starts resolving to a code-table block, which is a ruling, not a
+// refactor. The same pin sits on the Declaração (declaracao/declaracao-model
+// .test.ts) and on the clinical report (report/report-model.test.ts).
+// ---------------------------------------------------------------------------
+describe("R45 - the RGPD form's contact block for a short-code location is its own row", () => {
+  it.each(["OsteoJP (LV)", "OsteoJP (CB)"])("%s", (name) => {
+    const model = buildRgpdFormModel({
+      ...INPUTS,
+      location: { name, address: "Rua do registo, 1", phone: "210 000 000" },
+    });
+    expect(model.location).toEqual({
+      name,
+      addressLines: ["Rua do registo, 1"],
+      postalCode: null,
+      city: null,
+      phones: ["210 000 000"],
+      email: null,
+    });
+    // None of the code table's blocks, and nothing borrowed from one.
+    for (const block of Object.values(OSTEOJP_LOCATION_CONTACTS)) {
+      expect(model.location).not.toEqual(block);
+      expect(model.location.email).not.toBe(block.email);
+      for (const phone of block.phones) expect(model.location.phones).not.toContain(phone);
+    }
+  });
+
+  it("the plain name still selects the code table's block, so the pin above is not vacuous", () => {
+    const model = buildRgpdFormModel({
+      ...INPUTS,
+      location: { name: "Castelo Branco", address: "Rua do registo, 1", phone: "210 000 000" },
+    });
+    expect(model.location).toEqual(OSTEOJP_LOCATION_CONTACTS["castelo-branco"]);
   });
 });
 

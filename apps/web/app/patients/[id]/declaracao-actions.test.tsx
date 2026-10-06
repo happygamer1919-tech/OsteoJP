@@ -4,7 +4,12 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({
   requireRequestContext: vi.fn(),
 }));
+// A factory REPLACES THE WHOLE MODULE, so both things the action imports from
+// it are named here. R45: `declaracaoStampAvailable` is the check the action
+// makes before the ceiling; it is stubbed TRUE in beforeEach for the suites
+// that are not about the refusal.
 vi.mock("@/lib/clinical/declaracao/generate", () => ({
+  declaracaoStampAvailable: vi.fn(),
   generateDeclaracaoPdf: vi.fn(),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
@@ -28,7 +33,12 @@ vi.mock("@/lib/clinical/document-rate-limit", () => ({
 }));
 
 import { requireRequestContext } from "@/lib/auth/context";
-import { generateDeclaracaoPdf } from "@/lib/clinical/declaracao/generate";
+import {
+  declaracaoStampAvailable,
+  generateDeclaracaoPdf,
+} from "@/lib/clinical/declaracao/generate";
+import { ClinicalError } from "@/lib/clinical/errors";
+import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPatient } from "@/lib/patients/queries";
 import { updatePatient } from "@/lib/patients/actions";
@@ -37,6 +47,8 @@ import type { RequestContext } from "@osteojp/auth";
 
 const mockCtx = vi.mocked(requireRequestContext);
 const mockPdf = vi.mocked(generateDeclaracaoPdf);
+const mockStampAvailable = vi.mocked(declaracaoStampAvailable);
+const mockCeiling = vi.mocked(documentGenerationAllowed);
 const mockAdmin = vi.mocked(createSupabaseAdminClient);
 
 const ctx: RequestContext = { tenantId: "t1", role: "reception", userId: "u1" };
@@ -63,6 +75,116 @@ beforeEach(() => {
   signedUrlArgs = [];
   mockCtx.mockResolvedValue(ctx);
   mockPdf.mockResolvedValue({ bytes: new Uint8Array([1, 2, 3]), filename: "declaracao-presenca-p1.pdf" });
+  mockStampAvailable.mockResolvedValue(true);
+});
+
+// ---------------------------------------------------------------------------
+// R45 (strategy, 2026-10-06): "Never issue one without a stamp."
+//   G8 "Declaração at a location with no stamp. EXPECT: refused with the
+//       notice, no document produced."
+// WHICH locations have no carimbo is generate.test.ts's question. This suite
+// asks what the ACTION does once the answer is no: it must report the refusal
+// by name and must have produced, stored, signed, written and spent nothing.
+// ---------------------------------------------------------------------------
+describe("R45 G8 - a location with no carimbo is refused before anything is produced or spent", () => {
+  const LOCATION_ID = "00000000-0000-4000-8000-0000000000a1";
+
+  beforeEach(() => {
+    vi.mocked(getPatient).mockReset();
+    vi.mocked(updatePatient).mockReset();
+  });
+
+  it.each([
+    ["a marcação at a location with no carimbo", LOCATION_ID],
+    ["the manual path, and the tenant default has none", null],
+    ["no locationId sent at all", undefined],
+  ])("%s: refused as no_stamp, nothing produced", async (_label, locationId) => {
+    const { upload, createSignedUrl } = stubStorage();
+    mockStampAvailable.mockResolvedValue(false);
+
+    // A NIF the record lacks is typed too: the write-back must not run either.
+    const result = await generateDeclaracaoUrlAction({ ...req, locationId, nif: "123456789" });
+
+    expect(result).toEqual({ url: null, refused: "no_stamp" });
+    // The check was made for the location the dialog sent, in this caller's tenant.
+    expect(mockStampAvailable).toHaveBeenCalledTimes(1);
+    expect(mockStampAvailable.mock.calls[0]![0]).toMatchObject({ tenant_id: "t1" });
+    expect(mockStampAvailable.mock.calls[0]![1]).toBe(locationId);
+    // No PDF, no Storage object, no signed URL.
+    expect(mockPdf).not.toHaveBeenCalled();
+    expect(mockAdmin).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+    expect(createSignedUrl).not.toHaveBeenCalled();
+    // No slot of the per-user generation ceiling.
+    expect(mockCeiling).not.toHaveBeenCalled();
+    // No write to the patient record (which is also the only audited write here).
+    expect(vi.mocked(getPatient)).not.toHaveBeenCalled();
+    expect(vi.mocked(updatePatient)).not.toHaveBeenCalled();
+  });
+
+  it("the check runs BEFORE the ceiling: an allowed location then spends exactly one slot", async () => {
+    stubStorage();
+    const order: string[] = [];
+    mockStampAvailable.mockImplementation(async () => {
+      order.push("stamp");
+      return true;
+    });
+    mockCeiling.mockImplementationOnce(async () => {
+      order.push("ceiling");
+      return true;
+    });
+    mockPdf.mockImplementation(async () => {
+      order.push("render");
+      return { bytes: new Uint8Array([1]), filename: "d.pdf" };
+    });
+
+    const result = await generateDeclaracaoUrlAction({ ...req, locationId: LOCATION_ID });
+
+    expect(order).toEqual(["stamp", "ceiling", "render"]);
+    expect(result).toEqual({ url: "https://storage.example/signed?token=abc" });
+    expect(result).not.toHaveProperty("refused");
+  });
+
+  it("the generator's own refusal is reported the same way, and nothing is stored", async () => {
+    // The generator refuses a location with no carimbo by itself, whatever the
+    // check above answered a moment earlier.
+    const { upload, createSignedUrl } = stubStorage();
+    mockPdf.mockRejectedValue(new ClinicalError("no_stamp"));
+
+    const result = await generateDeclaracaoUrlAction({ ...req, locationId: LOCATION_ID, nif: "123456789" });
+
+    expect(result).toEqual({ url: null, refused: "no_stamp" });
+    expect(upload).not.toHaveBeenCalled();
+    expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(vi.mocked(updatePatient)).not.toHaveBeenCalled();
+  });
+
+  it("only no_stamp is named: every other failure keeps the generic result", async () => {
+    stubStorage();
+    mockPdf.mockRejectedValue(new ClinicalError("not_found"));
+    expect(await generateDeclaracaoUrlAction(req)).toEqual({ url: null });
+
+    mockPdf.mockRejectedValue(new Error("boom"));
+    expect(await generateDeclaracaoUrlAction(req)).toEqual({ url: null });
+  });
+
+  it("a failed availability read is not a refusal, and still produces and spends nothing", async () => {
+    const { upload } = stubStorage();
+    mockStampAvailable.mockRejectedValue(new Error("connection lost"));
+
+    const result = await generateDeclaracaoUrlAction(req);
+
+    expect(result).toEqual({ url: null });
+    expect(mockCeiling).not.toHaveBeenCalled();
+    expect(mockPdf).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("a malformed request never reaches the check: the shape check still comes first", async () => {
+    mockStampAvailable.mockResolvedValue(false);
+    expect(await generateDeclaracaoUrlAction({ ...req, date: "" })).toEqual({ url: null });
+    expect(mockStampAvailable).not.toHaveBeenCalled();
+  });
 });
 
 describe("generateDeclaracaoUrlAction - W9-03 download-vs-preview (CB QA item 2)", () => {

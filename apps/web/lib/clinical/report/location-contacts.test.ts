@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveLocationContact,
   normalizeLocationKey,
+  OSTEOJP_LOCATION_CONTACTS,
   OSTEOJP_PRIMARY_EMAIL_PLACEHOLDER,
 } from "./location-contacts";
 
@@ -58,5 +59,38 @@ describe("resolveLocationContact — selection by location", () => {
     const c = resolveLocationContact({ name: "Pop-up Clinic", address: null, phone: null });
     expect(c.addressLines).toEqual([]);
     expect(c.phones).toEqual([]);
+  });
+});
+
+// R45 (strategy, 2026-10-06), option (b) REFUSED until the real Linda-a-Velha
+// email is supplied. The Declaração's carimbo and place line learned the
+// brand-plus-short-code names ("OsteoJP (LV)", "OsteoJP (CB)"); THIS resolver
+// did not, on purpose. A short-code name keeps its own row here, so no document
+// starts printing the code table's block, placeholder email included, for it.
+describe("R45 - a short-code name is NOT a code-table location for the contact block", () => {
+  it.each(["OsteoJP (LV)", "OsteoJP (CB)", "osteojp (lv)", " OsteoJP(CB) "])("%s keeps its own row", (name) => {
+    const c = resolveLocationContact({ name, address: "Rua do registo, 1", phone: "210 000 000" });
+    expect(c).toEqual({
+      name,
+      addressLines: ["Rua do registo, 1"],
+      postalCode: null,
+      city: null,
+      phones: ["210 000 000"],
+      email: null,
+    });
+    expect(c.email).not.toBe(OSTEOJP_PRIMARY_EMAIL_PLACEHOLDER);
+    expect(Object.values(OSTEOJP_LOCATION_CONTACTS)).not.toContainEqual(c);
+  });
+
+  it("with no address and no telephone on the row, the block is the name alone", () => {
+    const c = resolveLocationContact({ name: "OsteoJP (LV)", address: null, phone: null });
+    expect(c).toEqual({
+      name: "OsteoJP (LV)",
+      addressLines: [],
+      postalCode: null,
+      city: null,
+      phones: [],
+      email: null,
+    });
   });
 });
