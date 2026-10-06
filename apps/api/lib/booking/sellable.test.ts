@@ -124,8 +124,9 @@ describe("GUEST-08 is one rule", () => {
     // is scanned, so a clause can only be found where it is applied.
     expect(checkerSource).toContain("export const GUEST_SELLABILITY_CLAUSES = [");
     expect(checker).not.toContain("GUEST_SELLABILITY_CLAUSES = [");
-    expect(codeOnly('// eq(services.isActive, true)\nconst a = 1; /* locations.isActive */')).not.toMatch(
-      /isActive/,
-    );
+    // Indented, as every real comment in the two files is, and at column zero.
+    expect(
+      codeOnly('// eq(services.isActive, true)\n  // eq(x.isActive, 1)\nconst a = 1; /* locations.isActive */'),
+    ).not.toMatch(/isActive/);
   });
 });

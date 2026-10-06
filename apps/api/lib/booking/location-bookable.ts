@@ -39,12 +39,16 @@ import { locations } from "@osteojp/db";
  * of it: a row that has not started yet counts, and so does one that has
  * expired.
  *
- * NOT STARTED YET COUNTS because that is somebody bookable with hours there. A
- * `valid_from <= today` test, which the therapist step's roster applies, would
- * take a working clinic off the form on any day that falls between one dated
- * row and the next.
+ * NOT STARTED YET COUNTS because that is somebody bookable with hours there,
+ * and the slot query honours the row for days inside its window. THE COST: a
+ * location given hours ahead of its opening day is listed from the day they
+ * are typed, and the therapist step's roster (which requires the row to have
+ * started, owner ruling Q-ROSTER) is empty for it until then. A `valid_from`
+ * test here would hide exactly that location. It would also hide a working
+ * clinic for as long as its schedule was being replaced by one that starts
+ * later, if the old rows were switched off rather than left to expire.
  *
- * EXPIRED COUNTS TOO, AND THAT HALF IS A CHOICE WITH A COST. A location whose
+ * EXPIRED COUNTS TOO, AND THAT HALF HAS ITS OWN COST. A location whose
  * every schedule row has expired can offer no slot until somebody enters hours,
  * and it stays listed: the wizard shows it with nothing to pick, and the public
  * form accepts a request for it. Before this rule every active location behaved
@@ -52,10 +56,12 @@ import { locations } from "@osteojp/db";
  * would also take a working clinic off the PUBLIC form on the first morning
  * its entered hours ran out, although that form needs no schedule at all:
  * reception answers those requests by telephone. Staying listed fails towards
- * the clinic being reachable. Which failure is preferred is the clinic's to
- * say, so the choice is recorded in the pull request for strategy, and
- * `location-bookable.db.test.ts` pins both halves so that changing either is a
- * decision rather than a tidy-up.
+ * the clinic being reachable.
+ *
+ * BOTH HALVES FAIL THE SAME WAY, towards a clinic being listed. Which failure
+ * is preferred is the clinic's to say, so both are recorded in the pull request
+ * as a question for strategy, and `location-bookable.db.test.ts` pins both so
+ * that changing either is a decision rather than a tidy-up.
  *
  * ==========================================================================
  * THE CALLER MUST HAVE `locations` IN SCOPE
