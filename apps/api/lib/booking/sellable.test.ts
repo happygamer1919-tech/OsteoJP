@@ -14,7 +14,7 @@
  * against either one stays green while the two disagree, because each is doing
  * exactly what its own author intended.
  *
- * So this asserts the CROSS-FILE property directly: the five clauses named by
+ * So this asserts the CROSS-FILE property directly: the clauses named by
  * `GUEST_SELLABILITY_CLAUSES` appear in the catalogue route AND in the checker.
  * It is a crude tie and that is the right crudeness. It cannot be satisfied by
  * a route that reaches the same answer a different way — which would fail this
@@ -40,10 +40,28 @@ const checker = readFileSync(CHECKER, "utf8");
 const postRoute = readFileSync(POST_ROUTE, "utf8");
 
 describe("GUEST-08 is one rule", () => {
-  it("names FIVE clauses, and the count is pinned", () => {
-    // A sixth condition is a product decision, not a refactor. If one is added,
-    // this line is the place somebody has to think about it.
-    expect(GUEST_SELLABILITY_CLAUSES).toHaveLength(5);
+  it("names SIX clauses, and the count is pinned", () => {
+    // Another condition is a product decision, not a refactor. If one is added,
+    // this line is the place somebody has to think about it. It read FIVE until
+    // 2026-10-06, when strategy's ruling R45 added the sixth: the location has
+    // a bookable therapist with hours there.
+    expect(GUEST_SELLABILITY_CLAUSES).toHaveLength(6);
+  });
+
+  it("the sixth clause is the shared fragment, defined in exactly one file", () => {
+    // The call is what the two files have in common. Its DEFINITION must stay in
+    // one place, or the list and the submit check are two rules again.
+    const fragment = readFileSync(join(API, "lib/booking/location-bookable.ts"), "utf8");
+    expect(fragment).toContain("export function locationHasBookableTherapist(");
+    for (const [name, src] of [
+      ["the catalogue route", catalog],
+      ["the checker", checker],
+    ] as const) {
+      expect(
+        /from\s+availability_templates/.test(src),
+        `${name} reads availability_templates itself; the rule belongs in location-bookable.ts`,
+      ).toBe(false);
+    }
   });
 
   for (const clause of GUEST_SELLABILITY_CLAUSES) {

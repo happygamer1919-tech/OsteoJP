@@ -29,6 +29,7 @@ import type {
 } from "./booking";
 import type { TherapistCandidate } from "./therapist";
 import { acquireSlotLocks } from "./slot-lock";
+import { locationHasBookableTherapist } from "@/lib/booking/location-bookable";
 
 /**
  * SCHED-17 - A SHARED RESOURCE IS NEVER OFFERED TO A PATIENT.
@@ -349,7 +350,17 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
       db
         .select({ id: locations.id, name: locations.name })
         .from(locations)
-        .where(and(eq(locations.tenantId, principal.tenantId), eq(locations.isActive, true)))
+        // R45: active AND somebody bookable has hours there. A location row is
+        // active from the moment it is created, so `is_active` alone listed a
+        // clinic that had not opened yet. The rule is one fragment, shared with
+        // `isBookableLocation` below and with the public form.
+        .where(
+          and(
+            eq(locations.tenantId, principal.tenantId),
+            eq(locations.isActive, true),
+            locationHasBookableTherapist(),
+          ),
+        )
         .orderBy(locations.name),
       db
         .select({
@@ -453,6 +464,9 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           eq(locations.id, locationId),
           eq(locations.tenantId, principal.tenantId),
           eq(locations.isActive, true),
+          // R45: the write guard asks what the catalogue asks, so a location the
+          // wizard does not list cannot be booked by somebody holding its id.
+          locationHasBookableTherapist(),
         ),
       )
       .limit(1);

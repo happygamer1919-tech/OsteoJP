@@ -8,6 +8,7 @@ import {
   services,
 } from "@osteojp/db";
 
+import { locationHasBookableTherapist } from "@/lib/booking/location-bookable";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
 
@@ -101,7 +102,17 @@ export async function GET(req: Request): Promise<Response> {
     db
       .select({ id: locations.id, name: locations.name })
       .from(locations)
-      .where(and(eq(locations.tenantId, tenantId), eq(locations.isActive, true)))
+      // R45: a clinic is listed only when somebody bookable has hours there.
+      // `locations.isActive` alone listed a location from the moment its row
+      // was created. Every list below is built from these rows, so a service
+      // offered ONLY at such a location drops out with it.
+      .where(
+        and(
+          eq(locations.tenantId, tenantId),
+          eq(locations.isActive, true),
+          locationHasBookableTherapist(),
+        ),
+      )
       .orderBy(asc(locations.name)),
     db
       .select({

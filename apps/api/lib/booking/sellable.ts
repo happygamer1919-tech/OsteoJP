@@ -1,6 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { getDbAdmin, locations, serviceLocationPrices, services } from "@osteojp/db";
 
+import { locationHasBookableTherapist } from "./location-bookable";
+
 /**
  * GUEST-08, STATED ONCE, FOR THE ENDPOINT THAT ACCEPTS AS WELL AS THE ONE THAT
  * LISTS.
@@ -33,7 +35,7 @@ import { getDbAdmin, locations, serviceLocationPrices, services } from "@osteojp
  * one route's SELECT and the other route had no reason to know it existed. A
  * copied predicate would close today's hole and reopen it the day GUEST-08 is
  * amended in one file. This module is the rule; `sellable.test.ts` pins the
- * catalogue route's own SELECT to the same five clauses, so amending one
+ * catalogue route's own SELECT to the same clauses, so amending one
  * without the other fails the build.
  *
  * ==========================================================================
@@ -52,7 +54,8 @@ import { getDbAdmin, locations, serviceLocationPrices, services } from "@osteojp
  */
 
 /**
- * The five clauses, named so a reader and a test see the same list.
+ * The clauses, named so a reader and a test see the same list: five from
+ * GUEST-08, and a sixth from R45 (2026-10-06).
  *
  * `sellable.test.ts` asserts every one of these strings appears in the
  * catalogue route's source. That is a crude tie and it is the RIGHT crudeness:
@@ -65,13 +68,19 @@ export const GUEST_SELLABILITY_CLAUSES = [
   "services.patientBookable",
   "locations.isActive",
   "serviceLocationPrices.isActive",
+  // R45 item 1, strategy ruling of 2026-10-06: the SIXTH clause. The location
+  // has a bookable therapist with hours there. It is a function name rather
+  // than a column because the rule is one shared fragment
+  // (`location-bookable.ts`), and naming the call is what ties both files to it.
+  "locationHasBookableTherapist()",
 ] as const;
 
 /**
  * May a member of the public book `serviceId` at `locationId` in this tenant?
  *
  * One round trip. The join IS the rule: an inner join to `locations` enforces
- * the active clinic, an inner join to `service_location_prices` enforces
+ * the active clinic with somebody bookable working there (R45), an inner join
+ * to `service_location_prices` enforces
  * offered-only-where-priced, and the three service columns are the wizard's own
  * conditions. A missing row on either side of either join is a `false`, which
  * is the same answer a wrong tenant gets.
@@ -107,6 +116,9 @@ export async function isGuestSellable(args: {
           eq(locations.id, args.locationId),
           eq(locations.tenantId, services.tenantId),
           eq(locations.isActive, true),
+          // R45: and somebody bookable has hours there, the same fragment the
+          // catalogue route filters its clinic list with.
+          locationHasBookableTherapist(),
         ),
       )
       .where(
