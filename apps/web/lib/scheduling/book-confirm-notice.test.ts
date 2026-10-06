@@ -192,7 +192,6 @@ const readRow = {
   patientSmsEnabled: true,
   locationAddress: "Rua de Exemplo 1" as string | null,
   locationPhone: "+351 272 111 111" as string | null,
-  serviceId: "service-1" as string | null,
   serviceName: "Osteopatia" as string | null,
   tenantSettings: { locale: "pt" } as unknown,
 };
@@ -249,7 +248,7 @@ describe("approvalNoticeAfterAccept", () => {
   it("switch on, an email, the appointment has NO SERVICE: the THIRD notice", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
     mockRunScoped.mockResolvedValueOnce([
-      { patientId: NOT_LISTED, ...readRow, serviceId: null, serviceName: null },
+      { patientId: NOT_LISTED, ...readRow, serviceName: null },
     ] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("service_missing");
   });
@@ -257,17 +256,29 @@ describe("approvalNoticeAfterAccept", () => {
   it("switch on, no email but a mobile, no service: nothing, the SMS names no service and goes", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
     mockRunScoped.mockResolvedValueOnce([
-      { patientId: NOT_LISTED, ...readRow, patientEmail: null, serviceId: null, serviceName: null },
+      { patientId: NOT_LISTED, ...readRow, patientEmail: null, serviceName: null },
     ] as never);
     expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
   });
 
-  it("a service the appointment HAS but the actor's read did not return is unknown, never 'no service'", async () => {
+  it("a service name that did not come back is read as the dispatch reads it, and the other reasons survive", async () => {
+    // The notice adds no rule of its own about the service row: a null name is
+    // what the dispatch's read would also see, and it would stop there on the
+    // email leg. And it never costs a row its OTHER reason, which a filter on
+    // the service once did.
     process.env.BOOK_CONFIRM_MODE = "on";
+    mockRunScoped.mockResolvedValueOnce([{ patientId: NOT_LISTED, ...readRow, serviceName: null }] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("service_missing");
+
     mockRunScoped.mockResolvedValueOnce([
-      { patientId: NOT_LISTED, ...readRow, serviceId: "service-hidden", serviceName: null },
+      { patientId: NOT_LISTED, ...readRow, serviceName: null, patientEmail: null, patientPhone: null },
     ] as never);
-    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBeNull();
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("patient_no_email");
+
+    mockRunScoped.mockResolvedValueOnce([
+      { patientId: NOT_LISTED, ...readRow, serviceName: null, locationAddress: null },
+    ] as never);
+    expect(await approvalNoticeAfterAccept(actor, [APPT])).toBe("location_contact_missing");
   });
 
   it("switch on, a mobile and no email, but the CLINIC's settings have SMS off: the notice", async () => {
@@ -362,7 +373,7 @@ describe("confirmAppointmentRequest carries the notice, and never fails because 
 
   it("switch on, an email on file, no service: ok, with the THIRD notice", async () => {
     process.env.BOOK_CONFIRM_MODE = "on";
-    accept(async () => [{ patientId: NOT_LISTED, ...readRow, serviceId: null, serviceName: null }]);
+    accept(async () => [{ patientId: NOT_LISTED, ...readRow, serviceName: null }]);
     expect(await confirmAppointmentRequest(APPT)).toEqual({
       ok: true,
       data: { id: APPT, notice: "service_missing" },

@@ -58,9 +58,10 @@ import {
 // scope, and the patient, the location and the tenant are INNER joins: a row
 // the actor cannot see is not a row, and "unknown" is never reported as
 // "unreachable" or as "the location has no address". The service is a LEFT
-// join, because an appointment may have none and that is the third reason; so
-// an appointment that HAS a service whose row did not come back is dropped,
-// which is what an inner join would have done with it.
+// join, exactly as the dispatch's own read has it, because an appointment may
+// have none and that is the third reason. The notice and the dispatch
+// therefore read the same service name and ask the same function about it;
+// neither adds a rule of its own about a service row that did not come back.
 //
 // IT ASKS THE SAME SWITCH THE DISPATCH ASKS (`bookConfirmAppliesTo`), so the
 // notice appears for exactly the patients the new message applies to. With the
@@ -126,7 +127,6 @@ export async function approvalNoticeAfterAccept(
           patientSmsEnabled: patients.reminderSmsEnabled,
           locationAddress: locations.address,
           locationPhone: locations.phone,
-          serviceId: appointments.serviceId,
           serviceName: services.name,
           tenantSettings: tenants.settings,
         })
@@ -140,16 +140,11 @@ export async function approvalNoticeAfterAccept(
         .where(inArray(appointments.id, [...appointmentIds])),
     );
     return approvalNoticeFor(
-      read
-        // A service the appointment names but the actor's read did not return
-        // is UNKNOWN, never "no service" (`services.name` is NOT NULL, so a
-        // null name beside a service id means the row did not come back).
-        .filter((row) => row.serviceId === null || row.serviceName !== null)
-        .map(({ tenantSettings, ...row }) => ({
-          ...row,
-          // The same parse the dispatch makes of the same column.
-          tenantSmsEnabled: parseTenantConfig(tenantSettings).reminders.smsEnabled,
-        })),
+      read.map(({ tenantSettings, ...row }) => ({
+        ...row,
+        // The same parse the dispatch makes of the same column.
+        tenantSmsEnabled: parseTenantConfig(tenantSettings).reminders.smsEnabled,
+      })),
     );
   } catch (e) {
     console.error(

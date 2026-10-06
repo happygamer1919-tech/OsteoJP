@@ -120,8 +120,13 @@ export type BookingApprovedReachInput = {
 };
 
 /**
- * Every reason `bookingApprovedBlocker` can give, IN THE ORDER THE DISPATCH
- * CHECKS THEM. The type is derived from the list, so a reason cannot exist
+ * Every reason `bookingApprovedBlocker` can give, in the order it gives them:
+ * the patient, then the location, then the service, which is the order of the
+ * dispatch's gates. (One corner differs and predates the third reason: with no
+ * email, a number the SMS leg cannot use AND a location with no contact, the
+ * dispatch records the location and this names the patient. Nothing is sent
+ * either way, and the approver is told to ring either way.) The type is
+ * derived from the list, so a reason cannot exist
  * without a place in the order, and a `Record` keyed on the type (the notice's
  * mapping) stops compiling until a new reason is given its sentence.
  */
