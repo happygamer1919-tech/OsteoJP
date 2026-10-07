@@ -153,13 +153,24 @@ d("0079: no untrusted role can execute a SECURITY DEFINER function", () => {
      *   purge_expired_guest_intakes  the retention job's body. It runs as its
      *                                owner from the scheduler and NO application
      *                                role may execute it, service_role included.
+     *
+     * 0102 (SAT-01) adds two, each revoked by name in its own migration:
+     *   patients_survey_switch_audit   a TRIGGER function, like
+     *                                  assign_patient_number: fired by its
+     *                                  trigger, never called, granted to nobody.
+     *   purge_expired_survey_comments  the retention job's body, like
+     *                                  purge_expired_guest_intakes: it runs as
+     *                                  its owner and NO application role may
+     *                                  execute it, service_role included.
      */
     expect(denied).toEqual([
       "assign_patient_number",
       "custom_access_token_hook",
       "jwt_patient_id",
       "patient_guest_request_ids",
+      "patients_survey_switch_audit",
       "purge_expired_guest_intakes",
+      "purge_expired_survey_comments",
     ]);
   });
 

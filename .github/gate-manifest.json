@@ -43,7 +43,7 @@
     "docs/board/validate-board.test.mjs": "ac19a4dec6875549c5c4a3d74fc4eed28f59ba520e9da369f9849b758216c28d",
     "docs/guide/build/guide-names-waived.txt": "8d95105355259ad4d8bb3fc273d7c57684696f2981ce9f7ce9f54ee1db18a37f",
     "docs/guide/build/guide-names.mjs": "e4d1578c3f61cf01a61bfe65d71f0084609d4a0fdfabdb57caefb90c5d31e3c2",
-    "packages/db/scripts/check-security-definer-owner.mjs": "eb9fafe62c9bb85ebadb0ecdf8bd3c84e861dd243480d05146a78ab8e1efb8bd",
+    "packages/db/scripts/check-security-definer-owner.mjs": "7539df82422a723a8a1fd738fe6286c264fb13b13e6ab9ddbcf12efbda2a631a",
     "scripts/0082-grant-states-its-end-state.test.mjs": "400155b239ce0797d962132c097313b8304a6b1548a0ff0880890e3f35ac58d2",
     "scripts/0083-checks-quote-the-real-file.test.mjs": "6a266fb9850ae40b5412393a388a22d789916bc6884f9c061c48e047c8ef009e",
     "scripts/agent-commands-carry-no-credentials.test.mjs": "042c8eaf0d5d25dcde8c197b04f3e0f25289a257f38b270f0078641289a4a749",

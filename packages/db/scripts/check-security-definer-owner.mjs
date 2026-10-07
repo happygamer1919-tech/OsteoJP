@@ -147,8 +147,36 @@ export const EXPECTED_OWNER = "postgres";
  * this change merges; then main is merged into #1475 and #1475 merges. Between
  * this merge and #1475's, main's own count reads red (the seeded database and
  * the derived set hold 27, this says 28): one red run, accepted by the ruling.
+ *
+ * 28 -> 36 with migration 0102 (SAT-01, the satisfaction survey's tables,
+ * doors and switch audit; numbered 0102 by strategy's R41, promoted on PR
+ * #1551). It creates EIGHT SECURITY DEFINER functions, each with its own
+ * `ALTER FUNCTION ... OWNER TO postgres` in 0102:
+ *   - six doors, with EXECUTE granted to `authenticated` only:
+ *     `public.issue_survey_automatic(text, uuid, uuid, text)`,
+ *     `public.issue_survey_manual(text, uuid, uuid, text)`,
+ *     `public.survey_send_state(uuid, uuid)`,
+ *     `public.resolve_survey_code(text)`,
+ *     `public.submit_survey_response(text, uuid, integer, integer, text, boolean, text)`
+ *     and `public.opt_out_survey(text, uuid)`;
+ *   - two that no application role may execute:
+ *     `public.purge_expired_survey_comments(uuid)` and the trigger function
+ *     `public.patients_survey_switch_audit()`.
+ * Its ninth function, the private helper `public.survey_manual_verdict`, runs
+ * as its caller and is NOT counted: it carries no owner pin, on purpose. 0098
+ * to 0101 add no definer, so the sum is 28 + 8.
+ *
+ * MEASURED, NOT INCREMENTED: GREEN's post-check on production read
+ * `51 tables, 36 secdef, 0 not postgres` in the sitting of 2026-10-07 (28
+ * before it), and the definer set derived from `packages/db/migrations` with
+ * 0102 in it has 36 names.
+ *
+ * THE ORDER is 0096's: GREEN applied 0102 from #1551's held head FIRST; then
+ * this change merges; then main is merged into #1551 and #1551 merges. Between
+ * this merge and #1551's, main's own count reads red (the seeded database and
+ * the derived set hold 28, this says 36): one red run, accepted by the ruling.
  */
-export const EXPECTED_COUNT = 28;
+export const EXPECTED_COUNT = 36;
 
 /**
  * The verdict, as a pure function of the catalog rows.
