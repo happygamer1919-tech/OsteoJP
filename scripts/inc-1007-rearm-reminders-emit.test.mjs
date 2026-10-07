@@ -52,6 +52,7 @@ import {
   buildSender,
   changedSince,
   classifyTarget,
+  describeError,
   marginMsFor,
   markTooClose,
   parseArgs,
@@ -64,6 +65,7 @@ import {
   tooLateToWait,
   verdictOf,
   wouldSchedule,
+  writeMarker,
 } from "../packages/db/scripts/inc-1007-rearm-reminders-emit.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -148,9 +150,13 @@ async function runWith(rows, argv, opts = {}) {
     home,
     out: opts.out ?? ((l) => lines.push(l)),
     openReader: async () => {
+      if (opts.openFails) throw opts.openFails;
       reader.opened += 1;
       return {
-        selection: async () => ({ tenantId: TENANT, t0: new Date(T0), rows }),
+        selection: async () => {
+          if (opts.selectionFails) throw opts.selectionFails;
+          return { tenantId: TENANT, t0: new Date(T0), rows };
+        },
         recheck: async (tenantId, id) => {
           assert.equal(tenantId, TENANT, "the re-read was not bound to the tenant");
           reader.rechecked.push(id);
@@ -163,6 +169,7 @@ async function runWith(rows, argv, opts = {}) {
       };
     },
     ...(opts.now ? { now: opts.now } : {}),
+    ...(opts.writeMarker ? { writeMarker: opts.writeMarker } : {}),
   };
   let result = null;
   let halt = null;
@@ -382,7 +389,9 @@ test("a dry run against a closed local port fails on the read, exit 1, and sends
   // Proves the order: every refusal above fired BEFORE this point.
   const r = cli(SLUG, { DATABASE_URL_DIRECT: LANE_URL });
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /FAILED: the read failed/);
+  // The error's name and code, and never the driver's message: that one names the host and the port.
+  assert.match(r.stderr, /^FAILED: the read failed: [A-Za-z]+ ECONNREFUSED$/m);
+  assert.doesNotMatch(r.stdout + r.stderr, /127\.0\.0\.1|:1\b|connect |postgres:/, "a piece of the connection string was printed");
   assert.match(r.stdout, /DRY RUN - nothing is sent/);
   assert.match(r.stdout, /CANNOT verify what is deployed/);
   // And a confirm that fails on the read gives its lock back.
@@ -541,6 +550,30 @@ test("with the margin, the floor is 24 hours plus the margin, and the 48 hour ma
   // A larger batch has a larger margin.
   const big = { ...OPTS, marginMs: marginMsFor(1000) };
   assert.equal(verdictOf(row({ startsAt: at(T0 + 24 * HOUR + MARGIN + 1) }), T0, big), "near_mark");
+});
+
+test("a row held back for its 48 hour mark can be sent only from 60 s after that mark until its 24 hour mark nears", () => {
+  const mark = T0 + 120_000; // the 48 hour mark is 2 minutes after the first read
+  const held = row({ startsAt: at(mark + 48 * HOUR) });
+  const later = (t) => verdictOf(held, t, WITH_MARGIN);
+  assert.equal(later(T0), "near_mark");
+  // Too early: the mark is ahead, or passed less than 60 s ago.
+  assert.equal(later(mark), "near_mark");
+  assert.equal(later(mark + BACK_MS - 1), "near_mark");
+  // The window opens 60 s after the mark...
+  assert.equal(later(mark + BACK_MS), "emit");
+  assert.equal(later(T0 + 23 * HOUR), "emit", "a run 23 hours after the first read no longer reaches it");
+  // ...and closes when the 24 hour mark comes inside the later run's margin.
+  assert.equal(later(mark + 24 * HOUR - MARGIN - 1), "emit");
+  assert.equal(later(mark + 24 * HOUR - MARGIN), "near_mark");
+  // A run a day or more after the first one finds it inside 24 hours, for good.
+  assert.equal(later(mark + 24 * HOUR), "inside_24h");
+  assert.equal(later(T0 + 25 * HOUR), "inside_24h");
+  // "Within 23 hours of this read" is true for every row the first read can hold back, at the largest margin.
+  const big = marginMsFor(1000);
+  const earliestMark = T0 - BACK_MS + 1;
+  assert.ok(earliestMark + 24 * HOUR - big - 1 > T0 + 23 * HOUR);
+  assert.equal(verdictOf(row({ startsAt: at(earliestMark + 48 * HOUR) }), T0 + 23 * HOUR, { ...OPTS, marginMs: big }), "emit");
 });
 
 test("a row touched exactly 25 hours before the read is skipped; one millisecond older it is emitted", () => {
@@ -751,6 +784,97 @@ test("the request posts the event with no id, returns the id Inngest gave it, an
   assert.deepEqual(dropped, { ok: false, why: "network error (TypeError)", eventId: null });
 });
 
+/* ---- an outside error is printed as a name and a code, never as its message - */
+
+/** What a driver's or a network library's message can carry. None of it may be printed. */
+const LEAK = { host: "db.leaky.invalid", port: "6543", user: "postgres.leakyuser", pw: "fixture-not-a-secret-pw" };
+const leaky = (name, code, extra = {}) => {
+  const e = new Error(`connect ${code} ${LEAK.host}:${LEAK.port}; password authentication failed for user "${LEAK.user}" (${LEAK.pw})`);
+  e.name = name;
+  if (code !== undefined) e.code = code;
+  return Object.assign(e, extra);
+};
+const assertNoLeak = (text) => {
+  for (const piece of Object.values(LEAK)) assert.ok(!text.includes(piece), `${piece} was printed`);
+  assert.doesNotMatch(text, /password authentication|connect E/);
+};
+
+test("describeError gives the name and the code, and nothing else", () => {
+  assert.equal(describeError(leaky("Error", "ECONNREFUSED")), "Error ECONNREFUSED");
+  assert.equal(describeError(leaky("PostgresError", "28P01")), "PostgresError 28P01");
+  assert.equal(describeError(leaky("Error", undefined)), "Error");
+  // fetch reports its reason on `cause`.
+  assert.equal(describeError(leaky("TypeError", undefined, { cause: leaky("Error", "UND_ERR_CONNECT_TIMEOUT") })), "TypeError UND_ERR_CONNECT_TIMEOUT");
+  // A code or a name that is not from a fixed vocabulary is left out, not printed.
+  assert.equal(describeError(leaky("Error", `${LEAK.host}:${LEAK.port}`)), "Error");
+  assert.equal(describeError(leaky("Error", "econnrefused 127.0.0.1")), "Error");
+  assert.equal(describeError(leaky("Error", 23)), "Error");
+  assert.equal(describeError(leaky(`Error for ${LEAK.user}`, "ECONNRESET")), "Error ECONNRESET");
+  assert.equal(describeError(leaky("Error", undefined, { cause: { code: LEAK.pw } })), "Error");
+  assert.equal(describeError(`${LEAK.user}:${LEAK.pw}`), "Error");
+  assert.equal(describeError({ name: LEAK.user, code: LEAK.pw, message: LEAK.host }), "Error");
+  assert.equal(describeError(null), "Error");
+  // Only a real Error is believed about its name and its code, and only a real Error as its cause.
+  assert.equal(describeError({ name: "TypeError", code: "ECONNRESET" }), "Error");
+  assert.equal(describeError(leaky("TypeError", undefined, { cause: { code: "ECONNRESET" } })), "TypeError");
+  // The script's own sentence about a tenant slug is a refusal, printed whole; it is not a driver's error.
+  assert.match(CODE, /if \(t\.length !== 1\) throw new Halt\(1, `the read failed: tenant slug "\$\{tenantSlug\}" matched \$\{t\.length\} tenants, not 1`\);/);
+  for (const e of [leaky("Error", "ECONNREFUSED"), leaky("PostgresError", "28P01"), leaky(LEAK.user, LEAK.pw), LEAK.pw]) assertNoLeak(describeError(e));
+  // No message of an outside error is printed anywhere in the script.
+  assert.doesNotMatch(CODE, /\be\.message\b[^;]*\)`\)|describeError\(e\)\.message/);
+  assert.equal((CODE.match(/\be\.message\b/g) ?? []).length, 1, "an error message is printed somewhere new");
+  assert.match(CODE, /console\.error\(`\$\{e\.code === 2 \? "BAD INVOCATION" : "FAILED"\}: \$\{e\.message\}`\);/, "the one message printed is a Halt's own");
+});
+
+test("a read that fails prints the error's name and code, and no host, user name or password from its message", async () => {
+  const rows = [dbRow(1), dbRow(2)];
+  for (const [opts, expected] of [
+    [{ selectionFails: leaky("Error", "ECONNREFUSED") }, "the read failed: Error ECONNREFUSED"],
+    [{ selectionFails: leaky("PostgresError", "28P01") }, "the read failed: PostgresError 28P01"],
+    [{ openFails: leaky("TypeError", undefined) }, "the read failed: TypeError"],
+  ]) {
+    for (const argv of [[], SINK_CONFIRM(2)]) {
+      const r = await runWith(rows, argv, opts);
+      assert.equal(r.halt?.code, 1);
+      assert.equal(r.halt.message, expected);
+      assertNoLeak([r.halt.message, ...r.lines].join("\n"));
+      assert.equal(r.events.length, 0);
+      assert.equal(existsSync(r.lockPath), false, "a failed read left the lock behind");
+    }
+  }
+});
+
+test("a re-read that fails prints the error's name and code, and nothing from its message", async () => {
+  const r = await runWith([dbRow(1), dbRow(2)], SINK_CONFIRM(2), {
+    fresh: (id, x) => {
+      if (id === apptId(2)) throw leaky("PostgresError", "57014");
+      return unchanged(x);
+    },
+  });
+  assert.equal(r.halt?.code, 1);
+  assert.match(r.halt.message, /bbbbbbbb0002: could not be read again \(PostgresError 57014\); nothing was sent for it/);
+  assertNoLeak([r.halt.message, ...r.lines, readFileSync(r.markerPath, "utf8")].join("\n"));
+  assert.deepEqual(r.events.map((e) => e.data.appointmentId), [apptId(1)]);
+});
+
+test("a request that fails records the error's name and code, and nothing from its message", async () => {
+  const event = buildEvent(row());
+  const send = (thrown) =>
+    sendToInngest(event, {
+      key: "fixture-key",
+      origin: "http://sink.invalid",
+      fetchImpl: async () => {
+        throw thrown;
+      },
+    });
+  assert.deepEqual(await send(leaky("TypeError", undefined, { cause: leaky("Error", "ECONNRESET") })), { ok: false, why: "network error (TypeError ECONNRESET)", eventId: null });
+  assert.deepEqual(await send(leaky("TimeoutError", 23)), { ok: false, why: "network error (TimeoutError)", eventId: null });
+  assert.deepEqual(await send(`${LEAK.host} ${LEAK.pw}`), { ok: false, why: "network error (Error)", eventId: null });
+  for (const thrown of [leaky("TypeError", undefined, { cause: leaky("Error", "ECONNRESET") }), leaky(LEAK.user, LEAK.pw), LEAK.host]) {
+    assertNoLeak(JSON.stringify(await send(thrown)));
+  }
+});
+
 /* ---- the lock --------------------------------------------------------------- */
 
 test("the lock is exclusive: a second taker is refused until the first lets go", () => {
@@ -809,7 +933,7 @@ test("the dry run prints the counts, the skips and hold-backs by reason and the 
   assert.doesNotMatch(text, /--resend-attempted to include them/, "the advice about attempted rows is printed with none on record");
   assert.match(text, /^held back: a reminder mark is inside the margin: 3$/m);
   assert.match(text, /^ {2}of those, the 24 hour mark \(this script will never send for them\): 1$/m);
-  assert.match(text, /^ {2}of those, the 48 hour mark \(a later run sends them\): 2$/m);
+  assert.match(text, /^ {2}of those, the 48 hour mark \(only a run from 1 minute after the mark, and within 23 hours of this read, can send them\): 2$/m);
   assert.match(text, /^held back: nearer than --min-days-ahead 1: 0$/m);
   assert.match(text, /^ELIGIBLE: 32$/m);
   assert.match(text, /^ {2}by status: scheduled=22 confirmed=10$/m);
@@ -941,16 +1065,62 @@ test("while a run is sending it holds the lock, and each row is on disk as sent 
 test("a row is written to the marker as ATTEMPTED before its request leaves", () => {
   // Order in the code: the claim, then per row the re-read, the attempted record on disk, the request.
   const claim = CODE.indexOf('state: "sending"');
-  const claimWrite = CODE.indexOf("writeMarker(marker, entries)", claim);
+  const claimWrite = CODE.indexOf("write(marker, entries)", claim);
   const recheck = CODE.indexOf("reader.recheck(tenantId, row.id)", claimWrite);
   const attempted = CODE.indexOf('state: "attempted", at:', recheck);
-  const attemptedWrite = CODE.indexOf("writeMarker(marker, entries)", attempted);
+  const attemptedWrite = CODE.indexOf("write(marker, entries)", attempted);
   const request = CODE.indexOf("await send(buildEvent(row))");
   const sentState = CODE.indexOf('record.state = "sent"');
   assert.ok(claim > 0 && claimWrite > claim && recheck > claimWrite, "the marker claim no longer precedes the first row");
   assert.ok(attempted > recheck && attemptedWrite > attempted && request > attemptedWrite, "the attempted record is no longer on disk before the request");
   assert.ok(sentState > request, "a row is marked sent before its request");
   assert.equal((CODE.match(/await send\(/g) ?? []).length, 1, "a second send, or a retry, appears in the loop");
+});
+
+test("a marker write that fails stops the run: before the first row, before a request, and after a 2xx", async () => {
+  const rows = [dbRow(1), dbRow(2), dbRow(3)];
+  /** The real writer, except that call number `n` fails. Calls: 1 the claim, then per row the attempted record and the sent record. */
+  const failingAt = (n) => {
+    let calls = 0;
+    return (marker, entries) => {
+      calls += 1;
+      if (calls === n) throw Object.assign(new Error("fixture: the disk is full"), { code: "ENOSPC" });
+      writeMarker(marker, entries);
+    };
+  };
+  // The claim: nothing is sent, nothing is re-read.
+  const claim = await runWith(rows, SINK_CONFIRM(3), { writeMarker: failingAt(1) });
+  assert.equal(claim.halt?.code, 1);
+  assert.match(claim.halt.message, /could not write the marker .*; nothing was sent\./);
+  assert.equal(claim.events.length, 0);
+  assert.deepEqual(claim.reader.rechecked, []);
+  assert.equal(claim.marker, null);
+  assert.equal(existsSync(claim.lockPath), false);
+
+  // The attempted record of the SECOND row: its request never leaves, and it is not recorded.
+  const before = await runWith(rows, SINK_CONFIRM(3), { writeMarker: failingAt(4) });
+  assert.equal(before.halt?.code, 1);
+  assert.match(before.halt.message, /stopped at bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002: the marker .* could not be updated; nothing was sent for it\./);
+  assert.deepEqual(before.events.map((e) => e.data.appointmentId), [apptId(1)]);
+  assert.deepEqual(before.marker.history[0].rows.map((x) => [x.id, x.state]), [[apptId(1), "sent"]]);
+  assert.equal(before.marker.history[0].state, "stopped");
+  assert.match(before.lines.join("\n"), /^SENT: 1 of 3 .*\nchanged since the read, not sent: 0\nattempted, outcome unknown: 0\nnot reached: 2$/m);
+  assert.deepEqual(before.reader.rechecked, [apptId(1), apptId(2)]);
+
+  // The sent record of the FIRST row, after its 2xx: the run stops there. It does not go on to the next row.
+  const seen = [];
+  const after = await runWith(rows, SINK_CONFIRM(3), { writeMarker: failingAt(3), out: (l) => seen.push(l) });
+  assert.equal(after.halt?.code, 1);
+  assert.match(after.halt.message, /stopped at bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001: SENT, but the marker .* could not be updated and still says attempted\./);
+  assert.deepEqual(after.events.map((e) => e.data.appointmentId), [apptId(1)], "the run went on after it could not record a sent row");
+  assert.deepEqual(after.reader.rechecked, [apptId(1)]);
+  assert.equal(seen.some((l) => /^ {2}sent /.test(l)), false, "a row is reported sent although its record could not be kept");
+  assert.match(seen.join("\n"), /^SENT: 1 of 3 .*\nchanged since the read, not sent: 0\nattempted, outcome unknown: 0\nnot reached: 2$/m);
+  // The closing write went through, so the marker ends up telling the truth, and the row is never sent twice.
+  assert.equal(after.marker.history[0].state, "stopped");
+  assert.deepEqual(after.marker.history[0].rows.map((x) => [x.id, x.state]), [[apptId(1), "sent"]]);
+  assert.equal(existsSync(after.lockPath), false);
+  assert.equal((await runWith(rows, [], { dir: after.dir })).result.eligible, 2);
 });
 
 test("a send that fails stops the run at once and leaves the row ATTEMPTED, which later runs skip and count", async () => {
@@ -960,18 +1130,23 @@ test("a send that fails stops the run at once and leaves the row ATTEMPTED, whic
   const rows = [dbRow(1), dbRow(2)];
   const r = await runWith(rows, SINK_CONFIRM(2), { dir });
   assert.equal(r.halt?.code, 1);
-  assert.match(r.halt.message, /stopped at bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001: could not write the sink file \(Error\)\. The row stays ATTEMPTED/);
+  assert.match(r.halt.message, /stopped at bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001: could not write the sink file \(Error EISDIR\)\. The row stays ATTEMPTED/);
   assert.equal(r.marker.history[0].state, "stopped");
   assert.equal(r.marker.history[0].rows.length, 1);
   assert.equal(r.marker.history[0].rows[0].state, "attempted");
-  assert.equal(r.marker.history[0].rows[0].why, "could not write the sink file (Error)");
+  assert.equal(r.marker.history[0].rows[0].why, "could not write the sink file (Error EISDIR)");
   assert.match(r.lines.join("\n"), /^SENT: 0 of 2 .*\nchanged since the read, not sent: 0\nattempted, outcome unknown: 1\nnot reached: 1$/m);
   assert.deepEqual(r.reader.rechecked, [apptId(1)], "the run went on after a failed send");
   assert.equal(existsSync(r.lockPath), false, "a stopped run left its lock behind");
 
   const dry = await runWith(rows, [], { dir });
   assert.match(dry.lines.join("\n"), /^skipped: attempted by an earlier run, outcome unknown \(marker\): 1$/m);
-  assert.match(dry.lines.join("\n"), /add --resend-attempted to include them/);
+  // The advice says when sending again is safe, and what the only guard for that is.
+  assert.match(
+    dry.lines.join("\n"),
+    /^ {2}Inngest may or may not have taken those events\. Each send has its own id, so sending them again is safe\n {2}ONLY IF the scheduler runs the new settings\. The dashboard check is the only guard for that: the canary\n {2}cannot tell old settings from new\. If that check passed: add --resend-attempted to include them\.$/m,
+  );
+  assert.doesNotMatch(dry.lines.join("\n"), /^resend {3}/m, "the flag's warning is printed without the flag");
   assert.equal(dry.result.eligible, 1);
 });
 
@@ -1008,6 +1183,10 @@ test("an attempted row is sent again only with --resend-attempted, and then it i
 
   const dryFlag = await runWith(rows, ["--resend-attempted"], { dir });
   assert.equal(dryFlag.result.eligible, 1);
+  assert.match(
+    dryFlag.lines.join("\n"),
+    /^resend {3}--resend-attempted is given\. Sending a row a second time is safe ONLY with the new scheduler settings live\. The dashboard check is the only guard for that; the canary cannot tell old settings from new\.$/m,
+  );
   assert.match(dryFlag.lines.join("\n"), /^skipped: attempted by an earlier run, outcome unknown \(marker\): 0$/m);
   assert.match(dryFlag.lines.join("\n"), /^ {2}attempted before and sent again now \(--resend-attempted\): 1$/m);
 
@@ -1074,7 +1253,7 @@ test("a re-read that fails, or takes longer than its bound, stops the run with n
   const started = Date.now();
   const slow = await runWith([dbRow(1)], SINK_CONFIRM(1), { fresh: () => new Promise(() => {}) });
   assert.equal(slow.halt?.code, 1);
-  assert.match(slow.halt.message, /could not be read again \(Error\)/);
+  assert.match(slow.halt.message, /could not be read again \(Error TIMEOUT\)/);
   assert.equal(slow.events.length, 0);
   assert.deepEqual(slow.marker.history[0].rows, []);
   const took = Date.now() - started;
@@ -1312,6 +1491,10 @@ test("the script and its document carry no em dash, and the document carries wha
     ".lock",
     "465",
     "690",
+    "caffeinate -i",
+    "23 hours",
+    "ONLY with the new scheduler settings live",
+    "cannot tell old settings from new",
   ]) {
     assert.ok(doc.includes(word), `the document does not carry ${word}`);
   }

@@ -80,6 +80,15 @@ local dev server, 10 appointments per pattern:
 90 sends came back with 90 different ids, and the function saw the scheduler's
 id, not one of ours.
 
+**All of this is true ONLY with the new scheduler settings live.** Under the old
+settings a second event inside 24 hours destroys the reminder whatever its id
+is. So three things that are safe with the fix are dangerous without it:
+`--resend-attempted`, a lost marker, and two overlapping runs. **The only guard
+is step 2**, the owner's look at the settings in the dashboard. The canary is
+not a guard: it cannot tell old settings from new, because one event gives one
+run per channel under both. A canary that looks right says the event arrived.
+It does not say the fix is live.
+
 **Condition 2: the event must not arrive just before a reminder is due.**
 Measured by the reviewer, 6 appointments per pattern, each with a healthy
 sleeping SMS run:
@@ -114,6 +123,18 @@ own delay, and a clock difference between this machine and the database. A mark
 that passed less than 60 seconds before the read holds its row back too,
 because its reminder may be going out at that moment. That last part is
 reasoned, not measured.
+
+What happens to a row that is held back depends on which mark it was:
+
+- **Held back for its 24 hour mark: never sent.** By the next run it is inside
+  24 hours. The real floor is 24 hours plus the margin.
+- **Held back for its 48 hour mark: it can still be sent, but only inside a
+  window.** Such a row starts about 48 hours after the run that held it back. A
+  later run can send it from one minute after its 48 hour mark until its 24
+  hour mark comes inside that later run's margin. In practice that means a run
+  **within 23 hours of the one that held it back**. A run a day or more later
+  finds it inside 24 hours and never sends it. Step 7 is too late for these
+  rows; step 6b is the one for them.
 
 ## Which appointments get an event
 
@@ -180,9 +201,11 @@ have taken the event. Every later run skips such a row and prints the count:
 
 What the operator does about it: run again with `--resend-attempted`. Because
 every send has an id of its own, sending such a row a second time is safe under
-the fix, as the tables above show. The flag is a deliberate choice, not a
-danger. Without it the appointment may have no reminder run. With it the
-appointment gets a fresh one either way.
+the fix, as the tables above show, and ONLY with the new scheduler settings live.
+Step 2 is the one thing that says they are; the script cannot check, and it
+prints that warning whenever the flag is given. With the settings live the flag
+is a deliberate choice, not a danger. Without it the appointment may have no
+reminder run. With it the appointment gets a fresh one either way.
 
 **The lock** is the file `~/.osteojp-inc1007-rearm.json.lock`. Every `--confirm`
 takes it before reading the database and removes it when it ends. A second
@@ -197,6 +220,13 @@ Each block is one command. Run them from the repository root, in a shell that
 holds `DATABASE_URL_DIRECT` (the session pooler, port 5432) and
 `INNGEST_EVENT_KEY` (the production value). The script prints neither, and no
 part of either.
+
+**Keep the machine awake for the whole run.** On macOS that is `caffeinate -i`
+in front of the command, as the two sending blocks below have it. A machine
+that sleeps in the middle of a request can deliver that event many minutes
+late, outside the margin the run counted on, and so right next to a reminder
+mark. Plug the laptop in and leave the lid open as well: `caffeinate -i` stops
+idle sleep, not a closed lid.
 
 **Run a confirm right after its own dry run, with the same `--max` and the same
 `--min-days-ahead`.** The eligible count depends on both, and it moves as
@@ -239,7 +269,7 @@ node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp
 ```bash
 ELIGIBLE=
 FIX_SHA=
-node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp --min-days-ahead 3 --max 5 --confirm --expect "${ELIGIBLE}" --fix-deployed-sha "${FIX_SHA}" --i-checked-inngest-settings
+caffeinate -i node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp --min-days-ahead 3 --max 5 --confirm --expect "${ELIGIBLE}" --fix-deployed-sha "${FIX_SHA}" --i-checked-inngest-settings
 ```
 
 Fill in the two values before pasting. With either one empty the script refuses
@@ -249,6 +279,10 @@ and sends nothing.
 ids. For each one, `send-appointment-reminder` must show exactly **one** waiting
 run for the 48 hour email and exactly **one** for the 24 hour SMS. Not zero, not
 two. If any appointment shows anything else, stop and report. Do not run step 6.
+
+This check shows that the events arrive and schedule. It does NOT show that the
+fix is live: one event gives one run per channel under the old settings too.
+Step 2 is the only check of the settings.
 
 Do not replay any `appointment/reminder.due` event from before the deploy while
 you are in the dashboard. The fix's own notes measured that a replay sends the
@@ -264,18 +298,26 @@ node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp
 ```bash
 ELIGIBLE=
 FIX_SHA=
-node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp --max 1000 --confirm --expect "${ELIGIBLE}" --fix-deployed-sha "${FIX_SHA}" --i-checked-inngest-settings
+caffeinate -i node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp --max 1000 --confirm --expect "${ELIGIBLE}" --fix-deployed-sha "${FIX_SHA}" --i-checked-inngest-settings
 ```
 
 Read the four lines at the end: `SENT`, `changed since the read, not sent`,
 `attempted, outcome unknown` and `not reached`. If the run printed
 `OUT OF TIME`, or `not reached` is above zero, repeat step 6 for the rest.
 
+**Step 6b. Only if step 6 held rows back for their 48 hour mark.** Look at the
+dry run's line "the 48 hour mark (only a run from 1 minute after the mark, and
+within 23 hours of this read, can send them)". If its number is not zero,
+repeat step 6 once more, at least a quarter of an hour after step 6 and no more
+than 23 hours after it. On a weekday night the number should be zero, because
+no mark falls at night. Rows on the line above it, "the 24 hour mark (this
+script will never send for them)", cannot be helped by any run.
+
 **Step 7. One more pass, 25 hours or more after the fix went live.** Rows saved
 in the last day before the fix are the ones most likely to be damaged, and rule
 6 skips exactly those on the first pass. Repeat step 6 once after the 25 hours.
-It sends only what the first pass left: touched rows, rows held back for their
-48 hour mark, and rows that changed under a send.
+It sends what the first pass left as touched, and rows that changed under a
+send. It does NOT reach the rows of step 6b: by then they are inside 24 hours.
 
 **If a run stops half way.** It prints `FAILED: stopped at <appointment id>` and
 why. Report that line and the four lines above it. Then run the dry run again.
@@ -304,6 +346,8 @@ and not stopped, the lock is still there: see "The lock".
   minutes. A move in that instant would still make the event carry the old
   start. This is one reason for the "when" recommendation in Q2.
 - **A second machine.** The lock is a file in the home directory.
+- **A machine that sleeps.** The run counts its time on this machine's clock.
+  See "Keep the machine awake" above.
 
 ## What it does not fix
 
@@ -313,6 +357,11 @@ and not stopped, the lock is still there: see "The lock".
   hours plus the margin. The dry run counts them on the line "the 24 hour mark
   (this script will never send for them)". If such an appointment was damaged,
   its SMS is lost.
+- **Appointments whose 48 hour mark was inside the margin, unless a run comes
+  back for them in time.** They can be sent only from one minute after that
+  mark and within 23 hours of the run that held them back (step 6b). A run a
+  day or more later finds them inside 24 hours. Then a damaged one loses its
+  SMS.
 - **Appointments 24 to 48 hours ahead get the SMS only.** The email moment has
   passed.
 - **Some rows saved in the last 25 hours.** A row that was saved again yesterday
@@ -338,7 +387,10 @@ agenda.
 - It never sends within the margin of a reminder mark.
 - It never prints a name, a phone number, an email address, the connection
   string, any part of the connection string, or the event key. About the
-  database it prints one verdict and nothing parsed.
+  database it prints one verdict and nothing parsed. When the database or the
+  network fails it prints the error's name and code, such as
+  `Error ECONNREFUSED` or `PostgresError 28P01`, and never the error's message:
+  a driver's message can name the host, the port or the user.
 - It never reads a database that is not the exact production target or a strict
   local one. A retired project, a development project and a string that names
   production without being the exact target are all refused, the dry run
@@ -371,6 +423,8 @@ appointments were created within the last 25 hours.
 | `--confirm --expect 0` with `--sink-file` | sent 0 of 0, no sink file, no marker, lock taken and given back |
 | `--confirm` while a lock file is present | refused before the read, exit 1, that lock left alone |
 | A tenant slug that does not exist | `FAILED`, exit 1 |
+| A dry run against a closed local port | `FAILED: the read failed: Error ECONNREFUSED`, exit 1, no host and no port on any line |
+| The sink confirm again under `caffeinate -i`, with `--resend-attempted` | sent 0 of 0, the flag's warning printed, lock given back |
 
 **The script's real database reader, on the seeded rows.** Its own connection,
 read only: the first read returned 87 rows, the second read of 10 of them found

@@ -53,6 +53,14 @@
 // The marker and the lock below are no longer what keeps a reminder alive.
 // They keep the run tidy: one event per row, and no two runs at once.
 //
+// ALL OF THIS HOLDS ONLY WITH THE NEW SCHEDULER SETTINGS LIVE. Under the old
+// settings a second event inside 24 hours destroys the reminder whatever its
+// id is. So --resend-attempted, a lost marker and two overlapping runs are
+// safe ONLY when the scheduler runs the fix. THE ONE GUARD for that is the
+// look at the dashboard that --i-checked-inngest-settings vouches for. The
+// canary is NOT a guard: one event gives one run per channel under the old
+// settings and under the new, so the canary looks the same either way.
+//
 // ===================================================================
 // NO EVENT NEAR A REMINDER MARK
 // ===================================================================
@@ -72,9 +80,13 @@
 // scheduler's own delay and a clock difference between this machine and the
 // database. A mark that passed less than 60 s before the read holds the row
 // back too, because its run may be sending at that moment (reasoned, not
-// measured). A row held back for its 48 hour mark is sent by a later run. A
-// row held back for its 24 hour mark will be inside 24 hours by then, so this
-// script never sends for it: the real floor is 24 hours plus the margin.
+// measured). A row held back for its 24 hour mark will be inside 24 hours by
+// the next run, so this script never sends for it: the real floor is 24 hours
+// plus the margin. A row held back for its 48 hour mark CAN still be sent, but
+// only inside a window: by a run that reads from one minute after that mark
+// until the row's 24 hour mark comes inside that run's own margin. In practice
+// that is a run within 23 hours of this one. A run a day or more later finds
+// the row inside 24 hours and never sends it.
 //
 // ===================================================================
 // WHICH ROWS
@@ -124,9 +136,10 @@
 //   2. A `sent` row is skipped by every later run at the same start.
 //   3. An `attempted` row is skipped too, and COUNTED, until the operator adds
 //      --resend-attempted. Every send has an id of its own, so sending such a
-//      row again is safe under the fix. The flag is a deliberate choice, not a
-//      danger: without it the row may have no run; with it the row gets a
-//      fresh one either way.
+//      row again is safe under the fix, AND ONLY UNDER THE FIX (see "ALL OF
+//      THIS HOLDS ONLY" above). With the new settings live the flag is a
+//      deliberate choice, not a danger: without it the row may have no run;
+//      with it the row gets a fresh one either way.
 //   4. THE LOCK (the marker's path plus `.lock`) is taken by every --confirm
 //      and removed when it ends. A second --confirm while it exists is
 //      refused. A run that is killed leaves it behind on purpose: the operator
@@ -588,7 +601,7 @@ export function readHistory(marker) {
 }
 
 /** Written whole, then renamed, so a run that dies mid-write leaves the old file. */
-function writeMarker(marker, entries) {
+export function writeMarker(marker, entries) {
   const tmp = `${marker}.tmp`;
   writeFileSync(tmp, JSON.stringify({ history: entries }, null, 2) + "\n");
   renameSync(tmp, marker);
@@ -642,7 +655,7 @@ export async function sendToInngest(event, { key, origin = INNGEST_ORIGIN, fetch
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
   } catch (e) {
-    return { ok: false, why: `network error (${e instanceof Error ? e.name : "unknown"})`, eventId: null };
+    return { ok: false, why: `network error (${describeError(e)})`, eventId: null };
   }
   if (!res.ok) return { ok: false, why: `HTTP ${res.status}`, eventId: null };
   let eventId = null;
@@ -662,7 +675,7 @@ function sinkSender(file) {
     try {
       appendFileSync(file, JSON.stringify(event) + "\n");
     } catch (e) {
-      return { ok: false, why: `could not write the sink file (${e instanceof Error ? e.name : "unknown"})`, eventId: null };
+      return { ok: false, why: `could not write the sink file (${describeError(e)})`, eventId: null };
     }
     return { ok: true, why: null, eventId: null };
   };
@@ -681,11 +694,29 @@ export function buildSender(args, target, env) {
   return (event) => sendToInngest(event, { key: env.INNGEST_EVENT_KEY });
 }
 
+/**
+ * An error as this script prints it: its NAME and its CODE, never its message.
+ * A database driver's or a network library's message can carry a host, a port
+ * or a user name (`connect ECONNREFUSED <host>:<port>`, `password
+ * authentication failed for user "<user>"`), and no part of the connection
+ * string is ever printed. The name and the code come from fixed vocabularies:
+ * anything that does not look like one is left out.
+ */
+export function describeError(e) {
+  const name = e instanceof Error && typeof e.name === "string" && /^[A-Za-z]{1,40}$/.test(e.name) ? e.name : "Error";
+  let code = null;
+  if (e instanceof Error) {
+    if (typeof e.code === "string") code = e.code;
+    else if (e.cause instanceof Error && typeof e.cause.code === "string") code = e.cause.code;
+  }
+  return code !== null && /^[A-Z0-9_]{1,32}$/.test(code) ? `${name} ${code}` : name;
+}
+
 /** A promise that loses to a clock. */
 function within(promise, ms, what) {
   let timer;
   const late = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${what} took longer than ${ms} ms`)), ms);
+    timer = setTimeout(() => reject(Object.assign(new Error(`${what} took longer than ${ms} ms`), { code: "TIMEOUT" })), ms);
   });
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
@@ -703,7 +734,8 @@ export async function openReader(raw) {
     async selection(tenantSlug) {
       return sql.begin("read only", async (tx) => {
         const t = await tx`select id::text as id from tenants where slug = ${tenantSlug}`;
-        if (t.length !== 1) throw new Error(`tenant slug "${tenantSlug}" matched ${t.length} tenants, not 1`);
+        // The script's own sentence, so a Halt: it is printed whole. A driver's error is not.
+        if (t.length !== 1) throw new Halt(1, `the read failed: tenant slug "${tenantSlug}" matched ${t.length} tenants, not 1`);
         const clock = await tx`select now() as t0`;
         const rows = await tx.unsafe(SELECT_ROWS, [t[0].id]);
         return { tenantId: t[0].id, t0: clock[0].t0, rows };
@@ -721,8 +753,9 @@ export async function openReader(raw) {
 
 /**
  * The whole run. `deps` exists for the test file: `env`, `home`, `out` and
- * `now` replace the process's own, and `openReader` replaces the database.
- * The command line never sets any of them.
+ * `now` replace the process's own, `openReader` replaces the database and
+ * `writeMarker` replaces the marker's writer. The command line never sets any
+ * of them.
  */
 export async function run(argv, deps = {}) {
   const env = deps.env ?? process.env;
@@ -730,6 +763,7 @@ export async function run(argv, deps = {}) {
   const home = deps.home ?? homedir();
   const open = deps.openReader ?? openReader;
   const now = deps.now ?? Date.now;
+  const write = deps.writeMarker ?? writeMarker;
 
   const args = parseArgs(argv);
   const raw = env.DATABASE_URL_DIRECT ?? env.DATABASE_URL;
@@ -748,6 +782,12 @@ export async function run(argv, deps = {}) {
     `inngest  ${args.checkedInngest ? "the operator says the two functions show Singleton and Debounce" : "dashboard check not stated"}` +
       "  (recorded only: this script cannot see the hosted scheduler)",
   );
+  if (args.resendAttempted) {
+    out(
+      "resend   --resend-attempted is given. Sending a row a second time is safe ONLY with the new scheduler settings live. " +
+        "The dashboard check is the only guard for that; the canary cannot tell old settings from new.",
+    );
+  }
   const budgetMs = runBudgetMs(args.max);
   const marginMs = marginMsFor(args.max);
   out(
@@ -789,7 +829,8 @@ export async function run(argv, deps = {}) {
       selection = await reader.selection(args.tenantSlug);
     } catch (e) {
       if (e instanceof Halt) throw e;
-      fail(`the read failed: ${e instanceof Error ? e.message : "unknown error"}`);
+      // The name and the code only. See describeError().
+      fail(`the read failed: ${describeError(e)}`);
     }
     const tenantId = String(selection.tenantId);
     if (!UUID.test(tenantId)) fail("the read returned a tenant id that is not a uuid. Refusing.");
@@ -829,11 +870,12 @@ export async function run(argv, deps = {}) {
     out(`skipped: attempted by an earlier run, outcome unknown (marker): ${tally.attempted}`);
     if (tally.attempted > 0) {
       out("  Inngest may or may not have taken those events. Each send has its own id, so sending them again is safe");
-      out("  under the fix: add --resend-attempted to include them.");
+      out("  ONLY IF the scheduler runs the new settings. The dashboard check is the only guard for that: the canary");
+      out("  cannot tell old settings from new. If that check passed: add --resend-attempted to include them.");
     }
     out(`held back: a reminder mark is inside the margin: ${tally.near_mark}`);
     out(`  of those, the 24 hour mark (this script will never send for them): ${near24}`);
-    out(`  of those, the 48 hour mark (a later run sends them): ${tally.near_mark - near24}`);
+    out(`  of those, the 48 hour mark (only a run from 1 minute after the mark, and within 23 hours of this read, can send them): ${tally.near_mark - near24}`);
     out(`held back: nearer than --min-days-ahead ${args.minDaysAhead}: ${tally.held_back}`);
     out(`ELIGIBLE: ${eligible.length}`);
     const byStatus = Object.fromEntries(REMINDABLE.map((s) => [s, 0]));
@@ -895,7 +937,7 @@ export async function run(argv, deps = {}) {
     // CLAIM FIRST. The marker is written before the first event, so a marker
     // that cannot be written stops the run while nothing has been sent.
     try {
-      writeMarker(marker, entries);
+      write(marker, entries);
     } catch {
       fail(`could not write the marker ${marker}; nothing was sent.`);
     }
@@ -920,7 +962,7 @@ export async function run(argv, deps = {}) {
       try {
         fresh = await within(reader.recheck(tenantId, row.id), RECHECK_BOUND_MS, "the re-read");
       } catch (e) {
-        stopped = `${row.id}: could not be read again (${e instanceof Error ? e.name : "unknown"}); nothing was sent for it`;
+        stopped = `${row.id}: could not be read again (${describeError(e)}); nothing was sent for it`;
         break;
       }
       const reason = changedSince(row, fresh);
@@ -935,7 +977,7 @@ export async function run(argv, deps = {}) {
       const record = { id: row.id, startsAt: row.startsAt, state: "attempted", at: new Date().toISOString() };
       entry.rows.push(record);
       try {
-        writeMarker(marker, entries);
+        write(marker, entries);
       } catch {
         entry.rows.pop();
         stopped = `${row.id}: the marker ${marker} could not be updated; nothing was sent for it`;
@@ -953,7 +995,7 @@ export async function run(argv, deps = {}) {
       sent += 1;
       // AND SENT, ON DISK, before the line that says so.
       try {
-        writeMarker(marker, entries);
+        write(marker, entries);
       } catch {
         stopped = `${row.id}: SENT, but the marker ${marker} could not be updated and still says attempted`;
         break;
@@ -962,7 +1004,7 @@ export async function run(argv, deps = {}) {
     }
     entry.state = stopped ? "stopped" : outOfTime ? "out_of_time" : "done";
     try {
-      writeMarker(marker, entries);
+      write(marker, entries);
     } catch {
       console.error(`WARNING: could not update ${marker}. Keep every line above and below; they are the record.`);
     }
@@ -1007,8 +1049,8 @@ if (isMain()) {
       if (e.code === 2) console.error(USAGE);
       process.exit(e.code);
     }
-    // The NAME only: an unexpected error's message is not known to be free of data.
-    console.error(`FAILED: unexpected error (${e instanceof Error ? e.name : "unknown"})`);
+    // The name and the code only: an unexpected error's message is not known to be free of data.
+    console.error(`FAILED: unexpected error (${describeError(e)})`);
     process.exit(1);
   }
 }
