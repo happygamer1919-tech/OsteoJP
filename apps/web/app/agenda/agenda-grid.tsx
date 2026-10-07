@@ -241,10 +241,12 @@ export function AgendaGrid({
    * therapist's working hours, as the page computed them from the write path's
    * own availability check (off-hours-core.ts).
    *
-   * NON-EMPTY ONLY UNDER A SINGLE-THERAPIST FILTER, like `blocks` and for the
-   * same reason: the grid has no therapist axis. Absent or empty marks nothing,
-   * so every other caller and every existing test renders what it rendered
-   * before.
+   * NON-EMPTY ONLY WHEN THE AGENDA IS SCOPED TO ONE THERAPIST, like `blocks`
+   * and for the same reason: the grid has no therapist axis. That is a
+   * single-therapist filter for reception, admin and the owner, and it is
+   * EVERY agenda a therapist opens, because theirs is locked to themselves
+   * (page.tsx). Absent or empty marks nothing, so every other caller and every
+   * existing test renders what it rendered before.
    */
   offHours?: OffHoursByDate;
   onSelectAppointment: (appt: AgendaAppointment) => void;

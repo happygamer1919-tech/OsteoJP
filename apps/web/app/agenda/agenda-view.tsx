@@ -106,7 +106,8 @@ export function AgendaView({
   blocks: BlockSpan[];
   /** AGENDA-OFF-HOURS: per day, the slots outside the selected therapist's
    *  working hours. Empty unless the agenda is scoped to one therapist who has
-   *  hours configured - see page.tsx. Drawn by the desktop grid only. */
+   *  hours configured (a therapist's own agenda always is) - see page.tsx.
+   *  Drawn by the desktop grid only. */
   offHours?: OffHoursByDate;
   /** 0085: the grid's visible window, from the clinic's own opening hours.
    *  AGENDA-NEVER-HIDES: widened to cover any appointment outside them. */

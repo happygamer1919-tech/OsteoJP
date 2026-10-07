@@ -10,9 +10,8 @@ import { sharedResourcesForViewer } from "@/lib/scheduling/shared-resource-guard
 import { listSharedResources } from "@/lib/scheduling/shared-resources";
 import { reconcileAgendaStaff } from "@/lib/scheduling/staff-options";
 import { listTherapistBlocksAndHours } from "@/lib/scheduling/day-availability";
-import { offHoursByDate, schedulesByClinic } from "@/lib/scheduling/off-hours-core";
+import { agendaOffHours } from "@/lib/scheduling/off-hours-core";
 import {
-  daySlots,
   formatTimeOfDay,
   lisbonMinutesFromMidnight,
   lisbonParts,
@@ -230,23 +229,31 @@ export default async function AgendaPage({
   /* every clinic this viewer sees, and a slot is then marked only when    */
   /* the therapist works at none of them. A slot worked at some clinic in  */
   /* view is bookable there, so calling it off hours would be false.       */
+  /* A THERAPIST has no clinic choice here (`locationId` is null for them) */
+  /* and reads every clinic, so for them it is the clinics they may BOOK   */
+  /* INTO: a booking of theirs anywhere else is refused before any hours   */
+  /* are looked at.                                                        */
   /*                                                                       */
   /* EMPTY WITHOUT ONE THERAPIST, like the blocks above, and empty for a   */
   /* therapist with no hours configured: the enforcement refuses nothing   */
   /* for them, so there is nothing to mark.                                */
   /*                                                                       */
-  /* THE CLINIC LIST comes from the agenda's 60-second reference cache     */
-  /* (`options.locations`); the schedule rows are read on every request.   */
-  const offHours = blocksAndHours
-    ? offHoursByDate({
-        dates: [...drawnDates],
-        slots: daySlots(dayWindow.startMin, dayWindow.endMin),
-        clinics: schedulesByClinic(
-          blocksAndHours.templates,
-          visibleClinics.map((l) => l.id),
-        ),
-      })
-    : {};
+  /* THE CHOICES ARE MADE IN `agendaOffHours` (off-hours-core.ts), where a */
+  /* unit test can reach them; this call only hands it what the page has.  */
+  /*                                                                       */
+  /* THE CLINIC LISTS come from the agenda's 60-second reference cache     */
+  /* (`options.locations`, `options.bookableLocations`); the schedule rows */
+  /* and the viewer's own assignment are read on every request.            */
+  const offHours = agendaOffHours({
+    templates: blocksAndHours?.templates ?? null,
+    therapistViewer: lockTherapist,
+    selectedLocationId: locationId,
+    locations: options.locations,
+    bookableLocations: options.bookableLocations,
+    view,
+    anchor,
+    dayWindow,
+  });
 
   const lockedPatient = lockedPatientRow
     ? {

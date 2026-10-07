@@ -20,7 +20,14 @@
 // to exactly one therapist.
 
 import { evaluateAvailability, type AvailabilityTemplate } from "./availability";
-import { SLOT_MINUTES, lisbonDateTimeToUtc, slotLabel } from "./time";
+import {
+  SLOT_MINUTES,
+  daySlots,
+  lisbonDateTimeToUtc,
+  slotLabel,
+  viewDates,
+  type AgendaView,
+} from "./time";
 
 /** A run of off-hours slots on one day, in minutes from Lisbon midnight. */
 export type OffHoursSpan = { startMin: number; endMin: number };
@@ -34,9 +41,10 @@ export type ClinicSchedule = { locationId: string; templates: AvailabilityTempla
 /**
  * Group one therapist's schedule rows by clinic, keeping only `clinicIds`.
  *
- * `clinicIds` is the clinic selected in the toolbar, or every clinic the viewer
- * sees under "Todas as localizações". A row at any other clinic is dropped: it
- * says nothing about a booking this screen can lead to. Every id gets an entry,
+ * `clinicIds` comes from `offHoursClinicIds` below: the clinic selected in the
+ * toolbar, every clinic the viewer sees under "Todas as localizações", or for
+ * a therapist the clinics they may book into. A row at any other clinic is
+ * dropped: it says nothing about a booking this screen can lead to. Every id gets an entry,
  * a clinic with no rows included, so the caller can see it was asked about.
  */
 export function schedulesByClinic(
@@ -137,4 +145,74 @@ export function offHoursByDate(input: {
     if (spans.length > 0) out[date] = spans;
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* What the agenda page asks                                           */
+/* ------------------------------------------------------------------ */
+
+/** A clinic as the agenda's options carry it. Only the id is read here. */
+type ClinicRef = { id: string };
+
+/**
+ * WHICH CLINICS the band is measured against, for one viewer and one toolbar.
+ *
+ * RECEPTION, ADMIN AND THE OWNER: the clinic selected in the toolbar, alone,
+ * or under "Todas as localizações" every clinic the viewer sees (`locations`,
+ * already narrowed to their read scope by getAgendaOptions). A selected id
+ * that is not among them gives no clinic and therefore no band.
+ *
+ * A THERAPIST: the clinics they may BOOK INTO (`bookableLocations`), and the
+ * toolbar is not consulted, because the page gives a therapist no clinic
+ * choice. Their read scope is every clinic in the tenant, which is the wrong
+ * list here. A therapist books only themselves, and `createAppointment`
+ * refuses a clinic outside their own assignment before it looks at any hours,
+ * so hours they still hold at a clinic they are no longer assigned to are not
+ * somewhere a booking on this screen can land. Counting them left a slot
+ * unshaded that the therapist's own booking is refused at. An unassigned
+ * therapist has every active clinic in `bookableLocations`, the same fallback
+ * the booking check uses.
+ */
+export function offHoursClinicIds(input: {
+  therapistViewer: boolean;
+  selectedLocationId: string | null;
+  locations: readonly ClinicRef[];
+  bookableLocations: readonly ClinicRef[];
+}): string[] {
+  if (input.therapistViewer) return input.bookableLocations.map((l) => l.id);
+  const inView = input.selectedLocationId
+    ? input.locations.filter((l) => l.id === input.selectedLocationId)
+    : input.locations;
+  return inView.map((l) => l.id);
+}
+
+/**
+ * The off-hours runs the agenda page hands the grid: whose rows, which
+ * clinics, which dates and which slots, in ONE place so each choice is tested
+ * (page.tsx is a server component and cannot be).
+ *
+ * `templates` is the one therapist's active schedule rows at every clinic, or
+ * NULL when the agenda is not scoped to one therapist. Null marks nothing: the
+ * grid has no therapist axis (W9-04). A therapist-role viewer is always scoped
+ * to themselves, so for them it is never null.
+ *
+ * The dates are the ones the desktop grid draws and the slots are `daySlots`
+ * of the window it is drawn with, so every run's edge is a slot edge.
+ */
+export function agendaOffHours(input: {
+  templates: readonly AvailabilityTemplate[] | null;
+  therapistViewer: boolean;
+  selectedLocationId: string | null;
+  locations: readonly ClinicRef[];
+  bookableLocations: readonly ClinicRef[];
+  view: AgendaView;
+  anchor: string;
+  dayWindow: { startMin: number; endMin: number };
+}): OffHoursByDate {
+  if (input.templates === null) return {};
+  return offHoursByDate({
+    dates: viewDates(input.view, input.anchor),
+    slots: daySlots(input.dayWindow.startMin, input.dayWindow.endMin),
+    clinics: schedulesByClinic(input.templates, offHoursClinicIds(input)),
+  });
 }

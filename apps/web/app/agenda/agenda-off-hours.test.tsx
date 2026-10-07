@@ -112,9 +112,9 @@ describe("one therapist selected: the hours they do not work are drawn", () => {
   });
 
   it("names the reason on the slot: the day, the time, then the therapist's hours", () => {
-    expect(label(slot(html, "19:30"))).toMatch(/ 19:30 - fora do horário do terapeuta$/);
-    expect(label(slot(html, "08:00"))).toMatch(/ 08:00 - fora do horário do terapeuta$/);
-    expect(label(slot(html, "13:30"))).toMatch(/ 13:30 - fora do horário do terapeuta$/);
+    expect(label(slot(html, "19:30"))).toMatch(/ 19:30 - Fora do horário do terapeuta$/);
+    expect(label(slot(html, "08:00"))).toMatch(/ 08:00 - Fora do horário do terapeuta$/);
+    expect(label(slot(html, "13:30"))).toMatch(/ 13:30 - Fora do horário do terapeuta$/);
   });
 
   it("marks exactly the slots outside the hours, by their own attribute", () => {
@@ -213,8 +213,8 @@ describe("a block wins over off hours", () => {
   });
 
   it("the slots either side of the block are still off hours", () => {
-    expect(label(slot(html, "19:00"))).toMatch(/ - fora do horário do terapeuta$/);
-    expect(label(slot(html, "20:30"))).toMatch(/ - fora do horário do terapeuta$/);
+    expect(label(slot(html, "19:00"))).toMatch(/ - Fora do horário do terapeuta$/);
+    expect(label(slot(html, "20:30"))).toMatch(/ - Fora do horário do terapeuta$/);
   });
 
   it("an absence over the whole day leaves no off-hours band at all", () => {
@@ -286,6 +286,6 @@ describe("the clinic wins over off hours", () => {
     expect(outside).not.toContain("data-therapist-off-hours");
     // The off-hours band starts where the clinic's hours do.
     expect(bands(html)[0]).toEqual({ top: px("09:00"), height: HOUR_PX });
-    expect(label(slot(html, "09:30"))).toMatch(/ - fora do horário do terapeuta$/);
+    expect(label(slot(html, "09:30"))).toMatch(/ - Fora do horário do terapeuta$/);
   });
 });

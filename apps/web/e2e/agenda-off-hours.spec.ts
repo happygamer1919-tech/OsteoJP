@@ -41,6 +41,11 @@
  * no appointment, so a retry needs no new day: every fixture row has a fixed id
  * or is keyed by this therapist, and is deleted before it is written.
  *
+ * ONE ARM SELECTS A CLINIC IN THE URL (`&location=`): Linda-a-Velha, where the
+ * therapist has the hours, and Consultório B, where they have no rows. Admin
+ * has no clinic assignment in the seed, so the server honours either id, and
+ * the arm asserts the URL kept it.
+ *
  * THE ASSERTED SLOTS ARE 10:00 TO 17:30. Other specs move Linda-a-Velha's
  * opening hours and midday closure while they run; every slot named here is
  * inside any of those clinic days and outside 13:00 to 14:00.
@@ -51,7 +56,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // The app's own Lisbon conversion, so the block lands on the wall-clock hour
 // whichever side of a clock change the day falls.
 import { lisbonDateTimeToUtc } from "@/lib/scheduling/time";
-import { LOCATION, RUN_DAY_BASE, TENANT_A, futureWeekdayDate } from "./fixtures";
+import { LOCATION, LOCATION_B, RUN_DAY_BASE, TENANT_A, futureWeekdayDate } from "./fixtures";
 
 /** This file's day. Never a Sunday, so the week view draws it. */
 const DAY = futureWeekdayDate(RUN_DAY_BASE + 170);
@@ -63,7 +68,7 @@ const THERAPIST_EMAIL = "e2e-therapist-fora-horario@osteojp.test";
 const BLOCK_ID = "00000000-0000-4000-8000-00000000f0b1";
 const BLOCK_NOTE = "Fora horario E2E";
 
-const OFF_HOURS_NAME = "fora do horário do terapeuta";
+const OFF_HOURS_NAME = "Fora do horário do terapeuta";
 
 const weekdayOf = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
 const plusDays = (d: string, n: number) => {
@@ -115,6 +120,26 @@ const slotAt = (col: Locator, time: string): Locator =>
   col.getByRole("button", { name: new RegExp(` ${time}( - .*)?$`) });
 const marked = (col: Locator): Locator => col.locator('button[data-therapist-off-hours="true"]');
 const bandsIn = (scope: Locator | Page): Locator => scope.getByTestId("agenda-off-hours-band");
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/** A rendered box, or a failure that says which one was missing. */
+async function boxOf(target: Locator, what: string): Promise<Box> {
+  const box = await target.boundingBox();
+  if (!box) throw new Error(`${what} has no rendered box`);
+  return box;
+}
+
+/** The boxes of every off-hours band in a column, top to bottom. */
+async function bandBoxes(col: Locator): Promise<Box[]> {
+  const bands = bandsIn(col);
+  const boxes: Box[] = [];
+  for (let i = 0; i < (await bands.count()); i++) boxes.push(await boxOf(bands.nth(i), `band ${i}`));
+  return boxes.sort((a, b) => a.y - b.y);
+}
+
+/** Band and slot edges come from one px mapper; a pixel of rounding is allowed. */
+const PX = 1.5;
 
 async function openAgenda(page: Page, query: string): Promise<void> {
   await page.setViewportSize(DESKTOP);
@@ -222,7 +247,9 @@ test.describe("AGENDA-OFF-HOURS: the hours a therapist does not work", () => {
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 8_000 });
   });
 
-  test("week view: a day with no hours is one band from the first slot to the last", async ({ page }) => {
+  test("week view: a day with no hours is ONE band, from the top of the first slot to the bottom of the last", async ({
+    page,
+  }) => {
     await openAgenda(page, `view=week&date=${DAY}&therapist=${THERAPIST_ID}`);
 
     // DAY keeps its own shape in the week.
@@ -236,6 +263,52 @@ test.describe("AGENDA-OFF-HOURS: the hours a therapist does not work", () => {
     const enabled = await other.locator("button[aria-label]:not([disabled])").count();
     expect(enabled, "the not-worked day draws enabled slots").toBeGreaterThan(10);
     await expect(marked(other)).toHaveCount(enabled);
+
+    // ONE BAND, AND ITS EXTENT. Admin has no clinic assignment, so this is
+    // "Todas as localizações": no closure band and no row outside the clinics'
+    // hours can cut the run, and every slot of the column is enabled.
+    await expect(other.locator("button[aria-label]")).toHaveCount(enabled);
+    await expect(bandsIn(other)).toHaveCount(1);
+    const band = await boxOf(bandsIn(other), "the not-worked day's band");
+    const first = await boxOf(marked(other).first(), "the first slot");
+    const last = await boxOf(marked(other).last(), "the last slot");
+    expect(Math.abs(band.y - first.y), "the band starts at the first slot's top").toBeLessThan(PX);
+    expect(
+      Math.abs(band.y + band.height - (last.y + last.height)),
+      "the band ends at the last slot's bottom",
+    ).toBeLessThan(PX);
+  });
+
+  test("one clinic selected: the band is that clinic's hours, and a clinic where the therapist has no hours shows none", async ({
+    page,
+  }) => {
+    // AT THE CLINIC WITH THE HOURS: the same marks as under "Todas".
+    await openAgenda(page, `view=day&date=${DAY}&therapist=${THERAPIST_ID}&location=${LOCATION.id}`);
+    // The selection held (admin has no assignment, so the server honours it).
+    await expect(page).toHaveURL(new RegExp(`location=${LOCATION.id}`));
+    const here = column(page, DAY);
+    await expect(bandsIn(here).first()).toBeVisible();
+    for (const time of ["10:30", "15:30"]) {
+      await expect(slotAt(here, time), `${time} is inside the hours`).toHaveAccessibleName(new RegExp(` ${time}$`));
+    }
+    for (const time of ["12:30", "16:30"]) {
+      await expect(slotAt(here, time), `${time} is outside the hours`).toHaveAccessibleName(
+        new RegExp(` ${time} - ${OFF_HOURS_NAME}$`),
+      );
+      await expect(slotAt(here, time)).toBeEnabled();
+    }
+
+    // AT ANOTHER CLINIC, where this therapist has no rows: the enforcement
+    // refuses nothing there, so nothing is marked - not even the hours that
+    // are off at Linda-a-Velha.
+    await openAgenda(page, `view=day&date=${DAY}&therapist=${THERAPIST_ID}&location=${LOCATION_B.id}`);
+    await expect(page).toHaveURL(new RegExp(`location=${LOCATION_B.id}`));
+    const there = column(page, DAY);
+    await expect(bandsIn(page)).toHaveCount(0);
+    await expect(marked(there)).toHaveCount(0);
+    await expect(slotAt(there, "16:30")).toHaveCount(1);
+    await expect(slotAt(there, "16:30")).toHaveAccessibleName(/ 16:30$/);
+    await expect(slotAt(there, "16:30")).toBeEnabled();
   });
 
   test("all therapists shown: no band and no marked slot, on the same day", async ({ page }) => {
@@ -252,7 +325,7 @@ test.describe("AGENDA-OFF-HOURS: the hours a therapist does not work", () => {
     await expect(bandsIn(page)).toHaveCount(0);
   });
 
-  test("a block wins: blocked slots keep the block's name and stay disabled, and the band resumes after it", async ({
+  test("a block wins: blocked slots keep the block's name and stay disabled, no band covers them, and a band starts again at the block's end", async ({
     page,
   }) => {
     // 16:00-17:00 Lisbon, inside the off-hours run that starts at 16:00.
@@ -281,10 +354,26 @@ test.describe("AGENDA-OFF-HOURS: the hours a therapist does not work", () => {
         await expect(slot).toBeDisabled();
         await expect(slot).not.toHaveAttribute("data-therapist-off-hours", "true");
       }
-      // Before the block (the midday gap) and after it, the band is still there.
+      // Before the block (the midday gap) and after it, the slots are still marked.
       await expect(slotAt(day, "12:30")).toHaveAttribute("data-therapist-off-hours", "true");
       await expect(slotAt(day, "17:00")).toHaveAttribute("data-therapist-off-hours", "true");
       await expect(slotAt(day, "17:00")).toBeEnabled();
+
+      // THE BANDS THEMSELVES: none reaches into the blocked hour, and one
+      // starts exactly where the block ends.
+      const bands = await bandBoxes(day);
+      const blockedFrom = await boxOf(slotAt(day, "16:00"), "the 16:00 slot");
+      const blockedTo = await boxOf(slotAt(day, "16:30"), "the 16:30 slot");
+      const after = await boxOf(slotAt(day, "17:00"), "the 17:00 slot");
+      const blockedBottom = blockedTo.y + blockedTo.height;
+      for (const b of bands) {
+        const overlaps = b.y < blockedBottom - PX && b.y + b.height > blockedFrom.y + PX;
+        expect(overlaps, `a band at y=${b.y} reaches into the blocked 16:00-17:00`).toBe(false);
+      }
+      expect(
+        bands.some((b) => Math.abs(b.y - after.y) < PX),
+        "a band starts at the top of the 17:00 slot",
+      ).toBe(true);
     } finally {
       await removeBlock(db);
     }

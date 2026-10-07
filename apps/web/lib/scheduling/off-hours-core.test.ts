@@ -5,12 +5,15 @@ vi.mock("server-only", () => ({}));
 import { checkAvailability } from "./availability-enforcement";
 import type { AvailabilityTemplate } from "./availability";
 import {
+  agendaOffHours,
   isSlotInSpans,
   isSlotOffHours,
   offHoursByDate,
+  offHoursClinicIds,
   schedulesByClinic,
   spansOfSlots,
   type ClinicSchedule,
+  type OffHoursByDate,
 } from "./off-hours-core";
 import { SLOT_MINUTES, daySlots, lisbonDateTimeToUtc, slotLabel } from "./time";
 
@@ -412,5 +415,156 @@ describe("AGREEMENT: a slot is shaded exactly when checkAvailability refuses a b
         expect(isSlotOffHours(MON, m, v.clinics), `${v.name} ${slotLabel(m)}`).toBe(want);
       }
     }
+  });
+});
+
+/* ==================================================================== */
+/* WHAT THE AGENDA PAGE ASKS: WHOSE ROWS, WHICH CLINICS, WHICH SLOTS.    */
+/* ==================================================================== */
+
+describe("agendaOffHours: the page's choices, one arm each", () => {
+  // Mornings at LV, afternoons at CB, Monday to Friday. Every choice below gives
+  // a DIFFERENT answer on this fixture, so a wrong clinic list cannot pass.
+  const lvRows = weekdays({ startTime: "09:00:00", endTime: "13:00:00" });
+  const cbRows = weekdays({ startTime: "14:00:00", endTime: "19:00:00", locationId: CB });
+  const all = [...lvRows, ...cbRows];
+  const BOTH = [{ id: LV }, { id: CB }];
+  /** A third clinic of the tenant, where this therapist has no rows. */
+  const MN = "loc-mn";
+
+  type Input = Parameters<typeof agendaOffHours>[0];
+  /** Reception under "Todas as localizações", Dia on MON, the 08:00-21:00 grid. */
+  function ask(over: Partial<Input> = {}): OffHoursByDate {
+    return agendaOffHours({
+      templates: all,
+      therapistViewer: false,
+      selectedLocationId: null,
+      locations: BOTH,
+      bookableLocations: BOTH,
+      view: "day",
+      anchor: MON,
+      dayWindow: { startMin: 8 * 60, endMin: 21 * 60 },
+      ...over,
+    });
+  }
+  const shown = (out: OffHoursByDate, date = MON): string[] =>
+    (out[date] ?? []).map((sp) => `${slotLabel(sp.startMin)}-${slotLabel(sp.endMin)}`);
+
+  const AT_LV = ["08:00-09:00", "13:00-21:00"];
+  const AT_CB = ["08:00-14:00", "19:00-21:00"];
+  const AT_NEITHER = ["08:00-09:00", "13:00-14:00", "19:00-21:00"];
+
+  it("CONTROL: the three clinic sets give three different answers on this fixture", () => {
+    expect(new Set([AT_LV, AT_CB, AT_NEITHER].map((x) => x.join())).size).toBe(3);
+  });
+
+  it("all clinics selected: shaded only where the therapist works at none of the clinics in view", () => {
+    expect(shown(ask())).toEqual(AT_NEITHER);
+  });
+
+  it("one clinic selected where the therapist has hours: that clinic's hours, not the union", () => {
+    expect(shown(ask({ selectedLocationId: LV }))).toEqual(AT_LV);
+    expect(shown(ask({ selectedLocationId: CB }))).toEqual(AT_CB);
+  });
+
+  it("one clinic selected: the answer is the single-clinic refusal, slot for slot", async () => {
+    const spans = ask({ selectedLocationId: LV })[MON] ?? [];
+    for (const m of SLOTS) {
+      expect(isSlotInSpans(m, spans), slotLabel(m)).toBe(await refused(MON, m, lvRows));
+    }
+  });
+
+  it("one clinic selected where the therapist has NO hours: no band at all", () => {
+    const three = [...BOTH, { id: MN }];
+    expect(ask({ selectedLocationId: MN, locations: three, bookableLocations: three })).toEqual({});
+  });
+
+  it("a selected clinic the viewer does not see: no band", () => {
+    expect(ask({ selectedLocationId: MN })).toEqual({});
+  });
+
+  it("no single therapist (null rows): nothing, whatever else is passed", () => {
+    expect(ask({ templates: null })).toEqual({});
+    expect(ask({ templates: null, selectedLocationId: LV })).toEqual({});
+    expect(ask({ templates: null, therapistViewer: true, view: "week" })).toEqual({});
+  });
+
+  it("one therapist with no rows: nothing", () => {
+    expect(ask({ templates: [] })).toEqual({});
+  });
+
+  it("a non-therapist viewer is NOT narrowed by where they may book", () => {
+    // An owner or receptionist can book this therapist at any clinic they see.
+    expect(shown(ask({ bookableLocations: [{ id: LV }] }))).toEqual(AT_NEITHER);
+  });
+
+  describe("a therapist-role viewer: the clinics they may book into", () => {
+    // Assigned to LV only, with rows still active at CB. They read every
+    // clinic, and the page gives them no clinic choice.
+    const own = { therapistViewer: true, bookableLocations: [{ id: LV }] } as const;
+
+    it("leftover hours at a clinic they are not assigned to do not unshade a slot", () => {
+      expect(shown(ask(own))).toEqual(AT_LV);
+      // 15:00 is inside the CB rows and outside the LV ones.
+      expect(isSlotInSpans(15 * 60, ask(own)[MON] ?? [])).toBe(true);
+      // The same rows for reception under "Todas" leave 15:00 clear.
+      expect(isSlotInSpans(15 * 60, ask()[MON] ?? [])).toBe(false);
+    });
+
+    it("that is what their own booking meets: refused at LV at every shaded slot", async () => {
+      const spans = ask(own)[MON] ?? [];
+      for (const m of SLOTS) {
+        expect(isSlotInSpans(m, spans), slotLabel(m)).toBe(await refused(MON, m, lvRows));
+      }
+    });
+
+    it("assigned to both clinics: shaded only where they work at neither", () => {
+      expect(shown(ask({ therapistViewer: true, bookableLocations: BOTH }))).toEqual(AT_NEITHER);
+    });
+
+    it("assigned only to a clinic where they have no hours: nothing is shaded", () => {
+      // The enforcement refuses nothing for them there.
+      expect(ask({ therapistViewer: true, bookableLocations: [{ id: MN }] })).toEqual({});
+    });
+
+    it("a clinic id in the toolbar is not consulted for a therapist", () => {
+      expect(shown(ask({ ...own, selectedLocationId: CB }))).toEqual(AT_LV);
+    });
+  });
+
+  it("offHoursClinicIds, stated directly", () => {
+    const base = { locations: BOTH, bookableLocations: [{ id: LV }] };
+    expect(offHoursClinicIds({ ...base, therapistViewer: false, selectedLocationId: null })).toEqual([LV, CB]);
+    expect(offHoursClinicIds({ ...base, therapistViewer: false, selectedLocationId: CB })).toEqual([CB]);
+    expect(offHoursClinicIds({ ...base, therapistViewer: false, selectedLocationId: MN })).toEqual([]);
+    expect(offHoursClinicIds({ ...base, therapistViewer: true, selectedLocationId: null })).toEqual([LV]);
+    expect(offHoursClinicIds({ ...base, therapistViewer: true, selectedLocationId: CB })).toEqual([LV]);
+  });
+
+  describe("which dates and which slots", () => {
+    it("Dia: the anchor day and no other", () => {
+      expect(Object.keys(ask({ selectedLocationId: LV }))).toEqual([MON]);
+      // A Saturday anchor is the day not worked, open to close.
+      expect(shown(ask({ selectedLocationId: LV, anchor: SAT }), SAT)).toEqual(["08:00-21:00"]);
+    });
+
+    it("Semana: Monday to Saturday of the anchor's week, each with its own runs", () => {
+      const out = ask({ selectedLocationId: LV, view: "week", anchor: THU });
+      expect(Object.keys(out)).toEqual(WEEK);
+      for (const d of WEEK.slice(0, 5)) expect(shown(out, d), d).toEqual(AT_LV);
+      expect(shown(out, SAT)).toEqual(["08:00-21:00"]);
+    });
+
+    it("the runs stop at the window the grid is drawn with", () => {
+      const out = ask({ selectedLocationId: LV, dayWindow: { startMin: 9 * 60, endMin: 18 * 60 } });
+      expect(shown(out)).toEqual(["13:00-18:00"]);
+    });
+
+    it("a window off the hour keeps the grid's own slot edges", () => {
+      // The grid's slots for an 08:30 opening are 08:30, 09:00, ... so the run
+      // before a 09:00 start is the one 08:30 slot.
+      const out = ask({ selectedLocationId: LV, dayWindow: { startMin: 8 * 60 + 30, endMin: 14 * 60 } });
+      expect(shown(out)).toEqual(["08:30-09:00", "13:00-14:00"]);
+    });
   });
 });
