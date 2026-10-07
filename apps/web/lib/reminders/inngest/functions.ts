@@ -88,11 +88,12 @@ import { dispatchReminder, dispatchConfirmation, dispatchFollowUp, dispatchNoSho
 // cancelOn stays: it is what removes a run created under the old settings, which
 // carries no singleton key.
 //
-// TWO LIMITS, both measured:
+// TWO LIMITS, the first reasoned and the second measured:
 //   - "Newest" means the run that STARTS last. A fan-out held back longer than
 //     the gap between two saves (a retried step, a cold start) could start
-//     after the later save's and win with the older time. Not seen with saves
-//     2 s or more apart. Before these settings the same race sent both.
+//     after the later save's and win with the older time. Reasoned, not
+//     reproduced: it did not occur with saves 2 s or more apart. Before these
+//     settings the same race sent both.
 //   - NEVER REPLAY a reminder.due event from before this deploy in the Inngest
 //     dashboard. Its run, if still asleep, was created under the old key and
 //     holds no singleton key, so the replay would start a second run beside it
