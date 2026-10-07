@@ -16,6 +16,7 @@ import { createPortal } from "react-dom";
 
 import {
   appendToStack,
+  createDismissTimer,
   createToastLifecycle,
   createToasterRegistry,
   pickRegionParent,
@@ -318,39 +319,34 @@ function ToastItem({
   const duration = toast.duration ?? DEFAULT_DURATION;
 
   const [shown, setShown] = useState(false);
-  const remaining = useRef(duration);
-  const startedAt = useRef(0);
-  const timer = useRef<number | undefined>(undefined);
-
-  const clear = () => {
-    if (timer.current !== undefined) window.clearTimeout(timer.current);
-  };
-  const resume = useCallback(() => {
-    clear();
-    startedAt.current = Date.now();
-    timer.current = window.setTimeout(onDismiss, remaining.current);
-  }, [onDismiss]);
-  const pause = () => {
-    clear();
-    remaining.current -= Date.now() - startedAt.current;
-  };
+  // The countdown and its pause are rules, not rendering: toast-store.ts,
+  // createDismissTimer. A toast often appears UNDER the pointer (the drawer's
+  // confirm button and the region share the bottom right corner), so the pointer
+  // can enter it before the effect below has started the countdown.
+  const [timer] = useState(() =>
+    createDismissTimer(duration, {
+      now: () => Date.now(),
+      setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimeout: (handle) => window.clearTimeout(handle as number),
+    }),
+  );
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setShown(true));
-    resume();
+    timer.start(onDismiss);
     return () => {
       cancelAnimationFrame(raf);
-      clear();
+      timer.stop();
     };
-  }, [resume]);
+  }, [timer, onDismiss]);
 
   return (
     <div
       role={tone === "error" ? "alert" : "status"}
-      onMouseEnter={pause}
-      onMouseLeave={resume}
-      onFocus={pause}
-      onBlur={resume}
+      onMouseEnter={timer.hold}
+      onMouseLeave={timer.release}
+      onFocus={timer.hold}
+      onBlur={timer.release}
       className={cx(
         "pointer-events-auto flex w-full max-w-90 items-start gap-3 rounded-lg border border-border bg-surface p-4 shadow-lg",
         "transition-all duration-base ease-standard",
