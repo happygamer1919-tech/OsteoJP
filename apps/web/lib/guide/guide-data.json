@@ -5716,6 +5716,40 @@
             }
           ],
           "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "PDF de um episódio: em "
+            },
+            {
+              "strong": "Registos clínicos"
+            },
+            {
+              "text": ", o grupo de um episódio com registos finalizados tem, acima dos registos, o botão "
+            },
+            {
+              "strong": "PDF do episódio"
+            },
+            {
+              "text": ". Vê-o quem pode usar "
+            },
+            {
+              "strong": "Transferir PDF"
+            },
+            {
+              "text": ". O ficheiro junta todas as versões finalizadas dos registos do episódio, da mais antiga à mais recente. Rascunhos e registos anulados ficam de fora."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "Se já não houver nada para exportar, ou se atingir o limite de pedidos, aparece «Não foi possível gerar o PDF.». Cada exportação fica no registo de auditoria."
+            }
+          ],
+          "type": "para"
         }
       ],
       "capability": "clinical_records:sign",
@@ -5743,7 +5777,7 @@
       "see": [],
       "shots": null,
       "title": "Assinar e bloquear um registo",
-      "words": 116
+      "words": 198
     },
     {
       "answers": [],
