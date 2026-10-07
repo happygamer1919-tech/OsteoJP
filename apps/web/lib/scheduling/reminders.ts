@@ -62,6 +62,10 @@ export class ReminderBurstError extends Error {
  *   how supersession happens — the new appointment/scheduled event cancels the
  *   prior sleeping reminder run (cancelOn, matched on appointment id) and the new
  *   send instant starts a fresh run. So the patient never gets the old time.
+ *   A re-save that keeps the start (therapist, clinic or duration changed; a
+ *   visit brought back from Cancelada) starts a fresh run too, since
+ *   2026-10-07: before that its replacement was dropped as a duplicate key and
+ *   the reminder was lost (lib/reminders/inngest/functions.ts).
  *
  * Best-effort by design: the appointment is already persisted, so a failed
  * enqueue is logged (sanitized — no PII; ids are uuids) and swallowed rather than

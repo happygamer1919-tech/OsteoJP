@@ -237,7 +237,7 @@ function deliver(events: { name: string; data: Record<string, unknown> }[]) {
   const dropped: string[] = [];
   expect(CONFIRMATION_TRIGGER_FILTER).toBe("event.data.confirmationEligible == true");
 
-  for (const e of events) {
+  for (const [index, e] of events.entries()) {
     if (e.name !== "appointment/scheduled") continue;
     // A new appointment/scheduled cancels the sleeping reminder runs (cancelOn).
     reminderRuns.length = 0;
@@ -257,6 +257,12 @@ function deliver(events: { name: string; data: Record<string, unknown> }[]) {
         offsetId: due.offsetId,
         channel: due.channel,
         sendAt: due.sendAt.toISOString(),
+        // The id Inngest gave THIS appointment/scheduled event (functions.ts,
+        // reminderScheduledBy). Without it the model would evaluate the key's
+        // last term to "undefined" for every event and dedupe reminders the way
+        // the key did before 2026-10-07, which the real configuration no longer
+        // does.
+        scheduledBy: `evt-${index}`,
       };
       const key = `reminder|${evaluateKey(REMINDER_IDEMPOTENCY_KEY, dueData)}`;
       if (seen.has(key)) dropped.push(key);
@@ -317,20 +323,22 @@ function acceptedRow(startsAt: Date) {
 }
 
 describe("the model drops a duplicate key, so the arms below are not passing by blindness", () => {
-  it("IF the move still emitted, the acceptance's confirmation and reminders would all be dropped", async () => {
+  it("IF the move still emitted, the acceptance's confirmation would be dropped (its reminders no longer are)", async () => {
     // The old behaviour, reproduced by hand: an event for the unaccepted
     // request at its new start, then the acceptance at that same start.
     await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: MOVED_ONCE }]);
     rowState = { ...rowState, startsAt: MOVED_ONCE, endsAt: hourAfter(MOVED_ONCE) };
     await accept();
 
-    const { confirmationRuns, dropped } = deliver(h.sent);
+    const { confirmationRuns, reminderRuns, dropped } = deliver(h.sent);
     // Only the FIRST event ran a confirmation, and it is the one that sends
-    // nothing; the acceptance's run and both of its reminder runs are dropped.
+    // nothing; the acceptance's confirmation run is dropped. Until 2026-10-07
+    // both of its reminder runs were dropped with it (three in all): the
+    // reminder key now carries the save, so they run.
     expect(confirmationRuns).toHaveLength(1);
     expect(confirmationRuns[0]!.acceptedPedido).toBeUndefined();
-    expect(dropped).toHaveLength(3);
-    expect(dropped[0]).toBe(`confirmation|${APPT}:confirmation:${MOVED_ONCE.toISOString()}`);
+    expect(dropped).toEqual([`confirmation|${APPT}:confirmation:${MOVED_ONCE.toISOString()}`]);
+    expect(reminderRuns).toHaveLength(2);
   });
 });
 
