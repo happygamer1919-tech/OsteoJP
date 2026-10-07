@@ -46,28 +46,44 @@ const lisbonTime = (iso: string): string =>
 const apptLabel = (a: DeclaracaoAppointment): string =>
   `${lisbonDate(a.startsAt)} ${lisbonTime(a.startsAt)}–${lisbonTime(a.endsAt)} · ${a.locationName}`;
 
+/** R45: a location a MANUAL declaration can be made for, under its stored name. */
+export type DeclaracaoLocation = { id: string; name: string };
+
 /**
  * W5-31 — "Imprimir Declaração de Presença" button + dialog on the Documentos
  * tab. Pick a marcação (prefills date / hora início / hora fim / location) OR
  * enter manually; all three fields stay editable. Generate calls the server
  * action and opens the returned short-lived signed PDF URL.
+ *
+ * R45: a declaration carries ONE clinic's carimbo, so it is always made for a
+ * location that was given. A marcação brings its own. A manual entry has none,
+ * so the dialog asks for it, over `locations`: the active locations this staff
+ * member may act in (listDeclaracaoLocations). The server re-checks the choice.
  */
 export function DeclaracaoDialog({
   patientId,
   appointments,
+  locations,
   patientNif,
 }: {
   patientId: string;
   appointments: DeclaracaoAppointment[];
+  /** R45: what a manual entry may choose its location from. */
+  locations: DeclaracaoLocation[];
   /** W12-24: the patient's stored NIF, prefilled into the (editable) NIF field. */
   patientNif?: string | null;
 }) {
+  // PL-14: with exactly one location there is nothing to choose. It is applied
+  // as it stands and shown as a line, not as a one-option control.
+  const soleLocationId = locations.length === 1 ? locations[0]!.id : "";
   const [open, setOpen] = useState(false);
   const [apptId, setApptId] = useState<string>("");
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [locationId, setLocationId] = useState<string | null>(null);
+  // The dialog opens on "Introdução manual", so it starts on the manual
+  // location: the sole one, or none chosen yet.
+  const [locationId, setLocationId] = useState<string>(soleLocationId);
   // W12-24: NIF is the PATIENT's (not the marcação's), so it prefills once from
   // patients.nif and is untouched by the marcação/manual switch.
   // PL-20: and when it IS on file, it is no longer ASKED - the value is shown,
@@ -84,6 +100,9 @@ export function DeclaracaoDialog({
 
   function selectAppointment(id: string) {
     setApptId(id);
+    // What the alert says was about the previous selection. A refusal for one
+    // location must not stay on screen over another.
+    setError(null);
     const a = appointments.find((x) => x.id === id);
     if (a) {
       setDate(lisbonDate(a.startsAt));
@@ -97,8 +116,14 @@ export function DeclaracaoDialog({
       setDate("");
       setStartTime("");
       setEndTime("");
-      setLocationId(null);
+      // R45: and the location is the manual one again, never the marcação's.
+      setLocationId(soleLocationId);
     }
+  }
+
+  function changeLocation(id: string) {
+    setLocationId(id);
+    setError(null);
   }
 
   // W12-31: typing Início defaults Fim to one hour later (same day) whenever Fim
@@ -113,13 +138,19 @@ export function DeclaracaoDialog({
       setError(s["documents.declaracao.incomplete"]);
       return;
     }
+    // R45: no location, no declaration. Only a manual entry can get here (a
+    // marcação always has one); the server refuses the same request.
+    if (!locationId) {
+      setError(s["appointment.requiredFields"]);
+      return;
+    }
     if (!isAfter(endTime, startTime)) {
       setError(s["documents.declaracao.endBeforeStart"]);
       return;
     }
     setError(null);
     startTransition(async () => {
-      const { url } = await generateDeclaracaoUrlAction({
+      const { url, refused } = await generateDeclaracaoUrlAction({
         patientId,
         date,
         startTime,
@@ -132,7 +163,13 @@ export function DeclaracaoDialog({
         window.open(url, "_blank", "noopener,noreferrer");
         setOpen(false);
       } else {
-        setError(s["documents.declaracao.error"]);
+        // R45: a location with no carimbo is told so, in the approved wording;
+        // nothing was generated. Any other failure keeps the generic message.
+        setError(
+          refused === "no_stamp"
+            ? s["documents.declaracao.noStamp"]
+            : s["documents.declaracao.error"],
+        );
       }
     });
   }
@@ -171,6 +208,36 @@ export function DeclaracaoDialog({
               ))}
             </select>
           </label>
+          {/* R45: the location of a MANUAL entry. A marcação brings its own, so
+              the field is not shown for one. Same shape as the other staff
+              forms (PL-14): one location -> a line, several -> a required
+              choice over the staff member's own locations. */}
+          {apptId === "" &&
+            (locations.length === 1 ? (
+              <div className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">{s["header.location"]}</span>
+                <span data-testid="declaracao-location-fixed">{locations[0]!.name}</span>
+              </div>
+            ) : (
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">{s["header.location"]}</span>
+                <select
+                  required
+                  aria-required="true"
+                  value={locationId}
+                  onChange={(e) => changeLocation(e.target.value)}
+                  className={field}
+                  data-testid="declaracao-location"
+                >
+                  <option value="">{s["appointment.selectLocation"]}</option>
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">{s["documents.declaracao.dateLabel"]}</span>
             <DatePicker

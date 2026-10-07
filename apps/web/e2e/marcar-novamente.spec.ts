@@ -265,6 +265,24 @@ async function pickAndConfirm(page: Page, date: string, hhmm: string): Promise<v
   await drawer.getByRole("button", { name: CONFIRM, exact: true }).click();
 }
 
+/**
+ * THE AGENDA CARD OF THE VISIT THIS ATTEMPT SEEDED, BY ITS OWN ID.
+ *
+ * The two drawer tests used to press "the first card with the patient's name".
+ * Every attempt seeds a NEW source visit on the same past day at the same hour,
+ * so on a retry that day holds two cards with one name, and the first one can be
+ * the PREVIOUS attempt's. The copy is then made from the wrong source and the
+ * `clonedFrom` assertion fails on a correct product. Seen on CI on 2026-10-06:
+ * one failed first attempt, then both retries failed for this reason and the
+ * shard went red.
+ *
+ * `data-appointment-id` is the card's identity (agenda-grid.tsx), the same
+ * handle the profile test below uses on its own row.
+ */
+function seededCard(page: Page, fx: Fixture) {
+  return page.locator(`button[data-appointment-id="${fx.appointmentId}"]`);
+}
+
 test.describe("SCHED-15 - Marcar novamente", () => {
   test("copies a completed visit from the PATIENT PROFILE row", async ({ page }, testInfo) => {
     const db = serviceClient();
@@ -311,8 +329,8 @@ test.describe("SCHED-15 - Marcar novamente", () => {
     // The agenda on the source's own day, then the appointment's card.
     const srcDay = fx.startsAt.toISOString().slice(0, 10);
     await page.goto(`/agenda?view=day&date=${srcDay}`);
-    const card = page.getByRole("button", { name: new RegExp(PATIENTS.maria.name) }).first();
-    await expect(card).toBeVisible({ timeout: 15_000 });
+    const card = seededCard(page, fx);
+    await expect(card).toHaveCount(1, { timeout: 15_000 });
     await card.click();
 
     const edit = page.getByRole("dialog");
@@ -350,8 +368,8 @@ test.describe("SCHED-15 - Marcar novamente", () => {
 
     const srcDay = fx.startsAt.toISOString().slice(0, 10);
     await page.goto(`/agenda?view=day&date=${srcDay}`);
-    const card = page.getByRole("button", { name: new RegExp(PATIENTS.maria.name) }).first();
-    await expect(card).toBeVisible({ timeout: 15_000 });
+    const card = seededCard(page, fx);
+    await expect(card).toHaveCount(1, { timeout: 15_000 });
     await card.click();
     const edit = page.getByRole("dialog");
     await expect(edit).toBeVisible();

@@ -1,7 +1,6 @@
 import "server-only";
 
 import {
-  normalizeLocationKey,
   resolveLocationContact,
   type LocationContact,
   type SourceLocation,
@@ -13,6 +12,7 @@ import {
 } from "../report/clinic-fiscal";
 import { readDeclaracaoSettings } from "./declaracao-settings";
 import { signatureStampBytesForLocation } from "./signature-stamp-asset";
+import { resolveStampClinicKey, stampClinicCity } from "./stamp-clinic";
 
 // W5-31 — pure, testable projection for the Declaração de Presença PDF. The
 // orchestrator (generate.ts) resolves the raw inputs (patient, appointment
@@ -21,45 +21,34 @@ import { signatureStampBytesForLocation } from "./signature-stamp-asset";
 // whether the signature/stamp image is embedded.
 
 /**
- * Localidade for the "{localidade}, {dia}" line: the selected marcação's location
- * locality (Linda-a-Velha / Castelo Branco, from the canonical location-contacts
- * dataset), falling back to the tenant's default location, then to the location
- * NAME. Never a fixed "Lisboa".
+ * Localidade for the "{localidade}, {dia}" line: the city of the clinic the
+ * declaration's location is (Linda-a-Velha / Castelo Branco), whichever way that
+ * location is spelled, "Linda-a-Velha" or "OsteoJP (LV)". A location that is
+ * not one of those clinics gives its own NAME. Never a fixed "Lisboa".
+ *
+ * R45: resolved through `resolveStampClinicKey`, the resolver the carimbo uses,
+ * on the ONE location the declaration is for. The line and the stamp therefore
+ * always describe the SAME clinic, and neither has a second location to fall
+ * back to.
  */
-export function resolveLocalidade(
-  appointmentLocation: SourceLocation | null,
-  tenantDefaultLocation: SourceLocation | null,
-): string {
-  for (const loc of [appointmentLocation, tenantDefaultLocation]) {
-    if (!loc) continue;
-    const city = resolveLocationContact(loc).city;
-    if (city && city.trim().length > 0) return city.trim();
-  }
-  return (appointmentLocation?.name ?? tenantDefaultLocation?.name ?? "").trim();
+export function resolveLocalidade(location: SourceLocation | null): string {
+  if (!location) return "";
+  const key = resolveStampClinicKey(location.name);
+  return (key && stampClinicCity(key)) || location.name.trim();
 }
 
 /**
- * The location key the CARIMBO resolves through (W9-03, CB QA item 2).
+ * The clinic key the CARIMBO resolves through (W9-03, CB QA item 2), for the
+ * location the declaration is for.
  *
- * Deliberately mirrors `resolveLocalidade` above: same two candidates, same
- * order (the marcação's location, then the tenant default), same canonical
- * `normalizeLocationKey`. The localidade line and the stamp therefore always
- * describe the SAME clinic - a CB declaration cannot say "Castelo Branco" and
- * carry the LV carimbo, which is precisely the reported defect.
- *
- * Returns null when neither location is known, which resolves to a blank stamp
- * area rather than a fallback to some other clinic's stamp.
+ * R45: the key comes from `resolveStampClinicKey`, so it is only ever the key
+ * of a clinic that HAS a carimbo asset. Null is every other case: a location
+ * with no asset, a name that is not one of the clinics, and no location at
+ * all. generate.ts refuses the declaration on null; nothing falls back to some
+ * other clinic's stamp.
  */
-export function resolveStampLocationKey(
-  appointmentLocation: SourceLocation | null,
-  tenantDefaultLocation: SourceLocation | null,
-): string | null {
-  for (const loc of [appointmentLocation, tenantDefaultLocation]) {
-    if (!loc?.name) continue;
-    const key = normalizeLocationKey(loc.name);
-    if (key) return key;
-  }
-  return null;
+export function resolveStampLocationKey(location: SourceLocation | null): string | null {
+  return resolveStampClinicKey(location?.name);
 }
 
 export type DeclaracaoInputs = {
@@ -73,7 +62,8 @@ export type DeclaracaoInputs = {
   localidade: string;
   /** W9-03: canonical key of the clinic this declaration is FOR, from
    *  resolveStampLocationKey. Drives per-location carimbo resolution; null ->
-   *  blank stamp area. */
+   *  blank stamp area. R45: generate.ts refuses a null key before it builds a
+   *  model, so a rendered declaration always arrives here with a clinic's key. */
   stampLocationKey: string | null;
   /** W12-24: the patient NIF as entered in the dialog (prefilled from
    *  `patients.nif`, editable). Trimmed; null/empty -> omitted from the body. */
@@ -82,9 +72,9 @@ export type DeclaracaoInputs = {
    *  generation. Trimmed; null/empty -> the body has no observações block.
    *  Transient (never persisted). */
   observacoes?: string | null;
-  /** W12-30 C1: the clinic this declaration is FOR (the marcação's location,
-   *  else the tenant default), resolved to the print-ready contact block for the
-   *  branded footer. null -> no contact block (the fiscal identity still prints). */
+  /** W12-30 C1: the location this declaration is FOR, the one the request
+   *  named, resolved to the print-ready contact block for the branded footer.
+   *  null -> no contact block (the fiscal identity still prints). */
   sourceLocation?: SourceLocation | null;
   /** W12-30 C1: clinic fiscal identity source (tenants.name / tenants.nif),
    *  resolved via resolveClinicFiscal into the footer fiscal line. Falls back to
@@ -131,8 +121,10 @@ export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel 
     observacoes: inputs.observacoes?.trim() || null,
     // W9-03: per-location. The tenant switch still wins (settings.signatureStamp
     // = false means "leave blank for a physical stamp" everywhere); when it is
-    // on, the stamp is resolved for THIS declaration's location, and a location
-    // with no asset yet gets a blank area - never another clinic's carimbo.
+    // on, the stamp is resolved for THIS declaration's location - never another
+    // clinic's carimbo. R45: the switch only blanks the area of a clinic that
+    // has a carimbo; a location with none is refused in generate.ts whatever
+    // the switch says.
     stampBytes: settings.signatureStamp
       ? signatureStampBytesForLocation(inputs.stampLocationKey)
       : null,

@@ -242,7 +242,9 @@ export const FICHA_EPISODES = {
  * patient of its own (so the EPI-01a spec's group counts never move), created_by
  * the E2E therapist, its clinic Linda-a-Velha, seeded by seed-e2e.mjs
  * (ensureAddEvaluationFixture) with exactly one group of each kind:
- *   appEpisode  an OPEN app episode (no ledger row) holding one draft registo;
+ *   appEpisode  an OPEN app episode (no ledger row) holding one draft registo
+ *               and, since EPI-01b piece 3, one LOCKED registo
+ *               (finalizedRecordId), so the episode has something to export;
  *   imported    one closed Osteopatia episode the import ledger names, holding
  *               one locked registo (the importer's shape);
  *   noEpisode   one draft registo with no episode ("Sem episódio").
@@ -256,6 +258,7 @@ export const ADD_EVALUATION = {
     episodeId: "00000000-0000-0000-0000-00000000fe41",
     title: "Episódio (15/09/2026)",
     recordId: "00000000-0000-0000-0000-00000000fe51",
+    finalizedRecordId: "00000000-0000-0000-0000-00000000fe55",
   },
   imported: {
     episodeId: "00000000-0000-0000-0000-00000000fe42",

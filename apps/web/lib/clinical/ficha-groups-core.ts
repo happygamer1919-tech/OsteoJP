@@ -29,6 +29,7 @@
  * tenant-wide until 0102), so the complaint is read from the registo.
  */
 import { isEpisodeSpecialty, type EpisodeSpecialty } from "./episode-title";
+import { isEpisodeExportable } from "./report/episode-export-core";
 
 /** The record_status axis, as the list shows it. */
 export type FichaRecordStatus = "draft" | "locked" | "signed";
@@ -242,4 +243,35 @@ export function addEvaluationTarget(group: FichaGroup): AddEvaluationTarget | nu
     return { kind: "newEpisode", specialty: group.label };
   }
   return null;
+}
+
+/**
+ * EPI-01b, piece 3: WHETHER A GROUP SHOWS "PDF do episódio", AND WHAT IT SAYS.
+ *
+ *   - an APP episode group (`kind: "episode"`) holding at least one registo the
+ *     episode's file would include (episode-export-core.ts `isEpisodeExportable`:
+ *     finalized, not annulled): the button, for that episode;
+ *   - an episode with no registo, or with drafts only: NO button. There is
+ *     nothing to export, and the server would produce nothing;
+ *   - an IMPORTED group: NO button. It is one group per specialty over many
+ *     imported episodes, not an episode;
+ *   - the "Sem episódio" group: NO button. It is not an episode.
+ * `partial` is true when the group shows a registo the file leaves out (a
+ * draft, or an annulled one while "Mostrar anulados" is on), so the tab can say
+ * so beside the button.
+ *
+ * The list does not carry the AI review axis, so it is read as "not under
+ * review", as the per-record button's own gate reads it (record-status.ts
+ * `canDownloadReport`); the server asks the full rule again for every registo.
+ * WHO sees the button (a reader of clinical records) is the page's gate.
+ */
+export type EpisodePdfTarget = { episodeId: string; partial: boolean };
+
+export function episodePdfTarget(group: FichaGroup): EpisodePdfTarget | null {
+  if (group.kind !== "episode" || !group.episodeId) return null;
+  const included = group.records.filter((r) =>
+    isEpisodeExportable({ status: r.status, aiReviewState: null, annulled: r.annulled }),
+  ).length;
+  if (included === 0) return null;
+  return { episodeId: group.episodeId, partial: included < group.records.length };
 }

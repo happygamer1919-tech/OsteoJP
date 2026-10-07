@@ -54,6 +54,9 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
   "lib/clinical/ficha-groups.ts#listFichaRecords#therapistPatientReadScope": {
     calls: 1, verdict: "read", why: "EPI-01a: the Registos tab, grouped by episode. The same reach as listRecords (clinical_records_select, 0096), plus each registo's episode; it writes nothing.",
   },
+  "lib/clinical/report/episode-export.ts#readEpisodeExportRows#therapistPatientReadScope": {
+    calls: 1, verdict: "read", why: "EPI-01b piece 3: which registos an episode's PDF holds. The Registos tab's own reach (listFichaRecords), narrowed to one episode; each registo is then loaded by the per-record report engine under the caller's claims. It writes no registo.",
+  },
   "lib/clinical/records.ts#getRecordDetail#therapistPatientReadScope": {
     calls: 1, verdict: "read", why: "Opening a registo. Its edit, sign and version actions are refused by clinical_records' write policies, which 0096 does not touch.",
   },

@@ -16,7 +16,7 @@ import { notFound } from "next/navigation";
 import { getRequestContext } from "../../../lib/auth/context";
 import { listActiveTemplates, type RecordStatus } from "../../../lib/clinical/records";
 import { listFichaRecords } from "../../../lib/clinical/ficha-groups";
-import { addEvaluationTarget, groupForFicha } from "../../../lib/clinical/ficha-groups-core";
+import { addEvaluationTarget, episodePdfTarget, groupForFicha } from "../../../lib/clinical/ficha-groups-core";
 import { listOpenAppEpisodes } from "../../../lib/clinical/episodes";
 import { mayOpenEpisode } from "../../../lib/clinical/episode-open-core";
 import { pickEpisodeToReuse } from "../../../lib/clinical/episode-reuse-core";
@@ -50,6 +50,7 @@ import { versionRecordAction } from "../../clinical/[id]/actions";
 import { createRecordAction } from "../../clinical/new/actions";
 import { AddEvaluationButton } from "./add-evaluation-button";
 import { AddEpisodeButton } from "./add-episode-button";
+import { EpisodePdfButton } from "./episode-pdf-button";
 import { FocusOnArrive } from "./focus-on-arrive.client";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
@@ -58,6 +59,7 @@ import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
 import { PatientDocuments } from "./PatientDocuments";
 import { DeclaracaoDialog, type DeclaracaoAppointment } from "./DeclaracaoDialog";
+import { listDeclaracaoLocations } from "../../../lib/clinical/declaracao/declaracao-locations";
 import { listGuestIntakesForPatient } from "../../../lib/guest-intake/queries";
 import { toGuestIntakeDisplay } from "../../../lib/guest-intake/view";
 import { GuestIntakeAnswers } from "../../../components/guest-intake-answers";
@@ -525,6 +527,9 @@ export default async function PatientProfilePage({
           locationName: a.locationName,
         }))
       : [];
+  // R45: a manual declaration has no marcação to take its location from, so the
+  // dialog asks, over the active locations this staff member may act in.
+  const declaracaoLocations = tab === "documentos" ? await listDeclaracaoLocations(ctx) : [];
 
   return (
     <main>
@@ -879,6 +884,12 @@ export default async function PatientProfilePage({
                 // SPECIALTY, for which the server reuses the patient's open app
                 // episode or opens a new one (R31); "Sem episódio" gets none.
                 const add = addEvaluationTemplateId ? addEvaluationTarget(g) : null;
+                // EPI-01b, piece 3: "PDF do episódio" (ficha-groups-core
+                // episodePdfTarget): an app episode holding at least one
+                // finalized registo, for whoever reads clinical records. The
+                // per-record "Transferir PDF" asks the same capability, and
+                // the server action asks it again.
+                const pdf = canReadClinical ? episodePdfTarget(g) : null;
                 return (
                 <details
                   key={g.key}
@@ -923,8 +934,19 @@ export default async function PatientProfilePage({
                     </span>
                   </summary>
                   <div className="flex flex-col gap-3 px-4 pb-4">
+                    {(pdf || (add && addEvaluationTemplateId)) && (
+                    <div className="flex flex-wrap items-start justify-end gap-3">
+                    {pdf && (
+                      <EpisodePdfButton
+                        patientId={patient.id}
+                        episodeId={pdf.episodeId}
+                        label={s["patients.fichaGroupEpisodePdf"]}
+                        ariaLabel={s["patients.fichaGroupEpisodePdfAria"].replace("{group}", g.label ?? "")}
+                        errorLabel={s["clinical.downloadPdfError"]}
+                      />
+                    )}
                     {add && addEvaluationTemplateId && (
-                      <form action={createRecordAction} className="flex justify-end">
+                      <form action={createRecordAction}>
                         <input type="hidden" name="from" value="ficha" />
                         <input type="hidden" name="patientId" value={patient.id} />
                         <input type="hidden" name="formTemplateId" value={addEvaluationTemplateId} />
@@ -941,6 +963,15 @@ export default async function PatientProfilePage({
                           ).replace("{group}", g.label ?? "")}
                         />
                       </form>
+                    )}
+                    </div>
+                    )}
+                    {/* The file holds the finalized registos only: said here
+                        when this group shows one it leaves out. */}
+                    {pdf?.partial && (
+                      <p className="text-right text-xs text-text-secondary" data-testid="record-group-episode-pdf-partial">
+                        {s["patients.fichaGroupEpisodePdfPartial"]}
+                      </p>
                     )}
                     {g.records.map((r) => (
                       <div
@@ -1036,7 +1067,12 @@ export default async function PatientProfilePage({
             </div>
           ) : (
             <div className="mb-4 flex justify-end">
-              <DeclaracaoDialog patientId={patient.id} appointments={declaracaoAppointments} patientNif={patient.nif} />
+              <DeclaracaoDialog
+                patientId={patient.id}
+                appointments={declaracaoAppointments}
+                locations={declaracaoLocations}
+                patientNif={patient.nif}
+              />
             </div>
           )}
           <PatientDocuments

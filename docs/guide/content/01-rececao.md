@@ -123,9 +123,9 @@ A ficha reúne tudo o que a receção precisa sobre um paciente: dados pessoais,
 ### Como fazer: imprimir uma declaração de presença
 
 1. No separador **Documentos**, clique em **Imprimir Declaração de Presença**.
-2. Em **Marcação**, escolha a consulta, ou escolha **Introdução manual** e preencha **Data**, **Hora de início** e **Hora de fim**.
+2. Em **Marcação**, escolha a consulta, ou escolha **Introdução manual** e preencha **Data**, **Hora de início** e **Hora de fim**. Na introdução manual, se trabalhar em mais do que um local, escolha também a **Localização**.
 3. Confira o **NIF** e, se quiser, escreva **Observações (opcional)**.
-4. Clique em **Gerar**. A declaração abre num novo separador do navegador, pronta a imprimir.
+4. Clique em **Gerar**. A declaração abre num novo separador do navegador, pronta a imprimir, com o carimbo do local da consulta.
 
 ![Ficha do paciente no telemóvel](../screens/rececao/ficha-paciente-390.png)
 ![Ficha do paciente no computador](../screens/rececao/ficha-paciente-desktop.png)
@@ -135,6 +135,8 @@ Nota: um terapeuta atribuído passa a ver todo o histórico de consultas do paci
 Nota: em **Documentos**, **Carregar documento** aceita PDF, imagem ou documento Word até 50 MB. Ao eliminar um documento, o motivo é obrigatório e o ficheiro não é apagado: deixa só de aparecer na ficha.
 
 Nota: sem NIF (nem **Estrangeiro / sem NIF**), a declaração de presença não pode ser emitida. Corrija primeiro em **Editar dados**.
+
+Nota: num local que ainda não tem carimbo, a declaração de presença não é emitida e aparece o aviso «Declaração indisponível neste local: falta o carimbo. Contacte a administração.».
 
 ## Marcações
 

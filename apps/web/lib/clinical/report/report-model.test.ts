@@ -10,7 +10,7 @@ import {
   type ReportPractitionerInput,
   type ReportClinicInput,
 } from "./report-model";
-import type { SourceLocation } from "./location-contacts";
+import { OSTEOJP_LOCATION_CONTACTS, type SourceLocation } from "./location-contacts";
 
 type Overrides = {
   record?: Partial<ReportRecordInput>;
@@ -143,5 +143,46 @@ describe("buildClinicalReportModel", () => {
     const m = buildClinicalReportModel(inputs(), "en");
     expect(m.patient.dateOfBirth).toBe("09/03/1985");
     expect(m.record.consultationDate).toBe("20/05/2026");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R45 (strategy, 2026-10-06), option (b) REFUSED: "switching LV and CB to the
+// fuller contact block in code" waits until the real Linda-a-Velha email is
+// supplied (the code table carries a placeholder for it). The clinic's rows are
+// named "OsteoJP (LV)" and "OsteoJP (CB)", and for those names the report
+// prints the location's OWN row. This pins that. It fails the day a short-code
+// name starts resolving to a code-table block, which is a ruling, not a
+// refactor. The same pin sits on the Declaração (declaracao/declaracao-model
+// .test.ts) and on the RGPD form (rgpd/rgpd.test.ts).
+// ---------------------------------------------------------------------------
+describe("R45 - the clinical report's contact block for a short-code location is its own row", () => {
+  it.each(["OsteoJP (LV)", "OsteoJP (CB)"])("%s", (name) => {
+    const m = buildClinicalReportModel(
+      inputs({ location: { name, address: "Rua do registo, 1", phone: "210 000 000" } }),
+      "pt",
+    );
+    expect(m.location).toEqual({
+      name,
+      addressLines: ["Rua do registo, 1"],
+      postalCode: null,
+      city: null,
+      phones: ["210 000 000"],
+      email: null,
+    });
+    // None of the code table's blocks, and nothing borrowed from one.
+    for (const block of Object.values(OSTEOJP_LOCATION_CONTACTS)) {
+      expect(m.location).not.toEqual(block);
+      expect(m.location.email).not.toBe(block.email);
+      for (const phone of block.phones) expect(m.location.phones).not.toContain(phone);
+    }
+  });
+
+  it("the plain name still selects the code table's block, so the pin above is not vacuous", () => {
+    const m = buildClinicalReportModel(
+      inputs({ location: { name: "Castelo Branco", address: "Rua do registo, 1", phone: "210 000 000" } }),
+      "pt",
+    );
+    expect(m.location).toEqual(OSTEOJP_LOCATION_CONTACTS["castelo-branco"]);
   });
 });
