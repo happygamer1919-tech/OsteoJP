@@ -1422,6 +1422,8 @@
   "agenda.blockedNoNote": "no note",
   "agenda.clinicClosed": "Clinic closed",
   "agenda.outsideClinicHours": "Outside clinic hours",
+  "agenda.therapistOffHours": "Off hours",
+  "agenda.therapistOffHoursSlot": "outside the therapist's working hours",
   "agenda.legend": "Service legend",
   "agenda.serviceMassagemTerapeutica": "Massagem Terapêutica",
   "agenda.serviceMassagemRelaxamento": "Massagem Relaxamento",

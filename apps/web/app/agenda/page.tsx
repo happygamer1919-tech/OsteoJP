@@ -9,8 +9,10 @@ import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import { sharedResourcesForViewer } from "@/lib/scheduling/shared-resource-guard";
 import { listSharedResources } from "@/lib/scheduling/shared-resources";
 import { reconcileAgendaStaff } from "@/lib/scheduling/staff-options";
-import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
+import { listTherapistBlocksAndHours } from "@/lib/scheduling/day-availability";
+import { offHoursByDate, schedulesByClinic } from "@/lib/scheduling/off-hours-core";
 import {
+  daySlots,
   formatTimeOfDay,
   lisbonMinutesFromMidnight,
   lisbonParts,
@@ -112,7 +114,7 @@ export default async function AgendaPage({
   // null and the agenda opens normally (no lock).
   const novaMarcacaoPacienteId = firstParam(sp.novaMarcacaoPaciente);
 
-  const [options, appointments, lockedPatientRow, blocks, frontDeskResources] = await Promise.all([
+  const [options, appointments, lockedPatientRow, blocksAndHours, frontDeskResources] = await Promise.all([
     // W9-02: the selected location narrows the therapist dropdown to that
     // location's assigned therapists (owner ruling 2026-07-17). Null here means
     // "Todas as localizações" and restores the full roster.
@@ -132,13 +134,17 @@ export default async function AgendaPage({
     // therapist is away, suppressing real bookable time. A therapist's own
     // agenda is always locked to them, so they always see their own blocks.
     // Owner question filed 2026-07-17 (inbox W9-04-SCOPE-blocked-band-therapist-axis).
+    //
+    // AGENDA-OFF-HOURS: the same therapist's working-hours rows ride the same
+    // transaction, for the band that marks the hours they do not work. The same
+    // scoping applies for the same reason: no single therapist, no rows read.
     practitionerId
-      ? listTherapistBlocks(actor, {
+      ? listTherapistBlocksAndHours(actor, {
           therapistId: practitionerId,
           rangeStart: startUtc,
           rangeEnd: endUtc,
         })
-      : Promise.resolve([]),
+      : Promise.resolve(null),
     // SCHED-29.4 (Q-SCHED-29-4-1 = A): owner, admin and reception are offered the
     // shared resources beside the is_bookable roster. READ PER REQUEST, not through
     // fetchAgendaReferenceData's 60-second unstable_cache: that cache is
@@ -147,6 +153,7 @@ export default async function AgendaPage({
     // vanished a load late. A therapist already has theirs, read the same way above.
     lockTherapist ? Promise.resolve([]) : listSharedResources(actor),
   ]);
+  const blocks = blocksAndHours?.blocks ?? [];
 
   /* ==================================================================== */
   /* 0085 - THE GRID'S WINDOW COMES FROM THE CLINIC NOW.                   */
@@ -206,6 +213,40 @@ export default async function AgendaPage({
           locationName: selectedLocation.label,
         }
       : null;
+
+  /* ==================================================================== */
+  /* AGENDA-OFF-HOURS - THE HOURS THE SELECTED THERAPIST DOES NOT WORK.    */
+  /* ==================================================================== */
+  /* Reception reads free time off this grid, and an hour outside the      */
+  /* therapist's schedule looked exactly like a free one: the slot was     */
+  /* offered and the booking then refused (`outside_availability`).        */
+  /*                                                                       */
+  /* COMPUTED HERE, ON THE SERVER, FROM THE SLOTS THE GRID DRAWS. Each     */
+  /* slot is put to `evaluateAvailability`, the function the write path    */
+  /* refuses with (off-hours-core.ts), and only the resulting minutes      */
+  /* cross to the client, never the schedule rows.                         */
+  /*                                                                       */
+  /* WHICH CLINICS: the one selected, or under "Todas as localizações"     */
+  /* every clinic this viewer sees, and a slot is then marked only when    */
+  /* the therapist works at none of them. A slot worked at some clinic in  */
+  /* view is bookable there, so calling it off hours would be false.       */
+  /*                                                                       */
+  /* EMPTY WITHOUT ONE THERAPIST, like the blocks above, and empty for a   */
+  /* therapist with no hours configured: the enforcement refuses nothing   */
+  /* for them, so there is nothing to mark.                                */
+  /*                                                                       */
+  /* THE CLINIC LIST comes from the agenda's 60-second reference cache     */
+  /* (`options.locations`); the schedule rows are read on every request.   */
+  const offHours = blocksAndHours
+    ? offHoursByDate({
+        dates: [...drawnDates],
+        slots: daySlots(dayWindow.startMin, dayWindow.endMin),
+        clinics: schedulesByClinic(
+          blocksAndHours.templates,
+          visibleClinics.map((l) => l.id),
+        ),
+      })
+    : {};
 
   const lockedPatient = lockedPatientRow
     ? {
@@ -314,6 +355,7 @@ export default async function AgendaPage({
       appointments={appointments}
       serviceChips={serviceChips}
       blocks={blockSpans}
+      offHours={offHours}
       dayWindow={dayWindow}
       clinicWindow={clinicWindow}
       closure={closure}

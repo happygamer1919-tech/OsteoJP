@@ -206,12 +206,40 @@ function readBlockRows(
  * enforces that; see the loop file and the owner question filed 2026-07-17.
  *
  * Runs through runScoped, so RLS scopes it to the caller's tenant.
+ *
+ * AGENDA-OFF-HOURS: the therapist's working-hours rows come back with the
+ * blocks, for the band that marks the hours they do not work. The two reads
+ * share ONE transaction: a second `runScoped` is four more round trips on
+ * production for a read this small (PERF-06). The rows are the active ones at
+ * every clinic, each with its `locationId`; the page keeps the clinics in view
+ * and off-hours-core.ts asks `evaluateAvailability` about them, the function
+ * the write path refuses with. `is_active` is filtered here and again there,
+ * which is the same set `checkAvailability` ends up measuring against. Read on
+ * every request, never through the agenda's 60-second reference cache: a
+ * schedule edited in Horarios shows on the next load.
  */
-export async function listTherapistBlocks(
+export async function listTherapistBlocksAndHours(
   ctx: RequestContext,
   args: { therapistId: string; rangeStart: Date; rangeEnd: Date },
-): Promise<BlockRow[]> {
-  return runScoped(ctx, (tx) => readBlockRows(tx, args));
+): Promise<{ blocks: BlockRow[]; templates: AvailabilityTemplate[] }> {
+  return runScoped(ctx, async (tx) => {
+    const [blocks, templateRows] = await Promise.all([
+      readBlockRows(tx, args),
+      readTemplateRows(tx, { therapistId: args.therapistId }),
+    ]);
+    return {
+      blocks,
+      templates: templateRows.map((r) => ({
+        weekday: r.weekday,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        validFrom: r.validFrom,
+        validUntil: r.validUntil,
+        isActive: true, // query already filters is_active = true
+        locationId: r.locationId,
+      })),
+    };
+  });
 }
 
 /**

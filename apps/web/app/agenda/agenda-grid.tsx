@@ -10,6 +10,12 @@ import {
   type BlockPlacement,
   type BlockSpan,
 } from "@/lib/scheduling/blocked-time-core";
+import {
+  isSlotInSpans,
+  spansOfSlots,
+  type OffHoursByDate,
+  type OffHoursSpan,
+} from "@/lib/scheduling/off-hours-core";
 import { patientLabel } from "@/lib/scheduling/patient-label";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
@@ -35,6 +41,8 @@ const SLOT_HEIGHT = 48; // px per 30-min slot at the BASE (unexpanded) height
 const DAY_START_MIN = DAY_START_HOUR * 60;
 const DAY_END_MIN = DAY_END_HOUR * 60;
 const GUTTER = 64;
+/** A day with no off-hours runs. One shared value, so nothing is allocated per column. */
+const NO_OFF_HOURS: readonly OffHoursSpan[] = [];
 
 /** One appointment name line, and the group's own vertical padding. */
 const NAME_LINE_PX = 20;
@@ -213,6 +221,7 @@ export function AgendaGrid({
   anchor,
   appointments,
   blocks = [],
+  offHours,
   onSelectAppointment,
   onSelectSlot,
   onOpenBlock,
@@ -227,6 +236,17 @@ export function AgendaGrid({
    *  is scoped to one therapist (page.tsx), since the grid has no therapist axis
    *  and a full-width band would otherwise claim the whole clinic is blocked. */
   blocks?: BlockSpan[];
+  /**
+   * AGENDA-OFF-HOURS - per day, the runs of slots outside the selected
+   * therapist's working hours, as the page computed them from the write path's
+   * own availability check (off-hours-core.ts).
+   *
+   * NON-EMPTY ONLY UNDER A SINGLE-THERAPIST FILTER, like `blocks` and for the
+   * same reason: the grid has no therapist axis. Absent or empty marks nothing,
+   * so every other caller and every existing test renders what it rendered
+   * before.
+   */
+  offHours?: OffHoursByDate;
   onSelectAppointment: (appt: AgendaAppointment) => void;
   onSelectSlot: (date: string, time: string) => void;
   /** SCHED-22: open the block a band belongs to. Absent when the caller has
@@ -535,6 +555,29 @@ export function AgendaGrid({
           const isToday = d === today;
           // W9-04: this day's blocked spans, clipped to the visible window.
           const dayBlocks = placeBlocksOnDate(blocks, d, win.endMin);
+          /**
+           * AGENDA-OFF-HOURS - is this slot outside the therapist's hours, AND
+           * free of every reason that already outranks that one?
+           *
+           * A BLOCK WINS, AND SO DOES THE CLINIC. A blocked slot, a slot in the
+           * clinic's closure and a slot outside the clinic's own hours are
+           * disabled and already say why; "the therapist is not working" on top
+           * would be a second, weaker reason over a stronger one. So the band
+           * is built from what is left, and it never sits over either of the
+           * other two.
+           *
+           * THE SLOT STAYS ENABLED, which is the difference from all three. The
+           * write path's refusal, its message and the drawer are unchanged by
+           * this card; the band only tells reception before the click what the
+           * server will say after it.
+           */
+          const dayOffHours = offHours?.[d] ?? NO_OFF_HOURS;
+          const offHoursAt = (m: number): boolean =>
+            isSlotInSpans(m, dayOffHours) &&
+            !isSlotBlocked(m, dayBlocks) &&
+            !closedAt(m) &&
+            !outsideHours(m);
+          const offHoursBands = spansOfSlots(slots, offHoursAt);
           return (
             <div
               key={d}
@@ -560,6 +603,7 @@ export function AgendaGrid({
                   exactly the "bookable over blocked time" hole (CB QA item 3). */}
               {slots.map((m, i) => {
                 const blocked = isSlotBlocked(m, dayBlocks);
+                const offHoursSlot = offHoursAt(m);
                 // W12-02: gridline on the TOP edge so the STRONG hour rule
                 // coincides with the hour label + an on-the-hour appointment (all
                 // at the slot top), not one 30-min slot below on the :30 line.
@@ -594,6 +638,11 @@ export function AgendaGrid({
                     // appointment is in it is marked in the DOM, so the marking
                     // is assertable rather than a colour somebody has to see.
                     data-outside-hours={outsideHours(m) ? "true" : undefined}
+                    // AGENDA-OFF-HOURS: its own attribute, NOT `data-outside-hours`.
+                    // That one means the CLINIC's hours and marks a disabled
+                    // slot (agenda-never-hides.spec.ts counts it); this one is
+                    // the therapist's hours on a slot that stays enabled.
+                    data-therapist-off-hours={offHoursSlot ? "true" : undefined}
                     disabled={blocked || closedAt(m) || outsideHours(m)}
                     // 0085: the two reasons are NAMED SEPARATELY, and a screen
                     // reader gets the same distinction the band gives a sighted
@@ -605,6 +654,9 @@ export function AgendaGrid({
                     // horario da clinica" sends the reader to the clinic's
                     // hours, where "Clinica encerrada" sends them to the midday
                     // closure and "Tempo bloqueado" to a therapist's blocks.
+                    // AGENDA-OFF-HOURS: a fourth, last in the chain because the
+                    // other three outrank it (see `offHoursAt`). It sends the
+                    // reader to the therapist's schedule in Horarios.
                     aria-label={
                       outsideHours(m)
                         ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.outsideClinicHours"]}`
@@ -612,7 +664,9 @@ export function AgendaGrid({
                           ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.clinicClosed"]}`
                           : blocked
                             ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.blockedTime"]}`
-                            : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
+                            : offHoursSlot
+                              ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.therapistOffHoursSlot"]}`
+                              : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
                     }
                     onClick={
                       blocked || closedAt(m) || outsideHours(m)
@@ -622,7 +676,14 @@ export function AgendaGrid({
                     className={`absolute inset-x-0 transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
                       blocked || closedAt(m) || outsideHours(m)
                         ? "cursor-not-allowed"
-                        : "motion-safe:active:scale-[0.97] hover:bg-v2-green-50"
+                        : offHoursSlot
+                          ? // The tint is on the SLOT, not on the band over it:
+                            // the slot is still focusable, and a tinted overlay
+                            // would dim its own focus ring. The hover stays in
+                            // the error scale, so pointing at an off-hours slot
+                            // does not turn it the green of a bookable one.
+                            "motion-safe:active:scale-[0.97] bg-error-bg/70 hover:bg-error-100"
+                          : "motion-safe:active:scale-[0.97] hover:bg-v2-green-50"
                     } ${outsideHours(m) ? "bg-surface-muted/60" : ""} ${rule}`}
                     // STAFF-03: positioned by the mapper, so a 30-minute slot is
                     // half of its (possibly taller) hour. Still one focusable
@@ -632,6 +693,31 @@ export function AgendaGrid({
                   />
                 );
               })}
+
+              {/* AGENDA-OFF-HOURS - THE HOURS THE THERAPIST DOES NOT WORK, AND
+                  IT IS NEITHER OF THE TWO BANDS BELOW. The block band is a grey
+                  hatch reception can open; the closure band is a flat neutral
+                  band nobody can act on; this is a red tint (the error scale's
+                  background token) with a rule above and below, and the slots
+                  under it stay clickable. The tint itself is on the slots (see
+                  the class above); this element carries the edges and the
+                  words, because colour is never the only cue. No z-index: it
+                  paints over the slots by DOM order and under both other bands
+                  and the appointment names (z-10). `pointer-events-none`, so
+                  it takes no click from the slot beneath it. */}
+              {offHoursBands.map((b) => (
+                <div
+                  key={b.startMin}
+                  data-testid="agenda-off-hours-band"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 overflow-hidden border-y border-error-200"
+                  style={{ top: minToPx(b.startMin), height: minToPx(b.endMin) - minToPx(b.startMin) }}
+                >
+                  <span className="block truncate px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-error-800">
+                    {s["agenda.therapistOffHours"]}
+                  </span>
+                </div>
+              ))}
 
               {/* W9-04: blocked-time bands (SPEC-v2-agenda 2.1: muted,
                   non-interactive). Drawn above the slot layer so the hatch
