@@ -5,13 +5,19 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  CONFIRMATION_IDEMPOTENCY_KEY,
   CONFIRMATION_TRIGGER_FILTER,
   REMINDER_IDEMPOTENCY_KEY,
+  REMINDER_SCHEDULE_DEBOUNCE,
+  REMINDER_SINGLETON,
   REMINDER_SUPERSEDE_CANCEL_ON,
   functions,
+  reminderScheduledBy,
+  scheduleAppointmentReminders,
   sendAppointmentConfirmation,
+  sendAppointmentReminder,
 } from "./functions";
-import { EVENT_APPOINTMENT_SCHEDULED } from "./client";
+import { EVENT_APPOINTMENT_SCHEDULED, EVENT_REMINDER_DUE } from "./client";
 
 describe("reminder reschedule supersession config", () => {
   it("cancels the in-flight reminder run on a new appointment/scheduled event", () => {
@@ -92,5 +98,110 @@ describe("series burst guard — confirmation fires once per booking action", ()
     // No `if` at all: the scheduler must fire for EVERY occurrence of a series,
     // which is what keeps reminders per-occurrence while confirmations are not.
     expect(authoredTriggers(scheduler!)).toEqual([{ event: EVENT_APPOINTMENT_SCHEDULED }]);
+  });
+});
+
+/** The options an InngestFunction was constructed with (see authoredTriggers). */
+function authoredOptions(fn: unknown): Record<string, unknown> {
+  return (fn as { opts?: Record<string, unknown> }).opts ?? {};
+}
+
+/**
+ * INC 2026-10-07: A SAVE THAT KEEPS THE START LOST THE REMINDER.
+ *
+ * The behaviour itself is Inngest's (a cancelled run, then a replacement dropped
+ * as a duplicate key) and was measured on the Inngest dev server; the table is in
+ * functions.ts. What a unit test can hold is the CONFIGURATION those measurements
+ * were taken with, and the one value our code computes: who scheduled a reminder.
+ * Each assertion below names the setting whose removal brought a failure back.
+ */
+describe("a re-save never loses or doubles a reminder (INC 2026-10-07)", () => {
+  it("the idempotency key carries the save, last, so a second save with the SAME start is a new run", () => {
+    expect(REMINDER_IDEMPOTENCY_KEY).toContain("event.data.scheduledBy");
+    expect(REMINDER_IDEMPOTENCY_KEY.indexOf("event.data.scheduledBy")).toBeGreaterThan(
+      REMINDER_IDEMPOTENCY_KEY.indexOf("event.data.sendAt"),
+    );
+    // The whole expression, so a dropped term cannot hide behind `toContain`.
+    expect(REMINDER_IDEMPOTENCY_KEY).toBe(
+      'event.data.appointmentId + ":" + event.data.offsetId + ":" + event.data.channel + ":" + event.data.sendAt + ":" + event.data.scheduledBy',
+    );
+  });
+
+  it("only the newest run of one reminder stays alive: singleton, mode cancel, per appointment + offset + channel", () => {
+    expect(REMINDER_SINGLETON.mode).toBe("cancel");
+    expect(REMINDER_SINGLETON.key).toBe(
+      'event.data.appointmentId + ":" + event.data.offsetId + ":" + event.data.channel',
+    );
+    // NOT per send instant and NOT per save: a move and a re-save must both land
+    // on the key of the run they replace, or the old one survives beside the new.
+    expect(REMINDER_SINGLETON.key).not.toContain("sendAt");
+    expect(REMINDER_SINGLETON.key).not.toContain("scheduledBy");
+  });
+
+  it("the fan-out of one appointment is debounced, so two saves a moment apart start their runs in order", () => {
+    expect(REMINDER_SCHEDULE_DEBOUNCE).toEqual({ key: "event.data.appointmentId", period: "2s" });
+  });
+
+  it("all three settings, and cancelOn, are on the functions Inngest is given", () => {
+    const send = authoredOptions(sendAppointmentReminder);
+    expect(send.triggers).toEqual([{ event: EVENT_REMINDER_DUE }]);
+    expect(send.idempotency).toBe(REMINDER_IDEMPOTENCY_KEY);
+    expect(send.singleton).toEqual(REMINDER_SINGLETON);
+    // cancelOn stays: it removes a run created before the singleton key existed.
+    expect(send.cancelOn).toEqual(REMINDER_SUPERSEDE_CANCEL_ON);
+
+    const schedule = authoredOptions(scheduleAppointmentReminders);
+    expect(schedule.debounce).toEqual(REMINDER_SCHEDULE_DEBOUNCE);
+    // The scheduler is not a singleton and has no idempotency key: every save
+    // must reach it (the debounce picks the last).
+    expect(schedule.singleton).toBeUndefined();
+    expect(schedule.idempotency).toBeUndefined();
+  });
+
+  it("the confirmation keeps its own key: one per appointment and start, however many saves", () => {
+    const confirmation = authoredOptions(sendAppointmentConfirmation);
+    expect(confirmation.idempotency).toBe(CONFIRMATION_IDEMPOTENCY_KEY);
+    expect(CONFIRMATION_IDEMPOTENCY_KEY).not.toContain("scheduledBy");
+    expect(confirmation.singleton).toBeUndefined();
+    expect(confirmation.debounce).toBeUndefined();
+  });
+
+  it("scheduledBy is the event's id, never empty, and differs between two saves", () => {
+    expect(reminderScheduledBy({ id: "01JABC", ts: 1 })).toBe("01JABC");
+    expect(reminderScheduledBy({ id: "", ts: 1791000000000 })).toBe("ts:1791000000000");
+    expect(reminderScheduledBy({ ts: 1791000000000 })).toBe("ts:1791000000000");
+    expect(reminderScheduledBy({})).toBe("ts:0");
+    expect(reminderScheduledBy({ id: "a" })).not.toBe(reminderScheduledBy({ id: "b" }));
+    expect(reminderScheduledBy({ ts: 1 })).not.toBe(reminderScheduledBy({ ts: 2 }));
+  });
+
+  it("the fan-out stamps every reminder with the save that scheduled it", async () => {
+    const sent: Array<{ name: string; data: Record<string, unknown> }> = [];
+    const step = {
+      sendEvent: async (_id: string, events: Array<{ name: string; data: Record<string, unknown> }>) => {
+        sent.push(...events);
+      },
+    };
+    const handler = (scheduleAppointmentReminders as unknown as {
+      fn: (ctx: unknown) => Promise<{ scheduled: number }>;
+    }).fn;
+    // Ten days out: both offsets (48h email, 24h SMS) are still due.
+    const startsAt = new Date(Date.now() + 10 * 86_400_000).toISOString();
+    const data = { appointmentId: "appt-1", tenantId: "tenant-1", startsAt, confirmationEligible: false };
+
+    const first = await handler({ event: { id: "evt-first", ts: 1, data }, step });
+    const second = await handler({ event: { id: "evt-second", ts: 2, data }, step });
+
+    expect(first.scheduled).toBe(2);
+    expect(second.scheduled).toBe(2);
+    expect(sent).toHaveLength(4);
+    expect(sent.every((e) => e.name === EVENT_REMINDER_DUE)).toBe(true);
+    expect(sent.slice(0, 2).map((e) => e.data.scheduledBy)).toEqual(["evt-first", "evt-first"]);
+    expect(sent.slice(2).map((e) => e.data.scheduledBy)).toEqual(["evt-second", "evt-second"]);
+    // The SAME appointment, offsets and send instants: without scheduledBy the
+    // second save's reminders would carry the first save's keys.
+    const withoutSave = (e: { data: Record<string, unknown> }) =>
+      `${e.data.appointmentId}:${e.data.offsetId}:${e.data.channel}:${e.data.sendAt}`;
+    expect(sent.slice(2).map(withoutSave)).toEqual(sent.slice(0, 2).map(withoutSave));
   });
 });

@@ -1871,7 +1871,9 @@ export async function updateAppointment(
         //
         // ONLY UNACCEPTED PEDIDOS. A staff booking already has its run, and a
         // second appointment/scheduled at an unchanged start would cancel it
-        // (see lib/scheduling/pedido-acceptance.ts). Read BEFORE the UPDATE and
+        // (see lib/scheduling/pedido-acceptance.ts; since 2026-10-07 a
+        // replacement run starts, so nothing is lost, but nothing is needed
+        // either). Read BEFORE the UPDATE and
         // regardless of allowConflict: "Guardar mesmo assim" overrides a
         // conflict warning, not the acceptance.
         // ==============================================================

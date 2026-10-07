@@ -19,6 +19,8 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
  * CANCELS the sleeping reminder runs (cancelOn) and the replacements are dropped
  * by the 24h idempotency key - so emitting for a row that is not an unaccepted
  * pedido would REMOVE its reminders. Every silent arm below is that guarantee.
+ * (The removal was real until 2026-10-07, when the reminder key began to carry
+ * the save. The silent arms stay: such a row needs no event.)
  */
 
 vi.mock("server-only", () => ({}));

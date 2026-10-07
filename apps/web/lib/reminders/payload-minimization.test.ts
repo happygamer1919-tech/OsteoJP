@@ -75,6 +75,11 @@ describe("Inngest event payloads carry identifiers only", () => {
       // reception made for a public-form request. A literal `true` about the
       // EVENT. The dispatch does not act on it without reading the link row.
       "acceptedGuestRequest",
+      // INC 2026-10-07, added deliberately: the Inngest id of the
+      // appointment/scheduled EVENT a reminder was fanned out from. An id
+      // Inngest generated for an event; it names nobody and is derived from
+      // nothing about a person. It is what gives each save its own reminder run.
+      "scheduledBy",
     ]);
 
     const blocks = src.match(/=\s*\{[^}]*\}/g) ?? [];
