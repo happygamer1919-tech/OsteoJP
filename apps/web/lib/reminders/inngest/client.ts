@@ -56,6 +56,14 @@ export type ReminderDueData = {
   /** The single channel this reminder goes out on. Part of the idempotency key. */
   channel: Channel;
   sendAt: string; // ISO-8601 UTC
+  /**
+   * The id of the `appointment/scheduled` event this reminder was fanned out
+   * from. Part of the idempotency key, so EVERY save that re-schedules gets a
+   * run of its own (see REMINDER_IDEMPOTENCY_KEY in ./functions.ts). Optional
+   * in the type only because runs created before this field existed are still
+   * asleep in Inngest; every event emitted now carries it.
+   */
+  scheduledBy?: string;
 };
 
 /** Payload for status-change events (completed / no_show). endsAt is carried so
