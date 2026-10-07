@@ -502,7 +502,7 @@ describe("createDismissTimer: a toast leaves after its time on screen, not held"
     expect(t.pendingDelays()).toEqual([4000]);
   });
 
-  it("a toast that has left is not dismissed a second time by a late release or start", () => {
+  it("a toast that has left is not dismissed a second time by a late release; only a new start counts again", () => {
     const t = fakeTimers();
     const first = vi.fn();
     const second = vi.fn();

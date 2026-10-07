@@ -246,8 +246,9 @@ export function createDismissTimer(duration: number, deps: DismissTimerDeps): Di
     running = {
       since: deps.now(),
       handle: deps.setTimeout(() => {
-        // It has left: a release or a start that arrives after this (a pointer
-        // leaving before React has removed the toast) must not fire it again.
+        // It has left: a release that arrives after this (a pointer leaving
+        // before React has removed the toast) must not fire it again. Only a
+        // new start counts again.
         running = null;
         remaining = 0;
         onDismiss = null;
