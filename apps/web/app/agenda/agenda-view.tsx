@@ -26,6 +26,7 @@ import {
   type AgendaView as View,
 } from "@/lib/scheduling/time";
 import type { BlockSpan } from "@/lib/scheduling/blocked-time-core";
+import type { OffHoursByDate } from "@/lib/scheduling/off-hours-core";
 import {
   browserViewStorage,
   preferredViewRedirect,
@@ -73,6 +74,7 @@ export function AgendaView({
   appointments,
   serviceChips = [],
   blocks,
+  offHours,
   dayWindow,
   clinicWindow,
   closure,
@@ -102,6 +104,11 @@ export function AgendaView({
   /** W9-04: time_off spans for the visible range. Non-empty ONLY when the agenda
    *  is scoped to one therapist - see page.tsx for why. */
   blocks: BlockSpan[];
+  /** AGENDA-OFF-HOURS: per day, the slots outside the selected therapist's
+   *  working hours. Empty unless the agenda is scoped to one therapist who has
+   *  hours configured (a therapist's own agenda always is) - see page.tsx.
+   *  Drawn by the desktop grid only. */
+  offHours?: OffHoursByDate;
   /** 0085: the grid's visible window, from the clinic's own opening hours.
    *  AGENDA-NEVER-HIDES: widened to cover any appointment outside them. */
   dayWindow: { startMin: number; endMin: number };
@@ -805,6 +812,7 @@ export function AgendaView({
         anchor={anchor}
         appointments={shownAppointments}
         blocks={blocks}
+        offHours={offHours}
         dayWindow={dayWindow}
         clinicWindow={clinicWindow}
         closure={closure}
