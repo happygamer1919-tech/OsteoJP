@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MAX_STACK,
   appendToStack,
+  createDismissTimer,
   createToastLifecycle,
   createToasterRegistry,
   pickRegionParent,
@@ -351,5 +352,188 @@ describe("pickRegionParent: the region goes into a modal only for a toast raised
       "discard-dialog",
     );
     expect(pickRegionParent(["drawer", "discard-dialog"], ["drawer"])).toBe("drawer");
+  });
+});
+
+/**
+ * A clock and a timer queue the test moves by hand. `advance` fires every timer
+ * that has come due, in order, the way a browser would.
+ */
+function fakeTimers(startAt = 1_791_000_000_000) {
+  let now = startAt;
+  let nextHandle = 1;
+  const pending = new Map<number, { at: number; fn: () => void; ms: number }>();
+  return {
+    deps: {
+      now: () => now,
+      setTimeout: (fn: () => void, ms: number) => {
+        const handle = nextHandle;
+        nextHandle += 1;
+        pending.set(handle, { at: now + Math.max(0, ms), fn, ms });
+        return handle;
+      },
+      clearTimeout: (handle: unknown) => {
+        pending.delete(handle as number);
+      },
+    },
+    advance(ms: number) {
+      const end = now + ms;
+      for (;;) {
+        const due = [...pending].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        pending.delete(due[0]);
+        now = due[1].at;
+        due[1].fn();
+      }
+      now = end;
+    },
+    pendingDelays: () => [...pending.values()].map((t) => t.ms),
+  };
+}
+
+describe("createDismissTimer: a toast leaves after its time on screen, not held", () => {
+  it("leaves after the duration, once", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    t.advance(4999);
+    expect(onDismiss).not.toHaveBeenCalled();
+    t.advance(1);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    t.advance(60_000);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("THE LOST TOAST: a hold that arrives BEFORE the countdown starts does not dismiss it", () => {
+    // The toast is born under the pointer and the pointer's enter is delivered
+    // before the effect that starts the countdown. The old code subtracted
+    // (now - 0) here and the toast left as soon as it was started.
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.hold();
+    timer.start(onDismiss);
+    // Held: nothing is counting, and nothing was scheduled with a wrong delay.
+    expect(t.pendingDelays()).toEqual([]);
+    t.advance(60_000);
+    expect(onDismiss).not.toHaveBeenCalled();
+    // The pointer leaves: the WHOLE duration is still to run.
+    timer.release();
+    expect(t.pendingDelays()).toEqual([5000]);
+    t.advance(4999);
+    expect(onDismiss).not.toHaveBeenCalled();
+    t.advance(1);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("a hold stops the countdown and a release runs only what was left", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    t.advance(2000);
+    timer.hold();
+    t.advance(60_000);
+    expect(onDismiss).not.toHaveBeenCalled();
+    timer.release();
+    expect(t.pendingDelays()).toEqual([3000]);
+    t.advance(3000);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("a second hold (the pointer, then the focus) subtracts nothing more", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    t.advance(1000);
+    timer.hold();
+    t.advance(10_000);
+    timer.hold();
+    timer.release();
+    expect(t.pendingDelays()).toEqual([4000]);
+  });
+
+  it("a release with nothing held leaves the running countdown alone", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    t.advance(4000);
+    timer.release();
+    t.advance(1000);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("the time left never goes below zero, whatever the clock does", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    // The timer is stopped late (a tab that was asleep): 9 s have passed.
+    t.deps.clearTimeout(1);
+    t.advance(9000);
+    timer.hold();
+    timer.release();
+    expect(t.pendingDelays()).toEqual([0]);
+    expect(createDismissTimer(-5, t.deps)).toBeDefined();
+  });
+
+  it("stop then start (a re-render with a new onDismiss) continues the same countdown with the new function", () => {
+    const t = fakeTimers();
+    const first = vi.fn();
+    const second = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(first);
+    t.advance(2000);
+    timer.stop();
+    expect(t.pendingDelays()).toEqual([]);
+    timer.start(second);
+    expect(t.pendingDelays()).toEqual([3000]);
+    t.advance(3000);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("start twice without a stop does not leave two timers running", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    timer.start(onDismiss);
+    expect(t.pendingDelays()).toHaveLength(1);
+    t.advance(5000);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stopped toast is not dismissed by a late release or by time", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    timer.hold();
+    timer.stop();
+    timer.release();
+    t.advance(60_000);
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(t.pendingDelays()).toEqual([]);
+  });
+
+  it("Toast.tsx counts down through this timer and keeps no clock of its own (source arm)", () => {
+    // Toast.tsx needs a DOM this package's unit tests do not have, so the wiring
+    // is pinned in its source: the four handlers and the effect use the timer,
+    // and the arithmetic that lost the toast is not written there again.
+    const src = readFileSync(join(__dirname, "Toast.tsx"), "utf8");
+    const item = src.slice(src.indexOf("function ToastItem("));
+    expect(item).toContain("createDismissTimer(duration,");
+    expect(item).toContain("timer.start(onDismiss);");
+    expect(item).toContain("timer.stop();");
+    expect(item).toContain("onMouseEnter={timer.hold}");
+    expect(item).toContain("onMouseLeave={timer.release}");
+    expect(item).toContain("onFocus={timer.hold}");
+    expect(item).toContain("onBlur={timer.release}");
+    expect(item).not.toContain("Date.now() -");
+    expect(item).not.toContain("window.setTimeout(onDismiss");
   });
 });

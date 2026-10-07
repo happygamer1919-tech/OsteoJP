@@ -178,3 +178,94 @@ export function pickRegionParent<E>(openDialogs: ArrayLike<E>, origins: Iterable
   }
   return null;
 }
+
+/** The clock and the timers a dismiss timer runs on (the window's, in the browser). */
+export interface DismissTimerDeps {
+  now(): number;
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+export interface DismissTimer {
+  /** The toast is on screen (again): count down with `onDismiss`, unless it is held. */
+  start(onDismiss: () => void): void;
+  /** The pointer or the focus is on the toast: stop counting. */
+  hold(): void;
+  /** The pointer or the focus left it: count down what is left. */
+  release(): void;
+  /** The toast is leaving the screen (or re-rendering): no timer stays behind. */
+  stop(): void;
+}
+
+/**
+ * THE AUTO-DISMISS COUNTDOWN OF ONE TOAST, PAUSED WHILE IT IS HELD.
+ *
+ * A toast leaves after `duration` ms ON SCREEN AND NOT HELD. Held means the
+ * pointer or the focus is on it.
+ *
+ * WHY THIS IS A RULE WITH A TEST AND NOT THREE LINES IN Toast.tsx. The first
+ * version subtracted "time since the countdown started" on every pause, and
+ * read the start time from a variable that was 0 until the countdown started.
+ * A pause that came BEFORE the first start therefore subtracted the whole epoch:
+ * the time left went to minus 1.7 trillion ms and the toast left the moment the
+ * countdown did start. That order is not rare. The region sits in the bottom
+ * right corner, which is where a drawer's confirm button is, so after "Marcar"
+ * or "Guardar" the new toast is born under the pointer and the browser can
+ * deliver the pointer's enter before React runs the effect that starts the
+ * countdown. Measured on 2026-10-07 on the local stack: 5 of 30 runs of
+ * marcar-novamente.spec.ts lost "Nova marcação criada." within 10 ms of showing
+ * it, with the booking saved every time.
+ *
+ * So: only a RUNNING countdown has elapsed time to subtract; a hold that
+ * arrives early is remembered and the countdown simply does not start until the
+ * release; and the time left never goes below zero.
+ *
+ * `stop` then `start` (a re-render with a new `onDismiss`) continues the same
+ * countdown: the time already spent on screen stays spent.
+ */
+export function createDismissTimer(duration: number, deps: DismissTimerDeps): DismissTimer {
+  let remaining = Math.max(0, duration);
+  let held = false;
+  let onDismiss: (() => void) | null = null;
+  let running: { handle: unknown; since: number } | null = null;
+
+  function halt(): void {
+    if (!running) return;
+    deps.clearTimeout(running.handle);
+    remaining = Math.max(0, remaining - (deps.now() - running.since));
+    running = null;
+  }
+
+  function run(): void {
+    if (running || held || !onDismiss) return;
+    const fire = onDismiss;
+    running = {
+      since: deps.now(),
+      handle: deps.setTimeout(() => {
+        running = null;
+        remaining = 0;
+        fire();
+      }, remaining),
+    };
+  }
+
+  return {
+    start(fn) {
+      halt();
+      onDismiss = fn;
+      run();
+    },
+    hold() {
+      held = true;
+      halt();
+    },
+    release() {
+      held = false;
+      run();
+    },
+    stop() {
+      halt();
+      onDismiss = null;
+    },
+  };
+}
