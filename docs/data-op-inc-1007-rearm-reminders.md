@@ -207,12 +207,17 @@ refuses and sends nothing: run the dry run again.
 shows the production deployment of that commit as complete. Note the full
 40-character commit sha. The script records it and cannot check it.
 
-**Step 2. The owner looks at the Inngest dashboard.** In the production app:
+**Step 2. The owner looks at the Inngest dashboard.** A deploy does not carry a
+job's settings to the scheduler. The app `osteojp-reminders` is synced by hand
+(Apps, `osteojp-reminders`, Resync), and until that is pressed the scheduler
+keeps the old settings however new the code is. `CLAUDE.md` records this under
+2026-10-07. After the Resync, in each function's configuration panel:
 
 - `schedule-appointment-reminders` shows **Debounce**.
 - `send-appointment-reminder` shows **Singleton**.
 
-If either is missing, the scheduler is not running the fix. Stop here.
+If either is missing, the scheduler is not running the fix. Stop here. No lane
+presses Resync: it is a call into production.
 
 **Step 3. Dry run.** It sends nothing.
 
