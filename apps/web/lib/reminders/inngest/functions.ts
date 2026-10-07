@@ -18,8 +18,8 @@ import { dispatchReminder, dispatchConfirmation, dispatchFollowUp, dispatchNoSho
 //      offsets are still in the future and fan out one appointment/reminder.due
 //      event per offset (carrying its absolute send time).
 //   2. sendAppointmentReminder — on appointment/reminder.due, sleep until the
-//      send time, then dispatch. Idempotency is keyed on appointment id +
-//      offset, so the same reminder fires exactly once even if the event is
+//      send time, then dispatch. Idempotency (REMINDER_IDEMPOTENCY_KEY below)
+//      makes the same reminder fire exactly once even if the event is
 //      DELIVERED more than once. That key is why Stream E needs no sent-log
 //      table (per the build constraints). A second SAVE of the appointment is
 //      a different case; see "A save that does NOT change the time" below.
@@ -87,6 +87,16 @@ import { dispatchReminder, dispatchConfirmation, dispatchFollowUp, dispatchNoSho
 //      older time).
 // cancelOn stays: it is what removes a run created under the old settings, which
 // carries no singleton key.
+//
+// TWO LIMITS, both measured:
+//   - "Newest" means the run that STARTS last. A fan-out held back longer than
+//     the gap between two saves (a retried step, a cold start) could start
+//     after the later save's and win with the older time. Not seen with saves
+//     2 s or more apart. Before these settings the same race sent both.
+//   - NEVER REPLAY a reminder.due event from before this deploy in the Inngest
+//     dashboard. Its run, if still asleep, was created under the old key and
+//     holds no singleton key, so the replay would start a second run beside it
+//     and the patient would get the reminder twice (measured: 4 of 4).
 export const REMINDER_SUPERSEDE_CANCEL_ON = [
   {
     event: EVENT_APPOINTMENT_SCHEDULED,
@@ -119,8 +129,10 @@ export const REMINDER_SCHEDULE_DEBOUNCE = {
 
 /**
  * What a reminder says it was scheduled by: the id of the appointment/scheduled
- * event. Inngest gives every received event an id; the timestamp is the
- * fallback, so the value is never empty and two saves never share one.
+ * event. Inngest gives every received event an id, so two saves never share
+ * one. The timestamp is the fallback and keeps the value from ever being
+ * empty; two events with neither would share "ts:0", which degrades to the old
+ * behaviour (a dropped duplicate), never to a second reminder.
  *
  * Exported for direct testing.
  */
