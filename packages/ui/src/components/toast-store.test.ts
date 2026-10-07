@@ -477,7 +477,64 @@ describe("createDismissTimer: a toast leaves after its time on screen, not held"
     timer.hold();
     timer.release();
     expect(t.pendingDelays()).toEqual([0]);
-    expect(createDismissTimer(-5, t.deps)).toBeDefined();
+  });
+
+  it("a negative duration is zero, not a negative delay", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    createDismissTimer(-5, t.deps).start(onDismiss);
+    expect(t.pendingDelays()).toEqual([0]);
+  });
+
+  it("a hold survives a re-render: stop then start does not start counting under the pointer", () => {
+    const t = fakeTimers();
+    const onDismiss = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(onDismiss);
+    t.advance(1000);
+    timer.hold();
+    timer.stop();
+    timer.start(onDismiss);
+    expect(t.pendingDelays()).toEqual([]);
+    t.advance(600_000);
+    expect(onDismiss).not.toHaveBeenCalled();
+    timer.release();
+    expect(t.pendingDelays()).toEqual([4000]);
+  });
+
+  it("a toast that has left is not dismissed a second time by a late release or start", () => {
+    const t = fakeTimers();
+    const first = vi.fn();
+    const second = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(first);
+    t.advance(5000);
+    expect(first).toHaveBeenCalledTimes(1);
+    // The pointer leaves before React has removed the toast.
+    timer.release();
+    timer.hold();
+    timer.release();
+    t.advance(60_000);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(t.pendingDelays()).toEqual([]);
+    // Only a new start (the toast is on screen again) counts again.
+    timer.stop();
+    timer.start(second);
+    expect(t.pendingDelays()).toEqual([0]);
+  });
+
+  it("start with a new function while running replaces the old one: one timer, the new function", () => {
+    const t = fakeTimers();
+    const first = vi.fn();
+    const second = vi.fn();
+    const timer = createDismissTimer(5000, t.deps);
+    timer.start(first);
+    t.advance(2000);
+    timer.start(second);
+    expect(t.pendingDelays()).toEqual([3000]);
+    t.advance(3000);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
   });
 
   it("stop then start (a re-render with a new onDismiss) continues the same countdown with the new function", () => {

@@ -277,7 +277,7 @@ async function pickAndConfirm(page: Page, date: string, hhmm: string): Promise<v
  * shard went red.
  *
  * `data-appointment-id` is the card's identity (agenda-grid.tsx), the same
- * handle the profile test above already uses on its own row.
+ * handle the profile test below uses on its own row.
  */
 function seededCard(page: Page, fx: Fixture) {
   return page.locator(`button[data-appointment-id="${fx.appointmentId}"]`);

@@ -200,8 +200,9 @@ export interface DismissTimer {
 /**
  * THE AUTO-DISMISS COUNTDOWN OF ONE TOAST, PAUSED WHILE IT IS HELD.
  *
- * A toast leaves after `duration` ms ON SCREEN AND NOT HELD. Held means the
- * pointer or the focus is on it.
+ * A toast leaves after `duration` ms ON SCREEN AND NOT HELD. It is held from the
+ * moment the pointer or the focus goes onto it until either of them leaves: one
+ * release ends the hold, whichever of the two it came from.
  *
  * WHY THIS IS A RULE WITH A TEST AND NOT THREE LINES IN Toast.tsx. The first
  * version subtracted "time since the countdown started" on every pause, and
@@ -221,7 +222,10 @@ export interface DismissTimer {
  * release; and the time left never goes below zero.
  *
  * `stop` then `start` (a re-render with a new `onDismiss`) continues the same
- * countdown: the time already spent on screen stays spent.
+ * countdown: the time already spent on screen stays spent, and a hold stays a
+ * hold. A toast under a resting pointer therefore stays until the pointer
+ * leaves, which is the documented rule; the first version restarted the clock
+ * on every re-render, held or not.
  */
 export function createDismissTimer(duration: number, deps: DismissTimerDeps): DismissTimer {
   let remaining = Math.max(0, duration);
@@ -242,8 +246,11 @@ export function createDismissTimer(duration: number, deps: DismissTimerDeps): Di
     running = {
       since: deps.now(),
       handle: deps.setTimeout(() => {
+        // It has left: a release or a start that arrives after this (a pointer
+        // leaving before React has removed the toast) must not fire it again.
         running = null;
         remaining = 0;
+        onDismiss = null;
         fire();
       }, remaining),
     };
