@@ -110,6 +110,7 @@
     "scripts/read-applied-migrations-target.test.mjs": "36bf852d991daa908c6c0ac23723f226e38337480c38a9a4a553df0a2087fa50",
     "scripts/registo-writes-0097.test.mjs": "066a843ab350612642229d8b9f2e172275b2ac87fba983643fca9131e0001944",
     "scripts/required-checks-are-honest.test.mjs": "cc53c16929c324a8fb4acb27caae89359631753ed3f15c413d03589e2699da74",
+    "scripts/sat01-tables-0102.test.mjs": "18e581584dbb7edf1988af7d791531b521915519bbe4c7e21e736d6c4b718b64",
     "scripts/secret-scan-runs-in-ci.test.mjs": "b6b37eacc805469319727d155e22f8d0bee9888ceedbe4c7fdc14e07630a721e",
     "scripts/secret-scan.mjs": "e21913ea006fecb6bcac037abda465fe051d03e8e40ea8b91fce2486c741f5f4",
     "scripts/secret-scan.test.mjs": "4d46cf812bf15a67f787ac86139fb965af6f76de35fe7b41347ac6183002f032",
