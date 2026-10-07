@@ -37,8 +37,7 @@ const DELETE_ORDER = [
   "invoices",
   // 0080 — a child of BOTH appointments and patients, so it precedes appointments.
   "appointment_reschedule_requests",
-  // 0102 (SAT-01), named here BEFORE its migration is promoted (see
-  // AHEAD_OF_MIGRATION): the satisfaction survey's three tables. A send and an
+  // 0102 (SAT-01, applied 2026-10-07): the satisfaction survey's three tables. A send and an
   // answer are children of BOTH appointments and patients; a code is a child of
   // its send. An answer's foreign keys to its appointment, its send and its
   // patient are ON DELETE NO ACTION, so the answers go before all three.
@@ -231,21 +230,18 @@ const CREATED = new Set(
  * on 2026-09-23, the entry went inert, and it was removed in the GATE-CHANGE
  * the owner ruled on 2026-09-24, after 0093's apply to production.
  *
- * NOW IT HOLDS THREE, the same shape: SAT-01's tables, which the pending
- * migration (to be numbered 0102) creates. Its promotion is an ordinary pull
- * request and cannot carry this file, so this file goes first. Until the
- * promotion, no migration creates them, schema.ts does not name them and the
- * script has no delete from them: the entries change nothing the script does.
- * From the promotion on they are in CREATED and inert, and the tests below
- * require schema.ts to name them and the script to delete from them. Remove the
- * three in the GATE-CHANGE that follows 0102's apply to production. Every other
- * table in DELETE_ORDER must be created by a numbered migration.
+ * IT HAS HELD THREE MORE, the same shape: appointment_survey_codes,
+ * appointment_survey_responses and appointment_survey_sends, SAT-01's tables,
+ * added by the GATE-CHANGE #1544 so the cleanup could list them before
+ * 0102_sat01_satisfaction_survey.sql reached main. 0102 was applied to
+ * production on 2026-10-07 from its held head and then merged (#1551); from
+ * that merge the three are in CREATED and their entries were inert, and they
+ * are removed in this GATE-CHANGE, which follows the apply.
+ *
+ * EMPTY NOW: every table in DELETE_ORDER must be created by a numbered
+ * migration.
  */
-const AHEAD_OF_MIGRATION = new Set([
-  "appointment_survey_codes",
-  "appointment_survey_responses",
-  "appointment_survey_sends",
-]);
+const AHEAD_OF_MIGRATION = new Set([]);
 
 test("every table it deletes from still exists in schema.ts", () => {
   // A renamed or dropped table lands here as a red test rather than as a failed
@@ -308,12 +304,14 @@ test("every table with an FK path to patients is covered", () => {
   // through 0079; 19 once 0080 (#1195, 2026-09-06) added
   // appointment_reschedule_requests; 20 once 0091 (CARE-01, #1374, 2026-09-21)
   // added patient_care_team; 21 once 0093 (RGPD-01, #1399, 2026-09-23) added
-  // patient_rgpd_acceptances. The floor was not raised at 0080, and its old
+  // patient_rgpd_acceptances; 24 once 0102 (SAT-01, #1551, 2026-10-07) added
+  // appointment_survey_sends, appointment_survey_codes and
+  // appointment_survey_responses. The floor was not raised at 0080, and its old
   // comment skipped that step, so it read 19 while the true count was 21 and a
-  // lost patients edge on 0093 stayed green. At 21 a floor of 22 fails with
-  // "found 21". Raise it in the same GATE-CHANGE that adds the next child of
+  // lost patients edge on 0093 stayed green. At 24 a floor of 25 fails with
+  // "found 24". Raise it in the same GATE-CHANGE that adds the next child of
   // patients to DELETE_ORDER.
-  assert.ok(reached.size >= 21, `expected at least 21 patient-rooted tables, found ${reached.size}`);
+  assert.ok(reached.size >= 24, `expected at least 24 patient-rooted tables, found ${reached.size}`);
   const covered = new Set(DELETE_ORDER);
   for (const t of reached) {
     assert.ok(covered.has(t), `${t} has an FK path to patients but the script never deletes from it`);
