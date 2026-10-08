@@ -14,10 +14,13 @@
  * EVERY REGISTO HERE IS A DRAFT, on purpose: a finalized registo can never be
  * deleted (clinical_records_enforce_immutability), so a suite that created one
  * could not remove its own rows. The rule that turns the rows read into a file
- * (finalized, not under AI review, not annulled, oldest first) is pure and is
- * pinned on every status in episode-export-core.test.ts; here the READ is
- * asserted row by row, and the selection and the engine are shown to produce
- * nothing from drafts.
+ * (finalized, not under AI review, oldest first; an annulled registo is in the
+ * file, with its mark) is pure and is pinned on every status in
+ * episode-export-core.test.ts; here the READ is asserted row by row, and the
+ * selection and the engine are shown to produce nothing from drafts. Whether
+ * the render prints a registo handed to it for a caller outside the patient's
+ * reach cannot be asked of drafts: that is registo-export.db.test.ts's, with
+ * the status read as finalized.
  *
  * THE ARMS:
  *   - the owner, an admin of the patient's clinic and the treating therapist
@@ -290,7 +293,8 @@ d("the episode PDF's reads and audit row under real RLS", () => {
   it("an episode of drafts selects nothing, and the engine prints nothing from it", async () => {
     const treating = ctx(therapistTreating, "therapist");
     expect(await mod.readEpisodeExportSelection(treating, ask)).toBeNull();
-    // Even handed the ids directly, the file is never made.
+    // Even handed the ids directly, the file is never made: a draft is
+    // printed for nobody, in scope or out of it.
     const forced = { episodeId: epApp, patientId: patient, recordIds: ORDER, leftOut: 0 };
     expect(await mod.renderEpisodeReport(treating, forced, "pt")).toBeNull();
     expect(await mod.renderEpisodeReport(ctx(therapistUnrelated, "therapist"), forced, "pt")).toBeNull();
@@ -356,7 +360,9 @@ d("the episode PDF's reads and audit row under real RLS", () => {
   ] as const)("the audit row, written as %s under their own policy: one row, ids and counts only", async (_label, userId, role) => {
     // The file's order, as the writer is handed it: descending by id, so it is
     // neither the ids' own order nor its reverse, and a stored list that was
-    // sorted or reversed on the way would not match.
+    // sorted or reversed on the way would not match. The writer is handed
+    // three ids and a count of two; which registos a real export holds is the
+    // selection rule's, not this arm's.
     const inFile = [rFirst, rSecond, rSecondV2].sort().reverse();
     await mod.recordEpisodeExport(ctx(userId, role), { episodeId: epApp, patientId: patient, recordIds: inFile, leftOut: 2 });
     const rows = await auditRows(userId);
@@ -378,7 +384,8 @@ d("the episode PDF's reads and audit row under real RLS", () => {
     ]);
     const metadata = rows[0]!.metadata as { recordIds: string[]; recordsIncluded: number };
     expect(metadata.recordsIncluded).toBe(metadata.recordIds.length);
-    // The two registos left out of this export are counted and not named.
+    // The row names the ids it was handed and no other registo of the
+    // episode: what is left out is a count.
     expect(JSON.stringify(rows[0])).not.toContain(rAiPending);
     expect(JSON.stringify(rows[0])).not.toContain(rAnnulled);
   });

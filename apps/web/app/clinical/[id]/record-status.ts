@@ -28,7 +28,11 @@ export function statusLabel(status: RecordStatus): string {
  * (locked / signed). Draft is hidden; an under-AI-review record is a draft
  * (record_status never finalizes from AI ingestion), so it is hidden too — and
  * the engine re-checks the full gate server-side (defense in depth).
+ *
+ * EXPORT-01: a caller that has read the AI review axis passes it, and then this
+ * IS the engine's gate, so the button is shown only where the engine prints.
+ * A list that does not carry the axis leaves it out, as before.
  */
-export function canDownloadReport(status: RecordStatus): boolean {
-  return isPrintable({ status, aiReviewState: null });
+export function canDownloadReport(status: RecordStatus, aiReviewState: string | null = null): boolean {
+  return isPrintable({ status, aiReviewState });
 }
