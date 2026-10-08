@@ -21,6 +21,7 @@ vi.mock("@/lib/admin/appointment-delete-password", () => ({
   verifyDeletePassword: vi.fn(),
 }));
 
+import { DrizzleQueryError } from "drizzle-orm";
 import { patientLocations, patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
@@ -53,6 +54,8 @@ function makeTx(opts: {
   // total of the 9 other-reference counts (one bucket is enough to prove refuse)
   references?: number;
   patientDeleted?: { id: string }[];
+  // what the patients DELETE rejects with, when the database refuses it
+  patientDeleteError?: unknown;
 }) {
   const { target = TARGET, records = 0, references = 0 } = opts;
   // Select order inside hardDeletePatient:
@@ -75,7 +78,14 @@ function makeTx(opts: {
         table === patientLocations ? "patient_locations" : table === patients ? "patients" : "other";
       stats.deleteOrder.push(tag);
       const rows = tag === "patients" ? (opts.patientDeleted ?? [{ id: target?.id }]) : [];
-      return { where: () => ({ returning: async () => rows }) };
+      return {
+        where: () => ({
+          returning: async () => {
+            if (tag === "patients" && opts.patientDeleteError) throw opts.patientDeleteError;
+            return rows;
+          },
+        }),
+      };
     },
   };
   return { tx, stats };
@@ -165,5 +175,59 @@ describe("hardDeletePatient (W5-08)", () => {
     const r = await hardDeletePatient("ghost", "correct-horse");
     expect(r).toEqual({ ok: false, error: "not_found" });
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+// The database's own refusal of the patients DELETE. The driver error is built
+// the way postgres.js raises it (the SQLSTATE is its `code`) and wrapped the way
+// Drizzle wraps it (a DrizzleQueryError with no `code`, the driver error at
+// `.cause`).
+describe("hardDeletePatient: the database's foreign-key refusal is named", () => {
+  const driverError = (code: string) => Object.assign(new Error("driver error"), { code });
+  const wrapped = (code: string) =>
+    new DrizzleQueryError("delete from patients where id = $1", ["patient-1"], driverError(code));
+
+  async function runWith(opts: Parameters<typeof makeTx>[0]) {
+    mockVerify.mockResolvedValue(true);
+    const made = makeTx(opts);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(made.tx as never)));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      return { r: await hardDeletePatient("patient-1", "correct-horse"), ...made };
+    } finally {
+      logged.mockRestore();
+    }
+  }
+
+  it("a DELETE refused with 23503 at the Drizzle error's cause is has_references, with no audit row", async () => {
+    const { r, stats } = await runWith({ patientDeleteError: wrapped("23503") });
+    expect(r).toEqual({ ok: false, error: "has_references" });
+    // The counts passed and the DELETE was reached: the refusal is the database's.
+    expect(stats.deleteOrder).toEqual(["patient_locations", "patients"]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("a DELETE refused with 23503 on the error itself is has_references too", async () => {
+    const { r } = await runWith({ patientDeleteError: driverError("23503") });
+    expect(r).toEqual({ ok: false, error: "has_references" });
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("another SQLSTATE on the DELETE is not named: it stays the generic error", async () => {
+    for (const code of ["23505", "23514", "42501"]) {
+      const { r } = await runWith({ patientDeleteError: wrapped(code) });
+      expect(r, code).toEqual({ ok: false, error: "error" });
+    }
+    const { r } = await runWith({ patientDeleteError: new Error("no code at all") });
+    expect(r).toEqual({ ok: false, error: "error" });
+  });
+
+  it("a 23503 raised by another statement of the transaction is not named", async () => {
+    mockAudit.mockRejectedValueOnce(
+      new DrizzleQueryError("insert into audit_log", [], driverError("23503")),
+    );
+    const { r, stats } = await runWith({});
+    expect(stats.deleteOrder).toEqual(["patient_locations", "patients"]);
+    expect(r).toEqual({ ok: false, error: "error" });
   });
 });

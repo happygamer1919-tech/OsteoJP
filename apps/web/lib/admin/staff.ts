@@ -30,6 +30,7 @@ import { invitesLiveSendEnabled, sendInviteEmail } from "@/lib/invites/email";
 import { type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { isForeignKeyViolation } from "./foreign-key-refusal";
 import { verifyDeletePassword } from "./appointment-delete-password";
 import { countActiveOwners, wouldRemoveLastOwner } from "./guards";
 
@@ -575,6 +576,23 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
 }
 
 /**
+ * The linked-records count `deleteStaffMember` refuses on: the sum of the rows
+ * its guard reads for this user. Exported so the DB-gated suite reads the same
+ * sum the action reads. RLS scopes every read to the tenant; counts only.
+ */
+export async function countStaffActivity(tx: DbTx, userId: string): Promise<number> {
+  const counts = await Promise.all([
+    tx.select({ n: count() }).from(appointments).where(or(eq(appointments.practitionerId, userId), eq(appointments.createdBy, userId))),
+    tx.select({ n: count() }).from(clinicalRecords).where(or(eq(clinicalRecords.practitionerId, userId), eq(clinicalRecords.signedBy, userId))),
+    tx.select({ n: count() }).from(clinicalEpisodes).where(eq(clinicalEpisodes.primaryPractitionerId, userId)),
+    tx.select({ n: count() }).from(appointmentNotes).where(eq(appointmentNotes.authorUserId, userId)),
+    tx.select({ n: count() }).from(auditLog).where(eq(auditLog.actorUserId, userId)),
+    tx.select({ n: count() }).from(analyticsEvents).where(or(eq(analyticsEvents.therapistUserId, userId), eq(analyticsEvents.actorUserId, userId))),
+  ]);
+  return counts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
+}
+
+/**
  * Hard-delete a staff member (W4-01, owner-requested). Password-gated (reuses
  * the tenant delete password from Administração → Definições, W3-06) + a
  * linked-records guard: REFUSED when the user has ANY appointment, clinical
@@ -585,7 +603,8 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
  *
  * The user's own CONFIG rows (therapist_services, availability_templates,
  * time_off) are deleted child-first (RETURNING); then the users row. Clinical
- * and audit data are never touched.
+ * and audit data are never touched. The database's own foreign-key refusal of
+ * the users DELETE (SQLSTATE 23503) is named `has_activity` as well.
  */
 export async function deleteStaffMember(
   actor: RequestContext,
@@ -622,15 +641,7 @@ export async function deleteStaffMember(
 
     // Linked-records guard — refuse if the user has ANY activity / clinical /
     // audit reference. Only an activity-free account is deletable.
-    const counts = await Promise.all([
-      tx.select({ n: count() }).from(appointments).where(or(eq(appointments.practitionerId, userId), eq(appointments.createdBy, userId))),
-      tx.select({ n: count() }).from(clinicalRecords).where(or(eq(clinicalRecords.practitionerId, userId), eq(clinicalRecords.signedBy, userId))),
-      tx.select({ n: count() }).from(clinicalEpisodes).where(eq(clinicalEpisodes.primaryPractitionerId, userId)),
-      tx.select({ n: count() }).from(appointmentNotes).where(eq(appointmentNotes.authorUserId, userId)),
-      tx.select({ n: count() }).from(auditLog).where(eq(auditLog.actorUserId, userId)),
-      tx.select({ n: count() }).from(analyticsEvents).where(or(eq(analyticsEvents.therapistUserId, userId), eq(analyticsEvents.actorUserId, userId))),
-    ]);
-    const activity = counts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
+    const activity = await countStaffActivity(tx, userId);
     if (activity > 0) throw new AdminError("has_activity");
 
     // Delete the user's own config rows child-first (RETURNING), then the user.
@@ -638,7 +649,16 @@ export async function deleteStaffMember(
     await tx.delete(availabilityTemplates).where(eq(availabilityTemplates.userId, userId)).returning({ id: availabilityTemplates.id });
     await tx.delete(timeOff).where(eq(timeOff.userId, userId)).returning({ id: timeOff.id });
 
-    const del = await tx.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
+    // Names the database's foreign-key refusal: a DELETE refused because a row
+    // still references the user is `has_activity`, the word the counts above
+    // give. Any other failure is rethrown untouched.
+    let del: { id: string }[];
+    try {
+      del = await tx.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
+    } catch (e) {
+      if (isForeignKeyViolation(e)) throw new AdminError("has_activity");
+      throw e;
+    }
     if (del.length === 0) throw new AdminError("not_found");
 
     await writeAudit(tx, actor, {

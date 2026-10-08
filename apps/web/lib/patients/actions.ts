@@ -30,6 +30,7 @@ import {
   patientNoteRevisions,
 } from "@osteojp/db";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
+import { isForeignKeyViolation } from "@/lib/admin/foreign-key-refusal";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
@@ -485,6 +486,8 @@ export type MergePatientsResult =
  *    (0025/0026/0030) and invoices are fiscally sensitive, so these can never
  *    be cascaded — only a reference-free patient (e.g. created by mistake) is
  *    hard-deletable. Everything else stays on the soft-delete path.
+ *    The database's own foreign-key refusal of the patients DELETE (SQLSTATE
+ *    23503) is named `has_references` as well.
  *
  * The only deletable child is the patient_locations junction (child-first,
  * RETURNING), then the patients row itself (RETURNING). Idempotent: a second
@@ -567,10 +570,19 @@ export async function hardDeletePatient(
         .where(eq(patientLocations.patientId, id))
         .returning({ id: patientLocations.id });
 
-      const deleted = await tx
-        .delete(patients)
-        .where(eq(patients.id, id))
-        .returning({ id: patients.id });
+      // Names the database's foreign-key refusal: a DELETE refused because a row
+      // still references the patient is `has_references`, the word the counts
+      // above give. Any other failure is rethrown untouched.
+      let deleted: { id: string }[];
+      try {
+        deleted = await tx
+          .delete(patients)
+          .where(eq(patients.id, id))
+          .returning({ id: patients.id });
+      } catch (e) {
+        if (isForeignKeyViolation(e)) throw new AdminError("has_references");
+        throw e;
+      }
       if (deleted.length === 0) throw new AdminError("not_found");
 
       // Audit in the SAME tx (rule 6). PII-FREE: ids + patient number + flags
