@@ -879,7 +879,8 @@ test("G1: 8 executions per event is what functions.ts costs, counted from its ru
   assert.equal(EXECUTIONS_PER_EVENT, runs + allSteps);
   assert.equal(EXECUTIONS_PER_EVENT, 8);
   assert.equal(EXECUTION_LIMIT, 20_000);
-  // EXACTLY TWO functions listen to the event this script sends: the fan-out, and the
+  // EXACTLY TWO functions IN functions.ts listen to the event this script sends (a listener
+  // in another file would not redden this test): the fan-out, and the
   // confirmation behind its filter. A third listener would cost executions the 8 does not count.
   const triggers = [...FUNCTIONS.matchAll(/^\s*triggers: (\[.*\]),$/gm)].map((m) => m[1]);
   assert.equal(triggers.length, (FUNCTIONS.match(/inngest\.createFunction\(/g) ?? []).length, "a function declares its triggers in a shape this test does not read");

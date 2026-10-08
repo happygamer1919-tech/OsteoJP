@@ -311,7 +311,10 @@ ONLY with the new scheduler settings live. Step 2 is the one thing that says
 they are; the script cannot check, and it prints that warning whenever the flag
 is given. Without the flag the appointment may have no reminder run. With it
 the appointment gets a fresh one either way. **In a GREEN sitting the flag is
-given only on the lead's ruling.** GREEN reports the count and halts.
+given only on the lead's ruling.** GREEN reports the count and halts. The
+script's own printed advice, "If that check passed: add --resend-attempted to
+include them.", is written for an operator who rules for himself. In a GREEN
+sitting it is not acted on.
 
 **The lock** is the file `~/.osteojp-inc1007-rearm.json.lock`. Every `--confirm`
 takes it before reading the database and removes it when it ends. A second
@@ -319,8 +322,10 @@ takes it before reading the database and removes it when it ends. A second
 is killed leaves the lock behind on purpose, and the script never removes a
 lock it did not take. Every later `--confirm` is refused until the file is
 gone. **In a GREEN sitting a lock left behind is a halt, and whether the file
-is removed is the lead's ruling.** The lock only works on one machine, so one
-machine is used for the whole operation.
+is removed is the lead's ruling.** The refusal the script prints ends "If no
+run is going: read the marker's attempted rows, then delete the lock file by
+hand." In a GREEN sitting that sentence is not acted on either. The lock only
+works on one machine, so one machine is used for the whole operation.
 
 ## The three gate lines the script prints
 
@@ -422,11 +427,6 @@ G3 line is printed and before anything is sent, with this sentence:
 G3: <u> marker row(s) cannot be checked against the ledger. The marker is this operation's only record of what was sent. Send nothing further and report every line above.
 ```
 
-If the second read itself fails, the line reads
-`G3 AFTER THIS RUN: NOT READ  (the G3 ledger read failed: <name and code>)` and
-the run ends FAILED. A run whose second read is above zero, or fails, is
-recorded in the marker with the state `g3_failed`, not `done`.
-
 If the read itself cannot be made, the run ends with `FAILED` and
 `the G3 ledger read failed: <name and code>`.
 
@@ -445,10 +445,17 @@ Above zero here ends the run with the same `FAILED` sentence, after the closing
 counts. If the run had already stopped on a failed send, that failure is the
 one printed.
 
+If the second read itself fails, the line reads
+`G3 AFTER THIS RUN: NOT READ  (the G3 ledger read failed: <name and code>)` and
+the run ends FAILED. A run whose second read is above zero, or fails, is
+recorded in the marker with the state `g3_failed`, not `done`.
+
 A confirm that had rows to send always prints the `G4 ATTEMPTED EQUALS SENT`
 line and a `G3 AFTER THIS RUN` line after its four closing counts. When it
-started no request, because every row changed since the read, there is no
-wait, no `settle` line and no read of the database, and the two lines are:
+started no request (every row changed since the read, or the run stopped or
+ran out of time before its first request), there is no wait, no `settle` line
+and no read of the database. The two lines can then stand directly above a
+`FAILED` line, and the `FAILED` line is the result. They are:
 
 ```text
 G4 ATTEMPTED EQUALS SENT: yes (0 requests started, 0 sent)
@@ -650,7 +657,8 @@ node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp
 ```
 
 `--max 200` is what step 6 sends with: see "Why 200" there. Read the counts.
-`ELIGIBLE` is the number the runs of step 6 would send now, all together. Then
+`ELIGIBLE` is the number the canary and the runs of step 6 would send now, all
+together. Then
 the three gate lines:
 
 - `G1 UNDER THE LIMIT OF 20000:` must say `yes`. On `NO`, halt.
@@ -750,7 +758,11 @@ means another run. The sends of the sitting are over when a dry run prints
 **Why 200.** One run then ends in a few minutes, inside the ten minutes a
 session allows a command. At about 2,500 appointments that is up to 14 runs.
 The margin of every one of them is 690 s. The few minutes are reasoned from
-local runs: no send to the hosted scheduler was timed.
+local runs: no send to the hosted scheduler was timed. The script's own stop
+comes later than ten minutes: its last send may start up to 615 s after the
+read began, then come the 20 s wait and the second ledger read, about 11
+minutes in all. That is reached only when a send averages about 3 seconds. A
+run the session cuts before then is a killed run: see "The lock".
 
 **Step 6b. Only if step 6 held rows back for their 48 hour mark.** Look at the
 dry run's line "the 48 hour mark (only a run from 1 minute after the mark, and
@@ -811,7 +823,10 @@ of step 6, unchanged. It is run no sooner than 12 minutes after the read of the
 last run that sent. A margin is 690 s at most, so by then the window of that
 last run has closed, and this dry run's G3 line reads every window of the
 sitting whole. It must say 0. The same dry run prints the final G4 line, the
-one the owner reads.
+one the owner reads. **It must also print `ELIGIBLE: 0`.** The G4 line counts
+an eligible row as re-armed, and a dry run sends nothing: rows that became
+eligible during the wait (their 25 hours ran out) would be in neither number.
+If `ELIGIBLE` is above zero, repeat step 6 and close again.
 
 **If a run stops half way.** It prints `FAILED: stopped at <appointment id>` and
 why. Report that line and every closing line above it. Then run the dry run
@@ -1207,9 +1222,9 @@ there.
   started no request, and the ledger statement running with nothing to check.
   None was run on the command line in this round's rehearsal. They rest on the
   test file and on a probe of the ledger statement through the script's own
-  reader on the local database. A command-line rehearsal of the final bytes,
-  made after this document was committed, is recorded in the dispatch and not
-  here.
+  reader on the local database. A command-line rehearsal of the final bytes
+  is to be recorded in the dispatch before READY, with the script's sha256;
+  it is not recorded here.
 - **`--max 200`.** The main runs carried `--max 1000`. The margin is the same
   690 s.
 - **A real confirm.** No event went to the hosted scheduler and none could.
