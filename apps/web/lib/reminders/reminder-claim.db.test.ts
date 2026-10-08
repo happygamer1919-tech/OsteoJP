@@ -16,7 +16,8 @@
  *      the retry still sends.
  *   4. WHICH ROWS COUNT, row by row: the start, the offset, the channel, the
  *      template, the outcome, the order in time, an early claim, a released
- *      claim, a claim of another start in between.
+ *      claim, a claim of another start in between, and a RELEASED claim in
+ *      between, which takes no `sent` row from the live claim before it.
  *   5. TWO TENANTS. Rows of another tenant that name this very appointment do
  *      not hold it.
  *
@@ -439,9 +440,10 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     expect(await claimsOf(appt)).toHaveLength(2);
     expect(h.sends).toEqual([]);
 
-    // Brought back at the same start, and asked again: it goes out. Whether a
-    // suppression should instead be final for its start is an open question
-    // (BLOCKING_LEDGER_OUTCOMES); until it is ruled this is the behaviour.
+    // Brought back at the same start, and asked again: it goes out. The
+    // sweep's design calls a suppression final for its start; that is held
+    // for a ruling (BLOCKING_LEDGER_OUTCOMES), and until it is ruled this is
+    // the behaviour.
     h.loadReminderData.mockResolvedValue(loaded(appt));
     expect(await dispatchReminder(tenantA, appt, "24h", "sms")).toMatchObject({ dispatched: true });
     expect(h.sends).toEqual(["sms"]);
@@ -600,6 +602,42 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
       expect(await releasesOf(appt)).toHaveLength(1);
     });
   }
+
+  it("a sender refused WHILE another is still at the provider: its released claim does not take the other's `sent` row, and its retry is HELD", async () => {
+    const { dispatchReminder } = await import("./dispatch");
+    const appt = await fresh();
+    h.loadReminderData.mockResolvedValue(loaded(appt));
+
+    // Sender 1 claims and is slow at the provider. While it waits, sender 2
+    // claims the same reminder (nothing is sent yet, so it is not held), is
+    // refused, and releases. Only then does sender 1's hand-over come back.
+    let refusal: unknown = null;
+    h.duringSend = async () => {
+      h.duringSend = null;
+      h.transport = "refuse";
+      refusal = await dispatchReminder(tenantA, appt, "24h", "sms").catch((e: unknown) => e);
+      h.transport = "sent";
+    };
+    expect(await dispatchReminder(tenantA, appt, "24h", "sms")).toMatchObject({ dispatched: true });
+    expect(refusal).toBeInstanceOf(Error);
+    expect((refusal as Error).message).toBe("provider refused");
+
+    // On record, in this order: two claims, the refusal, the release of the
+    // SECOND claim, and the first sender's `sent` row last.
+    const claims = await claimsOf(appt);
+    expect(claims).toHaveLength(2);
+    expect((await releasesOf(appt)).map((r) => r.claim_id)).toEqual([claims[1]!.id]);
+    expect((await ledgerOf(appt)).map((r) => r.outcome)).toEqual(["provider_error", "sent"]);
+    expect(h.sends).toEqual(["sms", "sms"]);
+    const after = await footprint(appt);
+
+    // Sender 2's retry. The reminder WAS sent, by sender 1: held, and nothing
+    // more is written. Before released claims were left out of "the next
+    // claim", the `sent` row counted for the released claim, nothing was
+    // held, and this call sent a second copy.
+    expect(await dispatchReminder(tenantA, appt, "24h", "sms")).toEqual({ dispatched: false, reason: "claim_held" });
+    expect(await footprint(appt)).toEqual(after);
+  });
 
   it(
     "a FAILED release, then the retry sends: the claim stays live with no outcome, and that blocks nothing",
@@ -895,6 +933,56 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
       },
     },
     {
+      name: "a later claim of this start that was RELEASED before the row: its sender threw, so the row is the first claim's",
+      held: true,
+      seed: async (appt) => {
+        await seedClaim(appt);
+        const laterId = await seedClaim(appt, { at: at(ROW_AT - 20) });
+        await seedRelease(appt, laterId, { at: at(ROW_AT - 10) });
+        await seedLedger(appt);
+      },
+    },
+    {
+      name: "a later claim of this start released AFTER the row: still not that claim's row",
+      held: true,
+      seed: async (appt) => {
+        await seedClaim(appt);
+        const laterId = await seedClaim(appt, { at: at(ROW_AT - 20) });
+        await seedLedger(appt);
+        await seedRelease(appt, laterId, { at: at(ROW_AT + 10) });
+      },
+    },
+    {
+      name: "a RELEASED claim of ANOTHER START between the claim and the row does not take the row away",
+      held: true,
+      seed: async (appt) => {
+        await seedClaim(appt);
+        const laterId = await seedClaim(appt, { startsAt: OTHER_START, at: at(ROW_AT - 20) });
+        await seedRelease(appt, laterId, { at: at(ROW_AT - 10) });
+        await seedLedger(appt);
+      },
+    },
+    {
+      name: "a later claim of another start, and a release that names ANOTHER claim: the later claim is live and the row is its own",
+      held: false,
+      seed: async (appt) => {
+        await seedClaim(appt);
+        await seedClaim(appt, { startsAt: OTHER_START, at: at(ROW_AT - 20) });
+        await seedRelease(appt, randomUUID(), { at: at(ROW_AT - 10) });
+        await seedLedger(appt);
+      },
+    },
+    {
+      name: "a later claim of another start, and a row of another action that carries its id: not a release, the row is the later claim's",
+      held: false,
+      seed: async (appt) => {
+        await seedClaim(appt);
+        const laterId = await seedClaim(appt, { startsAt: OTHER_START, at: at(ROW_AT - 20) });
+        await seedRelease(appt, laterId, { at: at(ROW_AT - 10), action: "appointment.update" });
+        await seedLedger(appt);
+      },
+    },
+    {
       name: "a claim of another start AFTER the row: the row stays this claim's",
       held: true,
       seed: async (appt) => {
@@ -1031,6 +1119,18 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     await seedLedger(foreignRelease, { tenant: tenantB });
     await seedRelease(foreignRelease, claimId, { tenant: tenantA });
     expect(await ask(foreignRelease)).toBe(true);
+
+    // The release of a LATER claim is another tenant's: that claim is still
+    // live, and the row is its own.
+    const foreignLaterRelease = await fresh("B");
+    await seedClaim(foreignLaterRelease, { tenant: tenantB });
+    const laterId = await seedClaim(foreignLaterRelease, { tenant: tenantB, startsAt: OTHER_START, at: at(10) });
+    await seedLedger(foreignLaterRelease, { tenant: tenantB });
+    await seedRelease(foreignLaterRelease, laterId, { tenant: tenantA, at: at(20) });
+    expect(await ask(foreignLaterRelease)).toBe(false);
+    // NEGATIVE CONTROL: the same release under tenant B's own id hands the row back.
+    await seedRelease(foreignLaterRelease, laterId, { tenant: tenantB, at: at(20) });
+    expect(await ask(foreignLaterRelease)).toBe(true);
   });
 
   it("two tenants: each holds its own reminder and neither holds the other's", async () => {

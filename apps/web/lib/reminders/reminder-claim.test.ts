@@ -261,9 +261,10 @@ describe("the reminder claim: held or not", () => {
   });
 
   it("ONE outcome makes a claim block: sent. A suppression and a provider refusal do not", () => {
-    // The whole list, to the word. Adding `suppressed` decides whether a
-    // suppression is final for its start, which is an open question
-    // (reminder-claim.ts), so this fails until somebody rules it.
+    // The whole list, to the word. The sweep's design names `suppressed` too;
+    // adding it decides whether a suppression is final for its start, which
+    // is held for a ruling (reminder-claim.ts), so this fails until somebody
+    // rules it.
     expect([...BLOCKING_LEDGER_OUTCOMES]).toEqual(["sent"]);
   });
 });

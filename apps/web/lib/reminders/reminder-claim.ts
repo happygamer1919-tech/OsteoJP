@@ -37,7 +37,10 @@ import { REMINDER_OFFSETS } from "./offsets";
  * `audit_log` is append only, so a release is a second row that names its
  * claim (`releaseReminderClaim`). A claim is LIVE while no release names it.
  * The dispatcher writes one whenever it throws after taking a claim, and
- * throws the same error on. Today a release changes no answer, because a
+ * throws the same error on. Today a release changes one answer: a `sent` row
+ * is never counted as a released claim's own, so the released claim of a
+ * sender that was refused cannot take that row away from the live claim of
+ * the sender that did send (`claimIsHeld`). It changes no other, because a
  * claim with no `sent` row does not block anyway; it keeps the claims in order
  * for the change that will make a live claim block at any age.
  *
@@ -81,13 +84,16 @@ export const REMINDER_CLAIM_RELEASE_ACTION = "appointment.reminder_claim_release
  * `sent`: the message was handed to the provider. A second sender would be a
  * second copy of it.
  *
- * `suppressed` IS NOT HERE, AND THAT IS A QUESTION LEFT OPEN, NOT A RULING. A
+ * `suppressed` IS NOT HERE, AND THAT IS A DEPARTURE FROM THE SWEEP'S DESIGN,
+ * HELD FOR A RULING. THE DESIGN NAMES TWO OUTCOMES, `sent` AND `suppressed`,
+ * and calls a suppression final for its start. This list has one. A
  * suppression is the dispatcher deciding, on record, to send nothing: the
  * visit was cancelled, the request was not accepted, the channel is off. If
  * it blocked, a second sender that arrives after the visit was put right
  * would send nothing, where today it reads the row again and sends. Such a
  * second sender exists: the scheduler runs the step again when it loses the
- * answer of the first. Whether a suppression is final for its start is not
+ * answer of the first. And the same design leaves a visit brought back after
+ * its mark to the owner. Whether a suppression is final for its start is not
  * this file's to decide, so until it is ruled a suppressed reminder is asked
  * again exactly as it was before claims existed. Adding the word here is the
  * whole change.
@@ -194,12 +200,21 @@ type ClaimColumns = Record<"tenantId" | "entityType" | "entityId" | "action" | "
  *
  * "AFTER IT" IS DERIVED, because the ledger holds no start, no offset and no
  * claim id (0075), and it is the derivation the second count on Lembretes SMS
- * uses (reminder-numbers.ts): a row for the same appointment and channel,
- * whose template is this offset's reminder (`reminder.<offset>.`, the
- * fee-notice body included), written at or after the claim and BEFORE THE
- * NEXT CLAIM OF THIS REMINDER, WHATEVER START THAT ONE NAMES. Without the last
- * clause a visit moved away and back would let the row of the other start
- * count for the old claim.
+ * uses (reminder-numbers.ts), with one clause more: a row for the same
+ * appointment and channel, whose template is this offset's reminder
+ * (`reminder.<offset>.`, the fee-notice body included), written at or after
+ * the claim and BEFORE THE NEXT LIVE CLAIM OF THIS REMINDER, WHATEVER START
+ * THAT ONE NAMES. Without the last clause a visit moved away and back would
+ * let the row of the other start count for the old claim.
+ *
+ * A RELEASED CLAIM IN BETWEEN DOES NOT TAKE THE ROW (the clause the count does
+ * not have). A release is written only by a sender that threw, and a sender
+ * that threw handed nothing over: the dispatcher writes its `sent` row as the
+ * last thing it does (dispatch.ts). So a `sent` row is never a released
+ * claim's own, and it stays with the live claim before it. The order this
+ * closes: one sender is slow at the provider, a second claims, is refused and
+ * releases, and then the first one's `sent` row lands. The second sender's
+ * retry is held, where it would have sent a second copy.
  *
  * An offset this build does not know has no mark and no rule behind it, and
  * never holds anything.
@@ -220,6 +235,16 @@ export async function claimIsHeld(
   const claim = alias(auditLog, "reminder_claim");
   const release = alias(auditLog, "reminder_claim_release");
   const later = alias(auditLog, "reminder_later_claim");
+  const laterRelease = alias(auditLog, "reminder_later_claim_release");
+  /** A release of this appointment that names the claim with this id. */
+  const releaseNaming = (r: ClaimColumns, claimId: PgColumn): SQL | undefined =>
+    and(
+      eq(r.tenantId, args.tenantId),
+      eq(r.entityType, "appointment"),
+      eq(r.entityId, args.appointmentId),
+      eq(r.action, REMINDER_CLAIM_RELEASE_ACTION),
+      sql`${r.metadata}->>'claimId' = ${claimId}::text`,
+    );
   /** A claim of THIS reminder (appointment, offset, channel), of any start. */
   const ofThisReminder = (t: ClaimColumns): SQL | undefined =>
     and(
@@ -241,20 +266,7 @@ export async function claimIsHeld(
         // `toISOString()` of the same column, so equality is exact.
         sql`${claim.metadata}->>'startsAt' = ${args.startsAt.toISOString()}`,
         sql`${claim.metadata}->>'early' is distinct from 'true'`,
-        notExists(
-          tx
-            .select({ one: sql`1` })
-            .from(release)
-            .where(
-              and(
-                eq(release.tenantId, args.tenantId),
-                eq(release.entityType, "appointment"),
-                eq(release.entityId, args.appointmentId),
-                eq(release.action, REMINDER_CLAIM_RELEASE_ACTION),
-                sql`${release.metadata}->>'claimId' = ${claim.id}::text`,
-              ),
-            ),
-        ),
+        notExists(tx.select({ one: sql`1` }).from(release).where(releaseNaming(release, claim.id))),
         exists(
           tx
             .select({ one: sql`1` })
@@ -276,6 +288,13 @@ export async function claimIsHeld(
                         ofThisReminder(later),
                         gt(later.createdAt, claim.createdAt),
                         lte(later.createdAt, reminderDispatches.createdAt),
+                        // Live: a released claim in between does not take the row.
+                        notExists(
+                          tx
+                            .select({ one: sql`1` })
+                            .from(laterRelease)
+                            .where(releaseNaming(laterRelease, later.id)),
+                        ),
                       ),
                     ),
                 ),
