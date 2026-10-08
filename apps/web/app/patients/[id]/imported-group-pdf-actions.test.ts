@@ -6,13 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 //
 //   capability, input shape  ->  which registos (the caller's own reads)
 //     ->  the document ceiling, once  ->  render  ->  upload  ->  signed URL
-//     ->  the URL.
+//     ->  the audit row  ->  the URL.
 //
 // G2: a refusal at any step returns `{ url: null }` and runs NO later step:
-// nothing rendered, stored or signed, and before the ceiling, no slot spent.
-// Reception is refused before any read. A caller whose own reads show no such
-// group (a patient outside their reach) gets the same answer. Which registos
-// the reads return for which role is registo-export.db.test.ts's, on real rows.
+// nothing rendered, stored, signed or audited, and before the ceiling, no slot
+// spent. Reception is refused before any read. A caller whose own reads show no
+// such group (a patient outside their reach) gets the same answer. Which
+// registos the reads return for which role is registo-export.db.test.ts's, on
+// real rows.
+//
+// G4: a finished export asks for its audit row exactly once, with ids and
+// counts and nothing else (the group's label is not among them). When the row
+// cannot be written the URL is not handed out and the file just stored is
+// removed. The row itself, on the real table, is export-audit.db.test.ts's.
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ requireRequestContext: vi.fn() }));
@@ -23,6 +29,7 @@ vi.mock("@/lib/clinical/report/episode-export", () => ({
   readImportedGroupExportSelection: vi.fn(),
   renderImportedGroupReport: vi.fn(),
 }));
+vi.mock("@/lib/clinical/export-audit", () => ({ recordImportedGroupExport: vi.fn() }));
 vi.mock("@/lib/clinical/document-rate-limit", () => ({ documentGenerationAllowed: vi.fn() }));
 vi.mock("@/lib/clinical/storage", () => ({ ATTACHMENTS_BUCKET: "clinical-attachments" }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn() }));
@@ -30,9 +37,11 @@ vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn() }));
 import type { RequestContext } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
+import { recordImportedGroupExport } from "@/lib/clinical/export-audit";
 import {
   readEpisodeExportSelection,
   readImportedGroupExportSelection,
+  recordEpisodeExport,
   renderEpisodeReport,
   renderImportedGroupReport,
 } from "@/lib/clinical/report/episode-export";
@@ -42,6 +51,7 @@ import { downloadImportedGroupReportUrlAction } from "./episode-pdf-actions";
 const mockCtx = vi.mocked(requireRequestContext);
 const mockSelection = vi.mocked(readImportedGroupExportSelection);
 const mockRender = vi.mocked(renderImportedGroupReport);
+const mockAudit = vi.mocked(recordImportedGroupExport);
 const mockCeiling = vi.mocked(documentGenerationAllowed);
 const mockAdmin = vi.mocked(createSupabaseAdminClient);
 
@@ -65,7 +75,7 @@ let logged: ReturnType<typeof vi.spyOn>;
 const failureLine = (step: string) => `[episode-pdf] the episode export failed at step: ${step}`;
 
 type StorageFault = "error" | "throws";
-function stubStorage(opts: { upload?: StorageFault; sign?: StorageFault } = {}) {
+function stubStorage(opts: { upload?: StorageFault; sign?: StorageFault; remove?: StorageFault } = {}) {
   upload = vi.fn(async () => {
     steps.push("upload");
     if (opts.upload === "throws") throw new Error("Zzz Paciente Inventado");
@@ -76,7 +86,11 @@ function stubStorage(opts: { upload?: StorageFault; sign?: StorageFault } = {}) 
     if (opts.sign === "throws") throw new Error("Zzz Paciente Inventado");
     return opts.sign === "error" ? { data: null, error: { message: "x" } } : { data: { signedUrl: SIGNED }, error: null };
   });
-  remove = vi.fn();
+  remove = vi.fn(async () => {
+    steps.push("remove");
+    if (opts.remove === "throws") throw new Error("Zzz Paciente Inventado");
+    return opts.remove === "error" ? { data: null, error: { message: "x" } } : { data: [], error: null };
+  });
   mockAdmin.mockImplementation(() => {
     steps.push("admin");
     return {
@@ -104,14 +118,20 @@ function allGood(role: RequestContext["role"] = "owner") {
     steps.push("render");
     return pdf;
   });
+  mockAudit.mockImplementation(async () => {
+    steps.push("audit");
+  });
   stubStorage();
 }
 
+/** Nothing was rendered, stored, signed or audited, and nothing was removed. */
 function expectNothingProduced() {
   expect(mockRender).not.toHaveBeenCalled();
   expect(mockAdmin).not.toHaveBeenCalled();
   expect(upload).not.toHaveBeenCalled();
   expect(createSignedUrl).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
@@ -126,9 +146,9 @@ afterEach(() => {
 });
 
 describe("downloadImportedGroupReportUrlAction: an export, step by step", () => {
-  it("the order: which registos, the ceiling, the render, the upload, the signed URL, and only then the URL", async () => {
+  it("the order: which registos, the ceiling, the render, the upload, the signed URL, the audit row, and only then the URL", async () => {
     expect(await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia")).toEqual({ url: SIGNED });
-    expect(steps).toEqual(["selection", "ceiling", "render", "admin", "upload", "sign"]);
+    expect(steps).toEqual(["selection", "ceiling", "render", "admin", "upload", "sign", "audit"]);
     expect(remove).not.toHaveBeenCalled();
     expect(logged).not.toHaveBeenCalled();
   });
@@ -166,6 +186,84 @@ describe("downloadImportedGroupReportUrlAction: an export, step by step", () => 
     expect(path).toBe(upload.mock.calls[0]![0]);
     expect(ttl).toBe(60);
     expect(options).toEqual({ download: "relatorio-episodio-importado-4444aaaa.pdf" });
+  });
+});
+
+describe("downloadImportedGroupReportUrlAction: the audit row of an export (G4)", () => {
+  it.each(["owner", "admin", "therapist"] as const)(
+    "%s: asked for ONCE, as that caller, with the patient, the registos in the file and the count left out, and nothing else",
+    async (role) => {
+      allGood(role);
+      await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia");
+      expect(mockAudit).toHaveBeenCalledTimes(1);
+      expect(mockAudit).toHaveBeenCalledWith(ctxOf(role), { patientId: PATIENT, recordIds: ["r1", "r2", "r3"], leftOut: 1 });
+      // It is the imported group's row, never the app episode's.
+      expect(recordEpisodeExport).not.toHaveBeenCalled();
+    },
+  );
+
+  it("the group's label is handed to the read and to nothing that is written: not the row, not the path", async () => {
+    await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia");
+    expect(JSON.stringify(mockAudit.mock.calls)).not.toContain("Osteopatia");
+    expect(String(upload.mock.calls[0]![0])).not.toContain("Osteopatia");
+  });
+
+  it("the registos audited are the ones the render put in the file, in the file's order, not the ones selected", async () => {
+    // Selected: r1, r2 and r3. The engine printed r3 and r1, in that order.
+    mockRender.mockResolvedValue({ ...pdf, recordIds: ["r3", "r1"], leftOut: 2 });
+    await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia");
+    expect(mockAudit.mock.calls[0]![1]).toEqual({ patientId: PATIENT, recordIds: ["r3", "r1"], leftOut: 2 });
+  });
+
+  it("two exports are two rows asked for: one per file handed out", async () => {
+    await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia");
+    await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia");
+    expect(mockAudit).toHaveBeenCalledTimes(2);
+  });
+
+  it("the audit row cannot be written: the signed URL is NOT handed out, and the file just stored is removed", async () => {
+    mockAudit.mockRejectedValue(new Error("boom"));
+    expect(await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia")).toEqual({ url: null });
+    expect(steps).toEqual(["selection", "ceiling", "render", "admin", "upload", "sign", "remove"]);
+    // The object removed is the one this call stored, in the bucket it stored it in, and no other.
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith([upload.mock.calls[0]![0]]);
+    expect(buckets).toEqual(["clinical-attachments", "clinical-attachments", "clinical-attachments"]);
+  });
+
+  it.each(["error", "throws"] as const)(
+    "the removal is best effort: when it fails too (%s), the answer and the line logged are still the audit's",
+    async (fault) => {
+      stubStorage({ remove: fault });
+      mockAudit.mockRejectedValue(new Error("boom"));
+      expect(await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia")).toEqual({ url: null });
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(logged.mock.calls).toEqual([[failureLine("audit")]]);
+    },
+  );
+
+  it("no row is asked for, and nothing is removed, on any outcome that hands out no file", async () => {
+    const outcomes: [string, () => void][] = [
+      ["reception", () => mockCtx.mockResolvedValue(ctxOf("reception"))],
+      ["nothing to export", () => mockSelection.mockResolvedValue(null)],
+      ["the selection read fails", () => mockSelection.mockRejectedValue(new Error("boom"))],
+      ["the ceiling refuses", () => mockCeiling.mockResolvedValue(false)],
+      ["the ceiling fails", () => mockCeiling.mockRejectedValue(new Error("boom"))],
+      ["no registo printed", () => mockRender.mockResolvedValue(null)],
+      ["the render fails", () => mockRender.mockRejectedValue(new Error("boom"))],
+      ["the upload answers an error", () => stubStorage({ upload: "error" })],
+      ["the upload throws", () => stubStorage({ upload: "throws" })],
+      ["the signed URL answers an error", () => stubStorage({ sign: "error" })],
+      ["the signed URL throws", () => stubStorage({ sign: "throws" })],
+    ];
+    for (const [label, arrange] of outcomes) {
+      vi.clearAllMocks();
+      allGood();
+      arrange();
+      expect(await downloadImportedGroupReportUrlAction(PATIENT, "Osteopatia"), label).toEqual({ url: null });
+      expect(mockAudit, label).not.toHaveBeenCalled();
+      expect(remove, label).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -225,6 +323,7 @@ describe("downloadImportedGroupReportUrlAction: a failure logs one line naming t
     ["the upload throws", "upload", () => stubStorage({ upload: "throws" })],
     ["the signed URL answers with an error", "sign", () => stubStorage({ sign: "error" })],
     ["the signed URL throws", "sign", () => stubStorage({ sign: "throws" })],
+    ["the audit row cannot be written", "audit", () => mockAudit.mockRejectedValue(new Error("Zzz Paciente Inventado"))],
   ];
 
   it.each(cases)("%s: no URL, and one line, for step '%s', with no id and none of the error's text", async (_label, step, arrange) => {

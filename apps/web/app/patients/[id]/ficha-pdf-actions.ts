@@ -4,6 +4,7 @@ import { can } from "@osteojp/auth";
 import { locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
+import { recordPatientFichaExport } from "@/lib/clinical/export-audit";
 import { readPatientFichaExportSelection, renderPatientFichaReport } from "@/lib/clinical/report/ficha-export";
 import { fichaReportPath } from "@/lib/clinical/report/ficha-export-core";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
@@ -31,7 +32,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *      nothing;
  *   3. THE DOCUMENT CEILING (document-rate-limit.ts), once: one export writes
  *      one permanent Storage object, whatever the number of registos in it;
- *   4. the render, the upload and the signed URL.
+ *   4. the render, the upload and the signed URL;
+ *   5. THE AUDIT ROW (`patient.export_pdf`, document `ficha`), before the URL
+ *      is returned. If it cannot be written, the URL is not handed out: no
+ *      export leaves without its row. The file just stored is then removed,
+ *      best effort, since nothing will ever link to it. The row names the
+ *      patient and the registos in the file and counts the rest; no section
+ *      is named.
  */
 export async function downloadPatientFichaUrlAction(patientId: string): Promise<{ url: string | null }> {
   const ctx = await requireRequestContext();
@@ -65,6 +72,25 @@ export async function downloadPatientFichaUrlAction(patientId: string): Promise<
       .from(ATTACHMENTS_BUCKET)
       .createSignedUrl(path, 60, { download: pdf.filename });
     if (signed.error || !signed.data) return failedAt("sign");
+
+    try {
+      await recordPatientFichaExport(ctx, {
+        patientId: selection.patientId,
+        recordIds: pdf.recordIds,
+        sections: pdf.sections,
+        leftOut: pdf.leftOut,
+      });
+    } catch {
+      // No row, so no URL, and the file just stored will never be linked to:
+      // it is removed. Best effort: whether or not the removal works, the
+      // answer is the same and the failure logged is the audit's.
+      try {
+        await admin.storage.from(ATTACHMENTS_BUCKET).remove([path]);
+      } catch {
+        // Nothing to add: the audit failure is what is reported below.
+      }
+      return failedAt("audit");
+    }
     return { url: signed.data.signedUrl };
   } catch {
     // A read, the ceiling, the render or a Storage call threw: never surface
@@ -74,7 +100,7 @@ export async function downloadPatientFichaUrlAction(patientId: string): Promise<
 }
 
 /** The steps of an export that can fail. */
-type ExportStep = "read" | "limit" | "render" | "upload" | "sign";
+type ExportStep = "read" | "limit" | "render" | "upload" | "sign" | "audit";
 
 /**
  * A FAILED EXPORT IS LOGGED, BECAUSE THE SCREEN CANNOT REPORT IT: every refusal

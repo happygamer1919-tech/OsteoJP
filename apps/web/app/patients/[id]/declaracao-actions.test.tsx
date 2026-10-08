@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({
@@ -31,6 +31,12 @@ vi.mock("@/lib/patients/actions", () => ({ updatePatient: vi.fn() }));
 vi.mock("@/lib/clinical/document-rate-limit", () => ({
   documentGenerationAllowed: vi.fn(async () => true),
 }));
+// EXPORT-01: the action writes one audit row per declaration handed out. The
+// writer is stubbed here (it answers, so the suites above it in this file are
+// about what they were about); what the ACTION does with it is the last suite
+// of this file, and the row itself, on the real table, is
+// lib/clinical/export-audit.db.test.ts's.
+vi.mock("@/lib/clinical/export-audit", () => ({ recordDeclaracaoExport: vi.fn() }));
 
 import { requireRequestContext } from "@/lib/auth/context";
 import {
@@ -39,6 +45,7 @@ import {
 } from "@/lib/clinical/declaracao/generate";
 import { ClinicalError } from "@/lib/clinical/errors";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
+import { recordDeclaracaoExport } from "@/lib/clinical/export-audit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPatient } from "@/lib/patients/queries";
 import { updatePatient } from "@/lib/patients/actions";
@@ -50,6 +57,7 @@ const mockPdf = vi.mocked(generateDeclaracaoPdf);
 const mockAvailability = vi.mocked(declaracaoAvailability);
 const mockCeiling = vi.mocked(documentGenerationAllowed);
 const mockAdmin = vi.mocked(createSupabaseAdminClient);
+const mockAudit = vi.mocked(recordDeclaracaoExport);
 
 const ctx: RequestContext = { tenantId: "t1", role: "reception", userId: "u1" };
 // R45: every declaration names its location (the marcação's, or the one chosen
@@ -106,9 +114,11 @@ function expectNothingProducedOrSpent(storage: ReturnType<typeof stubStorage>) {
   expect(storage.createSignedUrl).not.toHaveBeenCalled();
   // No slot of the per-user generation ceiling.
   expect(mockCeiling).not.toHaveBeenCalled();
-  // No write to the patient record (which is also the only audited write here).
+  // No write to the patient record.
   expect(vi.mocked(getPatient)).not.toHaveBeenCalled();
   expect(vi.mocked(updatePatient)).not.toHaveBeenCalled();
+  // No audit row: nothing was handed out.
+  expect(mockAudit).not.toHaveBeenCalled();
 }
 
 describe("R45 - a declaration with NO location is malformed input, refused before anything", () => {
@@ -392,5 +402,134 @@ describe("PL-20 — a captured NIF is written back only when the record had none
     mockUpdate.mockRejectedValue(new Error("boom"));
     const result = await generateDeclaracaoUrlAction({ ...req, nif: "123456789" });
     expect(result.url).toContain("https://storage.example/signed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EXPORT-01, G4: "each export. EXPECT: exactly one audit row, no patient text
+// in it." What the action asks its writer for, when, and what it does when the
+// row cannot be written.
+// ---------------------------------------------------------------------------
+describe("EXPORT-01 G4 - one audit row per declaration handed out, ids only", () => {
+  const SIGNED = "https://storage.example/signed?token=abc";
+  let steps: string[] = [];
+  let upload: ReturnType<typeof vi.fn>;
+  let createSignedUrl: ReturnType<typeof vi.fn>;
+  let remove: ReturnType<typeof vi.fn>;
+  let logged: ReturnType<typeof vi.spyOn>;
+
+  type Fault = "error" | "throws";
+  function stub(opts: { upload?: Fault; sign?: Fault; remove?: Fault } = {}) {
+    const answer = (name: string, fault: Fault | undefined, data: unknown) => async () => {
+      steps.push(name);
+      if (fault === "throws") throw new Error("Zzz Paciente Inventado");
+      return fault === "error" ? { data: null, error: { message: "x" } } : { data, error: null };
+    };
+    upload = vi.fn(answer("upload", opts.upload, { path: "x" }));
+    createSignedUrl = vi.fn(answer("sign", opts.sign, { signedUrl: SIGNED }));
+    remove = vi.fn(answer("remove", opts.remove, []));
+    mockAdmin.mockReturnValue({
+      storage: { from: () => ({ upload, createSignedUrl, remove }) },
+    } as unknown as ReturnType<typeof createSupabaseAdminClient>);
+  }
+
+  beforeEach(() => {
+    steps = [];
+    stub();
+    mockPdf.mockImplementation(async () => {
+      steps.push("render");
+      return { bytes: new Uint8Array([1]), filename: "d.pdf" };
+    });
+    mockAudit.mockImplementation(async () => {
+      steps.push("audit");
+    });
+    vi.mocked(getPatient).mockReset().mockResolvedValue({ id: "p1", nif: null } as never);
+    vi.mocked(updatePatient).mockReset();
+    logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    logged.mockRestore();
+  });
+
+  it("the order: the render, the upload, the signed URL, the audit row, and only then the URL", async () => {
+    expect(await generateDeclaracaoUrlAction(req)).toEqual({ url: SIGNED });
+    expect(steps).toEqual(["render", "upload", "sign", "audit"]);
+    expect(remove).not.toHaveBeenCalled();
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it.each(["owner", "admin", "therapist", "reception"] as const)(
+    "%s: asked for ONCE, as that caller, with the patient and the location and nothing else",
+    async (role) => {
+      const caller: RequestContext = { ...ctx, role };
+      mockCtx.mockResolvedValue(caller);
+      await generateDeclaracaoUrlAction(req);
+      expect(mockAudit).toHaveBeenCalledTimes(1);
+      expect(mockAudit).toHaveBeenCalledWith(caller, { patientId: "p1", locationId: LOCATION_ID });
+    },
+  );
+
+  it("what was typed in the dialog is handed to the document and never to the row: no day, no hours, no NIF, no observações", async () => {
+    await generateDeclaracaoUrlAction({ ...req, nif: "123456789", observacoes: "Texto inventado do paciente" });
+    const asked = JSON.stringify(mockAudit.mock.calls);
+    for (const typed of ["2026-07-17", "09:30", "10:30", "123456789", "Texto", "inventado"]) {
+      expect(asked).not.toContain(typed);
+    }
+    // Control: the same values did reach the generator.
+    expect(JSON.stringify(mockPdf.mock.calls)).toContain("Texto inventado do paciente");
+  });
+
+  it("two declarations are two rows asked for: one per file handed out", async () => {
+    await generateDeclaracaoUrlAction(req);
+    await generateDeclaracaoUrlAction(req);
+    expect(mockAudit).toHaveBeenCalledTimes(2);
+  });
+
+  it("the audit row cannot be written: the signed URL is NOT handed out, and the file just stored is removed", async () => {
+    mockAudit.mockRejectedValue(new Error("Zzz Paciente Inventado"));
+    expect(await generateDeclaracaoUrlAction(req)).toEqual({ url: null });
+    expect(steps).toEqual(["render", "upload", "sign", "remove"]);
+    // The object removed is the one this call stored, and no other.
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith([upload.mock.calls[0]![0]]);
+    // One line, naming the document and the step: no id, none of the error's text.
+    expect(logged.mock.calls).toEqual([["[declaracao] the export failed at step: audit"]]);
+  });
+
+  it.each(["error", "throws"] as const)(
+    "the removal is best effort: when it fails too (%s), the answer and the line logged are the same",
+    async (fault) => {
+      stub({ remove: fault });
+      mockAudit.mockRejectedValue(new Error("boom"));
+      expect(await generateDeclaracaoUrlAction(req)).toEqual({ url: null });
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(logged.mock.calls).toEqual([["[declaracao] the export failed at step: audit"]]);
+    },
+  );
+
+  it("no row is asked for, and nothing is removed, on any outcome that hands out no file", async () => {
+    const outcomes: [string, () => void][] = [
+      ["no location", () => mockAvailability.mockResolvedValue("invalid")],
+      ["no carimbo", () => mockAvailability.mockResolvedValue("no_stamp")],
+      ["the ceiling refuses", () => mockCeiling.mockResolvedValueOnce(false)],
+      ["the generator refuses the location", () => mockPdf.mockRejectedValue(new ClinicalError("no_stamp"))],
+      ["no such patient for this caller", () => mockPdf.mockRejectedValue(new ClinicalError("not_found"))],
+      ["the render fails", () => mockPdf.mockRejectedValue(new Error("boom"))],
+      ["the upload answers an error", () => stub({ upload: "error" })],
+      ["the upload throws", () => stub({ upload: "throws" })],
+      ["the signed URL answers an error", () => stub({ sign: "error" })],
+      ["the signed URL throws", () => stub({ sign: "throws" })],
+    ];
+    for (const [label, arrange] of outcomes) {
+      mockAudit.mockClear();
+      mockCtx.mockResolvedValue(ctx);
+      mockAvailability.mockResolvedValue("ok");
+      mockPdf.mockResolvedValue({ bytes: new Uint8Array([1]), filename: "d.pdf" });
+      stub();
+      arrange();
+      expect((await generateDeclaracaoUrlAction(req)).url, label).toBeNull();
+      expect(mockAudit, label).not.toHaveBeenCalled();
+      expect(remove, label).not.toHaveBeenCalled();
+    }
   });
 });

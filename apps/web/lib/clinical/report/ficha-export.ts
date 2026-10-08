@@ -27,6 +27,9 @@ import { renderSectionPagePdf, type SectionHeading } from "./pdf";
  *                                     its registos through the per-record
  *                                     engine, all joined into one document.
  *
+ * The audit row of one export is `recordPatientFichaExport` (../export-audit.ts),
+ * written by the action once the file is stored and signed.
+ *
  * EVERY READ IS THE CALLER'S OWN. The selection IS the Registos tab's read
  * (`listFichaRecords`: the capability, the therapist read scope on the
  * patient, the caller's RLS) and the tab's grouping, run again on the server.

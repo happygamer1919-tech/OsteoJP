@@ -4,6 +4,7 @@ import { can } from "@osteojp/auth";
 import { locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
+import { recordImportedGroupExport } from "@/lib/clinical/export-audit";
 import {
   readEpisodeExportSelection,
   readImportedGroupExportSelection,
@@ -121,7 +122,11 @@ export async function downloadEpisodeReportUrlAction(
  *      this caller, or none of its registos finalized, ends here, having
  *      rendered, stored and spent nothing;
  *   3. the document ceiling, once;
- *   4. the render, the upload and the signed URL.
+ *   4. the render, the upload and the signed URL;
+ *   5. THE AUDIT ROW (`patient.export_pdf`, document `imported_group`), before
+ *      the URL is returned: no row, no URL, and the file just stored is
+ *      removed, as above. The row names the patient and the registos in the
+ *      file; the group's label is not written.
  * `{ url: null }` for every refusal and every failure, as above.
  */
 export async function downloadImportedGroupReportUrlAction(
@@ -159,6 +164,22 @@ export async function downloadImportedGroupReportUrlAction(
       .from(ATTACHMENTS_BUCKET)
       .createSignedUrl(path, 60, { download: pdf.filename });
     if (signed.error || !signed.data) return failedAt("sign");
+
+    try {
+      await recordImportedGroupExport(ctx, {
+        patientId: selection.patientId,
+        recordIds: pdf.recordIds,
+        leftOut: pdf.leftOut,
+      });
+    } catch {
+      // No row, so no URL: the file just stored is removed, as above.
+      try {
+        await admin.storage.from(ATTACHMENTS_BUCKET).remove([path]);
+      } catch {
+        // Nothing to add: the audit failure is what is reported below.
+      }
+      return failedAt("audit");
+    }
     return { url: signed.data.signedUrl };
   } catch {
     // A read, the ceiling, the render or a Storage call threw: never surface

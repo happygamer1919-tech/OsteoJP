@@ -50,9 +50,10 @@ import type { RecordStatus } from "./report-model";
  * EXPORT-01: THE IMPORTED GROUP. The imported history is one group per
  * specialty on the tab, and "PDF do episódio" on that group exports the group:
  * `readImportedGroupExportSelection` and `renderImportedGroupReport` below,
- * the same three steps over the tab's own read and grouping. An imported
- * EPISODE asked for by id is still no episode to export here (the ledger test
- * in `readEpisodeExportRows`): no screen offers one.
+ * the same three steps over the tab's own read and grouping; its audit row is
+ * `recordImportedGroupExport` (../export-audit.ts). An imported EPISODE asked
+ * for by id is still no episode to export here (the ledger test in
+ * `readEpisodeExportRows`): no screen offers one.
  */
 
 /** A uuid's shape; anything else is refused before it reaches a uuid column. */
