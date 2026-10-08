@@ -11,6 +11,12 @@
  *      every way a call can end the outcome, the sends and the ledger rows are
  *      IDENTICAL whatever it answers. A dispatcher that started reading the
  *      claim's answer would fail the arm that makes it answer "held".
+ *
+ * WHAT THIS FILE CANNOT SHOW: how long a real claim may take. The stand-in
+ * answers when it is told to. The dispatcher awaits the claim, so the bound on
+ * that wait is the claim's own (reminder-claim.ts sets it in its transaction),
+ * and it is proven where a lock can really be held: reminder-log.db.test.ts
+ * puts another session on the reminder's lock and the dispatcher still answers.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -21,6 +27,8 @@ const h = vi.hoisted(() => ({
   claims: [] as Record<string, unknown>[],
   /** What the stand-in claim resolves to. The real one resolves to nothing. */
   claimAnswer: undefined as unknown,
+  /** How long the stand-in takes to answer. The default is at once. */
+  claimDelayMs: 0,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -29,6 +37,8 @@ vi.mock("./reminder-claim", () => ({
   takeReminderClaim: vi.fn(async (args: Record<string, unknown>) => {
     h.claims.push(args);
     h.events.push("claim");
+    if (h.claimDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, h.claimDelayMs));
+    h.events.push("claim:answered");
     return h.claimAnswer;
   }),
 }));
@@ -133,6 +143,7 @@ describe("dispatchReminder takes a reminder claim", () => {
     h.events.length = 0;
     h.claims.length = 0;
     h.claimAnswer = undefined;
+    h.claimDelayMs = 0;
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
@@ -161,8 +172,9 @@ describe("dispatchReminder takes a reminder claim", () => {
         // Today's only caller is the sleeping job, which names no taker.
         taker: "run",
       });
-      // Before the send and before the ledger row, every time.
-      expect(h.events[0]).toBe("claim");
+      // Before the send and before the ledger row, every time: taken first,
+      // and answered before anything else happens.
+      expect(h.events.slice(0, 2)).toEqual(["claim", "claim:answered"]);
       expect(h.events.filter((x) => x === "claim")).toHaveLength(1);
     });
   }
@@ -203,7 +215,7 @@ describe("dispatchReminder takes a reminder claim", () => {
     });
     h.loadReminderData.mockResolvedValue(fixture());
     await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).rejects.toThrow("provider refused");
-    expect(h.events).toEqual(["claim", "send:sms", "ledger:reminder.24h.sms:provider_error:"]);
+    expect(h.events).toEqual(["claim", "claim:answered", "send:sms", "ledger:reminder.24h.sms:provider_error:"]);
   });
 
   /**
@@ -237,10 +249,29 @@ describe("dispatchReminder takes a reminder claim", () => {
     it("NEGATIVE CONTROL: the baseline of a send is not empty, so the equality above compares something", async () => {
       const sms = await run(ENDINGS.find((e) => e.name.startsWith("the 24h SMS"))!, undefined);
       expect(sms.outcome).toMatchObject({ dispatched: true });
-      expect(sms.events).toEqual(["claim", "send:sms", "ledger:reminder.24h.sms:suppressed:sandbox"]);
+      expect(sms.events).toEqual(["claim", "claim:answered", "send:sms", "ledger:reminder.24h.sms:suppressed:sandbox"]);
       const status = await run(ENDINGS.find((e) => e.name === "status")!, undefined);
       expect(status.outcome).toEqual({ dispatched: false, reason: "status" });
-      expect(status.events).toEqual(["claim", "ledger:reminder.24h.sms:suppressed:status"]);
+      expect(status.events).toEqual(["claim", "claim:answered", "ledger:reminder.24h.sms:suppressed:status"]);
+    });
+
+    /**
+     * A SLOW CLAIM. The stand-in takes its time before it answers. The
+     * dispatcher waits for it (nothing is sent while the claim is still out)
+     * and then does exactly what it does when the claim answers at once.
+     */
+    it("a claim that answers LATE: nothing is sent before it answers, and then every ending is the same", async () => {
+      for (const e of ENDINGS) {
+        h.claimDelayMs = 0;
+        const baseline = await run(e, undefined);
+        h.claimDelayMs = 25;
+        const slow = await run(e, undefined);
+        expect(slow, e.name).toEqual(baseline);
+        if (e.claims === 1) {
+          // `claim:answered` sits between the claim and whatever follows it.
+          expect(slow.events.indexOf("claim:answered"), e.name).toBe(1);
+        }
+      }
     });
   });
 });

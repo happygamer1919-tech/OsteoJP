@@ -34,6 +34,13 @@ import { REMINDER_OFFSETS } from "./offsets";
  * ==========================================================================
  * Everything below sits inside one try. A claim that cannot be written is
  * logged, ids only (rule 7), and the reminder goes out as it does today.
+ *
+ * ON A WAIT TOO, NOT ONLY ON AN ERROR. The dispatcher awaits the claim before
+ * it sends, so a claim that queued behind a stuck holder of this reminder's
+ * lock, or behind a lock on `audit_log`, would hold the reminder for as long as
+ * the holder sat there. The claim's transaction therefore bounds its own waits
+ * first (`boundReminderClaimWaits`): Postgres ends the wait, the catch below
+ * logs it, and the reminder goes out without its claim.
  */
 
 /** The audit action of a claim. One row per dispatcher call that found its appointment. */
@@ -99,6 +106,26 @@ export function acquireReminderClaimLock(
 }
 
 /**
+ * How long the claim may wait, in Postgres's own units. Two seconds for a lock
+ * (this reminder's advisory lock, or a lock another session holds on
+ * `audit_log`), five for any one statement. An uncontended claim takes
+ * milliseconds, and two honest senders of one reminder queue for as long as
+ * one INSERT, so neither bound is reached by a claim that is working.
+ */
+export const CLAIM_LOCK_TIMEOUT = "2s";
+export const CLAIM_STATEMENT_TIMEOUT = "5s";
+
+/**
+ * The first statement of the claim's transaction: bound every wait that
+ * follows. `set_config(..., true)` is `SET LOCAL` with the value as a bound
+ * parameter, so both settings end with this transaction and never reach the
+ * pooled connection's next user.
+ */
+export function boundReminderClaimWaits(): SQL {
+  return sql`select set_config('lock_timeout', ${CLAIM_LOCK_TIMEOUT}, true), set_config('statement_timeout', ${CLAIM_STATEMENT_TIMEOUT}, true)`;
+}
+
+/**
  * Write one claim. Returns nothing: see the header.
  *
  * The start is stored as an ISO instant, the same `toISOString()` the
@@ -128,6 +155,7 @@ export async function takeReminderClaim(args: {
     // below and never thrown into the send path.
     assertPiiFreeAuditMetadata(metadata, "reminders/takeReminderClaim");
     await withReminderTenantContext(args.tenantId, async (tx) => {
+      await tx.execute(boundReminderClaimWaits());
       await tx.execute(
         acquireReminderClaimLock(args.tenantId, args.appointmentId, args.offsetId, args.channel),
       );

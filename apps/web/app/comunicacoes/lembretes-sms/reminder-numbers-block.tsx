@@ -14,6 +14,10 @@ import type { ReminderNumbers } from "@/lib/reminders/reminder-numbers";
  * nobody counted: "0 missed" and "could not be counted" are different facts,
  * and reception acts on the first.
  *
+ * THE FIRST COUNT CAN BE NULL ON ITS OWN, for the same reason: with no send
+ * attempt on record in the last seven days it has nothing to count from
+ * (reminder-numbers.ts), and its line says that in words, with no number.
+ *
  * Its own file, with no hook and no handler, so it renders on the server
  * inside the page and can be rendered alone by its test.
  */
@@ -54,13 +58,19 @@ export function ReminderNumbersBlock({ numbers }: { numbers: ReminderNumbers | n
             {rows.map((r) => (
               <div key={r.key} data-testid={`reminder-numbers-${r.key}`} className="flex flex-col gap-0.5">
                 <dt className="text-sm text-v2-text-secondary">{r.label}</dt>
-                <dd className="text-sm font-medium tabular-nums text-v2-text-primary">
-                  {s["remindersLog.numbersChannelSms"]}:{" "}
-                  <span data-testid={`reminder-numbers-${r.key}-sms`}>{r.sms}</span>
-                  {" · "}
-                  {s["remindersLog.numbersChannelEmail"]}:{" "}
-                  <span data-testid={`reminder-numbers-${r.key}-email`}>{r.email}</span>
-                </dd>
+                {r.sms === null || r.email === null ? (
+                  <dd data-testid={`reminder-numbers-${r.key}-not-counted`} className="text-sm text-v2-text-primary">
+                    {s["remindersLog.numbersNotCounted"]}
+                  </dd>
+                ) : (
+                  <dd className="text-sm font-medium tabular-nums text-v2-text-primary">
+                    {s["remindersLog.numbersChannelSms"]}:{" "}
+                    <span data-testid={`reminder-numbers-${r.key}-sms`}>{r.sms}</span>
+                    {" · "}
+                    {s["remindersLog.numbersChannelEmail"]}:{" "}
+                    <span data-testid={`reminder-numbers-${r.key}-email`}>{r.email}</span>
+                  </dd>
+                )}
               </div>
             ))}
           </dl>

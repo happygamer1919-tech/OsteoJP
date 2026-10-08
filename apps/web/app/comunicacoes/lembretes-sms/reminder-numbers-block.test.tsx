@@ -64,6 +64,33 @@ describe("the Lembretes SMS counts block", () => {
     }
   });
 
+  it("a first count nobody could make is said in words on its own line, and the second count keeps its numbers", () => {
+    // No send attempt on record in seven days: number one is null on both
+    // channels (reminder-numbers.ts). A zero here would read as "nothing was
+    // missed" on the very day nothing was being recorded.
+    const html = renderToStaticMarkup(
+      <ReminderNumbersBlock
+        numbers={{
+          sms: { marksWithoutClaim: null, claimsWithoutOutcome: 3 },
+          email: { marksWithoutClaim: null, claimsWithoutOutcome: 11 },
+        }}
+      />,
+    );
+    expect(slot(html, "reminder-numbers-unclaimed-not-counted")).toBe(s["remindersLog.numbersNotCounted"]);
+    expect(html).not.toContain('data-testid="reminder-numbers-unclaimed-sms"');
+    expect(html).not.toContain('data-testid="reminder-numbers-unclaimed-email"');
+    // The first line carries its sentence and then the words, never "SMS: 0".
+    expect(text(html)).toContain(`${s["remindersLog.numbersUnclaimed"]} ${s["remindersLog.numbersNotCounted"]}`);
+    expect(slot(html, "reminder-numbers-no-outcome-sms")).toBe("3");
+    expect(slot(html, "reminder-numbers-no-outcome-email")).toBe("11");
+    expect(html).not.toContain('data-testid="reminder-numbers-no-outcome-not-counted"');
+  });
+
+  it("with the first count made, the not-counted sentence is absent", () => {
+    const html = renderToStaticMarkup(<ReminderNumbersBlock numbers={NUMBERS} />);
+    expect(text(html)).not.toContain(s["remindersLog.numbersNotCounted"]);
+  });
+
   it("a read that failed is said in words, and shows no number at all", () => {
     const html = renderToStaticMarkup(<ReminderNumbersBlock numbers={null} />);
     expect(slot(html, "reminder-numbers-unavailable")).toBe(s["remindersLog.numbersUnavailable"]);
@@ -81,6 +108,7 @@ describe("the Lembretes SMS counts block", () => {
       "remindersLog.numbersChannelSms",
       "remindersLog.numbersChannelEmail",
       "remindersLog.numbersNote",
+      "remindersLog.numbersNotCounted",
       "remindersLog.numbersUnavailable",
     ] as const;
     expect(LOCALES.length).toBeGreaterThan(1);
@@ -97,5 +125,6 @@ describe("the Lembretes SMS counts block", () => {
     expect(pt["remindersLog.numbersUnclaimed"]).toContain("30 minutos");
     expect(pt["remindersLog.numbersNoOutcome"]).toContain("30 minutos");
     expect(pt["remindersLog.numbersNoOutcome"]).toContain("7 dias");
+    expect(pt["remindersLog.numbersNotCounted"]).toContain("7 dias");
   });
 });

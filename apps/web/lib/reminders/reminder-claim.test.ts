@@ -14,7 +14,7 @@ vi.mock("server-only", () => ({}));
 
 /** Every statement the claim's transaction ran, in order. */
 const ran: ({ kind: "execute"; sql: string; params: unknown[] } | { kind: "insert"; values: Record<string, unknown> })[] = [];
-let failAt: "context" | "lock" | "insert" | null = null;
+let failAt: "context" | "bounds" | "lock" | "insert" | null = null;
 
 const dialect = new PgDialect();
 
@@ -25,8 +25,11 @@ vi.mock("./context", () => ({
     if (failAt === "context") throw new Error("db down");
     return fn({
       execute: async (q: Parameters<PgDialect["sqlToQuery"]>[0]) => {
-        if (failAt === "lock") throw new Error("lock refused");
         const built = dialect.sqlToQuery(q);
+        const isLock = built.sql.includes("pg_advisory_xact_lock");
+        if (failAt === "bounds" && !isLock) throw new Error("bounds refused");
+        // What Postgres answers when the wait for a lock runs out.
+        if (failAt === "lock" && isLock) throw new Error("lock wait timed out");
         ran.push({ kind: "execute", sql: built.sql, params: built.params });
       },
       insert: () => ({
@@ -41,6 +44,8 @@ vi.mock("./context", () => ({
 }));
 
 const {
+  CLAIM_LOCK_TIMEOUT,
+  CLAIM_STATEMENT_TIMEOUT,
   EARLY_CLAIM_MS,
   REMINDER_CLAIM_ACTION,
   isEarlyClaim,
@@ -122,10 +127,22 @@ describe("the reminder claim: the row", () => {
     expect(insertedMetadata().taker).toBe("sweep");
   });
 
-  it("takes the advisory lock FIRST, in the same transaction, keyed on tenant, appointment, offset and channel", async () => {
+  it("bounds its own waits FIRST: a lock wait of two seconds and a statement of five, for this transaction only", async () => {
     await takeReminderClaim(base);
-    expect(ran.map((r) => r.kind)).toEqual(["execute", "insert"]);
-    const lock = ran[0] as { sql: string; params: unknown[] };
+    const bounds = ran[0] as { sql: string; params: unknown[] };
+    // `true` is transaction-local: the settings never reach the connection's next user.
+    expect(bounds.sql).toBe(
+      "select set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)",
+    );
+    expect(bounds.params).toEqual(["2s", "5s"]);
+    expect([CLAIM_LOCK_TIMEOUT, CLAIM_STATEMENT_TIMEOUT]).toEqual(["2s", "5s"]);
+  });
+
+  it("then takes the advisory lock, BEFORE the row, in the same transaction, keyed on tenant, appointment, offset and channel", async () => {
+    await takeReminderClaim(base);
+    // Bounds, lock, row. A lock taken before the bounds would wait unbounded.
+    expect(ran.map((r) => r.kind)).toEqual(["execute", "execute", "insert"]);
+    const lock = ran[1] as { sql: string; params: unknown[] };
     // The transaction-scoped variant, so it cannot outlive the claim.
     expect(lock.sql).toBe("select pg_advisory_xact_lock(hashtextextended($1, 0))");
     expect(lock.params).toEqual([`reminder-claim:${TENANT}:${APPOINTMENT}:24h:sms`]);
@@ -184,7 +201,10 @@ describe("the reminder claim: it can never stop a send", () => {
     await expect(takeReminderClaim(base)).resolves.toBeUndefined();
   });
 
-  for (const where of ["context", "lock", "insert"] as const) {
+  // `lock` is also the shape of a WAIT that ran out: Postgres ends it with an
+  // error at that statement. The wait itself is proven against a real lock in
+  // reminder-log.db.test.ts.
+  for (const where of ["context", "bounds", "lock", "insert"] as const) {
     it(`a failure at the ${where} is swallowed, logged with ids and the error's name only`, async () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
       failAt = where;
@@ -194,10 +214,18 @@ describe("the reminder claim: it can never stop a send", () => {
       expect(logged).toContain("reminder claim write FAILED");
       expect(logged).toContain(`appointmentId=${APPOINTMENT}`);
       // The error NAME, never its message.
-      expect(logged).not.toMatch(/db down|lock refused|insert refused/);
+      expect(logged).not.toMatch(/db down|bounds refused|lock wait timed out|insert refused/);
       spy.mockRestore();
     });
   }
+
+  it("a claim whose bounds could not be set takes NO lock: it never waits unbounded", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failAt = "bounds";
+    await takeReminderClaim(base);
+    expect(ran).toHaveLength(0);
+    spy.mockRestore();
+  });
 
   it("a start that is not a date is swallowed too: the fixture shape, not a real row", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});

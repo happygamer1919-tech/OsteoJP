@@ -577,6 +577,82 @@ d("SWEEP-01: the dispatcher leaves a reminder claim, and the claim changes nothi
     expect(spy.mock.calls.flat().join(" ")).toContain("reminder claim write FAILED");
     spy.mockRestore();
   });
+
+  /**
+   * A CLAIM THAT HAS TO WAIT. The arm above is a claim that ERRORS at once.
+   * This one cannot error on its own: another session sits on this very
+   * reminder's advisory lock and does not let go. Without a bound the claim
+   * would queue behind it, and the dispatcher, which awaits the claim before
+   * it sends, would hold the reminder for as long as the holder sat there.
+   *
+   * The holder is a second connection in an open transaction, which is what a
+   * stuck sender looks like to Postgres. It is released in `finally`, so a
+   * failed expectation cannot leave the lock behind.
+   */
+  it(
+    "a claim that must WAIT does not hold the reminder: with this reminder's lock held elsewhere, the dispatcher still answers, about two seconds late and without its claim",
+    async () => {
+      const { dispatchReminder } = await import("./dispatch");
+      const { reminderClaimLockPayload, CLAIM_LOCK_TIMEOUT } = await import("./reminder-claim");
+      expect(CLAIM_LOCK_TIMEOUT).toBe("2s");
+      const a = ids.A;
+      const payload = reminderClaimLockPayload(tenantA, a.appointment, "48h", "email");
+      const ledgerOf = () =>
+        rows(raw`select channel, template_id, outcome, suppression_reason
+          from reminder_dispatches where appointment_id = ${a.appointment} order by created_at, id`);
+
+      let letGo!: () => void;
+      const untilLetGo = new Promise<void>((resolve) => (letGo = resolve));
+      let lockIsHeld!: () => void;
+      const untilHeld = new Promise<void>((resolve) => (lockIsHeld = resolve));
+      const holder = sql.transaction(async (tx) => {
+        await tx.execute(raw`select pg_advisory_xact_lock(hashtextextended(${payload}, 0))`);
+        lockIsHeld();
+        await untilLetGo;
+      });
+      await untilHeld;
+
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      h.loadReminderData.mockResolvedValue(loaded(a.appointment, a.patient));
+      try {
+        const claimsBefore = (await claimsOf(a.appointment)).length;
+        const ledgerBefore = await ledgerOf();
+
+        const started = performance.now();
+        const outcome = await dispatchReminder(tenantA, a.appointment, "48h", "email");
+        const waitedMs = performance.now() - started;
+
+        // It answered, and the answer is the one it always gave: the email
+        // was handed to the (replaced) transport and the ledger row followed.
+        expect(outcome).toMatchObject({ dispatched: true });
+        expect(await ledgerOf()).toEqual([
+          ...ledgerBefore,
+          { channel: "email", template_id: "reminder.48h.email", outcome: "suppressed", suppression_reason: "sandbox" },
+        ]);
+        // It really did wait for the lock: not an error at once. And Postgres
+        // ended the wait, not the holder: the holder is still holding on at
+        // this line, and lets go only in `finally` below. No upper bound is
+        // asserted on the clock, because a loaded machine would fail it for
+        // no reason; having an answer at all, here, is the bound.
+        expect(waitedMs).toBeGreaterThan(1_900);
+        // No claim: the wait ran out before the row could be written, and the
+        // failure is logged like any other.
+        expect((await claimsOf(a.appointment)).length).toBe(claimsBefore);
+        expect(spy.mock.calls.flat().join(" ")).toContain("reminder claim write FAILED");
+      } finally {
+        letGo();
+        await holder;
+        spy.mockRestore();
+      }
+
+      // NEGATIVE CONTROL: with the lock free, the same call leaves its claim.
+      // So it was the held lock, and nothing else, that kept the claim out.
+      const claimsBefore = (await claimsOf(a.appointment)).length;
+      expect(await dispatchReminder(tenantA, a.appointment, "48h", "email")).toMatchObject({ dispatched: true });
+      expect((await claimsOf(a.appointment)).length).toBe(claimsBefore + 1);
+    },
+    30_000,
+  );
 });
 
 /**
@@ -589,11 +665,17 @@ d("SWEEP-01: the dispatcher leaves a reminder claim, and the claim changes nothi
  * EACH SEED IS ONE REASON A ROW IS OR IS NOT COUNTED, with its neighbour on the
  * other side of the edge. A count that ignored any one rule lands on a
  * different number, which is why every expectation is an exact total.
+ *
+ * FOUR TENANTS. A holds the rules of both counts. B is the other tenant, and
+ * counts only its own. C has claims that began two hours ago: the floor of the
+ * first count. D has none in seven days: the first count is not a number.
  */
 d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () => {
   let sql: Awaited<ReturnType<typeof import("@osteojp/db").getDbAdmin>>;
   const tenantA = randomUUID();
   const tenantB = randomUUID();
+  const tenantC = randomUUID();
+  const tenantD = randomUUID();
   const A = {
     reception: randomUUID(),
     assignedReception: randomUUID(),
@@ -603,6 +685,11 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     l2: randomUUID(),
   };
   const B = { reception: randomUUID(), therapist: randomUUID(), patient: randomUUID(), l1: randomUUID() };
+  const C = { reception: randomUUID(), therapist: randomUUID(), patient: randomUUID(), l1: randomUUID() };
+  const D = { reception: randomUUID(), therapist: randomUUID(), patient: randomUUID(), l1: randomUUID() };
+  const people = { [tenantA]: A, [tenantB]: B, [tenantC]: C, [tenantD]: D };
+  /** Tenant B's one visit still ahead: the last arm hands it to the real claim writer. */
+  let bVisit: { id: string; start: Date };
 
   const NOW = lisbonDateTimeToUtc(addDays(todayInLisbon(), 10), "12:00");
   const MIN = 60_000;
@@ -616,21 +703,48 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     return (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Row[];
   }
 
+  /**
+   * An audit row that is NOT a claim: the trail a save of the clinic leaves on
+   * a visit, or any other row a seed needs beside it.
+   */
+  async function trail(t: {
+    tenant?: string;
+    action: string;
+    entityType?: string;
+    entityId: string;
+    /** The keys the writer of this action puts in its metadata. */
+    metadata?: Record<string, unknown>;
+    created?: Date;
+  }): Promise<void> {
+    // `::text::jsonb`, as in `claim` below.
+    await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
+      values (${t.tenant ?? tenantA}, null, ${t.action}, ${t.entityType ?? "appointment"}, ${t.entityId},
+              ${JSON.stringify(t.metadata ?? {})}::text::jsonb, ${(t.created ?? at(-5 * DAY)).toISOString()})`);
+  }
+
   async function visit(v: {
     tenant?: string;
     location?: string;
     start: Date;
     created?: Date;
     status?: string;
+    /**
+     * `false` is a visit with NO booking row on its audit trail: an imported
+     * one, or an online request. The seed adds whatever rows it needs itself.
+     * The default writes the row a booking at the clinic writes.
+     */
+    booked?: boolean;
   }): Promise<{ id: string; start: Date }> {
     const tenantId = v.tenant ?? tenantA;
-    const mine = tenantId === tenantA ? A : B;
+    const mine = people[tenantId]!;
     const id = randomUUID();
+    const created = v.created ?? at(-5 * DAY);
     await sql.execute(raw`insert into appointments
       (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_at)
       values (${id}, ${tenantId}, ${mine.patient}, ${mine.therapist}, ${v.location ?? mine.l1},
               ${v.start.toISOString()}, ${new Date(v.start.getTime() + 45 * MIN).toISOString()},
-              ${v.status ?? "scheduled"}, ${(v.created ?? at(-5 * DAY)).toISOString()})`);
+              ${v.status ?? "scheduled"}, ${created.toISOString()})`);
+    if (v.booked !== false) await trail({ tenant: tenantId, action: "appointment.create", entityId: id, created });
     return { id, start: v.start };
   }
 
@@ -683,6 +797,8 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     for (const [tenantId, label] of [
       [tenantA, "a"],
       [tenantB, "b"],
+      [tenantC, "c"],
+      [tenantD, "d"],
     ] as const) {
       await sql.execute(raw`insert into tenants (id, name, slug)
         values (${tenantId}, 'Reminder Numbers Co', ${"rnum-" + label + "-" + tenantId.slice(0, 8)})`);
@@ -690,12 +806,18 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     await sql.execute(raw`insert into locations (id, tenant_id, name) values (${A.l1}, ${tenantA}, 'Clinica Um')`);
     await sql.execute(raw`insert into locations (id, tenant_id, name) values (${A.l2}, ${tenantA}, 'Clinica Dois')`);
     await sql.execute(raw`insert into locations (id, tenant_id, name) values (${B.l1}, ${tenantB}, 'Clinica B')`);
+    await sql.execute(raw`insert into locations (id, tenant_id, name) values (${C.l1}, ${tenantC}, 'Clinica C')`);
+    await sql.execute(raw`insert into locations (id, tenant_id, name) values (${D.l1}, ${tenantD}, 'Clinica D')`);
     for (const [id, tenantId, name, bookable] of [
       [A.reception, tenantA, "Rececao Geral", false],
       [A.assignedReception, tenantA, "Rececao Clinica Um", false],
       [A.therapist, tenantA, "Dra Numeros", true],
       [B.reception, tenantB, "Rececao B", false],
       [B.therapist, tenantB, "Dra B", true],
+      [C.reception, tenantC, "Rececao C", false],
+      [C.therapist, tenantC, "Dra C", true],
+      [D.reception, tenantD, "Rececao D", false],
+      [D.therapist, tenantD, "Dra D", true],
     ] as const) {
       await sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active, is_bookable)
         values (${id}, ${tenantId}, ${"u-" + id.slice(0, 8) + "@t.test"}, ${name}, true, ${bookable})`);
@@ -708,6 +830,10 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
       values (${A.patient}, ${tenantA}, 'Paciente Numeros', '912345678')`);
     await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone)
       values (${B.patient}, ${tenantB}, 'Paciente B', '912345678')`);
+    await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone)
+      values (${C.patient}, ${tenantC}, 'Paciente C', '912345678')`);
+    await sql.execute(raw`insert into patients (id, tenant_id, full_name, phone)
+      values (${D.patient}, ${tenantD}, 'Paciente D', '912345678')`);
 
     /* ---------------- NUMBER ONE: a mark with no claim ---------------- */
 
@@ -763,7 +889,63 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     await claim({ tenant: tenantB, appointment: v1.id, offset: "24h", start: v1.start, created: FRESH });
     await claim({ tenant: tenantB, appointment: v1.id, offset: "48h", start: v1.start, created: FRESH });
     // Tenant B's own visit, nothing claimed.                        B: sms +1, email +1
-    await visit({ tenant: tenantB, start: at(23 * HOUR) });
+    bVisit = await visit({ tenant: tenantB, start: at(23 * HOUR) });
+
+    /* --- NUMBER ONE: only a visit handed to the reminder job (the switch is off) --- */
+    // Every visit above carries the audit row of its booking, which `visit`
+    // writes. The ones below do NOT. Each has both marks past; a claim on one
+    // channel leaves the other to say whether the visit is in the count.
+    // All are `scheduled`: the status takes no part here (v13 is the confirmed
+    // one), and two confirmed visits of one therapist may not overlap.
+    // "ALL" is what the same visit adds when the switch says every visit counts.
+
+    // v16. Nothing on its trail: an imported visit, or an online request
+    //      nobody has touched.                                      neither (ALL: sms +1, email +1)
+    await visit({ start: at(14 * HOUR), booked: false });
+    // v17. Moved by the clinic.                                     sms +1
+    const v17 = await visit({ start: at(13 * HOUR), booked: false });
+    await trail({ action: "appointment.reschedule", entityId: v17.id });
+    await claim({ appointment: v17.id, offset: "48h", start: v17.start, created: FRESH });
+    // v18. Accepted with the Estado control: a status set to confirmed.
+    //                                                               email +1
+    const v18 = await visit({ start: at(12.5 * HOUR), booked: false });
+    await trail({ action: "appointment.update", entityId: v18.id, metadata: { changed: ["status"], fromStatus: "scheduled", toStatus: "confirmed" } });
+    await claim({ appointment: v18.id, offset: "24h", start: v18.start, created: FRESH });
+    // v19. Its trail is full, and NOT ONE row is a scheduling event: a
+    //      cancellation; a change that is not a status; a status set to
+    //      something other than scheduled or confirmed; a review that
+    //      confirmed and moved nothing; a review that cancelled; a patient's
+    //      reply that went to review; and a booking row whose entity is not
+    //      an appointment.                                          neither (ALL: sms +1, email +1)
+    const v19 = await visit({ start: at(12 * HOUR), booked: false });
+    await trail({ action: "appointment.cancel", entityId: v19.id });
+    await trail({ action: "appointment.update", entityId: v19.id, metadata: { changed: ["notes"], scope: "one" } });
+    await trail({ action: "appointment.update", entityId: v19.id, metadata: { changed: ["status"], fromStatus: "confirmed", toStatus: "completed" } });
+    await trail({ action: "appointment.sms_reply_reviewed", entityId: v19.id, metadata: { resolution: "confirmed", applied: false } });
+    await trail({ action: "appointment.sms_reply_reviewed", entityId: v19.id, metadata: { resolution: "cancelled", applied: true } });
+    await trail({ action: "appointment.patient_sms_reply", entityId: v19.id, metadata: { intent: "confirm", outcome: "review" } });
+    await trail({ action: "appointment.create", entityType: "patient", entityId: v19.id });
+    // v20. The only booking row that names it is in ANOTHER tenant.
+    //                                                               neither (ALL: sms +1, email +1)
+    const v20 = await visit({ start: at(11.5 * HOUR), booked: false });
+    await trail({ tenant: tenantB, action: "appointment.create", entityId: v20.id });
+    // v21. An online request accepted from the queue (Aceitar pedido).
+    //                                                               sms +1
+    const v21 = await visit({ start: at(11 * HOUR), booked: false });
+    await trail({ action: "appointment.update", entityId: v21.id, metadata: { changed: ["status"], from_status: "scheduled", to_status: "confirmed", via: "portal_request_confirm" } });
+    await claim({ appointment: v21.id, offset: "48h", start: v21.start, created: FRESH });
+    // v22. Accepted by reception from the SMS review queue.         email +1
+    const v22 = await visit({ start: at(10.5 * HOUR), booked: false });
+    await trail({ action: "appointment.sms_reply_reviewed", entityId: v22.id, metadata: { resolution: "confirmed", applied: true } });
+    await claim({ appointment: v22.id, offset: "24h", start: v22.start, created: FRESH });
+    // v23. Accepted by the patient's own SMS reply.                 sms +1
+    const v23 = await visit({ start: at(10 * HOUR), booked: false });
+    await trail({ action: "appointment.patient_sms_reply", entityId: v23.id, metadata: { intent: "confirm", outcome: "confirmed" } });
+    await claim({ appointment: v23.id, offset: "48h", start: v23.start, created: FRESH });
+    // v24. Brought back from cancelled: a status set to scheduled.  email +1
+    const v24 = await visit({ start: at(9.5 * HOUR), booked: false });
+    await trail({ action: "appointment.update", entityId: v24.id, metadata: { changed: ["status"], fromStatus: "cancelled", toStatus: "scheduled" } });
+    await claim({ appointment: v24.id, offset: "24h", start: v24.start, created: FRESH });
 
     /* -------------- NUMBER TWO: a claim with no outcome --------------- */
     // Visits already completed, days ago: they take no part in number one.
@@ -856,14 +1038,38 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     await ledger({ appointment: w19.id, channel: "sms", template: "reminder.24h.sms", outcome: "sent", created: at(-3 * HOUR + 5000) });
     await claim({ appointment: w19.id, offset: "24h", start: w19.start, created: TWO_HOURS_AGO });
     await ledger({ appointment: w19.id, channel: "sms", template: "reminder.24h.sms", outcome: "sent", created: at(-2 * HOUR + 5000) });
-    // Tenant B's own claim with no row.                             B: sms +1
+    // Tenant B's own claim with no row, three days old: B's claims began
+    // long before any mark the first count looks at.                B: sms +1
     const wB = await done(undefined, tenantB);
-    await claim({ tenant: tenantB, appointment: wB.id, offset: "24h", start: wB.start, created: TWO_HOURS_AGO });
+    await claim({ tenant: tenantB, appointment: wB.id, offset: "24h", start: wB.start, created: at(-3 * DAY) });
+
+    /* ------- NUMBER ONE'S FLOOR: claims began two hours ago (tenant C) ------- */
+    // C's first claim, and its only one. Everything C's dispatcher handled
+    // before this instant has no claim and never will.               C two: sms +1
+    const wC = await done(undefined, tenantC);
+    await claim({ tenant: tenantC, appointment: wC.id, offset: "24h", start: wC.start, created: TWO_HOURS_AGO });
+    // c1. Its SMS mark fell due an hour ago, after claims began: a real miss.
+    //     Its email mark fell due 25 hours ago, before any claim was written:
+    //     that email went out, or did not, before there was a way to tell.
+    //                                                               C: sms +1, email no
+    await visit({ tenant: tenantC, start: at(23 * HOUR) });
+    // c2. Its SMS mark fell due at the very instant of the first claim.
+    //                                                               C: sms +1
+    await visit({ tenant: tenantC, start: at(22 * HOUR) });
+    // c3. One second earlier than that.                             C: no
+    await visit({ tenant: tenantC, start: at(22 * HOUR - 1000) });
+
+    /* ------- NO CLAIM IN SEVEN DAYS (tenant D): not a number at all ------- */
+    // d1. Both marks passed, nothing claimed. In tenant A this is v1.
+    await visit({ tenant: tenantD, start: at(23 * HOUR) });
+    // D's only claim is one second outside the seven days.
+    const wD = await done(undefined, tenantD);
+    await claim({ tenant: tenantD, appointment: wD.id, offset: "24h", start: wD.start, created: at(-7 * DAY - 1000) });
   });
 
   afterAll(async () => {
     if (!sql) return;
-    for (const tenantId of [tenantA, tenantB]) {
+    for (const tenantId of [tenantA, tenantB, tenantC, tenantD]) {
       await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from reminder_dispatches where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
@@ -882,9 +1088,19 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
         count(*) filter (where metadata->>'source' = 'reminder-claim')::int as claims,
         count(*)::int as all_rows
       from audit_log where tenant_id = ${tenantA} and action = 'appointment.reminder_claimed'`);
-    expect(seeded).toEqual({ claims: 33, all_rows: 33 });
+    expect(seeded).toEqual({ claims: 39, all_rows: 39 });
     const [visits] = await rows(raw`select count(*)::int as n from appointments where tenant_id = ${tenantA}`);
-    expect(visits).toEqual({ n: 38 });
+    expect(visits).toEqual({ n: 47 });
+    // The booking rows: every visit of tenant A carries one except v16 to
+    // v24, which are seeded without (38 of 47). Without these rows every
+    // first count below would be zero.
+    const [booked] = await rows(raw`select count(distinct entity_id)::int as visits from audit_log
+      where tenant_id = ${tenantA} and entity_type = 'appointment' and action = 'appointment.create'`);
+    expect(booked).toEqual({ visits: 38 });
+    // And a seeded metadata key reads as a key, for the rows that have one.
+    const [keyed] = await rows(raw`select count(*)::int as n from audit_log
+      where tenant_id = ${tenantA} and action = 'appointment.update' and metadata->>'toStatus' is not null`);
+    expect(keyed).toEqual({ n: 3 });
     const [ledgerRows] = await rows(raw`select count(*)::int as n from reminder_dispatches where tenant_id = ${tenantA}`);
     expect(ledgerRows).toEqual({ n: 13 });
   });
@@ -893,10 +1109,36 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     const { readReminderNumbers } = await import("./reminder-numbers");
     const numbers = await readReminderNumbers({ tenantId: tenantA, role: "reception" as const, userId: A.reception }, { now: NOW });
     expect(numbers).toEqual({
-      // v1, v3, v4, v5b, v6c, v9, v13, v15   |   w1, w4, w5, w6, w7b, w8b, w11, w12, w13, w15, w17
-      sms: { marksWithoutClaim: 8, claimsWithoutOutcome: 11 },
-      // v1, v9, v10, v12, v13           |   w9
-      email: { marksWithoutClaim: 5, claimsWithoutOutcome: 1 },
+      // v1, v3, v4, v5b, v6c, v9, v13, v15, v17, v21, v23   |   w1, w4, w5, w6, w7b, w8b, w11, w12, w13, w15, w17
+      sms: { marksWithoutClaim: 11, claimsWithoutOutcome: 11 },
+      // v1, v9, v10, v12, v13, v18, v22, v24           |   w9
+      email: { marksWithoutClaim: 8, claimsWithoutOutcome: 1 },
+    });
+  });
+
+  /**
+   * THE SWITCH, BOTH WAYS. The arm above is the switch as it ships: off. This
+   * one turns it on through the option only a test passes, and the three
+   * visits with no scheduling event on their trail (v16, v19, v20) appear on
+   * both channels. So the difference between the two answers is exactly those
+   * visits, and the default really is the one that leaves them out.
+   */
+  it("the switch: off leaves out the visits that never had a reminder, on counts them, and nothing else moves", async () => {
+    const { readReminderNumbers } = await import("./reminder-numbers");
+    const { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER } = await import("./reminder-population");
+    const viewer = { tenantId: tenantA, role: "reception" as const, userId: A.reception };
+    expect(REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER).toBe(false);
+
+    const asShipped = await readReminderNumbers(viewer, { now: NOW });
+    const off = await readReminderNumbers(viewer, { now: NOW, includeNeverReminded: false });
+    const on = await readReminderNumbers(viewer, { now: NOW, includeNeverReminded: true });
+
+    expect(off).toEqual(asShipped);
+    expect(on).toEqual({
+      // The eleven above, and v16, v19, v20.
+      sms: { marksWithoutClaim: 14, claimsWithoutOutcome: 11 },
+      // The eight above, and v16, v19, v20.
+      email: { marksWithoutClaim: 11, claimsWithoutOutcome: 1 },
     });
   });
 
@@ -908,8 +1150,66 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     );
     // Without v9 and w11, which are at Clinica Dois.
     expect(numbers).toEqual({
-      sms: { marksWithoutClaim: 7, claimsWithoutOutcome: 10 },
-      email: { marksWithoutClaim: 4, claimsWithoutOutcome: 1 },
+      sms: { marksWithoutClaim: 10, claimsWithoutOutcome: 10 },
+      email: { marksWithoutClaim: 7, claimsWithoutOutcome: 1 },
+    });
+  });
+
+  /**
+   * THE FLOOR. Tenant C's dispatcher wrote its first claim two hours ago. A
+   * reminder that fell due before that has no claim whatever became of it, and
+   * the list under the counts may well show it as sent: counting it as "no
+   * send attempt on record" would send reception to the telephone for a
+   * patient who was reminded.
+   */
+  it("the first count starts where the claims start: a mark that fell due before the first claim is not counted, one at that instant is", async () => {
+    const { readReminderNumbers } = await import("./reminder-numbers");
+    const viewer = { tenantId: tenantC, role: "reception" as const, userId: C.reception };
+    // NEGATIVE CONTROL: three visits still ahead, each booked by the clinic,
+    // each with both marks over 30 minutes past and no claim at all. With no
+    // floor this tenant would read sms 3, email 3.
+    const [ahead] = await rows(raw`select count(*)::int as n from appointments
+      where tenant_id = ${tenantC} and status = 'scheduled' and starts_at > ${NOW.toISOString()}`);
+    expect(ahead).toEqual({ n: 3 });
+    const [claims] = await rows(raw`select count(*)::int as n from audit_log
+      where tenant_id = ${tenantC} and action = 'appointment.reminder_claimed'`);
+    expect(claims).toEqual({ n: 1 });
+
+    expect(await readReminderNumbers(viewer, { now: NOW })).toEqual({
+      // c1 and c2. Not c3: its mark is one second before the first claim.
+      sms: { marksWithoutClaim: 2, claimsWithoutOutcome: 1 },
+      // None: every 48 hour mark here fell due a day before the first claim.
+      email: { marksWithoutClaim: 0, claimsWithoutOutcome: 0 },
+    });
+    // The floor does not depend on the switch.
+    expect((await readReminderNumbers(viewer, { now: NOW, includeNeverReminded: true })).sms.marksWithoutClaim).toBe(2);
+  });
+
+  it("no claim in the last seven days: the first count is not a number, and it becomes one with the first claim", async () => {
+    const { readReminderNumbers } = await import("./reminder-numbers");
+    const viewer = { tenantId: tenantD, role: "reception" as const, userId: D.reception };
+    // NEGATIVE CONTROL: the visit is there with both marks past, and so is a
+    // claim, one second too old to be a floor.
+    const [seeded] = await rows(raw`select
+        (select count(*)::int from appointments where tenant_id = ${tenantD} and status = 'scheduled') as visits,
+        (select count(*)::int from audit_log where tenant_id = ${tenantD} and action = 'appointment.reminder_claimed') as claims`);
+    expect(seeded).toEqual({ visits: 1, claims: 1 });
+
+    // Null, never 0: nobody counted, and a zero would say nothing was missed.
+    expect(await readReminderNumbers(viewer, { now: NOW })).toEqual({
+      sms: { marksWithoutClaim: null, claimsWithoutOutcome: 0 },
+      email: { marksWithoutClaim: null, claimsWithoutOutcome: 0 },
+    });
+
+    // The first claim lands, ninety minutes ago, for some other visit. From
+    // that instant the count is a number: d1's SMS mark fell due an hour ago,
+    // after it, and d1's email mark fell due long before it.
+    const [other] = await rows(raw`select id::text as id from appointments
+      where tenant_id = ${tenantD} and status = 'completed'`);
+    await claim({ tenant: tenantD, appointment: String(other!.id), offset: "48h", start: at(-3 * DAY), created: at(-90 * MIN) });
+    expect(await readReminderNumbers(viewer, { now: NOW })).toEqual({
+      sms: { marksWithoutClaim: 1, claimsWithoutOutcome: 0 },
+      email: { marksWithoutClaim: 0, claimsWithoutOutcome: 1 },
     });
   });
 
@@ -925,8 +1225,8 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
   it("an admin reads the same counts as reception, and a therapist is refused", async () => {
     const { readReminderNumbers } = await import("./reminder-numbers");
     const admin = await readReminderNumbers({ tenantId: tenantA, role: "admin" as const, userId: A.reception }, { now: NOW });
-    expect(admin.sms).toEqual({ marksWithoutClaim: 8, claimsWithoutOutcome: 11 });
-    expect(admin.email).toEqual({ marksWithoutClaim: 5, claimsWithoutOutcome: 1 });
+    expect(admin.sms).toEqual({ marksWithoutClaim: 11, claimsWithoutOutcome: 11 });
+    expect(admin.email).toEqual({ marksWithoutClaim: 8, claimsWithoutOutcome: 1 });
 
     const { ForbiddenError } = await import("@osteojp/auth");
     await expect(
@@ -942,15 +1242,13 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     const { readReminderNumbers } = await import("./reminder-numbers");
     const viewer = { tenantId: tenantB, role: "reception" as const, userId: B.reception };
     // Tenant B's one visit still ahead, seeded above at NOW plus 23 hours.
-    const start = at(23 * HOUR);
-    const [target] = await rows(raw`select id::text as id from appointments
-      where tenant_id = ${tenantB} and status = 'scheduled'`);
-    expect(target, "tenant B's scheduled visit").toBeTruthy();
+    const start = bVisit.start;
+    expect((await readReminderNumbers(viewer, { now: NOW })).sms.marksWithoutClaim, "before the claim").toBe(1);
 
     // Taken at its mark, so it is not early.
     await takeReminderClaim({
       tenantId: tenantB,
-      appointmentId: String(target!.id),
+      appointmentId: bVisit.id,
       offsetId: "24h",
       channel: "sms",
       startsAt: start,

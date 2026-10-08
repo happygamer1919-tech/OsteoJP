@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, eq, gt, gte, inArray, like, lt, lte, notExists, sql, type SQL } from "drizzle-orm";
+import { and, count, eq, gt, gte, inArray, like, lt, lte, min, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { assertCan } from "@osteojp/auth";
 import { appointments, auditLog, reminderDispatches, type DbTx } from "@osteojp/db";
@@ -9,6 +9,7 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 
 import { REMINDER_OFFSETS, type ReminderOffset } from "./offsets";
 import { REMINDER_CLAIM_ACTION } from "./reminder-claim";
+import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./reminder-population";
 
 /**
  * THE TWO NUMBERS ON LEMBRETES SMS, for both channels.
@@ -39,13 +40,24 @@ import { REMINDER_CLAIM_ACTION } from "./reminder-claim";
  * the visits `appointments_rls` lets them read.
  *
  * ==========================================================================
- * WHAT NUMBER ONE DOES NOT KNOW YET
+ * WHICH VISITS NUMBER ONE COUNTS, AND FROM WHEN
  * ==========================================================================
- * It counts EVERY scheduled or confirmed visit. Some of those were never due a
- * reminder under the rules of today (an imported visit, a request reception
- * has not accepted, a visit moved to within the lead time), so it has a
- * baseline above zero. Which visits it should leave out is a decision this
- * file does not make.
+ * ONLY A VISIT THE CLINIC SAVED. A visit that never had a reminder under the
+ * rules of today (an imported one, an online request nobody has handled) is
+ * not a visit whose reminder went missing, and whether such a visit should be
+ * reminded at all is the owner's open question. The switch and its default,
+ * NO, are in ./reminder-population.ts; this file reads it and decides nothing.
+ *
+ * ONLY A MARK THAT FELL DUE AFTER CLAIMS BEGAN. A reminder sent before the
+ * dispatcher wrote claims has no claim and never will, and the list below the
+ * counts shows it as sent. So number one has a floor: the first claim of the
+ * last seven days. A mark before it is not counted. With NO claim in seven
+ * days there is no floor, and number one is not a number at all (null): the
+ * page says so in words, because a zero there would mean "nothing was missed"
+ * and nobody counted.
+ *
+ * WHAT IS STILL IN IT, so it has a baseline above zero: a request accepted
+ * after its mark, and a visit moved to within the lead time.
  */
 
 /** "Over 30 minutes": how long a mark or a claim is left alone before it is counted. */
@@ -66,8 +78,8 @@ export const CLAIM_OUTCOME_WINDOW_MS = 7 * 24 * 60 * 60_000;
 export const NUMBERS_REMINDABLE_STATUSES = ["scheduled", "confirmed"] as const;
 
 export type ReminderChannelNumbers = {
-  /** Number one. */
-  marksWithoutClaim: number;
+  /** Number one. Null when it could not be counted: no claim in the last seven days. */
+  marksWithoutClaim: number | null;
   /** Number two. */
   claimsWithoutOutcome: number;
 };
@@ -97,11 +109,39 @@ function isClaimFor(t: ClaimColumns, offset: ReminderOffset): SQL | undefined {
 }
 
 /**
+ * NUMBER ONE'S FLOOR: when the first claim of the last seven days was written,
+ * of any reminder of the tenant. Null when there is none.
+ *
+ * Seven days and not "ever": the bound keeps the read on
+ * `audit_log_created_idx`, as number two's is, and it loses nothing. A mark
+ * number one looks at is at most the longest offset old, so a first claim
+ * older than that moves no count. And seven days with no claim at all is not
+ * a start-up any more: the claims have stopped, and null says that too.
+ */
+async function readFirstClaimAt(tx: DbTx, now: Date): Promise<Date | null> {
+  const [row] = await tx
+    .select({ first: min(auditLog.createdAt) })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.entityType, "appointment"),
+        eq(auditLog.action, REMINDER_CLAIM_ACTION),
+        gte(auditLog.createdAt, new Date(now.getTime() - CLAIM_OUTCOME_WINDOW_MS)),
+      ),
+    );
+  return row?.first ?? null;
+}
+
+/**
  * NUMBER ONE for one offset: visits still ahead whose mark passed more than 30
  * minutes ago, with no claim for this offset, this channel and THIS start.
  *
  *   - "visit ahead" and "mark over 30 minutes past" are one range on the
  *     start: after now, and before now minus 30 minutes plus the offset.
+ *   - the mark is at or after the floor (`firstClaimAt`): claims were being
+ *     written when it fell due.
+ *   - the clinic saved it (./reminder-population.ts), unless the switch says
+ *     every visit counts.
  *   - created before its mark. A visit booked inside the lead time never had
  *     this reminder (computeDueReminders drops a mark already past).
  *   - a claim for ANOTHER start does not count: the visit moved, and the
@@ -109,9 +149,16 @@ function isClaimFor(t: ClaimColumns, offset: ReminderOffset): SQL | undefined {
  *   - an `early` claim does not count either: it was taken over ten minutes
  *     before this mark, by a job that woke at an older time.
  */
-async function countMarksWithoutClaim(tx: DbTx, offset: ReminderOffset, now: Date): Promise<number> {
+async function countMarksWithoutClaim(
+  tx: DbTx,
+  offset: ReminderOffset,
+  now: Date,
+  firstClaimAt: Date,
+  includeNeverReminded: boolean,
+): Promise<number> {
   const claim = alias(auditLog, "reminder_number_claim");
   const startBefore = new Date(now.getTime() - NUMBERS_SETTLE_MS + offset.minutesBefore * 60_000);
+  const startFrom = new Date(firstClaimAt.getTime() + offset.minutesBefore * 60_000);
   const [row] = await tx
     .select({ n: count() })
     .from(appointments)
@@ -120,7 +167,9 @@ async function countMarksWithoutClaim(tx: DbTx, offset: ReminderOffset, now: Dat
         inArray(appointments.status, [...NUMBERS_REMINDABLE_STATUSES]),
         gt(appointments.startsAt, now),
         lt(appointments.startsAt, startBefore),
+        gte(appointments.startsAt, startFrom),
         sql`${appointments.createdAt} < ${appointments.startsAt} - make_interval(mins => ${offset.minutesBefore}::int)`,
+        includeNeverReminded ? undefined : hasSchedulingEvent(tx),
         notExists(
           tx
             .select({ one: sql`1` })
@@ -204,26 +253,36 @@ async function countClaimsWithoutOutcome(tx: DbTx, offset: ReminderOffset, now: 
  *
  * `now` is passed in by tests. Every instant the queries compare against comes
  * from it, so a seeded database gives the same answer at any hour.
+ *
+ * `includeNeverReminded` is the switch of ./reminder-population.ts, and that
+ * constant is its value everywhere but in a test: the page passes nothing.
  */
 export async function readReminderNumbers(
   ctx: RequestContext,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; includeNeverReminded?: boolean } = {},
 ): Promise<ReminderNumbers> {
   assertCan(ctx.role, "reminders:log_read");
   const now = opts.now ?? new Date();
+  const includeNeverReminded = opts.includeNeverReminded ?? REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER;
 
   return runScoped(
     ctx,
     async (tx) => {
-      const numbers: ReminderNumbers = {
-        sms: { marksWithoutClaim: 0, claimsWithoutOutcome: 0 },
-        email: { marksWithoutClaim: 0, claimsWithoutOutcome: 0 },
-      };
+      const firstClaimAt = await readFirstClaimAt(tx, now);
+      const marks: Record<Channel, number> = { sms: 0, email: 0 };
+      const claims: Record<Channel, number> = { sms: 0, email: 0 };
       for (const offset of REMINDER_OFFSETS) {
-        numbers[offset.channel].marksWithoutClaim += await countMarksWithoutClaim(tx, offset, now);
-        numbers[offset.channel].claimsWithoutOutcome += await countClaimsWithoutOutcome(tx, offset, now);
+        if (firstClaimAt !== null) {
+          marks[offset.channel] += await countMarksWithoutClaim(tx, offset, now, firstClaimAt, includeNeverReminded);
+        }
+        claims[offset.channel] += await countClaimsWithoutOutcome(tx, offset, now);
       }
-      return numbers;
+      // No claim in seven days: number one was not counted, and is not a zero.
+      const counted = firstClaimAt !== null;
+      return {
+        sms: { marksWithoutClaim: counted ? marks.sms : null, claimsWithoutOutcome: claims.sms },
+        email: { marksWithoutClaim: counted ? marks.email : null, claimsWithoutOutcome: claims.email },
+      };
     },
     "db:reminder-numbers",
   );
