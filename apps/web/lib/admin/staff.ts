@@ -30,6 +30,7 @@ import { invitesLiveSendEnabled, sendInviteEmail } from "@/lib/invites/email";
 import { type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { isForeignKeyViolation } from "./foreign-key-refusal";
 import { verifyDeletePassword } from "./appointment-delete-password";
 import { countActiveOwners, wouldRemoveLastOwner } from "./guards";
 
@@ -585,7 +586,8 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
  *
  * The user's own CONFIG rows (therapist_services, availability_templates,
  * time_off) are deleted child-first (RETURNING); then the users row. Clinical
- * and audit data are never touched.
+ * and audit data are never touched. The database's own foreign-key refusal of
+ * the users DELETE (SQLSTATE 23503) is named `has_activity` as well.
  */
 export async function deleteStaffMember(
   actor: RequestContext,
@@ -638,7 +640,16 @@ export async function deleteStaffMember(
     await tx.delete(availabilityTemplates).where(eq(availabilityTemplates.userId, userId)).returning({ id: availabilityTemplates.id });
     await tx.delete(timeOff).where(eq(timeOff.userId, userId)).returning({ id: timeOff.id });
 
-    const del = await tx.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
+    // Names the database's foreign-key refusal: a DELETE refused because a row
+    // still references the user is `has_activity`, the word the counts above
+    // give. Any other failure is rethrown untouched.
+    let del: { id: string }[];
+    try {
+      del = await tx.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
+    } catch (e) {
+      if (isForeignKeyViolation(e)) throw new AdminError("has_activity");
+      throw e;
+    }
     if (del.length === 0) throw new AdminError("not_found");
 
     await writeAudit(tx, actor, {
