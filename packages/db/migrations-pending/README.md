@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0104_clinical_records_episode_key.sql` | `0104` | 2026-10-08 | branch `db/0105-registo-episode-key`. Becomes `0105` (strategy, dispatch S-1008-B). A registo and the episode it is filed in name one patient, in one tenant: a unique index on `clinical_episodes`, a foreign key from `clinical_records`, and `merge_patients` replaced with two statements added. It is promoted only after `0104` is applied to production and merged. Its pre-check and post-check are `scripts/db/precheck-0105-registo-episode-key.sql` and `scripts/db/postcheck-0105-registo-episode-key.sql`, and both pin the file's sha256 as a literal. `packages/db/src/schema.ts` declares the index and the key in the same commit. |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
