@@ -273,6 +273,8 @@
   "patients.hardDeleteClassFormSubmissions": "Formulários preenchidos",
   "patients.hardDeleteClassAnalytics": "Eventos de estatística",
   "patients.hardDeleteClassMergeLosers": "Pacientes fundidos neste",
+  "patients.hardDeleteClassSurveySends": "Avaliações de satisfação (envios)",
+  "patients.hardDeleteClassSurveyAnswers": "Avaliações de satisfação (respostas)",
   "patients.hardDeleteWhatBlocks": "Não é possível eliminar definitivamente. O que ainda referencia este paciente:",
   "patients.hardDeleteBlockedPermanently": "Um registo clínico nunca pode ser removido, por isso este paciente não pode ser eliminado definitivamente.",
   "patients.hardDeleteWrongPassword": "Palavra-passe de eliminação incorreta.",

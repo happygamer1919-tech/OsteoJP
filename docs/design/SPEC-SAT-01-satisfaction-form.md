@@ -1114,7 +1114,9 @@ English translation (S10). Texts 1 to 60 are JP's approved texts of 2026-10-02,
 with the S1 renames and the changes S9 required shown against the approved
 wording; text 7 is the ruled sentence, approved by JP on 2026-10-02 (S9a).
 Texts 61 to 81 are new staff strings for the button, the dialog, the disabled
-reasons, the status line and the list (S9). ~~No app pull request opens before
+reasons, the status line and the list (S9). Texts 82 and 83, added 2026-10-08,
+are the two staff labels the patient hard delete shows for survey sends and
+answers (A4). ~~No app pull request opens before
 JP's review comes back.~~ *Superseded 2026-10-02 by S-1002-D S9a: the review is
 done.* The file JP reviewed is in the owner's handover folder as
 `SAT-01-copy-pt-for-JP.md`.

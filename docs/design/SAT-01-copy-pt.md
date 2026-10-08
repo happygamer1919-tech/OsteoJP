@@ -20,6 +20,9 @@ avaliação de satisfação. Nada está construído.
   teste acompanhado para um paciente ZZ TESTE.
 * **Textos novos para a equipa** (61 a 81): escritos a 2 de outubro de 2026 a
   pedido da S9, no mesmo estilo dos textos aprovados.
+* **Textos 82 e 83, novos para a equipa:** escritos a 8 de outubro de 2026, no
+  mesmo estilo, para a eliminação definitiva de um paciente (secção L). Não são
+  lidos por pacientes.
 * **Inglês:** a secção "English" no fim deste ficheiro é traduzida dos textos
   em português; não foi revista em separado (S10).
 
@@ -626,6 +629,24 @@ não pode ver (S7).
 
 > Resposta visível apenas para o terapeuta que realizou a consulta, para a receção e os administradores dessa clínica e para o proprietário.
 
+## L. Eliminação definitiva de um paciente: o que a impede (novo, 8 de outubro de 2026)
+
+Onde: na ficha do paciente, "Zona de risco", e em "Pacientes eliminados", na
+lista "O que ainda referencia este paciente", ao lado dos outros tipos de dados
+(marcações, notas, faturas). Cada linha mostra o texto, dois pontos e o número
+de registos. Um paciente com envios ou respostas de avaliação não pode ser
+eliminado definitivamente.
+
+Exemplo: "Avaliações de satisfação (envios): 1"
+
+**82. Envios de avaliação**
+
+> Avaliações de satisfação (envios)
+
+**83. Respostas de avaliação**
+
+> Avaliações de satisfação (respostas)
+
 ## Perguntas para o JP, com as respostas de 2 de outubro de 2026
 
 1. **O nome.** "Questionário de satisfação" em todo o lado. Prefere
@@ -742,6 +763,8 @@ avaliações, and "review" is already Review Consultation.
 | 79 | Sent |
 | 80 | Answer |
 | 81 | Answer visible only to the therapist who carried out the appointment, to reception and the administrators of that clinic, and to the owner. |
+| 82 | Satisfaction surveys (sends) |
+| 83 | Satisfaction surveys (answers) |
 
 The English SMS (3) is ASCII only, as the house rule asks of every SMS. Its
 fixed text is 100 characters, plus the date (5), the code (8) and the

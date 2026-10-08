@@ -9,6 +9,8 @@ import { assertCan } from "@osteojp/auth";
 import {
   analyticsEvents,
   appointmentNotes,
+  appointmentSurveyResponses,
+  appointmentSurveySends,
   appointments,
   attachments,
   clinicalEpisodes,
@@ -225,8 +227,8 @@ export type PatientHardDeleteBlockers = {
    * The two booleans above are kept and are still derived from the SAME reads,
    * so no caller has to change and the two answers cannot drift apart. What the
    * clinic could not get before is exactly this: `has_references` is one word
-   * for ten different situations, and three marcações and one nota are not the
-   * same problem.
+   * for twelve different situations, and three marcações and one nota are not
+   * the same problem.
    */
   counts: HardDeleteCount[];
 };
@@ -267,6 +269,19 @@ export async function getPatientHardDeleteBlockers(
         .where(eq(patientFormSubmissions.patientId, id)),
       tx.select({ n: count() }).from(analyticsEvents).where(eq(analyticsEvents.patientId, id)),
       tx.select({ n: count() }).from(patients).where(eq(patients.mergedIntoId, id)),
+      // SAT-01: the survey sends and answers that name the patient, the same two
+      // reads as hardDeletePatient (actions.ts). RLS decides what this caller
+      // counts (0102's two SELECT policies): the owner reads every row of the
+      // tenant, so these are the whole count for the owner and can read zero
+      // for anyone else while a row exists.
+      tx
+        .select({ n: count() })
+        .from(appointmentSurveySends)
+        .where(eq(appointmentSurveySends.patientId, id)),
+      tx
+        .select({ n: count() })
+        .from(appointmentSurveyResponses)
+        .where(eq(appointmentSurveyResponses.patientId, id)),
     ]);
     // THE ORDER OF `others` IS THE ORDER OF THE SELECTS ABOVE, and the order of
     // HARD_DELETE_CLASSES is that same order with `clinicalRecords` in front.
