@@ -1,8 +1,9 @@
 # 0103: apply the revoke of anon's SEQUENCES default in public
 
-**NOT READY. Nothing in this document may be pasted yet.** Open, in order: the rehearsal (the section "Rehearsal" reads `REHEARSAL: PENDING`); the one mutation sweep of the two check files; R4, at most three rounds; the pull request, which is not opened (`PR-NUMBER-PENDING`); CI on the head that merges; the owner's two clicks; and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
+**NOT READY. Nothing in this document may be pasted yet.** The rehearsal ran on 2026-10-08, with limits (see "Rehearsal"). Open, in order: the one mutation sweep of the two check files; R4, at most three rounds; the pull request, which is not opened (`PR-NUMBER-PENDING`); CI on the head that merges; the owner's two clicks; and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
 
-**Status: AUTHORED. NOT REHEARSED. NOT APPLIED.** One migration,
+**Status: AUTHORED. REHEARSED WITH LIMITS on 2026-10-08 (no block ran whole to its last line: see
+"Rehearsal"). NOT APPLIED.** One migration,
 `packages/db/migrations/0103_revoke_anon_sequences_default.sql`, sha256 `8283a7996ddf76266d60edec2e8b44f32ebac513237038ff7f8c413774643f59`.
 
 **In plain language.** The database has a setting that says what every NEW sequence (a counter)
@@ -61,9 +62,9 @@ of 2026-09-27 asks ("build/rehearse/document as separate agents").
    post-check and the pending README's row (commit `5ec08eb0`); then this document, its sidecar and
    its script test (the commit after it). `node scripts/check-journal.mjs` reads 101 files and 101
    entries.
-2. **OPEN: the rehearsal,** by the rehearsal agent, under the lead's standing rule, verbatim in
-   its prompt (see "What the rehearsal agent owes"). It includes strategy's gate G7, the lock read.
-   Its record goes under "Rehearsal", which today reads `REHEARSAL: PENDING`.
+2. **DONE 2026-10-08, WITH LIMITS: the rehearsal,** by the rehearsal agent, under the lead's
+   standing rule, verbatim in its prompt (see "What the rehearsal agent owes"). It includes
+   strategy's gate G7, the lock read, which read as expected. Its record is under "Rehearsal".
 3. **OPEN: the one mutation sweep** of the pre-check's and the post-check's predicates, mechanical,
    with the survivors listed (the owner's ruling of 2026-09-27). Its table goes under "Review
    history".
@@ -90,7 +91,7 @@ records what it found, and the dispatch pins the sha by machine.
 | Placeholder | Where it stands | Filled when | By |
 |---|---|---|---|
 | `PR-NUMBER-PENDING` | this document: the banner, step 5 above, the fact table, the order table | when the pull request is opened | SOLO, as an amendment to this document, with its sidecar |
-| `REHEARSAL: PENDING` | this document, "Rehearsal" | when the rehearsal has run | the rehearsal agent's record, committed by SOLO with the sidecar |
+| `REHEARSAL: PENDING` | it stood in this document, under "Rehearsal", until 2026-10-08 | FILLED 2026-10-08: the rehearsal has run and its record replaced the line | the rehearsal agent's record, committed with the sidecar |
 | `MERGE-SHA-PENDING` | GREEN's dispatch only. Named in the banner here so nobody looks for it in a block | after the owner merges | SOLO |
 | this document's sha256 | GREEN's dispatch, and `docs/migration-apply-0103.sha256` on the same head | after the LAST amendment of this document | SOLO; it is the first field of the sidecar |
 | the run window | GREEN's dispatch only, as three Lisbon times `YYYYMMDDHHMM` | when the dispatch is written | SOLO |
@@ -278,10 +279,11 @@ closed hours only. The sitting S-1008-B rules for the night of 2026-10-08 is in 
    statements are the two lines.
 2. **Condition 2 holds: the migration is catalog-only.** Its one statement after the two SET LOCAL
    lines is `ALTER DEFAULT PRIVILEGES`, which changes one row of `pg_default_acl` and names no
-   table. It takes no lock on any table: read on the local stack by the build agent from a second
-   session, and by the document agent statement by statement (see "G7"). **The rehearsal's own G7
-   read is still owed,** and strategy's gate says what follows if it reads otherwise: "it is closed
-   hours only and says so in its READY line". This document is closed hours only either way.
+   table. It takes no lock on any table outside the catalogue: read on the local stack by the build
+   agent from a second session, and by the document agent statement by statement (see "G7").
+   **The rehearsal's own G7 read agrees** (see "Rehearsal", "G7: THE LOCK READ"). Strategy's gate
+   says what follows if it reads otherwise: "it is closed hours only and says so in its READY
+   line". This document is closed hours only either way.
 3. **Condition 3 does not hold:** no read-only pre-check has run on production in an earlier
    sitting. The pre-check runs inside stage 1, minutes before the apply, and that is not "an
    earlier sitting". The card's ORDER sentence also names one: "a read-only measurement and a
@@ -325,12 +327,13 @@ because production holds one `opens_at` and `closes_at` pair per location and no
   no owner-override arm and no date in any arm.** An override would be a new amendment with its
   own R4 round (R8).
 
-## G7: the locks (the build lane's two reads, 2026-10-08; the rehearsal's read is PENDING)
+## G7: the locks (the build lane's two reads, 2026-10-08; the rehearsal's read is under "Rehearsal")
 
 Strategy's gate G7: "G7 CHECK: the 0103 rehearsal. EXPECT: lock read shows no auth table and no
 table reception writes. Otherwise it is closed hours only and says so in its READY line."
 
-**G7's verdict belongs to the rehearsal and is not given here.** What follows are two readings on
+**G7's verdict belongs to the rehearsal. It is given under "Rehearsal", "G7: THE LOCK READ", and it
+is the expected one: no `auth` table and no table reception writes.** What follows are two readings on
 the build lane's stack (lane `green`, Postgres 17.6, the platform's default in place), each inside
 a transaction that was rolled back. Neither is the rehearsal.
 
@@ -1068,7 +1071,7 @@ apply.
 | nothing else moved | post-check 4 and 7 to 11 | the catalogue, by md5 |
 | production journal reads 101, 0103 by hash | post-check 12 and 13, stage 2, and the closing journal read | the database |
 | the next sequence gives `anon` nothing | **NOT DISCHARGED ON PRODUCTION** (a READ ONLY transaction creates no sequence). IN ACTION on the local stack | the executor, on a throwaway |
-| G7: no `auth` table and no table reception writes is locked | **NOT DISCHARGED ON PRODUCTION, AND NOT YET BY THE REHEARSAL:** two readings on the build lane's stack | a throwaway |
+| G7: no `auth` table and no table reception writes is locked | **NOT DISCHARGED ON PRODUCTION.** On a throwaway: the rehearsal's four readings ("Rehearsal", "G7: THE LOCK READ") and two readings on the build lane's stack | a throwaway |
 | the sitting is in closed hours | stage 0's and stage 1's clock arms, by machine | the apply machine |
 
 ## Rollback
@@ -1121,12 +1124,337 @@ merge. The board card's PR and the `CLAUDE.md` docs PR are SOLO's, Tier A.
 
 ## Rehearsal
 
-REHEARSAL: PENDING
+**REHEARSED ON 2026-10-08, 14:33 TO 14:45 LISBON, WITH LIMITS.** No block of this document ran
+whole to its last line. Each of the four stopped at its own STOP, where this document predicts
+before a merge, and is NOT REHEARSED as a whole block. What a local database can prove was run on
+its own, with this document's own lines: the pre-check, the apply through `verified-migrate.mjs`
+and drizzle-kit, the post-check, a second apply, and G7. **G7 read as strategy expects: no `auth`
+table and no table reception writes is locked.** The record comes first, as the rehearsal agent
+reported it. The build lane's run and the document agent's run follow it, and neither is the
+rehearsal.
 
-**No block of this document has run against a database.** Whole, the four blocks have run only in
-the fault-injection harness, on stubs. The rehearsal agent's record replaces the line above; until
-it does, this document is NOT REHEARSED, every block of it. What follows is what the build lane
-measured, and none of it is the rehearsal.
+### The rehearsal, 2026-10-08, as the rehearsal agent reported it
+
+**Where and when.** 2026-10-08, 14:33:41 to 14:45:40 Lisbon. Every time below was read by
+machine: the start and the end of each run by `TZ=Europe/Lisbon date`, whose zone read `WEST`, and
+an instant inside a run from the database's own clock, which reads UTC (Lisbon was UTC plus one
+hour). It was a Thursday inside clinic hours, so every clock arm read `open`. Run from this
+branch's worktree at head `04ac9821` (`04ac982133cbf3880303a7cc47766b15328ef14d`), with this
+document as it stood at that head, before this record was written into it (sha256
+`88564a76b613b6e8e2ea40315a51c446bd27e89c310d09969fe9d5dce539fa7e`), and its four blocks taken
+out of it by machine. This record changed no byte of any block. Run under the lead's standing
+rule, verbatim in its prompt. The agent wrote neither the migration nor this document.
+
+**The database.** Lane `green` (project `OsteoJP-green`, 127.0.0.1:54922), a local Supabase stack
+that carries the platform's default privileges. It was found running, in the before state, and
+read before anything ran (14:33:41, READ ONLY):
+
+- PostgreSQL 17.6 (aarch64); the session is `postgres`, and `postgres` is no member of
+  `supabase_admin` (`false`);
+- the mirror `0000` to `0102`, 100 rows in `supabase_migrations.schema_migrations`;
+- a drizzle journal of 100 rows, the newest 0102 (`db12b967...`, `when` 1788502300000);
+- **0 sequences** in `public`;
+- 2 active `public.locations` rows, open 08:00 to 20:00;
+- **`pg_default_acl`, the `public` SEQUENCES entry of `postgres`:
+  `{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}`.**
+  It names `anon=rwU/postgres`, so the thing 0103 revokes is really there.
+
+Tools: psql client 18.6, node 22.22.3, pnpm 11.1.3, drizzle-kit 0.31.10 with the `postgres` driver
+3.4.9, zsh 5.9, bash 3.2.57, Supabase CLI 2.100.0.
+
+**How each run was made.** One runner started `zsh -f` or `bash --noprofile --norc` with an
+environment of six names it sets itself and nothing inherited: `PATH`, `HOME`, `LANG`, `TERM`, and
+lane `green`'s URL as `DATABASE_URL_DIRECT` and as `DATABASE_URL`. No `PG*` variable was set (read
+by name: all nine unset). Each text ran in GREEN's tool shape,
+`true && eval '<text>' < /dev/null && echo TOOL-CHAIN-CONTINUED`. The production environment file
+was never read, sourced or handed to a program.
+
+**SUBSTITUTIONS, ONLY THESE.**
+
+1. **The `cd` to the apply checkout became this worktree:** one line in each block, and no other
+   byte of any block.
+2. **The database is lane `green` on 127.0.0.1,** its URL supplied by the runner. The lines that
+   load the production environment file did not run and are NOT REHEARSED: stage 1's and stage 2's
+   `set -o allexport && . ... && set +o allexport` line, and the closing read's
+   `node --env-file=...` line as it is written.
+3. **Nothing stood in for `origin/main`, for the target guard, for the journal reader, for the
+   dispatch's run window or for the `/tmp/0103-` paths.** `/tmp` held no `0103-` file before the
+   first run. The rehearsal wrote six real ones (`0103-check-journal.out`, `0103-precheck.new`,
+   `0103-precheck.out`, `0103-postcheck.out`, `0103-apply.out`, `0103-applied.ok`) and removed all
+   six at 14:45:32; `/tmp` held none after. `/tmp/0103-main.sha` and `/tmp/0103-window.ok` never
+   existed, and nobody wrote either by hand.
+
+**WHOLE BLOCKS: NONE OF FOUR RAN TO ITS LAST LINE.** Each was pasted whole, in order, under zsh
+and again under bash (14:33:50 to 14:34:02). Each stopped at its own STOP with exit 1, printed no
+`TOOL-CHAIN-CONTINUED` and wrote no record. The two shells printed the same lines.
+
+| Block | Where it stopped, in both shells |
+|---|---|
+| stage 0 | Its first lines ran for real: the clean worktree check, the fetch, the detached checkout of `origin/main` and the HEAD CHECK, which printed `origin/main and HEAD: 5c619c75ecd7ae60a1f2eae973c512b5838ed8a6`. Then `STOP: the document pin is not on disk at origin/main`, as "STAGE 0" predicts before a merge. The worktree was put back on the branch after each run |
+| stage 1 | `STOP: stage 0 recorded no sha in this sitting. The sitting stops` |
+| stage 2 | `STOP: stage 1 left no applied marker in this sitting, or left it over an hour ago. If stage 1 ended with its line 0103 APPLIED, then 0103 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; the lead rules` |
+| the closing read | `STOP: stage 1 left no applied marker. If stage 1 ended with its line 0103 APPLIED, then 0103 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1. The journal read has not run; the lead rules` |
+
+**PASTED AGAIN AFTER THE APPLY** (14:39:14 to 14:39:15, with the applied marker in place, both
+shells, exit 1 each):
+
+| Block | Where it stopped |
+|---|---|
+| stage 0 and stage 1 | `STOP: stage 1 has ALREADY APPLIED 0103 in this sitting, or the age of /tmp/0103-applied.ok could not be read. The sitting stops here. Never run stage 0 or 1 again. GREEN reports this whole output, and stage 2 (READ ONLY) runs only on the owner's or the lead's word` |
+| stage 2 | it passed its applied-marker check, then `STOP: stage 0 recorded no sha in this sitting, and stage 2 runs only from the recorded sha. 0103 IS APPLIED and the write stands. ...` |
+| the closing read | it passed its applied-marker check, then `STOP: stage 0 recorded no sha in this sitting. 0103 IS APPLIED and the write stands. ...` |
+
+**FRAGMENTS: this document's own lines, run on their own. A pass here is not a pass of a block.**
+Each fragment is a run of consecutive lines of one block, taken by line number by machine, each
+checked against the text it must start with, between the block's own `(` and `)` and under its
+variable lines. Where a line prints the sha it runs from, `MAIN` or `REC` was set to the
+worktree's head by hand. Each ran under zsh and under bash, except the lines that write.
+
+| Fragment | Lisbon, exit | Result |
+|---|---|---|
+| stage 0, from `test -f ${DOCPIN}` to the end of the clock arm | 14:34:50, 1 and 1 | `docs/migration-apply-0103.md: OK`; `newest journal entry: idx 100, when 1788502400000, tag 0103_revoke_anon_sequences_default, of 101; before it idx 99, when 1788502300000, tag 0102_sat01_satisfaction_survey`; `0102 on disk: 0102_sat01_satisfaction_survey.sql, sha256 db12b967...`; check-journal's `101 .sql files match 101 journal entries in order`. Then **the clock arm on the real clock, in the safe direction:** `Lisbon weekday and time 41434 (...; the clock read 41434 WEST): open by the weekday table`, the three proofs (`yes`, `yes, by construction`, `no, by construction`) and `STOP: Lisbon 41434 is inside clinic hours by the weekday table ...`. The three lines after it (the record of the sha and the last line) did not run |
+| stage 1, from the marker check to the pins, then THE REAL TARGET GUARD | 14:35:09, 1 and 1 | `docs/migration-apply-0103.md: OK`; `0102: packages/db/migrations/0102_sat01_satisfaction_survey.sql, sha256 db12b967..., journal when 1788502300000`; then the guard: `host: 127.0.0.1`, `port: 54922`, `ref:  postgres`, **`REFUSING: project ref is "postgres", not the production project.`**, and the block's `STOP: the target guard refused or failed (its lines are above). Nothing was applied`. A marker line placed after it did not print. **Stage 1 is NOT REHEARSED past the guard as a block** |
+| stage 1, the pre-check line and its three counts | 14:35:20, 0 and 0 | the BEFORE state: **10 OK / 0 VACUOUS / 0 FAIL**, and `the pre-check profile: 10 OK / 0 VACUOUS / 0 FAIL. REPORT, AS PRINTED ABOVE, ...`. The two shells' transcripts are byte-identical |
+| stage 1, the clock and the clinics | 14:35:29, 1 and 1 | `Lisbon weekday and time 41435 (...): open by the weekday table`; `active clinics whose own hours reach outside 08:00 to 21:00, the table's widest row: 0 of 2`; `the clinics' own rows against the weekday table: inside`; the three proofs; `STOP: Lisbon 41435, clock open, clinics inside. ...` |
+| stage 1, the three lines from `--- only now` | 14:35:31, 0 (zsh only) | the old records removed, the transcript moved to `/tmp/0103-precheck.out` |
+| stage 2, the sidecar and the pins, the carries, then THE REAL TARGET GUARD | 14:35:36, 1 and 1 | `carries from this run: journal_before=100 tables_before=51 sequences_before=0 secdef_before=36 anon_default_before=SELECT,UPDATE,USAGE ...` with seven md5 values; `the post-check profile this sitting must print, chosen by sequences_before=0: 13 OK / 1 VACUOUS / 0 FAIL (...)`; then the guard's same four lines and the block's STOP. **Stage 2 is NOT REHEARSED past the guard as a block** |
+| stage 2, the carries, the post-check line and its counts, ON THE BEFORE STATE | 14:35:36, 1 and 1 | **10 OK / 1 VACUOUS / 3 FAIL: FAIL on verdicts 1, 12 and 13, VACUOUS on 5.** The block's own line then stopped: `STOP: the post-check printed [3] FAIL verdicts, or its transcript could not be read. Stage 1 recorded that it applied 0103, and this read does not agree. Treat the state as UNKNOWN. ...` |
+| stage 1, the four lines from `--- the apply` | 14:38:26, 0 (zsh only) | THE APPLY, below |
+| stage 2, the carries, the post-check, SR-51, the journal's last three rows and the last line, ON THE AFTER STATE | 14:39:00, 0 and 0 | **13 OK / 1 VACUOUS / 0 FAIL**, the VACUOUS being verdict 5; `journal rows before=100 after=101, 0103 present by hash`; the last line as this document's EXPECT. Byte-identical transcripts in the two shells |
+| the closing read, the sidecar and the reader's pins | 14:39:25, 1 and 1 | `reader: 825b7818..., its target module: e037104d... (at the recorded sha 04ac9821...)`. Then the reader, **run on its own with no environment file named, which is not the block's line:** `` REFUSED: this script reads drizzle.__drizzle_migrations, which only production uses, and the target's ref is not dfotoodqvmjhbdcxyaxf. A local lane is migrated by `supabase db reset` and records in supabase_migrations.schema_migrations instead, so the answer here would be an error rather than a smaller truth. `` **The closing read is NOT REHEARSED from the reader on** |
+
+**THE PRE-CHECK ON THE BEFORE STATE, 10 OK** (14:35:20):
+
+- verdict 0 `on`; verdict 1 `0; control 1`; verdict 2 `1 row, newest is 0102, when 1788502300000`;
+  `journal_rows_before` 100; verdict 4 `postgres; control false`;
+- **verdict 5 `1 entry, anon SELECT,UPDATE,USAGE, grantable 0; control SELECT,UPDATE,USAGE`;**
+- verdict 6 `PUBLIC items 0, grantees anon inherits from 0; control 3 other grantees`; verdict 7
+  `0; control SELECT,UPDATE,USAGE`; verdict 8 `5`; `secdef_functions_before` 36;
+- CARRY: `tables_before` 51, **`sequences_before` 0**, `anon_default_before` `SELECT,UPDATE,USAGE`,
+  and seven md5 values (over 0 sequences, 102 policies, 262 functions, 2475 relation privileges,
+  9 column privileges, 333 default privileges, 204 role and relation pairs);
+- INFO: `17.6`; `supabase_admin`; **`0 of 0`** sequences on which `anon` holds a privilege;
+  `authenticated SELECT,UPDATE,USAGE; service_role SELECT,UPDATE,USAGE`;
+- SUMMARY `10 OK / 0 VACUOUS / 0 FAIL`.
+
+**THE APPLY** (14:38:26 to 14:38:30, verified-migrate through pnpm and drizzle-kit, exit 0):
+`file       0103_revoke_anon_sequences_default.sql present, sha256 matches`;
+`journal    100 row(s) applied, last when=1788502300000`;
+`pending    1  [0103_revoke_anon_sequences_default]`; the drizzle-kit banner with the two NOTICEs
+(42P06 and 42P07) and its line `migrations applied successfully!`, `stderr: (nothing)`, `exit:   0`;
+`journal    100 -> 101  (delta 1)`; `0103_revoke_anon_sequences_default present by sha256: yes`;
+`OK: the journal moved by exactly the pending count and carries the approved sha256.`; then the
+marker and `0103 APPLIED. Paste stage 2 now.`
+
+**THE POST-CHECK ON THE AFTER STATE, 13 OK / 1 VACUOUS / 0 FAIL** (14:39:00):
+
+- **verdict 1 `1 entry, anon none; control SELECT,UPDATE,USAGE; before SELECT,UPDATE,USAGE`;**
+- verdict 2 `PUBLIC items 0, grantees anon inherits from 0; control 3 other grantees`; verdict 3
+  `0; control SELECT,UPDATE,USAGE`;
+- verdict 4, every other default privilege: `8733030e...` over 333, the pre-check's md5;
+- **verdict 5 `0 sequences, d41d8cd9...`: VACUOUS,** because `public` holds none;
+- verdicts 6 to 11: every carried md5 unchanged, 36 SECURITY DEFINER functions, 51 tables;
+- verdict 12 `101`; verdict 13 `1, newest is 0103`;
+- FOR THE RECORD: no `postgres | public | anon` row, and the `supabase_admin | public | anon` row
+  still there;
+- the last line: `0103 POST-CHECK PASSED. 10/10 pre-check OK, post-check 13 OK / 1 VACUOUS / 0 FAIL, the profile for 0 sequences in public, journal 100 to 101; anon holds nothing in the public SEQUENCES default of postgres, tables 51 and SECURITY DEFINER functions 36 unchanged. Paste the closing journal read now.`
+
+**THE DEFAULT PRIVILEGES, BEFORE AND AFTER** (`pg_default_acl` for schema `public`, all six rows,
+read at 14:33:41 and at 14:40:49):
+
+| Creator | Object type | Before | After |
+|---|---|---|---|
+| `postgres` | SEQUENCES | `{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}` | `{postgres=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}` |
+| `postgres` | FUNCTIONS | `{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}` | the same bytes |
+| `postgres` | TABLES | `{postgres=arwdDxtm/postgres,authenticated=arwd/postgres,service_role=arwdDxtm/postgres}` | the same bytes |
+| `supabase_admin` | SEQUENCES | `{postgres=rwU/supabase_admin,anon=rwU/supabase_admin,authenticated=rwU/supabase_admin,service_role=rwU/supabase_admin}` | the same bytes: it still grants `anon` |
+| `supabase_admin` | FUNCTIONS | `{postgres=X/supabase_admin,anon=X/supabase_admin,authenticated=X/supabase_admin,service_role=X/supabase_admin}` | the same bytes |
+| `supabase_admin` | TABLES | `{postgres=arwdDxtm/supabase_admin,anon=arwdDxtm/supabase_admin,authenticated=arwdDxtm/supabase_admin,service_role=arwdDxtm/supabase_admin}` | the same bytes |
+
+No default without a schema exists before or after (0 rows). One row of six changed, and
+post-check 4 holds every other default privilege in the database to the pre-check's md5.
+
+**G7: THE LOCK READ. No relation in schema `auth` is locked, and no table reception writes is
+locked: 0 relations in `auth`, 0 in `public`, 0 in `storage`, 0 in `realtime`, in every reading.**
+Each reading was taken from a second session, from `pg_locks` joined to `pg_class` and
+`pg_namespace`, while the migration's transaction was open and had not committed.
+
+1. **Held open, the file's statements** (14:37:17). Session 1 ran `BEGIN`, the migration file as
+   it is on disk, then waited, then rolled back. Every row the second session read for that
+   backend: ROW EXCLUSIVE on the sequence `graphql.seq_schema_version`, and the transaction's own
+   `transactionid` and `virtualxid`. Counted: `auth` 0, `public` 0, `storage` 0, `realtime` 0,
+   tables in any schema 0, relation locks in all 1; the controls read 23 tables in `auth` and 51 in
+   `public`. No backend was waiting on a lock. The second session still read the default with
+   `anon` in it, because nothing had committed.
+2. **Held open, with the journal row as drizzle writes it** (14:43:29, rolled back). The same,
+   plus ROW EXCLUSIVE on the table `drizzle.__drizzle_migrations` and on its sequence
+   `drizzle.__drizzle_migrations_id_seq`. As read here, this is everything the apply's transaction
+   still holds when it commits.
+3. **The real apply, sampled** (14:41:40, the second cycle below). A second session read
+   `pg_locks` of every other backend in a loop, 57,295 times in 19.6 seconds (one read every 0.343
+   ms on average), while verified-migrate ran drizzle-kit. The backend that ran the migration
+   (application `postgres.js`, one transaction) showed its `virtualxid` from `begin`, then from the
+   ALTER on ROW EXCLUSIVE on `graphql.seq_schema_version` and its `transactionid`, and no other
+   row. No backend was seen waiting for any lock. The journal insert and the COMMIT fell between
+   two reads.
+4. **The apply made to wait** (14:44:13, the bound below; 146,058 reads, one every 0.219 ms). This
+   denser reading also caught what lives only inside a statement: ACCESS SHARE on
+   `pg_catalog.pg_extension` during the first statement, and ROW EXCLUSIVE on
+   `pg_catalog.pg_default_acl` and its two indexes during the ALTER. None of those four was still
+   held while the insert waited five seconds.
+
+**The whole list, every relation and mode seen in any reading:**
+
+| Relation | What it is | Mode | Held |
+|---|---|---|---|
+| `pg_catalog.pg_extension` | a catalogue table | ACCESS SHARE | inside the first statement only |
+| `pg_catalog.pg_default_acl` | the catalogue table whose one row changes | ROW EXCLUSIVE | inside the ALTER only |
+| `pg_catalog.pg_default_acl_oid_index`, `pg_catalog.pg_default_acl_role_nsp_obj_index` | its two indexes | ROW EXCLUSIVE | inside the ALTER only |
+| `graphql.seq_schema_version` | the platform's sequence that counts schema changes | ROW EXCLUSIVE | from the ALTER to the end of the transaction |
+| `drizzle.__drizzle_migrations` | the migration journal, which only the applier writes | ROW EXCLUSIVE | from the journal insert to the COMMIT |
+| `drizzle.__drizzle_migrations_id_seq` | the journal's own sequence | ROW EXCLUSIVE | the same |
+| the transaction's own `transactionid` and `virtualxid` | not relations | EXCLUSIVE | the transaction |
+
+- **No relation in `auth`. No relation in `public`,** where the application's own 51 tables live,
+  reception's among them, nor in `storage` or `realtime`. The one ordinary table in the list is
+  the migration journal, in ROW EXCLUSIVE, which blocks no read and no INSERT, UPDATE or DELETE.
+- **So G7's EXPECT holds, and G7 does not make this document "closed hours only".** R9 proof 3
+  still does (section "R9"), so the document stays closed hours only, for that reason alone.
+- **Limits.** A local stack, not production: production's platform configuration was not read.
+  Readings 1 and 2 are exact for a lock that lasts to the end of the transaction. Readings 3 and 4
+  are samples: a lock taken and released inside one statement, in less than the gap between two
+  reads, can be missed, and reading 3 missed the catalogue locks reading 4 caught.
+- **Two readings were thrown away, and why.** The first held reading (14:36:56) had the agent's
+  own `SELECT` on `pg_default_acl` inside session 1, which added ACCESS SHARE locks of its own on
+  `pg_default_acl` and `pg_namespace`; reading 1 is the repeat with nothing in the session but the
+  file. The first sampler, during the first apply (14:38:26), joined `pg_stat_activity` inside one
+  transaction, where that view is frozen at its first read, so it never saw the migration's
+  backend; readings 3 and 4 are the corrected sampler.
+
+**APPLIED A SECOND TIME, AND WHAT HAPPENS.**
+
+- **The apply lines again** (14:39:13, zsh and bash): `journal    101 row(s) applied, last when=1788502400000`,
+  `pending    0  [-]`, `PRECONDITION FAILED: 0103_revoke_anon_sequences_default's sha256 is ALREADY in drizzle.__drizzle_migrations.`,
+  then the block's `STOP: the apply exited 3: ...`, exit 3. Nothing ran against the database but
+  verified-migrate's READ ONLY read. The applied marker kept its time.
+- **The whole blocks again:** stage 0 and stage 1 stop on the marker (the table above).
+- **The pre-check on the applied state** (14:39:23, both shells): **6 OK / 1 VACUOUS / 3 FAIL,**
+  FAIL on 1 (`1; control 1`), 2 (`1 row, newest is NOT 0102, when 1788502400000`) and
+  `journal_rows_before` (`101`), VACUOUS on 5 (`1 entry, anon none, grantable 0`). The block's line
+  stopped: `STOP: the pre-check printed [3] FAIL verdicts, ... Nothing was applied and no earlier transcript was touched`.
+- **The SQL itself, a second time** (14:39:47). The migration file again in one committed
+  transaction: psql exit 0, and the entry, the md5 over every row of `pg_default_acl`
+  (`51b14b27...`) and the journal count (101) read the same before and after. The mirror file
+  outside a transaction, the Supabase CLI's shape: two
+  `WARNING:  SET LOCAL can only be used in transaction blocks`, exit 0, the same three readings
+  again. A second apply changes nothing.
+
+**THE SECOND CYCLE, WITH A SEQUENCE THAT EXISTS** (14:40:49 to 14:42:16). To get a second before
+state on the same lane, the agent ran the restoring statement of "Rollback" and committed it,
+removed the lane's own journal row for 0103 (a throwaway's row; on production a journal row is
+never deleted), and created one sequence in `public` as `postgres`.
+
+- **The restoring statement, committed:** the entry read
+  `{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}`
+  again, byte for byte the first before state.
+- **The sequence created BEFORE the revoke** was born with
+  `{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}`:
+  `anon` USAGE, SELECT and UPDATE all true.
+- **The pre-check: 10 OK / 0 VACUOUS / 0 FAIL,** with `sequences_before` **1** and the INFO row
+  **`1 of 1`**.
+- **The post-check on that before state: 11 OK / 0 VACUOUS / 3 FAIL** (1, 12 and 13), and the
+  block's line stopped on `[3] FAIL verdicts`.
+- **The apply** (14:41:30 to 14:41:40, exit 0): `journal    100 -> 101  (delta 1)`,
+  `present by sha256: yes`, `0103 APPLIED. Paste stage 2 now.`
+- **The post-check: 14 OK / 0 VACUOUS / 0 FAIL** in both shells, byte-identical. Verdict 5 read
+  `1 sequences, a28e64c7...`, the pre-check's md5: OK over a real sequence, not over nothing. The
+  last line: `0103 POST-CHECK PASSED. 10/10 pre-check OK, post-check 14 OK / 0 VACUOUS / 0 FAIL, the profile for 1 sequences in public, journal 100 to 101; ...`
+- **In action, after the apply:**
+
+| Sequence | Its ACL | `anon` USAGE, SELECT, UPDATE | `authenticated`, `service_role` |
+|---|---|---|---|
+| the one created BEFORE the revoke | `{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}`, unchanged | true, true, true: 0103 touches no sequence that exists | all three true |
+| one created AFTER the revoke (rolled back) | `{postgres=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}` | **false, false, false** | all three true |
+
+  In the first cycle the same probe, as `anon`: `select nextval(...)` on a sequence created after
+  the apply answered `ERROR:  permission denied for sequence rehearsal_0103_probe_after`.
+
+**THE BOUND, FIRED ON PURPOSE** (14:44:12 to 14:44:18, on the before state). A third session held
+SHARE on the lane's journal table, so the apply's last statement, the journal insert, had to wait.
+
+- The insert waited from 13:44:13.713 UTC, and the server's log reads
+  `2026-10-08 13:44:18.713 UTC [4532] postgres@postgres ERROR:  canceling statement due to lock timeout at character 13`:
+  five seconds. **So `SET LOCAL lock_timeout = '5s'` is in force inside drizzle's transaction.**
+- GREEN's transcript does not name it, as "WHEN A BOUND FIRES" says: drizzle-kit printed
+  `undefined`, pnpm printed
+  `[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: drizzle-kit migrate`,
+  then `exit:   1`, `journal    100 -> 100  (delta 0)`,
+  `0103_revoke_anon_sequences_default present by sha256: NO`,
+  `FAIL: drizzle-kit migrate exited 1.` and the block's `STOP: the apply exited 4: ...`, exit 4.
+  The text `lock timeout` is nowhere in the transcript.
+- **Nothing was applied, the ALTER included.** The pre-check right after (14:45:09) read 10 OK /
+  0 VACUOUS / 0 FAIL, journal 100, with `anon` still in the default: the ALTER had run inside the
+  transaction and went with its rollback. The apply is all or nothing.
+- In the held run inside psql that began at 14:36:50, `show lock_timeout` read `5s` and
+  `show statement_timeout` read `1min` after the file's statements.
+
+**THE packages/db SUITE ON THE APPLIED LANE** (14:42:38 to 14:43:19, `pnpm exec vitest run` in
+`packages/db` with `DATABASE_URL` at lane `green`, 0103 applied, CI's command): 101 files,
+**1555 of 1555 passed,** none skipped, vitest exit 0. The apps/web and apps/api DB-gated suites
+were not run.
+
+**WHAT WAS OWED, ITEM BY ITEM** (the list below, "What the rehearsal agent owes"):
+
+| # | Owed | Done |
+|---|---|---|
+| 1 | a database that really carries the default, `pg_default_acl` read first | yes: lane `green`, the entry names `anon=rwU/postgres` |
+| 2 | an active clinic inside 08:00 to 21:00 | yes: `0 of 2` outside, `inside` |
+| 3 | the four blocks and GREEN's two, verbatim, every halt for real | the four ran whole and stopped at their own STOPs; the lines a local database can run ran as fragments. **GREEN's two blocks are NOT REHEARSED: the dispatch is not written** |
+| 4 | the post-check on the before and the after state | yes: 10 OK / 1 VACUOUS / 3 FAIL before; 13 OK / 1 VACUOUS / 0 FAIL after with no sequence; 14 OK / 0 VACUOUS / 0 FAIL after with one |
+| 5 | G7 | yes: as expected |
+| 6 | a sequence created before and after | yes: the table above |
+| 7 | CI's `db-tests` on the pull request's head | not the rehearsal's: there is no pull request yet |
+
+**SEVEN OBSERVATIONS, none of which changed a byte of a block.**
+
+1. **Stage 0's fetch is a real fetch.** It moved `origin/main` from `bf0000a1` to `5c619c75`
+   (#1568, two board files; no file this document pins differs between the two) and pruned twelve
+   stale remote branches in the shared repository.
+2. **drizzle sends four statements, not three.** The file's last breakpoint is followed by its
+   closing comment (section 5), which drizzle sent as a statement of its own after the ALTER. The
+   server accepted it, and both applies exited 0.
+3. **The new journal row's `id` read 129, then 130, not 101.** The id is a serial, and earlier
+   rolled-back inserts on this lane had advanced it. The post-check and stage 2 count rows and
+   compare the hash, never the id. The id of production's new row is not predicted here.
+4. **check-journal's line begins with a check mark** before `Migration journal reconciled: 101 ...`;
+   stage 0's `grep -qF` matches inside the line (0100's rehearsal saw the same).
+5. **Stage 2's last line reads `the profile for 1 sequences in public`** where there is one. It is
+   wording only.
+6. **Another default names `anon` on the local stack:** `postgres`'s SEQUENCES default in schema
+   `storage` reads `{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}`.
+   The card names `public`, so 0103 leaves it, and section 4 already lists other schemas as out of
+   scope. It is written here for the lead, not decided.
+7. **The reader's refusal names the production ref,** so on a refusal `tee` would write it into
+   `/tmp/0103-journal-after.out`. On production the reader does not refuse.
+
+**THE DOCUMENT'S TESTS, AFTER THIS RECORD WAS WRITTEN** (from 14:51 Lisbon, each in an environment
+with no database URL, and each run again on the bytes that were committed). The sidecar was
+regenerated in the same commit.
+
+| Run | Result |
+|---|---|
+| `node --test scripts/anon-sequences-default-0103.test.mjs` | 38 of 38 passed. Its first run read 37 of 38: the record quoted drizzle-kit's check mark, and the test holds this document to ASCII. The record now says it in words |
+| `node --test scripts/owner-blocks-survive-zsh.test.mjs` | 5 of 5 passed |
+| `node scripts/check-journal.mjs` | 101 files, 101 entries, the mirror matching by content |
+| `pnpm test:scripts`, whole | 1463 of 1463 passed, none skipped, 54 suites |
+| `GATE_BASE_REF=main node scripts/assert-gates-unchanged.mjs` | `GATE FREEZE: 99 gate files match their pins, package.json scripts unchanged.` |
+
+**THE LANE AFTERWARDS.** Lane `green` was returned to the before state at 14:43:28 (the restoring
+statement, and the lane's journal row for 0103 removed; the planted sequence had been dropped at
+14:42:38), read back by the
+pre-check at 14:45:09 (10 OK / 0 VACUOUS / 0 FAIL, journal 100, 0 sequences), and stopped at
+14:45:40 with `node scripts/lane-stack.mjs down --lane green`. Its data is kept in its docker
+volume.
 
 ### What the rehearsal agent owes before the dispatch is issued
 
@@ -1270,20 +1598,35 @@ database. That is the build lane's run, the document agent's run and the rehears
 
 ### NOT REHEARSED, said one by one
 
-Everything, until the rehearsal's record replaces `REHEARSAL: PENDING`. In particular:
+Each by the lead's rule, and each with its reason. The rehearsal's record above says what did run.
 
-- **Stages 0, 1, 2, the closing read and the dispatch's two blocks, as whole blocks.**
-- **`verified-migrate.mjs` reaching drizzle-kit with this file:** the journal 100 to 101, the row's
-  sha256, the two timeouts taking effect inside drizzle's transaction.
-- **The official G7 lock read,** from a second session on the rehearsal database.
-- **The target guard passing, and both journal-reader reads:** each refuses any target but
-  production, so their pass is first seen in the sitting, as for 0100 and 0101.
-- **A clock STOP on a real clock.**
-- **`supabase db reset` applying the 0103 mirror** (CI's path): proven so far by psql outside a
-  transaction on a scratch database. CI's `db-tests` on the pull request's head is the real proof.
-- **The DB-gated suites on a database with 0103 applied.** No test reads `pg_default_acl` or uses a
-  sequence in `public` (searched), but that is a search, not a run.
+- **All four blocks, as whole blocks.** None ran to its last line: each stopped at its own STOP
+  (the tables under "WHOLE BLOCKS" and "PASTED AGAIN AFTER THE APPLY").
+- **Every line that needs stage 0's record, `/tmp/0103-main.sha`:** stage 0's last three lines,
+  which write it; stage 1's HEAD CHECK and its checkout of the recorded sha; the recorded-sha lines
+  of stage 2 and of the closing read; stage 2's pass mark and the closing read's checks of it.
+  Reason: before the merge stage 0 stops on `origin/main`, and nobody writes that record by hand.
+- **Every line that needs the dispatch's run window, `/tmp/0103-window.ok`,** in stage 1 (both
+  window checks), in stage 2 and in the closing read; **and GREEN's two blocks themselves.**
+  Reason: the dispatch is not written, and nobody writes its record by hand.
+- **The lines that load the production environment file,** in stages 1 and 2, and the closing
+  read's `node --env-file=...` line as it is written. Reason: this lane never reads that file.
+- **The target guard passing, and stages 1 and 2 past it as blocks.** The real guard ran against
+  lane `green` in both and refused: `REFUSING: project ref is "postgres", not the production project.`
+  The pre-check, the apply and the post-check ran as fragments, not as the blocks.
+- **Both journal-reader reads,** the dispatch's and the closing read's, **and the closing read's
+  four checks and its last line.** The reader refused lane `green`, and its pass is first seen in
+  the sitting, as for 0100 and 0101.
+- **The clock arm PASSING on a real clock.** The rehearsal ran at 14:34 on a Thursday, so stage
+  0's and stage 1's arms stopped, which is the safe direction. Closed hours passing is proven in
+  the fault-injection harness only.
+- **`supabase db reset` applying the 0103 mirror as a first apply** (CI's path). The mirror ran
+  under psql outside a transaction on the applied lane, as a second application. CI's `db-tests` on
+  the pull request's head is the real proof.
+- **The apps/web and apps/api DB-gated suites on a database with 0103 applied.** The packages/db
+  suite ran there: 1555 of 1555.
 - **Production's platform configuration, and production's sequences in `public`.**
+- **The mutation sweep** is not the rehearsal's: NOT READY step 3.
 
 ## QUESTIONS THIS DOCUMENT DOES NOT ANSWER
 
