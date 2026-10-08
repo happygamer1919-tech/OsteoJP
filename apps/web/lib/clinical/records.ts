@@ -22,6 +22,7 @@ import {
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError, type ClinicalErrorCode } from "./errors";
+import { isEpisodeKeyRefusal } from "./episode-key-refusal";
 import { defaultEpisodeTitle, isEpisodeSpecialty } from "./episode-title";
 import { findOpenEpisodeOfSpecialty, insertOpenEpisode } from "./episodes";
 import {
@@ -624,6 +625,34 @@ export async function assertEpisodeIsThePatients(
   }
 }
 
+/**
+ * REG-03: THE SAME RULE, WHEN IT IS THE DATABASE THAT REFUSES. Where the
+ * database carries the foreign key `isEpisodeKeyRefusal` names
+ * (episode-key-refusal.ts), an INSERT whose episode is not the registo's
+ * patient's, in its tenant, is refused there with a foreign-key violation that
+ * names the key. This maps that one refusal to the refusal the application
+ * already returns for the rule, `episode_mismatch`, so the caller gets the same
+ * answer `assertEpisodeIsThePatients` gives and not an unhandled database error.
+ *
+ * NOTHING IS WRITTEN: the statement failed, this throws, and the writer's
+ * transaction rolls back with everything it did before the INSERT (an episode
+ * opened for the registo included). No audit row, and one log line with no
+ * identifier in it, as for the application's own refusal above.
+ *
+ * EVERY OTHER ERROR PASSES THROUGH UNCHANGED, a foreign-key violation that
+ * names any other key included. On a database that does not carry the key
+ * this never matches.
+ */
+async function namingEpisodeKeyRefusal<T>(insert: PromiseLike<T>): Promise<T> {
+  try {
+    return await insert;
+  } catch (e) {
+    if (!isEpisodeKeyRefusal(e)) throw e;
+    console.warn("[clinical] registo refused: the database's episode key refused it (episode_mismatch). Nothing written.");
+    throw new ClinicalError("episode_mismatch");
+  }
+}
+
 export async function createDraftRecord(
   ctx: RequestContext,
   input: {
@@ -691,19 +720,21 @@ export async function createDraftRecord(
         ));
       }
     }
-    const rows = await tx
-      .insert(clinicalRecords)
-      .values({
-        tenantId: ctx.tenantId,
-        patientId,
-        formTemplateId: input.formTemplateId,
-        episodeId,
-        appointmentId: input.appointmentId ?? null,
-        practitionerId: ctx.userId,
-        data: {},
-        status: "draft",
-      })
-      .returning({ id: clinicalRecords.id });
+    const rows = await namingEpisodeKeyRefusal(
+      tx
+        .insert(clinicalRecords)
+        .values({
+          tenantId: ctx.tenantId,
+          patientId,
+          formTemplateId: input.formTemplateId,
+          episodeId,
+          appointmentId: input.appointmentId ?? null,
+          practitionerId: ctx.userId,
+          data: {},
+          status: "draft",
+        })
+        .returning({ id: clinicalRecords.id }),
+    );
     const id = rows[0]!.id;
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -829,21 +860,23 @@ export async function createAddendum(
     // (an imported registo's "Nova versão" stays in its imported group).
     if (s.episodeId) await assertEpisodeIsThePatients(tx, ctx, s.episodeId, s.patientId);
 
-    const rows = await tx
-      .insert(clinicalRecords)
-      .values({
-        tenantId: ctx.tenantId,
-        patientId: s.patientId,
-        episodeId: s.episodeId,
-        formTemplateId: s.formTemplateId,
-        appointmentId: s.appointmentId,
-        practitionerId: ctx.userId,
-        data: (s.data as Record<string, unknown>) ?? {},
-        status: "draft",
-        version: s.version + 1,
-        supersedesId: id,
-      })
-      .returning({ id: clinicalRecords.id });
+    const rows = await namingEpisodeKeyRefusal(
+      tx
+        .insert(clinicalRecords)
+        .values({
+          tenantId: ctx.tenantId,
+          patientId: s.patientId,
+          episodeId: s.episodeId,
+          formTemplateId: s.formTemplateId,
+          appointmentId: s.appointmentId,
+          practitionerId: ctx.userId,
+          data: (s.data as Record<string, unknown>) ?? {},
+          status: "draft",
+          version: s.version + 1,
+          supersedesId: id,
+        })
+        .returning({ id: clinicalRecords.id }),
+    );
     const newId = rows[0]!.id;
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,

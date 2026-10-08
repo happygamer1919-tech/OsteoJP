@@ -30,6 +30,7 @@ import {
   patientNoteRevisions,
 } from "@osteojp/db";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
+import { sqlStateOf } from "@/lib/observability/sql-state";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
@@ -1024,10 +1025,18 @@ export async function mergePatients(raw: MergePatientsInput): Promise<MergePatie
       // well-formed uuid that names nobody. It says the same thing to a
       // cross-tenant id, deliberately - answering "that patient is not yours"
       // would confirm the row exists somewhere.
-      const code = (err as { code?: string } | null)?.code;
+      //
+      // THE SQLSTATE IS READ THROUGH `sqlStateOf`, which reads the error and
+      // its cause: Drizzle wraps the driver's error, and the wrapper carries
+      // no code of its own (pinned in merge-refusals.db.test.ts).
+      const code = sqlStateOf(err);
       if (code === "P0002") {
+        // FLAGGED AND RETHROWN, not answered from in here: the statement
+        // failed, so this transaction can only roll back, and the driver
+        // raises a failed statement's error again at the end of a transaction
+        // whose callback returned normally. The catch below reads the flag.
         notFound = true;
-        return null;
+        throw err;
       }
       if (code === "23514") {
         throw new InvalidMergeError("Cannot merge a patient into itself");
@@ -1043,6 +1052,10 @@ export async function mergePatients(raw: MergePatientsInput): Promise<MergePatie
       .limit(1);
     if (!survivorRowFull) throw new PatientNotFoundError();
     return survivorRowFull;
+  }).catch((err: unknown) => {
+    // Only the refusal flagged above is an answer; everything else still throws.
+    if (notFound) return null;
+    throw err;
   });
 
   if (notFound || !survivor) return { ok: false, error: "not_found" };
