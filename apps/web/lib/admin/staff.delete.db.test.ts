@@ -13,9 +13,10 @@
  *      member who registered a patient: `has_activity`, and nothing is deleted,
  *      the absence the action removes first included.
  *
- * THE REFERENCE IS A PATIENT THE STAFF MEMBER REGISTERED, ON PURPOSE. The
- * action's counts read other columns, so they pass and the refusal is the
- * database's.
+ * THE REFERENCE IS A PATIENT THE STAFF MEMBER REGISTERED. The second arm
+ * provokes the database's own refusal with that referencing row and reads the
+ * named answer back. That the answer is the database's is asserted in the arm:
+ * it calls the count the action itself runs, first.
  *
  * NOTHING IS STUBBED BUT `server-only`. The password gate, the location scope,
  * `runScoped`, RLS, every count, every delete and the audit insert are real.
@@ -39,6 +40,8 @@ d("DEL-02: deleteStaffMember names the database's foreign-key refusal", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let schema: typeof import("@osteojp/db");
   let deleteStaffMember: typeof import("./staff").deleteStaffMember;
+  let countStaffActivity: typeof import("./staff").countStaffActivity;
+  let runScoped: typeof import("@/lib/auth/context").runScoped;
   let isForeignKeyViolation: typeof import("./foreign-key-refusal").isForeignKeyViolation;
   let password: string;
 
@@ -70,10 +73,14 @@ d("DEL-02: deleteStaffMember names the database's foreign-key refusal", () => {
              and entity_id = ${id}::uuid`,
     );
 
+  /** The count the action itself runs, in the scope the action runs it in. */
+  const activityOf = (id: string) => runScoped(actor, (tx) => countStaffActivity(tx, id));
+
   beforeAll(async () => {
     schema = await import("@osteojp/db");
     db = schema.getDbAdmin();
-    ({ deleteStaffMember } = await import("./staff"));
+    ({ deleteStaffMember, countStaffActivity } = await import("./staff"));
+    ({ runScoped } = await import("@/lib/auth/context"));
     ({ isForeignKeyViolation } = await import("./foreign-key-refusal"));
     // The house default: a tenant with no stored hash is checked against it.
     password = (await import("./appointment-delete-password")).DEFAULT_DELETE_PASSWORD;
@@ -156,6 +163,10 @@ d("DEL-02: deleteStaffMember names the database's foreign-key refusal", () => {
   });
 
   it("a staff member who registered a patient is refused as has_activity, and nothing is deleted", async () => {
+    // The count the action itself runs reads zero for this staff member: the
+    // refusal below is the database's.
+    expect(await activityOf(referenced)).toBe(0);
+
     await expect(deleteStaffMember(actor, referenced, password)).rejects.toMatchObject({
       name: "AdminError",
       code: "has_activity",
@@ -175,6 +186,9 @@ d("DEL-02: deleteStaffMember names the database's foreign-key refusal", () => {
     expect(await userRows(clean)).toBe(0);
     expect(await absenceRows(clean)).toBe(0);
     expect(await auditRows(clean)).toBe(1);
+    // The same count is not a constant zero: the removal's own audit row
+    // counts for the owner who made it.
+    expect(await activityOf(owner)).toBeGreaterThan(0);
   });
 
   it("CONTROL: with the patient gone, the same staff member is deleted", async () => {

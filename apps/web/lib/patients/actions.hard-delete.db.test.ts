@@ -13,12 +13,10 @@
  *      a follow-up contact still references: `has_references`, and nothing is
  *      deleted, the clinic link the action removes first included.
  *
- * THE REFERENCE IS A FOLLOW-UP CONTACT ON PURPOSE. The action's counts read
- * other tables, so they pass and the refusal is the database's. The second arm
- * asserts that rather than taking it from this comment: it reads the preflight,
- * which counts the same classes as the action, and expects every count at zero.
- * If a count is ever taught to read follow-up contacts, that assertion fails
- * and this arm needs another reference.
+ * THE REFERENCE IS A FOLLOW-UP CONTACT. The second arm provokes the database's
+ * own refusal with that referencing row and reads the named answer back. That
+ * the answer is the database's is asserted in the arm: it reads the preflight,
+ * which counts the same classes as the action, first.
  *
  * WHAT IS STUBBED, AND NEITHER IS UNDER TEST: `requireRequestContext`, because
  * a vitest worker has no Supabase session, and `next/cache`, which needs a

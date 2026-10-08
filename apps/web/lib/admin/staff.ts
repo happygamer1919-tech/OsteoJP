@@ -576,6 +576,23 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
 }
 
 /**
+ * The linked-records count `deleteStaffMember` refuses on: the sum of the rows
+ * its guard reads for this user. Exported so the DB-gated suite reads the same
+ * sum the action reads. RLS scopes every read to the tenant; counts only.
+ */
+export async function countStaffActivity(tx: DbTx, userId: string): Promise<number> {
+  const counts = await Promise.all([
+    tx.select({ n: count() }).from(appointments).where(or(eq(appointments.practitionerId, userId), eq(appointments.createdBy, userId))),
+    tx.select({ n: count() }).from(clinicalRecords).where(or(eq(clinicalRecords.practitionerId, userId), eq(clinicalRecords.signedBy, userId))),
+    tx.select({ n: count() }).from(clinicalEpisodes).where(eq(clinicalEpisodes.primaryPractitionerId, userId)),
+    tx.select({ n: count() }).from(appointmentNotes).where(eq(appointmentNotes.authorUserId, userId)),
+    tx.select({ n: count() }).from(auditLog).where(eq(auditLog.actorUserId, userId)),
+    tx.select({ n: count() }).from(analyticsEvents).where(or(eq(analyticsEvents.therapistUserId, userId), eq(analyticsEvents.actorUserId, userId))),
+  ]);
+  return counts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
+}
+
+/**
  * Hard-delete a staff member (W4-01, owner-requested). Password-gated (reuses
  * the tenant delete password from Administração → Definições, W3-06) + a
  * linked-records guard: REFUSED when the user has ANY appointment, clinical
@@ -624,15 +641,7 @@ export async function deleteStaffMember(
 
     // Linked-records guard — refuse if the user has ANY activity / clinical /
     // audit reference. Only an activity-free account is deletable.
-    const counts = await Promise.all([
-      tx.select({ n: count() }).from(appointments).where(or(eq(appointments.practitionerId, userId), eq(appointments.createdBy, userId))),
-      tx.select({ n: count() }).from(clinicalRecords).where(or(eq(clinicalRecords.practitionerId, userId), eq(clinicalRecords.signedBy, userId))),
-      tx.select({ n: count() }).from(clinicalEpisodes).where(eq(clinicalEpisodes.primaryPractitionerId, userId)),
-      tx.select({ n: count() }).from(appointmentNotes).where(eq(appointmentNotes.authorUserId, userId)),
-      tx.select({ n: count() }).from(auditLog).where(eq(auditLog.actorUserId, userId)),
-      tx.select({ n: count() }).from(analyticsEvents).where(or(eq(analyticsEvents.therapistUserId, userId), eq(analyticsEvents.actorUserId, userId))),
-    ]);
-    const activity = counts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
+    const activity = await countStaffActivity(tx, userId);
     if (activity > 0) throw new AdminError("has_activity");
 
     // Delete the user's own config rows child-first (RETURNING), then the user.
