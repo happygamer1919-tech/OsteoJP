@@ -16,7 +16,12 @@ import { notFound } from "next/navigation";
 import { getRequestContext } from "../../../lib/auth/context";
 import { listActiveTemplates, type RecordStatus } from "../../../lib/clinical/records";
 import { listFichaRecords } from "../../../lib/clinical/ficha-groups";
-import { addEvaluationTarget, episodePdfTarget, groupForFicha } from "../../../lib/clinical/ficha-groups-core";
+import {
+  addEvaluationTarget,
+  episodePdfTarget,
+  groupForFicha,
+  importedGroupPdfTarget,
+} from "../../../lib/clinical/ficha-groups-core";
 import { listOpenAppEpisodes } from "../../../lib/clinical/episodes";
 import { mayOpenEpisode } from "../../../lib/clinical/episode-open-core";
 import { pickEpisodeToReuse } from "../../../lib/clinical/episode-reuse-core";
@@ -51,6 +56,7 @@ import { createRecordAction } from "../../clinical/new/actions";
 import { AddEvaluationButton } from "./add-evaluation-button";
 import { AddEpisodeButton } from "./add-episode-button";
 import { EpisodePdfButton } from "./episode-pdf-button";
+import { ImportedGroupPdfButton } from "./imported-group-pdf-button";
 import { FocusOnArrive } from "./focus-on-arrive.client";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
@@ -890,6 +896,10 @@ export default async function PatientProfilePage({
                 // per-record "Transferir PDF" asks the same capability, and
                 // the server action asks it again.
                 const pdf = canReadClinical ? episodePdfTarget(g) : null;
+                // EXPORT-01: the same button on an IMPORTED group, for the
+                // group as this tab draws it (ficha-groups-core
+                // importedGroupPdfTarget), under the same capability.
+                const importedPdf = canReadClinical ? importedGroupPdfTarget(g) : null;
                 return (
                 <details
                   key={g.key}
@@ -934,7 +944,7 @@ export default async function PatientProfilePage({
                     </span>
                   </summary>
                   <div className="flex flex-col gap-3 px-4 pb-4">
-                    {(pdf || (add && addEvaluationTemplateId)) && (
+                    {(pdf || importedPdf || (add && addEvaluationTemplateId)) && (
                     <div className="flex flex-wrap items-start justify-end gap-3">
                     {pdf && (
                       <EpisodePdfButton
@@ -942,6 +952,16 @@ export default async function PatientProfilePage({
                         episodeId={pdf.episodeId}
                         label={s["patients.fichaGroupEpisodePdf"]}
                         ariaLabel={s["patients.fichaGroupEpisodePdfAria"].replace("{group}", g.label ?? "")}
+                        errorLabel={s["clinical.downloadPdfError"]}
+                      />
+                    )}
+                    {importedPdf && (
+                      <ImportedGroupPdfButton
+                        patientId={patient.id}
+                        specialty={importedPdf.specialty}
+                        label={s["patients.fichaGroupEpisodePdf"]}
+                        // A function, so a "$" in an imported title is text and not a pattern.
+                        ariaLabel={s["patients.fichaGroupEpisodePdfAria"].replace("{group}", () => importedPdf.specialty)}
                         errorLabel={s["clinical.downloadPdfError"]}
                       />
                     )}
@@ -968,7 +988,7 @@ export default async function PatientProfilePage({
                     )}
                     {/* The file holds the finalized registos only: said here
                         when this group shows one it leaves out. */}
-                    {pdf?.partial && (
+                    {(pdf?.partial || importedPdf?.partial) && (
                       <p className="text-right text-xs text-text-secondary" data-testid="record-group-episode-pdf-partial">
                         {s["patients.fichaGroupEpisodePdfPartial"]}
                       </p>

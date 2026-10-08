@@ -5,6 +5,7 @@ import {
   episodePdfTarget,
   excerpt,
   groupForFicha,
+  importedGroupPdfTarget,
   type FichaRecord,
 } from "./ficha-groups-core";
 
@@ -363,10 +364,10 @@ describe("episodePdfTarget (EPI-01b, piece 3): which group shows 'PDF do episód
     });
   });
 
-  it("an app episode with a finalized registo and an annulled one on screen: the button, partial", () => {
+  it("EXPORT-01: an app episode with a finalized registo and an annulled one on screen: the button, and nothing left out (the annulled one is in the file)", () => {
     expect(
       episodePdfTarget(only([inEpisode({ status: "signed" }), inEpisode({ status: "signed", annulled: true })])),
-    ).toEqual({ episodeId: EP, partial: true });
+    ).toEqual({ episodeId: EP, partial: false });
   });
 
   it("an app episode holding DRAFTS ONLY gets NO button: nothing would be exported", () => {
@@ -375,8 +376,15 @@ describe("episodePdfTarget (EPI-01b, piece 3): which group shows 'PDF do episód
     expect(episodePdfTarget(g)).toBeNull();
   });
 
-  it("an app episode whose only registo is ANNULLED gets NO button", () => {
-    expect(episodePdfTarget(only([inEpisode({ status: "signed", annulled: true })]))).toBeNull();
+  it("EXPORT-01: an app episode whose only registo is ANNULLED gets the button: an export never refuses an annulled registo", () => {
+    expect(episodePdfTarget(only([inEpisode({ status: "signed", annulled: true })]))).toEqual({
+      episodeId: EP,
+      partial: false,
+    });
+  });
+
+  it("an annulled DRAFT is still a draft: no button", () => {
+    expect(episodePdfTarget(only([inEpisode({ status: "draft", annulled: true })]))).toBeNull();
   });
 
   it("an open episode with NO registo yet gets NO button", () => {
@@ -385,7 +393,7 @@ describe("episodePdfTarget (EPI-01b, piece 3): which group shows 'PDF do episód
     expect(episodePdfTarget(g)).toBeNull();
   });
 
-  it("an IMPORTED group gets NO button, however many locked registos it holds", () => {
+  it("an IMPORTED group is not this function's: null here, its target is importedGroupPdfTarget's", () => {
     const g = only([
       rec({ status: "locked", episodeId: "imp-1", episodeTitle: "Osteopatia", episodeImported: true }),
       rec({ status: "locked", episodeId: "imp-2", episodeTitle: "Osteopatia", episodeImported: true }),
@@ -398,5 +406,67 @@ describe("episodePdfTarget (EPI-01b, piece 3): which group shows 'PDF do episód
     const g = only([rec({ status: "signed" })]);
     expect(g.kind).toBe("none");
     expect(episodePdfTarget(g)).toBeNull();
+  });
+});
+
+describe("importedGroupPdfTarget (EXPORT-01): which imported group shows 'PDF do episódio', and for what", () => {
+  const imported = (over: Partial<FichaRecord> = {}) =>
+    rec({ status: "locked", episodeId: `imp-${seq}`, episodeTitle: "Osteopatia", episodeImported: true, ...over });
+  const only = (records: FichaRecord[]) => {
+    const groups = groupForFicha(records);
+    expect(groups).toHaveLength(1);
+    return groups[0]!;
+  };
+
+  it("an imported group of locked registos, each in its own imported episode: the button, for the group's specialty", () => {
+    const g = only([imported(), imported(), imported()]);
+    expect(g).toMatchObject({ kind: "imported", key: "imported:Osteopatia", evaluations: 3 });
+    expect(new Set(g.records.map((r) => r.episodeId)).size).toBe(3);
+    expect(importedGroupPdfTarget(g)).toEqual({ specialty: "Osteopatia", partial: false });
+  });
+
+  it("the target is the group's own label: two specialties are two targets", () => {
+    const groups = groupForFicha([imported(), imported({ episodeTitle: "Fisioterapia" })]);
+    expect(groups.map(importedGroupPdfTarget)).toEqual(
+      expect.arrayContaining([
+        { specialty: "Osteopatia", partial: false },
+        { specialty: "Fisioterapia", partial: false },
+      ]),
+    );
+  });
+
+  it("an imported group with a locked registo and an imported DRAFT: the button, and the tab says the file is partial", () => {
+    expect(importedGroupPdfTarget(only([imported(), imported({ status: "draft" })]))).toEqual({
+      specialty: "Osteopatia",
+      partial: true,
+    });
+  });
+
+  it("an imported group of DRAFTS ONLY gets NO button: a draft is never exported", () => {
+    const g = only([imported({ status: "draft" }), imported({ status: "draft" })]);
+    expect(g.records).toHaveLength(2);
+    expect(importedGroupPdfTarget(g)).toBeNull();
+  });
+
+  it("an annulled registo is in the file, so it counts: the button, nothing left out", () => {
+    expect(importedGroupPdfTarget(only([imported({ status: "signed", annulled: true })]))).toEqual({
+      specialty: "Osteopatia",
+      partial: false,
+    });
+  });
+
+  it("an imported group whose episode title is blank groups under the dash, and that is its target", () => {
+    const g = only([imported({ episodeTitle: "  " })]);
+    expect(g.key).toBe("imported:\u2014");
+    expect(importedGroupPdfTarget(g)).toEqual({ specialty: "\u2014", partial: false });
+  });
+
+  it("an APP episode and the 'Sem episódio' group are not this function's: null", () => {
+    const app = only([rec({ status: "signed", episodeId: "ep-app", episodeTitle: "Osteopatia (01/09/2026)" })]);
+    expect(app.kind).toBe("episode");
+    expect(importedGroupPdfTarget(app)).toBeNull();
+    const none = only([rec({ status: "signed" })]);
+    expect(none.kind).toBe("none");
+    expect(importedGroupPdfTarget(none)).toBeNull();
   });
 });

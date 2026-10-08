@@ -8,12 +8,14 @@
  *   - the gate is the per-record button's: whoever reads clinical records
  *     (owner, admin, therapist, and a care-team therapist who only READS the
  *     ficha). Reception has no Registos tab at all;
- *   - the button is on an APP episode holding at least one finalized registo,
- *     and on no other group: not on an episode of drafts only, not on an open
- *     episode with no registo yet, not on an imported group, not on
- *     "Sem episódio", not on an episode whose only registo is annulled;
- *   - a group that shows a registo the file leaves out says so beside the
- *     button, and a group that shows none does not;
+ *   - the button is on an APP episode holding at least one finalized registo
+ *     (EXPORT-01: an annulled one counts, it is in the file with its mark), and
+ *     not on an episode of drafts only, not on an open episode with no registo
+ *     yet, not on "Sem episódio";
+ *   - EXPORT-01: an IMPORTED group holding a finalized registo has the same
+ *     button, for the group (its specialty), wired to its own action;
+ *   - a group that shows a registo the file leaves out (a draft) says so beside
+ *     the button, and a group that shows none does not;
  *   - the button names its episode, and the page hands it the patient and
  *     THAT group's episode (read from the props the page passes; what the
  *     button then asks the server action for is episode-pdf-button.test.tsx's).
@@ -33,6 +35,7 @@ const EP_DRAFTS = "77777777-7777-4777-8777-777777777773";
 const EP_EMPTY = "77777777-7777-4777-8777-777777777774";
 const EP_ANNULLED = "77777777-7777-4777-8777-777777777775";
 const EP_IMPORTED = "77777777-7777-4777-8777-777777777776";
+const EP_IMPORTED_2 = "77777777-7777-4777-8777-777777777777";
 const TEMPLATE = "66666666-6666-4666-8666-666666666666";
 
 const h = vi.hoisted(() => ({
@@ -47,6 +50,10 @@ const h = vi.hoisted(() => ({
   includeAnnulled: [] as boolean[],
   /** What the page handed each "PDF do episódio" button, in render order. */
   buttonProps: [] as Record<string, unknown>[],
+  /** What the page handed each IMPORTED group's button, in render order. */
+  importedButtonProps: [] as Record<string, unknown>[],
+  /** An imported draft beside the locked imported registo, when asked for. */
+  importedDraft: false,
 }));
 
 class NotFound extends Error {}
@@ -113,6 +120,9 @@ vi.mock("../../../lib/clinical/ficha-groups", () => ({
       rec("r-annulled-1", { episodeId: EP_ANNULLED, episodeTitle: "Fisioterapia (01/06/2026)", status: "signed", annulled: true, createdAt: "2026-06-01T09:00:00.000Z" }),
       rec("r-imp", { episodeId: EP_IMPORTED, episodeTitle: "Osteopatia", episodeImported: true, status: "locked", createdAt: "2024-05-10T23:00:00.000Z" }),
       rec("r-free", { status: "signed", createdAt: "2026-05-20T10:00:00.000Z" }),
+      ...(h.importedDraft
+        ? [rec("r-imp-draft", { episodeId: EP_IMPORTED_2, episodeTitle: "Osteopatia", episodeImported: true, status: "draft", createdAt: "2024-06-10T23:00:00.000Z" })]
+        : []),
     ];
     return filter.includeAnnulled ? all : all.filter((r) => !r.annulled);
   },
@@ -150,7 +160,10 @@ vi.mock("../../../lib/admin/care-team", () => ({ listCareTeam: async () => [], l
 vi.mock("../../clinical/[id]/actions", () => ({ versionRecordAction: vi.fn() }));
 vi.mock("../../clinical/new/actions", () => ({ createRecordAction: vi.fn() }));
 vi.mock("./episode-actions", () => ({ createEpisodeAction: vi.fn() }));
-vi.mock("./episode-pdf-actions", () => ({ downloadEpisodeReportUrlAction: vi.fn() }));
+vi.mock("./episode-pdf-actions", () => ({
+  downloadEpisodeReportUrlAction: vi.fn(),
+  downloadImportedGroupReportUrlAction: vi.fn(),
+}));
 // The REAL button, with the props the page hands it recorded on the way in.
 vi.mock("./episode-pdf-button", async (importOriginal) => {
   const real = await importOriginal<typeof import("./episode-pdf-button")>();
@@ -159,6 +172,16 @@ vi.mock("./episode-pdf-button", async (importOriginal) => {
     EpisodePdfButton: (props: Parameters<typeof real.EpisodePdfButton>[0]) => {
       h.buttonProps.push({ ...props });
       return createElement(real.EpisodePdfButton, props);
+    },
+  };
+});
+vi.mock("./imported-group-pdf-button", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./imported-group-pdf-button")>();
+  const { createElement } = await import("react");
+  return {
+    ImportedGroupPdfButton: (props: Parameters<typeof real.ImportedGroupPdfButton>[0]) => {
+      h.importedButtonProps.push({ ...props });
+      return createElement(real.ImportedGroupPdfButton, props);
     },
   };
 });
@@ -194,9 +217,13 @@ import PatientProfilePage from "./page";
 const s = getStrings("pt");
 const en = getStrings("en");
 
-async function render(role: string, opts: { mayWrite?: boolean; anulados?: boolean } = {}): Promise<string> {
+async function render(
+  role: string,
+  opts: { mayWrite?: boolean; anulados?: boolean; importedDraft?: boolean } = {},
+): Promise<string> {
   h.ctx = { ...h.ctx, role };
   h.mayWrite = opts.mayWrite ?? true;
+  h.importedDraft = opts.importedDraft ?? false;
   const el = await PatientProfilePage({
     params: Promise.resolve({ id: PATIENT_ID }),
     searchParams: Promise.resolve({ tab: "registos", ...(opts.anulados ? { anulados: "1" } : {}) }),
@@ -216,6 +243,7 @@ function groups(html: string): Record<string, string> {
 }
 
 const BUTTON = 'data-testid="record-group-episode-pdf"';
+const IMPORTED_BUTTON = 'data-testid="record-group-imported-pdf"';
 const PARTIAL = 'data-testid="record-group-episode-pdf-partial"';
 const ROW = 'data-testid="record-row"';
 const count = (html: string, needle: string) => html.split(needle).length - 1;
@@ -233,6 +261,8 @@ beforeEach(() => {
   h.mayWrite = true;
   h.includeAnnulled = [];
   h.buttonProps = [];
+  h.importedButtonProps = [];
+  h.importedDraft = false;
 });
 
 describe("EPI-01b, piece 3: which groups show 'PDF do episódio' (the treating therapist)", () => {
@@ -243,7 +273,7 @@ describe("EPI-01b, piece 3: which groups show 'PDF do episódio' (the treating t
     expect(count(g[FINAL]!, PARTIAL)).toBe(0);
   });
 
-  it("an app episode with a finalized registo and a draft: one button, and the line saying drafts and annulled registos stay out", async () => {
+  it("an app episode with a finalized registo and a draft: one button, and the line saying drafts stay out", async () => {
     const g = groups(await render("therapist"));
     expect(count(g[MIXED]!, ROW)).toBe(2);
     expect(count(g[MIXED]!, BUTTON)).toBe(1);
@@ -267,10 +297,12 @@ describe("EPI-01b, piece 3: which groups show 'PDF do episódio' (the treating t
     expect(count(g[EMPTY]!, BUTTON)).toBe(0);
   });
 
-  it("an IMPORTED group, with a locked registo: the group renders, no button", async () => {
+  it("EXPORT-01: an IMPORTED group, with a locked registo: the group renders, with its own button and no app-episode button", async () => {
     const g = groups(await render("therapist"));
     expect(count(g[IMPORTED]!, ROW)).toBe(1);
     expect(count(g[IMPORTED]!, BUTTON)).toBe(0);
+    expect(count(g[IMPORTED]!, IMPORTED_BUTTON)).toBe(1);
+    expect(count(g[IMPORTED]!, PARTIAL)).toBe(0);
   });
 
   it("'Sem episódio', with a signed registo: the group renders, no button", async () => {
@@ -285,13 +317,70 @@ describe("EPI-01b, piece 3: which groups show 'PDF do episódio' (the treating t
     expect(count(html, BUTTON)).toBe(2);
   });
 
-  it("an episode whose only registo is ANNULLED: hidden by default; with 'Mostrar anulados' the group renders, no button", async () => {
+  it("EXPORT-01: an episode whose only registo is ANNULLED: hidden by default; with 'Mostrar anulados' the group renders WITH the button, and no 'partial' line", async () => {
     expect(groups(await render("therapist"))[ANNULLED]).toBeUndefined();
     const g = groups(await render("therapist", { anulados: true }));
     expect(h.includeAnnulled).toEqual([false, true]);
     expect(count(g[ANNULLED]!, ROW)).toBe(1);
     expect(g[ANNULLED]!).toContain('data-annulled="true"');
-    expect(count(g[ANNULLED]!, BUTTON)).toBe(0);
+    expect(count(g[ANNULLED]!, BUTTON)).toBe(1);
+    expect(count(g[ANNULLED]!, PARTIAL)).toBe(0);
+  });
+});
+
+describe("EXPORT-01: 'PDF do episódio' on an IMPORTED group", () => {
+  it("the page hands the button the patient and the group's SPECIALTY, and the app-episode buttons are untouched", async () => {
+    await render("owner");
+    expect(h.importedButtonProps).toEqual([
+      {
+        patientId: PATIENT_ID,
+        specialty: "Osteopatia",
+        label: "PDF do episódio",
+        ariaLabel: "Transferir o PDF do episódio: Osteopatia",
+        errorLabel: s["clinical.downloadPdfError"],
+      },
+    ]);
+    expect(h.buttonProps.map((p) => p.episodeId)).toEqual([EP_FINAL, EP_MIXED]);
+  });
+
+  it("the button says 'PDF do episódio' and names the group", async () => {
+    const g = groups(await render("owner"));
+    const html = unescape(g[IMPORTED]!);
+    const at = html.indexOf(IMPORTED_BUTTON);
+    const button = html.slice(html.lastIndexOf("<button", at), html.indexOf("</button>", at));
+    expect(button).toContain("PDF do episódio");
+    expect(button).toContain('aria-label="Transferir o PDF do episódio: Osteopatia"');
+    expect(button).toContain('type="button"');
+    expect(count(g[IMPORTED]!, 'data-testid="record-group-imported-pdf-error"')).toBe(0);
+  });
+
+  it("an imported group that also shows an imported DRAFT: the button, and the line saying drafts stay out", async () => {
+    const g = groups(await render("owner", { importedDraft: true }));
+    expect(count(g[IMPORTED]!, ROW)).toBe(2);
+    expect(count(g[IMPORTED]!, IMPORTED_BUTTON)).toBe(1);
+    expect(count(g[IMPORTED]!, PARTIAL)).toBe(1);
+  });
+
+  it.each(["owner", "admin", "therapist"] as const)("%s reads clinical records: one button, on the imported group only", async (role) => {
+    const html = await render(role);
+    const g = groups(html);
+    // Positive control: the reader sees the imported registo.
+    expect(count(g[IMPORTED]!, ROW)).toBe(1);
+    expect(count(g[IMPORTED]!, IMPORTED_BUTTON)).toBe(1);
+    expect(count(html, IMPORTED_BUTTON)).toBe(1);
+  });
+
+  it("a CARE-TEAM therapist (reads the ficha, writes nothing here): the button", async () => {
+    const html = await render("therapist", { mayWrite: false });
+    expect(count(groups(html)[IMPORTED]!, IMPORTED_BUTTON)).toBe(1);
+  });
+
+  it("RECEPTION: no Registos tab, so no imported group and no button", async () => {
+    const html = await render("reception");
+    expect(html).toContain("Zzz Paciente Render Teste");
+    expect(count(html, 'data-testid="record-group"')).toBe(0);
+    expect(count(html, IMPORTED_BUTTON)).toBe(0);
+    expect(h.importedButtonProps).toEqual([]);
   });
 });
 
@@ -341,10 +430,10 @@ describe("EPI-01b, piece 3: what the button says and carries", () => {
     expect(s["patients.fichaGroupEpisodePdfAria"]).toBe("Transferir o PDF do episódio: {group}");
     expect(en["patients.fichaGroupEpisodePdfAria"]).toBe("Download the episode PDF: {group}");
     expect(s["patients.fichaGroupEpisodePdfPartial"]).toBe(
-      "O PDF do episódio inclui só os registos finalizados. Rascunhos e registos anulados ficam de fora.",
+      "O PDF do episódio inclui só os registos finalizados. Os rascunhos ficam de fora.",
     );
     expect(en["patients.fichaGroupEpisodePdfPartial"]).toBe(
-      "The episode PDF includes finalized records only. Drafts and annulled records are left out.",
+      "The episode PDF includes finalized records only. Drafts are left out.",
     );
     // The error line is the per-record button's own.
     expect(s["clinical.downloadPdfError"]).toBe("Não foi possível gerar o PDF.");

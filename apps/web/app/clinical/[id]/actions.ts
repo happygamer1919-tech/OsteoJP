@@ -20,7 +20,7 @@ import {
   ATTACHMENTS_BUCKET,
 } from "@/lib/clinical/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { generateClinicalReportPdf } from "@/lib/clinical/report";
+import { generateRegistoReportPdf } from "@/lib/clinical/report";
 import { generateRgpdFormPdf } from "@/lib/clinical/rgpd/generate";
 import {
   confirmPatientDocument,
@@ -124,6 +124,12 @@ export async function signRecordAction(id: string, expectedDataHash: string): Pr
  * written to tenant-prefixed Storage, and handed back as a 60s Supabase signed
  * URL - the URL carries an opaque token + expiry only, never fiscal data, and
  * the bytes are never proxied through Next. Read-only on clinical_records.
+ *
+ * EXPORT-01: the record is read as the registo page reads it
+ * (`generateRegistoReportPdf`: the capability, the therapist read scope, the
+ * caller's RLS), so this answers for exactly the registos whose page opens for
+ * the caller, an imported one included, and `{ url: null }` for every other.
+ * An annulled registo is never refused: its PDF carries the annulment mark.
  */
 export async function downloadReportUrlAction(
   id: string,
@@ -142,9 +148,10 @@ export async function downloadReportUrlAction(
   }
 
   try {
-    // Tenant-scoped + finalized-only gate live inside the report engine (RLS in
-    // load, print gate in buildClinicalReportModel). Draft / under-review throw.
-    const pdf = await generateClinicalReportPdf(toClaims(ctx), id, locale);
+    // The page's read reach and the finalized-only gate live inside the report
+    // engine (scope and RLS in load, print gate in buildClinicalReportModel).
+    // Draft / under-review throw.
+    const pdf = await generateRegistoReportPdf(ctx, id, locale);
 
     // Tenant-prefixed object path; record id only - no PII, no fiscal data.
     const path = `${ctx.tenantId}/reports/${id}/${randomUUID()}.pdf`;

@@ -52,7 +52,7 @@ vi.mock("@/lib/clinical/storage", () => ({
   ATTACHMENTS_BUCKET: "attachments",
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn() }));
-vi.mock("@/lib/clinical/report", () => ({ generateClinicalReportPdf: vi.fn() }));
+vi.mock("@/lib/clinical/report", () => ({ generateRegistoReportPdf: vi.fn() }));
 vi.mock("@/lib/clinical/rgpd/generate", () => ({ generateRgpdFormPdf: vi.fn() }));
 vi.mock("@/lib/patients/documents", () => ({
   confirmPatientDocument: vi.fn(),

@@ -6,10 +6,12 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
 import {
   readEpisodeExportSelection,
+  readImportedGroupExportSelection,
   recordEpisodeExport,
   renderEpisodeReport,
+  renderImportedGroupReport,
 } from "@/lib/clinical/report/episode-export";
-import { episodeReportPath } from "@/lib/clinical/report/episode-export-core";
+import { episodeReportPath, importedGroupReportPath } from "@/lib/clinical/report/episode-export-core";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -97,6 +99,66 @@ export async function downloadEpisodeReportUrlAction(
       }
       return failedAt("audit");
     }
+    return { url: signed.data.signedUrl };
+  } catch {
+    // A read, the ceiling, the render or a Storage call threw: never surface
+    // internals or PII.
+    return failedAt(step);
+  }
+}
+
+/**
+ * EXPORT-01: "PDF do episódio" on an IMPORTED group of the Registos tab. ONE
+ * PDF of the group's finalized registos, oldest first, each printed as its own
+ * page shows it (the stored field names under the read-only notice), handed
+ * back as a short-lived SIGNED download URL. The action above, step for step,
+ * for the group the tab draws from the imported history:
+ *
+ *   1. the capability (`clinical_records:read`; reception holds none) and the
+ *      shape of the patient id and of the group's label;
+ *   2. WHICH REGISTOS: the tab's own read and grouping, run again under the
+ *      caller's scope (`readImportedGroupExportSelection`). No such group for
+ *      this caller, or none of its registos finalized, ends here, having
+ *      rendered, stored and spent nothing;
+ *   3. the document ceiling, once;
+ *   4. the render, the upload and the signed URL.
+ * `{ url: null }` for every refusal and every failure, as above.
+ */
+export async function downloadImportedGroupReportUrlAction(
+  patientId: string,
+  specialty: string,
+): Promise<{ url: string | null }> {
+  const ctx = await requireRequestContext();
+  if (!can(ctx.role, "clinical_records:read")) return { url: null };
+  if (typeof patientId !== "string" || typeof specialty !== "string") return { url: null };
+  if (!UUID_RE.test(patientId) || specialty === "") return { url: null };
+
+  let step: ExportStep = "read";
+  try {
+    const selection = await readImportedGroupExportSelection(ctx, { patientId, specialty });
+    if (!selection) return { url: null };
+
+    step = "limit";
+    if (!(await documentGenerationAllowed(ctx.userId))) return { url: null };
+
+    step = "render";
+    const pdf = await renderImportedGroupReport(ctx, selection, locale);
+    if (!pdf) return { url: null };
+
+    step = "upload";
+    // Tenant-prefixed object path; the patient id only - no PII, no specialty.
+    const path = importedGroupReportPath(ctx.tenantId, selection.patientId, randomUUID());
+    const admin = createSupabaseAdminClient();
+    const up = await admin.storage
+      .from(ATTACHMENTS_BUCKET)
+      .upload(path, pdf.bytes, { contentType: "application/pdf", upsert: true });
+    if (up.error) return failedAt("upload");
+
+    step = "sign";
+    const signed = await admin.storage
+      .from(ATTACHMENTS_BUCKET)
+      .createSignedUrl(path, 60, { download: pdf.filename });
+    if (signed.error || !signed.data) return failedAt("sign");
     return { url: signed.data.signedUrl };
   } catch {
     // A read, the ceiling, the render or a Storage call threw: never surface

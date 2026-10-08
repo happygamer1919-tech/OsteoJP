@@ -15,6 +15,8 @@ const FINALIZED: ReportInputs = {
       treatmentPlan: "Mobilização articular e plano de exercícios em casa.",
       observations: "Reavaliar em 2 semanas.",
     },
+    view: "form",
+    annulledAt: null,
     consultationDate: new Date("2026-05-20T09:30:00Z"),
     signedAt: new Date("2026-05-21T16:00:00Z"),
   },

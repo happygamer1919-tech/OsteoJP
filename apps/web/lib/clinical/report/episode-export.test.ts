@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //            caller's claims.
 //   WHICH    the episode must be this patient's, in the caller's tenant, and
 //            not an imported one; then the selection rule (finalized, not
-//            under AI review, not annulled), oldest first.
+//            under AI review; an annulled registo is in the file), oldest first.
 //   NOTHING  on every refusal nothing is rendered and nothing is written.
 //   AUDIT    one row per export, ids and counts only.
 
@@ -285,7 +285,7 @@ describe("readEpisodeExportRows: which episode", () => {
 });
 
 describe("readEpisodeExportSelection: what the file holds", () => {
-  it("a mixed episode: the finalized registos, oldest first; the draft, the AI-pending and the annulled left out and counted", async () => {
+  it("a mixed episode: the finalized registos, oldest first, the annulled one among them; the draft and the AI-pending left out and counted", async () => {
     appEpisode(
       [
         // Handed over out of order: the order is the rule's, not the read's.
@@ -303,8 +303,8 @@ describe("readEpisodeExportSelection: what the file holds", () => {
     expect(await readEpisodeExportSelection(owner, ask)).toEqual({
       episodeId: EPISODE,
       patientId: PATIENT,
-      recordIds: [R1, R3],
-      leftOut: 3,
+      recordIds: [R1, R3, R4],
+      leftOut: 2,
     });
   });
 
@@ -313,7 +313,10 @@ describe("readEpisodeExportSelection: what the file holds", () => {
     ["an imported episode", [[{ id: EPISODE }], [{ id: EPISODE }]]],
     ["an empty episode", [[{ id: EPISODE }], [], []]],
     ["drafts only", [[{ id: EPISODE }], [], [registo(R1, "2026-09-01T09:00:00Z", { status: "draft" })], []]],
-    ["annulled only", [[{ id: EPISODE }], [], [registo(R1, "2026-09-01T09:00:00Z")], [{ recordId: R1 }]]],
+    [
+      "an annulled draft only",
+      [[{ id: EPISODE }], [], [registo(R1, "2026-09-01T09:00:00Z", { status: "draft" })], [{ recordId: R1 }]],
+    ],
     [
       "under AI review only",
       [[{ id: EPISODE }], [], [registo(R1, "2026-09-01T09:00:00Z", { aiReviewState: "in_review" })], []],
@@ -323,6 +326,16 @@ describe("readEpisodeExportSelection: what the file holds", () => {
     expect(await readEpisodeExportSelection(owner, ask)).toBeNull();
     expect(t.inserted).toEqual([]);
     expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it("EXPORT-01: an episode whose only finalized registo is ANNULLED is exported, the registo in the file", async () => {
+    appEpisode([registo(R1, "2026-09-01T09:00:00Z")], [R1]);
+    expect(await readEpisodeExportSelection(owner, ask)).toEqual({
+      episodeId: EPISODE,
+      patientId: PATIENT,
+      recordIds: [R1],
+      leftOut: 0,
+    });
   });
 
   it("the ids it answers with are the canonical ones, whatever case was posted", async () => {

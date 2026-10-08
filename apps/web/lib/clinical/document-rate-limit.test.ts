@@ -152,16 +152,35 @@ describe("the three document actions share ONE ceiling", () => {
     expect(code).not.toContain("createDurableRateLimitStore");
   });
 
-  it("the episode report action (EPI-01b, piece 3) calls the shared helper, once per export", async () => {
+  /** The episode actions' file, cut where the imported group's action starts. */
+  const episodeActions = async () => {
     const code = await read("../../app/patients/[id]/episode-pdf-actions.ts");
-    expect(code.match(/documentGenerationAllowed\(/g)?.length).toBe(1);
+    const cut = code.indexOf("export async function downloadImportedGroupReportUrlAction(");
+    expect(cut).toBeGreaterThan(code.indexOf("export async function downloadEpisodeReportUrlAction("));
+    return { code, episode: code.slice(0, cut), imported: code.slice(cut) };
+  };
+
+  it("the episode report action (EPI-01b, piece 3) calls the shared helper, once per export", async () => {
+    const { code, episode } = await episodeActions();
+    expect(episode.match(/documentGenerationAllowed\(/g)?.length).toBe(1);
     expect(code).not.toContain("createDurableRateLimitStore");
     // AFTER the read that decides whether there is anything to export, BEFORE
     // the render: a request that produces no document spends nothing.
-    const at = (needle: string) => code.indexOf(needle);
+    const at = (needle: string) => episode.indexOf(needle);
     expect(at("readEpisodeExportSelection(")).toBeGreaterThan(-1);
     expect(at("readEpisodeExportSelection(")).toBeLessThan(at("documentGenerationAllowed("));
     expect(at("documentGenerationAllowed(")).toBeLessThan(at("renderEpisodeReport("));
+  });
+
+  it("the imported group's report action (EXPORT-01) calls it too, in the same file, once per export", async () => {
+    const { code, imported } = await episodeActions();
+    // Two guarded actions in one file -> the call must appear twice, once in each.
+    expect(code.match(/documentGenerationAllowed\(/g)?.length).toBe(2);
+    expect(imported.match(/documentGenerationAllowed\(/g)?.length).toBe(1);
+    const at = (needle: string) => imported.indexOf(needle);
+    expect(at("readImportedGroupExportSelection(")).toBeGreaterThan(-1);
+    expect(at("readImportedGroupExportSelection(")).toBeLessThan(at("documentGenerationAllowed("));
+    expect(at("documentGenerationAllowed(")).toBeLessThan(at("renderImportedGroupReport("));
   });
 
   it("the ceiling is defined in ONE place", async () => {
