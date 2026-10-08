@@ -16,7 +16,14 @@ import { notFound } from "next/navigation";
 import { getRequestContext } from "../../../lib/auth/context";
 import { listActiveTemplates, type RecordStatus } from "../../../lib/clinical/records";
 import { listFichaRecords } from "../../../lib/clinical/ficha-groups";
-import { addEvaluationTarget, episodePdfTarget, groupForFicha } from "../../../lib/clinical/ficha-groups-core";
+import {
+  addEvaluationTarget,
+  episodePdfTarget,
+  fichaExportTarget,
+  groupForFicha,
+  groupName,
+  importedGroupPdfTarget,
+} from "../../../lib/clinical/ficha-groups-core";
 import { listOpenAppEpisodes } from "../../../lib/clinical/episodes";
 import { mayOpenEpisode } from "../../../lib/clinical/episode-open-core";
 import { pickEpisodeToReuse } from "../../../lib/clinical/episode-reuse-core";
@@ -51,6 +58,8 @@ import { createRecordAction } from "../../clinical/new/actions";
 import { AddEvaluationButton } from "./add-evaluation-button";
 import { AddEpisodeButton } from "./add-episode-button";
 import { EpisodePdfButton } from "./episode-pdf-button";
+import { ImportedGroupPdfButton } from "./imported-group-pdf-button";
+import { FichaExportButton } from "./ficha-export-button";
 import { FocusOnArrive } from "./focus-on-arrive.client";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
@@ -304,11 +313,22 @@ export default async function PatientProfilePage({
   // each registo's episode (EPI-01a, lib/clinical/ficha-groups.ts), grouped the
   // way the Fisiozero ficha was (ficha-groups-core.ts: one group per specialty
   // for the imported history, one per app episode, and "Sem episódio").
-  // W5-30: annulled fichas are hidden unless the "Mostrar anulados" toggle is on.
-  const records =
+  // EXPORT-01: ONE read, annulled registos included, because every export
+  // holds them (marked) whatever the toggle shows: the export buttons are
+  // decided from `readRecords`, the read the exports run again on the server.
+  const readRecords =
     tab === "registos" && canReadClinical
-      ? await listFichaRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
+      ? await listFichaRecords(ctx, { patientId: id, includeAnnulled: true })
       : [];
+  // W5-30: annulled fichas are hidden unless the "Mostrar anulados" toggle is on.
+  // `records` is what the tab LISTS.
+  const records = showAnnulled ? readRecords : readRecords.filter((r) => !r.annulled);
+  // EXPORT-01: "Exportar ficha", one PDF of the whole patient, for whoever
+  // reads clinical records, when the viewer reads at least one registo the
+  // file would hold (ficha-groups-core fichaExportTarget). The list is the
+  // viewer's own read, the one the export runs again on the server, so the
+  // button is drawn where the export answers, and only there.
+  const fichaExport = canReadClinical ? fichaExportTarget(readRecords, records) : null;
   // EPI-01b, piece 2: "+ Episódio". A therapist who may write for this patient
   // (createEpisode asks the same on the server, whatever is drawn here).
   const canAddEpisode = canStartEpisode && mayOpenEpisode(ctx.role);
@@ -323,6 +343,10 @@ export default async function PatientProfilePage({
       .filter((e) => e.empty)
       .map((e) => ({ id: e.id, title: e.title, openedAt: e.openedAt.toISOString() })),
   );
+  // EXPORT-01: each group over EVERY registo read, by its key: what a group's
+  // "PDF do episódio" is decided from. While annulled registos are hidden, a
+  // drawn group can hold more than it shows.
+  const readGroups = new Map(groupForFicha(readRecords).map((g) => [g.key, g]));
   // "+ Episódio" opened nothing because an episode of that specialty is open:
   // the one to show is R31's choice (the most recently opened), read again
   // here, never taken from the address. Nothing to show: no question.
@@ -756,6 +780,13 @@ export default async function PatientProfilePage({
               {showAnnulled ? s["clinical.hideAnnulled"] : s["clinical.showAnnulled"]}
             </Link>
             <div className="flex flex-wrap items-end justify-end gap-3">
+              {fichaExport && (
+                <FichaExportButton
+                  patientId={patient.id}
+                  label={s["patients.fichaExport"]}
+                  errorLabel={s["clinical.downloadPdfError"]}
+                />
+              )}
               {/* EPI-01b, piece 2: "+ Episódio". The therapist picks a specialty
                   from the closed list and nothing else: the title is a specialty
                   and a date, by ruling, and the server builds it. */}
@@ -794,6 +825,13 @@ export default async function PatientProfilePage({
               )}
             </div>
           </div>
+          {/* EXPORT-01: the patient's file holds the finalized registos only:
+              said here when this tab shows one it leaves out. */}
+          {fichaExport?.partial && (
+            <p className="mb-4 text-right text-xs text-text-secondary" data-testid="ficha-export-partial">
+              {s["patients.fichaExportPartial"]}
+            </p>
+          )}
           {/* EPI-01b, piece 2: what "+ Episódio" did, said here. */}
           {m === "episodeErr" && (
             <p role="alert" className="mb-4 text-sm text-error" data-testid="add-episode-error">
@@ -889,7 +927,16 @@ export default async function PatientProfilePage({
                 // finalized registo, for whoever reads clinical records. The
                 // per-record "Transferir PDF" asks the same capability, and
                 // the server action asks it again.
-                const pdf = canReadClinical ? episodePdfTarget(g) : null;
+                // EXPORT-01: decided from every registo of the group the
+                // viewer reads (an annulled one is in the file), not only
+                // from the ones this tab is showing. An open episode with no
+                // registo yet has no group of registos: it is `g` itself.
+                const read = readGroups.get(g.key) ?? g;
+                const pdf = canReadClinical ? episodePdfTarget(read, g) : null;
+                // EXPORT-01: the same button on an IMPORTED group, for the
+                // group as this tab draws it (ficha-groups-core
+                // importedGroupPdfTarget), under the same capability.
+                const importedPdf = canReadClinical ? importedGroupPdfTarget(read, g) : null;
                 return (
                 <details
                   key={g.key}
@@ -934,7 +981,7 @@ export default async function PatientProfilePage({
                     </span>
                   </summary>
                   <div className="flex flex-col gap-3 px-4 pb-4">
-                    {(pdf || (add && addEvaluationTemplateId)) && (
+                    {(pdf || importedPdf || (add && addEvaluationTemplateId)) && (
                     <div className="flex flex-wrap items-start justify-end gap-3">
                     {pdf && (
                       <EpisodePdfButton
@@ -942,6 +989,20 @@ export default async function PatientProfilePage({
                         episodeId={pdf.episodeId}
                         label={s["patients.fichaGroupEpisodePdf"]}
                         ariaLabel={s["patients.fichaGroupEpisodePdfAria"].replace("{group}", g.label ?? "")}
+                        errorLabel={s["clinical.downloadPdfError"]}
+                      />
+                    )}
+                    {importedPdf && (
+                      <ImportedGroupPdfButton
+                        patientId={patient.id}
+                        specialty={importedPdf.specialty}
+                        label={s["patients.fichaGroupEpisodePdf"]}
+                        // A function, so a "$" in an imported title is text and not a pattern.
+                        // A group with a blank title is named as the imported one.
+                        ariaLabel={s["patients.fichaGroupEpisodePdfAria"].replace(
+                          "{group}",
+                          () => groupName(importedPdf.specialty) ?? s["patients.fichaGroupImported"],
+                        )}
                         errorLabel={s["clinical.downloadPdfError"]}
                       />
                     )}
@@ -968,7 +1029,7 @@ export default async function PatientProfilePage({
                     )}
                     {/* The file holds the finalized registos only: said here
                         when this group shows one it leaves out. */}
-                    {pdf?.partial && (
+                    {(pdf?.partial || importedPdf?.partial) && (
                       <p className="text-right text-xs text-text-secondary" data-testid="record-group-episode-pdf-partial">
                         {s["patients.fichaGroupEpisodePdfPartial"]}
                       </p>

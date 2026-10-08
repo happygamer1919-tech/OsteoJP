@@ -14,6 +14,7 @@ import {
 } from "./hard-delete-preflight";
 
 const pt = getStrings("pt");
+const en = getStrings("en");
 const c = (key: HardDeleteCount["key"], count: number): HardDeleteCount => ({ key, count });
 
 /**
@@ -24,10 +25,24 @@ const c = (key: HardDeleteCount["key"], count: number): HardDeleteCount => ({ ke
  * would refuse.
  */
 describe("hard-delete preflight", () => {
-  it("names all ten classes hardDeletePatient counts", () => {
-    expect(HARD_DELETE_CLASSES).toHaveLength(10);
-    expect(HARD_DELETE_CLASSES).toContain("appointmentNotes");
-    expect(HARD_DELETE_CLASSES).toContain("patientNoteRevisions");
+  it("names all twelve classes hardDeletePatient counts, in the order it counts them", () => {
+    // The whole list, so a class added, dropped or moved reddens here. The
+    // order is the order of the reads in ./actions.ts and ./queries.ts; the two
+    // read-order suites beside this one pin those to the same twelve.
+    expect(HARD_DELETE_CLASSES).toEqual([
+      "clinicalRecords",
+      "clinicalEpisodes",
+      "appointments",
+      "appointmentNotes",
+      "patientNoteRevisions",
+      "invoices",
+      "attachments",
+      "formSubmissions",
+      "analyticsEvents",
+      "mergeLosers",
+      "surveySends",
+      "surveyAnswers",
+    ]);
   });
 
   it("every class has a pt-PT label, and none is the raw key", () => {
@@ -35,6 +50,30 @@ describe("hard-delete preflight", () => {
       const label = classLabel(key);
       expect(label, `${key} has no label`).toBeTruthy();
       expect(label).not.toBe(key);
+    }
+  });
+
+  // SAT-01: migration 0102 lets a survey send and its answer name a patient,
+  // and the database refuses the patient's delete while either does.
+  it("names the two satisfaction survey classes, in both languages", () => {
+    expect(classLabel("surveySends")).toBe("Avaliações de satisfação (envios)");
+    expect(classLabel("surveyAnswers")).toBe("Avaliações de satisfação (respostas)");
+    expect(pt["patients.hardDeleteClassSurveySends"]).toBe("Avaliações de satisfação (envios)");
+    expect(pt["patients.hardDeleteClassSurveyAnswers"]).toBe("Avaliações de satisfação (respostas)");
+    expect(en["patients.hardDeleteClassSurveySends"]).toBe("Satisfaction surveys (sends)");
+    expect(en["patients.hardDeleteClassSurveyAnswers"]).toBe("Satisfaction surveys (answers)");
+  });
+
+  it("a survey send or a survey answer BLOCKS: neither cascades, neither is permanent", () => {
+    expect(CASCADES).not.toContain("surveySends");
+    expect(CASCADES).not.toContain("surveyAnswers");
+    expect(PERMANENT).not.toContain("surveySends");
+    expect(PERMANENT).not.toContain("surveyAnswers");
+    for (const key of ["surveySends", "surveyAnswers"] as const) {
+      const counts = HARD_DELETE_CLASSES.map((k) => c(k, k === key ? 1 : 0));
+      expect(cascadingCounts(counts), key).toEqual([]);
+      expect(blockingCounts(counts), key).toEqual([c(key, 1)]);
+      expect(refusal(counts), key).toEqual({ blocked: true, permanent: false });
     }
   });
 

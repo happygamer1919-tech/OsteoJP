@@ -18,6 +18,8 @@ import { noSmsReason, type NoSmsReason } from "@osteojp/notify";
 import {
   analyticsEvents,
   appointmentNotes,
+  appointmentSurveyResponses,
+  appointmentSurveySends,
   appointments,
   attachments,
   clinicalEpisodes,
@@ -30,6 +32,8 @@ import {
   patientNoteRevisions,
 } from "@osteojp/db";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
+import { isForeignKeyViolation } from "@/lib/admin/foreign-key-refusal";
+import { sqlStateOf } from "@/lib/observability/sql-state";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
@@ -39,6 +43,7 @@ import {
   InvalidMergeError,
   PatientNotFoundError,
 } from "./errors";
+import { isSelfMergeRefusal } from "./merge-refusal";
 import {
   parseCreatePatient,
   parseMergeInput,
@@ -480,11 +485,14 @@ export type MergePatientsResult =
  *    touched or bypassed here.
  *  - has_references: any other domain row still referencing the patient
  *    (episodes, appointments incl. secondary, visit notes, note revisions,
- *    invoices, attachments, form submissions, analytics events, merge losers).
+ *    invoices, attachments, form submissions, analytics events, merge losers,
+ *    satisfaction survey sends and answers).
  *    Note revisions / visit notes / analytics are append-only by RLS policy
  *    (0025/0026/0030) and invoices are fiscally sensitive, so these can never
  *    be cascaded — only a reference-free patient (e.g. created by mistake) is
  *    hard-deletable. Everything else stays on the soft-delete path.
+ *    The database's own foreign-key refusal of the patients DELETE (SQLSTATE
+ *    23503) is named `has_references` as well.
  *
  * The only deletable child is the patient_locations junction (child-first,
  * RETURNING), then the patients row itself (RETURNING). Idempotent: a second
@@ -556,6 +564,19 @@ export async function hardDeletePatient(
         tx.select({ n: count() }).from(analyticsEvents).where(eq(analyticsEvents.patientId, id)),
         // Merge losers pointing at this patient as their survivor.
         tx.select({ n: count() }).from(patients).where(eq(patients.mergedIntoId, id)),
+        // SAT-01 (0102): a survey send and its answer each name the patient, NO
+        // ACTION. merge_patients does not re-point them, so a merged-away
+        // patient keeps them while its appointments move to the survivor. RLS
+        // scopes both reads (0102's SELECT policies), so a caller who reads none
+        // of the rows counts zero here and is refused by the DELETE below.
+        tx
+          .select({ n: count() })
+          .from(appointmentSurveySends)
+          .where(eq(appointmentSurveySends.patientId, id)),
+        tx
+          .select({ n: count() })
+          .from(appointmentSurveyResponses)
+          .where(eq(appointmentSurveyResponses.patientId, id)),
       ]);
       const references = refCounts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
       if (references > 0) throw new AdminError("has_references");
@@ -567,10 +588,19 @@ export async function hardDeletePatient(
         .where(eq(patientLocations.patientId, id))
         .returning({ id: patientLocations.id });
 
-      const deleted = await tx
-        .delete(patients)
-        .where(eq(patients.id, id))
-        .returning({ id: patients.id });
+      // Names the database's foreign-key refusal: a DELETE refused because a row
+      // still references the patient is `has_references`, the word the counts
+      // above give. Any other failure is rethrown untouched.
+      let deleted: { id: string }[];
+      try {
+        deleted = await tx
+          .delete(patients)
+          .where(eq(patients.id, id))
+          .returning({ id: patients.id });
+      } catch (e) {
+        if (isForeignKeyViolation(e)) throw new AdminError("has_references");
+        throw e;
+      }
       if (deleted.length === 0) throw new AdminError("not_found");
 
       // Audit in the SAME tx (rule 6). PII-FREE: ids + patient number + flags
@@ -1024,12 +1054,25 @@ export async function mergePatients(raw: MergePatientsInput): Promise<MergePatie
       // well-formed uuid that names nobody. It says the same thing to a
       // cross-tenant id, deliberately - answering "that patient is not yours"
       // would confirm the row exists somewhere.
-      const code = (err as { code?: string } | null)?.code;
+      //
+      // THE SQLSTATE IS READ THROUGH `sqlStateOf`, which reads the error and
+      // its cause: Drizzle wraps the driver's error, and the wrapper carries
+      // no code of its own (pinned in merge-refusals.db.test.ts).
+      const code = sqlStateOf(err);
       if (code === "P0002") {
+        // FLAGGED AND RETHROWN, not answered from in here: the statement
+        // failed, so this transaction can only roll back, and the driver
+        // raises a failed statement's error again at the end of a transaction
+        // whose callback returned normally. The catch below reads the flag.
         notFound = true;
-        return null;
+        throw err;
       }
-      if (code === "23514") {
+      // ONLY THE FUNCTION'S OWN REFUSAL of one patient as both sides is the
+      // self-merge answer. It is a check violation (23514), and so is every
+      // other check the statement can fail: `isSelfMergeRefusal` reads the
+      // SQLSTATE and the function's own message together, and any other check
+      // violation is rethrown as it is.
+      if (isSelfMergeRefusal(err)) {
         throw new InvalidMergeError("Cannot merge a patient into itself");
       }
       throw err;
@@ -1043,6 +1086,10 @@ export async function mergePatients(raw: MergePatientsInput): Promise<MergePatie
       .limit(1);
     if (!survivorRowFull) throw new PatientNotFoundError();
     return survivorRowFull;
+  }).catch((err: unknown) => {
+    // Only the refusal flagged above is an answer; everything else still throws.
+    if (notFound) return null;
+    throw err;
   });
 
   if (notFound || !survivor) return { ok: false, error: "not_found" };

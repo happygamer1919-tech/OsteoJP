@@ -21,7 +21,13 @@ vi.mock("@/lib/admin/appointment-delete-password", () => ({
   verifyDeletePassword: vi.fn(),
 }));
 
-import { patientLocations, patients } from "@osteojp/db";
+import { DrizzleQueryError } from "drizzle-orm";
+import {
+  appointmentSurveyResponses,
+  appointmentSurveySends,
+  patientLocations,
+  patients,
+} from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
@@ -50,15 +56,21 @@ function q(rows: unknown[]) {
 function makeTx(opts: {
   target?: typeof TARGET | null;
   records?: number;
-  // total of the 9 other-reference counts (one bucket is enough to prove refuse)
+  // total of the 11 other-reference counts (one bucket is enough to prove refuse)
   references?: number;
+  // rows of ONE named class that reference the patient, by its table (SAT-01:
+  // the two survey classes are the last two reads, so the queue cannot name them)
+  rowsIn?: { table: unknown; n: number };
   patientDeleted?: { id: string }[];
+  // what the patients DELETE rejects with, when the database refuses it
+  patientDeleteError?: unknown;
 }) {
-  const { target = TARGET, records = 0, references = 0 } = opts;
+  const { target = TARGET, records = 0, references = 0, rowsIn } = opts;
   // Select order inside hardDeletePatient:
   //   1. snapshot (.limit)
   //   2. clinical_records count
-  //   3..11. the 9 other-reference counts (Promise.all)
+  //   3..13. the 11 other-reference counts (Promise.all); the last two are the
+  //          satisfaction survey sends and answers
   const selectQueue: unknown[][] = [
     target ? [target] : [], // snapshot
     [{ n: records }], // clinical_records
@@ -68,14 +80,24 @@ function makeTx(opts: {
   const stats = { deleteOrder: [] as string[] };
   const tx = {
     select: () => ({
-      from: () => ({ where: () => q(selectQueue[si++] ?? [{ n: 0 }]) }),
+      from: (table: unknown) => ({
+        where: () =>
+          q(selectQueue[si++] ?? [{ n: rowsIn && rowsIn.table === table ? rowsIn.n : 0 }]),
+      }),
     }),
     delete: (table: unknown) => {
       const tag =
         table === patientLocations ? "patient_locations" : table === patients ? "patients" : "other";
       stats.deleteOrder.push(tag);
       const rows = tag === "patients" ? (opts.patientDeleted ?? [{ id: target?.id }]) : [];
-      return { where: () => ({ returning: async () => rows }) };
+      return {
+        where: () => ({
+          returning: async () => {
+            if (tag === "patients" && opts.patientDeleteError) throw opts.patientDeleteError;
+            return rows;
+          },
+        }),
+      };
     },
   };
   return { tx, stats };
@@ -157,6 +179,31 @@ describe("hardDeletePatient (W5-08)", () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  // SAT-01 (0102): a survey send or a survey answer that names the patient is
+  // counted, and it refuses before any delete is reached. Each alone, every
+  // other count zero.
+  it("REFUSES a patient whose only reference is one satisfaction survey send", async () => {
+    mockVerify.mockResolvedValue(true);
+    const { tx, stats } = makeTx({ rowsIn: { table: appointmentSurveySends, n: 1 } });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    const r = await hardDeletePatient("patient-1", "correct-horse");
+    expect(r).toEqual({ ok: false, error: "has_references" });
+    expect(stats.deleteOrder).toEqual([]); // the count refused, not the database
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("REFUSES a patient whose only reference is one satisfaction survey answer", async () => {
+    mockVerify.mockResolvedValue(true);
+    const { tx, stats } = makeTx({ rowsIn: { table: appointmentSurveyResponses, n: 1 } });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    const r = await hardDeletePatient("patient-1", "correct-horse");
+    expect(r).toEqual({ ok: false, error: "has_references" });
+    expect(stats.deleteOrder).toEqual([]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
   it("returns not_found for a missing / cross-tenant patient (RLS = 0 rows)", async () => {
     mockVerify.mockResolvedValue(true);
     const { tx } = makeTx({ target: null });
@@ -165,5 +212,59 @@ describe("hardDeletePatient (W5-08)", () => {
     const r = await hardDeletePatient("ghost", "correct-horse");
     expect(r).toEqual({ ok: false, error: "not_found" });
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+// The database's own refusal of the patients DELETE. The driver error is built
+// the way postgres.js raises it (the SQLSTATE is its `code`) and wrapped the way
+// Drizzle wraps it (a DrizzleQueryError with no `code`, the driver error at
+// `.cause`).
+describe("hardDeletePatient: the database's foreign-key refusal is named", () => {
+  const driverError = (code: string) => Object.assign(new Error("driver error"), { code });
+  const wrapped = (code: string) =>
+    new DrizzleQueryError("delete from patients where id = $1", ["patient-1"], driverError(code));
+
+  async function runWith(opts: Parameters<typeof makeTx>[0]) {
+    mockVerify.mockResolvedValue(true);
+    const made = makeTx(opts);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(made.tx as never)));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      return { r: await hardDeletePatient("patient-1", "correct-horse"), ...made };
+    } finally {
+      logged.mockRestore();
+    }
+  }
+
+  it("a DELETE refused with 23503 at the Drizzle error's cause is has_references, with no audit row", async () => {
+    const { r, stats } = await runWith({ patientDeleteError: wrapped("23503") });
+    expect(r).toEqual({ ok: false, error: "has_references" });
+    // The counts passed and the DELETE was reached: the refusal is the database's.
+    expect(stats.deleteOrder).toEqual(["patient_locations", "patients"]);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("a DELETE refused with 23503 on the error itself is has_references too", async () => {
+    const { r } = await runWith({ patientDeleteError: driverError("23503") });
+    expect(r).toEqual({ ok: false, error: "has_references" });
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("another SQLSTATE on the DELETE is not named: it stays the generic error", async () => {
+    for (const code of ["23505", "23514", "42501"]) {
+      const { r } = await runWith({ patientDeleteError: wrapped(code) });
+      expect(r, code).toEqual({ ok: false, error: "error" });
+    }
+    const { r } = await runWith({ patientDeleteError: new Error("no code at all") });
+    expect(r).toEqual({ ok: false, error: "error" });
+  });
+
+  it("a 23503 raised by another statement of the transaction is not named", async () => {
+    mockAudit.mockRejectedValueOnce(
+      new DrizzleQueryError("insert into audit_log", [], driverError("23503")),
+    );
+    const { r, stats } = await runWith({});
+    expect(stats.deleteOrder).toEqual(["patient_locations", "patients"]);
+    expect(r).toEqual({ ok: false, error: "error" });
   });
 });

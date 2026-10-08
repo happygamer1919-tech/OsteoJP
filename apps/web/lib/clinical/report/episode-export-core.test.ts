@@ -5,6 +5,8 @@ import { importedDocumentPrefix } from "@/lib/patients/imported-documents-path";
 import {
   episodeReportFilename,
   episodeReportPath,
+  importedGroupReportFilename,
+  importedGroupReportPath,
   isEpisodeExportable,
   selectEpisodeExport,
   type EpisodeExportRow,
@@ -12,8 +14,9 @@ import {
 import { isPrintable, type RecordStatus } from "./report-model";
 
 // EPI-01b, piece 3: which registos the episode's file holds, in which order,
-// and what the file is called. The rule is the per-record button's, with one
-// narrowing (an annulled registo is left out); each arm states one case.
+// and what the file is called. The rule is the per-record button's; each arm
+// states one case. EXPORT-01: an annulled registo is IN the file (the engine
+// prints its mark), and a draft is never in it.
 
 const STATUSES: RecordStatus[] = ["draft", "locked", "signed"];
 const AI_STATES: (string | null)[] = [null, "pending_review", "in_review", "approved", "rejected"];
@@ -36,12 +39,12 @@ describe("isEpisodeExportable: the per-record button's rule, and never wider", (
   it.each(
     STATUSES.flatMap((status) => AI_STATES.map((aiReviewState) => ({ status, aiReviewState }))),
   )("status $status, AI review $aiReviewState: in the file exactly when the per-record engine prints it", (c) => {
-    expect(isEpisodeExportable({ ...c, annulled: false })).toBe(isPrintable(c));
+    expect(isEpisodeExportable(c)).toBe(isPrintable(c));
   });
 
   it("the table, written out: only a finalized registo that is not under AI review", () => {
     const table = STATUSES.flatMap((status) =>
-      AI_STATES.map((ai) => `${status}/${ai}:${isEpisodeExportable({ status, aiReviewState: ai, annulled: false })}`),
+      AI_STATES.map((ai) => `${status}/${ai}:${isEpisodeExportable({ status, aiReviewState: ai })}`),
     );
     expect(table).toEqual([
       "draft/null:false",
@@ -63,35 +66,38 @@ describe("isEpisodeExportable: the per-record button's rule, and never wider", (
   });
 
   it.each(STATUSES)("status %s with no AI review: the same answer as the 'Transferir PDF' button's own gate", (status) => {
-    expect(isEpisodeExportable({ status, aiReviewState: null, annulled: false })).toBe(canDownloadReport(status));
+    expect(isEpisodeExportable({ status, aiReviewState: null })).toBe(canDownloadReport(status));
   });
 
   it.each(
     STATUSES.flatMap((status) => AI_STATES.map((aiReviewState) => ({ status, aiReviewState }))),
-  )("an ANNULLED registo is never in the file (status $status, AI review $aiReviewState)", (c) => {
-    expect(isEpisodeExportable({ ...c, annulled: true })).toBe(false);
+  )("an ANNULLED registo is in the file exactly when it would be were it not annulled (status $status, AI review $aiReviewState)", (c) => {
+    const annulled = row({ ...c, annulled: true });
+    const standing = row({ ...c, annulled: false });
+    expect(selectEpisodeExport([annulled]).recordIds).toEqual(isPrintable(c) ? [annulled.id] : []);
+    expect(selectEpisodeExport([standing]).recordIds).toEqual(isPrintable(c) ? [standing.id] : []);
   });
 
-  it("the narrowing is only a narrowing: nothing the per-record engine refuses is ever admitted", () => {
-    for (const status of STATUSES)
-      for (const aiReviewState of AI_STATES)
-        for (const annulled of [false, true])
-          if (isEpisodeExportable({ status, aiReviewState, annulled })) {
-            expect(isPrintable({ status, aiReviewState })).toBe(true);
-          }
+  it.each(AI_STATES)("a DRAFT is never in the file, annulled or not (AI review %s)", (aiReviewState) => {
+    for (const annulled of [false, true]) {
+      expect(selectEpisodeExport([row({ status: "draft", aiReviewState, annulled })])).toEqual({
+        recordIds: [],
+        leftOut: 1,
+      });
+    }
   });
 });
 
 describe("selectEpisodeExport: which registos, and how many are left out", () => {
-  it("a mixed episode: the locked and the signed are in; the draft, the AI-pending and the annulled are counted out", () => {
+  it("a mixed episode: the locked, the signed and the annulled are in; the draft and the AI-pending are counted out", () => {
     const locked = row({ status: "locked", createdAt: new Date("2026-09-01T09:00:00Z") });
     const draft = row({ status: "draft", createdAt: new Date("2026-09-02T09:00:00Z") });
     const signed = row({ status: "signed", createdAt: new Date("2026-09-03T09:00:00Z") });
     const aiPending = row({ status: "draft", aiReviewState: "pending_review", createdAt: new Date("2026-09-04T09:00:00Z") });
     const annulled = row({ status: "signed", annulled: true, createdAt: new Date("2026-09-05T09:00:00Z") });
     expect(selectEpisodeExport([locked, draft, signed, aiPending, annulled])).toEqual({
-      recordIds: [locked.id, signed.id],
-      leftOut: 3,
+      recordIds: [locked.id, signed.id, annulled.id],
+      leftOut: 2,
     });
   });
 
@@ -209,5 +215,26 @@ describe("the file: where it is stored and what it is called", () => {
 
   it("the download name is the episode id's first block and nothing else", () => {
     expect(episodeReportFilename(EPISODE)).toBe("relatorio-episodio-7777cccc.pdf");
+  });
+
+  const PATIENT = "4444dddd-4444-4444-8444-444444444441";
+
+  it("EXPORT-01, the imported group's file: tenant-prefixed, ids only, in a folder of its own", () => {
+    expect(importedGroupReportPath(TENANT, PATIENT, OBJECT)).toBe(
+      `${TENANT}/imported-episode-reports/${PATIENT}/${OBJECT}.pdf`,
+    );
+    const folder = importedGroupReportPath(TENANT, PATIENT, OBJECT).split("/")[1]!;
+    const named = otherWritersFirstSegments()
+      .map((o) => o.segment)
+      .filter((segment) => !segment.startsWith("${"));
+    expect(named).toEqual(expect.arrayContaining(["reports", "rgpd-forms", "declaracoes", "patient-documents"]));
+    expect(named).not.toContain(folder);
+    expect(folder).not.toBe(episodeReportPath(TENANT, EPISODE, OBJECT).split("/")[1]);
+    expect(folder).not.toBe(importedDocumentPrefix(TENANT).split("/")[1]);
+    expect(folder).not.toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  });
+
+  it("EXPORT-01, the imported group's download name: the patient id's first block and nothing else", () => {
+    expect(importedGroupReportFilename(PATIENT)).toBe("relatorio-episodio-importado-4444dddd.pdf");
   });
 });
