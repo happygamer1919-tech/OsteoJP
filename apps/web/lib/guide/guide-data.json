@@ -5738,7 +5738,13 @@
               "strong": "Transferir PDF"
             },
             {
-              "text": ". O ficheiro junta todas as versões finalizadas dos registos do episódio, da mais antiga à mais recente. Rascunhos e registos anulados ficam de fora."
+              "text": ". O ficheiro junta todas as versões finalizadas dos registos do episódio, da mais antiga à mais recente. Rascunhos ficam de fora. Anulados entram, marcados "
+            },
+            {
+              "strong": "ANULADO"
+            },
+            {
+              "text": "."
             }
           ],
           "type": "para"
@@ -5777,7 +5783,7 @@
       "see": [],
       "shots": null,
       "title": "Assinar e bloquear um registo",
-      "words": 198
+      "words": 199
     },
     {
       "answers": [],
