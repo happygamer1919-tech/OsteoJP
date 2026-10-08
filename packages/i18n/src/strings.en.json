@@ -273,6 +273,8 @@
   "patients.hardDeleteClassFormSubmissions": "Submitted forms",
   "patients.hardDeleteClassAnalytics": "Analytics events",
   "patients.hardDeleteClassMergeLosers": "Patients merged into this one",
+  "patients.hardDeleteClassSurveySends": "Satisfaction surveys (sends)",
+  "patients.hardDeleteClassSurveyAnswers": "Satisfaction surveys (answers)",
   "patients.hardDeleteWhatBlocks": "Permanent deletion is not possible. What still references this patient:",
   "patients.hardDeleteBlockedPermanently": "A clinical record can never be removed, so this patient can never be permanently deleted.",
   "patients.hardDeleteWrongPassword": "Incorrect delete password.",

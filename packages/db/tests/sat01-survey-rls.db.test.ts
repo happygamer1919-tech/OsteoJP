@@ -1715,8 +1715,10 @@ if (w102) dLive(`SAT-01 0102: the behaviour check per role, the guest token, the
 
   it("MERGE (0005) DOES NOT KNOW THESE TABLES, application work that is OWED: after a merge the survey rows stay on the merged-away patient, and the database refuses its hard delete", async () => {
     // THIS ARM RECORDS A GAP, NOT A WISH. merge_patients moves appointments and leaves sends and answers
-    // where they were. The spec's amendment of 2026-10-05 lists the application work (the merge re-points
-    // or refuses; the hard delete reports has_references). When that lands, this arm changes with it.
+    // where they were. The spec's amendment of 2026-10-05 lists the application work: the merge re-points
+    // or refuses (A3, still owed; when it lands, this arm changes with it), and the hard delete reports
+    // has_references (A4, landed 2026-10-08, proved in apps/web/lib/patients/hard-delete-survey.db.test.ts).
+    // A4 is application code: the database's own refusal, asserted at the end of this arm, is unchanged.
     const out = await scenario(null, staff("owner", W.owner), async (tx) => {
       const code = hex();
       const loser = await owner(tx, () => mkPatient(tx));

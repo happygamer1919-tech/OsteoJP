@@ -18,6 +18,8 @@ import { noSmsReason, type NoSmsReason } from "@osteojp/notify";
 import {
   analyticsEvents,
   appointmentNotes,
+  appointmentSurveyResponses,
+  appointmentSurveySends,
   appointments,
   attachments,
   clinicalEpisodes,
@@ -483,7 +485,8 @@ export type MergePatientsResult =
  *    touched or bypassed here.
  *  - has_references: any other domain row still referencing the patient
  *    (episodes, appointments incl. secondary, visit notes, note revisions,
- *    invoices, attachments, form submissions, analytics events, merge losers).
+ *    invoices, attachments, form submissions, analytics events, merge losers,
+ *    satisfaction survey sends and answers).
  *    Note revisions / visit notes / analytics are append-only by RLS policy
  *    (0025/0026/0030) and invoices are fiscally sensitive, so these can never
  *    be cascaded — only a reference-free patient (e.g. created by mistake) is
@@ -561,6 +564,19 @@ export async function hardDeletePatient(
         tx.select({ n: count() }).from(analyticsEvents).where(eq(analyticsEvents.patientId, id)),
         // Merge losers pointing at this patient as their survivor.
         tx.select({ n: count() }).from(patients).where(eq(patients.mergedIntoId, id)),
+        // SAT-01 (0102): a survey send and its answer each name the patient, NO
+        // ACTION. merge_patients does not re-point them, so a merged-away
+        // patient keeps them while its appointments move to the survivor. RLS
+        // scopes both reads (0102's SELECT policies), so a caller who reads none
+        // of the rows counts zero here and is refused by the DELETE below.
+        tx
+          .select({ n: count() })
+          .from(appointmentSurveySends)
+          .where(eq(appointmentSurveySends.patientId, id)),
+        tx
+          .select({ n: count() })
+          .from(appointmentSurveyResponses)
+          .where(eq(appointmentSurveyResponses.patientId, id)),
       ]);
       const references = refCounts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
       if (references > 0) throw new AdminError("has_references");
