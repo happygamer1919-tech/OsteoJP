@@ -38,6 +38,7 @@ import {
   recordBookingApprovedHandOver,
   recordDispatch,
 } from "./dispatch-ledger";
+import { takeReminderClaim, type ReminderClaimTaker } from "./reminder-claim";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import {
   bookingApprovedLocationContact,
@@ -595,8 +596,9 @@ export function buildReminderContext(
 type Dispatchable =
   | { ok: true; data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>> }
   /** `patientId` is present when the row WAS read (a soft-deleted patient), and
-   *  absent for `not_found`. An id, never a name. */
-  | { ok: false; outcome: DispatchOutcome; patientId?: string };
+   *  absent for `not_found`. An id, never a name. `startsAt` travels with it,
+   *  for the reminder claim, which is keyed on the start. */
+  | { ok: false; outcome: DispatchOutcome; patientId?: string; startsAt?: Date };
 
 async function loadDispatchable(
   tenantId: string,
@@ -623,6 +625,7 @@ async function loadDispatchable(
       ok: false,
       outcome: { dispatched: false, reason: "patient_deleted" },
       patientId: data.patientId,
+      startsAt: data.startsAt,
     };
   }
 
@@ -653,8 +656,11 @@ export async function dispatchReminder(
   appointmentId: string,
   offsetId: ReminderOffsetId,
   channel: Channel,
+  /** Who is asking, for the reminder claim. Today's only caller is the sleeping
+   *  job, which passes nothing. */
+  taker: ReminderClaimTaker = "run",
 ): Promise<DispatchOutcome> {
-  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel);
+  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel, taker);
   if (!outcome.dispatched) {
     await recordDispatch({
       tenantId,
@@ -676,8 +682,18 @@ async function dispatchReminderInner(
   offsetId: ReminderOffsetId,
   /** The single channel this run is for. One run, one channel, one key. */
   channel: Channel,
+  taker: ReminderClaimTaker,
 ): Promise<DispatchOutcome> {
   const gate = await loadDispatchable(tenantId, appointmentId, "reminder");
+  // THE CLAIM, RECORD ONLY (./reminder-claim.ts). Taken HERE, after the load
+  // and before every gate below, because the claim is keyed on the start and
+  // only the loaded row knows it. So every return of this function leaves one
+  // claim behind, except `not_found`, where there is no row and no start. It
+  // returns nothing and never throws: no line below can depend on it.
+  const claimStart = gate.ok ? gate.data.startsAt : gate.startsAt;
+  if (claimStart) {
+    await takeReminderClaim({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
+  }
   if (!gate.ok) return gate.outcome;
   const data = gate.data;
   if (!REMINDABLE_STATUSES.has(data.status)) {
