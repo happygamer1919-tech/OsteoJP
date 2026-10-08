@@ -10,6 +10,9 @@
  * insert policy admits a therapist writing their own booking's row and the
  * select policy admits therapists reading their own list; attachments,
  * clinical_episodes and appointment_notes stay as they are."
+ * (That sentence is CARE-02a's own scope. clinical_episodes has a migration of
+ * its own, 0104, and packages/db/tests/clinical-episodes-role-matrix.db.test.ts
+ * holds its matrix.)
  *
  * AND THE OWNER'S RULING OF 2026-09-27 on the open question: "limit to their
  * clinic only". A care-team therapist reads the ficha, the registos and the
@@ -597,7 +600,8 @@ d("CARE-02a: the care team reads the ficha and the registos (0098)", () => {
    * "the source registo (or the patient) is SELECT-visible", and then wrote
    * somewhere whose own policy admits any therapist: a new version
    * (clinical_records_insert's author arm), an annulment (record_annulments is
-   * tenant-only), an attachment on a draft or an episode (tenant-only). 0098
+   * tenant-only), an attachment on a draft (tenant-only) or an episode (its
+   * policies are 0104's where that is applied; this arm passes on both). 0098
    * widens the SELECT, so without therapistRegistoWriteScope and the narrow
    * patient check each of these would now succeed for T1. They pass on a
    * database with or without 0098; what they catch is the app losing the gate.

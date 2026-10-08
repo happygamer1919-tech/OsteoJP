@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0103_clinical_episodes_role_matrix.sql` | `0103` | 2026-10-08 | branch `db/0104-episode-policy`. Becomes `0104` (strategy, dispatch S-1008-B). The `clinical_episodes` policies follow the roles, one policy per command. It is promoted only after `0103` is applied to production and merged. Its pre-check and post-check are `scripts/db/precheck-0104-episode-policies.sql` and `scripts/db/postcheck-0104-episode-policies.sql`, and both pin the file's sha256 as a literal. |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
