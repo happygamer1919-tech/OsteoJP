@@ -59,8 +59,16 @@ describe("reminder reschedule supersession config", () => {
     );
   });
 
-  it("registers all five notification functions (2 reminders + confirmation + follow-up + no-show)", () => {
-    expect(functions).toHaveLength(5);
+  it("registers the five notification functions (2 reminders + confirmation + follow-up + no-show) and the sweep", () => {
+    expect(functions).toHaveLength(6);
+    expect(functions.map((f) => f.id())).toEqual([
+      "schedule-appointment-reminders",
+      "send-appointment-reminder",
+      "send-appointment-confirmation",
+      "send-follow-up-notification",
+      "send-no-show-notification",
+      "sweep-due-reminders",
+    ]);
   });
 });
 
