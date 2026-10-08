@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  BLANK_IMPORTED_LABEL,
   EXCERPT_MAX,
   addEvaluationTarget,
   episodePdfTarget,
   excerpt,
   fichaExportTarget,
   groupForFicha,
+  groupName,
   importedGroupPdfTarget,
   type FichaRecord,
 } from "./ficha-groups-core";
@@ -388,6 +390,36 @@ describe("episodePdfTarget (EPI-01b, piece 3): which group shows 'PDF do episód
     expect(episodePdfTarget(only([inEpisode({ status: "draft", annulled: true })]))).toBeNull();
   });
 
+  describe("EXPORT-01: decided from every registo READ, while the tab SHOWS fewer ('Mostrar anulados' off)", () => {
+    const annulled = inEpisode({ status: "signed", annulled: true });
+    const draft = inEpisode({ status: "draft" });
+    const final = inEpisode({ status: "locked" });
+    const shownOf = (read: FichaRecord[]) => only(read.filter((r) => !r.annulled));
+
+    it("the only finalized registo is annulled and hidden, beside a draft on screen: the button (the export answers with it, marked), and the draft on screen is said to be left out", () => {
+      const read = [annulled, draft];
+      // CONTROL: from what is on screen alone there would be no button.
+      expect(episodePdfTarget(shownOf(read))).toBeNull();
+      expect(episodePdfTarget(only(read), shownOf(read))).toEqual({ episodeId: EP, partial: true });
+    });
+
+    it("a finalized registo on screen and an annulled one hidden: the button, and no 'partial' line, since nothing on screen is left out", () => {
+      const read = [final, annulled];
+      expect(episodePdfTarget(only(read), shownOf(read))).toEqual({ episodeId: EP, partial: false });
+    });
+
+    it("'partial' speaks of what is on screen: an annulled DRAFT that is hidden does not raise it, and raises it once shown", () => {
+      const read = [final, inEpisode({ status: "draft", annulled: true })];
+      expect(episodePdfTarget(only(read), shownOf(read))).toEqual({ episodeId: EP, partial: false });
+      expect(episodePdfTarget(only(read), only(read))).toEqual({ episodeId: EP, partial: true });
+    });
+
+    it("drafts only, read and shown: still no button", () => {
+      const read = [draft, inEpisode({ status: "draft", annulled: true })];
+      expect(episodePdfTarget(only(read), shownOf(read))).toBeNull();
+    });
+  });
+
   it("an open episode with NO registo yet gets NO button", () => {
     const g = only([], [{ id: EP, title: "Osteopatia (01/09/2026)", openedAt: day("2026-09-01") }]);
     expect(g).toMatchObject({ kind: "episode", episodeId: EP, evaluations: 0 });
@@ -428,7 +460,7 @@ describe("importedGroupPdfTarget (EXPORT-01): which imported group shows 'PDF do
 
   it("the target is the group's own label: two specialties are two targets", () => {
     const groups = groupForFicha([imported(), imported({ episodeTitle: "Fisioterapia" })]);
-    expect(groups.map(importedGroupPdfTarget)).toEqual(
+    expect(groups.map((g) => importedGroupPdfTarget(g))).toEqual(
       expect.arrayContaining([
         { specialty: "Osteopatia", partial: false },
         { specialty: "Fisioterapia", partial: false },
@@ -460,6 +492,36 @@ describe("importedGroupPdfTarget (EXPORT-01): which imported group shows 'PDF do
     const g = only([imported({ episodeTitle: "  " })]);
     expect(g.key).toBe("imported:\u2014");
     expect(importedGroupPdfTarget(g)).toEqual({ specialty: "\u2014", partial: false });
+  });
+
+  it("the dash is a key, not a NAME: groupName gives null for it and for no label, and the label itself otherwise", () => {
+    expect(BLANK_IMPORTED_LABEL).toBe("\u2014");
+    expect(only([imported({ episodeTitle: "  " })]).label).toBe(BLANK_IMPORTED_LABEL);
+    expect(groupName(BLANK_IMPORTED_LABEL)).toBeNull();
+    expect(groupName(null)).toBeNull();
+    expect(groupName("Osteopatia")).toBe("Osteopatia");
+    expect(groupName("Osteopatia (01/09/2026)")).toBe("Osteopatia (01/09/2026)");
+  });
+
+  describe("decided from every registo READ, while the tab SHOWS fewer ('Mostrar anulados' off)", () => {
+    const shownOf = (read: FichaRecord[]) => only(read.filter((r) => !r.annulled));
+
+    it("the only finalized registo is annulled and hidden, beside an imported draft on screen: the button, and the draft is said to be left out", () => {
+      const read = [imported({ status: "signed", annulled: true }), imported({ status: "draft" })];
+      // CONTROL: from what is on screen alone there would be no button.
+      expect(importedGroupPdfTarget(shownOf(read))).toBeNull();
+      expect(importedGroupPdfTarget(only(read), shownOf(read))).toEqual({ specialty: "Osteopatia", partial: true });
+    });
+
+    it("a locked registo on screen and an annulled one hidden: the button, and no 'partial' line", () => {
+      const read = [imported(), imported({ status: "signed", annulled: true })];
+      expect(importedGroupPdfTarget(only(read), shownOf(read))).toEqual({ specialty: "Osteopatia", partial: false });
+    });
+
+    it("drafts only, read and shown: still no button", () => {
+      const read = [imported({ status: "draft" }), imported({ status: "draft", annulled: true })];
+      expect(importedGroupPdfTarget(only(read), shownOf(read))).toBeNull();
+    });
   });
 
   it("an APP episode and the 'Sem episódio' group are not this function's: null", () => {
@@ -497,5 +559,33 @@ describe("fichaExportTarget (EXPORT-01): whether the tab shows 'Exportar ficha'"
 
   it("no registo the viewer reads: NO button", () => {
     expect(fichaExportTarget([])).toBeNull();
+  });
+
+  describe("decided from every registo READ, while the tab LISTS fewer ('Mostrar anulados' off)", () => {
+    const listed = (read: FichaRecord[]) => read.filter((r) => !r.annulled);
+
+    it("the patient's only finalized registo is annulled and hidden: the button, on a tab that lists nothing", () => {
+      const read = [rec({ status: "signed", annulled: true })];
+      expect(listed(read)).toEqual([]);
+      // CONTROL: from what is listed alone there would be no button.
+      expect(fichaExportTarget(listed(read))).toBeNull();
+      expect(fichaExportTarget(read, listed(read))).toEqual({ partial: false });
+    });
+
+    it("an annulled finalized registo hidden beside a draft that is listed: the button, and the draft is said to be left out", () => {
+      const read = [rec({ status: "locked", annulled: true }), rec({ status: "draft" })];
+      expect(fichaExportTarget(read, listed(read))).toEqual({ partial: true });
+    });
+
+    it("'partial' speaks of what is listed: an annulled DRAFT that is hidden does not raise it, and raises it once listed", () => {
+      const read = [rec({ status: "signed" }), rec({ status: "draft", annulled: true })];
+      expect(fichaExportTarget(read, listed(read))).toEqual({ partial: false });
+      expect(fichaExportTarget(read, read)).toEqual({ partial: true });
+    });
+
+    it("drafts only, read and listed: still no button", () => {
+      const read = [rec({ status: "draft" }), rec({ status: "draft", annulled: true })];
+      expect(fichaExportTarget(read, listed(read))).toBeNull();
+    });
   });
 });

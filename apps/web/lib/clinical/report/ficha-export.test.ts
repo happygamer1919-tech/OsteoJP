@@ -235,6 +235,24 @@ describe("renderPatientFichaReport: a heading page per section, then each regist
     ]);
   });
 
+  it("a section with no name to give (a blank imported title groups under a dash, or no label at all) is headed 'Episódio', once, and never by the dash", async () => {
+    engine();
+    const unnamed: FichaExportSelection = {
+      patientId: PATIENT,
+      sections: [
+        { kind: "imported", label: "\u2014", recordIds: ["r1"] },
+        { kind: "episode", label: null, recordIds: ["r2"] },
+      ],
+      leftOut: 0,
+    };
+    await renderPatientFichaReport(owner, unnamed, "pt");
+    expect(mockSection.mock.calls.map((c) => c[0])).toEqual([
+      { overline: null, title: "Episódio", note: "Importado" },
+      { overline: null, title: "Episódio", note: null },
+    ]);
+    expect(JSON.stringify(mockSection.mock.calls)).not.toMatch(/[\u2013\u2014]/);
+  });
+
   it("the headings follow the language asked for", async () => {
     engine();
     await renderPatientFichaReport(owner, selection, "en");

@@ -16,6 +16,10 @@
  *     button, for the group (its specialty), wired to its own action;
  *   - a group that shows a registo the file leaves out (a draft) says so beside
  *     the button, and a group that shows none does not;
+ *   - EXPORT-01: a group's button is decided from every registo of the group
+ *     the viewer READS, annulled ones included, whatever "Mostrar anulados"
+ *     shows, because the export answers with them. A group with nothing on
+ *     screen is not drawn, so it has no button of its own;
  *   - the button names its episode, and the page hands it the patient and
  *     THAT group's episode (read from the props the page passes; what the
  *     button then asks the server action for is episode-pdf-button.test.tsx's).
@@ -46,8 +50,10 @@ const h = vi.hoisted(() => ({
   },
   /** What the narrow (write) getPatient finds: false for a care-team reader. */
   mayWrite: true,
-  /** What listFichaRecords was asked: the "Mostrar anulados" toggle reaches it. */
+  /** What listFichaRecords was asked: annulled registos included, or not. */
   includeAnnulled: [] as boolean[],
+  /** Registos an arm adds to the patient's own. */
+  extra: [] as Record<string, unknown>[],
   /** What the page handed each "PDF do episódio" button, in render order. */
   buttonProps: [] as Record<string, unknown>[],
   /** What the page handed each IMPORTED group's button, in render order. */
@@ -123,6 +129,7 @@ vi.mock("../../../lib/clinical/ficha-groups", () => ({
       ...(h.importedDraft
         ? [rec("r-imp-draft", { episodeId: EP_IMPORTED_2, episodeTitle: "Osteopatia", episodeImported: true, status: "draft", createdAt: "2024-06-10T23:00:00.000Z" })]
         : []),
+      ...h.extra,
     ];
     return filter.includeAnnulled ? all : all.filter((r) => !r.annulled);
   },
@@ -219,11 +226,12 @@ const en = getStrings("en");
 
 async function render(
   role: string,
-  opts: { mayWrite?: boolean; anulados?: boolean; importedDraft?: boolean } = {},
+  opts: { mayWrite?: boolean; anulados?: boolean; importedDraft?: boolean; extra?: Record<string, unknown>[] } = {},
 ): Promise<string> {
   h.ctx = { ...h.ctx, role };
   h.mayWrite = opts.mayWrite ?? true;
   h.importedDraft = opts.importedDraft ?? false;
+  h.extra = opts.extra ?? [];
   const el = await PatientProfilePage({
     params: Promise.resolve({ id: PATIENT_ID }),
     searchParams: Promise.resolve({ tab: "registos", ...(opts.anulados ? { anulados: "1" } : {}) }),
@@ -263,6 +271,7 @@ beforeEach(() => {
   h.buttonProps = [];
   h.importedButtonProps = [];
   h.importedDraft = false;
+  h.extra = [];
 });
 
 describe("EPI-01b, piece 3: which groups show 'PDF do episódio' (the treating therapist)", () => {
@@ -320,11 +329,27 @@ describe("EPI-01b, piece 3: which groups show 'PDF do episódio' (the treating t
   it("EXPORT-01: an episode whose only registo is ANNULLED: hidden by default; with 'Mostrar anulados' the group renders WITH the button, and no 'partial' line", async () => {
     expect(groups(await render("therapist"))[ANNULLED]).toBeUndefined();
     const g = groups(await render("therapist", { anulados: true }));
-    expect(h.includeAnnulled).toEqual([false, true]);
+    // The read is asked for annulled registos either way: the page hides them.
+    expect(h.includeAnnulled).toEqual([true, true]);
     expect(count(g[ANNULLED]!, ROW)).toBe(1);
     expect(g[ANNULLED]!).toContain('data-annulled="true"');
     expect(count(g[ANNULLED]!, BUTTON)).toBe(1);
     expect(count(g[ANNULLED]!, PARTIAL)).toBe(0);
+  });
+
+  it("EXPORT-01: an episode on screen with a DRAFT, whose only finalized registo is annulled and hidden: the button all the same, for that episode, and the line saying drafts stay out", async () => {
+    const extra = [
+      rec("r-annulled-draft", { episodeId: EP_ANNULLED, episodeTitle: "Fisioterapia (01/06/2026)", status: "draft", createdAt: "2026-06-08T09:00:00.000Z" }),
+    ];
+    const g = groups(await render("therapist", { extra }));
+    // The group shows the draft alone: the annulled registo is not on screen.
+    expect(count(g[ANNULLED]!, ROW)).toBe(1);
+    expect(g[ANNULLED]!).not.toContain('data-annulled="true"');
+    expect(count(g[ANNULLED]!, BUTTON)).toBe(1);
+    expect(count(g[ANNULLED]!, PARTIAL)).toBe(1);
+    expect(h.buttonProps.map((p) => p.episodeId)).toEqual([EP_FINAL, EP_MIXED, EP_ANNULLED]);
+    // CONTROL: the episode of drafts only, which holds no annulled registo, still has none.
+    expect(count(g[DRAFTS]!, BUTTON)).toBe(0);
   });
 });
 
@@ -359,6 +384,45 @@ describe("EXPORT-01: 'PDF do episódio' on an IMPORTED group", () => {
     expect(count(g[IMPORTED]!, ROW)).toBe(2);
     expect(count(g[IMPORTED]!, IMPORTED_BUTTON)).toBe(1);
     expect(count(g[IMPORTED]!, PARTIAL)).toBe(1);
+  });
+
+  it("an imported group on screen with a DRAFT, whose only finalized registo is annulled and hidden: the button all the same, and the line saying drafts stay out", async () => {
+    const pilates = { episodeTitle: "Pilates", episodeImported: true };
+    const extra = [
+      rec("r-pil-annulled", { ...pilates, episodeId: "77777777-7777-4777-8777-777777777778", status: "locked", annulled: true, createdAt: "2023-03-01T23:00:00.000Z" }),
+      rec("r-pil-draft", { ...pilates, episodeId: "77777777-7777-4777-8777-777777777779", status: "draft", createdAt: "2023-03-08T23:00:00.000Z" }),
+    ];
+    const g = groups(await render("owner", { extra }));
+    const group = g["imported:Pilates"]!;
+    expect(count(group, ROW)).toBe(1);
+    expect(group).not.toContain('data-annulled="true"');
+    expect(count(group, IMPORTED_BUTTON)).toBe(1);
+    expect(count(group, PARTIAL)).toBe(1);
+    expect(h.importedButtonProps.map((p) => p.specialty)).toContain("Pilates");
+    // CONTROL: without the annulled registo the same group, a draft alone, has none.
+    h.importedButtonProps = [];
+    const control = groups(await render("owner", { extra: [extra[1]!] }));
+    expect(count(control["imported:Pilates"]!, ROW)).toBe(1);
+    expect(count(control["imported:Pilates"]!, IMPORTED_BUTTON)).toBe(0);
+  });
+
+  it("an imported group whose title is BLANK: the button carries the dash as the group's key and never speaks it; it is named as the imported group", async () => {
+    const extra = [
+      rec("r-blank", { episodeId: "77777777-7777-4777-8777-77777777777a", episodeTitle: "  ", episodeImported: true, status: "locked", createdAt: "2022-01-10T23:00:00.000Z" }),
+    ];
+    await render("owner", { extra });
+    const blank = h.importedButtonProps.find((p) => p.specialty === "\u2014");
+    expect(blank).toEqual({
+      patientId: PATIENT_ID,
+      specialty: "\u2014",
+      label: "PDF do episódio",
+      ariaLabel: `Transferir o PDF do episódio: ${s["patients.fichaGroupImported"]}`,
+      errorLabel: s["clinical.downloadPdfError"],
+    });
+    // No accessible name on the tab's export buttons holds a dash.
+    for (const props of [...h.importedButtonProps, ...h.buttonProps]) {
+      expect(String(props.ariaLabel)).not.toMatch(/[\u2013\u2014]/);
+    }
   });
 
   it.each(["owner", "admin", "therapist"] as const)("%s reads clinical records: one button, on the imported group only", async (role) => {

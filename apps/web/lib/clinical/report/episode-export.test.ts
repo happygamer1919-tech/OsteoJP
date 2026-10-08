@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //   WHO      a reader of clinical records; reception is refused before any
 //            read. Every read is the caller's own: `runScoped` with the
 //            caller's context, the therapist read scope in the registo read's
-//            WHERE, and each registo loaded by the per-record engine with the
-//            caller's claims.
+//            WHERE, and each registo printed by the per-record engine as the
+//            caller, under the registo page's read scope, asked once.
 //   WHICH    the episode must be this patient's, in the caller's tenant, and
 //            not an imported one; then the selection rule (finalized, not
 //            under AI review; an annulled registo is in the file), oldest first.
@@ -29,11 +29,11 @@ vi.mock("@/lib/patients/scope", async () => {
     ),
   };
 });
-vi.mock("./generate", () => ({ generateClinicalReportPdf: vi.fn() }));
+vi.mock("./generate", () => ({ generateRegistoReportPdf: vi.fn(), registoReadScope: vi.fn() }));
 vi.mock("./episode-pdf", () => ({ mergeReportPdfs: vi.fn() }));
 
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import {
   auditLog,
   clinicalEpisodes,
@@ -47,7 +47,7 @@ import { runScoped } from "@/lib/auth/context";
 import { therapistPatientReadScope } from "@/lib/patients/scope";
 import { ClinicalError } from "../errors";
 import { AuditMetadataError } from "@/lib/audit/metadata-contract";
-import { generateClinicalReportPdf } from "./generate";
+import { generateRegistoReportPdf, registoReadScope } from "./generate";
 import { mergeReportPdfs } from "./episode-pdf";
 import {
   readEpisodeExportRows,
@@ -58,7 +58,8 @@ import {
 
 const mockRunScoped = vi.mocked(runScoped);
 const mockScope = vi.mocked(therapistPatientReadScope);
-const mockGenerate = vi.mocked(generateClinicalReportPdf);
+const mockGenerate = vi.mocked(generateRegistoReportPdf);
+const mockReadScope = vi.mocked(registoReadScope);
 const mockMerge = vi.mocked(mergeReportPdfs);
 const dialect = new PgDialect();
 const render = (q: unknown) => dialect.sqlToQuery(q as SQL);
@@ -148,6 +149,7 @@ beforeEach(() => {
   mockRunScoped.mockReset();
   mockScope.mockClear();
   mockGenerate.mockReset();
+  mockReadScope.mockReset();
   mockMerge.mockReset();
 });
 
@@ -348,22 +350,34 @@ describe("readEpisodeExportSelection: what the file holds", () => {
   });
 });
 
-describe("renderEpisodeReport: each registo through the per-record engine, with the caller's claims", () => {
+describe("renderEpisodeReport: each registo through the per-record engine, as the caller, under the registo page's read scope", () => {
   const selection = { episodeId: EPISODE, patientId: PATIENT, recordIds: [R1, R2, R3], leftOut: 1 };
   const part = (n: number) => ({ bytes: new Uint8Array([n]), filename: `relatorio-clinico-${n}.pdf` });
   const JOINED = new Uint8Array([9, 9, 9]);
+  // A marker: the box `registoReadScope` answered with must be the one every
+  // registo is printed under, itself and not a look-alike.
+  const SCOPE = { value: sql`READ_SCOPE_MARKER` };
 
-  it("one engine call per registo, in the selection's order, as the caller; the parts are joined in that order", async () => {
-    mockGenerate.mockImplementation(async (_claims, id) => part(Number(id.slice(-1))));
+  beforeEach(() => {
+    mockReadScope.mockResolvedValue(SCOPE);
+  });
+
+  it("one engine call per registo, in the selection's order, as the caller, with the read scope asked ONCE; the parts are joined in that order", async () => {
+    mockGenerate.mockImplementation(async (_ctx, id) => part(Number(id.slice(-1))));
     mockMerge.mockResolvedValue(JOINED);
 
     const pdf = await renderEpisodeReport(therapist, selection, "pt");
 
-    expect(mockGenerate.mock.calls.map((c) => c[1])).toEqual([R1, R2, R3]);
-    for (const call of mockGenerate.mock.calls) {
-      expect(call[0]).toEqual({ tenant_id: TENANT, user_role: "therapist", sub: THERAPIST_ID });
-      expect(call[2]).toBe("pt");
-    }
+    expect(mockReadScope).toHaveBeenCalledTimes(1);
+    expect(mockReadScope).toHaveBeenCalledWith(therapist);
+    expect(mockGenerate.mock.calls.map((c) => c.slice(0, 3))).toEqual([
+      [therapist, R1, "pt"],
+      [therapist, R2, "pt"],
+      [therapist, R3, "pt"],
+    ]);
+    // The selection is never trusted for reach: every registo is read under
+    // the scope, so one of a patient the caller may not open is not printed.
+    for (const call of mockGenerate.mock.calls) expect(call[3]).toBe(SCOPE);
     expect(mockMerge).toHaveBeenCalledTimes(1);
     expect(mockMerge.mock.calls[0]![0]).toEqual([new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([3])]);
     expect(mockMerge.mock.calls[0]![1]).toBe("Relatório Clínico");
@@ -373,8 +387,15 @@ describe("renderEpisodeReport: each registo through the per-record engine, with 
       recordIds: [R1, R2, R3],
       leftOut: 1,
     });
-    // No transaction of its own: the reads are the engine's, under the claims above.
+    // No transaction of its own: the reads are the engine's, as the caller above.
     expect(mockRunScoped).not.toHaveBeenCalled();
+  });
+
+  it("reception is refused before the read scope is asked, whoever made the selection", async () => {
+    await expect(renderEpisodeReport(reception, selection, "pt")).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockReadScope).not.toHaveBeenCalled();
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockMerge).not.toHaveBeenCalled();
   });
 
   it("the document title follows the locale", async () => {
@@ -388,7 +409,7 @@ describe("renderEpisodeReport: each registo through the per-record engine, with 
   it.each(["not_found", "not_printable"] as const)(
     "a registo the engine answers %s for is left out, counted and not named among the file's registos; the others keep their order",
     async (code) => {
-      mockGenerate.mockImplementation(async (_claims, id) => {
+      mockGenerate.mockImplementation(async (_ctx, id) => {
         if (id === R2) throw new ClinicalError(code);
         return part(Number(id.slice(-1)));
       });
@@ -406,7 +427,7 @@ describe("renderEpisodeReport: each registo through the per-record engine, with 
   });
 
   it("any other fault ends the export: it is not swallowed, and nothing is joined", async () => {
-    mockGenerate.mockImplementation(async (_claims, id) => {
+    mockGenerate.mockImplementation(async (_ctx, id) => {
       if (id === R2) throw new Error("boom");
       return part(1);
     });

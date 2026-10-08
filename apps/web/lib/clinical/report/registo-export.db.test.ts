@@ -19,6 +19,14 @@
  * alone changed in memory (the print gate and the layout are pure, and pinned
  * on every status in registo-export.test.ts).
  *
+ * "AS IF FINALIZED". A draft is printed for nobody, so on drafts alone a
+ * refusal cannot be told from the print gate's. The arms that ask whether the
+ * caller's REACH refuses switch `finalize` on, as ficha-export.db.test.ts
+ * does: the status alone is then read as "locked", in memory, at the engine's
+ * print gate. Every read stays the real one, under the caller's own claims,
+ * and no row changes. Each such arm carries a control: a reader in scope is
+ * printed the same registos through the same call.
+ *
  * THE ARMS:
  *   G1  the owner, an admin of the patient's clinic and the treating therapist
  *       load an imported registo as the page's "imported" view, and its PDF
@@ -33,7 +41,10 @@
  *   G3  a draft is never printed, annulled or not; an annulled registo is
  *       loaded with its annulment, and prints the mark.
  *   The imported group: read as the Registos tab groups it, annulled registos
- *   included, for the same three readers and nobody else.
+ *   included, for the same three readers and nobody else. Handed the ids
+ *   directly, as if finalized, the group's render and the episode's render
+ *   print them for a reader in scope and for no one outside it, the author of
+ *   one of those registos included.
  *
  * Runs in `.github/workflows/db-tests.yml` (it globs `.db.test.ts` in this
  * workspace) and self-skips without DATABASE_URL, like every suite beside it.
@@ -42,10 +53,29 @@ import { randomUUID } from "node:crypto";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { sql as raw } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getStrings } from "@osteojp/i18n";
 
 vi.mock("server-only", () => ({}));
+
+const h = vi.hoisted(() => ({ finalize: false }));
+
+// The engine's print gate, with "as if finalized" (see the header). Off, it is
+// the real gate, untouched.
+vi.mock("./report-model", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./report-model")>();
+  return {
+    ...actual,
+    buildClinicalReportModel: (
+      inputs: Parameters<typeof actual.buildClinicalReportModel>[0],
+      locale: Parameters<typeof actual.buildClinicalReportModel>[1],
+    ) =>
+      actual.buildClinicalReportModel(
+        h.finalize ? { ...inputs, record: { ...inputs.record, status: "locked" } } : inputs,
+        locale,
+      ),
+  };
+});
 
 import { ForbiddenError, toClaims, type RequestContext } from "@osteojp/auth";
 import { ImportedRecordPreview } from "@/app/clinical/[id]/imported-record-preview";
@@ -252,6 +282,10 @@ d("EXPORT-01: the registo PDF and the imported group's PDF under real RLS", () =
     );
   }, 60_000);
 
+  afterEach(() => {
+    h.finalize = false;
+  });
+
   /** Every delete is attempted and the first failure re-raised. FK order. */
   afterAll(async () => {
     if (!db) return;
@@ -448,12 +482,60 @@ d("EXPORT-01: the registo PDF and the imported group's PDF under real RLS", () =
       ["a therapist with no relation to the patient", therapistUnrelated, "therapist"],
       ["a therapist who only authored another registo of the patient", therapistAuthor, "therapist"],
       ["an admin of another clinic", adminOtherClinic, "admin"],
-    ] as const)("G2, %s: no such group, nothing selected, nothing rendered", async (_label, userId, role) => {
+    ] as const)("G2, %s: no such group, nothing selected, and nothing rendered even handed the ids as if finalized", async (_label, userId, role) => {
       const c = ctx(userId, role);
       expect(await group.readImportedGroupRecords(c, ask)).toBeNull();
       expect(await group.readImportedGroupExportSelection(c, ask)).toBeNull();
       const forced = { ...ask, recordIds: [rOsteo1, rOsteo2, rOsteoAnnulled], leftOut: 0 };
+      const forcedEpisode = { episodeId: epOsteo1, patientId: patient, recordIds: forced.recordIds, leftOut: 0 };
+
+      h.finalize = true;
+      // CONTROL: with the print gate out of the way, a reader in scope is
+      // printed all three, by the group's render and by the episode's.
+      const reader = ctx(owner, "owner");
+      expect((await group.renderImportedGroupReport(reader, forced, "pt"))?.recordIds).toEqual(forced.recordIds);
+      expect((await group.renderEpisodeReport(reader, forcedEpisode, "pt"))?.recordIds).toEqual(forced.recordIds);
+      // So what refuses here is the caller's reach, not the status.
       expect(await group.renderImportedGroupReport(c, forced, "pt")).toBeNull();
+      expect(await group.renderEpisodeReport(c, forcedEpisode, "pt")).toBeNull();
+    }, 60_000);
+
+    it("G2, a THERAPIST handed the registo they AUTHORED, of a patient they may not open: neither render prints it, though the registo policy alone shows them the row", async () => {
+      const c = ctx(therapistAuthor, "therapist");
+      const forced = { ...ask, recordIds: [rAuthored], leftOut: 0 };
+      const forcedEpisode = { episodeId: epOsteo1, patientId: patient, recordIds: [rAuthored], leftOut: 0 };
+      // CONTROL: the registo policy alone shows them the row they wrote.
+      const { clinicalRecords, withTenantContext } = await import("@osteojp/db");
+      const { eq } = await import("drizzle-orm");
+      const visible = await withTenantContext(toClaims(c), (tx) =>
+        tx.select({ id: clinicalRecords.id }).from(clinicalRecords).where(eq(clinicalRecords.id, rAuthored)),
+      );
+      expect(visible.map((r) => r.id)).toEqual([rAuthored]);
+
+      h.finalize = true;
+      // CONTROL: as if finalized, both renders print it for a reader in scope.
+      const reader = ctx(therapistTreating, "therapist");
+      expect((await group.renderImportedGroupReport(reader, forced, "pt"))?.recordIds).toEqual([rAuthored]);
+      expect((await group.renderEpisodeReport(reader, forcedEpisode, "pt"))?.recordIds).toEqual([rAuthored]);
+      // The author gets nothing from either. Two things refuse them today, and
+      // this arm holds the outcome whichever does: the renders read under the
+      // registo page's scope (pinned as a statement in episode-export.test.ts
+      // and imported-group-export.test.ts), and the engine's own read joins
+      // the patient, whom their RLS does not show them: with no scope at all
+      // the engine still finds nothing for them.
+      expect(await group.renderImportedGroupReport(c, forced, "pt")).toBeNull();
+      expect(await group.renderEpisodeReport(c, forcedEpisode, "pt")).toBeNull();
+      expect(await answer(() => gen.generateClinicalReportPdf(toClaims(c), rAuthored, "pt"))).toBe("not_found");
+    }, 60_000);
+
+    it("G2, RECEPTION is refused by both renders, whoever made the selection", async () => {
+      const c = ctx(randomUUID(), "reception");
+      const forced = { ...ask, recordIds: [rOsteo1], leftOut: 0 };
+      h.finalize = true;
+      await expect(group.renderImportedGroupReport(c, forced, "pt")).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(
+        group.renderEpisodeReport(c, { episodeId: epOsteo1, patientId: patient, recordIds: [rOsteo1], leftOut: 0 }, "pt"),
+      ).rejects.toBeInstanceOf(ForbiddenError);
     });
 
     it("G2, the OWNER against another tenant's patient, both ways: no such group", async () => {

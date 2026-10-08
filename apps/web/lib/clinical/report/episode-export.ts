@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { assertCan, toClaims, type RequestContext } from "@osteojp/auth";
+import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   clinicalEpisodes,
   clinicalRecords,
@@ -24,7 +24,7 @@ import {
   type EpisodeExportRow,
 } from "./episode-export-core";
 import { mergeReportPdfs } from "./episode-pdf";
-import { generateClinicalReportPdf } from "./generate";
+import { generateRegistoReportPdf, registoReadScope } from "./generate";
 import type { RecordStatus } from "./report-model";
 
 /**
@@ -41,11 +41,12 @@ import type { RecordStatus } from "./report-model";
  *
  * EVERY READ IS THE CALLER'S OWN. The selection runs under `runScoped` (the
  * caller's tenant-scoped, RLS-enforced transaction) with the therapist read
- * scope the Registos tab applies, and each registo is then loaded by
- * `generateClinicalReportPdf` with the caller's claims: the very call
- * "Transferir PDF" makes for that registo. Nothing here uses the service-role
- * client, so the file never holds a page the caller could not download one
- * registo at a time.
+ * scope the Registos tab applies, and each registo is then printed by
+ * `generateRegistoReportPdf`: the very call "Transferir PDF" makes for that
+ * registo, with the reach the registo page opens it with (the capability, the
+ * therapist read scope on the registo's patient, the caller's RLS). Nothing
+ * here uses the service-role client, so the file never holds a page the caller
+ * could not download one registo at a time, whoever made the selection.
  *
  * EXPORT-01: THE IMPORTED GROUP. The imported history is one group per
  * specialty on the tab, and "PDF do episódio" on that group exports the group:
@@ -199,7 +200,7 @@ export type EpisodeReportPdf = {
 
 /**
  * THE EPISODE'S FILE: each selected registo rendered by the per-record report
- * engine (`generateClinicalReportPdf`: the caller-scoped load, the print gate,
+ * engine (`generateRegistoReportPdf`: the caller-scoped load, the print gate,
  * the branded layout), and the results joined in the selection's order
  * (episode-pdf.ts copies the pages; it draws nothing).
  *
@@ -217,19 +218,28 @@ export async function renderEpisodeReport(
   return rendered && { ...rendered, filename: episodeReportFilename(selection.episodeId) };
 }
 
-/** The registos of a selection through the per-record engine, joined: see above. */
+/**
+ * The registos of a selection through the per-record engine, joined: see above.
+ *
+ * The selection is not trusted for reach. The capability is asked here, then
+ * the registo page's read scope once (`registoReadScope`), and every registo
+ * is read under it: one of a patient the caller may not open is `not_found`
+ * and left out, also when the registo policy alone would show them the row
+ * (a registo they authored). Reception is refused whoever made the selection.
+ */
 async function renderRegistos(
   ctx: RequestContext,
   selection: { recordIds: readonly string[]; leftOut: number },
   locale: Locale,
 ): Promise<{ bytes: Uint8Array; recordIds: string[]; leftOut: number } | null> {
-  const claims = toClaims(ctx);
+  assertCan(ctx.role, "clinical_records:read");
+  const scope = await registoReadScope(ctx);
   const parts: Uint8Array[] = [];
   const recordIds: string[] = [];
   let leftOut = selection.leftOut;
   for (const recordId of selection.recordIds) {
     try {
-      parts.push((await generateClinicalReportPdf(claims, recordId, locale)).bytes);
+      parts.push((await generateRegistoReportPdf(ctx, recordId, locale, scope)).bytes);
       recordIds.push(recordId);
     } catch (e) {
       if (isClinicalError(e) && (e.code === "not_found" || e.code === "not_printable")) {
@@ -335,7 +345,7 @@ export type ImportedGroupReportPdf = {
 
 /**
  * EXPORT-01: THE IMPORTED GROUP'S FILE: each selected registo through the
- * per-record engine with the caller's claims, joined in the group's order, as
+ * per-record engine with the caller's own reach, joined in the group's order, as
  * `renderEpisodeReport` does for an app episode. An imported registo prints as
  * its own page shows it: the stored field names under the read-only notice.
  * Null when no registo rendered.

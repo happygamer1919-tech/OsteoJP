@@ -4,7 +4,7 @@ import { getStrings, type Locale } from "@osteojp/i18n";
 import { canonicalId } from "../episode-reuse-core";
 import { isClinicalError } from "../errors";
 import { listFichaRecords } from "../ficha-groups";
-import { groupForFicha, type FichaGroup } from "../ficha-groups-core";
+import { groupForFicha, groupName, type FichaGroup } from "../ficha-groups-core";
 import { mergeReportPdfs } from "./episode-pdf";
 import {
   fichaReportFilename,
@@ -107,16 +107,19 @@ export type FichaReportPdf = {
  * What a section's heading page says: the name the Registos tab gives the
  * group, in the tab's own words. An episode is named by its title (for the
  * imported history, the specialty, noted as imported); a registo filed in no
- * episode goes under the tab's "Sem episódio".
+ * episode goes under the tab's "Sem episódio". A group with no name to give
+ * (a blank imported title groups under a dash, which is a key and not a name)
+ * is headed by the word for an episode, once.
  */
 function sectionHeading(section: FichaExportSection, locale: Locale): SectionHeading {
   const s = getStrings(locale);
   if (section.kind === "none") {
     return { overline: null, title: s["patients.fichaGroupNoEpisode"], note: null };
   }
+  const name = groupName(section.label);
   return {
-    overline: s["report.record.episode"],
-    title: section.label ?? s["report.record.episode"],
+    overline: name ? s["report.record.episode"] : null,
+    title: name ?? s["report.record.episode"],
     note: section.kind === "imported" ? s["patients.fichaGroupImported"] : null,
   };
 }

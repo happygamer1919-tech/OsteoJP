@@ -12,7 +12,9 @@
  *     outside their ruled scope: the tab's read is the export's read) sees the
  *     tab and NO button; reception has no Registos tab at all;
  *   - G3: a tab of drafts only shows NO button; a tab that shows a draft
- *     beside a finalized registo says the file leaves drafts out;
+ *     beside a finalized registo says the file leaves drafts out; the button
+ *     is decided from every registo the viewer READS, annulled ones included,
+ *     whatever "Mostrar anulados" lists, because the export answers with them;
  *   - the page hands the button the patient and nothing else (what the button
  *     then asks the server action for is ficha-export-button.test.tsx's).
  * Every "no button" arm first proves the tab rendered, so a page that failed
@@ -41,6 +43,8 @@ const h = vi.hoisted(() => ({
   records: [] as Record<string, unknown>[],
   /** How many times the tab's read ran. */
   reads: 0,
+  /** What each read asked for: annulled registos included, or not. */
+  includeAnnulled: [] as boolean[],
   /** What the page handed "Exportar ficha", in render order. */
   buttonProps: [] as Record<string, unknown>[],
 }));
@@ -100,6 +104,7 @@ vi.mock("../../../lib/clinical/ficha-groups", () => ({
   // As the real read does: annulled registos are dropped unless asked for.
   listFichaRecords: async (_ctx: unknown, filter: { includeAnnulled?: boolean }) => {
     h.reads += 1;
+    h.includeAnnulled.push(Boolean(filter.includeAnnulled));
     return filter.includeAnnulled ? h.records : h.records.filter((r) => !r.annulled);
   },
 }));
@@ -203,6 +208,7 @@ beforeEach(() => {
   h.mayWrite = true;
   h.records = [];
   h.reads = 0;
+  h.includeAnnulled = [];
   h.buttonProps = [];
 });
 
@@ -234,9 +240,12 @@ describe("EXPORT-01: who sees 'Exportar ficha' (whoever reads clinical records)"
     ]);
   });
 
-  it("the tab's read is not run a second time for the button", async () => {
+  it("the tab's read is not run a second time for the button: ONE read, annulled registos included, whatever the toggle says", async () => {
     await render("owner", FINALIZED);
     expect(h.reads).toBe(1);
+    await render("owner", FINALIZED, { anulados: true });
+    expect(h.reads).toBe(2);
+    expect(h.includeAnnulled).toEqual([true, true]);
   });
 
   it("it is on the Registos tab only: another tab of the same patient draws none", async () => {
@@ -295,15 +304,44 @@ describe("EXPORT-01, G3: drafts and annulled registos on the tab", () => {
     expect(count(html, PARTIAL)).toBe(0);
   });
 
-  it("a patient whose only finalized registo is ANNULLED: with 'Mostrar anulados' the tab lists it, WITH the button", async () => {
+  it("a patient whose only finalized registo is ANNULLED: the button is there with the registo hidden and with it listed, because the export answers with it, marked", async () => {
     const only = [rec("r-annulled", { annulled: true })];
-    // Hidden by default, as every annulled registo is: nothing listed, no button.
+    // Hidden by default, as every annulled registo is: nothing listed. The
+    // button is drawn all the same.
     const hidden = await render("owner", only);
+    expect(count(hidden, TAB_PANEL)).toBe(1);
     expect(count(hidden, ROW)).toBe(0);
-    expect(count(hidden, BUTTON)).toBe(0);
+    expect(count(hidden, BUTTON)).toBe(1);
+    expect(count(hidden, PARTIAL)).toBe(0);
     const shown = await render("owner", only, { anulados: true });
     expect(count(shown, ROW)).toBe(1);
     expect(count(shown, BUTTON)).toBe(1);
+    expect(count(shown, PARTIAL)).toBe(0);
+  });
+
+  it("a hidden annulled registo beside a DRAFT on the tab: the button, and the line saying drafts stay out of the file", async () => {
+    const html = await render("owner", [rec("r-annulled", { annulled: true }), rec("d-free", { status: "draft" })]);
+    expect(count(html, ROW)).toBe(1);
+    expect(html).not.toContain('data-annulled="true"');
+    expect(count(html, BUTTON)).toBe(1);
+    expect(count(html, PARTIAL)).toBe(1);
+  });
+
+  it("an annulled DRAFT, hidden, beside a finalized registo: no 'partial' line, which speaks only of what the tab lists", async () => {
+    const records = [rec("r-app", inApp), rec("d-annulled", { status: "draft", annulled: true })];
+    const hidden = await render("owner", records);
+    expect(count(hidden, ROW)).toBe(1);
+    expect(count(hidden, BUTTON)).toBe(1);
+    expect(count(hidden, PARTIAL)).toBe(0);
+    const shown = await render("owner", records, { anulados: true });
+    expect(count(shown, ROW)).toBe(2);
+    expect(count(shown, PARTIAL)).toBe(1);
+  });
+
+  it("DRAFTS ONLY, one of them annulled and hidden: still NO button", async () => {
+    const html = await render("owner", [rec("d1", { status: "draft" }), rec("d2", { status: "draft", annulled: true })]);
+    expect(count(html, ROW)).toBe(1);
+    expect(count(html, BUTTON)).toBe(0);
   });
 });
 
