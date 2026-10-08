@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { assertCan, toClaims, type RequestContext } from "@osteojp/auth";
+import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   clinicalEpisodes,
   clinicalRecords,
@@ -14,9 +14,17 @@ import { therapistPatientReadScope } from "@/lib/patients/scope";
 import { clientIp, writeClinicalAudit } from "../audit";
 import { canonicalId } from "../episode-reuse-core";
 import { isClinicalError } from "../errors";
-import { episodeReportFilename, selectEpisodeExport, type EpisodeExportRow } from "./episode-export-core";
+import { listFichaRecords } from "../ficha-groups";
+import { groupForFicha, type FichaRecord } from "../ficha-groups-core";
+import {
+  episodeReportFilename,
+  importedGroupReportFilename,
+  isEpisodeExportable,
+  selectEpisodeExport,
+  type EpisodeExportRow,
+} from "./episode-export-core";
 import { mergeReportPdfs } from "./episode-pdf";
-import { generateClinicalReportPdf } from "./generate";
+import { generateRegistoReportPdf, registoReadScope } from "./generate";
 import type { RecordStatus } from "./report-model";
 
 /**
@@ -33,11 +41,20 @@ import type { RecordStatus } from "./report-model";
  *
  * EVERY READ IS THE CALLER'S OWN. The selection runs under `runScoped` (the
  * caller's tenant-scoped, RLS-enforced transaction) with the therapist read
- * scope the Registos tab applies, and each registo is then loaded by
- * `generateClinicalReportPdf` with the caller's claims: the very call
- * "Transferir PDF" makes for that registo. Nothing here uses the service-role
- * client, so the file never holds a page the caller could not download one
- * registo at a time.
+ * scope the Registos tab applies, and each registo is then printed by
+ * `generateRegistoReportPdf`: the very call "Transferir PDF" makes for that
+ * registo, with the reach the registo page opens it with (the capability, the
+ * therapist read scope on the registo's patient, the caller's RLS). Nothing
+ * here uses the service-role client, so the file never holds a page the caller
+ * could not download one registo at a time, whoever made the selection.
+ *
+ * EXPORT-01: THE IMPORTED GROUP. The imported history is one group per
+ * specialty on the tab, and "PDF do episódio" on that group exports the group:
+ * `readImportedGroupExportSelection` and `renderImportedGroupReport` below,
+ * the same three steps over the tab's own read and grouping; its audit row is
+ * `recordImportedGroupExport` (../export-audit.ts). An imported EPISODE asked
+ * for by id is still no episode to export here (the ledger test in
+ * `readEpisodeExportRows`): no screen offers one.
  */
 
 /** A uuid's shape; anything else is refused before it reaches a uuid column. */
@@ -183,7 +200,7 @@ export type EpisodeReportPdf = {
 
 /**
  * THE EPISODE'S FILE: each selected registo rendered by the per-record report
- * engine (`generateClinicalReportPdf`: the caller-scoped load, the print gate,
+ * engine (`generateRegistoReportPdf`: the caller-scoped load, the print gate,
  * the branded layout), and the results joined in the selection's order
  * (episode-pdf.ts copies the pages; it draws nothing).
  *
@@ -197,13 +214,32 @@ export async function renderEpisodeReport(
   selection: EpisodeExportSelection,
   locale: Locale,
 ): Promise<EpisodeReportPdf | null> {
-  const claims = toClaims(ctx);
+  const rendered = await renderRegistos(ctx, selection, locale);
+  return rendered && { ...rendered, filename: episodeReportFilename(selection.episodeId) };
+}
+
+/**
+ * The registos of a selection through the per-record engine, joined: see above.
+ *
+ * The selection is not trusted for reach. The capability is asked here, then
+ * the registo page's read scope once (`registoReadScope`), and every registo
+ * is read under it: one of a patient the caller may not open is `not_found`
+ * and left out, also when the registo policy alone would show them the row
+ * (a registo they authored). Reception is refused whoever made the selection.
+ */
+async function renderRegistos(
+  ctx: RequestContext,
+  selection: { recordIds: readonly string[]; leftOut: number },
+  locale: Locale,
+): Promise<{ bytes: Uint8Array; recordIds: string[]; leftOut: number } | null> {
+  assertCan(ctx.role, "clinical_records:read");
+  const scope = await registoReadScope(ctx);
   const parts: Uint8Array[] = [];
   const recordIds: string[] = [];
   let leftOut = selection.leftOut;
   for (const recordId of selection.recordIds) {
     try {
-      parts.push((await generateClinicalReportPdf(claims, recordId, locale)).bytes);
+      parts.push((await generateRegistoReportPdf(ctx, recordId, locale, scope)).bytes);
       recordIds.push(recordId);
     } catch (e) {
       if (isClinicalError(e) && (e.code === "not_found" || e.code === "not_printable")) {
@@ -217,10 +253,110 @@ export async function renderEpisodeReport(
 
   return {
     bytes: await mergeReportPdfs(parts, getStrings(locale)["report.clinical.title"]),
-    filename: episodeReportFilename(selection.episodeId),
     recordIds,
     leftOut,
   };
+}
+
+/** The longest group label the imported export reads; a specialty is a word. */
+const SPECIALTY_MAX = 120;
+
+export type ImportedGroupExportSelection = {
+  patientId: string;
+  /** The imported group's label on the tab: the specialty. */
+  specialty: string;
+  /** The registos of the file, in the file's order. Never empty. */
+  recordIds: string[];
+  /** Registos of the group the caller reads that are not in the file. */
+  leftOut: number;
+};
+
+/**
+ * EXPORT-01: THE REGISTOS OF ONE IMPORTED GROUP OF ONE PATIENT, AS THE
+ * REGISTOS TAB SHOWS THEM TO THE CALLER, or null when the caller's tab has no
+ * such group. It writes nothing.
+ *
+ * It IS the tab's read and the tab's grouping, run again on the server:
+ * `listFichaRecords` (the capability, the therapist read scope on the patient,
+ * the caller's RLS; which episodes are imported is the import ledger's answer)
+ * and `groupForFicha`. So the file holds the group the caller sees and can
+ * never hold a registo their tab would not list. Annulled registos are asked
+ * for, whatever the tab's toggle shows: the file holds them, marked.
+ *
+ * Null, in the order asked:
+ *   - a patient id that is not a uuid, or a label that is not a short string;
+ *   - no imported group of that label among the registos the caller reads for
+ *     this patient: no such patient in the caller's tenant, a patient outside
+ *     the caller's reach, no imported registo, or another specialty.
+ * Reception holds no `clinical_records:read` and is refused before any read.
+ */
+export async function readImportedGroupRecords(
+  ctx: RequestContext,
+  input: { patientId: string; specialty: string },
+): Promise<FichaRecord[] | null> {
+  assertCan(ctx.role, "clinical_records:read");
+  if (typeof input.patientId !== "string" || !UUID_RE.test(input.patientId)) return null;
+  if (typeof input.specialty !== "string") return null;
+  if (input.specialty === "" || input.specialty.length > SPECIALTY_MAX) return null;
+
+  const records = await listFichaRecords(ctx, {
+    patientId: canonicalId(input.patientId),
+    includeAnnulled: true,
+  });
+  const group = groupForFicha(records).find((g) => g.kind === "imported" && g.label === input.specialty);
+  return group ? group.records : null;
+}
+
+/**
+ * EXPORT-01: WHICH REGISTOS THE IMPORTED GROUP'S FILE HOLDS, or null when there
+ * is nothing to export: no such group for the caller (`readImportedGroupRecords`)
+ * or none of its registos finalized. The rule and the order are the episode
+ * file's (episode-export-core.ts): finalized, oldest first by the clinical
+ * date, an annulled registo included. The tab's list does not carry the AI
+ * review axis; the per-record engine asks the full rule again at the render.
+ */
+export async function readImportedGroupExportSelection(
+  ctx: RequestContext,
+  input: { patientId: string; specialty: string },
+): Promise<ImportedGroupExportSelection | null> {
+  const records = await readImportedGroupRecords(ctx, input);
+  if (!records) return null;
+  const recordIds = records
+    .filter((r) => isEpisodeExportable({ status: r.status, aiReviewState: null }))
+    .map((r) => r.id);
+  if (recordIds.length === 0) return null;
+  return {
+    patientId: canonicalId(input.patientId),
+    specialty: input.specialty,
+    recordIds,
+    leftOut: records.length - recordIds.length,
+  };
+}
+
+export type ImportedGroupReportPdf = {
+  bytes: Uint8Array;
+  /** Suggested download filename: the patient id's first block, never patient data. */
+  filename: string;
+  /** The registos the file holds, in the file's order. Never empty. */
+  recordIds: string[];
+  /** How many registos of the group the caller reads that it does not hold. */
+  leftOut: number;
+};
+
+/**
+ * EXPORT-01: THE IMPORTED GROUP'S FILE: each selected registo through the
+ * per-record engine with the caller's own reach, joined in the group's order, as
+ * `renderEpisodeReport` does for an app episode. An imported registo prints as
+ * its own page shows it: the stored field names under the read-only notice.
+ * Null when no registo rendered.
+ */
+export async function renderImportedGroupReport(
+  ctx: RequestContext,
+  selection: ImportedGroupExportSelection,
+  locale: Locale,
+): Promise<ImportedGroupReportPdf | null> {
+  const rendered = await renderRegistos(ctx, selection, locale);
+  return rendered && { ...rendered, filename: importedGroupReportFilename(selection.patientId) };
 }
 
 /**
