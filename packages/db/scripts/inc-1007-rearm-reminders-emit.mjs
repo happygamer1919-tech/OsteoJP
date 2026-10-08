@@ -102,6 +102,10 @@
 //     file fails if the function's definition moves;
 //   - starts more than 24 hours after the read instant (inside 24 hours both
 //     offsets have passed);
+//   - starts no more than --max-days-ahead days after the read instant. The
+//     scope in days is ruled, so a real --confirm must state it. The vendor's
+//     limit on how long a run may sleep is NOT ESTABLISHED, and a row beyond
+//     the bound waits for a later ruling;
 //   - NO emitting audit event in the last 25 hours (next paragraph);
 //   - no reminder mark inside the margin (above);
 //   - not already sent, and not attempted with the outcome unknown (below).
@@ -152,16 +156,49 @@
 //     nothing more.
 //   - That the hosted functions carry the new settings. --confirm is refused
 //     without --i-checked-inngest-settings: the owner looks at the Inngest
-//     dashboard first and sees Singleton and Debounce on the two functions.
+//     dashboard first and sees THREE things: Debounce on
+//     schedule-appointment-reminders, Singleton on send-appointment-reminder,
+//     and the trigger expression `event.data.confirmationEligible == true` on
+//     send-appointment-confirmation. The third is what keeps this event from
+//     sending a booking confirmation: the handler has no second check.
 //   - Whether a run exists for any appointment.
+//
+// ===================================================================
+// THE THREE GATE LINES (strategy, 2026-10-08): G1, G4 AND G3
+// ===================================================================
+//   G1 PROJECTED SCHEDULER EXECUTIONS. Every appointment in scope (not an
+//      unaccepted request, not inside 24 hours, not beyond --max-days-ahead)
+//      times 8, the most one event can cost. It is the bound for everything
+//      in scope at THIS read, sent already or not; the first sitting's number
+//      is the gate. (The scope shrinks as sent rows come inside 24 hours or
+//      start.) At 20000 or more a --confirm is refused; a dry run prints NO
+//      and ends normally.
+//   G4 NEXT 48 HOURS, NOT RE-ARMED. A count for reception: the appointments
+//      starting within 24 hours, plus those 24 to 48 hours ahead that this
+//      run leaves alone. An appointment starting within 24 hours that an
+//      earlier run of this operation sent, at the start it has now, was
+//      re-armed: it is counted apart, on a line of its own. After the sends,
+//      G4 ATTEMPTED EQUALS SENT compares the requests this run started with
+//      the ones Inngest took.
+//   G3 LEDGER ROWS. Every message attempt writes one row to
+//      reminder_dispatches. A re-arm must send no message at run time, so for
+//      every row the marker holds, the ledger must hold NOTHING for that
+//      appointment between its run's read instant and the end of its run's
+//      margin. Counts only, READ ONLY, in every mode. A count above 0 stops
+//      everything, the dry run too, and so does a marker row that cannot be
+//      checked. A confirm that started a request asks again 20 s after its
+//      sends, for its own rows.
 //
 // USAGE, from the repo root with the production environment sourced:
 //   node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug osteojp
 //     DRY RUN, the default. Reads, prints what it WOULD emit, sends nothing.
 //   ... plus --confirm --expect <N> --fix-deployed-sha <40 hex> --i-checked-inngest-settings
+//       --max-days-ahead <D>
 //     Re-reads the same way, refuses unless exactly N rows are eligible, then
 //     emits the first --max of them (25 unless told otherwise).
 //   --min-days-ahead <D> narrows a run to appointments D or more days ahead.
+//   --max-days-ahead <D> leaves out appointments more than D days ahead. A dry
+//     run and a rehearsal may omit it; a real --confirm may not.
 //   --resend-attempted lets rows the marker holds as attempted be sent again.
 //   --sink-file <absolute path> is for REHEARSAL on a local database: events
 //     are appended to that file, nothing is sent anywhere, and the marker and
@@ -171,8 +208,8 @@
 //
 // It prints appointment ids, instants, statuses and counts. NEVER a patient
 // name, phone or email (CLAUDE.md rule 7), never the connection string, any
-// part of it, or the key. Every read is a READ ONLY transaction. It writes
-// nothing to Postgres.
+// part of it, or the key. Every read is a READ ONLY transaction, the ledger
+// read included. It writes nothing to Postgres.
 //
 // EXIT 0 OK, 1 FAILED, 2 BAD_INVOCATION (the repo's tooling convention).
 
@@ -227,6 +264,30 @@ export const READ_BOUND_MS = 30_000;
 export const SLACK_MS = 60_000;
 /** A mark this recently passed may have its run sending right now. */
 export const BACK_MS = 60_000;
+/**
+ * G1. The most one event of this script can cost the scheduler, as the vendor
+ * counts it (one execution per function run and one per step):
+ *   schedule-appointment-reminders   1 run + 1 step (the fan-out)       = 2
+ *   send-appointment-reminder, twice 1 run + 2 steps (sleep, dispatch)  = 6
+ * 3 runs and 5 steps. An appointment 24 to 48 hours ahead costs 5, so 8 is an
+ * upper bound. confirmationEligible is false, so no confirmation run starts.
+ * "At most 8" is WITHOUT RETRIES: a run or a step the scheduler tries again
+ * is not counted here, and whether the vendor bills a retry is not established.
+ */
+export const EXECUTIONS_PER_EVENT = 8;
+/** G1. Strategy's limit of 2026-10-08: the projection must be UNDER this. */
+export const EXECUTION_LIMIT = 20_000;
+/** The bound on one read of the reminder ledger. */
+export const LEDGER_BOUND_MS = 10_000;
+/**
+ * G3. How long a confirm waits after its sends before it reads the ledger
+ * again: ten times the debounce (2 s). It must stay below SLACK_MS, so that
+ * the second read ends before any mark of a row this run sent.
+ */
+export const SETTLE_MS = 20_000;
+/** CONFIRMATION_TRIGGER_FILTER, apps/web/lib/reminders/inngest/functions.ts.
+ *  The third thing the owner sees in the dashboard before a real --confirm. */
+export const CONFIRMATION_FILTER = "event.data.confirmationEligible == true";
 export const INNGEST_ORIGIN = "https://inn.gs";
 const MARKER_NAME = ".osteojp-inc1007-rearm.json";
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
@@ -313,11 +374,42 @@ select a.starts_at,
  where a.tenant_id = $1::uuid
    and a.id = $2::uuid`;
 
+/*
+ * G3, THE LEDGER READ. One tenant ($1) and a list of windows ($2), counts only.
+ * A window is one appointment this operation sent an event for, from the read
+ * instant of the run that sent it to the end of that run's margin. By
+ * construction no reminder mark of a sent row falls inside its window, and the
+ * event carries confirmationEligible false, so every ledger row counted here
+ * is a message this operation may have caused. `handed_over` leaves out the
+ * attempts the dispatcher suppressed, where nothing reached a provider.
+ *
+ * $2 is ONE JSON string, never a JavaScript array: the driver runs with
+ * `prepare: false` and `tx.unsafe`, where array parameters are not reliable.
+ * It is cast `::text::jsonb` and not `::jsonb`. MEASURED on a local Postgres
+ * through openReader() below (postgres.js 3.4.9): with `$2::jsonb` the driver
+ * learns the parameter is jsonb and encodes the string a second time, and the
+ * statement fails with 22023, "cannot call jsonb_to_recordset on a non-array".
+ * Declared as text, the string arrives as it was written.
+ * It reads no patient column and no message content.
+ */
+export const LEDGER_CHECK = `
+select count(*)::int as n,
+       count(*) filter (where d.outcome <> 'suppressed')::int as handed_over
+  from jsonb_to_recordset($2::text::jsonb) as s(appointment_id uuid, from_at timestamptz, to_at timestamptz)
+  join reminder_dispatches d
+    on d.tenant_id = $1::uuid
+   and d.appointment_id = s.appointment_id
+   and d.created_at >= s.from_at
+   and d.created_at < s.to_at`;
+
 export const USAGE = `usage:
   node packages/db/scripts/inc-1007-rearm-reminders-emit.mjs --tenant-slug <slug>
-       [--confirm --expect <N> --fix-deployed-sha <40 hex> --i-checked-inngest-settings]
+       [--confirm --expect <N> --fix-deployed-sha <40 hex> --i-checked-inngest-settings --max-days-ahead <D>]
        [--max <N, default ${DEFAULT_MAX}>] [--min-days-ahead <D, default 1>] [--resend-attempted]
-       [--sink-file <absolute path, rehearsal on a local database only>]`;
+       [--max-days-ahead <D, 2 or more and above --min-days-ahead; required with a real --confirm>]
+       [--sink-file <absolute path, rehearsal on a local database only>]
+  every mode prints the gate lines G1 (projected scheduler executions, limit ${EXECUTION_LIMIT}),
+  G4 (the next 48 hours, not re-armed) and G3 (reminder ledger rows, expected 0)`;
 
 /** A refusal. `code` is the exit code: 1 FAILED, 2 BAD_INVOCATION. */
 export class Halt extends Error {
@@ -338,7 +430,7 @@ function fail(msg) {
 
 export function parseArgs(argv) {
   const out = { confirm: false, checkedInngest: false, resendAttempted: false, max: String(DEFAULT_MAX), minDaysAhead: "1" };
-  const takes = new Set(["--tenant-slug", "--expect", "--max", "--min-days-ahead", "--sink-file", "--fix-deployed-sha"]);
+  const takes = new Set(["--tenant-slug", "--expect", "--max", "--min-days-ahead", "--max-days-ahead", "--sink-file", "--fix-deployed-sha"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--confirm") {
@@ -360,6 +452,7 @@ export function parseArgs(argv) {
     if (a === "--expect") out.expect = v;
     if (a === "--max") out.max = v;
     if (a === "--min-days-ahead") out.minDaysAhead = v;
+    if (a === "--max-days-ahead") out.maxDaysAhead = v;
     if (a === "--sink-file") out.sinkFile = v;
     if (a === "--fix-deployed-sha") out.fixDeployedSha = v;
   }
@@ -368,6 +461,15 @@ export function parseArgs(argv) {
   if (!/^[1-9]\d{0,5}$/.test(out.max)) bad("--max must be a whole number, 1 or more");
   if (!/^[1-9]\d{0,3}$/.test(out.minDaysAhead)) {
     bad("--min-days-ahead must be a whole number, 1 or more. It can narrow a run; the 24 hour floor never moves");
+  }
+  if (out.maxDaysAhead !== undefined) {
+    // At least 2, so that no row of the next 48 hours is ever "beyond" the bound.
+    if (!/^[1-9]\d{0,3}$/.test(out.maxDaysAhead) || Number(out.maxDaysAhead) < 2) {
+      bad("--max-days-ahead must be a whole number, 2 or more");
+    }
+    if (Number(out.maxDaysAhead) <= Number(out.minDaysAhead)) {
+      bad("--max-days-ahead must be greater than --min-days-ahead");
+    }
   }
   if (out.fixDeployedSha !== undefined && !SHA.test(out.fixDeployedSha)) {
     bad("--fix-deployed-sha must be the full 40 character lowercase commit sha of the deployed fix");
@@ -385,15 +487,24 @@ export function parseArgs(argv) {
     if (!out.checkedInngest) {
       bad(
         "--confirm needs --i-checked-inngest-settings. Before giving it, open the Inngest dashboard for the " +
-          "production app and check that schedule-appointment-reminders shows Debounce and that " +
-          "send-appointment-reminder shows Singleton. If either is missing the fix is not live in the " +
-          "scheduler: do not run this.",
+          "production app and check three things: schedule-appointment-reminders shows Debounce, " +
+          "send-appointment-reminder shows Singleton, and the trigger of send-appointment-confirmation shows the " +
+          `expression ${CONFIRMATION_FILTER}. If the first or the second is missing the fix is not live in the ` +
+          "scheduler; if the third is missing every event starts the confirmation function, and a patient who " +
+          "booked online gets a booking confirmation. With any of the three missing: do not run this.",
+      );
+    }
+    if (out.maxDaysAhead === undefined) {
+      bad(
+        "--confirm needs --max-days-ahead <D>. How many days ahead this operation reaches is a ruled scope, " +
+          "and a real run must state it: the dispatch names the number.",
       );
     }
   }
   out.expect = out.expect === undefined ? undefined : Number(out.expect);
   out.max = Number(out.max);
   out.minDaysAhead = Number(out.minDaysAhead);
+  out.maxDaysAhead = out.maxDaysAhead === undefined ? null : Number(out.maxDaysAhead);
   return out;
 }
 
@@ -487,6 +598,8 @@ export function verdictOf(row, t0Ms, opts) {
   const startMs = Date.parse(row.startsAt);
   if (row.unacceptedRequest) return "unaccepted_request";
   if (!(startMs - t0Ms > LEAD_MS)) return "inside_24h";
+  // No bound unless --max-days-ahead gave one. Exactly D days ahead is in scope.
+  if (opts.maxDaysAhead !== null && opts.maxDaysAhead !== undefined && startMs - t0Ms > opts.maxDaysAhead * DAY_MS) return "beyond_max_days";
   if (row.lastEmitAt !== null && Date.parse(row.lastEmitAt) >= t0Ms - TOUCH_MS) return "touched_25h";
   if (opts.sent(row)) return "already_sent";
   if (opts.attempted(row) && !opts.resendAttempted) return "attempted";
@@ -502,6 +615,89 @@ export function verdictOf(row, t0Ms, opts) {
 export function tooLateToWait(row, marginMs) {
   if (row.lastEmitAt === null) return false;
   return Date.parse(row.startsAt) <= Date.parse(row.lastEmitAt) + TOUCH_MS + LEAD_MS + marginMs;
+}
+
+/**
+ * G1. True for a row that is in scope at THIS read, sent already or not: every
+ * verdict except the three that put a row out of scope. PURE.
+ * Rows already sent, eligible now, touched, attempted and held back all count:
+ * a later run can still reach them, or an earlier one already did. A sent row
+ * leaves the scope when it comes inside 24 hours or starts, so the number of a
+ * later read is smaller: the first sitting's number is the gate.
+ */
+export function inScope(verdict) {
+  return verdict !== "unaccepted_request" && verdict !== "inside_24h" && verdict !== "beyond_max_days";
+}
+
+/** G1. The most the scheduler can be asked to execute for `count` appointments. PURE. */
+export function projectedExecutions(count) {
+  return count * EXECUTIONS_PER_EVENT;
+}
+
+/** G1. "Under" is strict: the limit itself is not under the limit. PURE. */
+export function underExecutionLimit(projected) {
+  return projected < EXECUTION_LIMIT;
+}
+
+/**
+ * G4. True for a row 24 to 48 hours ahead of the read that this run leaves
+ * without a new event. PURE. A row this run sends (`emit`) or an earlier run
+ * sent (`already_sent`) is re-armed. An unaccepted request has no reminder
+ * until reception accepts it, so it is not counted either.
+ */
+export function leftUnarmed24To48(startMs, t0Ms, verdict) {
+  const ahead = startMs - t0Ms;
+  if (!(ahead > LEAD_MS && ahead <= 2 * DAY_MS)) return false;
+  return verdict === "touched_25h" || verdict === "attempted" || verdict === "near_mark" || verdict === "held_back";
+}
+
+/**
+ * G4. Where a row starting within 24 hours of the read is counted. PURE.
+ * `sentAtThisStart` is the marker's answer for the row at the start it has NOW.
+ *   "sent_earlier"  an earlier run of this operation sent it at this start, so
+ *                   it was re-armed: it is not "not re-armed".
+ *   "not_rearmed"   every other row inside 24 hours: never sent, attempted
+ *                   with the outcome unknown, or sent at ANOTHER start and
+ *                   moved since.
+ *   null            the row does not start within 24 hours.
+ */
+export function within24hCount(verdict, sentAtThisStart) {
+  if (verdict !== "inside_24h") return null;
+  return sentAtThisStart === true ? "sent_earlier" : "not_rearmed";
+}
+
+/** G4. A run attempted exactly what it sent, or it did not. PURE. */
+export function attemptedEqualsSent(started, sent) {
+  return started === sent;
+}
+
+/**
+ * G3. The windows the ledger is asked about, built from the marker's entries.
+ * PURE. One window per marker row (sent or attempted, since Inngest may have
+ * taken either): the appointment, from the read instant of the run that sent
+ * it to the end of that run's margin. Both come from the entry, so they are the
+ * database clock and the margin of THAT run, not of this one. An entry without
+ * a readable `readAt` or `marginMs`, or a row whose id is not a uuid, cannot be
+ * asked about: its rows are counted in `unchecked` and reported, never dropped
+ * in silence.
+ */
+export function ledgerWindows(entries) {
+  const windows = [];
+  let unchecked = 0;
+  for (const e of entries) {
+    const rows = (e && Array.isArray(e.rows) ? e.rows : []).filter((r) => r && (r.state === "sent" || r.state === "attempted"));
+    const fromMs = e && typeof e.readAt === "string" ? Date.parse(e.readAt) : NaN;
+    const marginMs = e ? e.marginMs : undefined;
+    const usable = !Number.isNaN(fromMs) && Number.isInteger(marginMs) && marginMs > 0;
+    for (const r of rows) {
+      if (!usable || typeof r.id !== "string" || !UUID.test(r.id)) {
+        unchecked += 1;
+        continue;
+      }
+      windows.push({ appointment_id: r.id, from_at: new Date(fromMs).toISOString(), to_at: new Date(fromMs + marginMs).toISOString() });
+    }
+  }
+  return { windows, unchecked };
 }
 
 /**
@@ -722,9 +918,27 @@ function within(promise, ms, what) {
 }
 
 /**
+ * G3. The answer of the ledger statement as the run reads it. PURE. The
+ * statement returns exactly ONE row of two whole numbers, `n` and
+ * `handed_over`. Anything else is the NO_COUNT error, never a zero: a count
+ * that did not arrive must not read as "no message left".
+ */
+export function ledgerAnswer(rows) {
+  const whole = (v) => Number.isInteger(v) && v >= 0;
+  const row = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  if (!row || !whole(row.n) || !whole(row.handed_over)) {
+    throw Object.assign(new Error("the ledger read returned no count"), { code: "NO_COUNT" });
+  }
+  return { n: row.n, handedOver: row.handed_over };
+}
+
+/**
  * The database, read only. `selection` is one READ ONLY transaction: the
  * tenant, the read instant, the rows. `recheck` is one READ ONLY transaction
- * for one row.
+ * for one row. `ledger` is one READ ONLY transaction for two counts. It ALWAYS
+ * asks: with no window it sends the statement with an empty list and reads 0
+ * from the database, so the dry run of a first sitting proves the statement
+ * on the target before anything is sent.
  */
 export async function openReader(raw) {
   // Lazy on purpose: every refusal is testable without the driver.
@@ -745,6 +959,10 @@ export async function openReader(raw) {
       const rows = await sql.begin("read only", (tx) => tx.unsafe(RECHECK_ROW, [tenantId, id]));
       return rows.length === 1 ? rows[0] : null;
     },
+    async ledger(tenantId, windows) {
+      const rows = await sql.begin("read only", (tx) => tx.unsafe(LEDGER_CHECK, [tenantId, JSON.stringify(windows)]));
+      return ledgerAnswer(rows);
+    },
     async close() {
       await sql.end({ timeout: 5 });
     },
@@ -752,10 +970,40 @@ export async function openReader(raw) {
 }
 
 /**
+ * One bounded read of the ledger. An answer that is not two whole numbers is
+ * an error, never a zero: a count that did not arrive must not read as "no
+ * message left".
+ */
+async function readLedger(reader, tenantId, windows) {
+  const answer = await within(reader.ledger(tenantId, windows), LEDGER_BOUND_MS, "the ledger read");
+  const whole = (v) => Number.isInteger(v) && v >= 0;
+  if (!answer || !whole(answer.n) || !whole(answer.handedOver)) {
+    throw Object.assign(new Error("the ledger read returned no count"), { code: "NO_COUNT" });
+  }
+  return answer;
+}
+
+/** G3. The refusal, the same sentence after the first read and after the sends. */
+function ledgerRefusal(n) {
+  return (
+    `G3: ${n} reminder ledger row(s) were written for appointments this operation sent, inside the margin of the run ` +
+    "that sent them. No message may leave at run time. Send nothing further and report every line above."
+  );
+}
+
+/** G3. The refusal for marker rows the ledger cannot be asked about. */
+function uncheckedRefusal(u) {
+  return (
+    `G3: ${u} marker row(s) cannot be checked against the ledger. The marker is this operation's only record of ` +
+    "what was sent. Send nothing further and report every line above."
+  );
+}
+
+/**
  * The whole run. `deps` exists for the test file: `env`, `home`, `out` and
- * `now` replace the process's own, `openReader` replaces the database and
- * `writeMarker` replaces the marker's writer. The command line never sets any
- * of them.
+ * `now` replace the process's own, `openReader` replaces the database,
+ * `writeMarker` replaces the marker's writer and `sleep` replaces the wait
+ * before the second ledger read. The command line never sets any of them.
  */
 export async function run(argv, deps = {}) {
   const env = deps.env ?? process.env;
@@ -764,6 +1012,7 @@ export async function run(argv, deps = {}) {
   const open = deps.openReader ?? openReader;
   const now = deps.now ?? Date.now;
   const write = deps.writeMarker ?? writeMarker;
+  const sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
   const args = parseArgs(argv);
   const raw = env.DATABASE_URL_DIRECT ?? env.DATABASE_URL;
@@ -779,8 +1028,12 @@ export async function run(argv, deps = {}) {
       "and cannot see whether a reminder run exists for any appointment)",
   );
   out(
-    `inngest  ${args.checkedInngest ? "the operator says the two functions show Singleton and Debounce" : "dashboard check not stated"}` +
-      "  (recorded only: this script cannot see the hosted scheduler)",
+    `inngest  ${
+      args.checkedInngest
+        ? "the operator says the dashboard shows Debounce on schedule-appointment-reminders, Singleton on " +
+          `send-appointment-reminder and the trigger expression ${CONFIRMATION_FILTER} on send-appointment-confirmation`
+        : "dashboard check not stated"
+    }  (recorded only: this script cannot see the hosted scheduler)`,
   );
   if (args.resendAttempted) {
     out(
@@ -842,19 +1095,39 @@ export async function run(argv, deps = {}) {
     const keyOf = (row) => `${row.id}|${row.startsAt}`;
     const opts = {
       minDaysAhead: args.minDaysAhead,
+      maxDaysAhead: args.maxDaysAhead,
       marginMs,
       resendAttempted: args.resendAttempted,
       sent: (row) => history.sent.has(keyOf(row)),
       attempted: (row) => history.attempted.has(keyOf(row)),
     };
-    const tally = { unaccepted_request: 0, inside_24h: 0, touched_25h: 0, already_sent: 0, attempted: 0, near_mark: 0, held_back: 0, emit: 0 };
+    const tally = {
+      unaccepted_request: 0,
+      inside_24h: 0,
+      beyond_max_days: 0,
+      touched_25h: 0,
+      already_sent: 0,
+      attempted: 0,
+      near_mark: 0,
+      held_back: 0,
+      emit: 0,
+    };
     const eligible = [];
     let touchedTooLate = 0;
     let near24 = 0;
+    let scope = 0;
+    let unarmed24To48 = 0;
+    let unarmedWithin24 = 0;
+    let sentEarlierWithin24 = 0;
     for (const row of rows) {
       const verdict = verdictOf(row, t0Ms, opts);
       tally[verdict] += 1;
       if (verdict === "emit") eligible.push(row);
+      if (inScope(verdict)) scope += 1;
+      if (leftUnarmed24To48(Date.parse(row.startsAt), t0Ms, verdict)) unarmed24To48 += 1;
+      const within24 = within24hCount(verdict, opts.sent(row));
+      if (within24 === "not_rearmed") unarmedWithin24 += 1;
+      if (within24 === "sent_earlier") sentEarlierWithin24 += 1;
       if (verdict === "touched_25h" && tooLateToWait(row, marginMs)) touchedTooLate += 1;
       if (verdict === "near_mark" && markTooClose(Date.parse(row.startsAt), t0Ms, marginMs) === "24h") near24 += 1;
     }
@@ -864,6 +1137,11 @@ export async function run(argv, deps = {}) {
     out(`FUTURE REMINDABLE: ${rows.length}  (scheduled or confirmed, patient not deleted, starts after the read instant)`);
     out(`skipped: unaccepted online request: ${tally.unaccepted_request}`);
     out(`skipped: starts within 24 hours: ${tally.inside_24h}`);
+    out(
+      args.maxDaysAhead === null
+        ? `held back: starts more than --max-days-ahead days after the read: ${tally.beyond_max_days}  (not given: no upper bound)`
+        : `held back: starts more than --max-days-ahead ${args.maxDaysAhead} days after the read: ${tally.beyond_max_days}`,
+    );
     out(`skipped: touched in the last 25 hours: ${tally.touched_25h}`);
     out(`  of those, too near their start by the time the 25 hours are up (no later run can reach them): ${touchedTooLate}`);
     out(`skipped: already sent by an earlier run (marker): ${tally.already_sent}`);
@@ -893,6 +1171,42 @@ export async function run(argv, deps = {}) {
     out(`  with two or more emitting audit events (saved again at least once): ${resaved}`);
     out(`  attempted before and sent again now (--resend-attempted): ${resends}`);
 
+    // G1. The bound for everything in scope at THIS read, sent already or not,
+    // and not for this run alone. The first sitting's number is the gate.
+    const projected = projectedExecutions(scope);
+    const underLimit = underExecutionLimit(projected);
+    out(
+      `G1 PROJECTED SCHEDULER EXECUTIONS: ${projected} at most  ` +
+        `(${scope} appointments in scope x ${EXECUTIONS_PER_EVENT}: 3 runs and 5 steps each)`,
+    );
+    out(`G1 UNDER THE LIMIT OF ${EXECUTION_LIMIT}: ${underLimit ? "yes" : "NO"}`);
+    // G4. A count for reception. No screen lists appointments without a reminder,
+    // so the sentence names the two screens reception compares. A row inside 24
+    // hours that an earlier run sent at this start was re-armed: the third line.
+    out(
+      `G4 NEXT 48 HOURS, NOT RE-ARMED: ${unarmedWithin24 + unarmed24To48}  ` +
+        `(starting within 24 hours: ${unarmedWithin24}; 24 to 48 hours ahead: ${unarmed24To48})`,
+    );
+    out("  reception sees these appointments in Agenda, and which of them got an SMS in Comunicações, Lembretes SMS");
+    out(`  not counted: ${sentEarlierWithin24} starting within 24 hours that an earlier run of this operation sent`);
+    // G3, in every mode and before anything is sent: did a message leave for a
+    // row an earlier run sent, inside that run's margin? Expected: nothing.
+    const earlier = ledgerWindows(history.entries);
+    let ledger;
+    try {
+      ledger = await readLedger(reader, tenantId, earlier.windows);
+    } catch (e) {
+      fail(`the G3 ledger read failed: ${describeError(e)}`);
+    }
+    out(
+      `G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: ${ledger.n}  ` +
+        `(appointments checked: ${earlier.windows.length}; handed to a provider: ${ledger.handedOver}; ` +
+        `not checkable: ${earlier.unchecked}; expected 0)`,
+    );
+    if (ledger.n > 0) fail(ledgerRefusal(ledger.n));
+    // A marker row the ledger cannot be asked about is a row nobody checked.
+    if (earlier.unchecked > 0) fail(uncheckedRefusal(earlier.unchecked));
+
     const batch = eligible.slice(0, args.max);
     out(`THIS RUN: ${batch.length} of ${eligible.length}  (--max ${args.max}; left for a later run: ${eligible.length - batch.length})`);
     if (!args.confirm) {
@@ -906,6 +1220,13 @@ export async function run(argv, deps = {}) {
           "--fix-deployed-sha <sha> --i-checked-inngest-settings",
       );
       return { sent: 0, eligible: eligible.length, changed: 0, attempted: 0, notReached: 0 };
+    }
+    // G1 refuses a confirm, real or rehearsal, before the marker is touched.
+    if (!underLimit) {
+      fail(
+        `G1: the projected scheduler executions are ${projected}, which is not under the limit of ${EXECUTION_LIMIT}. ` +
+          "Nothing was sent and nothing was recorded. Report every line above.",
+      );
     }
     if (eligible.length !== args.expect) {
       fail(`expected ${args.expect} eligible rows and found ${eligible.length}. Something changed since the dry run; run the dry run again.`);
@@ -929,6 +1250,7 @@ export async function run(argv, deps = {}) {
       eligible: eligible.length,
       max: args.max,
       minDaysAhead: args.minDaysAhead,
+      maxDaysAhead: args.maxDaysAhead,
       marginMs,
       state: "sending",
       rows: [],
@@ -1014,7 +1336,41 @@ export async function run(argv, deps = {}) {
     out(`changed since the read, not sent: ${changed}`);
     out(`attempted, outcome unknown: ${attempted}`);
     out(`not reached: ${notReached}`);
+    // G4. Every row in the entry was written as attempted before its request left.
+    const started = entry.rows.length;
+    out(`G4 ATTEMPTED EQUALS SENT: ${attemptedEqualsSent(started, sent) ? "yes" : "NO"} (${started} requests started, ${sent} sent)`);
+    // G3 AGAIN, for the rows of this run, once the scheduler has had time to
+    // act on them. A run that started no request has nothing to ask about: it
+    // prints the same line with zeros, without a wait and without a read.
+    let after = null;
+    let afterFailed = null;
+    if (started > 0) {
+      await sleep(SETTLE_MS);
+      out(`settle   waited ${SETTLE_MS / 1000} s for the scheduler before the second ledger read`);
+      const mine = ledgerWindows([entry]);
+      try {
+        after = await readLedger(reader, tenantId, mine.windows);
+        out(`G3 AFTER THIS RUN: ${after.n}  (appointments checked: ${mine.windows.length}; handed to a provider: ${after.handedOver}; expected 0)`);
+      } catch (e) {
+        afterFailed = describeError(e);
+        out(`G3 AFTER THIS RUN: NOT READ  (the G3 ledger read failed: ${afterFailed})`);
+      }
+    } else {
+      out("G3 AFTER THIS RUN: 0  (appointments checked: 0; handed to a provider: 0; expected 0)");
+    }
+    // A run whose second read found a ledger row, or could not be made, says so
+    // in the marker: its entry is not `done`.
+    if (afterFailed !== null || (after !== null && after.n > 0)) {
+      entry.state = "g3_failed";
+      try {
+        write(marker, entries);
+      } catch {
+        console.error(`WARNING: could not update ${marker}. Keep every line above and below; they are the record.`);
+      }
+    }
     if (stopped) fail(`stopped at ${stopped}. Report the lines above. A later run skips what the marker holds as sent or attempted.`);
+    if (afterFailed !== null) fail(`the G3 ledger read failed: ${afterFailed}`);
+    if (after !== null && after.n > 0) fail(ledgerRefusal(after.n));
     if (outOfTime) {
       out("OUT OF TIME: the time for the sends is spent, so no event can land near a reminder mark. Run the dry run again for the rest.");
     }
