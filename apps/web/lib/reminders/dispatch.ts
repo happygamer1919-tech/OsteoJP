@@ -38,7 +38,7 @@ import {
   recordBookingApprovedHandOver,
   recordDispatch,
 } from "./dispatch-ledger";
-import { takeReminderClaim, type ReminderClaimTaker } from "./reminder-claim";
+import { releaseReminderClaim, takeReminderClaim, type ReminderClaimTaker } from "./reminder-claim";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import {
   bookingApprovedLocationContact,
@@ -194,6 +194,14 @@ export type DispatchOutcome =
          * for this appointment. One approval, one message.
          */
         | "already_sent"
+        /**
+         * Reminders only. This reminder, for the start the visit has now, was
+         * already handed to the provider: an earlier sender's claim is live and
+         * a `sent` ledger row followed it (./reminder-claim.ts). Nothing is
+         * sent, and NO LEDGER ROW IS WRITTEN: the send is already on record,
+         * and a second row would read as a second attempt.
+         */
+        | "claim_held"
         /**
          * Today's confirmation only. Building the reschedule link threw (its
          * base URL or its signing secret is not configured), so neither the
@@ -650,6 +658,11 @@ async function loadDispatchable(
  * function knows the provider id, the body length and the segment count. The
  * wrapper therefore records only the NOT-dispatched outcomes, and
  * `dispatched: true` falls through untouched.
+ *
+ * ONE EXCEPTION, AND IT IS NAMED: `claim_held` writes no row. It means this
+ * reminder's `sent` row is ALREADY in the ledger for this start, written by
+ * the sender that got there first. A row here would be a second record of one
+ * reminder, filed after that sender's claim as if it had tried twice.
  */
 export async function dispatchReminder(
   tenantId: string,
@@ -661,7 +674,7 @@ export async function dispatchReminder(
   taker: ReminderClaimTaker = "run",
 ): Promise<DispatchOutcome> {
   const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel, taker);
-  if (!outcome.dispatched) {
+  if (!outcome.dispatched && outcome.reason !== "claim_held") {
     await recordDispatch({
       tenantId,
       appointmentId,
@@ -685,15 +698,42 @@ async function dispatchReminderInner(
   taker: ReminderClaimTaker,
 ): Promise<DispatchOutcome> {
   const gate = await loadDispatchable(tenantId, appointmentId, "reminder");
-  // THE CLAIM, RECORD ONLY (./reminder-claim.ts). Taken HERE, after the load
-  // and before every gate below, because the claim is keyed on the start and
-  // only the loaded row knows it. So every return of this function leaves one
-  // claim behind, except `not_found`, where there is no row and no start. It
-  // returns nothing and never throws: no line below can depend on it.
+  // THE CLAIM (./reminder-claim.ts). Taken HERE, after the load and before
+  // every gate, because the claim is keyed on the start and only the loaded
+  // row knows it. `not_found` has no row and no start, so it takes none.
   const claimStart = gate.ok ? gate.data.startsAt : gate.startsAt;
-  if (claimStart) {
-    await takeReminderClaim({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
+  if (!claimStart) return dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate);
+  const claim = await takeReminderClaim({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
+  // THE ONE ANSWER THAT STOPS A SEND: this reminder was already sent for this
+  // start. Every other answer, a claim that could not be read or written
+  // included, goes on exactly as before there were claims.
+  if (claim.held) return { dispatched: false, reason: "claim_held" };
+  try {
+    return await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate);
+  } catch (e) {
+    // EVERY THROW RELEASES ITS CLAIM, and the error goes on unchanged: the run
+    // must still fail, because the scheduler's retry is the delivery
+    // behaviour. `releaseReminderClaim` never throws, so it cannot replace
+    // `e`. A claim that was never written has nothing to release.
+    if (claim.claimId !== null) {
+      await releaseReminderClaim({ tenantId, appointmentId, offsetId, channel, claimId: claim.claimId });
+    }
+    throw e;
   }
+}
+
+/**
+ * The reminder itself, once its claim is settled: every gate, the render and
+ * the send. Whatever throws out of here is caught by the caller above, which
+ * releases the claim.
+ */
+async function dispatchClaimedReminder(
+  tenantId: string,
+  appointmentId: string,
+  offsetId: ReminderOffsetId,
+  channel: Channel,
+  gate: Dispatchable,
+): Promise<DispatchOutcome> {
   if (!gate.ok) return gate.outcome;
   const data = gate.data;
   if (!REMINDABLE_STATUSES.has(data.status)) {

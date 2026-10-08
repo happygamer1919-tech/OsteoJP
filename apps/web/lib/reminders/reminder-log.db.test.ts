@@ -348,8 +348,14 @@ d("COMMS-03: Lembretes SMS finds a patient by name, with the existing filters", 
  *
  * EVERY ARM ASSERTS OVER ROWS THIS SUITE OWNS: its two tenants are fresh
  * uuids, and the claims are read by appointment id.
+ *
+ * SINCE SWEEP-02 A CLAIM CAN HOLD A REPEAT (reminder-claim.db.test.ts): the
+ * second sender of a reminder already SENT. The transports of this file never
+ * answer "sent" (one refuses, one holds back), so no arm here can be held,
+ * every call below does what it did before claims existed, and the ledger
+ * this suite reads is the proof of that.
  */
-d("SWEEP-01: the dispatcher leaves a reminder claim, and the claim changes nothing", () => {
+d("SWEEP-01: the dispatcher leaves a reminder claim, and a first claim changes nothing", () => {
   let sql: Awaited<ReturnType<typeof import("@osteojp/db").getDbAdmin>>;
   const tenantA = randomUUID();
   const tenantB = randomUUID();
@@ -541,7 +547,12 @@ d("SWEEP-01: the dispatcher leaves a reminder claim, and the claim changes nothi
     const before = (await claimsOf(b.appointment)).length;
     const take = () =>
       takeReminderClaim({ tenantId: tenantB, appointmentId: b.appointment, offsetId: "48h", channel: "email", startsAt: farStart, taker: "run" });
-    await expect(Promise.all([take(), take(), take()])).resolves.toEqual([undefined, undefined, undefined]);
+    // Not held, each with the id of its own row: three takers, three rows.
+    const answers = await Promise.all([take(), take(), take()]);
+    expect(answers.map((a) => a.held)).toEqual([false, false, false]);
+    const written = answers.map((a) => (a.held ? null : a.claimId));
+    expect(new Set(written).size).toBe(3);
+    expect(written.every((id) => typeof id === "string")).toBe(true);
     expect((await claimsOf(b.appointment)).length).toBe(before + 3);
   });
 

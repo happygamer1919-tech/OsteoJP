@@ -1,7 +1,8 @@
 import "server-only";
-import { auditLog } from "@osteojp/db";
+import { auditLog, reminderDispatches, type DbTx } from "@osteojp/db";
 import type { Channel } from "@osteojp/notify";
-import { sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, gt, gte, inArray, like, lte, notExists, sql, type SQL } from "drizzle-orm";
+import { alias, type PgColumn } from "drizzle-orm/pg-core";
 
 import { assertPiiFreeAuditMetadata } from "@/lib/audit/metadata-contract";
 import { withReminderTenantContext } from "./context";
@@ -12,13 +13,33 @@ import { REMINDER_OFFSETS } from "./offsets";
  * moment", as a row that can be read back.
  *
  * ==========================================================================
- * RECORD ONLY. IT DECIDES NOTHING.
+ * WHAT IT DECIDES, AND IT IS ONE THING
  * ==========================================================================
- * `takeReminderClaim` returns nothing, on purpose: the dispatcher has no value
- * to branch on, so a claim cannot stop or change a send. It adds the time of
- * its own write and nothing else. Whether a reminder goes out is exactly what
- * it was before this file existed. The claim is the trail a later change will
- * read; this change only starts writing it.
+ * `takeReminderClaim` answers `held` in exactly one case: this reminder, for
+ * the start the visit has now, WAS ALREADY HANDED TO THE PROVIDER. An earlier
+ * claim for the same appointment, offset, channel and start is still live, and
+ * a `sent` ledger row followed it (`claimIsHeld`, below). The dispatcher then
+ * sends nothing and writes nothing. That is the second sender of a reminder
+ * that already went out: a step the scheduler ran again, a second run for the
+ * same mark.
+ *
+ * IN EVERY OTHER CASE THE DISPATCHER DOES WHAT IT ALWAYS DID. A CLAIM ALONE
+ * NEVER BLOCKS, WHATEVER ITS AGE. A claim with no `sent` row after it is a
+ * sender that died, or threw, or could not write its release, or decided to
+ * send nothing, and the next caller claims again and is asked every gate
+ * afresh. So a claim cannot cost a patient a reminder: the most this file can
+ * remove is a SECOND COPY of a message already sent. Two senders inside the
+ * same instant both find no `sent` row yet and both send, as before.
+ *
+ * ==========================================================================
+ * A THROW RELEASES THE CLAIM
+ * ==========================================================================
+ * `audit_log` is append only, so a release is a second row that names its
+ * claim (`releaseReminderClaim`). A claim is LIVE while no release names it.
+ * The dispatcher writes one whenever it throws after taking a claim, and
+ * throws the same error on. Today a release changes no answer, because a
+ * claim with no `sent` row does not block anyway; it keeps the claims in order
+ * for the change that will make a live claim block at any age.
  *
  * ==========================================================================
  * WHY AN AUDIT ROW, AND NOT A LEDGER ROW
@@ -32,8 +53,10 @@ import { REMINDER_OFFSETS } from "./offsets";
  * ==========================================================================
  * IT NEVER THROWS INTO THE SEND PATH, AND IT FAILS OPEN
  * ==========================================================================
- * Everything below sits inside one try. A claim that cannot be written is
- * logged, ids only (rule 7), and the reminder goes out as it does today.
+ * Everything in `takeReminderClaim` sits inside one try. A claim that cannot
+ * be read or written is logged, ids only (rule 7), and answers "not held": the
+ * reminder goes out as it does today, without its claim. An unreadable trail
+ * costs at most a repeat, never the message.
  *
  * ON A WAIT TOO, NOT ONLY ON AN ERROR. The dispatcher awaits the claim before
  * it sends, so a claim that queued behind a stuck holder of this reminder's
@@ -43,8 +66,37 @@ import { REMINDER_OFFSETS } from "./offsets";
  * logs it, and the reminder goes out without its claim.
  */
 
-/** The audit action of a claim. One row per dispatcher call that found its appointment. */
+/**
+ * The audit action of a claim. One row per dispatcher call that found its
+ * appointment and was not held.
+ */
 export const REMINDER_CLAIM_ACTION = "appointment.reminder_claimed";
+
+/** The audit action of a release: the row that names a claim its sender gave up. */
+export const REMINDER_CLAIM_RELEASE_ACTION = "appointment.reminder_claim_released";
+
+/**
+ * THE LEDGER OUTCOMES THAT MAKE A CLAIM BLOCK. ONE LIST, PINNED BY A TEST.
+ *
+ * `sent`: the message was handed to the provider. A second sender would be a
+ * second copy of it.
+ *
+ * `suppressed` IS NOT HERE, AND THAT IS A QUESTION LEFT OPEN, NOT A RULING. A
+ * suppression is the dispatcher deciding, on record, to send nothing: the
+ * visit was cancelled, the request was not accepted, the channel is off. If
+ * it blocked, a second sender that arrives after the visit was put right
+ * would send nothing, where today it reads the row again and sends. Such a
+ * second sender exists: the scheduler runs the step again when it loses the
+ * answer of the first. Whether a suppression is final for its start is not
+ * this file's to decide, so until it is ruled a suppressed reminder is asked
+ * again exactly as it was before claims existed. Adding the word here is the
+ * whole change.
+ *
+ * `provider_error` IS NOT HERE EITHER, and that one is settled: the provider
+ * refused, the run failed, and the scheduler's retry is how that reminder
+ * still gets out.
+ */
+export const BLOCKING_LEDGER_OUTCOMES = ["sent"] as const;
 
 /**
  * Who took the claim. `run` is the sleeping job of today
@@ -93,7 +145,8 @@ export function reminderClaimLockPayload(
  * The transaction-scoped advisory lock two senders of ONE reminder queue on,
  * the pattern of lib/scheduling/slot-lock.ts. pg_advisory_xact_lock releases at
  * commit or rollback, so it cannot outlive the claim's own short transaction.
- * Today it only orders two writers; nothing is decided under it yet.
+ * Under it the claim reads whether this reminder is held and then writes its
+ * own row, so two takers cannot both read before either has written.
  */
 export function acquireReminderClaimLock(
   tenantId: string,
@@ -125,8 +178,134 @@ export function boundReminderClaimWaits(): SQL {
   return sql`select set_config('lock_timeout', ${CLAIM_LOCK_TIMEOUT}, true), set_config('statement_timeout', ${CLAIM_STATEMENT_TIMEOUT}, true)`;
 }
 
+/** The `audit_log` columns a claim of one reminder is recognised by, under any alias. */
+type ClaimColumns = Record<"tenantId" | "entityType" | "entityId" | "action" | "metadata", PgColumn>;
+
 /**
- * Write one claim. Returns nothing: see the header.
+ * IS THIS REMINDER HELD? True when a claim for this appointment, offset,
+ * channel and START:
+ *
+ *   - was not taken `early`. A sleeping job that woke at the old time of a
+ *     visit since moved later sent over ten minutes before the mark of the
+ *     start the visit has now. That send does not hold the one at the right
+ *     time, for any taker: today both go out;
+ *   - is LIVE: no release names it;
+ *   - has a ledger row AFTER it whose outcome is on the list above: `sent`.
+ *
+ * "AFTER IT" IS DERIVED, because the ledger holds no start, no offset and no
+ * claim id (0075), and it is the derivation the second count on Lembretes SMS
+ * uses (reminder-numbers.ts): a row for the same appointment and channel,
+ * whose template is this offset's reminder (`reminder.<offset>.`, the
+ * fee-notice body included), written at or after the claim and BEFORE THE
+ * NEXT CLAIM OF THIS REMINDER, WHATEVER START THAT ONE NAMES. Without the last
+ * clause a visit moved away and back would let the row of the other start
+ * count for the old claim.
+ *
+ * An offset this build does not know has no mark and no rule behind it, and
+ * never holds anything.
+ *
+ * Reads as the caller: inside the reminder job's context that is the tenant's
+ * own rows and nobody else's (the policies of `audit_log` and of
+ * `reminder_dispatches`). The tenant is stated in every clause as well.
+ *
+ * IT THROWS when the read fails. `takeReminderClaim` is the one caller, and
+ * its catch turns that into "not held".
+ */
+export async function claimIsHeld(
+  tx: DbTx,
+  args: { tenantId: string; appointmentId: string; offsetId: string; channel: Channel; startsAt: Date },
+): Promise<boolean> {
+  if (!REMINDER_OFFSETS.some((o) => o.id === args.offsetId)) return false;
+
+  const claim = alias(auditLog, "reminder_claim");
+  const release = alias(auditLog, "reminder_claim_release");
+  const later = alias(auditLog, "reminder_later_claim");
+  /** A claim of THIS reminder (appointment, offset, channel), of any start. */
+  const ofThisReminder = (t: ClaimColumns): SQL | undefined =>
+    and(
+      eq(t.tenantId, args.tenantId),
+      eq(t.entityType, "appointment"),
+      eq(t.entityId, args.appointmentId),
+      eq(t.action, REMINDER_CLAIM_ACTION),
+      sql`${t.metadata}->>'offsetId' = ${args.offsetId}`,
+      sql`${t.metadata}->>'channel' = ${args.channel}`,
+    );
+
+  const rows = await tx
+    .select({ id: claim.id })
+    .from(claim)
+    .where(
+      and(
+        ofThisReminder(claim),
+        // The start this claim was taken for. Both sides are the same
+        // `toISOString()` of the same column, so equality is exact.
+        sql`${claim.metadata}->>'startsAt' = ${args.startsAt.toISOString()}`,
+        sql`${claim.metadata}->>'early' is distinct from 'true'`,
+        notExists(
+          tx
+            .select({ one: sql`1` })
+            .from(release)
+            .where(
+              and(
+                eq(release.tenantId, args.tenantId),
+                eq(release.entityType, "appointment"),
+                eq(release.entityId, args.appointmentId),
+                eq(release.action, REMINDER_CLAIM_RELEASE_ACTION),
+                sql`${release.metadata}->>'claimId' = ${claim.id}::text`,
+              ),
+            ),
+        ),
+        exists(
+          tx
+            .select({ one: sql`1` })
+            .from(reminderDispatches)
+            .where(
+              and(
+                eq(reminderDispatches.tenantId, args.tenantId),
+                eq(reminderDispatches.appointmentId, args.appointmentId),
+                eq(reminderDispatches.channel, args.channel),
+                like(reminderDispatches.templateId, `reminder.${args.offsetId}.%`),
+                inArray(reminderDispatches.outcome, [...BLOCKING_LEDGER_OUTCOMES]),
+                gte(reminderDispatches.createdAt, claim.createdAt),
+                notExists(
+                  tx
+                    .select({ one: sql`1` })
+                    .from(later)
+                    .where(
+                      and(
+                        ofThisReminder(later),
+                        gt(later.createdAt, claim.createdAt),
+                        lte(later.createdAt, reminderDispatches.createdAt),
+                      ),
+                    ),
+                ),
+              ),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * What taking a claim answers.
+ *
+ * `held`: this reminder was already sent for this start. No row was written,
+ * and the caller sends nothing.
+ *
+ * Not held: the caller goes on. `claimId` is the row just written, for the
+ * release a throw owes it; null when the claim could not be read or written,
+ * where there is nothing to release.
+ */
+export type ReminderClaimAnswer = { held: true } | { held: false; claimId: string | null };
+
+/**
+ * Take the claim for one reminder, or learn that it is held. One tenant
+ * transaction: bound the waits, take the lock, read (`claimIsHeld`), and write
+ * the row unless it is held.
+ *
+ * It never throws, and every failure answers "not held": see the header.
  *
  * The start is stored as an ISO instant, the same `toISOString()` the
  * booking-approved hand-over stores, so a reader can compare it exactly.
@@ -140,7 +319,7 @@ export async function takeReminderClaim(args: {
   taker: ReminderClaimTaker;
   /** The taker's clock. Passed in by tests; the dispatcher leaves it out. */
   now?: Date;
-}): Promise<void> {
+}): Promise<ReminderClaimAnswer> {
   try {
     const metadata = {
       source: "reminder-claim",
@@ -154,6 +333,64 @@ export async function takeReminderClaim(args: {
     // (lib/audit/metadata-contract.ts). INSIDE the try, so a refusal is logged
     // below and never thrown into the send path.
     assertPiiFreeAuditMetadata(metadata, "reminders/takeReminderClaim");
+    return await withReminderTenantContext(args.tenantId, async (tx): Promise<ReminderClaimAnswer> => {
+      await tx.execute(boundReminderClaimWaits());
+      await tx.execute(
+        acquireReminderClaimLock(args.tenantId, args.appointmentId, args.offsetId, args.channel),
+      );
+      if (await claimIsHeld(tx, args)) return { held: true };
+      const [row] = await tx
+        .insert(auditLog)
+        .values({
+          tenantId: args.tenantId,
+          actorUserId: null,
+          action: REMINDER_CLAIM_ACTION,
+          entityType: "appointment",
+          entityId: args.appointmentId,
+          metadata,
+          ip: null,
+        })
+        .returning({ id: auditLog.id });
+      return { held: false, claimId: row?.id ?? null };
+    });
+  } catch (e) {
+    console.error(
+      `[reminders] reminder claim write FAILED tenantId=${args.tenantId} ` +
+        `appointmentId=${args.appointmentId} offsetId=${args.offsetId} channel=${args.channel}: ` +
+        `${e instanceof Error ? e.name : "unknown"}`,
+    );
+    return { held: false, claimId: null };
+  }
+}
+
+/**
+ * Release a claim: one more audit row, naming it. The dispatcher calls this
+ * when it throws after taking a claim, and then throws the same error on.
+ *
+ * IT NEVER THROWS, for the dispatcher's reason: the error on its way out is
+ * the one the scheduler must see, and a failed release must not replace it. A
+ * release that cannot be written is logged, ids only. The claim then stays
+ * live with no `sent` row after it, which blocks nothing: the retry claims
+ * again and sends.
+ *
+ * Its waits are bounded like the claim's, and it queues on the same lock, so a
+ * release never lands between another taker's read and its write.
+ */
+export async function releaseReminderClaim(args: {
+  tenantId: string;
+  appointmentId: string;
+  offsetId: string;
+  channel: Channel;
+  claimId: string;
+}): Promise<void> {
+  try {
+    const metadata = {
+      source: "reminder-claim",
+      claimId: args.claimId,
+      offsetId: args.offsetId,
+      channel: args.channel,
+    };
+    assertPiiFreeAuditMetadata(metadata, "reminders/releaseReminderClaim");
     await withReminderTenantContext(args.tenantId, async (tx) => {
       await tx.execute(boundReminderClaimWaits());
       await tx.execute(
@@ -162,7 +399,7 @@ export async function takeReminderClaim(args: {
       await tx.insert(auditLog).values({
         tenantId: args.tenantId,
         actorUserId: null,
-        action: REMINDER_CLAIM_ACTION,
+        action: REMINDER_CLAIM_RELEASE_ACTION,
         entityType: "appointment",
         entityId: args.appointmentId,
         metadata,
@@ -171,7 +408,7 @@ export async function takeReminderClaim(args: {
     });
   } catch (e) {
     console.error(
-      `[reminders] reminder claim write FAILED tenantId=${args.tenantId} ` +
+      `[reminders] reminder claim release FAILED tenantId=${args.tenantId} ` +
         `appointmentId=${args.appointmentId} offsetId=${args.offsetId} channel=${args.channel}: ` +
         `${e instanceof Error ? e.name : "unknown"}`,
     );

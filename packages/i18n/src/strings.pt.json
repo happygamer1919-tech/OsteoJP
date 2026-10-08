@@ -1690,6 +1690,7 @@
   "remindersLog.reason.template_unapproved": "texto da mensagem não aprovado",
   "remindersLog.reason.missing_provider_config": "fornecedor de envio não configurado",
   "remindersLog.reason.invalid_recipient": "destinatário em falta",
+  "remindersLog.reason.claim_held": "lembrete já enviado para esta data e hora",
   "remindersLog.reason.unknown": "motivo não reconhecido ({code})",
   "remindersLog.filterAll": "Todos",
   "remindersLog.filterFailures": "Só falhas",
