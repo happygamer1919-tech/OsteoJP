@@ -46,6 +46,8 @@
  * seeded LOCKED imported registo (the one registo of its kind a DB-gated suite
  * cannot create), and reads the two downloaded files: each holds the field
  * names and the values the registo's own page shows, under the page's heading.
+ * A second owner arm presses "Exportar ficha" and reads the one PDF of the
+ * whole patient: each group under its heading page, and no draft.
  *
  * THAT ARM IS A REAL DOWNLOAD, AND IT NEEDS NOTHING ANOTHER SPEC LEFT BEHIND.
  * The app renders the file, stores it in the `clinical-attachments` bucket and
@@ -420,5 +422,52 @@ test.describe("EXPORT-01, gate G1: the owner exports an imported registo and an 
     expect(await groupDownload.failure()).toBeNull();
     await holdsTheScreen(await groupDownload.path());
     await expect(imported.getByTestId("record-group-imported-pdf-error")).toHaveCount(0);
+  });
+
+  test("'Exportar ficha' downloads ONE PDF of the whole patient: each group under its heading, oldest first, and no draft", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.owner);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+    // THE SCREEN: one button on the Registos tab, and, because the tab shows
+    // the seeded drafts, the line saying the file leaves drafts out.
+    await openTab(page);
+    const exportFicha = page.getByTestId("ficha-export");
+    await expect(exportFicha).toHaveCount(1);
+    await expect(exportFicha).toHaveText("Exportar ficha");
+    await expect(page.getByTestId("ficha-export-partial")).toBeVisible();
+    // Positive control: the seeded draft is on the tab the file is made from.
+    await expect(group(page, APP_KEY).locator(`[data-record-id="${F.appEpisode.recordId}"]`)).toContainText("Rascunho");
+
+    const downloading = page.waitForEvent("download", { timeout: 60_000 });
+    await exportFicha.click();
+    const download = await downloading;
+    expect(download.suggestedFilename()).toBe(`relatorio-ficha-${F.patientId.slice(0, 8)}.pdf`);
+    expect(await download.failure()).toBeNull();
+    await expect(page.getByTestId("ficha-export-error")).toHaveCount(0);
+
+    const bytes = readFileSync(await download.path());
+    expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    const pages = await drawnLines(bytes);
+    const text = pages.map((lines) => words(lines));
+    const pageWith = (needle: string) => text.findIndex((t) => t.includes(needle));
+    const headingPage = (lines: string[]) => pages.findIndex((p) => p.length === lines.length && p.every((l, i) => l === lines[i]));
+
+    // The imported history is the oldest group: its heading opens the file,
+    // and its locked registo follows, printed as its own page shows it.
+    expect(pages[0]).toEqual(["Episódio", F.imported.specialty, "Importado"]);
+    expect(pageWith("Dorsalgia antiga, inventada")).toBe(1);
+    expect(pages[1]).toContain("Conteúdo importado");
+    expect(pages[1]).toContain("motivos");
+    // The app episode, under its own heading, with its locked registo.
+    const appHeading = headingPage(["Episódio", F.appEpisode.title]);
+    expect(appHeading).toBeGreaterThan(1);
+    expect(pageWith("Dor cervical em melhoria, inventada")).toBe(appHeading + 1);
+    // The episode's DRAFT is on no page.
+    expect(pageWith("Dor cervical ao acordar, inventada")).toBe(-1);
+    // Nothing here is annulled: no mark.
+    expect(pages.flat().filter((line) => line.includes("ANULADO"))).toEqual([]);
   });
 });

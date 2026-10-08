@@ -19,6 +19,7 @@ import { listFichaRecords } from "../../../lib/clinical/ficha-groups";
 import {
   addEvaluationTarget,
   episodePdfTarget,
+  fichaExportTarget,
   groupForFicha,
   importedGroupPdfTarget,
 } from "../../../lib/clinical/ficha-groups-core";
@@ -57,6 +58,7 @@ import { AddEvaluationButton } from "./add-evaluation-button";
 import { AddEpisodeButton } from "./add-episode-button";
 import { EpisodePdfButton } from "./episode-pdf-button";
 import { ImportedGroupPdfButton } from "./imported-group-pdf-button";
+import { FichaExportButton } from "./ficha-export-button";
 import { FocusOnArrive } from "./focus-on-arrive.client";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
@@ -315,6 +317,12 @@ export default async function PatientProfilePage({
     tab === "registos" && canReadClinical
       ? await listFichaRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
       : [];
+  // EXPORT-01: "Exportar ficha", one PDF of the whole patient, for whoever
+  // reads clinical records, when this tab lists at least one registo the file
+  // would hold (ficha-groups-core fichaExportTarget). The list is the viewer's
+  // own read, the one the export runs again on the server, so the button is
+  // drawn only where the export answers.
+  const fichaExport = canReadClinical ? fichaExportTarget(records) : null;
   // EPI-01b, piece 2: "+ Episódio". A therapist who may write for this patient
   // (createEpisode asks the same on the server, whatever is drawn here).
   const canAddEpisode = canStartEpisode && mayOpenEpisode(ctx.role);
@@ -762,6 +770,13 @@ export default async function PatientProfilePage({
               {showAnnulled ? s["clinical.hideAnnulled"] : s["clinical.showAnnulled"]}
             </Link>
             <div className="flex flex-wrap items-end justify-end gap-3">
+              {fichaExport && (
+                <FichaExportButton
+                  patientId={patient.id}
+                  label={s["patients.fichaExport"]}
+                  errorLabel={s["clinical.downloadPdfError"]}
+                />
+              )}
               {/* EPI-01b, piece 2: "+ Episódio". The therapist picks a specialty
                   from the closed list and nothing else: the title is a specialty
                   and a date, by ruling, and the server builds it. */}
@@ -800,6 +815,13 @@ export default async function PatientProfilePage({
               )}
             </div>
           </div>
+          {/* EXPORT-01: the patient's file holds the finalized registos only:
+              said here when this tab shows one it leaves out. */}
+          {fichaExport?.partial && (
+            <p className="mb-4 text-right text-xs text-text-secondary" data-testid="ficha-export-partial">
+              {s["patients.fichaExportPartial"]}
+            </p>
+          )}
           {/* EPI-01b, piece 2: what "+ Episódio" did, said here. */}
           {m === "episodeErr" && (
             <p role="alert" className="mb-4 text-sm text-error" data-testid="add-episode-error">

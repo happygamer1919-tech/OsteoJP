@@ -381,3 +381,41 @@ export async function renderClinicalReportPdf(
 
   return finish();
 }
+
+/** What a heading page of the whole-patient file says. */
+export type SectionHeading = {
+  /** A small line above the title, or null: what kind of section this is. */
+  overline: string | null;
+  /** The section's name, as the Registos tab names the group. */
+  title: string;
+  /** A small line under the title, or null. */
+  note: string | null;
+};
+
+/**
+ * EXPORT-01: ONE HEADING PAGE of the whole-patient file ("Exportar ficha"),
+ * as a PDF of its own, so the file is joined from whole documents like every
+ * other (episode-pdf.ts copies pages; it draws nothing). The page names the
+ * section that follows it, in this file's type and colours, and holds nothing
+ * else: no patient, no clinical text. Text the font cannot draw prints as "?",
+ * as everywhere above.
+ */
+export async function renderSectionPagePdf(heading: SectionHeading, locale: Locale): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.setTitle(getStrings(locale)["report.clinical.title"]);
+  const fonts: Fonts = {
+    regular: await doc.embedFont(StandardFonts.Helvetica),
+    bold: await doc.embedFont(StandardFonts.HelveticaBold),
+  };
+  const cur = new Cursor(doc, fonts);
+  if (heading.overline) cur.text(heading.overline, { size: 9, color: MUTED });
+  cur.gap(2);
+  cur.text(heading.title, { size: 15, bold: true, color: INK });
+  if (heading.note) {
+    cur.gap(2);
+    cur.text(heading.note, { size: 9, color: MUTED });
+  }
+  cur.gap(6);
+  cur.rule();
+  return doc.save();
+}

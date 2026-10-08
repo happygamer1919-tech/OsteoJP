@@ -4,6 +4,7 @@ import {
   addEvaluationTarget,
   episodePdfTarget,
   excerpt,
+  fichaExportTarget,
   groupForFicha,
   importedGroupPdfTarget,
   type FichaRecord,
@@ -468,5 +469,33 @@ describe("importedGroupPdfTarget (EXPORT-01): which imported group shows 'PDF do
     const none = only([rec({ status: "signed" })]);
     expect(none.kind).toBe("none");
     expect(importedGroupPdfTarget(none)).toBeNull();
+  });
+});
+
+describe("fichaExportTarget (EXPORT-01): whether the tab shows 'Exportar ficha'", () => {
+  it.each(["locked", "signed"] as const)("one %s registo, wherever it is filed: the button, nothing left out", (status) => {
+    expect(fichaExportTarget([rec({ status })])).toEqual({ partial: false });
+    expect(fichaExportTarget([rec({ status, episodeId: "ep-app", episodeTitle: "Osteopatia (01/09/2026)" })])).toEqual({
+      partial: false,
+    });
+    expect(
+      fichaExportTarget([rec({ status, episodeId: "imp-1", episodeTitle: "Osteopatia", episodeImported: true })]),
+    ).toEqual({ partial: false });
+  });
+
+  it("a finalized registo and a draft: the button, and the tab says the file is partial", () => {
+    expect(fichaExportTarget([rec({ status: "signed" }), rec({ status: "draft" })])).toEqual({ partial: true });
+  });
+
+  it("an annulled registo is in the file, so it counts: the button, nothing left out", () => {
+    expect(fichaExportTarget([rec({ status: "signed", annulled: true })])).toEqual({ partial: false });
+  });
+
+  it("DRAFTS ONLY get NO button: a draft is never exported", () => {
+    expect(fichaExportTarget([rec({ status: "draft" }), rec({ status: "draft", annulled: true })])).toBeNull();
+  });
+
+  it("no registo the viewer reads: NO button", () => {
+    expect(fichaExportTarget([])).toBeNull();
   });
 });

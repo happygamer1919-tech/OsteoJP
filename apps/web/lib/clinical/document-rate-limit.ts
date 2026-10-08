@@ -17,8 +17,9 @@ import {
  * EPI-01b piece 3, a fourth: `downloadEpisodeReportUrlAction`, which renders
  * one PDF for a whole episode and writes ONE object, so it asks once per
  * export; and, since EXPORT-01, a fifth, `downloadImportedGroupReportUrlAction`,
- * the same for an imported group. What is said of "three" below holds for all
- * five. The rate-limit
+ * the same for an imported group, and a sixth, `downloadPatientFichaUrlAction`,
+ * the same for the whole patient. What is said of "three" below holds for all
+ * six. The rate-limit
  * package's own header records why a security control must not be copied: "two
  * copies drift, and the drift is silent - nobody would know which app enforced
  * what until an incident asked." Three copies of a bucket-key derivation would

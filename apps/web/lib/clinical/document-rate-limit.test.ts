@@ -183,6 +183,18 @@ describe("the three document actions share ONE ceiling", () => {
     expect(at("documentGenerationAllowed(")).toBeLessThan(at("renderImportedGroupReport("));
   });
 
+  it("the whole-patient export action (EXPORT-01) calls the shared helper, once per export", async () => {
+    const code = await read("../../app/patients/[id]/ficha-pdf-actions.ts");
+    expect(code.match(/documentGenerationAllowed\(/g)?.length).toBe(1);
+    expect(code).not.toContain("createDurableRateLimitStore");
+    // AFTER the read that decides whether there is anything to export, BEFORE
+    // the render: a request that produces no document spends nothing.
+    const at = (needle: string) => code.indexOf(needle);
+    expect(at("readPatientFichaExportSelection(")).toBeGreaterThan(-1);
+    expect(at("readPatientFichaExportSelection(")).toBeLessThan(at("documentGenerationAllowed("));
+    expect(at("documentGenerationAllowed(")).toBeLessThan(at("renderPatientFichaReport("));
+  });
+
   it("the ceiling is defined in ONE place", async () => {
     const code = await read("./document-rate-limit.ts");
     expect(code).toContain("RULES.staffDocumentGeneration");

@@ -294,3 +294,24 @@ export function importedGroupPdfTarget(group: FichaGroup): ImportedGroupPdfTarge
   if (included === 0) return null;
   return { specialty: group.label, partial: included < group.records.length };
 }
+
+/**
+ * EXPORT-01: WHETHER THE REGISTOS TAB SHOWS "Exportar ficha", the one PDF of
+ * the whole patient (report/ficha-export-core.ts).
+ *
+ * The same rule as a group's button, over every registo the tab lists: at
+ * least one the file would include (finalized; an annulled registo is in the
+ * file, with its mark), and `partial` when the tab shows one the file leaves
+ * out (a draft). With no such registo there is NO button: the server would
+ * produce nothing. So a viewer whose own read returns no registo of this
+ * patient (the tab's read is the export's read) never sees it.
+ *
+ * WHO sees the tab at all (a reader of clinical records) is the page's gate.
+ */
+export type FichaExportTarget = { partial: boolean };
+
+export function fichaExportTarget(records: readonly FichaRecord[]): FichaExportTarget | null {
+  const included = records.filter((r) => isEpisodeExportable({ status: r.status, aiReviewState: null })).length;
+  if (included === 0) return null;
+  return { partial: included < records.length };
+}

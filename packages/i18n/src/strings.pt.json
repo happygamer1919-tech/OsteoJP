@@ -1365,6 +1365,8 @@
   "patients.fichaGroupEpisodePdf": "PDF do episódio",
   "patients.fichaGroupEpisodePdfAria": "Transferir o PDF do episódio: {group}",
   "patients.fichaGroupEpisodePdfPartial": "O PDF do episódio inclui só os registos finalizados. Os rascunhos ficam de fora.",
+  "patients.fichaExport": "Exportar ficha",
+  "patients.fichaExportPartial": "O PDF da ficha inclui só os registos finalizados. Os rascunhos ficam de fora.",
   "patients.fichaAddEpisode": "Episódio",
   "patients.fichaAddEpisodeAria": "Abrir um novo episódio da especialidade escolhida",
   "patients.fichaAddEpisodeSpecialty": "Especialidade do novo episódio",
