@@ -1,6 +1,6 @@
 # 0103: apply the revoke of anon's SEQUENCES default in public
 
-**NOT READY. Nothing in this document may be pasted yet.** The rehearsal ran on 2026-10-08, with limits (see "Rehearsal"). Open, in order: the one mutation sweep of the two check files; R4, at most three rounds; the pull request, which is not opened (`PR-NUMBER-PENDING`); CI on the head that merges; the owner's two clicks; and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
+**NOT READY. Nothing in this document may be pasted yet.** The rehearsal ran on 2026-10-08, with limits (see "Rehearsal"). The one mutation sweep ran on 2026-10-08 and changed no byte of the migration, of a check file or of a block (see "Review history"). Open, in order: R4, at most three rounds; the pull request, which is not opened (`PR-NUMBER-PENDING`); CI on the head that merges; the owner's two clicks; and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
 
 **Status: AUTHORED. REHEARSED WITH LIMITS on 2026-10-08 (no block ran whole to its last line: see
 "Rehearsal"). NOT APPLIED.** One migration,
@@ -65,9 +65,10 @@ of 2026-09-27 asks ("build/rehearse/document as separate agents").
 2. **DONE 2026-10-08, WITH LIMITS: the rehearsal,** by the rehearsal agent, under the lead's
    standing rule, verbatim in its prompt (see "What the rehearsal agent owes"). It includes
    strategy's gate G7, the lock read, which read as expected. Its record is under "Rehearsal".
-3. **OPEN: the one mutation sweep** of the pre-check's and the post-check's predicates, mechanical,
-   with the survivors listed (the owner's ruling of 2026-09-27). Its table goes under "Review
-   history".
+3. **DONE 2026-10-08: the one mutation sweep** of the pre-check's and the post-check's predicates
+   and of the blocks' halting predicates, mechanical, with the survivors listed (the owner's ruling
+   of 2026-09-27). Its tables are under "Review history". It added tests and changed no byte of
+   the migration, of a check file or of a block.
 4. **OPEN: R4** on the pull request's diff and the card's acceptance, by a fresh reviewer that
    sees only those: at most three rounds (the review-loop cap).
 5. **OPEN: SOLO opens the pull request, held from the moment it opens:** label `held-for-apply`,
@@ -1592,6 +1593,14 @@ zsh fails the test.
   FEED:** stage 1 on eleven run-window records and clocks. **A RECORD THAT READS EMPTY OR SHORT,**
   **A READ THAT CONTRADICTS THE MARKER,** and **THE APPLIED MARKER'S AGE.**
 
+**Added by the mutation sweep on 2026-10-08, each run whole in both shells** (why each is there is
+under "Review history"): A PINNED FILE THAT DIFFERS OR IS NOT THERE (every pin of every block);
+WHAT STAGES 0 AND 1 FIND ON DISK (a journal wrong in one fact, a second file under a number, a
+dirty worktree, a checkout that left HEAD where it was, and no applied marker at all); and BETWEEN
+THE STAGES (the window's end in stage 2 and the closing read, a clock that moved on during stage 1,
+one read in another zone, a reading that is no weekday, a record that is gone, and what stage 2
+and the closing read are handed).
+
 **What the harness is not.** Its psql is a stub that prints a fixture. It proves that a block halts
 and what it hands each program; it proves nothing about what the two check files print on a
 database. That is the build lane's run, the document agent's run and the rehearsal.
@@ -1696,12 +1705,416 @@ block's `begin read only`, and neither reads any table of people: every source t
 
 ## Review history
 
-**None yet.** R4 has not run on this document (NOT READY step 4), and the mutation sweep has not
-run (step 3). When each does, its verdict and its table go here. **The document agent ran no
-mutation sweep:** the script test's red arms are hand-written controls, one per rule, and are not a
-sweep.
+**R4 has not run on this document (NOT READY step 4).** Its verdict goes here when it does.
 
-**How the four blocks were derived, so a reviewer can check it by machine.** Each is 0101's reviewed
+### The mutation sweep, 2026-10-08: one pass, mechanical
+
+**In plain language.** A script changed every check in the two check files and in the four blocks,
+one at a time, 1914 changes in all (a comparison turned round, a number moved by one, a condition
+dropped, a whole check line deleted), and each changed copy was run to see whether anything
+noticed. **For the two check files nothing was found that lets a wrong database through, and no
+byte of them changed.** **For the four blocks 67 changes ran green through every test there was;**
+each is now caught by a test added in this sweep. No block changed either: the blocks were right,
+and it was the test that could not see some of their lines.
+
+**Who, when, what it touched.** Run by a sweep agent that wrote neither the migration, the check
+files nor this document, from 15:28 to 17:34 Lisbon (clock reads, zone `WEST`). The scripts and
+their result files are in the sweep's scratchpad and are not committed.
+
+- **No byte of the migration, of either check file or of any block changed,** in the sweep or
+  because of it. Every pin in this document, the sha256 of both check files and every reading of
+  the rehearsal stand as they were.
+- **What changed:** `scripts/anon-sequences-default-0103.test.mjs` (one static rule, three tests,
+  four inputs for its stubs, two readings for the clinics' rows; 38 tests became 41) and this
+  section, with the sidecar. The test is this branch's own new file and is not yet in the gate
+  manifest, so this is no gate edit.
+- **No byte pin was allowed to catch a mutant.** For a check-file mutant the document's `SHAPRE`
+  or `SHAPOST` lines, the fact table's sha256 and the sidecar were regenerated first; for a block
+  mutant the sidecar was. A mutant counts as caught only where a rule that reads the changed thing
+  fails, or where a run ends differently.
+
+#### Part C. The two check files: 975 mutants
+
+**Where.** Lane `green` (127.0.0.1:54922), found stopped, in the before state the rehearsal left
+(read first: the entry names `anon=rwU/postgres`, the journal holds 100 rows with 0102 the newest,
+`public` holds 0 sequences). Only its database container was started (`supabase db start`, no
+reset). Every state was planted inside a transaction that was rolled back, and nothing was
+committed to the lane; it read the same afterwards. A second, plain database
+(`sweep0103_plain`: a journal and nothing else) stood on the same server for the empty-set states.
+
+**How a mutant is read.** The unmutated file ran first on every state (47 for the pre-check, 71
+for the post-check; the two tables below). A mutant is CAUGHT BY A READING when, on some state, a
+row's last column moves (OK, VACUOUS, FAIL, CARRY) or psql stops, where the unmutated file on the
+same state does not. A pre-check mutant that prints another carry is handed on: the unmutated
+post-check runs on the after state with those carries, and the mutant is caught if one of its
+verdicts moves (112 were caught that way). The states are tried in this order and the first that
+catches is counted: the readings the rehearsal recorded; then the build lane's two recorded states
+(the entry removed, and a plain database); then the arms this sweep planted.
+
+| | Pre-check | Post-check | Both |
+|---|---|---|---|
+| Mutants | 514 | 461 | 975 |
+| Caught by a reading the rehearsal recorded | 273 | 243 | 516 |
+| Not by those: caught by one of the build lane's two recorded states | 11 | 44 | 55 |
+| Not by those: caught by an arm this sweep planted | 69 | 83 | 152 |
+| **No verdict moves on any state** | **161** | **91** | **252** |
+| of those 252: a static rule of the script test fails | 10 | 13 | 23 |
+| of those 252: the printed transcript differs on a rehearsed reading | 88 | 54 | 142 |
+| of those 252: the printed transcript differs on a planted arm only | 41 | 15 | 56 |
+| of those 252: nothing differs anywhere | 22 | 9 | 31 |
+
+- **An existing test or a rehearsed reading catches 597 of the 975.** The script test's static
+  rules fail on 178; 155 of those are also caught by a reading.
+- **46 of the 723 caught are caught by psql stopping** (the mutant is not valid SQL on that state,
+  or the file's own STOP fired). The blocks treat a psql that stops as a halt.
+- **The operators,** each applied once at every place it fits: a comparison swapped (`=` and `<>`,
+  `>` and `>=`, `<` and `<=`, `~`, `IN`, `IS NOT NULL`); AND and OR exchanged; a predicate negated;
+  a condition dropped (TRUE where it stood among ANDs, FALSE among ORs, both for a lone WHEN); a
+  string or number literal changed; a verdict's result literal changed; `ORDER BY id DESC` turned
+  to ASC; a `\if` guard removed, and made to fire on a value that is there.
+
+**THE 252 ON WHICH NO VERDICT MOVES, by family. None lets a wrong database through, and none led to
+a change of either file.**
+
+| Family | Mutants | Why no verdict moves |
+|---|---|---|
+| Expressions that print and decide nothing | 171 | The pre-check's four INFO rows (36), both SUMMARY rows (18), both FOR THE RECORD tables (40), and a count or a word printed beside a verdict (77: `over N policies` and its fellows, `1 entry`, `anon none`, `is 0102`, `is 0103`). 170 of them change what is printed on some state; no block reads those rows |
+| A count the post-check reads only at zero | 25 | The number of default privileges, of role and relation pairs, of column privileges, of functions and of other grantees decides VACUOUS when it is 0 and is otherwise only printed. Each of these turns one non-zero count into another. The mutants that turn an empty set into a non-empty one, or the reverse, are among the caught: the plain database is where 38 post-check mutants are first caught, the small database PL2A 10 |
+| The guard on a missing `-v`, removed | 14 | psql still stops with exit 3 and no verdict, because the value is then not substituted and the statement does not parse; only the STOP sentence is lost. The 12 of the post-check fail a static rule, which reads the list of required carries off these guards |
+| The shape checks on the pre-check's eight CARRY rows | 16 | `md5()` always prints 32 hex characters, and the privilege list is built by the same statement, so the check cannot fail on any database: 8 dropped checks are equivalent, and the 8 whose FAIL was turned to OK fail a static rule |
+| Inputs of a verdict that no database can move | 26 | Listed one by one below |
+
+- **The control of pre-check 4, "`anon` is no member of `postgres`" (3).** It cannot be planted:
+  `GRANT postgres TO anon` is refused even to the superuser, `role "postgres" is a member of role
+  "anon"`. On a Supabase database this control can never read true. The verdict's other half, the
+  session is `postgres`, is caught (arm p07).
+- **The planted control `{anon=rwU/postgres}` (10, both files).** It parses a constant, so it reads
+  the same on every database of one server version. It would move only on a server that reads an
+  ACL item differently.
+- **PUBLIC in two counts that are read after FAIL has been decided (6).** Where the entry holds a
+  PUBLIC item the CASE has already said FAIL, so what the count of other grantees or of inherited
+  grantees does with PUBLIC is never read.
+- **Two conditions that repeat what the statement already says (4):** `d.grantee = anon` beside
+  `pg_has_role(anon, d.grantee)` (a role has itself), and `attacl IS NOT NULL` before `aclexplode`
+  (which returns no row for a NULL).
+- **`'postgres'` in the list of five roles (1).** Changed to another role that exists, the count is
+  still five; with `postgres` gone the statement stops before any verdict.
+- **Pre-check 0 (2).** The file opens its own `BEGIN READ ONLY`, so this verdict cannot read FAIL
+  while that line stands, and a static rule holds the line. The post-check's verdict 0 is caught
+  (arm q37, a transaction that is not read only).
+
+**Said so that nobody leans on them: the INFO rows, the SUMMARY rows and the FOR THE RECORD tables
+are checked by no machine.** Stage 1 and stage 2 count the verdict rows themselves. The row GREEN is
+asked to report, the sequences on which `anon` holds a privilege, has 14 mutants, and each prints
+another `<k> of <n>` on one of the arms p25, p26u, p26s and p26w; the only reader of that row is
+the person who reads GREEN's report.
+
+**Five arms were added after the first pass, for 18 mutants the other states did not catch,** and
+only those 18 were run again:
+
+- p37, a stranger's newest row that carries 0102's own `created_at` (1: pre-check 2's `newest is
+  0102`);
+- p36, `authenticated` holding the default WITH GRANT OPTION (1: the grantable count's filter on
+  `anon`);
+- p38, exactly one SECURITY DEFINER function left (1: `secdef > 0`);
+- q45, not applied and the entry naming `anon` alone (2: post-check 2's VACUOUS);
+- PL2 and PL2A, a small database of its own with a sequence that has no ACL of its own (13). **It
+  is the first reading in which a NULL `relacl` is actually read:** before it, the rule that a
+  sequence's default ACL is read with code `'s'` was held by the static rule alone (6 of the 13).
+
+**THE PRE-CHECK, unmutated, on every state** (lane `green`; each planted inside a transaction and rolled back):
+
+| State | What is planted | The unmutated file reads | Mutants first caught here |
+|---|---|---|---|
+| B0 (rehearsed) | before the apply, no sequence in public | 10 OK / 0 VACUOUS / 0 FAIL | 248 |
+| B1 (rehearsed) | before the apply, one sequence in public | 10 OK / 0 VACUOUS / 0 FAIL | 3 |
+| A0 (rehearsed) | 0103 already applied (the pre-check a second time) | 6 OK / 1 VACUOUS / 3 FAIL (1 FAIL, 2 FAIL, journal_rows_before FAIL, 5 VACUOUS) | 22 |
+| N (build lane) | the entry removed: a database that never carried the default | 8 OK / 2 VACUOUS / 0 FAIL (5 VACUOUS, 6 VACUOUS) | 3 |
+| PLAIN (build lane) | a plain CREATE DATABASE with a journal and nothing else | 7 OK / 2 VACUOUS / 1 FAIL (5 VACUOUS, 6 VACUOUS, secdef_functions_before FAIL) | 8 |
+| p01 (planted) | 0102's row deleted from the journal | 7 OK / 0 VACUOUS / 3 FAIL (1 FAIL, 2 FAIL, journal_rows_before FAIL) | 1 |
+| p02 (planted) | 0102's hash twice, the second as the newest row | 7 OK / 0 VACUOUS / 3 FAIL (1 FAIL, 2 FAIL, journal_rows_before FAIL) | 2 |
+| p03 (planted) | a stranger's row newer than 0102 | 8 OK / 0 VACUOUS / 2 FAIL (2 FAIL, journal_rows_before FAIL) | 0 |
+| p04 (planted) | 0102's created_at moved by one | 9 OK / 0 VACUOUS / 1 FAIL (2 FAIL) | 1 |
+| p05 (planted) | the oldest journal row deleted (99 rows, 0102 still newest) | 9 OK / 0 VACUOUS / 1 FAIL (journal_rows_before FAIL) | 0 |
+| p06 (planted) | 0103's hash present as the OLDEST row | 8 OK / 0 VACUOUS / 2 FAIL (1 FAIL, journal_rows_before FAIL) | 0 |
+| p07 (planted) | the session is supabase_admin, not postgres | 9 OK / 0 VACUOUS / 1 FAIL (4 FAIL) | 3 |
+| p09 (planted) | the default grants anon SELECT and USAGE only | 9 OK / 0 VACUOUS / 1 FAIL (5 FAIL) | 3 |
+| p10 (planted) | the default grants anon the three WITH GRANT OPTION | 9 OK / 0 VACUOUS / 1 FAIL (5 FAIL) | 2 |
+| p10b (planted) | the default grants anon USAGE only, WITH GRANT OPTION | 9 OK / 0 VACUOUS / 1 FAIL (5 FAIL) | 1 |
+| p11 (planted) | anon already out of the default, no journal row | 9 OK / 1 VACUOUS / 0 FAIL (5 VACUOUS) | 0 |
+| p12 (planted) | the entry grants PUBLIC a privilege | 9 OK / 0 VACUOUS / 1 FAIL (6 FAIL) | 5 |
+| p13 (planted) | anon inherits from authenticated, a grantee of the entry | 9 OK / 0 VACUOUS / 1 FAIL (6 FAIL) | 3 |
+| p14 (planted) | the entry names anon and nobody else | 9 OK / 1 VACUOUS / 0 FAIL (6 VACUOUS) | 2 |
+| p15 (planted) | a GLOBAL SEQUENCES default of postgres grants anon | 9 OK / 0 VACUOUS / 1 FAIL (7 FAIL) | 8 |
+| p16 (planted) | a GLOBAL SEQUENCES default of postgres grants PUBLIC | 9 OK / 0 VACUOUS / 1 FAIL (7 FAIL) | 3 |
+| p17 (planted) | a GLOBAL SEQUENCES default grants patient, and anon inherits from patient | 9 OK / 0 VACUOUS / 1 FAIL (7 FAIL) | 2 |
+| p18 (planted) | a GLOBAL TABLES default of postgres grants anon (not a sequence default) | 10 OK / 0 VACUOUS / 0 FAIL | 1 |
+| p19 (planted) | a GLOBAL SEQUENCES default of supabase_admin grants anon (another creator) | 10 OK / 0 VACUOUS / 0 FAIL | 1 |
+| p21a (planted) | the role patient is missing (renamed) | 9 OK / 0 VACUOUS / 1 FAIL (8 FAIL) | 2 |
+| p21b (planted) | the role authenticated is missing (renamed) | 9 OK / 0 VACUOUS / 1 FAIL (8 FAIL) | 1 |
+| p21c (planted) | the role service_role is missing (renamed) | 9 OK / 0 VACUOUS / 1 FAIL (8 FAIL) | 0 |
+| p21d (planted) | the role anon is missing (renamed): a STOP, not a verdict | psql exit 3, no verdict: `role "anon" does not exist` | 0 |
+| p22 (planted) | one SECURITY DEFINER function owned by supabase_admin | 9 OK / 0 VACUOUS / 1 FAIL (secdef_functions_before FAIL) | 2 |
+| p23 (planted) | no SECURITY DEFINER function in public at all | 9 OK / 0 VACUOUS / 1 FAIL (secdef_functions_before FAIL) | 0 |
+| p25 (planted) | a sequence in public on which anon holds nothing | 10 OK / 0 VACUOUS / 0 FAIL | 0 |
+| p26u (planted) | a sequence on which anon holds USAGE only | 10 OK / 0 VACUOUS / 0 FAIL | 0 |
+| p26s (planted) | a sequence on which anon holds SELECT only | 10 OK / 0 VACUOUS / 0 FAIL | 0 |
+| p26w (planted) | a sequence on which anon holds UPDATE only | 10 OK / 0 VACUOUS / 0 FAIL | 0 |
+| p27 (planted) | -v prev_hash not passed: a STOP | psql exit 3, no verdict: `STOP: -v prev_hash is missing (the sha256 of 0102 as applied). This file refuses to guess.` | 0 |
+| p28 (planted) | -v prev_when not passed: a STOP | psql exit 3, no verdict: `STOP: -v prev_when is missing (0102's journal when). This file refuses to guess.` | 0 |
+| p31a (planted) | -v prev_hash is another migration's hash | 8 OK / 0 VACUOUS / 2 FAIL (1 FAIL, 2 FAIL) | 0 |
+| p31b (planted) | -v prev_when is off by one | 9 OK / 0 VACUOUS / 1 FAIL (2 FAIL) | 0 |
+| p32 (planted) | supabase_admin's public SEQUENCES default no longer grants anon | 10 OK / 0 VACUOUS / 0 FAIL | 0 |
+| p33 (planted) | authenticated holds SELECT only in the entry | 10 OK / 0 VACUOUS / 0 FAIL | 0 |
+| p34 (planted) | a GLOBAL SEQUENCES default of postgres grants service_role, from which anon inherits nothing | 10 OK / 0 VACUOUS / 0 FAIL | 5 |
+| p35 (planted) | a GLOBAL SEQUENCES default names patient ONLY (the owner's own item revoked), and anon inherits from patient | 9 OK / 0 VACUOUS / 1 FAIL (7 FAIL) | 0 |
+| p36 (planted) | the default grants authenticated (not anon) WITH GRANT OPTION | 10 OK / 0 VACUOUS / 0 FAIL | 1 |
+| p37 (planted) | a stranger's row newer than 0102, carrying 0102's own created_at | 8 OK / 0 VACUOUS / 2 FAIL (2 FAIL, journal_rows_before FAIL) | 1 |
+| p38 (planted) | exactly one SECURITY DEFINER function left in public | 10 OK / 0 VACUOUS / 0 FAIL | 1 |
+| PL2 (planted) | a small database of its own: one sequence with no ACL of its own (created before the default), one table, one policy, one column grant, one SECURITY DEFINER function, and the default for anon and authenticated | 10 OK / 0 VACUOUS / 0 FAIL | 3 |
+| K (planted) | a richer before state: a sequence, a partitioned table, a view, a materialized view, a foreign table, PUBLIC grants, a column grant, a GLOBAL TABLES default | 10 OK / 0 VACUOUS / 0 FAIL | 15 |
+
+**THE POST-CHECK, unmutated, on every state** (lane `green`; each planted inside a transaction and rolled back):
+
+| State | What is planted | The unmutated file reads | Mutants first caught here |
+|---|---|---|---|
+| B0 (rehearsed) | the before state (0103 not applied) | 10 OK / 1 VACUOUS / 3 FAIL (1 FAIL, 5 VACUOUS, 12 FAIL, 13 FAIL) | 202 |
+| A0 (rehearsed) | after the apply, no sequence in public | 13 OK / 1 VACUOUS / 0 FAIL (5 VACUOUS) | 36 |
+| B1 (rehearsed) | the before state with one sequence | 11 OK / 0 VACUOUS / 3 FAIL (1 FAIL, 12 FAIL, 13 FAIL) | 5 |
+| A1 (rehearsed) | after the apply, one sequence in public | 14 OK / 0 VACUOUS / 0 FAIL | 0 |
+| N (build lane) | a database that never carried the default, journal row added | 11 OK / 3 VACUOUS / 0 FAIL (1 VACUOUS, 2 VACUOUS, 5 VACUOUS) | 6 |
+| PLAIN (build lane) | a plain database, journal row added | 4 OK / 10 VACUOUS / 0 FAIL (1 VACUOUS, 2 VACUOUS, 4 VACUOUS, 5 VACUOUS, 6 VACUOUS, 7 VACUOUS, 8 VACUOUS, 9 VACUOUS, 10 VACUOUS, 11 VACUOUS) | 38 |
+| q01 (planted) | applied, then anon given SELECT back in the default | 12 OK / 1 VACUOUS / 1 FAIL (1 FAIL, 5 VACUOUS) | 1 |
+| q02 (planted) | applied; the carry anon_default_before says none | 12 OK / 2 VACUOUS / 0 FAIL (1 VACUOUS, 5 VACUOUS) | 0 |
+| q03 (planted) | applied; the carry anon_default_before says SELECT,USAGE | 12 OK / 1 VACUOUS / 1 FAIL (1 FAIL, 5 VACUOUS) | 2 |
+| q04 (planted) | applied; the entry grants PUBLIC a privilege | 11 OK / 1 VACUOUS / 2 FAIL (2 FAIL, 4 FAIL, 5 VACUOUS) | 7 |
+| q05 (planted) | applied; anon inherits from authenticated, a grantee left in the entry | 11 OK / 1 VACUOUS / 2 FAIL (2 FAIL, 5 VACUOUS, 8 FAIL) | 5 |
+| q06 (planted) | applied; the entry emptied of every grantee | 11 OK / 2 VACUOUS / 1 FAIL (2 VACUOUS, 4 FAIL, 5 VACUOUS) | 0 |
+| q07 (planted) | applied; a GLOBAL SEQUENCES default of postgres grants anon | 11 OK / 1 VACUOUS / 2 FAIL (3 FAIL, 4 FAIL, 5 VACUOUS) | 8 |
+| q08 (planted) | applied; a GLOBAL SEQUENCES default of postgres grants PUBLIC | 11 OK / 1 VACUOUS / 2 FAIL (3 FAIL, 4 FAIL, 5 VACUOUS) | 3 |
+| q09 (planted) | applied; a GLOBAL SEQUENCES default grants patient, and anon inherits from patient | 10 OK / 1 VACUOUS / 3 FAIL (3 FAIL, 4 FAIL, 5 VACUOUS, 8 FAIL) | 2 |
+| q10 (planted) | applied; a GLOBAL TABLES default of postgres grants anon | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 1 |
+| q11 (planted) | applied; a GLOBAL SEQUENCES default of supabase_admin grants anon | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 1 |
+| q12 (planted) | applied; the FUNCTIONS default lost anon's EXECUTE | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 0 |
+| q13 (planted) | applied; authenticated lost UPDATE in the same entry | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 0 |
+| q14 (planted) | applied; supabase_admin's public SEQUENCES default lost anon | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 0 |
+| q15 (planted) | applied; the storage schema's SEQUENCES default lost anon | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 0 |
+| q16 (planted) | applied; a sequence created after the pre-check | 12 OK / 0 VACUOUS / 2 FAIL (5 FAIL, 6 FAIL) | 3 |
+| q17 (planted) | applied; the existing sequence lost anon's UPDATE | 12 OK / 0 VACUOUS / 2 FAIL (5 FAIL, 6 FAIL) | 2 |
+| q18 (planted) | applied; the sequence dropped and another created (same count) | 12 OK / 0 VACUOUS / 2 FAIL (5 FAIL, 6 FAIL) | 0 |
+| q19 (planted) | applied; the sequence the pre-check counted is gone | 12 OK / 0 VACUOUS / 2 FAIL (5 FAIL, 6 FAIL) | 0 |
+| q20 (planted) | applied; anon granted SELECT on a table | 11 OK / 1 VACUOUS / 2 FAIL (5 VACUOUS, 6 FAIL, 8 FAIL) | 0 |
+| q21 (planted) | applied; anon granted TRIGGER on a table (no DML verb) | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 6 FAIL) | 0 |
+| q22 (planted) | applied; a column privilege granted | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 7 FAIL) | 2 |
+| q23 (planted) | applied; patient made a member of service_role. `patient` is NOINHERIT, so it gains no privilege and nothing should move | 13 OK / 1 VACUOUS / 0 FAIL (5 VACUOUS) | 0 |
+| q24 (planted) | applied; a policy created | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 9 FAIL) | 2 |
+| q25 (planted) | applied; one policy's expression changed (same count) | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 9 FAIL) | 0 |
+| q26 (planted) | applied; a function created | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 10 FAIL) | 3 |
+| q27 (planted) | applied; one function made SECURITY INVOKER (same function count) | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 10 FAIL) | 0 |
+| q28 (planted) | applied; the carry secdef_before is one less | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 10 FAIL) | 1 |
+| q29 (planted) | applied; a table created | 10 OK / 1 VACUOUS / 3 FAIL (5 VACUOUS, 6 FAIL, 8 FAIL, 11 FAIL) | 2 |
+| q30 (planted) | applied; the carry tables_before is one less | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 11 FAIL) | 0 |
+| q31 (planted) | the ALTER ran, the journal row is missing | 11 OK / 1 VACUOUS / 2 FAIL (5 VACUOUS, 12 FAIL, 13 FAIL) | 0 |
+| q32 (planted) | applied; a stranger's row newer than 0103 (journal plus two) | 11 OK / 1 VACUOUS / 2 FAIL (5 VACUOUS, 12 FAIL, 13 FAIL) | 2 |
+| q33 (planted) | applied; the oldest journal row deleted (the count did not move) | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 12 FAIL) | 0 |
+| q34 (planted) | applied; 0103's hash twice, the oldest row deleted (count plus one) | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 13 FAIL) | 1 |
+| q35 (planted) | the ALTER ran; 0103's hash is the OLDEST row, 0102 still newest (count plus one) | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 13 FAIL) | 0 |
+| q36a (planted) | applied; the carry journal_rows_before is one less | 12 OK / 1 VACUOUS / 1 FAIL (5 VACUOUS, 12 FAIL) | 0 |
+| q36b (planted) | applied; the carry sequences_before says 1 | 13 OK / 0 VACUOUS / 1 FAIL (5 FAIL) | 1 |
+| q36m, seven arms | applied; one md5 carry replaced by thirty-two zeros, each of the seven in turn | 1 FAIL each, on the verdict that reads that carry: 5, 9, 10, 6, 7, 4, 8 | 0 |
+| q37 (planted) | applied; the transaction is NOT read only | 12 OK / 1 VACUOUS / 1 FAIL (0 FAIL, 5 VACUOUS) | 2 |
+| q38, twelve arms | applied; one `-v` carry not passed, each of the twelve in turn | psql exit 3, no verdict: `STOP: -v <name> is missing. This file refuses to guess.` | 0 |
+| q40 (planted) | a plain database handed the carries of the real one: FAIL comes before VACUOUS | 5 OK / 2 VACUOUS / 7 FAIL (2 VACUOUS, 4 FAIL, 5 VACUOUS, 6 FAIL, 7 FAIL, 8 FAIL, 9 FAIL, 10 FAIL, 11 FAIL) | 0 |
+| q41 (planted) | applied; anon inherits from service_role only | 11 OK / 1 VACUOUS / 2 FAIL (2 FAIL, 5 VACUOUS, 8 FAIL) | 0 |
+| q42 (planted) | applied; the entry keeps postgres only | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 0 |
+| q43 (planted) | applied; a GLOBAL SEQUENCES default of postgres grants service_role, from which anon inherits nothing | 12 OK / 1 VACUOUS / 1 FAIL (4 FAIL, 5 VACUOUS) | 5 |
+| q44 (planted) | applied; a GLOBAL SEQUENCES default names patient ONLY, and anon inherits from patient | 10 OK / 1 VACUOUS / 3 FAIL (3 FAIL, 4 FAIL, 5 VACUOUS, 8 FAIL) | 0 |
+| q45 (planted) | NOT applied; the entry names anon and nobody else | 8 OK / 2 VACUOUS / 4 FAIL (1 FAIL, 2 VACUOUS, 4 FAIL, 5 VACUOUS, 12 FAIL, 13 FAIL) | 2 |
+| PL2A (planted) | the small database, applied | 14 OK / 0 VACUOUS / 0 FAIL | 10 |
+| KA (planted) | the richer state, applied | 14 OK / 0 VACUOUS / 0 FAIL | 15 |
+
+#### Part D. The four blocks: 939 mutants
+
+One mutant changes ONE line of ONE block, or deletes it. Two questions were put to each. Does a
+static rule of the script test fail, with the sidecar regenerated first? And, for every mutant but
+the halt strips: run WHOLE, in the script test's own harness (its exported functions, under bash),
+on the inputs of its whole-block arms, does the block end differently from the unmutated block
+(the exit code, the STOP line, the pass line, the records written, the programs run, the lines it
+prints about the clock, the clinics and the profile)? There are 95 such inputs over the four
+blocks (16 for stage 0, 41 for stage 1, 24 for stage 2, 14 for the closing read): closed hours with
+everything in order, the seven ruled minutes, the six zone answers, the applied marker 719 and 780
+minutes old, the six clinic readings, the four other pre-check transcripts, the eleven run-window
+records, the six other post-check outcomes, the carry `none`, the four database answers, a run
+window whose sha is short, the recorded sha empty, blank, short and not hex, an empty pass mark and
+the reader's two answers.
+
+| The change | Mutants | A static rule fails | Run whole, it ends differently | Neither |
+|---|---|---|---|---|
+| the explicit halt stripped from a line | 187 | 187 | not run | 0 |
+| the STOP left to print, its `exit` removed | 190 | 190 | not run | 0 |
+| a whole check line deleted | 131 | 56 | 37 | 61 |
+| a test negated (`test -f`, `-z`, `-n`) | 53 | 4 | 53 | 0 |
+| a comparison swapped (`=`, `-ge`, `-le`, `-lt`) | 58 | 52 | 56 | 2 |
+| a literal changed (a count, a regex bound, a zone, an age, a field, a journal number) | 171 | 87 | 141 | 5 |
+| an operator swapped inside an awk, node or SQL program | 64 | 45 | 47 | 10 |
+| one condition of several dropped | 85 | 39 | 40 | 32 |
+| **all** | **939** | **660** | **374** | **110** |
+
+- **The 377 halt strips were not run whole on purpose.** The harness cannot make a shell builtin
+  fail, so for a `test`, a `[ ... ]` or a `grep -q` the static rule EVERY HALT IS EXPLICIT is the
+  arm, with its own red arms; it failed on 377 of 377. The fault sweeps (224 faults in each shell)
+  are the run for the lines that call a program.
+- **829 of the 939 fail a static rule that was there before the sweep, or end differently on an
+  input the test already ran;** 205 of them do both.
+- **3 of the 110 are caught by the fault sweeps, which were there too.** All 110 were put through
+  the fault sweep of their own block, as the test stood before this sweep (bash). Deleting the
+  count of files under a number (507, 509, 619) leaves its `find | wc | tr` calls with no check
+  after them, and the fault that makes one of them fail then runs on to the last line. The other
+  107 halt on every fault. **So 832 of the 939 were caught before the sweep, and 107 were not.**
+- **Checked on a sample:** 16 of the 110, taken across the families below, were also run against
+  the WHOLE script test as it stood before the sweep, all 38 tests in both shells. 15 passed 38 of
+  38. The 16th, on line 507, failed the two fault sweeps and nothing else, which is what sent all
+  110 through the fault sweep.
+
+**THE 110, FAMILY BY FAMILY.** 67 are real gaps: lines a block needs and that no test ran. 3 more
+(the count of files) were caught by the fault sweeps alone. Each of those 70 is now caught by an
+arm added in this sweep, and each was run again against that arm and failed it. 2 are inside a SQL
+statement the harness cannot run and are caught by a reading on lane `green`. 38 change nothing a
+block does.
+
+| What was changed | Mutants | Lines | What now catches it |
+|---|---|---|---|
+| **A pin's compare line deleted:** the migration, the pre-check, the post-check and 0102 in every stage that pins them, and in stage 0 the guard's module and the reader. Nothing required a pin that is assigned to be compared | 11 | 517 to 519, 522, 523, 528, 620, 621, 629, 816, 817 | the static rule `pinComparedProblems`, and A PINNED FILE: each block run whole with one pinned file changed by a byte |
+| **Stage 0's journal line:** each of its seven facts dropped, each `&&` turned to `||` | 13 | 526 | WHAT STAGES 0 AND 1 FIND ON DISK: seven journals, each wrong in one fact |
+| Stage 1's read of 0102's journal `when`, and the check on it | 4 | 626, 627 | the same test: the entry before the newest with another idx, then with another tag |
+| **`test ! -f ... ||` dropped from the applied-marker line.** The line then stops every first sitting, and no arm ran a block with NO marker: every arm planted an old one | 2 | 488, 592 | the same test: stages 0 and 1 with no marker pass |
+| the worktree-is-clean check deleted | 2 | 490, 595 | the same test: `git status` prints one changed file |
+| the count of files under a number deleted (the 3 the fault sweeps already caught) | 3 | 507, 509, 619 | the same test, which now reads it directly: a second `0103_*.sql`, a second `0102_*.sql` |
+| stage 2's read-back of HEAD after its checkout deleted | 1 | 810 | the same test: a checkout that exits 0 and leaves HEAD where it was (stages 0, 1 and 2) |
+| a `test -f` of a record deleted (the recorded sha, the run window, the transcript) | 7 | 598, 633, 797, 822, 836, 952, 968 | BETWEEN THE STAGES: each record gone, and the block names the record it misses |
+| the second window read of stage 1, after the pre-check, deleted | 1 | 669 | the same test: a clock that has moved past the last start minute by the second read |
+| **the window in stage 2 and in the closing read:** its end check deleted or loosened by a minute, its shape check, its sha | 7 | 825, 827, 833, 973, 979 | the same test: now AT the window's end, a minute before it, a 13-digit end, a window for another sha. Stage 1 had its feed; nothing ran these two at the end of the window |
+| the age check of stage 1's transcript deleted | 1 | 837 | the same test: a transcript 70 minutes old |
+| the carries' not-empty line deleted, and each of its twelve conditions dropped | 13 | 851 | the same test: each of the twelve carry rows missing in turn |
+| the closing read's pass-mark age, its `pending` line and its `no matching file` line deleted | 3 | 967, 989, 990 | the same test: a pass mark older than the apply; a later migration pending; a journal row with no file |
+| the clinics' reading: a fourth field or another middle word let through | 2 | 680 | THE CLINICS' ROWS: `0 of 2 x` and `0 xx 2` |
+| **the clinics' SQL statement:** `is_active` dropped from either count | 2 | 678 | a reading on lane `green` (below); the harness's psql is a stub |
+
+**THE 38 THAT CHANGE NOTHING A BLOCK DOES, and why each is left.**
+
+- **21: a `test -f` deleted where the next line stops on the same missing file** (lines 503, 505,
+  510 to 516, 527, 613 to 617, 628, 812 to 815, 980). For 20 of them the new arm A PINNED FILE runs
+  the block with that file gone, and the mutant still stops once, before anything runs with
+  credentials: the sha256 compare stops in its place. The 21st is the sidecar's own `test -f`
+  (503), which the `shasum -c` on the next line covers. The line is kept for its sentence.
+- **4: the twelve-digit re-check of `NOWL` deleted** (644, 667, 831, 977). `NOWL` is the first
+  twelve characters of a reading the line before has already required to be twelve digits and a
+  zone. It can differ only if `cut` fails, and then the numeric compare on the next line fails and
+  stops; the fault sweeps fault that `cut`.
+- **4: stage 1's read of 0102's tag** (625). It reads the same journal entry under the same
+  condition as the `when` read on the next line, whose check stops first; and the tag only names
+  the file whose sha256 the block then compares.
+- **6: the SECOND awk of the clinics' line** (680), which only chooses between two STOP sentences
+  (`clinics outside`, or the reading did not parse). Whatever it answers, the block stops.
+- **3: an age moved by one minute** (`-mmin -720` to `-721` at 488 and 592; `-mmin -60` to `-61` at
+  837). A boundary of one minute in a rule of twelve hours and of one hour. The arms sit at 719 and
+  780 minutes, and at 70; none pins the exact minute, because `find` rounds a part of a minute.
+  The gross changes (800 minutes, 3 minutes) are caught.
+
+**Of the 78 that a static rule alone caught** (the block run whole did not differ on any of the 95
+inputs):
+
+- **16 are in the clock program.** 10 read a cell of the weekday table wrongly: the sweep ran each
+  on the 84 cells of the test's own program arm, which is how that arm sees them once its text pin
+  is set aside. 6 are equivalent: the weekday row widened to Saturday, which the Saturday row
+  after it still decides (0101's sweep found the same), and the weekday row's lower and upper
+  bound dropped, which the format check and the two rows around it cover.
+- **7 are in the clinics' SQL statement,** which only a database can read (below).
+- **55 are check lines of the kinds a static rule names:** the 40-hex checks, the sha compares and
+  the sidecar assertion (20), the clock's zone and format checks and R9 proof 1's conditions (14),
+  the guard's and the reader's compares (4), the carry shape checks and the tag in the journal
+  `when` read (7), the three counting patterns without their `$` anchor (6), and the applied marker's line in stage 2 and the closing
+  read (4). The static rule is their arm, each with a red arm in the test. Several are now run as
+  well (a reading that is no weekday, the second clock read in another zone, a carry that is not a
+  number, an applied marker over an hour old); the sweep did not run the 55 again against the new
+  arms. The counting patterns without their anchor count the same rows on this sweep's real
+  transcripts: 10, 0 and 0 on the pre-check before the apply; 13, 1 and 0 on the post-check after.
+
+**THE CLINICS' SQL STATEMENT, on lane `green`** (stage 1, line 678; the two seeded active clinics
+and one inactive row, changed inside a transaction that was rolled back). Its nine mutants each
+print another reading on at least one of eight states. Three already differ on the rows as seeded,
+which is the reading the rehearsal recorded (`0 of 2`): `08:00` moved to `08:01` and `<` turned to
+`<=` each read `2 of 2`, and the second count without `is_active` reads `0 of 3`.
+
+| State | The line's own statement reads |
+|---|---|
+| as seeded: two active clinics 08:00 to 20:00, and one inactive row | `0 of 2` |
+| one opens at 07:59 | `1 of 2` |
+| one closes at 21:01 | `1 of 2` |
+| one is 08:00 to 21:00 exactly | `0 of 2` |
+| one is INACTIVE and opens at 06:00 | `0 of 1` |
+| one opens at 07:00, the other closes at 22:00 | `2 of 2` |
+| one is 07:00 to 22:00 | `1 of 2` |
+| both inactive | `0 of 0` |
+
+#### What was added to the script test, and its runs
+
+- **One static rule,** `pinComparedProblems`: every pin a block assigns is compared in that block,
+  once, on a line of its own with its own halt (nine pins in stage 0, six in stage 1, four in stage
+  2, two in the closing read). Three red arms.
+- **A PINNED FILE THAT DIFFERS OR IS NOT THERE:** 42 cases in each shell (every pin of every block,
+  the file changed by one byte, then gone). Each block stops once, runs nothing with credentials
+  and no check-journal, and writes no record. Its control: stage 1 without its `SHAPRE` compare
+  runs a pre-check that is not the approved file through to the apply.
+- **WHAT STAGES 0 AND 1 FIND ON DISK:** the seven journals, a second file under a number, a dirty
+  worktree, a checkout that left HEAD where it was, the closing read with HEAD elsewhere, and no
+  applied marker at all, with the control that shows why that last arm is there.
+- **BETWEEN THE STAGES:** the window's end, a clock that moved on, one read in another zone, a
+  reading that is no weekday (0 and 8), a record that is gone, and what stage 2 and the closing
+  read are handed.
+- **Four inputs for the stubs,** all empty unless an arm sets them, so the fault sweeps run as
+  before (224 faults in each shell, unchanged): what `git status` prints, a checkout that does not
+  move HEAD, one clock read answered in another zone or at a later minute, and two more answers of
+  the journal reader.
+
+| Run, after the additions | Result |
+|---|---|
+| `node --test scripts/anon-sequences-default-0103.test.mjs`, no database URL in the environment | 41 of 41 passed, none skipped |
+| `node --test scripts/owner-blocks-survive-zsh.test.mjs` | 5 of 5 passed |
+| `node scripts/check-journal.mjs` | 101 files, 101 entries, the mirror matching by content |
+| `GATE_BASE_REF=main node scripts/assert-gates-unchanged.mjs` | `GATE FREEZE: 99 gate files match their pins, package.json scripts unchanged.` |
+| `pnpm test:scripts`, whole | exit 0: 1466 of 1466 passed, none failed, none skipped, 54 suites (the 1463 read before the sweep, and the three new tests) |
+
+`pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` were not run: the sweep changed one
+script test and this document, and no file of any package. The rows above were read once and then
+this table was filled in, which moves the sidecar; the script test and the block scan, the two that
+read this document, were run again on the committed bytes with the same result.
+
+#### What the sweep did not do
+
+- **GREEN's two blocks** are not swept: the dispatch is not written.
+- **The migration file** was not mutated: the script test's CONTROLS, ONE RULE AT A TIME are its
+  arms, and no byte of it may change.
+- **The whole-block runs of Part D were under bash only.** The final script test ran in both shells.
+- **The words a row or a STOP prints** (the names of the checks, the `expected` column, the STOP
+  sentences) were not mutated: they are text, not predicates. The static rules on the STOP
+  sentences are the document agent's.
+- **Production** was never contacted, and the production environment file was never read.
+
+#### Two things for the lead, found and not decided
+
+1. **The INFO rows, the SUMMARY rows and the FOR THE RECORD tables are read by a person only.**
+   (a) Leave it: the blocks count the verdict rows themselves, and that is the authority; what this
+   document does. (b) Have stage 1 and stage 2 compare the SUMMARY row with their own three counts:
+   a change of block bytes, with its own R4 round and a new sidecar. Recommended: (a).
+2. **Pre-check 4's control can never read true on a Supabase database:** `postgres` is a member of
+   `anon` there (the refusal quoted in Part C says so), and a membership cannot be circular. The
+   control is harmless. Removing it would change the pre-check's bytes, move its pin and call for
+   the rehearsal's pre-check readings again. Recommended: leave it.
+
+#### How the four blocks were derived
+
+**So a reviewer can check it by machine.** Each is 0101's reviewed
 block of the same stage (`docs/migration-apply-0101.md` on main) with the number, the file names,
 the pins and the journal numbers changed, and with these changes and no other: line 2 without `-e`;
 no pending-file lines in stage 0 (there never was a pending file); the pre-check's VACUOUS count and

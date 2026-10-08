@@ -48,7 +48,13 @@
 //     transcripts that carry a VACUOUS, a FAIL or a missing verdict); THE CLINICS' ROWS; THE WINDOW
 //     FEED; the applied marker's age; and the harness's own control. In CI the harness runs under
 //     bash with errexit forced off; under zsh wherever zsh is installed
-//     (scripts/apply-lane/apply-lane-settings.test.mjs is the convention: zsh is not on the runner).
+//     (scripts/apply-lane/apply-lane-settings.test.mjs is the convention: zsh is not on the runner);
+//   * THE MUTATION SWEEP'S ARMS (2026-10-08), each for a check line a mutant ran green without: every pin a
+//     block assigns is compared, and each block STOPS on a pinned file that differs or is gone; stage 0's
+//     journal line with each of its seven facts wrong; a second file under a number; a dirty worktree; a
+//     checkout that left HEAD where it was; no applied marker at all (every first sitting); the window's
+//     end in stage 2 and the closing read; a clock that moved on during stage 1; and what stage 2 and the
+//     closing read are handed by the stage before them.
 //
 // WHAT IT DOES NOT PROVE: that any of it runs against a database. That is the build lane's run and
 // the rehearsal (docs/migration-apply-0103.md, "Rehearsal").
@@ -257,6 +263,30 @@ export function pinProblems(md, actual, gateText) {
   }
   const names = new Set(pinLines(md).map(([n]) => n));
   for (const n of PIN_NAMES) if (!names.has(n)) problems.push(`no block pins ${n}`);
+  return problems;
+}
+
+/** The file each pin stands for. SHAGATE is not here: it feeds R9 proof 1, which is printed and decides nothing. */
+export const PIN_FILES = Object.freeze({
+  SHA0103: MIGRATION_PATH, SHAPREV: PREV_PATH, SHAPRE: PRE, SHAPOST: POST, SHAVM: "packages/db/scripts/verified-migrate.mjs",
+  SHAGUARD: "scripts/assert-production-target.mjs", SHAPTM: "scripts/production-target.mjs",
+  SHAREADER: "packages/db/scripts/read-applied-migrations.mjs", SHACJ: "scripts/check-journal.mjs",
+});
+/** The pins a block assigns, SHAGATE left out. */
+export const pinsOf = (block) => [...block.matchAll(PIN_LINE)].map((m) => m[1]).filter((n) => n in PIN_FILES);
+
+/**
+ * A PIN THAT IS ASSIGNED IS COMPARED. Every pin a block assigns stands in exactly one `= "${NAME}" ]`
+ * compare of that same block, on a line of its own with its own halt. The mutation sweep of 2026-10-08
+ * deleted each compare line in turn, and for six of the nine pins nothing in this file noticed.
+ */
+export function pinComparedProblems(block) {
+  const problems = [];
+  const lines = block.split("\n");
+  for (const name of pinsOf(block)) {
+    const hits = lines.filter((l) => l.startsWith("[ ") && l.includes(`= "\${${name}}" ] || `) && EXPLICIT_HALT.test(l));
+    if (hits.length !== 1) problems.push(`${name} is assigned and compared ${hits.length} times, not once`);
+  }
   return problems;
 }
 
@@ -1283,13 +1313,14 @@ if [ "$HARNESS_FAIL" = "$id" ]; then
 fi
 case "$n" in
   git) case "$1" in
-      status) exit 0;;
+      status) if [ -n "$HARNESS_STRAY" ]; then echo "$HARNESS_STRAY"; fi; exit 0;;
       fetch) exit 0;;
       rev-parse) if [ "$2" = origin/main ]; then echo "$HARNESS_MAIN"; exit 0; fi
         if [ "$2" = HEAD ]; then read -r h < "$d/head"; echo "$h"; exit 0; fi;;
       cat-file) case "$3" in *[!0-9a-f]*) ;; *) if [ "\${#3}" -eq 40 ]; then echo commit; exit 0; fi;; esac
         echo "fatal: Not a valid object name $3" >&2; exit 128;;
-      checkout) for a in "$@"; do last="$a"; done; echo "$last" > "$d/head"; exit 0;;
+      checkout) if [ "$HARNESS_CHECKOUT" = stuck ]; then exit 0; fi
+        for a in "$@"; do last="$a"; done; echo "$last" > "$d/head"; exit 0;;
     esac
     unexpected "$@";;
   psql) if [ -z "$1" ]; then echo "psql: error: connection to server on socket failed: No such file or directory" >&2; exit 2; fi
@@ -1313,14 +1344,20 @@ case "$n" in
       packages/db/scripts/verified-migrate.mjs) exec ${R("cat")} "$HARNESS_FIX/vm.out";;
       --env-file=*) f="\${1#--env-file=}"; [ -f "$f" ] || { echo "node: $f: not found" >&2; exit 9; }
         [ "$2" = packages/db/scripts/read-applied-migrations.mjs ] || unexpected "$@";
+        if [ "$HARNESS_READER" = pending-later ]; then printf 'journal rows on production: %s\\n  APPLIED  0102_sat01_satisfaction_survey.sql\\n  APPLIED  0103_revoke_anon_sequences_default.sql\\n  PENDING  0104_later.sql\\npending on this ref: 1\\njournal rows with no matching file on this ref: 0\\n' "$HARNESS_ROWS"; exit 0; fi
+        if [ "$HARNESS_READER" = orphan-row ]; then printf 'journal rows on production: %s\\n  APPLIED  0102_sat01_satisfaction_survey.sql\\n  APPLIED  0103_revoke_anon_sequences_default.sql\\npending on this ref: 0\\njournal rows with no matching file on this ref: 1\\n' "$HARNESS_ROWS"; exit 0; fi
         if [ "$HARNESS_READER" = without-0103 ]; then printf 'journal rows on production: %s\\n  APPLIED  0102_sat01_satisfaction_survey.sql\\n  PENDING  0103_revoke_anon_sequences_default.sql\\npending on this ref: 1\\njournal rows with no matching file on this ref: 0\\n' "$HARNESS_ROWS"; exit 0; fi
         printf 'journal rows on production: %s\\n  APPLIED  0102_sat01_satisfaction_survey.sql\\n  APPLIED  0103_revoke_anon_sequences_default.sql\\npending on this ref: 0\\njournal rows with no matching file on this ref: 0\\n' "$HARNESS_ROWS"; exit 0;;
     esac
     unexpected "$@";;
   date) [ "$TZ" = Europe/Lisbon ] || unexpected "date ran without TZ=Europe/Lisbon [TZ=$TZ]";
+    z="$HARNESS_ZONE"
+    s="$HARNESS_STAMP"
+    if [ "$HARNESS_ZONE_AT" = "$id" ]; then z="$HARNESS_ZONE_BAD"; fi
+    if [ -n "$HARNESS_STAMP_FROM" ] && [ "$k" -ge "$HARNESS_STAMP_FROM" ]; then s="$HARNESS_STAMP_LATER"; fi
     case "$1" in
-      '+%u%H%M %Z') echo "$HARNESS_DHHMM $HARNESS_ZONE";;
-      '+%Y%m%d%H%M %Z') echo "$HARNESS_STAMP $HARNESS_ZONE";;
+      '+%u%H%M %Z') echo "$HARNESS_DHHMM $z";;
+      '+%Y%m%d%H%M %Z') echo "$s $z";;
       *) unexpected "$@";;
     esac; exit 0;;
   cut) if [ -n "$inp" ]; then printf '%s\\n' "$inp" | ${R("cut")} "$@"; exit $?; fi
@@ -1478,6 +1515,11 @@ export async function runOnce(cfg, runId, fault) {
     HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3), HARNESS_FAIL_MODE: fault?.mode ?? "",
     HARNESS_HASHN: cfg.db?.hashN ?? "1", HARNESS_PRE: cfg.db?.pre ?? "pre.out", HARNESS_POST: cfg.db?.post ?? "post.out", HARNESS_READER: cfg.db?.reader ?? "",
     HARNESS_HOOK_AFTER: fault?.hookAfter ?? "", HARNESS_HOOK_MKDIR: fault?.hookMkdir ? join(run, "tmp", fault.hookMkdir) : "",
+    // Inputs only the arms after the fault sweeps give: a dirty worktree, a checkout that leaves HEAD where it was,
+    // one clock read that answers another zone, and a clock that has moved on by a later read.
+    HARNESS_STRAY: cfg.git?.stray ?? "", HARNESS_CHECKOUT: cfg.git?.checkout ?? "",
+    HARNESS_ZONE_AT: cfg.clock.zoneAt ?? "", HARNESS_ZONE_BAD: cfg.clock.zoneBad ?? "",
+    HARNESS_STAMP_FROM: String(cfg.clock.laterFrom ?? ""), HARNESS_STAMP_LATER: cfg.clock.later ?? "",
   };
   const r = await runShell(cfg.shell, text, env, join(cfg.base, "apply"));
   const readRun = (f) => (existsSync(join(run, f)) ? readFileSync(join(run, f), "utf8") : "");
@@ -1862,6 +1904,9 @@ test("THE CLINICS' ROWS: a clinic whose own hours reach outside the table, or no
         ["closed hours, no active clinic at all", clockAt(2, "2230", "0 of 0"), /^STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic \[0 of 0\]/m],
         ["closed hours, a reading that is not <k> of <n>", clockAt(2, "2230", "t"), /^STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic \[t\]/m],
         ["closed hours, more outside than active", clockAt(2, "2230", "3 of 2"), /^STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic \[3 of 2\]/m],
+        // Found by the mutation sweep: nothing read a fourth field, or a middle word that is not "of".
+        ["closed hours, a reading with a fourth field", clockAt(2, "2230", "0 of 2 x"), /^STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic \[0 of 2 x\]/m],
+        ["closed hours, a reading whose middle word is not of", clockAt(2, "2230", "0 xx 2"), /^STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic \[0 xx 2\]/m],
         ["inside clinic hours AND a row outside", clockAt(3, "1200", "1 of 2"), /^STOP: Lisbon 31200, clock open, clinics outside\. /m],
       ];
       for (const [label, clock, stop] of cases) {
@@ -2229,6 +2274,287 @@ test("THE APPLIED MARKER'S AGE: a marker from this sitting stops stages 0 and 1;
             assert.equal(r.code, 0, `${shell} ${name} ${age}: ${r.out.slice(-600)}`);
           }
         }
+      }
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// =====================================================================================
+// THE MUTATION SWEEP'S SURVIVORS (2026-10-08). The sweep deleted, negated and changed every check line
+// of the four blocks, one at a time. These arms are the inputs no earlier arm gave a block: each one
+// is here because a mutant ran whole and green without it.
+// =====================================================================================
+
+const shellsHere = () => ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
+
+/** What a run did with credentials or against a database: the guard, psql, the apply, the reader. */
+const credentialCalls = (r) => r.calls.filter((c) => c.id.startsWith("psql#") || (c.id.startsWith("node#") && /^(packages\/db\/scripts\/verified-migrate|scripts\/assert-production-target|--env-file=)/.test(c.args)));
+
+/** One clean STOP: exit 1, exactly one STOP line and it matches, no pass line, the tool chain stopped, no call the stubs did not expect. */
+function assertStops(r, name, stop, tag) {
+  assert.equal(r.code, 1, `${tag}: exit ${r.code}\n${r.out.slice(-600)}`);
+  const stops = r.out.split("\n").filter((l) => l.startsWith("STOP: "));
+  assert.equal(stops.length, 1, `${tag}: ${stops.join(" | ")}`);
+  assert.match(stops[0], stop, tag);
+  assert.ok(!r.out.includes("TOOL-CHAIN-CONTINUED") && !HARNESS_BLOCKS[name].success.some((x) => r.out.includes(x)), tag);
+  assert.equal(r.unexpected, "", tag);
+}
+
+/** A harness whose fake apply worktree was changed first. */
+async function withApplyTree(change, fn) {
+  const base = mkdtempSync(join(tmpdir(), "fault-0103-tree-"));
+  try {
+    prepareHarness(base, doc);
+    change(join(base, "apply"));
+    return await fn(base);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+}
+
+test("A PINNED FILE THAT DIFFERS OR IS NOT THERE: every pin a block assigns is compared, and the block STOPS on it before anything runs with credentials", async () => {
+  for (const b of blocksOf(doc)) assert.deepEqual(pinComparedProblems(b), []);
+  // Nine pins in stage 0, six in stage 1, four in stage 2, two in the closing read.
+  assert.deepEqual(HARNESS_PLAN.map((n) => pinsOf(blockWith(doc, HARNESS_BLOCKS[n].marker)).length), [9, 6, 4, 2]);
+  const s1 = blockWith(doc, STAGE1);
+  const preCompare = s1.split("\n").find((l) => l.includes('= "${SHAPRE}" ] || '));
+  assert.ok(preCompare);
+  // RED ARMS of the static rule: the compare line gone, and the compare line without its halt.
+  assert.deepEqual(pinComparedProblems(s1.replace(`${preCompare}\n`, "")), ["SHAPRE is assigned and compared 0 times, not once"]);
+  assert.deepEqual(pinComparedProblems(s1.replace(preCompare, preCompare.replace(/ \|\| \{ echo "STOP: [^"]+"; exit 1; \}$/, ""))), ["SHAPRE is assigned and compared 0 times, not once"]);
+  assert.deepEqual(pinComparedProblems(`${s1}${preCompare}\n`), ["SHAPRE is assigned and compared 2 times, not once"]);
+
+  // THE RUN. Each block whole, with ONE file it pins changed by a byte, then with that file gone.
+  const shells = shellsHere();
+  const cases = HARNESS_PLAN.flatMap((name) => pinsOf(blockWith(doc, HARNESS_BLOCKS[name].marker)).flatMap((pin) => ["differs", "is missing"].map((kind) => ({ name, pin, kind }))));
+  assert.equal(cases.length, 42);
+  await inPool(cases, Math.max(2, Math.floor(cpus().length / 2)), async ({ name, pin, kind }) => {
+    await withApplyTree((apply) => {
+      const f = join(apply, PIN_FILES[pin]);
+      if (kind === "differs") writeFileSync(f, `${readFileSync(f, "utf8")}\n`);
+      else rmSync(f);
+    }, async (base) => {
+      for (const shell of shells) {
+        const tag = `${shell} ${name}: the file of ${pin} ${kind}`;
+        const r = await runOnce(harnessConfig(doc, name, CLOSED, shell, base), `${shell}-pin-${name}-${pin}`, null);
+        assertStops(r, name, /^STOP: /, tag);
+        assert.deepEqual(credentialCalls(r), [], `${tag}: it ran something with credentials first`);
+        assert.deepEqual(r.calls.filter((c) => c.args.startsWith("scripts/check-journal.mjs")), [], `${tag}: check-journal ran first`);
+        assert.deepEqual(r.markersAtEnd, [], `${tag}: it wrote a record`);
+      }
+    });
+  });
+  // THE CONTROL: stage 1 without its SHAPRE compare runs a pre-check that is not the approved file, through to the apply.
+  await withApplyTree((apply) => writeFileSync(join(apply, PRE), `${readFileSync(join(apply, PRE), "utf8")}\n`), async (base) => {
+    for (const shell of shells) {
+      const cfg = harnessConfig(doc, "stage1", CLOSED, shell, base);
+      const r = await runOnce({ ...cfg, block: cfg.block.replace(`${preCompare}\n`, "") }, `${shell}-pin-control`, null);
+      assert.equal(r.code, 0, `${shell}: ${r.out.slice(-400)}`);
+      assert.ok(r.out.includes(STAGE1) && r.markersAtEnd.includes("0103-applied.ok"), shell);
+    }
+  });
+});
+
+test("WHAT STAGES 0 AND 1 FIND ON DISK: a journal wrong in one fact, a second file under a number, a worktree that is not clean and a checkout that left HEAD where it was each STOP; and with no applied marker at all both pass", async () => {
+  const shells = shellsHere();
+  const good = journalAsOf0103(JSON.parse(read(JOURNAL)));
+  const edit = (fn) => { const j = structuredClone(good); fn(j.entries); return j; };
+  const last = (e) => e[e.length - 1];
+  const prev = (e) => e[e.length - 2];
+  // ONE FACT WRONG AT A TIME: the seven the stage 0 line asserts. [what is wrong, the journal, whether stage 1 must stop on it too]
+  const journals = [
+    ["102 entries", edit((e) => { e.unshift({ idx: -1, version: e[0].version, when: 0, tag: "0000_before_the_first", breakpoints: true }); }), false],
+    ["the newest entry's idx", edit((e) => { last(e).idx = 101; }), false],
+    ["the newest entry's tag", edit((e) => { last(e).tag = `${TAG}_other`; }), false],
+    ["the newest entry's when", edit((e) => { last(e).when += 1; }), false],
+    ["the idx of the entry before it", edit((e) => { prev(e).idx = 98; }), true],
+    ["the tag of the entry before it", edit((e) => { prev(e).tag = "0102_other"; }), true],
+    ["the when of the entry before it", edit((e) => { prev(e).when += 1; }), false],
+  ];
+  for (const [what, journal, stage1Too] of journals) {
+    assert.notDeepEqual(journal, good, what);
+    await withApplyTree((apply) => writeFileSync(join(apply, JOURNAL), `${JSON.stringify(journal, null, 2)}\n`), async (base) => {
+      for (const shell of shells) {
+        const tag = `${shell}: the journal with ${what} wrong`;
+        const r0 = await runOnce(harnessConfig(doc, "stage0", CLOSED, shell, base), `${shell}-journal-0`, null);
+        assertStops(r0, "stage0", /^STOP: the newest journal entry is not idx 100, tag 0103_revoke_anon_sequences_default, when 1788502400000, of 101, after idx 99 tagged 0102_sat01_satisfaction_survey at when 1788502300000$/, tag);
+        assert.match(r0.out, /^newest journal entry: idx /m, tag);
+        // Nothing after it: no check-journal, no clock, no recorded sha.
+        assert.deepEqual(r0.calls.filter((c) => c.id.startsWith("date#") || c.args.startsWith("scripts/check-journal.mjs")), [], tag);
+        assert.deepEqual(r0.markersAtEnd, [], tag);
+        if (!stage1Too) continue;
+        const r1 = await runOnce(harnessConfig(doc, "stage1", CLOSED, shell, base), `${shell}-journal-1`, null);
+        assertStops(r1, "stage1", /^STOP: 0102's journal when did not parse from the journal at the recorded sha\. Nothing was applied$/, `${tag}, stage 1`);
+        assert.deepEqual(credentialCalls(r1), [], `${tag}, stage 1`);
+      }
+    });
+  }
+  // A SECOND FILE UNDER A NUMBER.
+  for (const [extra, names] of [["0103_other.sql", ["stage0", "stage1"]], ["0102_other.sql", ["stage0"]]]) {
+    await withApplyTree((apply) => writeFileSync(join(apply, "packages/db/migrations", extra), "SELECT 1;\n"), async (base) => {
+      for (const shell of shells) {
+        for (const name of names) {
+          const r = await runOnce(harnessConfig(doc, name, CLOSED, shell, base), `${shell}-second-${name}`, null);
+          assertStops(r, name, new RegExp(`^STOP: 2 files claim migration number ${extra.slice(0, 4)}, not 1$`), `${shell} ${name} with ${extra}`);
+          assert.deepEqual(credentialCalls(r), [], `${shell} ${name} with ${extra}`);
+          assert.deepEqual(r.markersAtEnd, [], `${shell} ${name} with ${extra}`);
+        }
+      }
+    });
+  }
+  const base = mkdtempSync(join(tmpdir(), "fault-0103-disk-"));
+  try {
+    prepareHarness(base, doc);
+    for (const shell of shells) {
+      for (const name of ["stage0", "stage1"]) {
+        const cfg = harnessConfig(doc, name, CLOSED, shell, base);
+        // A WORKTREE THAT IS NOT CLEAN: the block prints what git printed, and nothing is fetched.
+        const dirty = await runOnce({ ...cfg, git: { stray: " M docs/migration-apply-0103.md" } }, `${shell}-dirty-${name}`, null);
+        assertStops(dirty, name, /^STOP: the apply worktree is not clean$/, `${shell} ${name}, a dirty worktree`);
+        assert.match(dirty.out, /^ M docs\/migration-apply-0103\.md$/m);
+        assert.deepEqual(dirty.calls.filter((c) => c.id.startsWith("git#") && !c.args.startsWith("status")), [], `${shell} ${name}: git ran on after a dirty worktree`);
+        // NO APPLIED MARKER AT ALL, which is every first sitting: the block passes. (Every other arm plants an old marker.)
+        const fresh = await runOnce({ ...cfg, setup: (tmp) => { cfg.setup(tmp); rmSync(join(tmp, "0103-applied.ok")); } }, `${shell}-nomarker-${name}`, null);
+        assert.equal(fresh.code, 0, `${shell} ${name} with no applied marker: ${fresh.out.slice(-500)}`);
+        assert.ok(fresh.out.includes(HARNESS_BLOCKS[name].success.at(-1)) && fresh.out.includes("TOOL-CHAIN-CONTINUED"), `${shell} ${name}`);
+        // THE CONTROL: without its `test ! -f ... ||` the same line stops a first sitting, which is why the arm above is here.
+        const noShortcut = cfg.block.replace("test ! -f /tmp/0103-applied.ok || { AGE=", "{ AGE=");
+        assert.notEqual(noShortcut, cfg.block);
+        const wrong = await runOnce({ ...cfg, block: noShortcut, setup: (tmp) => { cfg.setup(tmp); rmSync(join(tmp, "0103-applied.ok")); } }, `${shell}-nomarker-control-${name}`, null);
+        assert.equal(wrong.code, 1, `${shell} ${name}`);
+        assert.match(wrong.out, /^STOP: stage 1 has ALREADY APPLIED 0103 in this sitting/m);
+      }
+      // A CHECKOUT THAT EXITS 0 AND LEAVES HEAD WHERE IT WAS: stages 0, 1 and 2 read HEAD back and stop.
+      for (const [name, stop] of [
+        ["stage0", /^STOP: the worktree is not on origin\/main after the checkout\. Nothing was applied$/],
+        ["stage1", /^STOP: the worktree is not on the recorded sha after the checkout\. Nothing was applied$/],
+        ["stage2", /^STOP: the worktree is not on the recorded sha after the checkout\. 0103 IS APPLIED and the write stands\. /],
+      ]) {
+        const r = await runOnce({ ...harnessConfig(doc, name, CLOSED, shell, base), git: { checkout: "stuck" } }, `${shell}-stuck-${name}`, null);
+        assertStops(r, name, stop, `${shell} ${name}, a checkout that did not move HEAD`);
+        assert.deepEqual(credentialCalls(r), [], `${shell} ${name}`);
+      }
+      // The closing read checks out nothing: it reads HEAD and refuses any but the recorded sha.
+      const elsewhere = await runOnce({ ...harnessConfig(doc, "closing", CLOSED, shell, base), initialHead: FAKE_SHA.BEFORE }, `${shell}-elsewhere`, null);
+      assertStops(elsewhere, "closing", /^STOP: the apply worktree is not on the sha stage 0 recorded\. 0103 IS APPLIED and the write stands\. /, `${shell} closing, HEAD elsewhere`);
+      assert.deepEqual(credentialCalls(elsewhere), [], shell);
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("BETWEEN THE STAGES: the window's end in stage 2 and the closing read, a clock that moved on during stage 1, one read in another zone, a reading that is no weekday, and what stage 2 and the closing read are handed", async () => {
+  const shells = shellsHere();
+  const base = mkdtempSync(join(tmpdir(), "fault-0103-between-"));
+  try {
+    prepareHarness(base, doc);
+    const M = FAKE_SHA.MAIN;
+    const now = CLOSED.stamp;
+    const day = now.slice(0, 8);
+    assert.equal(now, "202610062230");
+    const fx = harnessFixtures();
+    const rowOf = (name) => fx["pre.out"].split("\n").find((l) => l.trimStart().startsWith(`${name} `));
+    for (const shell of shells) {
+      /** One block whole. `over.records` rewrites records after the block's own setup; every other key overrides the configuration. */
+      const run = (name, id, over = {}) => {
+        const cfg = harnessConfig(doc, name, over.clock ?? CLOSED, shell, base);
+        const { records, ...rest } = over;
+        return runOnce({ ...cfg, ...rest, setup: (tmp) => { cfg.setup(tmp); records?.(tmp); } }, `${shell}-between-${id}`, null);
+      };
+      const window = (text) => (tmp) => putRecord(tmp, "0103-window.ok", `${text}\n`, 15);
+
+      // THE WINDOW'S END. Stage 1 has its feed; nothing ran stage 2 or the closing read at the end of the window.
+      for (const [name, stands] of [["stage2", "stage 2 did not pass"], ["closing", "The journal read did not pass"]]) {
+        const tag = `${shell} ${name}`;
+        const atEnd = await run(name, `${name}-end`, { records: window(`${M} ${day}2200 ${day}2229 ${now}`) });
+        assertStops(atEnd, name, new RegExp(`^STOP: Lisbon ${now} is at or past ${now}, the end of the run window\\. 0103 IS APPLIED and the write stands\\. Run nothing again, not stage 0 and not stage 1[.;] ${stands}`), `${tag}, now AT the window's end`);
+        assert.deepEqual(credentialCalls(atEnd), [], tag);
+        const before = await run(name, `${name}-before-end`, { records: window(`${M} ${day}2200 ${day}2229 ${day}2231`) });
+        assert.equal(before.code, 0, `${tag}, one minute before the window's end: ${before.out.slice(-400)}`);
+        assert.ok(before.out.includes(HARNESS_BLOCKS[name].success.at(-1)), tag);
+        const long = await run(name, `${name}-13`, { records: window(`${M} ${day}2200 ${day}2229 ${now}0`) });
+        assertStops(long, name, /^STOP: the recorded run window did not parse\. 0103 IS APPLIED and the write stands\. /, `${tag}, a 13-digit end`);
+        const other = await run(name, `${name}-other-sha`, { records: window(`${"2".repeat(40)} ${day}2200 ${day}2229 ${day}2359`) });
+        assertStops(other, name, /^STOP: the run window was recorded for another sha\. 0103 IS APPLIED and the write stands\. /, `${tag}, a window for another sha`);
+        assert.deepEqual(credentialCalls(other), [], tag);
+      }
+
+      // THE CLOCK MOVED ON DURING STAGE 1: the second read, after the pre-check, is past the last start minute.
+      const feed = window(`${M} ${day}2200 ${day}2300 209912310000`);
+      const moved = await run("stage1", "moved", { clock: { ...CLOSED, laterFrom: 2, later: `${day}2301` }, records: feed });
+      assertStops(moved, "stage1", new RegExp(`^STOP: Lisbon ${day}2301 is past ${day}2300 after the pre-check, so the apply does not start\\. Nothing was applied$`), `${shell}: the clock moved on`);
+      assert.equal(moved.calls.filter((c) => c.id.startsWith("psql#")).length, 1, `${shell}: the pre-check is the only read`);
+      assert.deepEqual(moved.calls.filter((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs")), [], shell);
+      assert.ok(!moved.markersAtEnd.includes("0103-applied.ok") && !moved.markersAtEnd.includes("0103-precheck.out"), shell);
+      // AT the last start minute the second read still passes.
+      const atLast = await run("stage1", "moved-edge", { clock: { ...CLOSED, laterFrom: 2, later: `${day}2300` }, records: feed });
+      assert.equal(atLast.code, 0, `${shell}: ${atLast.out.slice(-400)}`);
+      assert.match(atLast.out, new RegExp(`^run window, again before the apply: now ${day}2300, stage 1 starts by ${day}2300$`, "m"));
+
+      // ONE READ IN ANOTHER ZONE: stage 1's SECOND read alone answers UTC (the first and the last have their own arms).
+      const zone2 = await run("stage1", "zone2", { clock: { ...CLOSED, zoneAt: "date#2", zoneBad: "UTC" } });
+      assertStops(zone2, "stage1", new RegExp(`^STOP: the Lisbon clock did not read as YYYYMMDDHHMM and the zone WET or WEST again before the apply, so the Lisbon zone may not have loaded \\[${now} UTC\\]\\. Nothing was applied$`), `${shell}: the second read in UTC`);
+      assert.deepEqual(zone2.calls.filter((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs")), [], shell);
+
+      // A READING THAT IS NO WEEKDAY: `date +%u` prints 1 to 7, and the arm refuses anything else.
+      for (const name of ["stage0", "stage1"]) {
+        for (const d of ["0", "8"]) {
+          const r = await run(name, `noday-${name}-${d}`, { clock: { ...CLOSED, dhhmm: `${d}2230` } });
+          assertStops(r, name, new RegExp(`^STOP: the Lisbon clock did not read as a weekday \\(1 to 7\\), HHMM and the zone WET or WEST, so the Lisbon zone may not have loaded \\[${d}2230 WEST\\]\\. Nothing was applied$`), `${shell} ${name}: weekday ${d}`);
+          assert.deepEqual(r.calls.filter((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs")), [], `${shell} ${name}`);
+        }
+      }
+
+      // WHAT STAGE 2 IS HANDED. An applied marker or a transcript over an hour old, and a transcript whose carries are not what they must be.
+      const preOut = (text) => (tmp) => putRecord(tmp, "0103-precheck.out", text, 6);
+      const swapRow = (name, fn) => { const row = rowOf(name); assert.ok(row, name); const to = fn(row); assert.notEqual(to, row, name); return fx["pre.out"].replace(`${row}\n`, to === "" ? "" : `${to}\n`); };
+      const handed = [
+        ["the applied marker 70 minutes old", { records: (tmp) => putRecord(tmp, "0103-applied.ok", "", 70) }, /^STOP: stage 1 left no applied marker in this sitting, or left it over an hour ago\. If stage 1 ended with its line 0103 APPLIED, then /],
+        ["the transcript 70 minutes old", { records: (tmp) => putRecord(tmp, "0103-precheck.out", fx["pre.out"], 70) }, /^STOP: stage 1's transcript is over an hour old; it is not this sitting's\. 0103 IS APPLIED and the write stands\. /],
+        ["a count carry that is not a number", { records: preOut(swapRow("tables_before", (r) => r.replace("| 51", "| x1"))) }, /^STOP: a count carry is not a number\. 0103 IS APPLIED and the write stands\. /],
+        ["an md5 carry that is not hex", { records: preOut(swapRow("policies_md5", (r) => r.replace(/\| [0-9a-f]{32}/, `| ${"z".repeat(32)}`))) }, /^STOP: an md5 carry is not 32 hex characters\. 0103 IS APPLIED and the write stands\. /],
+        ["an md5 carry one character short", { records: preOut(swapRow("dml_profile_md5", (r) => r.replace(/\| ([0-9a-f]{31})[0-9a-f]/, "| $1"))) }, /^STOP: an md5 carry is not 32 hex characters\. 0103 IS APPLIED and the write stands\. /],
+        // Each of the twelve carry rows gone, one at a time: the block says a carry did not parse, whichever it is.
+        ...CARRY_NAMES.map((c) => [`the carry row ${c} missing`, { records: preOut(swapRow(c, () => "")) }, /^STOP: a carry did not parse out of the transcript\. 0103 IS APPLIED and the write stands\. /]),
+      ];
+      assert.equal(handed.length, 17);
+      for (const [what, over, stop] of handed) {
+        const r = await run("stage2", `handed-${what.replace(/\W+/g, "-")}`, over);
+        assertStops(r, "stage2", stop, `${shell} stage 2, ${what}`);
+        assert.deepEqual(credentialCalls(r), [], `${shell} stage 2, ${what}`);
+        assert.deepEqual(r.markersAtEnd, [], `${shell} stage 2, ${what}`);
+      }
+
+      // A RECORD THAT IS NOT THERE AT ALL (empty and short have their own arm): the block names the record it misses.
+      for (const [name, file, stop] of [
+        ["stage1", "0103-main.sha", /^STOP: stage 0 recorded no sha in this sitting\. The sitting stops$/],
+        ["stage2", "0103-main.sha", /^STOP: stage 0 recorded no sha in this sitting, and stage 2 runs only from the recorded sha\. 0103 IS APPLIED and the write stands\. /],
+        ["closing", "0103-main.sha", /^STOP: stage 0 recorded no sha in this sitting\. 0103 IS APPLIED and the write stands\. /],
+        ["stage1", "0103-window.ok", /^STOP: the dispatch's CLOCK CHECK recorded no run window after this sitting's stage 0\. Nothing was applied$/],
+        ["stage2", "0103-window.ok", /^STOP: no run window is recorded for this sitting\. 0103 IS APPLIED and the write stands\. /],
+        ["closing", "0103-window.ok", /^STOP: no run window is recorded for this sitting\. 0103 IS APPLIED and the write stands\. /],
+        ["stage2", "0103-precheck.out", /^STOP: stage 1's pre-check transcript is missing\. 0103 IS APPLIED and the write stands\. /],
+      ]) {
+        const r = await run(name, `gone-${name}-${file}`, { records: (tmp) => rmSync(join(tmp, file)) });
+        assertStops(r, name, stop, `${shell} ${name}, no ${file}`);
+        assert.deepEqual(credentialCalls(r), [], `${shell} ${name}, no ${file}`);
+      }
+
+      // WHAT THE CLOSING READ IS HANDED.
+      const closing = [
+        ["no applied marker", { records: (tmp) => rmSync(join(tmp, "0103-applied.ok")) }, /^STOP: stage 1 left no applied marker\. If stage 1 ended with its line 0103 APPLIED, then /, false],
+        ["a pass mark older than the apply", { records: (tmp) => putRecord(tmp, "0103-stage2.ok", `${M}\n`, 20) }, /^STOP: stage 2's pass mark is older than the apply\. 0103 IS APPLIED and the write stands\. /, false],
+        ["a later migration pending on the recorded sha", { db: { reader: "pending-later" } }, /^STOP: the journal read finds a migration pending on the recorded sha\. 0103 IS APPLIED and the write stands\. /, true],
+        ["a journal row with no matching file", { db: { reader: "orphan-row" } }, /^STOP: the journal holds a row with no matching file on the recorded sha\. 0103 IS APPLIED and the write stands\. /, true],
+      ];
+      for (const [what, over, stop, readerRan] of closing) {
+        const r = await run("closing", `closing-${what.replace(/\W+/g, "-")}`, over);
+        assertStops(r, "closing", stop, `${shell} closing, ${what}`);
+        assert.equal(credentialCalls(r).length, readerRan ? 1 : 0, `${shell} closing, ${what}`);
+        assert.ok(!r.out.includes("UNKNOWN"), `${shell} closing, ${what}: the read listed 0103 as APPLIED, so nothing contradicts the marker`);
       }
     }
   } finally {
