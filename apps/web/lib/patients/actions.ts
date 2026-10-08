@@ -40,6 +40,7 @@ import {
   InvalidMergeError,
   PatientNotFoundError,
 } from "./errors";
+import { isSelfMergeRefusal } from "./merge-refusal";
 import {
   parseCreatePatient,
   parseMergeInput,
@@ -1038,7 +1039,12 @@ export async function mergePatients(raw: MergePatientsInput): Promise<MergePatie
         notFound = true;
         throw err;
       }
-      if (code === "23514") {
+      // ONLY THE FUNCTION'S OWN REFUSAL of one patient as both sides is the
+      // self-merge answer. It is a check violation (23514), and so is every
+      // other check the statement can fail: `isSelfMergeRefusal` reads the
+      // SQLSTATE and the function's own message together, and any other check
+      // violation is rethrown as it is.
+      if (isSelfMergeRefusal(err)) {
         throw new InvalidMergeError("Cannot merge a patient into itself");
       }
       throw err;

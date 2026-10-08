@@ -3,11 +3,12 @@
  * FUNCTION RAISES, against the real function and the real driver.
  *
  * `mergePatients` (actions.ts) calls `public.merge_patients` and answers two of
- * its refusals by SQLSTATE: P0002 (a patient that is not a live member of the
- * caller's tenant) is the form's `not_found`, and 23514 (source and target are
- * one patient) is `InvalidMergeError`. Both are read from the error the driver
- * raises, and that error reaches the action WRAPPED: Drizzle raises its own
- * `Failed query` error and hangs the driver's error, which carries the
+ * its refusals: P0002 (a patient that is not a live member of the caller's
+ * tenant) is the form's `not_found`, and the function's own 23514 (source and
+ * target are one patient), read by SQLSTATE and by the function's message
+ * (merge-refusal.ts), is `InvalidMergeError`. Both are read from the error the
+ * driver raises, and that error reaches the action WRAPPED: Drizzle raises its
+ * own `Failed query` error and hangs the driver's error, which carries the
  * SQLSTATE, off `.cause`. The first arm pins that shape, so the mapping is
  * tested against what really arrives and not against a mock of it. A refusal
  * the action answers also has to LEAVE the transaction by a throw: the driver
@@ -18,9 +19,13 @@
  *   - the shape: the outer error carries no SQLSTATE, its cause carries P0002;
  *   - a well-formed id that names nobody, as the survivor and as the loser, is
  *     `not_found`, and nothing moves and no audit row is written;
- *   - one patient named twice in different letter case passes the form's own
- *     comparison (it compares text) and is refused by the function: the action
- *     raises `InvalidMergeError`, and nothing moves;
+ *   - one patient named as both sides of the merge: the function refuses it,
+ *     the action raises `InvalidMergeError`, and nothing moves;
+ *   - the two check violations, side by side: the function's own refusal and
+ *     the registo immutability trigger's arrive wrapped with the same SQLSTATE,
+ *     and `isSelfMergeRefusal` reads only the function's as the self-merge
+ *     answer. The registo is written, and its change refused, in one
+ *     transaction that always rolls back;
  *   - CONTROL: two live patients merge, so the refusals above are refusals and
  *     not a call that never reached the function.
  *
@@ -65,6 +70,7 @@ d("the merge action names the refusals of merge_patients", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let mergePatients: typeof import("./actions").mergePatients;
   let runScoped: typeof import("@/lib/auth/context").runScoped;
+  let refusal: typeof import("./merge-refusal");
 
   const tenant = randomUUID();
   const owner = randomUUID();
@@ -98,6 +104,7 @@ d("the merge action names the refusals of merge_patients", () => {
     db = mod.getDbAdmin();
     ({ mergePatients } = await import("./actions"));
     ({ runScoped } = await import("@/lib/auth/context"));
+    refusal = await import("./merge-refusal");
 
     await db.execute(
       raw`insert into tenants (id, name, slug) values (${tenant}::uuid, 'merge-refusals', ${`merge-refusals-${tenant.slice(0, 8)}`})`,
@@ -175,6 +182,61 @@ d("the merge action names the refusals of merge_patients", () => {
     await expect(asOwner(() => mergePatients({ survivorId: upper, loserId: kept }))).rejects.toMatchObject({
       name: "InvalidMergeError",
     });
+    expect(await untouched()).toEqual(before);
+  });
+
+  it("THE TWO CHECK VIOLATIONS: the function's own refusal and the registo immutability trigger's arrive wrapped with SQLSTATE 23514; only the function's is read as the self-merge answer", async () => {
+    type Wrapped = { code?: unknown; cause?: { code?: unknown; message?: unknown } };
+    const before = await untouched();
+
+    // The function's own, straight from the function: one patient as both sides.
+    let own: unknown = null;
+    try {
+      await runScoped({ tenantId: tenant, role: "owner", userId: owner }, (tx) =>
+        tx.execute(raw`select public.merge_patients(${kept}::uuid, ${kept}::uuid, ${owner}::uuid)`),
+      );
+    } catch (e) {
+      own = e;
+    }
+    expect(own).not.toBeNull();
+    expect((own as Wrapped).code).toBeUndefined();
+    expect((own as Wrapped).cause?.code).toBe("23514");
+    expect(String((own as Wrapped).cause?.message).startsWith(refusal.SELF_MERGE_REFUSAL)).toBe(true);
+    expect(refusal.isSelfMergeRefusal(own)).toBe(true);
+
+    // The trigger's: a locked registo of this file's own patient, written and
+    // then changed in ONE transaction that always rolls back, so no registo of
+    // this file is ever committed.
+    const registo = randomUUID();
+    let wrote = false;
+    let triggers: unknown = null;
+    await db
+      .transaction(async (tx) => {
+        await tx.execute(
+          raw`insert into clinical_records (id, tenant_id, patient_id, practitioner_id, status)
+              values (${registo}::uuid, ${tenant}::uuid, ${kept}::uuid, ${owner}::uuid, 'locked')`,
+        );
+        wrote = true;
+        try {
+          await tx.execute(raw`update clinical_records set data = '{"x":1}'::jsonb where id = ${registo}::uuid`);
+        } catch (e) {
+          triggers = e;
+        }
+        throw new Error("rollback");
+      })
+      .catch((e: Error) => {
+        if (e.message !== "rollback") throw e;
+      });
+    // CONTROL: the registo was written, so the refusal below is of the change.
+    expect(wrote).toBe(true);
+    expect(triggers).not.toBeNull();
+    expect((triggers as Wrapped).code).toBeUndefined();
+    expect((triggers as Wrapped).cause?.code).toBe("23514");
+    expect(String((triggers as Wrapped).cause?.message)).toMatch(/^clinical_records [0-9a-f-]{36}: status=locked is finalized and immutable/);
+    expect(refusal.isSelfMergeRefusal(triggers)).toBe(false);
+
+    // Nothing of either is left.
+    expect(await rows(raw`select 1 from clinical_records where tenant_id = ${tenant}::uuid`)).toHaveLength(0);
     expect(await untouched()).toEqual(before);
   });
 

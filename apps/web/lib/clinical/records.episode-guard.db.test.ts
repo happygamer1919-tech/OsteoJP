@@ -81,9 +81,10 @@
  *     is carried, the database refuses that source registo when the fixture
  *     sends it (23503, naming the key), so there is none to version; where it
  *     is not, the application refuses the version (`episode_mismatch`);
- *   - another tenant's episode: the application refuses on both sides. Where
- *     the key is carried, the same row from the admin connection is refused by
- *     it too, by name;
+ *   - another tenant's episode: the application refuses on both sides. The
+ *     same row is also sent from the admin connection, in a transaction that
+ *     always rolls back, and the foreign key that answers for it is compared
+ *     with the side the catalogue reading named: an assertion on either side;
  *   - THE DRIVER'S SHAPE, on both sides: a registo INSERT refused by ANOTHER
  *     foreign key of the table (a form template that does not exist) reaches
  *     the caller wrapped, the SQLSTATE and the constraint name on the cause and
@@ -302,12 +303,12 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
   });
 
   it("REG-03: NAMES WHICH SIDE THIS DATABASE IS ON for the episode key, read from the catalogue; never half, never without it once promoted", async ({ annotate }) => {
-    // episodeKeyState THROWS in beforeAll for a half-made key, or for a
-    // database without it once a promoted migration names it, so reaching here
-    // means one of the two whole sides. The line names which, in the log and on
-    // the test.
+    // AN ANNOTATION, with no assertion of its own. episodeKeyState THROWS in
+    // beforeAll for a half-made key, or for a database without it once a
+    // promoted migration names it, so reaching here means one of the two whole
+    // sides. The line names which, in the log and on the test. The reading is
+    // compared with the database's own answer in the another-tenant arm below.
     await annotate(key.detail, key.carried ? "notice" : "warning");
-    expect(key.carried || !key.promoted).toBe(true);
   });
 
   it("ANOTHER PATIENT'S episode: refused, and nothing is written", async () => {
@@ -347,28 +348,33 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     expect(
       (await rows(raw`select 1 from clinical_episodes where id = ${epForeign}::uuid and tenant_id = ${otherTenant}::uuid`)).length,
     ).toBe(1);
-    // Control 2 (REG-03), where the database carries the episode key: the same
-    // row from the admin connection is refused by it, by name. In a transaction
-    // that is rolled back, so the arm leaves nothing.
-    if (key.carried) {
-      let refusedBy: string | null = null;
-      await db
-        .transaction(async (tx) => {
-          await tx.execute(
-            raw`insert into clinical_records (tenant_id, patient_id, episode_id, form_template_id, source, status, data)
-                values (${tenant}::uuid, ${patientA}::uuid, ${epForeign}::uuid, ${template}::uuid, 'manual'::record_source, 'draft', '{}'::jsonb)`,
-          );
-          throw new Error("rollback");
-        })
-        .catch((e: Error) => {
-          if (e.message === "rollback") return;
-          refusedBy = refusal.refusingForeignKey(e);
-          if (refusedBy === null) throw e;
-        });
-      expect(refusedBy).toBe(refusal.EPISODE_PATIENT_TENANT_KEY);
-    }
-
     const before = await countRecords();
+    // Control 2 (REG-03), on both sides: the catalogue reading is compared with
+    // the database's own answer. The same row is sent from the admin
+    // connection, in a transaction that always rolls back, so the arm leaves
+    // nothing. What answers for it is read by name and must be what the side
+    // `key` named owes. Any other error fails the arm.
+    const NO_KEY = "no foreign key";
+    const answeredBy: string = await db
+      .transaction(async (tx) => {
+        await tx.execute(
+          raw`insert into clinical_records (tenant_id, patient_id, episode_id, form_template_id, source, status, data)
+              values (${tenant}::uuid, ${patientA}::uuid, ${epForeign}::uuid, ${template}::uuid, 'manual'::record_source, 'draft', '{}'::jsonb)`,
+        );
+        throw new Error("rollback");
+      })
+      .then(
+        () => "committed",
+        (e: Error) => {
+          if (e.message === "rollback") return NO_KEY;
+          const name = refusal.refusingForeignKey(e);
+          if (name === null) throw e;
+          return name;
+        },
+      );
+    expect(answeredBy).toBe(key.carried ? refusal.EPISODE_PATIENT_TENANT_KEY : NO_KEY);
+    expect(await countRecords()).toBe(before);
+
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       expect(

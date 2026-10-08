@@ -215,9 +215,10 @@ describe.skipIf(!live)(`REG-03: a registo and its episode name one patient [${SI
   });
 
   it(`NAMES THE SIDE IT RAN ON: ${SIDE}`, () => {
-    // carriesTheKey() THROWS for a half-made key, or for a database without it
-    // once a promoted migration names it, so reaching here is one whole side.
-    expect(typeof keyed).toBe("boolean");
+    // AN ANNOTATION, with no assertion of its own. carriesTheKey() THROWS for a
+    // half-made key, or for a database without it once a promoted migration
+    // names it, so reaching here is one whole side. The title and the line
+    // below name which.
     console.warn(`[clinical-records-episode-key.db.test] ${SIDE}`);
   });
 
