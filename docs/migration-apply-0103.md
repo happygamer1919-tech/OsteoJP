@@ -1,6 +1,6 @@
 # 0103: apply the revoke of anon's SEQUENCES default in public
 
-**NOT READY. Nothing in this document may be pasted yet.** The rehearsal ran on 2026-10-08, with limits (see "Rehearsal"). The one mutation sweep ran on 2026-10-08 and changed no byte of the migration, of a check file or of a block (see "Review history"). Open, in order: R4, at most three rounds; the pull request, which is not opened (`PR-NUMBER-PENDING`); CI on the head that merges; the owner's two clicks; and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
+**NOT READY. Nothing in this document may be pasted yet.** The rehearsal ran on 2026-10-08, with limits (see "Rehearsal"). The one mutation sweep ran on 2026-10-08 and changed no byte of the migration, of a check file or of a block (see "Review history"). Review round 1 ran on 2026-10-08 and found five defects, all in this document's prose; fixing them changed no byte of the migration, of a check file or of a block either. Open, in order: R4's PASS, at most three rounds; **the lead's ruling on the card's ORDER sentence (`ORDER-RULING-PENDING`), without which there is no READY line**; the pull request, which is not opened (`PR-NUMBER-PENDING`); CI on the head that merges; the owner's two clicks, which come after GREEN's report on the operation in flight before this one; and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
 
 **Status: AUTHORED. REHEARSED WITH LIMITS on 2026-10-08 (no block ran whole to its last line: see
 "Rehearsal"). NOT APPLIED.** One migration,
@@ -70,16 +70,32 @@ of 2026-09-27 asks ("build/rehearse/document as separate agents").
    of 2026-09-27). Its tables are under "Review history". It added tests and changed no byte of
    the migration, of a check file or of a block.
 4. **OPEN: R4** on the pull request's diff and the card's acceptance, by a fresh reviewer that
-   sees only those: at most three rounds (the review-loop cap).
-5. **OPEN: SOLO opens the pull request, held from the moment it opens:** label `held-for-apply`,
+   sees only those: at most three rounds (the review-loop cap). **Round 1 ran on 2026-10-08, on
+   this branch's diff, and did not pass:** two MAJOR and three MINOR findings, all in this
+   document's prose. The amendment that records them fixed the three MINOR ones and corrected the
+   text of the two MAJOR ones, each of which leaves a question with the lead (see "Review
+   history"). A fresh round on the changed bytes is owed.
+5. **OPEN, THE LEAD: a ruling on the card's ORDER sentence, and until it is quoted here SOLO
+   writes no READY line.** The sentence asks for "a read-only measurement and a read-only
+   pre-check sitting on production before it". Neither has run for 0103, and stage 1's own
+   pre-check is not an earlier sitting (R9, condition 3). Whether stage 1's pre-check discharges
+   the sentence, or an earlier read-only sitting is owed first, is question 1 under "QUESTIONS
+   THIS DOCUMENT DOES NOT ANSWER". **The ruling: `ORDER-RULING-PENDING`.** Its words replace that
+   mark, in an amendment that carries the sidecar. If it asks for the earlier sitting, that
+   sitting's block is an amendment of block bytes with its own R4 round (R8), and the sitting
+   runs before the owner's clicks.
+6. **OPEN: SOLO opens the pull request, held from the moment it opens:** label `held-for-apply`,
    unarmed. Its number replaces `PR-NUMBER-PENDING` in this document, in an amendment that carries
    the sidecar with it.
-6. **OPEN: CI is green on the head that merges,** the required checks and `db-tests`, which
+7. **OPEN: CI is green on the head that merges,** the required checks and `db-tests`, which
    applies 0103 from the mirror with every other migration on a real Supabase stack; and the SET
    LOCAL gate reads the file in scope and passing.
-7. **OPEN, THE OWNER: he takes `held-for-apply` off and merges the pull request,** and merges to
-   main stop from that merge until GREEN's report is in (SOLO disarms every armed PR first).
-8. **OPEN: SOLO fills GREEN's dispatch:** the merge commit's sha, this document's sha256, and a
+8. **OPEN, THE OWNER, AND NEVER WHILE ANOTHER OPERATION OF GREEN'S IS IN FLIGHT: he takes
+   `held-for-apply` off and merges the pull request.** On the night S-1008-B rules that is after
+   GREEN's report on the re-arm (the held pull request #1567), not before 21:00: a reading of
+   S-1008-B, not a ruling (see "THE ORDER OF PULL REQUESTS", and question 4). Merges to main stop
+   from that merge until GREEN's report on 0103 is in (SOLO disarms every armed PR first).
+9. **OPEN: SOLO fills GREEN's dispatch:** the merge commit's sha, this document's sha256, and a
    run window **while both clinics are closed by the weekday table** (R9 below). The dispatch's own
    CLOCK CHECK writes `/tmp/0103-window.ok` (see "What GREEN's dispatch carries").
 
@@ -91,7 +107,8 @@ records what it found, and the dispatch pins the sha by machine.
 
 | Placeholder | Where it stands | Filled when | By |
 |---|---|---|---|
-| `PR-NUMBER-PENDING` | this document: the banner, step 5 above, the fact table, the order table | when the pull request is opened | SOLO, as an amendment to this document, with its sidecar |
+| `ORDER-RULING-PENDING` | this document: the banner, step 5 above, R9's condition 3, the owner's click 1 and question 1 | when the lead rules question 1; **until then there is no READY line** | the lead rules; SOLO quotes the ruling word for word at step 5 and under question 1 and takes the mark out wherever else it stands, as an amendment to this document, with its sidecar |
+| `PR-NUMBER-PENDING` | this document: the banner, step 6 above, the fact table, the order table, the owner's clicks | when the pull request is opened | SOLO, as an amendment to this document, with its sidecar |
 | `REHEARSAL: PENDING` | it stood in this document, under "Rehearsal", until 2026-10-08 | FILLED 2026-10-08: the rehearsal has run and its record replaced the line | the rehearsal agent's record, committed with the sidecar |
 | `MERGE-SHA-PENDING` | GREEN's dispatch only. Named in the banner here so nobody looks for it in a block | after the owner merges | SOLO |
 | this document's sha256 | GREEN's dispatch, and `docs/migration-apply-0103.sha256` on the same head | after the LAST amendment of this document | SOLO; it is the first field of the sidecar |
@@ -105,7 +122,7 @@ round (the review-loop cap, and R8).
 
 | Fact | Value |
 |---|---|
-| Card | `SEC-anon-sequences-default` on the board (`docs/board/portal-board.json`), carded 2026-10-02 from the read-only 0100 measurement. Its status still reads `todo`: the card's own update is a board PR (SR-44), not this branch |
+| Card | `SEC-anon-sequences-default` on the board (`docs/board/portal-board.json`), carded 2026-10-02 from the read-only 0100 measurement. On `main` its status reads `in_flight` since the board pull request #1568 of 2026-10-08, with a note of that date that records the 0103 numbering. What the card says after the apply is a board PR of its own (SR-44), not this branch |
 | Ruling | Strategy's dispatch S-1008-B (2026-10-08), its words: "Numbering: 0103 sequences default." (the sentence goes on to number the items after this one; they are not this document's). "2. 0103 authored, reviewed (cap 3), rehearsed. If READY by 21:00, its GREEN dispatch path goes to the owner for the same night, after the re-arm report. One migration in flight at a time." "G7 CHECK: the 0103 rehearsal. EXPECT: lock read shows no auth table and no table reception writes. Otherwise it is closed hours only and says so in its READY line." "Explicit halts, never set -e. No gate edit inside a sitting." "Merges allowed until 21:00 Lisbon, none from 21:00 until GREEN's report." And S-1002-A R9 and R10 |
 | The card's SCOPE sentence | "SCOPE when built: ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, with the two SET LOCAL lines (#1510), a pre-check and post-check that prove the default before and after and that no existing sequence's ACL moves." |
 | Pull request | `PR-NUMBER-PENDING`, branch `db/0103-anon-sequences-default`, to be opened `held-for-apply`, unarmed |
@@ -116,7 +133,7 @@ round (the review-loop cap, and R8).
 | Runs from | `origin/main`, when it IS the pull request's merge commit. Stage 0 records the sha `origin/main` resolves to in `/tmp/0103-main.sha`; every later stage checks out that recorded sha, never a fresh `origin/main`, and stage 1 HALTS if `origin/main` has moved since (the HEAD CHECK) |
 | The apply worktree | `/Users/ivan/Projects/GitHub/osteojp-prod-apply` |
 | This document | `docs/migration-apply-0103.md`, pinned by `docs/migration-apply-0103.sha256` and asserted by every block; GREEN's dispatch pins its sha256 on its own and checks it by machine |
-| Pre-check | `scripts/db/precheck-0103-anon-sequences-default.sql`, READ ONLY, 10 verdicts each with its control, 10 CARRY rows, 4 INFO rows and a SUMMARY row, `-v prev_hash` and `-v prev_when` required, sha256 `de205334fff4e2576afc602bfa451606fe528b2b4c36ae0fecbc5cdb82f977f7` |
+| Pre-check | `scripts/db/precheck-0103-anon-sequences-default.sql`, READ ONLY, 10 verdicts (1, 4, 5, 6 and 7 each carry a control; the other five carry none), 10 CARRY rows, 4 INFO rows and a SUMMARY row, `-v prev_hash` and `-v prev_when` required, sha256 `de205334fff4e2576afc602bfa451606fe528b2b4c36ae0fecbc5cdb82f977f7` |
 | Post-check | `scripts/db/postcheck-0103-anon-sequences-default.sql`, READ ONLY, 14 verdicts and a SUMMARY row, twelve carries in, sha256 `22e2ac620b0e80a1e535207fe206a74d9db1d687da215075289b5639acd7cdea` |
 | Behaviour check | none on production, on purpose (see "No behaviour check on production, and why"). IN ACTION on the build lane's stack: a sequence created before the revoke and one created after it |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387`; and the module both of the last two import, `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c`. All four read from `origin/main` at `bf0000a1` on 2026-10-08, the same bytes the 0100 and 0101 documents pin; every block that runs one compares it, and the module, first |
@@ -288,8 +305,10 @@ closed hours only. The sitting S-1008-B rules for the night of 2026-10-08 is in 
 3. **Condition 3 does not hold:** no read-only pre-check has run on production in an earlier
    sitting. The pre-check runs inside stage 1, minutes before the apply, and that is not "an
    earlier sitting". The card's ORDER sentence also names one: "a read-only measurement and a
-   read-only pre-check sitting on production before it". Whether stage 1's pre-check discharges
-   that sentence is the lead's to rule (see "QUESTIONS THIS DOCUMENT DOES NOT ANSWER").
+   read-only pre-check sitting on production before it". **Neither has run for 0103. Whether
+   stage 1's pre-check discharges that sentence is NOT RULED (`ORDER-RULING-PENDING`): it is the
+   lead's, and there is no READY line until the ruling is quoted in this document** (NOT READY
+   step 5, and question 1 under "QUESTIONS THIS DOCUMENT DOES NOT ANSWER").
 
 **So there is no daytime arm in any block, and none can be reached.** The blocks print R9's three
 proofs in every sitting (proof 1 computed, proof 2 a fixed `yes`, proof 3 a fixed `no`) and decide
@@ -373,10 +392,10 @@ own GATE-CHANGE pull request, merged by the owner on green.
 
 | Order | Pull request | What it carries | Who merges |
 |---|---|---|---|
-| 1 | this branch, `db/0103-anon-sequences-default`, `held-for-apply`: `PR-NUMBER-PENDING` | the migration, its journal entry and its mirror, the two check files, this document and its sidecar, the script test, the pending README. **No gate file is edited:** the script test is a NEW file, which the freeze allows | the owner (label off, then merge), after the rehearsal, the sweep, R4 and CI |
+| 1 | this branch, `db/0103-anon-sequences-default`, `held-for-apply`: `PR-NUMBER-PENDING` | the migration, its journal entry and its mirror, the two check files, this document and its sidecar, the script test, the pending README. **No gate file is edited:** the script test is a NEW file, which the freeze allows | the owner (label off, then merge), after the rehearsal, the sweep, R4, the lead's ruling on question 1 and CI, and never while another operation of GREEN's is in flight |
 | 2 | the sitting | GREEN applies from the merge commit. No pull request, and no gate edit | - |
 | 3 | **no post-apply GATE-CHANGE** | 0103 creates no function, so the SECURITY DEFINER count (36) and the 0079 ACL lists do not move | - |
-| 4 | the board card and `CLAUDE.md`'s number table | the card `SEC-anon-sequences-default` still reads `todo`, and the table still reads "after `0102` ... not yet authored". Each is its own PR (a board PR under SR-44, a docs PR), after GREEN's report | SOLO, Tier A |
+| 4 | the board card and `CLAUDE.md`'s number table | on `main` the card `SEC-anon-sequences-default` reads `in_flight` and records the 0103 numbering (the board PR #1568 of 2026-10-08), and it has no apply to record yet; the table still reads "after `0102` ... not yet authored". Each is its own PR (a board PR under SR-44, a docs PR), after GREEN's report | SOLO, Tier A |
 
 **NO GATE-CHANGE IS OWED, before or after, measured.** With the migration in place the build agent
 read `node scripts/check-journal.mjs` 101 of 101, `pnpm test:scripts` passing whole, and
@@ -392,11 +411,30 @@ merge first, because a required check counts those functions on a database built
 creates none, so it can. All four blocks name `origin/main`, so none can run from the pull
 request's head before the merge without a change to block bytes.
 
-**Two of S-1008-B's rulings, read together** (the document agent's reading, for the lead to
-confirm): "Merges allowed until 21:00 Lisbon, none from 21:00 until GREEN's report", and a clock
-that passes only from 21:00 on a weekday. So for a sitting the same night the owner's merge lands
-BEFORE 21:00 and stage 0 is pasted from 21:00. A pull request not merged by 21:00 is not applied
-that night.
+**Where the merge stands on the night of the sitting: after GREEN's report on the re-arm, not
+before 21:00. This is a READING of two of S-1008-B's sentences, NOT A RULING, and it is question
+4 under "QUESTIONS THIS DOCUMENT DOES NOT ANSWER".** The sentences: "If READY by 21:00, its GREEN
+dispatch path goes to the owner for the same night, after the re-arm report. One migration in
+flight at a time." and "Merges allowed until 21:00 Lisbon, none from 21:00 until GREEN's report."
+
+- **What must hold by 21:00 is SOLO's READY line, not the merge.** Neither sentence asks for a
+  merge by 21:00.
+- **From 21:00 the operation in flight is the re-arm** (the held pull request #1567), and nothing
+  merges until GREEN's report on it.
+- **So the owner's two clicks on 0103 come after that report.** Merged any earlier, 0103 would
+  leave main one unapplied migration ahead, and frozen, while the re-arm is still in flight: two
+  operations in flight, not one.
+- **From 0103's own merge nothing else merges until GREEN's report on 0103.** The owner's clicks
+  on #1567 itself are not this document's: they land before 0103's merge or after GREEN's report
+  on 0103, never between the two, because a main that has moved halts the sitting (GREEN's
+  BEFORE YOU START, and the HEAD CHECK).
+- **Stage 0 is pasted in closed hours by the weekday table,** which that evening is from 21:00.
+  No block reads the hour of the merge: the blocks read `origin/main`, the clock and the run
+  window, so this reading and the other one run the same block bytes.
+
+An earlier revision of this paragraph, and of the owner's click 2, said the merge lands BEFORE
+21:00 and that "a pull request not merged by 21:00 is not applied that night". No ruling says
+either; review round 1 found it, and both are withdrawn.
 
 ## Merged before the apply, and why that is safe here
 
@@ -1014,15 +1052,22 @@ then OK: an empty subject can neither print OK nor hide a failure
 `scripts/db/postcheck-0103-anon-sequences-default.sql`, lines 267 to 320; the script test reads
 the order of every such CASE).
 
-**Pre-check, 10 verdicts, all `OK` on production as measured, each with its control:** 0 the
+**Pre-check, 10 verdicts. All ten read `OK` on the local stack, and that is what is EXPECTED of
+production, not what was measured there.** The pre-check has never run on production (R9, proof
+3). The 2026-10-02 measurement read the default privileges by creator and grantee and nothing
+else: that is what verdicts 5 and 7 read, without the grant option, and none of the other eight.
+**Five verdicts carry a control, named with each below (1, 4, 5, 6 and 7); the other five (0, 2,
+`journal_rows_before`, 8 and `secdef_functions_before`) carry none.** The ten: 0 the
 transaction is READ ONLY; 1 0103 absent by hash (control: the same count finds 0102 once); 2 0102
 present by hash once, the newest row, at its journal `when`; `journal_rows_before` **100**; 4 the
 session is `postgres`, the role 0103 names (control: `anon` is no member of it); 5 THE PREMISE: the
 `public` SEQUENCES default of `postgres` grants `anon` exactly SELECT, UPDATE, USAGE, none
 grantable (control: the same parse on a planted item; **VACUOUS when `anon` holds nothing there**);
 6 `anon` reaches that default by its own grant only: no PUBLIC item, and `anon` inherits from no
-other grantee (**VACUOUS when the entry names no other grantee**); 7 no GLOBAL default of `postgres`
-grants `anon`, PUBLIC or a role `anon` inherits from a sequence privilege; 8 the five roles exist;
+other grantee (control: the count of the entry's other grantees, printed; **VACUOUS when the
+entry names no other grantee**); 7 no GLOBAL default of `postgres` grants `anon`, PUBLIC or a
+role `anon` inherits from a sequence privilege (control: the planted item of verdict 5); 8 the
+five roles exist;
 `secdef_functions_before`, every one owned by `postgres`. Then 10 CARRY rows (`tables_before`,
 `sequences_before`, `anon_default_before`, `sequence_acl_md5`, `policies_md5`, `functions_md5`,
 `relation_acl_md5`, `column_acl_md5`, `default_acl_md5`, `dml_profile_md5`; with
@@ -1033,7 +1078,7 @@ privilege, as `<k> of <n>`; what `authenticated` and `service_role` hold in the 
 
 | Where the pre-check runs | Its profile | Stage 1 |
 |---|---|---|
-| a database that carries the platform's default, 0103 not applied (production as measured; the local stack) | 10 OK / 0 VACUOUS / 0 FAIL | goes on |
+| a database that carries the platform's default, 0103 not applied (read on the local stack; expected of production, where only the default itself was measured) | 10 OK / 0 VACUOUS / 0 FAIL | goes on |
 | a database that never carried the default | 8 OK / 2 VACUOUS / 0 FAIL with the entry removed on the local stack; 7 OK / 2 VACUOUS / 1 FAIL on a plain `CREATE DATABASE` | STOPs, nothing applied |
 | a database where 0103 is already applied | FAIL on 1, 2 and `journal_rows_before`, VACUOUS on 5 | STOPs, nothing applied |
 
@@ -1115,10 +1160,10 @@ Nothing below is done by SOLO or by GREEN. Each is the owner's, and each waits f
 
 | # | Click | When | What it starts |
 |---|---|---|---|
-| 1 | On `PR-NUMBER-PENDING`: take the label `held-for-apply` off | after SOLO's READY line (rehearsal recorded, sweep listed, R4 PASS, CI green on the head) | nothing by itself. SOLO never removes this label (ruling of 2026-09-27) |
-| 2 | On `PR-NUMBER-PENDING`: merge | right after click 1, and **before 21:00 Lisbon** for a sitting the same night ("Merges allowed until 21:00 Lisbon, none from 21:00 until GREEN's report") | main is then one migration ahead of production. SOLO has disarmed every armed PR first, and nothing else merges until GREEN's report |
-| 3 | Launch GREEN (a fresh session with the apply settings) and hand it SOLO's dispatch, which names `0103_revoke_anon_sequences_default.sql` | in closed hours by the weekday table (on 2026-10-08, a Thursday: from 21:00 Lisbon), inside the dispatch's run window, and after the re-arm report (S-1008-B: "after the re-arm report") | the sitting: BEFORE YOU START, stage 0, CLOCK CHECK, stage 1, stage 2, the closing read |
-| 4 | Read GREEN's report | when it arrives | merges resume. If the report carries a STOP: nothing is pasted again, and the lead rules |
+| 1 | On `PR-NUMBER-PENDING`: take the label `held-for-apply` off | after SOLO's READY line (rehearsal recorded, sweep listed, R4 PASS, the lead's ruling on question 1 quoted in this document in place of `ORDER-RULING-PENDING`, CI green on the head), **and after GREEN's report on the re-arm** (this document's reading of S-1008-B's "One migration in flight at a time": question 4) | nothing by itself. SOLO never removes this label (ruling of 2026-09-27) |
+| 2 | On `PR-NUMBER-PENDING`: merge | right after click 1, so after GREEN's report on the re-arm too, and never while the re-arm is in flight. **No ruling asks for this merge by 21:00:** 21:00 is the hour by which SOLO's READY line is due ("If READY by 21:00"). This order is a reading, not a ruling (question 4) | main is then one migration ahead of production. SOLO has disarmed every armed PR first, and nothing else merges until GREEN's report on 0103 |
+| 3 | Launch GREEN (a fresh session with the apply settings) and hand it SOLO's dispatch, which names `0103_revoke_anon_sequences_default.sql` | after click 2 and after SOLO has filled the dispatch with the merge commit's sha, so after the re-arm report (S-1008-B: "its GREEN dispatch path goes to the owner for the same night, after the re-arm report"); in closed hours by the weekday table (on 2026-10-08, a Thursday: from 21:00 Lisbon) and inside the dispatch's run window | the sitting: BEFORE YOU START, stage 0, CLOCK CHECK, stage 1, stage 2, the closing read |
+| 4 | Read GREEN's report on 0103 | when it arrives | merges resume. If the report carries a STOP: nothing is pasted again, and the lead rules |
 
 **There is no click after the apply for 0103 itself:** no count GATE-CHANGE, no label, no second
 merge. The board card's PR and the `CLAUDE.md` docs PR are SOLO's, Tier A.
@@ -1640,15 +1685,28 @@ Each by the lead's rule, and each with its reason. The rehearsal's record above 
 ## QUESTIONS THIS DOCUMENT DOES NOT ANSWER
 
 Each is the lead's or the owner's. The document was built on the first option of each, and each is
-also listed under "JUDGMENTS" where a block carries the choice.
+also listed under "JUDGMENTS" where a block carries the choice. **Question 1 is the one this
+document waits for: SOLO writes no READY line until its ruling is quoted here** (NOT READY step
+5), because that sentence is part of the card's acceptance. Questions 2 and 3 hold nothing up:
+the sitting can run on the first option of each. Question 4 is about when the owner clicks, so
+it is the lead's to confirm before his first click; the document follows the reading under
+which only one operation is ever in flight and no sentence of S-1008-B is broken as written.
 
 1. **The card's ORDER sentence names "a read-only measurement and a read-only pre-check sitting on
-   production before it".** (a) Stage 1's pre-check, which is READ ONLY and halts before any write
-   on any profile but 10 OK / 0 VACUOUS / 0 FAIL, counts as that read, closed hours only: what this
-   document does. (b) GREEN runs the pre-check alone in an earlier sitting, before the merge, from
-   the pull request's head, on its own dispatch, as 0100's THE EARLIER PRE-CHECK SITTING did. That
-   block is NOT in this document; adding it is an amendment with its own R4 round, and it is also
-   what R9 proof 3 would need for any daytime sitting.
+   production before it". NOT RULED: `ORDER-RULING-PENDING`.** Neither has run for 0103: the
+   measurement of 2026-10-02 was 0100's, made before this item was carded, and it did not count
+   the sequences in `public`; and no pre-check of 0103 has run on production. (a) Stage 1's
+   pre-check, which is READ ONLY and halts before any write on any profile but 10 OK / 0 VACUOUS /
+   0 FAIL, counts as both reads, closed hours only: what this document's blocks do. (b) GREEN
+   runs the pre-check alone in an earlier sitting, before the merge, from the pull request's
+   head, on its own dispatch, as 0100's THE EARLIER PRE-CHECK SITTING did. That block is NOT in
+   this document; adding it is an amendment with its own R4 round, and it is also what R9 proof 3
+   would need for any daytime sitting. **What the card itself says since 2026-10-08:** its note
+   of that date records that S-1008-B's numbering replaces "the ORDER sentence of the entry
+   below, which put this item after the episode-policy item and the Q9 guard", and that "THE
+   SCOPE SENTENCE BELOW STANDS". That note is SOLO's, not a ruling, and it does not say whether
+   the clause about the two reads went with the rest of the sentence. So the question stands
+   until the lead answers it.
 2. **A sequence found in `public` on production,** with or without `anon` holding a privilege on
    it. (a) The sitting goes on, GREEN reports the two rows, the lead rules afterwards: what this
    document does. (b) Stage 1 STOPs on `sequences_before` other than 0, because the card says "the
@@ -1656,6 +1714,17 @@ also listed under "JUDGMENTS" where a block carries the choice.
 3. **A standing DB-gated test** ("the next sequence in `public` gives `anon` nothing"), so a later
    platform image or migration cannot re-grant it unseen. Not built: 0100, the model, has none, and
    it was not ruled. A Tier A follow-up after the apply, if wanted.
+4. **When the owner merges 0103 on the night of the sitting.** S-1008-B: "If READY by 21:00, its
+   GREEN dispatch path goes to the owner for the same night, after the re-arm report. One
+   migration in flight at a time." and "Merges allowed until 21:00 Lisbon, none from 21:00 until
+   GREEN's report." (a) After GREEN's report on the re-arm: READY is what is due by 21:00, the
+   freeze from 21:00 ends at that report, and 0103 is merged and applied after it, so only one
+   operation is ever in flight: what this document says (see "THE ORDER OF PULL REQUESTS" and
+   "OWNER CLICKS"). It needs "until GREEN's report" to mean the report on the re-arm, so that
+   0103's own merge is allowed after it the same night. (b) Before 21:00, with the sitting after
+   the re-arm report: the reading this document carried until review round 1. It keeps every
+   merge before 21:00, and it leaves main one unapplied migration ahead, and frozen, for the
+   whole of the re-arm. No block byte differs between the two.
 
 ## JUDGMENTS, NOT RULINGS, in this document
 
@@ -1705,7 +1774,56 @@ block's `begin read only`, and neither reads any table of people: every source t
 
 ## Review history
 
-**R4 has not run on this document (NOT READY step 4).** Its verdict goes here when it does.
+**R4 has given no PASS on this document yet (NOT READY step 4).** Its verdict goes here when it
+does. Round 1 ran and did not pass; its record is next.
+
+### Review round 1, 2026-10-08: five findings, all in this document's prose
+
+**In plain language.** A fresh reviewer read this branch as it stood at `06e08e1d` and found five
+things wrong, two of them MAJOR. All five are sentences of this document, not code. Three said
+something that was not true. The two MAJOR ones let the owner take the label off and merge on a
+point nobody had ruled. No PASS was given.
+
+**What the fix changed, and what it did not.** This document and its sidecar, and nothing else.
+**No byte of the migration, of either check file, of the script test or of any block changed.**
+The four fenced blocks were compared with `06e08e1d`'s by machine, each by its sha256, and none
+differs. So nothing was run again on a database: the Rehearsal record, the sweep's readings and
+every pin stand as they were, and lane `green` was not started. The fixer wrote neither the
+migration, the check files nor the blocks.
+
+| # | Severity | What was wrong | What was done |
+|---|---|---|---|
+| 1 | MINOR | The fact table and the order table said the board card "still reads `todo`". On `main` it has read `in_flight` since the board PR #1568 of 2026-10-08 | FIXED: both rows now say what `main` holds |
+| 2 | MINOR | "Pre-check, 10 verdicts, all `OK` on production as measured, each with its control" overstated twice: the pre-check has never run on production, and five of the ten verdicts carry no control | FIXED: the fact table and "What every verdict must read" say expected, not measured, and name the five verdicts that carry a control |
+| 3 | MAJOR | The owner's click 2 and the order section said the merge lands before 21:00, and that a pull request not merged by 21:00 is not applied that night. S-1008-B asks for READY by 21:00 and puts the dispatch after the re-arm report; merged before 21:00, 0103 would sit unapplied on a frozen main while the re-arm is in flight | FIXED IN THE TEXT, AND A QUESTION: the order section, NOT READY step 8 and the owner's clicks now put both clicks after GREEN's report on the re-arm, say that this is a reading and not a ruling, and question 4 gives the lead both readings |
+| 4 | MAJOR | The card's ORDER sentence asks for "a read-only measurement and a read-only pre-check sitting on production before it". Neither has run, the document left it to the lead, and nothing made READY wait for the answer | GATED, NOT DECIDED: there is no READY line until the lead's ruling is quoted here. A mark stands for the ruling until then, in the banner, NOT READY step 5, R9's condition 3, the owner's click 1 and question 1 (see "The placeholders, and who fills each"). No earlier sitting was added, because none is ruled |
+| 5 | MINOR | Every block line number in the mutation sweep's record below was one less than the line in the committed document: the sweep read the document before its own record added a line above the blocks | FIXED: see "Where the sweep's line numbers point" below |
+
+**Where the sweep's line numbers point.** Every line number of a block in "Part D" below is a line
+of this document as the round 1 amendment left it, in which the fence that opens stage 0 is line
+510. The sweep read them 39 lines higher up (the document at `6b6bb370`, where that
+fence is line 471), and each was moved by that one number; the line each now names was compared
+with the line the sweep named, byte for byte. The four blocks move together. **If that fence
+stands on another line when you read this, a later amendment added or removed lines above the
+blocks: add the difference to every block line number below.**
+
+**Run after the amendment,** each in an environment with no database URL:
+
+| Run | Result |
+|---|---|
+| `node --test scripts/anon-sequences-default-0103.test.mjs` | 41 of 41 passed, none skipped; 224 injected faults in bash and 224 in zsh, every one held |
+| `node --test scripts/owner-blocks-survive-zsh.test.mjs` | 5 of 5 passed |
+| `node scripts/check-journal.mjs` | 101 files, 101 entries, the mirror matching by content |
+| `GATE_BASE_REF=main node scripts/assert-gates-unchanged.mjs` | `GATE FREEZE: 99 gate files match their pins, package.json scripts unchanged.` |
+| `pnpm test:scripts`, whole | exit 0: 1466 of 1466 passed, none failed, none skipped, 54 suites |
+
+The rows above were read once and then this table was filled in, which moves the sidecar; the
+script test and the block scan, the two that read this document, were run again on the committed
+bytes with the same result.
+
+**Not done.** No database run, for the reason above. `pnpm lint`, `pnpm typecheck`, `pnpm test`
+and `pnpm build` were not run: no file of any package changed. **A fresh review round on these
+changed bytes is owed** before any PASS is claimed, because two of the findings were MAJOR.
 
 ### The mutation sweep, 2026-10-08: one pass, mechanical
 
@@ -1968,12 +2086,12 @@ the reader's two answers.
   input the test already ran;** 205 of them do both.
 - **3 of the 110 are caught by the fault sweeps, which were there too.** All 110 were put through
   the fault sweep of their own block, as the test stood before this sweep (bash). Deleting the
-  count of files under a number (507, 509, 619) leaves its `find | wc | tr` calls with no check
+  count of files under a number (546, 548, 658) leaves its `find | wc | tr` calls with no check
   after them, and the fault that makes one of them fail then runs on to the last line. The other
   107 halt on every fault. **So 832 of the 939 were caught before the sweep, and 107 were not.**
 - **Checked on a sample:** 16 of the 110, taken across the families below, were also run against
   the WHOLE script test as it stood before the sweep, all 38 tests in both shells. 15 passed 38 of
-  38. The 16th, on line 507, failed the two fault sweeps and nothing else, which is what sent all
+  38. The 16th, on line 546, failed the two fault sweeps and nothing else, which is what sent all
   110 through the fault sweep.
 
 **THE 110, FAMILY BY FAMILY.** 67 are real gaps: lines a block needs and that no test ran. 3 more
@@ -1984,40 +2102,40 @@ block does.
 
 | What was changed | Mutants | Lines | What now catches it |
 |---|---|---|---|
-| **A pin's compare line deleted:** the migration, the pre-check, the post-check and 0102 in every stage that pins them, and in stage 0 the guard's module and the reader. Nothing required a pin that is assigned to be compared | 11 | 517 to 519, 522, 523, 528, 620, 621, 629, 816, 817 | the static rule `pinComparedProblems`, and A PINNED FILE: each block run whole with one pinned file changed by a byte |
-| **Stage 0's journal line:** each of its seven facts dropped, each `&&` turned to `||` | 13 | 526 | WHAT STAGES 0 AND 1 FIND ON DISK: seven journals, each wrong in one fact |
-| Stage 1's read of 0102's journal `when`, and the check on it | 4 | 626, 627 | the same test: the entry before the newest with another idx, then with another tag |
-| **`test ! -f ... ||` dropped from the applied-marker line.** The line then stops every first sitting, and no arm ran a block with NO marker: every arm planted an old one | 2 | 488, 592 | the same test: stages 0 and 1 with no marker pass |
-| the worktree-is-clean check deleted | 2 | 490, 595 | the same test: `git status` prints one changed file |
-| the count of files under a number deleted (the 3 the fault sweeps already caught) | 3 | 507, 509, 619 | the same test, which now reads it directly: a second `0103_*.sql`, a second `0102_*.sql` |
-| stage 2's read-back of HEAD after its checkout deleted | 1 | 810 | the same test: a checkout that exits 0 and leaves HEAD where it was (stages 0, 1 and 2) |
-| a `test -f` of a record deleted (the recorded sha, the run window, the transcript) | 7 | 598, 633, 797, 822, 836, 952, 968 | BETWEEN THE STAGES: each record gone, and the block names the record it misses |
-| the second window read of stage 1, after the pre-check, deleted | 1 | 669 | the same test: a clock that has moved past the last start minute by the second read |
-| **the window in stage 2 and in the closing read:** its end check deleted or loosened by a minute, its shape check, its sha | 7 | 825, 827, 833, 973, 979 | the same test: now AT the window's end, a minute before it, a 13-digit end, a window for another sha. Stage 1 had its feed; nothing ran these two at the end of the window |
-| the age check of stage 1's transcript deleted | 1 | 837 | the same test: a transcript 70 minutes old |
-| the carries' not-empty line deleted, and each of its twelve conditions dropped | 13 | 851 | the same test: each of the twelve carry rows missing in turn |
-| the closing read's pass-mark age, its `pending` line and its `no matching file` line deleted | 3 | 967, 989, 990 | the same test: a pass mark older than the apply; a later migration pending; a journal row with no file |
-| the clinics' reading: a fourth field or another middle word let through | 2 | 680 | THE CLINICS' ROWS: `0 of 2 x` and `0 xx 2` |
-| **the clinics' SQL statement:** `is_active` dropped from either count | 2 | 678 | a reading on lane `green` (below); the harness's psql is a stub |
+| **A pin's compare line deleted:** the migration, the pre-check, the post-check and 0102 in every stage that pins them, and in stage 0 the guard's module and the reader. Nothing required a pin that is assigned to be compared | 11 | 556 to 558, 561, 562, 567, 659, 660, 668, 855, 856 | the static rule `pinComparedProblems`, and A PINNED FILE: each block run whole with one pinned file changed by a byte |
+| **Stage 0's journal line:** each of its seven facts dropped, each `&&` turned to `||` | 13 | 565 | WHAT STAGES 0 AND 1 FIND ON DISK: seven journals, each wrong in one fact |
+| Stage 1's read of 0102's journal `when`, and the check on it | 4 | 665, 666 | the same test: the entry before the newest with another idx, then with another tag |
+| **`test ! -f ... ||` dropped from the applied-marker line.** The line then stops every first sitting, and no arm ran a block with NO marker: every arm planted an old one | 2 | 527, 631 | the same test: stages 0 and 1 with no marker pass |
+| the worktree-is-clean check deleted | 2 | 529, 634 | the same test: `git status` prints one changed file |
+| the count of files under a number deleted (the 3 the fault sweeps already caught) | 3 | 546, 548, 658 | the same test, which now reads it directly: a second `0103_*.sql`, a second `0102_*.sql` |
+| stage 2's read-back of HEAD after its checkout deleted | 1 | 849 | the same test: a checkout that exits 0 and leaves HEAD where it was (stages 0, 1 and 2) |
+| a `test -f` of a record deleted (the recorded sha, the run window, the transcript) | 7 | 637, 672, 836, 861, 875, 991, 1007 | BETWEEN THE STAGES: each record gone, and the block names the record it misses |
+| the second window read of stage 1, after the pre-check, deleted | 1 | 708 | the same test: a clock that has moved past the last start minute by the second read |
+| **the window in stage 2 and in the closing read:** its end check deleted or loosened by a minute, its shape check, its sha | 7 | 864, 866, 872, 1012, 1018 | the same test: now AT the window's end, a minute before it, a 13-digit end, a window for another sha. Stage 1 had its feed; nothing ran these two at the end of the window |
+| the age check of stage 1's transcript deleted | 1 | 876 | the same test: a transcript 70 minutes old |
+| the carries' not-empty line deleted, and each of its twelve conditions dropped | 13 | 890 | the same test: each of the twelve carry rows missing in turn |
+| the closing read's pass-mark age, its `pending` line and its `no matching file` line deleted | 3 | 1006, 1028, 1029 | the same test: a pass mark older than the apply; a later migration pending; a journal row with no file |
+| the clinics' reading: a fourth field or another middle word let through | 2 | 719 | THE CLINICS' ROWS: `0 of 2 x` and `0 xx 2` |
+| **the clinics' SQL statement:** `is_active` dropped from either count | 2 | 717 | a reading on lane `green` (below); the harness's psql is a stub |
 
 **THE 38 THAT CHANGE NOTHING A BLOCK DOES, and why each is left.**
 
-- **21: a `test -f` deleted where the next line stops on the same missing file** (lines 503, 505,
-  510 to 516, 527, 613 to 617, 628, 812 to 815, 980). For 20 of them the new arm A PINNED FILE runs
+- **21: a `test -f` deleted where the next line stops on the same missing file** (lines 542, 544,
+  549 to 555, 566, 652 to 656, 667, 851 to 854, 1019). For 20 of them the new arm A PINNED FILE runs
   the block with that file gone, and the mutant still stops once, before anything runs with
   credentials: the sha256 compare stops in its place. The 21st is the sidecar's own `test -f`
-  (503), which the `shasum -c` on the next line covers. The line is kept for its sentence.
-- **4: the twelve-digit re-check of `NOWL` deleted** (644, 667, 831, 977). `NOWL` is the first
+  (542), which the `shasum -c` on the next line covers. The line is kept for its sentence.
+- **4: the twelve-digit re-check of `NOWL` deleted** (683, 706, 870, 1016). `NOWL` is the first
   twelve characters of a reading the line before has already required to be twelve digits and a
   zone. It can differ only if `cut` fails, and then the numeric compare on the next line fails and
   stops; the fault sweeps fault that `cut`.
-- **4: stage 1's read of 0102's tag** (625). It reads the same journal entry under the same
+- **4: stage 1's read of 0102's tag** (664). It reads the same journal entry under the same
   condition as the `when` read on the next line, whose check stops first; and the tag only names
   the file whose sha256 the block then compares.
-- **6: the SECOND awk of the clinics' line** (680), which only chooses between two STOP sentences
+- **6: the SECOND awk of the clinics' line** (719), which only chooses between two STOP sentences
   (`clinics outside`, or the reading did not parse). Whatever it answers, the block stops.
-- **3: an age moved by one minute** (`-mmin -720` to `-721` at 488 and 592; `-mmin -60` to `-61` at
-  837). A boundary of one minute in a rule of twelve hours and of one hour. The arms sit at 719 and
+- **3: an age moved by one minute** (`-mmin -720` to `-721` at 527 and 631; `-mmin -60` to `-61` at
+  876). A boundary of one minute in a rule of twelve hours and of one hour. The arms sit at 719 and
   780 minutes, and at 70; none pins the exact minute, because `find` rounds a part of a minute.
   The gross changes (800 minutes, 3 minutes) are caught.
 
@@ -2040,7 +2158,7 @@ inputs):
   arms. The counting patterns without their anchor count the same rows on this sweep's real
   transcripts: 10, 0 and 0 on the pre-check before the apply; 13, 1 and 0 on the post-check after.
 
-**THE CLINICS' SQL STATEMENT, on lane `green`** (stage 1, line 678; the two seeded active clinics
+**THE CLINICS' SQL STATEMENT, on lane `green`** (stage 1, line 717; the two seeded active clinics
 and one inactive row, changed inside a transaction that was rolled back). Its nine mutants each
 print another reading on at least one of eight states. Three already differ on the rows as seeded,
 which is the reading the rehearsal recorded (`0 of 2`): `08:00` moved to `08:01` and `<` turned to
