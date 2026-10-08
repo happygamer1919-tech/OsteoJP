@@ -701,6 +701,13 @@
       "when": 1788502300000,
       "tag": "0102_sat01_satisfaction_survey",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1788502400000,
+      "tag": "0103_revoke_anon_sequences_default",
+      "breakpoints": true
     }
   ]
 }
