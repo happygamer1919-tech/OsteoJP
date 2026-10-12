@@ -24,8 +24,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *     /clinical/new, so no posted text reaches a redirect.
  *
  * A refusal of the episode has its own message (`episode_mismatch`: not this
- * patient's; `episode_closed`: a new registo goes only into an open episode);
- * every other clinical refusal keeps the generic one it had. Anything that is not a
+ * patient's; `episode_closed`: a new registo goes only into an open episode),
+ * and so has a create rolled back as a deadlock victim (M-4,
+ * `concurrent_change`: nothing was created, try again); every other clinical
+ * refusal keeps the generic one it had. Anything that is not a
  * ClinicalError (a ForbiddenError for a role that may not author) propagates to
  * the error boundary, as before.
  */
@@ -46,6 +48,7 @@ export async function createRecordAction(formData: FormData): Promise<void> {
     if (!isClinicalError(e)) throw e;
     if (e.code === "episode_mismatch") target = `${back}episodeMismatch`;
     if (e.code === "episode_closed") target = `${back}episodeClosed`;
+    if (e.code === "concurrent_change") target = `${back}concurrentChange`;
   }
   redirect(target);
 }

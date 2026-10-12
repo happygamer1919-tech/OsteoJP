@@ -35,7 +35,12 @@ export async function claimAction(formData: FormData): Promise<void> {
   let recordId: string;
   try {
     ({ recordId } = await claimReviewItem(ctx, ref!));
-  } catch {
+  } catch (e) {
+    // M-4: a claim rolled back as a deadlock victim has its own flag, which the
+    // queue answers with the retry sentence. Nothing was claimed.
+    if (isClinicalError(e) && e.code === "concurrent_change") {
+      redirect("/clinical/review?m=concurrentChange");
+    }
     // already_reviewed / not_found / not_reviewable — bounce back to the queue.
     redirect("/clinical/review?m=err");
   }

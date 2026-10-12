@@ -62,8 +62,9 @@ export type DeclaracaoInputs = {
   localidade: string;
   /** W9-03: canonical key of the clinic this declaration is FOR, from
    *  resolveStampLocationKey. Drives per-location carimbo resolution; null ->
-   *  blank stamp area. R45: generate.ts refuses a null key before it builds a
-   *  model, so a rendered declaration always arrives here with a clinic's key. */
+   *  blank stamp area. R45: generate.ts refuses a location with no carimbo
+   *  before it builds a model, so a null key arrives here only for a location
+   *  marked "physical stamp" (S-1012-A1 ruling 4, `physicalStamp` below). */
   stampLocationKey: string | null;
   /** W12-24: the patient NIF as entered in the dialog (prefilled from
    *  `patients.nif`, editable). Trimmed; null/empty -> omitted from the body. */
@@ -80,6 +81,9 @@ export type DeclaracaoInputs = {
    *  resolved via resolveClinicFiscal into the footer fiscal line. Falls back to
    *  the owner-gated placeholders when absent (never invents values). */
   fiscalSource?: ClinicFiscalSource;
+  /** S-1012-A1 ruling 4: the location is marked "physical stamp" (and has no
+   *  carimbo image), so the stamp area is an empty frame to stamp by hand. */
+  physicalStamp?: boolean;
   /** The tenant's raw `settings` JSONB (declaracao namespace read here). */
   tenantSettings: unknown;
 };
@@ -98,6 +102,9 @@ export type DeclaracaoModel = {
   /** The owner-supplied signature + carimbo image FOR THIS LOCATION, or null
    *  -> blank stamp space (W9-03). Never another location's stamp. */
   stampBytes: Uint8Array | null;
+  /** S-1012-A1 ruling 4: draw an EMPTY FRAME where the image would be, for a
+   *  location that stamps by hand. Never true together with `stampBytes`. */
+  physicalStampArea: boolean;
   /** W12-30 C1: print-ready location contact block for the branded footer, or
    *  null when the source location is unknown. */
   contact: LocationContact | null;
@@ -108,6 +115,9 @@ export type DeclaracaoModel = {
 
 export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel {
   const settings = readDeclaracaoSettings(inputs.tenantSettings);
+  const stampBytes = settings.signatureStamp
+    ? signatureStampBytesForLocation(inputs.stampLocationKey)
+    : null;
   return {
     patientName: inputs.patientName,
     dia: inputs.dia,
@@ -125,9 +135,11 @@ export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel 
     // clinic's carimbo. R45: the switch only blanks the area of a clinic that
     // has a carimbo; a location with none is refused in generate.ts whatever
     // the switch says.
-    stampBytes: settings.signatureStamp
-      ? signatureStampBytesForLocation(inputs.stampLocationKey)
-      : null,
+    stampBytes,
+    // S-1012-A1 ruling 4: the frame belongs to a location marked "physical
+    // stamp" and to nothing else. A clinic whose carimbo the tenant switch
+    // blanked keeps the unframed space it had.
+    physicalStampArea: inputs.physicalStamp === true && stampBytes === null,
     // W12-30 C1: branded-footer sources — reuse the report/RGPD data helpers, so
     // the three printed documents draw contacts + fiscal identity from one place.
     contact: inputs.sourceLocation ? resolveLocationContact(inputs.sourceLocation) : null,

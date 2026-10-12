@@ -36,6 +36,17 @@ export async function updateLocationAction(formData: FormData): Promise<void> {
       address: String(formData.get("address") ?? ""),
       phone: String(formData.get("phone") ?? ""),
       slotGranularityMin: formData.get("slotGranularityMin") as string | null,
+      // S-1012-A1 ruling 4: only a row that RENDERS the control edits the mark
+      // (a location with a carimbo image does not), so an absent control never
+      // clears one.
+      ...(formData.get("physicalStampShown") === "1"
+        ? {
+            physicalStamp: {
+              enabled: formData.get("physicalStamp") === "on",
+              place: String(formData.get("physicalStampPlace") ?? ""),
+            },
+          }
+        : {}),
     }),
   );
 }

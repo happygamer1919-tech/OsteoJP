@@ -4601,6 +4601,44 @@
             {
               "spans": [
                 {
+                  "text": "Para passar uma marcação "
+                },
+                {
+                  "strong": "Agendada"
+                },
+                {
+                  "text": " ou "
+                },
+                {
+                  "strong": "Confirmada"
+                },
+                {
+                  "text": " para outro terapeuta, em "
+                },
+                {
+                  "strong": "Gerir marcação"
+                },
+                {
+                  "text": " escolha o nome em "
+                },
+                {
+                  "strong": "Terapeuta"
+                },
+                {
+                  "text": " e clique em "
+                },
+                {
+                  "strong": "Alterar terapeuta"
+                },
+                {
+                  "text": ". A hora, a clínica e o pacote não mudam. Se esse terapeuta não trabalhar a essa hora, ou já tiver outra marcação, a alteração é recusada e o motivo aparece por baixo do campo."
+                }
+              ],
+              "type": "para"
+            },
+            {
+              "spans": [
+                {
                   "text": "Se uma consulta ficou com o estado final errado (por exemplo "
                 },
                 {
@@ -4681,7 +4719,7 @@
       "see": [],
       "shots": "pacientes.marcacoes-na-ficha",
       "title": "Marcar, cancelar ou corrigir um estado a partir da ficha",
-      "words": 138
+      "words": 195
     },
     {
       "answers": [],
@@ -6498,6 +6536,175 @@
       "shots": null,
       "title": "Uma gravação que não foi processada",
       "words": 88
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "spans": [
+            {
+              "text": "Há três botões, para quem pode abrir os "
+            },
+            {
+              "strong": "Registos clínicos"
+            },
+            {
+              "text": " de um paciente. A Receção não os tem."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "strong": "Exportar ficha"
+              },
+              {
+                "text": ", no topo do separador "
+              },
+              {
+                "strong": "Registos clínicos"
+              },
+              {
+                "text": ": um só PDF com os registos do paciente que pode ler."
+              }
+            ],
+            [
+              {
+                "strong": "PDF do episódio"
+              },
+              {
+                "text": ", dentro de um grupo da lista: os registos desse grupo. Um grupo com a etiqueta "
+              },
+              {
+                "strong": "Importado"
+              },
+              {
+                "text": " também o tem; o grupo "
+              },
+              {
+                "strong": "Sem episódio"
+              },
+              {
+                "text": " não."
+              }
+            ],
+            [
+              {
+                "strong": "Transferir PDF"
+              },
+              {
+                "text": ", dentro de um registo: só esse registo."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Cada botão só aparece quando há um registo finalizado."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "O que o ficheiro contém:"
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "text": "Só registos finalizados: um "
+              },
+              {
+                "strong": "Rascunho"
+              },
+              {
+                "text": " nunca é exportado."
+              }
+            ],
+            [
+              {
+                "text": "Um registo anulado entra, com a marca "
+              },
+              {
+                "strong": "ANULADO"
+              },
+              {
+                "text": " em todas as páginas desse registo."
+              }
+            ],
+            [
+              {
+                "text": "Um registo importado sai como no ecrã: os nomes de campo de origem e o aviso de apenas leitura."
+              }
+            ],
+            [
+              {
+                "text": "Um registo escrito no modelo "
+              },
+              {
+                "strong": "Ficha Clínica"
+              },
+              {
+                "text": " sai como relatório clínico, só com as secções Motivo da consulta, Diagnóstico, Plano de tratamento e Observações, se preenchidas. Os outros campos do ecrã não entram."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Cada exportação fica no registo de auditoria, em seu nome."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "O ficheiro contém dados de saúde do paciente. Depois de transferido, fica fora da plataforma, que já não controla quem o abre."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "clinical_records:read",
+      "faq": [],
+      "file": "04-registos/07-exportar-pdf.md",
+      "goal": "Saber onde estão os três botões de PDF e o que cada ficheiro contém.",
+      "id": "registos.exportar-pdf",
+      "images": null,
+      "order": {
+        "proprietario": 7,
+        "terapeuta": 7
+      },
+      "question": null,
+      "review": null,
+      "roles": [
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [
+        "ficha-paciente"
+      ],
+      "section": "registos",
+      "see": [],
+      "shots": null,
+      "title": "Exportar registos em PDF",
+      "words": 197
     },
     {
       "answers": [],
@@ -11009,7 +11216,8 @@
         "registos.criar-registo",
         "registos.gravar-consulta",
         "registos.episodios",
-        "registos.gravacao-nao-processada"
+        "registos.gravacao-nao-processada",
+        "registos.exportar-pdf"
       ],
       "sections": [
         "inicio",
@@ -11112,6 +11320,7 @@
         "registos.gravar-consulta",
         "registos.episodios",
         "registos.gravacao-nao-processada",
+        "registos.exportar-pdf",
         "pacientes.encontrar-paciente",
         "pacientes.ficha-do-paciente",
         "pacientes.marcacoes-na-ficha",
@@ -11272,7 +11481,7 @@
         }
       ],
       "file": "04-registos/_seccao.md",
-      "goal": "Escrever, rever e assinar os registos clínicos dos pacientes.",
+      "goal": "Escrever, rever, assinar e exportar os registos clínicos dos pacientes.",
       "id": "registos",
       "order": {
         "proprietario": 9,
