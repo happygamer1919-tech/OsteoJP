@@ -169,9 +169,9 @@ this line and the board disagree.*
 > where it used to scroll inside.
 >
 > **Montemor-o-Novo exists as a location** and issues the Declaração with a blank
-> area for a physical stamp. Its reminder SMS now fits in one message. The clinic's
-> name in the follow-up and no-show emails is written and not merged; both emails
-> are switched off.
+> area for a physical stamp. Its reminder SMS now fits in one message. The
+> follow-up and no-show emails now name the clinic; both emails are switched off,
+> so nobody receives them.
 >
 > **Your answers of 2026-10-12 are on the cards:** the BOOK-CONFIRM canary retest
 > works; DUR-01 is closed and reception corrects by hand; the red on a therapist's
