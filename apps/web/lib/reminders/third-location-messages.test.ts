@@ -489,6 +489,19 @@ describe("G7 - the 24h SMS with the confirm link armed prints the place alone wh
     expect(h.sms).toEqual([]);
   });
 
+  it("a body refused for a character outside GSM-7 stays refused: only a too long body is shortened", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    // The tab is not GSM-7. Trimmed, this name would shorten and fit.
+    h.loadReminderData.mockResolvedValue(row({ locationName: `${NAME}\t` }));
+
+    expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toMatchObject({
+      dispatched: false,
+      reason: "body_refused",
+    });
+    expect(h.sms).toEqual([]);
+    expect(h.issuedCodes).toEqual([]);
+  });
+
   it("smsPlaceName reads only the form OsteoJP (<place>)", () => {
     expect(smsPlaceName("OsteoJP (Montemor-o-Novo)")).toBe("Montemor-o-Novo");
     expect(smsPlaceName("  OsteoJP ( Castelo Branco ) ")).toBe("Castelo Branco");
@@ -500,6 +513,9 @@ describe("G7 - the 24h SMS with the confirm link armed prints the place alone wh
       // A short code is not a place: the two older clinics are stored this way.
       "OsteoJP (LV)",
       "OsteoJP (CB)",
+      "OsteoJP (X)",
+      // No space before the bracket.
+      "OsteoJP(Montemor-o-Novo)",
       "OsteoJP (Novo)",
       // Text before the brand, after the bracket, another brand, another case.
       "Clinica OsteoJP (Montemor-o-Novo)",
