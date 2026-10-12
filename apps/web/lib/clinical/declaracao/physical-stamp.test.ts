@@ -18,6 +18,7 @@
  *
  * Every name is invented.
  */
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 
@@ -358,6 +359,22 @@ describe("a location WITH a carimbo image behaves as today, marked or not", () =
     expect(doc.ops).not.toContain(drawn("Outro Sitio, 12/07/2026"));
   });
 
+  // THE PIN AGAINST THE CODE BEFORE THIS CHANGE. The test under this one
+  // compares the new code with itself; this one does not. Each hash is of the
+  // page's drawing operators as the generator at d8d97191 (main, before the
+  // physical-stamp setting existed) wrote them for the same fixture, computed by
+  // running that commit's model, renderer, settings reader and generator. A
+  // deliberate change to the clinics' page changes these two values with it.
+  it.each([
+    { at: LV, city: "Linda-a-Velha", length: 2328, sha256: "dab59be6979f91b705803d2960626afbb213e60f61b699f51e044926802abd27" },
+    { at: CB, city: "Castelo Branco", length: 2334, sha256: "7b2516a2abfe3e2ec705ca3b559ae577d38761ecfc419c06d8ff69dff046f243" },
+  ])("$city: the page is, operator for operator, the one issued BEFORE this change", async ({ at, length, sha256 }) => {
+    const { ops } = await readPdf((await generateDeclaracaoPdf(owner, { ...inputs, locationId: at })).bytes);
+
+    expect(ops.length).toBe(length);
+    expect(createHash("sha256").update(ops, "latin1").digest("hex")).toBe(sha256);
+  });
+
   it("the page of a clinic declaration does not change when another location is marked", async () => {
     const withMark = await generateDeclaracaoPdf(owner, { ...inputs, locationId: CB });
     db.tenant = { settings: {}, name: "OsteoJP, Lda.", nif: "515123456" };
@@ -412,6 +429,7 @@ describe("a location with NEITHER an image nor the setting is still refused, wit
     ["a place of spaces", { [MN]: { place: "   " } }],
     ["a place that is not text", { [MN]: { place: 7 } }],
     ["a place longer than the setting stores", { [MN]: { place: "x".repeat(PHYSICAL_STAMP_PLACE_MAX + 1) } }],
+    ["a place the document's font cannot print", { [MN]: { place: "Montemor \u2192 Novo" } }],
     ["a bare true", { [MN]: true }],
     ["a bare string", { [MN]: PLACE }],
     ["a null entry", { [MN]: null }],
@@ -423,6 +441,15 @@ describe("a location with NEITHER an image nor the setting is still refused, wit
     expect(await outcome(generateDeclaracaoPdf(owner, { ...inputs, locationId: MN }))).toBe("no_stamp");
     expect(mockRender).not.toHaveBeenCalled();
     expect(await declaracaoAvailability(owner, MN)).toBe("no_stamp");
+  });
+
+  it("why that place is refused and not drawn: the renderer THROWS on it, and prints a pt-PT one", async () => {
+    db.tenant = marked({ [MN]: { place: "S\u00e3o Jo\u00e3o da Madeira" } });
+    const pdf = await generateDeclaracaoPdf(owner, { ...inputs, locationId: MN });
+    expect((await readPdf(pdf.bytes)).ops).toContain(drawn("S\u00e3o Jo\u00e3o da Madeira, 12/07/2026"));
+
+    const model = mockRender.mock.calls[0]![0];
+    await expect(renderDeclaracaoPdf({ ...model, localidade: "Montemor \u2192 Novo" })).rejects.toThrow();
   });
 
   it("no tenant row in view: no_stamp", async () => {

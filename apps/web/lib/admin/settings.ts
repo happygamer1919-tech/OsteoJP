@@ -84,7 +84,10 @@ export async function updateTenantSettings(
 
   await runScoped(actor, async (tx) => {
     // Read-merge-write so we never clobber other keys in the settings blob.
-    const current = await tx.select({ settings: tenants.settings }).from(tenants);
+    // The row is locked for the read: a save of another key of the blob (a
+    // location's Declaração mark, a tenant secret) that commits between this
+    // read and this write would otherwise be written over.
+    const current = await tx.select({ settings: tenants.settings }).from(tenants).for("update");
     const existing = (current[0]?.settings ?? {}) as TenantSettingsJson;
     const settings: TenantSettingsJson = {
       ...existing,

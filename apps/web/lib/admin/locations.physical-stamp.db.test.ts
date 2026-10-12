@@ -24,6 +24,8 @@ d("S-1012-A1 ruling 4: the physical-stamp mark, written and read under RLS", () 
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let schema: typeof import("@osteojp/db");
   let updateLocation: typeof import("./locations").updateLocation;
+  let deleteLocation: typeof import("./locations").deleteLocation;
+  let updateTenantSettings: typeof import("./settings").updateTenantSettings;
   let listPhysicalStampPlaces: typeof import("./locations").listPhysicalStampPlaces;
   let declaracaoAvailability: typeof import("../clinical/declaracao/generate").declaracaoAvailability;
   let generateDeclaracaoPdf: typeof import("../clinical/declaracao/generate").generateDeclaracaoPdf;
@@ -57,7 +59,8 @@ d("S-1012-A1 ruling 4: the physical-stamp mark, written and read under RLS", () 
   beforeAll(async () => {
     schema = await import("@osteojp/db");
     db = schema.getDbAdmin();
-    ({ updateLocation, listPhysicalStampPlaces } = await import("./locations"));
+    ({ updateLocation, deleteLocation, listPhysicalStampPlaces } = await import("./locations"));
+    ({ updateTenantSettings } = await import("./settings"));
     ({ declaracaoAvailability, generateDeclaracaoPdf } = await import("../clinical/declaracao/generate"));
     const { sql } = await import("drizzle-orm");
     const slug = (id: string) => `mn01-${id.slice(0, 8)}`;
@@ -151,6 +154,14 @@ d("S-1012-A1 ruling 4: the physical-stamp mark, written and read under RLS", () 
     expect(await declaracaoAvailability(actor("owner"), third)).toBe("no_stamp");
   });
 
+  it("a place the document cannot print is refused at save, and nothing is stored", async () => {
+    await expect(
+      updateLocation(actor("admin"), third, { ...base, physicalStamp: { enabled: true, place: "Montemor \u2192 Novo" } }),
+    ).rejects.toMatchObject({ code: "invalid" });
+
+    expect(await listPhysicalStampPlaces(actor("admin"), [third])).toEqual({});
+  });
+
   it("the audit trail of the two changes names the field and the location, never the place", async () => {
     const { sql } = await import("drizzle-orm");
     const rows = await db.execute<{ action: string; metadata: Record<string, unknown> }>(
@@ -165,5 +176,94 @@ d("S-1012-A1 ruling 4: the physical-stamp mark, written and read under RLS", () 
       { fields: ["declaracao.physicalStamp"], locationId: third },
       { fields: ["declaracao.physicalStamp"], locationId: third },
     ]);
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Two saves of the same blob, at once                                  */
+  /* ------------------------------------------------------------------ */
+
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("a mark saved WHILE another save of the blob is open keeps both: the read waits on the row lock", async () => {
+    const { sql } = await import("drizzle-orm");
+    let marking: Promise<void> | undefined;
+
+    // Another session writes a key of the blob and holds its transaction open.
+    await db.transaction(async (other) => {
+      await other.execute(
+        sql`update public.tenants set settings = jsonb_set(settings, '{raceKey}', '"kept"') where id = ${tenant}`,
+      );
+      marking = updateLocation(actor("admin"), third, {
+        ...base,
+        physicalStamp: { enabled: true, place: "Montemor-o-Novo" },
+      });
+      // Long enough for the location save to reach its read of the tenant row.
+      await pause(400);
+    });
+    await marking;
+
+    const stored = await settingsOf(tenant);
+    expect(stored.raceKey).toBe("kept");
+    expect((stored.declaracao as Record<string, unknown>).physicalStamp).toEqual({
+      [third]: { place: "Montemor-o-Novo" },
+    });
+  });
+
+  it("the settings page saved WHILE a mark is being stored keeps the mark: its read waits too", async () => {
+    const { sql } = await import("drizzle-orm");
+    await updateLocation(actor("admin"), third, { ...base, physicalStamp: { enabled: false, place: "" } });
+    let saving: Promise<void> | undefined;
+
+    // Another session stores a mark and holds its transaction open.
+    await db.transaction(async (other) => {
+      await other.execute(
+        sql`update public.tenants
+            set settings = jsonb_set(settings, '{declaracao,physicalStamp}', ${JSON.stringify({ [unmarked]: { place: "Outro Sitio" } })}::jsonb)
+            where id = ${tenant}`,
+      );
+      saving = updateTenantSettings(actor("admin"), {
+        name: "mn01",
+        nif: "",
+        email: "geral@mn01.test",
+        phone: "210 999 999",
+        address: "",
+        config: {
+          locale: "pt",
+          reminderEmailEnabled: true,
+          reminderSmsEnabled: true,
+          reminderLeadTimeHours: [48, 24],
+          billingCurrency: "EUR",
+          billingVatRate: "23",
+          billingInvoiceEmail: "",
+        },
+      });
+      await pause(400);
+    });
+    await saving;
+
+    const stored = await settingsOf(tenant);
+    expect((stored.contacts as Record<string, unknown>).email).toBe("geral@mn01.test");
+    expect((stored.declaracao as Record<string, unknown>).physicalStamp).toEqual({
+      [unmarked]: { place: "Outro Sitio" },
+    });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* A deleted location takes its mark with it                            */
+  /* ------------------------------------------------------------------ */
+
+  it("deleting a marked location removes its mark and leaves the other location's", async () => {
+    await updateLocation(actor("owner"), third, { ...base, physicalStamp: { enabled: true, place: "Montemor-o-Novo" } });
+    expect((await settingsOf(tenant)).declaracao).toMatchObject({
+      physicalStamp: { [third]: { place: "Montemor-o-Novo" }, [unmarked]: { place: "Outro Sitio" } },
+    });
+
+    await deleteLocation(actor("owner"), third);
+
+    const stored = await settingsOf(tenant);
+    expect((stored.declaracao as Record<string, unknown>).physicalStamp).toEqual({
+      [unmarked]: { place: "Outro Sitio" },
+    });
+    expect(stored.raceKey).toBe("kept");
   });
 });

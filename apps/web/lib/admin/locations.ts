@@ -14,6 +14,8 @@ import {
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import {
   PHYSICAL_STAMP_PLACE_MAX,
+  hasPhysicalStampEntry,
+  isPrintablePlace,
   readPhysicalStampPlace,
   withPhysicalStamp,
 } from "@/lib/clinical/declaracao/declaracao-settings";
@@ -111,6 +113,11 @@ function parsePhysicalStamp(v: LocationInput["physicalStamp"]): string | null | 
   if (!place || place.length > PHYSICAL_STAMP_PLACE_MAX) {
     throw new AdminError("invalid", "physical stamp needs a place line");
   }
+  // Refused HERE, at save: drawn as it is, a character the document's font
+  // cannot encode would fail every declaration of this location at render.
+  if (!isPrintablePlace(place)) {
+    throw new AdminError("invalid", "physical stamp place has a character the document cannot print");
+  }
   return place;
 }
 
@@ -194,11 +201,15 @@ export async function updateLocation(
     if (!rows[0]) throw new AdminError("not_found");
     if (v.physicalStampPlace !== undefined) {
       // Read-merge-write, in the location's own transaction: the rest of the
-      // settings blob and the other locations' marks are carried over.
+      // settings blob and the other locations' marks are carried over. The row
+      // is LOCKED for the read, as it is by the two other writers of the blob
+      // (settings.ts, tenant-secret.ts): a save racing this one waits and
+      // merges into what this one stored, instead of writing over it.
       const [tenant] = await tx
         .select({ settings: tenants.settings })
         .from(tenants)
-        .where(eq(tenants.id, actor.tenantId));
+        .where(eq(tenants.id, actor.tenantId))
+        .for("update");
       if (!tenant) throw new AdminError("not_found", "tenant row not visible in this context");
       if (readPhysicalStampPlace(tenant.settings, id) !== v.physicalStampPlace) {
         const saved = await tx
@@ -307,6 +318,30 @@ export async function deleteLocation(actor: RequestContext, id: string): Promise
       .where(eq(locations.id, id))
       .returning({ id: locations.id });
     if (!del[0]) throw new AdminError("not_found");
+
+    // S-1012-A1 ruling 4: the Declaração's "physical stamp" mark is keyed by
+    // this id in tenants.settings. Nothing reads a dead id's entry; it goes with
+    // the location so the blob does not keep one. Same lock, merge and audit as
+    // the save in updateLocation.
+    const [tenant] = await tx
+      .select({ settings: tenants.settings })
+      .from(tenants)
+      .where(eq(tenants.id, actor.tenantId))
+      .for("update");
+    if (tenant && hasPhysicalStampEntry(tenant.settings, id)) {
+      const saved = await tx
+        .update(tenants)
+        .set({ settings: withPhysicalStamp(tenant.settings, id, null) })
+        .where(eq(tenants.id, actor.tenantId))
+        .returning({ id: tenants.id });
+      if (!saved[0]) throw new AdminError("forbidden", "tenant settings not writable");
+      await writeAudit(tx, actor, {
+        action: "tenant.update",
+        entityType: "tenant",
+        entityId: actor.tenantId,
+        metadata: { fields: ["declaracao.physicalStamp"], locationId: id },
+      });
+    }
 
     await writeAudit(tx, actor, {
       action: "location.delete",

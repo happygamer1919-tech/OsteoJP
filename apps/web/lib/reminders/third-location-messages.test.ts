@@ -24,13 +24,53 @@
  * two existing locations appear nowhere in it, and the tenant-level phone is a
  * number of its own, so a message that printed any of them would show.
  *
- * TWO FINDINGS ARE PINNED BELOW AS THEY ARE, NOT FIXED. Both are patient-facing
- * copy (Tier D), so this file records what is sent today and a change to the
- * copy has to change the pin with it:
+ * WHAT THIS FILE DOES NOT PROVE: that the row comes from the appointment's own
+ * location. ./data is replaced, so a broken join could not fail here. That is
+ * proved against a real database in ./third-location-data.db.test.ts.
+ *
+ * THREE FINDINGS ARE PINNED BELOW AS THEY ARE, NOT FIXED. Each is patient-facing
+ * copy or a REMINDERS_* flag (Tier D), so this file records what is sent today
+ * and a change to the copy has to change the pin with it:
  *   1. the follow-up and the no-show messages print the location's phone and
  *      NOT its name;
  *   2. the 24h SMS with the confirm link armed is longer than one segment for
- *      this location's name, and is refused (nothing is sent).
+ *      this location's name, and is refused (nothing is sent). G7 IS NOT MET IN
+ *      THAT CONFIGURATION, and the pin is a record of the failure, not a pass:
+ *      docs/comms-confirm-loop-current-wiring.md (section 1) records the link as
+ *      armed on production. Which of a shorter stored name, shorter copy or the
+ *      link off is the answer is the owner's decision;
+ *   3. the 24h SMS with the fee line (unapproved, off today) is refused at this
+ *      location, with or without the link.
+ *
+ * "REPORT ANY TEXT THAT STILL NAMES ONLY TWO CLINICS". None is changed here;
+ * each is patient-facing copy or outside this change. Read on this branch:
+ *   a patient sees
+ *     apps/portal/app/global-error.tsx:75-77      two phone numbers, fatal error page
+ *     apps/portal/lib/clinics.ts:91-112           published details for LV and CB only
+ *                                                 (also the list shown when the API is down)
+ *     packages/i18n/src/portal/strings.pt.json:250-255, strings.en.json the same keys
+ *                                                 names, addresses and hours of two
+ *     apps/web/lib/clinical/report/location-contacts.ts:71-89
+ *                                                 the printed contact block of two (report,
+ *                                                 RGPD and Declaração footers); a third
+ *                                                 location's footer is its own row
+ *   a patient does not see a wrong text, but the table holds two
+ *     apps/portal/lib/locationLabel.ts:9-12       city names by short code, LV and CB; a name
+ *                                                 shaped "OsteoJP (Place)" needs no entry (:49)
+ *   staff see
+ *     apps/web/lib/reminders/messaging-check-body.ts:35
+ *                                                 the delivery test's sample says "Castelo Branco",
+ *                                                 as "the longest real clinic name"; the third
+ *                                                 location's stored name is longer
+ *     apps/web/app/horarios/AlternatingWeeksPanel.tsx:88-90
+ *                                                 alternating weeks assume a pair
+ *   comments only
+ *     apps/web/lib/clinical/report/location-contacts.ts:66-69
+ *                                                 says Montemor-o-Novo was ruled "never a real
+ *                                                 or planned clinic" (2026-08-06); S-1012-A1
+ *                                                 makes it one
+ *     apps/web/lib/reminders/fee-notice.ts:45-49  the fee line's budget is measured with
+ *                                                 "Castelo Branco" as the longest name
  *
  * Every name, address and phone number of a person below is invented.
  */
@@ -354,7 +394,9 @@ describe("G7 - the reminders of a third-location appointment", () => {
 /* FINDING 2: the 24h SMS with the confirm link                          */
 /* ==================================================================== */
 
-describe("FINDING - the 24h SMS with the confirm link armed does not fit one segment for this name", () => {
+// G7 ASKS FOR ONE SEGMENT, AND WITH THE LINK ARMED THERE IS NO SMS AT ALL. The
+// tests below pin that failure so it cannot be lost; they do not pass the gate.
+describe("FINDING, G7 NOT MET - the 24h SMS with the confirm link armed does not fit one segment for this name", () => {
   beforeEach(() => {
     process.env.REMINDERS_CONFIRM_LINK_ENABLED = "true";
     process.env.REMINDERS_CONFIRM_CODE_SECRET = "test-only-confirm-secret-not-prod";
@@ -410,6 +452,64 @@ describe("FINDING - the 24h SMS with the confirm link armed does not fit one seg
       reason: "body_refused",
     });
     expect(h.sms).toHaveLength(1);
+  });
+});
+
+/* ==================================================================== */
+/* FINDING 3: the 24h SMS with the fee line                              */
+/* ==================================================================== */
+
+// Unapproved copy behind a flag that is off (fee-notice.ts), so no patient is
+// affected today. Rendered here all the same: it is a 24h SMS of its own id,
+// and at this location it does not fit.
+describe("FINDING - the 24h SMS with the fee line (unapproved, off today) does not fit at this location", () => {
+  beforeEach(() => {
+    process.env.REMINDERS_FEE_NOTICE_ENABLED = "true";
+  });
+
+  const refused = (chars: number) => ({
+    dispatched: false,
+    reason: "body_refused",
+    detail: `reminders/sms: message is ${chars} chars, exceeds ${SMS_SEGMENT_LIMIT}-char single segment`,
+  });
+
+  it("the flag alone changes nothing: a patient who has not accepted gets the plain 126 characters", async () => {
+    h.loadReminderData.mockResolvedValue(row());
+
+    expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
+
+    const sms = only(h.sms);
+    expect(sms.templateId).toBe("reminder.24h.sms");
+    expectOneSegment(sms.body, 126);
+  });
+
+  it("flag on and terms accepted: 180 characters, REFUSED, nothing sent under either id", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    h.loadReminderData.mockResolvedValue(row({ patientHasAcceptedTerms: true }));
+
+    expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toEqual(refused(180));
+    expect(h.sms).toEqual([]);
+  });
+
+  it("with the confirm link as well: 217 characters, REFUSED", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    process.env.REMINDERS_CONFIRM_LINK_ENABLED = "true";
+    process.env.REMINDERS_CONFIRM_CODE_SECRET = "test-only-confirm-secret-not-prod";
+    h.loadReminderData.mockResolvedValue(row({ patientHasAcceptedTerms: true }));
+
+    expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toEqual(refused(217));
+    expect(h.sms).toEqual([]);
+    expect(h.issuedCodes).toEqual([]);
+  });
+
+  it("the control: at a 12-character name the same fee-bearing SMS is 167 characters and refused too", async () => {
+    // So the fee line's overflow is not this location's alone: with the one-way
+    // sender's "Nao lemos respostas." line it fits at no location.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    h.loadReminderData.mockResolvedValue(row({ locationName: "OsteoJP (XX)", patientHasAcceptedTerms: true }));
+
+    expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toEqual(refused(167));
+    expect(h.sms).toEqual([]);
   });
 });
 
@@ -605,8 +705,9 @@ describe("every registered appointment message is one this file sent", () => {
       // routed away: 48h goes by email only and 24h by SMS only (offsets.ts).
       "reminder.48h.sms",
       "reminder.24h.email",
-      // the 24h SMS under another id, when the fee line is switched on; the
-      // location line of its body is the 24h body's own.
+      // the 24h SMS under another id, when the fee line is switched on.
+      // Rendered above (FINDING 3): at this location it is refused, so no
+      // message goes out under this id to be collected here.
       FEE_NOTICE_TEMPLATE_ID,
       // fixed sentences, asserted above.
       ...Object.values(REPLY_ACK_TEMPLATE_IDS),

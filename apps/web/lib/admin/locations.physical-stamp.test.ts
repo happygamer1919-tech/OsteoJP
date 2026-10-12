@@ -35,6 +35,8 @@ const state = {
   /** False: the tenants UPDATE policy lets no row through for this role. */
   tenantWritable: true,
   tenantWrites: [] as Record<string, unknown>[],
+  /** The lock strength of each locked read of the tenant row. */
+  locks: [] as string[],
   locationWrites: [] as Record<string, unknown>[],
   locationFound: true,
 };
@@ -48,15 +50,25 @@ beforeEach(() => {
   state.tenantVisible = true;
   state.tenantWritable = true;
   state.tenantWrites = [];
+  state.locks = [];
   state.locationWrites = [];
   state.locationFound = true;
 
   const tx = {
     select: () => ({
       from: (table: unknown) => ({
-        where: async () => {
+        where: () => {
           if (table !== tenants) throw new Error("this fake only reads tenants");
-          return state.tenantVisible ? [{ settings: state.settings }] : [];
+          const rows = state.tenantVisible ? [{ settings: state.settings }] : [];
+          // Awaited as it is (a plain read), or after .for("update") (a locked one).
+          return {
+            for: async (strength: string) => {
+              state.locks.push(strength);
+              return rows;
+            },
+            then: (res: (v: unknown[]) => void, rej: (e: unknown) => void) =>
+              Promise.resolve(rows).then(res, rej),
+          };
         },
       }),
     }),
@@ -155,6 +167,32 @@ describe("updateLocation - the Declaração's physical-stamp mark", () => {
     expect(state.tenantWrites).toEqual([]);
   });
 
+  it.each([
+    ["a character outside the document's font", "Montemor \u2192 Novo"],
+    ["a character of another script", "\u041c\u043e\u043d\u0442\u0435\u043c\u043e\u0440"],
+    ["a line break", "Montemor\no-Novo"],
+  ])("ticked with %s: refused as invalid at SAVE, never left to fail at render", async (_label, place) => {
+    expect(await code(updateLocation(admin, MN, { ...base, physicalStamp: { enabled: true, place } }))).toBe(
+      "invalid",
+    );
+    expect(mockRunScoped).not.toHaveBeenCalled();
+    expect(state.tenantWrites).toEqual([]);
+  });
+
+  it("a place with pt-PT accents is one the document prints: stored as typed", async () => {
+    await updateLocation(admin, MN, { ...base, physicalStamp: { enabled: true, place: "\u00c9vora, S\u00e3o Jo\u00e3o" } });
+
+    expect(await listPhysicalStampPlaces(admin, [MN])).toEqual({ [MN]: "\u00c9vora, S\u00e3o Jo\u00e3o" });
+  });
+
+  it("the tenant row is read LOCKED before the merge, once, and only when the mark is edited", async () => {
+    await updateLocation(admin, MN, base);
+    expect(state.locks).toEqual([]);
+
+    await updateLocation(admin, MN, { ...base, physicalStamp: { enabled: true, place: "Montemor-o-Novo" } });
+    expect(state.locks).toEqual(["update"]);
+  });
+
   it("a tenant row that updates NO row fails the save: never 'saved' for a mark not stored", async () => {
     state.tenantWritable = false;
 
@@ -217,6 +255,11 @@ describe("listPhysicalStampPlaces - what Administração > Locais shows", () => 
 
   it("no tenant row in view: nothing is marked", async () => {
     state.tenantVisible = false;
+    expect(await listPhysicalStampPlaces(admin, [MN])).toEqual({});
+  });
+
+  it("a stored place the document cannot print reads as NOT marked (refused, never drawn)", async () => {
+    state.settings = { declaracao: { physicalStamp: { [MN]: { place: "Montemor \u2192 Novo" } } } };
     expect(await listPhysicalStampPlaces(admin, [MN])).toEqual({});
   });
 });
