@@ -27,7 +27,7 @@ export type ClinicalErrorCode =
   | "reason_required" // blank or missing reason
   | "reason_too_long" // reason over DOCUMENT_DELETE_REASON_MAX after trimming
   // --- R45, the Declaração de Presença ---
-  | "no_stamp"; // the declaration's location has no carimbo asset: nothing rendered
+  | "no_stamp"; // the declaration's location has no carimbo asset and no physical-stamp mark: nothing rendered
 
 export class ClinicalError extends Error {
   override readonly name = "ClinicalError";

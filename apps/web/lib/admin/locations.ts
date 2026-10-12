@@ -9,8 +9,14 @@ import {
   patientLocations,
   serviceLocationPrices,
   services,
+  tenants,
 } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import {
+  PHYSICAL_STAMP_PLACE_MAX,
+  readPhysicalStampPlace,
+  withPhysicalStamp,
+} from "@/lib/clinical/declaracao/declaracao-settings";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 
@@ -33,6 +39,12 @@ export type LocationInput = {
   phone: string;
   /** PL-25: minutes. Omitted on paths that do not edit it (creation keeps 30). */
   slotGranularityMin?: string | number | null;
+  /**
+   * S-1012-A1 ruling 4: the Declaração's "physical stamp" mark for this
+   * location. Omitted on paths that do not edit it, so the mark keeps its
+   * value. `enabled` with a place sets it; not `enabled` clears it.
+   */
+  physicalStamp?: { enabled: boolean; place: string };
 };
 
 /**
@@ -74,6 +86,7 @@ function validate(input: LocationInput): {
   address: string | null;
   phone: string | null;
   slotGranularityMin: number | null;
+  physicalStampPlace: string | null | undefined;
 } {
   const name = input.name.trim();
   if (!name) throw new AdminError("invalid", "location name is required");
@@ -82,7 +95,48 @@ function validate(input: LocationInput): {
     address: input.address.trim() || null,
     phone: input.phone.trim() || null,
     slotGranularityMin: parseSlotGranularity(input.slotGranularityMin),
+    physicalStampPlace: parsePhysicalStamp(input.physicalStamp),
   };
+}
+
+/**
+ * `undefined` means "the caller is not editing this"; `null` clears the mark;
+ * a string is the place line to store. A mark with no place is rejected: the
+ * declaration prints that place, and a missing one is never guessed.
+ */
+function parsePhysicalStamp(v: LocationInput["physicalStamp"]): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (!v.enabled) return null;
+  const place = v.place.trim();
+  if (!place || place.length > PHYSICAL_STAMP_PLACE_MAX) {
+    throw new AdminError("invalid", "physical stamp needs a place line");
+  }
+  return place;
+}
+
+/**
+ * S-1012-A1 ruling 4: the place line of every location marked "physical
+ * stamp", by location id, for Administração > Locais. Read from
+ * tenants.settings (declaracao namespace); an unmarked location is absent.
+ */
+export async function listPhysicalStampPlaces(
+  actor: RequestContext,
+  locationIds: readonly string[],
+): Promise<Record<string, string>> {
+  assertCan(actor.role, "locations:read");
+  const settings = await runScoped(actor, async (tx) => {
+    const [row] = await tx
+      .select({ settings: tenants.settings })
+      .from(tenants)
+      .where(eq(tenants.id, actor.tenantId));
+    return row?.settings ?? {};
+  });
+  const out: Record<string, string> = {};
+  for (const id of locationIds) {
+    const place = readPhysicalStampPlace(settings, id);
+    if (place) out[id] = place;
+  }
+  return out;
 }
 
 /**
@@ -138,6 +192,32 @@ export async function updateLocation(
       .where(eq(locations.id, id))
       .returning({ id: locations.id });
     if (!rows[0]) throw new AdminError("not_found");
+    if (v.physicalStampPlace !== undefined) {
+      // Read-merge-write, in the location's own transaction: the rest of the
+      // settings blob and the other locations' marks are carried over.
+      const [tenant] = await tx
+        .select({ settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, actor.tenantId));
+      if (!tenant) throw new AdminError("not_found", "tenant row not visible in this context");
+      if (readPhysicalStampPlace(tenant.settings, id) !== v.physicalStampPlace) {
+        const saved = await tx
+          .update(tenants)
+          .set({ settings: withPhysicalStamp(tenant.settings, id, v.physicalStampPlace) })
+          .where(eq(tenants.id, actor.tenantId))
+          .returning({ id: tenants.id });
+        // A role the tenants UPDATE policy does not name updates no row. Fail
+        // the whole save: the form must not say "saved" for a mark not stored.
+        if (!saved[0]) throw new AdminError("forbidden", "tenant settings not writable");
+        await writeAudit(tx, actor, {
+          action: "tenant.update",
+          entityType: "tenant",
+          entityId: actor.tenantId,
+          // PII-free: the field and the location id, never the place text.
+          metadata: { fields: ["declaracao.physicalStamp"], locationId: id },
+        });
+      }
+    }
     await writeAudit(tx, actor, {
       action: "location.update",
       entityType: "location",
