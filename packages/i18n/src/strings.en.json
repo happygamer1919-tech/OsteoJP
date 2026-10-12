@@ -442,6 +442,8 @@
   "appointment.created": "Appointment created.",
   "appointment.updated": "Appointment updated.",
   "appointment.rescheduled": "Appointment rescheduled.",
+  "appointment.changeTherapist": "Change therapist",
+  "appointment.therapistChanged": "Therapist changed.",
   "appointment.cancelledMsg": "Appointment cancelled.",
   "appointment.requiredFields": "Please fill in the required fields.",
   "appointment.deleteHint": "Appointments are never permanently deleted; only cancelled.",
