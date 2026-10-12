@@ -47,6 +47,7 @@ vi.mock("@/lib/notifications/centre", () => ({
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { updateAppointment } from "./actions";
+import { appointmentRefusalMessage, isOverridableConflict } from "./refusal-message";
 import type { RequestContext } from "@osteojp/auth";
 
 const mockCtx = vi.mocked(requireRequestContext);
@@ -143,14 +144,26 @@ describe("0061 — the copy exists and both surfaces render it", () => {
   });
 
   it("the agenda drawer renders it as a MESSAGE, never through the conflict path", () => {
+    // MARC-THERAPIST-01 moved the sentence out of the drawer, into the function
+    // the ficha's "Gerir marcação" reads too. So this is asserted in two
+    // halves: the shared function maps the code to the copy, and the drawer
+    // sends every refusal but an overridable conflict through that function.
+    const shared = strip(readFileSync(join(__dirname, "refusal-message.ts"), "utf8"));
+    expect(shared).toMatch(/case "double_booked":\s*return s\["appointment\.doubleBooked"\];/);
     const src = strip(
       readFileSync(join(__dirname, "..", "..", "app", "agenda", "appointment-drawer.tsx"), "utf8"),
     );
-    expect(src).toContain('r.error === "double_booked"');
-    expect(src).toContain('s["appointment.doubleBooked"]');
+    expect(src).toContain("if (isOverridableConflict(r)) setConflicts(r.conflicts ?? []);");
+    expect(src).toContain("else setError(appointmentRefusalMessage(r));");
     // The refusal must NOT be routed into setConflicts: that surface offers
-    // "Guardar mesmo assim", which cannot succeed against this constraint.
-    expect(src).not.toMatch(/double_booked[\s\S]{0,120}setConflicts/);
+    // "Guardar mesmo assim", which cannot succeed against this constraint. The
+    // drawer has exactly one setConflicts that takes a server result, and it
+    // sits behind the predicate, which is false for this code.
+    expect(src.split("setConflicts(r.conflicts").length - 1).toBe(1);
+    expect(isOverridableConflict({ error: "double_booked" })).toBe(false);
+    expect(appointmentRefusalMessage({ error: "double_booked" })).toBe(
+      "Este terapeuta já tem uma marcação confirmada neste horário. Duas marcações confirmadas não podem sobrepor-se.",
+    );
   });
 
   it("the reception confirm queue maps it to its own row error, not `generic`", () => {

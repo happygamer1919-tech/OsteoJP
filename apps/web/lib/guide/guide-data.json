@@ -4601,6 +4601,44 @@
             {
               "spans": [
                 {
+                  "text": "Para passar uma marcação "
+                },
+                {
+                  "strong": "Agendada"
+                },
+                {
+                  "text": " ou "
+                },
+                {
+                  "strong": "Confirmada"
+                },
+                {
+                  "text": " para outro terapeuta, em "
+                },
+                {
+                  "strong": "Gerir marcação"
+                },
+                {
+                  "text": " escolha o nome em "
+                },
+                {
+                  "strong": "Terapeuta"
+                },
+                {
+                  "text": " e clique em "
+                },
+                {
+                  "strong": "Alterar terapeuta"
+                },
+                {
+                  "text": ". A hora, a clínica e o pacote não mudam. Se esse terapeuta não trabalhar a essa hora, ou já tiver outra marcação, a alteração é recusada e o motivo aparece por baixo do campo."
+                }
+              ],
+              "type": "para"
+            },
+            {
+              "spans": [
+                {
                   "text": "Se uma consulta ficou com o estado final errado (por exemplo "
                 },
                 {
@@ -4681,7 +4719,7 @@
       "see": [],
       "shots": "pacientes.marcacoes-na-ficha",
       "title": "Marcar, cancelar ou corrigir um estado a partir da ficha",
-      "words": 138
+      "words": 195
     },
     {
       "answers": [],
