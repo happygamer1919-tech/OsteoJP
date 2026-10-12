@@ -85,7 +85,7 @@ const RECEPTION = [
 ];
 
 // Terapeuta: Início, Agenda, Registos, Pacientes, Pacotes, Equipa e Horários,
-// Portal do paciente, Faturação. 37 lessons.
+// Portal do paciente, Faturação. 38 lessons.
 const THERAPIST = [
   "inicio.resumo-do-dia",
   "inicio.nota-rapida",
@@ -106,6 +106,7 @@ const THERAPIST = [
   "registos.gravar-consulta",
   "registos.episodios",
   "registos.gravacao-nao-processada",
+  "registos.exportar-pdf",
   "pacientes.encontrar-paciente",
   "pacientes.ficha-do-paciente",
   "pacientes.marcacoes-na-ficha",
@@ -127,8 +128,8 @@ const THERAPIST = [
 ];
 
 // Proprietário: Início, Agenda, Pacientes, Equipa e Horários, Faturação,
-// Pacotes, Portal do paciente, Marcação online, Registos. 58 lessons, M1
-// held: 57, which is every published lesson.
+// Pacotes, Portal do paciente, Marcação online, Registos. 59 lessons, M1
+// held: 58, which is every published lesson.
 const OWNER = [
   "inicio.resumo-do-dia",
   "inicio.ver-outro-dia",
@@ -187,14 +188,17 @@ const OWNER = [
   "registos.gravar-consulta",
   "registos.episodios",
   "registos.gravacao-nao-processada",
+  "registos.exportar-pdf",
 ];
 
 // Administrador: the Proprietário order without the lessons whose capability
 // the admin role lacks: Atribuir terapeutas a um paciente (care_team:manage),
-// Recuperar um paciente eliminado (patients:recover), every Registos lesson
-// (clinical_records:author, :sign, :review) and Enviar uma mensagem de teste
-// (roles:manage; the page is owner only, see "a lesson's gate is its page's
-// gate" below). 48 lessons.
+// Recuperar um paciente eliminado (patients:recover), the Registos lessons
+// on writing (clinical_records:author, :sign, :review) and Enviar uma mensagem
+// de teste (roles:manage; the page is owner only, see "a lesson's gate is its
+// page's gate" below). 49 lessons. E-25: of Registos an administrator reads
+// one lesson, Exportar registos em PDF, because it holds clinical_records:read
+// and the three export buttons ask for nothing else.
 const ADMIN = [
   "inicio.resumo-do-dia",
   "inicio.ver-outro-dia",
@@ -244,6 +248,7 @@ const ADMIN = [
   "portal.servicos-no-portal",
   "marcacao-online.tratar-pedido-novo-cliente",
   "marcacao-online.horarios-do-portal",
+  "registos.exportar-pdf",
 ];
 
 describe("each role sees exactly its own lessons, in its own order (G1-3)", () => {
@@ -253,26 +258,27 @@ describe("each role sees exactly its own lessons, in its own order (G1-3)", () =
     expect(sectionIds("reception")).not.toContain("registos");
   });
 
-  it("therapist: the 37 Terapeuta lessons, with F2 (faturas de um paciente) and not F1 (faturas de um período)", () => {
+  it("therapist: the 38 Terapeuta lessons, with F2 (faturas de um paciente) and not F1 (faturas de um período)", () => {
     expect(ids("therapist")).toEqual(THERAPIST);
     expect(ids("therapist")).toContain("faturacao.faturas-de-um-paciente");
     expect(ids("therapist")).not.toContain("faturacao.faturas-de-um-periodo");
     expect(ids("therapist").filter((id) => id.startsWith("marcacao-online."))).toEqual([]);
   });
 
-  it("admin: the 48 Proprietário lessons whose capability the admin role holds, with Atualizar os dados and without Atribuir terapeutas", () => {
+  it("admin: the 49 Proprietário lessons whose capability the admin role holds, with Atualizar os dados and without Atribuir terapeutas", () => {
     expect(ids("admin")).toEqual(ADMIN);
     // The same list, derived: the owner's lessons filtered by can("admin", capability).
     const derived = guideLessonsFor("owner")
       .filter((lesson) => lesson.capability === null || (isCapability(lesson.capability) && can("admin", lesson.capability)))
       .map((lesson) => lesson.id);
     expect(ids("admin")).toEqual(derived);
-    expect(sectionIds("admin")).not.toContain("registos");
+    // E-25: of Registos, the one lesson that needs only clinical_records:read.
+    expect(ids("admin").filter((id) => id.startsWith("registos."))).toEqual(["registos.exportar-pdf"]);
     expect(ids("admin")).toContain("pacientes.atualizar-dados");
     expect(ids("admin")).not.toContain("pacientes.atribuir-terapeutas");
   });
 
-  it("owner: the 57 Proprietário lessons, which are every published lesson", () => {
+  it("owner: the 58 Proprietário lessons, which are every published lesson", () => {
     expect(ids("owner")).toEqual(OWNER);
     expect([...ids("owner")].sort()).toEqual(GUIDE_DATA.lessons.map((lesson) => lesson.id).sort());
   });
@@ -311,7 +317,8 @@ describe("the lists above are the ruled orders", () => {
       "marcacao-online",
       "registos",
     ]);
-    expect(sectionIds("admin")).toEqual(sectionIds("owner").filter((id) => id !== "registos"));
+    // E-25: an administrator reads one Registos lesson, so its sections are the owner's.
+    expect(sectionIds("admin")).toEqual(sectionIds("owner"));
   });
 
   it("the helper's order is the model's order for every profile (the JSON orders come from guide-model.mjs)", () => {
@@ -335,8 +342,8 @@ describe("a lesson is only ever written for a role that can open its screen", ()
 
   it("the source loads without errors", () => {
     expect(guide.errors).toEqual([]);
-    // 58 lessons and the seven FAQ entries: an entry is held to the same rule.
-    expect(all.length).toBe(65);
+    // 59 lessons and the seven FAQ entries: an entry is held to the same rule.
+    expect(all.length).toBe(66);
   });
 
   it("every capability named is a packages/auth capability", () => {
@@ -826,6 +833,12 @@ describe("each role reads only the FAQ role blocks written for it (G1-3)", () =>
 //     owner role itself. The lesson's roles:manage stands in for it because
 //     only the owner holds roles:manage; this row fails the day another role
 //     is granted it.
+//   * Exportar registos em PDF (E-25) teaches three buttons with four doors:
+//     the Registos tab that draws two of them, and the three server actions
+//     behind "Exportar ficha", "PDF do episódio" and "Transferir PDF". Each
+//     asks for clinical_records:read and nothing else, which is why the
+//     lesson is read by a therapist, an administrator and the owner, and
+//     not by reception. A door that came to ask for more would fail here.
 const PAGE_GATES: { lesson: string; page: string; check: string; admits: (role: Role) => boolean }[] = [
   {
     lesson: "faturacao.faturas-de-um-periodo",
@@ -845,6 +858,17 @@ const PAGE_GATES: { lesson: string; page: string; check: string; admits: (role: 
     check: 'const canManageCareTeam = can(ctx.role, "care_team:manage");',
     admits: (role) => can(role, "care_team:manage"),
   },
+  ...[
+    ["apps/web/app/patients/[id]/page.tsx", 'const canReadClinical = can(ctx.role, "clinical_records:read");'],
+    ["apps/web/app/patients/[id]/ficha-pdf-actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };'],
+    ["apps/web/app/patients/[id]/episode-pdf-actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };'],
+    ["apps/web/app/clinical/[id]/actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };'],
+  ].map(([page, check]) => ({
+    lesson: "registos.exportar-pdf",
+    page: page!,
+    check: check!,
+    admits: (role: Role) => can(role, "clinical_records:read"),
+  })),
 ];
 
 /** The roles that hold the capability but that the page refuses. */
