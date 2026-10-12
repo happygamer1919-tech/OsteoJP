@@ -253,6 +253,32 @@ const SUITES = [
   // Only Postgres can demonstrate the state is unreachable, and only if the
   // suite actually ran.
   { file: "no-double-confirmed.test.ts", hard: true },
+  // M-8, added 2026-10-12 (strategy S-1012-A: "open the GATE-CHANGE now, the
+  // owner merges it"). Six DB-gated suites of apps/web that merged between
+  // 2026-10-08 and 2026-10-12. The derived half below already reddens any of
+  // them that SKIPS. What it cannot see is one that is ABSENT: renamed, deleted,
+  // or dropped from the run. Naming them here makes absence red too. Each proves
+  // a DATABASE fact no mocked test can:
+  //   - removing a staff member, and removing a patient, that another row
+  //     still references is refused by the database's own foreign keys
+  //     (23503), and nothing is deleted (#1569);
+  //   - a patient with survey rows is refused on their count for the owner,
+  //     and by the database's foreign key for an admin whose own reads show
+  //     none of them (#1572);
+  //   - the per-location Declaração mark is stored by an admin, the document
+  //     is then produced, and an unmarked location is still refused; and each
+  //     appointment's reminder data is its OWN location's, at three locations
+  //     (#1575);
+  //   - a therapist change from the patient's Marcações tab is refused outside
+  //     working hours and on a conflict, and on a pack appointment keeps the
+  //     link and the balance, with one appointment audit row and one reminder
+  //     event (#1576).
+  { file: "staff.delete.db.test.ts", hard: true },
+  { file: "actions.hard-delete.db.test.ts", hard: true },
+  { file: "hard-delete-survey.db.test.ts", hard: true },
+  { file: "locations.physical-stamp.db.test.ts", hard: true },
+  { file: "third-location-data.db.test.ts", hard: true },
+  { file: "marcacoes-therapist-change.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
