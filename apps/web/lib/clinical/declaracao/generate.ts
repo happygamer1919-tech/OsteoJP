@@ -11,6 +11,7 @@ import {
   resolveStampLocationKey,
 } from "./declaracao-model";
 import { renderDeclaracaoPdf } from "./declaracao-pdf";
+import { readPhysicalStampPlace } from "./declaracao-settings";
 
 // Tenant-scoped, READ-ONLY load + render for the Declaração de Presença (W5-31).
 // Every query runs through withTenantContext so RLS enforces tenant isolation. No
@@ -30,6 +31,12 @@ import { renderDeclaracaoPdf } from "./declaracao-pdf";
 // ClinicalError("no_stamp"). Both refusals come before a model is built and
 // before a byte is rendered. This function is the only way to a rendered
 // declaration, so every caller inherits them.
+//
+// S-1012-A1 ruling 4 (2026-10-12): ONE exception, set per location. A location
+// with no carimbo image that the tenant has marked "physical stamp"
+// (declaracao-settings.ts) is issued with an EMPTY FRAME to stamp by hand and
+// the place line stored with its mark. A location with a carimbo image is
+// unchanged, marked or not. A location with neither is refused as before.
 
 export type DeclaracaoPdf = { bytes: Uint8Array; filename: string };
 
@@ -70,7 +77,7 @@ async function readDeclaracaoLocation(
   tx: DbTx,
   scope: string[] | null,
   locationId: string | null | undefined,
-): Promise<SourceLocation | null> {
+): Promise<(SourceLocation & { id: string }) | null> {
   if (!locationId || !isLocationBookable(scope, locationId)) return null;
   const [loc] = await tx
     .select({
@@ -83,7 +90,28 @@ async function readDeclaracaoLocation(
     .where(eq(locations.id, locationId))
     .limit(1);
   if (!loc || !loc.isActive) return null;
-  return { name: loc.name, address: loc.address, phone: loc.phone };
+  return { id: locationId, name: loc.name, address: loc.address, phone: loc.phone };
+}
+
+/**
+ * How a location's declaration is stamped, and the place line that goes with
+ * it. Null is "neither a carimbo image nor the physical-stamp mark": refused.
+ *
+ * THE IMAGE COMES FIRST. A clinic with a carimbo is answered from its name
+ * alone, exactly as before, and its mark (if somebody set one) is not read.
+ */
+type DeclaracaoStamp =
+  | { kind: "image"; key: string; localidade: string }
+  | { kind: "physical"; localidade: string };
+
+function resolveDeclaracaoStamp(
+  location: SourceLocation & { id: string },
+  tenantSettings: unknown,
+): DeclaracaoStamp | null {
+  const key = resolveStampLocationKey(location);
+  if (key) return { kind: "image", key, localidade: resolveLocalidade(location) };
+  const place = readPhysicalStampPlace(tenantSettings, location.id);
+  return place ? { kind: "physical", localidade: place } : null;
 }
 
 /**
@@ -93,22 +121,26 @@ async function readDeclaracaoLocation(
  *
  *   "invalid"  - no location, or not an active location this staff member may
  *                act in. The request is malformed; nothing is produced.
- *   "no_stamp" - a usable location with no carimbo asset.
- *   "ok"       - a clinic with a carimbo.
+ *   "no_stamp" - a usable location with no carimbo asset and no
+ *                physical-stamp mark.
+ *   "ok"       - a clinic with a carimbo, or a location marked "physical stamp".
  *
- * It asks the same questions of the same row as generateDeclaracaoPdf below,
- * which refuses on its own whether or not a caller asked first.
+ * It asks the same questions of the same rows as generateDeclaracaoPdf below,
+ * which refuses on its own whether or not a caller asked first. The tenant's
+ * settings are read only for a location with no carimbo image.
  */
 export async function declaracaoAvailability(
   ctx: RequestContext,
   locationId: string | null | undefined,
 ): Promise<"ok" | "invalid" | "no_stamp"> {
   const scope = await bookingLocationScope(ctx);
-  const location = await withTenantContext(toClaims(ctx), (tx) =>
-    readDeclaracaoLocation(tx, scope, locationId),
-  );
-  if (!location) return "invalid";
-  return resolveStampLocationKey(location) === null ? "no_stamp" : "ok";
+  return withTenantContext(toClaims(ctx), async (tx) => {
+    const location = await readDeclaracaoLocation(tx, scope, locationId);
+    if (!location) return "invalid";
+    if (resolveStampLocationKey(location) !== null) return "ok";
+    const [tenant] = await tx.select({ settings: tenants.settings }).from(tenants).limit(1);
+    return resolveDeclaracaoStamp(location, tenant?.settings ?? {}) === null ? "no_stamp" : "ok";
+  });
 }
 
 /** "YYYY-MM-DD" → "DD/MM/YYYY" (the date is already the Lisbon calendar day). */
@@ -142,12 +174,13 @@ export async function generateDeclaracaoPdf(
       invalidLocation: false as const,
       patientName: patient.fullName,
       tenantSettings: tenant?.settings ?? {},
-      localidade: resolveLocalidade(location),
       // W9-03: carry the location IDENTITY through, not just the derived
       // localidade string. Before this, the resolved location was dropped here,
       // so the model layer could not tell which clinic the declaration was for
       // and every declaration got the LV carimbo (CB QA item 2, "erro grave").
-      stampLocationKey: resolveStampLocationKey(location),
+      // S-1012-A1 ruling 4: the stamp AND the place line are one answer, so a
+      // declaration cannot carry one location's place over another's stamp.
+      stamp: resolveDeclaracaoStamp(location, tenant?.settings ?? {}),
       // W12-30 C1: the location this declaration is FOR drives the branded
       // footer contact block; the tenant row supplies the fiscal identity
       // (placeholders when unset — never invented).
@@ -163,16 +196,18 @@ export async function generateDeclaracaoPdf(
   // R45: no carimbo asset for this declaration's location, so no declaration.
   // Decided on the LOCATION alone: the tenant's signatureStamp switch (leave
   // the area blank for a physical stamp) applies to a clinic that has a
-  // carimbo, and does not make a location without one issuable.
-  if (!built.stampLocationKey) throw new ClinicalError("no_stamp");
+  // carimbo, and does not make a location without one issuable. Only that
+  // location's own physical-stamp mark does (S-1012-A1 ruling 4).
+  if (!built.stamp) throw new ClinicalError("no_stamp");
 
   const model = buildDeclaracaoModel({
     patientName: built.patientName,
     dia: formatDia(inputs.date),
     horaInicio: inputs.startTime,
     horaFim: inputs.endTime,
-    localidade: built.localidade,
-    stampLocationKey: built.stampLocationKey,
+    localidade: built.stamp.localidade,
+    stampLocationKey: built.stamp.kind === "image" ? built.stamp.key : null,
+    physicalStamp: built.stamp.kind === "physical",
     nif: inputs.nif,
     observacoes: inputs.observacoes,
     sourceLocation: built.sourceLocation,

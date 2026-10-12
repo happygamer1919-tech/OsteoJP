@@ -24,6 +24,7 @@ const model = (over: Partial<DeclaracaoModel> = {}): DeclaracaoModel => ({
   localidade: "Linda-a-Velha",
   responsavel: "Dr. João Paulo Santos Silva",
   stampBytes: null,
+  physicalStampArea: false,
   nif: null,
   observacoes: null,
   // W12-30 C1: branded footer sources. Null contact + placeholder fiscal is the

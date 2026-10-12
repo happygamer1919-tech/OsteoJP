@@ -16,6 +16,7 @@ import {
   patientLocations,
   serviceLocationPrices,
   services,
+  tenants,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
@@ -33,31 +34,47 @@ function tag(table: unknown): string {
   if (table === availabilityTemplates) return "availability_templates";
   if (table === patientLocations) return "patient_locations";
   if (table === locations) return "locations";
+  if (table === tenants) return "tenants";
   return "other";
 }
 
 function q(rows: unknown[]) {
   return {
     limit: async () => rows,
+    for: async () => rows,
     then: (res: (v: unknown[]) => void, rej: (e: unknown) => void) =>
       Promise.resolve(rows).then(res, rej),
   };
 }
 
-function makeTx(opts: { exists?: boolean; apptCount?: number }) {
-  const { exists = true, apptCount = 0 } = opts;
+function makeTx(opts: { exists?: boolean; apptCount?: number; settings?: unknown; tenantWritable?: boolean }) {
+  const { exists = true, apptCount = 0, settings = {}, tenantWritable = true } = opts;
   const selectQueue: unknown[][] = [
     exists ? [{ id: "loc-1" }] : [], // existence
     [{ n: apptCount }], // appointment count
+    [{ settings }], // the tenant row, for the Declaração's physical-stamp mark
   ];
   let si = 0;
   const updates: string[] = [];
   const deletes: string[] = [];
+  const tenantWrites: unknown[] = [];
   const tx = {
     select: () => ({ from: () => ({ where: () => q(selectQueue[si++] ?? []) }) }),
     update: (t: unknown) => {
       updates.push(tag(t));
-      return { set: () => ({ where: async () => {} }) };
+      return {
+        set: (values: unknown) => ({
+          where: () => ({
+            // Awaited as it is (services, analytics) or with RETURNING (tenants).
+            returning: async () => {
+              if (!tenantWritable) return [];
+              tenantWrites.push(values);
+              return [{ id: "tenant-A" }];
+            },
+            then: (res: (v: void) => void, rej: (e: unknown) => void) => Promise.resolve().then(res, rej),
+          }),
+        }),
+      };
     },
     delete: (t: unknown) => {
       deletes.push(tag(t));
@@ -65,7 +82,7 @@ function makeTx(opts: { exists?: boolean; apptCount?: number }) {
       return { where: () => ({ returning: async () => rows }) };
     },
   };
-  return { tx, updates, deletes };
+  return { tx, updates, deletes, tenantWrites };
 }
 
 beforeEach(() => {
@@ -107,6 +124,71 @@ describe("deleteLocation (W3-07)", () => {
     ]);
     expect(writeAudit).toHaveBeenCalledTimes(1);
     expect(vi.mocked(writeAudit).mock.calls[0][2].action).toBe("location.delete");
+  });
+
+  // S-1012-A1 ruling 4: the "physical stamp" mark is keyed by the location's id
+  // in tenants.settings, so it goes with the location.
+  it("a MARKED location: its mark is removed with it, every other setting and mark stays", async () => {
+    const settings = {
+      contacts: { phone: "210 000 000" },
+      declaracao: { responsavel: "Dra. Teste", physicalStamp: { "loc-1": { place: "Montemor-o-Novo" }, "loc-2": { place: "Outro" } } },
+    };
+    const { tx, updates, tenantWrites } = makeTx({ settings });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await deleteLocation(admin, "loc-1");
+
+    expect(updates).toEqual(["services", "analytics", "tenants"]);
+    expect(tenantWrites).toEqual([
+      {
+        settings: {
+          contacts: { phone: "210 000 000" },
+          declaracao: { responsavel: "Dra. Teste", physicalStamp: { "loc-2": { place: "Outro" } } },
+        },
+      },
+    ]);
+    expect(vi.mocked(writeAudit).mock.calls.map((c) => c[2])).toEqual([
+      {
+        action: "tenant.update",
+        entityType: "tenant",
+        entityId: "tenant-A",
+        metadata: { fields: ["declaracao.physicalStamp"], locationId: "loc-1" },
+      },
+      { action: "location.delete", entityType: "location", entityId: "loc-1" },
+    ]);
+  });
+
+  it("a MALFORMED entry under its id is removed too", async () => {
+    const { tx, tenantWrites } = makeTx({ settings: { declaracao: { physicalStamp: { "loc-1": "x" } } } });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await deleteLocation(admin, "loc-1");
+
+    expect(tenantWrites).toEqual([{ settings: { declaracao: { physicalStamp: {} } } }]);
+  });
+
+  it("an UNMARKED location: the tenant row is not written (another location's mark is not its)", async () => {
+    const { tx, updates, tenantWrites } = makeTx({
+      settings: { declaracao: { physicalStamp: { "loc-2": { place: "Outro" } } } },
+    });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await deleteLocation(admin, "loc-1");
+
+    expect(tenantWrites).toEqual([]);
+    expect(updates).toEqual(["services", "analytics"]);
+    expect(writeAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it("a mark that cannot be removed fails the delete: no location.delete audit row", async () => {
+    const { tx } = makeTx({
+      settings: { declaracao: { physicalStamp: { "loc-1": { place: "Montemor-o-Novo" } } } },
+      tenantWritable: false,
+    });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await expect(deleteLocation(admin, "loc-1")).rejects.toMatchObject({ code: "forbidden" });
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it("refuses a non-admin (locations:write gate)", async () => {

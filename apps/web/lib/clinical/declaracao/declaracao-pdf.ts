@@ -8,7 +8,8 @@
 // responsável name is NOT hardcoded here — it arrives on `model.responsavel`
 // (config layer, declaracao-settings.ts). The signature + carimbo image is
 // embedded only when `model.stampBytes` is present, else blank vertical space is
-// left for a physical stamp.
+// left for a physical stamp. A location marked "physical stamp" gets that space
+// as an EMPTY FRAME (`model.physicalStampArea`, S-1012-A1 ruling 4).
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { clinicLogoBytes } from "../assets/clinic-logo-asset";
@@ -30,6 +31,11 @@ const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 const MARGIN = 64;
 const CONTENT_W = PAGE_W - MARGIN * 2;
+
+// The empty frame of a location marked "physical stamp": the width the carimbo
+// image is drawn at, and room for a hand stamp and a signature.
+export const PHYSICAL_STAMP_FRAME_W = 300;
+export const PHYSICAL_STAMP_FRAME_H = 110;
 
 // Verbatim Fisiozero template text (pt-PT). Placeholders interpolated for para 1.
 export const DECLARACAO_TITLE = "Declaração de Presença";
@@ -193,6 +199,18 @@ export async function renderDeclaracaoPdf(model: DeclaracaoModel): Promise<Uint8
     const h = png.height * scale;
     page.drawImage(png, { x: (PAGE_W - w) / 2, y: y - h, width: w, height: h });
     y -= h + 10;
+  } else if (model.physicalStampArea) {
+    // S-1012-A1 ruling 4: a location that stamps by hand. An EMPTY frame where
+    // the image would be, as wide as the image; nothing is written inside it.
+    page.drawRectangle({
+      x: (PAGE_W - PHYSICAL_STAMP_FRAME_W) / 2,
+      y: y - PHYSICAL_STAMP_FRAME_H,
+      width: PHYSICAL_STAMP_FRAME_W,
+      height: PHYSICAL_STAMP_FRAME_H,
+      borderColor: MUTED,
+      borderWidth: 0.75,
+    });
+    y -= PHYSICAL_STAMP_FRAME_H + 22;
   } else {
     // Blank vertical space for a physical signature + stamp.
     y -= 90;
