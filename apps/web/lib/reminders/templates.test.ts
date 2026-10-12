@@ -409,6 +409,20 @@ describe("follow-up email", () => {
     }
   });
 
+  // A name the fill would substitute or the placeholder check would refuse, and
+  // a name that is not a string, leave the line out too: the body is exactly
+  // the body of a blank name, and the render never throws.
+  it("a name that cannot be printed leaves the line out and still renders (MN-03)", () => {
+    const unprintable = ["Clinica {norte}", "Clinica {{clinic_phone}}", null, undefined];
+    for (const locale of ["pt", "en"] as const) {
+      const blank = renderFollowUpEmail(locale, { ...followUpCtx, clinicLocation: "" }).body;
+      for (const name of unprintable) {
+        const { body } = renderFollowUpEmail(locale, { ...followUpCtx, clinicLocation: name as unknown as string });
+        expect(body, String(name)).toBe(blank);
+      }
+    }
+  });
+
   it("leaves no unfilled placeholders in either locale", () => {
     for (const locale of ["pt", "en"] as const) {
       const { subject, body } = renderFollowUpEmail(locale, followUpCtx);
@@ -503,6 +517,20 @@ describe("no-show email", () => {
       expect(body).not.toMatch(/^(Local|Location):/m);
       expect(body).toContain("+351 210 000 000");
       expect(body).not.toMatch(/\n\n\n/);
+    }
+  });
+
+  // A name the fill would substitute or the placeholder check would refuse, and
+  // a name that is not a string, leave the line out too: the body is exactly
+  // the body of a blank name, and the render never throws.
+  it("a name that cannot be printed leaves the line out and still renders (MN-03)", () => {
+    const unprintable = ["Clinica {norte}", "Clinica {{clinic_phone}}", null, undefined];
+    for (const locale of ["pt", "en"] as const) {
+      const blank = renderNoShowEmail(locale, { ...noShowCtx, clinicLocation: "" }).body;
+      for (const name of unprintable) {
+        const { body } = renderNoShowEmail(locale, { ...noShowCtx, clinicLocation: name as unknown as string });
+        expect(body, String(name)).toBe(blank);
+      }
     }
   });
 

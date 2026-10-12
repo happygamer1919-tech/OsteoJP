@@ -651,14 +651,20 @@ export type FollowUpContext = {
 //
 // The column is required, so a blank name cannot come from the database. If
 // one ever does, the email is sent without the line and never refused for it:
-// LOCATION_LINE is that line as the four bodies below spell it.
+// LOCATION_LINE is that line as the four bodies below spell it. The same holds
+// for a name that is not a string, and for a name carrying a word in braces,
+// which the fill would substitute or assertNoUnfilledPlaceholders would refuse.
 const LOCATION_LINE: Record<Locale, string> = {
   pt: "Local: {{clinic_location}}\n",
   en: "Location: {{clinic_location}}\n",
 };
 
 function withoutLocationLineIfBlank(body: string, locale: Locale, clinicLocation: string): string {
-  return clinicLocation.trim() === "" ? body.split(LOCATION_LINE[locale]).join("") : body;
+  const printable =
+    typeof clinicLocation === "string" &&
+    clinicLocation.trim() !== "" &&
+    !/\{\{?[a-z_]+\}?\}/i.test(clinicLocation);
+  return printable ? body : body.split(LOCATION_LINE[locale]).join("");
 }
 
 export const FOLLOW_UP_EMAIL: Record<Locale, EmailTemplate> = {

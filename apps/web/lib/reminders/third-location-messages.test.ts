@@ -801,21 +801,25 @@ describe("MN-03 - the follow-up and the no-show EMAIL carry the location's name"
 
   // The column is required, so this cannot happen from the database. If a name
   // ever arrives blank the email is still sent, without the line: exactly the
-  // body that was sent before MN-03.
-  it.each([[""], ["   "]])("a blank name (%j) never stops the send: the line is left out", async (blank) => {
-    h.loadReminderData.mockResolvedValue(row({ status: "completed", locationName: blank }));
-    expect((await dispatchFollowUp(TENANT, APPT)).dispatched).toBe(true);
-    const followUp = only(h.email);
-    expect(followUp.body).toBe(followUpEmailBody("", PHONE));
-    expect(followUp.body).not.toContain("Local:");
-    h.email.length = 0;
+  // body that was sent before MN-03. The same for a name carrying a word in
+  // braces, which the template fill would substitute or refuse.
+  it.each([[""], ["   "], ["Clinica {norte}"], ["Clinica {{clinic_phone}}"]])(
+    "a blank or braced name (%j) never stops the send: the line is left out",
+    async (blank) => {
+      h.loadReminderData.mockResolvedValue(row({ status: "completed", locationName: blank }));
+      expect((await dispatchFollowUp(TENANT, APPT)).dispatched).toBe(true);
+      const followUp = only(h.email);
+      expect(followUp.body).toBe(followUpEmailBody("", PHONE));
+      expect(followUp.body).not.toContain("Local:");
+      h.email.length = 0;
 
-    h.loadReminderData.mockResolvedValue(row({ status: "no_show", locationName: blank }));
-    expect((await dispatchNoShow(TENANT, APPT)).dispatched).toBe(true);
-    const noShow = only(h.email);
-    expect(noShow.body).toBe(noShowEmailBody("", PHONE, rescheduleLinkOf(noShow.body)));
-    expect(noShow.body).not.toContain("Local:");
-  });
+      h.loadReminderData.mockResolvedValue(row({ status: "no_show", locationName: blank }));
+      expect((await dispatchNoShow(TENANT, APPT)).dispatched).toBe(true);
+      const noShow = only(h.email);
+      expect(noShow.body).toBe(noShowEmailBody("", PHONE, rescheduleLinkOf(noShow.body)));
+      expect(noShow.body).not.toContain("Local:");
+    },
+  );
 });
 
 // These pass on the commit before MN-03 and on this one, with no edit between.
