@@ -252,6 +252,8 @@ describe("EPI-01b: the alert a refused '+ Avaliação' lands on", () => {
     ["episodeMismatch", "clinical.episodeMismatch"],
     ["episodeClosed", "clinical.episodeClosedRefused"],
     ["avaliacaoErr", "patients.fichaGroupAddEvaluationError"],
+    // M-4: the create was rolled back as a deadlock victim.
+    ["concurrentChange", "errors.concurrentChange"],
   ] as const)("m=%s renders its own pt-PT alert, once, with role=alert", async (m, key) => {
     const html = await render("therapist", { m });
     expect(count(html, ALERT)).toBe(1);

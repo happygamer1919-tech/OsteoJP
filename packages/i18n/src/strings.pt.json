@@ -484,6 +484,7 @@
   "appointment.availabilityError": "Não foi possível carregar a disponibilidade.",
   "errors.forbidden": "Não tem permissão para esta ação.",
   "errors.generic": "Ocorreu um erro. Tente novamente.",
+  "errors.concurrentChange": "Outra alteração a este paciente estava a decorrer ao mesmo tempo. Nada foi guardado. Tente novamente.",
   "errors.unauthenticated": "Sessão expirada. Inicie sessão novamente.",
   "invoicing.title": "Faturação",
   "invoicing.filterStatus": "Estado",

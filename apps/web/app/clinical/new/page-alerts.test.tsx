@@ -52,6 +52,8 @@ describe("/clinical/new: the alert a refused episode lands on (EPI-01b)", () => 
   it.each([
     ["episodeMismatch", "clinical.episodeMismatch"],
     ["episodeClosed", "clinical.episodeClosedRefused"],
+    // M-4: the create was rolled back as a deadlock victim.
+    ["concurrentChange", "errors.concurrentChange"],
   ] as const)("m=%s draws its own pt-PT alert, once, and the form still renders", async (m, key) => {
     const html = await render(m);
     expect(count(html, ALERT)).toBe(1);
@@ -70,6 +72,7 @@ describe("/clinical/new: the alert a refused episode lands on (EPI-01b)", () => 
       expect(count(html, ALERT), String(m)).toBe(0);
       expect(html, String(m)).not.toContain(s["clinical.episodeMismatch"]);
       expect(html, String(m)).not.toContain(s["clinical.episodeClosedRefused"]);
+      expect(html, String(m)).not.toContain(s["errors.concurrentChange"]);
     }
   });
 });
