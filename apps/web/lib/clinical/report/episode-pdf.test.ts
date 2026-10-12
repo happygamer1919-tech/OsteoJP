@@ -27,6 +27,8 @@ function inputs(marker: string, over: Partial<ReportInputs["record"]> = {}): Rep
       version: 1,
       episodeId: "77777777-7777-4777-8777-777777777771",
       data: { consultationReason: marker, diagnosis: "Texto inventado" },
+      view: "form",
+      annulledAt: null,
       consultationDate: new Date("2026-05-20T09:30:00Z"),
       signedAt: new Date("2026-05-21T16:00:00Z"),
       ...over,

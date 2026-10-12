@@ -8,7 +8,12 @@
 // This is a CLINICAL document, NOT a fiscal one — no fatura-recibo / ATCUD /
 // QR / SAF-T.
 
-export { generateClinicalReportPdf, type ClinicalReportPdf } from "./generate";
+export {
+  generateClinicalReportPdf,
+  generateRegistoReportPdf,
+  registoReadScope,
+  type ClinicalReportPdf,
+} from "./generate";
 
 // Pure seams (testable without a DB or the PDF lib).
 export {
@@ -23,6 +28,8 @@ export {
   type ReportInputs,
   type ReportBodyKey,
   type RecordStatus,
+  type StoredEntry,
+  type StoredOrigin,
 } from "./report-model";
 
 export {

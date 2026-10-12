@@ -122,10 +122,26 @@ export function excerpt(fields: Readonly<Record<string, unknown>> | null | undef
 const byCreatedThenVersion = (a: FichaRecord, b: FichaRecord): number =>
   a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.version - b.version;
 
+/**
+ * The label imported registos group under when their episode's title is blank:
+ * a dash. It keys the group, the tab's chip shows it, and the server finds the
+ * group again by it. It is not a NAME: see `groupName`.
+ */
+export const BLANK_IMPORTED_LABEL = "\u2014";
+
+/**
+ * A group's label AS A NAME, for a heading or an accessible name: the label,
+ * or null when the group has none to give (no label, or the blank one above).
+ * The caller says what it prints or speaks instead.
+ */
+export function groupName(label: string | null): string | null {
+  return label === null || label === BLANK_IMPORTED_LABEL ? null : label;
+}
+
 /** The group a registo belongs to. */
 function groupKeyOf(r: FichaRecord): { key: string; kind: FichaGroupKind; label: string | null } {
   if (r.episodeId && r.episodeImported) {
-    const specialty = r.episodeTitle?.trim() || "—";
+    const specialty = r.episodeTitle?.trim() || BLANK_IMPORTED_LABEL;
     return { key: `imported:${specialty}`, kind: "imported", label: specialty };
   }
   if (r.episodeId) return { key: `episode:${r.episodeId}`, kind: "episode", label: r.episodeTitle };
@@ -250,15 +266,20 @@ export function addEvaluationTarget(group: FichaGroup): AddEvaluationTarget | nu
  *
  *   - an APP episode group (`kind: "episode"`) holding at least one registo the
  *     episode's file would include (episode-export-core.ts `isEpisodeExportable`:
- *     finalized, not annulled): the button, for that episode;
+ *     finalized; an annulled registo is in the file, with its mark): the
+ *     button, for that episode;
  *   - an episode with no registo, or with drafts only: NO button. There is
  *     nothing to export, and the server would produce nothing;
- *   - an IMPORTED group: NO button. It is one group per specialty over many
- *     imported episodes, not an episode;
+ *   - an IMPORTED group: its own target, `importedGroupPdfTarget` below;
  *   - the "Sem episódio" group: NO button. It is not an episode.
  * `partial` is true when the group shows a registo the file leaves out (a
- * draft, or an annulled one while "Mostrar anulados" is on), so the tab can say
- * so beside the button.
+ * draft), so the tab can say so beside the button.
+ *
+ * `group` holds EVERY registo of the episode the viewer reads, annulled ones
+ * included: the file holds them whatever "Mostrar anulados" shows, so they
+ * decide the button. `shown` is the same group as the tab draws it (without
+ * the annulled registos while the toggle is off); `partial` speaks of what is
+ * on screen. With one argument the two are the same group.
  *
  * The list does not carry the AI review axis, so it is read as "not under
  * review", as the per-record button's own gate reads it (record-status.ts
@@ -267,11 +288,61 @@ export function addEvaluationTarget(group: FichaGroup): AddEvaluationTarget | nu
  */
 export type EpisodePdfTarget = { episodeId: string; partial: boolean };
 
-export function episodePdfTarget(group: FichaGroup): EpisodePdfTarget | null {
+/** Whether a file holds this registo of the tab's list (the list carries no AI review axis). */
+const inFile = (r: FichaRecord): boolean => isEpisodeExportable({ status: r.status, aiReviewState: null });
+
+export function episodePdfTarget(group: FichaGroup, shown: FichaGroup = group): EpisodePdfTarget | null {
   if (group.kind !== "episode" || !group.episodeId) return null;
-  const included = group.records.filter((r) =>
-    isEpisodeExportable({ status: r.status, aiReviewState: null, annulled: r.annulled }),
-  ).length;
-  if (included === 0) return null;
-  return { episodeId: group.episodeId, partial: included < group.records.length };
+  if (!group.records.some(inFile)) return null;
+  return { episodeId: group.episodeId, partial: shown.records.some((r) => !inFile(r)) };
+}
+
+/**
+ * EXPORT-01: WHETHER AN IMPORTED GROUP SHOWS "PDF do episódio", AND FOR WHAT.
+ *
+ * The imported history has no episode the tab could name: it is drawn as one
+ * group per specialty, and that group is what the button exports. So the target
+ * is the group's own label (the specialty, or the dash a blank title groups
+ * under), which the server finds again by running this file's grouping over
+ * the caller's own read (episode-export.ts `readImportedGroupRecords`); no id
+ * from the page is trusted for it.
+ *
+ * The same rule as an app episode: at least one registo the file would include,
+ * and `partial` when the group shows one it leaves out (a draft). `group` and
+ * `shown` are `episodePdfTarget`'s: every registo read, and what is on screen.
+ */
+export type ImportedGroupPdfTarget = { specialty: string; partial: boolean };
+
+export function importedGroupPdfTarget(group: FichaGroup, shown: FichaGroup = group): ImportedGroupPdfTarget | null {
+  if (group.kind !== "imported" || !group.label) return null;
+  if (!group.records.some(inFile)) return null;
+  return { specialty: group.label, partial: shown.records.some((r) => !inFile(r)) };
+}
+
+/**
+ * EXPORT-01: WHETHER THE REGISTOS TAB SHOWS "Exportar ficha", the one PDF of
+ * the whole patient (report/ficha-export-core.ts).
+ *
+ * The same rule as a group's button, over every registo the viewer reads: at
+ * least one the file would include (finalized; an annulled registo is in the
+ * file, with its mark), and `partial` when the tab shows one the file leaves
+ * out (a draft). With no such registo there is NO button: the server would
+ * produce nothing. So a viewer whose own read returns no registo of this
+ * patient (the tab's read is the export's read) never sees it.
+ *
+ * `records` is EVERY registo read, annulled ones included, as the export reads
+ * them: a patient whose only finalized registo is annulled has the button
+ * whatever "Mostrar anulados" shows, because the export answers with that
+ * registo, marked. `shown` is what the tab lists; `partial` speaks of it.
+ *
+ * WHO sees the tab at all (a reader of clinical records) is the page's gate.
+ */
+export type FichaExportTarget = { partial: boolean };
+
+export function fichaExportTarget(
+  records: readonly FichaRecord[],
+  shown: readonly FichaRecord[] = records,
+): FichaExportTarget | null {
+  if (!records.some(inFile)) return null;
+  return { partial: shown.some((r) => !inFile(r)) };
 }

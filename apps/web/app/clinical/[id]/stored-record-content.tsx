@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
 
+import {
+  isAbsentStoredValue,
+  isPrintableStoredValue,
+  storedContentEntries,
+  storedValueText,
+} from "@/lib/clinical/stored-content";
+
 /**
  * THE STORED CONTENT OF A RECORD THAT HAS NO FORM TEMPLATE, READ-ONLY.
  *
@@ -17,26 +24,20 @@ import type { ReactNode } from "react";
  *     it" and "there is nothing to draw" are different answers.
  *
  * READ-ONLY BY CONSTRUCTION: no form, no input, no action, no server action.
+ *
+ * EXPORT-01: which keys are drawn and what text each value is now live in
+ * `lib/clinical/stored-content.ts`, so the PDF of the same record prints the
+ * same names and the same values (report-model.ts). This file is the drawing.
  */
 
-/** A leaf we can print as text without interpreting it. */
-function isPrintable(v: unknown): v is string | number | boolean {
-  return typeof v === "string" || typeof v === "number" || typeof v === "boolean";
-}
-
-/** Nothing to show: genuine absence, not a value. */
-export function isAbsentStoredValue(v: unknown): boolean {
-  return v === null || v === undefined || (typeof v === "string" && v.trim() === "");
-}
+export { isAbsentStoredValue };
 
 /** One stored value, printed without interpretation. */
 export function renderStoredValue(value: unknown): ReactNode {
-  if (isPrintable(value)) return String(value);
+  if (isPrintableStoredValue(value)) return storedValueText(value);
   // Arrays and objects have no agreed presentation here and inventing one would
   // be a judgement about their meaning. JSON keeps every byte visible.
-  return (
-    <span className="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(value, null, 2)}</span>
-  );
+  return <span className="whitespace-pre-wrap font-mono text-xs">{storedValueText(value)}</span>;
 }
 
 export function StoredRecordContent({
@@ -54,7 +55,7 @@ export function StoredRecordContent({
   testId: string;
   emptyTestId: string;
 }) {
-  const entries = Object.entries(data).filter(([, v]) => !isAbsentStoredValue(v));
+  const entries = storedContentEntries(data);
 
   if (entries.length === 0) {
     return (

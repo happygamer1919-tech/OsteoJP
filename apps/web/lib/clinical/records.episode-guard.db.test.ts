@@ -15,16 +15,15 @@
  *   - ANOTHER PATIENT'S episode (same tenant, a patient the therapist also
  *     treats, so only the episode can be the reason): refused, nothing written;
  *     the owner is refused the same;
- *   - ANOTHER TENANT'S episode: refused, nothing written. The control shows the
- *     foreign key alone WOULD take it (an admin insert with it succeeds), which
- *     is the gap this guard closes;
+ *   - ANOTHER TENANT'S episode: refused, nothing written (and see REG-03
+ *     below for what the admin connection is answered);
  *   - CONTROL: the right episode files the registo in it, with its audit row;
  *   - "+ Avaliação" on an imported group (Q7), the patient having no open
  *     episode of the specialty: a NEW open episode titled with the specialty and
  *     the Lisbon date, the registo in it, the imported episode untouched; a word
  *     off the list files nothing; a refused registo leaves no episode behind;
- *   - "Nova versão" of a registo already in another patient's episode is refused;
- *     of one in its own episode, filed there;
+ *   - "Nova versão" of a registo in another patient's episode is refused (see
+ *     REG-03 below for which refusal); of one in its own episode, filed there;
  *   - admin and reception are refused before anything is read.
  *
  * Added after R4 round 1 on #1526:
@@ -70,6 +69,28 @@
  *     chosen" runs on a patient who already has the episode, so it is the REUSE
  *     path and never reaches the episode insert.)
  *
+ * Added for REG-03 (the registo writers name the database's refusal of the
+ * same rule). Where the database carries the foreign key
+ * `clinical_records_episode_patient_tenant_fk` it refuses, by name, a registo
+ * whose episode is not its patient's in its tenant, and the writers answer that
+ * as `episode_mismatch` (records.ts, `namingEpisodeKeyRefusal`). Two arms send
+ * such a row from the admin connection, so they ASK THE SCHEMA WHICH SIDE THEY
+ * ARE ON (episode-key-state.ts) and assert the refusal that side owes. None is
+ * skipped, and the first test names the side:
+ *   - "Nova versão" of a registo in another patient's episode. Where the key
+ *     is carried, the database refuses that source registo when the fixture
+ *     sends it (23503, naming the key), so there is none to version; where it
+ *     is not, the application refuses the version (`episode_mismatch`);
+ *   - another tenant's episode: the application refuses on both sides. The
+ *     same row is also sent from the admin connection, in a transaction that
+ *     always rolls back, and the foreign key that answers for it is compared
+ *     with the side the catalogue reading named: an assertion on either side;
+ *   - THE DRIVER'S SHAPE, on both sides: a registo INSERT refused by ANOTHER
+ *     foreign key of the table (a form template that does not exist) reaches
+ *     the caller wrapped, the SQLSTATE and the constraint name on the cause and
+ *     neither on the outer error. `refusingForeignKey` reads both there, and
+ *     the writer leaves that refusal unmapped.
+ *
  * Runs in `.github/workflows/db-tests.yml` (it globs `.db.test.ts` in this
  * workspace) and self-skips without DATABASE_URL, like every suite beside it.
  * Invented names only.
@@ -89,6 +110,11 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let records: typeof import("./records");
   let episodes_: typeof import("./episodes");
+  let refusal: typeof import("./episode-key-refusal");
+  /** REG-03: whether this database carries the episode key; the arms that send a row it refuses read it. */
+  let key: import("./episode-key-state").EpisodeKeyState;
+  /** REG-03: the foreign key that refused the crossSource fixture row, when one did. */
+  let crossSourceRefusedBy: string | null = null;
 
   const tenant = randomUUID();
   const otherTenant = randomUUID();
@@ -105,7 +131,7 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
   const epB = randomUUID(); // patient B's app episode
   const epImported = randomUUID(); // patient A's imported Osteopatia episode
   const epForeign = randomUUID(); // the other tenant's patient's episode
-  const crossSource = randomUUID(); // a registo of A already filed in B's episode
+  const crossSource = randomUUID(); // a registo of A naming B's episode
   const ownSource = randomUUID(); // a registo of A in A's own episode
   const epClosedOwn = randomUUID(); // a closed app episode of A
   const closedSource = randomUUID(); // a registo of A in that closed episode
@@ -163,6 +189,9 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     db = mod.getDbAdmin();
     records = await import("./records");
     episodes_ = await import("./episodes");
+    refusal = await import("./episode-key-refusal");
+    key = await (await import("./episode-key-state")).episodeKeyState(db);
+    console.warn(`[records.episode-guard.db.test] ${key.detail}`);
 
     for (const [id, slug] of [
       [tenant, "epi01b"],
@@ -226,20 +255,26 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
           values (${tenant}::uuid, ${randomUUID()}::uuid, 'fisiozero', 'clinical_episode'::migration_entity_type,
                   ${`epi01b-r31-${epCImportedOpen.slice(0, 8)}`}, '{}'::jsonb, 'imported'::migration_staging_status, ${epCImportedOpen}::uuid)`,
     );
-    // Two source registos for "Nova versão", drafts so the cleanup can remove
-    // them (createAddendum does not ask the source's status). crossSource is the
-    // shape Q9 forbids: patient A's registo in patient B's episode. Only an admin
-    // insert can make it, which is the point: the database takes it.
-    for (const [id, ep] of [
-      [crossSource, epB],
-      [ownSource, epA],
-      [closedSource, epClosedOwn],
-    ] as const) {
-      await db.execute(
+    // The source registos for "Nova versão", drafts so the cleanup can remove
+    // them (createAddendum does not ask the source's status).
+    const sourceRegisto = (id: string, ep: string) =>
+      db.execute(
         raw`insert into clinical_records (id, tenant_id, patient_id, episode_id, form_template_id, practitioner_id, source, status, data)
             values (${id}::uuid, ${tenant}::uuid, ${patientA}::uuid, ${ep}::uuid, ${template}::uuid, ${therapist}::uuid,
                     'manual'::record_source, 'draft', '{}'::jsonb)`,
       );
+    await sourceRegisto(ownSource, epA);
+    await sourceRegisto(closedSource, epClosedOwn);
+    // crossSource is the shape Q9 forbids: patient A's registo in patient B's
+    // episode, sent by the admin connection (the application files none).
+    // REG-03: a foreign key that refuses it is kept by name for the "Nova
+    // versão" arm, which reads the refusal its side owes; anything else that
+    // goes wrong here fails the suite.
+    try {
+      await sourceRegisto(crossSource, epB);
+    } catch (e) {
+      crossSourceRefusedBy = refusal.refusingForeignKey(e);
+      if (crossSourceRefusedBy === null) throw e;
     }
   }, 60_000);
 
@@ -265,6 +300,15 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
       }
     }
     if (first) throw first;
+  });
+
+  it("REG-03: NAMES WHICH SIDE THIS DATABASE IS ON for the episode key, read from the catalogue; never half, never without it once promoted", async ({ annotate }) => {
+    // AN ANNOTATION, with no assertion of its own. episodeKeyState THROWS in
+    // beforeAll for a half-made key, or for a database without it once a
+    // promoted migration names it, so reaching here means one of the two whole
+    // sides. The line names which, in the log and on the test. The reading is
+    // compared with the database's own answer in the another-tenant arm below.
+    await annotate(key.detail, key.carried ? "notice" : "warning");
   });
 
   it("ANOTHER PATIENT'S episode: refused, and nothing is written", async () => {
@@ -299,29 +343,38 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     expect(await countRecords()).toBe(before);
   });
 
-  it("ANOTHER TENANT'S episode: refused, nothing written; the foreign key alone would have taken it", async () => {
+  it("ANOTHER TENANT'S episode: refused, and nothing is written", async () => {
     // Control 1: the episode exists, in the other tenant.
     expect(
       (await rows(raw`select 1 from clinical_episodes where id = ${epForeign}::uuid and tenant_id = ${otherTenant}::uuid`)).length,
     ).toBe(1);
-    // Control 2: the gap. An admin insert pointing this tenant's registo at it
-    // succeeds (no RLS on a foreign key check), and is rolled back.
-    let fkTookIt = false;
-    await db
+    const before = await countRecords();
+    // Control 2 (REG-03), on both sides: the catalogue reading is compared with
+    // the database's own answer. The same row is sent from the admin
+    // connection, in a transaction that always rolls back, so the arm leaves
+    // nothing. What answers for it is read by name and must be what the side
+    // `key` named owes. Any other error fails the arm.
+    const NO_KEY = "no foreign key";
+    const answeredBy: string = await db
       .transaction(async (tx) => {
         await tx.execute(
           raw`insert into clinical_records (tenant_id, patient_id, episode_id, form_template_id, source, status, data)
               values (${tenant}::uuid, ${patientA}::uuid, ${epForeign}::uuid, ${template}::uuid, 'manual'::record_source, 'draft', '{}'::jsonb)`,
         );
-        fkTookIt = true;
         throw new Error("rollback");
       })
-      .catch((e: Error) => {
-        if (e.message !== "rollback") throw e;
-      });
-    expect(fkTookIt).toBe(true);
+      .then(
+        () => "committed",
+        (e: Error) => {
+          if (e.message === "rollback") return NO_KEY;
+          const name = refusal.refusingForeignKey(e);
+          if (name === null) throw e;
+          return name;
+        },
+      );
+    expect(answeredBy).toBe(key.carried ? refusal.EPISODE_PATIENT_TENANT_KEY : NO_KEY);
+    expect(await countRecords()).toBe(before);
 
-    const before = await countRecords();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       expect(
@@ -421,13 +474,21 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     expect(await countEpisodes(patientA)).toBe(episodesBefore);
   });
 
-  it("'Nova versão' of a registo already in another patient's episode is refused; of one in its own, filed there", async () => {
+  it("'Nova versão' of a registo in another patient's episode is refused; of one in its own, filed there", async () => {
     const before = await countRecords();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      expect(await codeOf(records.createAddendum(ctx(therapist, "therapist"), crossSource))).toBe("episode_mismatch");
-    } finally {
-      warn.mockRestore();
+    if (key.carried) {
+      // REG-03: the database refused that source registo itself, by the episode
+      // key, when the fixture sent it. There is none to version.
+      expect(crossSourceRefusedBy).toBe(refusal.EPISODE_PATIENT_TENANT_KEY);
+      expect(await rows(raw`select 1 from clinical_records where id = ${crossSource}::uuid`)).toHaveLength(0);
+      expect(await codeOf(records.createAddendum(ctx(therapist, "therapist"), crossSource))).toBe("not_found");
+    } else {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        expect(await codeOf(records.createAddendum(ctx(therapist, "therapist"), crossSource))).toBe("episode_mismatch");
+      } finally {
+        warn.mockRestore();
+      }
     }
     expect(await countRecords()).toBe(before);
 
@@ -884,4 +945,39 @@ d("EPI-01b: the same-patient episode guard under real RLS", () => {
     expect(new Set(mixed.map((f) => f.episodeId)).size).toBe(1);
     expect(await countEpisodes(patientG)).toBe(before + 1);
   }, 60_000);
+  // ------------------------------------------------------------------ REG-03
+
+  it("REG-03 THE DRIVER'S SHAPE: a registo INSERT refused by ANOTHER foreign key reaches the caller wrapped and unmapped, the SQLSTATE and the key's name on the cause", async () => {
+    const OTHER_KEY = "clinical_records_form_template_id_form_templates_id_fk";
+    const missingTemplate = randomUUID(); // no such form_templates row: the registo INSERT fails on that foreign key
+    expect(await rows(raw`select 1 from form_templates where id = ${missingTemplate}::uuid`)).toHaveLength(0);
+    const [recs, audits] = [await countRecords(), await countAudit()];
+
+    let failure: unknown = null;
+    try {
+      // In patient A's own open episode, so the application's guard passes and
+      // the INSERT is reached.
+      await records.createDraftRecord(ctx(therapist, "therapist"), {
+        patientId: patientA,
+        formTemplateId: missingTemplate,
+        episodeId: epA,
+      });
+    } catch (e) {
+      failure = e;
+    }
+    expect(failure).not.toBeNull();
+    // Unmapped: the error Drizzle raised, not a refusal of the application's.
+    expect((failure as Error).name).not.toBe("ClinicalError");
+    // The outer error carries neither field; its cause, the driver's error, carries both.
+    const outer = failure as { code?: unknown; constraint_name?: unknown; cause?: { code?: unknown; constraint_name?: unknown } };
+    expect(outer.code).toBeUndefined();
+    expect(outer.constraint_name).toBeUndefined();
+    expect(outer.cause?.code).toBe("23503");
+    expect(outer.cause?.constraint_name).toBe(OTHER_KEY);
+    // The reader the writers use finds the name there, and it is not the episode key.
+    expect(refusal.refusingForeignKey(failure)).toBe(OTHER_KEY);
+    expect(refusal.isEpisodeKeyRefusal(failure)).toBe(false);
+    expect(await countRecords()).toBe(recs);
+    expect(await countAudit()).toBe(audits);
+  });
 });

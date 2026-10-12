@@ -107,6 +107,7 @@ import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import type { RequestContext } from "@osteojp/auth";
 import { confirmAppointmentRequest, rescheduleAppointment } from "@/lib/scheduling/actions";
 import { enqueueRemindersAfterCommit } from "@/lib/scheduling/reminders";
+import { therapistChangeInput } from "@/lib/scheduling/therapist-change";
 import { dispatchConfirmation, dispatchReminder } from "./dispatch";
 import {
   CONFIRMATION_IDEMPOTENCY_KEY,
@@ -230,7 +231,12 @@ function evaluateKey(expression: string, data: Record<string, unknown>): string 
  * Deliver the captured events in order, the way Inngest would inside one 24h
  * window: a run whose key was already seen is dropped. Returns what RAN.
  */
-function deliver(events: { name: string; data: Record<string, unknown> }[]) {
+function deliver(
+  events: { name: string; data: Record<string, unknown> }[],
+  // The id Inngest gives each received event: a new one per save. An arm may
+  // pass a constant to put back the key as it was before 2026-10-07.
+  eventId: (index: number) => string = (index) => `evt-${index}`,
+) {
   const seen = new Set<string>();
   const confirmationRuns: Record<string, unknown>[] = [];
   const reminderRuns: { offsetId: string; channel: string; sendAt: string }[] = [];
@@ -262,7 +268,7 @@ function deliver(events: { name: string; data: Record<string, unknown> }[]) {
         // last term to "undefined" for every event and dedupe reminders the way
         // the key did before 2026-10-07, which the real configuration no longer
         // does.
-        scheduledBy: `evt-${index}`,
+        scheduledBy: eventId(index),
       };
       const key = `reminder|${evaluateKey(REMINDER_IDEMPOTENCY_KEY, dueData)}`;
       if (seen.has(key)) dropped.push(key);
@@ -455,5 +461,96 @@ describe("a moved ACCEPTED appointment re-emits exactly as before", () => {
     pedidoIds = [];
     await move(MOVED_ONCE);
     expect(h.sent).toHaveLength(1);
+  });
+});
+
+/**
+ * MARC-THERAPIST-01. The ficha's "Gerir marcação" changes the Terapeuta through
+ * the same action, with the start unchanged. That is the save the incident of
+ * 2026-10-07 was about: the new appointment/scheduled cancels the waiting
+ * reminders, and until #1562 their replacements carried the same key and were
+ * dropped. The input is built by the field's own function, so what is driven
+ * here is what the field sends.
+ *
+ * WHAT THIS PROVES AND WHAT IT DOES NOT. Real: the action, the one event it
+ * emits and the key expressions the functions are registered with. Modelled:
+ * Inngest's cancel-on-new-event and its duplicate-key drop. The model does not
+ * run Inngest: the singleton and the debounce that #1562 also set are pinned as
+ * settings in inngest/functions.test.ts and were measured by hand on the
+ * Inngest dev server, which no test in this repository starts.
+ */
+describe("the THERAPIST changed from the ficha keeps one waiting reminder per channel", () => {
+  beforeEach(() => {
+    // A staff booking, accepted: the row every reminder belongs to.
+    rowState = { ...rowState, status: "confirmed", practitionerId: "therapist-1" };
+    pedidoIds = [];
+  });
+
+  /** The ficha's row, as its list reads it, sent the way the field sends it. */
+  async function changeTherapist(to: string) {
+    const listed = {
+      practitionerId: rowState.practitionerId,
+      practitionerName: "Dra Inventada",
+      practitionerTwoId: rowState.practitionerTwoId,
+      locationId: rowState.locationId,
+      startsAt: rowState.startsAt.toISOString(),
+      endsAt: rowState.endsAt.toISOString(),
+    };
+    const result = await rescheduleAppointment(APPT, therapistChangeInput(listed, to));
+    expect(result).toEqual({ ok: true, data: { id: APPT } });
+    rowState = { ...rowState, practitionerId: to };
+  }
+
+  const oneOfEach = [
+    { offsetId: "48h", channel: "email", sendAt: new Date(ORIGINAL.getTime() - 48 * 3600_000).toISOString() },
+    { offsetId: "24h", channel: "sms", sendAt: new Date(ORIGINAL.getTime() - 24 * 3600_000).toISOString() },
+  ];
+
+  it("the save emits ONE appointment/scheduled, at the start the appointment already had", async () => {
+    await changeTherapist("therapist-2");
+    expect(h.sent).toEqual([
+      {
+        name: "appointment/scheduled",
+        data: {
+          appointmentId: APPT,
+          tenantId: TENANT,
+          startsAt: ORIGINAL.toISOString(),
+          confirmationEligible: true,
+        },
+      },
+    ]);
+  });
+
+  it("after the save exactly one 48 h email and one 24 h SMS are waiting, and no reminder was dropped", async () => {
+    // The booking's own event first: its two reminders are the ones waiting.
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL }]);
+    expect(deliver(h.sent).reminderRuns).toEqual(oneOfEach);
+
+    await changeTherapist("therapist-2");
+    const { reminderRuns, dropped } = deliver(h.sent);
+    expect(reminderRuns).toEqual(oneOfEach);
+    expect(dropped.filter((key) => key.startsWith("reminder|"))).toEqual([]);
+    // The one key that IS a duplicate is the confirmation's (one per appointment
+    // and start, however many saves): no second confirmation inside 24 hours.
+    expect(dropped).toEqual([`confirmation|${APPT}:confirmation:${ORIGINAL.toISOString()}`]);
+  });
+
+  it("changed to a colleague and back: still exactly one per channel", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL }]);
+    await changeTherapist("therapist-2");
+    await changeTherapist("therapist-1");
+    expect(h.sent).toHaveLength(3);
+    const { reminderRuns, dropped } = deliver(h.sent);
+    expect(reminderRuns).toEqual(oneOfEach);
+    expect(dropped.filter((key) => key.startsWith("reminder|"))).toEqual([]);
+  });
+
+  it("WITH THE KEY AS IT WAS BEFORE #1562 the same save loses both reminders, so the arms above can fail", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL }]);
+    await changeTherapist("therapist-2");
+    // One constant in place of the per-save event id is the old key.
+    const { reminderRuns, dropped } = deliver(h.sent, () => "no-save-in-the-key");
+    expect(reminderRuns).toEqual([]);
+    expect(dropped.filter((key) => key.startsWith("reminder|"))).toHaveLength(2);
   });
 });

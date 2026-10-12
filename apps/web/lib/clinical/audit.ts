@@ -17,6 +17,14 @@ export type ClinicalAuditAction =
   // system. Metadata is the episode, the patient, the ids of the registos in
   // the file and two counts.
   | "episode.export_pdf"
+  // EXPORT-01: every other document export writes one row as well, with ids
+  // and counts only (export-audit.ts lists each export beside its row). One
+  // PDF of one registo left the system:
+  | "clinical_record.export_pdf"
+  // and one PDF about one patient did: the whole ficha, an imported group of
+  // it, the RGPD form or the Declaração de Presença. `metadata.document` says
+  // which, from a closed list.
+  | "patient.export_pdf"
   | "attachment.create"
   | "patient_document.create" // staff uploaded an administrative doc to a patient
   // SR-62 PU-4: staff SOFT deleted a patient document (row + Storage object kept).

@@ -65,7 +65,8 @@ export async function setTenantSecret(
   assertCan(actor.role, "settings:manage");
 
   await runScoped(actor, async (tx) => {
-    const [row] = await tx.select({ settings: tenants.settings }).from(tenants);
+    // Locked for the read, like every writer of the blob (see settings.ts).
+    const [row] = await tx.select({ settings: tenants.settings }).from(tenants).for("update");
     const existing = (row?.settings ?? {}) as SettingsBlob;
     const secrets = { ...(existing.secrets ?? {}), [key]: value };
     await tx.update(tenants).set({ settings: { ...existing, secrets } });

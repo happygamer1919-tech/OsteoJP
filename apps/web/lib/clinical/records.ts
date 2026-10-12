@@ -14,6 +14,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { isDeadlockVictim } from "@/lib/observability/sql-state";
 import {
   therapistPatientReadScope,
   therapistPatientScope,
@@ -22,6 +23,7 @@ import {
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError, type ClinicalErrorCode } from "./errors";
+import { isEpisodeKeyRefusal } from "./episode-key-refusal";
 import { defaultEpisodeTitle, isEpisodeSpecialty } from "./episode-title";
 import { findOpenEpisodeOfSpecialty, insertOpenEpisode } from "./episodes";
 import {
@@ -624,6 +626,77 @@ export async function assertEpisodeIsThePatients(
   }
 }
 
+/**
+ * REG-03: THE SAME RULE, WHEN IT IS THE DATABASE THAT REFUSES. Where the
+ * database carries the foreign key `isEpisodeKeyRefusal` names
+ * (episode-key-refusal.ts), an INSERT whose episode is not the registo's
+ * patient's, in its tenant, is refused there with a foreign-key violation that
+ * names the key. This maps that one refusal to the refusal the application
+ * already returns for the rule, `episode_mismatch`, so the caller gets the same
+ * answer `assertEpisodeIsThePatients` gives and not an unhandled database error.
+ *
+ * NOTHING IS WRITTEN: the statement failed, this throws, and the writer's
+ * transaction rolls back with everything it did before the INSERT (an episode
+ * opened for the registo included). No audit row, and one log line with no
+ * identifier in it, as for the application's own refusal above.
+ *
+ * EVERY OTHER ERROR PASSES THROUGH UNCHANGED, a foreign-key violation that
+ * names any other key included. On a database that does not carry the key
+ * this never matches.
+ */
+async function namingEpisodeKeyRefusal<T>(insert: PromiseLike<T>): Promise<T> {
+  try {
+    return await insert;
+  } catch (e) {
+    if (!isEpisodeKeyRefusal(e)) throw e;
+    console.warn("[clinical] registo refused: the database's episode key refused it (episode_mismatch). Nothing written.");
+    throw new ClinicalError("episode_mismatch");
+  }
+}
+
+/**
+ * M-4: A REGISTO WRITE ROLLED BACK AS A DEADLOCK VICTIM IS A NAMED REFUSAL.
+ *
+ * A registo write and another change to the same patient (a patient merge is
+ * the one that matters) can each hold a lock the other is waiting for. Postgres
+ * ends that by rolling one of the two back with SQLSTATE 40P01; the other goes
+ * through and the data stays correct. This maps that one error to
+ * `concurrent_change`, so the caller can say "try again" where it would
+ * otherwise show its generic failure.
+ *
+ * AROUND THE WHOLE TRANSACTION, not around one statement: the victim is chosen
+ * at whichever statement was waiting (the registo's own INSERT or UPDATE, an
+ * episode opened for it, its audit row), and the answer is the same for all of
+ * them. NOTHING IS WRITTEN: the transaction rolled back, the audit row with it.
+ * NOTHING IS RETRIED here: the staff member sends the request again. One log
+ * line with no identifier in it, as for the other refusals in this file.
+ *
+ * EVERY OTHER ERROR PASSES THROUGH UNCHANGED, a `ClinicalError` raised inside
+ * the transaction included.
+ *
+ * WHO USES IT: the three transactions in which a staff member's action INSERTS
+ * a registo (createDraftRecord and createAddendum here; claimReviewItem in
+ * review.ts, the review queue's claim, which files a draft for a patient's
+ * submission) and the draft save (updateRecordData), which only UPDATES its
+ * registo and is in because the ruling names the registo save. LEFT OUT ON
+ * PURPOSE, each answering a deadlock as it answered any unknown error
+ * before: every other write that only UPDATES or DELETES an existing
+ * registo (editReviewNarrative, saveReviewFicha and finalizeReview in
+ * review.ts; signAndLockRecord, annulRecord and hardDeleteClinicalRecord
+ * here), the ingestion endpoint's insert (lib/ingestion/store.ts, a machine
+ * caller with no screen to show a sentence on), and the importer
+ * (packages/db/src/migration/upsert.ts, no app action calls it).
+ */
+export async function namingDeadlock<T>(write: Promise<T>): Promise<T> {
+  try {
+    return await write;
+  } catch (e) {
+    if (!isDeadlockVictim(e)) throw e;
+    console.warn("[clinical] registo write refused: rolled back as a deadlock victim (concurrent_change). Nothing written.");
+    throw new ClinicalError("concurrent_change");
+  }
+}
+
 export async function createDraftRecord(
   ctx: RequestContext,
   input: {
@@ -660,7 +733,7 @@ export async function createDraftRecord(
   // no open episode (a second one would be opened) and take a lock of its own.
   const patientId = input.patientId.toLowerCase();
   const ip = await clientIp();
-  return runScoped(ctx, async (tx) => {
+  return namingDeadlock(runScoped(ctx, async (tx) => {
     // A therapist files a registo only for a patient they treat or created
     // (the permission matrix; 0097's INSERT policy once applied). Refuse any
     // other patient here, cleanly. Before 0097 the INSERT would succeed (0045
@@ -691,19 +764,21 @@ export async function createDraftRecord(
         ));
       }
     }
-    const rows = await tx
-      .insert(clinicalRecords)
-      .values({
-        tenantId: ctx.tenantId,
-        patientId,
-        formTemplateId: input.formTemplateId,
-        episodeId,
-        appointmentId: input.appointmentId ?? null,
-        practitionerId: ctx.userId,
-        data: {},
-        status: "draft",
-      })
-      .returning({ id: clinicalRecords.id });
+    const rows = await namingEpisodeKeyRefusal(
+      tx
+        .insert(clinicalRecords)
+        .values({
+          tenantId: ctx.tenantId,
+          patientId,
+          formTemplateId: input.formTemplateId,
+          episodeId,
+          appointmentId: input.appointmentId ?? null,
+          practitionerId: ctx.userId,
+          data: {},
+          status: "draft",
+        })
+        .returning({ id: clinicalRecords.id }),
+    );
     const id = rows[0]!.id;
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -715,7 +790,7 @@ export async function createDraftRecord(
       ip,
     });
     return { id, episodeId };
-  });
+  }));
 }
 
 /**
@@ -729,7 +804,7 @@ export async function updateRecordData(
 ): Promise<{ dataHash: string }> {
   assertCan(ctx.role, "clinical_records:author");
   const ip = await clientIp();
-  return runScoped(ctx, async (tx) => {
+  return namingDeadlock(runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -793,7 +868,7 @@ export async function updateRecordData(
       ip,
     });
     return { dataHash: stored.dataHash };
-  });
+  }));
 }
 
 /** Create a new draft version (addendum) that supersedes a finalized record. */
@@ -803,7 +878,7 @@ export async function createAddendum(
 ): Promise<{ id: string }> {
   assertCan(ctx.role, "clinical_records:author");
   const ip = await clientIp();
-  return runScoped(ctx, async (tx) => {
+  return namingDeadlock(runScoped(ctx, async (tx) => {
     const src = await tx
       .select({
         patientId: clinicalRecords.patientId,
@@ -829,21 +904,23 @@ export async function createAddendum(
     // (an imported registo's "Nova versão" stays in its imported group).
     if (s.episodeId) await assertEpisodeIsThePatients(tx, ctx, s.episodeId, s.patientId);
 
-    const rows = await tx
-      .insert(clinicalRecords)
-      .values({
-        tenantId: ctx.tenantId,
-        patientId: s.patientId,
-        episodeId: s.episodeId,
-        formTemplateId: s.formTemplateId,
-        appointmentId: s.appointmentId,
-        practitionerId: ctx.userId,
-        data: (s.data as Record<string, unknown>) ?? {},
-        status: "draft",
-        version: s.version + 1,
-        supersedesId: id,
-      })
-      .returning({ id: clinicalRecords.id });
+    const rows = await namingEpisodeKeyRefusal(
+      tx
+        .insert(clinicalRecords)
+        .values({
+          tenantId: ctx.tenantId,
+          patientId: s.patientId,
+          episodeId: s.episodeId,
+          formTemplateId: s.formTemplateId,
+          appointmentId: s.appointmentId,
+          practitionerId: ctx.userId,
+          data: (s.data as Record<string, unknown>) ?? {},
+          status: "draft",
+          version: s.version + 1,
+          supersedesId: id,
+        })
+        .returning({ id: clinicalRecords.id }),
+    );
     const newId = rows[0]!.id;
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
@@ -855,7 +932,7 @@ export async function createAddendum(
       ip,
     });
     return { id: newId };
-  });
+  }));
 }
 
 /**

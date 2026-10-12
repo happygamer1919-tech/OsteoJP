@@ -108,6 +108,16 @@ describe("createRecordAction: one write path for /clinical/new and '+ Avaliaçã
     );
   });
 
+  it("M-4: a create rolled back as a deadlock victim lands on its own message, on the page it came from", async () => {
+    h.createDraftRecord.mockRejectedValue(new ClinicalError("concurrent_change"));
+    expect(await landing({ patientId: PATIENT, formTemplateId: TEMPLATE, episodeId: EPISODE, from: "ficha" })).toBe(
+      `/patients/${PATIENT}?tab=registos&m=concurrentChange`,
+    );
+    expect(await landing({ patientId: PATIENT, formTemplateId: TEMPLATE, episodeId: EPISODE })).toBe(
+      "/clinical/new?m=concurrentChange",
+    );
+  });
+
   it("any other clinical refusal keeps the generic message, on the page it came from", async () => {
     h.createDraftRecord.mockRejectedValue(new ClinicalError("not_found"));
     expect(await landing({ patientId: PATIENT, formTemplateId: TEMPLATE, from: "ficha" })).toBe(

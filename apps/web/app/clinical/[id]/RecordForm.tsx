@@ -67,6 +67,8 @@ export function saveFailureReason(result: SaveState | null): string {
   if (result?.code === "finalized") return s["clinical.finalized"];
   // The draft has another author (zeroRowRefusal, records.ts).
   if (result?.code === "not_author") return s["clinical.notAuthor"];
+  // M-4: the save was rolled back as a deadlock victim (namingDeadlock, records.ts).
+  if (result?.code === "concurrent_change") return s["errors.concurrentChange"];
   return s["clinical.error"];
 }
 

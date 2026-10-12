@@ -12,7 +12,7 @@ import { runScoped } from "@/lib/auth/context";
 import { therapistPatientScope, therapistRegistoWriteScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
-import { assertTherapistMayFileFor, recordDataHash, zeroRowRefusal } from "./records";
+import { assertTherapistMayFileFor, namingDeadlock, recordDataHash, zeroRowRefusal } from "./records";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -172,6 +172,12 @@ export async function listReviewQueue(ctx: RequestContext): Promise<ReviewQueueI
  * draft clinical_record (narrative-only auto-fill from the payload — coded +
  * safety fields stay blank for manual entry) and links it. Idempotent: a
  * re-claim of an already-claimed item returns the same record id.
+ *
+ * M-4: the claim of a patient submission INSERTS a registo for that patient,
+ * as createDraftRecord does, so a claim rolled back as a deadlock victim is
+ * `concurrent_change` (namingDeadlock, records.ts). The mapping sits around the
+ * one transaction both sources share. The other writers of this file only
+ * update a registo that exists and are left as they were.
  */
 export async function claimReviewItem(
   ctx: RequestContext,
@@ -179,7 +185,7 @@ export async function claimReviewItem(
 ): Promise<{ recordId: string }> {
   assertCan(ctx.role, "clinical_records:review");
   const ip = await clientIp();
-  return runScoped(ctx, async (tx) => {
+  return namingDeadlock(runScoped(ctx, async (tx) => {
     if (ref.source === "ai") {
       const rows = await tx
         .select({
@@ -352,7 +358,7 @@ export async function claimReviewItem(
       ip,
     });
     return { recordId };
-  });
+  }));
 }
 
 /* ------------------------------------------------------------------ */

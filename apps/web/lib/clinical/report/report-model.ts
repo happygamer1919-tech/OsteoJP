@@ -10,6 +10,8 @@
 // no ATCUD, no QR, no SAF-T — deliberately out of scope.
 
 import type { Locale } from "@osteojp/i18n";
+import type { RecordView } from "../record-view";
+import { storedContentEntries, storedValueText } from "../stored-content";
 import { resolveLocationContact, type LocationContact, type SourceLocation } from "./location-contacts";
 
 export type RecordStatus = "draft" | "locked" | "signed";
@@ -53,6 +55,20 @@ export type ReportRecordInput = {
   episodeId: string | null;
   /** The filled form response (clinical_records.data jsonb). */
   data: unknown;
+  /**
+   * EXPORT-01: which body the registo page draws for this record
+   * (`chooseRecordView`, lib/clinical/record-view.ts), asked by the loader with
+   * the page's own inputs. "form" prints the template body below; any other
+   * view prints the stored content under the names it is stored with, as that
+   * view does on the screen.
+   */
+  view: RecordView;
+  /**
+   * EXPORT-01: the instant of the annulment that names this record
+   * (record_annulments), or null when none does. An annulled record is printed,
+   * never refused, and every page of it carries the mark.
+   */
+  annulledAt: Date | null;
   /** Consultation date — appointment start, else the record's creation date. */
   consultationDate: Date | null;
   signedAt: Date | null;
@@ -128,12 +144,30 @@ export type ClinicalReportModel = {
   };
   /** Only the fields actually present in the record data, in template order. */
   body: { key: ReportBodyKey; value: string }[];
+  /**
+   * EXPORT-01: the stored content of a record the page draws without a form,
+   * exactly as the page lists it (lib/clinical/stored-content.ts): every stored
+   * key that holds something, under its own name, in stored order, each value
+   * as the text the screen prints. `origin` selects the heading and the
+   * read-only notice the page shows above it ("imported" for a record the
+   * importer wrote, "other" for any other record without a template). Null for
+   * a record with a template, which prints `body`.
+   */
+  stored: { origin: StoredOrigin; entries: StoredEntry[] } | null;
+  /** EXPORT-01: set for an annulled record; the date the mark carries. */
+  annulment: { annulledAt: string | null } | null;
   signature: {
     practitionerName: string | null;
     practitionerTitle: string | null;
     signedAt: string | null;
   };
 };
+
+/** Which of the page's two template-less views the stored content came from. */
+export type StoredOrigin = "imported" | "other";
+
+/** One stored key and its value as text, as the page prints the pair. */
+export type StoredEntry = { name: string; value: string };
 
 // ---------------------------------------------------------------------------
 // Print gate
@@ -220,8 +254,22 @@ export function buildClinicalReportModel(
       ? (inputs.record.data as Record<string, unknown>)
       : {};
 
-  const body = REPORT_BODY_KEYS.map((key) => ({ key, value: readBodyField(data, key) }))
-    .filter((f): f is { key: ReportBodyKey; value: string } => f.value !== null);
+  // A record the page draws through its template prints the template body. Any
+  // other record prints what is stored, as the page's own view of it does: the
+  // seven template fields are house names, and reading them out of content
+  // stored under other names would print an empty body over a full record.
+  const templated = inputs.record.view === "form";
+  const body = templated
+    ? REPORT_BODY_KEYS.map((key) => ({ key, value: readBodyField(data, key) })).filter(
+        (f): f is { key: ReportBodyKey; value: string } => f.value !== null,
+      )
+    : [];
+  const stored = templated
+    ? null
+    : {
+        origin: inputs.record.view === "imported" ? ("imported" as const) : ("other" as const),
+        entries: storedContentEntries(data).map(([name, value]) => ({ name, value: storedValueText(value) })),
+      };
 
   // A signed record prints the signer; a locked-but-unsigned one prints the
   // authoring practitioner (no signature line value).
@@ -244,6 +292,10 @@ export function buildClinicalReportModel(
       episodeId: inputs.record.episodeId,
     },
     body,
+    stored,
+    annulment: inputs.record.annulledAt
+      ? { annulledAt: formatDate(inputs.record.annulledAt, locale) }
+      : null,
     signature: {
       practitionerName,
       practitionerTitle: inputs.practitioner.title,

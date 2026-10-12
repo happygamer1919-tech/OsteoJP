@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sqlStateOf } from "./sql-state";
+import { DEADLOCK_DETECTED, isDeadlockVictim, sqlStateOf } from "./sql-state";
 
 /**
  * The subject is NOT "does it find the code" — it is "can anything else get
@@ -123,5 +123,50 @@ describe("sqlStateOf", () => {
     ]) {
       expect(sqlStateOf(Object.assign(new Error("x"), { code })), code).toBe(code);
     }
+  });
+});
+
+/**
+ * M-4. Which errors are a deadlock victim's. The wrapped shape is the one
+ * Drizzle raises (its own error, the driver's at `.cause`); it is pinned
+ * against a real deadlock on the real driver in
+ * lib/clinical/deadlock-victim.db.test.ts.
+ */
+describe("isDeadlockVictim", () => {
+  const driver = (code: unknown) => Object.assign(new Error("a driver message that is never read"), { code });
+  const wrapped = (cause: unknown) => new Error("Failed query: insert into clinical_records", { cause });
+
+  it("the SQLSTATE is 40P01", () => {
+    expect(DEADLOCK_DETECTED).toBe("40P01");
+  });
+
+  it("wrapped once, as Drizzle raises it: the outer error carries no SQLSTATE, the cause carries 40P01", () => {
+    const e = wrapped(driver("40P01"));
+    expect((e as { code?: unknown }).code).toBeUndefined();
+    expect(isDeadlockVictim(e)).toBe(true);
+  });
+
+  it("the driver's own error, with 40P01 on the outer error", () => {
+    expect(isDeadlockVictim(driver("40P01"))).toBe(true);
+  });
+
+  it("CONTROL: every other SQLSTATE is not it, wrapped or not", () => {
+    // 40001 is the same class (transaction rollback) and a different refusal.
+    for (const code of ["23503", "23505", "23514", "40001", "55P03", "57014", "P0001", "P0002", "XX000"]) {
+      expect(isDeadlockVictim(driver(code)), code).toBe(false);
+      expect(isDeadlockVictim(wrapped(driver(code))), code).toBe(false);
+    }
+  });
+
+  it("CONTROL: an error with no SQLSTATE, a code that is not text, and a value that is not an error are not it", () => {
+    expect(isDeadlockVictim(new Error("deadlock detected"))).toBe(false);
+    expect(isDeadlockVictim(wrapped(new Error("deadlock detected")))).toBe(false);
+    expect(isDeadlockVictim(driver(40))).toBe(false);
+    for (const v of [null, undefined, "40P01", {}, []]) expect(isDeadlockVictim(v)).toBe(false);
+  });
+
+  it("an outer SQLSTATE answers before the cause: a wrapper with a code of its own is not looked behind", () => {
+    const e = Object.assign(new Error("outer", { cause: driver("40P01") }), { code: "23503" });
+    expect(isDeadlockVictim(e)).toBe(false);
   });
 });
