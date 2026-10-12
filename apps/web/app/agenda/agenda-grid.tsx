@@ -48,10 +48,13 @@ const NO_OFF_HOURS: readonly OffHoursSpan[] = [];
  * One appointment name line, as the scale reserves it, and the gap it leaves
  * under a group so the last name does not sit on the next rule.
  *
- * THE LINE IS A CONTRACT WITH THE CSS, NOT A MEASUREMENT. `AppointmentName` is
- * `text-xs leading-tight` (15px) inside `py-0.5` (4px) and draws 20px in
- * Chromium; nothing here reads the DOM. e2e/agenda-stacked-slot.spec.ts is what
- * holds the two together: it fails if a drawn group is taller than its band.
+ * THE LINE IS THIS TALL BECAUSE `AppointmentName` IS GIVEN THIS HEIGHT, not
+ * because its text happens to draw so. `text-xs leading-tight` (15px) inside
+ * `py-0.5` (4px) beside a 14px glyph comes to 20px at default settings, and a
+ * browser minimum font size makes that text taller; the scale reads no DOM, so
+ * a line that grew with its text would run six names over the next hour. The
+ * button's height is therefore set from this constant, and a taller text stays
+ * in its own line. e2e/agenda-stacked-slot.spec.ts measures the drawn line.
  */
 const NAME_LINE_PX = 20;
 const GROUP_PAD_PX = 4;
@@ -141,8 +144,8 @@ export function groupNeedPx(lines: number): number {
  *
  * `startsByDay` holds, per day column, the start of every appointment LINE as
  * minutes from midnight (one entry per appointment, so six at 10:00 is six
- * 600s). A start outside the rendered hours asks for nothing: the grid clamps
- * it, as it always did.
+ * 600s). A start outside the window is counted where the grid draws it
+ * (`drawnStartMin`), so it has room there like any other line.
  *
  * LATEST GROUP FIRST, and the order is what makes the answer one answer. A
  * group's room is the stretches from its start to its bound, and every stretch
@@ -152,6 +155,31 @@ export function groupNeedPx(lines: number): number {
  *
  * Pure and exported so the arithmetic is unit-testable without a DOM.
  */
+/**
+ * The minute a start is DRAWN at: its own, or the edge of the window when it
+ * is outside it. Before the first rendered hour it is that hour; at or after
+ * the close it is the last 30-minute slot, so it has a row to sit in.
+ *
+ * NOT REACHABLE FROM THE PAGE TODAY: `gridWindow` (lib/scheduling/clinic-hours.ts)
+ * widens the window to every appointment loaded. This is what keeps the grid
+ * whole if a caller ever passes a narrower one: `agendaScale` and
+ * `groupByStart` both read it, so a start pushed to the edge joins the group
+ * already there and the scale makes room for it. Without it the scale would
+ * make no room, and with the scroll gone the names would run over the rows
+ * below, or under the card's clip at the bottom.
+ */
+export function drawnStartMin(
+  min: number,
+  startMin: number = DAY_START_MIN,
+  endMin: number = DAY_END_MIN,
+): number {
+  const originMin = Math.floor(startMin / 60) * 60;
+  if (min < originMin) return originMin;
+  if (min < endMin) return min;
+  const lastSlot = originMin + Math.floor((endMin - 1 - originMin) / SLOT_MINUTES) * SLOT_MINUTES;
+  return Math.max(originMin, lastSlot);
+}
+
 export function agendaScale(
   startsByDay: number[][],
   startMin: number = DAY_START_MIN,
@@ -163,22 +191,30 @@ export function agendaScale(
   // appointment half an hour high.
   const originMin = Math.floor(startMin / 60) * 60;
   const bottomMin = originMin + dayHours(startMin, endMin).length * 60;
+  // A window with no hour in it has one knot and nothing to place.
+  if (bottomMin === originMin) return { mins: [originMin], tops: [0] };
 
   const knots = new Set<number>();
   for (let m = originMin; m <= bottomMin; m += SLOT_MINUTES) knots.add(m);
+  // The close is a knot too. A clinic closing off the hour (20:30) still draws
+  // the whole 20:00 row, and the mapper places nothing below the close, so a
+  // group's room ends there and not at the bottom of the row.
+  knots.add(endMin);
 
   const groups: { start: number; bound: number; need: number }[] = [];
   for (const starts of startsByDay) {
     const lines = new Map<number, number>();
     for (const m of starts) {
-      if (m >= originMin && m < bottomMin) lines.set(m, (lines.get(m) ?? 0) + 1);
+      const at = drawnStartMin(m, startMin, endMin);
+      lines.set(at, (lines.get(at) ?? 0) + 1);
     }
     const day = [...lines.entries()].sort((x, y) => x[0] - y[0]);
     day.forEach(([start, count], i) => {
       knots.add(start);
       // PL-01's bound, unchanged: the nearer of the next hour line and the
-      // next group in this column.
-      const nextHour = (Math.floor(start / 60) + 1) * 60;
+      // next group in this column. In the last row the close stands in for
+      // the hour line, which is where `groupBandPx` ends the band as well.
+      const nextHour = Math.min((Math.floor(start / 60) + 1) * 60, endMin);
       const nextGroup = day[i + 1]?.[0] ?? nextHour;
       groups.push({ start, bound: Math.min(nextHour, nextGroup), need: groupNeedPx(count) });
     });
@@ -240,13 +276,21 @@ export function makeMinToPx(
  * groups are positioned by start time so the vertical position still encodes
  * time. No horizontal overlap-splitting.
  */
-function groupByStart(appts: AgendaAppointment[]): [number, AgendaAppointment[]][] {
-  // AGENDA-STACK-01: keyed by the Lisbon MINUTE, the same value the scale
-  // counts lines by (`agendaScale`), so a group in the DOM and a group the
-  // scale made room for are one thing by construction.
+function groupByStart(
+  appts: AgendaAppointment[],
+  winStartMin: number,
+  winEndMin: number,
+): [number, AgendaAppointment[]][] {
+  // AGENDA-STACK-01: keyed by the Lisbon MINUTE THE LINE IS DRAWN AT, the same
+  // value the scale counts lines by (`agendaScale`), so a group in the DOM and
+  // a group the scale made room for are one thing by construction.
   const groups = new Map<number, AgendaAppointment[]>();
   for (const a of appts) {
-    const startMin = lisbonMinutesFromMidnight(new Date(a.startsAt));
+    const startMin = drawnStartMin(
+      lisbonMinutesFromMidnight(new Date(a.startsAt)),
+      winStartMin,
+      winEndMin,
+    );
     const list = groups.get(startMin);
     if (list) list.push(a);
     else groups.set(startMin, [a]);
@@ -826,7 +870,7 @@ export function AgendaGrid({
               {/* W11-00 v3: appointment names as a Fisiozero-style vertical list.
                   Each start slot is a full-width column; same-slot appointments
                   stack one name per line (never side by side). */}
-              {groupByStart(dayAppts).map(([startMin, group], gi, groups) => {
+              {groupByStart(dayAppts, win.startMin, win.endMin).map(([startMin, group], gi, groups) => {
                 const nextStartMin = gi + 1 < groups.length ? groups[gi + 1]![0] : null;
                 // AGENDA-STACK-01: NO `overflow` HERE, ON PURPOSE. This element
                 // was `overflow-y-auto`, and that was the scroll inside the
@@ -1079,6 +1123,9 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
         // ACC-vacuous-guard-sweep criterion F, in one attribute: a guard proves a
         // test RAN; only run-scoped identity proves it tested the right SUBJECT.
         data-appointment-id={appt.id}
+        // AGENDA-STACK-01: the line is exactly as tall as the scale reserved
+        // for it (see NAME_LINE_PX), whatever size the browser draws the text.
+        style={{ height: NAME_LINE_PX }}
         className={`flex w-full items-start gap-1 rounded-v2 px-2 py-0.5 text-left text-xs font-normal leading-tight ${tColor.text} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
       >
         <EstadoMarker estado={estado} className="mt-0.5" />

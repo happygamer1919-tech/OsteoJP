@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgendaGrid,
   agendaScale,
+  drawnStartMin,
   groupBandPx,
   groupNeedPx,
   makeMinToPx,
@@ -247,6 +248,15 @@ describe("PL-10 - agenda name-line: first + last only, smaller, non-bold", () =>
     const html = render([appt({ patientName: "Abílio José de Carvalho Fernandes" })]);
     expect(visibleText(faceFor(html, "Abílio Fernandes"))).toBe("Abílio Fernandes");
     expect(html).toContain("Abílio José de Carvalho Fernandes"); // hover carries the full name
+  });
+
+  it("the name line's height is the one the scale reserves for it, set on the element", () => {
+    // AGENDA-STACK-01: the scale reads no DOM. It reserves groupNeedPx(n) for n
+    // lines, so a line must not be able to draw taller than its share of that,
+    // whatever size a browser gives the text.
+    const linePx = groupNeedPx(2) - groupNeedPx(1);
+    const face = faceFor(render([appt()]), "Maria Silva");
+    expect(face).toMatch(new RegExp(`style="[^"]*height:\\s*${linePx}px`));
   });
 
   it("renders the name-line smaller (text-xs) and non-bold (font-normal)", () => {
@@ -732,13 +742,80 @@ describe("STAFF-03, AGENDA-STACK-01 - the row grows to fit its appointments", ()
     expectEveryGroupFits([[...full, ...lines(3, H(9, 5)), ...lines(2, H(9, 50)), ...lines(8, H(19, 45))]]);
   });
 
-  it("follows the clinic's window: a start outside the rendered hours asks for nothing", () => {
-    // 09:00 to 13:00. Ten lines at 08:00 and at 13:00 are outside the rows the
-    // grid draws; the grid clamps them, and the scale must not grow for them.
-    const scale = agendaScale([[...lines(10, H(8)), ...lines(10, H(13))]], H(9), H(13));
+  it("follows the clinic's window: a start outside it is drawn at the edge, and has room there", () => {
+    // 09:00 to 13:00. The page never passes a window narrower than its
+    // appointments (gridWindow widens it), so this is the grid holding together
+    // on its own if a caller ever does. Ten lines at 08:00 are drawn at 09:00,
+    // ten at 13:00 in the last slot, 12:30; each joins the group already there.
+    expect(drawnStartMin(H(8), H(9), H(13))).toBe(H(9));
+    expect(drawnStartMin(H(13), H(9), H(13))).toBe(H(12, 30));
+    expect(drawnStartMin(H(15, 20), H(9), H(13))).toBe(H(12, 30));
+    // Inside the window a start is its own minute, the last slot included.
+    expect(drawnStartMin(H(9), H(9), H(13))).toBe(H(9));
+    expect(drawnStartMin(H(12, 45), H(9), H(13))).toBe(H(12, 45));
+    // A window opening at 08:30 draws the 08:00 row, so 08:10 is inside it.
+    expect(drawnStartMin(H(8, 10), H(8, 30), H(13))).toBe(H(8, 10));
+    expect(drawnStartMin(H(7, 50), H(8, 30), H(13))).toBe(H(8));
+
+    const scale = agendaScale(
+      [[...lines(10, H(8)), H(9), ...lines(10, H(13)), H(12, 30)]],
+      H(9),
+      H(13),
+    );
     expect(scale.mins[0]).toBe(H(9));
+    const px = makeMinToPx(scale, H(13));
+    expect(span(px, H(9), H(10)), "eleven lines at the top edge").toBe(groupNeedPx(11));
+    expect(span(px, H(12, 30), H(13)), "eleven lines in the last slot").toBe(groupNeedPx(11));
+    expect(span(px, H(10), H(12, 30)), "nothing between them moved").toBe(5 * 48);
+    // A window with no hour in it places nothing, whatever it is handed.
+    expect(agendaScale([lines(6, H(10))], H(9), H(9))).toEqual({ mins: [H(9)], tops: [0] });
+  });
+
+  it("renders a start outside the window in the edge group, inside the day column (end to end)", () => {
+    // 09:00 Lisbon is the fixture's start. With a 10:00 to 13:00 window it is
+    // before the first row: it is drawn in the 10:00 group, on top 0.
+    const html = renderToStaticMarkup(
+      <AgendaGrid
+        view="day"
+        anchor={DAY}
+        appointments={[
+          appt({ id: "early", patientName: "Ana Costa" }),
+          appt({
+            id: "edge",
+            patientName: "Bruno Dias",
+            startsAt: `${DAY}T09:00:00.000Z`,
+            endsAt: `${DAY}T10:00:00.000Z`,
+          }),
+        ]}
+        dayWindow={{ startMin: H(10), endMin: H(13) }}
+        onSelectAppointment={() => {}}
+        onSelectSlot={() => {}}
+      />,
+    );
+    const groups = html.match(/<div[^>]*data-testid="agenda-start-group"[^>]*>/g) ?? [];
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toContain(`data-start-min="${H(10)}"`);
+    expect(groups[0]).toMatch(/top:\s*0(px)?[;"]/);
+    expect(faces(html)).toHaveLength(2);
+  });
+
+  it("a clinic closing off the hour: the last group's room ends at the close, and so does its band", () => {
+    // 09:00 to 12:30. The 12:00 row is drawn whole, but nothing is placed below
+    // the close, so six at 12:00 must fit above 12:30 and the band the grid
+    // puts on the group must be the room the scale made, not less.
+    const day = lines(6, H(12));
+    const scale = agendaScale([day], H(9), H(12, 30));
+    const px = makeMinToPx(scale, H(12, 30));
+    const bottom = scale.tops[scale.tops.length - 1]!;
+    expect(span(px, H(12), H(12, 30))).toBe(groupNeedPx(6));
+    expect(groupBandPx(H(12), null, bottom, px)).toBe(groupNeedPx(6));
+    // The half hour below the close is still drawn, at its base height.
+    expect(bottom - px(H(12, 30))).toBe(48);
+  });
+
+  it("the mapper clamps to the window, at both ends", () => {
+    const scale = agendaScale([], H(9), H(13));
     expect(scale.tops[scale.tops.length - 1]).toBe(4 * 96);
-    // The mapper clamps to the window, at both ends.
     const px = makeMinToPx(scale, H(13));
     expect(px(H(7))).toBe(0);
     expect(px(H(15))).toBe(4 * 96);

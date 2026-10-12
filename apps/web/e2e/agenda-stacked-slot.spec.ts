@@ -28,8 +28,9 @@
  *   - the last card ends at or above the top of the next hour's row, and the
  *     gutter's label for that hour sits on that row;
  *   - a click on the next hour opens Nova marcação FOR THAT HOUR;
- *   - a quiet hour of the same day is as tall as it always was (where the
- *     lane's database left that hour quiet).
+ *   - each card is one name line tall, the height the scale reserves for it;
+ *   - in Semana, every day's 11:00 and 12:00 rows start level with this day's;
+ *   - every hour in which nothing on screen starts is as tall as it always was.
  *
  * THE SECOND PAIR OF ARMS ADDS A SEVENTH APPOINTMENT AT THE HALF HOUR, and it
  * is the pair that fails on the layout this card replaced. Six lines alone fit
@@ -50,9 +51,11 @@
  * ITS DAY IS RUN_DAY_BASE + 180 (181 when that lands on a Sunday), which no
  * other spec derives (scripts/e2e-spec-days-do-not-collide.test.mjs).
  *
- * THE HOURS ARE 10:00 AND 11:00, AND THE QUIET HOUR IS 15:00. Other specs move
- * Linda-a-Velha's opening hours and midday closure while they run; these are
- * inside any of those clinic days and outside 13:00 to 14:00.
+ * THE HOURS ARE 10:00 AND 11:00. Other specs move Linda-a-Velha's opening
+ * hours and midday closure while they run; these are inside any of those clinic
+ * days and outside 13:00 to 14:00. THE QUIET HOURS ARE FOUND, NOT NAMED: a
+ * lane's database keeps other runs' rows, so the spec reads which hours hold no
+ * start in any column on screen and measures those.
  */
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 
@@ -126,6 +129,8 @@ const card = (page: Page, id: string): Locator => page.locator(`[data-appointmen
 
 /** Edges are sums of fractional px on one mapper; a pixel of rounding is allowed. */
 const PX = 1;
+/** One name line, as the grid's scale reserves it (NAME_LINE_PX in agenda-grid.tsx). */
+const LINE_PX = 20;
 
 type CardProbe = {
   id: string;
@@ -204,6 +209,30 @@ async function probe(page: Page, ids: string[]): Promise<{ cards: CardProbe[]; g
   return out;
 }
 
+/**
+ * Every day column on screen: where each of its 30-minute slots starts, in page
+ * coordinates and keyed by minute of the day, plus the hours in which a start
+ * group sits in ANY column. The slot buttons are the column's own children
+ * without a test id; the blocked band is a button there too, with one.
+ */
+async function columns(page: Page): Promise<{ days: { day: string; tops: Record<number, number> }[]; busyHours: number[] }> {
+  return page.evaluate(() => {
+    const days = [...document.querySelectorAll("[data-day]")].map((col) => {
+      const tops: Record<number, number> = {};
+      for (const b of col.querySelectorAll(":scope > button:not([data-testid])")) {
+        const t = /(\d\d):(\d\d)( - .*)?$/.exec(b.getAttribute("aria-label") ?? "");
+        if (t) tops[Number(t[1]) * 60 + Number(t[2])] = b.getBoundingClientRect().top + window.scrollY;
+      }
+      return { day: col.getAttribute("data-day") ?? "", tops };
+    });
+    const busy = new Set<number>();
+    for (const g of document.querySelectorAll('[data-testid="agenda-start-group"]')) {
+      busy.add(Math.floor(Number(g.getAttribute("data-start-min")) / 60));
+    }
+    return { days, busyHours: [...busy] };
+  });
+}
+
 /** A box's top and bottom in PAGE coordinates, so a scroll between two reads cannot move it. */
 async function edges(target: Locator, what: string): Promise<{ top: number; bottom: number }> {
   await expect(target, what).toHaveCount(1);
@@ -242,6 +271,7 @@ async function expectAllShownWithNoInnerScroll(page: Page, ids: string[], testIn
     expect.soft(c.clippedBy, `card ${c.id} is cut by a box around it`).toBeNull();
     expect.soft(c.scrollsIn, `card ${c.id} sits inside a box that can scroll`).toBeNull();
     expect.soft(c.hitIsCard, `the point at the centre of card ${c.id} is the card`).toBe(true);
+    expect.soft(Math.abs(c.bottom - c.top - LINE_PX), `card ${c.id} is one ${LINE_PX}px line`).toBeLessThanOrEqual(PX);
   }
   expect(m.groups.length, "the column draws its start groups").toBeGreaterThan(0);
   for (const g of m.groups) {
@@ -322,19 +352,40 @@ test.describe("AGENDA-STACK-01: a slot with several appointments grows, and noth
       const labelRow = await edges(label.locator(".."), "the gutter's 11:00 row");
       expect(Math.abs(labelRow.top - next.top), "the 11:00 label sits on the 11:00 row").toBeLessThanOrEqual(PX);
 
-      // A QUIET HOUR IS AS TALL AS IT ALWAYS WAS: two 48px half-hour slots.
-      // Only where 15:00 really is quiet in every column on screen; if another
-      // run left a row there, the arm says so instead of measuring its hour.
-      const busyAt15 = await page
-        .locator('[data-testid="agenda-start-group"]')
-        .evaluateAll((els) => els.filter((el) => Math.floor(Number(el.getAttribute("data-start-min")) / 60) === 15).length);
-      if (busyAt15 === 0) {
-        const quiet = await edges(slotAt(page, "15:00"), "the 15:00 slot");
-        const afterQuiet = await edges(slotAt(page, "16:00"), "the 16:00 slot");
-        expect(Math.abs(afterQuiet.top - quiet.top - 96), "the empty 15:00 hour is 96px").toBeLessThanOrEqual(PX);
-      } else {
-        testInfo.annotations.push({ type: "not-measured", description: "15:00 holds another run's rows; the quiet-hour height was not asserted" });
+      const grid = await columns(page);
+      const own = grid.days.find((d) => d.day === DAY)!;
+
+      // THE ROWS ARE LEVEL ACROSS THE DAYS. One scale serves every column, so
+      // the hour after the grown one, and the one after that, start at the same
+      // height in every day on screen. In Semana that is more than this day.
+      if (view === "week") expect(grid.days.length, "Semana draws more than one day").toBeGreaterThan(1);
+      else expect(grid.days.length, "Dia draws one day").toBe(1);
+      for (const d of grid.days) {
+        for (const min of [11 * 60, 12 * 60]) {
+          expect(d.tops[min], `${d.day} draws a slot at minute ${min}`).toBeDefined();
+          expect(
+            Math.abs(d.tops[min]! - own.tops[min]!),
+            `${d.day}: the row at minute ${min} starts level with ${DAY}'s`,
+          ).toBeLessThanOrEqual(PX);
+        }
       }
+      expect(Math.abs(own.tops[11 * 60]! - next.top), "the column read agrees with the 11:00 slot").toBeLessThanOrEqual(PX);
+
+      // A QUIET HOUR IS AS TALL AS IT ALWAYS WAS: two 48px half-hour slots.
+      // Every hour in which no column on screen has a start, whichever hours
+      // those are on this lane's database today. At least one must exist, or
+      // this arm would say nothing about the rows the change must not touch.
+      const quiet = Object.keys(own.tops)
+        .map(Number)
+        .filter((m) => m % 60 === 0 && own.tops[m + 60] !== undefined && !grid.busyHours.includes(m / 60));
+      expect(quiet.length, "at least one hour on screen has no start in it").toBeGreaterThan(0);
+      for (const m of quiet) {
+        expect(
+          Math.abs(own.tops[m + 60]! - own.tops[m]! - 96),
+          `the quiet hour at minute ${m} is 96px`,
+        ).toBeLessThanOrEqual(PX);
+      }
+      testInfo.annotations.push({ type: "quiet-hours-measured", description: quiet.map((m) => `${m / 60}:00`).join(", ") });
 
       // A CLICK ON THE NEXT HOUR BOOKS THE NEXT HOUR.
       await slotAt(page, "11:00").click();
