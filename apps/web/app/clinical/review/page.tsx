@@ -93,7 +93,7 @@ function ClaimAction({ item }: { item: ReviewQueueItem }) {
 export default async function ReviewQueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; m?: string }>;
 }) {
   const ctx = await requireRequestContext();
   // Reviewing/finalizing is a clinician action (therapist/owner). Admin can read
@@ -101,7 +101,7 @@ export default async function ReviewQueuePage({
   // queue it can't act on.
   if (!can(ctx.role, "clinical_records:review")) redirect("/clinical");
 
-  const { q } = await searchParams;
+  const { q, m } = await searchParams;
   const query = (q ?? "").trim();
 
   return (
@@ -110,6 +110,11 @@ export default async function ReviewQueuePage({
         <h1 className="text-2xl text-v2-text-primary">{s["review.heading"]}</h1>
         <p className="text-sm text-v2-text-secondary">{s["review.subtitle"]}</p>
       </div>
+
+      {/* M-4: the claim was rolled back as a deadlock victim (claimAction). */}
+      {m === "concurrentChange" && (
+        <p role="alert" className="text-sm text-error">{s["errors.concurrentChange"]}</p>
+      )}
 
       {/* Toolbar row (UI-STYLE.md §6). W5-02: patient-name search over the
           role-scoped queue read, reusing the Pacientes SearchBox (URL ?q= +

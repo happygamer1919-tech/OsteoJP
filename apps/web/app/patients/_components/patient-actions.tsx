@@ -30,7 +30,8 @@ const HARD_DELETE_ERROR_TEXT: Partial<Record<HardDeletePatientError, string>> = 
 
 /**
  * INC-CONFIRM-07b. The three ways an operator can get the survivor box wrong,
- * each with the sentence that says what to do about it.
+ * each with the sentence that says what to do about it. M-4 adds a fourth
+ * refusal that is not about the box: the merge lost a deadlock, try again.
  *
  * A COMPLETE Record, not a Partial: every member of `MergePatientError` is a
  * refusal the operator caused, so every one of them has an answer here and
@@ -38,10 +39,12 @@ const HARD_DELETE_ERROR_TEXT: Partial<Record<HardDeletePatientError, string>> = 
  * hard-delete map above is Partial because two of ITS members - `forbidden` and
  * `error` - are not operator input and fall through to the generic sentence.
  */
-const MERGE_ERROR_TEXT: Record<MergePatientError, string> = {
+export const MERGE_ERROR_TEXT: Record<MergePatientError, string> = {
   invalid_id: s["patients.mergeInvalidId"],
   self_merge: s["patients.mergeSelfMerge"],
   not_found: s["patients.mergeNotFound"],
+  // M-4: not operator input, but theirs to act on: send the merge again.
+  concurrent_change: s["errors.concurrentChange"],
 };
 
 // Destructive controls (soft-delete / restore / merge / gated hard delete).
