@@ -39,6 +39,7 @@ import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
 import { addDays, lisbonMidnightUtc } from "../../../lib/scheduling/time";
+import { offersTherapistChange } from "../../../lib/scheduling/therapist-change";
 import type { AppointmentStatusValue } from "../../../lib/scheduling/types";
 import { MarcacoesFilters } from "./marcacoes-filters.client";
 import {
@@ -222,6 +223,10 @@ export default async function PatientProfilePage({
   // each Agenda server action re-asserts its own capability server-side.
   const canEditAppointments = can(ctx.role, "appointments:write") && canActOnPatient;
   const canCancelAppointments = can(ctx.role, "appointments:delete");
+  // MARC-THERAPIST-01: the Terapeuta field of "Gerir marcação" is offered to
+  // owner, admin and reception and not to a therapist. The rule and its
+  // reasoning are `offersTherapistChange`, tested role by role beside it.
+  const canChangeAppointmentTherapist = offersTherapistChange(ctx.role, canEditAppointments);
   // SCHED-30 (owner dispatch 2026-09-14): a therapist cancels, and brings back,
   // the rows they are Terapeuta or Terapeuta 2 on, at their own clinics. Only the
   // affordance; cancelAppointment and updateAppointment re-check it.
@@ -733,6 +738,7 @@ export default async function PatientProfilePage({
             canCancel={canCancelAppointments}
             ownCancelIds={ownCancelIds}
             filtered={marcacoesFiltered}
+            therapistStaff={canChangeAppointmentTherapist ? consultasOptions : null}
           />
         </div>
       )}

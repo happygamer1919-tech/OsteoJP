@@ -442,6 +442,8 @@
   "appointment.created": "Marcação criada.",
   "appointment.updated": "Marcação atualizada.",
   "appointment.rescheduled": "Marcação remarcada.",
+  "appointment.changeTherapist": "Alterar terapeuta",
+  "appointment.therapistChanged": "Terapeuta alterado.",
   "appointment.cancelledMsg": "Marcação cancelada.",
   "appointment.requiredFields": "Preencha os campos obrigatórios.",
   "appointment.deleteHint": "As marcações nunca são eliminadas; apenas canceladas.",
