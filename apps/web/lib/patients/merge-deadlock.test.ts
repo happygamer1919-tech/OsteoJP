@@ -111,9 +111,13 @@ describe("mergePatients: rolled back as a deadlock victim is concurrent_change",
       statementRaises(wrapped(pgError("40P01", `Process 1 waits for ShareLock on transaction 2; tuple of ${A}`)));
       await merge();
       expect(warn).toHaveBeenCalledTimes(1);
-      const line = String(warn.mock.calls[0]![0]);
+      // The WHOLE call: one argument, a string. An error passed as a second
+      // argument would carry the failed query and the driver's DETAIL.
+      expect(warn.mock.calls[0]).toHaveLength(1);
+      expect(typeof warn.mock.calls[0]![0]).toBe("string");
+      const line = warn.mock.calls[0]!.map(String).join(" ");
       expect(line).toContain("concurrent_change");
-      for (const id of [A, B, owner.tenantId, owner.userId, "Process"]) expect(line).not.toContain(id);
+      for (const id of [A, B, owner.tenantId, owner.userId, "Process", "Failed query"]) expect(line).not.toContain(id);
     });
   });
 

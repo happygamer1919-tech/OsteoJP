@@ -7,10 +7,11 @@ import { getStrings } from "@osteojp/i18n";
  * A registo write or a patient merge that Postgres rolls back as a deadlock
  * victim (SQLSTATE 40P01) is answered with one named refusal
  * (`namingDeadlock` in lib/clinical/records.ts, and `mergePatients` in
- * lib/patients/actions.ts). It reaches the staff through five places: the
+ * lib/patients/actions.ts). It reaches the staff through six places: the
  * record page's message for a refused new version (page-write-controls.test.tsx),
  * /clinical/new and the patient's Registos tab for a refused create
- * (new/page-alerts.test.tsx, patients/[id]/page-add-evaluation.test.tsx), and
+ * (new/page-alerts.test.tsx, patients/[id]/page-add-evaluation.test.tsx), the
+ * review queue for a refused claim (review/claim-concurrent-change.test.tsx), and
  * the two client mappers below: the ficha save (RecordForm) and the merge box
  * in the danger zone. One sentence, in pt-PT and in English.
  */

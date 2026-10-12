@@ -163,9 +163,12 @@ d("M-4: a real deadlock is the error isDeadlockVictim recognises", () => {
       await lock(tx, rowA);
       return "committed" as const;
     });
-    // A transaction that failed before its step must not leave the other hanging.
-    first.catch(() => secondHoldsB.open());
-    second.catch(() => firstHoldsA.open(-1));
+    // A transaction that failed before its step must not leave the other
+    // hanging: each failure opens the gate the OTHER side waits on (the second
+    // waits on firstHoldsA, the first on secondHoldsB). The side released that
+    // way ends through untilWaiting's bound or its lock_timeout.
+    first.catch(() => firstHoldsA.open(-1));
+    second.catch(() => secondHoldsB.open());
 
     const outcomes = await Promise.allSettled([first, second]);
 

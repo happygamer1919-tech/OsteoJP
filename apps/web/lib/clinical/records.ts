@@ -673,8 +673,20 @@ async function namingEpisodeKeyRefusal<T>(insert: PromiseLike<T>): Promise<T> {
  *
  * EVERY OTHER ERROR PASSES THROUGH UNCHANGED, a `ClinicalError` raised inside
  * the transaction included.
+ *
+ * WHO USES IT: the four transactions in which a staff member's action INSERTS
+ * a registo. The three writers of this file (createDraftRecord,
+ * updateRecordData, createAddendum) and the review queue's claim
+ * (claimReviewItem, review.ts), which files a draft for a patient's
+ * submission. LEFT OUT ON PURPOSE, each answering a deadlock as it answered
+ * any unknown error before: the writes that only UPDATE or DELETE an existing
+ * registo (editReviewNarrative, saveReviewFicha and finalizeReview in
+ * review.ts; signAndLockRecord, annulRecord and hardDeleteClinicalRecord
+ * here), the ingestion endpoint's insert (lib/ingestion/store.ts, a machine
+ * caller with no screen to show a sentence on), and the importer
+ * (packages/db/src/migration/upsert.ts, no app action calls it).
  */
-async function namingDeadlock<T>(write: Promise<T>): Promise<T> {
+export async function namingDeadlock<T>(write: Promise<T>): Promise<T> {
   try {
     return await write;
   } catch (e) {
