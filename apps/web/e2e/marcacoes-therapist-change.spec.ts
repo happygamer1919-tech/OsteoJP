@@ -11,8 +11,8 @@
  *   2. A therapist who does not work that hour is refused with the agenda's
  *      sentence, which names their hours; the row keeps its therapist.
  *   3. A therapist with a booking in the way is refused with the agenda's
- *      conflict list, and this field offers no "Guardar mesmo assim"; the row
- *      keeps its therapist.
+ *      conflict warning ("Conflito de terapeuta: ..."), and this field offers
+ *      no "Guardar mesmo assim"; the row keeps its therapist.
  *
  * What a refusal leaves in the database (nothing), the pacote balance, the
  * audit row and the care team are proven against Postgres in
@@ -47,6 +47,8 @@ test.use({ storageState: STORAGE.reception });
 const SAVE = "Guardar";
 const THERAPIST_NO_HOURS = "E2E Terapeuta Sem Servicos";
 const PATIENT = PATIENTS.joao;
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function bandDay(base: number, retry: number): string {
   return futureDate(RUN_DAY_BASE + base + retry * 100);
@@ -197,14 +199,19 @@ test("a therapist with a conflict is refused with the agenda's conflict list, an
   const field = await openTherapistField(r);
   await (await pickTherapist(field, THERAPIST_NO_HOURS)).click();
 
-  // "Conflito" and the booking in the way, with its hour, as the agenda lists it.
-  await expect(field.getByText("Conflito", { exact: true })).toBeVisible({ timeout: 8_000 });
-  await expect(field.getByText(new RegExp(`${PATIENTS.ana.name}: 15:00-`))).toBeVisible();
+  // The agenda's own warning, whole (app/agenda/conflict-banner.tsx, the one
+  // component both screens draw): the KIND of conflict, the booking in the
+  // way, its hour. Not the ficha's shorter "Conflito" banner.
+  const warning = field.getByTestId("conflict-lines");
+  await expect(warning).toHaveText(
+    new RegExp(`^Conflito de terapeuta: ${escapeRegExp(PATIENTS.ana.name)}: 15:00-\\d{2}:\\d{2}$`),
+    { timeout: 8_000 },
+  );
   await expect(field.getByRole("button", { name: /Guardar mesmo assim/i })).toHaveCount(0);
 
   // Picking another name clears the refusal: it described the one just tried.
   await field.getByLabel("Terapeuta", { exact: true }).selectOption({ label: THERAPIST_NAME });
-  await expect(field.getByText("Conflito", { exact: true })).toHaveCount(0);
+  await expect(warning).toHaveCount(0);
 
   await openMarcacoes(page);
   await expect(row(page, date, "15:00").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME);

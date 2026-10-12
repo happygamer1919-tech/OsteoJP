@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { bookingStaffOptions } from "./booking-staff-options";
-import { therapistChangeInput, therapistChangeOptions, type TherapistChangeStaff } from "./therapist-change";
+import {
+  offersTherapistChange,
+  therapistChangeInput,
+  therapistChangeOptions,
+  type TherapistChangeStaff,
+} from "./therapist-change";
 
 /**
  * MARC-THERAPIST-01 - what the ficha's Terapeuta field offers and what it sends.
@@ -30,13 +35,35 @@ const row = {
   endsAt: "2031-05-14T14:45:00.000Z",
 };
 
+describe("who is offered the field", () => {
+  it.each(["owner", "admin", "reception"] as const)("%s is, when they may edit the patient's appointments", (role) => {
+    expect(offersTherapistChange(role, true)).toBe(true);
+  });
+
+  it("a therapist is not, although they may edit appointments", () => {
+    expect(offersTherapistChange("therapist", true)).toBe(false);
+  });
+
+  it.each(["owner", "admin", "reception", "therapist"] as const)(
+    "%s is not when they may not edit this patient's appointments",
+    (role) => {
+      expect(offersTherapistChange(role, false)).toBe(false);
+    },
+  );
+});
+
 describe("the options", () => {
   it("are the row's clinic's team plus the colleagues with no clinic, the current Terapeuta among them", () => {
     expect(therapistChangeOptions(row, staff).map((o) => o.id)).toEqual([ana.id, bruno.id, dora.id]);
   });
 
-  it("are the agenda edit panel's own list for that row, option for option", () => {
-    const agenda = bookingStaffOptions({
+  // Not a proof that the two screens stay in step: this feeds the builder the
+  // arguments the field itself passes, so it pins only that the field adds
+  // nothing to the builder's list when there is no Terapeuta 2. The proof is in
+  // app/agenda/appointment-drawer.test.tsx, which renders the agenda's edit
+  // panel and compares the options it paints with this function's.
+  it("add nothing to the shared builder's list when the row has no Terapeuta 2", () => {
+    const built = bookingStaffOptions({
       isTherapist: false,
       selfLocked: false,
       selfUserId: "",
@@ -50,7 +77,7 @@ describe("the options", () => {
       editing: { practitionerId: row.practitionerId, practitionerName: row.practitionerName },
       labels: null,
     }).therapistOptions;
-    expect(therapistChangeOptions(row, staff)).toEqual(agenda);
+    expect(therapistChangeOptions(row, staff)).toEqual(built);
   });
 
   it("leave out the row's Terapeuta 2, and nobody else", () => {

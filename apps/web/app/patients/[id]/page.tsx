@@ -39,6 +39,7 @@ import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
 import { addDays, lisbonMidnightUtc } from "../../../lib/scheduling/time";
+import { offersTherapistChange } from "../../../lib/scheduling/therapist-change";
 import type { AppointmentStatusValue } from "../../../lib/scheduling/types";
 import { MarcacoesFilters } from "./marcacoes-filters.client";
 import {
@@ -223,11 +224,9 @@ export default async function PatientProfilePage({
   const canEditAppointments = can(ctx.role, "appointments:write") && canActOnPatient;
   const canCancelAppointments = can(ctx.role, "appointments:delete");
   // MARC-THERAPIST-01: the Terapeuta field of "Gerir marcação" is offered to
-  // owner, admin and reception. A therapist holds appointments:write too and
-  // changes the Terapeuta on the agenda; whether they also get this field is
-  // an open question, so they are not handed it. Only the affordance:
-  // rescheduleAppointment has no rule of its own about it.
-  const canChangeAppointmentTherapist = canEditAppointments && ctx.role !== "therapist";
+  // owner, admin and reception and not to a therapist. The rule and its
+  // reasoning are `offersTherapistChange`, tested role by role beside it.
+  const canChangeAppointmentTherapist = offersTherapistChange(ctx.role, canEditAppointments);
   // SCHED-30 (owner dispatch 2026-09-14): a therapist cancels, and brings back,
   // the rows they are Terapeuta or Terapeuta 2 on, at their own clinics. Only the
   // affordance; cancelAppointment and updateAppointment re-check it.

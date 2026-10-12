@@ -9,6 +9,8 @@
 // clinic's hours, the conflicts and the clinic assignment are checked by the
 // one copy of each check that exists.
 
+import type { Role } from "@osteojp/auth";
+
 import { bookingStaffOptions } from "./booking-staff-options";
 import { staffLabelContext, type StaffOption } from "./staff-options";
 import type { AgendaAppointment, AgendaOptions, RescheduleInput } from "./types";
@@ -23,6 +25,17 @@ type Row = Pick<
   AgendaAppointment,
   "practitionerId" | "practitionerName" | "practitionerTwoId" | "locationId" | "startsAt" | "endsAt"
 >;
+
+/**
+ * Who is OFFERED the field: owner, admin and reception, when they may edit this
+ * patient's appointments at all. A therapist holds appointments:write too and
+ * changes the Terapeuta on the agenda; whether they also get this field is an
+ * open question, so they are not handed it. Only the affordance:
+ * rescheduleAppointment has no rule of its own about it.
+ */
+export function offersTherapistChange(role: Role, canEditAppointments: boolean): boolean {
+  return canEditAppointments && role !== "therapist";
+}
 
 /**
  * The Terapeuta options for one row: the agenda edit panel's list for the row's

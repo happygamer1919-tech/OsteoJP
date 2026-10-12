@@ -17,6 +17,16 @@
  *       the care team holds the new therapist (once), and exactly one reminder
  *       event is asked for, at the unchanged start.
  *
+ * "ONE AUDIT ROW" READS AS ONE APPOINTMENT ROW. The first time a therapist joins
+ * a patient's care team the care team writes a row of its own
+ * (care_team.auto_assign, ids only), as it does for an agenda booking; G3's
+ * first arm states both rows and its second arm shows the appointment row alone.
+ *
+ * "CARE TEAM UPDATED" HOLDS FOR THE ROLES THAT MAY WRITE THE CARE TEAM. An admin
+ * is offered the field and may not (careTeamWriteReach, lib/admin/
+ * care-team-core.ts): their save moves the Terapeuta and adds nobody, on the
+ * agenda and here alike. The last G3 arm pins that as it stands.
+ *
  * runScoped is REAL, so appointments_rls, patient_care_team's policies and the
  * audit_log policies run as on production, as reception. Only the request
  * context, the client IP and the reminder send are mocked; the send is a spy,
@@ -69,6 +79,7 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
   let serviceId: string;
   let packId: string;
   let reception: string;
+  let admin: string;
   let tFirst: string;
   let tMornings: string;
   let tBusy: string;
@@ -80,7 +91,7 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
   const MINUTES = 45;
   const endOf = (start: Date) => new Date(start.getTime() + MINUTES * 60_000);
 
-  type Ctx = { tenantId: string; role: "reception"; userId: string };
+  type Ctx = { tenantId: string; role: "reception" | "admin"; userId: string };
   let ctx: Ctx;
 
   beforeAll(async () => {
@@ -96,6 +107,7 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
       values (${tenantId}, 'Marc Therapist Co', ${"marcther-" + tenantId.slice(0, 8)})`);
 
     reception = randomUUID();
+    admin = randomUUID();
     tFirst = randomUUID();
     tMornings = randomUUID();
     tBusy = randomUUID();
@@ -104,6 +116,7 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
       sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active, is_bookable)
         values (${id}, ${tenantId}, ${"u-" + id.slice(0, 8) + "@t.test"}, ${name}, true, ${bookable})`);
     await person(reception, "Rececao Teste", false);
+    await person(admin, "Admin Teste", false);
     await person(tFirst, "Terapeuta Primeiro", true);
     await person(tMornings, "Terapeuta Manhas", true);
     await person(tBusy, "Terapeuta Ocupado", true);
@@ -111,7 +124,7 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
 
     loc = randomUUID();
     await sql.execute(raw`insert into locations (id, tenant_id, name) values (${loc}, ${tenantId}, 'Clinica Teste')`);
-    for (const u of [reception, tFirst, tMornings, tBusy, tFree]) {
+    for (const u of [reception, admin, tFirst, tMornings, tBusy, tFree]) {
       await sql.execute(raw`insert into staff_locations (tenant_id, user_id, location_id) values (${tenantId}, ${u}, ${loc})`);
     }
     // ONE therapist has declared hours: Wednesday (weekday 3) 09:00 to 13:00.
@@ -141,6 +154,9 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
   };
 
   afterEach(async () => {
+    // An arm that acted as another role hands the suite back to reception.
+    ctx = { tenantId, role: "reception", userId: reception };
+    h.requireRequestContext.mockResolvedValue(ctx);
     h.enqueueRemindersAfterCommit.mockClear();
     await clean();
   });
@@ -367,6 +383,27 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
     expect((await auditActions()).slice(auditsBefore.length)).toEqual(["appointment.reschedule"]);
     expect((await team(p)).sort()).toEqual([tFirst, tFree].sort());
     expect(await packs.listPatientPackInstances(ctx, p)).toEqual(balance);
+    expect(h.enqueueRemindersAfterCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("G3, the limit: an ADMIN's change saves and writes its one audit row, and adds NOBODY to the care team", async () => {
+    const p = await patient("Paciente Um");
+    const id = await book({ patientId: p, practitionerId: tFirst, start: at(WED, 15) });
+    expect(await team(p)).toEqual([tFirst]);
+    const auditsBefore = await auditActions();
+    h.enqueueRemindersAfterCommit.mockClear();
+
+    ctx = { tenantId, role: "admin", userId: admin };
+    h.requireRequestContext.mockResolvedValue(ctx);
+    expect(await changeTherapist(p, id, tFree)).toEqual({ ok: true, data: { id } });
+
+    expect((await stored(id)).practitioner_id).toBe(tFree);
+    const audits = await appointmentAudits(id);
+    expect(audits.map((a) => a.action)).toEqual(["appointment.create", "appointment.reschedule"]);
+    expect(audits[1]).toMatchObject({ actor_user_id: admin });
+    // No care-team row and no care-team audit row: admin has no care team write.
+    expect((await auditActions()).slice(auditsBefore.length)).toEqual(["appointment.reschedule"]);
+    expect(await team(p)).toEqual([tFirst]);
     expect(h.enqueueRemindersAfterCommit).toHaveBeenCalledTimes(1);
   });
 

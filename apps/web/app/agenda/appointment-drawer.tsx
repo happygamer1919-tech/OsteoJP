@@ -28,7 +28,7 @@ import { runAction } from "@/lib/actions/run-action";
 import { useActionOwner } from "@/lib/actions/use-action-owner";
 import { useLatestCallback } from "@/lib/actions/use-latest-callback";
 import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
-import { conflictPatientLabel, patientLabel } from "@/lib/scheduling/patient-label";
+import { patientLabel } from "@/lib/scheduling/patient-label";
 import { getPatientContraindications, getPatientNoSmsReason, searchPatientsAction } from "@/lib/patients/actions";
 import { NO_SMS_MESSAGE_KEY } from "@/lib/patients/phone-preview";
 import type { NoSmsReason } from "@osteojp/notify";
@@ -61,8 +61,8 @@ import type { LinkablePacksView } from "@/lib/packs/link";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import type { RebookOutcome } from "@/lib/scheduling/batch-failure-core";
 import { BatchFailureDialog } from "./batch-failure-dialog";
+import { ConflictBanner } from "./conflict-banner";
 import {
-  formatTimeOfDay,
   lisbonDateTimeToUtc,
   lisbonParts,
 } from "@/lib/scheduling/time";
@@ -1291,11 +1291,6 @@ export function AppointmentDrawer({
     return { booked: r.data.booked.length > 0, failure: r.data.failures[0] ?? null };
   }
 
-  const therapistConflicts = conflicts?.filter((c) => c.kind === "therapist") ?? [];
-  const roomConflicts = conflicts?.filter((c) => c.kind === "room") ?? [];
-  const availabilityConflicts = conflicts?.filter((c) => c.kind === "availability") ?? [];
-  const timeOffConflicts = conflicts?.filter((c) => c.kind === "time_off") ?? [];
-
   // NESA contraindication warning (W2-08, ruling A): SOFT — names the matched
   // contraindication(s) when the patient has any AND the service is sensitive.
   // Never blocks submit.
@@ -2045,16 +2040,7 @@ export function AppointmentDrawer({
           </Field>
         )}
 
-        {conflicts && (
-          <Banner tone="warning">
-            <span className="flex flex-col gap-1">
-              {therapistConflicts.length > 0 && <ConflictLine heading={s["agenda.conflictTherapist"]} items={therapistConflicts} />}
-              {roomConflicts.length > 0 && <ConflictLine heading={s["agenda.conflictRoom"]} items={roomConflicts} />}
-              {availabilityConflicts.length > 0 && <ConflictLine heading={s["agenda.conflictAvailability"]} items={availabilityConflicts} />}
-              {timeOffConflicts.length > 0 && <ConflictLine heading={s["agenda.conflictTimeOff"]} items={timeOffConflicts} />}
-            </span>
-          </Banner>
-        )}
+        {conflicts && <ConflictBanner conflicts={conflicts} />}
 
         {error && (
           <p role="alert" className="text-sm text-error">{error}</p>
@@ -2162,29 +2148,5 @@ export function AppointmentDrawer({
       </Dialog>
     )}
     </>
-  );
-}
-
-const TIME_OFF_REASON_KEY: Record<string, StringKey> = {
-  vacation: "appointment.timeOffReasonVacation",
-  sick: "appointment.timeOffReasonSick",
-  holiday: "appointment.timeOffReasonHoliday",
-  other: "appointment.timeOffReasonOther",
-};
-
-function ConflictLine({ heading, items }: { heading: string; items: ConflictInfo[] }) {
-  return (
-    <span className="block">
-      <span className="font-medium">{heading}</span>
-      {": "}
-      {items
-        .map((c) => {
-          const lead = conflictPatientLabel(c) ?? (c.reason ? s[TIME_OFF_REASON_KEY[c.reason] ?? "appointment.timeOffReasonOther"] : null);
-          const prefix = [lead, c.room].filter(Boolean).join(" · ");
-          const time = `${formatTimeOfDay(new Date(c.startsAt))}-${formatTimeOfDay(new Date(c.endsAt))}`;
-          return prefix ? `${prefix}: ${time}` : time;
-        })
-        .join("; ")}
-    </span>
   );
 }

@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppointmentNotesBoard } from "@/app/agenda/appointment-notes-board";
+import { ConflictBanner } from "@/app/agenda/conflict-banner";
 import {
   ScheduleAgainDrawer,
   isEligibleForScheduleAgain,
@@ -396,10 +397,12 @@ function AppointmentRow({
  * start.
  *
  * THE REFUSALS READ AS ON THE AGENDA, from the one function both screens use
- * (lib/scheduling/refusal-message.ts). A conflict lists the bookings in the
- * way, as there, and offers NO "Guardar mesmo assim": the acceptance check for
- * this field says a conflict is refused, and whether reception may override it
- * from here as it can on the agenda is a question for the owner, not a default.
+ * (lib/scheduling/refusal-message.ts). A conflict is the agenda's own warning,
+ * the one component both draw (app/agenda/conflict-banner.tsx), so it names the
+ * kind and, for an absence, the reason. It offers NO "Guardar mesmo assim": the
+ * acceptance check for this field says a conflict is refused, and whether
+ * reception may override it from here as it can on the agenda is a question for
+ * the owner, not a default.
  *
  * Shown inline rather than as a toast: the working-hours sentence names the
  * therapist's hours and has to stay on screen while the next name is picked.
@@ -468,20 +471,7 @@ function TherapistInline({ appt, staff }: { appt: AgendaAppointment; staff: Ther
           </Button>
         </div>
       </Field>
-      {conflicts && (
-        <Banner tone="warning">
-          <span className="flex flex-col gap-1">
-            <span className="font-medium">{s["agenda.conflict"]}</span>
-            {conflicts.map((c) => (
-              <span key={c.id} className="block text-sm">
-                {[conflictPatientLabel(c), c.room].filter(Boolean).join(" · ")}
-                {conflictPatientLabel(c) || c.room ? ": " : ""}
-                {formatTimeOfDay(new Date(c.startsAt))}-{formatTimeOfDay(new Date(c.endsAt))}
-              </span>
-            ))}
-          </span>
-        </Banner>
-      )}
+      {conflicts && <ConflictBanner conflicts={conflicts} />}
       {error && (
         <p role="alert" className="max-w-prose text-sm text-error">
           {error}

@@ -81,6 +81,7 @@ vi.mock("@osteojp/ui", () => {
 });
 
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
+import { therapistChangeOptions } from "@/lib/scheduling/therapist-change";
 import { loadAppointmentDrawer } from "@/lib/scheduling/drawer-load";
 
 const options: AgendaOptions = { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
@@ -703,5 +704,124 @@ describe("AppointmentDrawer - the edit loader never runs during render (SKEW-01 
     render({ mode: "edit", appt: editAppt });
     render({ mode: "create" });
     expect(loadAppointmentDrawer).not.toHaveBeenCalled();
+  });
+});
+
+// MARC-THERAPIST-01 - the ficha's "Gerir marcação" has a Terapeuta field that
+// promises the agenda edit panel's own list. This renders THE PANEL, reads the
+// options its Terapeuta select paints, and compares them with what the field's
+// function returns for the same row and the same staff lists. So a change to
+// the panel's list that the field does not follow (or the reverse) fails here,
+// which a test calling the shared builder twice with the same arguments cannot.
+//
+// As reception, the viewer the field is offered to. Rows without a Terapeuta 2:
+// the field leaves that person out on purpose (therapist-change.test.ts).
+describe("AppointmentDrawer - the ficha's Terapeuta field offers this panel's list (MARC-THERAPIST-01)", () => {
+  const LV = "loc-lv";
+  const CB = "loc-cb";
+  const loc = (id: string, label: string) => ({
+    id,
+    label,
+    opensAt: "08:00:00",
+    closesAt: "20:00:00",
+    middayClosedFrom: null,
+    middayClosedTo: null,
+  });
+  const ANA = { id: "t-ana", label: "Ana Lisboa" }; // LV
+  const BRUNO = { id: "t-bruno", label: "Bruno Ambas" }; // LV and CB
+  const CARLA = { id: "t-carla", label: "Carla Castelo" }; // CB only
+  const DORA = { id: "t-dora", label: "Dora Nenhuma" }; // no clinic at all
+  const NESA_LV = { id: "nesa-lv", label: "NESA (LV)", locationIds: [LV] };
+  const NESA_CB = { id: "nesa-cb", label: "NESA (CB)", locationIds: [CB] };
+  const STAFF: AgendaOptions = {
+    // The filter's list is narrower than the full roster, as on the ficha.
+    therapists: [ANA, BRUNO],
+    allTherapists: [ANA, BRUNO, CARLA, DORA],
+    therapistLocationIds: { [ANA.id]: [LV], [BRUNO.id]: [LV, CB], [CARLA.id]: [CB] },
+    clinicCodes: { [LV]: "LV", [CB]: "CB" },
+    locations: [loc(LV, "OsteoJP (LV)"), loc(CB, "OsteoJP (CB)")],
+    bookableLocations: [
+      { id: LV, label: "OsteoJP (LV)" },
+      { id: CB, label: "OsteoJP (CB)" },
+    ],
+    services: [],
+    packs: [],
+    sharedResources: [NESA_LV, NESA_CB],
+    viewerClinicIds: [LV, CB],
+  };
+  const RECEPTION: Viewer = { role: "reception", userId: "recep-1" };
+
+  /** The options of the select that has `id` selected: the panel's Terapeuta. */
+  const panelTherapistOptions = (html: string, id: string) => {
+    const select = (html.match(/<select[^>]*>[\s\S]*?<\/select>/g) ?? []).find((sel) =>
+      sel.includes(`<option value="${id}" selected="">`),
+    );
+    if (!select) throw new Error("the panel painted no select with the row's Terapeuta selected");
+    return [...select.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)]
+      .filter((m) => m[1] !== "")
+      .map((m) => ({ id: m[1]!, label: m[2]! }));
+  };
+
+  /** An LV-only viewer: one machine listed, unsuffixed, and CB's row unknown to the lists. */
+  const LV_ONLY: AgendaOptions = {
+    ...STAFF,
+    therapists: [ANA, { id: NESA_LV.id, label: "NESA" }],
+    allTherapists: [ANA, { id: NESA_LV.id, label: "NESA" }],
+    therapistLocationIds: { [ANA.id]: [LV], [NESA_LV.id]: [LV], [NESA_CB.id]: [CB] },
+    locations: [loc(LV, "OsteoJP (LV)")],
+    bookableLocations: [{ id: LV, label: "OsteoJP (LV)" }],
+    sharedResources: [{ ...NESA_LV, label: "NESA" }],
+    viewerClinicIds: [LV],
+  };
+  /** The filter's list names somebody the booking roster does not, under its own label. */
+  const EVA = { id: "t-eva", label: "Eva Filtro (inativa)" };
+  const WITH_EVA: AgendaOptions = { ...STAFF, therapists: [ANA, BRUNO, EVA] };
+
+  const rows: [string, AgendaAppointment, AgendaOptions][] = [
+    ["a row at LV", { ...editAppt, practitionerId: ANA.id, practitionerName: ANA.label, locationId: LV }, STAFF],
+    ["a row at CB", { ...editAppt, practitionerId: CARLA.id, practitionerName: CARLA.label, locationId: CB }, STAFF],
+    [
+      "a row whose Terapeuta the lists no longer carry",
+      { ...editAppt, practitionerId: "t-gone", practitionerName: "Terapeuta Antigo", locationId: LV },
+      STAFF,
+    ],
+    [
+      "a row on the machine",
+      { ...editAppt, practitionerId: NESA_CB.id, practitionerName: "NESA", locationId: CB },
+      STAFF,
+    ],
+    // Two machines under one name: the clinic suffixes come from the label context.
+    [
+      "a legacy LV row that names CB's machine",
+      { ...editAppt, practitionerId: NESA_CB.id, practitionerName: "NESA", locationId: LV },
+      LV_ONLY,
+    ],
+    // A Terapeuta rebuilt from the row reads as the page's lists already name them.
+    [
+      "a row whose Terapeuta only the filter's list names",
+      { ...editAppt, practitionerId: EVA.id, practitionerName: "Eva Filtro", locationId: LV },
+      WITH_EVA,
+    ],
+  ];
+
+  it.each(rows)("%s: the same options, in the same order, with the same labels", (_name, appt, staff) => {
+    const panel = panelTherapistOptions(render({ mode: "edit", appt }, false, RECEPTION, staff), appt.practitionerId);
+    // Not vacuous: the panel painted a real choice, the row's Terapeuta in it.
+    expect(panel.length).toBeGreaterThan(1);
+    expect(panel.map((o) => o.id)).toContain(appt.practitionerId);
+    expect(therapistChangeOptions(appt, staff)).toEqual(panel);
+  });
+
+  it("the comparison reads real labels: the suffixes and the filter's own name are in the panel", () => {
+    const legacy = rows[4]!;
+    expect(panelTherapistOptions(render({ mode: "edit", appt: legacy[1] }, false, RECEPTION, legacy[2]), NESA_CB.id)).toEqual([
+      ANA,
+      { id: NESA_LV.id, label: "NESA (LV)" },
+      { id: NESA_CB.id, label: "NESA (CB)" },
+    ]);
+    const eva = rows[5]!;
+    expect(
+      panelTherapistOptions(render({ mode: "edit", appt: eva[1] }, false, RECEPTION, eva[2]), EVA.id),
+    ).toContainEqual(EVA);
   });
 });
