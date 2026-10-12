@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   AgendaGrid,
+  agendaScale,
+  drawnStartMin,
   groupBandPx,
-  hourHeights,
-  hourTops,
+  groupNeedPx,
   makeMinToPx,
   shortPatientName,
 } from "./agenda-grid";
@@ -247,6 +248,15 @@ describe("PL-10 - agenda name-line: first + last only, smaller, non-bold", () =>
     const html = render([appt({ patientName: "Abílio José de Carvalho Fernandes" })]);
     expect(visibleText(faceFor(html, "Abílio Fernandes"))).toBe("Abílio Fernandes");
     expect(html).toContain("Abílio José de Carvalho Fernandes"); // hover carries the full name
+  });
+
+  it("the name line's height is the one the scale reserves for it, set on the element", () => {
+    // AGENDA-STACK-01: the scale reads no DOM. It reserves groupNeedPx(n) for n
+    // lines, so a line must not be able to draw taller than its share of that,
+    // whatever size a browser gives the text.
+    const linePx = groupNeedPx(2) - groupNeedPx(1);
+    const face = faceFor(render([appt()]), "Maria Silva");
+    expect(face).toMatch(new RegExp(`style="[^"]*height:\\s*${linePx}px`));
   });
 
   it("renders the name-line smaller (text-xs) and non-bold (font-normal)", () => {
@@ -508,15 +518,16 @@ describe("W12-02 - strong hour rule on the on-the-hour slot TOP, coincident with
 // PL-01: Rodica - "as marcacoes descem para a hora seguinte". A large same-hour
 // cluster of the (intentional) vertical stack grew down past its hour band and
 // read as the next hour. The fix keeps the vertical stack but BOUNDS each
-// same-start group to the nearer of its next hour line and its next start-group,
-// scrolling any overflow WITHIN the band (never truncating a name, never hiding).
+// same-start group to the nearer of its next hour line and its next start-group.
+// It used to scroll any overflow WITHIN the band; since AGENDA-STACK-01 the day
+// is sized by this same bound, so the band holds the group and nothing scrolls.
 describe("PL-01 - same-start group bounded to its hour band (no bleed into the next hour)", () => {
   const DAY_BOTTOM = 24 * 48; // 08:00-20:00, 24 half-hour slots x SLOT_HEIGHT.
 
   // STAFF-03: the scale is now per-render, so the mapper is passed in. AT BASE
   // HEIGHTS IT IS THE OLD LINEAR ONE, which is why every expectation below is
   // unchanged - the bound's rule did not change, only where the hour edges are.
-  const BASE = makeMinToPx(hourHeights([]));
+  const BASE = makeMinToPx(agendaScale([]));
 
   it("groupBandPx caps a group to the nearer of the next hour and the next group", () => {
     // 09:00, nothing after -> the full hour band (96px), never past 10:00.
@@ -531,7 +542,7 @@ describe("PL-01 - same-start group bounded to its hour band (no bleed into the n
     expect(groupBandPx(590, 600, DAY_BOTTOM, BASE)).toBe(24);
   });
 
-  it("renders the 09:00 start-group with a max-height bound + internal scroll (FAILS pre-fix)", () => {
+  it("renders the 09:00 start-group bounded to its hour, and with NO scroll of its own", () => {
     const html = render([
       appt({ id: "a", patientName: "Ana Costa" }),
       appt({ id: "b", patientName: "Bruno Dias" }),
@@ -543,9 +554,12 @@ describe("PL-01 - same-start group bounded to its hour band (no bleed into the n
       /<div[^>]*data-testid="agenda-start-group"[^>]*data-start-min="540"[^>]*>/,
     );
     expect(group, "the 09:00 start-group div").not.toBeNull();
-    // Bounded to the 09:00 hour band (96px) and scrolls within, never bleeding down.
-    expect(group![0]).toContain("overflow-y-auto");
+    // Four lines fit the 96px hour as it is, so the band is still the hour.
     expect(group![0]).toMatch(/max-height:\s*96px/);
+    // AGENDA-STACK-01: the scroll inside the slot is gone, and no other
+    // overflow took its place - a clip would hide a name where a scroll at
+    // least kept it reachable.
+    expect(group![0]).not.toContain("overflow");
   });
 
   it("preserves the vertical stack under the bound (no side-by-side split)", () => {
@@ -559,70 +573,257 @@ describe("PL-01 - same-start group bounded to its hour band (no bleed into the n
 });
 
 // ============================================================================
-// STAFF-03 — the hour row grows to fit what starts inside it.
+// STAFF-03 and AGENDA-STACK-01 - the row grows to fit what starts inside it.
 // ============================================================================
-// Reported from reception: several appointments in one hour crop, crowd the
-// hover target, and an off-hour start sits mid-row. The old scale was LINEAR —
-// every hour exactly 96px whatever it held — and PL-01 capped each group to its
-// hour and SCROLLED the overflow. Nothing was hidden; a receptionist simply had
-// to scroll inside a 96px cell to read a name.
+// Reported from reception, twice. The old scale was LINEAR - every hour exactly
+// 96px whatever it held - and PL-01 capped each group to its hour and SCROLLED
+// the overflow. STAFF-03 grew the hour by how many lines start in it, keeping
+// every minute proportional inside it; six at 10:00 beside one at 10:30 then
+// still scrolled, because the six owned only the top half of the grown hour.
+// AGENDA-STACK-01 sizes the day so that EVERY start-group fits its own band.
 //
 // THE 30-MINUTE GRID UNDERNEATH IS UNTOUCHED, and the pins above still prove it:
 // the :30 slot is still clickable, focusable and labelled. Collapsing to hour
 // granularity would have halved the bookable start times.
-describe("STAFF-03 — the hour row expands to fit its appointments", () => {
+//
+// TWO PINS OF STAFF-03 ARE WITHDRAWN HERE, ON PURPOSE: "a :30 start is exactly
+// halfway down its hour, however tall the hour" and "an off-slot start is
+// minute-proportional within a grown hour". They pinned the proportion that
+// made the six scroll. What replaces them is pinned below: an untouched hour is
+// still linear, the order of starts never changes, and an hour or half-hour
+// edge is still where its slot begins.
+describe("STAFF-03, AGENDA-STACK-01 - the row grows to fit its appointments", () => {
+  const H = (h: number, m = 0) => h * 60 + m;
+  /** `n` appointment lines starting at one minute. */
+  const lines = (n: number, min: number): number[] => Array.from({ length: n }, () => min);
+  /** The px a stretch of the day takes on a scale. */
+  const span = (px: (m: number) => number, from: number, to: number) => px(to) - px(from);
+  /**
+   * THE PROPERTY THE CARD IS ABOUT, checked the way the grid draws it: every
+   * start-group of every day fits between its own top and the nearer of the
+   * next hour line and the next group in its column.
+   */
+  function expectEveryGroupFits(startsByDay: number[][]) {
+    const scale = agendaScale(startsByDay);
+    const px = makeMinToPx(scale);
+    const bottom = scale.tops[scale.tops.length - 1]!;
+    for (const starts of startsByDay) {
+      const groups = [...new Set(starts)].sort((a, b) => a - b);
+      groups.forEach((start, i) => {
+        const count = starts.filter((m) => m === start).length;
+        const band = groupBandPx(start, groups[i + 1] ?? null, bottom, px);
+        expect(band, `${count} lines at minute ${start} fit their band`).toBeGreaterThanOrEqual(
+          groupNeedPx(count) - 1e-9,
+        );
+      });
+    }
+  }
+
   it("is EXACTLY the old linear scale when nothing needs extra room", () => {
     // The fix must be inert on a quiet day, or it is a redesign dressed as a bug
     // fix. 08:00 -> 0, 09:00 -> 96, 09:30 -> 144, and the day is 24 slots deep.
-    const px = makeMinToPx(hourHeights([]));
-    expect(px(8 * 60)).toBe(0);
-    expect(px(9 * 60)).toBe(96);
-    expect(px(9 * 60 + 30)).toBe(144);
-    const tops = hourTops(hourHeights([]));
-    expect(tops[tops.length - 1]).toBe(24 * 48);
+    const scale = agendaScale([]);
+    const px = makeMinToPx(scale);
+    expect(px(H(8))).toBe(0);
+    expect(px(H(9))).toBe(96);
+    expect(px(H(9, 30))).toBe(144);
+    expect(scale.tops[scale.tops.length - 1]).toBe(24 * 48);
   });
 
-  it("grows the hour that needs it, and ONLY that hour", () => {
-    // 09:00 holds eight lines; every other hour is untouched. A change that grew
-    // the whole day would pass a naive "is it taller" check and would push the
-    // afternoon off the screen for no reason.
-    const counts = [[0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]];
-    const heights = hourHeights(counts);
-    expect(heights[1], "the 09:00 hour must grow past its 96px base").toBeGreaterThan(96);
-    expect(heights[0]).toBe(96);
-    expect(heights[2]).toBe(96);
+  it("a slot with ONE appointment changes nothing, on the hour, the half hour or a quarter", () => {
+    // "A slot with one appointment looks exactly as today." One line per start,
+    // on the hour, on the half hour, and off the slot grid at :15 and :45 (the
+    // last has only 24px to the hour line, which is exactly what one line and
+    // its gap need). The scale must be the linear one at every minute asked.
+    const quiet = makeMinToPx(agendaScale([]));
+    const one = makeMinToPx(
+      agendaScale([[H(9), H(10, 30), H(11, 15), H(12, 45), H(14), H(14, 30), H(19, 45)]]),
+    );
+    for (let m = H(8); m <= H(20); m += 5) expect(one(m), `minute ${m}`).toBeCloseTo(quiet(m), 9);
   });
 
-  it("takes the WORST day per hour, so every column shares one scale", () => {
+  it("two appointments at one start fit a half-hour slot as it is", () => {
+    // Two lines and the gap are 44px of a 48px slot, with a neighbour at :30.
+    const scale = agendaScale([[...lines(2, H(9)), H(9, 30)]]);
+    expect(scale.tops[scale.tops.length - 1]).toBe(24 * 48);
+  });
+
+  it("G1: six appointments at 10:00 fit above 11:00, and only that hour grew", () => {
+    const day = lines(6, H(10));
+    const px = makeMinToPx(agendaScale([day]));
+    // The six take the hour: its two half-hour slots are 96px, the six need 124.
+    expect(span(px, H(10), H(11))).toBe(groupNeedPx(6));
+    expect(groupNeedPx(6)).toBe(124);
+    // The room was added where the group is; the 10:30 slot kept its 48px.
+    expect(span(px, H(10, 30), H(11))).toBe(48);
+    // Every other hour is untouched. A change that grew the whole day would
+    // pass a naive "is it taller" check and push the afternoon off the screen.
+    expect(span(px, H(9), H(10))).toBe(96);
+    expect(span(px, H(11), H(12))).toBe(96);
+    expect(px(H(20))).toBe(24 * 48 + (124 - 96));
+    expectEveryGroupFits([day]);
+  });
+
+  it("six at 10:00 with a seventh at 10:30: the six get the 10:00 slot, not half an hour's share", () => {
+    // THE SHAPE THAT STILL SCROLLED. STAFF-03 gave this hour 7 lines' worth
+    // (148px) and split it in two, so the six had 74px for 120px of names.
+    const day = [...lines(6, H(10)), H(10, 30)];
+    const px = makeMinToPx(agendaScale([day]));
+    expect(span(px, H(10), H(10, 30)), "the 10:00 slot holds the six").toBe(groupNeedPx(6));
+    expect(span(px, H(10, 30), H(11)), "the 10:30 slot is as it was").toBe(48);
+    expectEveryGroupFits([day]);
+  });
+
+  it("six at the HALF hour grow the half hour, and the first half stays 48px", () => {
+    const day = lines(6, H(10, 30));
+    const px = makeMinToPx(agendaScale([day]));
+    expect(span(px, H(10), H(10, 30))).toBe(48);
+    expect(span(px, H(10, 30), H(11))).toBe(groupNeedPx(6));
+    expectEveryGroupFits([day]);
+  });
+
+  it("takes every day in view, so all columns share one scale", () => {
     // THE DETAIL THAT MAKES THE WEEK VIEW WORK. Per-column heights would put
-    // Monday's 10:00 at a different y than Tuesday's, and the gutter — which is
-    // drawn once — would then agree with neither.
-    const quiet = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    const busy = [0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    expect(hourHeights([quiet, busy])).toEqual(hourHeights([busy, quiet]));
-    expect(hourHeights([quiet, busy])[1]).toBe(hourHeights([busy])[1]);
+    // Monday's 11:00 at a different y than Tuesday's, and the gutter - which is
+    // drawn once - would then agree with neither.
+    const quiet = [H(10)];
+    const busy = lines(9, H(10));
+    expect(agendaScale([quiet, busy])).toEqual(agendaScale([busy, quiet]));
+    expect(agendaScale([quiet, busy])).toEqual(agendaScale([busy]));
+    // Two days that each need room at a DIFFERENT start of the same hour.
+    const monday = [...lines(5, H(10)), H(10, 30)];
+    const tuesday = [H(10), ...lines(4, H(10, 15))];
+    expect(agendaScale([monday, tuesday])).toEqual(agendaScale([tuesday, monday]));
+    expectEveryGroupFits([monday, tuesday]);
   });
 
-  it("keeps a :30 start exactly halfway down its hour, however tall the hour", () => {
-    // The property that keeps vertical position encoding TIME rather than merely
-    // ordering. Without it, an expanded hour would slide its :30 appointments
-    // away from the clock they are supposed to sit against.
-    const heights = hourHeights([[0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]);
-    const px = makeMinToPx(heights);
-    const tops = hourTops(heights);
-    const half = px(9 * 60 + 30) - tops[1]!;
-    expect(half).toBeCloseTo(heights[1]! / 2, 5);
+  it("does not grow twice for room another day already made in the same hour", () => {
+    // Monday's six at 10:00 own the whole hour (nothing follows them); Tuesday's
+    // six at 10:30 grow the 10:30 slot. That slot is inside Monday's band, so
+    // Monday needs nothing more. Sizing the earlier group first would grow the
+    // 10:00 slot as well, for room the hour was about to have anyway.
+    const monday = lines(6, H(10));
+    const tuesday = lines(6, H(10, 30));
+    const px = makeMinToPx(agendaScale([monday, tuesday]));
+    expect(span(px, H(10), H(10, 30))).toBe(48);
+    expect(span(px, H(10, 30), H(11))).toBe(groupNeedPx(6));
+    expectEveryGroupFits([monday, tuesday]);
   });
 
-  it("places an off-hour start where the clock says, not at a slot boundary", () => {
-    // 11:25 is a real, reachable time — 55-minute appointments chained off a
-    // 30-minute cadence land there, which is what STAFF-01 was about. It must
-    // sit 25/60 of the way down its hour, not snapped to :00 or :30.
-    const heights = hourHeights([[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0]]);
-    const px = makeMinToPx(heights);
-    const tops = hourTops(heights);
-    const within = px(11 * 60 + 25) - tops[3]!;
-    expect(within).toBeCloseTo((25 / 60) * heights[3]!, 5);
+  it("two groups five minutes apart cost one line, not an hour twelve lines tall", () => {
+    // 11:25 and 11:30 is a real pair: 55-minute appointments chained off a
+    // 30-minute cadence land there (STAFF-01). The stretch between them is 8px
+    // at base; it grows to the 24px one line needs, and nothing else moves.
+    const day = [H(11, 25), H(11, 30)];
+    const px = makeMinToPx(agendaScale([day]));
+    expect(span(px, H(11, 25), H(11, 30))).toBe(groupNeedPx(1));
+    expect(span(px, H(11), H(11, 25))).toBe(40);
+    expect(span(px, H(11, 30), H(12))).toBe(48);
+    expectEveryGroupFits([day]);
+  });
+
+  it("keeps every start in clock order, and every slot edge on its slot, in a grown hour", () => {
+    // What replaces the old proportion: position still ORDERS time, strictly,
+    // and the :00 and :30 edges are still where the gutter and the slot
+    // buttons put them, because all three read the one mapper.
+    const day = [...lines(7, H(10)), ...lines(3, H(10, 10)), ...lines(4, H(10, 40)), H(10, 55)];
+    const px = makeMinToPx(agendaScale([day]));
+    for (let m = H(8) + 1; m <= H(20); m++) {
+      expect(px(m), `minute ${m} is below minute ${m - 1}`).toBeGreaterThan(px(m - 1));
+    }
+    expectEveryGroupFits([day]);
+  });
+
+  it("a busy day: every group fits, whatever the mix", () => {
+    // Four therapists booked on every half hour, plus off-slot starts.
+    const full: number[] = [];
+    for (let m = H(8); m < H(20); m += 30) full.push(...lines(4, m));
+    expectEveryGroupFits([full]);
+    expectEveryGroupFits([[...full, ...lines(3, H(9, 5)), ...lines(2, H(9, 50)), ...lines(8, H(19, 45))]]);
+  });
+
+  it("follows the clinic's window: a start outside it is drawn at the edge, and has room there", () => {
+    // 09:00 to 13:00. The page never passes a window narrower than its
+    // appointments (gridWindow widens it), so this is the grid holding together
+    // on its own if a caller ever does. Ten lines at 08:00 are drawn at 09:00,
+    // ten at 13:00 in the last slot, 12:30; each joins the group already there.
+    expect(drawnStartMin(H(8), H(9), H(13))).toBe(H(9));
+    expect(drawnStartMin(H(13), H(9), H(13))).toBe(H(12, 30));
+    expect(drawnStartMin(H(15, 20), H(9), H(13))).toBe(H(12, 30));
+    // Inside the window a start is its own minute, the last slot included.
+    expect(drawnStartMin(H(9), H(9), H(13))).toBe(H(9));
+    expect(drawnStartMin(H(12, 45), H(9), H(13))).toBe(H(12, 45));
+    // A window opening at 08:30 draws the 08:00 row, so 08:10 is inside it.
+    expect(drawnStartMin(H(8, 10), H(8, 30), H(13))).toBe(H(8, 10));
+    expect(drawnStartMin(H(7, 50), H(8, 30), H(13))).toBe(H(8));
+
+    const scale = agendaScale(
+      [[...lines(10, H(8)), H(9), ...lines(10, H(13)), H(12, 30)]],
+      H(9),
+      H(13),
+    );
+    expect(scale.mins[0]).toBe(H(9));
+    const px = makeMinToPx(scale, H(13));
+    expect(span(px, H(9), H(10)), "eleven lines at the top edge").toBe(groupNeedPx(11));
+    expect(span(px, H(12, 30), H(13)), "eleven lines in the last slot").toBe(groupNeedPx(11));
+    expect(span(px, H(10), H(12, 30)), "nothing between them moved").toBe(5 * 48);
+    // A window with no hour in it places nothing, whatever it is handed.
+    expect(agendaScale([lines(6, H(10))], H(9), H(9))).toEqual({ mins: [H(9)], tops: [0] });
+  });
+
+  it("renders a start outside the window in the edge group, inside the day column (end to end)", () => {
+    // 09:00 Lisbon is the fixture's start. With a 10:00 to 13:00 window it is
+    // before the first row: it is drawn in the 10:00 group, on top 0.
+    const html = renderToStaticMarkup(
+      <AgendaGrid
+        view="day"
+        anchor={DAY}
+        appointments={[
+          appt({ id: "early", patientName: "Ana Costa" }),
+          appt({
+            id: "edge",
+            patientName: "Bruno Dias",
+            startsAt: `${DAY}T09:00:00.000Z`,
+            endsAt: `${DAY}T10:00:00.000Z`,
+          }),
+        ]}
+        dayWindow={{ startMin: H(10), endMin: H(13) }}
+        onSelectAppointment={() => {}}
+        onSelectSlot={() => {}}
+      />,
+    );
+    const groups = html.match(/<div[^>]*data-testid="agenda-start-group"[^>]*>/g) ?? [];
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toContain(`data-start-min="${H(10)}"`);
+    expect(groups[0]).toMatch(/top:\s*0(px)?[;"]/);
+    expect(faces(html)).toHaveLength(2);
+  });
+
+  it("a clinic closing off the hour: the last group's room ends at the close, and so does its band", () => {
+    // 09:00 to 12:30. The 12:00 row is drawn whole, but nothing is placed below
+    // the close, so six at 12:00 must fit above 12:30 and the band the grid
+    // puts on the group must be the room the scale made, not less.
+    const day = lines(6, H(12));
+    const scale = agendaScale([day], H(9), H(12, 30));
+    const px = makeMinToPx(scale, H(12, 30));
+    const bottom = scale.tops[scale.tops.length - 1]!;
+    expect(span(px, H(12), H(12, 30))).toBe(groupNeedPx(6));
+    expect(groupBandPx(H(12), null, bottom, px)).toBe(groupNeedPx(6));
+    // The half hour below the close is still drawn, at its base height.
+    expect(bottom - px(H(12, 30))).toBe(48);
+  });
+
+  it("the mapper clamps to the window, at both ends", () => {
+    const scale = agendaScale([], H(9), H(13));
+    expect(scale.tops[scale.tops.length - 1]).toBe(4 * 96);
+    const px = makeMinToPx(scale, H(13));
+    expect(px(H(7))).toBe(0);
+    expect(px(H(15))).toBe(4 * 96);
+    // A clinic closing at 12:30 still draws the whole 12:00 row, and a minute
+    // past the close is placed AT the close, not further down that row.
+    const half = makeMinToPx(agendaScale([], H(9), H(12, 30)), H(12, 30));
+    expect(half(H(12, 30))).toBe(3 * 96 + 48);
+    expect(half(H(12, 45))).toBe(3 * 96 + 48);
   });
 
   it("renders a taller day column when one hour is busy (end to end)", () => {
@@ -637,10 +838,27 @@ describe("STAFF-03 — the hour row expands to fit its appointments", () => {
     );
     const heightOf = (html: string): number =>
       Math.max(...[...html.matchAll(/height:\s*(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1])));
+    expect(heightOf(quiet), "one appointment leaves the day at its base height").toBe(24 * 48);
     expect(
       heightOf(busy),
-      "six appointments in one hour must make the day taller than one appointment does",
-    ).toBeGreaterThan(heightOf(quiet));
+      "six appointments in one hour make the day taller by exactly what they need",
+    ).toBe(24 * 48 + groupNeedPx(6) - 96);
+  });
+
+  it("renders the six as ONE group whose band is the room the scale made (end to end)", () => {
+    const html = render(
+      ["Ana Costa", "Bruno Dias", "Carla Eanes", "Duarte Faria", "Elsa Gomes", "Rui Horta"].map(
+        (patientName, i) => appt({ id: `x${i}`, patientName }),
+      ),
+    );
+    const groups = html.match(/<div[^>]*data-testid="agenda-start-group"[^>]*>/g) ?? [];
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatch(new RegExp(`max-height:\\s*${groupNeedPx(6)}px`));
+    expect(groups[0]).not.toContain("overflow");
+    // And the 10:00 slot button below starts where the grown 09:00 hour ends.
+    const ten = html.match(/<button[^>]*aria-label="[^"]*10:00"[^>]*>/g) ?? [];
+    expect(ten.length).toBeGreaterThan(0);
+    for (const b of ten) expect(b).toMatch(new RegExp(`top:\\s*${96 + groupNeedPx(6)}px`));
   });
 });
 
