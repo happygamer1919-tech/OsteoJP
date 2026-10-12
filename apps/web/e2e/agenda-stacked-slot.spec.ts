@@ -48,7 +48,7 @@
  * appointments are removed afterwards by patient, which also clears a crashed
  * run's rows from an earlier RUN_DAY_BASE.
  *
- * ITS DAY IS RUN_DAY_BASE + 180 (181 when that lands on a Sunday), which no
+ * ITS DAY IS RUN_DAY_BASE + 200 (201 when that lands on a Sunday), which no
  * other spec derives (scripts/e2e-spec-days-do-not-collide.test.mjs).
  *
  * THE HOURS ARE 10:00 AND 11:00. Other specs move Linda-a-Velha's opening
@@ -64,7 +64,7 @@ import { LOCATION, RUN_DAY_BASE, SERVICE, TENANT_A, futureWeekdayDate } from "./
 import { expectTime } from "./helpers";
 import { serviceClient } from "./helpers/confirm-code";
 
-const DAY = futureWeekdayDate(RUN_DAY_BASE + 180);
+const DAY = futureWeekdayDate(RUN_DAY_BASE + 200);
 const DESKTOP = { width: 1440, height: 900 };
 
 /**
