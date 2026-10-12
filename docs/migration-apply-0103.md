@@ -1,6 +1,6 @@
 # 0103: apply the revoke of anon's SEQUENCES default in public
 
-**NOT READY. Nothing in this document may be pasted yet.** The rehearsal ran on 2026-10-08, with limits (see "Rehearsal"). The one mutation sweep ran on 2026-10-08 and changed no byte of the migration, of a check file or of a block (see "Review history"). Review round 1 (2026-10-08) found five defects, all in this document's prose, and round 2 (2026-10-08) passed with two MINOR notes. The amendment of 2026-10-12 answers both notes, quotes the lead's ruling on the card's ORDER sentence (strategy's dispatch S-1012-A, M-10: stage 1's own read-only pre-check counts) and names the pull request, #1573; it changed no byte of the migration, of a check file or of a block either. Open, in order: one review round on that amendment and on the two blocks of GREEN's dispatch, then SOLO's READY line; `main` merged into the branch, with CI green on the head that merges; the owner's two clicks, which come after GREEN's report on the re-arm (ruled, M-11); and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
+**NOT READY. Nothing in this document may be pasted yet.** The rehearsal ran on 2026-10-08, with limits (see "Rehearsal"). The one mutation sweep ran on 2026-10-08 and changed no byte of the migration, of a check file or of a block (see "Review history"). Review round 1 (2026-10-08) found five defects, all in this document's prose, and round 2 (2026-10-08) passed with two MINOR notes. The amendment of 2026-10-12 answers both notes, quotes the lead's ruling on the card's ORDER sentence (strategy's dispatch S-1012-A, M-10: stage 1's own read-only pre-check counts) and names the pull request, #1573; it changed no byte of the migration, of a check file or of a block either. The one review round on that amendment and on the two blocks of GREEN's dispatch ran on 2026-10-12: seven MINOR findings, none in a block, each answered in prose and not reviewed again (see "Review history"). Open, in order: SOLO's READY line, which covers the reviews and the ruling and not the merge of `main`; `main` merged into the branch, with CI green on the head that merges; the owner's two clicks, which come after GREEN's report on the re-arm (ruled, M-11); and GREEN's dispatch, which carries the three values this document cannot hold: the merge commit's sha (`MERGE-SHA-PENDING`), this document's sha256 and the run window. Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only, by the weekday table** (see "R9").
 
 **Status: AUTHORED. REHEARSED WITH LIMITS on 2026-10-08 (no block ran whole to its last line: see
 "Rehearsal"). NOT APPLIED.** One migration,
@@ -72,8 +72,8 @@ of 2026-09-27 asks ("build/rehearse/document as separate agents").
 4. **R4** on the pull request's diff and the card's acceptance, by a fresh reviewer that sees only
    those: at most three rounds (the review-loop cap). **Round 1 (2026-10-08) did not pass:** two
    MAJOR and three MINOR findings, all in this document's prose. **Round 2 (2026-10-08) PASSED, with
-   two MINOR notes,** which the amendment of 2026-10-12 answers (see "Review history"). **OPEN: one
-   review round on that amendment and on the two blocks of GREEN's dispatch** (the ruling at step 5).
+   two MINOR notes,** which the amendment of 2026-10-12 answers. **RAN 2026-10-12: the one review
+   round on that amendment and on GREEN's two blocks, seven MINOR findings** (see "Review history").
 5. **RULED 2026-10-12, THE LEAD: stage 1's own pre-check discharges the card's ORDER sentence.**
    The sentence asks for "a read-only measurement and a read-only pre-check sitting on production
    before it". Strategy's dispatch S-1012-A (2026-10-12), word for word: "M-10: stage 1's own
@@ -112,8 +112,8 @@ records what it found, and the dispatch pins the sha by machine.
 | the mark for the pull request's number | it stood in this document until 2026-10-12: in the banner, step 6 above, the fact table, the order table, the owner's clicks | FILLED 2026-10-12: #1573, opened on 2026-10-08 | SOLO, as an amendment to this document, with its sidecar |
 | `REHEARSAL: PENDING` | it stood in this document, under "Rehearsal", until 2026-10-08 | FILLED 2026-10-08: the rehearsal has run and its record replaced the line | the rehearsal agent's record, committed with the sidecar |
 | `MERGE-SHA-PENDING` | GREEN's dispatch only. Named in the banner here so nobody looks for it in a block | after the owner merges | SOLO |
-| this document's sha256 | GREEN's dispatch, and `docs/migration-apply-0103.sha256` on the same head | after the LAST amendment of this document | SOLO; it is the first field of the sidecar |
-| the run window | GREEN's dispatch only, as three Lisbon times `YYYYMMDDHHMM` | when the dispatch is written | SOLO |
+| this document's sha256 | GREEN's dispatch, and `docs/migration-apply-0103.sha256` on the same head | the sidecar: with every amendment, in the same commit. The dispatch: only after the owner's merge, read from the merge commit, which holds the LAST amendment (step 9) | SOLO; it is the first field of the sidecar |
+| the run window | GREEN's dispatch only, as three Lisbon times `YYYYMMDDHHMM` | only after the owner's merge, when the dispatch is filled (step 9) | SOLO |
 
 **Every amendment of this document moves its sha256.** The sidecar is regenerated in the same
 commit (`shasum -a 256 docs/migration-apply-0103.md > docs/migration-apply-0103.sha256`, from the
@@ -1161,11 +1161,25 @@ Nothing below is done by SOLO or by GREEN. Each is the owner's, and each waits f
 **Before the first click, and not a click:** SOLO merges `main` into the branch (no rebase, no
 force push), CI is green on that head, and SOLO's READY line has arrived. `main` is strict, and
 the label `held-for-apply` stops the automatic update. If another pull request merges to `main`
-first, this is done again.
+first, this is done again. **Those are three separate conditions.** The READY line covers the
+rehearsal, the sweep, the reviews and the ruling; it does not cover the merge of `main`. So a
+second merge of `main` into the branch needs CI green on the new head, and no second READY line.
+
+**The owner's two clicks on #1567 (the re-arm's own pull request: its label off, then its merge)
+are not in the table below, because they are not this document's. They have two possible places,
+and no other:**
+
+- **after GREEN's clean report on the re-arm and BEFORE click 1 here.** `main` then moves, so
+  SOLO merges `main` into #1573 once more and waits for CI to be green on that head, and only
+  then does click 1 come; or
+- **after click 4,** when GREEN's report on 0103 is in.
+
+Never between click 2 and click 4: a `main` that has moved halts the sitting (see "THE ORDER OF
+PULL REQUESTS").
 
 | # | Click | When | What it starts |
 |---|---|---|---|
-| 1 | On #1573: take the label `held-for-apply` off | after SOLO's READY line (rehearsal recorded, sweep listed, R4 PASS, the lead's ruling on question 1 quoted in this document, `main` merged into the branch with CI green on that head), **and after GREEN's clean report on the re-arm** (ruled, S-1012-A: "M-11: after the re-arm report.") | nothing by itself. SOLO never removes this label (ruling of 2026-09-27) |
+| 1 | On #1573: take the label `held-for-apply` off | after SOLO's READY line (rehearsal recorded, sweep listed, R4 PASS, the lead's ruling on question 1 quoted in this document); with `main` merged into the branch and CI green on that head, which is a condition of its own and is met again each time `main` moves (after #1567's merge, if that comes first); **and after GREEN's clean report on the re-arm** (ruled, S-1012-A: "M-11: after the re-arm report.") | nothing by itself. SOLO never removes this label (ruling of 2026-09-27) |
 | 2 | On #1573: merge | right after click 1, so after GREEN's clean report on the re-arm too, and never while the re-arm or any other sitting of GREEN's is in flight (S-1012-A: "No merge during a GREEN sitting.") | main is then one migration ahead of production. SOLO has disarmed every armed PR first, and nothing else merges until GREEN's report on 0103 |
 | 3 | Launch GREEN (a fresh session with the apply settings) and hand it SOLO's dispatch, which names `0103_revoke_anon_sequences_default.sql` | after click 2, and after SOLO has filled the dispatch with the merge commit's sha, this document's sha256 at that commit and the run window; in closed hours by the weekday table, on the night the dispatch names and inside its run window | the sitting: BEFORE YOU START, stage 0, CLOCK CHECK, stage 1, stage 2, the closing read |
 | 4 | Read GREEN's report on 0103 | when it arrives | merges resume. If the report carries a STOP: nothing is pasted again, and the lead rules |
@@ -1463,7 +1477,7 @@ were not run.
 |---|---|---|
 | 1 | a database that really carries the default, `pg_default_acl` read first | yes, on an inherited stack and not one of the rehearsal's own: lane `green` as the build agent left it, read in its before state before anything ran; the entry names `anon=rwU/postgres` |
 | 2 | an active clinic inside 08:00 to 21:00 | yes: `0 of 2` outside, `inside` |
-| 3 | the four blocks and GREEN's two, verbatim, every halt for real | the four ran whole and stopped at their own STOPs; the lines a local database can run ran as fragments. **GREEN's two blocks are NOT REHEARSED: the dispatch is not written** |
+| 3 | the four blocks and GREEN's two, verbatim, every halt for real | the four ran whole and stopped at their own STOPs; the lines a local database can run ran as fragments. **GREEN's two blocks are NOT REHEARSED: the dispatch is not written** (so on 2026-10-08. A draft exists since, outside the repository; its two blocks are still NOT REHEARSED) |
 | 4 | the post-check on the before and the after state | yes: 10 OK / 1 VACUOUS / 3 FAIL before; 13 OK / 1 VACUOUS / 0 FAIL after with no sequence; 14 OK / 0 VACUOUS / 0 FAIL after with one |
 | 5 | G7 | yes: as expected |
 | 6 | a sequence created before and after | yes: the table above |
@@ -1670,7 +1684,9 @@ Each by the lead's rule, and each with its reason. The rehearsal's record above 
   Reason: before the merge stage 0 stops on `origin/main`, and nobody writes that record by hand.
 - **Every line that needs the dispatch's run window, `/tmp/0103-window.ok`,** in stage 1 (both
   window checks), in stage 2 and in the closing read; **and GREEN's two blocks themselves.**
-  Reason: the dispatch is not written, and nobody writes its record by hand.
+  Reason: the dispatch is not written, and nobody writes its record by hand. (So on 2026-10-08. A
+  draft exists since, outside the repository; none of these lines has run since, and GREEN's two
+  blocks are still NOT REHEARSED.)
 - **The lines that load the production environment file,** in stages 1 and 2, and the closing
   read's `node --env-file=...` line as it is written. Reason: this lane never reads that file.
 - **The target guard passing, and stages 1 and 2 past it as blocks.** The real guard ran against
@@ -1788,8 +1804,9 @@ block's `begin read only`, and neither reads any table of people: every source t
 ## Review history
 
 **R4 PASSED on round 2 (2026-10-08), with two MINOR notes. The amendment of 2026-10-12 answers
-both, and has had no review round yet.** Round 1 ran and did not pass; its record is next, then
-round 2's, then the amendment's.
+both, and its one review round ran on 2026-10-12: seven MINOR findings, answered in prose and not
+reviewed again.** Round 1 ran and did not pass; its record is next, then round 2's, then the
+amendment's, then that review round's.
 
 ### Review round 1, 2026-10-08: five findings, all in this document's prose
 
@@ -1912,6 +1929,54 @@ these changed bytes is owed, with the two blocks of GREEN's dispatch** (the ruli
 round (M-15)"), and SOLO's READY line comes after it. `main` is still to be merged into the
 branch: as this lane last fetched it, `main` holds one commit the branch does not (the board pull
 request #1574, two board files, no file this document pins).
+
+### The review round on the amendment, 2026-10-12: seven MINOR findings, none in a block
+
+**In plain language.** A fresh reviewer read the amendment above and the draft of GREEN's
+dispatch, with its two blocks. It found seven things, all MINOR and all in sentences: four in this
+document and three in the draft, which is not in the repository. None is in a block, in a check
+file or in the migration: each was a place where two sentences did not say the same thing, or
+where one was missing. The fixer wrote neither the migration, the check files nor
+the blocks. **This record gives the findings and the fixes; the reviewer's verdict line is SOLO's
+to paste in the body of the pull request, and is not claimed here.**
+
+| # | Where | What was unclear | What was done |
+|---|---|---|---|
+| 1 | "OWNER CLICKS" | The owner's two clicks on #1567 were named only under "THE ORDER OF PULL REQUESTS", so the click list did not show that they sit between the re-arm report and the last merge of `main` into #1573 | FIXED: "OWNER CLICKS" now gives their two possible places, and what follows the first one |
+| 2 | The banner against click 1 | The banner put the READY line before the merge of `main`, and click 1 listed that merge inside what READY covers; it was unclear whether READY is issued again after #1567 merges | FIXED: the banner, the paragraph above the click table and click 1 now say that these are separate conditions, and that a second merge of `main` needs CI green and no second READY line |
+| 3 | NOT READY step 9 against the placeholder table | Step 9 fills each dispatch value only after the owner's merge; two rows of the table still said "after the LAST amendment" and "when the dispatch is written" | FIXED: both rows now say what step 9 says, and the sidecar's own rule (with every amendment) is kept apart from the dispatch's |
+| 4 | Three lines of the records of 2026-10-08 | They say "the dispatch is not written" in the present tense, and it has been a draft since | FIXED: each carries a dated note. GREEN's two blocks are still NOT REHEARSED and not swept |
+| 5 | The draft: the rule for filling the run window | For a Saturday evening the rule promised a start after midnight that the two blocks refuse (after midnight they read Sunday, one window of its own), and it gave no rule for a Sunday | FIXED IN THE DRAFT'S PROSE: the rule now names Monday to Friday, Saturday and Sunday each. No block byte changed |
+| 6 | The draft: what the READY line carries | One reading of "PRs NOT TO MERGE: any held-for-apply PR until GREEN's clean report." is SOLO's to put to the lead with the READY line, and the step that says what the READY line carries did not list it | FIXED IN THE DRAFT'S PROSE |
+| 7 | The draft: the sentence above what BEFORE YOU START must print | It said the block stops on any difference "but the main head", while the block stops on a main head that is not the merge commit | FIXED IN THE DRAFT'S PROSE |
+
+**What it did not change.** No byte of the migration, of its mirror, of either check file, of the
+script test, or inside any fenced block, here or in the draft. The four blocks of this document
+were hashed again after the fix and each reads the sha256 the table of the amendment gives. The
+fence that opens stage 0 is still line 510: every change above the blocks was made inside lines
+that were already there. So no block line number in "Part D" moved.
+
+**Not reviewed again, and why.** The owner's ruling of 2026-09-27 (the review-loop cap) asks for
+another round only on a MAJOR or BLOCKER finding or on a byte that runs against production. These
+seven are MINOR and no such byte changed.
+
+**Run after the fix,** each in an environment with no database URL:
+
+| Run | Result |
+|---|---|
+| `node --test scripts/anon-sequences-default-0103.test.mjs` | 41 of 41 passed, none skipped; 224 injected faults in bash and 224 in zsh, of which 218 halt and 6 are the ones the test allows to go on, in each shell |
+| `node --test scripts/owner-blocks-survive-zsh.test.mjs` | 5 of 5 passed |
+| `node scripts/check-journal.mjs` | 101 files, 101 entries, the mirror matching by content |
+| `GATE_BASE_REF=main node scripts/assert-gates-unchanged.mjs` | `GATE FREEZE: 99 gate files match their pins, package.json scripts unchanged.` |
+| `pnpm test:scripts`, whole | exit 0: 1466 of 1466 passed, none failed, none skipped, 54 suites |
+
+The rows above were read once and then this table was filled in, which moves the sidecar; the
+script test and the block scan, the two that read this document, were run again on the committed
+bytes with the same result.
+
+**Not done.** No database run: no byte that runs changed. `pnpm lint`, `pnpm typecheck`,
+`pnpm test` and `pnpm build` were not run: no file of any package changed. `main` is still to be
+merged into the branch.
 
 ### The mutation sweep, 2026-10-08: one pass, mechanical
 
@@ -2298,7 +2363,8 @@ read this document, were run again on the committed bytes with the same result.
 
 #### What the sweep did not do
 
-- **GREEN's two blocks** are not swept: the dispatch is not written.
+- **GREEN's two blocks** are not swept: the dispatch is not written. (So on 2026-10-08. A draft
+  exists since, outside the repository; its two blocks are still not swept.)
 - **The migration file** was not mutated: the script test's CONTROLS, ONE RULE AT A TIME are its
   arms, and no byte of it may change.
 - **The whole-block runs of Part D were under bash only.** The final script test ran in both shells.
