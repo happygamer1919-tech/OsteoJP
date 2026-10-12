@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppointmentNotesBoard } from "@/app/agenda/appointment-notes-board";
+import { ConflictBanner } from "@/app/agenda/conflict-banner";
 import {
   ScheduleAgainDrawer,
   isEligibleForScheduleAgain,
@@ -43,6 +44,12 @@ import {
 import { correctionTargets, isLegalEstadoCorrection } from "@/lib/scheduling/estado-correction";
 import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
+import { appointmentRefusalMessage, isOverridableConflict } from "@/lib/scheduling/refusal-message";
+import {
+  therapistChangeInput,
+  therapistChangeOptions,
+  type TherapistChangeStaff,
+} from "@/lib/scheduling/therapist-change";
 import {
   outsideClinicHoursMessage,
   type ClinicWindowRefusal,
@@ -97,6 +104,7 @@ export function AppointmentsList({
   canCancel,
   ownCancelIds = [],
   filtered = false,
+  therapistStaff = null,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
@@ -114,6 +122,12 @@ export function AppointmentsList({
    * /recuperacao count header exists to prevent.
    */
   filtered?: boolean;
+  /**
+   * MARC-THERAPIST-01: the staff lists the Terapeuta field of "Gerir marcação"
+   * builds its options from, or null when this viewer is not offered the field.
+   * Only the affordance: rescheduleAppointment re-checks everything.
+   */
+  therapistStaff?: TherapistChangeStaff | null;
 }) {
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
@@ -123,6 +137,7 @@ export function AppointmentsList({
         canCancel={canCancel}
         ownCancelIds={ownCancelIds}
         filtered={filtered}
+        therapistStaff={therapistStaff}
       />
     </ToastProvider>
   );
@@ -139,12 +154,14 @@ function AppointmentsListInner({
   canCancel,
   ownCancelIds,
   filtered,
+  therapistStaff,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
   canCancel: boolean;
   ownCancelIds: readonly string[];
   filtered: boolean;
+  therapistStaff: TherapistChangeStaff | null;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<RowAction | null>(null);
@@ -176,6 +193,7 @@ function AppointmentsListInner({
           canEdit={canEdit}
           canCancel={canCancel}
           canCancelRow={canCancel || ownCancelIds.includes(a.id)}
+          therapistStaff={therapistStaff}
           onOpenNotes={() => setNotesFor(a)}
           onScheduleAgain={() => setAction({ kind: "scheduleAgain", appt: a })}
           onReschedule={() => setAction({ kind: "reschedule", appt: a })}
@@ -225,6 +243,7 @@ function AppointmentRow({
   canEdit,
   canCancel,
   canCancelRow,
+  therapistStaff,
   onOpenNotes,
   onScheduleAgain,
   onReschedule,
@@ -235,6 +254,7 @@ function AppointmentRow({
   canCancel: boolean;
   /** SCHED-30: this viewer may cancel THIS row and bring it back. */
   canCancelRow: boolean;
+  therapistStaff: TherapistChangeStaff | null;
   onOpenNotes: () => void;
   onScheduleAgain: () => void;
   onReschedule: () => void;
@@ -245,6 +265,9 @@ function AppointmentRow({
   // is open AND has at least one legal onward transition.
   const editable = isEditable(a);
   const showReschedule = canEdit && editable;
+  // MARC-THERAPIST-01: the Terapeuta field, on the rows Reagendar is on
+  // (Agendada and Confirmada), for a viewer the page hands the staff lists to.
+  const showTherapist = showReschedule && therapistStaff !== null;
   // SCHED-27 (owner, 2026-09-13): a Cancelada row also gets the Estado control,
   // to go back to Agendada or Confirmada - but only for a viewer who can CANCEL
   // (owner, admin, reception), because bringing one back is the inverse of
@@ -280,7 +303,7 @@ function AppointmentRow({
           <span className="font-medium text-text-primary">
             {dateFmt.format(new Date(a.startsAt))} · {formatTimeOfDay(new Date(a.startsAt))}
           </span>
-          <span className="text-sm text-text-secondary">
+          <span data-testid="marcacao-therapist" className="text-sm text-text-secondary">
             {a.practitionerName}
             {a.serviceName ? ` · ${a.serviceName}` : ""}
           </span>
@@ -345,6 +368,7 @@ function AppointmentRow({
                 {s["appointment.reschedule"]}
               </Button>
             )}
+            {showTherapist && <TherapistInline appt={a} staff={therapistStaff} />}
             {showEstado && <EstadoInline appt={a} />}
             {showCorrect && <CorrigirEstadoInline appt={a} />}
             {showCancel && (
@@ -356,6 +380,103 @@ function AppointmentRow({
         </details>
       )}
     </Card>
+    </div>
+  );
+}
+
+/**
+ * MARC-THERAPIST-01 - the Terapeuta of ONE marcação, changed from the ficha.
+ *
+ * The same save the agenda's edit panel makes when only its Terapeuta changes:
+ * `rescheduleAppointment` with the row's own start, end and clinic. So the new
+ * therapist's working hours, the clinic's hours, the conflicts and the clinic
+ * assignment are checked by the server exactly as there, the pacote link is
+ * not touched (that write sets time, therapist and clinic only), the new
+ * therapist joins the care team as on a booking, one `appointment.reschedule`
+ * audit row is written, and the reminders are scheduled again at the unchanged
+ * start.
+ *
+ * THE REFUSALS READ AS ON THE AGENDA, from the one function both screens use
+ * (lib/scheduling/refusal-message.ts). A conflict is the agenda's own warning,
+ * the one component both draw (app/agenda/conflict-banner.tsx), so it names the
+ * kind and, for an absence, the reason. It offers NO "Guardar mesmo assim": the
+ * acceptance check for this field says a conflict is refused, and whether
+ * reception may override it from here as it can on the agenda is a question for
+ * the owner, not a default.
+ *
+ * Shown inline rather than as a toast: the working-hours sentence names the
+ * therapist's hours and has to stay on screen while the next name is picked.
+ */
+function TherapistInline({ appt, staff }: { appt: AgendaAppointment; staff: TherapistChangeStaff }) {
+  const router = useRouter();
+  const toast = useToast();
+  const options = therapistChangeOptions(appt, staff);
+  const [next, setNext] = useState(appt.practitionerId);
+  const [submitting, setSubmitting] = useState(false);
+  const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // A refusal describes one therapist. Picking another clears it, the same
+  // render-time reset the Estado control uses for its conflict banner.
+  const [checkedTarget, setCheckedTarget] = useState(next);
+  if (next !== checkedTarget) {
+    setCheckedTarget(next);
+    setConflicts(null);
+    setError(null);
+  }
+  const unchanged = next === appt.practitionerId;
+
+  async function apply() {
+    if (unchanged) return;
+    setError(null);
+    setConflicts(null);
+    setSubmitting(true);
+    const r = await rescheduleAppointment(appt.id, therapistChangeInput(appt, next));
+    setSubmitting(false);
+    if (r.ok) {
+      toast({ tone: "success", message: s["appointment.therapistChanged"] });
+      router.refresh();
+      return;
+    }
+    if (isOverridableConflict(r)) {
+      setConflicts(r.conflicts ?? []);
+      return;
+    }
+    setError(appointmentRefusalMessage(r));
+  }
+
+  return (
+    <div className="flex flex-col gap-1" data-testid="alterar-terapeuta">
+      <Field label={s["appointment.therapist"]}>
+        <div className="flex items-center gap-2">
+          <Select
+            aria-label={s["appointment.therapist"]}
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+          >
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            loading={submitting}
+            disabled={submitting || unchanged}
+            onClick={() => void apply()}
+          >
+            {s["appointment.changeTherapist"]}
+          </Button>
+        </div>
+      </Field>
+      {conflicts && <ConflictBanner conflicts={conflicts} />}
+      {error && (
+        <p role="alert" className="max-w-prose text-sm text-error">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

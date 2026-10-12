@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
+import type { TherapistChangeStaff } from "@/lib/scheduling/therapist-change";
 
 // AppointmentsList is a client component (router + clone action + toast). Stub
 // the router and server action so it renders in a node test without an
@@ -61,7 +62,12 @@ const base: AgendaAppointment = {
 
 function render(
   appt: AgendaAppointment,
-  caps: { canEdit?: boolean; canCancel?: boolean; ownCancelIds?: string[] } = {},
+  caps: {
+    canEdit?: boolean;
+    canCancel?: boolean;
+    ownCancelIds?: string[];
+    therapistStaff?: TherapistChangeStaff | null;
+  } = {},
 ): string {
   return renderToStaticMarkup(
     createElement(AppointmentsList, {
@@ -69,6 +75,7 @@ function render(
       canEdit: caps.canEdit ?? true,
       canCancel: caps.canCancel ?? true,
       ownCancelIds: caps.ownCancelIds,
+      therapistStaff: caps.therapistStaff,
     }),
   );
 }
@@ -207,5 +214,76 @@ describe("AppointmentsList — note thread reachable from the ficha (PL-19)", ()
     const html = render({ ...base, status: "scheduled" }, { canEdit: false, canCancel: false });
     expect(count(html, 'data-testid="ficha-notes-button"')).toBe(1);
     expect(count(html, "Gerir marcação")).toBe(0);
+  });
+});
+
+describe("AppointmentsList - the Terapeuta field of Gerir marcação (MARC-THERAPIST-01)", () => {
+  const colleague = { id: "00000000-0000-0000-0000-0000000000b2", label: "Dra. Colega" };
+  const second = { id: "00000000-0000-0000-0000-0000000000b3", label: "Dr. Segundo" };
+  const staff: TherapistChangeStaff = {
+    therapists: [{ id: base.practitionerId, label: base.practitionerName }, colleague, second],
+    therapistLocationIds: {},
+  };
+  /** The field's own markup, cut out of the row so no other select is read. */
+  const field = (html: string): string => {
+    const from = html.indexOf('data-testid="alterar-terapeuta"');
+    if (from === -1) return "";
+    const to = html.indexOf("</button>", from);
+    return html.slice(from, to);
+  };
+
+  it.each(["scheduled", "confirmed"] as const)(
+    "a %s row has the field: a Terapeuta select and its own button",
+    (status) => {
+      const html = render({ ...base, status }, { therapistStaff: staff });
+      const f = field(html);
+      expect(count(html, 'data-testid="alterar-terapeuta"')).toBe(1);
+      expect(f).toContain('aria-label="Terapeuta"');
+      expect(f).toContain(">Alterar terapeuta");
+      // Not "Aplicar": the Estado control beside it owns that name on this row.
+      expect(f).not.toContain(">Aplicar<");
+    },
+  );
+
+  it("lists the current Terapeuta, selected, and the colleagues", () => {
+    const f = field(render({ ...base, status: "scheduled" }, { therapistStaff: staff }));
+    expect(count(f, "<option")).toBe(3);
+    expect(f).toMatch(new RegExp(`<option value="${base.practitionerId}" selected="">Dr. Terapeuta</option>`));
+    expect(f).toContain(`<option value="${colleague.id}">Dra. Colega</option>`);
+  });
+
+  it("leaves the row's Terapeuta 2 out of the list", () => {
+    const f = field(
+      render(
+        { ...base, status: "scheduled", practitionerTwoId: second.id, practitionerTwoName: second.label },
+        { therapistStaff: staff },
+      ),
+    );
+    expect(count(f, "<option")).toBe(2);
+    expect(f).not.toContain(second.id);
+  });
+
+  it("the button is disabled until another therapist is picked", () => {
+    const f = field(render({ ...base, status: "scheduled" }, { therapistStaff: staff }));
+    const button = f.slice(f.lastIndexOf("<button"));
+    expect(button).toContain("Alterar terapeuta");
+    expect(button.slice(0, button.indexOf(">"))).toContain('disabled=""');
+  });
+
+  it.each(["completed", "cancelled", "no_show"] as const)("a %s row has no field", (status) => {
+    expect(count(render({ ...base, status }, { therapistStaff: staff }), 'data-testid="alterar-terapeuta"')).toBe(0);
+  });
+
+  it("a viewer the page hands no staff lists to has no field, and keeps Reagendar", () => {
+    for (const therapistStaff of [null, undefined]) {
+      const html = render({ ...base, status: "scheduled" }, { therapistStaff });
+      expect(count(html, 'data-testid="alterar-terapeuta"')).toBe(0);
+      expect(count(html, "Reagendar")).toBe(1);
+    }
+  });
+
+  it("a viewer without appointments:write has no field even with the lists", () => {
+    const html = render({ ...base, status: "scheduled" }, { canEdit: false, canCancel: true, therapistStaff: staff });
+    expect(count(html, 'data-testid="alterar-terapeuta"')).toBe(0);
   });
 });
