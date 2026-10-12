@@ -484,6 +484,7 @@
   "appointment.availabilityError": "Could not load availability.",
   "errors.forbidden": "You don't have permission for this action.",
   "errors.generic": "Something went wrong. Please try again.",
+  "errors.concurrentChange": "Another change to this patient was running at the same time. Nothing was saved. Try again.",
   "errors.unauthenticated": "Your session expired. Please sign in again.",
   "invoicing.title": "Invoicing",
   "invoicing.filterStatus": "Status",

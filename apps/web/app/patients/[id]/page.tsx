@@ -908,6 +908,11 @@ export default async function PatientProfilePage({
               {s["clinical.episodeClosedRefused"]}
             </p>
           )}
+          {m === "concurrentChange" && (
+            <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
+              {s["errors.concurrentChange"]}
+            </p>
+          )}
           {m === "avaliacaoErr" && (
             <p role="alert" className="mb-4 text-sm text-error" data-testid="add-evaluation-error">
               {s["patients.fichaGroupAddEvaluationError"]}

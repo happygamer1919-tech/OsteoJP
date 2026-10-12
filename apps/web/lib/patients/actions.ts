@@ -33,7 +33,7 @@ import {
 } from "@osteojp/db";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
 import { isForeignKeyViolation } from "@/lib/admin/foreign-key-refusal";
-import { sqlStateOf } from "@/lib/observability/sql-state";
+import { isDeadlockVictim, sqlStateOf } from "@/lib/observability/sql-state";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
@@ -463,7 +463,13 @@ export type HardDeletePatientResult =
 export type MergePatientError =
   | "invalid_id" // the survivor box does not hold a uuid (a number or a name)
   | "self_merge" // survivor and loser are the same patient
-  | "not_found"; // a well-formed uuid that names nobody live in this tenant
+  | "not_found" // a well-formed uuid that names nobody live in this tenant
+  // M-4. NOT the operator's input, and still a value: Postgres rolled the merge
+  // back as a deadlock victim (40P01) because another change to one of the two
+  // patients was running at the same moment. Nothing was merged, and the same
+  // merge sent again normally goes through, which is a thing the person at the
+  // screen can do. Thrown, it would reach them as an opaque digest.
+  | "concurrent_change";
 
 export type MergePatientsResult =
   | { ok: true; patient: Patient }
@@ -1040,6 +1046,7 @@ export async function mergePatients(raw: MergePatientsInput): Promise<MergePatie
   const { survivorId, loserId } = parsed;
 
   let notFound = false;
+  let deadlockVictim = false;
   const survivor = await runScoped(ctx, async (tx) => {
     try {
       // Audit row is written inside the function, in THIS transaction.
@@ -1089,9 +1096,22 @@ export async function mergePatients(raw: MergePatientsInput): Promise<MergePatie
   }).catch((err: unknown) => {
     // Only the refusal flagged above is an answer; everything else still throws.
     if (notFound) return null;
+    // M-4: the merge was rolled back as a deadlock victim (SQLSTATE 40P01):
+    // another change to one of the two patients held a lock this merge was
+    // waiting for, and waited on one this merge held. READ HERE, where the
+    // transaction's error lands, and not at the statement above: it is the
+    // same answer whichever statement was the one waiting. Nothing was merged
+    // (the function's audit row rolled back with it) and nothing is retried.
+    // One log line, with no identifier in it (rule 7).
+    if (isDeadlockVictim(err)) {
+      console.warn("[patients] merge refused: rolled back as a deadlock victim (concurrent_change). Nothing merged.");
+      deadlockVictim = true;
+      return null;
+    }
     throw err;
   });
 
+  if (deadlockVictim) return { ok: false, error: "concurrent_change" };
   if (notFound || !survivor) return { ok: false, error: "not_found" };
 
   revalidatePatient(survivorId);

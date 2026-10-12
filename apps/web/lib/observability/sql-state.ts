@@ -51,3 +51,26 @@ export function sqlStateOf(e: unknown): string {
   const found = code(e) ?? code(cause);
   return typeof found === "string" && /^(?!E)[0-9A-Z]{5}$/.test(found) ? found : "unknown";
 }
+
+/** Postgres `deadlock_detected`. */
+export const DEADLOCK_DETECTED = "40P01";
+
+/**
+ * M-4: was this write chosen as the victim of a deadlock?
+ *
+ * Two transactions each held a lock the other was waiting for, and Postgres
+ * ended the wait by rolling ONE of them back with SQLSTATE 40P01. The other
+ * went through. Nothing the victim did is stored, and the same request sent
+ * again normally succeeds, so a caller can answer it with a "try again"
+ * sentence where it would otherwise show its generic failure.
+ *
+ * READ THROUGH `sqlStateOf`, so from the error and from its `cause`: Drizzle
+ * wraps the driver's error, and the wrapper carries no code of its own (pinned
+ * against a real deadlock on the real driver in
+ * lib/clinical/deadlock-victim.db.test.ts). ONLY THE SQLSTATE IS READ: the
+ * DETAIL of a deadlock names process ids and the rows waited on, and nothing
+ * here hands it on (rule 7).
+ */
+export function isDeadlockVictim(e: unknown): boolean {
+  return sqlStateOf(e) === DEADLOCK_DETECTED;
+}
