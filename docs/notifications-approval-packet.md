@@ -280,6 +280,7 @@ Remarcar: +351 272 000 000
 - **Identificador:** `follow_up.email`
 - **Quando:** 24 horas depois de a consulta terminar, se marcada como realizada.
 - **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. Enviava a um doente que ja tinha marcacao no dia seguinte. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
+- **Nota:** a linha `Local:` (o nome do local da consulta) foi acrescentada a 2026-10-12 (MN-03, decisao do proprietario). Nao fazia parte do texto aprovado a 2026-08-03. O SMS nao muda.
 
 **Texto tal como esta programado:**
 
@@ -288,6 +289,7 @@ Olá {{patient_first_name}},
 
 Obrigado pela visita de {{appointment_date}}. Ficamos ao dispor para qualquer questão.
 
+Local: {{clinic_location}}
 Para marcar a próxima consulta contacte: {{clinic_phone}}
 
 — OsteoJP
@@ -302,6 +304,7 @@ Olá Madalena,
 
 Obrigado pela visita de 10 de setembro de 2026. Ficamos ao dispor para qualquer questão.
 
+Local: Castelo Branco
 Para marcar a próxima consulta contacte: +351 272 000 000
 
 — OsteoJP
@@ -343,6 +346,7 @@ Marcar proxima consulta: +351 272 000 000
 - **Identificador:** `no_show.email`
 - **Quando:** Quando a rececao marca a consulta como falta.
 - **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. JP nunca viu este texto e a mensagem e adjacente a taxa. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
+- **Nota:** a linha `Local:` (o nome do local da consulta) foi acrescentada a 2026-10-12 (MN-03, decisao do proprietario). Nao fazia parte do texto aprovado a 2026-08-03. O SMS nao muda.
 
 **Texto tal como esta programado:**
 
@@ -351,6 +355,7 @@ Olá {{patient_first_name}},
 
 A sua consulta de {{appointment_date}} às {{appointment_time}} ficou por realizar.
 
+Local: {{clinic_location}}
 Para remarcar: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
 
@@ -366,6 +371,7 @@ Olá Madalena,
 
 A sua consulta de 10 de setembro de 2026 às 14:30 ficou por realizar.
 
+Local: Castelo Branco
 Para remarcar: https://app.osteojp.pt/r/eyJ0IjoiM2EyZDA3MTEtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIiwiYSI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImV4cCI6MTc4OTAwMDAwMH0.N-5B6LOtRZUQt2eazNOmzTfvU7DQEE_lLu8FN_6GMiw
 Ou contacte: +351 272 000 000
 
