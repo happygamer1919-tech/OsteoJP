@@ -11,7 +11,7 @@ screens: ficha-paciente
 
 Há três botões, para quem pode abrir os **Registos clínicos** de um paciente. A Receção não os tem.
 
-* **Exportar ficha**, no topo do separador **Registos clínicos**: um só PDF com os registos do paciente que esse separador lhe mostra.
+* **Exportar ficha**, no topo do separador **Registos clínicos**: um só PDF com os registos do paciente que pode ler.
 * **PDF do episódio**, dentro de um grupo da lista: os registos desse grupo. Um grupo com a etiqueta **Importado** também o tem; o grupo **Sem episódio** não.
 * **Transferir PDF**, dentro de um registo: só esse registo.
 

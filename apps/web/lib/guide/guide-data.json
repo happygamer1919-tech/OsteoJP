@@ -6567,7 +6567,7 @@
                 "strong": "Registos clínicos"
               },
               {
-                "text": ": um só PDF com os registos do paciente que esse separador lhe mostra."
+                "text": ": um só PDF com os registos do paciente que pode ler."
               }
             ],
             [
@@ -6704,7 +6704,7 @@
       "see": [],
       "shots": null,
       "title": "Exportar registos em PDF",
-      "words": 199
+      "words": 197
     },
     {
       "answers": [],

@@ -838,8 +838,11 @@ describe("each role reads only the FAQ role blocks written for it (G1-3)", () =>
 //     behind "Exportar ficha", "PDF do episódio" and "Transferir PDF". Each
 //     asks for clinical_records:read and nothing else, which is why the
 //     lesson is read by a therapist, an administrator and the owner, and
-//     not by reception. A door that came to ask for more would fail here.
-const PAGE_GATES: { lesson: string; page: string; check: string; admits: (role: Role) => boolean }[] = [
+//     not by reception. Two of those files hold the same line more than
+//     once (the episode and the imported group; the report and the RGPD
+//     form), so `times` pins how many copies each file has: a door that came
+//     to ask for more, in any one copy, would fail here.
+const PAGE_GATES: { lesson: string; page: string; check: string; times?: number; admits: (role: Role) => boolean }[] = [
   {
     lesson: "faturacao.faturas-de-um-periodo",
     page: "apps/web/app/invoicing/page.tsx",
@@ -858,15 +861,16 @@ const PAGE_GATES: { lesson: string; page: string; check: string; admits: (role: 
     check: 'const canManageCareTeam = can(ctx.role, "care_team:manage");',
     admits: (role) => can(role, "care_team:manage"),
   },
-  ...[
-    ["apps/web/app/patients/[id]/page.tsx", 'const canReadClinical = can(ctx.role, "clinical_records:read");'],
-    ["apps/web/app/patients/[id]/ficha-pdf-actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };'],
-    ["apps/web/app/patients/[id]/episode-pdf-actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };'],
-    ["apps/web/app/clinical/[id]/actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };'],
-  ].map(([page, check]) => ({
+  ...([
+    ["apps/web/app/patients/[id]/page.tsx", 'const canReadClinical = can(ctx.role, "clinical_records:read");', 1],
+    ["apps/web/app/patients/[id]/ficha-pdf-actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };', 1],
+    ["apps/web/app/patients/[id]/episode-pdf-actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };', 2],
+    ["apps/web/app/clinical/[id]/actions.ts", 'if (!can(ctx.role, "clinical_records:read")) return { url: null };', 2],
+  ] as const).map(([page, check, times]) => ({
     lesson: "registos.exportar-pdf",
-    page: page!,
-    check: check!,
+    page,
+    check,
+    times,
     admits: (role: Role) => can(role, "clinical_records:read"),
   })),
 ];
@@ -880,6 +884,7 @@ describe("a lesson's gate is its page's gate", () => {
     it(`${gate.lesson}: ${gate.page} still checks what the lesson assumes, and admits every role holding the lesson's capability`, () => {
       const source = readFileSync(join(REPO_ROOT, gate.page), "utf8");
       expect(source).toContain(gate.check);
+      if (gate.times !== undefined) expect(source.split(gate.check).length - 1, `copies of the check in ${gate.page}`).toBe(gate.times);
       const lesson = GUIDE_DATA.lessons.find((item) => item.id === gate.lesson);
       expect(lesson, `${gate.lesson} is not a published lesson`).toBeDefined();
       expect(lesson!.capability).not.toBeNull();

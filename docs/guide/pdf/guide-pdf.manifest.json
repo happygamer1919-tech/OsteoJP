@@ -3,19 +3,19 @@
   "format": 1,
   "pdfs": [
     {
-      "bytes": 9034934,
+      "bytes": 9035432,
       "faq": 7,
       "file": "guia-plataforma-osteojp.pdf",
       "lessons": 58,
       "pages": 52,
       "profile": null,
-      "sha256": "82d1d42a7f0d5c7bf51ef80afcf064e0367dbba23ceede6cf79da3472b20436c"
+      "sha256": "64d7347f71834f8b4a55ea11ef03a14f9b558593d61e5533e69f2d4b987aaaf2"
     }
   ],
   "source": {
     "faq": 7,
     "lessons": 58,
     "sections": 9,
-    "sha256": "44459e13e4621cfc3c1c69c5a99f8137a9ab83022c741e83335398f88804c085"
+    "sha256": "df5e8b7b32937c6db193f8d5cc821615a75b628472d90216d4a9803c4c979a2a"
   }
 }
