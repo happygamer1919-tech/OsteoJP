@@ -121,7 +121,46 @@ export function renderReminderSmsBody(args: ReminderSmsBodyArgs): SmsBodyResult 
   // can arm separately, and the two lines are mutually exclusive by construction.
   const canReceiveReplies = senderCanReceiveReplies(env);
 
-  const message = assembleSms(args.offset, args.locale, args.ctx, {
+  const full = finishBody(args, args.ctx, canReceiveReplies, confirmLink);
+  if (full.ok || full.kind !== "too_long") return full;
+
+  // ==========================================================================
+  // MN-02 (strategy ruling, 2026-10-12): ONE SEGMENT, AND NO LOCATION IS RENAMED.
+  // ==========================================================================
+  // The sender id already says OsteoJP, so when the body with the location's
+  // full name is too long, AND ONLY THEN, it prints the place alone:
+  // "OsteoJP (Montemor-o-Novo)" becomes "Montemor-o-Novo". A body that fits is
+  // unchanged, byte for byte, so no other location's SMS moves. One that is
+  // still too long with the place alone is refused with the FULL body's length,
+  // which is the number an operator can act on.
+  const place = smsPlaceName(args.ctx.clinicLocation);
+  if (place === args.ctx.clinicLocation) return full;
+  const short = finishBody(
+    args,
+    { ...args.ctx, clinicLocation: place },
+    canReceiveReplies,
+    confirmLink,
+  );
+  return short.ok ? short : full;
+}
+
+/**
+ * The place inside a location name of the form "OsteoJP (<place>)", or the name
+ * itself when it has another form.
+ */
+export function smsPlaceName(locationName: string): string {
+  const m = /^OsteoJP \((.+)\)$/.exec(locationName.trim());
+  const place = m?.[1]?.trim();
+  return place ? place : locationName;
+}
+
+function finishBody(
+  args: ReminderSmsBodyArgs,
+  ctx: ReminderContext,
+  canReceiveReplies: boolean,
+  confirmLink: string | undefined,
+): SmsBodyResult {
+  const message = assembleSms(args.offset, args.locale, ctx, {
     feeNotice: args.feeNotice ?? false,
     replyInstruction: canReceiveReplies,
     confirmLink,

@@ -28,17 +28,15 @@
  * location. ./data is replaced, so a broken join could not fail here. That is
  * proved against a real database in ./third-location-data.db.test.ts.
  *
- * THREE FINDINGS ARE PINNED BELOW AS THEY ARE, NOT FIXED. Each is patient-facing
+ * TWO FINDINGS ARE PINNED BELOW AS THEY ARE, NOT FIXED (1 and 3). Each is patient-facing
  * copy or a REMINDERS_* flag (Tier D), so this file records what is sent today
  * and a change to the copy has to change the pin with it:
  *   1. the follow-up and the no-show messages print the location's phone and
  *      NOT its name;
- *   2. the 24h SMS with the confirm link armed is longer than one segment for
- *      this location's name, and is refused (nothing is sent). G7 IS NOT MET IN
- *      THAT CONFIGURATION, and the pin is a record of the failure, not a pass:
- *      docs/comms-confirm-loop-current-wiring.md (section 1) records the link as
- *      armed on production. Which of a shorter stored name, shorter copy or the
- *      link off is the answer is the owner's decision;
+ *   2. RULED AND FIXED (MN-02, strategy, 2026-10-12). The 24h SMS with the
+ *      confirm link armed is 163 characters with this location's full name. It
+ *      was refused; it now prints the place alone ("Montemor-o-Novo", 153) and
+ *      goes as one segment. A body that fits keeps the full name;
  *   3. the 24h SMS with the fee line (unapproved, off today) is refused at this
  *      location, with or without the link.
  *
@@ -144,6 +142,7 @@ import {
   REPLY_ACK_TEMPLATE_IDS,
 } from "./reminder-copy";
 import { FEE_NOTICE_TEMPLATE_ID } from "./fee-notice";
+import { smsPlaceName } from "./sms-body";
 import { SMS_SEGMENT_LIMIT } from "./templates";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
@@ -396,24 +395,74 @@ describe("G7 - the reminders of a third-location appointment", () => {
 /* FINDING 2: the 24h SMS with the confirm link                          */
 /* ==================================================================== */
 
-// G7 ASKS FOR ONE SEGMENT, AND WITH THE LINK ARMED THERE IS NO SMS AT ALL. The
-// tests below pin that failure so it cannot be lost; they do not pass the gate.
-describe("FINDING, G7 NOT MET - the 24h SMS with the confirm link armed does not fit one segment for this name", () => {
+// MN-02 (strategy ruling, 2026-10-12). With the link armed the body with the
+// full name is 163 characters. It is not refused any more: the sender id already
+// says OsteoJP, so a body that is too long prints the place alone, and only
+// then. The location is not renamed and nothing is split in two.
+describe("G7 - the 24h SMS with the confirm link armed prints the place alone when the full name does not fit", () => {
   beforeEach(() => {
     process.env.REMINDERS_CONFIRM_LINK_ENABLED = "true";
     process.env.REMINDERS_CONFIRM_CODE_SECRET = "test-only-confirm-secret-not-prod";
   });
 
-  it("a link host of 14 characters, the deployed length: 163 characters, REFUSED, nothing sent and no code minted", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("a link host of 14 characters, the deployed length: 163 with the full name, so it goes as 153 with the place alone", async () => {
     h.loadReminderData.mockResolvedValue(row());
 
-    const out = await dispatchReminder(TENANT, APPT, "24h", "sms");
+    expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
 
-    expect(out).toEqual({
+    const sms = only(h.sms);
+    expect(sms.templateId).toBe("reminder.24h.sms");
+    expect(sms.body).toMatch(
+      new RegExp(
+        "^OsteoJP - Lembrete\\nConsulta: amanha 14/05 as 14:30\\nLocal: Montemor-o-Novo\\nRemarcar: 926 714 926" +
+          "\\nConfirmar: app\\.jp\\.invalid/c/[A-Za-z0-9_-]{8}\\nNao lemos respostas\\.$",
+      ),
+    );
+    expect(sms.body).not.toContain(NAME);
+    expect(sms.body).toContain(PHONE);
+    expectNoOtherClinic(sms.body, "24h sms with the link");
+    expect(smsSegments(sms.body)).toEqual({ charset: "GSM-7", units: 153, segments: 1 });
+    expect(h.issuedCodes).toHaveLength(1);
+  });
+
+  it("the same appointment at a 12-character name goes with its FULL name: 150 characters, the control", async () => {
+    h.loadReminderData.mockResolvedValue(row({ locationName: "OsteoJP (XX)" }));
+
+    expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
+
+    const sms = only(h.sms);
+    expect(sms.body).toContain("\nLocal: OsteoJP (XX)\n");
+    expect(sms.body).toMatch(/\nConfirmar: app\.jp\.invalid\/c\/[A-Za-z0-9_-]{8}\nNao lemos respostas\.$/);
+    expect(smsSegments(sms.body)).toEqual({ charset: "GSM-7", units: 150, segments: 1 });
+  });
+
+  it("the edge: at exactly 160 the full name stays, at 161 the place alone goes (151)", async () => {
+    h.loadReminderData.mockResolvedValue(row());
+
+    process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://abcdefgh.pt"; // 11
+    expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
+    const fits = only(h.sms);
+    expectThisLocation(fits.body, "24h sms with the link");
+    expect(smsSegments(fits.body)).toEqual({ charset: "GSM-7", units: 160, segments: 1 });
+
+    process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://abcdefghi.pt"; // 12
+    expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
+    expect(h.sms).toHaveLength(2);
+    const short = h.sms[1]!;
+    expect(short.body).toContain("\nLocal: Montemor-o-Novo\n");
+    expect(short.body).not.toContain(NAME);
+    expect(smsSegments(short.body)).toEqual({ charset: "GSM-7", units: 151, segments: 1 });
+  });
+
+  it("still too long with the place alone: REFUSED with the full body's length, nothing sent and no code minted", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.loadReminderData.mockResolvedValue(row());
+    process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://a-long-host-name.invalid"; // 24
+
+    expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toEqual({
       dispatched: false,
       reason: "body_refused",
-      detail: `reminders/sms: message is 163 chars, exceeds ${SMS_SEGMENT_LIMIT}-char single segment`,
+      detail: `reminders/sms: message is 173 chars, exceeds ${SMS_SEGMENT_LIMIT}-char single segment`,
     });
     expect(h.sms).toEqual([]);
     expect(h.issuedCodes).toEqual([]);
@@ -428,32 +477,24 @@ describe("FINDING, G7 NOT MET - the 24h SMS with the confirm link armed does not
     expect(error).toHaveBeenCalledTimes(1);
   });
 
-  it("the same appointment at a 12-character name goes: 150 characters, the control", async () => {
-    h.loadReminderData.mockResolvedValue(row({ locationName: "OsteoJP (XX)" }));
-
-    expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
-
-    const sms = only(h.sms);
-    expect(sms.body).toMatch(/\nConfirmar: app\.jp\.invalid\/c\/[A-Za-z0-9_-]{8}\nNao lemos respostas\.$/);
-    expect(smsSegments(sms.body)).toEqual({ charset: "GSM-7", units: 150, segments: 1 });
-  });
-
-  it("a link host of 11 characters or fewer is what would fit: 160 at 11, 161 at 12", async () => {
-    h.loadReminderData.mockResolvedValue(row());
-
-    process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://abcdefgh.pt"; // 11
-    expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
-    const fits = only(h.sms);
-    expectThisLocation(fits.body, "24h sms with the link");
-    expect(smsSegments(fits.body)).toEqual({ charset: "GSM-7", units: 160, segments: 1 });
-
+  it("a name of another form is never shortened: 163 characters at a 25-character name, REFUSED", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://abcdefghi.pt"; // 12
+    h.loadReminderData.mockResolvedValue(row({ locationName: "Clinica de Montemor Novo." }));
+
     expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toMatchObject({
       dispatched: false,
       reason: "body_refused",
+      detail: `reminders/sms: message is 163 chars, exceeds ${SMS_SEGMENT_LIMIT}-char single segment`,
     });
-    expect(h.sms).toHaveLength(1);
+    expect(h.sms).toEqual([]);
+  });
+
+  it("smsPlaceName reads only the form OsteoJP (<place>)", () => {
+    expect(smsPlaceName("OsteoJP (Montemor-o-Novo)")).toBe("Montemor-o-Novo");
+    expect(smsPlaceName("  OsteoJP ( Castelo Branco ) ")).toBe("Castelo Branco");
+    expect(smsPlaceName("OsteoJP Montemor")).toBe("OsteoJP Montemor");
+    expect(smsPlaceName("OsteoJP ()")).toBe("OsteoJP ()");
+    expect(smsPlaceName("Montemor-o-Novo")).toBe("Montemor-o-Novo");
   });
 });
 
@@ -506,9 +547,11 @@ describe("FINDING - the 24h SMS with the fee line (unapproved, off today) does n
 
   it("the control: at a 12-character name the same fee-bearing SMS is 167 characters and refused too", async () => {
     // So the fee line's overflow is not this location's alone: with the one-way
-    // sender's "Nao lemos respostas." line it fits at no location.
+    // sender's "Nao lemos respostas." line it fits at no location name of 12
+    // characters. The name here is not of the form OsteoJP (<place>), so MN-02
+    // does not shorten it; one that is would go with its place alone.
     vi.spyOn(console, "error").mockImplementation(() => {});
-    h.loadReminderData.mockResolvedValue(row({ locationName: "OsteoJP (XX)", patientHasAcceptedTerms: true }));
+    h.loadReminderData.mockResolvedValue(row({ locationName: "Clinica XXXX", patientHasAcceptedTerms: true }));
 
     expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toEqual(refused(167));
     expect(h.sms).toEqual([]);
