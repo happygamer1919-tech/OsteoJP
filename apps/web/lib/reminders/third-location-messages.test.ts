@@ -477,9 +477,9 @@ describe("G7 - the 24h SMS with the confirm link armed prints the place alone wh
     expect(error).toHaveBeenCalledTimes(1);
   });
 
-  it("a name of another form is never shortened: 163 characters at a 25-character name, REFUSED", async () => {
+  it("a name of another brand is never shortened, brackets or not: 163 characters at a 25-character name, REFUSED", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    h.loadReminderData.mockResolvedValue(row({ locationName: "Clinica de Montemor Novo." }));
+    h.loadReminderData.mockResolvedValue(row({ locationName: "Clinica (Montemor-o-Novo)" }));
 
     expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toMatchObject({
       dispatched: false,
@@ -492,9 +492,27 @@ describe("G7 - the 24h SMS with the confirm link armed prints the place alone wh
   it("smsPlaceName reads only the form OsteoJP (<place>)", () => {
     expect(smsPlaceName("OsteoJP (Montemor-o-Novo)")).toBe("Montemor-o-Novo");
     expect(smsPlaceName("  OsteoJP ( Castelo Branco ) ")).toBe("Castelo Branco");
-    expect(smsPlaceName("OsteoJP Montemor")).toBe("OsteoJP Montemor");
-    expect(smsPlaceName("OsteoJP ()")).toBe("OsteoJP ()");
-    expect(smsPlaceName("Montemor-o-Novo")).toBe("Montemor-o-Novo");
+    for (const same of [
+      "OsteoJP Montemor",
+      "Montemor-o-Novo",
+      "OsteoJP ()",
+      "OsteoJP ( )",
+      // A short code is not a place: the two older clinics are stored this way.
+      "OsteoJP (LV)",
+      "OsteoJP (CB)",
+      "OsteoJP (Novo)",
+      // Text before the brand, after the bracket, another brand, another case.
+      "Clinica OsteoJP (Montemor-o-Novo)",
+      "OsteoJP (Montemor-o-Novo) sala 2",
+      "Clinica (Montemor-o-Novo)",
+      "osteojp (Montemor-o-Novo)",
+      // A bracket inside the bracket.
+      "OsteoJP (A) (Bairro)",
+      "OsteoJP ((Montemor))",
+    ]) {
+      expect(smsPlaceName(same), same).toBe(same);
+    }
+    expect(smsPlaceName("OsteoJP (Evora)")).toBe("Evora");
   });
 });
 
@@ -547,11 +565,10 @@ describe("FINDING - the 24h SMS with the fee line (unapproved, off today) does n
 
   it("the control: at a 12-character name the same fee-bearing SMS is 167 characters and refused too", async () => {
     // So the fee line's overflow is not this location's alone: with the one-way
-    // sender's "Nao lemos respostas." line it fits at no location name of 12
-    // characters. The name here is not of the form OsteoJP (<place>), so MN-02
-    // does not shorten it; one that is would go with its place alone.
+    // sender's "Nao lemos respostas." line it fits at no location. MN-02 does
+    // not rescue it: "XX" is a short code, not a place, so nothing is shortened.
     vi.spyOn(console, "error").mockImplementation(() => {});
-    h.loadReminderData.mockResolvedValue(row({ locationName: "Clinica XXXX", patientHasAcceptedTerms: true }));
+    h.loadReminderData.mockResolvedValue(row({ locationName: "OsteoJP (XX)", patientHasAcceptedTerms: true }));
 
     expect(await dispatchReminder(TENANT, APPT, "24h", "sms")).toEqual(refused(167));
     expect(h.sms).toEqual([]);

@@ -147,11 +147,20 @@ export function renderReminderSmsBody(args: ReminderSmsBodyArgs): SmsBodyResult 
 /**
  * The place inside a location name of the form "OsteoJP (<place>)", or the name
  * itself when it has another form.
+ *
+ * A SHORT CODE IS NOT A PLACE. "OsteoJP (LV)" is how the two older clinics are
+ * stored (the convention stamp-clinic.ts reads), and "Local: LV" tells a patient
+ * nothing, so a bracket of one to four letters is left alone and such a body
+ * is refused as before. Nothing inside the bracket may be a bracket, and nothing
+ * may follow it.
  */
+const BRAND_AND_PLACE = /^OsteoJP \(([^()]+)\)$/;
+const SHORT_CODE = /^[A-Za-z]{1,4}$/;
+
 export function smsPlaceName(locationName: string): string {
-  const m = /^OsteoJP \((.+)\)$/.exec(locationName.trim());
-  const place = m?.[1]?.trim();
-  return place ? place : locationName;
+  const place = BRAND_AND_PLACE.exec(locationName.trim())?.[1]?.trim();
+  if (!place || SHORT_CODE.test(place)) return locationName;
+  return place;
 }
 
 function finishBody(
