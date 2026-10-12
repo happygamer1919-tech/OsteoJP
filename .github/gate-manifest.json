@@ -25,7 +25,7 @@
   "files": {
     ".env.example": "1d896f7d740671d95bc19b2ada11df7eaa24020de05a7ec009ec5e7bd3d39153",
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
-    ".github/scripts/assert-rls-executed.mjs": "8854661ff1cb2a0878de55d676b52002ba89803715f1182efa7a59c9f820a01d",
+    ".github/scripts/assert-rls-executed.mjs": "5b14ee05330b853578371526d3f30847b8bbef821eda2fd2db49668a52fb7c87",
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
     ".github/workflows/ci.yml": "56ca4e11b16209094ab3d7ae82dfcaf3a22ad59e2fcb5ca3918cd69df5b32ccd",
     ".github/workflows/db-tests.yml": "33900efba45c91ea1c5337378aecad322edea9c1e2e2626aade1e03d78f24bc0",
@@ -89,6 +89,7 @@
     "scripts/import/prod-run-runbook.test.mjs": "89cb2fda4faa891ac85bfe5d4f4f02ee27cb35ba6229b4e7a13153161a80f873",
     "scripts/import/rehearsal-runbook.test.mjs": "b8805f92605d3623f9a6bd1cae11702aa9f3816997b4bdea65c6c27ac2ae8557",
     "scripts/import/run-import.test.mjs": "7e82eb9b8214fff7ed376c4da2c5d5267f5ffd85ace990b63789eecfa7d324ab",
+    "scripts/inc-1007-rearm-reminders-emit.test.mjs": "877139500c9f1d9543561e9c10dcfc8365502d031f8b4c2f64a650eede95b472",
     "scripts/ingestion-sign.test.mjs": "c6ba1b8cf42878ccb91d3f829e676c280e7b59ea8d82387e5b7bbe6ae2b40e2e",
     "scripts/lane-stack.test.mjs": "2bcc1f73267c7567c59e89b67bb1d077d3fc81342abcfa1a312ed75d62c51296",
     "scripts/local-target.test.mjs": "a7cfe74aea60206f5b0e2c3215526e9b59d48f31acc565550e331bf23c161f5c",

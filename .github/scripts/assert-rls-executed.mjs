@@ -279,6 +279,13 @@ const SUITES = [
   { file: "locations.physical-stamp.db.test.ts", hard: true },
   { file: "third-location-data.db.test.ts", hard: true },
   { file: "marcacoes-therapist-change.db.test.ts", hard: true },
+  // M-4, added 2026-10-13. One more DB-gated suite of apps/web, merged on
+  // 2026-10-12 (#1581). It makes two real transactions deadlock on a real
+  // database and proves that exactly one is rolled back, that its error
+  // carries 40P01 on the cause, and that another real failure in the same kind
+  // of transaction is not taken for a deadlock. A mocked test cannot produce a
+  // deadlock. Named here so that its ABSENCE is red too.
+  { file: "deadlock-victim.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
