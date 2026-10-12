@@ -1,7 +1,7 @@
 ---
 id: registos
 title: Registos
-goal: Escrever, rever e assinar os registos clínicos dos pacientes.
+goal: Escrever, rever, assinar e exportar os registos clínicos dos pacientes.
 roles: terapeuta, proprietario
 order: terapeuta 3, proprietario 9
 ---
