@@ -47,7 +47,7 @@ describe("the name on a conflict line", () => {
   });
 
   it("every surface that renders a conflict line goes through it", () => {
-    // Six lines in four files render a conflict's patient. A seventh written
+    // Seven lines in four files render a conflict's patient. An eighth written
     // as `c.patientName` would print a bare time for a booking whose patient
     // the caller does not read, so the four files are read and pinned.
     const surfaces = [
@@ -63,9 +63,10 @@ describe("the name on a conflict line", () => {
       uses += src.split("conflictPatientLabel(c)").length - 1;
     }
     // appointment-drawer 1, schedule-again-drawer 1, pending-requests 1,
-    // appointments-list 3 banners x 2 reads. A zero here would mean the
-    // regex above passed over files that render nothing.
-    expect(uses).toBe(9);
+    // appointments-list 4 banners x 2 reads (the fourth is the Terapeuta
+    // field's, MARC-THERAPIST-01). A zero here would mean the regex above
+    // passed over files that render nothing.
+    expect(uses).toBe(11);
   });
 });
 

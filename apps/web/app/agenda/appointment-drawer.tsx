@@ -43,16 +43,13 @@ import {
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
-import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
-import {
-  outsideClinicHoursMessage,
-  type ClinicWindowRefusal,
-} from "@/lib/scheduling/clinic-hours-message";
+import type { ClinicWindowRefusal } from "@/lib/scheduling/clinic-hours-message";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import { loadAppointmentDrawer } from "@/lib/scheduling/drawer-load";
 import { drawerPieceKeys, linkableKey, type DrawerLoadInput } from "@/lib/scheduling/drawer-load-core";
 import { createDrawerPreload, type DrawerPreload } from "@/lib/scheduling/drawer-preload";
 import { bookingStaffOptions } from "@/lib/scheduling/booking-staff-options";
+import { appointmentRefusalMessage, isOverridableConflict } from "@/lib/scheduling/refusal-message";
 import { staffLabelContext } from "@/lib/scheduling/staff-options";
 import {
   getPatientPackBalanceAction,
@@ -990,98 +987,15 @@ export function AppointmentDrawer({
     conflictOverridable?: false;
   }): boolean {
     if (r.ok) return true;
-    // SCHED-30: a therapist bringing a Cancelada back into a slot taken since.
-    // A plain refusal and NOT setConflicts, for the reason double_booked below
-    // gives: that path offers "Guardar mesmo assim", and the server does not
-    // honour it for this call.
-    if (r.error === "conflict" && r.conflictOverridable === false) setError(s["appointment.uncancelSlotTaken"]);
-    else if (r.error === "conflict") setConflicts(r.conflicts ?? []);
-    else if (r.error === "forbidden") setError(s["errors.forbidden"]);
-    // INC-08: its own message, not the generic one. This Estado <Select> offers
-    // all five statuses with no client-side guard, so an illegal move is one
-    // click away and reception needs to be told WHICH move is refused - not
-    // "ocorreu um erro", and certainly not "preencha os campos obrigatórios".
-    else if (r.error === "illegal_transition") setError(s["appointment.illegalTransition"]);
-    // INC-08 / 0061. Rendered as a plain message, NOT through setConflicts:
-    // that path offers "Guardar mesmo assim", and this is the one refusal the
-    // override may not reach. The owner is demonstrating this build to the
-    // clinic team; a raw database error here would be worse than the bug.
-    else if (r.error === "double_booked") setError(s["appointment.doubleBooked"]);
-    // RB-03. A plain message and NOT setConflicts, for the same reason as the
-    // double-booking above: that path offers "Guardar mesmo assim", and this is
-    // a refusal the override may not reach. It would also render "conflicts
-    // with:" followed by nothing, because there is no conflicting appointment -
-    // the candidate window IS the problem.
-    //
-    // THE MESSAGE NAMES THE WINDOW, which is the whole point of the refusal.
-    // "Fora do horário" on its own sends reception to another screen to find
-    // out what the horário IS; naming it means the next attempt is informed.
-    // Split shift is why this joins a LIST rather than printing one pair: a
-    // therapist-day can carry two periods (W13-A) and a message naming only the
-    // first would be confidently wrong about the afternoon.
-    //
-    // NO WINDOWS IS A DIFFERENT SENTENCE, not a missing value: the therapist has
-    // hours at this location but none that weekday.
-    else if (r.error === "outside_availability") {
-      const w = r.availabilityWindows ?? [];
-      setError(
-        w.length === 0
-          ? `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityNoWindows"]} ${s["appointment.outsideAvailabilityHint"]}`
-          : `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityWindows"]} ` +
-            `${w.map((x) => `${x.startTime}-${x.endTime}`).join(", ")}. ` +
-            `${s["appointment.outsideAvailabilityHint"]}`,
-      );
-    }
-    // 0085 - THE CLINIC IS SHUT, AND THE MESSAGE SAYS SO WITHOUT NAMING THE
-    // THERAPIST.
-    //
-    // That distinction is the whole card. "O terapeuta está ausente" sends
-    // reception to that person's blocks; there is nothing there, because the
-    // building is what is closed. The sentence names the CLINIC and the hour,
-    // and says explicitly that there is no block to remove - which is the step
-    // somebody would otherwise spend ten minutes looking for.
-    //
-    // AND THERE IS NO "Guardar mesmo assim" FOR IT. This refusal is raised
-    // outside the allowConflict gate on the server, so the override that clears
-    // a double-booking or an absence cannot reach it (owner: "not
-    // blockable-around").
-    // The sentence itself lives in clinic-closed-message.ts, shared with the
-    // Marcar novamente drawer so the two doors onto one diary say one thing.
-    else if (r.error === "clinic_closed") setError(clinicClosedMessage(r.clinicClosure));
-    // AGENDA-2100: the clinic is not OPEN at that hour, which is a different
-    // sentence from the midday closure above - the day has not begun, or the
-    // last start has passed. Also raised outside the allowConflict gate, so
-    // there is no "Guardar mesmo assim" for it either.
-    else if (r.error === "outside_clinic_hours") setError(outsideClinicHoursMessage(r.clinicWindow));
-    // STAFF-02. The form now offers only assigned locations, so reaching this is
-    // either a stale tab or a request that did not come from the form - and in
-    // both cases the honest message names the location, not a permission.
-    else if (r.error === "location_not_assigned")
-      setError(s["appointment.locationNotAssigned"]);
-    // SCHED-17: a shared resource (NESA) at a clinic where it is not installed,
-    // or outside the actor's own clinics. Not location_not_assigned's sentence:
-    // a therapist assigned to both clinics is told the MACHINE is not there.
-    else if (r.error === "shared_resource_location")
-      setError(s["appointment.sharedResourceLocation"]);
-    // SCHED-30: a therapist cannot bring back a Cancelada that holds NESA until
-    // 0088; the sentence sends them to reception, who can.
-    else if (r.error === "uncancel_shared_resource")
-      setError(s["appointment.uncancelSharedResource"]);
-    // RB-02: the pacote has fewer sessions left than this booking needs. The
-    // message NAMES both numbers, for the same reason outside_availability names
-    // the window: "não há sessões suficientes" on its own sends reception to
-    // another screen to find out how many there are.
-    else if (r.error === "pack_insufficient")
-      setError(s["appointment.packInsufficient"]);
-    // PACK-03: the service was changed on a marcação that draws a pacote
-    // session. The message says WHY it is locked and what to do instead, for
-    // the same reason pack_insufficient names both numbers: "não pode alterar"
-    // on its own reads as a permission problem, and it is not one.
-    else if (r.error === "pack_service_locked")
-      setError(s["appointment.packServiceLocked"]);
-    else if (r.error === "validation") setError(s["appointment.requiredFields"]);
-    else if (r.error === "unauthenticated") setError(s["errors.unauthenticated"]);
-    else setError(s["errors.generic"]);
+    // MARC-THERAPIST-01: every sentence below this line moved, with its
+    // reasoning, to lib/scheduling/refusal-message.ts, because the ficha's
+    // "Gerir marcação" now receives the same refusals from the same action and
+    // must say the same thing. What stays here is the one refusal that is not
+    // a sentence: an overridable conflict is a list, drawn by this drawer with
+    // "Guardar mesmo assim". Everything else, double_booked and
+    // outside_availability included, is a plain message and never setConflicts.
+    if (isOverridableConflict(r)) setConflicts(r.conflicts ?? []);
+    else setError(appointmentRefusalMessage(r));
     return false;
   }
 

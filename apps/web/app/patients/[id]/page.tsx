@@ -222,6 +222,12 @@ export default async function PatientProfilePage({
   // each Agenda server action re-asserts its own capability server-side.
   const canEditAppointments = can(ctx.role, "appointments:write") && canActOnPatient;
   const canCancelAppointments = can(ctx.role, "appointments:delete");
+  // MARC-THERAPIST-01: the Terapeuta field of "Gerir marcação" is offered to
+  // owner, admin and reception. A therapist holds appointments:write too and
+  // changes the Terapeuta on the agenda; whether they also get this field is
+  // an open question, so they are not handed it. Only the affordance:
+  // rescheduleAppointment has no rule of its own about it.
+  const canChangeAppointmentTherapist = canEditAppointments && ctx.role !== "therapist";
   // SCHED-30 (owner dispatch 2026-09-14): a therapist cancels, and brings back,
   // the rows they are Terapeuta or Terapeuta 2 on, at their own clinics. Only the
   // affordance; cancelAppointment and updateAppointment re-check it.
@@ -733,6 +739,7 @@ export default async function PatientProfilePage({
             canCancel={canCancelAppointments}
             ownCancelIds={ownCancelIds}
             filtered={marcacoesFiltered}
+            therapistStaff={canChangeAppointmentTherapist ? consultasOptions : null}
           />
         </div>
       )}
