@@ -25,7 +25,7 @@
   "files": {
     ".env.example": "1d896f7d740671d95bc19b2ada11df7eaa24020de05a7ec009ec5e7bd3d39153",
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
-    ".github/scripts/assert-rls-executed.mjs": "c68a19c97815f024a2b83f9ea2cc549d1c57e6d66b51c3456dd32c71e0bddab1",
+    ".github/scripts/assert-rls-executed.mjs": "8854661ff1cb2a0878de55d676b52002ba89803715f1182efa7a59c9f820a01d",
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
     ".github/workflows/ci.yml": "56ca4e11b16209094ab3d7ae82dfcaf3a22ad59e2fcb5ca3918cd69df5b32ccd",
     ".github/workflows/db-tests.yml": "33900efba45c91ea1c5337378aecad322edea9c1e2e2626aade1e03d78f24bc0",
