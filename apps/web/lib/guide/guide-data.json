@@ -6640,7 +6640,7 @@
                 "strong": "ANULADO"
               },
               {
-                "text": " em todas as páginas."
+                "text": " em todas as páginas desse registo."
               }
             ],
             [
@@ -6675,7 +6675,7 @@
         {
           "spans": [
             {
-              "text": "O ficheiro contém dados de saúde do paciente. Depois de transferido, onde fica guardado e a quem é entregue é da sua responsabilidade."
+              "text": "O ficheiro contém dados de saúde do paciente. Depois de transferido, fica fora da plataforma, que já não controla quem o abre."
             }
           ],
           "type": "para"
@@ -6704,7 +6704,7 @@
       "see": [],
       "shots": null,
       "title": "Exportar registos em PDF",
-      "words": 198
+      "words": 199
     },
     {
       "answers": [],
@@ -11481,7 +11481,7 @@
         }
       ],
       "file": "04-registos/_seccao.md",
-      "goal": "Escrever, rever e assinar os registos clínicos dos pacientes.",
+      "goal": "Escrever, rever, assinar e exportar os registos clínicos dos pacientes.",
       "id": "registos",
       "order": {
         "proprietario": 9,
