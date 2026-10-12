@@ -361,6 +361,7 @@ const followUpCtx: FollowUpContext = {
   patientFirstName: "Madalena",
   appointmentDateLong: "23 de maio de 2026",
   appointmentDateShort: "23/05",
+  clinicLocation: "OsteoJP (Montemor-o-Novo)",
   clinicPhone: "+351 210 000 000",
 };
 
@@ -388,6 +389,24 @@ describe("follow-up email", () => {
     expect(body).toContain("Dear Madalena,");
     expect(body).toContain("visit on 23 de maio de 2026");
     expect(body).toContain("+351 210 000 000");
+  });
+
+  it("names the clinic on a line of its own, above the phone (MN-03)", () => {
+    expect(renderFollowUpEmail("pt", followUpCtx).body).toContain(
+      "questão.\n\nLocal: OsteoJP (Montemor-o-Novo)\nPara marcar a próxima consulta contacte: +351 210 000 000\n",
+    );
+    expect(renderFollowUpEmail("en", followUpCtx).body).toContain(
+      "questions.\n\nLocation: OsteoJP (Montemor-o-Novo)\nTo book your next appointment contact us: +351 210 000 000\n",
+    );
+  });
+
+  it("a blank clinic name leaves the line out and still renders (MN-03)", () => {
+    for (const locale of ["pt", "en"] as const) {
+      const { body } = renderFollowUpEmail(locale, { ...followUpCtx, clinicLocation: " " });
+      expect(body).not.toMatch(/^(Local|Location):/m);
+      expect(body).toContain("+351 210 000 000");
+      expect(body).not.toMatch(/\n\n\n/);
+    }
   });
 
   it("leaves no unfilled placeholders in either locale", () => {
@@ -436,6 +455,7 @@ const noShowCtx: NoShowContext = {
   appointmentDateLong: "23 de maio de 2026",
   appointmentDateShort: "23/05",
   appointmentTime: "14:30",
+  clinicLocation: "OsteoJP (Montemor-o-Novo)",
   clinicPhone: "+351 210 000 000",
   rescheduleLink: "https://osteojp.pt/r/abc123",
 };
@@ -466,6 +486,24 @@ describe("no-show email", () => {
     expect(body).toContain("23 de maio de 2026 at 14:30");
     expect(body).toContain("https://osteojp.pt/r/abc123");
     expect(body).toContain("+351 210 000 000");
+  });
+
+  it("names the clinic on a line of its own, above the contact lines (MN-03)", () => {
+    expect(renderNoShowEmail("pt", noShowCtx).body).toContain(
+      "ficou por realizar.\n\nLocal: OsteoJP (Montemor-o-Novo)\nPara remarcar: ",
+    );
+    expect(renderNoShowEmail("en", noShowCtx).body).toContain(
+      "was not attended.\n\nLocation: OsteoJP (Montemor-o-Novo)\nTo rebook: ",
+    );
+  });
+
+  it("a blank clinic name leaves the line out and still renders (MN-03)", () => {
+    for (const locale of ["pt", "en"] as const) {
+      const { body } = renderNoShowEmail(locale, { ...noShowCtx, clinicLocation: "" });
+      expect(body).not.toMatch(/^(Local|Location):/m);
+      expect(body).toContain("+351 210 000 000");
+      expect(body).not.toMatch(/\n\n\n/);
+    }
   });
 
   it("leaves no unfilled placeholders in either locale", () => {

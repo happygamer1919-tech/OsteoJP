@@ -638,8 +638,28 @@ export type FollowUpContext = {
   appointmentDateLong: string;
   /** Terse dd/mm for SMS. */
   appointmentDateShort: string;
+  /** `locations.name` of the appointment's own location. EMAIL only (MN-03). */
+  clinicLocation: string;
   clinicPhone: string;
 };
+
+// MN-03 (owner, 2026-10-12: "Yes, in the two emails only."). The follow-up and
+// the no-show EMAIL say which clinic wrote, on a line of its own above the
+// contact lines, with the label the confirmation email uses. It is the only
+// line added: every other sentence of the two bodies is as it was. The two SMS
+// do not carry it.
+//
+// The column is required, so a blank name cannot come from the database. If
+// one ever does, the email is sent without the line and never refused for it:
+// LOCATION_LINE is that line as the four bodies below spell it.
+const LOCATION_LINE: Record<Locale, string> = {
+  pt: "Local: {{clinic_location}}\n",
+  en: "Location: {{clinic_location}}\n",
+};
+
+function withoutLocationLineIfBlank(body: string, locale: Locale, clinicLocation: string): string {
+  return clinicLocation.trim() === "" ? body.split(LOCATION_LINE[locale]).join("") : body;
+}
 
 export const FOLLOW_UP_EMAIL: Record<Locale, EmailTemplate> = {
   pt: {
@@ -648,6 +668,7 @@ export const FOLLOW_UP_EMAIL: Record<Locale, EmailTemplate> = {
 
 Obrigado pela visita de {{appointment_date}}. Ficamos ao dispor para qualquer questão.
 
+Local: {{clinic_location}}
 Para marcar a próxima consulta contacte: {{clinic_phone}}
 
 — OsteoJP`,
@@ -658,6 +679,7 @@ Para marcar a próxima consulta contacte: {{clinic_phone}}
 
 Thank you for your visit on {{appointment_date}}. We remain available for any questions.
 
+Location: {{clinic_location}}
 To book your next appointment contact us: {{clinic_phone}}
 
 — OsteoJP`,
@@ -665,7 +687,7 @@ To book your next appointment contact us: {{clinic_phone}}
 };
 
 // PT: "proxima" = próxima (no tilde/accent). Multi-line layout mirrors the other
-// SMS (owner ruling 2026-07-11, Option A); the post-visit context has no clinic
+// SMS (owner ruling 2026-07-11, Option A); the post-visit SMS prints no clinic
 // or time, so it uses a visit line + rebooking CTA rather than the 4-line form.
 export const FOLLOW_UP_SMS: Record<Locale, string> = {
   pt: "OsteoJP - Obrigado pela sua visita\nVisita: {date}\nMarcar proxima consulta: {phone}",
@@ -677,10 +699,11 @@ export function renderFollowUpEmail(locale: Locale, ctx: FollowUpContext): Rende
   const tokens = {
     patient_first_name: ctx.patientFirstName,
     appointment_date: ctx.appointmentDateLong,
+    clinic_location: ctx.clinicLocation,
     clinic_phone: ctx.clinicPhone,
   };
   const subject = fill(tpl.subject, tokens);
-  const body = fill(tpl.body, tokens);
+  const body = fill(withoutLocationLineIfBlank(tpl.body, locale, ctx.clinicLocation), tokens);
   assertNoUnfilledPlaceholders("email/follow_up", subject);
   assertNoUnfilledPlaceholders("email/follow_up", body);
   return { subject, body };
@@ -709,6 +732,8 @@ export type NoShowContext = {
   appointmentDateLong: string;
   appointmentDateShort: string;
   appointmentTime: string;
+  /** `locations.name` of the appointment's own location. EMAIL only (MN-03). */
+  clinicLocation: string;
   clinicPhone: string;
   rescheduleLink: string;
 };
@@ -720,6 +745,7 @@ export const NO_SHOW_EMAIL: Record<Locale, EmailTemplate> = {
 
 A sua consulta de {{appointment_date}} às {{appointment_time}} ficou por realizar.
 
+Local: {{clinic_location}}
 Para remarcar: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
 
@@ -731,6 +757,7 @@ Ou contacte: {{clinic_phone}}
 
 Your appointment on {{appointment_date}} at {{appointment_time}} was not attended.
 
+Location: {{clinic_location}}
 To rebook: {{reschedule_link}}
 Or contact us: {{clinic_phone}}
 
@@ -739,7 +766,7 @@ Or contact us: {{clinic_phone}}
 };
 
 // PT: "nao" = não, "as" = às. No accents in SMS. Multi-line layout mirrors the
-// other SMS (owner ruling 2026-07-11, Option A); the no-show context has no
+// other SMS (owner ruling 2026-07-11, Option A); the no-show SMS prints no
 // clinic location, so it drops the "Local:" line.
 export const NO_SHOW_SMS: Record<Locale, string> = {
   pt: "OsteoJP - Consulta nao realizada\nConsulta: {date} as {time}\nRemarcar: {phone}",
@@ -752,11 +779,12 @@ export function renderNoShowEmail(locale: Locale, ctx: NoShowContext): RenderedE
     patient_first_name: ctx.patientFirstName,
     appointment_date: ctx.appointmentDateLong,
     appointment_time: ctx.appointmentTime,
+    clinic_location: ctx.clinicLocation,
     clinic_phone: ctx.clinicPhone,
     reschedule_link: ctx.rescheduleLink,
   };
   const subject = fill(tpl.subject, tokens);
-  const body = fill(tpl.body, tokens);
+  const body = fill(withoutLocationLineIfBlank(tpl.body, locale, ctx.clinicLocation), tokens);
   assertNoUnfilledPlaceholders("email/no_show", subject);
   assertNoUnfilledPlaceholders("email/no_show", body);
   return { subject, body };
