@@ -311,10 +311,12 @@ beforeEach(() => {
   h.ledger.length = 0;
   h.handOvers.length = 0;
   h.issuedCodes.length = 0;
-  // The emails sign a reschedule link. The host is the one confirm-code.ts
-  // records as serving the patient-facing links.
+  // The emails sign a reschedule link. A reserved host of 14 characters: the
+  // length of the host confirm-code.ts records as serving the patient-facing
+  // links, so every measured length below is the deployed one. Never the real
+  // host (scripts/no-production-hosts-in-tests.test.mjs).
   process.env.REMINDERS_LINK_SECRET = "test-only-link-secret-not-prod";
-  process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://app.osteojp.pt";
+  process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://app.jp.invalid";
   // The one-way alphanumeric sender id, so the 24h body carries its longest
   // unconditional form (the "Nao lemos respostas." line).
   process.env.TWILIO_SMS_FROM = "OsteoJP";
@@ -402,7 +404,7 @@ describe("FINDING, G7 NOT MET - the 24h SMS with the confirm link armed does not
     process.env.REMINDERS_CONFIRM_CODE_SECRET = "test-only-confirm-secret-not-prod";
   });
 
-  it("host app.osteojp.pt: 163 characters, REFUSED, nothing sent and no code minted", async () => {
+  it("a link host of 14 characters, the deployed length: 163 characters, REFUSED, nothing sent and no code minted", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     h.loadReminderData.mockResolvedValue(row());
 
@@ -432,7 +434,7 @@ describe("FINDING, G7 NOT MET - the 24h SMS with the confirm link armed does not
     expect((await dispatchReminder(TENANT, APPT, "24h", "sms")).dispatched).toBe(true);
 
     const sms = only(h.sms);
-    expect(sms.body).toMatch(/\nConfirmar: app\.osteojp\.pt\/c\/[A-Za-z0-9_-]{8}\nNao lemos respostas\.$/);
+    expect(sms.body).toMatch(/\nConfirmar: app\.jp\.invalid\/c\/[A-Za-z0-9_-]{8}\nNao lemos respostas\.$/);
     expect(smsSegments(sms.body)).toEqual({ charset: "GSM-7", units: 150, segments: 1 });
   });
 
