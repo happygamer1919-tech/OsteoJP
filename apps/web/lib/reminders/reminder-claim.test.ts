@@ -9,6 +9,7 @@
  * taking a claim can never throw and answers "not held" whenever it fails.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTableName } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("server-only", () => ({}));
@@ -17,7 +18,7 @@ vi.mock("server-only", () => ({}));
 const ran: (
   | { kind: "execute"; sql: string; params: unknown[] }
   | { kind: "read" }
-  | { kind: "insert"; values: Record<string, unknown> }
+  | { kind: "insert"; table: string; values: Record<string, unknown> }
 )[] = [];
 let failAt: "context" | "bounds" | "lock" | "read" | "insert" | null = null;
 /** What the "is it held" read finds. A row means held. */
@@ -64,11 +65,12 @@ vi.mock("./context", () => ({
           ran.push({ kind: "read" });
           return heldRows;
         }),
-      insert: () => ({
+      insert: (table: Parameters<typeof getTableName>[0]) => ({
         values: (v: Record<string, unknown>) => {
           const write = async () => {
             if (failAt === "insert") throw new Error("insert refused");
-            ran.push({ kind: "insert", values: v });
+            // The table by its database name: a claim must never land in `audit_log`.
+            ran.push({ kind: "insert", table: getTableName(table), values: v });
             return [{ id: CLAIM_ID }];
           };
           // The claim asks for the new row's id; the release awaits the insert itself.
@@ -88,7 +90,7 @@ const {
   CLAIM_LOCK_TIMEOUT,
   CLAIM_STATEMENT_TIMEOUT,
   EARLY_CLAIM_MS,
-  REMINDER_CLAIM_ACTION,
+  REMINDER_CLAIM_KIND,
   REMINDER_CLAIM_RELEASE_ACTION,
   isEarlyClaim,
   releaseReminderClaim,
@@ -119,56 +121,55 @@ beforeEach(() => {
   heldRows = [];
 });
 
-/** The metadata of the one row the claim inserted. */
-function insertedMetadata(): Record<string, unknown> {
+/** The one row the claim inserted. */
+function insertedRow(): Record<string, unknown> {
   const inserts = ran.filter((r) => r.kind === "insert");
   expect(inserts).toHaveLength(1);
-  return (inserts[0] as { values: { metadata?: unknown } }).values.metadata as Record<string, unknown>;
+  return (inserts[0] as { values: Record<string, unknown> }).values;
 }
 
 describe("the reminder claim: the row", () => {
-  it("is an audit row: the appointment as the entity, the start as an ISO instant, no actor", async () => {
+  it("is a row of kind claim in the sweep's own table: the appointment, the start and its mark as instants", async () => {
     await takeReminderClaim(base);
     const inserts = ran.filter((r) => r.kind === "insert");
     expect(inserts).toEqual([
       {
         kind: "insert",
+        table: "reminder_claims",
         values: {
           tenantId: TENANT,
-          actorUserId: null,
-          action: "appointment.reminder_claimed",
-          entityType: "appointment",
-          entityId: APPOINTMENT,
-          metadata: {
-            source: "reminder-claim",
-            offsetId: "24h",
-            channel: "sms",
-            startsAt: "2031-05-14T10:00:00.000Z",
-            taker: "run",
-            early: false,
-          },
-          ip: null,
+          appointmentId: APPOINTMENT,
+          kind: "claim",
+          offsetId: "24h",
+          channel: "sms",
+          startsAt: START,
+          dueAt: MARK_24H,
+          taker: "run",
+          early: false,
         },
       },
     ]);
-    expect(REMINDER_CLAIM_ACTION).toBe("appointment.reminder_claimed");
+    expect(REMINDER_CLAIM_KIND).toBe("claim");
   });
 
-  it("carries ids, enums and an instant only: nothing about the patient", async () => {
+  it("carries ids, enums and instants only: nothing about the patient, and nothing a release or a shadow row carries", async () => {
     await takeReminderClaim(base);
-    expect(Object.keys(insertedMetadata()).sort()).toEqual([
+    expect(Object.keys(insertedRow()).sort()).toEqual([
+      "appointmentId",
       "channel",
+      "dueAt",
       "early",
+      "kind",
       "offsetId",
-      "source",
       "startsAt",
       "taker",
+      "tenantId",
     ]);
   });
 
   it("records who took it", async () => {
     await takeReminderClaim({ ...base, taker: "sweep" });
-    expect(insertedMetadata().taker).toBe("sweep");
+    expect(insertedRow().taker).toBe("sweep");
   });
 
   it("bounds its own waits FIRST: a lock wait of two seconds and a statement of five, for this transaction only", async () => {
@@ -225,15 +226,16 @@ describe("the reminder claim: early", () => {
     expect(isEarlyClaim(START, "24h", new Date("2031-05-12T10:00:00.000Z"))).toBe(true);
   });
 
-  it("an offset with no mark is recorded as null, never guessed", async () => {
+  it("an offset with no mark is recorded as null, never guessed: no due time and no early flag, together", async () => {
     expect(isEarlyClaim(START, "72h", MARK_24H)).toBeNull();
     await takeReminderClaim({ ...base, offsetId: "72h" });
-    expect(insertedMetadata().early).toBeNull();
+    // The table holds the two to each other (reminder_claims_early_matches_kind).
+    expect(insertedRow()).toMatchObject({ dueAt: null, early: null });
   });
 
   it("the row says early when the taker's clock is over ten minutes before the mark", async () => {
     await takeReminderClaim({ ...base, now: new Date(MARK_24H.getTime() - EARLY_CLAIM_MS - 1) });
-    expect(insertedMetadata().early).toBe(true);
+    expect(insertedRow()).toMatchObject({ early: true, dueAt: MARK_24H });
   });
 });
 
@@ -315,14 +317,6 @@ describe("the reminder claim: it can never stop a send by failing", () => {
     spy.mockRestore();
   });
 
-  it("metadata the audit contract refuses is not written, and still does not throw", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    // A value with whitespace is prose to the contract (metadata-contract.ts).
-    await expect(takeReminderClaim({ ...base, offsetId: "24 h" })).resolves.toEqual({ held: false, claimId: null });
-    expect(ran).toHaveLength(0);
-    expect(spy.mock.calls.flat().join(" ")).toContain("AuditMetadataError");
-    spy.mockRestore();
-  });
 });
 
 /**
@@ -344,6 +338,7 @@ describe("the reminder claim: the release", () => {
     expect(ran.filter((r) => r.kind === "insert")).toEqual([
       {
         kind: "insert",
+        table: "audit_log",
         values: {
           tenantId: TENANT,
           actorUserId: null,
@@ -356,9 +351,6 @@ describe("the reminder claim: the release", () => {
       },
     ]);
     expect(REMINDER_CLAIM_RELEASE_ACTION).toBe("appointment.reminder_claim_released");
-    // Never the claim's own action: a release counted as a claim would be a
-    // claim with no outcome for ever.
-    expect(REMINDER_CLAIM_RELEASE_ACTION).not.toBe(REMINDER_CLAIM_ACTION);
   });
 
   it("bounds its waits, then queues on the reminder's own lock, then writes: it reads nothing", async () => {

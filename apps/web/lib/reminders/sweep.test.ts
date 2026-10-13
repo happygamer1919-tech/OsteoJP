@@ -593,7 +593,7 @@ describe("the sweep can send nothing", () => {
     // the claim's file READS it; the test below holds that the sweep's own two
     // files do not take it.
     expect(reached.packages).toEqual({
-      "@osteojp/db": ["appointments", "auditLog", "reminderDispatches", "withTenantContext"],
+      "@osteojp/db": ["appointments", "auditLog", "reminderClaims", "reminderDispatches", "withTenantContext"],
       "drizzle-orm": [
         "and",
         "count",
@@ -640,6 +640,7 @@ describe("the sweep can send nothing", () => {
       "auditLog",
       "getDbAdmin",
       "listTenantIdsForRetention",
+      "reminderClaims",
       "reminderDispatches",
       "withTenantContext",
     ]);

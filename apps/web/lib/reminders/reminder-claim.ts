@@ -1,5 +1,5 @@
 import "server-only";
-import { auditLog, reminderDispatches, type DbTx } from "@osteojp/db";
+import { auditLog, reminderClaims, reminderDispatches, type DbTx } from "@osteojp/db";
 import type { Channel } from "@osteojp/notify";
 import { and, eq, exists, gt, gte, inArray, like, lte, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
@@ -70,10 +70,10 @@ import { REMINDER_OFFSETS } from "./offsets";
  */
 
 /**
- * The audit action of a claim. One row per dispatcher call that found its
- * appointment and was not held.
+ * The kind of a claim row in `reminder_claims`. One row per dispatcher call
+ * that found its appointment and was not held. The row's id is the claim id.
  */
-export const REMINDER_CLAIM_ACTION = "appointment.reminder_claimed";
+export const REMINDER_CLAIM_KIND = "claim";
 
 /** The audit action of a release: the row that names a claim its sender gave up. */
 export const REMINDER_CLAIM_RELEASE_ACTION = "appointment.reminder_claim_released";
@@ -183,6 +183,14 @@ export const CLAIM_STATEMENT_TIMEOUT = "5s";
 export function boundReminderClaimWaits(): SQL {
   return sql`select set_config('lock_timeout', ${CLAIM_LOCK_TIMEOUT}, true), set_config('statement_timeout', ${CLAIM_STATEMENT_TIMEOUT}, true)`;
 }
+
+/**
+ * NOT MOVED YET: the held read below, and the sweep's selection, still look
+ * for claims in `audit_log`, where none is written any more, so the held read
+ * answers "not held" every time. That is record only. The next two commits
+ * move them onto the table and this name goes.
+ */
+export const REMINDER_CLAIM_ACTION = "appointment.reminder_claimed";
 
 /** The `audit_log` columns a claim of one reminder is recognised by, under any alias. */
 type ClaimColumns = Record<"tenantId" | "entityType" | "entityId" | "action" | "metadata", PgColumn>;
@@ -326,8 +334,8 @@ export type ReminderClaimAnswer = { held: true } | { held: false; claimId: strin
  *
  * It never throws, and every failure answers "not held": see the header.
  *
- * The start is stored as an ISO instant, the same `toISOString()` the
- * booking-approved hand-over stores, so a reader can compare it exactly.
+ * The start is stored as the instant itself (`starts_at`), with the mark it
+ * was due at (`due_at`), so a reader compares instants and never text.
  */
 export async function takeReminderClaim(args: {
   tenantId: string;
@@ -340,37 +348,31 @@ export async function takeReminderClaim(args: {
   now?: Date;
 }): Promise<ReminderClaimAnswer> {
   try {
-    const metadata = {
-      source: "reminder-claim",
+    // A start that is not an instant is a fixture's shape, never a row's. Said
+    // HERE, inside the try, so it is logged below and never reaches the driver.
+    if (Number.isNaN(args.startsAt.getTime())) throw new RangeError("the start is not an instant");
+    const dueAt = reminderMark(args.startsAt, args.offsetId);
+    const row = {
+      tenantId: args.tenantId,
+      appointmentId: args.appointmentId,
+      kind: REMINDER_CLAIM_KIND,
       offsetId: args.offsetId,
       channel: args.channel,
-      startsAt: args.startsAt.toISOString(),
+      startsAt: args.startsAt,
+      // The mark as the offset is defined today, stored so the row says what
+      // was true when it was taken. Null, with `early`, for an unknown offset.
+      dueAt,
       taker: args.taker,
       early: isEarlyClaim(args.startsAt, args.offsetId, args.now ?? new Date()),
     };
-    // The audit metadata contract, asked of this writer like every other
-    // (lib/audit/metadata-contract.ts). INSIDE the try, so a refusal is logged
-    // below and never thrown into the send path.
-    assertPiiFreeAuditMetadata(metadata, "reminders/takeReminderClaim");
     return await withReminderTenantContext(args.tenantId, async (tx): Promise<ReminderClaimAnswer> => {
       await tx.execute(boundReminderClaimWaits());
       await tx.execute(
         acquireReminderClaimLock(args.tenantId, args.appointmentId, args.offsetId, args.channel),
       );
       if (await claimIsHeld(tx, args)) return { held: true };
-      const [row] = await tx
-        .insert(auditLog)
-        .values({
-          tenantId: args.tenantId,
-          actorUserId: null,
-          action: REMINDER_CLAIM_ACTION,
-          entityType: "appointment",
-          entityId: args.appointmentId,
-          metadata,
-          ip: null,
-        })
-        .returning({ id: auditLog.id });
-      return { held: false, claimId: row?.id ?? null };
+      const [written] = await tx.insert(reminderClaims).values(row).returning({ id: reminderClaims.id });
+      return { held: false, claimId: written?.id ?? null };
     });
   } catch (e) {
     console.error(

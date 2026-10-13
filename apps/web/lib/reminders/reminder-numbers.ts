@@ -2,13 +2,13 @@ import "server-only";
 import { and, count, eq, gt, gte, inArray, like, lt, lte, min, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { assertCan } from "@osteojp/auth";
-import { appointments, auditLog, reminderDispatches, type DbTx } from "@osteojp/db";
+import { appointments, reminderClaims, reminderDispatches, type DbTx } from "@osteojp/db";
 import type { Channel } from "@osteojp/notify";
 
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 
 import { REMINDER_OFFSETS, type ReminderOffset } from "./offsets";
-import { REMINDER_CLAIM_ACTION } from "./reminder-claim";
+import { REMINDER_CLAIM_KIND } from "./reminder-claim";
 import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./reminder-population";
 
 /**
@@ -65,8 +65,8 @@ export const NUMBERS_SETTLE_MS = 30 * 60_000;
 
 /**
  * Number two looks at claims taken in the last seven days. A bound, so the
- * read stays on `audit_log_created_idx` and one lost attempt is not counted
- * for ever.
+ * read stays on `reminder_claims_tenant_time_idx` and one lost attempt is not
+ * counted for ever.
  */
 export const CLAIM_OUTCOME_WINDOW_MS = 7 * 24 * 60 * 60_000;
 
@@ -87,25 +87,20 @@ export type ReminderChannelNumbers = {
 export type ReminderNumbers = Record<Channel, ReminderChannelNumbers>;
 
 /**
- * A timestamptz column as the ISO instant `Date.prototype.toISOString()`
- * writes, which is how a claim stores its start. Text against text, so a
- * malformed value in a row can never raise a cast error into the page.
+ * The start of the enclosing `appointments` row as a claim stores it: to the
+ * millisecond, which is all a sender's clock carries. Truncated on THIS side,
+ * so the claim's own column stays bare for `reminder_claims_mark_idx`.
  */
-function isoInstant(column: PgColumn): SQL {
-  return sql`to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+function claimedStart(): SQL {
+  return sql`date_trunc('milliseconds', ${appointments.startsAt})`;
 }
 
-/** The three `audit_log` columns a claim is recognised by, under any alias. */
-type ClaimColumns = Record<"entityType" | "action" | "metadata", PgColumn>;
+/** The `reminder_claims` columns a claim is recognised by, under any alias. */
+type ClaimColumns = Record<"kind" | "offsetId" | "channel", PgColumn>;
 
 /** The claims of one offset and channel, in whichever alias asks. */
 function isClaimFor(t: ClaimColumns, offset: ReminderOffset): SQL | undefined {
-  return and(
-    eq(t.entityType, "appointment"),
-    eq(t.action, REMINDER_CLAIM_ACTION),
-    sql`${t.metadata}->>'offsetId' = ${offset.id}`,
-    sql`${t.metadata}->>'channel' = ${offset.channel}`,
-  );
+  return and(eq(t.kind, REMINDER_CLAIM_KIND), eq(t.offsetId, offset.id), eq(t.channel, offset.channel));
 }
 
 /**
@@ -113,20 +108,19 @@ function isClaimFor(t: ClaimColumns, offset: ReminderOffset): SQL | undefined {
  * of any reminder of the tenant. Null when there is none.
  *
  * Seven days and not "ever": the bound keeps the read on
- * `audit_log_created_idx`, as number two's is, and it loses nothing. A mark
+ * `reminder_claims_tenant_time_idx`, as number two's is, and it loses nothing. A mark
  * number one looks at is at most the longest offset old, so a first claim
  * older than that moves no count. And seven days with no claim at all is not
  * a start-up any more: the claims have stopped, and null says that too.
  */
 async function readFirstClaimAt(tx: DbTx, now: Date): Promise<Date | null> {
   const [row] = await tx
-    .select({ first: min(auditLog.createdAt) })
-    .from(auditLog)
+    .select({ first: min(reminderClaims.createdAt) })
+    .from(reminderClaims)
     .where(
       and(
-        eq(auditLog.entityType, "appointment"),
-        eq(auditLog.action, REMINDER_CLAIM_ACTION),
-        gte(auditLog.createdAt, new Date(now.getTime() - CLAIM_OUTCOME_WINDOW_MS)),
+        eq(reminderClaims.kind, REMINDER_CLAIM_KIND),
+        gte(reminderClaims.createdAt, new Date(now.getTime() - CLAIM_OUTCOME_WINDOW_MS)),
       ),
     );
   return row?.first ?? null;
@@ -156,7 +150,7 @@ async function countMarksWithoutClaim(
   firstClaimAt: Date,
   includeNeverReminded: boolean,
 ): Promise<number> {
-  const claim = alias(auditLog, "reminder_number_claim");
+  const claim = alias(reminderClaims, "reminder_number_claim");
   const startBefore = new Date(now.getTime() - NUMBERS_SETTLE_MS + offset.minutesBefore * 60_000);
   const startFrom = new Date(firstClaimAt.getTime() + offset.minutesBefore * 60_000);
   const [row] = await tx
@@ -177,9 +171,9 @@ async function countMarksWithoutClaim(
             .where(
               and(
                 isClaimFor(claim, offset),
-                eq(claim.entityId, appointments.id),
-                sql`${claim.metadata}->>'startsAt' = ${isoInstant(appointments.startsAt)}`,
-                sql`${claim.metadata}->>'early' is distinct from 'true'`,
+                eq(claim.appointmentId, appointments.id),
+                eq(claim.startsAt, claimedStart()),
+                sql`${claim.early} is distinct from true`,
               ),
             ),
         ),
@@ -204,12 +198,12 @@ async function countMarksWithoutClaim(
  * claim this viewer does not count.
  */
 async function countClaimsWithoutOutcome(tx: DbTx, offset: ReminderOffset, now: Date): Promise<number> {
-  const claim = alias(auditLog, "reminder_number_claim");
-  const later = alias(auditLog, "reminder_number_later_claim");
+  const claim = alias(reminderClaims, "reminder_number_claim");
+  const later = alias(reminderClaims, "reminder_number_later_claim");
   const [row] = await tx
     .select({ n: count() })
     .from(claim)
-    .innerJoin(appointments, eq(appointments.id, claim.entityId))
+    .innerJoin(appointments, eq(appointments.id, claim.appointmentId))
     .where(
       and(
         isClaimFor(claim, offset),
@@ -221,7 +215,7 @@ async function countClaimsWithoutOutcome(tx: DbTx, offset: ReminderOffset, now: 
             .from(reminderDispatches)
             .where(
               and(
-                eq(reminderDispatches.appointmentId, claim.entityId),
+                eq(reminderDispatches.appointmentId, claim.appointmentId),
                 eq(reminderDispatches.channel, offset.channel),
                 like(reminderDispatches.templateId, `reminder.${offset.id}.%`),
                 gte(reminderDispatches.createdAt, claim.createdAt),
@@ -232,7 +226,7 @@ async function countClaimsWithoutOutcome(tx: DbTx, offset: ReminderOffset, now: 
                     .where(
                       and(
                         isClaimFor(later, offset),
-                        eq(later.entityId, claim.entityId),
+                        eq(later.appointmentId, claim.appointmentId),
                         gt(later.createdAt, claim.createdAt),
                         lte(later.createdAt, reminderDispatches.createdAt),
                       ),
