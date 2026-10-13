@@ -70,6 +70,7 @@ const M = {
   q: randomUUID(), // at clinic B
   r: randomUUID(), // created by tMaker, no appointment, no clinic
   r2: randomUUID(), // created by t1, no appointment, no clinic, no episode
+  k: randomUUID(), // at clinic A, treated by t2; t1 is on K's care team and neither treats nor created K; no episode
   s: randomUUID(), // at clinic B; the merge's source
   x: randomUUID(), // another tenant's patient
   epP: randomUUID(), // P's, in t1's name
@@ -113,15 +114,18 @@ async function seed(p: Sql): Promise<void> {
     (${M.q}, ${M.tenant}, 'Utente Q', ${M.recA}),
     (${M.r}, ${M.tenant}, 'Utente R', ${M.tMaker}),
     (${M.r2}, ${M.tenant}, 'Utente R2', ${M.t1}),
+    (${M.k}, ${M.tenant}, 'Utente K', ${M.recA}),
     (${M.s}, ${M.tenant}, 'Utente S', ${M.recA})`;
   await p`insert into patients (id, tenant_id, full_name) values (${M.x}, ${M.other}, 'Utente X')`;
   await p`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at) values
     (${M.tenant}, ${M.p}, ${M.t1}, ${M.locA}, ${T0}, ${T1}),
+    (${M.tenant}, ${M.k}, ${M.t2}, ${M.locA}, ${T0}, ${T1}),
     (${M.tenant}, ${M.q}, ${M.t3}, ${M.locB}, ${T0}, ${T1}),
     (${M.tenant}, ${M.s}, ${M.t3}, ${M.locB}, ${T0}, ${T1})`;
   await p`insert into patient_care_team (tenant_id, patient_id, user_id, assigned_by) values
     (${M.tenant}, ${M.p}, ${M.tCare}, ${M.recA}),
-    (${M.tenant}, ${M.p}, ${M.tCareB}, ${M.recA})`;
+    (${M.tenant}, ${M.p}, ${M.tCareB}, ${M.recA}),
+    (${M.tenant}, ${M.k}, ${M.t1}, ${M.recA})`;
   await p`insert into clinical_episodes (id, tenant_id, patient_id, primary_practitioner_id, title) values
     (${M.epP},  ${M.tenant}, ${M.p}, ${M.t1},     'Osteopatia'),
     (${M.epP2}, ${M.tenant}, ${M.p}, ${M.t2},     'Fisioterapia'),
@@ -205,7 +209,7 @@ describe.skipIf(!live)(`0104: the clinical_episodes policies follow the roles [$
 
   it("PREMISE: the fixture is what the cases say it is", async () => {
     const [f] = await sql<
-      { t1p: number; t2p: number; care: number; care_b: number; care_b_at_a: number; care_b_at_b: number; t3q: number; t3s: number; r2_maker: string; r2_appts: number; p_at_a: number; q_at_b: number; r_appts: number; r_maker: string; rec_none: number; episodes: number }[]
+      { t1p: number; t2p: number; care: number; care_b: number; care_b_at_a: number; care_b_at_b: number; t3q: number; t3s: number; r2_maker: string; r2_appts: number; k_t1_appts: number; k_t1_care: number; k_at_a: number; k_maker: string; p_at_a: number; q_at_b: number; r_appts: number; r_maker: string; rec_none: number; episodes: number }[]
     >`
       select (select count(*)::int from appointments where patient_id = ${M.p} and practitioner_id = ${M.t1}) as t1p,
              (select count(*)::int from appointments where patient_id = ${M.p} and practitioner_id = ${M.t2}) as t2p,
@@ -217,13 +221,17 @@ describe.skipIf(!live)(`0104: the clinical_episodes policies follow the roles [$
              (select count(*)::int from appointments where patient_id = ${M.s} and practitioner_id = ${M.t3}) as t3s,
              (select created_by::text from patients where id = ${M.r2}) as r2_maker,
              (select count(*)::int from appointments where patient_id = ${M.r2}) as r2_appts,
+             (select count(*)::int from appointments where patient_id = ${M.k} and practitioner_id = ${M.t1}) as k_t1_appts,
+             (select count(*)::int from patient_care_team where patient_id = ${M.k} and user_id = ${M.t1} and removed_at is null) as k_t1_care,
+             (select count(*)::int from appointments where patient_id = ${M.k} and location_id = ${M.locA}) as k_at_a,
+             (select created_by::text from patients where id = ${M.k}) as k_maker,
              (select count(*)::int from appointments where patient_id = ${M.p} and location_id = ${M.locA}) as p_at_a,
              (select count(*)::int from appointments where patient_id = ${M.q} and location_id = ${M.locB}) as q_at_b,
              (select count(*)::int from appointments where patient_id = ${M.r}) as r_appts,
              (select created_by::text from patients where id = ${M.r}) as r_maker,
              (select count(*)::int from staff_locations where user_id = ${M.recNone}) as rec_none,
              (select count(*)::int from clinical_episodes where tenant_id = ${M.tenant}) as episodes`;
-    expect(f).toEqual({ t1p: 1, t2p: 0, care: 1, care_b: 1, care_b_at_a: 0, care_b_at_b: 1, t3q: 1, t3s: 1, r2_maker: M.t1, r2_appts: 0, p_at_a: 1, q_at_b: 1, r_appts: 0, r_maker: M.tMaker, rec_none: 0, episodes: 5 });
+    expect(f).toEqual({ t1p: 1, t2p: 0, care: 1, care_b: 1, care_b_at_a: 0, care_b_at_b: 1, t3q: 1, t3s: 1, r2_maker: M.t1, r2_appts: 0, k_t1_appts: 0, k_t1_care: 1, k_at_a: 1, k_maker: M.recA, p_at_a: 1, q_at_b: 1, r_appts: 0, r_maker: M.tMaker, rec_none: 0, episodes: 5 });
   });
 
   /* ---- the matrix: eleven cases by four commands ----------------------- */
@@ -337,6 +345,21 @@ describe.skipIf(!live)(`0104: the clinical_episodes policies follow the roles [$
       return { renamed, practitioner: row?.practitioner };
     });
     expect(out).toEqual({ renamed: 1, practitioner: M.t2 });
+  });
+
+  it104(`${SIDE}: a therapist's UPDATE cannot hand an episode to a patient whose episodes they only READ, on the care team at their own clinic (WITH CHECK alone decides)`, async () => {
+    // t1 would read an episode of K (the care team, at t1's own clinic), so the read policy does not refuse the
+    // new row; only the UPDATE policy's own WITH CHECK does.
+    const wouldRead = await asUser("owner", M.owner, async (tx) => {
+      await tx`update clinical_episodes set patient_id = ${M.k} where id = ${M.epP2}`;
+      // The same transaction, now as t1: the claims are transaction-local, and the role is still authenticated.
+      await tx`select set_config('request.jwt.claims', ${claimsFor(M.tenant, "therapist", M.t1)}, true)`;
+      return reads(tx, M.epP2);
+    });
+    expect(wouldRead).toBe(1);
+    await expect(
+      asUser("therapist", M.t1, (tx) => tx`update clinical_episodes set patient_id = ${M.k} where id = ${M.epP}`),
+    ).rejects.toThrow(/row-level security/i);
   });
 
   it104(`${SIDE}: every episode a staff session changes is one it reads (the read set contains the write set)`, async () => {
