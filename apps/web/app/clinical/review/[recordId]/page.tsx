@@ -41,6 +41,9 @@ function finalizeErrorText(m: string | undefined): string | null {
   if (m === "finalized") return s["clinical.finalized"];
   // The draft has another author (zeroRowRefusal, records.ts).
   if (m === "not_author") return s["clinical.notAuthor"];
+  // M-4b: the finalize was rolled back as a deadlock victim (namingDeadlock,
+  // records.ts). Nothing was signed.
+  if (m === "concurrent_change") return s["errors.concurrentChange"];
   return s["review.error"];
 }
 

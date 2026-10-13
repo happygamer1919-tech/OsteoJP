@@ -49,8 +49,8 @@ const RECORD_TONE: Record<RecordStatus, StatusTone> = {
  * the same way). Only `err:finalized` had a message before; every other code
  * showed nothing, so a refused sign looked like a page that did not react.
  * `err:not_author`: the draft has another author (zeroRowRefusal, records.ts).
- * `err:concurrent_change` (M-4): a new version was rolled back as a deadlock
- * victim (namingDeadlock, records.ts).
+ * `err:concurrent_change` (M-4, M-4b): a new version, or a sign, was rolled
+ * back as a deadlock victim (namingDeadlock, records.ts).
  */
 function signErrorText(m: string | undefined): string | null {
   if (!m || !m.startsWith("err")) return null;

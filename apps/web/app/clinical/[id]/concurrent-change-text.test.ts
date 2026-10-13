@@ -14,6 +14,15 @@ import { getStrings } from "@osteojp/i18n";
  * review queue for a refused claim (review/claim-concurrent-change.test.tsx), and
  * the two client mappers below: the ficha save (RecordForm) and the merge box
  * in the danger zone. One sentence, in pt-PT and in English.
+ *
+ * M-4b: the writers that change one existing registo raise it too. A refused
+ * sign lands on the record page (actions.sign.test.ts and
+ * page-write-controls.test.tsx) and a refused finalize on the review page
+ * (review/actions.concurrent-change.test.ts and
+ * review/[recordId]/page-write-gate.test.tsx); the review's ficha save shows
+ * it through RecordForm, as the ficha save does; and two more client mappers
+ * below: the review's narrative save (ReviewEditor) and the delete and annul
+ * dialog on the patient's Registos tab.
  */
 
 vi.mock("server-only", () => ({}));
@@ -24,9 +33,15 @@ vi.mock("@/lib/patients/actions", () => ({
   restorePatient: vi.fn(),
   softDeletePatient: vi.fn(),
 }));
+vi.mock("@/app/patients/[id]/actions", () => ({
+  hardDeleteRecordAction: vi.fn(),
+  annulRecordAction: vi.fn(),
+}));
 
 import { saveFailureReason } from "./RecordForm";
 import { MERGE_ERROR_TEXT } from "@/app/patients/_components/patient-actions";
+import { reviewSaveErrorText } from "@/app/clinical/review/[recordId]/ReviewEditor";
+import { ERROR_TEXT } from "@/app/patients/[id]/record-lifecycle-actions";
 
 const pt = getStrings("pt");
 const en = getStrings("en");
@@ -64,5 +79,27 @@ describe("each client mapper names concurrent_change", () => {
     expect(MERGE_ERROR_TEXT.invalid_id).toBe(pt["patients.mergeInvalidId"]);
     expect(MERGE_ERROR_TEXT.self_merge).toBe(pt["patients.mergeSelfMerge"]);
     expect(MERGE_ERROR_TEXT.not_found).toBe(pt["patients.mergeNotFound"]);
+  });
+
+  it("M-4b the review narrative save (ReviewEditor): the retry sentence, not the generic review error", () => {
+    expect(reviewSaveErrorText({ ok: false, code: "concurrent_change" })).toBe(pt["errors.concurrentChange"]);
+    expect(pt["errors.concurrentChange"]).not.toBe(pt["review.error"]);
+  });
+
+  it("CONTROL the review narrative save: not_author keeps its message, an unknown code the generic one, a saved state none", () => {
+    expect(reviewSaveErrorText({ ok: false, code: "not_author" })).toBe(pt["clinical.notAuthor"]);
+    expect(reviewSaveErrorText({ ok: false, code: "error" })).toBe(pt["review.error"]);
+    expect(reviewSaveErrorText({ ok: true })).toBeNull();
+  });
+
+  it("M-4b the delete and annul dialog (record-lifecycle-actions): the retry sentence has its own entry", () => {
+    expect(ERROR_TEXT.concurrent_change).toBe(pt["errors.concurrentChange"]);
+    expect(pt["errors.concurrentChange"]).not.toBe(pt["errors.generic"]);
+    expect(pt["errors.concurrentChange"]).not.toBe(pt["clinical.recordActionServerError"]);
+  });
+
+  it("CONTROL the delete and annul dialog: an unknown error keeps the server-error sentence, not_found the generic fallback", () => {
+    expect(ERROR_TEXT.error).toBe(pt["clinical.recordActionServerError"]);
+    expect(ERROR_TEXT.not_found).toBeUndefined();
   });
 });
