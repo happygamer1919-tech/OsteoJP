@@ -23,3 +23,15 @@ export {
   isIntakeConsentVersion,
   type IntakeConsentVersion,
 } from "./src/intake-consent";
+
+// SAT-01 - the version label of the satisfaction survey's page text. The page
+// sends the current label, its action validates against the list, and a test in
+// apps/web pins the hash of the texts to it.
+export {
+  SURVEY_CONSENT_VERSIONS,
+  CURRENT_SURVEY_CONSENT_VERSION,
+  SURVEY_CONSENT_VERSION_MAX_LENGTH,
+  SURVEY_CONSENT_TEXT_KEYS,
+  isSurveyConsentVersion,
+  type SurveyConsentVersion,
+} from "./src/survey-consent";
