@@ -73,6 +73,23 @@ import { REMINDER_OFFSETS } from "./offsets";
  * the holder sat there. The claim's transaction therefore bounds its own waits
  * first (`boundReminderClaimWaits`): Postgres ends the wait, the catch below
  * logs it, and the reminder goes out without its claim.
+ *
+ * ==========================================================================
+ * WHILE THE SWEEP IS THE SENDER, THE CLAIM IS CLOSED INSTEAD (SWEEP-47)
+ * ==========================================================================
+ * Everything above is the claim as it works today, and it is what runs while
+ * the send switch is off (./sweep-mode.ts). With the switch on the dispatcher
+ * takes the claim through `takeReminderClaimClosed`, at the foot of this file,
+ * and three answers change:
+ *
+ *   - A LIVE CLAIM BLOCKS AT ANY AGE, with or without a `sent` row after it.
+ *     Two senders inside the same instant queue on the lock, the first writes
+ *     its claim, and the second finds it and sends nothing.
+ *   - A CLAIM THAT CANNOT BE READ OR WRITTEN STOPS THE SEND. It throws, and the
+ *     caller tries again later: the next pass, or the scheduler's retry.
+ *   - THE SENDER GIVES ITS CLAIM UP WHEN IT HANDED NOTHING OVER (a release, as
+ *     above), so a reminder that was held back can be taken again. A claim
+ *     whose message went out, or may have gone out, is never released.
  */
 
 /**
@@ -432,6 +449,154 @@ export async function releaseReminderClaim(args: {
       `[reminders] reminder claim release FAILED tenantId=${args.tenantId} ` +
         `appointmentId=${args.appointmentId} offsetId=${args.offsetId} channel=${args.channel}: ` +
         `${e instanceof Error ? e.name : "unknown"}`,
+    );
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* The closed claim: while the sweep is the sender (SWEEP-47)          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The claim could not be read or written while the sweep is the sender. The
+ * dispatcher lets it go on to its caller and sends nothing: an unreadable
+ * claim store costs a delay, never a second copy. Ids only (rule 7).
+ */
+export class ReminderClaimStoreError extends Error {
+  constructor(
+    readonly tenantId: string,
+    readonly appointmentId: string,
+    readonly offsetId: string,
+    readonly channel: string,
+    readonly causeName: string,
+  ) {
+    super(
+      `reminder claim store: the claim could not be read or written tenantId=${tenantId} ` +
+        `appointmentId=${appointmentId} offsetId=${offsetId} channel=${channel}: ${causeName}`,
+    );
+    this.name = "ReminderClaimStoreError";
+  }
+}
+
+/**
+ * IS THERE A LIVE CLAIM OF THIS REMINDER FOR THIS START? A claim for this
+ * appointment, offset, channel and START that no release names, taken by
+ * either sender, at any age. An `early` claim is not one: it was taken over
+ * ten minutes before this start's mark, by a job that woke at an older time.
+ *
+ * THE LEDGER IS NOT ASKED, and that is the difference from `claimIsHeld`. A
+ * sender that handed nothing over releases its own claim (dispatch.ts), by the
+ * claim's id, so "live" already means "sent, being sent, or of unknown
+ * outcome". No row has to be matched to a claim by its time.
+ *
+ * IT THROWS when the read fails; `takeReminderClaimClosed` is the one caller.
+ */
+export async function claimIsLive(
+  tx: DbTx,
+  args: { tenantId: string; appointmentId: string; offsetId: string; channel: Channel; startsAt: Date },
+): Promise<boolean> {
+  const claim = alias(reminderClaims, "reminder_live_claim");
+  const release = alias(reminderClaims, "reminder_live_claim_release");
+  const rows = await tx
+    .select({ id: claim.id })
+    .from(claim)
+    .where(
+      and(
+        eq(claim.tenantId, args.tenantId),
+        eq(claim.appointmentId, args.appointmentId),
+        eq(claim.kind, REMINDER_CLAIM_KIND),
+        eq(claim.offsetId, args.offsetId),
+        eq(claim.channel, args.channel),
+        eq(claim.startsAt, args.startsAt),
+        sql`${claim.early} is distinct from true`,
+        notExists(
+          tx
+            .select({ one: sql`1` })
+            .from(release)
+            .where(
+              and(
+                eq(release.tenantId, args.tenantId),
+                eq(release.appointmentId, args.appointmentId),
+                eq(release.kind, REMINDER_CLAIM_RELEASE_KIND),
+                eq(release.claimId, claim.id),
+              ),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * What the closed claim answers. `held`: a live claim of this reminder for
+ * this start exists, and the caller sends nothing. Not held: the row was
+ * written, and `claimId` is never null, because a claim that could not be
+ * written is a throw here and not an answer.
+ */
+export type ClosedReminderClaimAnswer = { held: true } | { held: false; claimId: string };
+
+/**
+ * TAKE THE CLAIM WHILE THE SWEEP IS THE SENDER. The same transaction as
+ * `takeReminderClaim`: bound the waits, take the reminder's lock, read, write.
+ * Three things differ, and each is the point:
+ *
+ *   - it reads `claimIsLive`, so a live claim blocks whatever followed it;
+ *   - IT THROWS `ReminderClaimStoreError` when anything fails, a wait that ran
+ *     out included, and the caller sends nothing;
+ *   - a claim the day's last pass takes ahead of its mark (`takenAhead`) is
+ *     NOT recorded as early. An early claim blocks nobody, and this one must
+ *     block the morning's first pass.
+ *
+ * THIS IS THE DUPLICATE REFUSAL. Two takers of one reminder queue on the lock;
+ * the first commits its row before the second reads; the second answers held.
+ * The table itself refuses nothing here: it has no unique key over the claims
+ * of one reminder.
+ */
+export async function takeReminderClaimClosed(args: {
+  tenantId: string;
+  appointmentId: string;
+  offsetId: string;
+  channel: Channel;
+  startsAt: Date;
+  taker: ReminderClaimTaker;
+  /** The day's last pass took this mark before it fell due. Never early. */
+  takenAhead?: boolean;
+  /** The taker's clock. Passed in by tests and by the pass. */
+  now?: Date;
+}): Promise<ClosedReminderClaimAnswer> {
+  try {
+    if (Number.isNaN(args.startsAt.getTime())) throw new RangeError("the start is not an instant");
+    const dueAt = reminderMark(args.startsAt, args.offsetId);
+    const early = isEarlyClaim(args.startsAt, args.offsetId, args.now ?? new Date());
+    const row = {
+      tenantId: args.tenantId,
+      appointmentId: args.appointmentId,
+      kind: REMINDER_CLAIM_KIND,
+      offsetId: args.offsetId,
+      channel: args.channel,
+      startsAt: args.startsAt,
+      dueAt,
+      taker: args.taker,
+      early: early === null ? null : args.takenAhead === true ? false : early,
+    };
+    return await withReminderTenantContext(args.tenantId, async (tx): Promise<ClosedReminderClaimAnswer> => {
+      await tx.execute(boundReminderClaimWaits());
+      await tx.execute(
+        acquireReminderClaimLock(args.tenantId, args.appointmentId, args.offsetId, args.channel),
+      );
+      if (await claimIsLive(tx, args)) return { held: true };
+      const [written] = await tx.insert(reminderClaims).values(row).returning({ id: reminderClaims.id });
+      if (!written?.id) throw new Error("the claim row came back without its id");
+      return { held: false, claimId: written.id };
+    });
+  } catch (e) {
+    throw new ReminderClaimStoreError(
+      args.tenantId,
+      args.appointmentId,
+      args.offsetId,
+      args.channel,
+      e instanceof Error ? e.name : "unknown",
     );
   }
 }

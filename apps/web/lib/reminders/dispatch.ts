@@ -38,7 +38,13 @@ import {
   recordBookingApprovedHandOver,
   recordDispatch,
 } from "./dispatch-ledger";
-import { releaseReminderClaim, takeReminderClaim, type ReminderClaimTaker } from "./reminder-claim";
+import {
+  releaseReminderClaim,
+  takeReminderClaim,
+  takeReminderClaimClosed,
+  type ReminderClaimTaker,
+} from "./reminder-claim";
+import { sweepSends } from "./sweep-mode";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import {
   bookingApprovedLocationContact,
@@ -200,6 +206,10 @@ export type DispatchOutcome =
          * a `sent` ledger row followed it (./reminder-claim.ts). Nothing is
          * sent, and NO LEDGER ROW IS WRITTEN: the send is already on record,
          * and a second row would read as a second attempt.
+         *
+         * While the sweep is the sender (SWEEP-47) it is also the answer for a
+         * reminder another sender holds right now, and for one whose outcome
+         * is unknown: a live claim of this reminder exists for this start.
          */
         | "claim_held"
         /**
@@ -327,6 +337,8 @@ async function sendPatientSms(args: {
   phone: string;
   body: string;
   templateId: string;
+  /** SWEEP-47: passed by the closed reminder dispatch only. */
+  attempt?: SendAttempt;
 }): Promise<SendResult | SmsSkip> {
   // ONE VERDICT, SHARED. `smsNumberVerdict` is the two questions this function
   // has always asked (does it normalise; is it a line that can receive SMS), in
@@ -389,6 +401,7 @@ async function sendPatientSms(args: {
         templateId: args.templateId,
         appointmentId: args.appointmentId,
       }),
+    args.attempt,
   );
 }
 
@@ -434,13 +447,92 @@ function tenantPhone(settings: unknown): string {
 async function sendRecordingProviderError(
   row: { tenantId: string; appointmentId: string; channel: "sms" | "email"; templateId: string },
   send: () => Promise<SendResult>,
+  /** The closed dispatch's note of how far this call got. Absent for every other caller. */
+  attempt?: SendAttempt,
 ): Promise<SendResult> {
   try {
+    if (attempt) attempt.handOverStarted = true;
     return await send();
   } catch (e) {
-    await recordDispatch({ ...row, outcome: "provider_error", providerErrorCode: providerErrorCode(e) });
+    const code = providerErrorCode(e);
+    if (attempt) attempt.refusal = { channel: row.channel, code };
+    await recordDispatch({ ...row, outcome: "provider_error", providerErrorCode: code });
     throw e;
   }
+}
+
+/**
+ * SWEEP-47. How far one closed dispatch got, written by the two places that
+ * call a transport and read by the one place that decides what becomes of the
+ * claim (`dispatchReminderClosed`). Nothing else reads or writes it.
+ */
+type SendAttempt = {
+  /** A transport was called. From here on the message may have left. */
+  handOverStarted: boolean;
+  /** The transport threw, with the provider's reason class when it gave one. */
+  refusal?: { channel: "sms" | "email"; code: string | null };
+};
+
+/**
+ * THE PROVIDER ANSWERS AFTER WHICH A CLAIM IS GIVEN UP, so the reminder can be
+ * taken again. ONE LIST PER CHANNEL, PINNED BY A TEST. Each name is an answer
+ * that says the message was NOT accepted. ANYTHING ELSE IS AN UNKNOWN OUTCOME:
+ * an answer that is not here, an error with no code, a call that never came
+ * back. The claim then stays live and the reminder is never sent again, because
+ * the message may have gone out.
+ *
+ * EMAIL: Resend's own error names (`ProviderSendError.code`, ./clients.ts).
+ * `application_error` is NOT here: the SDK uses that name for a request whose
+ * answer it could not read, and such a request may have been accepted.
+ *
+ * SMS: Twilio's numeric codes for a request it refused outright: not
+ * authenticated, too many requests, a number it will not send to, a full
+ * queue. WRITTEN FROM TWILIO'S PUBLISHED ERROR REFERENCE AS THE BUILDER KNOWS
+ * IT, AND NOT RE-READ AGAINST THE VENDOR'S PAGE: it is to be checked there
+ * before the send switch is turned on. A code missing from this list costs a
+ * reminder that is not retried; a code wrongly on it could cost a second copy.
+ */
+export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
+  email: [
+    "validation_error",
+    "invalid_from_address",
+    "missing_required_field",
+    "rate_limit_exceeded",
+    "daily_quota_exceeded",
+    "monthly_quota_exceeded",
+    "missing_api_key",
+    "restricted_api_key",
+    "invalid_api_key",
+  ],
+  sms: ["20003", "20429", "21211", "21408", "21610", "21611", "21614"],
+};
+
+/**
+ * After a throw: is the claim given up? Yes when no transport was called (the
+ * throw came before any hand-over), and yes when the provider's answer is on
+ * the list above. Otherwise no.
+ *
+ * Exported for direct testing.
+ */
+export function claimIsGivenUpAfterThrow(attempt: {
+  handOverStarted: boolean;
+  refusal?: { channel: "sms" | "email"; code: string | null };
+}): boolean {
+  if (!attempt.handOverStarted) return true;
+  const refusal = attempt.refusal;
+  if (!refusal || refusal.code === null) return false;
+  return CLAIM_RELEASING_PROVIDER_CODES[refusal.channel].includes(refusal.code);
+}
+
+/**
+ * Did this call hand a message to a provider? Only a real hand-over counts: a
+ * message the gate held back (`sandbox`), a number that cannot take an SMS and
+ * every outcome that is not a dispatch handed nothing over.
+ *
+ * Exported for direct testing.
+ */
+export function reminderWasHandedOver(outcome: DispatchOutcome): boolean {
+  return outcome.dispatched && outcome.channels.some((c) => !c.sandbox);
 }
 
 /**
@@ -703,6 +795,11 @@ async function dispatchReminderInner(
   // row knows it. `not_found` has no row and no start, so it takes none.
   const claimStart = gate.ok ? gate.data.startsAt : gate.startsAt;
   if (!claimStart) return dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate);
+  // SWEEP-47. WHILE THE SWEEP IS THE SENDER THE CLAIM IS CLOSED: a live claim
+  // blocks at any age and a claim that cannot be written stops the send. With
+  // the switch off (./sweep-mode.ts) this line is the only thing that ran, and
+  // everything below it is the dispatcher as it was.
+  if (sweepSends()) return dispatchReminderClosed(tenantId, appointmentId, offsetId, channel, taker, gate, claimStart);
   const claim = await takeReminderClaim({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
   // THE ONE ANSWER THAT STOPS A SEND: this reminder was already sent for this
   // start. Every other answer, a claim that could not be read or written
@@ -723,6 +820,57 @@ async function dispatchReminderInner(
 }
 
 /**
+ * SWEEP-47. THE DISPATCH WHILE THE SWEEP IS THE SENDER, for either taker: the
+ * pass, and a sleeping job that woke.
+ *
+ * ==========================================================================
+ * WHAT BECOMES OF THE CLAIM, FOR EVERY WAY THE CALL CAN END
+ * ==========================================================================
+ *   no claim     the claim could not be read or written: `takeReminderClaimClosed`
+ *                throws, nothing is sent and nothing is recorded. Fail closed.
+ *   held         a live claim of this reminder exists for this start: sent,
+ *                being sent, or of unknown outcome. `claim_held`, no row.
+ *   KEPT         a message was handed to the provider. Final for this start:
+ *                the claim is never released, so no sender takes it again.
+ *   KEPT         the transport threw and its answer is not on the list of
+ *                `CLAIM_RELEASING_PROVIDER_CODES`. The message may have gone
+ *                out. Never sent again.
+ *   GIVEN UP     nothing was handed over: a gate held the reminder back (the
+ *                status, an unaccepted request, a channel that is off, a
+ *                number that cannot take an SMS, live send off). The claim is
+ *                released, and the reminder is tried again while it may still
+ *                go out.
+ *   GIVEN UP     a throw before any transport was called, or a provider answer
+ *                that is on the list. Released; the same error goes on.
+ *
+ * A release that cannot be written leaves the claim live, and the reminder is
+ * then not tried again: the same side as every other failure here.
+ */
+async function dispatchReminderClosed(
+  tenantId: string,
+  appointmentId: string,
+  offsetId: ReminderOffsetId,
+  channel: Channel,
+  taker: ReminderClaimTaker,
+  gate: Dispatchable,
+  claimStart: Date,
+): Promise<DispatchOutcome> {
+  const claim = await takeReminderClaimClosed({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
+  if (claim.held) return { dispatched: false, reason: "claim_held" };
+  const release = () => releaseReminderClaim({ tenantId, appointmentId, offsetId, channel, claimId: claim.claimId });
+  const attempt: SendAttempt = { handOverStarted: false };
+  let outcome: DispatchOutcome;
+  try {
+    outcome = await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate, attempt);
+  } catch (e) {
+    if (claimIsGivenUpAfterThrow(attempt)) await release();
+    throw e;
+  }
+  if (!reminderWasHandedOver(outcome)) await release();
+  return outcome;
+}
+
+/**
  * The reminder itself, once its claim is settled: every gate, the render and
  * the send. Whatever throws out of here is caught by the caller above, which
  * releases the claim.
@@ -733,6 +881,8 @@ async function dispatchClaimedReminder(
   offsetId: ReminderOffsetId,
   channel: Channel,
   gate: Dispatchable,
+  /** SWEEP-47: the closed dispatch's note of how far the call got. */
+  attempt?: SendAttempt,
 ): Promise<DispatchOutcome> {
   if (!gate.ok) return gate.outcome;
   const data = gate.data;
@@ -789,6 +939,7 @@ async function dispatchClaimedReminder(
           templateId: emailTemplateId,
           appointmentId,
         }),
+      attempt,
     );
     // THE 48h EMAIL'S ONLY RECORD. Until now this send produced nothing
     // anywhere queryable: `sendEmail` returns a SendResult that was pushed onto
@@ -900,6 +1051,7 @@ async function dispatchClaimedReminder(
       phone: data.patientPhone,
       body: sms,
       templateId: smsTemplateIdFor(offsetId, feeNotice),
+      attempt,
     });
     const handedOver = isSmsSkip(sent) ? null : sent;
     // A CODE THAT WAS NEVER SENT IS WITHDRAWN, and this is not tidiness. The
