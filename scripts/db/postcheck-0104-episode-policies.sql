@@ -13,10 +13,11 @@
 -- 0104's read policy admits to no episode, reads VACUOUS in its own verdict (17
 -- to 20), never OK; on a table with no row verdict 14 reads VACUOUS as well.
 --
--- A FAIL VERDICT ENDS THIS FILE WITH AN ERROR: after the rows are printed, the
--- file reads the profile it printed and raises unless it ends "0 FAIL", so psql
--- exits 3 and the block's own halt fires. The block still asserts the whole
--- profile, with the VACUOUS count the pre-check carried (post_vacuous_expected).
+-- ANY PROFILE BUT THE EXPECTED ONE ENDS THIS FILE WITH AN ERROR: after the rows
+-- are printed, the file reads the profile it printed. It raises unless it ends
+-- "0 FAIL", and then unless it is exactly (21 - k) OK / k VACUOUS / 0 FAIL, where
+-- k is the pre-check's carry post_vacuous_expected, so psql exits 3 and the
+-- block's own halt fires. The block still asserts the whole profile itself.
 --
 -- Runs after `packages/db/scripts/verified-migrate.mjs` has applied
 -- 0104_clinical_episodes_role_matrix (sha256
@@ -108,6 +109,7 @@
 --        -v column_acl_md5=<md5> -v default_acl_md5=<md5> -v triggers_md5=<md5>
 --        -v tables_before=<n> -v episodes_rows=<n> -v episodes_md5=<md5>
 --        -v behaviour_tenant_md5=<md5> -v behaviour_actors_md5=<md5>
+--        -v post_vacuous_expected=<0 to 4>
 --        -c "begin read only" -f scripts/db/postcheck-0104-episode-policies.sql -c "rollback"
 
 \pset pager off
@@ -169,6 +171,10 @@
 \if :{?behaviour_actors_md5}
 \else
   DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v behaviour_actors_md5 is missing. The pre-check prints it; this file refuses to guess.'; END $missing$;
+\endif
+\if :{?post_vacuous_expected}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v post_vacuous_expected is missing. The pre-check prints it; this file refuses to guess.'; END $missing$;
 \endif
 
 -- THIS FILE DOES NOT OPEN ITS OWN TRANSACTION, AND REFUSES TO RUN OUTSIDE ONE THAT
@@ -516,7 +522,7 @@ WITH pol AS (
          (SELECT count(*) FROM r WHERE verdict = 'OK')::text      || ' OK / ' ||
          (SELECT count(*) FROM r WHERE verdict = 'VACUOUS')::text || ' VACUOUS / ' ||
          (SELECT count(*) FROM r WHERE verdict = 'FAIL')::text    || ' FAIL', true),
-         '21 OK / 0 VACUOUS / 0 FAIL where every actor reads at least one episode; never a FAIL', 'SUMMARY'
+         (21 - :'post_vacuous_expected'::int)::text || ' OK / ' || :'post_vacuous_expected' || ' VACUOUS / 0 FAIL, and nothing else: the profile the pre-check''s carry post_vacuous_expected names', 'SUMMARY'
 )
 SELECT "check", observed, expected, verdict FROM s ORDER BY n;
 
@@ -537,4 +543,16 @@ SELECT coalesce(current_setting('ep0104.profile', true), '') ~ '^[0-9]+ OK / [0-
   DO $fail$ BEGIN
     RAISE EXCEPTION 'STOP: the 0104 post-check printed a FAIL verdict, or its profile could not be read back [%]. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile');
   END $fail$;
+\endif
+
+-- A PROFILE THAT IS NOT THE EXPECTED ONE IS AN ERROR TOO. The pre-check carried
+-- how many of the four actors the new read policy admits to no episode; exactly
+-- that many verdicts may read VACUOUS, and every other verdict must read OK.
+SELECT set_config('ep0104.wanted', (21 - :'post_vacuous_expected'::int)::text || ' OK / ' || :'post_vacuous_expected' || ' VACUOUS / 0 FAIL', true)
+       = coalesce(current_setting('ep0104.profile', true), '') AS ep0104_profile_ok \gset
+\if :ep0104_profile_ok
+\else
+  DO $profile$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0104 post-check printed no FAIL verdict, but its profile [%] is not [%], the one the pre-check''s carry post_vacuous_expected names. A VACUOUS verdict is not a pass. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile'), coalesce(current_setting('ep0104.wanted', true), 'no expected profile');
+  END $profile$;
 \endif

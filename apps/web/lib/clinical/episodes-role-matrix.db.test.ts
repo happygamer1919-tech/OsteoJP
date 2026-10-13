@@ -155,7 +155,7 @@ d(`0104: the application's episode readers and writers [${SIDE}]`, () => {
     ] as const) {
       await db.execute(
         raw`insert into users (id, tenant_id, role_id, email, full_name)
-            values (${id}::uuid, ${tenant}::uuid, ${role}::uuid, ${`${label}-${id.slice(0, 8)}@e104.test`}, ${label})`,
+            values (${id}::uuid, ${tenant}::uuid, ${role}::uuid, ${`${label}-${id.slice(0, 8)}@e104.invalid`}, ${label})`,
       );
     }
     await db.execute(

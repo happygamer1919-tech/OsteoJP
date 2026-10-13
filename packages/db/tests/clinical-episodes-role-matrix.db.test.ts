@@ -14,8 +14,8 @@
  * skips as a whole on a live database, it THROWS on a database that holds half
  * of 0104, and from the promotion commit on it THROWS on one that lacks it.
  *
- * THE MATRIX. Ten cases, one per kind of staff session, each against one
- * episode, each for the four commands: forty cells, one test each.
+ * THE MATRIX. Eleven cases, one per kind of staff session, each against one
+ * episode, each for the four commands: forty-four cells, one test each.
  *
  *   case                                         SELECT INSERT UPDATE DELETE
  *   the owner                                      yes    yes    yes    no
@@ -25,6 +25,7 @@
  *   a therapist of the clinic, no tie to them      no     no     no     no
  *   a therapist, the patient at another clinic     no     no     no     no
  *   a therapist on the care team, own clinic       yes    no     no     no
+ *   a therapist on the care team, another clinic   no     no     no     no
  *   a receptionist, the patient at their clinic    yes    no     no     no
  *   a receptionist, the patient at another clinic  no     no     no     no
  *   a receptionist with no clinic                  no     no     no     no
@@ -63,10 +64,12 @@ const M = {
   t2: randomUUID(), // of clinic A; no appointment with P, did not create P; epP2 names them
   t3: randomUUID(), // treats Q and S, at clinic B
   tCare: randomUUID(), // of clinic A; on P's care team; no appointment with P
+  tCareB: randomUUID(), // of clinic B only; on P's care team; no appointment with P
   tMaker: randomUUID(), // created R; no appointment with anyone
   p: randomUUID(), // at clinic A
   q: randomUUID(), // at clinic B
   r: randomUUID(), // created by tMaker, no appointment, no clinic
+  r2: randomUUID(), // created by t1, no appointment, no clinic, no episode
   s: randomUUID(), // at clinic B; the merge's source
   x: randomUUID(), // another tenant's patient
   epP: randomUUID(), // P's, in t1's name
@@ -85,15 +88,16 @@ async function seed(p: Sql): Promise<void> {
     (${M.tenant}, 'E104', ${`e104-${M.tenant}`}),
     (${M.other}, 'E104 other', ${`e104o-${M.other}`})`;
   await p`insert into users (id, tenant_id, email, full_name) values
-    (${M.owner},   ${M.tenant}, ${`ow-${M.owner}@x.pt`},   'Owner'),
-    (${M.adminA},  ${M.tenant}, ${`ad-${M.adminA}@x.pt`},  'Admin A'),
-    (${M.recA},    ${M.tenant}, ${`ra-${M.recA}@x.pt`},    'Reception A'),
-    (${M.recNone}, ${M.tenant}, ${`rn-${M.recNone}@x.pt`}, 'Reception sem clinica'),
-    (${M.t1},      ${M.tenant}, ${`t1-${M.t1}@x.pt`},      'Terapeuta 1'),
-    (${M.t2},      ${M.tenant}, ${`t2-${M.t2}@x.pt`},      'Terapeuta 2'),
-    (${M.t3},      ${M.tenant}, ${`t3-${M.t3}@x.pt`},      'Terapeuta 3'),
-    (${M.tCare},   ${M.tenant}, ${`tc-${M.tCare}@x.pt`},   'Terapeuta equipa'),
-    (${M.tMaker},  ${M.tenant}, ${`tm-${M.tMaker}@x.pt`},  'Terapeuta registou')`;
+    (${M.owner},   ${M.tenant}, ${`ow-${M.owner}@e104.invalid`},   'Owner'),
+    (${M.adminA},  ${M.tenant}, ${`ad-${M.adminA}@e104.invalid`},  'Admin A'),
+    (${M.recA},    ${M.tenant}, ${`ra-${M.recA}@e104.invalid`},    'Reception A'),
+    (${M.recNone}, ${M.tenant}, ${`rn-${M.recNone}@e104.invalid`}, 'Reception sem clinica'),
+    (${M.t1},      ${M.tenant}, ${`t1-${M.t1}@e104.invalid`},      'Terapeuta 1'),
+    (${M.t2},      ${M.tenant}, ${`t2-${M.t2}@e104.invalid`},      'Terapeuta 2'),
+    (${M.t3},      ${M.tenant}, ${`t3-${M.t3}@e104.invalid`},      'Terapeuta 3'),
+    (${M.tCare},   ${M.tenant}, ${`tc-${M.tCare}@e104.invalid`},   'Terapeuta equipa'),
+    (${M.tCareB},  ${M.tenant}, ${`tb-${M.tCareB}@e104.invalid`},  'Terapeuta equipa B'),
+    (${M.tMaker},  ${M.tenant}, ${`tm-${M.tMaker}@e104.invalid`},  'Terapeuta registou')`;
   await p`insert into locations (id, tenant_id, name) values
     (${M.locA}, ${M.tenant}, 'E104 A'), (${M.locB}, ${M.tenant}, 'E104 B')`;
   await p`insert into staff_locations (tenant_id, user_id, location_id) values
@@ -102,11 +106,13 @@ async function seed(p: Sql): Promise<void> {
     (${M.tenant}, ${M.t1},     ${M.locA}),
     (${M.tenant}, ${M.t2},     ${M.locA}),
     (${M.tenant}, ${M.tCare},  ${M.locA}),
+    (${M.tenant}, ${M.tCareB}, ${M.locB}),
     (${M.tenant}, ${M.t3},     ${M.locB})`;
   await p`insert into patients (id, tenant_id, full_name, created_by) values
     (${M.p}, ${M.tenant}, 'Utente P', ${M.recA}),
     (${M.q}, ${M.tenant}, 'Utente Q', ${M.recA}),
     (${M.r}, ${M.tenant}, 'Utente R', ${M.tMaker}),
+    (${M.r2}, ${M.tenant}, 'Utente R2', ${M.t1}),
     (${M.s}, ${M.tenant}, 'Utente S', ${M.recA})`;
   await p`insert into patients (id, tenant_id, full_name) values (${M.x}, ${M.other}, 'Utente X')`;
   await p`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at) values
@@ -114,7 +120,8 @@ async function seed(p: Sql): Promise<void> {
     (${M.tenant}, ${M.q}, ${M.t3}, ${M.locB}, ${T0}, ${T1}),
     (${M.tenant}, ${M.s}, ${M.t3}, ${M.locB}, ${T0}, ${T1})`;
   await p`insert into patient_care_team (tenant_id, patient_id, user_id, assigned_by) values
-    (${M.tenant}, ${M.p}, ${M.tCare}, ${M.recA})`;
+    (${M.tenant}, ${M.p}, ${M.tCare}, ${M.recA}),
+    (${M.tenant}, ${M.p}, ${M.tCareB}, ${M.recA})`;
   await p`insert into clinical_episodes (id, tenant_id, patient_id, primary_practitioner_id, title) values
     (${M.epP},  ${M.tenant}, ${M.p}, ${M.t1},     'Osteopatia'),
     (${M.epP2}, ${M.tenant}, ${M.p}, ${M.t2},     'Fisioterapia'),
@@ -165,6 +172,7 @@ const CASES: Case[] = [
   { name: "a therapist of the clinic with no tie to the patient", role: "therapist", user: M.t2, episode: M.epP, patient: M.p, select: false, insert: false, update: false },
   { name: "a therapist, the patient at another clinic", role: "therapist", user: M.t1, episode: M.epQ, patient: M.q, select: false, insert: false, update: false },
   { name: "a therapist on the care team at their own clinic", role: "therapist", user: M.tCare, episode: M.epP, patient: M.p, select: true, insert: false, update: false },
+  { name: "a therapist on the care team whose clinic is not the patient's", role: "therapist", user: M.tCareB, episode: M.epP, patient: M.p, select: false, insert: false, update: false },
   { name: "a receptionist, the patient at their clinic", role: "reception", user: M.recA, episode: M.epP, patient: M.p, select: true, insert: false, update: false },
   { name: "a receptionist, the patient at another clinic", role: "reception", user: M.recA, episode: M.epQ, patient: M.q, select: false, insert: false, update: false },
   { name: "a receptionist with no clinic", role: "reception", user: M.recNone, episode: M.epP, patient: M.p, select: false, insert: false, update: false },
@@ -179,6 +187,7 @@ const STAFF: [AppRole, string][] = [
   ["therapist", M.t2],
   ["therapist", M.t3],
   ["therapist", M.tCare],
+  ["therapist", M.tCareB],
   ["therapist", M.tMaker],
 ];
 const EPISODES = [M.epP, M.epP2, M.epQ, M.epR, M.epS];
@@ -196,21 +205,28 @@ describe.skipIf(!live)(`0104: the clinical_episodes policies follow the roles [$
 
   it("PREMISE: the fixture is what the cases say it is", async () => {
     const [f] = await sql<
-      { t1p: number; t2p: number; care: number; p_at_a: number; q_at_b: number; r_appts: number; r_maker: string; rec_none: number; episodes: number }[]
+      { t1p: number; t2p: number; care: number; care_b: number; care_b_at_a: number; care_b_at_b: number; t3q: number; t3s: number; r2_maker: string; r2_appts: number; p_at_a: number; q_at_b: number; r_appts: number; r_maker: string; rec_none: number; episodes: number }[]
     >`
       select (select count(*)::int from appointments where patient_id = ${M.p} and practitioner_id = ${M.t1}) as t1p,
              (select count(*)::int from appointments where patient_id = ${M.p} and practitioner_id = ${M.t2}) as t2p,
              (select count(*)::int from patient_care_team where patient_id = ${M.p} and user_id = ${M.tCare} and removed_at is null) as care,
+             (select count(*)::int from patient_care_team where patient_id = ${M.p} and user_id = ${M.tCareB} and removed_at is null) as care_b,
+             (select count(*)::int from staff_locations where user_id = ${M.tCareB} and location_id = ${M.locA}) as care_b_at_a,
+             (select count(*)::int from staff_locations where user_id = ${M.tCareB} and location_id = ${M.locB}) as care_b_at_b,
+             (select count(*)::int from appointments where patient_id = ${M.q} and practitioner_id = ${M.t3}) as t3q,
+             (select count(*)::int from appointments where patient_id = ${M.s} and practitioner_id = ${M.t3}) as t3s,
+             (select created_by::text from patients where id = ${M.r2}) as r2_maker,
+             (select count(*)::int from appointments where patient_id = ${M.r2}) as r2_appts,
              (select count(*)::int from appointments where patient_id = ${M.p} and location_id = ${M.locA}) as p_at_a,
              (select count(*)::int from appointments where patient_id = ${M.q} and location_id = ${M.locB}) as q_at_b,
              (select count(*)::int from appointments where patient_id = ${M.r}) as r_appts,
              (select created_by::text from patients where id = ${M.r}) as r_maker,
              (select count(*)::int from staff_locations where user_id = ${M.recNone}) as rec_none,
              (select count(*)::int from clinical_episodes where tenant_id = ${M.tenant}) as episodes`;
-    expect(f).toEqual({ t1p: 1, t2p: 0, care: 1, p_at_a: 1, q_at_b: 1, r_appts: 0, r_maker: M.tMaker, rec_none: 0, episodes: 5 });
+    expect(f).toEqual({ t1p: 1, t2p: 0, care: 1, care_b: 1, care_b_at_a: 0, care_b_at_b: 1, t3q: 1, t3s: 1, r2_maker: M.t1, r2_appts: 0, p_at_a: 1, q_at_b: 1, r_appts: 0, r_maker: M.tMaker, rec_none: 0, episodes: 5 });
   });
 
-  /* ---- the matrix: ten cases by four commands -------------------------- */
+  /* ---- the matrix: eleven cases by four commands ----------------------- */
   for (const c of CASES) {
     const run = <R>(fn: (tx: TransactionSql) => Promise<R>) => asUser(c.role, c.user, fn);
 
@@ -288,6 +304,39 @@ describe.skipIf(!live)(`0104: the clinical_episodes policies follow the roles [$
     await expect(
       asUser("therapist", M.t1, (tx) => tx`update clinical_episodes set patient_id = ${M.q} where id = ${M.epP}`),
     ).rejects.toThrow(/row-level security/i);
+  });
+
+  /* ---- moving an episode: PINNED AS MEASURED on 2026-10-13, not as a design --- */
+  // The UPDATE policy asks one thing of the row before and of the row after: that
+  // the caller treats or created its patient. It asks nothing of the practitioner
+  // the episode names. So the three changes below pass. They are pinned so that a
+  // later change to the policy is SEEN; whether they should pass is not ruled here.
+  it("AS MEASURED: a therapist who treats both patients moves an episode from one to the other (both sides)", async () => {
+    const out = await asUser("therapist", M.t3, async (tx) => {
+      const moved = (await tx`update clinical_episodes set patient_id = ${M.s} where id = ${M.epQ}`).count;
+      const [row] = await tx<{ patient_id: string }[]>`select patient_id::text as patient_id from clinical_episodes where id = ${M.epQ}`;
+      return { moved, patient: row?.patient_id };
+    });
+    expect(out).toEqual({ moved: 1, patient: M.s });
+  });
+
+  it("AS MEASURED: a therapist moves an episode of a patient they treat to a patient they created (both sides)", async () => {
+    const out = await asUser("therapist", M.t1, async (tx) => {
+      const moved = (await tx`update clinical_episodes set patient_id = ${M.r2} where id = ${M.epP}`).count;
+      const [row] = await tx<{ patient_id: string }[]>`select patient_id::text as patient_id from clinical_episodes where id = ${M.epP}`;
+      return { moved, patient: row?.patient_id };
+    });
+    expect(out).toEqual({ moved: 1, patient: M.r2 });
+  });
+
+  it("AS MEASURED: a therapist puts an episode of a patient they treat in a colleague's name, and still reads it (both sides)", async () => {
+    const out = await asUser("therapist", M.t1, async (tx) => {
+      const renamed = (await tx`update clinical_episodes set primary_practitioner_id = ${M.t2} where id = ${M.epP}`).count;
+      const [row] = await tx<{ practitioner: string }[]>`
+        select primary_practitioner_id::text as practitioner from clinical_episodes where id = ${M.epP}`;
+      return { renamed, practitioner: row?.practitioner };
+    });
+    expect(out).toEqual({ renamed: 1, practitioner: M.t2 });
   });
 
   it104(`${SIDE}: every episode a staff session changes is one it reads (the read set contains the write set)`, async () => {

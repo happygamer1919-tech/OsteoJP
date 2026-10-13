@@ -21,10 +21,15 @@
 //     acldefault() of its own object type; and both END WITH AN ERROR on a FAIL verdict;
 //   * THE VERDICT PROFILE: every verdict of both files is OK, VACUOUS or FAIL, a verdict that can
 //     read VACUOUS tests FAIL first and never prints OK over an empty subject, and the profiles
-//     the blocks require are the ones the files print: 15 OK / 0 VACUOUS / 0 FAIL before the
+//     the blocks require are the ones the files print: 17 OK / 0 VACUOUS / 0 FAIL before the
 //     apply; after it (21 - k) OK / k VACUOUS / 0 FAIL, where k is the carried
 //     post_vacuous_expected (how many of the four actors the new read policy admits to no
-//     episode), never "no FAIL" alone;
+//     episode), never "no FAIL" alone; and each file ENDS WITH AN ERROR on any other profile;
+//   * THE MISFILED HALT (the owner's ruling of 2026-10-13): a registo filed in an episode of another
+//     patient stops stage 1 three times over, each on its own: the pre-check's verdict 15, the
+//     pre-check's own STOP naming the count, and stage 1's own line on the carried count;
+//   * WHO GRANTED THE PRIVILEGE 0104 REVOKES: the pre-check's verdict 16 wants one DELETE grant to
+//     authenticated, made by postgres, and no other path, so a second grantor stops stage 1;
 //   * every sha256 the document pins is the real file, or the value read on origin/main, and the
 //     sidecar pins the document;
 //   * THE ONLY WRITING COMMAND of the four blocks is verified-migrate, once, with the reviewed
@@ -482,7 +487,7 @@ export const STATE_UNKNOWN = "Stage 1 recorded that it applied 0104, and this re
  * It says which is which, and never that 0104 is applied.
  */
 export const POST_RUN_START = 'psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before=';
-export const POST_RUN_SENTENCE = "If a FAIL verdict is printed above, the file raised its own STOP on it: stage 1 recorded that it applied 0104 and this read does not agree, so the state is UNKNOWN. If no FAIL verdict is printed, this read confirmed nothing and contradicted nothing. Run nothing again, not stage 0 and not stage 1, and report this whole output; the lead rules";
+export const POST_RUN_SENTENCE = "If a FAIL verdict is printed above, the file raised its own STOP on it: stage 1 recorded that it applied 0104 and this read does not agree, so the state is UNKNOWN. If no FAIL verdict is printed and the file's own STOP names a profile, the verdicts are not the ones the pre-check's carry names: a VACUOUS verdict is not a pass, and stage 2 did not pass. If neither is printed, this read confirmed nothing and contradicted nothing. Run nothing again, not stage 0 and not stage 1, and report this whole output; the lead rules";
 export const CONTRADICTING_READS = Object.freeze({
   stage2: ['[ "${FAILS}" = 0 ] || ', '[ "${JA}" = "$((J + 1))" ] || ', '[ "${HN}" = 1 ] || '],
   closing: ["grep -qx 'journal rows on production: 102' ", "grep -qE '^[[:space:]]*APPLIED[[:space:]]+0104_clinical_episodes_role_matrix[.]sql$' "],
@@ -597,7 +602,7 @@ export function carryProblems(carries, rowNames) {
   return problems;
 }
 
-/** The fourteen carries the post-check takes: [the variable stage 2 holds it in, the pre-check row it reads, the post-check's -v name]. */
+/** Fourteen of the fifteen carries the post-check takes: [the variable stage 2 holds it in, the pre-check row it reads, the post-check's -v name]. */
 export const CARRY_MAP = Object.freeze([
   ["J", "journal_rows_before", "journal_rows_before"], ["PB", "policies_before", "policies_before"], ["OP", "other_policies_md5", "other_policies_md5"],
   ["FM", "functions_md5", "functions_md5"], ["S", "secdef_before", "secdef_before"], ["RM", "relation_acl_md5", "relation_acl_md5"],
@@ -605,8 +610,10 @@ export const CARRY_MAP = Object.freeze([
   ["T", "tables_before", "tables_before"], ["ER", "episodes_rows", "episodes_rows"], ["EM", "episodes_md5", "episodes_md5"],
   ["BT", "behaviour_tenant_md5", "behaviour_tenant_md5"], ["BA", "behaviour_actors_md5", "behaviour_actors_md5"],
 ]);
-/** The fifteenth carry feeds the block, never psql: it picks the profile the post-check must print. */
-export const PROFILE_CARRY = Object.freeze(["PV", "post_vacuous_expected"]);
+/** The fifteenth carry picks the profile the post-check must print: the block reads it, and hands it to the file too, which refuses any other profile by itself. */
+export const PROFILE_CARRY = Object.freeze(["PV", "post_vacuous_expected", "post_vacuous_expected"]);
+/** Every carry stage 2 hands the post-check with -v, in order. */
+export const POST_CARRIES = Object.freeze([...CARRY_MAP, PROFILE_CARRY]);
 /** carry() reads a row by its WHOLE name (the first column, trimmed) and takes the first such row. */
 export const CARRY_FUNCTION = `carry() { awk -F'|' -v k="$1" '{ a = $1; gsub(/^[ \\t]+|[ \\t]+$/, "", a); if (a == k) { b = $2; gsub(/^[ \\t]+|[ \\t]+$/, "", b); print b; exit } }' /tmp/0104-precheck.out; }`;
 /** The lines that refuse a carry before it reaches psql, each by how it starts. */
@@ -630,17 +637,45 @@ export function argumentProblems(s1, s2) {
   if (!l1.some((l) => l.startsWith(`node packages/db/scripts/verified-migrate.mjs --tag ${TAG} --sha256 \${SHA0104} --expect-pending 1 2>&1 | tee /tmp/0104-apply.out || `))) {
     problems.push(`stage 1 does not run verified-migrate with --tag ${TAG} --sha256 \${SHA0104} --expect-pending 1`);
   }
-  for (const [v, row] of [...CARRY_MAP, PROFILE_CARRY]) if (!l2.includes(`${v}=$(carry ${row})`)) problems.push(`stage 2 does not read \${${v}} from the row ${row}`);
+  for (const [v, row] of POST_CARRIES) if (!l2.includes(`${v}=$(carry ${row})`)) problems.push(`stage 2 does not read \${${v}} from the row ${row}`);
   if (!l2.includes(CARRY_FUNCTION)) problems.push("stage 2's carry() does not match a row by its whole name");
-  const want = `psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 ${CARRY_MAP.map(([v, , name]) => `-v ${name}="\${${v}}"`).join(" ")} -c "begin read only" -f ${POST} -c "rollback" 2>&1 | tee /tmp/0104-postcheck.out || `;
-  if (!l2.some((l) => l.startsWith(want))) problems.push("stage 2 does not hand the post-check the fourteen carries, each under its own name, inside begin read only");
+  const want = `psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 ${POST_CARRIES.map(([v, , name]) => `-v ${name}="\${${v}}"`).join(" ")} -c "begin read only" -f ${POST} -c "rollback" 2>&1 | tee /tmp/0104-postcheck.out || `;
+  if (!l2.some((l) => l.startsWith(want))) problems.push("stage 2 does not hand the post-check the fifteen carries, each under its own name, inside begin read only");
   for (const c of CARRY_CHECKS) if (!l2.some((l) => l.startsWith(c) && EXPLICIT_HALT.test(l))) problems.push(`stage 2 lacks the carry check ${c}`);
   const at = (start) => l2.findIndex((l) => l.startsWith(start));
   if (CARRY_CHECKS.some((c) => at(c) > at('psql "${DATABASE_URL_DIRECT}" -X -P pager=off'))) problems.push("a carry check follows the post-check it guards");
   return problems;
 }
 
-/** Stage 1 requires 15 OK, 0 VACUOUS, 0 FAIL of the pre-check; stage 2 requires the profile post_vacuous_expected chooses. */
+/**
+ * THE MISFILED HALT, stage 1's own (the owner's ruling of 2026-10-13). Three lines, together and in
+ * this order, after the three counts and before anything of the earlier sitting is removed: the
+ * carried count read out of THIS run's transcript by the row's whole name, a STOP unless it is a
+ * number, and a STOP unless that number is 0.
+ */
+export const MISFILED_READ = `MISF=$(awk -F'|' -v k=registos_in_another_patients_episode '{ a = $1; gsub(/^[ \\t]+|[ \\t]+$/, "", a); if (a == k) { b = $2; gsub(/^[ \\t]+|[ \\t]+$/, "", b); print b; exit } }' /tmp/0104-precheck.new)`;
+export const MISFILED_NUMBER = `echo "\${MISF}" | grep -qxE '[0-9]+' || `;
+export const MISFILED_ZERO = '[ "${MISF}" = 0 ] || ';
+/** What the STOP on a count that is not 0 says: what was found, that nothing was applied, and where the number goes. */
+export const MISFILED_SENTENCE = "STOP: the pre-check counted ${MISF} registos filed in an episode of another patient or tenant. After 0104 such a registo would show its episode's title only to a session the new read policy admits to the other patient's episodes, so the sitting stops on any number but 0 (the owner's ruling of 2026-10-13). Nothing was applied. Report the number ${MISF} to SOLO";
+export function misfiledProblems(s1) {
+  const problems = [];
+  const l1 = s1.split("\n");
+  const at = l1.indexOf(MISFILED_READ);
+  if (at < 0) return ["stage 1 does not read the carried count of misfiled registos out of this run's transcript, by the row's whole name"];
+  if (!(l1[at + 1] ?? "").startsWith(MISFILED_NUMBER) || !EXPLICIT_HALT.test(l1[at + 1])) problems.push("stage 1 does not stop on a carried count that is not a number");
+  if (!(l1[at + 2] ?? "").startsWith(MISFILED_ZERO) || !EXPLICIT_HALT.test(l1[at + 2] ?? "")) problems.push("stage 1 does not stop on a carried count that is not 0");
+  else if (!(l1[at + 2] ?? "").includes(`echo "${MISFILED_SENTENCE}"; exit 1; }`)) problems.push("the STOP on a count that is not 0 does not say what was found, that nothing was applied and that the number goes to SOLO");
+  if ((s1.match(/\bMISF=/g) ?? []).length !== 1) problems.push("the carried count is set somewhere else as well");
+  const first = (start) => l1.findIndex((l) => l.startsWith(start));
+  if (!(first('[ "${OKS}" = 17 ] || ') < at)) problems.push("the misfiled halt does not follow the three counts");
+  for (const later of ["rm -f /tmp/0104-postcheck.out ", "mv /tmp/0104-precheck.new ", "node packages/db/scripts/verified-migrate.mjs "]) {
+    if (!(first(later) > at + 2)) problems.push(`the misfiled halt does not stand before ${later.trim()}`);
+  }
+  return problems;
+}
+
+/** Stage 1 requires 17 OK, 0 VACUOUS, 0 FAIL of the pre-check; stage 2 requires the profile post_vacuous_expected chooses. */
 export function profileBlockProblems(s1, s2) {
   const problems = [];
   const has = (b, start) => b.split("\n").some((l) => l.startsWith(start) && EXPLICIT_HALT.test(l));
@@ -651,7 +686,7 @@ export function profileBlockProblems(s1, s2) {
   }
   if (!has(s1, '[ "${FAILS}" = 0 ] || ')) problems.push("stage 1 does not require 0 FAIL");
   if (!has(s1, '[ "${VACS}" = 0 ] || ')) problems.push("stage 1 does not require 0 VACUOUS");
-  if (!has(s1, '[ "${OKS}" = 15 ] || ')) problems.push("stage 1 does not require 15 OK");
+  if (!has(s1, '[ "${OKS}" = 17 ] || ')) problems.push("stage 1 does not require 17 OK");
   const l2 = s2.split("\n");
   const at = l2.indexOf(PROFILE_LINES[0]);
   if (at < 0 || l2[at + 1] !== PROFILE_LINES[1]) problems.push("stage 2 does not choose the profile by post_vacuous_expected");
@@ -659,6 +694,56 @@ export function profileBlockProblems(s1, s2) {
   if (!has(s2, '[ "${FAILS}" = 0 ] || ')) problems.push("stage 2 does not require 0 FAIL");
   if (!has(s2, '[ "${VACS}" = "${WVAC}" ] || ')) problems.push("stage 2 does not require the VACUOUS count the profile names");
   if (!has(s2, '[ "${OKS}" = "${WOK}" ] || ')) problems.push("stage 2 does not require the OK count the profile names");
+  return problems;
+}
+
+/**
+ * HOW EACH CHECK FILE ENDS. The pre-check: its own STOP on a count of misfiled registos that is not 0,
+ * then an error on any profile but 17 OK / 0 VACUOUS / 0 FAIL. The post-check: an error on a FAIL
+ * verdict, then on any profile but the one the carry post_vacuous_expected names.
+ */
+export const PRE_MISFILED_END = `SELECT coalesce(current_setting('ep0104.misfiled', true), '') = '0' AS ep0104_none_misfiled \\gset
+\\if :ep0104_none_misfiled
+\\else
+  DO $misfiled$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0104 pre-check counted [%] registos filed in an episode of another patient or tenant, and the sitting stops on any number but 0. After 0104 such a registo would show its episode''s title only to a session the new read policy admits to the OTHER patient''s episodes. This file wrote nothing, and the block that ran it applies nothing after this STOP. The number goes to SOLO.', coalesce(nullif(current_setting('ep0104.misfiled', true), ''), 'no count');
+  END $misfiled$;
+\\endif
+`;
+export const PRE_PROFILE_END = `SELECT coalesce(current_setting('ep0104.profile', true), '') = '17 OK / 0 VACUOUS / 0 FAIL' AS ep0104_profile_ok \\gset
+\\if :ep0104_profile_ok
+\\else
+  DO $fail$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0104 pre-check printed a FAIL or a VACUOUS verdict, or its profile could not be read back [%]; it must read 17 OK / 0 VACUOUS / 0 FAIL. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile');
+  END $fail$;
+\\endif
+`;
+export const POST_FAIL_END = `SELECT coalesce(current_setting('ep0104.profile', true), '') ~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_no_fail \\gset
+\\if :ep0104_no_fail
+\\else
+  DO $fail$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0104 post-check printed a FAIL verdict, or its profile could not be read back [%]. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile');
+  END $fail$;
+\\endif
+`;
+export const POST_PROFILE_END = `SELECT set_config('ep0104.wanted', (21 - :'post_vacuous_expected'::int)::text || ' OK / ' || :'post_vacuous_expected' || ' VACUOUS / 0 FAIL', true)
+       = coalesce(current_setting('ep0104.profile', true), '') AS ep0104_profile_ok \\gset
+\\if :ep0104_profile_ok
+\\else
+  DO $profile$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0104 post-check printed no FAIL verdict, but its profile [%] is not [%], the one the pre-check''s carry post_vacuous_expected names. A VACUOUS verdict is not a pass. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile'), coalesce(current_setting('ep0104.wanted', true), 'no expected profile');
+  END $profile$;
+\\endif
+`;
+export function endingProblems(preSql, postSql) {
+  const problems = [];
+  if (!preSql.includes(PRE_MISFILED_END)) problems.push("the pre-check does not end with its own STOP on a count of misfiled registos that is not 0");
+  if (!preSql.includes("SELECT 34, 'registos_in_another_patients_episode', set_config('ep0104.misfiled', registos_misfiled::text, true),")) problems.push("the pre-check's CARRY row does not store the count its own STOP reads back");
+  if (!preSql.includes(PRE_PROFILE_END)) problems.push("the pre-check does not end with an error on every profile but 17 OK / 0 VACUOUS / 0 FAIL");
+  else if (!preSql.trimEnd().endsWith(`${PRE_PROFILE_END}\nROLLBACK;`)) problems.push("the pre-check's last statements are not its profile check and its ROLLBACK");
+  if (!postSql.includes(POST_FAIL_END)) problems.push("the post-check does not end with an error on a FAIL verdict");
+  if (!postSql.includes(POST_PROFILE_END)) problems.push("the post-check does not end with an error on every profile but the one post_vacuous_expected names");
+  else if (!postSql.endsWith(POST_PROFILE_END)) problems.push("the post-check's last statement is not its profile check");
   return problems;
 }
 
@@ -770,12 +855,19 @@ test("the check files write nothing; the pre-check opens READ ONLY and ends with
     assert.ok(code.indexOf("PERFORM set_config('request.jwt.claims',") < code.indexOf("SET LOCAL ROLE authenticated;"), name);
     assert.doesNotMatch(code, /SET (LOCAL |SESSION )?ROLE (?!authenticated;)/i, name);
   }
-  // A FAIL VERDICT IS AN ERROR. The SUMMARY row stores the profile it prints; the file's last statement reads it
-  // back and raises unless it ends "/ 0 FAIL", so psql exits 3 under ON_ERROR_STOP and the block's own halt fires.
-  for (const [sql, word] of [[pre, "pre-check"], [post, "post-check"]]) {
-    assert.ok(sql.includes("         set_config('ep0104.profile',\n"), word);
-    assert.ok(sql.includes(`SELECT coalesce(current_setting('ep0104.profile', true), '') ~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_no_fail \\gset\n\\if :ep0104_no_fail\n\\else\n  DO $fail$ BEGIN\n    RAISE EXCEPTION 'STOP: the 0104 ${word} printed a FAIL verdict, or its profile could not be read back [%]. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile');\n  END $fail$;\n\\endif\n`), word);
-  }
+  // ANY PROFILE BUT THE EXPECTED ONE IS AN ERROR. The SUMMARY row stores the profile it prints; the file's last
+  // statements read it back and raise, so psql exits 3 under ON_ERROR_STOP and the block's own halt fires.
+  for (const [sql, word] of [[pre, "pre-check"], [post, "post-check"]]) assert.ok(sql.includes("         set_config('ep0104.profile',\n"), word);
+  assert.deepEqual(endingProblems(pre, post), []);
+  // RED ARMS: each raise loosened or removed, one at a time.
+  assert.deepEqual(endingProblems(swap(pre, "= '17 OK / 0 VACUOUS / 0 FAIL' AS ep0104_profile_ok", "~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_profile_ok"), post), ["the pre-check does not end with an error on every profile but 17 OK / 0 VACUOUS / 0 FAIL"]);
+  assert.deepEqual(endingProblems(swap(pre, "= '0' AS ep0104_none_misfiled", "<> '' AS ep0104_none_misfiled"), post), ["the pre-check does not end with its own STOP on a count of misfiled registos that is not 0"]);
+  assert.deepEqual(endingProblems(swap(pre, "set_config('ep0104.misfiled', registos_misfiled::text, true)", "registos_misfiled::text"), post), ["the pre-check's CARRY row does not store the count its own STOP reads back"]);
+  assert.deepEqual(endingProblems(pre, swap(post, "\n       = coalesce(current_setting('ep0104.profile', true), '') AS ep0104_profile_ok", "\n       <> '' AS ep0104_profile_ok")), ["the post-check does not end with an error on every profile but the one post_vacuous_expected names"]);
+  assert.deepEqual(endingProblems(pre, swap(post, "~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_no_fail", "~ '^[0-9]+ OK' AS ep0104_no_fail")), ["the post-check does not end with an error on a FAIL verdict"]);
+  // The misfiled STOP comes before the profile's, so a count that is not 0 ends the file with the sentence that names it.
+  assert.ok(pre.indexOf(PRE_MISFILED_END) < pre.indexOf(PRE_PROFILE_END));
+  assert.ok(post.indexOf(POST_FAIL_END) < post.indexOf(POST_PROFILE_END));
   // CONTROLS
   assert.notDeepEqual(writeProblems(`${pre}\nDELETE FROM public.patients;\n`), []);
   assert.notDeepEqual(writeProblems(`${post}\nSET LOCAL ROLE postgres;\n`), []);
@@ -798,26 +890,46 @@ test("the pre-check and the post-check read a NULL relacl as acldefault of its o
 });
 
 test("THE VERDICT PROFILE: OK, VACUOUS and FAIL are three results, FAIL is tested first, and the profiles the blocks require are the ones the files print", () => {
-  // The pre-check: fifteen verdicts, and 14 alone can read VACUOUS. The post-check: seventeen read off r (0 to 16),
+  // The pre-check: seventeen verdicts, of which 14 and 15 can read VACUOUS. The post-check: seventeen read off r (0 to 16),
   // seven of which can, and the four per-actor verdicts 17 to 20, which come from one SELECT and are pinned whole.
-  assert.deepEqual(profileProblems(pre, 15, [14]), []);
+  assert.deepEqual(profileProblems(pre, 17, [14, 15]), []);
   assert.deepEqual(profileProblems(post, 17, [7, 8, 9, 10, 11, 14, 16]), []);
   assert.deepEqual(actorRowsProblems(post), []);
   const preRows = verdictRowsOf(pre);
   const postRows = verdictRowsOf(post);
-  assert.deepEqual(preRows.map(kindOf).reduce((a, k) => ({ ...a, [k]: (a[k] ?? 0) + 1 }), {}), { verdict: 15, carry: 15, info: 8 });
+  assert.deepEqual(preRows.map(kindOf).reduce((a, k) => ({ ...a, [k]: (a[k] ?? 0) + 1 }), {}), { verdict: 17, carry: 15, info: 8 });
   assert.deepEqual(postRows.map(kindOf).reduce((a, k) => ({ ...a, [k]: (a[k] ?? 0) + 1 }), {}), { verdict: 17 });
-  assert.deepEqual(preRows.filter((r) => kindOf(r) === "verdict").map((r) => r.n), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.deepEqual(preRows.filter((r) => kindOf(r) === "verdict").map((r) => r.n), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
   assert.deepEqual(postRows.map((r) => r.n), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
   // Seventeen and four: the twenty-one the blocks count.
   assert.equal(postRows.length + 4, 21);
   // The files say their own profiles, and the blocks require exactly those.
-  assert.ok(pre.includes("'15 OK / 0 VACUOUS / 0 FAIL; or 14 OK / 1 VACUOUS / 0 FAIL where the table is empty or a role has no actor', 'SUMMARY'"));
-  assert.ok(post.includes("'21 OK / 0 VACUOUS / 0 FAIL where every actor reads at least one episode; never a FAIL', 'SUMMARY'"));
+  assert.ok(pre.includes("'17 OK / 0 VACUOUS / 0 FAIL, and nothing else: a VACUOUS (14: the table is empty or a role has no actor; 15: no registo names an episode) or a FAIL ends this file with an error', 'SUMMARY'"));
+  assert.ok(post.includes("(21 - :'post_vacuous_expected'::int)::text || ' OK / ' || :'post_vacuous_expected' || ' VACUOUS / 0 FAIL, and nothing else: the profile the pre-check''s carry post_vacuous_expected names', 'SUMMARY'"));
   const s1 = blockWith(doc, STAGE1);
   const s2 = blockWith(doc, STAGE2);
   assert.deepEqual(profileBlockProblems(s1, s2), []);
-  // WHY A 15 OK PRE-CHECK MEANS THE TABLE IS READ AS THE DESIGN ASSUMES: verdict 14 prints OK only when all four
+  // THE MISFILED HALT, in the file and in the block. Verdict 15 reads FAIL on any count but 0 (and where a registo
+  // that names an episode does not join to it), VACUOUS where no registo names an episode, and OK only then.
+  const V15 = "         CASE WHEN registos_misfiled <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL'\n              WHEN registos_with_episode = 0 THEN 'VACUOUS' ELSE 'OK' END FROM j";
+  assert.ok(codeOf(pre).includes(V15));
+  assert.ok(codeOf(pre).includes("      WHERE e.patient_id <> c.patient_id OR e.tenant_id <> c.tenant_id)                         AS registos_misfiled,"));
+  assert.deepEqual(misfiledProblems(s1), []);
+  const misfLine = s1.split("\n").find((l) => l.startsWith(MISFILED_ZERO));
+  assert.deepEqual(misfiledProblems(s1.replace(`${misfLine}\n`, "")), ["stage 1 does not stop on a carried count that is not 0"]);
+  assert.deepEqual(misfiledProblems(swap(s1, MISFILED_ZERO, '[ "${MISF}" -ge 0 ] || ')), ["stage 1 does not stop on a carried count that is not 0"]);
+  assert.deepEqual(misfiledProblems(swap(s1, "Report the number ${MISF} to SOLO", "The lead reads it")), ["the STOP on a count that is not 0 does not say what was found, that nothing was applied and that the number goes to SOLO"]);
+  assert.deepEqual(misfiledProblems(swap(s1, "-v k=registos_in_another_patients_episode ", "-v k=post_vacuous_expected ")), ["stage 1 does not read the carried count of misfiled registos out of this run's transcript, by the row's whole name"]);
+  assert.deepEqual(misfiledProblems(swap(s1, "print b; exit } }' /tmp/0104-precheck.new)", "print b; exit } }' /tmp/0104-precheck.out)")), ["stage 1 does not read the carried count of misfiled registos out of this run's transcript, by the row's whole name"]);
+  assert.deepEqual(misfiledProblems(swap(s1, `${MISFILED_NUMBER}`, "echo \"${MISF}\" | grep -qxE '.*' || ")), ["stage 1 does not stop on a carried count that is not a number"]);
+  const misfThree = s1.split("\n").slice(s1.split("\n").indexOf(MISFILED_READ), s1.split("\n").indexOf(MISFILED_READ) + 3).join("\n");
+  assert.equal(misfiledProblems(`${s1.replace(`${misfThree}\n`, "")}${misfThree}\n`).length, 3, "the halt moved below the apply");
+  // WHO GRANTED THE PRIVILEGE 0104 REVOKES. Verdict 16 wants exactly one DELETE item for authenticated, its grantor
+  // postgres, and no DELETE reaching authenticated through PUBLIC or a role it is a member of.
+  assert.ok(codeOf(pre).includes("         CASE WHEN delete_grantors = 'postgres' AND delete_other_paths = 0 AND owner_acl_items > 0 THEN 'OK' ELSE 'FAIL' END FROM j"));
+  assert.ok(codeOf(pre).includes("    (SELECT coalesce(string_agg(pg_get_userbyid(i.grantor), ',' ORDER BY pg_get_userbyid(i.grantor)), 'nobody')\n       FROM rel_items i\n      WHERE i.rel = 'clinical_episodes' AND i.privilege_type = 'DELETE'\n        AND i.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'authenticated'))             AS delete_grantors,"));
+  assert.ok(codeOf(pre).includes("        AND CASE WHEN i.grantee = 0 THEN true ELSE pg_has_role('authenticated', i.grantee, 'USAGE') END) AS delete_other_paths,"));
+  // WHY A 17 OK PRE-CHECK MEANS THE TABLE IS READ AS THE DESIGN ASSUMES: verdict 14 prints OK only when all four
   // actors were found, the tenant holds episodes, and each actor read every one of them.
   const V14 = "         CASE WHEN actors_not_whole <> 0 THEN 'FAIL'\n              WHEN actors_found = 4 AND behaviour_total > 0 THEN 'OK' ELSE 'VACUOUS' END FROM j";
   assert.ok(codeOf(pre).includes(V14));
@@ -831,15 +943,16 @@ test("THE VERDICT PROFILE: OK, VACUOUS and FAIL are three results, FAIL is teste
   const okFirst = swap(post, "CASE WHEN col_md5 <> :'column_acl_md5' THEN 'FAIL' WHEN n_col_items = 0 THEN 'VACUOUS' ELSE 'OK' END FROM t", "CASE WHEN col_md5 = :'column_acl_md5' THEN 'OK' WHEN n_col_items = 0 THEN 'VACUOUS' ELSE 'FAIL' END FROM t");
   assert.deepEqual(profileProblems(okFirst, 17, [7, 8, 9, 10, 11, 14, 16]), ["verdict 10 does not test FAIL first", "verdict 10 can print OK before it has tested for VACUOUS"]);
   const okBeforeFail = swap(pre, V14, "         CASE WHEN actors_found = 4 AND behaviour_total > 0 THEN 'OK'\n              WHEN actors_not_whole <> 0 THEN 'FAIL' ELSE 'VACUOUS' END FROM j");
-  assert.deepEqual(profileProblems(okBeforeFail, 15, [14]), ["verdict 14 does not test FAIL first"]);
+  assert.deepEqual(profileProblems(okBeforeFail, 17, [14, 15]), ["verdict 14 does not test FAIL first"]);
   const okAsElse = swap(pre, V14, "         CASE WHEN actors_not_whole <> 0 THEN 'FAIL'\n              WHEN actors_found = 4 THEN 'OK' WHEN behaviour_total = 0 THEN 'VACUOUS' ELSE 'OK' END FROM j");
-  assert.deepEqual(profileProblems(okAsElse, 15, [14]), ["verdict 14 can print OK before it has tested for VACUOUS"]);
-  assert.deepEqual(profileProblems(pre, 13, [14]), ["15 verdicts, not 13"]);
-  assert.deepEqual(profileProblems("SELECT 1;", 15, []), ["the file has no r CTE to read"]);
+  assert.deepEqual(profileProblems(okAsElse, 17, [14, 15]), ["verdict 14 can print OK before it has tested for VACUOUS"]);
+  assert.deepEqual(profileProblems(pre, 15, [14, 15]), ["17 verdicts, not 15"]);
+  assert.deepEqual(profileProblems(swap(pre, V15, "         CASE WHEN registos_misfiled <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL' ELSE 'OK' END FROM j"), 17, [14, 15]), ["the verdicts that can read VACUOUS are 14, not 14,15"]);
+  assert.deepEqual(profileProblems("SELECT 1;", 17, []), ["the file has no r CTE to read"]);
   assert.deepEqual(actorRowsProblems(swap(post, "              WHEN a.admitted = 0 THEN 'VACUOUS'\n", "")), ["the four per-actor verdicts are not the reviewed SELECT over admits"]);
   // RED ARMS of the block rule, one line at a time.
   const one = (a, b) => profileBlockProblems(a, b);
-  assert.deepEqual(one(swap(s1, '[ "${OKS}" = 15 ] || ', '[ "${OKS}" = 14 ] || '), s2), ["stage 1 does not require 15 OK"]);
+  assert.deepEqual(one(swap(s1, '[ "${OKS}" = 17 ] || ', '[ "${OKS}" = 16 ] || '), s2), ["stage 1 does not require 17 OK"]);
   const vacLine = s1.split("\n").find((l) => l.startsWith('[ "${VACS}" = 0 ] || '));
   assert.deepEqual(one(s1.replace(`${vacLine}\n`, ""), s2), ["stage 1 does not require 0 VACUOUS"]);
   assert.deepEqual(one(s1, swap(s2, "\nWOK=$((21 - PV))\n", "\nWOK=$((20 - PV))\n")), ["stage 2 does not choose the profile by post_vacuous_expected"]);
@@ -912,13 +1025,16 @@ test("THE ARGUMENTS: what stage 1 hands the pre-check and verified-migrate, and 
   const s2 = blockWith(doc, STAGE2);
   assert.deepEqual(argumentProblems(s1, s2), []);
   assert.equal(CARRY_MAP.length, 14);
+  assert.equal(POST_CARRIES.length, 15);
   const first = (list) => list[0];
   assert.match(first(argumentProblems(s1, swap(s2, "ER=$(carry episodes_rows)", "ER=$(carry tables_before)"))), /^stage 2 does not read \$\{ER\} from the row episodes_rows$/);
   assert.match(first(argumentProblems(s1, swap(s2, "PV=$(carry post_vacuous_expected)", "PV=0"))), /^stage 2 does not read \$\{PV\} from the row post_vacuous_expected$/);
   assert.ok(argumentProblems(s1, swap(s2, '-v policies_before="${PB}" -v other_policies_md5="${OP}"', '-v policies_before="${OP}" -v other_policies_md5="${PB}"')).length >= 1);
   assert.ok(argumentProblems(s1, swap(s2, ' -v episodes_md5="${EM}"', "")).length >= 1);
-  // post_vacuous_expected is the block's own: it never reaches psql.
-  assert.ok(!s2.includes("-v post_vacuous_expected"));
+  // post_vacuous_expected reaches psql as the fifteenth carry, so the file itself refuses a profile it does not name.
+  assert.ok(s2.includes(' -v behaviour_actors_md5="${BA}" -v post_vacuous_expected="${PV}" -c "begin read only" '));
+  assert.ok(argumentProblems(s1, swap(s2, ' -v post_vacuous_expected="${PV}"', "")).length >= 1);
+  assert.ok(argumentProblems(s1, swap(s2, ' -v post_vacuous_expected="${PV}"', ' -v post_vacuous_expected="${WVAC}"')).length >= 1);
   assert.deepEqual(argumentProblems(s1, swap(s2, "echo \"${PV}\" | grep -qxE '[0-4]' || ", "echo \"${PV}\" | grep -qxE '[0-9]+' || ")), [`stage 2 lacks the carry check ${CARRY_CHECKS[3]}`]);
   assert.deepEqual(argumentProblems(s1, swap(s2, "grep -qxE '[0-9a-f]{32}( [0-9a-f]{32}){8}'", "grep -qxE '.*'")), [`stage 2 lacks the carry check ${CARRY_CHECKS[2]}`]);
   // carry() reads a row by its WHOLE name. 0103's matched with index(); here policies_before and other_policies_md5 are both rows.
@@ -933,7 +1049,7 @@ test("THE ARGUMENTS: what stage 1 hands the pre-check and verified-migrate, and 
   // W103 is 0103's journal when, read from the journal at the recorded sha, never typed.
   assert.ok(s1.split("\n").some((l) => l.startsWith("W103=$(node -e ") && l.includes(`p.tag==='${PREV_TAG}'?String(p.when):'none'`)));
   // The verdict numbers stage 2's last line names are counted, never typed.
-  assert.match(s2, /^echo "0104 POST-CHECK PASSED\. 15\/15 pre-check OK, post-check \$\{OKS\} OK \/ \$\{VACS\} VACUOUS \/ 0 FAIL, the profile for post_vacuous_expected=\$\{PV\}, journal \$\{J\} to \$\{JA\}; /m);
+  assert.match(s2, /^echo "0104 POST-CHECK PASSED\. 17\/17 pre-check OK, post-check \$\{OKS\} OK \/ \$\{VACS\} VACUOUS \/ 0 FAIL, the profile for post_vacuous_expected=\$\{PV\}, journal \$\{J\} to \$\{JA\}; /m);
 });
 
 test("THE WEEKDAY TABLE: the arm stands in stage 0 and stage 1, with no override and no date, and passes only in closed hours", () => {
@@ -1250,9 +1366,9 @@ test("every block that runs the guard or the reader compares it, and its module,
 
 test("every carry stage 2 reads is a row the pre-check prints, and no carry name hides in another row", () => {
   const carries = [...blockWith(doc, STAGE2).matchAll(/\$\(carry ([a-z0-9_]+)\)/g)].map((m) => m[1]);
-  assert.deepEqual(carries, [...CARRY_MAP.map(([, row]) => row), PROFILE_CARRY[1]]);
+  assert.deepEqual(carries, POST_CARRIES.map(([, row]) => row));
   const rowNames = [...verdictRowsOf(pre).map((r) => r.name), "SUMMARY. the verdict profile this run printed"];
-  assert.equal(rowNames.length, 39, `${rowNames.length} rows read from the pre-check`);
+  assert.equal(rowNames.length, 41, `${rowNames.length} rows read from the pre-check`);
   assert.ok(codeOf(pre).includes("SELECT 99, 'SUMMARY. the verdict profile this run printed',"));
   assert.deepEqual(carryProblems(carries, rowNames), []);
   // The psql banners and the FOR THE RECORD table print lines too, and carry() reads every line's first column.
@@ -1261,14 +1377,14 @@ test("every carry stage 2 reads is a row the pre-check prints, and no carry name
   const required = [...post.matchAll(/^\\if :\{\?(\w+)\}$/gm)].map((m) => m[1]).sort();
   const passed = [...blockWith(doc, STAGE2).matchAll(/-v (\w+)="\$\{[A-Z]+\}"/g)].map((m) => m[1]).sort();
   assert.deepEqual(passed, required);
-  assert.equal(required.length, 14);
-  assert.deepEqual(required, CARRY_MAP.map(([, , name]) => name).sort());
+  assert.equal(required.length, 15);
+  assert.deepEqual(required, POST_CARRIES.map(([, , name]) => name).sort());
   // Every :'name' and :name the post-check uses is one it requires.
   const quoted = [...codeOf(post).matchAll(/(?<![:\w]):'([a-z_][a-z0-9_]*)'/g)].map((m) => m[1]);
   const bare = [...codeOf(post).replace(/(?<![:\w]):'[a-z_][a-z0-9_]*'/g, "V").replace(/'(?:[^']|'')*'/g, "''").matchAll(/(?<![:\w]):([a-z_][a-z0-9_]*)/g)].map((m) => m[1]);
-  // ep0104_no_fail is the file's own: it is set by \gset from the profile the file printed, and decides the closing RAISE.
-  assert.deepEqual([...new Set([...quoted, ...bare])].filter((n) => n !== "ep0104_no_fail").sort(), required);
-  assert.ok(bare.includes("ep0104_no_fail"));
+  // ep0104_no_fail and ep0104_profile_ok are the file's own: each is set by \gset from the profile the file printed, and decides a closing RAISE.
+  assert.deepEqual([...new Set([...quoted, ...bare])].filter((n) => n !== "ep0104_no_fail" && n !== "ep0104_profile_ok").sort(), required);
+  assert.ok(bare.includes("ep0104_no_fail") && bare.includes("ep0104_profile_ok"));
   assert.ok(quoted.length >= 14, `${bare.length} bare and ${quoted.length} quoted`);
   assert.deepEqual(carryProblems(["tables_before"], ["tables_count_before"]), ["the pre-check prints no row named tables_before"]);
   assert.deepEqual(carryProblems(["policies_md5"], ["policies_md5", "INFO policies_md5 again"]), ["carry policies_md5 is a substring of policies_md5, INFO policies_md5 again"]);
@@ -1478,8 +1594,10 @@ const COUNT_CARRIES = Object.freeze({ journal_rows_before: 101, policies_before:
 const carryValue = (row) => COUNT_CARRIES[row] ?? md5(row);
 
 /**
- * What the faked programs print. The pre-check: 15 OK with its CARRY rows and two INFO rows, and three
- * that must stop stage 1 (a VACUOUS behaviour read, a FAIL, a verdict missing). The post-check: 21 OK,
+ * What the faked programs print. The pre-check: 17 OK with its CARRY rows and two INFO rows, three
+ * that must stop stage 1 (a VACUOUS behaviour read, a FAIL, a verdict missing), and the misfiled
+ * registos: as the real file prints them (verdict 15 FAIL and the count), and three that no real file
+ * prints (the count under seventeen OK rows, a count that is no number, and no such row at all). The post-check: 21 OK,
  * 20 OK with one per-actor verdict VACUOUS, and three that must stop stage 2. Each transcript ends
  * with the SUMMARY row, as the real files print it. The real files also END WITH AN ERROR on a FAIL
  * verdict; the stub's exit code is set apart from the transcript, so the block's own count of FAIL
@@ -1493,7 +1611,7 @@ function harnessFixtures() {
   };
   const table = (rows) => [row("check", "observed", "verdict"), "-".repeat(92), ...rows, summary(rows), `(${rows.length + 1} rows)`, ""].join("\n");
   // `vacuousAfter` is the carry post_vacuous_expected: how many of the four actors the new read policy admits to nothing.
-  const preRows = (vacuousAfter = 0) => [
+  const preRows = (vacuousAfter = 0, misfiled = 0) => [
     row("0. this transaction is READ ONLY", "on", "OK"), row("1. 0104 is absent from the journal, by hash", "0; control 1", "OK"),
     row("2. 0103 is present by hash, once, the newest", "1 row, newest is 0103", "OK"), row("journal_rows_before", carryValue("journal_rows_before"), "OK"),
     row("4. the session is postgres", "postgres; control false", "OK"), row("5. this session reads clinical_episodes past", "true; control false", "OK"),
@@ -1502,8 +1620,9 @@ function harnessFixtures() {
     row("10. every function 0104's policies call", "6 of 6", "OK"), row("secdef_functions_before", "36, 0 not owned by postgres", "OK"),
     row("12. the server is Postgres 17", 170006, "OK"), row("13. the five roles the checks name exist", 5, "OK"),
     row("14. BEHAVIOUR: the table was read as one actor", "4 of 4 actors, missing none", "OK"),
+    row("15. no registo is filed in an episode of another", "0 misfiled; control 2 of 2", "OK"), row("16. DELETE reaches authenticated on the table", "granted by postgres", "OK"),
     ...CARRY_NAMES.filter((k) => k !== "journal_rows_before").map((k) => row(k, carryValue(k), "CARRY")),
-    row("post_vacuous_expected", vacuousAfter, "CARRY"), row("registos_in_another_patients_episode", 0, "CARRY"),
+    row("post_vacuous_expected", vacuousAfter, "CARRY"), ...(misfiled === null ? [] : [row("registos_in_another_patients_episode", misfiled, "CARRY")]),
     row("INFO the server version", "17.6", "INFO"), row("INFO behaviour, per role: episodes the actor", "owner 5 of 5, 0104 admits 5", "INFO"),
   ];
   const verdictOf = (rows, startsWith, to) => rows.map((r) => (r.trimStart().startsWith(startsWith) ? r.replace(/\| OK$/, `| ${to}`) : r));
@@ -1523,6 +1642,12 @@ function harnessFixtures() {
     "pre-vac.out": table(verdictOf(preRows(1), "14. BEHAVIOUR", "VACUOUS")),
     "pre-fail.out": table(verdictOf(pre, "2. 0103 is present", "FAIL")),
     "pre-short.out": table(pre.filter((r) => !r.trimStart().startsWith("13. the five roles"))),
+    // Three registos filed in an episode of another patient, as the real file prints it: verdict 15 FAIL, and the count.
+    "pre-misfiled.out": table(verdictOf(preRows(0, 3), "15. no registo is filed", "FAIL")),
+    // The same count under seventeen OK rows, a count that is no number, and no such row: no real pre-check prints these.
+    "pre-misfiled-ok.out": table(preRows(0, 3)),
+    "pre-misfiled-nan.out": table(preRows(0, "three")),
+    "pre-misfiled-gone.out": table(preRows(0, null)),
     // A transcript whose carry is no count of four actors, under fifteen OK rows: no real pre-check prints this.
     "pre-pv9.out": table(preRows(9)),
     "post.out": table(postRows([])),
@@ -2036,27 +2161,39 @@ test("THE CLINICS' ROWS: a clinic whose own hours reach outside the table, or no
   }
 });
 
-test("THE VERDICT PROFILE, stage 1 whole: a pre-check with a VACUOUS, a FAIL or a verdict missing STOPS before the clock arm and the apply; fifteen OK passes", async () => {
+test("THE VERDICT PROFILE AND THE MISFILED HALT, stage 1 whole: a pre-check with a VACUOUS, a FAIL, a verdict missing or a count of misfiled registos that is not 0 STOPS before the clock arm and the apply; seventeen OK and a count of 0 pass", async () => {
   const shells = ["bash", ...(hasShell("zsh") ? ["zsh"] : [])];
   const base = mkdtempSync(join(tmpdir(), "fault-0104-profile1-"));
   try {
     prepareHarness(base, doc);
     const fx = harnessFixtures();
     const profile = (text) => (/SUMMARY\. [^|]*\| ([^|]*?) *\|/.exec(text) ?? [])[1];
-    assert.deepEqual(["pre.out", "pre-pv1.out", "pre-vac.out", "pre-fail.out", "pre-short.out", "pre-pv9.out"].map((f) => profile(fx[f])), [
-      "15 OK / 0 VACUOUS / 0 FAIL", "15 OK / 0 VACUOUS / 0 FAIL", "14 OK / 1 VACUOUS / 0 FAIL", "14 OK / 0 VACUOUS / 1 FAIL", "14 OK / 0 VACUOUS / 0 FAIL", "15 OK / 0 VACUOUS / 0 FAIL",
+    assert.deepEqual(["pre.out", "pre-pv1.out", "pre-vac.out", "pre-fail.out", "pre-short.out", "pre-pv9.out", "pre-misfiled.out", "pre-misfiled-ok.out", "pre-misfiled-nan.out", "pre-misfiled-gone.out"].map((f) => profile(fx[f])), [
+      "17 OK / 0 VACUOUS / 0 FAIL", "17 OK / 0 VACUOUS / 0 FAIL", "16 OK / 1 VACUOUS / 0 FAIL", "16 OK / 0 VACUOUS / 1 FAIL", "16 OK / 0 VACUOUS / 0 FAIL", "17 OK / 0 VACUOUS / 0 FAIL",
+      "16 OK / 0 VACUOUS / 1 FAIL", "17 OK / 0 VACUOUS / 0 FAIL", "17 OK / 0 VACUOUS / 0 FAIL", "17 OK / 0 VACUOUS / 0 FAIL",
     ]);
+    const PRE_RUN_STOP = /^STOP: the pre-check did not complete, or it ended with its own STOP on a FAIL verdict, a VACUOUS verdict or a count of misfiled registos that is not 0 \(psql's lines are above\), or its transcript could not be written\. Nothing was applied$/m;
     for (const shell of shells) {
       const cases = [
         ["pre.out", 0, null],
         ["pre-pv1.out", 0, null],
         // No episode, or a role with no active member of staff: the profile the pre-check file itself names for it.
-        ["pre-vac.out", 0, /^STOP: the pre-check printed \[1\] VACUOUS verdicts, or its transcript could not be read\. A VACUOUS verdict means the table holds no episode or a staff role has no active member in the tenant read/m],
+        ["pre-vac.out", 0, /^STOP: the pre-check printed \[1\] VACUOUS verdicts, or its transcript could not be read\. A VACUOUS verdict means the table holds no episode, a staff role has no active member in the tenant read, or no registo names an episode, so that read proved nothing\. Nothing was applied$/m],
+        // THE FILE'S OWN RAISE on a VACUOUS, which is how the real file ends since it refuses every profile but its own.
+        ["pre-vac.out", 3, PRE_RUN_STOP],
         // THE BLOCK'S OWN COUNT: a FAIL row under a psql that exited 0 is still a STOP.
         ["pre-fail.out", 0, /^STOP: the pre-check printed \[1\] FAIL verdicts, or its transcript could not be read\. Nothing was applied/m],
         // THE FILE'S OWN RAISE: the real file ends with an error on a FAIL verdict, and the psql line's halt fires first.
-        ["pre-fail.out", 3, /^STOP: the pre-check did not complete, or it printed a FAIL verdict and ended with its own STOP \(psql's lines are above\), or its transcript could not be written\. Nothing was applied$/m],
-        ["pre-short.out", 0, /^STOP: the pre-check printed 14 OK verdicts, not 15\. Nothing was applied$/m],
+        ["pre-fail.out", 3, PRE_RUN_STOP],
+        ["pre-short.out", 0, /^STOP: the pre-check printed 16 OK verdicts, not 17\. Nothing was applied$/m],
+        // THE MISFILED REGISTOS, as the real file ends on them: verdict 15 FAIL, its own STOP, psql exit 3.
+        ["pre-misfiled.out", 3, PRE_RUN_STOP],
+        // The same transcript under a psql that exited 0: the block's own count of FAIL rows stops it.
+        ["pre-misfiled.out", 0, /^STOP: the pre-check printed \[1\] FAIL verdicts, or its transcript could not be read\. Nothing was applied/m],
+        // STAGE 1'S OWN HALT ON THE CARRIED COUNT: seventeen OK rows and exit 0, and the count alone stops it.
+        ["pre-misfiled-ok.out", 0, /^STOP: the pre-check counted 3 registos filed in an episode of another patient or tenant\. After 0104 such a registo would show its episode's title only to a session the new read policy admits to the other patient's episodes, so the sitting stops on any number but 0 \(the owner's ruling of 2026-10-13\)\. Nothing was applied\. Report the number 3 to SOLO$/m],
+        ["pre-misfiled-nan.out", 0, /^STOP: the count of registos filed in an episode of another patient did not read as a number out of the pre-check transcript \[three\]\. Nothing was applied$/m],
+        ["pre-misfiled-gone.out", 0, /^STOP: the count of registos filed in an episode of another patient did not read as a number out of the pre-check transcript \[\]\. Nothing was applied$/m],
       ];
       for (const [fixture, preExit, stop] of cases) {
         const cfg = harnessConfig(doc, "stage1", CLOSED, shell, base);
@@ -2067,7 +2204,7 @@ test("THE VERDICT PROFILE, stage 1 whole: a pre-check with a VACUOUS, a FAIL or 
         if (stop === null) {
           assert.equal(r.code, 0, `${tag}: ${r.out.slice(-600)}`);
           assert.ok(applied && ranApply, tag);
-          assert.match(r.out, /^the pre-check profile: 15 OK \/ 0 VACUOUS \/ 0 FAIL\. REPORT, AS PRINTED ABOVE, the CARRY rows post_vacuous_expected and registos_in_another_patients_episode and every INFO row: /m, tag);
+          assert.match(r.out, /^the pre-check profile: 17 OK \/ 0 VACUOUS \/ 0 FAIL\. REPORT, AS PRINTED ABOVE, the CARRY row post_vacuous_expected and every INFO row: /m, tag);
           continue;
         }
         assert.equal(r.code, 1, `${tag}: ${r.out.slice(-600)}`);
@@ -2079,17 +2216,23 @@ test("THE VERDICT PROFILE, stage 1 whole: a pre-check with a VACUOUS, a FAIL or 
         assert.ok(!r.markersAtEnd.includes("0104-precheck.out"), tag);
       }
       // THE CONTROL: with the VACUOUS line removed from the block, the VACUOUS database is stopped by the OK count
-      // instead (14, not 15), so the VACUOUS line is not the only thing between that database and the apply; and with BOTH
+      // instead (16, not 17), so the VACUOUS line is not the only thing between that database and the apply; and with BOTH
       // lines loosened it runs on to the apply, so the two lines are what stops it.
       const cfg = harnessConfig(doc, "stage1", CLOSED, shell, base);
       const vacLine = cfg.block.split("\n").find((l) => l.startsWith('[ "${VACS}" = 0 ] || '));
       const noVac = cfg.block.replace(`${vacLine}\n`, "");
       const byOk = await runOnce({ ...cfg, block: noVac, db: { pre: "pre-vac.out" } }, `${shell}-profile1-novac`, null);
       assert.equal(byOk.code, 1, byOk.out.slice(-400));
-      assert.match(byOk.out, /^STOP: the pre-check printed 14 OK verdicts, not 15\. Nothing was applied$/m);
-      const neither = await runOnce({ ...cfg, block: swap(noVac, '[ "${OKS}" = 15 ] || ', '[ "${OKS}" -ge 14 ] || '), db: { pre: "pre-vac.out" } }, `${shell}-profile1-neither`, null);
+      assert.match(byOk.out, /^STOP: the pre-check printed 16 OK verdicts, not 17\. Nothing was applied$/m);
+      const neither = await runOnce({ ...cfg, block: swap(noVac, '[ "${OKS}" = 17 ] || ', '[ "${OKS}" -ge 16 ] || '), db: { pre: "pre-vac.out" } }, `${shell}-profile1-neither`, null);
       assert.equal(neither.code, 0, neither.out.slice(-400));
       assert.ok(neither.out.includes(STAGE1));
+      // THE CONTROL OF THE MISFILED HALT: with stage 1's own line on the count removed, the transcript that carries
+      // 3 under seventeen OK rows runs on to the apply, so that line is what stops it there.
+      const zeroLine = cfg.block.split("\n").find((l) => l.startsWith(MISFILED_ZERO));
+      const noHalt = await runOnce({ ...cfg, block: cfg.block.replace(`${zeroLine}\n`, ""), db: { pre: "pre-misfiled-ok.out" } }, `${shell}-profile1-nomisf`, null);
+      assert.equal(noHalt.code, 0, noHalt.out.slice(-400));
+      assert.ok(noHalt.out.includes(STAGE1));
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
@@ -2104,8 +2247,8 @@ test("THE VERDICT PROFILE, stage 2 whole: 21 OK passes only where the pre-check 
     for (const shell of shells) {
       // [the pre-check transcript stage 1 left, what the post-check prints, the last line or the STOP]
       const cases = [
-        ["pre.out", "post.out", "pass", /^0104 POST-CHECK PASSED\. 15\/15 pre-check OK, post-check 21 OK \/ 0 VACUOUS \/ 0 FAIL, the profile for post_vacuous_expected=0, journal 101 to 102; /m],
-        ["pre-pv1.out", "post-1vac.out", "pass", /^0104 POST-CHECK PASSED\. 15\/15 pre-check OK, post-check 20 OK \/ 1 VACUOUS \/ 0 FAIL, the profile for post_vacuous_expected=1, journal 101 to 102; /m],
+        ["pre.out", "post.out", "pass", /^0104 POST-CHECK PASSED\. 17\/17 pre-check OK, post-check 21 OK \/ 0 VACUOUS \/ 0 FAIL, the profile for post_vacuous_expected=0, journal 101 to 102; /m],
+        ["pre-pv1.out", "post-1vac.out", "pass", /^0104 POST-CHECK PASSED\. 17\/17 pre-check OK, post-check 20 OK \/ 1 VACUOUS \/ 0 FAIL, the profile for post_vacuous_expected=1, journal 101 to 102; /m],
         // Every actor was to read at least one episode, and one verdict reads VACUOUS after: a VACUOUS is never waved through.
         ["pre.out", "post-1vac.out", "stop", /^STOP: the post-check printed \[1\] VACUOUS verdicts, not 0, the number post_vacuous_expected=0 allows\. A VACUOUS verdict is not a pass\. 0104 IS APPLIED and the write stands\. /m],
         // One actor was to read nothing, and nothing reads VACUOUS after: that actor's verdict printed OK, so it read something.
@@ -2272,11 +2415,12 @@ test("A READ THAT CONTRADICTS THE MARKER: stage 2 and the closing read, run whol
       assert.equal(positive.code, 0, positive.out.slice(-400));
       const postCall = positive.calls.find((c) => c.id.startsWith("psql#") && c.args.includes("postcheck-0104-episode-policies.sql"));
       assert.ok(postCall, "stage 2 did not run the post-check through psql");
-      // What the harness saw the post-check handed: the fourteen carries, each under its own name, read out of the transcript.
+      // What the harness saw the post-check handed: the fifteen carries, each under its own name, read out of the transcript.
       for (const [, row, name] of CARRY_MAP) {
         const value = String(carryValue(row));
         assert.ok(postCall.args.includes(`\n${name}=${value}\n`), `the post-check was not handed ${name}=${value}`);
       }
+      assert.ok(postCall.args.includes("\npost_vacuous_expected=0\n"), "the post-check was not handed post_vacuous_expected=0");
       assert.ok(positive.calls.some((c) => c.id.startsWith("psql#") && c.pos > postCall.pos), "the positive run reads the journal after the post-check");
       const failed = await runOnce(s2cfg, `${shell}-contra-psql-fails`, { call: postCall.id });
       assert.equal(failed.fired, postCall.id);
