@@ -12,6 +12,8 @@
  *
  * The ids below are made up. No real patient id is in this repository.
  */
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -44,11 +46,13 @@ type Recorded = {
   sets: string[][];
   /** How many raw statements were executed. */
   executes: number;
+  /** Each raw statement as the database would receive it: text and parameters. */
+  statements: { sql: string; params: unknown[] }[];
 };
 
 /** A transaction that records what it is asked and answers every read with `row`. */
 function recordingTx(row: Record<string, unknown> | null) {
-  const seen: Recorded = { selects: [], sets: [], executes: 0 };
+  const seen: Recorded = { selects: [], sets: [], executes: 0, statements: [] };
   const read = (fields: Record<string, unknown>) => {
     seen.selects.push(Object.keys(fields));
     const b: Record<string, unknown> = {};
@@ -66,8 +70,10 @@ function recordingTx(row: Record<string, unknown> | null) {
         return { where: async () => undefined };
       },
     }),
-    execute: async () => {
+    execute: async (statement: SQL) => {
       seen.executes += 1;
+      const { sql, params } = new PgDialect().sqlToQuery(statement);
+      seen.statements.push({ sql: sql.replace(/\s+/g, " ").trim(), params });
       return [];
     },
   };
@@ -179,6 +185,25 @@ describe("updateOwnProfile: the survey switch is written only when offered, and 
       // The typed update, the one that can name the reminder switches, did not run.
       expect(seen.sets).toEqual([]);
       expect(profile).toMatchObject({ surveyEnabled: value });
+    }
+  });
+
+  it("the survey statement, whole: one column set, the session's own patient and tenant in its condition", async () => {
+    // The row policy already confines the patient role to its own row (proven
+    // in profile-survey.db.test.ts). The statement says so itself as well, and
+    // this pins every word of it: nothing else is set, nothing else is aimed at.
+    setSwitch("on");
+    for (const value of [false, true]) {
+      const seen = recordingTx({ ...ROW, id: LISTED, surveyEnabled: value });
+      await updateOwnProfile(principal(LISTED), { surveyEnabled: value });
+      expect(seen.statements).toEqual([
+        {
+          sql:
+            'update "patients" set "survey_enabled" = $1 ' +
+            'where "patients"."id" = $2::uuid and "patients"."tenant_id" = $3::uuid',
+          params: [value, LISTED, TENANT],
+        },
+      ]);
     }
   });
 
