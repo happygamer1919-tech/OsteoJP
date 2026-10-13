@@ -678,3 +678,21 @@ export const CONFIRM_PATIENT = {
   name: "Confirmacao Sms Teste",
   nif: "999000555",
 } as const;
+
+/**
+ * The satisfaction survey page's OWN patient (SAT-01), for the reason the
+ * confirm page has one: survey-page.spec.ts WRITES concluded appointments,
+ * survey sends and an answer, and a spec that writes must not share a fixture
+ * with a spec that reads.
+ *
+ * An invented person with an invented address: a survey send needs a permitted
+ * channel, and the email is what the manual door checks. Nothing is ever sent
+ * to it; the spec issues the send through the database door and no message
+ * leaves. Created by the spec, idempotently and by fixed id; the appointments
+ * and the codes are run-scoped.
+ */
+export const SURVEY_PATIENT = {
+  id: "00000000-0000-0000-0000-00000000a3d0",
+  name: "Avaliacao Satisfacao Teste",
+  email: "avaliacao.ficticia@example.test",
+} as const;
