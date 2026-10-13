@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**537 cards on the board. 366 shipped, 171 open. Launch readiness 9/9, every launch gate passes.**
+**543 cards on the board. 370 shipped, 173 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,39 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-13
+>
+> **The reminders that were lost on 2026-10-07 are given back.** One sitting ran
+> on 2026-10-12, from 21:48 to 23:24 Lisbon, and closed clean: 532 appointments
+> starting within 28 days each got one reminder again. Nothing failed and nothing
+> is left to send. There is no second sitting. Appointments further ahead than
+> 28 days (194 that night) are covered by the daily reminder sweep, which must be
+> live and have run **before Friday 2026-11-06**. It is not built beyond local
+> work, it needs a database table of its own first, and it ships switched off.
+> Not given back, by design: 76 visits in the 48 hours after the sitting, which
+> reception sees in Agenda and in Comunicações, Lembretes SMS.
+>
+> **Migration 0103 is still held.** Its sitting is ruled for Tuesday 2026-10-13
+> from 21:00 Lisbon. When this was written it had not run.
+>
+> **Two things for you to look at on the live site** (each card stays open until
+> you have): reception can change a visit's therapist from the patient's
+> Marcações tab, and a full time slot on the desktop agenda grows its row
+> where it used to scroll inside.
+>
+> **Montemor-o-Novo exists as a location** and issues the Declaração with a blank
+> area for a physical stamp. Its reminder SMS now fits in one message. The
+> follow-up and no-show emails now name the clinic; both emails are switched off,
+> so nobody receives them.
+>
+> **Your answers of 2026-10-12 are on the cards:** the BOOK-CONFIRM canary retest
+> works; DUR-01 is closed and reception corrects by hand; the red on a therapist's
+> non-working hours stays as it is; the satisfaction survey shows nothing at all
+> while switched off; and what a patient will see of their registos in the portal
+> (locked or signed ones, date and status only, imported ones date only, the
+> newest valid version, an annulled one not shown, no PDF download).
+> **The therapist account with no clinic is inactive: nothing to do, and no card.**
 
 > ### Two decisions taken, 2026-08-20
 >

@@ -280,6 +280,7 @@ Remarcar: +351 272 000 000
 - **Identificador:** `follow_up.email`
 - **Quando:** 24 horas depois de a consulta terminar, se marcada como realizada.
 - **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. Enviava a um doente que ja tinha marcacao no dia seguinte. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
+- **Nota:** a linha `Local:` (o nome do local da consulta) foi acrescentada a 2026-10-12 (MN-03, decisao do proprietario). Nao fazia parte do texto aprovado a 2026-08-03. O SMS nao muda.
 
 **Texto tal como esta programado:**
 
@@ -288,6 +289,7 @@ Olá {{patient_first_name}},
 
 Obrigado pela visita de {{appointment_date}}. Ficamos ao dispor para qualquer questão.
 
+Local: {{clinic_location}}
 Para marcar a próxima consulta contacte: {{clinic_phone}}
 
 — OsteoJP
@@ -302,6 +304,7 @@ Olá Madalena,
 
 Obrigado pela visita de 10 de setembro de 2026. Ficamos ao dispor para qualquer questão.
 
+Local: Castelo Branco
 Para marcar a próxima consulta contacte: +351 272 000 000
 
 — OsteoJP
@@ -343,6 +346,7 @@ Marcar proxima consulta: +351 272 000 000
 - **Identificador:** `no_show.email`
 - **Quando:** Quando a rececao marca a consulta como falta.
 - **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. JP nunca viu este texto e a mensagem e adjacente a taxa. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
+- **Nota:** a linha `Local:` (o nome do local da consulta) foi acrescentada a 2026-10-12 (MN-03, decisao do proprietario). Nao fazia parte do texto aprovado a 2026-08-03. O SMS nao muda.
 
 **Texto tal como esta programado:**
 
@@ -351,6 +355,7 @@ Olá {{patient_first_name}},
 
 A sua consulta de {{appointment_date}} às {{appointment_time}} ficou por realizar.
 
+Local: {{clinic_location}}
 Para remarcar: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
 
@@ -366,6 +371,7 @@ Olá Madalena,
 
 A sua consulta de 10 de setembro de 2026 às 14:30 ficou por realizar.
 
+Local: Castelo Branco
 Para remarcar: https://app.osteojp.pt/r/eyJ0IjoiM2EyZDA3MTEtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIiwiYSI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImV4cCI6MTc4OTAwMDAwMH0.N-5B6LOtRZUQt2eazNOmzTfvU7DQEE_lLu8FN_6GMiw
 Ou contacte: +351 272 000 000
 
@@ -694,6 +700,68 @@ horas (seccao 6 acima). As quatro linhas originais estao inalteradas.
 > aprovar a taxa, sera preciso ou uma redaccao muito mais curta, ou aceitar
 > que essa mensagem passe a custar dois segmentos. Nada foi cortado para
 > abrir espaco: a margem foi gasta por esta aprovacao, nao por um corte.
+
+## NOVO: a avaliacao de satisfacao
+
+Uma mensagem nova, que **nao esta a ser enviada**. 24 horas depois de uma
+consulta concluida, ou quando a equipa a envia, o doente recebe um pedido de
+avaliacao: por email, ou por SMS quando nao ha email autorizado. Nunca os dois.
+
+Os textos sao os textos 1, 2 e 3 de `docs/design/SAT-01-copy-pt.md`, que regista
+a aprovacao do JP a 2 de outubro de 2026. Esta nas duas seccoes seguintes tal
+como esta programada.
+
+**O travao e o interruptor proprio da avaliacao.** Estas duas mensagens estao
+aprovadas e usam `REMINDERS_LIVE_SEND`, como todas as outras. O que as impede de
+sair e o interruptor proprio da avaliacao, `SURVEY_SEND_MODE`: `off` (o valor
+por omissao, e o que se le de qualquer valor nao reconhecido), `canary` (so os
+doentes de uma lista guardada na configuracao, nunca no repositorio) ou `on`.
+Ligar e uma decisao do proprietario. E hoje nenhum codigo envia estas duas
+mensagens: so os textos e o interruptor existem.
+
+### 17. Avaliacao de satisfacao: Email
+
+- **Identificador:** `survey.email`
+- **Quando:** 24 horas depois do fim de uma consulta concluida, ou quando a equipa envia a avaliacao, e so com `SURVEY_SEND_MODE` em `canary` (para os doentes da lista) ou `on`. Ainda sem envio programado.
+- **Estado:** aprovado (`approved: true`), JP, **2026-10-02**. **O envio continua bloqueado** por `SURVEY_SEND_MODE`, que esta desligado, alem de `REMINDERS_LIVE_SEND`.
+
+**Assunto:**
+
+```
+Avaliação da sua consulta de {{appointment_date}}
+```
+
+**Texto tal como esta programado:**
+
+```
+Olá {{patient_first_name}},
+
+Pedimos a sua avaliação da consulta de {{appointment_date}}. A avaliação tem três perguntas e a resposta é facultativa.
+
+Responder: {{survey_link}}
+
+A ligação é pessoal, só pode ser usada uma vez e é válida até {{survey_expiry_date}}.
+
+Se não pretender receber estas avaliações, indique-o na mesma ligação ou contacte a clínica: {{clinic_phone}}
+
+OsteoJP
+```
+
+### 18. Avaliacao de satisfacao: SMS
+
+- **Identificador:** `survey.sms`
+- **Quando:** no mesmo momento que a seccao 17, e **so** quando o doente nao tem email autorizado. Ainda sem envio programado.
+- **Estado:** aprovado (`approved: true`), JP, **2026-10-02**. **O envio continua bloqueado** por `SURVEY_SEND_MODE`, que esta desligado, alem de `REMINDERS_LIVE_SEND`.
+- **Codificacao:** GSM-7 (sem acentos), 1 segmento. Medido: 101 caracteres de texto fixo, mais a data (5), `/s/` e o codigo (11) e o endereco. Cabe num segmento com um endereco de ate 43 caracteres; com 44 tem 161 e **nao e enviado**.
+- **Nota:** `{ligacao}` e o endereco da aplicacao seguido de `/s/` e de um codigo de 8 caracteres.
+
+**Texto tal como esta programado:**
+
+```
+OsteoJP: avaliacao da consulta de {data}
+Responder: {ligacao}
+Para nao receber mais avaliacoes, use a mesma ligacao.
+```
 
 ---
 ## A redaccao de 24h fornecida pela clinica

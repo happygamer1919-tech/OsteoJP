@@ -312,6 +312,26 @@ export const RULES = {
   tokenRedeem: { limit: 10, windowMs: 60_000 },
 
   /**
+   * The satisfaction survey's answer POST, `apps/web`'s `/s/[code]` (SAT-01).
+   *
+   * THE SHAPE OF `tokenRedeem`, AND ITS NUMBER, for the same reason: each one
+   * that gets through reaches the database from an unauthenticated page, and a
+   * patient answering a survey submits once, or a few times while correcting a
+   * missed question. Nothing legitimate approaches ten a minute.
+   *
+   * ITS OWN RULE AND ITS OWN SCOPE, so an answer never spends the budget of a
+   * confirm link opened from the same address, and the reverse.
+   *
+   * KEYED ON IP, NOT ON THE CODE: the code is a credential and is never a
+   * bucket key, and a prober rotating codes must not get a fresh budget each
+   * time.
+   *
+   * IT LIMITS THE POST ONLY, as `tokenRedeem` does. Opening the link is a read
+   * that writes nothing and is not limited here.
+   */
+  surveySubmit: { limit: 10, windowMs: 60_000 },
+
+  /**
    * STAFF LOGIN - the email-and-password sign-in for the whole staff platform.
    * SEC-web-surface-limiter-adoption, route 1 of the adoption.
    *
