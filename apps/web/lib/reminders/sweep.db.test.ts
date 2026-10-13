@@ -134,6 +134,11 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     updatedIn?: number;
     status?: string;
     booked?: boolean;
+    /**
+     * Microseconds added to the STORED start, which a `Date` cannot carry. The
+     * start handed back is the one a sender's clock would read: without them.
+     */
+    micros?: number;
   }): Promise<{ id: string; start: Date }> {
     const tenantId = v.tenant ?? tenantA;
     const mine = seeds[tenantId]!;
@@ -144,7 +149,8 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     await sql.execute(raw`insert into appointments
       (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_at, updated_at)
       values (${id}, ${tenantId}, ${mine.patient}, ${mine.therapist}, ${mine.location},
-              ${start.toISOString()}, ${plus(start, 45).toISOString()}, ${v.status ?? "scheduled"},
+              ${start.toISOString()}::timestamptz + make_interval(secs => ${(v.micros ?? 0) / 1_000_000}::double precision),
+              ${plus(start, 45).toISOString()}, ${v.status ?? "scheduled"},
               ${created.toISOString()}, ${updated.toISOString()})`);
     if (v.booked !== false) await booking(tenantId, id);
     return { id, start };
@@ -662,6 +668,16 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     const shadowed = await fresh();
     await seedShadow(shadowed.id, shadowed.start);
     expect(await selects(now, shadowed.id)).toBe(false);
+    // ...also for a visit whose STORED start carries microseconds. A pass reads
+    // the start as its clock does, to the millisecond, and writes that; the
+    // next pass must know its own row, or it would take the mark every time.
+    const fine = await visit({ now, startIn: 20 * 60 + n++, createdIn: -10 * 60, micros: 123 });
+    const [stored] = await rows(raw`select (starts_at <> date_trunc('milliseconds', starts_at)) as has_micros
+      from appointments where id = ${fine.id}`);
+    expect(stored).toEqual({ has_micros: true });
+    expect(await selects(now, fine.id)).toBe(true);
+    await seedShadow(fine.id, fine.start);
+    expect(await selects(now, fine.id)).toBe(false);
     // ...and nothing that only looks like it does.
     const notShadows: [string, (v: { id: string; start: Date }) => Promise<unknown>][] = [
       ["a shadow row for another start", (v) => seedShadow(v.id, elsewhen(v.start))],

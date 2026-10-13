@@ -751,6 +751,11 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
      * The default writes the row a booking at the clinic writes.
      */
     booked?: boolean;
+    /**
+     * Microseconds added to the STORED start, which a `Date` cannot carry. The
+     * start handed back is the one a sender's clock would read: without them.
+     */
+    micros?: number;
   }): Promise<{ id: string; start: Date }> {
     const tenantId = v.tenant ?? tenantA;
     const mine = people[tenantId]!;
@@ -759,7 +764,8 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     await sql.execute(raw`insert into appointments
       (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, created_at)
       values (${id}, ${tenantId}, ${mine.patient}, ${mine.therapist}, ${v.location ?? mine.l1},
-              ${v.start.toISOString()}, ${new Date(v.start.getTime() + 45 * MIN).toISOString()},
+              ${v.start.toISOString()}::timestamptz + make_interval(secs => ${(v.micros ?? 0) / 1_000_000}::double precision),
+              ${new Date(v.start.getTime() + 45 * MIN).toISOString()},
               ${v.status ?? "scheduled"}, ${created.toISOString()})`);
     if (v.booked !== false) await trail({ tenant: tenantId, action: "appointment.create", entityId: id, created });
     return { id, start: v.start };
@@ -778,9 +784,11 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
      * row of the same table and it is NOT a claim.
      */
     kind?: "claim" | "shadow";
+    /** The channel, when it is NOT the one this offset goes out on. */
+    channel?: "sms" | "email";
   }): Promise<void> {
     const due = new Date(c.start.getTime() - (c.offset === "24h" ? 24 : 48) * HOUR);
-    const channel = c.offset === "24h" ? "sms" : "email";
+    const channel = c.channel ?? (c.offset === "24h" ? "sms" : "email");
     if (c.kind === "shadow") {
       await sql.execute(raw`insert into reminder_claims
         (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, minutes_after_mark, saved_after_mark, created_at)
@@ -809,6 +817,8 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
 
   /** A claim taken ten minutes ago: it answers number one and is too new for number two. */
   const FRESH = at(-10 * MIN);
+  /** When tenant C's first claim was written, as text for a seed check. */
+  const TWO_HOURS_AGO_ISO = at(-2 * HOUR).toISOString();
 
   beforeAll(async () => {
     const { getDbAdmin } = await import("@osteojp/db");
@@ -857,8 +867,11 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
 
     /* ---------------- NUMBER ONE: a mark with no claim ---------------- */
 
-    // v1. Both marks passed, nothing claimed.                      sms +1, email +1
+    // v1. Both marks passed, neither reminder claimed. Its one claim is for
+    //     the OTHER offset on the SMS channel, which is no reminder of today:
+    //     a claim is its offset AND its channel.                    sms +1, email +1
     const v1 = await visit({ start: at(23 * HOUR) });
+    await claim({ appointment: v1.id, offset: "48h", channel: "sms", start: v1.start, created: FRESH });
     // v2. Both reminders claimed for the start it has.              neither
     const v2 = await visit({ start: at(22 * HOUR) });
     await claim({ appointment: v2.id, offset: "24h", start: v2.start, created: FRESH });
@@ -967,6 +980,12 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     const v24 = await visit({ start: at(9.5 * HOUR), booked: false });
     await trail({ action: "appointment.update", entityId: v24.id, metadata: { changed: ["status"], fromStatus: "cancelled", toStatus: "scheduled" } });
     await claim({ appointment: v24.id, offset: "24h", start: v24.start, created: FRESH });
+    // v25. Its stored start carries MICROSECONDS, which no sender's clock
+    //      does. Both reminders are claimed for the start a sender read, to
+    //      the millisecond, and those claims are this visit's.      neither
+    const v25 = await visit({ start: at(9 * HOUR), micros: 123 });
+    await claim({ appointment: v25.id, offset: "24h", start: v25.start, created: FRESH });
+    await claim({ appointment: v25.id, offset: "48h", start: v25.start, created: FRESH });
 
     /* -------------- NUMBER TWO: a claim with no outcome --------------- */
     // Visits already completed, days ago: they take no part in number one.
@@ -1069,6 +1088,9 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     // before this instant has no claim and never will.               C two: sms +1
     const wC = await done(undefined, tenantC);
     await claim({ tenant: tenantC, appointment: wC.id, offset: "24h", start: wC.start, created: TWO_HOURS_AGO });
+    // An hour BEFORE it, the sweep's shadow row. It is not a claim, so it is
+    // not where the claims start: the floor stays two hours ago.
+    await claim({ tenant: tenantC, appointment: wC.id, offset: "24h", start: wC.start, created: at(-3 * HOUR), kind: "shadow" });
     // c1. Its SMS mark fell due an hour ago, after claims began: a real miss.
     //     Its email mark fell due 25 hours ago, before any claim was written:
     //     that email went out, or did not, before there was a way to tell.
@@ -1086,6 +1108,9 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     // D's only claim is one second outside the seven days.
     const wD = await done(undefined, tenantD);
     await claim({ tenant: tenantD, appointment: wD.id, offset: "24h", start: wD.start, created: at(-7 * DAY - 1000) });
+    // And a shadow row of the sweep, an hour old. A pass that only watches is
+    // not a sender taking reminders: D still has no claim in seven days.
+    await claim({ tenant: tenantD, appointment: wD.id, offset: "24h", start: wD.start, created: at(-1 * HOUR), kind: "shadow" });
   });
 
   afterAll(async () => {
@@ -1113,19 +1138,23 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
         count(*) filter (where kind = 'shadow')::int as shadows,
         count(*)::int as all_rows
       from reminder_claims where tenant_id = ${tenantA}`);
-    expect(seeded).toEqual({ claims: 38, shadows: 2, all_rows: 40 });
+    expect(seeded).toEqual({ claims: 41, shadows: 2, all_rows: 43 });
+    // One visit is stored with microseconds on its start, and its claims without.
+    const [fine] = await rows(raw`select count(*)::int as n from appointments
+      where tenant_id = ${tenantA} and starts_at <> date_trunc('milliseconds', starts_at)`);
+    expect(fine).toEqual({ n: 1 });
     // NOT ONE OF THEM IS IN THE AUDIT TRAIL: a claim is no longer an audit row.
     const [inAudit] = await rows(raw`select count(*)::int as n from audit_log
       where tenant_id = ${tenantA} and (action like '%reminder_claim%' or action like '%reminder_sweep%')`);
     expect(inAudit).toEqual({ n: 0 });
     const [visits] = await rows(raw`select count(*)::int as n from appointments where tenant_id = ${tenantA}`);
-    expect(visits).toEqual({ n: 47 });
+    expect(visits).toEqual({ n: 48 });
     // The booking rows: every visit of tenant A carries one except v16 to
-    // v24, which are seeded without (38 of 47). Without these rows every
+    // v24, which are seeded without (39 of 48). Without these rows every
     // first count below would be zero.
     const [booked] = await rows(raw`select count(distinct entity_id)::int as visits from audit_log
       where tenant_id = ${tenantA} and entity_type = 'appointment' and action = 'appointment.create'`);
-    expect(booked).toEqual({ visits: 38 });
+    expect(booked).toEqual({ visits: 39 });
     // And a seeded metadata key reads as a key, for the rows that have one.
     const [keyed] = await rows(raw`select count(*)::int as n from audit_log
       where tenant_id = ${tenantA} and action = 'appointment.update' and metadata->>'toStatus' is not null`);
@@ -1203,6 +1232,11 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     const [claims] = await rows(raw`select count(*)::int as n from reminder_claims
       where tenant_id = ${tenantC} and kind = 'claim'`);
     expect(claims).toEqual({ n: 1 });
+    // And one row older than that claim, which is not a claim: with it as the
+    // floor, c3 would be counted too.
+    const [older] = await rows(raw`select count(*)::int as n from reminder_claims
+      where tenant_id = ${tenantC} and kind = 'shadow' and created_at < ${TWO_HOURS_AGO_ISO}`);
+    expect(older).toEqual({ n: 1 });
 
     expect(await readReminderNumbers(viewer, { now: NOW })).toEqual({
       // c1 and c2. Not c3: its mark is one second before the first claim.
@@ -1223,6 +1257,10 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
         (select count(*)::int from appointments where tenant_id = ${tenantD} and status = 'scheduled') as visits,
         (select count(*)::int from reminder_claims where tenant_id = ${tenantD} and kind = 'claim') as claims`);
     expect(seeded).toEqual({ visits: 1, claims: 1 });
+    // And a row inside the seven days that is not a claim: the sweep's shadow row.
+    const [watched] = await rows(raw`select count(*)::int as n from reminder_claims
+      where tenant_id = ${tenantD} and kind = 'shadow' and created_at >= ${at(-7 * DAY).toISOString()}`);
+    expect(watched).toEqual({ n: 1 });
 
     // Null, never 0: nobody counted, and a zero would say nothing was missed.
     expect(await readReminderNumbers(viewer, { now: NOW })).toEqual({
