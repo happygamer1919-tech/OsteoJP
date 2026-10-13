@@ -77,6 +77,9 @@ import { GuestIntakeAnswers } from "../../../components/guest-intake-answers";
 import { listCareTeam, listCareTeamForTherapist } from "../../../lib/admin/care-team";
 import { labelCareTeamCard, staffLabelContext } from "../../../lib/scheduling/staff-options";
 import { CareTeamCard } from "./care-team-card";
+// SAT-01 (S8): the patient's survey switch, for the roles that set it.
+import { readPatientSurveySwitch } from "../../../lib/patients/survey-switch";
+import { SurveySwitchCard } from "./survey-switch-card";
 
 export const dynamic = "force-dynamic";
 
@@ -411,6 +414,12 @@ export default async function PatientProfilePage({
   // one whose only readable row is their own, and never before 0098 is applied,
   // when the card would otherwise say "Nenhum terapeuta atribuido" about a
   // patient who has one.
+  // SAT-01 (S8): the patient's survey switch. `readPatientSurveySwitch` answers
+  // null while the survey is switched off (staff see nothing of it, owner
+  // 2026-10-12), for a role that does not set it, and for a deleted patient;
+  // null draws nothing. The write asks the same rule again on the server.
+  const surveySwitch =
+    tab === "resumo" && canActOnPatient ? await readPatientSurveySwitch(ctx, patient.id) : null;
   const canManageCareTeam = can(ctx.role, "care_team:manage");
   const therapistCareTeam =
     tab === "resumo" && !canManageCareTeam && ctx.role === "therapist"
@@ -694,6 +703,19 @@ export default async function PatientProfilePage({
                   candidates={careTeamCandidates}
                   error={canManageCareTeam && typeof m === "string" && m.startsWith("err")}
                   readOnly={!canManageCareTeam}
+                />
+              </section>
+            )}
+            {/* SAT-01 (S8, copy texts 58 to 60): whether this patient receives
+                the satisfaction survey. Beside the contacts, which is where
+                the copy puts it. Not drawn at all while the survey is off. */}
+            {surveySwitch !== null && (
+              <section className="mt-6" data-testid="ficha-survey-section">
+                <SurveySwitchCard
+                  patientId={id}
+                  locale={DEFAULT_LOCALE}
+                  enabled={surveySwitch}
+                  error={m === "avaliacaoErro"}
                 />
               </section>
             )}

@@ -164,12 +164,12 @@ d("SAT-01: the survey page against a real database", () => {
    * Everything a render or a refused submit could have touched, as one row of
    * digests. Whole rows, so a changed timestamp counts as a change.
    *
-   * `all_sends` and `all_answers` count every tenant BUT the fixture tenants
-   * of the two other DB-gated files of this workspace that write these tables
-   * while this one runs beside them on the same database:
-   * lib/patients/hard-delete-survey.db.test.ts (slug `sat01del-`) and
-   * lib/reminders/survey-dispatch.db.test.ts (slug `sat01send-`). Counted
-   * whole, the two moved under those files' own inserts and deletes.
+   * EVERY LINE IS THIS SUITE'S OWN TENANT, and the limiter's line is this
+   * suite's own addresses (each carries the run's tag). The other DB-gated
+   * files of this workspace write survey sends, answers and limiter rows on
+   * the same database while this one runs beside them, so a count over a
+   * whole table moves under their inserts and deletes and says nothing about
+   * this page.
    */
   const snapshot = () =>
     one<Record<string, string | number>>(raw`
@@ -187,13 +187,8 @@ d("SAT-01: the survey page against a real database", () => {
         (select coalesce(md5(string_agg(p::text, '|' order by p.id)), 'none')
            from patients p where p.tenant_id = ${tenant}::uuid) as patients,
         (select count(*)::int from audit_log where tenant_id = ${tenant}::uuid) as audit_rows,
-        (select count(*)::int from appointment_survey_sends s
-          where s.tenant_id not in
-                (select t.id from tenants t where t.slug like 'sat01del-%' or t.slug like 'sat01send-%')) as all_sends,
-        (select count(*)::int from appointment_survey_responses r
-          where r.tenant_id not in
-                (select t.id from tenants t where t.slug like 'sat01del-%' or t.slug like 'sat01send-%')) as all_answers,
-        (select coalesce(sum(count), 0)::int from rate_limit_counters where key like 's-code:%') as limiter_hits
+        (select coalesce(sum(count), 0)::int from rate_limit_counters
+          where key like ${`s-code:ip:%-${run}`}) as limiter_hits
     `);
 
   async function render(code: string, query: { r?: string; l?: string } = {}): Promise<string> {
