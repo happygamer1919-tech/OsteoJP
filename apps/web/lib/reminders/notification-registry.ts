@@ -48,6 +48,8 @@ import {
   FOLLOW_UP_SMS,
   NO_SHOW_EMAIL,
   NO_SHOW_SMS,
+  SURVEY_EMAIL,
+  SURVEY_SMS,
 } from "./templates";
 import { FEE_NOTICE_SMS, FEE_NOTICE_TEMPLATE_ID } from "./fee-notice";
 import {
@@ -157,6 +159,15 @@ const STRATEGY_APPROVAL_S1004A = {
   approvedAt: "2026-10-04",
 } as const;
 
+/**
+ * SAT-01, 2026-10-02. The satisfaction survey's email and SMS are texts 1 to 3
+ * of docs/design/SAT-01-copy-pt.md. That file records JP's approval of
+ * 2026-10-02 and, under strategy's S9a of the same day, that every
+ * patient-facing text of the survey is approved. Its own constant, for the
+ * reason every constant above exists.
+ */
+const JP_APPROVAL_SAT01 = { approvedBy: "JP", approvedAt: "2026-10-02" } as const;
+
 /** The ten patient-facing reminder bodies. Nine approved by JP 2026-08-03; the
  *  48h email re-approved 2026-08-05 for the WF-02 amendment above. */
 export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
@@ -254,6 +265,38 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
      */
     ...patientTemplate("booking_approved.sms", "sms", EV_SCHEDULED, BOOKING_APPROVED_SMS.pt),
     ...STRATEGY_APPROVAL_S1004A,
+  },
+  {
+    /**
+     * SEVENTEENTH BODY: the satisfaction survey email. SAT-01.
+     *
+     * NOTHING SENDS IT YET. This entry and the one below register the two
+     * texts; no dispatch calls either id. The sender that comes later asks
+     * SURVEY_SEND_MODE first (lib/reminders/survey-mode.ts), and that switch is
+     * off unless the owner sets it.
+     *
+     * READ THIS BEFORE WRITING THAT SENDER: these two are `approved: true` and
+     * ride REMINDERS_LIVE_SEND through `patientTemplate`, like every patient
+     * body, so the two locks of this registry are both already open for them
+     * wherever reminders are live. The survey's own switch is the ONLY thing
+     * that holds a survey back, and this registry does not read it.
+     *
+     * The trigger is the concluded visit, 24 hours later. Staff can also send
+     * it by hand, which is no event; the field is documentation.
+     */
+    ...patientTemplate("survey.email", "email", EV_COMPLETED, SURVEY_EMAIL.pt.body),
+    ...JP_APPROVAL_SAT01,
+  },
+  {
+    /**
+     * EIGHTEENTH BODY: the satisfaction survey SMS. SAT-01.
+     *
+     * Sent INSTEAD of the email above, never beside it, when the patient has no
+     * permitted email. One GSM-7 segment or it is refused:
+     * lib/reminders/survey-body.ts returns the refusal as a value.
+     */
+    ...patientTemplate("survey.sms", "sms", EV_COMPLETED, SURVEY_SMS.pt),
+    ...JP_APPROVAL_SAT01,
   },
 
   /**
