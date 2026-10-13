@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0105_reminder_claims.sql` | `0105` | 2026-10-13 | branch `db/SWEEP-00-reminder-claims-table`, local, a DRAFT for strategy. Provisionally `0106`: after `0105` a number is given when the migration is authored, and this one is not fixed until strategy confirms it. The reminder sweep's own two tables, ruled off `audit_log` on 2026-10-12 (S-1012-A): `reminder_claims` (a claim, its release and the sweep's shadow row, append only) and `reminder_sweep_passes` (the heartbeat, one row per tenant per pass). Only the reminder job's own session inserts; staff of the tenant read; nobody updates or deletes. No function and no sequence. It creates four policies, so its sitting is closed hours only. It is promoted only after `0105` is applied to production and merged. Its pre-check and post-check are `scripts/db/precheck-0106-reminder-claims.sql` and `scripts/db/postcheck-0106-reminder-claims.sql`; the draft apply document is `docs/migration-apply-0106.md`; the DB-gated suite is `packages/db/tests/reminder-claims-rls.db.test.ts`, which skips on a database without the tables until the promotion. `packages/db/src/schema.ts` declares both tables, types only, in the same commit. |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
