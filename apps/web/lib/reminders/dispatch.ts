@@ -39,6 +39,10 @@ import {
   recordDispatch,
 } from "./dispatch-ledger";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
+import { surveyAppliesTo, surveySendMode } from "./survey-mode";
+import { renderSurveyEmailBody, renderSurveySmsBody } from "./survey-body";
+import { generateSurveyCode } from "@/lib/surveys/survey-code";
+import { issueSurveyAutomatic } from "@/lib/surveys/survey-store";
 import {
   bookingApprovedLocationContact,
   bookingApprovedServiceName,
@@ -199,7 +203,26 @@ export type DispatchOutcome =
          * email nor the SMS was attempted. The error still propagates; this is
          * the row it leaves behind.
          */
-        | "reschedule_link_error";
+        | "reschedule_link_error"
+        /**
+         * The satisfaction survey only. The patient has no email the survey
+         * may use and the stored number cannot receive an SMS. Asked BEFORE a
+         * code is made, so nothing is issued for a message that cannot go.
+         */
+        | "invalid_phone"
+        | "landline"
+        /**
+         * The satisfaction survey only: the database's own answers when asked
+         * to issue the send (`issue_survey_automatic`, migration 0102).
+         * `survey_cooldown` is a send to this patient in the last 60 days.
+         * `survey_not_eligible` is the door's one word for a patient who opted
+         * out, a visit that already has an answer, and a visit or a channel
+         * that changed between this run's read and the door's.
+         * `survey_not_allowed` is a session the door does not answer.
+         */
+        | "survey_cooldown"
+        | "survey_not_eligible"
+        | "survey_not_allowed";
       /**
        * The refusing sentence, for `body_refused`. Operator-facing and safe:
        * a length and a rule, never a recipient, a patient field or a code.
@@ -601,7 +624,7 @@ type Dispatchable =
 async function loadDispatchable(
   tenantId: string,
   appointmentId: string,
-  kind: "reminder" | "confirmation" | "followup" | "noshow",
+  kind: "reminder" | "confirmation" | "followup" | "noshow" | "survey",
 ): Promise<Dispatchable> {
   const data = await loadReminderData(tenantId, appointmentId);
   if (!data) return { ok: false, outcome: { dispatched: false, reason: "not_found" } };
@@ -1549,6 +1572,324 @@ export async function dispatchFollowUp(
     if (!isSmsSkip(sent)) channels.push(sent);
   }
   return { dispatched: true, channels };
+}
+
+/* ================================================================== */
+/* Satisfaction survey dispatch (SAT-01)                               */
+/* ================================================================== */
+
+export const SURVEY_EMAIL_TEMPLATE_ID = "survey.email";
+export const SURVEY_SMS_TEMPLATE_ID = "survey.sms";
+
+/**
+ * The ledger reason for a patient the canary list does not name. Not a
+ * DispatchOutcome reason: that patient's run goes on as it does with the
+ * switch off, and returns the follow-up's own outcome.
+ */
+export const SURVEY_CANARY_NOT_LISTED = "survey_canary_not_listed";
+
+/**
+ * The ledger reason when issuing the send threw (the code key is not set, or
+ * the database failed). The error still propagates; this is the row it leaves.
+ */
+export const SURVEY_ISSUE_ERROR = "survey_issue_error";
+
+/**
+ * What is recorded, and returned, when the survey email cannot be rendered.
+ * FIXED TEXT, for `BOOKING_APPROVED_RENDER_REFUSAL`'s reason: the renderer's
+ * own message quotes the fragment it tripped on.
+ */
+export const SURVEY_RENDER_REFUSAL =
+  "A value the email prints (first name or the location's phone) contains a {placeholder}-shaped word.";
+
+/**
+ * A link lives 14 days from its send: `resolve_survey_code` reads the expiry as
+ * `sent_at + interval '14 days'` (migration 0102). The email prints that day.
+ */
+const SURVEY_LINK_DAYS = 14;
+
+export type SurveyChannelPlan =
+  | { send: "email" }
+  | { send: "sms" }
+  | { send: "none"; reason: "no_contact" | "channels_off"; channel: "email" | "sms" };
+
+/**
+ * Which ONE channel a survey goes out on (S6). Pure, exported for direct testing.
+ *
+ *   email reminders on for the clinic, the patient's email switch on and an
+ *   email on file                              -> the email, and NO SMS
+ *   otherwise, the same three for SMS          -> the SMS
+ *   otherwise                                  -> nothing, with the reason
+ *
+ * Never both. `channel` on a refusal is the channel the row is filed under:
+ * the one the patient has a contact for, email first.
+ */
+export function planSurveyChannel(args: {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  tenantEmailEnabled: boolean;
+  tenantSmsEnabled: boolean;
+  patientEmailEnabled: boolean;
+  patientSmsEnabled: boolean;
+}): SurveyChannelPlan {
+  if (args.hasEmail && args.tenantEmailEnabled && args.patientEmailEnabled) return { send: "email" };
+  if (args.hasPhone && args.tenantSmsEnabled && args.patientSmsEnabled) return { send: "sms" };
+  if (!args.hasEmail && !args.hasPhone) return { send: "none", reason: "no_contact", channel: "email" };
+  return { send: "none", reason: "channels_off", channel: args.hasEmail ? "email" : "sms" };
+}
+
+/**
+ * The message 24 hours after a concluded visit. Called by the Inngest function
+ * that has always sent the follow-up, under the same id and key, so a run that
+ * went to sleep before this code existed wakes into it.
+ *
+ * THE SWITCH IS READ FIRST, BEFORE ANYTHING ELSE (survey-mode.ts).
+ *
+ *   off     `dispatchFollowUp`, untouched: the same read, the same two bodies,
+ *           the same outcome, and no row anywhere. Nothing of the survey runs.
+ *   canary  a patient on the list gets the survey. Everyone else gets what
+ *           `off` gives, and one ledger row saying the list did not name them.
+ *   on      the survey, INSTEAD of the follow-up (default 7 of the spec).
+ *
+ * `off` is also what an unset or misspelt value reads as, so it is the state
+ * every sleeping run wakes into until the owner sets the variable.
+ */
+export async function dispatchSurvey(
+  tenantId: string,
+  appointmentId: string,
+): Promise<DispatchOutcome> {
+  if (surveySendMode() === "off") return dispatchFollowUp(tenantId, appointmentId);
+  return await dispatchSurveyInner(tenantId, appointmentId);
+}
+
+/**
+ * The survey send. EVERY EXIT LEAVES A LEDGER ROW: sent, suppressed with its
+ * reason, or `provider_error`.
+ *
+ * THE ORDER IS THE RULE (INC-CONFIRM-07, spec 5.1 step 4): the code is a value
+ * first; the body that carries it is built and can be REFUSED before anything
+ * is written; only then does the database issue the send; only then is the
+ * body handed to the provider.
+ *
+ * THE CODE AND THE LINK ARE NEVER STORED AND NEVER LOGGED (spec 3.6, A7). The
+ * database gets the code's HMAC. The ledger row, the log lines and the value
+ * this returns carry ids, a reason, a length and the provider's id.
+ *
+ * WHAT ISSUING BEFORE THE HAND-OVER COSTS. 0102 has no door that withdraws a
+ * send. A provider that refuses the message after the issue leaves a send row
+ * with no message behind it: the retry is answered `cooldown`, and the patient
+ * is not asked again for 60 days. The `provider_error` row is what shows it.
+ */
+async function dispatchSurveyInner(
+  tenantId: string,
+  appointmentId: string,
+): Promise<DispatchOutcome> {
+  const gate = await loadDispatchable(tenantId, appointmentId, "survey");
+
+  /** Nothing was sent, and the ledger says why. */
+  const record = (channel: "email" | "sms", reason: string) =>
+    recordDispatch({
+      tenantId,
+      appointmentId,
+      channel,
+      templateId: channel === "email" ? SURVEY_EMAIL_TEMPLATE_ID : SURVEY_SMS_TEMPLATE_ID,
+      outcome: "suppressed",
+      suppressionReason: reason,
+    });
+  const suppress = async (
+    reason: Extract<DispatchOutcome, { dispatched: false }>["reason"],
+    channel: "email" | "sms",
+    detail?: string,
+  ): Promise<DispatchOutcome> => {
+    await record(channel, reason);
+    return { dispatched: false, reason, ...(detail ? { detail } : {}) };
+  };
+  /** Canary, and the list does not name this patient: recorded, then as `off`. */
+  const notListed = async (channel: "email" | "sms"): Promise<DispatchOutcome> => {
+    await record(channel, SURVEY_CANARY_NOT_LISTED);
+    return dispatchFollowUp(tenantId, appointmentId);
+  };
+
+  if (!gate.ok) {
+    // No row was read, or the patient was removed. Filed under the email id:
+    // no channel was chosen for a patient nobody could be asked about.
+    if (gate.patientId !== undefined && !surveyAppliesTo(gate.patientId).applies) {
+      return notListed("email");
+    }
+    return suppress((gate.outcome as Extract<DispatchOutcome, { dispatched: false }>).reason, "email");
+  }
+  const data = gate.data;
+
+  const { reminders } = parseTenantConfig(data.tenantSettings);
+  const email = (data.patientEmail ?? "").trim();
+  const phone = (data.patientPhone ?? "").trim();
+  const plan = planSurveyChannel({
+    hasEmail: email !== "",
+    hasPhone: phone !== "",
+    tenantEmailEnabled: reminders.emailEnabled,
+    tenantSmsEnabled: reminders.smsEnabled,
+    patientEmailEnabled: data.patientReminderEmailEnabled,
+    patientSmsEnabled: data.patientReminderSmsEnabled,
+  });
+  const channel = plan.send === "none" ? plan.channel : plan.send;
+
+  // The recipient is `appointments.patient_id`, the one patient the row was
+  // read for. A second patient on a shared visit is never asked (default 9).
+  if (!surveyAppliesTo(data.patientId).applies) return notListed(channel);
+
+  if (data.status !== "completed") return suppress("status", channel);
+  if (plan.send === "none") return suppress(plan.reason, channel);
+
+  const locale = resolveLocale(data.tenantSettings);
+
+  /** Issue the send in the database, or say why it was not issued. */
+  const issue = async (code: string): Promise<DispatchOutcome | null> => {
+    let issued: Awaited<ReturnType<typeof issueSurveyAutomatic>>;
+    try {
+      issued = await issueSurveyAutomatic({ tenantId, appointmentId, channel, code });
+    } catch (e) {
+      await record(channel, SURVEY_ISSUE_ERROR);
+      throw e;
+    }
+    return issued === "issued" ? null : suppress(`survey_${issued}`, channel);
+  };
+
+  if (plan.send === "email") {
+    // THE LOCATION'S PHONE AND NO OTHER (third-location ruling). The email
+    // prints one number for the patient to ring, and it is the appointment's
+    // own location's. With none on that row nothing is sent, and nothing falls
+    // back to the tenant's clinic settings.
+    const locationPhone = (data.locationPhone ?? "").trim();
+    if (locationPhone === "") {
+      console.warn(
+        `[reminders] survey skipped: location_contact_missing tenantId=${tenantId} ` +
+          `appointmentId=${appointmentId} patientId=${data.patientId}. ` +
+          `The appointment's location has no phone; nothing was sent and no code was made.`,
+      );
+      return suppress("location_contact_missing", "email");
+    }
+    // THE RENDER CAN REFUSE (no origin for the link) AND CAN THROW (a first
+    // name stored with braces around a word). Both are an outcome with a row,
+    // and the thrown message never leaves this function: it quotes what it
+    // tripped on.
+    // A VALUE, NOT A ROW. Nothing is written until a sendable body is in hand.
+    const code = generateSurveyCode();
+    let body: { subject: string; body: string } | null = null;
+    let refusal = SURVEY_RENDER_REFUSAL;
+    try {
+      const rendered = renderSurveyEmailBody({
+        locale,
+        ctx: {
+          patientFirstName: firstName(data.patientName),
+          appointmentDateLong: formatDateLong(data.startsAt, locale),
+          surveyExpiryDateLong: formatDateLong(
+            new Date(Date.now() + SURVEY_LINK_DAYS * 24 * 60 * 60_000),
+            locale,
+          ),
+          clinicPhone: locationPhone,
+        },
+        code,
+      });
+      if (rendered.ok) body = { subject: rendered.subject, body: rendered.body };
+      else refusal = rendered.refusal;
+    } catch {
+      // `refusal` stays the fixed sentence.
+    }
+    if (body === null) {
+      console.error(
+        `[reminders] survey refused: the email could not be built, so no message went and nothing was issued. ` +
+          `${refusal} tenantId=${tenantId} appointmentId=${appointmentId}`,
+      );
+      return suppress("body_refused", "email", refusal);
+    }
+    const mail = body;
+
+    const refused = await issue(code);
+    if (refused) return refused;
+
+    const result = await sendRecordingProviderError(
+      { tenantId, appointmentId, channel: "email", templateId: SURVEY_EMAIL_TEMPLATE_ID },
+      () =>
+        sendEmail({
+          to: email,
+          subject: mail.subject,
+          body: mail.body,
+          templateId: SURVEY_EMAIL_TEMPLATE_ID,
+          appointmentId,
+        }),
+    );
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "email",
+      templateId: SURVEY_EMAIL_TEMPLATE_ID,
+      outcome: result.sandbox ? "suppressed" : "sent",
+      suppressionReason: result.sandbox ? gateSuppressionReason(result) : null,
+      providerMessageId: result.sandbox ? null : result.id,
+    });
+    return { dispatched: true, channels: [result] };
+  }
+
+  // THE SMS, for a patient with no email the survey may use. The approved
+  // three lines and nothing after them: no reply line is appended here.
+  //
+  // THE NUMBER IS ASKED FIRST. `sendPatientSms` asks the same question at the
+  // hand-over, which is after the issue; a number that cannot receive an SMS
+  // would then cost the patient a send row and 60 days for a message that
+  // never left.
+  const number = smsNumberVerdict(phone);
+  if (!number.ok) {
+    console.warn(
+      `[reminders] survey skipped: ${number.reason} tenantId=${tenantId} ` +
+        `appointmentId=${appointmentId} patientId=${data.patientId}. Nothing was sent and no code was made.`,
+    );
+    return suppress(number.reason, "sms");
+  }
+
+  const code = generateSurveyCode();
+  const rendered = renderSurveySmsBody({
+    locale,
+    appointmentDateShort: formatDateShort(data.startsAt),
+    code,
+  });
+  if (!rendered.ok) {
+    console.error(
+      `[reminders] survey refused: the sms body was not sendable, so no message went and nothing was issued. ${rendered.refusal}`,
+      { tenantId, appointmentId, kind: rendered.kind },
+    );
+    return suppress("body_refused", "sms", rendered.refusal);
+  }
+
+  const refused = await issue(code);
+  if (refused) return refused;
+
+  const sent = await sendPatientSms({
+    tenantId,
+    appointmentId,
+    patientId: data.patientId,
+    phone,
+    body: rendered.body,
+    templateId: SURVEY_SMS_TEMPLATE_ID,
+  });
+  const handedOver = isSmsSkip(sent) ? null : sent;
+  await recordDispatch({
+    tenantId,
+    appointmentId,
+    channel: "sms",
+    templateId: SURVEY_SMS_TEMPLATE_ID,
+    outcome: handedOver && !handedOver.sandbox ? "sent" : "suppressed",
+    suppressionReason: handedOver
+      ? handedOver.sandbox
+        ? gateSuppressionReason(handedOver)
+        : null
+      : isSmsSkip(sent)
+        ? sent.skipped
+        : null,
+    bodyLength: rendered.length,
+    segments: null,
+    providerMessageId: handedOver && !handedOver.sandbox ? handedOver.id : null,
+  });
+  return { dispatched: true, channels: handedOver ? [handedOver] : [] };
 }
 
 /* ================================================================== */

@@ -9,7 +9,7 @@ import {
   type AppointmentStatusChangedData,
 } from "./client";
 import { computeDueReminders, reminderIdempotencyKey } from "../offsets";
-import { dispatchReminder, dispatchConfirmation, dispatchFollowUp, dispatchNoShow } from "../dispatch";
+import { dispatchReminder, dispatchConfirmation, dispatchSurvey, dispatchNoShow } from "../dispatch";
 
 // Inngest functions for appointment reminders (SDK v4 API).
 //
@@ -261,6 +261,15 @@ export const sendAppointmentConfirmation = inngest.createFunction(
 /* Follow-up — sleeps 24 h after appointment ends, then fires          */
 /* ================================================================== */
 
+// SAT-01. The step now calls `dispatchSurvey`, which reads the survey's switch
+// first: off (the default) it is `dispatchFollowUp`, exactly as before; canary
+// or on, the satisfaction survey goes instead (../dispatch.ts).
+//
+// NOTHING INNGEST STORES CHANGED: the id, the trigger, the idempotency key and
+// the two step names are the ones the function has always had, so no Resync is
+// owed, and a run that went to sleep before this code wakes into it. Asserted
+// in ./functions.test.ts.
+
 export const sendFollowUpNotification = inngest.createFunction(
   {
     id: "send-follow-up-notification",
@@ -273,7 +282,7 @@ export const sendFollowUpNotification = inngest.createFunction(
     const sendAt = new Date(new Date(endsAt).getTime() + 24 * 60 * 60_000);
     await step.sleepUntil("wait-24h-after-visit", sendAt);
     const outcome = await step.run("dispatch-follow-up", () =>
-      dispatchFollowUp(tenantId, appointmentId),
+      dispatchSurvey(tenantId, appointmentId),
     );
     return { appointmentId, ...outcome };
   },
