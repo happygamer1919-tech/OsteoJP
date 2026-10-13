@@ -13,6 +13,11 @@
 -- 0104's read policy admits to no episode, reads VACUOUS in its own verdict (17
 -- to 20), never OK; on a table with no row verdict 14 reads VACUOUS as well.
 --
+-- A FAIL VERDICT ENDS THIS FILE WITH AN ERROR: after the rows are printed, the
+-- file reads the profile it printed and raises unless it ends "0 FAIL", so psql
+-- exits 3 and the block's own halt fires. The block still asserts the whole
+-- profile, with the VACUOUS count the pre-check carried (post_vacuous_expected).
+--
 -- Runs after `packages/db/scripts/verified-migrate.mjs` has applied
 -- 0104_clinical_episodes_role_matrix (sha256
 -- eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9): DELETE was
@@ -507,9 +512,10 @@ WITH pol AS (
   SELECT n, "check", observed, expected, verdict FROM r
   UNION ALL
   SELECT 99, 'SUMMARY. the verdict profile this run printed',
+         set_config('ep0104.profile',
          (SELECT count(*) FROM r WHERE verdict = 'OK')::text      || ' OK / ' ||
          (SELECT count(*) FROM r WHERE verdict = 'VACUOUS')::text || ' VACUOUS / ' ||
-         (SELECT count(*) FROM r WHERE verdict = 'FAIL')::text    || ' FAIL',
+         (SELECT count(*) FROM r WHERE verdict = 'FAIL')::text    || ' FAIL', true),
          '21 OK / 0 VACUOUS / 0 FAIL where every actor reads at least one episode; never a FAIL', 'SUMMARY'
 )
 SELECT "check", observed, expected, verdict FROM s ORDER BY n;
@@ -521,3 +527,14 @@ SELECT p.polname, p.polcmd AS command, p.polpermissive AS permissive,
   FROM pg_policy p
  WHERE p.polrelid = 'public.clinical_episodes'::regclass
  ORDER BY 1;
+
+-- A FAIL VERDICT IS AN ERROR. The SUMMARY row stored the profile it printed
+-- (set_config, transaction-local, allowed in a READ ONLY transaction). Anything
+-- but a profile ending "/ 0 FAIL" raises, and psql exits 3.
+SELECT coalesce(current_setting('ep0104.profile', true), '') ~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_no_fail \gset
+\if :ep0104_no_fail
+\else
+  DO $fail$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0104 post-check printed a FAIL verdict, or its profile could not be read back [%]. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile');
+  END $fail$;
+\endif

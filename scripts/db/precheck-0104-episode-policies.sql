@@ -10,13 +10,20 @@
 -- holds episodes and one active member of staff of each role it reads
 -- 15 OK / 0 VACUOUS / 0 FAIL. Where the table holds no episode, or a role has no
 -- active member of staff in the tenant read, verdict 14 reads VACUOUS, never OK:
--- 14 OK / 1 VACUOUS / 0 FAIL. Fourteen CARRY rows feed the post-check, and the
--- INFO rows print a profile and are never counted.
+-- 14 OK / 1 VACUOUS / 0 FAIL. Fourteen CARRY rows feed the post-check, a
+-- fifteenth feeds the block that reads the post-check's profile, a sixteenth is
+-- a count the sitting reports, and the INFO rows print a profile and are never
+-- counted.
 --
--- WHAT 0104 DOES (packages/db/migrations-pending/NEXT-AFTER-0103_clinical_episodes_role_matrix.sql,
--- sha256 eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9, to be promoted to
--- packages/db/migrations/0104_clinical_episodes_role_matrix.sql with no byte
--- changed): the two SET LOCAL lines; REVOKE DELETE on public.clinical_episodes
+-- A FAIL VERDICT ENDS THIS FILE WITH AN ERROR: after the rows are printed, the
+-- file reads the profile it printed and raises unless it ends "0 FAIL", so psql
+-- exits 3 and the block's own halt fires. The block still asserts the whole
+-- profile.
+--
+-- WHAT 0104 DOES (packages/db/migrations/0104_clinical_episodes_role_matrix.sql,
+-- sha256 eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9, promoted from
+-- packages/db/migrations-pending/NEXT-AFTER-0103_clinical_episodes_role_matrix.sql
+-- with no byte changed): the two SET LOCAL lines; REVOKE DELETE on public.clinical_episodes
 -- from `authenticated`; DROP POLICY clinical_episodes_tenant_isolation; and, as
 -- its LAST THREE statements, CREATE POLICY clinical_episodes_select,
 -- clinical_episodes_insert and clinical_episodes_update, each TO authenticated.
@@ -81,11 +88,15 @@
 --          transaction: its claims are set, the identity is checked BEFORE
 --          anything is read as it (auth.uid(), jwt_tenant_id() and jwt_role() must
 --          answer for that actor, or the file STOPs), the role is set to
---          `authenticated`, the table is counted, and the role is reset. OK when
---          all four actors exist and the tenant holds episodes; VACUOUS when the
---          table is empty or a role has no active member of staff (a missing
---          subject is never a pass). The four counts are INFO rows, and the
---          post-check reads the same four actors again;
+--          `authenticated`, the table is counted, and the role is reset. FAIL
+--          when an actor that was found reads a number other than every episode
+--          of its tenant: 0001's one staff policy admits every staff session of
+--          the tenant to every episode, so any other number means the table is
+--          not read the way this file was written against. OK when all four
+--          actors exist and the tenant holds episodes; VACUOUS when the table is
+--          empty or a role has no active member of staff (a missing subject is
+--          never a pass). The four counts are INFO rows, and the post-check
+--          reads the same four actors again;
 --   CARRY  journal_rows_before;
 --   CARRY  policies_before: every policy in the database. The post-check wants
 --          this number plus 2 (one dropped, three created);
@@ -110,6 +121,16 @@
 --          and of the four actor ids verdict 14 read as (an id is never printed).
 --          The post-check picks its actors by the same rule and wants the same
 --          two md5s, so both files read as the same four people;
+--   CARRY  post_vacuous_expected: of the four actors, how many 0104's read
+--          policy admits to NO episode (computed from the tables), or are
+--          missing. The post-check's verdict for such an actor reads VACUOUS,
+--          never OK, so the block that reads the post-check wants exactly this
+--          many VACUOUS verdicts and 21 minus this many OK;
+--   CARRY  registos_in_another_patients_episode: the registos filed in an
+--          episode whose patient or tenant is not the registo's own. A count the
+--          sitting reports; it decides nothing here. Such a registo is read with
+--          its episode's title only by a session 0104 admits to that OTHER
+--          patient's episodes;
 --   INFO   the server version;
 --   INFO   what `service_role` holds on the table (0104 leaves it; no migration
 --          names it);
@@ -399,6 +420,12 @@ WITH pol AS (
     (SELECT count(*)::int FROM act WHERE actor IS NOT NULL)                                     AS actors_found,
     (SELECT coalesce(string_agg(role_slug, ',' ORDER BY role_slug), 'none') FROM act WHERE actor IS NULL) AS actors_missing,
     (SELECT coalesce(max(tenant_total), 0) FROM admits)                                         AS behaviour_total,
+    (SELECT count(*)::int FROM admits
+      WHERE actor IS NOT NULL AND reads IS DISTINCT FROM tenant_total)                          AS actors_not_whole,
+    (SELECT count(*)::int FROM admits WHERE actor IS NULL OR admitted = 0)                      AS post_vacuous,
+    (SELECT count(*)::int
+       FROM public.clinical_records c JOIN public.clinical_episodes e ON e.id = c.episode_id
+      WHERE e.patient_id <> c.patient_id OR e.tenant_id <> c.tenant_id)                         AS registos_misfiled,
     (SELECT string_agg(role_slug || ' ' || coalesce(reads::text, 'no actor') || ' of ' || tenant_total::text
                        || ', 0104 admits ' || CASE WHEN actor IS NULL THEN 'no actor' ELSE admitted::text END,
                        '; ' ORDER BY role_slug) FROM admits)                                    AS behaviour_info,
@@ -548,10 +575,12 @@ WITH pol AS (
          CASE WHEN server_num BETWEEN 170000 AND 179999 THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 13, '13. the five roles the checks name exist', roles_named::text, '5',
          CASE WHEN roles_named = 5 THEN 'OK' ELSE 'FAIL' END FROM j
-  UNION ALL SELECT 14, '14. BEHAVIOUR: the table was read as one active actor of each staff role, identity checked first',
-         actors_found::text || ' of 4 actors, missing ' || actors_missing || '; episodes in that tenant ' || behaviour_total::text,
-         '4 of 4 actors, missing none; episodes in that tenant more than 0 (a missing actor or an empty table reads VACUOUS)',
-         CASE WHEN actors_found = 4 AND behaviour_total > 0 THEN 'OK' ELSE 'VACUOUS' END FROM j
+  UNION ALL SELECT 14, '14. BEHAVIOUR: the table was read as one active actor of each staff role, identity checked first, and each reads every episode of its tenant',
+         actors_found::text || ' of 4 actors, missing ' || actors_missing || '; episodes in that tenant ' || behaviour_total::text
+           || '; actors reading another number ' || actors_not_whole::text,
+         '4 of 4 actors, missing none; episodes in that tenant more than 0 (a missing actor or an empty table reads VACUOUS); actors reading another number 0',
+         CASE WHEN actors_not_whole <> 0 THEN 'FAIL'
+              WHEN actors_found = 4 AND behaviour_total > 0 THEN 'OK' ELSE 'VACUOUS' END FROM j
   UNION ALL SELECT 20, 'policies_before', policies::text, 'a count', 'CARRY' FROM j
   UNION ALL SELECT 21, 'other_policies_md5', other_pol_md5, '32 hex characters',
          CASE WHEN other_pol_md5 ~ '^[0-9a-f]{32}$' THEN 'CARRY' ELSE 'FAIL' END FROM j
@@ -574,6 +603,8 @@ WITH pol AS (
          CASE WHEN tenant_md5 ~ '^[0-9a-f]{32}$' THEN 'CARRY' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 32, 'behaviour_actors_md5', coalesce(actors_md5, 'absent'), '32 hex characters',
          CASE WHEN actors_md5 ~ '^[0-9a-f]{32}$' THEN 'CARRY' ELSE 'FAIL' END FROM j
+  UNION ALL SELECT 33, 'post_vacuous_expected', post_vacuous::text, 'a count, 0 to 4', 'CARRY' FROM j
+  UNION ALL SELECT 34, 'registos_in_another_patients_episode', registos_misfiled::text, 'a count', 'CARRY' FROM j
   UNION ALL SELECT 40, 'INFO the server version', server_version, 'a profile', 'INFO' FROM j
   UNION ALL SELECT 41, 'INFO what service_role holds on the table (0104 leaves it)', service_privs, 'a profile', 'INFO' FROM j
   UNION ALL SELECT 42, 'INFO episodes: by status, by origin, with no practitioner (counts)', coalesce(episodes_profile, 'none'), 'a profile', 'INFO' FROM j
@@ -587,9 +618,10 @@ WITH pol AS (
   SELECT n, "check", observed, expected, verdict FROM r
   UNION ALL
   SELECT 99, 'SUMMARY. the verdict profile this run printed',
+         set_config('ep0104.profile',
          (SELECT count(*) FROM r WHERE verdict = 'OK')::text      || ' OK / ' ||
          (SELECT count(*) FROM r WHERE verdict = 'VACUOUS')::text || ' VACUOUS / ' ||
-         (SELECT count(*) FROM r WHERE verdict = 'FAIL')::text    || ' FAIL',
+         (SELECT count(*) FROM r WHERE verdict = 'FAIL')::text    || ' FAIL', true),
          '15 OK / 0 VACUOUS / 0 FAIL; or 14 OK / 1 VACUOUS / 0 FAIL where the table is empty or a role has no actor', 'SUMMARY'
 )
 SELECT "check", observed, expected, verdict FROM s ORDER BY n;
@@ -601,5 +633,16 @@ SELECT p.polname, p.polcmd AS command, p.polpermissive AS permissive,
   FROM pg_policy p
  WHERE p.polrelid = 'public.clinical_episodes'::regclass
  ORDER BY 1;
+
+-- A FAIL VERDICT IS AN ERROR. The SUMMARY row stored the profile it printed
+-- (set_config, transaction-local, allowed in a READ ONLY transaction). Anything
+-- but a profile ending "/ 0 FAIL" raises, and psql exits 3.
+SELECT coalesce(current_setting('ep0104.profile', true), '') ~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_no_fail \gset
+\if :ep0104_no_fail
+\else
+  DO $fail$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0104 pre-check printed a FAIL verdict, or its profile could not be read back [%]. Read the rows above.', coalesce(current_setting('ep0104.profile', true), 'no profile');
+  END $fail$;
+\endif
 
 ROLLBACK;
