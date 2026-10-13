@@ -20,11 +20,17 @@
  *      between, which takes no `sent` row from the live claim before it.
  *   5. TWO TENANTS. Rows of another tenant that name this very appointment do
  *      not hold it.
+ *   6. WHAT THE TABLE ITSELF REFUSES, so the read never has to tell it apart:
+ *      a release under another tenant or another appointment than its claim's,
+ *      a release that names no row, and a second release of one claim.
+ *   7. NOTHING OF IT IS IN THE AUDIT TRAIL. After every arm above, `audit_log`
+ *      holds no row of either tenant.
  *
- * WHY A DATABASE. "Held" is one read of `audit_log` and `reminder_dispatches`
- * made under the reminder job's own role and tenant claim, behind an advisory
- * lock. A mock has no policy to hide another tenant's rows, no timestamps to
- * order, and no lock to wait on.
+ * WHY A DATABASE. "Held" is one read of `reminder_claims` and
+ * `reminder_dispatches` made under the reminder job's own role and tenant
+ * claim, behind an advisory lock. A mock has no policy to hide another
+ * tenant's rows, no constraint to refuse a row, no timestamps to order, and no
+ * lock to wait on.
  *
  * Only the data seam (`loadReminderData`) and the two transports are replaced,
  * as in reminder-log.db.test.ts: no arm here can reach a provider whatever the
@@ -214,21 +220,19 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
 
   /** The claims of one appointment, oldest first. */
   async function claimsOf(appointmentId: string): Promise<Row[]> {
-    return rows(raw`select id::text as id, tenant_id::text as tenant_id,
-        metadata->>'offsetId' as offset_id, metadata->>'channel' as channel,
-        metadata->>'startsAt' as starts_at, metadata->>'taker' as taker, metadata->>'early' as early
-      from audit_log
-      where entity_id = ${appointmentId} and action = 'appointment.reminder_claimed'
+    return rows(raw`select id::text as id, tenant_id::text as tenant_id, offset_id, channel,
+        to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as starts_at, taker, early
+      from reminder_claims
+      where appointment_id = ${appointmentId} and kind = 'claim'
       order by created_at, id`);
   }
 
   /** The releases of one appointment, as the columns that matter. */
   async function releasesOf(appointmentId: string): Promise<Row[]> {
-    return rows(raw`select tenant_id::text as tenant_id, actor_user_id, entity_type, ip,
-        metadata->>'source' as source, metadata->>'claimId' as claim_id,
-        metadata->>'offsetId' as offset_id, metadata->>'channel' as channel
-      from audit_log
-      where entity_id = ${appointmentId} and action = 'appointment.reminder_claim_released'
+    return rows(raw`select tenant_id::text as tenant_id, claim_id::text as claim_id, offset_id, channel,
+        starts_at, due_at, taker, early, minutes_after_mark, saved_after_mark, pass_id
+      from reminder_claims
+      where appointment_id = ${appointmentId} and kind = 'release'
       order by created_at, id`);
   }
 
@@ -247,45 +251,64 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     };
   }
 
-  /** A claim row written straight to the table, at a stated instant. */
+  /**
+   * A claim row written straight to the table, at a stated instant, on the
+   * owning connection. `early: null` is a claim with no mark on record: the
+   * table holds "no early flag" and "no due time" to each other.
+   */
   async function seedClaim(
     appointmentId: string,
     over: {
       tenant?: string;
-      offsetId?: string;
+      offsetId?: "24h" | "48h";
       channel?: string;
       startsAt?: Date;
       early?: boolean | null;
       at?: string;
-      entityType?: string;
     } = {},
   ): Promise<string> {
     const id = randomUUID();
-    const metadata = {
-      source: "reminder-claim",
-      offsetId: over.offsetId ?? "24h",
-      channel: over.channel ?? "sms",
-      startsAt: (over.startsAt ?? START).toISOString(),
-      taker: "run",
-      early: over.early === undefined ? false : over.early,
-    };
-    await sql.execute(raw`insert into audit_log (id, tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
-      values (${id}, ${over.tenant ?? tenantA}, null, 'appointment.reminder_claimed', ${over.entityType ?? "appointment"},
-              ${appointmentId}, ${JSON.stringify(metadata)}::jsonb, ${over.at ?? at(0)})`);
+    const startsAt = over.startsAt ?? START;
+    const early = over.early === undefined ? false : over.early;
+    const due =
+      early === null ? null : new Date(startsAt.getTime() - ((over.offsetId ?? "24h") === "24h" ? 24 : 48) * 60 * 60_000).toISOString();
+    await sql.execute(raw`insert into reminder_claims
+      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, created_at)
+      values (${id}, ${over.tenant ?? tenantA}, ${appointmentId}, 'claim', ${over.offsetId ?? "24h"}, ${over.channel ?? "sms"},
+              ${startsAt.toISOString()}, ${due}::timestamptz, 'run', ${early}::boolean, ${over.at ?? at(0)})`);
     return id;
   }
 
-  /** A release row written straight to the table. */
-  async function seedRelease(
-    appointmentId: string,
-    claimId: string,
-    over: { tenant?: string; at?: string; entityType?: string; action?: string } = {},
-  ) {
-    const metadata = { source: "reminder-claim", claimId, offsetId: "24h", channel: "sms" };
-    await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
-      values (${over.tenant ?? tenantA}, null, ${over.action ?? "appointment.reminder_claim_released"},
-              ${over.entityType ?? "appointment"}, ${appointmentId},
-              ${JSON.stringify(metadata)}::jsonb, ${over.at ?? at(5)})`);
+  /**
+   * The sweep's shadow row for the 24 h SMS of START: a row of the same table,
+   * for the same reminder and start, that is NOT a claim.
+   */
+  async function seedShadow(appointmentId: string, over: { at?: string } = {}): Promise<void> {
+    await sql.execute(raw`insert into reminder_claims
+      (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, minutes_after_mark, saved_after_mark, created_at)
+      values (${tenantA}, ${appointmentId}, 'shadow', '24h', 'sms', ${START.toISOString()},
+              ${new Date(START.getTime() - 24 * 60 * 60_000).toISOString()}, 0, false, ${over.at ?? at(0)})`);
+  }
+
+  /** A release row written straight to the table, on the owning connection. */
+  async function seedRelease(appointmentId: string, claimId: string, over: { tenant?: string; at?: string } = {}) {
+    await sql.execute(raw`insert into reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id, created_at)
+      values (${over.tenant ?? tenantA}, ${appointmentId}, 'release', '24h', 'sms', ${claimId}, ${over.at ?? at(5)})`);
+  }
+
+  /**
+   * The constraint that refused a statement. Drizzle wraps the driver's error,
+   * so the name is looked for on the error and on its cause.
+   */
+  async function refusedBy(statement: Promise<unknown>): Promise<string> {
+    try {
+      await statement;
+    } catch (e) {
+      const own = (e as { constraint_name?: string }).constraint_name;
+      const cause = ((e as { cause?: { constraint_name?: string } }).cause ?? {}).constraint_name;
+      return own ?? cause ?? `refused with no constraint: ${e instanceof Error ? e.name : "unknown"}`;
+    }
+    return "NOT REFUSED";
   }
 
   /** A ledger row written straight to the table, at a stated instant. */
@@ -357,6 +380,9 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     if (!sql) return;
     for (const tenantId of [tenantA, tenantB]) {
       await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
+      // By tenant, not left to the appointment's cascade: a seeded row of one
+      // tenant may name the other tenant's appointment.
+      await sql.execute(raw`delete from reminder_claims where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from reminder_dispatches where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
@@ -406,7 +432,7 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     ]);
     const claims = await claimsOf(appt);
     expect(claims).toHaveLength(1);
-    expect(claims[0]).toMatchObject({ offset_id: "24h", channel: "sms", starts_at: START.toISOString(), early: "false" });
+    expect(claims[0]).toMatchObject({ offset_id: "24h", channel: "sms", starts_at: START.toISOString(), early: false });
     const after = await footprint(appt);
 
     // The second sender of the same reminder, and a third that calls itself the sweep.
@@ -492,13 +518,17 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     expect(await releasesOf(appt)).toEqual([
       {
         tenant_id: tenantA,
-        actor_user_id: null,
-        entity_type: "appointment",
-        ip: null,
-        source: "reminder-claim",
         claim_id: refused!.id,
         offset_id: "24h",
         channel: "sms",
+        // What only a claim or a shadow row carries.
+        starts_at: null,
+        due_at: null,
+        taker: null,
+        early: null,
+        minutes_after_mark: null,
+        saved_after_mark: null,
+        pass_id: null,
       },
     ]);
     expect(await ledgerOf(appt)).toEqual([
@@ -838,10 +868,10 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
       },
     },
     {
-      name: "a row with a claim's action filed under another kind of entity is not a claim",
+      name: "the sweep's SHADOW row of this reminder and this start, with a sent row after it: a shadow row is not a claim",
       held: false,
       seed: async (appt) => {
-        await seedClaim(appt, { entityType: "patient" });
+        await seedShadow(appt);
         await seedLedger(appt);
       },
     },
@@ -862,7 +892,7 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
       },
     },
     {
-      name: "a claim whose early flag is absent is not taken for an early one",
+      name: "a claim with no early flag (and so no due time on record) is not taken for an early one",
       held: true,
       seed: async (appt) => {
         await seedClaim(appt, { early: null });
@@ -879,39 +909,13 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
       },
     },
     {
-      name: "a release that names ANOTHER claim frees nothing",
+      name: "a release that names ANOTHER claim of this appointment (its other reminder's) frees nothing",
       held: true,
       seed: async (appt) => {
         await seedClaim(appt);
+        const otherReminder = await seedClaim(appt, { offsetId: "48h", channel: "email" });
         await seedLedger(appt);
-        await seedRelease(appt, randomUUID());
-      },
-    },
-    {
-      name: "a release filed under another kind of entity frees nothing",
-      held: true,
-      seed: async (appt) => {
-        const claimId = await seedClaim(appt);
-        await seedLedger(appt);
-        await seedRelease(appt, claimId, { entityType: "patient" });
-      },
-    },
-    {
-      name: "a row of another action that happens to carry the claim's id is not a release",
-      held: true,
-      seed: async (appt) => {
-        const claimId = await seedClaim(appt);
-        await seedLedger(appt);
-        await seedRelease(appt, claimId, { action: "appointment.update" });
-      },
-    },
-    {
-      name: "a release of this claim filed under another appointment frees nothing",
-      held: true,
-      seed: async (appt) => {
-        const claimId = await seedClaim(appt);
-        await seedLedger(appt);
-        await seedRelease(await fresh(), claimId);
+        await seedRelease(appt, otherReminder);
       },
     },
     {
@@ -963,22 +967,13 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
       },
     },
     {
-      name: "a later claim of another start, and a release that names ANOTHER claim: the later claim is live and the row is its own",
+      name: "a later claim of another start, and a release that names ANOTHER claim (the other reminder's): the later claim is live and the row is its own",
       held: false,
       seed: async (appt) => {
         await seedClaim(appt);
         await seedClaim(appt, { startsAt: OTHER_START, at: at(ROW_AT - 20) });
-        await seedRelease(appt, randomUUID(), { at: at(ROW_AT - 10) });
-        await seedLedger(appt);
-      },
-    },
-    {
-      name: "a later claim of another start, and a row of another action that carries its id: not a release, the row is the later claim's",
-      held: false,
-      seed: async (appt) => {
-        await seedClaim(appt);
-        const laterId = await seedClaim(appt, { startsAt: OTHER_START, at: at(ROW_AT - 20) });
-        await seedRelease(appt, laterId, { at: at(ROW_AT - 10), action: "appointment.update" });
+        const otherReminder = await seedClaim(appt, { offsetId: "48h", channel: "email", at: at(ROW_AT - 25) });
+        await seedRelease(appt, otherReminder, { at: at(ROW_AT - 10) });
         await seedLedger(appt);
       },
     },
@@ -1039,7 +1034,7 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     const appt = await fresh("A", FAR_START);
     h.loadReminderData.mockResolvedValue(loaded(appt, "A", { startsAt: FAR_START }));
     expect(await dispatchReminder(tenantA, appt, "24h", "sms")).toMatchObject({ dispatched: true });
-    expect((await claimsOf(appt)).map((c) => c.early)).toEqual(["true"]);
+    expect((await claimsOf(appt)).map((c) => c.early)).toEqual([true]);
     expect(await dispatchReminder(tenantA, appt, "24h", "sms")).toMatchObject({ dispatched: true });
     expect(h.sends).toEqual(["sms", "sms"]);
   });
@@ -1066,12 +1061,15 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     // Now tenant B has its own outcome, and holds its own reminder.
     expect(await dispatchReminder(tenantB, apptB, "24h", "sms")).toEqual({ dispatched: false, reason: "claim_held" });
 
-    // And tenant A cannot free it: a release written under tenant A that names
-    // tenant B's claim is a row tenant B's job never reads.
+    // And tenant A cannot free it: a release under tenant A that names tenant
+    // B's claim is a row THE TABLE DOES NOT TAKE, even from the owning
+    // connection (a release names a row of its own tenant and appointment).
     const mine = (await claimsOf(apptB)).filter((c) => c.tenant_id === tenantB);
     // Two: the one `take` wrote above, and the dispatcher's own.
     expect(mine).toHaveLength(2);
-    for (const c of mine) await seedRelease(apptB, String(c.id), { tenant: tenantA });
+    for (const c of mine) {
+      expect(await refusedBy(seedRelease(apptB, String(c.id), { tenant: tenantA }))).toBe("reminder_claims_claim_fkey");
+    }
     expect(await dispatchReminder(tenantB, apptB, "24h", "sms")).toEqual({ dispatched: false, reason: "claim_held" });
     expect(h.sends).toEqual(["sms"]);
 
@@ -1088,7 +1086,7 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
    * there. This one asks the read itself on the superuser connection, where NO
    * policy applies and the clauses are all that stands between two tenants.
    */
-  it("two tenants, with no policy in the way: the read's own tenant clauses keep another tenant's claim, ledger row and release out", async () => {
+  it("two tenants, with no policy in the way: the read's own tenant clauses keep another tenant's claim and ledger row out, and the table keeps its release out", async () => {
     const { claimIsHeld } = await import("./reminder-claim");
     const ask = (appointmentId: string) =>
       sql.transaction((tx) =>
@@ -1113,20 +1111,23 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     await seedLedger(foreignRow, { tenant: tenantA });
     expect(await ask(foreignRow)).toBe(false);
 
-    // The release is another tenant's: it frees nothing.
+    // A release under another tenant: there is no such row to read. The table
+    // refuses it, so the claim stays held.
     const foreignRelease = await fresh("B");
     const claimId = await seedClaim(foreignRelease, { tenant: tenantB });
     await seedLedger(foreignRelease, { tenant: tenantB });
-    await seedRelease(foreignRelease, claimId, { tenant: tenantA });
+    expect(await refusedBy(seedRelease(foreignRelease, claimId, { tenant: tenantA }))).toBe("reminder_claims_claim_fkey");
     expect(await ask(foreignRelease)).toBe(true);
 
-    // The release of a LATER claim is another tenant's: that claim is still
-    // live, and the row is its own.
+    // The same for the release of a LATER claim: refused, so that claim is
+    // still live, and the row is its own.
     const foreignLaterRelease = await fresh("B");
     await seedClaim(foreignLaterRelease, { tenant: tenantB });
     const laterId = await seedClaim(foreignLaterRelease, { tenant: tenantB, startsAt: OTHER_START, at: at(10) });
     await seedLedger(foreignLaterRelease, { tenant: tenantB });
-    await seedRelease(foreignLaterRelease, laterId, { tenant: tenantA, at: at(20) });
+    expect(await refusedBy(seedRelease(foreignLaterRelease, laterId, { tenant: tenantA, at: at(20) }))).toBe(
+      "reminder_claims_claim_fkey",
+    );
     expect(await ask(foreignLaterRelease)).toBe(false);
     // NEGATIVE CONTROL: the same release under tenant B's own id hands the row back.
     await seedRelease(foreignLaterRelease, laterId, { tenant: tenantB, at: at(20) });
@@ -1150,5 +1151,77 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     // Each tenant's rows are its own.
     expect((await claimsOf(apptA)).map((c) => c.tenant_id)).toEqual([tenantA]);
     expect((await claimsOf(apptB)).map((c) => c.tenant_id)).toEqual([tenantB]);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 6. What the table itself refuses                                  */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * While claims were audit rows, the held read had to tell a real release
+   * from a row that only looked like one: filed under another appointment,
+   * naming no claim, written twice. The table now refuses each of those rows,
+   * from any connection, and the read leans on it.
+   */
+  it("the table refuses a release under another appointment, a release that names no row, and a second release of one claim", async () => {
+    const appt = await fresh();
+    const claimId = await seedClaim(appt);
+    await seedLedger(appt);
+
+    expect(await refusedBy(seedRelease(await fresh(), claimId))).toBe("reminder_claims_claim_fkey");
+    expect(await refusedBy(seedRelease(appt, randomUUID()))).toBe("reminder_claims_claim_fkey");
+    // Nothing was written, so the claim still holds.
+    expect(await releasesOf(appt)).toEqual([]);
+    expect(await take(appt)).toEqual({ held: true });
+
+    // NEGATIVE CONTROL: the release it does take, and what it then answers.
+    await seedRelease(appt, claimId);
+    expect(await releasesOf(appt)).toHaveLength(1);
+    expect(await take(appt)).toMatchObject({ held: false });
+    // One release per claim.
+    expect(await refusedBy(seedRelease(appt, claimId))).toBe("reminder_claims_release_claim_key");
+  });
+
+  it("through the code: a second release of one claim, and a release that names no claim, are swallowed and logged, and write nothing", async () => {
+    const { releaseReminderClaim } = await import("./reminder-claim");
+    const appt = await fresh();
+    const answer = await take(appt);
+    if (answer.held || answer.claimId === null) throw new Error("the claim was not written: nothing here was measured");
+    const release = { tenantId: tenantA, appointmentId: appt, offsetId: "24h", channel: "sms" as const };
+
+    await expect(releaseReminderClaim({ ...release, claimId: answer.claimId })).resolves.toBeUndefined();
+    expect((await releasesOf(appt)).map((r) => r.claim_id)).toEqual([answer.claimId]);
+
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(releaseReminderClaim({ ...release, claimId: answer.claimId })).resolves.toBeUndefined();
+    await expect(releaseReminderClaim({ ...release, claimId: randomUUID() })).resolves.toBeUndefined();
+    await expect(releaseReminderClaim({ ...release, claimId: "not an id" })).resolves.toBeUndefined();
+    expect(spy.mock.calls.filter((c) => String(c[0]).includes("reminder claim release FAILED"))).toHaveLength(3);
+    expect(await releasesOf(appt)).toHaveLength(1);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 7. Nothing of it is in the audit trail                            */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * LAST ON PURPOSE: it reads what every arm above left. The claims and the
+   * releases are in their own table, and `audit_log` holds NOTHING of either
+   * tenant: not under the two action names these rows once had, and not under
+   * any other.
+   */
+  it("after every arm above: the claims and the releases are in reminder_claims, and audit_log holds no row of either tenant", async () => {
+    // NEGATIVE CONTROL: the arms above did write, through the dispatcher and
+    // through the claim itself. Without this, an empty audit trail proves nothing.
+    const [written] = await rows(raw`select
+        count(*) filter (where kind = 'claim')::int as claims,
+        count(*) filter (where kind = 'release')::int as releases
+      from reminder_claims where tenant_id in (${tenantA}, ${tenantB})`);
+    expect(Number(written!.claims)).toBeGreaterThan(40);
+    expect(Number(written!.releases)).toBeGreaterThan(10);
+
+    const audit = await rows(raw`select action, count(*)::int as n from audit_log
+      where tenant_id in (${tenantA}, ${tenantB}) group by action order by action`);
+    expect(audit).toEqual([]);
   });
 });

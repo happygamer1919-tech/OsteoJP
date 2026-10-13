@@ -2,8 +2,10 @@
  * reminder-claim.test.ts: the claim's contract, with the database replaced.
  *
  * What a real Postgres has to prove (the row lands under the job's own role,
- * the lock is taken, a second tenant cannot see it, and WHICH rows make a
- * reminder held) is in reminder-log.db.test.ts and reminder-claim.db.test.ts.
+ * the lock is taken, a second tenant cannot see it, WHICH rows make a
+ * reminder held, and what the table itself refuses: a value that is not an id,
+ * a second release of one claim) is in reminder-log.db.test.ts and
+ * reminder-claim.db.test.ts.
  * Pinned here is everything around it: the row's shape, the ten minute edge,
  * the order of the statements, and the property the send path leans on, that
  * taking a claim can never throw and answers "not held" whenever it fails.
@@ -91,7 +93,7 @@ const {
   CLAIM_STATEMENT_TIMEOUT,
   EARLY_CLAIM_MS,
   REMINDER_CLAIM_KIND,
-  REMINDER_CLAIM_RELEASE_ACTION,
+  REMINDER_CLAIM_RELEASE_KIND,
   isEarlyClaim,
   releaseReminderClaim,
   reminderClaimLockPayload,
@@ -333,24 +335,26 @@ describe("the reminder claim: the release", () => {
     claimId: CLAIM_ID,
   };
 
-  it("is an audit row of its own that names its claim: the appointment as the entity, no actor, ids and enums only", async () => {
+  it("is a row of its own, of kind release, that names its claim: ids and enums only, and no start, taker or mark", async () => {
     await expect(releaseReminderClaim(release)).resolves.toBeUndefined();
     expect(ran.filter((r) => r.kind === "insert")).toEqual([
       {
         kind: "insert",
-        table: "audit_log",
+        table: "reminder_claims",
         values: {
           tenantId: TENANT,
-          actorUserId: null,
-          action: "appointment.reminder_claim_released",
-          entityType: "appointment",
-          entityId: APPOINTMENT,
-          metadata: { source: "reminder-claim", claimId: CLAIM_ID, offsetId: "24h", channel: "sms" },
-          ip: null,
+          appointmentId: APPOINTMENT,
+          kind: "release",
+          offsetId: "24h",
+          channel: "sms",
+          claimId: CLAIM_ID,
         },
       },
     ]);
-    expect(REMINDER_CLAIM_RELEASE_ACTION).toBe("appointment.reminder_claim_released");
+    expect(REMINDER_CLAIM_RELEASE_KIND).toBe("release");
+    // Never the claim's own kind: a release counted as a claim would be a
+    // claim with no outcome for ever.
+    expect(REMINDER_CLAIM_RELEASE_KIND).not.toBe(REMINDER_CLAIM_KIND);
   });
 
   it("bounds its waits, then queues on the reminder's own lock, then writes: it reads nothing", async () => {
@@ -373,12 +377,4 @@ describe("the reminder claim: the release", () => {
       spy.mockRestore();
     });
   }
-
-  it("a claim id the audit contract refuses is not written, and still does not throw", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(releaseReminderClaim({ ...release, claimId: "not an id" })).resolves.toBeUndefined();
-    expect(ran).toHaveLength(0);
-    expect(spy.mock.calls.flat().join(" ")).toContain("AuditMetadataError");
-    spy.mockRestore();
-  });
 });

@@ -1,10 +1,9 @@
 import "server-only";
-import { auditLog, reminderClaims, reminderDispatches, type DbTx } from "@osteojp/db";
+import { reminderClaims, reminderDispatches, type DbTx } from "@osteojp/db";
 import type { Channel } from "@osteojp/notify";
 import { and, eq, exists, gt, gte, inArray, like, lte, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 
-import { assertPiiFreeAuditMetadata } from "@/lib/audit/metadata-contract";
 import { withReminderTenantContext } from "./context";
 import { REMINDER_OFFSETS } from "./offsets";
 
@@ -34,8 +33,8 @@ import { REMINDER_OFFSETS } from "./offsets";
  * ==========================================================================
  * A THROW RELEASES THE CLAIM
  * ==========================================================================
- * `audit_log` is append only, so a release is a second row that names its
- * claim (`releaseReminderClaim`). A claim is LIVE while no release names it.
+ * `reminder_claims` is append only, so a release is a second row that names
+ * its claim (`releaseReminderClaim`). A claim is LIVE while no release names it.
  * The dispatcher writes one whenever it throws after taking a claim, and
  * throws the same error on. Today a release changes one answer: a `sent` row
  * is never counted as a released claim's own, so the released claim of a
@@ -45,13 +44,20 @@ import { REMINDER_OFFSETS } from "./offsets";
  * for the change that will make a live claim block at any age.
  *
  * ==========================================================================
- * WHY AN AUDIT ROW, AND NOT A LEDGER ROW
+ * WHERE IT IS KEPT: `reminder_claims`, NOT THE LEDGER AND NOT THE AUDIT TRAIL
  * ==========================================================================
- * The same reason as the booking-approved hand-over (dispatch-ledger.ts): the
- * key carries the START, so a visit moved to another time earns a claim of its
- * own, and `reminder_dispatches` has no column that can say which start a row
- * was for. `audit_log` takes ids, enums and an ISO instant, with no migration.
- * No actor: a background job wrote it.
+ * Not the ledger: the key carries the START, so a visit moved to another time
+ * earns a claim of its own, and `reminder_dispatches` has no column that can
+ * say which start a row was for. Not `audit_log`, where these rows were first
+ * drafted: any staff session of the tenant may insert an audit row, so any
+ * staff session could have written a claim or a release this file would then
+ * believe, and a claim is operational bookkeeping, not part of the record of
+ * who did what. The table takes a row from the reminder job's own session
+ * only (a tenant and no user), lets nobody update or delete one, and holds
+ * each column to the kinds of row that carry it. A claim, a release and the
+ * sweep's shadow row are its three kinds. It stores no outcome: whether a
+ * reminder was sent stays in the ledger, and whether a claim blocks is decided
+ * here, by reading both.
  *
  * ==========================================================================
  * IT NEVER THROWS INTO THE SEND PATH, AND IT FAILS OPEN
@@ -63,7 +69,7 @@ import { REMINDER_OFFSETS } from "./offsets";
  *
  * ON A WAIT TOO, NOT ONLY ON AN ERROR. The dispatcher awaits the claim before
  * it sends, so a claim that queued behind a stuck holder of this reminder's
- * lock, or behind a lock on `audit_log`, would hold the reminder for as long as
+ * lock, or behind a lock on `reminder_claims`, would hold the reminder for as long as
  * the holder sat there. The claim's transaction therefore bounds its own waits
  * first (`boundReminderClaimWaits`): Postgres ends the wait, the catch below
  * logs it, and the reminder goes out without its claim.
@@ -75,7 +81,14 @@ import { REMINDER_OFFSETS } from "./offsets";
  */
 export const REMINDER_CLAIM_KIND = "claim";
 
-/** The audit action of a release: the row that names a claim its sender gave up. */
+/**
+ * The kind of a release row: the row that names, in `claim_id`, a claim its
+ * sender gave up. It carries no start of its own, and the table takes one
+ * release per claim.
+ */
+export const REMINDER_CLAIM_RELEASE_KIND = "release";
+
+/** NOT MOVED YET, as the name above: the sweep's selection reads releases under it until the next commit. */
 export const REMINDER_CLAIM_RELEASE_ACTION = "appointment.reminder_claim_released";
 
 /**
@@ -167,7 +180,7 @@ export function acquireReminderClaimLock(
 /**
  * How long the claim may wait, in Postgres's own units. Two seconds for a lock
  * (this reminder's advisory lock, or a lock another session holds on
- * `audit_log`), five for any one statement. An uncontended claim takes
+ * `reminder_claims`), five for any one statement. An uncontended claim takes
  * milliseconds, and two honest senders of one reminder queue for as long as
  * one INSERT, so neither bound is reached by a claim that is working.
  */
@@ -185,15 +198,14 @@ export function boundReminderClaimWaits(): SQL {
 }
 
 /**
- * NOT MOVED YET: the held read below, and the sweep's selection, still look
- * for claims in `audit_log`, where none is written any more, so the held read
- * answers "not held" every time. That is record only. The next two commits
- * move them onto the table and this name goes.
+ * NOT MOVED YET: the sweep's selection still looks for claims in `audit_log`
+ * under this name, where none is written any more. The next commit moves it
+ * onto the table and this name goes.
  */
 export const REMINDER_CLAIM_ACTION = "appointment.reminder_claimed";
 
-/** The `audit_log` columns a claim of one reminder is recognised by, under any alias. */
-type ClaimColumns = Record<"tenantId" | "entityType" | "entityId" | "action" | "metadata", PgColumn>;
+/** The `reminder_claims` columns a row of one reminder is recognised by, under any alias. */
+type ClaimColumns = Record<"tenantId" | "appointmentId" | "kind" | "offsetId" | "channel" | "claimId", PgColumn>;
 
 /**
  * IS THIS REMINDER HELD? True when a claim for this appointment, offset,
@@ -228,7 +240,7 @@ type ClaimColumns = Record<"tenantId" | "entityType" | "entityId" | "action" | "
  * never holds anything.
  *
  * Reads as the caller: inside the reminder job's context that is the tenant's
- * own rows and nobody else's (the policies of `audit_log` and of
+ * own rows and nobody else's (the policies of `reminder_claims` and of
  * `reminder_dispatches`). The tenant is stated in every clause as well.
  *
  * IT THROWS when the read fails. `takeReminderClaim` is the one caller, and
@@ -240,28 +252,30 @@ export async function claimIsHeld(
 ): Promise<boolean> {
   if (!REMINDER_OFFSETS.some((o) => o.id === args.offsetId)) return false;
 
-  const claim = alias(auditLog, "reminder_claim");
-  const release = alias(auditLog, "reminder_claim_release");
-  const later = alias(auditLog, "reminder_later_claim");
-  const laterRelease = alias(auditLog, "reminder_later_claim_release");
-  /** A release of this appointment that names the claim with this id. */
+  const claim = alias(reminderClaims, "reminder_claim");
+  const release = alias(reminderClaims, "reminder_claim_release");
+  const later = alias(reminderClaims, "reminder_later_claim");
+  const laterRelease = alias(reminderClaims, "reminder_later_claim_release");
+  /**
+   * A release that names the claim with this id. The table lets a release
+   * name only a row of its own tenant and its own appointment
+   * (`reminder_claims_claim_fkey`); both are stated here all the same.
+   */
   const releaseNaming = (r: ClaimColumns, claimId: PgColumn): SQL | undefined =>
     and(
       eq(r.tenantId, args.tenantId),
-      eq(r.entityType, "appointment"),
-      eq(r.entityId, args.appointmentId),
-      eq(r.action, REMINDER_CLAIM_RELEASE_ACTION),
-      sql`${r.metadata}->>'claimId' = ${claimId}::text`,
+      eq(r.appointmentId, args.appointmentId),
+      eq(r.kind, REMINDER_CLAIM_RELEASE_KIND),
+      eq(r.claimId, claimId),
     );
   /** A claim of THIS reminder (appointment, offset, channel), of any start. */
   const ofThisReminder = (t: ClaimColumns): SQL | undefined =>
     and(
       eq(t.tenantId, args.tenantId),
-      eq(t.entityType, "appointment"),
-      eq(t.entityId, args.appointmentId),
-      eq(t.action, REMINDER_CLAIM_ACTION),
-      sql`${t.metadata}->>'offsetId' = ${args.offsetId}`,
-      sql`${t.metadata}->>'channel' = ${args.channel}`,
+      eq(t.appointmentId, args.appointmentId),
+      eq(t.kind, REMINDER_CLAIM_KIND),
+      eq(t.offsetId, args.offsetId),
+      eq(t.channel, args.channel),
     );
 
   const rows = await tx
@@ -270,10 +284,10 @@ export async function claimIsHeld(
     .where(
       and(
         ofThisReminder(claim),
-        // The start this claim was taken for. Both sides are the same
-        // `toISOString()` of the same column, so equality is exact.
-        sql`${claim.metadata}->>'startsAt' = ${args.startsAt.toISOString()}`,
-        sql`${claim.metadata}->>'early' is distinct from 'true'`,
+        // The start this claim was taken for. Both sides are the visit's own
+        // start as a sender's clock carries it, so equality is exact.
+        eq(claim.startsAt, args.startsAt),
+        sql`${claim.early} is distinct from true`,
         notExists(tx.select({ one: sql`1` }).from(release).where(releaseNaming(release, claim.id))),
         exists(
           tx
@@ -385,14 +399,16 @@ export async function takeReminderClaim(args: {
 }
 
 /**
- * Release a claim: one more audit row, naming it. The dispatcher calls this
+ * Release a claim: one more row of `reminder_claims`, of kind release, naming
+ * it. The dispatcher calls this
  * when it throws after taking a claim, and then throws the same error on.
  *
  * IT NEVER THROWS, for the dispatcher's reason: the error on its way out is
  * the one the scheduler must see, and a failed release must not replace it. A
  * release that cannot be written is logged, ids only. The claim then stays
  * live with no `sent` row after it, which blocks nothing: the retry claims
- * again and sends.
+ * again and sends. The table refuses a second release of one claim, and a
+ * release that names no claim of this appointment; both end here, logged.
  *
  * Its waits are bounded like the claim's, and it queues on the same lock, so a
  * release never lands between another taker's read and its write.
@@ -405,27 +421,20 @@ export async function releaseReminderClaim(args: {
   claimId: string;
 }): Promise<void> {
   try {
-    const metadata = {
-      source: "reminder-claim",
-      claimId: args.claimId,
+    const row = {
+      tenantId: args.tenantId,
+      appointmentId: args.appointmentId,
+      kind: REMINDER_CLAIM_RELEASE_KIND,
       offsetId: args.offsetId,
       channel: args.channel,
+      claimId: args.claimId,
     };
-    assertPiiFreeAuditMetadata(metadata, "reminders/releaseReminderClaim");
     await withReminderTenantContext(args.tenantId, async (tx) => {
       await tx.execute(boundReminderClaimWaits());
       await tx.execute(
         acquireReminderClaimLock(args.tenantId, args.appointmentId, args.offsetId, args.channel),
       );
-      await tx.insert(auditLog).values({
-        tenantId: args.tenantId,
-        actorUserId: null,
-        action: REMINDER_CLAIM_RELEASE_ACTION,
-        entityType: "appointment",
-        entityId: args.appointmentId,
-        metadata,
-        ip: null,
-      });
+      await tx.insert(reminderClaims).values(row);
     });
   } catch (e) {
     console.error(

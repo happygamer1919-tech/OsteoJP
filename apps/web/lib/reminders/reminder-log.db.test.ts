@@ -441,6 +441,9 @@ d("SWEEP-01: the dispatcher leaves a reminder claim, and a first claim changes n
     if (!sql) return;
     for (const tenantId of [tenantA, tenantB]) {
       await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
+      // By tenant, not left to the appointment's cascade: a seeded row of one
+      // tenant may name the other tenant's appointment.
+      await sql.execute(raw`delete from reminder_claims where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from reminder_dispatches where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
@@ -1089,6 +1092,9 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
     if (!sql) return;
     for (const tenantId of [tenantA, tenantB, tenantC, tenantD]) {
       await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
+      // By tenant, not left to the appointment's cascade: a seeded row of one
+      // tenant may name the other tenant's appointment.
+      await sql.execute(raw`delete from reminder_claims where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from reminder_dispatches where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
