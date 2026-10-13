@@ -119,6 +119,7 @@ const WORST_FOLLOW_UP: FollowUpContext = {
   patientFirstName: LONGEST_FIRST_NAME,
   appointmentDateLong: "23 de maio de 2026",
   appointmentDateShort: "23/05",
+  clinicLocation: LONGEST_LOCATION,
   clinicPhone: LONGEST_PHONE,
 };
 
@@ -127,6 +128,7 @@ const WORST_NO_SHOW: NoShowContext = {
   appointmentDateLong: "23 de maio de 2026",
   appointmentDateShort: "23/05",
   appointmentTime: "14:30",
+  clinicLocation: LONGEST_LOCATION,
   clinicPhone: LONGEST_PHONE,
   rescheduleLink: "https://osteojp.pt/r/oversized-token-never-in-sms",
 };

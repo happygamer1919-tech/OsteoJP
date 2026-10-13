@@ -28,11 +28,13 @@
  * location. ./data is replaced, so a broken join could not fail here. That is
  * proved against a real database in ./third-location-data.db.test.ts.
  *
- * TWO FINDINGS ARE PINNED BELOW AS THEY ARE, NOT FIXED (1 and 3). Each is patient-facing
- * copy or a REMINDERS_* flag (Tier D), so this file records what is sent today
+ * ONE FINDING IS PINNED BELOW AS IT IS, NOT FIXED (3). It is patient-facing
+ * copy and a REMINDERS_* flag (Tier D), so this file records what is sent today
  * and a change to the copy has to change the pin with it:
- *   1. the follow-up and the no-show messages print the location's phone and
- *      NOT its name;
+ *   1. RULED AND FIXED FOR THE EMAILS (MN-03, owner, 2026-10-12: "Yes, in the
+ *      two emails only."). The follow-up and the no-show messages printed the
+ *      location's phone and NOT its name. The two emails now carry a "Local:"
+ *      line; the two SMS still print the phone alone, pinned byte for byte;
  *   2. RULED AND FIXED (MN-02, strategy, 2026-10-12). The 24h SMS with the
  *      confirm link armed is 163 characters with this location's full name. It
  *      was refused; it now prints the place alone ("Montemor-o-Novo", 153) and
@@ -143,7 +145,7 @@ import {
 } from "./reminder-copy";
 import { FEE_NOTICE_TEMPLATE_ID } from "./fee-notice";
 import { smsPlaceName } from "./sms-body";
-import { SMS_SEGMENT_LIMIT } from "./templates";
+import { FOLLOW_UP_SMS, NO_SHOW_SMS, SMS_SEGMENT_LIMIT } from "./templates";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const APPT = "22222222-2222-4222-8222-222222222222";
@@ -676,59 +678,219 @@ describe("G7 - the booking confirmation of a third-location appointment", () => 
 });
 
 /* ==================================================================== */
-/* FINDING 1: the follow-up and the no-show                              */
+/* MN-03: the follow-up and the no-show                                  */
 /* ==================================================================== */
 
-describe("FINDING - the follow-up and the no-show carry the location's phone and NOT its name", () => {
-  it("follow-up EMAIL and SMS: the phone, no name, no other clinic; SMS 85 characters", async () => {
-    h.loadReminderData.mockResolvedValue(row({ status: "completed" }));
+// MN-03 (owner, 2026-10-12: "Yes, in the two emails only."). Until then both
+// messages printed the location's phone and NOT its name, so with a third
+// location live a patient could not tell which clinic wrote. The two EMAILS now
+// carry a "Local:" line, the label the confirmation email already uses, filled
+// from the appointment's own location row. The two SMS are not changed by one
+// byte: their templates and their rendered bodies are pinned below.
+
+/** Three locations: the third as ruling 5 names it, and two invented ones. */
+const THREE = [
+  { name: NAME, phone: PHONE },
+  { name: "Clinica Norte", phone: "210 222 222" },
+  { name: "Clinica Sul", phone: "272 111 111" },
+] as const;
+
+/** The dash of the approved signature and subjects, by its code point. */
+const DASH = String.fromCharCode(0x2014);
+
+/** The whole follow-up email body. A blank name is the body as it was before MN-03. */
+const followUpEmailBody = (name: string, phone: string) =>
+  [
+    "Olá Madalena,",
+    "",
+    "Obrigado pela visita de 14 de maio de 2031. Ficamos ao dispor para qualquer questão.",
+    "",
+    ...(name ? [`Local: ${name}`] : []),
+    `Para marcar a próxima consulta contacte: ${phone}`,
+    "",
+    `${DASH} OsteoJP`,
+  ].join("\n");
+
+/** The whole no-show email body. A blank name is the body as it was before MN-03. */
+const noShowEmailBody = (name: string, phone: string, link: string) =>
+  [
+    "Olá Madalena,",
+    "",
+    "A sua consulta de 14 de maio de 2031 às 14:30 ficou por realizar.",
+    "",
+    ...(name ? [`Local: ${name}`] : []),
+    `Para remarcar: ${link}`,
+    `Ou contacte: ${phone}`,
+    "",
+    `${DASH} OsteoJP`,
+  ].join("\n");
+
+/** The signed link is different on every run: read it, then compare the rest exactly. */
+function rescheduleLinkOf(body: string): string {
+  const found = body.match(/^Para remarcar: (https:\/\/app\.jp\.invalid\/r\/\S+)$/m);
+  expect(found, "the no-show email carries no reschedule link").not.toBeNull();
+  return found![1]!;
+}
+
+function expectNoOtherOfTheThree(text: string, own: (typeof THREE)[number]): void {
+  for (const other of THREE) {
+    if (other === own) continue;
+    expect(text, `names ${other.name}`).not.toContain(other.name);
+    expect(squash(text), `prints the phone of ${other.name}`).not.toContain(squash(other.phone));
+  }
+}
+
+describe("MN-03 - the follow-up and the no-show EMAIL carry the location's name", () => {
+  it.each(THREE)("follow-up EMAIL at $name: its OWN name and phone, no other location's", async (place) => {
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "completed", locationName: place.name, locationPhone: place.phone }),
+    );
 
     expect((await dispatchFollowUp(TENANT, APPT)).dispatched).toBe(true);
 
     const mail = only(h.email);
     expect(mail.templateId).toBe("follow_up.email");
-    expect(mail.body).toContain(`Para marcar a próxima consulta contacte: ${PHONE}`);
+    expect(mail.subject).toBe(`Obrigado pela sua visita ${DASH} 14 de maio de 2031`);
+    expect(mail.body).toBe(followUpEmailBody(place.name, place.phone));
+    expect(mail.body).toContain(`\nLocal: ${place.name}\n`);
+    expectNoOtherOfTheThree(mail.body, place);
     expectNoOtherClinic(`${mail.subject}\n${mail.body}`, "follow-up email");
-
-    const sms = only(h.sms);
-    expect(sms.templateId).toBe("follow_up.sms");
-    expect(sms.body).toBe(
-      `OsteoJP - Obrigado pela sua visita\nVisita: 14/05\nMarcar proxima consulta: ${PHONE}`,
-    );
-    expectNoOtherClinic(sms.body, "follow-up sms");
-    expectOneSegment(sms.body, 85);
-
-    // THE FINDING, as it stands today. Ruling 6 asks for the name in every
-    // message; adding it is a change of patient-facing copy and is not made here.
-    expect(mail.body).not.toContain(NAME);
-    expect(mail.body).not.toContain("Montemor");
-    expect(sms.body).not.toContain(NAME);
-    expect(sms.body).not.toContain("Montemor");
   });
 
-  it("no-show EMAIL and SMS: the phone, no name, no other clinic; SMS 79 characters", async () => {
-    h.loadReminderData.mockResolvedValue(row({ status: "no_show" }));
+  it.each(THREE)("no-show EMAIL at $name: its OWN name and phone, no other location's", async (place) => {
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "no_show", locationName: place.name, locationPhone: place.phone }),
+    );
 
     expect((await dispatchNoShow(TENANT, APPT)).dispatched).toBe(true);
 
     const mail = only(h.email);
     expect(mail.templateId).toBe("no_show.email");
-    expect(mail.body).toContain(`Ou contacte: ${PHONE}`);
+    expect(mail.subject).toBe(`Sentimos a sua falta ${DASH} consulta de 14 de maio de 2031`);
+    expect(mail.body).toBe(noShowEmailBody(place.name, place.phone, rescheduleLinkOf(mail.body)));
+    expect(mail.body).toContain(`\nLocal: ${place.name}\n`);
+    expectNoOtherOfTheThree(mail.body, place);
     expectNoOtherClinic(`${mail.subject}\n${mail.body}`, "no-show email");
+  });
+
+  it("the third location's emails carry its name and its phone", async () => {
+    h.loadReminderData.mockResolvedValue(row({ status: "completed" }));
+    await dispatchFollowUp(TENANT, APPT);
+    expectThisLocation(only(h.email).body, "follow-up email body");
+    h.email.length = 0;
+
+    h.loadReminderData.mockResolvedValue(row({ status: "no_show" }));
+    await dispatchNoShow(TENANT, APPT);
+    expectThisLocation(only(h.email).body, "no-show email body");
+  });
+
+  it("the English emails carry the same name, on a Location line", async () => {
+    const en = { locale: "en", contacts: { phone: TENANT_PHONE } };
+    h.loadReminderData.mockResolvedValue(row({ status: "completed", tenantSettings: en }));
+    await dispatchFollowUp(TENANT, APPT);
+    expect(only(h.email).body).toContain(
+      `\n\nLocation: ${NAME}\nTo book your next appointment contact us: ${PHONE}\n`,
+    );
+    h.email.length = 0;
+
+    h.loadReminderData.mockResolvedValue(row({ status: "no_show", tenantSettings: en }));
+    await dispatchNoShow(TENANT, APPT);
+    expect(only(h.email).body).toContain(`\n\nLocation: ${NAME}\nTo rebook: https://app.jp.invalid/r/`);
+    expect(only(h.email).body).toContain(`\nOr contact us: ${PHONE}\n`);
+  });
+
+  // The column is required, so this cannot happen from the database. If a name
+  // ever arrives blank the email is still sent, without the line: exactly the
+  // body that was sent before MN-03. The same for a name carrying a word in
+  // braces, which the template fill would substitute or refuse.
+  it.each([[""], ["   "], ["Clinica {norte}"], ["Clinica {{clinic_phone}}"]])(
+    "a blank or braced name (%j) never stops the send: the line is left out",
+    async (blank) => {
+      h.loadReminderData.mockResolvedValue(row({ status: "completed", locationName: blank }));
+      expect((await dispatchFollowUp(TENANT, APPT)).dispatched).toBe(true);
+      const followUp = only(h.email);
+      expect(followUp.body).toBe(followUpEmailBody("", PHONE));
+      expect(followUp.body).not.toContain("Local:");
+      h.email.length = 0;
+
+      h.loadReminderData.mockResolvedValue(row({ status: "no_show", locationName: blank }));
+      expect((await dispatchNoShow(TENANT, APPT)).dispatched).toBe(true);
+      const noShow = only(h.email);
+      expect(noShow.body).toBe(noShowEmailBody("", PHONE, rescheduleLinkOf(noShow.body)));
+      expect(noShow.body).not.toContain("Local:");
+    },
+  );
+});
+
+// These pass on the commit before MN-03 and on this one, with no edit between.
+describe("MN-03 SMS pin - the follow-up and the no-show SMS are what they were, byte for byte", () => {
+  it("the two SMS templates, pt and en", () => {
+    expect(FOLLOW_UP_SMS).toEqual({
+      pt: "OsteoJP - Obrigado pela sua visita\nVisita: {date}\nMarcar proxima consulta: {phone}",
+      en: "OsteoJP - Thank you for your visit\nVisit: {date}\nBook next appointment: {phone}",
+    });
+    expect(NO_SHOW_SMS).toEqual({
+      pt: "OsteoJP - Consulta nao realizada\nConsulta: {date} as {time}\nRemarcar: {phone}",
+      en: "OsteoJP - Missed appointment\nAppointment: {date} at {time}\nRebook: {phone}",
+    });
+  });
+
+  it.each(THREE)("follow-up SMS at $name: the phone and no name", async (place) => {
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "completed", locationName: place.name, locationPhone: place.phone }),
+    );
+
+    await dispatchFollowUp(TENANT, APPT);
+
+    const sms = only(h.sms);
+    expect(sms.templateId).toBe("follow_up.sms");
+    expect(sms.body).toBe(
+      `OsteoJP - Obrigado pela sua visita\nVisita: 14/05\nMarcar proxima consulta: ${place.phone}`,
+    );
+    expect(sms.body).not.toContain(place.name);
+    expectNoOtherClinic(sms.body, "follow-up sms");
+    expectOneSegment(sms.body, 85);
+  });
+
+  it.each(THREE)("no-show SMS at $name: the phone and no name", async (place) => {
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "no_show", locationName: place.name, locationPhone: place.phone }),
+    );
+
+    await dispatchNoShow(TENANT, APPT);
 
     const sms = only(h.sms);
     expect(sms.templateId).toBe("no_show.sms");
     expect(sms.body).toBe(
-      `OsteoJP - Consulta nao realizada\nConsulta: 14/05 as 14:30\nRemarcar: ${PHONE}`,
+      `OsteoJP - Consulta nao realizada\nConsulta: 14/05 as 14:30\nRemarcar: ${place.phone}`,
     );
+    expect(sms.body).not.toContain(place.name);
     expectNoOtherClinic(sms.body, "no-show sms");
     expectOneSegment(sms.body, 79);
+  });
 
-    // THE FINDING, as it stands today (see the follow-up above).
-    expect(mail.body).not.toContain(NAME);
-    expect(mail.body).not.toContain("Montemor");
-    expect(sms.body).not.toContain(NAME);
-    expect(sms.body).not.toContain("Montemor");
+  it("the SMS does not read the name: three names and one phone give one body", async () => {
+    const bodies = { followUp: new Set<string>(), noShow: new Set<string>() };
+    for (const place of THREE) {
+      h.loadReminderData.mockResolvedValue(row({ status: "completed", locationName: place.name }));
+      await dispatchFollowUp(TENANT, APPT);
+      bodies.followUp.add(only(h.sms).body);
+      h.sms.length = 0;
+      h.email.length = 0;
+
+      h.loadReminderData.mockResolvedValue(row({ status: "no_show", locationName: place.name }));
+      await dispatchNoShow(TENANT, APPT);
+      bodies.noShow.add(only(h.sms).body);
+      h.sms.length = 0;
+      h.email.length = 0;
+    }
+
+    expect([...bodies.followUp]).toEqual([
+      `OsteoJP - Obrigado pela sua visita\nVisita: 14/05\nMarcar proxima consulta: ${PHONE}`,
+    ]);
+    expect([...bodies.noShow]).toEqual([
+      `OsteoJP - Consulta nao realizada\nConsulta: 14/05 as 14:30\nRemarcar: ${PHONE}`,
+    ]);
   });
 });
 
