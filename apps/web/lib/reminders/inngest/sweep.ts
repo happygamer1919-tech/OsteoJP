@@ -16,7 +16,8 @@ import { SWEEP_CRON, runReminderSweep, type SweepStep } from "../sweep";
  * for a changed setting (CLAUDE.md, 2026-10-07) and NOT ESTABLISHED for a new
  * function: ../../guest-intake/inngest/retention.ts says a function added to
  * this endpoint is scheduled by the next deploy with no dashboard step. Either
- * way it is safe: a pass that does run writes audit rows and nothing else.
+ * way it is safe: a pass that does run writes rows of the sweep's own two
+ * tables (reminder_claims, reminder_sweep_passes) and nothing else.
  *
  * ITS OWN FILE, registered through the list in ./functions.ts. A frozen test
  * reads that file's `createFunction` blocks and their triggers, and the served

@@ -24,14 +24,13 @@ const { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER } = await import("./reminder-pop
 const {
   ReminderSweepError,
   SWEEP_CRON,
-  SWEEP_HEARTBEAT_ACTION,
-  SWEEP_HEARTBEAT_ENTITY,
   SWEEP_LAST_PASS_MINUTES,
   SWEEP_LAST_PASS_TAKES_MARKS_BEFORE,
   SWEEP_LOG_PREFIX,
   SWEEP_MARK_CEILING,
   SWEEP_REMINDABLE_STATUSES,
-  SWEEP_SHADOW_ACTION,
+  SWEEP_PASS_MODE,
+  SWEEP_SHADOW_KIND,
   runReminderSweep,
   sweepLockPayload,
   sweepLookAheadLimit,
@@ -294,9 +293,11 @@ describe("what the sweep is held to", () => {
 
   it("the ceiling is 50 marks a pass, and the names of its rows and its lock are fixed", () => {
     expect(SWEEP_MARK_CEILING).toBe(50);
-    expect(SWEEP_SHADOW_ACTION).toBe("appointment.reminder_sweep_shadow");
-    expect(SWEEP_HEARTBEAT_ACTION).toBe("reminder_sweep.pass");
-    expect(SWEEP_HEARTBEAT_ENTITY).toBe("reminder_sweep");
+    // The kind of its row in reminder_claims and the mode of its heartbeat:
+    // the words the table's own lists hold. `send` is in the table's list of
+    // modes and is not a word this file has.
+    expect(SWEEP_SHADOW_KIND).toBe("shadow");
+    expect(SWEEP_PASS_MODE).toBe("shadow");
     expect(sweepLockPayload("tenant-1")).toBe("reminder-sweep:tenant-1");
   });
 });
@@ -580,7 +581,6 @@ describe("the sweep can send nothing", () => {
   it("sweep.ts reaches exactly these files of the app, and none of them is a sender", () => {
     const reached = reach(SWEEP);
     expect(reached.files).toEqual([
-      "lib/audit/metadata-contract.ts",
       "lib/reminders/context.ts",
       "lib/reminders/offsets.ts",
       "lib/reminders/reminder-claim.ts",
@@ -589,11 +589,19 @@ describe("the sweep can send nothing", () => {
       "lib/scheduling/time.ts",
     ]);
     // From the packages: the query builder, and from the database package
-    // three tables and the tenant context. The ledger's table is there because
-    // the claim's file READS it; the test below holds that the sweep's own two
-    // files do not take it.
+    // five tables and the tenant context. The ledger's table is there because
+    // the claim's file READS it, and the audit trail because the population
+    // rule READS a visit's booking rows there; the tests below hold that the
+    // sweep's own two files take neither.
     expect(reached.packages).toEqual({
-      "@osteojp/db": ["appointments", "auditLog", "reminderClaims", "reminderDispatches", "withTenantContext"],
+      "@osteojp/db": [
+        "appointments",
+        "auditLog",
+        "reminderClaims",
+        "reminderDispatches",
+        "reminderSweepPasses",
+        "withTenantContext",
+      ],
       "drizzle-orm": [
         "and",
         "count",
@@ -618,7 +626,6 @@ describe("the sweep can send nothing", () => {
   it("the scheduled function adds the scheduler's client and the tenant lister, and uses them for nothing else", () => {
     const reached = reach(CRON);
     expect(reached.files).toEqual([
-      "lib/audit/metadata-contract.ts",
       "lib/reminders/context.ts",
       "lib/reminders/inngest/client.ts",
       "lib/reminders/inngest/sweep.ts",
@@ -642,6 +649,7 @@ describe("the sweep can send nothing", () => {
       "listTenantIdsForRetention",
       "reminderClaims",
       "reminderDispatches",
+      "reminderSweepPasses",
       "withTenantContext",
     ]);
 
@@ -664,9 +672,42 @@ describe("the sweep can send nothing", () => {
       expect(names, file).not.toContain("releaseReminderClaim");
       expect(names, file).not.toContain("recordDispatch");
     }
-    // What sweep.ts takes from the claim's file is two action names, to read with.
+    // What sweep.ts takes from the claim's file is the names of two kinds of row, to read with.
     const fromClaim = factsOf(SWEEP).imports.find((i) => i.specifier === "./reminder-claim");
-    expect(fromClaim?.names).toEqual(["REMINDER_CLAIM_ACTION", "REMINDER_CLAIM_RELEASE_ACTION"]);
+    expect(fromClaim?.names).toEqual(["REMINDER_CLAIM_KIND", "REMINDER_CLAIM_RELEASE_KIND"]);
+  });
+
+  /**
+   * NOT ONE OF THEM CAN WRITE THE AUDIT TRAIL. The claim, the release, the
+   * shadow row and the heartbeat were first drafted as rows of `audit_log`.
+   * They are rows of the sweep's own two tables now, and the files that write
+   * and read them do not so much as import the audit table or its metadata
+   * contract. ONE file of the sweep's reach names it, and it only reads: the
+   * population rule, which looks for a visit's booking on its audit trail.
+   * What a real pass leaves in `audit_log` is read back in sweep.db.test.ts.
+   */
+  it("the claim, the counts, the pass and the scheduled function do not import the audit table; the population rule does, and only reads it", () => {
+    const stores = [
+      join(__dirname, "reminder-claim.ts"),
+      join(__dirname, "reminder-numbers.ts"),
+      SWEEP,
+      CRON,
+    ];
+    for (const file of stores) {
+      const facts = factsOf(file);
+      expect(facts.imports.flatMap((i) => i.names), file).not.toContain("auditLog");
+      expect(facts.imports.map((i) => i.specifier), file).not.toContain("@/lib/audit/metadata-contract");
+      expect(readFileSync(file, "utf8"), file).not.toMatch(/insert\(auditLog\)|from\(auditLog\)|alias\(auditLog/);
+    }
+    // NEGATIVE CONTROL: the same reader finds the audit table where it is.
+    const population = join(__dirname, "reminder-population.ts");
+    expect(factsOf(population).imports.flatMap((i) => i.names)).toContain("auditLog");
+    const text = readFileSync(population, "utf8");
+    expect(text).toContain("alias(auditLog,");
+    expect(text).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
+    // And the two tables are written from exactly these two files.
+    const writers = stores.filter((file) => /\.insert\((reminderClaims|reminderSweepPasses)\)/.test(readFileSync(file, "utf8")));
+    expect(writers).toEqual([join(__dirname, "reminder-claim.ts"), SWEEP]);
   });
 
   /**

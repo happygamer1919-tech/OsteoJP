@@ -1,13 +1,12 @@
 import "server-only";
 import { and, count, eq, gt, inArray, lt, lte, not, notExists, sql, type SQL } from "drizzle-orm";
-import { alias, type PgColumn } from "drizzle-orm/pg-core";
-import { appointments, auditLog, type DbTx } from "@osteojp/db";
+import { alias } from "drizzle-orm/pg-core";
+import { appointments, reminderClaims, reminderSweepPasses, type DbTx } from "@osteojp/db";
 
-import { assertPiiFreeAuditMetadata } from "@/lib/audit/metadata-contract";
 import { lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import { withReminderTenantContext } from "./context";
 import { REMINDER_OFFSETS, type ReminderOffset } from "./offsets";
-import { REMINDER_CLAIM_ACTION, REMINDER_CLAIM_RELEASE_ACTION } from "./reminder-claim";
+import { REMINDER_CLAIM_KIND, REMINDER_CLAIM_RELEASE_KIND } from "./reminder-claim";
 import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./reminder-population";
 
 /**
@@ -21,10 +20,12 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./r
  * There is no flag here that turns sending on. This file, and everything it
  * imports, has no path to the dispatcher (./dispatch.ts), to a transport
  * (./clients.ts), to a provider SDK or to the scheduler's event API. A pass
- * writes audit rows and nothing else: no ledger row, no claim, no release, no
- * event. sweep.test.ts walks the imports with the compiler's own parser, and
- * sweep.db.test.ts runs passes against a real Postgres with the transports
- * replaced by spies and reads back everything a send would have left.
+ * writes shadow rows in `reminder_claims` and its heartbeat in
+ * `reminder_sweep_passes`, and nothing else: no ledger row, no claim, no
+ * release, no audit row, no event. sweep.test.ts walks the imports with the
+ * compiler's own parser, and sweep.db.test.ts runs passes against a real
+ * Postgres with the transports replaced by spies and reads back everything a
+ * send would have left.
  *
  * The reminders patients receive are still sent by the sleeping job of today
  * (send-appointment-reminder), untouched by this file.
@@ -103,10 +104,20 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./r
  * ==========================================================================
  * THE HEARTBEAT
  * ==========================================================================
- * Every pass writes one row per tenant, in the same transaction as that
- * tenant's shadow rows, with the counts of the pass. `audit_log.tenant_id` is
- * NOT NULL, so there is no row for "the pass" as a whole. A pass that could
- * not finish for a tenant leaves no heartbeat for it, which is the signal.
+ * Every pass writes one row per tenant in `reminder_sweep_passes`, in the same
+ * transaction as that tenant's shadow rows, with the counts of the pass. The
+ * table's `tenant_id` is NOT NULL, so there is no row for "the pass" as a
+ * whole. A pass that could not finish for a tenant leaves no heartbeat for it,
+ * which is the signal.
+ *
+ * ==========================================================================
+ * WHERE THE ROWS ARE KEPT
+ * ==========================================================================
+ * In the sweep's own two tables, never in `audit_log`: 60 heartbeats a day and
+ * a shadow row per reminder are operational bookkeeping, not part of the
+ * record of who did what. Both tables take a row from the reminder job's own
+ * session only and let nobody update or delete one. A shadow row goes with its
+ * appointment; a heartbeat names no appointment and outlives them all.
  */
 
 /**
@@ -129,12 +140,14 @@ export const SWEEP_LAST_PASS_TAKES_MARKS_BEFORE = "23:00";
 /** At most this many marks a pass, over every tenant and both offsets. */
 export const SWEEP_MARK_CEILING = 50;
 
-/** The audit action of a shadow row: one per mark a pass would have handed over. */
-export const SWEEP_SHADOW_ACTION = "appointment.reminder_sweep_shadow";
+/** The kind of a shadow row in `reminder_claims`: one per mark a pass would have handed over. */
+export const SWEEP_SHADOW_KIND = "shadow";
 
-/** The audit action and entity of a heartbeat: one per tenant per pass. */
-export const SWEEP_HEARTBEAT_ACTION = "reminder_sweep.pass";
-export const SWEEP_HEARTBEAT_ENTITY = "reminder_sweep";
+/**
+ * The mode a heartbeat is written with. The table's list also holds `send`,
+ * for the pass that will hand reminders over; nothing here can write it.
+ */
+export const SWEEP_PASS_MODE = "shadow";
 
 /**
  * The statuses a reminder is still sent for: the dispatcher's
@@ -204,13 +217,13 @@ export function sweepStartRange(now: Date, offset: Pick<ReminderOffset, "minutes
 /* ------------------------------------------------------------------ */
 
 /**
- * A timestamptz column as the ISO instant `Date.prototype.toISOString()`
- * writes, which is how a claim and a shadow row store the start. Text against
- * text, as in reminder-numbers.ts, so a malformed value in a row can never
- * raise a cast error into the pass.
+ * The start of the enclosing `appointments` row as a claim and a shadow row
+ * store it: to the millisecond, which is all a sender's clock carries.
+ * Truncated on THIS side, as in reminder-numbers.ts, so the row's own column
+ * stays bare for `reminder_claims_mark_idx`.
  */
-function isoInstant(column: PgColumn): SQL {
-  return sql`to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+function recordedStart(): SQL {
+  return sql`date_trunc('milliseconds', ${appointments.startsAt})`;
 }
 
 /** The mark of the enclosing `appointments` row for one offset. */
@@ -240,10 +253,10 @@ function dueVisits(tenantId: string, offset: ReminderOffset, now: Date): SQL | u
  * outcome is not asked, and why a claim of the sleeping job is not looked at.
  */
 function notTakenBySweep(tx: DbTx, tenantId: string, offset: ReminderOffset): SQL | undefined {
-  const shadow = alias(auditLog, "reminder_sweep_shadow");
-  const claim = alias(auditLog, "reminder_sweep_claim");
-  const release = alias(auditLog, "reminder_sweep_claim_release");
-  const start = isoInstant(appointments.startsAt);
+  const shadow = alias(reminderClaims, "reminder_sweep_shadow");
+  const claim = alias(reminderClaims, "reminder_sweep_claim");
+  const release = alias(reminderClaims, "reminder_sweep_claim_release");
+  const start = recordedStart();
   return and(
     notExists(
       tx
@@ -252,12 +265,11 @@ function notTakenBySweep(tx: DbTx, tenantId: string, offset: ReminderOffset): SQ
         .where(
           and(
             eq(shadow.tenantId, tenantId),
-            eq(shadow.entityType, "appointment"),
-            eq(shadow.entityId, appointments.id),
-            eq(shadow.action, SWEEP_SHADOW_ACTION),
-            sql`${shadow.metadata}->>'offsetId' = ${offset.id}`,
-            sql`${shadow.metadata}->>'channel' = ${offset.channel}`,
-            sql`${shadow.metadata}->>'startsAt' = ${start}`,
+            eq(shadow.appointmentId, appointments.id),
+            eq(shadow.kind, SWEEP_SHADOW_KIND),
+            eq(shadow.offsetId, offset.id),
+            eq(shadow.channel, offset.channel),
+            eq(shadow.startsAt, start),
           ),
         ),
     ),
@@ -268,14 +280,13 @@ function notTakenBySweep(tx: DbTx, tenantId: string, offset: ReminderOffset): SQ
         .where(
           and(
             eq(claim.tenantId, tenantId),
-            eq(claim.entityType, "appointment"),
-            eq(claim.entityId, appointments.id),
-            eq(claim.action, REMINDER_CLAIM_ACTION),
-            sql`${claim.metadata}->>'taker' = 'sweep'`,
-            sql`${claim.metadata}->>'offsetId' = ${offset.id}`,
-            sql`${claim.metadata}->>'channel' = ${offset.channel}`,
-            sql`${claim.metadata}->>'startsAt' = ${start}`,
-            sql`${claim.metadata}->>'early' is distinct from 'true'`,
+            eq(claim.appointmentId, appointments.id),
+            eq(claim.kind, REMINDER_CLAIM_KIND),
+            eq(claim.taker, "sweep"),
+            eq(claim.offsetId, offset.id),
+            eq(claim.channel, offset.channel),
+            eq(claim.startsAt, start),
+            sql`${claim.early} is distinct from true`,
             notExists(
               tx
                 .select({ one: sql`1` })
@@ -283,10 +294,9 @@ function notTakenBySweep(tx: DbTx, tenantId: string, offset: ReminderOffset): SQ
                 .where(
                   and(
                     eq(release.tenantId, tenantId),
-                    eq(release.entityType, "appointment"),
-                    eq(release.entityId, appointments.id),
-                    eq(release.action, REMINDER_CLAIM_RELEASE_ACTION),
-                    sql`${release.metadata}->>'claimId' = ${claim.id}::text`,
+                    eq(release.appointmentId, appointments.id),
+                    eq(release.kind, REMINDER_CLAIM_RELEASE_KIND),
+                    eq(release.claimId, claim.id),
                   ),
                 ),
             ),
@@ -440,7 +450,8 @@ export async function sweepTenantInShadow(args: {
   /** The switch of ./reminder-population.ts. Passed by tests only. */
   includeNeverReminded?: boolean;
 }): Promise<SweepTenantOutcome> {
-  const passId = args.passId ?? null;
+  // The tables take a pass id or none, never a blank one.
+  const passId = args.passId || null;
   return withReminderTenantContext(args.tenantId, async (tx): Promise<SweepTenantOutcome> => {
     await tx.execute(
       sql`select set_config('lock_timeout', ${SWEEP_LOCK_TIMEOUT}, true), set_config('statement_timeout', ${SWEEP_STATEMENT_TIMEOUT}, true)`,
@@ -449,59 +460,43 @@ export async function sweepTenantInShadow(args: {
 
     const selected = await selectDueMarks(tx, args);
 
-    // Each row is built whole and its metadata is then asked the audit
-    // metadata contract (lib/audit/metadata-contract.ts), like every other
-    // writer: ids, enums, an instant and counts, and nobody's name.
-    const shadowRows = selected.marks.map((m) => {
-      const row = {
-        tenantId: args.tenantId,
-        actorUserId: null,
-        action: SWEEP_SHADOW_ACTION,
-        entityType: "appointment",
-        entityId: m.appointmentId,
-        metadata: {
-          source: "reminder-sweep",
-          mode: "shadow",
-          passId,
-          offsetId: m.offsetId,
-          channel: m.channel,
-          startsAt: m.startsAt.toISOString(),
-          minutesAfterMark: m.minutesAfterMark,
-          savedAfterMark: m.savedAfterMark,
-        },
-        ip: null,
-      };
-      assertPiiFreeAuditMetadata(row.metadata, "reminders/sweepTenantInShadow");
-      return row;
-    });
-    if (shadowRows.length > 0) await tx.insert(auditLog).values(shadowRows);
+    // One row per mark taken: ids, enums, instants and counts, and nobody's
+    // name. The mark is stored as `due_at`, as the offset defines it today.
+    const shadowRows = selected.marks.map((m) => ({
+      tenantId: args.tenantId,
+      appointmentId: m.appointmentId,
+      kind: SWEEP_SHADOW_KIND,
+      offsetId: m.offsetId,
+      channel: m.channel,
+      startsAt: m.startsAt,
+      dueAt: m.mark,
+      minutesAfterMark: m.minutesAfterMark,
+      savedAfterMark: m.savedAfterMark,
+      passId,
+    }));
+    if (shadowRows.length > 0) await tx.insert(reminderClaims).values(shadowRows);
 
     const outcome: SweepTenantOutcome = {
       due: selected.due,
       recorded: shadowRows.length,
       overCeiling: selected.due > shadowRows.length,
     };
-    const heartbeat = {
+    await tx.insert(reminderSweepPasses).values({
       tenantId: args.tenantId,
-      actorUserId: null,
-      action: SWEEP_HEARTBEAT_ACTION,
-      entityType: SWEEP_HEARTBEAT_ENTITY,
-      entityId: null,
-      metadata: {
-        source: "reminder-sweep",
-        mode: "shadow",
-        passId,
-        at: args.now.toISOString(),
-        lookAheadBefore: sweepLookAheadLimit(args.now)?.toISOString() ?? null,
-        due: outcome.due,
-        recorded: outcome.recorded,
-        overCeiling: outcome.overCeiling,
-        neverRemindedLeftOut: selected.neverRemindedLeftOut,
-      },
-      ip: null,
-    };
-    assertPiiFreeAuditMetadata(heartbeat.metadata, "reminders/sweepTenantInShadow");
-    await tx.insert(auditLog).values(heartbeat);
+      passId,
+      mode: SWEEP_PASS_MODE,
+      passAt: args.now,
+      lookAheadBefore: sweepLookAheadLimit(args.now),
+      // The count and the rows are two reads of one transaction, and a visit
+      // saved between them can make the rows one more than the count. The
+      // table holds "recorded is never more than due", so the heartbeat says
+      // at least what was recorded rather than lose the whole pass to it.
+      dueCount: Math.max(outcome.due, outcome.recorded),
+      recordedCount: outcome.recorded,
+      overCeiling: outcome.overCeiling,
+      // With the switch on nothing is left out, and the count says so: 0.
+      excludedCount: selected.neverRemindedLeftOut ?? 0,
+    });
     return outcome;
   });
 }

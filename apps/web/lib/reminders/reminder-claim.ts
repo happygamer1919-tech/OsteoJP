@@ -88,8 +88,6 @@ export const REMINDER_CLAIM_KIND = "claim";
  */
 export const REMINDER_CLAIM_RELEASE_KIND = "release";
 
-/** NOT MOVED YET, as the name above: the sweep's selection reads releases under it until the next commit. */
-export const REMINDER_CLAIM_RELEASE_ACTION = "appointment.reminder_claim_released";
 
 /**
  * THE LEDGER OUTCOMES THAT MAKE A CLAIM BLOCK. ONE LIST, PINNED BY A TEST.
@@ -196,13 +194,6 @@ export const CLAIM_STATEMENT_TIMEOUT = "5s";
 export function boundReminderClaimWaits(): SQL {
   return sql`select set_config('lock_timeout', ${CLAIM_LOCK_TIMEOUT}, true), set_config('statement_timeout', ${CLAIM_STATEMENT_TIMEOUT}, true)`;
 }
-
-/**
- * NOT MOVED YET: the sweep's selection still looks for claims in `audit_log`
- * under this name, where none is written any more. The next commit moves it
- * onto the table and this name goes.
- */
-export const REMINDER_CLAIM_ACTION = "appointment.reminder_claimed";
 
 /** The `reminder_claims` columns a row of one reminder is recognised by, under any alias. */
 type ClaimColumns = Record<"tenantId" | "appointmentId" | "kind" | "offsetId" | "channel" | "claimId", PgColumn>;

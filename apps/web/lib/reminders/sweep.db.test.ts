@@ -13,20 +13,28 @@
  *      sender is held (reminder-claim.ts) does not hold it, and the sweep
  *      still selects it once and never again.
  *   3. WHICH ROWS TAKE A MARK, row by row: the start, the offset, the channel,
- *      the tenant, the action, the taker, an early claim, a released claim.
+ *      the tenant, the kind of row, the taker, an early claim, a released
+ *      claim. And which rows the table itself refuses, so the selection never
+ *      meets them.
  *   4. THE CEILING. 50 marks a pass over every tenant, oldest first, the rest
  *      on the next pass, and the heartbeat says so.
  *   5. ONE HEARTBEAT PER TENANT PER PASS, and none for a tenant whose pass
  *      could not finish, which does not stop the other tenant's.
- *   6. A PASS SENDS NOTHING. It leaves audit rows of two kinds and nothing
- *      else: no ledger row, no claim, no release, no change to a visit. The
- *      transports, the dispatcher, the scheduler's client and `fetch` are
- *      replaced by spies, and none is reached.
+ *   6. A PASS SENDS NOTHING. It leaves shadow rows in `reminder_claims` and
+ *      heartbeats in `reminder_sweep_passes`, and nothing else: no ledger row,
+ *      no claim, no release, no change to a visit. The transports, the
+ *      dispatcher, the scheduler's client and `fetch` are replaced by spies,
+ *      and none is reached.
+ *   7. NOTHING OF IT IS IN THE AUDIT TRAIL. A full pass leaves `audit_log`
+ *      exactly as it found it, row for row, and after every arm of this file
+ *      the two tenants' audit rows are the booking rows the seeds wrote and
+ *      nothing else.
  *
- * WHY A DATABASE. The selection is one read of `appointments` and `audit_log`
- * made under the reminder job's own role and tenant claim, behind an advisory
- * lock. A mock has no policy to hide another tenant's rows, no timestamps to
- * compare and no lock to wait on.
+ * WHY A DATABASE. The selection is one read of `appointments`, of the audit
+ * trail of a visit's booking, and of `reminder_claims`, made under the reminder
+ * job's own role and tenant claim, behind an advisory lock. A mock has no
+ * policy to hide another tenant's rows or to refuse a write, no constraint, no
+ * timestamps to compare and no lock to wait on.
  *
  * EVERY ARM OWNS ITS ROWS: two fresh tenants, and a week of its own per arm.
  * Every instant a pass compares against is passed in, and every arm's clock is
@@ -97,19 +105,18 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     return (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Row[];
   }
 
-  /** An audit row written straight to the table. `::text::jsonb`, or the driver encodes the string twice. */
-  async function audit(a: {
-    tenant?: string;
-    action: string;
-    entityType?: string;
-    entityId: string | null;
-    metadata?: Record<string, unknown>;
-  }): Promise<string> {
-    const id = randomUUID();
-    await sql.execute(raw`insert into audit_log (id, tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
-      values (${id}, ${a.tenant ?? tenantA}, null, ${a.action}, ${a.entityType ?? "appointment"}, ${a.entityId},
-              ${JSON.stringify(a.metadata ?? {})}::text::jsonb)`);
-    return id;
+  /** How many booking rows the seeds wrote to the audit trail. The last arm reads the trail against it. */
+  let bookingRows = 0;
+
+  /**
+   * A booking row on a visit's audit trail, as a save at the clinic writes
+   * one. THE ONLY AUDIT ROW THIS FILE WRITES: the sweep reads it to tell a
+   * visit the clinic saved, and writes none of its own.
+   */
+  async function booking(tenant: string, appointmentId: string): Promise<void> {
+    await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
+      values (${tenant}, null, 'appointment.create', 'appointment', ${appointmentId}, '{}'::jsonb)`);
+    bookingRows += 1;
   }
 
   /**
@@ -139,7 +146,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
       values (${id}, ${tenantId}, ${mine.patient}, ${mine.therapist}, ${mine.location},
               ${start.toISOString()}, ${plus(start, 45).toISOString()}, ${v.status ?? "scheduled"},
               ${created.toISOString()}, ${updated.toISOString()})`);
-    if (v.booked !== false) await audit({ tenant: tenantId, action: "appointment.create", entityId: id });
+    if (v.booked !== false) await booking(tenantId, id);
     return { id, start };
   }
 
@@ -154,72 +161,74 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
 
   const SMS = { offsetId: "24h", channel: "sms" } as const;
 
-  /** A shadow row, shaped as a pass writes it. */
-  function seedShadow(
+  const hoursOf = (offsetId: string) => (offsetId === "48h" ? 48 : 24);
+
+  /** A shadow row, shaped as a pass writes it, on the owning connection. */
+  async function seedShadow(
     appointmentId: string,
     start: Date,
-    over: { tenant?: string; offsetId?: string; channel?: string; action?: string; entityType?: string } = {},
-  ) {
-    return audit({
-      tenant: over.tenant,
-      action: over.action ?? "appointment.reminder_sweep_shadow",
-      entityType: over.entityType,
-      entityId: appointmentId,
-      metadata: {
-        source: "reminder-sweep",
-        mode: "shadow",
-        passId: null,
-        offsetId: over.offsetId ?? SMS.offsetId,
-        channel: over.channel ?? SMS.channel,
-        startsAt: start.toISOString(),
-        minutesAfterMark: 0,
-        savedAfterMark: false,
-      },
-    });
+    over: { tenant?: string; offsetId?: "24h" | "48h"; channel?: string } = {},
+  ): Promise<void> {
+    const offsetId = over.offsetId ?? SMS.offsetId;
+    await sql.execute(raw`insert into reminder_claims
+      (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, minutes_after_mark, saved_after_mark)
+      values (${over.tenant ?? tenantA}, ${appointmentId}, 'shadow', ${offsetId}, ${over.channel ?? SMS.channel},
+              ${start.toISOString()}, ${plus(start, -hoursOf(offsetId) * 60).toISOString()}, 0, false)`);
   }
 
-  /** A claim row, shaped as takeReminderClaim writes it. */
-  function seedClaim(
+  /**
+   * A claim row, shaped as takeReminderClaim writes it. `early: null` is a
+   * claim with no mark on record: the table holds "no early flag" and "no due
+   * time" to each other.
+   */
+  async function seedClaim(
     appointmentId: string,
     start: Date,
     over: {
       tenant?: string;
-      taker?: string;
-      offsetId?: string;
+      taker?: "run" | "sweep";
+      offsetId?: "24h" | "48h";
       channel?: string;
       early?: boolean | null;
-      action?: string;
-      entityType?: string;
     } = {},
-  ) {
-    return audit({
-      tenant: over.tenant,
-      action: over.action ?? "appointment.reminder_claimed",
-      entityType: over.entityType,
-      entityId: appointmentId,
-      metadata: {
-        source: "reminder-claim",
-        offsetId: over.offsetId ?? SMS.offsetId,
-        channel: over.channel ?? SMS.channel,
-        startsAt: start.toISOString(),
-        taker: over.taker ?? "sweep",
-        early: over.early === undefined ? false : over.early,
-      },
-    });
+  ): Promise<string> {
+    const id = randomUUID();
+    const offsetId = over.offsetId ?? SMS.offsetId;
+    const early = over.early === undefined ? false : over.early;
+    const due = early === null ? null : plus(start, -hoursOf(offsetId) * 60).toISOString();
+    await sql.execute(raw`insert into reminder_claims
+      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early)
+      values (${id}, ${over.tenant ?? tenantA}, ${appointmentId}, 'claim', ${offsetId}, ${over.channel ?? SMS.channel},
+              ${start.toISOString()}, ${due}::timestamptz, ${over.taker ?? "sweep"}, ${early}::boolean)`);
+    return id;
   }
 
-  function seedRelease(
-    appointmentId: string,
-    claimId: string,
-    over: { tenant?: string; action?: string; entityType?: string } = {},
-  ) {
-    return audit({
-      tenant: over.tenant,
-      action: over.action ?? "appointment.reminder_claim_released",
-      entityType: over.entityType,
-      entityId: appointmentId,
-      metadata: { source: "reminder-claim", claimId, ...SMS },
-    });
+  async function seedRelease(appointmentId: string, claimId: string, over: { tenant?: string } = {}): Promise<void> {
+    await sql.execute(raw`insert into reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id)
+      values (${over.tenant ?? tenantA}, ${appointmentId}, 'release', ${SMS.offsetId}, ${SMS.channel}, ${claimId})`);
+  }
+
+  /**
+   * The constraint that refused a statement. Drizzle wraps the driver's error,
+   * so the name is looked for on the error and on its cause.
+   */
+  async function refusedBy(statement: Promise<unknown>): Promise<string> {
+    try {
+      await statement;
+    } catch (e) {
+      const own = (e as { constraint_name?: string }).constraint_name;
+      const cause = ((e as { cause?: { constraint_name?: string } }).cause ?? {}).constraint_name;
+      return own ?? cause ?? `refused with no constraint: ${e instanceof Error ? e.name : "unknown"}`;
+    }
+    return "NOT REFUSED";
+  }
+
+  /**
+   * ANOTHER visit of the same tenant with this very start. Cancelled, so it is
+   * no mark of its own; it is there to carry a row that names the wrong visit.
+   */
+  async function twinOf(v: { start: Date }, now: Date): Promise<{ id: string; start: Date }> {
+    return visit({ now, startIn: Math.round((v.start.getTime() - now.getTime()) / MIN), createdIn: -10 * 60, status: "cancelled" });
   }
 
   /** A ledger row for the 24 hour SMS, as the dispatcher writes it. */
@@ -250,31 +259,46 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     return sweepTenantInShadow({ tenantId: tenant, now, limit, passId });
   }
 
+  /** An instant column as the ISO text `toISOString()` writes, or null. */
+  const iso = (column: string) => raw.raw(`to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`);
+
+  /** The shadow rows of one visit, whole. */
   async function shadowsOf(appointmentId: string): Promise<Row[]> {
-    return rows(raw`select tenant_id::text as tenant_id, actor_user_id, entity_type, ip, metadata
-      from audit_log
-      where entity_id = ${appointmentId} and action = 'appointment.reminder_sweep_shadow'
-      order by metadata->>'offsetId', created_at, id`);
+    return rows(raw`select tenant_id::text as tenant_id, kind, offset_id, channel,
+        ${iso("starts_at")} as starts_at, ${iso("due_at")} as due_at,
+        minutes_after_mark, saved_after_mark, pass_id, taker, early, claim_id
+      from reminder_claims
+      where appointment_id = ${appointmentId} and kind = 'shadow'
+      order by offset_id, created_at, id`);
   }
 
+  /** The heartbeats of one pass, whole. */
   async function heartbeatsOf(passId: string): Promise<Row[]> {
-    return rows(raw`select tenant_id::text as tenant_id, actor_user_id, entity_type, entity_id, ip, metadata
-      from audit_log
-      where action = 'reminder_sweep.pass' and metadata->>'passId' = ${passId}
-        and tenant_id in (${tenantA}, ${tenantB})
+    return rows(raw`select tenant_id::text as tenant_id, pass_id, mode,
+        ${iso("pass_at")} as pass_at, ${iso("look_ahead_before")} as look_ahead_before,
+        due_count, recorded_count, over_ceiling, excluded_count
+      from reminder_sweep_passes
+      where pass_id = ${passId} and tenant_id in (${tenantA}, ${tenantB})
       order by tenant_id`);
+  }
+
+  /** The two tenants' audit trail, as a count and a fingerprint of every row in it. */
+  async function auditTrail(): Promise<Row> {
+    const [t] = await rows(raw`select count(*)::int as n,
+        coalesce(md5(string_agg(id::text || action || entity_type || coalesce(entity_id::text, '') || metadata::text
+          || created_at::text, ',' order by id)), '') as fingerprint
+      from audit_log where tenant_id in (${tenantA}, ${tenantB})`);
+    return t!;
   }
 
   /** Everything a send, or a sender's bookkeeping, would have changed for the two tenants. */
   async function footprint() {
     const [f] = await rows(raw`select
       (select count(*)::int from reminder_dispatches where tenant_id in (${tenantA}, ${tenantB})) as ledger,
-      (select count(*)::int from audit_log where tenant_id in (${tenantA}, ${tenantB})
-         and action = 'appointment.reminder_claimed') as claims,
-      (select count(*)::int from audit_log where tenant_id in (${tenantA}, ${tenantB})
-         and action = 'appointment.reminder_claim_released') as releases,
-      (select count(*)::int from audit_log where tenant_id in (${tenantA}, ${tenantB})
-         and action not in ('appointment.reminder_sweep_shadow', 'reminder_sweep.pass')) as other_audit,
+      (select count(*)::int from reminder_claims where tenant_id in (${tenantA}, ${tenantB})
+         and kind = 'claim') as claims,
+      (select count(*)::int from reminder_claims where tenant_id in (${tenantA}, ${tenantB})
+         and kind = 'release') as releases,
       (select count(*)::int from staff_notifications where tenant_id in (${tenantA}, ${tenantB})) as notifications,
       (select coalesce(md5(string_agg(id::text || starts_at::text || status::text || confirmation_state::text
                 || updated_at::text, ',' order by id)), '') from appointments
@@ -320,6 +344,10 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     if (!sql) return;
     for (const tenantId of [tenantA, tenantB]) {
       await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
+      // By tenant: a seeded row of one tenant may name the other's visit, and
+      // a heartbeat names no visit at all, so no cascade reaches it.
+      await sql.execute(raw`delete from reminder_claims where tenant_id = ${tenantId}`);
+      await sql.execute(raw`delete from reminder_sweep_passes where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from reminder_dispatches where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
       await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
@@ -388,7 +416,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
       // The other tenant's own visit.
       p: await visit({ now, startIn: 6 * H, tenant: tenantB }),
     };
-    await audit({ tenant: tenantB, action: "appointment.create", entityId: v.q.id });
+    await booking(tenantB, v.q.id);
     const label = (id: string) => Object.entries(v).find(([, x]) => x.id === id)?.[0] ?? id;
     const keys = (marks: { appointmentId: string; offsetId: string }[]) =>
       marks.map((m) => `${label(m.appointmentId)}:${m.offsetId}`).sort();
@@ -475,13 +503,15 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
 
     // The pass records how far ahead, and the heartbeat says where it looked to.
     expect(await pass(tenantA, last, "last-pass")).toEqual({ due: 4, recorded: 4, overCeiling: false });
-    const ahead = (await shadowsOf(x.id)).map((s) => s.metadata as Row);
-    expect(ahead.map((m) => [m.offsetId, m.minutesAfterMark])).toEqual([
-      ["24h", -45],
-      ["48h", 23 * 60 + 15],
+    const ahead = await shadowsOf(x.id);
+    expect(ahead.map((m) => [m.offset_id, m.minutes_after_mark, m.due_at])).toEqual([
+      // Its due time is 22:30 tonight, 45 minutes after the pass.
+      ["24h", -45, plus(last, 45).toISOString()],
+      ["48h", 23 * 60 + 15, plus(last, -(23 * 60 + 15)).toISOString()],
     ]);
     const [beat] = await heartbeatsOf("last-pass");
-    expect((beat!.metadata as Row).lookAheadBefore).toBe(lisbonDateTimeToUtc(day, "23:00").toISOString());
+    expect(beat!.look_ahead_before).toBe(lisbonDateTimeToUtc(day, "23:00").toISOString());
+    expect(beat!.pass_at).toBe(last.toISOString());
     // z's 24 hour mark is taken by the first pass of the morning, eight hours late.
     const morning = lisbonDateTimeToUtc(addDays(day, 1), "07:00");
     expect(keys((await select(tenantA, morning)).marks)).toEqual(["z:24h"]);
@@ -500,22 +530,21 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
 
     expect(await pass(tenantA, now, "once-1")).toEqual({ due: 3, recorded: 3, overCeiling: false });
 
-    // The rows, whole. Ids, enums, an instant and two numbers: nobody's name.
-    const row = (offsetId: string, channel: string, start: Date, minutesAfterMark: number) => ({
+    // The rows, whole. Ids, enums, two instants and two facts: nobody's name,
+    // and nothing a claim or a release carries.
+    const row = (offsetId: "24h" | "48h", channel: string, start: Date, minutesAfterMark: number) => ({
       tenant_id: tenantA,
-      actor_user_id: null,
-      entity_type: "appointment",
-      ip: null,
-      metadata: {
-        source: "reminder-sweep",
-        mode: "shadow",
-        passId: "once-1",
-        offsetId,
-        channel,
-        startsAt: start.toISOString(),
-        minutesAfterMark,
-        savedAfterMark: false,
-      },
+      kind: "shadow",
+      offset_id: offsetId,
+      channel,
+      starts_at: start.toISOString(),
+      due_at: plus(start, -hoursOf(offsetId) * 60).toISOString(),
+      minutes_after_mark: minutesAfterMark,
+      saved_after_mark: false,
+      pass_id: "once-1",
+      taker: null,
+      early: null,
+      claim_id: null,
     });
     expect(await shadowsOf(v1.id)).toEqual([
       row("24h", "sms", v1.start, 23 * 60),
@@ -523,25 +552,19 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     ]);
     expect(await shadowsOf(v2.id)).toEqual([row("48h", "email", v2.start, 23 * 60)]);
 
-    // The heartbeat, whole: this tenant's, about no entity, with the pass's counts.
+    // The heartbeat, whole: this tenant's, in its own table, with the pass's counts.
     expect(await heartbeatsOf("once-1")).toEqual([
       {
         tenant_id: tenantA,
-        actor_user_id: null,
-        entity_type: "reminder_sweep",
-        entity_id: null,
-        ip: null,
-        metadata: {
-          source: "reminder-sweep",
-          mode: "shadow",
-          passId: "once-1",
-          at: now.toISOString(),
-          lookAheadBefore: null,
-          due: 3,
-          recorded: 3,
-          overCeiling: false,
-          neverRemindedLeftOut: 2,
-        },
+        pass_id: "once-1",
+        mode: "shadow",
+        pass_at: now.toISOString(),
+        look_ahead_before: null,
+        due_count: 3,
+        recorded_count: 3,
+        over_ceiling: false,
+        // Both marks of the visit that never had a reminder.
+        excluded_count: 2,
       },
     ]);
 
@@ -554,8 +577,20 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     // Two hours later v1 has started, and v2's OTHER mark has come due: that one row, once.
     expect(await pass(tenantA, plus(now, 120), "once-3")).toEqual({ due: 1, recorded: 1, overCeiling: false });
     expect(await pass(tenantA, plus(now, 135), "once-4")).toEqual({ due: 0, recorded: 0, overCeiling: false });
-    expect((await shadowsOf(v2.id)).map((s) => (s.metadata as Row).offsetId)).toEqual(["24h", "48h"]);
+    expect((await shadowsOf(v2.id)).map((s) => s.offset_id)).toEqual(["24h", "48h"]);
     expect(await shadowsOf(v1.id)).toHaveLength(2);
+
+    // WITH THE SWITCH ON nothing is left out, and the heartbeat's count says 0.
+    const { sweepTenantInShadow } = await import("./sweep");
+    await sweepTenantInShadow({ tenantId: tenantA, now: plus(now, 150), limit: 50, passId: "once-on", includeNeverReminded: true });
+    expect((await heartbeatsOf("once-on")).map((b) => b.excluded_count)).toEqual([0]);
+    // A PASS WITH NO ID of its own still leaves its heartbeat, with no pass id:
+    // the table takes an id or none, never a blank one.
+    const noId = () =>
+      rows(raw`select count(*)::int as n from reminder_sweep_passes where tenant_id = ${tenantA} and pass_id is null`);
+    const before = Number((await noId())[0]!.n);
+    await pass(tenantA, plus(now, 165), "");
+    expect(Number((await noId())[0]!.n) - before).toBe(1);
   });
 
   it("a SUPPRESSED mark is selected once: the list that holds a second sender does not hold it, and the sweep still never takes it again", async () => {
@@ -633,10 +668,8 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
       ["a shadow row for the other reminder", (v) => seedShadow(v.id, v.start, { offsetId: "48h", channel: "email" })],
       ["a shadow row for another channel", (v) => seedShadow(v.id, v.start, { channel: "email" })],
       ["a shadow row for another offset on this channel", (v) => seedShadow(v.id, v.start, { offsetId: "48h" })],
-      ["a shadow row of ANOTHER visit with this very start", (v) => seedShadow(randomUUID(), v.start)],
+      ["a shadow row of ANOTHER visit with this very start", async (v) => seedShadow((await twinOf(v, now)).id, v.start)],
       ["a shadow row of another tenant", (v) => seedShadow(v.id, v.start, { tenant: tenantB })],
-      ["a shadow row about another kind of entity", (v) => seedShadow(v.id, v.start, { entityType: "patient" })],
-      ["the same metadata under another action", (v) => seedShadow(v.id, v.start, { action: "reminder_sweep.pass" })],
     ];
     for (const [what, seed] of notShadows) {
       const v = await fresh();
@@ -652,27 +685,20 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     const unknownEarly = await fresh();
     await seedClaim(unknownEarly.id, unknownEarly.start, { early: null });
     expect(await selects(now, unknownEarly.id)).toBe(false);
-    // A release that names ANOTHER claim, or that another tenant wrote, frees nothing.
+    // A release that names ANOTHER claim of the visit (its other reminder's) frees nothing.
     const otherRelease = await fresh();
     await seedClaim(otherRelease.id, otherRelease.start);
-    await seedRelease(otherRelease.id, randomUUID());
+    await seedRelease(otherRelease.id, await seedClaim(otherRelease.id, otherRelease.start, { offsetId: "48h", channel: "email" }));
     expect(await selects(now, otherRelease.id)).toBe(false);
+    // WHAT THE TABLE REFUSES, so the selection never has to tell it apart: a
+    // release another tenant wrote, a release filed under another visit, and
+    // a release that names no row. Each leaves the claim live.
     const foreignRelease = await fresh();
     const kept = await seedClaim(foreignRelease.id, foreignRelease.start);
-    await seedRelease(foreignRelease.id, kept, { tenant: tenantB });
+    expect(await refusedBy(seedRelease(foreignRelease.id, kept, { tenant: tenantB }))).toBe("reminder_claims_claim_fkey");
+    expect(await refusedBy(seedRelease((await twinOf(foreignRelease, now)).id, kept))).toBe("reminder_claims_claim_fkey");
+    expect(await refusedBy(seedRelease(foreignRelease.id, randomUUID()))).toBe("reminder_claims_claim_fkey");
     expect(await selects(now, foreignRelease.id)).toBe(false);
-    // And a row that names the claim without being its release: about another
-    // kind of entity, filed under another visit, or under another action.
-    const notReleases: [string, (visitId: string, claimId: string) => Promise<unknown>][] = [
-      ["a release about another kind of entity", (visitId, claimId) => seedRelease(visitId, claimId, { entityType: "patient" })],
-      ["a release filed under another visit", (_visitId, claimId) => seedRelease(randomUUID(), claimId)],
-      ["another action that carries the claim's id", (visitId, claimId) => seedRelease(visitId, claimId, { action: "appointment.reminder_claimed" })],
-    ];
-    for (const [what, seed] of notReleases) {
-      const v = await fresh();
-      await seed(v.id, await seedClaim(v.id, v.start));
-      expect(await selects(now, v.id), what).toBe(false);
-    }
 
     const notClaims: [string, (v: { id: string; start: Date }) => Promise<unknown>][] = [
       ["a claim of the sleeping job", (v) => seedClaim(v.id, v.start, { taker: "run" })],
@@ -689,9 +715,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
       ["a claim of the sweep for the other reminder", (v) => seedClaim(v.id, v.start, { offsetId: "48h", channel: "email" })],
       ["a claim of the sweep for another channel", (v) => seedClaim(v.id, v.start, { channel: "email" })],
       ["a claim of the sweep for another offset on this channel", (v) => seedClaim(v.id, v.start, { offsetId: "48h" })],
-      ["a claim of the sweep on ANOTHER visit with this very start", (v) => seedClaim(randomUUID(), v.start)],
-      ["a claim of the sweep about another kind of entity", (v) => seedClaim(v.id, v.start, { entityType: "patient" })],
-      ["the claim's metadata under another action", (v) => seedClaim(v.id, v.start, { action: "appointment.booking_approved_handed_over" })],
+      ["a claim of the sweep on ANOTHER visit with this very start", async (v) => seedClaim((await twinOf(v, now)).id, v.start)],
       ["a claim of the sweep in another tenant", (v) => seedClaim(v.id, v.start, { tenant: tenantB })],
     ];
     for (const [what, seed] of notClaims) {
@@ -715,7 +739,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     expect(ids).not.toContain(theirs.id);
     expect(ids).not.toContain(shadowed.id);
     expect(ids).not.toContain(claimed.id);
-    // The other tenant's release of this tenant's claim frees nothing here either.
+    // The claim whose three releases the table refused is still live here too.
     expect(ids).not.toContain(foreignRelease.id);
   });
 
@@ -733,10 +757,10 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     await move(moved);
     expect(await pass(tenantA, plus(now, 15), "moved-2")).toEqual({ due: 1, recorded: 1, overCeiling: false });
     expect(await pass(tenantA, plus(now, 30), "moved-3")).toEqual({ due: 0, recorded: 0, overCeiling: false });
-    const shadows = (await shadowsOf(v.id)).map((s) => s.metadata as Row);
-    expect(shadows.map((m) => m.startsAt)).toEqual([v.start.toISOString(), moved.toISOString()]);
+    const shadows = await shadowsOf(v.id);
+    expect(shadows.map((m) => m.starts_at)).toEqual([v.start.toISOString(), moved.toISOString()]);
     // The row of the new start says the visit was saved after that mark.
-    expect(shadows.map((m) => m.savedAfterMark)).toEqual([false, true]);
+    expect(shadows.map((m) => m.saved_after_mark)).toEqual([false, true]);
 
     // Moved back: the first row is about this start, so nothing is taken again.
     await move(v.start);
@@ -775,10 +799,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     const byTenant = (a: { tenant: unknown }, b: { tenant: unknown }) => (String(a.tenant) < String(b.tenant) ? -1 : 1);
     const beats = async (passId: string) =>
       (await heartbeatsOf(passId))
-        .map((b) => {
-          const m = b.metadata as Row;
-          return { tenant: b.tenant_id, due: m.due, recorded: m.recorded, overCeiling: m.overCeiling };
-        })
+        .map((b) => ({ tenant: b.tenant_id, due: b.due_count, recorded: b.recorded_count, overCeiling: b.over_ceiling }))
         .sort(byTenant);
 
     // PASS 1: the 50 oldest marks of tenant A. Tenant B's turn comes with nothing left.
@@ -869,7 +890,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
   /* 6. A pass sends nothing                                           */
   /* ---------------------------------------------------------------- */
 
-  it("A PASS SENDS NOTHING: it leaves shadow rows and heartbeats, and no ledger row, claim, release, notice or change to a visit", async () => {
+  it("A PASS SENDS NOTHING AND AUDITS NOTHING: it leaves shadow rows and heartbeats in its own two tables, no ledger row, claim, release, notice or change to a visit, and audit_log exactly as it was", async () => {
     const { runReminderSweep } = await import("./sweep");
     const now = clockOf(8);
     // Everything a real send would act on: due marks in both tenants, both
@@ -883,8 +904,12 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     await visit({ now, startIn: 60, tenant: tenantB });
 
     const before = await footprint();
-    const shadowsBefore = await rows(raw`select count(*)::int as n from audit_log
-      where tenant_id in (${tenantA}, ${tenantB}) and action = 'appointment.reminder_sweep_shadow'`);
+    const auditBefore = await auditTrail();
+    // NEGATIVE CONTROL: the trail is not empty. It holds the bookings seeded so far.
+    expect(auditBefore).toMatchObject({ n: bookingRows });
+    expect(bookingRows).toBeGreaterThan(100);
+    const shadowsBefore = await rows(raw`select count(*)::int as n from reminder_claims
+      where tenant_id in (${tenantA}, ${tenantB}) and kind = 'shadow'`);
 
     const outcome = await runReminderSweep({
       listTenantIds: async () => [tenantA, tenantB],
@@ -898,18 +923,17 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
 
     // Everything a send would have left is exactly as it was.
     expect(await footprint()).toEqual(before);
-    // What the pass did leave: seven shadow rows and two heartbeats, by nobody, from nowhere.
-    const left = await rows(raw`select action, entity_type, count(*)::int as n,
-        count(actor_user_id)::int as with_actor, count(ip)::int as with_ip
-      from audit_log
-      where tenant_id in (${tenantA}, ${tenantB}) and metadata->>'passId' = 'sends-nothing'
-      group by action, entity_type order by action`);
-    expect(left).toEqual([
-      { action: "appointment.reminder_sweep_shadow", entity_type: "appointment", n: 7, with_actor: 0, with_ip: 0 },
-      { action: "reminder_sweep.pass", entity_type: "reminder_sweep", n: 2, with_actor: 0, with_ip: 0 },
-    ]);
-    const shadowsAfter = await rows(raw`select count(*)::int as n from audit_log
-      where tenant_id in (${tenantA}, ${tenantB}) and action = 'appointment.reminder_sweep_shadow'`);
+    // THE AUDIT TRAIL, READ AFTER THE FULL PASS: the same rows, to the byte.
+    // Not one row was added, changed or removed.
+    expect(await auditTrail()).toEqual(auditBefore);
+    // What the pass did leave: seven shadow rows and two heartbeats, in their own tables.
+    const left = await rows(raw`select kind, count(*)::int as n from reminder_claims
+      where tenant_id in (${tenantA}, ${tenantB}) and pass_id = 'sends-nothing'
+      group by kind order by kind`);
+    expect(left).toEqual([{ kind: "shadow", n: 7 }]);
+    expect((await heartbeatsOf("sends-nothing")).map((b) => [b.mode, b.recorded_count])).toHaveLength(2);
+    const shadowsAfter = await rows(raw`select count(*)::int as n from reminder_claims
+      where tenant_id in (${tenantA}, ${tenantB}) and kind = 'shadow'`);
     expect(Number(shadowsAfter[0]!.n) - Number(shadowsBefore[0]!.n)).toBe(7);
     expect(h.reached).toEqual([]);
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -933,5 +957,34 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     ]);
     // Emptied by hand, so the check after every arm still holds for this one.
     h.reached.length = 0;
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 7. Nothing of it is in the audit trail                            */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * LAST ON PURPOSE: it reads what every arm above left. Passes ran for both
+   * tenants, with shadow rows, heartbeats, claims and releases, and one arm
+   * took claims through the claim's own code. The claim, the release, the
+   * shadow row and the heartbeat were audit rows in the first draft of the
+   * sweep. Not one is there now: the two tenants' audit trail holds the
+   * booking rows this file's seeds wrote, and nothing else.
+   */
+  it("after every arm above: audit_log holds the seeded booking rows and no claim, release, shadow row or heartbeat", async () => {
+    // NEGATIVE CONTROL: the four kinds of row were all written, in their own tables.
+    const [written] = await rows(raw`select
+        (select count(*)::int from reminder_claims where tenant_id in (${tenantA}, ${tenantB}) and kind = 'shadow') as shadows,
+        (select count(*)::int from reminder_claims where tenant_id in (${tenantA}, ${tenantB}) and kind = 'claim') as claims,
+        (select count(*)::int from reminder_claims where tenant_id in (${tenantA}, ${tenantB}) and kind = 'release') as releases,
+        (select count(*)::int from reminder_sweep_passes where tenant_id in (${tenantA}, ${tenantB})) as heartbeats`);
+    expect(Number(written!.shadows)).toBeGreaterThan(70);
+    expect(Number(written!.claims)).toBeGreaterThan(15);
+    expect(Number(written!.releases)).toBeGreaterThan(1);
+    expect(Number(written!.heartbeats)).toBeGreaterThan(20);
+
+    const audit = await rows(raw`select action, entity_type, count(*)::int as n from audit_log
+      where tenant_id in (${tenantA}, ${tenantB}) group by action, entity_type order by action`);
+    expect(audit).toEqual([{ action: "appointment.create", entity_type: "appointment", n: bookingRows }]);
   });
 });
