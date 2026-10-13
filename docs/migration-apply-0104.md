@@ -59,7 +59,7 @@ is the lead's call, never the runner's.
 | Must follow | `0103` (#1573), body sha256 `8283a7996ddf76266d60edec2e8b44f32ebac513237038ff7f8c413774643f59`, journal `idx 100`, `when` 1788502400000. Stage 0 finds it by its journal tag and asserts its bytes; the pre-check finds it by hash as production's newest row |
 | Runs from | `origin/main`, when it IS the pull request's merge commit. Stage 0 records the sha in `/tmp/0104-main.sha`; every later stage checks out that recorded sha, and stage 1 HALTS if `origin/main` has moved since |
 | This document | `docs/migration-apply-0104.md`, pinned by `docs/migration-apply-0104.sha256` and asserted by every block; GREEN's dispatch pins its sha256 on its own |
-| Pre-check | `scripts/db/precheck-0104-episode-policies.sql`, READ ONLY, 17 verdicts, 15 CARRY rows (verdict 3 prints a carried number too), 8 INFO rows and a SUMMARY row, `-v prev_hash` and `-v prev_when` required; it ends with an error on any profile but `17 OK / 0 VACUOUS / 0 FAIL`, sha256 `ecb413e6d189ddfaf307125f38e324955c656cccbf680c36fe710c230430fc56` |
+| Pre-check | `scripts/db/precheck-0104-episode-policies.sql`, READ ONLY, 17 verdicts, 15 CARRY rows (verdict 3 prints a carried number too), 8 INFO rows and a SUMMARY row, `-v prev_hash` and `-v prev_when` required; it ends with an error on any profile but `17 OK / 0 VACUOUS / 0 FAIL`, sha256 `e32111cd83e8bc4e765ffe87daf8fa3b075314e5ac275079fd8854ae937d3dce` |
 | Post-check | `scripts/db/postcheck-0104-episode-policies.sql`, READ ONLY, 21 verdicts and a SUMMARY row, fifteen carries in; it ends with an error on any profile but the one the carry `post_vacuous_expected` names, sha256 `ec832e62bdf583d1dba6c3f2ce364a688aca27860a1041a4406e8fe4bde2ddcb` |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387`; and the module the last two import, `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c`. The same bytes 0103's document pins; every block that runs one compares it first |
 | The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59` |
@@ -114,7 +114,7 @@ DOCPIN=docs/migration-apply-0104.sha256
 MIG=packages/db/migrations/0104_clinical_episodes_role_matrix.sql
 SHA0104=eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9
 SHAPREV=8283a7996ddf76266d60edec2e8b44f32ebac513237038ff7f8c413774643f59
-SHAPRE=ecb413e6d189ddfaf307125f38e324955c656cccbf680c36fe710c230430fc56
+SHAPRE=e32111cd83e8bc4e765ffe87daf8fa3b075314e5ac275079fd8854ae937d3dce
 SHAPOST=ec832e62bdf583d1dba6c3f2ce364a688aca27860a1041a4406e8fe4bde2ddcb
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
@@ -203,7 +203,7 @@ set -o pipefail
 MIG=packages/db/migrations/0104_clinical_episodes_role_matrix.sql
 SHA0104=eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9
 SHAPREV=8283a7996ddf76266d60edec2e8b44f32ebac513237038ff7f8c413774643f59
-SHAPRE=ecb413e6d189ddfaf307125f38e324955c656cccbf680c36fe710c230430fc56
+SHAPRE=e32111cd83e8bc4e765ffe87daf8fa3b075314e5ac275079fd8854ae937d3dce
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -518,8 +518,8 @@ echo "CLOSING READ: the journal reads 102, 0104 is APPLIED, and nothing is pendi
 - **The six functions the new policies call,** each by its flags, owner, EXECUTE for `authenticated` and body md5; and the SECURITY DEFINER count, 36.
 - **Verdict 14, the behaviour before:** one real active member of staff per role, in the tenant with the most episodes, is impersonated inside the READ ONLY transaction (identity checked first), and each must read EVERY episode of the tenant today. Any other number is a FAIL.
 - **What the new read policy will admit for each of those four,** computed from the tables and not through the helper functions (an INFO row), and `post_vacuous_expected` from it.
-- **Verdict 15 and `registos_in_another_patients_episode`:** the registos filed in an episode whose patient or tenant is not the registo's own. Any number but 0 is a FAIL and stops the sitting with nothing applied (the owner's ruling of 2026-10-13). The control is that every registo naming an episode joins to it; where no registo names an episode at all the verdict reads VACUOUS, which stops the sitting too.
-- **Verdict 16, who granted the privilege the migration revokes:** the table's ACL holds exactly one DELETE item for `authenticated`, granted by `postgres`, and neither PUBLIC nor a role `authenticated` is a member of holds DELETE on the table. The REVOKE, run by `postgres`, removes the grant `postgres` made and no other; a second grantor would leave the privilege in place, and before this verdict that was found only after the COMMIT (post-check verdict 5).
+- **Verdict 15 and `registos_in_another_patients_episode`:** the registos filed in an episode whose patient or tenant is not the registo's own. Any number but 0 is a FAIL and stops the sitting with nothing applied (the owner's ruling of 2026-10-13). It is counted twice, two ways, and either count above 0 is a FAIL, so one count that went wrong does not pass alone; the CARRY row prints the greater. The control is that every registo naming an episode joins to it; where no registo names an episode at all the verdict reads VACUOUS, which stops the sitting too.
+- **Verdict 16, who granted the privilege the migration revokes:** the table's ACL holds exactly one DELETE item for `authenticated`, granted by `postgres`, and neither PUBLIC nor a role `authenticated` is a member of holds DELETE on the table. The REVOKE, run by `postgres`, removes the grant `postgres` made and no other; a second grantor would leave the privilege in place, and before this verdict that was found only after the COMMIT (post-check verdict 5). Verdict 9 counts the same grant on its own, straight from the ACL, so a second grantor fails two verdicts.
 - **Profiles (INFO):** episodes open and closed, imported or not, with no practitioner; active admins and receptionists with no clinic assignment (the clinic test admits such a session to nothing).
 
 **What the post-check proves:** each of the three policies by md5; four policies on the table and the patient policy unchanged; the privileges (no DELETE for `authenticated`, everything else as before); the policy count plus 2; every other policy, every function, every other privilege, every column and default privilege, every trigger and the table count unchanged by md5; no row moved (count and md5); 0104 in the journal once as the newest row; the same four actors as the pre-check; and, per role, that the episodes the actor reads as `authenticated` EQUAL the episodes the new policy admits, computed from the tables.

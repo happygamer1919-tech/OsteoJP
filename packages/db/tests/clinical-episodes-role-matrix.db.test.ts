@@ -466,6 +466,19 @@ describe.skipIf(!live)(`0104: the clinical_episodes policies follow the roles [$
     ).rejects.toThrow(/row-level security/i);
   });
 
+  // An UPDATE with no WHERE and a constant SET reads no column, so Postgres does not put the row to the read
+  // policy: the UPDATE policy's own two tenant clauses are all that stands between it and another tenant.
+  it("the owner's UPDATE with no WHERE changes the tenant's own five episodes and stops at no other tenant's (USING alone decides) (both sides)", async () => {
+    const changed = await asUser("owner", M.owner, async (tx) => (await tx`update clinical_episodes set title = 'Osteopatia'`).count);
+    expect(changed).toBe(5);
+  });
+
+  it("the owner's UPDATE with no WHERE cannot hand the tenant's episodes to another tenant (WITH CHECK alone decides) (both sides)", async () => {
+    await expect(
+      asUser("owner", M.owner, (tx) => tx`update clinical_episodes set tenant_id = ${M.other}`),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
   it104(`${SIDE}: a session with no claims, or with a role that is none of the four, reads no episode`, async () => {
     const none = await asRole(sql, "authenticated", null, (tx) => tx<{ id: string }[]>`select id from clinical_episodes`);
     expect(none.length).toBe(0);

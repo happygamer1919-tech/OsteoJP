@@ -63,7 +63,8 @@
 --          policies, none RESTRICTIVE, and none is named as 0104's three are. The
 --          post-check wants this one unchanged and four in all;
 --   9      THE PRIVILEGES ON THE TABLE: `authenticated` holds exactly DELETE,
---          INSERT, SELECT, UPDATE; `patient` exactly SELECT; `anon` nothing; no
+--          INSERT, SELECT, UPDATE, the DELETE by exactly one grant in the ACL;
+--          `patient` exactly SELECT; `anon` nothing; no
 --          column of the table carries a column-level grant. 0104 takes DELETE
 --          from `authenticated` and touches nothing else. CONTROL: the same read
 --          finds that `postgres`, the owner, holds all eight;
@@ -104,9 +105,12 @@
 --          owner's ruling of 2026-10-13: the sitting stops on any number but 0,
 --          with nothing applied, and the number goes to SOLO). Such a registo
 --          is read with its episode's title only by a session 0104 admits to
---          that OTHER patient's episodes. CONTROL: every registo that names an
---          episode joins to it. VACUOUS when no registo names an episode at
---          all: the join was not exercised;
+--          that OTHER patient's episodes. COUNTED TWICE, two ways (a join that
+--          compares, and a registo with no episode of its own patient and
+--          tenant behind its episode_id), and either count above 0 is a FAIL, so
+--          one count that went wrong does not pass alone. CONTROL: every
+--          registo that names an episode joins to it. VACUOUS when no registo
+--          names an episode at all: the join was not exercised;
 --   16     DELETE REACHES `authenticated` ON THE TABLE BY ONE GRANT, MADE BY
 --          `postgres`, AND BY NO OTHER PATH: the ACL holds exactly one DELETE
 --          item for `authenticated`, its grantor is `postgres`, and neither
@@ -114,7 +118,9 @@
 --          the table. 0104's REVOKE, run by `postgres`, takes away the grant
 --          `postgres` made and no other, so a second grantor or a second path
 --          would leave the privilege in place and be found only after the
---          COMMIT. CONTROL: the same read finds the owner's own items;
+--          COMMIT. Verdict 9 counts the same grant on its own, so a second
+--          grantor fails two verdicts. CONTROL: the same read finds the owner's
+--          own items;
 --   CARRY  journal_rows_before;
 --   CARRY  policies_before: every policy in the database. The post-check wants
 --          this number plus 2 (one dropped, three created);
@@ -144,10 +150,10 @@
 --          missing. The post-check's verdict for such an actor reads VACUOUS,
 --          never OK, so the post-check and the block that reads it want exactly
 --          this many VACUOUS verdicts and 21 minus this many OK;
---   CARRY  registos_in_another_patients_episode: verdict 15's number, the
---          registos filed in an episode whose patient or tenant is not the
---          registo's own. The stage 1 block reads this row again and STOPs on
---          any number but 0;
+--   CARRY  registos_in_another_patients_episode: verdict 15's number (the
+--          greater of its two counts), the registos filed in an episode whose
+--          patient or tenant is not the registo's own. The stage 1 block reads
+--          this row again and STOPs on any number but 0;
 --   INFO   the server version;
 --   INFO   what `service_role` holds on the table (0104 leaves it; no migration
 --          names it);
@@ -443,6 +449,11 @@ WITH pol AS (
     (SELECT count(*)::int
        FROM public.clinical_records c JOIN public.clinical_episodes e ON e.id = c.episode_id
       WHERE e.patient_id <> c.patient_id OR e.tenant_id <> c.tenant_id)                         AS registos_misfiled,
+    (SELECT count(*)::int
+       FROM public.clinical_records c
+      WHERE c.episode_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM public.clinical_episodes e
+                         WHERE e.id = c.episode_id AND e.patient_id = c.patient_id AND e.tenant_id = c.tenant_id)) AS registos_misfiled_again,
     (SELECT count(*)::int FROM public.clinical_records c WHERE c.episode_id IS NOT NULL)        AS registos_with_episode,
     (SELECT count(*)::int
        FROM public.clinical_records c JOIN public.clinical_episodes e ON e.id = c.episode_id)   AS registos_joined,
@@ -450,6 +461,10 @@ WITH pol AS (
        FROM rel_items i
       WHERE i.rel = 'clinical_episodes' AND i.privilege_type = 'DELETE'
         AND i.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'authenticated'))             AS delete_grantors,
+    (SELECT count(*)::int
+       FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a
+      WHERE c.oid = 'public.clinical_episodes'::regclass AND a.privilege_type = 'DELETE'
+        AND pg_get_userbyid(a.grantee) = 'authenticated')                                       AS delete_grant_count,
     (SELECT count(*)::int
        FROM rel_items i
       WHERE i.rel = 'clinical_episodes' AND i.privilege_type = 'DELETE'
@@ -579,11 +594,11 @@ WITH pol AS (
          'r/true/patient 9b55a6d007d2226e2227be448d8b48a0 -; 2 policies, 0 restrictive, 0 of 0104''s names taken',
          CASE WHEN patient_pol = 'r/true/patient 9b55a6d007d2226e2227be448d8b48a0 -'
                AND table_pols = 2 AND restrictive_pols = 0 AND new_names_taken = 0 THEN 'OK' ELSE 'FAIL' END FROM j
-  UNION ALL SELECT 9, '9. privileges on the table: authenticated DELETE,INSERT,SELECT,UPDATE; patient SELECT; anon none; no column grant (control: the owner holds all eight)',
-         'authenticated ' || auth_privs || '; patient ' || patient_privs || '; anon ' || anon_privs || '; '
+  UNION ALL SELECT 9, '9. privileges on the table: authenticated DELETE,INSERT,SELECT,UPDATE, the DELETE by one grant; patient SELECT; anon none; no column grant (control: the owner holds all eight)',
+         'authenticated ' || auth_privs || ', DELETE by ' || delete_grant_count::text || ' grant; patient ' || patient_privs || '; anon ' || anon_privs || '; '
            || column_grants::text || ' column grants; control ' || owner_privs::text,
-         'authenticated DELETE,INSERT,SELECT,UPDATE; patient SELECT; anon none; 0 column grants; control 8',
-         CASE WHEN auth_privs = 'DELETE,INSERT,SELECT,UPDATE' AND patient_privs = 'SELECT' AND anon_privs = 'none'
+         'authenticated DELETE,INSERT,SELECT,UPDATE, DELETE by 1 grant; patient SELECT; anon none; 0 column grants; control 8',
+         CASE WHEN auth_privs = 'DELETE,INSERT,SELECT,UPDATE' AND delete_grant_count = 1 AND patient_privs = 'SELECT' AND anon_privs = 'none'
                AND column_grants = 0 AND owner_privs = 8 THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 10, '10. every function 0104''s policies call is as the migrations left it, and auth.uid() is executable (control: a planted name)',
          coalesce(helper_shapes, 'absent') || ' ; auth.uid() ' || uid_ok::text || '; control ' || planted_fn_absent::text,
@@ -615,9 +630,10 @@ WITH pol AS (
          CASE WHEN actors_not_whole <> 0 THEN 'FAIL'
               WHEN actors_found = 4 AND behaviour_total > 0 THEN 'OK' ELSE 'VACUOUS' END FROM j
   UNION ALL SELECT 15, '15. no registo is filed in an episode of another patient or tenant (control: every registo that names an episode joins to it)',
-         registos_misfiled::text || ' misfiled; control ' || registos_joined::text || ' of ' || registos_with_episode::text || ' joined',
-         '0 misfiled; control all joined, more than 0 (no registo in any episode reads VACUOUS)',
-         CASE WHEN registos_misfiled <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL'
+         registos_misfiled::text || ' misfiled, ' || registos_misfiled_again::text || ' by the second count; control '
+           || registos_joined::text || ' of ' || registos_with_episode::text || ' joined',
+         '0 misfiled, 0 by the second count; control all joined, more than 0 (no registo in any episode reads VACUOUS)',
+         CASE WHEN registos_misfiled <> 0 OR registos_misfiled_again <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL'
               WHEN registos_with_episode = 0 THEN 'VACUOUS' ELSE 'OK' END FROM j
   UNION ALL SELECT 16, '16. DELETE reaches authenticated on the table by one grant, made by postgres, and by no other path (control: the same read finds the owner''s own items)',
          'granted by ' || delete_grantors || '; through PUBLIC or another role ' || delete_other_paths::text
@@ -647,7 +663,7 @@ WITH pol AS (
   UNION ALL SELECT 32, 'behaviour_actors_md5', coalesce(actors_md5, 'absent'), '32 hex characters',
          CASE WHEN actors_md5 ~ '^[0-9a-f]{32}$' THEN 'CARRY' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 33, 'post_vacuous_expected', post_vacuous::text, 'a count, 0 to 4', 'CARRY' FROM j
-  UNION ALL SELECT 34, 'registos_in_another_patients_episode', set_config('ep0104.misfiled', registos_misfiled::text, true),
+  UNION ALL SELECT 34, 'registos_in_another_patients_episode', set_config('ep0104.misfiled', greatest(registos_misfiled, registos_misfiled_again)::text, true),
          '0 (any other number stops the sitting: verdict 15, and the stage 1 block)', 'CARRY' FROM j
   UNION ALL SELECT 40, 'INFO the server version', server_version, 'a profile', 'INFO' FROM j
   UNION ALL SELECT 41, 'INFO what service_role holds on the table (0104 leaves it)', service_privs, 'a profile', 'INFO' FROM j

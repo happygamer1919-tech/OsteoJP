@@ -738,7 +738,7 @@ export const POST_PROFILE_END = `SELECT set_config('ep0104.wanted', (21 - :'post
 export function endingProblems(preSql, postSql) {
   const problems = [];
   if (!preSql.includes(PRE_MISFILED_END)) problems.push("the pre-check does not end with its own STOP on a count of misfiled registos that is not 0");
-  if (!preSql.includes("SELECT 34, 'registos_in_another_patients_episode', set_config('ep0104.misfiled', registos_misfiled::text, true),")) problems.push("the pre-check's CARRY row does not store the count its own STOP reads back");
+  if (!preSql.includes("SELECT 34, 'registos_in_another_patients_episode', set_config('ep0104.misfiled', greatest(registos_misfiled, registos_misfiled_again)::text, true),")) problems.push("the pre-check's CARRY row does not store the count its own STOP reads back");
   if (!preSql.includes(PRE_PROFILE_END)) problems.push("the pre-check does not end with an error on every profile but 17 OK / 0 VACUOUS / 0 FAIL");
   else if (!preSql.trimEnd().endsWith(`${PRE_PROFILE_END}\nROLLBACK;`)) problems.push("the pre-check's last statements are not its profile check and its ROLLBACK");
   if (!postSql.includes(POST_FAIL_END)) problems.push("the post-check does not end with an error on a FAIL verdict");
@@ -862,7 +862,7 @@ test("the check files write nothing; the pre-check opens READ ONLY and ends with
   // RED ARMS: each raise loosened or removed, one at a time.
   assert.deepEqual(endingProblems(swap(pre, "= '17 OK / 0 VACUOUS / 0 FAIL' AS ep0104_profile_ok", "~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_profile_ok"), post), ["the pre-check does not end with an error on every profile but 17 OK / 0 VACUOUS / 0 FAIL"]);
   assert.deepEqual(endingProblems(swap(pre, "= '0' AS ep0104_none_misfiled", "<> '' AS ep0104_none_misfiled"), post), ["the pre-check does not end with its own STOP on a count of misfiled registos that is not 0"]);
-  assert.deepEqual(endingProblems(swap(pre, "set_config('ep0104.misfiled', registos_misfiled::text, true)", "registos_misfiled::text"), post), ["the pre-check's CARRY row does not store the count its own STOP reads back"]);
+  assert.deepEqual(endingProblems(swap(pre, "set_config('ep0104.misfiled', greatest(registos_misfiled, registos_misfiled_again)::text, true)", "greatest(registos_misfiled, registos_misfiled_again)::text"), post), ["the pre-check's CARRY row does not store the count its own STOP reads back"]);
   assert.deepEqual(endingProblems(pre, swap(post, "\n       = coalesce(current_setting('ep0104.profile', true), '') AS ep0104_profile_ok", "\n       <> '' AS ep0104_profile_ok")), ["the post-check does not end with an error on every profile but the one post_vacuous_expected names"]);
   assert.deepEqual(endingProblems(pre, swap(post, "~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS ep0104_no_fail", "~ '^[0-9]+ OK' AS ep0104_no_fail")), ["the post-check does not end with an error on a FAIL verdict"]);
   // The misfiled STOP comes before the profile's, so a count that is not 0 ends the file with the sentence that names it.
@@ -911,9 +911,11 @@ test("THE VERDICT PROFILE: OK, VACUOUS and FAIL are three results, FAIL is teste
   assert.deepEqual(profileBlockProblems(s1, s2), []);
   // THE MISFILED HALT, in the file and in the block. Verdict 15 reads FAIL on any count but 0 (and where a registo
   // that names an episode does not join to it), VACUOUS where no registo names an episode, and OK only then.
-  const V15 = "         CASE WHEN registos_misfiled <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL'\n              WHEN registos_with_episode = 0 THEN 'VACUOUS' ELSE 'OK' END FROM j";
+  // The count is taken twice, two ways, and either one above 0 is a FAIL: one count that went wrong does not pass alone.
+  const V15 = "         CASE WHEN registos_misfiled <> 0 OR registos_misfiled_again <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL'\n              WHEN registos_with_episode = 0 THEN 'VACUOUS' ELSE 'OK' END FROM j";
   assert.ok(codeOf(pre).includes(V15));
   assert.ok(codeOf(pre).includes("      WHERE e.patient_id <> c.patient_id OR e.tenant_id <> c.tenant_id)                         AS registos_misfiled,"));
+  assert.ok(codeOf(pre).includes("      WHERE c.episode_id IS NOT NULL\n        AND NOT EXISTS (SELECT 1 FROM public.clinical_episodes e\n                         WHERE e.id = c.episode_id AND e.patient_id = c.patient_id AND e.tenant_id = c.tenant_id)) AS registos_misfiled_again,"));
   assert.deepEqual(misfiledProblems(s1), []);
   const misfLine = s1.split("\n").find((l) => l.startsWith(MISFILED_ZERO));
   assert.deepEqual(misfiledProblems(s1.replace(`${misfLine}\n`, "")), ["stage 1 does not stop on a carried count that is not 0"]);
@@ -929,6 +931,9 @@ test("THE VERDICT PROFILE: OK, VACUOUS and FAIL are three results, FAIL is teste
   assert.ok(codeOf(pre).includes("         CASE WHEN delete_grantors = 'postgres' AND delete_other_paths = 0 AND owner_acl_items > 0 THEN 'OK' ELSE 'FAIL' END FROM j"));
   assert.ok(codeOf(pre).includes("    (SELECT coalesce(string_agg(pg_get_userbyid(i.grantor), ',' ORDER BY pg_get_userbyid(i.grantor)), 'nobody')\n       FROM rel_items i\n      WHERE i.rel = 'clinical_episodes' AND i.privilege_type = 'DELETE'\n        AND i.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'authenticated'))             AS delete_grantors,"));
   assert.ok(codeOf(pre).includes("        AND CASE WHEN i.grantee = 0 THEN true ELSE pg_has_role('authenticated', i.grantee, 'USAGE') END) AS delete_other_paths,"));
+  // Verdict 9 counts the same grant on its own, from the ACL and not through rel_items, so a second grantor fails two verdicts.
+  assert.ok(codeOf(pre).includes("         CASE WHEN auth_privs = 'DELETE,INSERT,SELECT,UPDATE' AND delete_grant_count = 1 AND patient_privs = 'SELECT' AND anon_privs = 'none'"));
+  assert.ok(codeOf(pre).includes("       FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a\n      WHERE c.oid = 'public.clinical_episodes'::regclass AND a.privilege_type = 'DELETE'\n        AND pg_get_userbyid(a.grantee) = 'authenticated')                                       AS delete_grant_count,"));
   // WHY A 17 OK PRE-CHECK MEANS THE TABLE IS READ AS THE DESIGN ASSUMES: verdict 14 prints OK only when all four
   // actors were found, the tenant holds episodes, and each actor read every one of them.
   const V14 = "         CASE WHEN actors_not_whole <> 0 THEN 'FAIL'\n              WHEN actors_found = 4 AND behaviour_total > 0 THEN 'OK' ELSE 'VACUOUS' END FROM j";
@@ -947,7 +952,7 @@ test("THE VERDICT PROFILE: OK, VACUOUS and FAIL are three results, FAIL is teste
   const okAsElse = swap(pre, V14, "         CASE WHEN actors_not_whole <> 0 THEN 'FAIL'\n              WHEN actors_found = 4 THEN 'OK' WHEN behaviour_total = 0 THEN 'VACUOUS' ELSE 'OK' END FROM j");
   assert.deepEqual(profileProblems(okAsElse, 17, [14, 15]), ["verdict 14 can print OK before it has tested for VACUOUS"]);
   assert.deepEqual(profileProblems(pre, 15, [14, 15]), ["17 verdicts, not 15"]);
-  assert.deepEqual(profileProblems(swap(pre, V15, "         CASE WHEN registos_misfiled <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL' ELSE 'OK' END FROM j"), 17, [14, 15]), ["the verdicts that can read VACUOUS are 14, not 14,15"]);
+  assert.deepEqual(profileProblems(swap(pre, V15, "         CASE WHEN registos_misfiled <> 0 OR registos_misfiled_again <> 0 OR registos_joined <> registos_with_episode THEN 'FAIL' ELSE 'OK' END FROM j"), 17, [14, 15]), ["the verdicts that can read VACUOUS are 14, not 14,15"]);
   assert.deepEqual(profileProblems("SELECT 1;", 17, []), ["the file has no r CTE to read"]);
   assert.deepEqual(actorRowsProblems(swap(post, "              WHEN a.admitted = 0 THEN 'VACUOUS'\n", "")), ["the four per-actor verdicts are not the reviewed SELECT over admits"]);
   // RED ARMS of the block rule, one line at a time.
