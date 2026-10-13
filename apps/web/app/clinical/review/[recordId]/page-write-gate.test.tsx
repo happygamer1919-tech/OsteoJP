@@ -176,6 +176,21 @@ describe("a refused Finalizar is named on the review page", () => {
     expect(html).not.toContain(text(pt["review.error"]));
   });
 
+  it("M-4b ?m=concurrent_change (a finalize rolled back as a deadlock victim): the retry sentence, not the generic review error", async () => {
+    h.canWriteRecord.mockResolvedValue(true);
+    for (const rec of [record({ source: "ai_ingested" }), record()]) {
+      const { html } = await open(rec, "concurrent_change");
+      expect(pt["errors.concurrentChange"]).toBeTruthy();
+      expect(html).toContain(text(pt["errors.concurrentChange"]));
+      expect(html).not.toContain(text(pt["review.error"]));
+    }
+    // CONTROL: an unknown code still draws the generic review error, and no flag draws neither.
+    const unknown = (await open(record(), "err")).html;
+    expect(unknown).toContain(text(pt["review.error"]));
+    expect(unknown).not.toContain(text(pt["errors.concurrentChange"]));
+    expect((await open(record())).html).not.toContain(text(pt["errors.concurrentChange"]));
+  });
+
   it("CONTROL ?m=stale and ?m=finalized keep their own messages", async () => {
     h.canWriteRecord.mockResolvedValue(true);
     const stale = (await open(record({ source: "ai_ingested" }), "stale")).html;

@@ -674,16 +674,16 @@ async function namingEpisodeKeyRefusal<T>(insert: PromiseLike<T>): Promise<T> {
  * EVERY OTHER ERROR PASSES THROUGH UNCHANGED, a `ClinicalError` raised inside
  * the transaction included.
  *
- * WHO USES IT: the three transactions in which a staff member's action INSERTS
- * a registo (createDraftRecord and createAddendum here; claimReviewItem in
- * review.ts, the review queue's claim, which files a draft for a patient's
- * submission) and the draft save (updateRecordData), which only UPDATES its
- * registo and is in because the ruling names the registo save. LEFT OUT ON
- * PURPOSE, each answering a deadlock as it answered any unknown error
- * before: every other write that only UPDATES or DELETES an existing
- * registo (editReviewNarrative, saveReviewFicha and finalizeReview in
- * review.ts; signAndLockRecord, annulRecord and hardDeleteClinicalRecord
- * here), the ingestion endpoint's insert (lib/ingestion/store.ts, a machine
+ * WHO USES IT: every transaction in which a staff member's action writes a
+ * registo. The three that INSERT one (createDraftRecord and createAddendum
+ * here; claimReviewItem in review.ts, the review queue's claim, which files a
+ * draft for a patient's submission) and the draft save (updateRecordData),
+ * since M-4. And, since M-4b, the writers that change ONE existing registo:
+ * signAndLockRecord, hardDeleteClinicalRecord and annulRecord here (the last
+ * leaves the signed row untouched and inserts its annulment);
+ * editReviewNarrative, saveReviewFicha and finalizeReview in review.ts. LEFT
+ * OUT ON PURPOSE, each answering a deadlock as it answered any unknown error
+ * before: the ingestion endpoint's insert (lib/ingestion/store.ts, a machine
  * caller with no screen to show a sentence on), and the importer
  * (packages/db/src/migration/upsert.ts, no app action calls it).
  */
@@ -954,7 +954,7 @@ export async function signAndLockRecord(
 ): Promise<void> {
   assertCan(ctx.role, "clinical_records:sign");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  await namingDeadlock(runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -998,7 +998,7 @@ export async function signAndLockRecord(
       metadata: { signedAt: signedAt.toISOString() },
       ip,
     });
-  });
+  }));
 }
 
 /**
@@ -1013,7 +1013,7 @@ export async function signAndLockRecord(
 export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string): Promise<void> {
   assertCan(ctx.role, "clinical_records:author");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  await namingDeadlock(runScoped(ctx, async (tx) => {
     const [target] = await tx
       .select({
         status: clinicalRecords.status,
@@ -1081,7 +1081,7 @@ export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string):
       },
       ip,
     });
-  });
+  }));
 }
 
 /**
@@ -1098,7 +1098,7 @@ export async function annulRecord(
 ): Promise<void> {
   assertCan(ctx.role, "clinical_records:author");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  await namingDeadlock(runScoped(ctx, async (tx) => {
     const [target] = await tx
       .select({ status: clinicalRecords.status })
       .from(clinicalRecords)
@@ -1133,5 +1133,5 @@ export async function annulRecord(
       metadata: { hadReason: Boolean(trimmed && trimmed.length > 0) },
       ip,
     });
-  });
+  }));
 }
