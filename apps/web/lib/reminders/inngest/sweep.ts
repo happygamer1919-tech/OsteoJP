@@ -1,11 +1,23 @@
 import { getDbAdmin, listTenantIdsForRetention } from "@osteojp/db";
 import { inngest } from "./client";
 import { SWEEP_CRON, runReminderSweep, type SweepStep } from "../sweep";
+import { sweepSends } from "../sweep-mode";
+import { runReminderSweepSend } from "../sweep-send";
 
 /**
  * SWEEP-03: the reminder sweep's scheduled function. IN SHADOW: a pass writes
  * down what it would hand to the dispatcher and hands nothing over. What a
  * pass takes, and why it can send nothing, is in ../sweep.ts.
+ *
+ * ==========================================================================
+ * SWEEP-47: THE SAME FUNCTION SENDS, BEHIND ONE SWITCH, AND THE SWITCH IS OFF
+ * ==========================================================================
+ * While REMINDERS_SWEEP_MODE is exactly `send` (../sweep-mode.ts) a run is the
+ * sending pass of ../sweep-send.ts instead. Unset, or anything else, the
+ * handler below does what it did before that file existed: the same call, with
+ * the same three arguments. The switch is read at each run, so turning it on
+ * or off is a change of configuration and a redeploy, and NOT a Resync: no
+ * option of this function changes with it.
  *
  * ==========================================================================
  * NOT LIVE AT MERGE
@@ -48,6 +60,13 @@ export const sweepDueReminders = inngest.createFunction(
     // `step.run` memoises its result as JSON. Every value that crosses it here
     // is a string array, a number or a boolean, so nothing changes shape.
     const runner: SweepStep = <T>(id: string, fn: () => Promise<T>) => step.run(id, fn) as unknown as Promise<T>;
+    if (sweepSends()) {
+      return runReminderSweepSend({
+        step: runner,
+        passId: runId,
+        listTenantIds: () => listTenantIdsForRetention(getDbAdmin()),
+      });
+    }
     return runReminderSweep({
       step: runner,
       passId: runId,

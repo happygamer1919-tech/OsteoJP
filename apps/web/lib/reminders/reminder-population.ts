@@ -21,6 +21,15 @@ import { appointments, auditLog, type DbTx } from "@osteojp/db";
  * reminder went missing. A sender that picks visits from the database must
  * read the same switch, so the two can never disagree about who is owed one.
  *
+ * THE SENDING PASS HAS A SWITCH OF ITS OWN (SWEEP-47). The owner's answer was
+ * to remind these visits, and strategy put that behind a second switch, off
+ * by default, until the exact rule is ruled: REMINDERS_SWEEP_NEVER_REMINDED
+ * (./sweep-mode.ts), read by the sending pass only (./sweep-send.ts). This
+ * constant stays what the shadow pass and the two counts read. So while that
+ * switch is on and this constant is off, the sending pass reminds a visit the
+ * first count does not count; flipping this constant, with the sentence under
+ * the counts, is the change that brings them back together.
+ *
  * FLIPPING IT IS A RULING, NOT A REFACTOR. `true` makes every scheduled or
  * confirmed visit count. The sentence under the counts
  * (`remindersLog.numbersNote`) says which visits are left out and changes with

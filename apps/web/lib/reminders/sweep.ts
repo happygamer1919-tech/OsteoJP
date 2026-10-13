@@ -222,7 +222,7 @@ export function sweepStartRange(now: Date, offset: Pick<ReminderOffset, "minutes
  * Truncated on THIS side, as in reminder-numbers.ts, so the row's own column
  * stays bare for `reminder_claims_mark_idx`.
  */
-function recordedStart(): SQL {
+export function recordedStart(): SQL {
   return sql`date_trunc('milliseconds', ${appointments.startsAt})`;
 }
 
@@ -236,7 +236,7 @@ function markOf(offset: ReminderOffset): SQL {
  * reminder and before asking whether the mark was taken. The tenant is stated
  * although the job's context already narrows to it (CLAUDE.md rule 3).
  */
-function dueVisits(tenantId: string, offset: ReminderOffset, now: Date): SQL | undefined {
+export function dueVisits(tenantId: string, offset: ReminderOffset, now: Date): SQL | undefined {
   const range = sweepStartRange(now, offset);
   return and(
     eq(appointments.tenantId, tenantId),

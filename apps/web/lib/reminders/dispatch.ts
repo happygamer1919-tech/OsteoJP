@@ -462,6 +462,20 @@ async function sendRecordingProviderError(
 }
 
 /**
+ * SWEEP-47. What a caller knows about the hand-over it asks for, for the
+ * dispatch while the sweep is the sender.
+ */
+export type ReminderHandOver = {
+  /** The caller's clock. The pass hands its own; a sleeping job hands none. */
+  now?: Date;
+  /**
+   * The day's last pass took this mark before it fell due (the next pass is in
+   * the morning). Its claim is then not recorded as early, so it holds.
+   */
+  takenAhead?: boolean;
+};
+
+/**
  * SWEEP-47. How far one closed dispatch got, written by the two places that
  * call a transport and read by the one place that decides what becomes of the
  * claim (`dispatchReminderClosed`). Nothing else reads or writes it.
@@ -761,11 +775,14 @@ export async function dispatchReminder(
   appointmentId: string,
   offsetId: ReminderOffsetId,
   channel: Channel,
-  /** Who is asking, for the reminder claim. Today's only caller is the sleeping
-   *  job, which passes nothing. */
+  /** Who is asking, for the reminder claim. The sleeping job passes nothing;
+   *  the pass names itself. */
   taker: ReminderClaimTaker = "run",
+  /** SWEEP-47: what the pass knows about this hand-over. Read only while the
+   *  sweep is the sender; with the send switch off nothing looks at it. */
+  handOver: ReminderHandOver = {},
 ): Promise<DispatchOutcome> {
-  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel, taker);
+  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel, taker, handOver);
   if (!outcome.dispatched && outcome.reason !== "claim_held") {
     await recordDispatch({
       tenantId,
@@ -788,6 +805,7 @@ async function dispatchReminderInner(
   /** The single channel this run is for. One run, one channel, one key. */
   channel: Channel,
   taker: ReminderClaimTaker,
+  handOver: ReminderHandOver,
 ): Promise<DispatchOutcome> {
   const gate = await loadDispatchable(tenantId, appointmentId, "reminder");
   // THE CLAIM (./reminder-claim.ts). Taken HERE, after the load and before
@@ -799,7 +817,9 @@ async function dispatchReminderInner(
   // blocks at any age and a claim that cannot be written stops the send. With
   // the switch off (./sweep-mode.ts) this line is the only thing that ran, and
   // everything below it is the dispatcher as it was.
-  if (sweepSends()) return dispatchReminderClosed(tenantId, appointmentId, offsetId, channel, taker, gate, claimStart);
+  if (sweepSends()) {
+    return dispatchReminderClosed(tenantId, appointmentId, offsetId, channel, taker, gate, claimStart, handOver);
+  }
   const claim = await takeReminderClaim({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
   // THE ONE ANSWER THAT STOPS A SEND: this reminder was already sent for this
   // start. Every other answer, a claim that could not be read or written
@@ -854,8 +874,18 @@ async function dispatchReminderClosed(
   taker: ReminderClaimTaker,
   gate: Dispatchable,
   claimStart: Date,
+  handOver: ReminderHandOver,
 ): Promise<DispatchOutcome> {
-  const claim = await takeReminderClaimClosed({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
+  const claim = await takeReminderClaimClosed({
+    tenantId,
+    appointmentId,
+    offsetId,
+    channel,
+    startsAt: claimStart,
+    taker,
+    ...(handOver.takenAhead === true ? { takenAhead: true } : {}),
+    ...(handOver.now ? { now: handOver.now } : {}),
+  });
   if (claim.held) return { dispatched: false, reason: "claim_held" };
   const release = () => releaseReminderClaim({ tenantId, appointmentId, offsetId, channel, claimId: claim.claimId });
   const attempt: SendAttempt = { handOverStarted: false };

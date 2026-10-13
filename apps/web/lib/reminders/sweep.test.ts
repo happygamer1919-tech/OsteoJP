@@ -623,44 +623,75 @@ describe("the sweep can send nothing", () => {
     });
   });
 
-  it("the scheduled function adds the scheduler's client and the tenant lister, and uses them for nothing else", () => {
-    const reached = reach(CRON);
-    expect(reached.files).toEqual([
+  /**
+   * SWEEP-47. The scheduled function now also names the SENDING pass
+   * (sweep-send.ts), which is the one file that reaches the dispatcher, and it
+   * calls that pass behind the send switch only. So what is held here is: the
+   * function's own imports, to the name; that the dispatcher is reached
+   * through sweep-send.ts and through nothing else it imports; and that the
+   * one call of the sending pass sits inside `if (sweepSends())`. What the
+   * handler does with the switch off is run, not read, in inngest/sweep.test.ts.
+   */
+  it("the scheduled function adds the scheduler's client, the tenant lister and the switch; it reaches a sender through sweep-send.ts only", () => {
+    const own = factsOf(CRON).imports;
+    expect(own).toEqual([
+      { specifier: "@osteojp/db", names: ["getDbAdmin", "listTenantIdsForRetention"] },
+      { specifier: "./client", names: ["inngest"] },
+      { specifier: "../sweep", names: ["SWEEP_CRON", "runReminderSweep"] },
+      { specifier: "../sweep-mode", names: ["sweepSends"] },
+      { specifier: "../sweep-send", names: ["runReminderSweepSend"] },
+    ]);
+
+    // Without the sending pass, the function reaches exactly what it reached
+    // before: no dispatcher, no transport.
+    const withoutTheSender = new Set<string>();
+    for (const imp of own) {
+      if (imp.specifier === "../sweep-send") continue;
+      const local = localFile(CRON, imp.specifier);
+      if (local) for (const f of reach(local).files) withoutTheSender.add(f);
+    }
+    expect([...withoutTheSender].sort()).toEqual([
       "lib/reminders/context.ts",
       "lib/reminders/inngest/client.ts",
-      "lib/reminders/inngest/sweep.ts",
       "lib/reminders/offsets.ts",
       "lib/reminders/reminder-claim.ts",
       "lib/reminders/reminder-population.ts",
+      "lib/reminders/sweep-mode.ts",
       "lib/reminders/sweep.ts",
       "lib/scheduling/time.ts",
     ]);
-    expect(Object.keys(reached.packages)).toEqual([
-      "@osteojp/db",
-      "drizzle-orm",
-      "drizzle-orm/pg-core",
-      "inngest",
-      "server-only",
-    ]);
-    expect(reached.packages["@osteojp/db"]).toEqual([
-      "appointments",
-      "auditLog",
-      "getDbAdmin",
-      "listTenantIdsForRetention",
-      "reminderClaims",
-      "reminderDispatches",
-      "reminderSweepPasses",
-      "withTenantContext",
-    ]);
+    // The switch's own file is pure: it imports nothing at all.
+    expect(factsOf(join(__dirname, "sweep-mode.ts")).imports).toEqual([]);
+    // With it, the dispatcher and the transports: sweep-send.ts is the path.
+    const reached = reach(CRON);
+    expect(reached.files).toContain("lib/reminders/sweep-send.ts");
+    expect(reached.files).toContain("lib/reminders/dispatch.ts");
+    expect(reached.files).toContain("lib/reminders/clients.ts");
 
     // The client can send events and a step can sleep, wait or send. The
     // function declares itself and runs steps, and that is all it does with either.
     const members = factsOf(CRON).members;
     expect(members.filter((m) => m.startsWith("inngest."))).toEqual(["inngest.createFunction"]);
     expect(members.filter((m) => m.startsWith("step."))).toEqual(["step.run"]);
-    // And the pass itself never sees the client or a step object at all.
-    const passMembers = factsOf(SWEEP).members;
-    expect(passMembers.filter((m) => m.startsWith("inngest.") || m.startsWith("step."))).toEqual([]);
+    // And neither pass ever sees the client or a step object at all.
+    for (const file of [SWEEP, join(__dirname, "sweep-send.ts")]) {
+      const passMembers = factsOf(file).members;
+      expect(passMembers.filter((m) => m.startsWith("inngest.") || m.startsWith("step.")), file).toEqual([]);
+    }
+
+    // THE ONE CALL OF THE SENDING PASS IS BEHIND THE SWITCH: it is inside the
+    // `if (sweepSends())` block, and the shadow pass's call is after it.
+    const text = readFileSync(CRON, "utf8");
+    expect(text.match(/runReminderSweepSend\(/g)).toHaveLength(1);
+    expect(text.match(/sweepSends\(\)/g)).toHaveLength(1);
+    const guard = text.indexOf("if (sweepSends()) {");
+    const send = text.indexOf("return runReminderSweepSend({");
+    const closes = text.indexOf("\n    }\n", guard);
+    const shadow = text.indexOf("return runReminderSweep({");
+    expect(guard).toBeGreaterThan(0);
+    expect(send).toBeGreaterThan(guard);
+    expect(closes).toBeGreaterThan(send);
+    expect(shadow).toBeGreaterThan(closes);
   });
 
   it("neither file writes the ledger, takes a claim or releases one", () => {
@@ -686,11 +717,12 @@ describe("the sweep can send nothing", () => {
    * population rule, which looks for a visit's booking on its audit trail.
    * What a real pass leaves in `audit_log` is read back in sweep.db.test.ts.
    */
-  it("the claim, the counts, the pass and the scheduled function do not import the audit table; the population rule does, and only reads it", () => {
+  it("the claim, the counts, both passes and the scheduled function do not import the audit table; the population rule does, and only reads it", () => {
     const stores = [
       join(__dirname, "reminder-claim.ts"),
       join(__dirname, "reminder-numbers.ts"),
       SWEEP,
+      join(__dirname, "sweep-send.ts"),
       CRON,
     ];
     for (const file of stores) {
@@ -707,7 +739,9 @@ describe("the sweep can send nothing", () => {
     expect(text).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
     // And the two tables are written from exactly these two files.
     const writers = stores.filter((file) => /\.insert\((reminderClaims|reminderSweepPasses)\)/.test(readFileSync(file, "utf8")));
-    expect(writers).toEqual([join(__dirname, "reminder-claim.ts"), SWEEP]);
+    // The sending pass writes its heartbeat, and no claim: the dispatcher takes those.
+    expect(writers).toEqual([join(__dirname, "reminder-claim.ts"), SWEEP, join(__dirname, "sweep-send.ts")]);
+    expect(readFileSync(join(__dirname, "sweep-send.ts"), "utf8")).not.toMatch(/\.insert\(reminderClaims\)/);
   });
 
   /**
