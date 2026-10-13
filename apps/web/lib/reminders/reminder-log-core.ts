@@ -171,8 +171,10 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   // one, and a row that ever did carry it must not read as unrecognised.
   claim_held: s["remindersLog.reason.claim_held"],
   // SWEEP-47. Written only while the sweep is the sender: a reminder whose
-  // time passed too long ago to send, and a call that came before its time.
+  // time passed too long ago to send, one whose visit had already begun, and
+  // a call that came before its time.
   mark_missed: s["remindersLog.reason.mark_missed"],
+  start_passed: s["remindersLog.reason.start_passed"],
   not_due: s["remindersLog.reason.not_due"],
 };
 

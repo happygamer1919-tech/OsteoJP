@@ -53,6 +53,8 @@ const h = vi.hoisted(() => ({
   /** How long the transport takes, so senders overlap. */
   sendDelayMs: 0,
   sendCount: 0,
+  /** Called as a transport is entered: every check of the dispatcher is behind that call. */
+  onHandOver: null as null | ((channel: string) => void),
 }));
 
 vi.mock("./data", () => ({ loadReminderData: h.loadReminderData }));
@@ -61,6 +63,7 @@ vi.mock("./clients", async (importOriginal) => {
   const transport = (channel: "sms" | "email") =>
     vi.fn(async () => {
       h.sends.push(channel);
+      h.onHandOver?.(channel);
       if (h.sendDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, h.sendDelayMs));
       // The Twilio SDK's shape: a numeric `code` on the error. 21211 is on the
       // pinned list of answers that give a claim up; 20500 is not.
@@ -91,11 +94,18 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
   const START = lisbonDateTimeToUtc(addDays(todayInLisbon(), -1), "11:00");
   const OTHER_START = lisbonDateTimeToUtc(addDays(todayInLisbon(), -1), "15:00");
   /**
-   * The clock the dispatcher is handed: five minutes after the 24 hour mark of
-   * a start. While the sweep is the sender a reminder is sent only inside its
-   * late limit, so "yesterday" has to be asked at yesterday's hour.
+   * Five minutes after the 24 hour mark of a start. While the sweep is the
+   * sender a reminder is sent only inside its late limit and only before its
+   * visit begins, so "yesterday" has to be asked at yesterday's hour. THE
+   * DISPATCHER JUDGES BOTH ON ITS OWN CLOCK, so `dispatch` below sets the
+   * system's clock to this instant too (`Date` only: the timers, and the
+   * database's clock that stamps a claim, stay real).
    */
   const justAfterMarkOf = (start: Date, hours = 24) => ({ now: new Date(start.getTime() - hours * 60 * 60_000 + 5 * 60_000) });
+  function theSendClockReads(at: Date) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(at);
+  }
   /** Ten days out: far outside both offsets, so a claim taken today is early. */
   const FAR_START = lisbonDateTimeToUtc(addDays(todayInLisbon(), 10), "11:00");
 
@@ -216,6 +226,7 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
 
   async function dispatch(appointmentId: string, taker: "run" | "sweep" = "sweep", start: Date = START) {
     const { dispatchReminder } = await import("./dispatch");
+    theSendClockReads(justAfterMarkOf(start).now);
     return dispatchReminder(tenantA, appointmentId, "24h", "sms", taker, justAfterMarkOf(start));
   }
 
@@ -258,6 +269,7 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
     h.sends.length = 0;
     h.transport = "sent";
     h.sendDelayMs = 0;
+    h.onHandOver = null;
     h.loadReminderData.mockReset();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -269,6 +281,7 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
       else process.env[k] = savedEnv[k];
     }
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   /* ---------------------------------------------------------------- */
@@ -474,10 +487,19 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
       h.loadReminderData.mockResolvedValue(loaded(id));
       h.sendDelayMs = 100;
       const { dispatchReminder } = await import("./dispatch");
-      const [sms, email] = await Promise.all([
-        dispatchReminder(tenantA, id, "24h", "sms", "sweep", justAfterMarkOf(START)),
-        dispatchReminder(tenantA, id, "48h", "email", "sweep", justAfterMarkOf(START, 48)),
-      ]);
+      // The two are due a day apart, and no one instant is in time for both.
+      // So the email is asked at its hour, and the SMS at its own while the
+      // email's claim is taken and its message is still with the transport.
+      let emailIsWithTheTransport!: () => void;
+      const untilItIs = new Promise<void>((resolve) => (emailIsWithTheTransport = resolve));
+      h.onHandOver = (channel) => {
+        if (channel === "email") emailIsWithTheTransport();
+      };
+      theSendClockReads(justAfterMarkOf(START, 48).now);
+      const emailAsked = dispatchReminder(tenantA, id, "48h", "email", "sweep", justAfterMarkOf(START, 48));
+      await untilItIs;
+      theSendClockReads(justAfterMarkOf(START).now);
+      const [sms, email] = await Promise.all([dispatchReminder(tenantA, id, "24h", "sms", "sweep", justAfterMarkOf(START)), emailAsked]);
       expect(sms).toMatchObject({ dispatched: true });
       expect(email).toMatchObject({ dispatched: true });
       expect([...h.sends].sort()).toEqual(["email", "sms"]);

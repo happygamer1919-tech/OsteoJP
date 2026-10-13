@@ -20,6 +20,15 @@
  *   6. A THROW gives the claim up before any transport was called and after a
  *      provider answer that is on the pinned list, and KEEPS it after any
  *      other answer, because the message may have gone out.
+ *   7. THE CLOCK OF THE SEND. Too late, and a visit that has begun, are judged
+ *      on the dispatcher's own clock at the moment it sends, and once more at
+ *      the transport's door. The clock a caller hands in decides "too early"
+ *      and nothing else, and "taken ahead" is granted only for the start the
+ *      dispatcher loaded.
+ *
+ * THE CLOCK. The arms of 7 move the system's clock (`Date` only; no timer is
+ * replaced), because the dispatcher reads it and takes it from nobody. Every
+ * other arm runs at the real time of day against a visit years ahead.
  *
  * WHAT THIS FILE CANNOT SHOW: which rows make the closed claim answer held,
  * and that two senders at once produce one send. Both need the lock and the
@@ -38,6 +47,10 @@ const h = vi.hoisted(() => ({
   transport: "sent" as "sent" | "sandbox" | { throws: unknown },
   /** Thrown once by the config read, before any transport. */
   throwBeforeHandOver: null as null | Error,
+  /** Run by the config read: after the claim and the first reading of the clock, before any transport. */
+  duringTheGates: null as null | (() => void),
+  /** Run as the confirm code is issued: the last row written before the SMS transport. */
+  asTheCodeIsIssued: null as null | (() => void),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -78,10 +91,23 @@ vi.mock("@/lib/admin/settings-config", async (importOriginal) => {
     ...actual,
     parseTenantConfig: (settings: unknown) => {
       if (h.throwBeforeHandOver) throw h.throwBeforeHandOver;
+      h.duringTheGates?.();
       return actual.parseTenantConfig(settings);
     },
   };
 });
+// The confirm code's two writes. Reached only by the arms that turn the link on.
+vi.mock("./confirm-code-store", () => ({
+  issueConfirmCode: vi.fn(async (args: { code: string }) => {
+    h.events.push("code:issued");
+    h.asTheCodeIsIssued?.();
+    return { code: args.code, codeHash: "test-code-hash" };
+  }),
+  withdrawConfirmCode: vi.fn(async (args: { codeHash: string }) => {
+    h.events.push(`code:withdrawn:${args.codeHash}`);
+    return true;
+  }),
+}));
 // THE TRANSPORT IS REPLACED, NOT WRAPPED: nothing here can reach a provider.
 vi.mock("./clients", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clients")>();
@@ -100,7 +126,9 @@ import {
   REMINDER_LATE_LIMIT_MS,
   claimIsGivenUpAfterThrow,
   dispatchReminder,
+  reminderIsTakenAhead,
   reminderIsTooLate,
+  reminderRefusedByTheClock,
   reminderWasHandedOver,
 } from "./dispatch";
 
@@ -150,6 +178,8 @@ const ENV_KEYS = [
   "REMINDERS_LINK_SECRET",
   "REMINDERS_RESCHEDULE_BASE_URL",
   "REMINDERS_CONFIRM_LINK_ENABLED",
+  "REMINDERS_CONFIRM_CODE_SECRET",
+  "REMINDERS_FEE_NOTICE_ENABLED",
 ];
 const saved: Record<string, string | undefined> = {};
 
@@ -166,6 +196,8 @@ beforeEach(() => {
   h.closedAnswer = { held: false, claimId: CLAIM_ID };
   h.transport = "sent";
   h.throwBeforeHandOver = null;
+  h.duringTheGates = null;
+  h.asTheCodeIsIssued = null;
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -176,7 +208,14 @@ afterEach(() => {
     else process.env[k] = saved[k];
   }
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
+
+/** Set the clock the dispatcher reads when it sends. `Date` only: every timer stays real. */
+function theSendClockReads(at: Date) {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(at);
+}
 
 function setSwitch(value: string | undefined) {
   if (value === undefined) delete process.env.REMINDERS_SWEEP_MODE;
@@ -378,14 +417,22 @@ describe("while the sweep is the sender", () => {
 });
 
 /**
- * THE TWO RULES OF TIME, which exist only while the sweep is the sender.
+ * THE RULES OF TIME, which exist only while the sweep is the sender.
  * Owner, answer 8a: an SMS may go up to 3 hours late and an email up to 12;
- * later it is recorded as too late and not sent.
+ * later it is recorded as too late and not sent. And no reminder is sent for a
+ * visit that has begun.
+ *
+ * TWO CLOCKS. `caller` is the clock a pass hands in: the instant it selected.
+ * `theSendClockReads` sets the one the dispatcher reads for itself. In every
+ * arm of "too late" the caller's clock says FIVE MINUTES AFTER THE MARK, as a
+ * pass's stored clock does however long ago it selected.
  */
-describe("while the sweep is the sender: too late, and not due", () => {
+describe("while the sweep is the sender: the clock of the send, too late, begun, and not due", () => {
   beforeEach(() => setSwitch("send"));
 
-  const at = (offset: "24h" | "48h", ms: number) => ({ now: new Date(MARK[offset].getTime() + ms) });
+  /** The caller's clock, `ms` after the reminder's time. */
+  const caller = (offset: "24h" | "48h", ms: number) => ({ now: new Date(MARK[offset].getTime() + ms) });
+  const after = (offset: "24h" | "48h", ms: number) => new Date(MARK[offset].getTime() + ms);
 
   it.each([
     ["24h", "sms", 0],
@@ -394,40 +441,180 @@ describe("while the sweep is the sender: too late, and not due", () => {
     ["24h", "sms", 3 * HOUR],
     ["48h", "email", 3 * HOUR + 1],
     ["48h", "email", 12 * HOUR],
-  ] as const)("the %s %s, %d ms after its time: still sent, and its claim is kept", async (offset, channel, ms) => {
+  ] as const)("the %s %s, sent %d ms after its time: still sent, and its claim is kept", async (offset, channel, ms) => {
     h.loadReminderData.mockResolvedValue(fixture());
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel, "sweep", at(offset, ms))).toMatchObject({ dispatched: true });
+    theSendClockReads(after(offset, ms));
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel, "sweep", justAfter(offset))).toMatchObject({ dispatched: true });
     expect(h.events).toEqual(["claim:closed", `send:${channel}`, `ledger:reminder.${offset}.${channel}:sent:`]);
   });
 
   it.each([
     ["24h", "sms", 3 * HOUR + 1],
+    ["24h", "sms", 4 * HOUR],
     ["24h", "sms", 23 * HOUR],
     ["48h", "email", 12 * HOUR + 1],
     ["48h", "email", 40 * HOUR],
-  ] as const)("the %s %s, %d ms after its time: TOO LATE. Recorded, not sent, and the claim is KEPT so it is final", async (offset, channel, ms) => {
+  ] as const)(
+    "A SEND STEP THAT RUNS LATE: the pass selected the %s %s five minutes after its time and the send comes %d ms after it. TOO LATE, not sent, claim KEPT",
+    async (offset, channel, ms) => {
+      h.loadReminderData.mockResolvedValue(fixture());
+      theSendClockReads(after(offset, ms));
+      // The pass's clock still says five minutes late. It is not asked.
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel, "sweep", justAfter(offset))).toEqual({
+        dispatched: false,
+        reason: "mark_missed",
+      });
+      // The claim, then the ledger row. No transport, and NO release.
+      expect(h.events).toEqual(["claim:closed", `ledger:reminder.${offset}.${channel}:suppressed:mark_missed`]);
+    },
+  );
+
+  it("the caller's clock cannot make a reminder late either: it says 40 hours late, the send clock says five minutes, and it is sent", async () => {
     h.loadReminderData.mockResolvedValue(fixture());
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel, "sweep", at(offset, ms))).toEqual({
-      dispatched: false,
-      reason: "mark_missed",
-    });
-    // The claim, then the ledger row. No transport, and NO release.
-    expect(h.events).toEqual(["claim:closed", `ledger:reminder.${offset}.${channel}:suppressed:mark_missed`]);
+    theSendClockReads(after("24h", 5 * MIN));
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", caller("24h", 40 * HOUR))).toMatchObject({ dispatched: true });
+    expect(h.events).toEqual(["claim:closed", "send:sms", "ledger:reminder.24h.sms:sent:"]);
   });
 
-  it("too late is decided before any gate: a cancelled visit past the limit reads too late, once, not `status` every hour", async () => {
-    h.loadReminderData.mockResolvedValue(fixture({ status: "cancelled" }));
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", at("24h", 4 * HOUR))).toEqual({
-      dispatched: false,
-      reason: "mark_missed",
+  describe("THE FLOOR: no reminder for a visit that has begun", () => {
+    it.each([
+      ["48h", "email", 0],
+      ["48h", "email", MIN],
+      ["24h", "sms", 0],
+      ["24h", "sms", 5 * 24 * HOUR],
+    ] as const)("the %s %s, with the send %d ms after the START: `start_passed`, not sent, claim KEPT", async (offset, channel, ms) => {
+      h.loadReminderData.mockResolvedValue(fixture());
+      theSendClockReads(new Date(STARTS_AT.getTime() + ms));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel, "sweep", justAfter(offset))).toEqual({
+        dispatched: false,
+        reason: "start_passed",
+      });
+      expect(h.events).toEqual(["claim:closed", `ledger:reminder.${offset}.${channel}:suppressed:start_passed`]);
     });
-    expect(h.events).toEqual(["claim:closed", "ledger:reminder.24h.sms:suppressed:mark_missed"]);
+
+    it("one millisecond before the start it is the late rule that refuses, so the floor is a rule of its own", async () => {
+      h.loadReminderData.mockResolvedValue(fixture());
+      theSendClockReads(new Date(STARTS_AT.getTime() - 1));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).toMatchObject({ reason: "mark_missed" });
+    });
+
+    it("the rule itself: the start first, at or before the clock, whatever the mark and the channel allow", () => {
+      const start = STARTS_AT;
+      const at = (ms: number) => new Date(start.getTime() + ms);
+      // An offset this build does not know has no mark: the floor still holds.
+      expect(reminderRefusedByTheClock({ startsAt: start, mark: null, channel: "sms", now: at(0) })).toBe("start_passed");
+      expect(reminderRefusedByTheClock({ startsAt: start, mark: null, channel: "sms", now: at(-1) })).toBeNull();
+      // A mark that is not late at all (it never is, for a real offset) does not lift it.
+      expect(reminderRefusedByTheClock({ startsAt: start, mark: at(-MIN), channel: "email", now: at(0) })).toBe("start_passed");
+      expect(reminderRefusedByTheClock({ startsAt: start, mark: at(-MIN), channel: "email", now: at(-1) })).toBeNull();
+      // Before the start, the late rule: its own word.
+      expect(reminderRefusedByTheClock({ startsAt: start, mark: MARK["24h"], channel: "sms", now: after("24h", 3 * HOUR + 1) })).toBe("mark_missed");
+      expect(reminderRefusedByTheClock({ startsAt: start, mark: MARK["24h"], channel: "sms", now: after("24h", 3 * HOUR) })).toBeNull();
+    });
+  });
+
+  describe("THE REAL REASON: what a person did is recorded, not the clock", () => {
+    it.each([
+      ["a cancelled visit", "status", { status: "cancelled" }],
+      ["a visit that is over", "status", { status: "completed" }],
+      ["a deleted patient", "patient_deleted", { patientDeletedAt: new Date("2031-01-01T00:00:00.000Z") }],
+    ] as const)("%s that is also too late reads `%s`, once, and its claim is KEPT: not `mark_missed`, and not tried again every hour", async (_name, reason, over) => {
+      h.loadReminderData.mockResolvedValue(fixture(over));
+      theSendClockReads(after("24h", 4 * HOUR));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run")).toEqual({ dispatched: false, reason });
+      expect(h.events).toEqual(["claim:closed", `ledger:reminder.24h.sms:suppressed:${reason}`]);
+    });
+
+    it("a cancelled visit that has ALSO begun reads `status`", async () => {
+      h.loadReminderData.mockResolvedValue(fixture({ status: "cancelled" }));
+      theSendClockReads(new Date(STARTS_AT.getTime() + HOUR));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run")).toEqual({ dispatched: false, reason: "status" });
+      expect(h.events).toEqual(["claim:closed", "ledger:reminder.24h.sms:suppressed:status"]);
+    });
+
+    it("CONTROL: the same cancelled visit IN TIME is held back as ever, and its claim is given up", async () => {
+      h.loadReminderData.mockResolvedValue(fixture({ status: "cancelled" }));
+      theSendClockReads(after("24h", HOUR));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run")).toEqual({ dispatched: false, reason: "status" });
+      expect(h.events).toEqual(["claim:closed", RELEASE, "ledger:reminder.24h.sms:suppressed:status"]);
+    });
+
+    it("every other gate that would hold it back does not hide the clock: an unaccepted request past the limit reads too late", async () => {
+      h.loadReminderData.mockResolvedValue(fixture({ status: "scheduled", origin: "patient_portal" }));
+      theSendClockReads(after("24h", 4 * HOUR));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).toEqual({
+        dispatched: false,
+        reason: "mark_missed",
+      });
+      expect(h.events).toEqual(["claim:closed", "ledger:reminder.24h.sms:suppressed:mark_missed"]);
+    });
+  });
+
+  describe("AT THE TRANSPORT'S DOOR: the clock is asked once more, as the last thing before the hand-over", () => {
+    /** In time when the claim is taken; one millisecond over the limit by the time the gates are through. */
+    const lateDuringTheGates = (offset: "24h" | "48h", channel: "sms" | "email") => {
+      theSendClockReads(after(offset, REMINDER_LATE_LIMIT_MS[channel] - MIN));
+      return () => vi.setSystemTime(after(offset, REMINDER_LATE_LIMIT_MS[channel] + 1));
+    };
+
+    it.each([
+      ["24h", "sms"],
+      ["48h", "email"],
+    ] as const)("the %s %s runs out of time between its claim and its transport: not sent, recorded too late, claim KEPT", async (offset, channel) => {
+      h.loadReminderData.mockResolvedValue(fixture());
+      h.duringTheGates = lateDuringTheGates(offset, channel);
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel, "sweep", justAfter(offset))).toEqual({
+        dispatched: false,
+        reason: "mark_missed",
+      });
+      expect(h.events).toEqual(["claim:closed", `ledger:reminder.${offset}.${channel}:suppressed:mark_missed`]);
+    });
+
+    it.each([
+      ["24h", "sms"],
+      ["48h", "email"],
+    ] as const)("CONTROL: the %s %s whose gates take no time is sent", async (offset, channel) => {
+      h.loadReminderData.mockResolvedValue(fixture());
+      theSendClockReads(after(offset, REMINDER_LATE_LIMIT_MS[channel] - MIN));
+      h.duringTheGates = () => {};
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel, "sweep", justAfter(offset))).toMatchObject({ dispatched: true });
+      expect(h.events).toEqual(["claim:closed", `send:${channel}`, `ledger:reminder.${offset}.${channel}:sent:`]);
+    });
+
+    it("the visit begins while the confirm code is being written: no SMS, the code is withdrawn, claim KEPT", async () => {
+      process.env.REMINDERS_CONFIRM_LINK_ENABLED = "true";
+      process.env.REMINDERS_CONFIRM_CODE_SECRET = "test-only-confirm-secret-not-prod";
+      // A visit whose 24 hour SMS is two hours late, with the code's write taking it past the limit.
+      h.loadReminderData.mockResolvedValue(fixture());
+      theSendClockReads(after("24h", 2 * HOUR));
+      h.asTheCodeIsIssued = () => vi.setSystemTime(after("24h", 3 * HOUR + 1));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).toEqual({
+        dispatched: false,
+        reason: "mark_missed",
+      });
+      expect(h.events).toEqual([
+        "claim:closed",
+        "code:issued",
+        "code:withdrawn:test-code-hash",
+        "ledger:reminder.24h.sms:suppressed:mark_missed",
+      ]);
+    });
+
+    it("CONTROL: with the code written in no time the SMS goes, and the code stays", async () => {
+      process.env.REMINDERS_CONFIRM_LINK_ENABLED = "true";
+      process.env.REMINDERS_CONFIRM_CODE_SECRET = "test-only-confirm-secret-not-prod";
+      h.loadReminderData.mockResolvedValue(fixture());
+      theSendClockReads(after("24h", 2 * HOUR));
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).toMatchObject({ dispatched: true });
+      expect(h.events).toEqual(["claim:closed", "code:issued", "send:sms", "ledger:reminder.24h.sms:sent:"]);
+    });
   });
 
   it("a reminder already sent is HELD, not too late: the late rule never writes a second row for it", async () => {
     h.closedAnswer = { held: true };
     h.loadReminderData.mockResolvedValue(fixture());
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", at("24h", 10 * HOUR))).toEqual({
+    theSendClockReads(after("24h", 10 * HOUR));
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).toEqual({
       dispatched: false,
       reason: "claim_held",
     });
@@ -440,7 +627,7 @@ describe("while the sweep is the sender: too late, and not due", () => {
     ["run", 3 * 24 * HOUR],
   ] as const)("NOT DUE: the %s asks %d ms before the reminder's time. No claim, nothing sent, and the answer says when it is due", async (taker, ms) => {
     h.loadReminderData.mockResolvedValue(fixture());
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", taker, at("24h", -ms))).toEqual({
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", taker, caller("24h", -ms))).toEqual({
       dispatched: false,
       reason: "not_due",
       dueAt: MARK["24h"].toISOString(),
@@ -451,17 +638,62 @@ describe("while the sweep is the sender: too late, and not due", () => {
 
   it("exactly ten minutes before its time is not `not due`", async () => {
     h.loadReminderData.mockResolvedValue(fixture());
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run", at("24h", -10 * MIN))).toMatchObject({ dispatched: true });
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run", caller("24h", -10 * MIN))).toMatchObject({ dispatched: true });
   });
 
-  it("the day's last pass takes a mark AHEAD on purpose: it says so, is let through, and the claim is told", async () => {
-    h.loadReminderData.mockResolvedValue(fixture());
-    const now = new Date(MARK["24h"].getTime() - 70 * MIN);
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", { now, takenAhead: true })).toMatchObject({ dispatched: true });
-    expect(h.closedClaims[0]).toMatchObject({ takenAhead: true, now });
-    // Without the word, the same call is not due.
-    h.events.length = 0;
-    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", { now })).toMatchObject({ reason: "not_due" });
+  describe("TAKEN AHEAD is granted for the start the dispatcher loaded, and only to the day's last pass", () => {
+    // May 2031, summer time: Lisbon is one hour ahead of UTC. The last pass runs at 21:45 and takes marks before 23:00.
+    const LAST_PASS = new Date("2031-05-13T20:45:00.000Z");
+    const LIMIT = new Date("2031-05-13T22:00:00.000Z");
+    /** A visit whose 24 hour mark is `at`. */
+    const withMarkAt = (at: Date) => fixture({ startsAt: new Date(at.getTime() + 24 * HOUR) });
+    const ask = (now: Date) => dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", { now, takenAhead: true });
+
+    it("the day's last pass takes a mark 45 minutes ahead: it says so, is let through, and the claim is told", async () => {
+      h.loadReminderData.mockResolvedValue(withMarkAt(new Date(LAST_PASS.getTime() + 45 * MIN)));
+      expect(await ask(LAST_PASS)).toMatchObject({ dispatched: true });
+      expect(h.closedClaims[0]).toMatchObject({ takenAhead: true, now: LAST_PASS });
+      // Without the word, the same call is not due.
+      h.events.length = 0;
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", { now: LAST_PASS })).toMatchObject({ reason: "not_due" });
+    });
+
+    it.each([
+      ["two days", 2 * 24 * HOUR],
+      ["two hours, past the pass's limit", 2 * HOUR],
+    ] as const)("A VISIT MOVED LATER SINCE THE PASS SELECTED IT, by %s: not due, no claim, nothing sent, whatever the pass said", async (_by, ms) => {
+      // The pass selected a mark 45 minutes ahead. The start it loads now is later.
+      const movedMark = new Date(LAST_PASS.getTime() + 45 * MIN + ms);
+      h.loadReminderData.mockResolvedValue(withMarkAt(movedMark));
+      expect(await ask(LAST_PASS)).toEqual({ dispatched: false, reason: "not_due", dueAt: movedMark.toISOString() });
+      expect(h.events).toEqual(["ledger:reminder.24h.sms:suppressed:not_due"]);
+      expect(h.closedClaims).toEqual([]);
+    });
+
+    it("a mark due at 23:00 exactly is the morning's, as in the selection; one millisecond before it is taken", async () => {
+      h.loadReminderData.mockResolvedValue(withMarkAt(LIMIT));
+      expect(await ask(LAST_PASS)).toMatchObject({ reason: "not_due" });
+      h.loadReminderData.mockResolvedValue(withMarkAt(new Date(LIMIT.getTime() - 1)));
+      expect(await ask(LAST_PASS)).toMatchObject({ dispatched: true });
+    });
+
+    it("no other pass may take a mark ahead: at 10:15 Lisbon the word buys nothing", async () => {
+      const morning = new Date("2031-05-13T09:15:00.000Z");
+      h.loadReminderData.mockResolvedValue(withMarkAt(new Date(morning.getTime() + 45 * MIN)));
+      expect(await ask(morning)).toMatchObject({ reason: "not_due" });
+      expect(h.closedClaims).toEqual([]);
+    });
+
+    it("a visit moved EARLIER since, so that its mark is already due, is sent", async () => {
+      h.loadReminderData.mockResolvedValue(withMarkAt(new Date(LAST_PASS.getTime() - 5 * MIN)));
+      expect(await ask(LAST_PASS)).toMatchObject({ dispatched: true });
+    });
+
+    it("the rule itself", () => {
+      expect(reminderIsTakenAhead(new Date(LIMIT.getTime() - 1), LAST_PASS)).toBe(true);
+      expect(reminderIsTakenAhead(LIMIT, LAST_PASS)).toBe(false);
+      expect(reminderIsTakenAhead(new Date(LAST_PASS.getTime() + MIN), new Date(LAST_PASS.getTime() - MIN))).toBe(false);
+    });
   });
 
   it("a sleeping job that hands no clock is measured against the real one", async () => {
@@ -471,16 +703,26 @@ describe("while the sweep is the sender: too late, and not due", () => {
     // A start an hour from the real now: its 24 hour mark was 23 hours ago.
     h.loadReminderData.mockResolvedValue(fixture({ startsAt: new Date(Date.now() + HOUR) }));
     expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).toMatchObject({ reason: "mark_missed" });
+    // A start a minute before the real now: the visit has begun.
+    h.loadReminderData.mockResolvedValue(fixture({ startsAt: new Date(Date.now() - MIN) }));
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).toMatchObject({ reason: "start_passed" });
   });
 
   it.each([undefined, "", "SEND", "send ", "true"])(
-    "REMINDERS_SWEEP_MODE=%j: NEITHER rule exists. A reminder days late, and one days early, are both sent, as today",
+    "REMINDERS_SWEEP_MODE=%j: NO rule of time exists. A reminder days late, one days early, and one for a visit that has begun are all sent, as today",
     async (value) => {
       setSwitch(value);
       h.loadReminderData.mockResolvedValue(fixture());
+      // By the caller's clock, and by the system's own: neither is asked.
       for (const ms of [40 * HOUR, -3 * 24 * HOUR]) {
         h.events.length = 0;
-        expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run", at("24h", ms))).toMatchObject({ dispatched: true });
+        expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run", caller("24h", ms))).toMatchObject({ dispatched: true });
+        expect(h.events).toEqual(["claim:today", "send:sms", "ledger:reminder.24h.sms:sent:"]);
+      }
+      for (const at of [after("24h", 40 * HOUR), after("24h", -3 * 24 * HOUR), new Date(STARTS_AT.getTime() + HOUR)]) {
+        h.events.length = 0;
+        theSendClockReads(at);
+        expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "run", { takenAhead: true })).toMatchObject({ dispatched: true });
         expect(h.events).toEqual(["claim:today", "send:sms", "ledger:reminder.24h.sms:sent:"]);
       }
     },

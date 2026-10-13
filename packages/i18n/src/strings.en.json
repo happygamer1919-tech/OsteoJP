@@ -1702,6 +1702,7 @@
   "remindersLog.reason.invalid_recipient": "recipient missing",
   "remindersLog.reason.claim_held": "reminder already sent for this date and time",
   "remindersLog.reason.mark_missed": "too late to send the reminder",
+  "remindersLog.reason.start_passed": "the appointment had already started",
   "remindersLog.reason.not_due": "it was not yet time for this reminder",
   "remindersLog.reason.unknown": "unrecognised reason ({code})",
   "remindersLog.filterAll": "All",

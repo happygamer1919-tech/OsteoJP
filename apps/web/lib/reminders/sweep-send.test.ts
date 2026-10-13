@@ -19,6 +19,8 @@ const {
   ReminderSweepSendError,
   SWEEP_RETRY_AFTER_MS,
   SWEEP_SEND_PASS_MODE,
+  UNSETTLED_CLAIM_AFTER_MS,
+  UNSETTLED_CLAIMS_NAMED,
   handOverMark,
   runReminderSweepSend,
   sendingPassIncludesNeverReminded,
@@ -83,6 +85,8 @@ describe("one mark, handed to the dispatcher", () => {
     [{ dispatched: false, reason: "not_found" }, "held_back"],
     [{ dispatched: false, reason: "not_due", dueAt: "2027-02-10T11:00:00.000Z" }, "held_back"],
     [{ dispatched: false, reason: "mark_missed" }, "too_late"],
+    // The visit had begun when the dispatcher came to send: final in the same way.
+    [{ dispatched: false, reason: "start_passed" }, "too_late"],
     [{ dispatched: false, reason: "claim_held" }, "claim_held"],
   ] as const)("the dispatcher answers %o: %s", async (outcome, word) => {
     const dispatch = vi.fn(async () => outcome as unknown as DispatchOutcome);
@@ -120,7 +124,8 @@ function fakeSweep(dueByTenant: Record<string, number>) {
     // Of what it took: all but two sent, one held back, one failed (when it took that many).
     const failed = taken >= 2 ? 1 : 0;
     const heldBack = taken >= 2 ? 1 : 0;
-    return { due, taken, sent: taken - failed - heldBack, heldBack, tooLate: 0, claimHeld: 0, failed, overCeiling: due > taken };
+    // And one claim with nothing after it, for every tenant that had anything due.
+    return { due, taken, sent: taken - failed - heldBack, heldBack, tooLate: 0, claimHeld: 0, failed, overCeiling: due > taken, unsettledClaims: due > 0 ? 1 : 0 };
   };
   return { calls, sweepTenant: sweepTenant as never };
 }
@@ -154,6 +159,8 @@ describe("one sending pass", () => {
       claimHeld: 0,
       failedMarks: 1,
       overCeiling: false,
+      // Counted over both tenants, and on the pass's own line below.
+      unsettledClaims: 2,
     });
     // The pass itself runs one step, the listing; each tenant's pass runs its own.
     expect(steps).toEqual(["list-tenants"]);
@@ -162,7 +169,7 @@ describe("one sending pass", () => {
       { tenantId: T2, limit: 47, passId: "01JRUNID" },
     ]);
     expect(lines).toEqual([
-      `${SWEEP_LOG_PREFIX} mode=send tenants=2 failed=0 due=4 taken=4 sent=2 heldBack=1 tooLate=0 claimHeld=0 failedMarks=1`,
+      `${SWEEP_LOG_PREFIX} mode=send tenants=2 failed=0 due=4 taken=4 sent=2 heldBack=1 tooLate=0 claimHeld=0 failedMarks=1 unsettledClaims=2`,
     ]);
     // A mark that failed does not fail the pass.
     expect(alarms).toEqual([]);
@@ -222,12 +229,15 @@ describe("one sending pass", () => {
     const lines: string[] = [];
     const out = await runReminderSweepSend({ listTenantIds: async () => [], log: (l) => lines.push(l), alarm: () => {} });
     expect(out).toMatchObject({ mode: "send", tenants: 0, taken: 0, sent: 0 });
-    expect(lines).toEqual([`${SWEEP_LOG_PREFIX} mode=send tenants=0 failed=0 due=0 taken=0 sent=0 heldBack=0 tooLate=0 claimHeld=0 failedMarks=0`]);
+    expect(lines).toEqual([`${SWEEP_LOG_PREFIX} mode=send tenants=0 failed=0 due=0 taken=0 sent=0 heldBack=0 tooLate=0 claimHeld=0 failedMarks=0 unsettledClaims=0`]);
   });
 
   it("the fixed words: the heartbeat's mode and the hour between two tries", () => {
     expect(SWEEP_SEND_PASS_MODE).toBe("send");
     expect(SWEEP_RETRY_AFTER_MS).toBe(60 * 60_000);
+    // A live claim is called unsettled after one pass of the sweep, and ten are named a line.
+    expect(UNSETTLED_CLAIM_AFTER_MS).toBe(15 * 60_000);
+    expect(UNSETTLED_CLAIMS_NAMED).toBe(10);
   });
 });
 

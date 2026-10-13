@@ -27,10 +27,18 @@
  *      12 are still sent; a minute later each is recorded as too late, once,
  *      and never sent. A reminder held back until its limit ends the same
  *      way. The marks that can still go out are taken before the ones that
- *      are only to be recorded.
+ *      are only to be recorded. IT IS JUDGED WHEN THE SEND STEP RUNS: a step
+ *      that runs hours after its selection sends nothing that is by then too
+ *      late, and nothing for a visit that has by then begun.
  *   9. THE FLOOR. A pass takes no mark that fell due before the tenant's
- *      first heartbeat, and a tenant with no heartbeat is not swept at all:
- *      the pass writes the first one and starts from there.
+ *      first SENDING heartbeat of this spell: not one the sleeping job sent
+ *      without a claim, not one it held back. A tenant that has only ever
+ *      been swept in shadow is not swept: the pass writes the first sending
+ *      heartbeat and starts from there, and again after the switch was off.
+ *  10. A VISIT MOVED LATER between the last pass's selection and its send is
+ *      not reminded early.
+ *  11. A CLAIM WITH NOTHING AFTER IT is counted and named by every later
+ *      pass, and never sent again.
  *
  * WHY A DATABASE. The selection reads `appointments`, the audit trail and
  * `reminder_claims` under the job's own claims, and "sent once" is the claim's
@@ -48,6 +56,11 @@
  * stamped by the database's own clock, so to those passes every claim is more
  * than an hour old. The arm that proves the hour between two tries uses the
  * real clock instead.
+ *
+ * THE DISPATCHER READS A CLOCK OF ITS OWN WHEN IT SENDS, and takes it from
+ * nobody. So `pass` sets the system's clock (`Date` only; every timer and the
+ * database's clock stay real) to the pass's own, and an arm that lets time go
+ * by between the selection and a send moves it inside the send step.
  *
  * Skipped without DATABASE_URL. NOT hard-required in assert-rls-executed.mjs:
  * that file is a frozen gate, so listing this suite there is a GATE-CHANGE.
@@ -69,6 +82,8 @@ const h = vi.hoisted(() => ({
   /** The tenants the scheduled function is allowed to list: this file's two. */
   tenants: [] as string[],
   network: [] as string[],
+  /** Every alarm line a pass raised. */
+  alarms: [] as string[],
 }));
 
 vi.mock("./clients", async (importOriginal) => {
@@ -170,18 +185,32 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
   async function seedClaim(
     appointmentId: string,
     start: Date,
-    over: { taker?: "run" | "sweep"; early?: boolean; released?: boolean } = {},
+    over: { tenant?: string; taker?: "run" | "sweep"; early?: boolean; released?: boolean } = {},
   ): Promise<string> {
     const id = randomUUID();
+    const tenant = over.tenant ?? tenantA;
     await sql.execute(raw`insert into reminder_claims
       (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early)
-      values (${id}, ${tenantA}, ${appointmentId}, 'claim', '24h', 'sms', ${start.toISOString()},
+      values (${id}, ${tenant}, ${appointmentId}, 'claim', '24h', 'sms', ${start.toISOString()},
               ${plus(start, -24 * H).toISOString()}, ${over.taker ?? "run"}, ${over.early ?? false}::boolean)`);
     if (over.released) {
       await sql.execute(raw`insert into reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id)
-        values (${tenantA}, ${appointmentId}, 'release', '24h', 'sms', ${id})`);
+        values (${tenant}, ${appointmentId}, 'release', '24h', 'sms', ${id})`);
     }
     return id;
+  }
+
+  /** A ledger row of the 24 hour SMS, as the dispatcher leaves one. */
+  async function seedLedger(appointmentId: string, outcome: "sent" | "suppressed", reason: string | null, tenant = tenantA) {
+    await sql.execute(raw`insert into reminder_dispatches (tenant_id, appointment_id, channel, template_id, outcome, suppression_reason)
+      values (${tenant}, ${appointmentId}, 'sms', 'reminder.24h.sms', ${outcome}, ${reason})`);
+  }
+
+  /** A heartbeat for one tenant: what a pass of that mode leaves. */
+  async function heartbeat(tenant: string, mode: "shadow" | "send", at: Date | string) {
+    await sql.execute(raw`insert into reminder_sweep_passes
+      (tenant_id, pass_id, mode, pass_at, due_count, recorded_count, over_ceiling, excluded_count)
+      values (${tenant}, 'floor-seed', ${mode}, ${typeof at === "string" ? at : at.toISOString()}, 0, 0, false, 0)`);
   }
 
   async function claimsOf(appointmentId: string): Promise<Row[]> {
@@ -222,15 +251,36 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     return { ...f!, sends: h.sends.length };
   }
 
-  async function pass(tenant: string, now: Date, over: { limit?: number; passId?: string; includeNeverReminded?: boolean } = {}) {
+  /** Set the clock the dispatcher reads when it sends. `Date` only: timers and the database stay real. */
+  function theSendClockReads(at: Date) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(at);
+  }
+
+  /**
+   * One tenant's sending pass at `now`. The system's clock reads `now` too,
+   * as it does in a run that does not stall. `beforeEachSend` runs inside
+   * every send step, before the dispatcher is called: the place where an arm
+   * lets time go by, or changes a visit, between the selection and the send.
+   */
+  async function pass(
+    tenant: string,
+    now: Date,
+    over: { limit?: number; passId?: string; includeNeverReminded?: boolean; beforeEachSend?: () => Promise<void> | void } = {},
+  ) {
     const { sweepTenantSending } = await import("./sweep-send");
+    theSendClockReads(now);
     return sweepTenantSending({
       tenantId: tenant,
       now: () => now,
       limit: over.limit ?? 50,
       passId: over.passId ?? `pass-${randomUUID()}`,
       includeNeverReminded: over.includeNeverReminded,
-      alarm: () => {},
+      step: async (id, fn) => {
+        if (id.startsWith("sweep-send-")) await over.beforeEachSend?.();
+        return fn();
+      },
+      alarm: (line) => h.alarms.push(line),
     });
   }
 
@@ -256,13 +306,6 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
         values (${t.patient}, ${tenant}, 'Paciente Sweep', '912345678', ${"p-" + t.patient.slice(0, 8) + "@p.test"}, true, true)`);
     }
     h.tenants = [tenantA, tenantB];
-    // THE FLOOR: the sweep has been running for both tenants since long before
-    // any mark an arm seeds. (The last arm removes one tenant's to prove the rule.)
-    for (const tenant of [tenantA, tenantB]) {
-      await sql.execute(raw`insert into reminder_sweep_passes
-        (tenant_id, pass_id, mode, pass_at, due_count, recorded_count, over_ceiling, excluded_count)
-        values (${tenant}, 'floor-seed', 'shadow', '2026-01-05T08:00:00Z', 0, 0, false, 0)`);
-    }
   });
 
   afterAll(async () => {
@@ -280,7 +323,15 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     }
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // THE FLOOR: the sweep has been SENDING for both tenants since long before
+    // any mark an arm seeds, and nothing has interrupted it. Set again before
+    // every arm, because the arms that run with the switch off leave shadow
+    // heartbeats, and a shadow heartbeat ends a spell of sending. (The arms
+    // of the floor replace one tenant's to prove the rule.)
+    await sql.execute(raw`delete from reminder_sweep_passes where tenant_id in (${tenantA}, ${tenantB})`);
+    for (const tenant of [tenantA, tenantB]) await heartbeat(tenant, "send", "2026-01-05T08:00:00Z");
+    h.alarms.length = 0;
     for (const k of ENV_KEYS) {
       savedEnv[k] = process.env[k];
       delete process.env[k];
@@ -309,6 +360,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
       else process.env[k] = savedEnv[k];
     }
     vi.restoreAllMocks();
+    vi.useRealTimers();
     // Each arm starts from visits of its own: the earlier arms' are cancelled.
     await sql.execute(raw`update appointments set status = 'cancelled' where tenant_id in (${tenantA}, ${tenantB}) and status <> 'cancelled'`);
   });
@@ -371,7 +423,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     const cancelled = await smsVisit(now, { status: "cancelled" });
 
     const first = await pass(tenantA, now, { passId: "sent-once-1" });
-    expect(first).toEqual({ due: 2, taken: 2, sent: 2, heldBack: 0, tooLate: 0, claimHeld: 0, failed: 0, overCeiling: false });
+    expect(first).toEqual({ due: 2, taken: 2, sent: 2, heldBack: 0, tooLate: 0, claimHeld: 0, failed: 0, overCeiling: false, unsettledClaims: 0 });
     expect([...h.sends].sort()).toEqual([`email:${email.id}`, `sms:${sms.id}`].sort());
     expect(await claimsOf(sms.id)).toEqual([
       { offset_id: "24h", channel: "sms", taker: "sweep", early: false, starts_at: sms.start.toISOString(), released: false },
@@ -622,7 +674,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     };
 
     const out = await pass(tenantA, now, { passId: "late-rule-1" });
-    expect(out).toEqual({ due: 4, taken: 4, sent: 2, heldBack: 0, tooLate: 2, claimHeld: 0, failed: 0, overCeiling: false });
+    expect(out).toEqual({ due: 4, taken: 4, sent: 2, heldBack: 0, tooLate: 2, claimHeld: 0, failed: 0, overCeiling: false, unsettledClaims: 0 });
     // The heartbeat counts the marks handed to the dispatcher, the two it did not send included.
     expect((await heartbeatsOf("late-rule-1"))[0]).toMatchObject({ mode: "send", due_count: 4, recorded_count: 4 });
     expect([...h.sends].sort()).toEqual([`email:${v.emailAtLimit.id}`, `sms:${v.smsAtLimit.id}`].sort());
@@ -685,41 +737,289 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
   });
 
   /* ---------------------------------------------------------------- */
+  /* 8b. The late rule is judged when the send step runs               */
+  /* ---------------------------------------------------------------- */
+
+  describe("A SEND STEP THAT RUNS HOURS AFTER ITS SELECTION is judged at the hour it runs", () => {
+    it("the SMS selected 30 minutes late and sent 4 hours later is NOT sent: recorded too late, once, claim kept", async () => {
+      const now = clockOf(11);
+      const v = await smsDue(now, 30);
+      // The run stalls between its selection and its send: the send step runs four hours on.
+      const out = await pass(tenantA, now, { passId: "stall-sms", beforeEachSend: () => theSendClockReads(plus(now, 4 * H)) });
+
+      expect(out).toMatchObject({ due: 1, taken: 1, sent: 0, tooLate: 1 });
+      expect(h.sends).toEqual([]);
+      expect(await ledgerOf(v.id)).toEqual(["reminder.24h.sms:suppressed:mark_missed"]);
+      expect((await claimsOf(v.id)).map((c) => [c.taker, c.released])).toEqual([["sweep", false]]);
+      // The heartbeat still carries the instant of the selection: it is the pass's clock, and only that.
+      expect((await heartbeatsOf("stall-sms"))[0]).toMatchObject({ pass_at: now.toISOString(), recorded_count: 1 });
+      // Final: no later pass and no sleeping job sends it.
+      for (const later of [4 * H + 15, 5 * H + 30]) {
+        expect(await pass(tenantA, plus(now, later))).toMatchObject({ due: 0, taken: 0 });
+      }
+      expect(h.sends).toEqual([]);
+    });
+
+    it("the email selected 30 minutes late and sent 13 hours later is NOT sent", async () => {
+      const now = clockOf(12);
+      const v = await emailDue(now, 30);
+      const out = await pass(tenantA, now, { beforeEachSend: () => theSendClockReads(plus(now, 13 * H)) });
+      expect(out).toMatchObject({ taken: 1, sent: 0, tooLate: 1 });
+      expect(h.sends).toEqual([]);
+      expect(await ledgerOf(v.id)).toEqual(["reminder.48h.email:suppressed:mark_missed"]);
+    });
+
+    it("CONTROL: the same two reminders, in a run that stalls for less than their limit, ARE sent", async () => {
+      const now = clockOf(13);
+      const sms = await smsDue(now, 30);
+      const email = await emailDue(now, 30);
+      // Two hours on: the SMS is 2 hours 30 late, the email too. Both inside their limit.
+      const out = await pass(tenantA, now, { beforeEachSend: () => theSendClockReads(plus(now, 2 * H)) });
+      expect(out).toMatchObject({ taken: 2, sent: 2, tooLate: 0 });
+      expect([...h.sends].sort()).toEqual([`email:${email.id}`, `sms:${sms.id}`].sort());
+    });
+
+    it("THE FLOOR UNDER EVERY SEND: a send step that runs after the visit has BEGUN sends nothing, and says `start_passed`", async () => {
+      const now = clockOf(14);
+      // The 48 hour email, 8 hours late at the selection: the visit starts 40 hours on.
+      const email = await emailDue(now, 8 * H);
+      // The 24 hour SMS, 30 minutes late: the visit starts 23 and a half hours on.
+      const sms = await smsDue(now, 30);
+      // The send steps run 41 hours on. Both visits have begun.
+      const out = await pass(tenantA, now, { beforeEachSend: () => theSendClockReads(plus(now, 41 * H)) });
+
+      expect(out).toMatchObject({ due: 2, taken: 2, sent: 0, tooLate: 2 });
+      expect(h.sends).toEqual([]);
+      expect(await ledgerOf(email.id)).toEqual(["reminder.48h.email:suppressed:start_passed"]);
+      expect(await ledgerOf(sms.id)).toEqual(["reminder.24h.sms:suppressed:start_passed"]);
+      expect((await claimsOf(email.id)).map((c) => c.released)).toEqual([false]);
+    });
+
+    it("a visit cancelled during the stall, and by then too late, is recorded as cancelled (`status`), once, and its claim is kept", async () => {
+      const now = clockOf(15);
+      const v = await smsDue(now, 30);
+      const out = await pass(tenantA, now, {
+        beforeEachSend: async () => {
+          await sql.execute(raw`update appointments set status = 'cancelled' where id = ${v.id}`);
+          theSendClockReads(plus(now, 4 * H));
+        },
+      });
+      expect(out).toMatchObject({ taken: 1, sent: 0 });
+      expect(h.sends).toEqual([]);
+      expect(await ledgerOf(v.id)).toEqual(["reminder.24h.sms:suppressed:status"]);
+      expect((await claimsOf(v.id)).map((c) => c.released)).toEqual([false]);
+    });
+  });
+
+  /* ---------------------------------------------------------------- */
   /* 9. The floor                                                      */
   /* ---------------------------------------------------------------- */
 
-  it("THE FLOOR: a tenant with no heartbeat is not swept; its first pass writes one, and only marks due from then on are ever taken", async () => {
+  it("THE FLOOR IS THE MOMENT THE SWITCH WAS TURNED: nothing that fell due before the first sending heartbeat is ever taken, whatever the sleeping job left on record", async () => {
     const now = clockOf(10);
-    // Tenant B as a tenant the sweep has never run for.
+    // Tenant B has been swept IN SHADOW for months, up to a quarter of an hour ago. It has never been sent for.
     await sql.execute(raw`delete from reminder_sweep_passes where tenant_id = ${tenantB}`);
-    // Its reminder fell due 30 minutes ago. The sleeping job may have sent it
-    // before claims were written: there is no claim to say either way.
-    const before = await smsVisit(now, { tenant: tenantB });
+    await heartbeat(tenantB, "shadow", "2026-01-05T08:00:00Z");
+    await heartbeat(tenantB, "shadow", plus(now, -15));
 
+    // Three reminders that fell due 30 minutes ago, while the sleeping job was the sender:
+    // (b) SENT WHILE THE CLAIM STORE FAILED: a `sent` row in the ledger and NO claim.
+    const sentWithoutClaim = await smsVisit(now, { tenant: tenantB });
+    await seedLedger(sentWithoutClaim.id, "sent", null, tenantB);
+    // (a) HELD BACK by the sleeping job: under the rules of today its claim was kept.
+    const heldBack = await smsVisit(now, { tenant: tenantB, origin: "patient_portal" });
+    await seedClaim(heldBack.id, heldBack.start, { tenant: tenantB });
+    await seedLedger(heldBack.id, "suppressed", "unconfirmed", tenantB);
+    // And one with nothing on record at all: sent before claims existed, or never.
+    const nothingOnRecord = await smsVisit(now, { tenant: tenantB });
+
+    // THE FIRST SENDING PASS takes nothing and sends nothing. It writes the first sending heartbeat.
     const first = await pass(tenantB, now, { passId: "floor-1" });
     expect(first).toMatchObject({ due: 0, taken: 0, sent: 0 });
+    expect(h.sends).toEqual([]);
     expect(await heartbeatsOf("floor-1")).toEqual([
       { tenant_id: tenantB, mode: "send", due_count: 0, recorded_count: 0, over_ceiling: false, excluded_count: 0, pass_at: now.toISOString() },
     ]);
 
-    // A reminder that falls due 10 minutes AFTER that first heartbeat.
+    // A reminder that falls due 10 minutes AFTER that heartbeat, and one due at its very instant: taken.
     const after = await smsVisit(now, { tenant: tenantB, startIn: 24 * H + 10 });
-    // And one that falls due at the very instant of the floor: taken.
     const atFloor = await smsVisit(now, { tenant: tenantB, startIn: 24 * H });
-
     const second = await pass(tenantB, plus(now, 15));
     expect(second).toMatchObject({ due: 2, taken: 2, sent: 2 });
     expect([...h.sends].sort()).toEqual([`sms:${after.id}`, `sms:${atFloor.id}`].sort());
-    // The one from before the floor is never taken, at any later pass.
-    for (const later of [30, 2 * H]) {
+
+    // The clinic accepts the request that was held back. It fell due before the switch: still not the sweep's.
+    await sql.execute(raw`update appointments set status = 'confirmed' where id = ${heldBack.id}`);
+    for (const later of [30, 90, 2 * H]) {
       expect(await pass(tenantB, plus(now, later))).toMatchObject({ due: 0, taken: 0 });
     }
-    expect(await claimsOf(before.id)).toEqual([]);
-    expect(await ledgerOf(before.id)).toEqual([]);
-    // CONTROL: tenant A, whose floor is long past, takes the same kind of mark.
+    expect(h.sends).toHaveLength(2);
+    expect(await ledgerOf(sentWithoutClaim.id)).toEqual(["reminder.24h.sms:sent:"]);
+    expect(await claimsOf(sentWithoutClaim.id)).toEqual([]);
+    expect(await ledgerOf(heldBack.id)).toEqual(["reminder.24h.sms:suppressed:unconfirmed"]);
+    expect(await claimsOf(heldBack.id)).toHaveLength(1);
+    expect(await claimsOf(nothingOnRecord.id)).toEqual([]);
+    expect(await ledgerOf(nothingOnRecord.id)).toEqual([]);
+
+    // THE SWITCH IS TURNED OFF AND ON AGAIN. Three hours on a shadow pass ran: that spell of sending is over.
+    await heartbeat(tenantB, "shadow", plus(now, 3 * H));
+    // A reminder that fell due while the switch was off (2 hours 40 on), which the sleeping job handled.
+    const whileOff = await smsVisit(now, { tenant: tenantB, startIn: 24 * H + 2 * H + 40 });
+    const again = await pass(tenantB, plus(now, 3 * H + 10), { passId: "floor-2" });
+    expect(again).toMatchObject({ due: 0, taken: 0, sent: 0 });
+    expect(await heartbeatsOf("floor-2")).toHaveLength(1);
+    // From the new spell's first heartbeat on, marks are taken again; the one from the gap never is.
+    const afterAgain = await smsVisit(now, { tenant: tenantB, startIn: 24 * H + 3 * H + 20 });
+    expect(await pass(tenantB, plus(now, 3 * H + 25))).toMatchObject({ due: 1, taken: 1, sent: 1 });
+    expect(h.sends[2]).toBe(`sms:${afterAgain.id}`);
+    expect(await claimsOf(whileOff.id)).toEqual([]);
+    expect(await ledgerOf(whileOff.id)).toEqual([]);
+
+    // CONTROL: tenant A, sending without a break since long ago, takes the same kind of mark.
     const control = await smsVisit(now);
     expect(await pass(tenantA, now)).toMatchObject({ due: 1, taken: 1, sent: 1 });
     expect(h.sends).toContain(`sms:${control.id}`);
+  });
+
+  it("a tenant with no heartbeat at all is not swept either: its first sending pass writes one and starts from there", async () => {
+    const now = clockOf(16);
+    await sql.execute(raw`delete from reminder_sweep_passes where tenant_id = ${tenantB}`);
+    const before = await smsVisit(now, { tenant: tenantB });
+    expect(await pass(tenantB, now)).toMatchObject({ due: 0, taken: 0, sent: 0 });
+    const after = await smsVisit(now, { tenant: tenantB, startIn: 24 * H + 10 });
+    expect(await pass(tenantB, plus(now, 15))).toMatchObject({ due: 1, taken: 1, sent: 1 });
+    expect(h.sends).toEqual([`sms:${after.id}`]);
+    expect(await claimsOf(before.id)).toEqual([]);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 10. A visit moved later between the selection and the send        */
+  /* ---------------------------------------------------------------- */
+
+  describe("the day's last pass, and a visit moved while it runs", () => {
+    // 21:45 Lisbon on the Monday of the arm's week (winter time: Lisbon is UTC).
+    const lastPassOf = (week: number) => lisbonDateTimeToUtc(addDays(FIRST_MONDAY, week * 7), "21:45");
+
+    it("A VISIT MOVED TWO DAYS LATER between the selection and the send is NOT reminded early, takes no claim, and is reminded at its new time", async () => {
+      const now = lastPassOf(17);
+      // Its 24 hour SMS falls due at 22:30, 45 minutes ahead: the last pass takes it ahead.
+      const v = await smsVisit(now, { startIn: 24 * H + 45 });
+      const movedStart = plus(v.start, 2 * 24 * H);
+
+      const out = await pass(tenantA, now, {
+        beforeEachSend: async () => {
+          await sql.execute(raw`update appointments set starts_at = ${movedStart.toISOString()}, ends_at = ${plus(movedStart, 45).toISOString()} where id = ${v.id}`);
+        },
+      });
+
+      expect(out).toMatchObject({ due: 1, taken: 1, sent: 0, heldBack: 1 });
+      expect(h.sends).toEqual([]);
+      // NO CLAIM: nothing blocks the reminder at the right time.
+      expect(await claimsOf(v.id)).toEqual([]);
+      expect(await ledgerOf(v.id)).toEqual(["reminder.24h.sms:suppressed:not_due"]);
+
+      // Two days on, at its new time, a pass sends it: once. (The move also gave the visit a 48 hour
+      // email time, a day gone by then: that one is recorded as too late.)
+      const due = plus(movedStart, -24 * H);
+      expect(await pass(tenantA, plus(due, 5))).toMatchObject({ due: 2, taken: 2, sent: 1, tooLate: 1 });
+      expect(h.sends).toEqual([`sms:${v.id}`]);
+      expect((await claimsOf(v.id)).filter((c) => c.offset_id === "24h").map((c) => [c.starts_at, c.early, c.released])).toEqual([
+        [movedStart.toISOString(), false, false],
+      ]);
+    });
+
+    it("CONTROL: the same visit, not moved, IS taken ahead by the last pass and sent, and its claim holds in the morning", async () => {
+      const now = lastPassOf(18);
+      const v = await smsVisit(now, { startIn: 24 * H + 45 });
+      expect(await pass(tenantA, now)).toMatchObject({ due: 1, taken: 1, sent: 1 });
+      expect(h.sends).toEqual([`sms:${v.id}`]);
+      expect((await claimsOf(v.id)).map((c) => [c.early, c.released])).toEqual([[false, false]]);
+      // 07:00 the next morning: nothing to take.
+      expect(await pass(tenantA, plus(now, 9 * H + 15))).toMatchObject({ due: 0, taken: 0 });
+      expect(h.sends).toHaveLength(1);
+    });
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 11. A claim with nothing after it                                 */
+  /* ---------------------------------------------------------------- */
+
+  describe("A CLAIM WITH NOTHING AFTER IT: a sender died between its claim and its send", () => {
+    it("every later pass counts it and names its appointment, and nobody sends it again", async () => {
+      const now = clockOf(19);
+      const v = {
+        // What a crash between the claim and the send leaves: a live claim, and no ledger row.
+        stranded: await smsVisit(now),
+        strandedRun: await smsVisit(now),
+        // Settled, each in its own way: none of these is counted.
+        sent: await smsVisit(now),
+        tooLate: await smsVisit(now),
+        released: await smsVisit(now),
+        early: await smsVisit(now),
+      };
+      await seedClaim(v.stranded.id, v.stranded.start, { taker: "sweep" });
+      await seedClaim(v.strandedRun.id, v.strandedRun.start, { taker: "run" });
+      await seedClaim(v.sent.id, v.sent.start, { taker: "sweep" });
+      await seedLedger(v.sent.id, "sent", null);
+      await seedClaim(v.tooLate.id, v.tooLate.start, { taker: "sweep" });
+      await seedLedger(v.tooLate.id, "suppressed", "mark_missed");
+      await seedClaim(v.released.id, v.released.start, { released: true });
+      await seedClaim(v.early.id, v.early.start, { early: true });
+      // A stranded claim of a visit that has begun is no longer reported.
+      const begun = await visit({ now, startIn: -30 });
+      await seedClaim(begun.id, begun.start, { taker: "sweep" });
+      // And another tenant's stranded claim is that tenant's.
+      const other = await smsVisit(now, { tenant: tenantB });
+      await seedClaim(other.id, other.start, { tenant: tenantB, taker: "sweep" });
+
+      const named = [v.stranded.id, v.strandedRun.id].sort().join(",");
+      for (const later of [0, 15, 3 * H]) {
+        h.alarms.length = 0;
+        const out = await pass(tenantA, plus(now, later));
+        // The released and the early one are taken and sent on the first pass; the stranded two never are.
+        expect(out.unsettledClaims, `pass at +${later}`).toBe(2);
+        expect(h.alarms.filter((l) => l.includes("UNSETTLED CLAIMS"))).toEqual([
+          `[reminders] sweep: UNSETTLED CLAIMS tenantId=${tenantA} count=2 appointmentIds=${named}: ` +
+            `a claim was taken and nothing was recorded after it. Whether the reminder left is not known. It is not sent again.`,
+        ]);
+      }
+      expect([...h.sends].sort()).toEqual([`sms:${v.released.id}`, `sms:${v.early.id}`].sort());
+      expect(await ledgerOf(v.stranded.id)).toEqual([]);
+      expect(await claimsOf(v.stranded.id)).toHaveLength(1);
+      // A sleeping job that wakes for it is held too: an unknown outcome is not sent twice.
+      const { dispatchReminder } = await import("./dispatch");
+      expect(await dispatchReminder(tenantA, v.stranded.id, "24h", "sms")).toEqual({ dispatched: false, reason: "claim_held" });
+      expect(await pass(tenantB, now)).toMatchObject({ unsettledClaims: 1 });
+    });
+
+    it("a claim taken a moment ago is a send in progress, not a stranded one (the real clock)", async () => {
+      const t0 = new Date();
+      // To the real clock every claim an earlier arm left is ahead and will soon be old: this arm starts from none.
+      await sql.execute(raw`delete from reminder_claims where tenant_id = ${tenantA}`);
+      const v = await smsVisit(t0);
+      await seedClaim(v.id, v.start, { taker: "sweep" });
+      expect(await pass(tenantA, t0)).toMatchObject({ unsettledClaims: 0 });
+      expect(h.alarms).toEqual([]);
+      // Sixteen minutes on, with still nothing after it, it is one.
+      expect(await pass(tenantA, plus(t0, 16))).toMatchObject({ unsettledClaims: 1 });
+    });
+
+    it("the pass says it once, inside its selection step: a run the scheduler resumes does not say it again", async () => {
+      const now = clockOf(20);
+      const v = await smsVisit(now);
+      await seedClaim(v.id, v.start, { taker: "sweep" });
+      const { sweepTenantSending } = await import("./sweep-send");
+      const stored = new Map<string, unknown>();
+      const step = async <T>(id: string, fn: () => Promise<T>): Promise<T> => {
+        if (!stored.has(id)) stored.set(id, JSON.parse(JSON.stringify(await fn())));
+        return stored.get(id) as T;
+      };
+      for (let resumed = 0; resumed < 3; resumed++) {
+        const out = await sweepTenantSending({ tenantId: tenantA, now: () => now, limit: 50, step, alarm: (l) => h.alarms.push(l) });
+        expect(out.unsettledClaims).toBe(1);
+      }
+      expect(h.alarms.filter((l) => l.includes("UNSETTLED CLAIMS"))).toHaveLength(1);
+    });
   });
 
   it("nothing a pass writes is in the audit trail: the two tenants hold their booking rows and nothing else", async () => {
