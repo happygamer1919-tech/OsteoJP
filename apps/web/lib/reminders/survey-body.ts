@@ -23,6 +23,7 @@ import type { Locale } from "@osteojp/i18n";
 import type { EnvSource } from "@osteojp/notify";
 
 import { CONFIRM_LINK_BASE_VAR, confirmLinkHostOrNull } from "./confirm-code";
+import { formatDateLong } from "./locale";
 import {
   assembleSurveySms,
   renderSurveyEmail,
@@ -33,6 +34,45 @@ import {
 
 /** The path of the answer page. `/c/` is the confirm page's; this is its neighbour. */
 const SURVEY_PATH = "/s/";
+
+/**
+ * A link lives 14 days from its send, to the minute: `resolve_survey_code`
+ * reads the expiry as `sent_at + interval '14 days'` (migration 0102).
+ */
+export const SURVEY_LINK_DAYS = 14;
+
+const LISBON_DAY = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Lisbon",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+});
+
+/**
+ * The "valid until" date a person reads: THE DAY BEFORE the Lisbon calendar
+ * day the link dies on (owner ruling, 2026-10-13).
+ *
+ * The link dies 14 days after the send to the minute, so on the day it dies it
+ * stops working part of the way through. The day before is the last one it
+ * works on from start to end, and that is the only date that is true to print.
+ * Sent 24 May, the link dies on 7 June and the message says 6 June.
+ *
+ * A CALENDAR STEP, NOT 24 HOURS. The day is read in Lisbon and one is taken off
+ * the day number. Taking 24 hours off the instant lands two days back when the
+ * link dies in the first hour after the clocks go forward, and counting from
+ * the send's own Lisbon date is a day late when the clocks go back in between.
+ *
+ * The database expiry is not this function's and does not move.
+ */
+export function surveyValidUntilDateLong(sentAt: Date, locale: Locale): string {
+  const diesAt = new Date(sentAt.getTime() + SURVEY_LINK_DAYS * 24 * 60 * 60_000);
+  const part = (type: "year" | "month" | "day") =>
+    Number(LISBON_DAY.formatToParts(diesAt).find((p) => p.type === type)?.value);
+  // Noon UTC is the same calendar day in Lisbon all year, and Date.UTC carries
+  // day 0 back into the month, and the year, before.
+  const dayBefore = new Date(Date.UTC(part("year"), part("month") - 1, part("day") - 1, 12));
+  return formatDateLong(dayBefore, locale);
+}
 
 /**
  * The two forms of one link: the whole address for the email, and the bare

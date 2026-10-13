@@ -27,6 +27,16 @@ Where this document still reads `0101` for SAT-01 it is a quotation of a ruling
 or of an earlier revision, marked superseded; every statement in the present
 tense reads `0102`.
 
+**Amended 2026-10-13** by SOLO to an owner ruling of that day, on the "valid
+until" date a person reads. A link dies exactly 14 days after its send, to the
+minute, so it stops working part of the way through a day. The printed date is
+therefore ONE DAY EARLIER than the Lisbon calendar date of the expiry instant:
+the last day the link works from start to end. Sent 24 May, the link dies on 7
+June and the message reads "6 de junho de 2026". This binds the email's
+`survey_expiry_date` (7.1) and the staff line's `{data_fim}` (copy text 73,
+5.4). The expiry itself, `sent_at + interval '14 days'`, does not change, and
+no migration follows from this.
+
 **The name (S1).** In every Portuguese string the feature is the "Avaliação de
 satisfação" (plural "Avaliações de satisfação", never bare "Avaliações", which on
 this platform means the clinical evaluations). This English document keeps
@@ -439,7 +449,9 @@ Built on `apps/web/app/c/[code]/` and keeping its rules:
   page** (SR-30). The page does not say which it was.
 * **A code lives 14 days from its send** and works once (the build order's
   "single-use 14-day token"; 3.2 row 6). ~~14 days after the visit~~
-  *(superseded 2026-10-02 by S-1002-D S4).*
+  *(superseded 2026-10-02 by S-1002-D S4).* The page prints no expiry date.
+  Wherever a person reads a "valid until" date, it is the day before the Lisbon
+  day the code dies on (owner ruling, 2026-10-13).
 * **The visit date only.** No therapist, no service, no time, no clinical
   content, no patient name. Text 7 tells the patient that the answers carry
   their identity and who reads them (S7, S9).
@@ -500,7 +512,8 @@ depends on the sender (`reply-capability.ts`), which SAT-01 does not change.
   concluded appointment; the patient opted out (S8); no permitted channel
   exists (the same channel rule as 5.1, S6); or a send to this patient is
   unanswered and its link is still valid (sent less than 14 days ago, not
-  consumed).
+  consumed). The date text 73 prints as `{data_fim}` is the day before the
+  Lisbon day that link dies on (owner ruling, 2026-10-13), not the day it dies.
 * **Not blocked by the 60-day rule (S4).** A manual send does count toward the
   next automatic one (S3).
 * **The dialog (S6)** names the channel before anything is sent: copy text 63
@@ -819,9 +832,13 @@ live-send flag is off (the build order). Section 10 gives the order.
 * The code module reuses `confirm-code.ts`'s alphabet, length (8) and HMAC.
   Recommended: the same key with a `survey:` domain prefix on the HMAC input,
   so no new secret is needed (O7).
-* New render tokens: `survey_link`, `survey_expiry_date` (the send date plus 14
-  days, long form). ~~Visit date plus 14 days.~~ *Superseded 2026-10-02 by
-  S-1002-D S4 (3.2 row 6).*
+* New render tokens: `survey_link`, `survey_expiry_date` (the day BEFORE the
+  Lisbon calendar date of the expiry instant, long form: sent 24 May, the link
+  dies on 7 June and the token reads 6 June; owner ruling, 2026-10-13).
+  ~~The send date plus 14 days, long form.~~ *Superseded 2026-10-13 by that
+  ruling: the link dies to the minute, so its last calendar day is not a whole
+  day.* ~~Visit date plus 14 days.~~ *Superseded 2026-10-02 by S-1002-D S4
+  (3.2 row 6).*
 * The SAT live-send flag is introduced here, off by default.
 
 ### 7.2 The guest page (Tier B: auth-adjacent guest write)
