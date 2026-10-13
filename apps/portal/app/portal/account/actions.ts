@@ -204,3 +204,36 @@ export async function updateReminderPrefsAction(prefs: {
     return { error: 'Erro de ligação. Verifique a sua internet e tente novamente.' }
   }
 }
+
+/**
+ * SAT-01 (S8): the patient's own survey switch.
+ *
+ * ONE KEY, `surveyEnabled`, AND NO OTHER. The two reminder switches are not in
+ * this body, so this action cannot move them.
+ *
+ * It answers ok or not ok and carries no sentence: no text for a failed save is
+ * approved (docs/design/SAT-01-copy-pt.md, 32 to 35), and the switch goes back
+ * to where it was. The API refuses the key for a patient the survey does not
+ * apply to, with the 400 it gives any body it finds nothing editable in.
+ */
+export async function updateSurveyPrefAction(enabled: boolean): Promise<{ ok: boolean }> {
+  const authHeader = await apiAuthHeader()
+
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/patient/profile`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader,
+      },
+      body: JSON.stringify({ surveyEnabled: enabled }),
+    })
+
+    if (!res.ok) return { ok: false }
+
+    revalidatePath('/portal/account')
+    return { ok: true }
+  } catch {
+    return { ok: false }
+  }
+}

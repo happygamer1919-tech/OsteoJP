@@ -79,6 +79,9 @@ export type PatientProfile = {
   city: string | null
   reminderSmsEnabled: boolean
   reminderEmailEnabled: boolean
+  /** SAT-01: sent by the API only to a patient the survey applies to. Absent
+   *  means there is no survey switch to show, not that it is off. */
+  surveyEnabled?: boolean
 }
 
 export type PatientProfilePatch = {

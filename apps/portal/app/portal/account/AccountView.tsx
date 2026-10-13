@@ -8,6 +8,7 @@ import type { PortalLocale } from '@osteojp/i18n'
 import type { PatientProfile } from '@/lib/api/client'
 import { createBrowserClient } from '@/lib/supabase/client'
 import ReminderToggles from '@/components/account/ReminderToggles'
+import SurveyToggle from '@/components/account/SurveyToggle'
 import { signOutAction, updateProfileAction } from './actions'
 import { s } from '@/lib/i18n'
 
@@ -176,6 +177,14 @@ export function AccountView({
           initialEmail={profile?.reminderEmailEnabled ?? false}
         />
       </section>
+
+      {/* SAT-01 (S8): the survey switch, below the reminder switches. Drawn only
+          when the profile carries the value, which the API sends only to a
+          patient the survey applies to. While the survey is switched off the
+          key is absent for everyone and nothing of the survey is on this page. */}
+      {typeof profile?.surveyEnabled === 'boolean' && (
+        <SurveyToggle initialEnabled={profile.surveyEnabled} />
+      )}
 
       {/* Group 3 — Terminar sessão */}
       <section>
