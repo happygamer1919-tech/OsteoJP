@@ -10,6 +10,8 @@ import {
 } from "./client";
 import { computeDueReminders, reminderIdempotencyKey } from "../offsets";
 import { dispatchReminder, dispatchConfirmation, dispatchFollowUp, dispatchNoShow } from "../dispatch";
+// SWEEP-03: the reminder sweep, in shadow. Declared in ./sweep.ts, named here.
+import { sweepDueReminders } from "./sweep";
 
 // Inngest functions for appointment reminders (SDK v4 API).
 //
@@ -304,4 +306,5 @@ export const functions = [
   sendAppointmentConfirmation,
   sendFollowUpNotification,
   sendNoShowNotification,
+  sweepDueReminders,
 ];

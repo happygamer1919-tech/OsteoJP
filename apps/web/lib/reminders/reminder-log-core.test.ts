@@ -176,6 +176,15 @@ describe("statusOf - Estado in pt-PT", () => {
     expect(reasonLabel(code)).toBe(label);
     expect(statusOf({ outcome: "suppressed", providerStatus: null, suppressionReason: code }).label).toContain(label);
   });
+
+  it("claim_held has its own sentence, though the dispatcher writes no row for it", () => {
+    // The dispatcher answers it and the wrapper leaves the ledger alone
+    // (dispatch.ts). The sentence is here so the reason is never the one
+    // unlabelled answer, and so a row that did carry it would still read.
+    expect(dispatchSrc).toContain('reason: "claim_held"');
+    expect(dispatchSrc).toContain('outcome.reason !== "claim_held"');
+    expect(reasonLabel("claim_held")).toBe("lembrete já enviado para esta data e hora");
+  });
 });
 
 describe("isFailure - the Só falhas filter", () => {

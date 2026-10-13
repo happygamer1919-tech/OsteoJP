@@ -165,6 +165,11 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   template_unapproved: s["remindersLog.reason.template_unapproved"],
   missing_provider_config: s["remindersLog.reason.missing_provider_config"],
   invalid_recipient: s["remindersLog.reason.invalid_recipient"],
+  // SWEEP-02. A reminder that was already sent for its start.
+  // The dispatcher writes NO row for it, so this sentence is not expected on
+  // the page; it is here because every reason the dispatcher can answer has
+  // one, and a row that ever did carry it must not read as unrecognised.
+  claim_held: s["remindersLog.reason.claim_held"],
 };
 
 export const KNOWN_SUPPRESSION_REASONS: readonly string[] = Object.keys(REASON_LABEL);
