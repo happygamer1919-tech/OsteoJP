@@ -158,6 +158,7 @@ describe("the send switch on: the job is the backstop", () => {
     ["any other answer ends the job", { dispatched: false, reason: "status" }],
     ["too late ends the job", { dispatched: false, reason: "mark_missed" }],
     ["not due with no time to wait for ends the job", { dispatched: false, reason: "not_due" }],
+    ["another answer that happens to carry a time ends the job: only not due is followed", { dispatched: false, reason: "status", dueAt: "2031-05-15T14:00:00.000Z" }],
     ["not due with a time that is not one ends the job", { dispatched: false, reason: "not_due", dueAt: "soon" }],
   ])("%s", async (_name, answer) => {
     h.dispatchReminder.mockResolvedValue(answer);

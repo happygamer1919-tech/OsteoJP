@@ -621,8 +621,10 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
       emailLate: await emailDue(now, 12 * H + 1),
     };
 
-    const out = await pass(tenantA, now);
+    const out = await pass(tenantA, now, { passId: "late-rule-1" });
     expect(out).toEqual({ due: 4, taken: 4, sent: 2, heldBack: 0, tooLate: 2, claimHeld: 0, failed: 0, overCeiling: false });
+    // The heartbeat counts the marks handed to the dispatcher, the two it did not send included.
+    expect((await heartbeatsOf("late-rule-1"))[0]).toMatchObject({ mode: "send", due_count: 4, recorded_count: 4 });
     expect([...h.sends].sort()).toEqual([`email:${v.emailAtLimit.id}`, `sms:${v.smsAtLimit.id}`].sort());
     expect(await ledgerOf(v.smsAtLimit.id)).toEqual(["reminder.24h.sms:sent:"]);
     expect(await ledgerOf(v.emailAtLimit.id)).toEqual(["reminder.48h.email:sent:"]);
