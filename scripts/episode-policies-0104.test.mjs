@@ -68,7 +68,8 @@
 //     journal line with each of its seven facts wrong; a second file under a number; a dirty worktree; a
 //     checkout that left HEAD where it was; no applied marker at all (every first sitting); the window's
 //     end in stage 2 and the closing read; a clock that moved on during stage 1; and what stage 2 and the
-//     closing read are handed by the stage before them. 0104's own blocks have had no sweep yet.
+//     closing read are handed by the stage before them. 0104's own sweep ran on 2026-10-14, against a
+//     database (docs/migration-apply-0104.md, "The amendment of 2026-10-13 and 2026-10-14").
 //
 // WHAT IT DOES NOT PROVE: that any of it runs against a database. That is the rehearsal
 // (docs/migration-apply-0104.md, "Rehearsal").
