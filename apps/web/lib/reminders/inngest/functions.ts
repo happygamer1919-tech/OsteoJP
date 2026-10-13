@@ -12,6 +12,9 @@ import { computeDueReminders, reminderIdempotencyKey } from "../offsets";
 import { dispatchReminder, dispatchConfirmation, dispatchFollowUp, dispatchNoShow } from "../dispatch";
 // SWEEP-03: the reminder sweep, in shadow. Declared in ./sweep.ts, named here.
 import { sweepDueReminders } from "./sweep";
+// SWEEP-47: what a reminder job does while the sweep is the sender.
+import { sweepSends } from "../sweep-mode";
+import { dispatchAfterTheSweep, type BackstopStep } from "./backstop";
 
 // Inngest functions for appointment reminders (SDK v4 API).
 //
@@ -200,6 +203,19 @@ export const sendAppointmentReminder = inngest.createFunction(
 
     // Durable wait until the reminder is due. Survives restarts/redeploys.
     await step.sleepUntil("wait-until-due", new Date(sendAt));
+
+    // SWEEP-47. While the sweep is the sender (REMINDERS_SWEEP_MODE is exactly
+    // "send") this job is the backstop: it waits for the sweep, then asks. See
+    // ./backstop.ts, where those steps are written and why they are not here.
+    // With the switch off this block is skipped and the rest is the job of
+    // today, word for word.
+    if (sweepSends()) {
+      const afterTheSweep = await dispatchAfterTheSweep(step as unknown as BackstopStep, event.data as ReminderDueData);
+      return {
+        key: reminderIdempotencyKey(appointmentId, offsetId, channel),
+        ...afterTheSweep,
+      };
+    }
 
     const outcome = await step.run("dispatch", () =>
       dispatchReminder(tenantId, appointmentId, offsetId, channel),
