@@ -127,7 +127,10 @@ const ORIGIN = "https://app.jp.invalid";
 
 /** 14/05 at 14:30 in Lisbon: a fixed wall-clock hour, far from any DST edge. */
 const STARTS_AT = new Date(Date.UTC(2031, 4, 14, 13, 30, 0));
-/** The run wakes the next day. 15/05/2031 plus 14 days is 29/05/2031. */
+/**
+ * The run wakes the next day. 15/05/2031 plus 14 days is 29/05/2031, the day
+ * the link dies on, so the email prints the day before: 28/05/2031.
+ */
 const NOW = new Date(Date.UTC(2031, 4, 15, 14, 15, 0));
 
 function row(over: Record<string, unknown> = {}) {
@@ -437,7 +440,7 @@ describe("switch on: the survey goes instead of the follow-up", () => {
         "",
         `Responder: ${ORIGIN}/s/${code}`,
         "",
-        "A ligação é pessoal, só pode ser usada uma vez e é válida até 29 de maio de 2031.",
+        "A ligação é pessoal, só pode ser usada uma vez e é válida até 28 de maio de 2031.",
         "",
         `Se não pretender receber estas avaliações, indique-o na mesma ligação ou contacte a clínica: ${LOCATION_PHONE}`,
         "",
@@ -517,7 +520,7 @@ describe("switch on: the survey goes instead of the follow-up", () => {
     await dispatchSurvey(TENANT, APPT);
     const mail = only(h.email);
     expect(mail.subject).toBe("Satisfaction survey for your appointment on 14 May 2031");
-    expect(mail.body).toContain("valid until 29 May 2031.");
+    expect(mail.body).toContain("valid until 28 May 2031.");
     expect(mail.body).toContain(`contact the clinic: ${LOCATION_PHONE}`);
   });
 

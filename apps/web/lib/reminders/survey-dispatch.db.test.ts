@@ -33,6 +33,8 @@ import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { formatDateLong } from "./locale";
+
 vi.mock("server-only", () => ({}));
 
 type Sent = { templateId: string; to: string; subject?: string; body: string };
@@ -339,6 +341,32 @@ d("SAT-01: the automatic survey send against a real database", () => {
     expect(
       await all(raw`select 1 from audit_log where tenant_id = ${tenant}::uuid and entity_id = ${north.appointmentId}::uuid`),
     ).toEqual([]);
+  });
+
+  it("the date the email prints is the day before the Lisbon day the DATABASE lets the link die on", async () => {
+    const v = await concluded({}, loc.north);
+    expect(await dispatchSurvey(tenant, v.appointmentId)).toMatchObject({ dispatched: true });
+
+    // Postgres does the arithmetic here, on the row's own `sent_at` and with
+    // the door's own `interval '14 days'`: the Lisbon date of that instant,
+    // less one day (owner ruling, 2026-10-13). The application counted from its
+    // own clock, a moment before the row was written, so a run that straddles
+    // Lisbon midnight to the millisecond can read a day apart.
+    const [row] = await all<{ dies_on: string; day_before: string }>(
+      raw`select to_char((s.sent_at + interval '14 days') at time zone 'Europe/Lisbon', 'YYYY-MM-DD') as dies_on,
+                 to_char(((s.sent_at + interval '14 days') at time zone 'Europe/Lisbon')::date - 1, 'YYYY-MM-DD') as day_before
+            from appointment_survey_sends s
+           where s.appointment_id = ${v.appointmentId}::uuid`,
+    );
+    if (!row) throw new Error("no send row");
+    const long = (day: string) => formatDateLong(new Date(`${day}T12:00:00Z`), "pt");
+
+    const mail = h.email.at(-1);
+    if (!mail) throw new Error("no email");
+    // Every code this suite sends is counted by the last arm.
+    codeIn(mail);
+    expect(mail.body).toContain(`é válida até ${long(row.day_before)}.`);
+    expect(mail.body).not.toContain(long(row.dies_on));
   });
 
   it("SMS when there is no email: the three lines, and a send row on the sms channel", async () => {

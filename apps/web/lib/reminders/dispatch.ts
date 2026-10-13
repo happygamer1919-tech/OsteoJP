@@ -40,7 +40,11 @@ import {
 } from "./dispatch-ledger";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import { surveyAppliesTo, surveySendMode } from "./survey-mode";
-import { renderSurveyEmailBody, renderSurveySmsBody } from "./survey-body";
+import {
+  renderSurveyEmailBody,
+  renderSurveySmsBody,
+  surveyValidUntilDateLong,
+} from "./survey-body";
 import { generateSurveyCode } from "@/lib/surveys/survey-code";
 import { issueSurveyAutomatic } from "@/lib/surveys/survey-store";
 import {
@@ -1602,12 +1606,6 @@ export const SURVEY_ISSUE_ERROR = "survey_issue_error";
 export const SURVEY_RENDER_REFUSAL =
   "A value the email prints (first name or the location's phone) contains a {placeholder}-shaped word.";
 
-/**
- * A link lives 14 days from its send: `resolve_survey_code` reads the expiry as
- * `sent_at + interval '14 days'` (migration 0102). The email prints that day.
- */
-const SURVEY_LINK_DAYS = 14;
-
 export type SurveyChannelPlan =
   | { send: "email" }
   | { send: "sms" }
@@ -1782,10 +1780,8 @@ async function dispatchSurveyInner(
         ctx: {
           patientFirstName: firstName(data.patientName),
           appointmentDateLong: formatDateLong(data.startsAt, locale),
-          surveyExpiryDateLong: formatDateLong(
-            new Date(Date.now() + SURVEY_LINK_DAYS * 24 * 60 * 60_000),
-            locale,
-          ),
+          // The day BEFORE the one the link dies on (ruling of 2026-10-13).
+          surveyExpiryDateLong: surveyValidUntilDateLong(new Date(Date.now()), locale),
           clinicPhone: locationPhone,
         },
         code,
