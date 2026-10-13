@@ -24,6 +24,23 @@ const NOT_LISTED = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 /** Every value that is not the switch, and must leave the survey dark. */
 const NEAR_MISSES = [
+  // Case and surrounding whitespace. BOOK_CONFIRM_MODE tolerates these; this
+  // switch does not: the value is compared exactly as it was set.
+  " ON ",
+  "ON ",
+  "ON",
+  "On",
+  "oN",
+  "on ",
+  " on",
+  "on\n",
+  "on\r\n",
+  "\ton",
+  "Canary",
+  "CANARY",
+  " canary\n",
+  "canary ",
+  " canary",
   "",
   " ",
   "\t",
@@ -53,13 +70,6 @@ describe("the mode: off | canary | on, and everything else is off", () => {
     ["off", "off"],
     ["canary", "canary"],
     ["on", "on"],
-    // Tolerant of case and of the whitespace a dashboard paste leaves behind,
-    // exactly as BOOK_CONFIRM_MODE is.
-    [" ON ", "on"],
-    ["ON ", "on"],
-    ["On", "on"],
-    ["Canary", "canary"],
-    [" canary\n", "canary"],
     ["OFF", "off"],
   ] as const)("SURVEY_SEND_MODE=%j reads as %s", (value, expected) => {
     expect(surveySendMode({ SURVEY_SEND_MODE: value })).toBe(expected);

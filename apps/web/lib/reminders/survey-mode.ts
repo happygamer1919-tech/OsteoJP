@@ -15,6 +15,13 @@
 // FAIL CLOSED: anything that is not exactly `canary` or `on` is `off`. A typo in
 // the value must leave the survey dark, never switch it on.
 //
+// EXACT MEANS EXACT, and here this module is stricter than book-confirm-mode.ts,
+// which trims and lower-cases its value. The value is compared as it was set: no
+// trim, no lower-casing. `ON`, `On`, `Canary`, and `on` with a space or a line
+// break beside it all read `off`. The cost of that strictness is a survey that
+// stays dark after a careless paste, which is seen and corrected; the cost of
+// the tolerance would be a survey switched on by a value nobody meant.
+//
 // THE LIST LIVES IN CONFIGURATION AND NEVER IN THE REPOSITORY. It holds patient
 // ids, the repository is public, and an id is a pointer at a real person.
 //
@@ -28,9 +35,9 @@ type Env = Record<string, string | undefined>;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** The switch. Trimmed and lower-cased; everything else is `off`. */
+/** The switch. The raw value, compared exactly; everything else is `off`. */
 export function surveySendMode(env: Env = process.env): SurveySendMode {
-  const raw = (env.SURVEY_SEND_MODE ?? "").trim().toLowerCase();
+  const raw = env.SURVEY_SEND_MODE;
   if (raw === "canary") return "canary";
   if (raw === "on") return "on";
   return "off";

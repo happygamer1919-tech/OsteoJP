@@ -425,8 +425,9 @@ Gaps that SAT-01 inherits and does not fix in v1:
 5. The SMS line is `Responder: <host>/s/<8 characters>`, bare host, the host
    read from the same variable the confirm link uses (`confirm-code.ts:68`,
    `REMINDERS_RESCHEDULE_BASE_URL`). The email carries the full link. The
-   system refuses an SMS that does not fit one message (S6): the render throws
-   and nothing is issued.
+   system refuses an SMS that does not fit one message (S6): the render
+   returns a refusal (a value, not a throw, `survey-body.ts`), the caller stops
+   on it, and nothing is issued.
 
 ### 5.2 The page `/s/<code>`
 
@@ -506,8 +507,8 @@ depends on the sender (`reply-capability.ts`), which SAT-01 does not change.
   for email; for SMS, copy text 64 says it goes by SMS and text 65 that SMS has
   a cost. The patient's address is not shown in the dialog.
 * **The SMS that does not fit one message is still refused (S6)**, in the same
-  order as 5.1 step 4: the render throws, no send is issued, and the dialog
-  shows copy text 69.
+  order as 5.1 step 4: the render returns a refusal, no send is issued, and the
+  dialog shows copy text 69.
 * **The flag governs it too:** while the SAT live-send flag is off, a manual
   send reaches no patient, except the canary of 7.5.
 * **The server works out the button's state, and the door decides.** The
