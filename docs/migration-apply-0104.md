@@ -37,7 +37,7 @@ is the lead's call, never the runner's.
 
 ## NOT READY: what must happen first, in this order, and none of it by GREEN
 
-1. **DONE on this branch, `db/0104-episode-policy`, locally:** `main` merged in at `5d4e8091` (which carries 0103); the migration promoted to its number with no byte changed (sha256 `eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9` before and after); its journal entry (`idx 101`, tag `0104_clinical_episodes_role_matrix`, `when` 1788502500000); its mirror `supabase/migrations/0104_clinical_episodes_role_matrix.sql`; the pending README's rows; the pre-check and the post-check in their final form; this document, its sidecar and its script test. `node scripts/check-journal.mjs` reads 102 files and 102 entries.
+1. **DONE on this branch, `db/0104-episode-policy`, locally:** `main` merged in at `d2c75a47` (which carries 0103, #1573, and the three pull requests merged after it, #1592 to #1594); the migration promoted to its number with no byte changed (sha256 `eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9` before and after); its journal entry (`idx 101`, tag `0104_clinical_episodes_role_matrix`, `when` 1788502500000); its mirror `supabase/migrations/0104_clinical_episodes_role_matrix.sql`; the pending README's rows; the pre-check and the post-check in their final form; this document, its sidecar and its script test. `node scripts/check-journal.mjs` reads 102 files and 102 entries.
 2. **WAITS FOR 0103:** 0103 is applied to production and GREEN's report on it is clean. One migration is in flight at a time, and nothing of 0104 is pushed before that report.
 3. **DONE 2026-10-13, WITH LIMITS: the rehearsal on a throwaway** (see "Rehearsal" and "NOT REHEARSED").
 4. **OPEN: the four blocks run whole against a database,** in a clone whose `origin/main` is the promoted head, with the named substitutions of 0100's recipe.
@@ -522,7 +522,7 @@ echo "CLOSING READ: the journal reads 102, 0104 is APPLIED, and nothing is pendi
 
 ## Every reader and writer the changed policies govern
 
-Read on this head (`main` at `5d4e8091` merged in). Every staff reader and writer runs under `withTenantContext` (`SET LOCAL ROLE authenticated` and the JWT claims), so the policies apply to it. "Proved" names the DB-gated test that ran it as the real role on the throwaway with 0104 applied, 2026-10-13.
+Read on this head (`main` at `d2c75a47` merged in). Every staff reader and writer runs under `withTenantContext` (`SET LOCAL ROLE authenticated` and the JWT claims), so the policies apply to it. "Proved" names the DB-gated test that ran it as the real role on the throwaway with 0104 applied, 2026-10-13.
 
 | Where | What it does | After 0104 | Proved by |
 |---|---|---|---|
@@ -570,30 +570,32 @@ Read on this head (`main` at `5d4e8091` merged in). Every staff reader and write
 
 - **None for the promotion.** With the file in place `node scripts/check-journal.mjs` reads 102 of 102, `pnpm test:scripts` passes whole and `node scripts/assert-gates-unchanged.mjs` finds every pin unchanged. No test of 0103's needed a journal cut.
 - **None for the apply.** The SECURITY DEFINER count stays 36 (`packages/db/scripts/check-security-definer-owner.mjs`, read on the applied throwaway: 36, all owned by postgres).
-- **One owed after the merge, the owner's to merge:** `.github/scripts/assert-rls-executed.mjs` gains two entries in its required list, after the entry for `survey-page.db.test.ts`: `{ file: "clinical-episodes-role-matrix.db.test.ts", hard: true },` and `{ file: "episodes-role-matrix.db.test.ts", hard: true },`, and `.github/gate-manifest.json` takes that file's new sha256. Until then both suites run and are counted; the entries make their ABSENCE red too.
+- **One owed after the merge, the owner's to merge:** `.github/scripts/assert-rls-executed.mjs` gains two entries in its required list, after the entry for `survey-switch.db.test.ts`: `{ file: "clinical-episodes-role-matrix.db.test.ts", hard: true },` and `{ file: "episodes-role-matrix.db.test.ts", hard: true },`, and `.github/gate-manifest.json` takes that file's new sha256. Until then both suites run and are counted; the entries make their ABSENCE red too.
 
 ## Rehearsal
 
-**2026-10-13, 22:10 to 22:30 Lisbon, on a throwaway built by the recipe `docs/migration-apply-0100.md` records.** Never a lane, never production. It is the second run of the evening: a first session ran the same steps from 21:46 and was cut off before it committed anything, so every figure below is the second session's own, on a throwaway it built afresh. The two runs agree on every line they share.
+**2026-10-13, 22:41 to 22:42 Lisbon, on a throwaway built by the recipe `docs/migration-apply-0100.md` records, with this branch at the commit that merges `main` at `d2c75a47`.** Never a lane, never production. It is the third run of the evening. A first session ran the same steps from 21:46 and was cut off before it committed anything; a second ran them from 22:10 on a throwaway built afresh, before `main` moved by three pull requests. Every figure below is the third run's own, on a throwaway built afresh again. The three runs agree on every line they share; the apps/web suite grew from 64 files to 67 with `main`.
 
 **The throwaway.** A local Supabase stack, project id `r0104`, Supabase CLI 2.100.0, PostgreSQL 17.6, database on 127.0.0.1:55402, started with CI's exclude list. Built at production's position after 0103: this head's `supabase/migrations` minus 0104, so 101 migrations, `0000` to `0103` (101 rows in `supabase_migrations.schema_migrations`), then `supabase/seed.sql`; a drizzle journal of 101 rows built from `_journal.json` entries idx 0 to 100, each `hash` the sha256 of its file and each `created_at` its `when`, the newest 0103 (`8283a7996ddf76266d60edec2e8b44f32ebac513237038ff7f8c413774643f59`, `when` 1788502400000). A synthetic fixture in the seed tenant: nine members of staff over the four roles, two active clinics (08:00 to 21:00), four patients, three appointments, one care-team row, five episodes. No real name anywhere.
 
 | Step | What ran | Result |
 |---|---|---|
 | Pre-check, whole, the real file, the real journal | `psql ... -v prev_hash=<0103> -v prev_when=1788502400000 -f scripts/db/precheck-0104-episode-policies.sql` | exit 0, `15 OK / 0 VACUOUS / 0 FAIL`. Behaviour row: `admin 5 of 5, 0104 admits 2; owner 5 of 5, 0104 admits 5; reception 5 of 5, 0104 admits 2; therapist 5 of 5, 0104 admits 2`. `post_vacuous_expected` 0, `registos_in_another_patients_episode` 0. `supautils.policy_grants`: `postgres: 24 tables, auth.users yes` |
-| The locks | the file's statements in one transaction, read from a second session, rolled back | the table under "Closed hours, and the locks". The pre-check, run again after the rollback, printed the same rows |
+| The locks (the second run, 22:10) | the file's statements in one transaction, read from a second session, rolled back | the table under "Closed hours, and the locks". The pre-check, run again after the rollback, printed the same rows |
+| The post-check BEFORE the apply | the post-check command below, on the database the pre-check had just passed | **psql exit 3:** `11 OK / 0 VACUOUS / 10 FAIL`, then the file's own `STOP: the 0104 post-check printed a FAIL verdict`. So a post-check on a database without 0104 cannot end with exit 0 |
 | The apply, through the real applier | `node packages/db/scripts/verified-migrate.mjs --tag 0104_clinical_episodes_role_matrix --sha256 eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9 --expect-pending 1`, the database URL pointing at the throwaway | exit 0: `journal    101 -> 102  (delta 1)`, `0104_clinical_episodes_role_matrix present by sha256: yes`. The applier has no target check of its own, so it runs locally unchanged; the target guard is a separate program and was not run (see "NOT REHEARSED") |
 | The second apply | the same command again | **a clear refusal, exit 3, nothing run:** `PRECONDITION FAILED: 0104_clinical_episodes_role_matrix's sha256 is ALREADY in drizzle.__drizzle_migrations.` The journal stayed at 102 |
-| An apply that fails inside its transaction | the same command, on a throwaway where the five statements had already been run by hand and the journal still read 101 (a rehearsal mistake: a timing script ran outside its transaction; that throwaway was thrown away and built again before every other row of this table) | **exit 4, nothing applied:** the DROP POLICY found no policy to drop, drizzle rolled back, `journal    101 -> 101  (delta 0)`, `0104_clinical_episodes_role_matrix present by sha256: NO`, `FAIL: drizzle-kit migrate exited 1.` |
+| An apply that fails inside its transaction (the second run, 22:09) | the same command, on a throwaway where the five statements had already been run by hand and the journal still read 101 (a rehearsal mistake: a timing script ran outside its transaction; that throwaway was thrown away and built again before every other row of this table) | **exit 4, nothing applied:** the DROP POLICY found no policy to drop, drizzle rolled back, `journal    101 -> 101  (delta 0)`, `0104_clinical_episodes_role_matrix present by sha256: NO`, `FAIL: drizzle-kit migrate exited 1.` |
 | Post-check, whole, the carries from the pre-check's transcript | `psql ... -v <14 carries> -c "begin read only" -f scripts/db/postcheck-0104-episode-policies.sql -c "rollback"` | exit 0, `21 OK / 0 VACUOUS / 0 FAIL`. Reads: owner 5 of 5, admin 2 of 5, reception 2 of 5, therapist 2 of 5, each equal to the count from the tables |
 | Negative control: the pre-check on the APPLIED database | the same pre-check command | **psql exit 3:** 7 FAIL verdicts (1, 2, 3, 7, 8, 9, 14), then the file's own `STOP: the 0104 pre-check printed a FAIL verdict` |
 | packages/db, every suite, the way `db-tests.yml` runs it | `pnpm exec vitest run` with only the throwaway's URL in the environment | Test Files 103 passed (103); Tests 1617 passed (1617); 0 skipped; exit 0 |
-| apps/web, every DB-gated suite | `pnpm exec vitest run .db.test.ts` | Test Files 64 passed (64); Tests 778 passed (778); exit 0 |
+| apps/web, every DB-gated suite | `pnpm exec vitest run .db.test.ts` | Test Files 67 passed (67); Tests 832 passed (832); exit 0 |
 | apps/api, every DB-gated suite | `pnpm exec vitest run .db.test.ts` | Test Files 10 passed (10); Tests 96 passed (96); exit 0 |
 | The SECURITY DEFINER count | `node scripts/check-security-definer-owner.mjs` in packages/db | `OK: all 36 owned by postgres.` exit 0 |
 | The restoring statements, then the pre-check again | the five statements of "Rollback" in one transaction, after every suite had run | `12 OK / 0 VACUOUS / 3 FAIL` with the journal row left (exit 3, by design); `15 OK / 0 VACUOUS / 0 FAIL` and every carry identical once the throwaway's journal row was removed too |
 | The application's matrix suite on that restored database | `pnpm exec vitest run lib/clinical/episodes-role-matrix.db.test.ts` in apps/web | **it THROWS, by design, exit 1:** `0104 IS PROMOTED (0104_clinical_episodes_role_matrix.sql creates clinical_episodes_select) BUT THIS DATABASE DOES NOT HAVE IT.` So from this pull request on, a database built without 0104 cannot turn these suites green, and the side before the apply can no longer be run from this head |
-| The throwaway removed | `supabase stop --no-backup`, 22:30 Lisbon | no `r0104` container or volume left |
+| THE VACUOUS ARM: a database where the new read policy admits one of the four actors to nothing | on the restored throwaway, the one receptionist with a clinic lost the assignment; then the pre-check, the applier and the post-check as above | pre-check exit 0, `15 OK / 0 VACUOUS / 0 FAIL`, `post_vacuous_expected` 1, `reception 5 of 5, 0104 admits 0`; the apply `journal    101 -> 102  (delta 1)`; post-check exit 0, `20 OK / 1 VACUOUS / 0 FAIL`, the VACUOUS verdict being 19, `reads 0 of 5`. That is the profile stage 2 requires for a carry of 1 |
+| The throwaway removed | `supabase stop --no-backup`, 22:41:52 Lisbon | no `r0104` container or volume left |
 
 ### NOT REHEARSED, said one by one
 
@@ -603,7 +605,7 @@ Read on this head (`main` at `5d4e8091` merged in). Every staff reader and write
 - **Production.** Its policy text and helper bodies (the md5 pins were read on Postgres 17.6 local stacks; the pre-check STOPs if production's differ), its `supautils.policy_grants`, its episode count, its staff per role, the count of registos in another patient's episode, and the time the locks are held there.
 - **The cost of the two per-row helper functions on a table of production's size.** Not measured anywhere.
 - **No Playwright spec ran with 0104 applied.**
-- **A VACUOUS post-check verdict** (`post_vacuous_expected` above 0): the fixture gave 0. The arm is exercised only by the script test's stand-in transcripts.
+- **A missing actor.** A role with no active member of staff in the tenant read stops the sitting at the pre-check (verdict 14 VACUOUS). That arm ran only in the script test's stand-in transcripts.
 
 ## QUESTIONS THIS DOCUMENT DOES NOT ANSWER
 
