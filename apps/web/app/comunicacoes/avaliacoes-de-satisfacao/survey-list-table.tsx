@@ -1,0 +1,114 @@
+"use client";
+
+import Link from "next/link";
+import { EmptyState, StatusChip, Table, type TableColumn } from "@osteojp/ui";
+import { ClipboardList } from "lucide-react";
+
+import { s } from "@/lib/i18n";
+import type { SurveyListRowView } from "@/lib/surveys/survey-list-core";
+
+/**
+ * SAT-01 - the Avaliações de satisfação table. CLIENT ONLY because `Table`
+ * takes cell functions, which cannot cross the server boundary. Every row
+ * arrives already selected under the viewer's own row policies, paged and
+ * FORMATTED on the server in Europe/Lisbon, so this component decides nothing,
+ * formats no date and holds no answer the viewer may not read.
+ *
+ * A RESERVED ANSWER (copy text 81) takes the place of the answer's cells: the
+ * sentence stands in the first of them and the others are empty. The send's
+ * own cells (the send, whether it was answered, the channel) are not part of
+ * the answer and always show.
+ */
+export function SurveyListTable({
+  rows,
+  filtered,
+}: {
+  rows: SurveyListRowView[];
+  /** A month is chosen, so an empty table means "none that month", not "none ever". */
+  filtered: boolean;
+}) {
+  const columns: Array<TableColumn<SurveyListRowView>> = [
+    {
+      key: "visit",
+      header: s["surveyList.colVisit"],
+      cell: (r) => <span className="tabular-nums">{r.visit}</span>,
+    },
+    {
+      key: "patient",
+      header: s["surveyList.colPatient"],
+      cell: (r) => (
+        <span className="flex flex-col">
+          <span className="font-medium text-v2-text-primary">{r.patientName}</span>
+          {r.patientHref && (
+            <Link
+              href={r.patientHref}
+              className="text-xs text-v2-text-secondary underline underline-offset-2 hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              {s["surveyList.openPatient"]}
+            </Link>
+          )}
+        </span>
+      ),
+    },
+    { key: "therapist", header: s["surveyList.colTherapist"], cell: (r) => r.therapist },
+    { key: "clinic", header: s["surveyList.colClinic"], cell: (r) => r.clinic },
+    {
+      key: "send",
+      header: s["surveyList.colSend"],
+      cell: (r) => <span className="tabular-nums">{r.send}</span>,
+    },
+    {
+      key: "answer",
+      header: s["surveyList.colAnswer"],
+      cell: (r) => <StatusChip tone={r.answer === "open" ? "neutral" : "success"}>{r.answerState}</StatusChip>,
+    },
+    {
+      key: "nps",
+      header: s["surveyList.colNps"],
+      cell: (r) =>
+        r.answer === "reserved" ? (
+          <span data-testid="survey-answer-reserved" className="block min-w-64 max-w-sm text-xs text-v2-text-secondary">
+            {s["surveyList.answerReserved"]}
+          </span>
+        ) : (
+          <span className="tabular-nums">{r.nps}</span>
+        ),
+    },
+    {
+      key: "rating",
+      header: s["surveyList.colRating"],
+      cell: (r) => <span className="tabular-nums">{r.rating}</span>,
+    },
+    {
+      key: "comment",
+      header: s["surveyList.colComment"],
+      cell: (r) => <span className="block max-w-sm whitespace-pre-wrap break-words">{r.comment}</span>,
+    },
+    { key: "contact", header: s["surveyList.colContact"], cell: (r) => r.contact },
+    { key: "channel", header: s["surveyList.colChannel"], cell: (r) => r.channel },
+    {
+      key: "answeredAt",
+      header: s["surveyList.colAnsweredAt"],
+      cell: (r) => <span className="tabular-nums">{r.answeredAt}</span>,
+    },
+  ];
+
+  // NO SENTENCE FOR "NONE THIS MONTH". The approved empty text (54) says no
+  // survey has been sent yet, which is false when a month is chosen and other
+  // months have sends. Until a text for that case is approved, a filtered list
+  // with no rows shows its headings and nothing under them.
+  const empty = rows.length === 0 && !filtered;
+
+  return (
+    <Table
+      columns={columns}
+      data={rows}
+      rowKey={(r) => r.id}
+      caption={s["surveyList.title"]}
+      state={empty ? "empty" : "ready"}
+      empty={
+        <EmptyState icon={ClipboardList} title={s["surveyList.empty"]} description={s["surveyList.emptyHint"]} />
+      }
+    />
+  );
+}
