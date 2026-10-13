@@ -8,10 +8,14 @@ import {
   SURVEY_NPS_VALUES,
   SURVEY_RATING_VALUES,
 } from "@/lib/surveys/survey-form";
-import { submitSurveyAction } from "./actions";
+import { optOutSurveyAction, submitSurveyAction } from "./actions";
 
 // The survey form: two required scales, an optional comment, one unticked box
-// and one button. No opt-out control here: that is a later pull request.
+// and one button. Below it, apart and with less weight, the opt-out (S8).
+//
+// THE OPT-OUT IS A FORM OF ITS OWN. It posts the code and the page's language
+// and nothing else, so pressing it sends no answer the visitor had begun, and
+// it asks for none: a patient who wants no more surveys owes no score first.
 //
 // IT WORKS WITHOUT SCRIPT. The form posts to the server action either way.
 //
@@ -46,6 +50,8 @@ export type SurveyFormLabels = {
   q2Error: string;
   commentError: string;
   saveError: string;
+  optOut: string;
+  optOutNote: string;
 };
 
 function Scale({
@@ -121,16 +127,24 @@ export function SurveyForm({
   labels: SurveyFormLabels;
 }) {
   const [state, action, pending] = useActionState(submitSurveyAction, EMPTY_SURVEY_FORM_STATE);
+  const [optOutState, optOutAction, optOutPending] = useActionState(
+    optOutSurveyAction,
+    EMPTY_SURVEY_FORM_STATE,
+  );
   const { errors } = state;
   const fieldError = Boolean(errors.nps || errors.rating || errors.comment);
-  const summary = errors.save ? labels.saveError : fieldError ? labels.errorSummary : null;
+  // An opt-out that could not be saved says so in the same place and the same
+  // words as an answer that could not (text 25): the one sentence this page
+  // has for a write that failed.
+  const saveFailed = Boolean(errors.save || optOutState.errors.save);
+  const summary = saveFailed ? labels.saveError : fieldError ? labels.errorSummary : null;
 
   // The summary sits above the questions and the button below them. On a phone
   // a refused submit would otherwise change nothing the visitor can see.
   const summaryRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     if (summary) summaryRef.current?.focus();
-  }, [state, summary]);
+  }, [state, optOutState, summary]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -139,90 +153,112 @@ export function SurveyForm({
   }
 
   return (
-    <form action={action} onSubmit={submit} noValidate className="space-y-6">
-      <input type="hidden" name="code" value={code} />
-      <input type="hidden" name="locale" value={locale} />
-      <input type="hidden" name="consentVersion" value={consentVersion} />
+    <div className="space-y-6">
+      <form action={action} onSubmit={submit} noValidate className="space-y-6">
+        <input type="hidden" name="code" value={code} />
+        <input type="hidden" name="locale" value={locale} />
+        <input type="hidden" name="consentVersion" value={consentVersion} />
 
-      <div className="space-y-2 text-body-sm text-text-secondary">
-        <p>{labels.instruction}</p>
-        <p>{labels.whoReads}</p>
-      </div>
+        <div className="space-y-2 text-body-sm text-text-secondary">
+          <p>{labels.instruction}</p>
+          <p>{labels.whoReads}</p>
+        </div>
 
-      {summary ? (
-        <p
-          ref={summaryRef}
-          tabIndex={-1}
-          role="alert"
-          className="rounded border border-error bg-bg p-3 text-body-sm font-medium text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          {summary}
-        </p>
-      ) : null}
-
-      <Scale
-        name="nps"
-        legend={labels.q1}
-        values={SURVEY_NPS_VALUES}
-        low={labels.q1Low}
-        high={labels.q1High}
-        error={errors.nps ? labels.q1Error : null}
-        columns="grid-cols-6"
-      />
-
-      <Scale
-        name="rating"
-        legend={labels.q2}
-        values={SURVEY_RATING_VALUES}
-        low={labels.q2Low}
-        high={labels.q2High}
-        error={errors.rating ? labels.q2Error : null}
-        columns="grid-cols-5"
-      />
-
-      <div className="space-y-2">
-        <label htmlFor="survey-comment" className="block text-body-sm font-medium text-text-primary">
-          {labels.q3}
-        </label>
-        {errors.comment ? (
-          <p id="survey-comment-error" className="text-body-sm font-medium text-error">
-            {labels.commentError}
+        {summary ? (
+          <p
+            ref={summaryRef}
+            tabIndex={-1}
+            role="alert"
+            className="rounded border border-error bg-bg p-3 text-body-sm font-medium text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            {summary}
           </p>
         ) : null}
-        <textarea
-          id="survey-comment"
-          name="comment"
-          rows={4}
-          maxLength={SURVEY_COMMENT_MAX}
-          aria-invalid={errors.comment ? true : undefined}
-          aria-describedby={
-            errors.comment ? "survey-comment-error survey-comment-hint" : "survey-comment-hint"
-          }
-          className="block w-full rounded border border-border bg-bg p-3 text-body-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+
+        <Scale
+          name="nps"
+          legend={labels.q1}
+          values={SURVEY_NPS_VALUES}
+          low={labels.q1Low}
+          high={labels.q1High}
+          error={errors.nps ? labels.q1Error : null}
+          columns="grid-cols-6"
         />
-        <div id="survey-comment-hint" className="space-y-1 text-body-sm text-text-secondary">
-          <p>{labels.q3Hint}</p>
-          <p>{labels.healthNote}</p>
+
+        <Scale
+          name="rating"
+          legend={labels.q2}
+          values={SURVEY_RATING_VALUES}
+          low={labels.q2Low}
+          high={labels.q2High}
+          error={errors.rating ? labels.q2Error : null}
+          columns="grid-cols-5"
+        />
+
+        <div className="space-y-2">
+          <label htmlFor="survey-comment" className="block text-body-sm font-medium text-text-primary">
+            {labels.q3}
+          </label>
+          {errors.comment ? (
+            <p id="survey-comment-error" className="text-body-sm font-medium text-error">
+              {labels.commentError}
+            </p>
+          ) : null}
+          <textarea
+            id="survey-comment"
+            name="comment"
+            rows={4}
+            maxLength={SURVEY_COMMENT_MAX}
+            aria-invalid={errors.comment ? true : undefined}
+            aria-describedby={
+              errors.comment ? "survey-comment-error survey-comment-hint" : "survey-comment-hint"
+            }
+            className="block w-full rounded border border-border bg-bg p-3 text-body-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          />
+          <div id="survey-comment-hint" className="space-y-1 text-body-sm text-text-secondary">
+            <p>{labels.q3Hint}</p>
+            <p>{labels.healthNote}</p>
+          </div>
         </div>
-      </div>
 
-      <label className="flex items-start gap-3 text-body-sm text-text-primary">
-        <input
-          type="checkbox"
-          name="contactConsent"
-          className="mt-0.5 size-5 shrink-0 accent-brand-teal"
-        />
-        <span>{labels.contactConsent}</span>
-      </label>
+        <label className="flex items-start gap-3 text-body-sm text-text-primary">
+          <input
+            type="checkbox"
+            name="contactConsent"
+            className="mt-0.5 size-5 shrink-0 accent-brand-teal"
+          />
+          <span>{labels.contactConsent}</span>
+        </label>
 
-      <button
-        type="submit"
-        disabled={pending}
-        aria-busy={pending || undefined}
-        className="w-full rounded bg-brand-teal px-4 py-3 font-medium text-text-inverse hover:bg-brand-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-60"
-      >
-        {labels.submit}
-      </button>
-    </form>
+        <button
+          type="submit"
+          disabled={pending}
+          aria-busy={pending || undefined}
+          className="w-full rounded bg-brand-teal px-4 py-3 font-medium text-text-inverse hover:bg-brand-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-60"
+        >
+          {labels.submit}
+        </button>
+      </form>
+
+      {/* Texts 19 and 20: under the submit button, with less weight. A plain
+          form post, so it works without script, and it carries no field of
+          the form above. */}
+      <form action={optOutAction} className="space-y-2 border-t border-border pt-4 text-center">
+        <input type="hidden" name="code" value={code} />
+        <input type="hidden" name="locale" value={locale} />
+        <button
+          type="submit"
+          disabled={optOutPending}
+          aria-busy={optOutPending || undefined}
+          aria-describedby="survey-opt-out-note"
+          className="min-h-11 rounded px-3 py-2 text-body-sm font-medium text-text-secondary underline underline-offset-2 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-60"
+        >
+          {labels.optOut}
+        </button>
+        <p id="survey-opt-out-note" className="text-body-sm text-text-secondary">
+          {labels.optOutNote}
+        </p>
+      </form>
+    </div>
   );
 }

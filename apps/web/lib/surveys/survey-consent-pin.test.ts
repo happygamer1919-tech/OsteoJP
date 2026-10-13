@@ -140,7 +140,7 @@ const COPY = readFileSync(
   "utf8",
 ).split("\n");
 
-/** Copy text number to string key: texts 4 to 18 and 21 to 31 (19 and 20 are the opt-out button, not built yet). */
+/** Copy text number to string key: texts 4 to 31, the page's whole section (19 and 20 are the opt-out, S8). */
 const KEY_OF_TEXT: Record<number, StringKey> = {
   4: "survey.page.title",
   5: "survey.page.visitLine",
@@ -157,6 +157,8 @@ const KEY_OF_TEXT: Record<number, StringKey> = {
   16: "survey.page.healthNote",
   17: "survey.page.contactConsent",
   18: "survey.page.submit",
+  19: "survey.page.optOut",
+  20: "survey.page.optOutNote",
   21: "survey.page.errorSummary",
   22: "survey.page.q1Error",
   23: "survey.page.q2Error",
@@ -192,12 +194,8 @@ const asStringKey = (text: string): string => text.replace("{{appointment_date}}
 describe("the page's strings are the approved copy, character for character", () => {
   const numbers = Object.keys(KEY_OF_TEXT).map(Number);
 
-  it("covers texts 4 to 18 and 21 to 31, and nothing else", () => {
-    const expected = [
-      ...Array.from({ length: 15 }, (_, i) => i + 4),
-      ...Array.from({ length: 11 }, (_, i) => i + 21),
-    ];
-    expect(numbers).toEqual(expected);
+  it("covers texts 4 to 31, and nothing else", () => {
+    expect(numbers).toEqual(Array.from({ length: 28 }, (_, i) => i + 4));
   });
 
   it.each(numbers)("text %i, in Portuguese and in English", (n) => {
@@ -221,7 +219,36 @@ describe("the page's strings are the approved copy, character for character", ()
   it("no em or en dash in any survey string", () => {
     for (const locale of ["pt", "en"] as const) {
       const s = getStrings(locale);
-      for (const key of Object.values(KEY_OF_TEXT)) expect(s[key], key).not.toMatch(/[\u2013\u2014]/);
+      for (const key of [...Object.values(KEY_OF_TEXT), ...Object.values(STAFF_KEY_OF_TEXT)]) {
+        expect(s[key], key).not.toMatch(/[\u2013\u2014]/);
+      }
     }
+  });
+
+  it("THE OPT-OUT IS NOT PART OF WHAT AN ANSWER WAS GIVEN UNDER: its texts are outside the label", () => {
+    // Texts 19 and 20 say nothing about what an answer means or who reads it,
+    // so adding them changed no label and no pinned hash.
+    const pinned = SURVEY_CONSENT_TEXT_KEYS as readonly string[];
+    expect(pinned).not.toContain("survey.page.optOut");
+    expect(pinned).not.toContain("survey.page.optOutNote");
+  });
+});
+
+/** The patient ficha's section (copy section G): its title, the switch and the note under it when off. */
+const STAFF_KEY_OF_TEXT: Record<number, StringKey> = {
+  58: "patients.surveySwitchTitle",
+  59: "patients.surveySwitchLabel",
+  60: "patients.surveySwitchOffNote",
+};
+
+describe("the ficha's survey switch strings are the copy file's, character for character", () => {
+  it.each(Object.keys(STAFF_KEY_OF_TEXT).map(Number))("text %i, in Portuguese and in English", (n) => {
+    const key = STAFF_KEY_OF_TEXT[n]!;
+    const pt = approvedPt(n);
+    const en = publishedEn(n);
+    expect(pt.length, "the reader found a text").toBeGreaterThan(5);
+    expect(en.length, "the reader found a text").toBeGreaterThan(5);
+    expect(getStrings("pt")[key]).toBe(pt);
+    expect(getStrings("en")[key]).toBe(en);
   });
 });
