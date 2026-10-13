@@ -591,9 +591,20 @@ d("SAT-01: the survey page against a real database", () => {
         waiting = Number(
           rowsOf<{ n: number }>(
             await tx.execute(
-              raw`select count(*)::int as n from pg_stat_activity
-                   where wait_event_type = 'Lock' and query like '%submit_survey_response%'
-                     and pid <> pg_backend_pid()`,
+              // WHO WAITS ON THIS TRANSACTION, asked of the lock manager. The
+              // first submit waits on this session; the second queues behind
+              // the first. `pg_blocking_pids` answers for every role, where
+              // the activity view hides another role's query and wait event
+              // from a session without the statistics privilege (CI's).
+              raw`with first as (
+                    select pid from pg_stat_activity
+                     where pg_backend_pid() = any(pg_blocking_pids(pid))
+                  ), behind as (
+                    select a.pid from pg_stat_activity a, first f
+                     where f.pid = any(pg_blocking_pids(a.pid))
+                  )
+                  select count(distinct pid)::int as n
+                    from (select pid from first union select pid from behind) w`,
             ),
           )[0]!.n,
         );
