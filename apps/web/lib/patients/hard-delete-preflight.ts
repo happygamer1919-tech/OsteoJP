@@ -35,7 +35,14 @@ import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 
 const s = getStrings(DEFAULT_LOCALE);
 
-/** The ten classes `hardDeletePatient` counts, in the order it counts them. */
+/**
+ * The twelve classes `hardDeletePatient` counts, in the order it counts them.
+ *
+ * The last two are SAT-01's (migration 0102): a satisfaction survey send and its
+ * answer each name the patient with a NO ACTION foreign key. Neither is in
+ * `CASCADES`: no application role may write those tables, so a delete can only
+ * be refused by them.
+ */
 export const HARD_DELETE_CLASSES = [
   "clinicalRecords",
   "clinicalEpisodes",
@@ -47,6 +54,8 @@ export const HARD_DELETE_CLASSES = [
   "formSubmissions",
   "analyticsEvents",
   "mergeLosers",
+  "surveySends",
+  "surveyAnswers",
 ] as const;
 
 export type HardDeleteClass = (typeof HARD_DELETE_CLASSES)[number];
@@ -83,6 +92,8 @@ const LABEL: Record<HardDeleteClass, keyof typeof s> = {
   formSubmissions: "patients.hardDeleteClassFormSubmissions",
   analyticsEvents: "patients.hardDeleteClassAnalytics",
   mergeLosers: "patients.hardDeleteClassMergeLosers",
+  surveySends: "patients.hardDeleteClassSurveySends",
+  surveyAnswers: "patients.hardDeleteClassSurveyAnswers",
 };
 
 /** The pt-PT name of a class, for the danger-zone list. */

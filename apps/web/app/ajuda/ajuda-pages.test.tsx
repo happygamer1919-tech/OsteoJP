@@ -7,7 +7,7 @@
  * in lib/guide/guide-roles.test.ts, against the helper. This file proves the
  * PAGES draw exactly that list: every lesson link on the index, in order, is
  * the helper's list for that role, the counts are the ruled ones (reception
- * 37, therapist 37, admin 48, owner 57), the section order per role is written
+ * 37, therapist 38, admin 49, owner 58), the section order per role is written
  * out by hand below, and the named cases the owner's spec asks for are
  * asserted by id.
  *
@@ -200,10 +200,10 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     expect(lessonLinks(html)).toContain("/ajuda/pacientes/atribuir-terapeutas");
   });
 
-  it("therapist: its 37 lessons in order, with F2 (faturas de um paciente) and not F1 (faturas de um período)", async () => {
+  it("therapist: its 38 lessons in order, with F2 (faturas de um paciente) and not F1 (faturas de um período)", async () => {
     const html = await indexHtml("therapist");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("therapist")));
-    expect(lessonLinks(html)).toHaveLength(37);
+    expect(lessonLinks(html)).toHaveLength(38);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -222,10 +222,10 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
   });
 
-  it("admin: the 48 Proprietário lessons whose capability the admin role holds, and no Registos", async () => {
+  it("admin: the 49 Proprietário lessons whose capability the admin role holds, and of Registos only the PDF export", async () => {
     const html = await indexHtml("admin");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("admin")));
-    expect(lessonLinks(html)).toHaveLength(48);
+    expect(lessonLinks(html)).toHaveLength(49);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -235,8 +235,12 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
       "pacotes",
       "portal",
       "marcacao-online",
+      "registos",
     ]);
-    expect(html).not.toContain("/ajuda/registos");
+    // E-25: the export buttons ask for clinical_records:read, which an admin
+    // holds; every other Registos lesson needs a capability it lacks.
+    expect(lessonLinks(html).filter((href) => href.startsWith("/ajuda/registos/"))).toEqual(["/ajuda/registos/exportar-pdf"]);
+    absentButPublished(lessonLinks(html), "/ajuda/registos/assinar-registo");
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/pacientes-eliminados");
     absentButPublished(lessonLinks(html), "/ajuda/portal/mensagem-de-teste");
     // P4 split in two: admin holds patients:write and reads Atualizar os dados,
@@ -245,10 +249,10 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
   });
 
-  it("owner: every published lesson (57), in the Proprietário order, and not the held one", async () => {
+  it("owner: every published lesson (58), in the Proprietário order, and not the held one", async () => {
     const html = await indexHtml("owner");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("owner")));
-    expect(lessonLinks(html)).toHaveLength(57);
+    expect(lessonLinks(html)).toHaveLength(58);
     expect([...lessonLinks(html)].sort()).toEqual(hrefs(GUIDE_DATA.lessons).sort());
     expect(sectionLinks(html)).toEqual([
       "inicio",
@@ -457,7 +461,7 @@ describe("Perguntas frequentes (G1-2): the seven base tasks first, for the viewe
 
   it("an unknown ?tab= opens the guide", async () => {
     const html = await indexHtml("owner", "outra");
-    expect(lessonLinks(html)).toHaveLength(57);
+    expect(lessonLinks(html)).toHaveLength(58);
     expect(faqEntries(html)).toEqual([]);
   });
 });
@@ -477,8 +481,8 @@ describe("a section page lists the viewer's lessons there, and nothing outside t
     await expect(sectionHtml("reception", "registos")).rejects.toThrow("NOT_FOUND");
   });
 
-  it("admin opening /ajuda/registos is not found (no Registos lesson is open to admin)", async () => {
-    await expect(sectionHtml("admin", "registos")).rejects.toThrow("NOT_FOUND");
+  it("admin opening /ajuda/registos reads one lesson there, the PDF export (E-25)", async () => {
+    expect(lessonLinks(await sectionHtml("admin", "registos"))).toEqual(["/ajuda/registos/exportar-pdf"]);
   });
 
   it("a therapist opening /ajuda/marcacao-online is not found", async () => {
@@ -509,6 +513,31 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
 
   it("reception opening a Registos lesson is not found", async () => {
     await refusedButReal("reception", "registos", "criar-registo");
+    // E-25: reception holds no clinical_records:read, so it has no export button and no lesson on one.
+    await refusedButReal("reception", "registos", "exportar-pdf");
+  });
+
+  // E-25. The lesson quotes the three buttons by the labels the screens draw
+  // (the same i18n keys), and says the four things a reader must not get
+  // wrong about the file. It has no capture yet, so it shows the card.
+  it("Exportar registos em PDF: a therapist, an administrator and the owner read it, with the three button labels", async () => {
+    const lesson = lessonById("registos.exportar-pdf");
+    expect(lesson.capability).toBe("clinical_records:read");
+    expect(lesson.images).toBeNull();
+    const labels = [pt["patients.fichaExport"], pt["patients.fichaGroupEpisodePdf"], pt["clinical.downloadPdf"]];
+    expect(labels).toEqual(["Exportar ficha", "PDF do episódio", "Transferir PDF"]);
+    for (const role of ["therapist", "admin", "owner"] as const) {
+      const html = await lessonHtml(role, "registos", "exportar-pdf");
+      expect(html, role).toContain(`${lesson.title}</h1>`);
+      for (const label of labels) expect(html, `${role} ${label}`).toContain(`<strong class="font-semibold">${label}</strong>`);
+      expect(html, role).toContain(`<strong class="font-semibold">${pt["patients.fichaGroupImported"]}</strong>`);
+      expect(html, role).toContain(`<strong class="font-semibold">${pt["clinical.recordAnulado"]}</strong>`);
+      expect(html, role).toContain(`<strong class="font-semibold">${pt["clinical.statusDraft"]}</strong> nunca é exportado`);
+      expect(html, role).toContain("Cada exportação fica no registo de auditoria");
+      expect(html, role).toContain("dados de saúde");
+      expect(html, role).toContain("data-guide-no-image");
+      expect(html, role).not.toContain("<img");
+    }
   });
 
   it("a therapist opening F1 (faturas de um período) is not found, and F2 renders", async () => {
@@ -524,6 +553,8 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
 
   it("admin opening a lesson whose capability it lacks is not found", async () => {
     await refusedButReal("admin", "registos", "assinar-registo");
+    // The one Registos lesson an admin does read needs clinical_records:read only.
+    await expect(lessonHtml("admin", "registos", "exportar-pdf")).resolves.toContain("<h1");
     await refusedButReal("admin", "pacientes", "pacientes-eliminados");
     // care_team:manage: the admin role does not hold it, reception does.
     await refusedButReal("admin", "pacientes", "atribuir-terapeutas");

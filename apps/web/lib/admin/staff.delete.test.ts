@@ -20,6 +20,7 @@ vi.mock("@/lib/reminders/clients", () => ({ sendEmail: vi.fn() }));
 vi.mock("./audit", () => ({ writeAudit: vi.fn() }));
 vi.mock("./appointment-delete-password", () => ({ verifyDeletePassword: vi.fn() }));
 
+import { DrizzleQueryError } from "drizzle-orm";
 import {
   availabilityTemplates,
   therapistServices,
@@ -56,7 +57,13 @@ function q(rows: unknown[]) {
  * Fake tx. Select order: [target user, owner role, then 6 activity counts].
  * `activity` sets each count row. Records the delete order by table.
  */
-function makeTx(opts: { target?: { id: string; roleId: string } | null; roleId?: string; activity?: number }) {
+function makeTx(opts: {
+  target?: { id: string; roleId: string } | null;
+  roleId?: string;
+  activity?: number;
+  // what the users DELETE rejects with, when the database refuses it
+  userDeleteError?: unknown;
+}) {
   const { target = { id: "ther-1", roleId: "role-therapist" }, activity = 0 } = opts;
   const selectQueue: unknown[][] = [
     target ? [target] : [], // target user
@@ -70,7 +77,14 @@ function makeTx(opts: { target?: { id: string; roleId: string } | null; roleId?:
     delete: (table: unknown) => {
       stats.deleteOrder.push(tag(table));
       const rows = tag(table) === "users" ? [{ id: "ther-1" }] : [];
-      return { where: () => ({ returning: async () => rows }) };
+      return {
+        where: () => ({
+          returning: async () => {
+            if (tag(table) === "users" && opts.userDeleteError) throw opts.userDeleteError;
+            return rows;
+          },
+        }),
+      };
     },
   };
   return { tx, stats };
@@ -133,5 +147,62 @@ describe("deleteStaffMember (W4-01)", () => {
   it("refuses a non-admin (users:manage gate)", async () => {
     await expect(deleteStaffMember(reception, "ther-1", "1234")).rejects.toThrow();
     expect(mockVerify).not.toHaveBeenCalled();
+  });
+});
+
+// The database's own refusal of the users DELETE. The driver error is built the
+// way postgres.js raises it (the SQLSTATE is its `code`) and wrapped the way
+// Drizzle wraps it (a DrizzleQueryError with no `code`, the driver error at
+// `.cause`).
+describe("deleteStaffMember: the database's foreign-key refusal is named", () => {
+  const driverError = (code: string) => Object.assign(new Error("driver error"), { code });
+  const wrapped = (code: string) =>
+    new DrizzleQueryError("delete from users where id = $1", ["ther-1"], driverError(code));
+  const ALL_FOUR = ["therapist_services", "availability_templates", "time_off", "users"];
+
+  function arrange(opts: Parameters<typeof makeTx>[0]) {
+    mockVerify.mockResolvedValue(true);
+    const made = makeTx(opts);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(made.tx as never)));
+    return made;
+  }
+
+  it("a DELETE refused with 23503 at the Drizzle error's cause is has_activity, with no audit row", async () => {
+    const { stats } = arrange({ userDeleteError: wrapped("23503") });
+    await expect(deleteStaffMember(admin, "ther-1", "1234")).rejects.toMatchObject({
+      name: "AdminError",
+      code: "has_activity",
+    });
+    // The counts passed and the DELETE was reached: the refusal is the database's.
+    expect(stats.deleteOrder).toEqual(ALL_FOUR);
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it("a DELETE refused with 23503 on the error itself is has_activity too", async () => {
+    arrange({ userDeleteError: driverError("23503") });
+    await expect(deleteStaffMember(admin, "ther-1", "1234")).rejects.toMatchObject({
+      name: "AdminError",
+      code: "has_activity",
+    });
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it("another SQLSTATE on the DELETE is not named: the same error comes back out", async () => {
+    for (const code of ["23505", "23514", "42501"]) {
+      const refusal = wrapped(code);
+      arrange({ userDeleteError: refusal });
+      await expect(deleteStaffMember(admin, "ther-1", "1234"), code).rejects.toBe(refusal);
+    }
+    const plain = new Error("no code at all");
+    arrange({ userDeleteError: plain });
+    await expect(deleteStaffMember(admin, "ther-1", "1234")).rejects.toBe(plain);
+  });
+
+  it("a 23503 raised by another statement of the transaction is not named", async () => {
+    const fromAudit = new DrizzleQueryError("insert into audit_log", [], driverError("23503"));
+    const { stats } = arrange({});
+    vi.mocked(writeAudit).mockRejectedValueOnce(fromAudit);
+    await expect(deleteStaffMember(admin, "ther-1", "1234")).rejects.toBe(fromAudit);
+    expect(stats.deleteOrder).toEqual(ALL_FOUR);
   });
 });

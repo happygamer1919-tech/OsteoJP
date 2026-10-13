@@ -27,9 +27,11 @@ export function reviewSaveErrorText(state: ReviewSaveState | null): string | nul
         ? s["clinical.finalized"]
         : state.code === "not_author"
           ? s["clinical.notAuthor"]
-          : state.code
-            ? s["review.error"]
-            : null;
+          : state.code === "concurrent_change"
+            ? s["errors.concurrentChange"]
+            : state.code
+              ? s["review.error"]
+              : null;
 }
 
 /**

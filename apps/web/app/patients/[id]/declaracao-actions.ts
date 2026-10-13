@@ -13,6 +13,7 @@ import { getPatient } from "@/lib/patients/queries";
 import { updatePatient } from "@/lib/patients/actions";
 import { shouldPersistCapturedValue } from "@/lib/patients/known-field";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
+import { recordDeclaracaoExport } from "@/lib/clinical/export-audit";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 
 // W5-31 — generate the Declaração de Presença PDF for a patient and hand back a
@@ -20,6 +21,12 @@ import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 // scoped read (RLS), tenant-prefixed Storage path, 60s signed URL, bytes never
 // proxied through Next, error-silent (never leak PII). No schema change, nothing
 // persisted beyond the transient PDF object.
+//
+// EXPORT-01: THE AUDIT ROW (`patient.export_pdf`, document `declaracao`: the
+// patient and the location, ids only) is written after the file is stored and
+// signed and before the URL is returned. If it cannot be written, the URL is
+// not handed out, and the file just stored is removed, best effort (the order
+// and its reasons: lib/clinical/export-audit.ts).
 
 export type DeclaracaoRequest = {
   patientId: string;
@@ -141,6 +148,25 @@ export async function generateDeclaracaoUrlAction(
       .from(ATTACHMENTS_BUCKET)
       .createSignedUrl(path, 60);
     if (signed.error || !signed.data) return { url: null };
+
+    try {
+      await recordDeclaracaoExport(ctx, {
+        patientId: input.patientId,
+        locationId: input.locationId,
+      });
+    } catch {
+      // No row, so no URL, and the file just stored will never be linked to:
+      // it is removed. Best effort: the answer is the same either way.
+      try {
+        await admin.storage.from(ATTACHMENTS_BUCKET).remove([path]);
+      } catch {
+        // Nothing to add: the audit failure is what is logged below.
+      }
+      // The screen shows this like any other failure, so it is logged: the
+      // document and the step, no id, no error object, no message text.
+      console.error("[declaracao] the export failed at step: audit");
+      return { url: null };
+    }
     return { url: signed.data.signedUrl };
   } catch (e) {
     // R45: the generator refuses a location with no carimbo on its own, before

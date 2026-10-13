@@ -1493,6 +1493,8 @@ function buildFollowUpContext(
     patientFirstName: firstName(data.patientName),
     appointmentDateLong: formatDateLong(data.startsAt, locale),
     appointmentDateShort: formatDateShort(data.startsAt),
+    // MN-03: the appointment's own location row, as the reminder email reads it.
+    clinicLocation: data.locationName,
     clinicPhone: data.locationPhone || tenantPhone(data.tenantSettings),
   };
 }
@@ -1563,6 +1565,7 @@ function buildNoShowContext(
     appointmentDateLong: formatDateLong(data.startsAt, locale),
     appointmentDateShort: formatDateShort(data.startsAt),
     appointmentTime: formatTime(data.startsAt, locale),
+    clinicLocation: data.locationName,
     clinicPhone: data.locationPhone || tenantPhone(data.tenantSettings),
     rescheduleLink: rescheduleLink({
       tenantId,

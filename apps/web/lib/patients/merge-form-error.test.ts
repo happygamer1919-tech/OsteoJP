@@ -73,18 +73,25 @@ describe("the inputs an operator actually types into the survivor box", () => {
   });
 });
 
-describe("every operator-caused refusal has a sentence", () => {
-  it("the union is exactly the three the operator can cause", () => {
+describe("every refusal the merge returns has a sentence", () => {
+  it("the union is exactly the three the operator can cause, and the one they can only retry", () => {
     // A COMPILE-TIME ASSERTION MADE RUNTIME-VISIBLE. `MERGE_ERROR_TEXT` in
-    // patient-actions.tsx is a COMPLETE Record over this union, so a fourth
-    // member cannot be added without a sentence to show for it. This pins the
+    // patient-actions.tsx is a COMPLETE Record over this union, so a member
+    // cannot be added without a sentence to show for it. This pins the
     // membership so that guarantee cannot be widened silently by loosening the
     // type to Partial.
+    //
+    // M-4 added the fourth, `concurrent_change`: the merge was rolled back as a
+    // deadlock victim. It is not operator input; it is here because the person
+    // at the screen can act on it (send the merge again), and its sentence says
+    // so (merge-deadlock.test.ts pins the action, and
+    // app/clinical/[id]/concurrent-change-text.test.ts the sentence).
     const all: Record<MergePatientError, true> = {
       invalid_id: true,
       self_merge: true,
       not_found: true,
+      concurrent_change: true,
     };
-    expect(Object.keys(all).sort()).toEqual(["invalid_id", "not_found", "self_merge"]);
+    expect(Object.keys(all).sort()).toEqual(["concurrent_change", "invalid_id", "not_found", "self_merge"]);
   });
 });

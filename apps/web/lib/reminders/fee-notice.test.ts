@@ -334,7 +334,10 @@ describe("registry gating", () => {
     const approved = REMINDER_TEMPLATES.filter((t) => t.approved);
     // 10 -> 11 on 2026-10-04, S-1004-A: the booking-approved SMS, strategy's
     // copy, its own approval. The line below still says the fee entry is out.
-    expect(approved).toHaveLength(11);
+    // 11 -> 13, SAT-01: the satisfaction survey's email and SMS, registered
+    // approved (JP, 2026-10-02) before anything sends them. Their own
+    // approval, and the line below still says the fee entry is out.
+    expect(approved).toHaveLength(13);
     expect(approved.some((t) => t.id === FEE_NOTICE_TEMPLATE_ID)).toBe(false);
   });
 

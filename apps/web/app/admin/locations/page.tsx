@@ -1,7 +1,16 @@
 import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
-import { listLocations, SLOT_GRANULARITY_CHOICES } from "@/lib/admin/locations";
+import {
+  listLocations,
+  listPhysicalStampPlaces,
+  SLOT_GRANULARITY_CHOICES,
+} from "@/lib/admin/locations";
+import {
+  PHYSICAL_STAMP_PLACE_MAX,
+  placeFromAddress,
+} from "@/lib/clinical/declaracao/declaracao-settings";
+import { resolveStampClinicKey } from "@/lib/clinical/declaracao/stamp-clinic";
 import {
   createLocationAction,
   deleteLocationAction,
@@ -26,6 +35,10 @@ export default async function LocationsPage({
 }) {
   const actor = await requireRequestContext();
   const locations = await listLocations(actor);
+  const physicalStampPlaces = await listPhysicalStampPlaces(
+    actor,
+    locations.map((l) => l.id),
+  );
   const { m } = await searchParams;
 
   const banner =
@@ -99,6 +112,32 @@ export default async function LocationsPage({
                           </option>
                         ))}
                       </select>
+                      {/* S-1012-A1 ruling 4: a location with no carimbo image
+                          can be marked as one that stamps the Declaração by
+                          hand. A clinic with a carimbo image has no such
+                          choice, so its row does not show it. */}
+                      {resolveStampClinicKey(loc.name) === null && (
+                        <>
+                          <input type="hidden" name="physicalStampShown" value="1" />
+                          <label className={`flex items-center gap-1 ${adminHelp}`}>
+                            <input
+                              type="checkbox"
+                              name="physicalStamp"
+                              defaultChecked={Object.hasOwn(physicalStampPlaces, loc.id)}
+                            />
+                            {s["admin.locations.physicalStamp"]}
+                          </label>
+                          <input
+                            name="physicalStampPlace"
+                            defaultValue={physicalStampPlaces[loc.id] ?? placeFromAddress(loc.address)}
+                            maxLength={PHYSICAL_STAMP_PLACE_MAX}
+                            aria-label={s["admin.locations.physicalStampPlace"]}
+                            placeholder={s["admin.locations.physicalStampPlace"]}
+                            title={s["admin.locations.physicalStampHelp"]}
+                            className={`w-44 ${adminInputInline}`}
+                          />
+                        </>
+                      )}
                       <span className={adminHelp}>
                         {loc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                       </span>

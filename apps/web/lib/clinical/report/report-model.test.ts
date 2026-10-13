@@ -35,6 +35,8 @@ function inputs(overrides: Overrides = {}): ReportInputs {
         // an empty field must be omitted from the model body:
         observations: "   ",
       },
+      view: "form",
+      annulledAt: null,
       consultationDate: new Date("2026-05-20T09:30:00Z"),
       signedAt: null,
       ...overrides.record,

@@ -313,7 +313,7 @@ written yet: no application code is in the migration's pull request.**
 | A1 | The public page `/s/<code>` and its actions call the three doors through `withReminderTenantContext` (tenant, role `authenticated`, no user, no patient claim), as `confirm-code-store.ts` calls 0074's doors. They never use the visitor's own session, so a visitor who is also signed in as staff or in the portal still gets the page. A test with a staff session and a portal session in the browser. | The doors refuse any other session. A page that passed the visitor's session would show "link not valid" to every signed-in visitor. | 7.2, 9.3 |
 | A2 | **MUST LAND BEFORE THE LIVE-SEND FLAG LEAVES `off`.** The manual send records its hand-over to the channel in `reminder_dispatches` (or the ledger the send path uses), in the same request as `issue_survey_manual`, and the Comunicações list shows a send with no hand-over as not sent. | The database cannot tell the application's manual send from a staff member's direct call of `issue_survey_manual`. Such a call is attributable (`sent_by`, the `survey.sent` audit row) and can attach only to a patient that member may send to, but it records a send with no message leaving, blocks the button for 14 days (`open_link`) and consumes the patient's 60-day window for the automatic send. The hand-over record is the only thing that shows the difference. | 7.6, 9.2; a condition of 7.5's flag leaving `off`, with A7 and A8 |
 | A3 | **Merge.** `merge_patients` (0005) does not know the three tables. After a merge the appointment is the survivor's and its send and answer still name the merged-away patient: the live link stops resolving, the survivor can be sent a second survey for the same visit, and the answer is missing from the survivor's file. The merge must either re-point `appointment_survey_sends.patient_id` and `appointment_survey_responses.patient_id` to the survivor in the same transaction, or refuse a merge whose source has survey rows. A ruling is needed on which (O13). It is a change to a SECURITY DEFINER function: its own migration and review. | Recorded as a gap by one arm of the DB-gated suite, which changes when this lands. | new; before the live-send flag leaves `off` |
-| A4 | **Hard delete.** `hardDeletePatient` (`apps/web/lib/patients/actions.ts`) counts the patient's rows in the two tables in its reference guard, so it answers `has_references`. | Without it the delete of a merged-away patient with survey rows fails at the foreign key and the screen shows the generic error. A patient who was never merged is already stopped by the appointment the send belongs to. | 7.7 or its own small pull request |
+| A4 | **Hard delete. Delivered 2026-10-08, no longer owed.** `hardDeletePatient` (`apps/web/lib/patients/actions.ts`) counts the patient's rows in the two tables in its reference guard, so it answers `has_references`. The danger zone names both classes with their counts (copy texts 82 and 83). | ~~Without it the delete of a merged-away patient with survey rows fails at the foreign key and the screen shows the generic error.~~ *Superseded 2026-10-08:* the foreign key's refusal has answered `has_references` since DEL-02 (#1569), and the count now shows which rows hold the patient. An admin of another clinic than the send's reads zero and is still answered `has_references`, by the database. A patient who was never merged is already stopped by the appointment the send belongs to. | ~~7.7 or~~ its own small pull request; proved by `apps/web/lib/patients/hard-delete-survey.db.test.ts` |
 | A5 | The consent label list (7.2) refuses a label longer than 64 characters, in its test. | The CHECK. | 7.2 |
 | A6 | An erasure request (RGPD, a patient asking for their answers to be deleted) has no path: the purge nulls comments after 24 months and nothing deletes an answer. | The foreign keys make that explicit. Out of scope in v1 unless ruled otherwise (O14). | 8 |
 | A7 | **The survey link is never stored and never shown to staff.** The application keeps only the code's HMAC (as `confirm-code-store.ts` does); the link is built in the send path, handed to the provider and dropped. No staff screen, log line, audit row, dispatch record or error message carries the link or the code; the Comunicações list shows that a send exists and its status, never its link. A test that greps the rendered staff pages and the dispatch ledger for the code. | The page's doors answer the server's own session for whoever presents a live code. The code is therefore the whole of the patient's authority: a staff member who can read it can answer as the patient through the page itself, which no database rule can tell from the patient. | 7.1, 7.3, 7.6, 9.2 |
@@ -425,8 +425,9 @@ Gaps that SAT-01 inherits and does not fix in v1:
 5. The SMS line is `Responder: <host>/s/<8 characters>`, bare host, the host
    read from the same variable the confirm link uses (`confirm-code.ts:68`,
    `REMINDERS_RESCHEDULE_BASE_URL`). The email carries the full link. The
-   system refuses an SMS that does not fit one message (S6): the render throws
-   and nothing is issued.
+   system refuses an SMS that does not fit one message (S6): the render
+   returns a refusal (a value, not a throw, `survey-body.ts`), the caller stops
+   on it, and nothing is issued.
 
 ### 5.2 The page `/s/<code>`
 
@@ -506,8 +507,8 @@ depends on the sender (`reply-capability.ts`), which SAT-01 does not change.
   for email; for SMS, copy text 64 says it goes by SMS and text 65 that SMS has
   a cost. The patient's address is not shown in the dialog.
 * **The SMS that does not fit one message is still refused (S6)**, in the same
-  order as 5.1 step 4: the render throws, no send is issued, and the dialog
-  shows copy text 69.
+  order as 5.1 step 4: the render returns a refusal, no send is issued, and the
+  dialog shows copy text 69.
 * **The flag governs it too:** while the SAT live-send flag is off, a manual
   send reaches no patient, except the canary of 7.5.
 * **The server works out the button's state, and the door decides.** The
@@ -1001,8 +1002,13 @@ Taken out of this list 2026-10-02:
 ### 9.2 The send path
 
 * The pt SMS renders as one GSM-7 segment of at most 160 characters for the
-  longest date and a host of 32 characters, and throws beyond 160; the copy has
-  no accents and no dash characters. The en SMS likewise.
+  longest date and a host of 43 characters, and is refused beyond 160; the copy
+  has no accents and no dash characters. The en SMS likewise, with a host of 47.
+  ~~A host of 32 characters.~~ *Corrected 2026-10-13, measured in
+  `apps/web/lib/reminders/survey-body.test.ts`: 32 was the room left by the
+  wording before S1 ("questionario", 115 fixed characters). The approved text
+  has 104 fixed characters with `/s/`, and the copy file's 43 is right. The
+  refusal is a value the sender records, not a throw.*
 * Email: no unfilled placeholder; plain text.
 * The registry holds `survey.*` with `approvedBy` and `approvedAt` set (S9a,
   S10) and no longer holds `follow_up.*`; a test fails if a survey entry is
@@ -1114,7 +1120,9 @@ English translation (S10). Texts 1 to 60 are JP's approved texts of 2026-10-02,
 with the S1 renames and the changes S9 required shown against the approved
 wording; text 7 is the ruled sentence, approved by JP on 2026-10-02 (S9a).
 Texts 61 to 81 are new staff strings for the button, the dialog, the disabled
-reasons, the status line and the list (S9). ~~No app pull request opens before
+reasons, the status line and the list (S9). Texts 82 and 83, added 2026-10-08,
+are the two staff labels the patient hard delete shows for survey sends and
+answers (A4). ~~No app pull request opens before
 JP's review comes back.~~ *Superseded 2026-10-02 by S-1002-D S9a: the review is
 done.* The file JP reviewed is in the owner's handover folder as
 `SAT-01-copy-pt-for-JP.md`.

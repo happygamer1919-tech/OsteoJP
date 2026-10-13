@@ -13,12 +13,21 @@
  * button (record-status.ts) and the per-record engine (buildClinicalReportModel),
  * so the two exports cannot drift apart on a status.
  *
- * One rule is NARROWER than the per-record button: an ANNULLED registo is left
- * out. The Registos tab hides it unless asked, and a file that covers a whole
- * episode holds the registos that stand.
+ * EXPORT-01: AN ANNULLED REGISTO IS IN THE FILE, as it is behind the per-record
+ * button: an export never refuses one, and every page of it carries the
+ * annulment mark the per-record engine prints (pdf.ts). A DRAFT IS NEVER IN
+ * ANY FILE.
  *
  * Every version of a registo that passes the rule is in the file, as every
  * version is a row of the group on the tab.
+ *
+ * ==========================================================================
+ * EXPORT-01: THE IMPORTED GROUP IS EXPORTED AS THE TAB SHOWS IT
+ * ==========================================================================
+ * The imported history is drawn as ONE group per specialty per patient
+ * (ficha-groups-core.ts), and that group is what its "PDF do episódio" holds:
+ * the group's registos, under the same rule and in the same order. Its file is
+ * stored under a folder of its own and named by the patient id's first block.
  *
  * ==========================================================================
  * THE ORDER IS THE REGISTOS TAB'S
@@ -35,7 +44,7 @@ export type EpisodeExportRow = {
   status: RecordStatus;
   /** clinical_records.ai_review_state (null for a manual registo). */
   aiReviewState: string | null;
-  /** True when a record_annulments row names it. */
+  /** True when a record_annulments row names it. Carried, not asked by the rule. */
   annulled: boolean;
   /** The clinical date (`created_at`). */
   createdAt: Date;
@@ -43,10 +52,8 @@ export type EpisodeExportRow = {
 };
 
 /** Is this registo in the episode's file? See the selection rule above. */
-export function isEpisodeExportable(
-  row: Pick<EpisodeExportRow, "status" | "aiReviewState" | "annulled">,
-): boolean {
-  return !row.annulled && isPrintable(row);
+export function isEpisodeExportable(row: Pick<EpisodeExportRow, "status" | "aiReviewState">): boolean {
+  return isPrintable(row);
 }
 
 const byClinicalDateThenVersion = (a: EpisodeExportRow, b: EpisodeExportRow): number => {
@@ -82,4 +89,18 @@ export function episodeReportPath(tenantId: string, episodeId: string, objectId:
 /** The suggested download name: the episode id's first block, never patient data. */
 export function episodeReportFilename(episodeId: string): string {
   return `relatorio-episodio-${episodeId.slice(0, 8)}.pdf`;
+}
+
+/**
+ * EXPORT-01: the Storage object of one export of a patient's imported group:
+ * `<tenant>/imported-episode-reports/<patient>/<object>.pdf`. A folder of its
+ * own, as above. Ids only: the specialty is not in the path.
+ */
+export function importedGroupReportPath(tenantId: string, patientId: string, objectId: string): string {
+  return `${tenantId}/imported-episode-reports/${patientId}/${objectId}.pdf`;
+}
+
+/** The suggested download name: the patient id's first block, never patient data. */
+export function importedGroupReportFilename(patientId: string): string {
+  return `relatorio-episodio-importado-${patientId.slice(0, 8)}.pdf`;
 }

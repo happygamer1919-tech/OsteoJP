@@ -52,7 +52,7 @@ vi.mock("@/lib/clinical/storage", () => ({
   ATTACHMENTS_BUCKET: "attachments",
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn() }));
-vi.mock("@/lib/clinical/report", () => ({ generateClinicalReportPdf: vi.fn() }));
+vi.mock("@/lib/clinical/report", () => ({ generateRegistoReportPdf: vi.fn() }));
 vi.mock("@/lib/clinical/rgpd/generate", () => ({ generateRgpdFormPdf: vi.fn() }));
 vi.mock("@/lib/patients/documents", () => ({
   confirmPatientDocument: vi.fn(),
@@ -93,6 +93,12 @@ describe("versionRecordAction: a refusal stays on the registo with its code", ()
   it("any other ClinicalError keeps its own code in the redirect", async () => {
     h.createAddendum.mockRejectedValue(new ClinicalError("finalized"));
     expect(await run()).toBe(`/clinical/${SOURCE}?m=err:finalized`);
+  });
+
+  it("M-4: a new version rolled back as a deadlock victim: back to the SOURCE registo with ?m=err:concurrent_change", async () => {
+    h.createAddendum.mockRejectedValue(new ClinicalError("concurrent_change"));
+    expect(await run()).toBe(`/clinical/${SOURCE}?m=err:concurrent_change`);
+    expect(h.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("CONTROL: a new version is filed: its path is revalidated and the caller lands on it", async () => {

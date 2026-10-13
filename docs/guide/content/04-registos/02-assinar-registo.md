@@ -19,6 +19,6 @@ Um registo com o estado **Assinada** já não pode ser alterado. Para corrigir, 
 
 **Eliminar** (só em rascunho) e **Anular** (só em registos assinados) pedem a palavra-passe de eliminação da clínica, que não é a sua palavra-passe de acesso. Um registo anulado fica com a etiqueta **ANULADO** e só aparece depois de clicar em **Mostrar anulados**.
 
-PDF de um episódio: em **Registos clínicos**, o grupo de um episódio com registos finalizados tem, acima dos registos, o botão **PDF do episódio**. Vê-o quem pode usar **Transferir PDF**. O ficheiro junta todas as versões finalizadas dos registos do episódio, da mais antiga à mais recente. Rascunhos e registos anulados ficam de fora.
+PDF de um episódio: em **Registos clínicos**, o grupo de um episódio com registos finalizados tem, acima dos registos, o botão **PDF do episódio**. Vê-o quem pode usar **Transferir PDF**. O ficheiro junta todas as versões finalizadas dos registos do episódio, da mais antiga à mais recente. Rascunhos ficam de fora. Anulados entram, marcados **ANULADO**.
 
 Se já não houver nada para exportar, ou se atingir o limite de pedidos, aparece «Não foi possível gerar o PDF.». Cada exportação fica no registo de auditoria.

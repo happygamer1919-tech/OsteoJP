@@ -21,6 +21,7 @@ vi.mock("../../../lib/patients/actions", () => ({
   softDeletePatient: vi.fn(),
 }));
 
+import type { HardDeleteClass } from "../../../lib/patients/hard-delete-preflight";
 import { PatientActions } from "./patient-actions";
 
 const render = (canHardDelete = false) =>
@@ -57,5 +58,43 @@ describe("PatientActions W7-03 containment", () => {
   it("keeps the password-gated hard delete behind the admin flag", () => {
     expect(render(false)).not.toContain("Eliminar definitivamente");
     expect(render(true)).toContain("Eliminar definitivamente");
+  });
+});
+
+// SAT-01: the danger zone itemises what refuses a hard delete. A survey send
+// and a survey answer are two more classes of that list, each with its count.
+describe("PatientActions: the satisfaction survey classes in the hard-delete list", () => {
+  const renderBlocked = (hardDeleteCounts: { key: HardDeleteClass; count: number }[]) =>
+    renderToStaticMarkup(
+      createElement(PatientActions, {
+        patientId: "p1",
+        isDeleted: false,
+        canHardDelete: true,
+        hardDeleteBlocked: "references",
+        hardDeleteCounts,
+      }),
+    );
+
+  it("names both classes with their counts", () => {
+    const html = renderBlocked([
+      { key: "appointments", count: 0 },
+      { key: "surveySends", count: 2 },
+      { key: "surveyAnswers", count: 1 },
+    ]);
+    expect(html).toContain("O que ainda referencia este paciente:");
+    expect(html).toContain("Avaliações de satisfação (envios): 2");
+    expect(html).toContain("Avaliações de satisfação (respostas): 1");
+    // A class with no rows is not listed.
+    expect(html).not.toContain("Marcações: 0");
+  });
+
+  it("lists neither when neither has rows", () => {
+    const html = renderBlocked([
+      { key: "appointments", count: 3 },
+      { key: "surveySends", count: 0 },
+      { key: "surveyAnswers", count: 0 },
+    ]);
+    expect(html).toContain("Marcações: 3");
+    expect(html).not.toContain("Avaliações de satisfação");
   });
 });

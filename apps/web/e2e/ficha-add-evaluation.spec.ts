@@ -37,9 +37,17 @@
  * EPI-01b piece 3, ONE ARM: "PDF do episódio". The seeded app episode holds a
  * draft and a locked registo, so its group offers the button and says the file
  * leaves the draft out; pressing it downloads one PDF named after the episode.
- * The imported group and "Sem episódio" are not episodes and offer none. Which
- * registos the file holds, per role and status, is pinned in the unit and
- * DB-backed suites (episode-export*.test.ts).
+ * "Sem episódio" is not an episode and offers none. Which registos the file
+ * holds, per role and status, is pinned in the unit and DB-backed suites
+ * (episode-export*.test.ts).
+ *
+ * EXPORT-01: THE IMPORTED GROUP HAS THE BUTTON TOO, AND AN IMPORTED REGISTO HAS
+ * "Transferir PDF". The owner arm at the foot of this file presses both on the
+ * seeded LOCKED imported registo (the one registo of its kind a DB-gated suite
+ * cannot create), and reads the two downloaded files: each holds the field
+ * names and the values the registo's own page shows, under the page's heading.
+ * A second owner arm presses "Exportar ficha" and reads the one PDF of the
+ * whole patient: each group under its heading page, and no draft.
  *
  * THAT ARM IS A REAL DOWNLOAD, AND IT NEEDS NOTHING ANOTHER SPEC LEFT BEHIND.
  * The app renders the file, stores it in the `clinical-attachments` bucket and
@@ -50,10 +58,20 @@
  * (fixtures.ts, IMPORTED_DOCUMENTS) and are still never downloaded. Playwright
  * accepts downloads by default and the config does not turn that off; the file
  * is read from the path Playwright saved it to and must begin as a PDF does.
+ *
+ * EXPORT-01, GATE G4: EACH OF THOSE DOWNLOADS LEAVES EXACTLY ONE AUDIT ROW.
+ * Every download arm reads `audit_log` before and after its click
+ * (`rowsLeftBy`) and compares the one row the app wrote: the action, what it
+ * is filed on, the caller, and metadata that is ids and counts only, with no
+ * name, no title and no clinical text. These are the four exports that print
+ * finalized registos, on the seeded locked ones; the RGPD form's and the
+ * Declaração's rows, and every refusal, are lib/clinical/export-audit.db.test.ts's.
  */
 import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
-import { ADD_EVALUATION as F, ADD_EVALUATION_REUSE as R, E2E_PASSWORD, STORAGE, USERS } from "./fixtures";
+import { drawnLines, squash, words } from "../lib/clinical/report/drawn-lines-test-fixture";
+import { ADD_EVALUATION as F, ADD_EVALUATION_REUSE as R, E2E_PASSWORD, STORAGE, TENANT_A, USERS } from "./fixtures";
+import { serviceClient } from "./helpers/confirm-code";
 
 const TAB = `/patients/${F.patientId}?tab=registos`;
 const APP_KEY = `episode:${F.appEpisode.episodeId}`;
@@ -72,6 +90,74 @@ const addButton = (page: Page) => page.getByTestId("record-group-add-evaluation"
 async function openTab(page: Page) {
   await page.goto(TAB);
   await expect(group(page, APP_KEY)).toBeVisible({ timeout: 15_000 });
+}
+
+type ExportRow = {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  actor_user_id: string;
+  metadata: Record<string, unknown>;
+};
+
+/** The newest export rows of the fixture's patient, whoever exported. */
+async function exportRows(): Promise<ExportRow[]> {
+  const { data, error } = await serviceClient()
+    .from("audit_log")
+    .select("id, action, entity_type, entity_id, actor_user_id, metadata")
+    .eq("tenant_id", TENANT_A)
+    .in("action", ["clinical_record.export_pdf", "episode.export_pdf", "patient.export_pdf"])
+    .eq("metadata->>patientId", F.patientId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`audit read failed: ${error.message}`);
+  return (data ?? []) as ExportRow[];
+}
+
+/**
+ * G4: the export rows `download` left behind, which are the rows that were not
+ * there before it. The app writes the row before it answers with the URL, so
+ * a download that has arrived has its row. The suite runs on one worker, so
+ * no other export of this patient runs in between.
+ */
+async function rowsLeftBy(download: () => Promise<void>): Promise<Omit<ExportRow, "id">[]> {
+  const before = new Set((await exportRows()).map((r) => r.id));
+  await download();
+  return (await exportRows())
+    .filter((r) => !before.has(r.id))
+    .map((r) => ({
+      action: r.action,
+      entity_type: r.entity_type,
+      entity_id: r.entity_id,
+      actor_user_id: r.actor_user_id,
+      metadata: r.metadata,
+    }));
+}
+
+/** The `users.id` of a seeded member of staff: the actor an audit row must name. */
+async function staffId(email: string): Promise<string> {
+  const { data, error } = await serviceClient().from("users").select("id").eq("tenant_id", TENANT_A).eq("email", email).limit(1);
+  if (error) throw new Error(`staff lookup failed: ${error.message}`);
+  const id = data?.[0]?.id as string | undefined;
+  if (!id) throw new Error(`${email} has no users row in TENANT_A. Run the e2e seed.`);
+  return id;
+}
+
+const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** G4: a row holds ids and counts and at most the document word; none of the fixture's text. */
+function expectIdsAndCountsOnly(row: Omit<ExportRow, "id">) {
+  for (const [key, value] of Object.entries(row.metadata)) {
+    if (key === "document") expect(["ficha", "imported_group"], key).toContain(value);
+    else if (Array.isArray(value)) for (const id of value) expect(id, key).toMatch(ID);
+    else if (typeof value === "string") expect(value, key).toMatch(ID);
+    else expect(Number.isInteger(value) && (value as number) >= 0, key).toBe(true);
+  }
+  const text = JSON.stringify(row);
+  for (const never of [F.patientName, F.appEpisode.title, F.imported.specialty, "inventada", "Dorsalgia", "motivos"]) {
+    expect(text, never).not.toContain(never);
+  }
 }
 
 /** Click a group's "+ Avaliação" and return the id of the registo it opened. */
@@ -98,7 +184,7 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     await expect(group(page, APP_KEY).getByTestId("record-group-add-evaluation")).toHaveText("Avaliação");
   });
 
-  test("piece 3: the app episode offers 'PDF do episódio' and it downloads; the imported group and 'Sem episódio' offer none", async ({ page }) => {
+  test("piece 3: the app episode offers 'PDF do episódio' and it downloads; the imported group offers its own; 'Sem episódio' offers none", async ({ page }) => {
     await openTab(page);
     const app = group(page, APP_KEY);
     await expect(app.locator(`[data-record-id="${F.appEpisode.finalizedRecordId}"]`)).toContainText("Bloqueada");
@@ -108,20 +194,45 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     // The episode also holds a draft: the group says the file leaves it out.
     await expect(app.getByTestId("record-group-episode-pdf-partial")).toBeVisible();
 
-    // Not an episode: no button, on a group that really rendered its registo.
+    // EXPORT-01: the imported group has its own button (the group's, by its
+    // specialty), never the app episode's.
     await expect(group(page, IMPORTED_KEY).locator(`[data-record-id="${F.imported.recordId}"]`)).toBeVisible();
     await expect(group(page, IMPORTED_KEY).getByTestId("record-group-episode-pdf")).toHaveCount(0);
+    await expect(
+      group(page, IMPORTED_KEY).getByRole("button", { name: `Transferir o PDF do episódio: ${F.imported.specialty}` }),
+    ).toBeVisible();
+    await expect(group(page, IMPORTED_KEY).getByTestId("record-group-imported-pdf")).toHaveCount(1);
+    // Not an episode: no button, on a group that really rendered its registo.
     await expect(group(page, "none").locator(`[data-record-id="${F.noEpisode.recordId}"]`)).toBeVisible();
     await expect(group(page, "none").getByTestId("record-group-episode-pdf")).toHaveCount(0);
 
     // The signed URL names the file (Content-Disposition), so the browser
     // downloads it and the tab stays on the ficha.
-    const downloading = page.waitForEvent("download", { timeout: 30_000 });
-    await pdf.click();
-    const download = await downloading;
-    expect(download.suggestedFilename()).toBe(`relatorio-episodio-${F.appEpisode.episodeId.slice(0, 8)}.pdf`);
-    expect(await download.failure()).toBeNull();
-    expect(readFileSync(await download.path()).subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    const rows = await rowsLeftBy(async () => {
+      const downloading = page.waitForEvent("download", { timeout: 30_000 });
+      await pdf.click();
+      const download = await downloading;
+      expect(download.suggestedFilename()).toBe(`relatorio-episodio-${F.appEpisode.episodeId.slice(0, 8)}.pdf`);
+      expect(await download.failure()).toBeNull();
+      expect(readFileSync(await download.path()).subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    });
+    // G4: exactly one row, on the episode, in the therapist's name. It names
+    // the locked registo that is in the file and not the draft that is not.
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row).toMatchObject({
+      action: "episode.export_pdf",
+      entity_type: "clinical_episode",
+      entity_id: F.appEpisode.episodeId,
+      actor_user_id: await staffId(USERS.therapist),
+    });
+    expect(Object.keys(row.metadata).sort()).toEqual(["episodeId", "patientId", "recordIds", "recordsIncluded", "recordsLeftOut"]);
+    expect(row.metadata).toMatchObject({ episodeId: F.appEpisode.episodeId, patientId: F.patientId });
+    expect(row.metadata.recordIds).toContain(F.appEpisode.finalizedRecordId);
+    expect(row.metadata.recordIds).not.toContain(F.appEpisode.recordId);
+    expect(row.metadata.recordsIncluded).toBe((row.metadata.recordIds as string[]).length);
+    expect(row.metadata.recordsLeftOut).toBeGreaterThanOrEqual(1);
+    expectIdsAndCountsOnly(row);
     // The tab is still the ficha: the group is there, with no error line.
     await expect(app.getByTestId("record-group-episode-pdf-error")).toHaveCount(0);
     await expect(pdf).toBeVisible();
@@ -345,3 +456,181 @@ async function shot(page: Page, path: string): Promise<string> {
   await page.screenshot({ path, fullPage: true });
   return path;
 }
+
+test.describe("EXPORT-01, gate G1: the owner exports an imported registo and an imported group", () => {
+  test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 1280, height: 900 } });
+
+  test("each has an export action, and each PDF holds the fields the registo's page shows", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.owner);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+    // THE SCREEN: the imported registo's own page, with its read-only notice and
+    // every stored field under its source name.
+    await page.goto(`/clinical/${F.imported.recordId}`);
+    const preview = page.getByTestId("imported-record-preview");
+    await expect(preview).toBeVisible({ timeout: 15_000 });
+    await expect(preview).toContainText("Conteúdo importado");
+    await expect(preview).toContainText("Apenas leitura.");
+    const names = (await preview.locator("dt").allInnerTexts()).map((t) => t.trim());
+    const values = (await preview.locator("dd").allInnerTexts()).map((t) => t.trim());
+    // Positive control: the seeded content is on the screen, under its vendor names.
+    expect(names.sort()).toEqual(["especialidade", "motivos"]);
+    expect(values).toContain("Dorsalgia antiga, inventada");
+    const notice = squash(await preview.locator("p").first().innerText());
+
+    /** What a downloaded file must hold: the screen's heading, notice, names and values. */
+    const holdsTheScreen = async (path: string) => {
+      const bytes = readFileSync(path);
+      expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+      const lines = (await drawnLines(bytes)).flat();
+      expect(lines).toContain("Conteúdo importado");
+      expect(words(lines)).toContain(notice);
+      for (const name of names) expect(lines, name).toContain(name);
+      for (const value of values) expect(words(lines), value).toContain(squash(value));
+      // Not annulled: no mark.
+      expect(lines.filter((line) => line.includes("ANULADO"))).toEqual([]);
+    };
+
+    // THE REGISTO'S ACTION: "Transferir PDF" on the imported registo.
+    const registoPdf = page.getByTestId("record-export").getByRole("button", { name: "Transferir PDF" });
+    await expect(registoPdf).toBeVisible();
+    const ownerId = await staffId(USERS.owner);
+    const registoRows = await rowsLeftBy(async () => {
+      const registoDownloading = page.waitForEvent("download", { timeout: 30_000 });
+      await registoPdf.click();
+      const registoDownload = await registoDownloading;
+      expect(registoDownload.suggestedFilename()).toBe(`relatorio-clinico-${F.imported.recordId.slice(0, 8)}.pdf`);
+      expect(await registoDownload.failure()).toBeNull();
+      await holdsTheScreen(await registoDownload.path());
+    });
+    // G4: exactly one row, on the registo, in the owner's name: two ids.
+    expect(registoRows).toEqual([
+      {
+        action: "clinical_record.export_pdf",
+        entity_type: "clinical_record",
+        entity_id: F.imported.recordId,
+        actor_user_id: ownerId,
+        metadata: { recordId: F.imported.recordId, patientId: F.patientId },
+      },
+    ]);
+    expectIdsAndCountsOnly(registoRows[0]!);
+
+    // THE GROUP'S ACTION: "PDF do episódio" on the imported group of the tab.
+    await openTab(page);
+    const imported = group(page, IMPORTED_KEY);
+    await expect(imported.locator(`[data-record-id="${F.imported.recordId}"]`)).toContainText("Bloqueada");
+    const groupPdf = imported.getByRole("button", { name: `Transferir o PDF do episódio: ${F.imported.specialty}` });
+    await expect(groupPdf).toBeVisible();
+    await expect(groupPdf).toHaveText("PDF do episódio");
+    const groupRows = await rowsLeftBy(async () => {
+      const groupDownloading = page.waitForEvent("download", { timeout: 30_000 });
+      await groupPdf.click();
+      const groupDownload = await groupDownloading;
+      expect(groupDownload.suggestedFilename()).toBe(`relatorio-episodio-importado-${F.patientId.slice(0, 8)}.pdf`);
+      expect(await groupDownload.failure()).toBeNull();
+      await holdsTheScreen(await groupDownload.path());
+    });
+    // G4: exactly one row, on the patient, in the owner's name. It names the
+    // registo in the file; the group's label (the specialty) is not in it.
+    expect(groupRows).toEqual([
+      {
+        action: "patient.export_pdf",
+        entity_type: "patient",
+        entity_id: F.patientId,
+        actor_user_id: ownerId,
+        metadata: {
+          document: "imported_group",
+          patientId: F.patientId,
+          recordIds: [F.imported.recordId],
+          recordsIncluded: 1,
+          recordsLeftOut: 0,
+        },
+      },
+    ]);
+    expectIdsAndCountsOnly(groupRows[0]!);
+    await expect(imported.getByTestId("record-group-imported-pdf-error")).toHaveCount(0);
+  });
+
+  test("'Exportar ficha' downloads ONE PDF of the whole patient: each group under its heading, oldest first, and no draft", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.owner);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+    // THE SCREEN: one button on the Registos tab, and, because the tab shows
+    // the seeded drafts, the line saying the file leaves drafts out.
+    await openTab(page);
+    const exportFicha = page.getByTestId("ficha-export");
+    await expect(exportFicha).toHaveCount(1);
+    await expect(exportFicha).toHaveText("Exportar ficha");
+    await expect(page.getByTestId("ficha-export-partial")).toBeVisible();
+    // Positive control: the seeded draft is on the tab the file is made from.
+    await expect(group(page, APP_KEY).locator(`[data-record-id="${F.appEpisode.recordId}"]`)).toContainText("Rascunho");
+
+    let saved = "";
+    const rows = await rowsLeftBy(async () => {
+      const downloading = page.waitForEvent("download", { timeout: 60_000 });
+      await exportFicha.click();
+      const download = await downloading;
+      expect(download.suggestedFilename()).toBe(`relatorio-ficha-${F.patientId.slice(0, 8)}.pdf`);
+      expect(await download.failure()).toBeNull();
+      saved = await download.path();
+    });
+    await expect(page.getByTestId("ficha-export-error")).toHaveCount(0);
+
+    // G4: exactly one row, on the patient, in the owner's name. It names the
+    // locked registos in the file and not the draft, and counts the sections
+    // without naming one.
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row).toMatchObject({
+      action: "patient.export_pdf",
+      entity_type: "patient",
+      entity_id: F.patientId,
+      actor_user_id: await staffId(USERS.owner),
+    });
+    expect(Object.keys(row.metadata).sort()).toEqual([
+      "document",
+      "patientId",
+      "recordIds",
+      "recordsIncluded",
+      "recordsLeftOut",
+      "sectionsIncluded",
+    ]);
+    expect(row.metadata).toMatchObject({ document: "ficha", patientId: F.patientId });
+    const inFile = row.metadata.recordIds as string[];
+    expect(inFile).toContain(F.imported.recordId);
+    expect(inFile).toContain(F.appEpisode.finalizedRecordId);
+    expect(inFile).not.toContain(F.appEpisode.recordId);
+    expect(row.metadata.recordsIncluded).toBe(inFile.length);
+    expect(row.metadata.sectionsIncluded).toBeGreaterThanOrEqual(2);
+    expect(row.metadata.recordsLeftOut).toBeGreaterThanOrEqual(1);
+    expectIdsAndCountsOnly(row);
+
+    const bytes = readFileSync(saved);
+    expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    const pages = await drawnLines(bytes);
+    const text = pages.map((lines) => words(lines));
+    const pageWith = (needle: string) => text.findIndex((t) => t.includes(needle));
+    const headingPage = (lines: string[]) => pages.findIndex((p) => p.length === lines.length && p.every((l, i) => l === lines[i]));
+
+    // The imported history is the oldest group: its heading opens the file,
+    // and its locked registo follows, printed as its own page shows it.
+    expect(pages[0]).toEqual(["Episódio", F.imported.specialty, "Importado"]);
+    expect(pageWith("Dorsalgia antiga, inventada")).toBe(1);
+    expect(pages[1]).toContain("Conteúdo importado");
+    expect(pages[1]).toContain("motivos");
+    // The app episode, under its own heading, with its locked registo.
+    const appHeading = headingPage(["Episódio", F.appEpisode.title]);
+    expect(appHeading).toBeGreaterThan(1);
+    expect(pageWith("Dor cervical em melhoria, inventada")).toBe(appHeading + 1);
+    // The episode's DRAFT is on no page.
+    expect(pageWith("Dor cervical ao acordar, inventada")).toBe(-1);
+    // Nothing here is annulled: no mark.
+    expect(pages.flat().filter((line) => line.includes("ANULADO"))).toEqual([]);
+  });
+});
