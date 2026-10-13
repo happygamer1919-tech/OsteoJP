@@ -1,10 +1,10 @@
 import "server-only";
-import { and, count, eq, gt, not, notExists, sql, type SQL } from "drizzle-orm";
+import { and, count, eq, gt, gte, lt, min, not, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { appointments, reminderClaims, reminderSweepPasses, type DbTx } from "@osteojp/db";
 
 import { withReminderTenantContext } from "./context";
-import { dispatchReminder, reminderWasHandedOver } from "./dispatch";
+import { REMINDER_LATE_LIMIT_MS, dispatchReminder, reminderWasHandedOver } from "./dispatch";
 import { REMINDER_OFFSETS, type ReminderOffset } from "./offsets";
 import { REMINDER_CLAIM_KIND, REMINDER_CLAIM_RELEASE_KIND } from "./reminder-claim";
 import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./reminder-population";
@@ -52,8 +52,24 @@ import { sweepRemindsNeverReminded } from "./sweep-mode";
  * minutes before this start's mark, by a job that woke at an older time. The
  * shadow's own rows count for neither as well: a shadow row sent nothing.
  *
- * At most SWEEP_MARK_CEILING marks a pass over every tenant, oldest mark
- * first, as in shadow.
+ * ONLY A MARK THAT FELL DUE SINCE THE SWEEP BEGAN TO RUN FOR THE TENANT
+ * (`readSweepFloor`): at or after the tenant's first heartbeat, of either
+ * mode. A reminder the sleeping job sent before claims were written has no
+ * claim and never will, and a pass that took it would send it a second time.
+ * The claim and the sweep ship together, so from the first heartbeat on every
+ * reminder that was sent has its claim. A tenant with no heartbeat yet is not
+ * swept: the pass writes its first heartbeat and starts from there.
+ *
+ * THE LATE RULE (owner, answer 8a). A mark is taken while the visit is ahead,
+ * however long ago it fell due, and the DISPATCHER decides: up to 3 hours
+ * late for an SMS and 12 for an email it may still go out; later it is
+ * recorded as too late (`mark_missed`), not sent, and never taken again. So a
+ * reminder that was held back is tried again only inside that limit.
+ *
+ * At most SWEEP_MARK_CEILING marks a pass over every tenant. THE MARKS THAT
+ * MAY STILL GO OUT COME FIRST, oldest first; the marks that are only to be
+ * recorded as too late come after them, so a backlog of those never delays a
+ * reminder that can still be sent.
  *
  * ==========================================================================
  * WHAT IT DOES WITH A MARK: ONE STEP, ONE CALL OF THE DISPATCHER
@@ -141,6 +157,18 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
   );
 }
 
+/**
+ * THE FLOOR: the tenant's first heartbeat, of either mode. Null when the sweep
+ * has never finished a pass for it. See the header.
+ */
+export async function readSweepFloor(tx: DbTx, tenantId: string): Promise<Date | null> {
+  const [row] = await tx
+    .select({ first: min(reminderSweepPasses.passAt) })
+    .from(reminderSweepPasses)
+    .where(eq(reminderSweepPasses.tenantId, tenantId));
+  return row?.first ?? null;
+}
+
 /** One mark a sending pass hands to the dispatcher. Ids and instants, no person. */
 export type SendableMark = {
   appointmentId: string;
@@ -169,13 +197,22 @@ export async function selectSendableMarks(
   args: { tenantId: string; now: Date; limit: number; includeNeverReminded: boolean },
 ): Promise<SendableMarks> {
   const limit = Math.max(0, Math.floor(args.limit));
-  const marks: SendableMark[] = [];
+  const floor = await readSweepFloor(tx, args.tenantId);
+  // No heartbeat yet: the sweep starts for this tenant with this pass.
+  if (floor === null) return { marks: [], due: 0, neverRemindedLeftOut: args.includeNeverReminded ? null : 0 };
+
+  const inTime: SendableMark[] = [];
+  const tooLate: SendableMark[] = [];
   let due = 0;
   let leftOut = 0;
 
   for (const offset of REMINDER_OFFSETS) {
+    const offsetMs = offset.minutesBefore * 60_000;
+    // The mark is at or after the floor: the start is at or after the floor plus the offset.
+    const sinceTheSweepBegan = gte(appointments.startsAt, new Date(floor.getTime() + offsetMs));
+    const dueSinceTheFloor = and(dueVisits(args.tenantId, offset, args.now), sinceTheSweepBegan);
     const selectable = and(
-      dueVisits(args.tenantId, offset, args.now),
+      dueSinceTheFloor,
       args.includeNeverReminded ? undefined : hasSchedulingEvent(tx),
       notSettledNorJustTried(tx, args.tenantId, offset, args.now),
     );
@@ -187,36 +224,42 @@ export async function selectSendableMarks(
       const [out] = await tx
         .select({ n: count() })
         .from(appointments)
-        .where(and(dueVisits(args.tenantId, offset, args.now), not(hasSchedulingEvent(tx))));
+        .where(and(dueSinceTheFloor, not(hasSchedulingEvent(tx))));
       leftOut += Number(out?.n ?? 0);
     }
 
     if (limit === 0) continue;
-    const rows = await tx
-      .select({ id: appointments.id, startsAt: appointments.startsAt })
-      .from(appointments)
-      .where(selectable)
-      .orderBy(appointments.startsAt, appointments.id)
-      .limit(limit);
-    for (const row of rows) {
-      marks.push({
-        appointmentId: row.id,
-        offsetId: offset.id,
-        channel: offset.channel,
-        startsAt: row.startsAt,
-        mark: new Date(row.startsAt.getTime() - offset.minutesBefore * 60_000),
-      });
+    // Too late is "the mark is more than the limit before now" (`reminderIsTooLate`),
+    // which on the start is: before now, less the limit, plus the offset.
+    const lateBefore = new Date(args.now.getTime() - REMINDER_LATE_LIMIT_MS[offset.channel] + offsetMs);
+    for (const [late, into] of [
+      [false, inTime],
+      [true, tooLate],
+    ] as const) {
+      const rows = await tx
+        .select({ id: appointments.id, startsAt: appointments.startsAt })
+        .from(appointments)
+        .where(and(selectable, late ? lt(appointments.startsAt, lateBefore) : gte(appointments.startsAt, lateBefore)))
+        .orderBy(appointments.startsAt, appointments.id)
+        .limit(limit);
+      for (const row of rows) {
+        into.push({
+          appointmentId: row.id,
+          offsetId: offset.id,
+          channel: offset.channel,
+          startsAt: row.startsAt,
+          mark: new Date(row.startsAt.getTime() - offsetMs),
+        });
+      }
     }
   }
 
-  marks.sort(
-    (a, b) =>
-      a.mark.getTime() - b.mark.getTime() ||
-      a.appointmentId.localeCompare(b.appointmentId) ||
-      a.offsetId.localeCompare(b.offsetId),
-  );
+  const oldestFirst = (a: SendableMark, b: SendableMark) =>
+    a.mark.getTime() - b.mark.getTime() ||
+    a.appointmentId.localeCompare(b.appointmentId) ||
+    a.offsetId.localeCompare(b.offsetId);
   return {
-    marks: marks.slice(0, limit),
+    marks: [...inTime.sort(oldestFirst), ...tooLate.sort(oldestFirst)].slice(0, limit),
     due,
     neverRemindedLeftOut: args.includeNeverReminded ? null : leftOut,
   };
@@ -243,12 +286,14 @@ export function sendingPassIncludesNeverReminded(env: Record<string, string | un
  *   sent        a message was handed to the provider. Final for this start.
  *   held_back   the dispatcher sent nothing and said why in the ledger. Its
  *               claim was given up; the mark is taken again in an hour.
+ *   too_late    the reminder's time passed longer ago than its channel allows.
+ *               Recorded in the ledger (`mark_missed`), not sent. Final.
  *   claim_held  another sender holds this reminder, or already sent it. No row.
  *   failed      the call threw: the claim could not be taken, or the provider
  *               refused. Logged with ids only. Whether it is taken again is the
  *               claim's to say (./dispatch.ts).
  */
-export type SweepMarkResult = "sent" | "held_back" | "claim_held" | "failed";
+export type SweepMarkResult = "sent" | "held_back" | "too_late" | "claim_held" | "failed";
 
 type Dispatch = typeof dispatchReminder;
 
@@ -275,6 +320,7 @@ export async function handOverMark(args: {
     });
     if (reminderWasHandedOver(outcome)) return "sent";
     if (!outcome.dispatched && outcome.reason === "claim_held") return "claim_held";
+    if (!outcome.dispatched && outcome.reason === "mark_missed") return "too_late";
     return "held_back";
   } catch (e) {
     alarm(
@@ -297,6 +343,8 @@ export type SweepSendTenantOutcome = {
   taken: number;
   sent: number;
   heldBack: number;
+  /** Recorded as too late, not sent. */
+  tooLate: number;
   claimHeld: number;
   failed: number;
   /** More was due than the pass was allowed to take. */
@@ -372,6 +420,7 @@ export async function sweepTenantSending(args: {
     taken: selection.marks.length,
     sent: 0,
     heldBack: 0,
+    tooLate: 0,
     claimHeld: 0,
     failed: 0,
     overCeiling: selection.due > selection.marks.length,
@@ -389,6 +438,7 @@ export async function sweepTenantSending(args: {
     );
     if (result === "sent") outcome.sent += 1;
     else if (result === "held_back") outcome.heldBack += 1;
+    else if (result === "too_late") outcome.tooLate += 1;
     else if (result === "claim_held") outcome.claimHeld += 1;
     else outcome.failed += 1;
   }
@@ -427,6 +477,7 @@ export type SweepSendPassOutcome = {
   taken: number;
   sent: number;
   heldBack: number;
+  tooLate: number;
   claimHeld: number;
   failedMarks: number;
   overCeiling: boolean;
@@ -477,6 +528,7 @@ export async function runReminderSweepSend(deps: SweepSendDeps): Promise<SweepSe
     taken: 0,
     sent: 0,
     heldBack: 0,
+    tooLate: 0,
     claimHeld: 0,
     failedMarks: 0,
     overCeiling: false,
@@ -490,6 +542,7 @@ export async function runReminderSweepSend(deps: SweepSendDeps): Promise<SweepSe
       outcome.taken += swept.taken;
       outcome.sent += swept.sent;
       outcome.heldBack += swept.heldBack;
+      outcome.tooLate += swept.tooLate;
       outcome.claimHeld += swept.claimHeld;
       outcome.failedMarks += swept.failed;
       outcome.overCeiling = outcome.overCeiling || swept.overCeiling;
@@ -502,7 +555,7 @@ export async function runReminderSweepSend(deps: SweepSendDeps): Promise<SweepSe
   log(
     `${SWEEP_LOG_PREFIX} mode=${outcome.mode} tenants=${outcome.tenants} failed=${outcome.failedTenants} ` +
       `due=${outcome.due} taken=${outcome.taken} sent=${outcome.sent} heldBack=${outcome.heldBack} ` +
-      `claimHeld=${outcome.claimHeld} failedMarks=${outcome.failedMarks}`,
+      `tooLate=${outcome.tooLate} claimHeld=${outcome.claimHeld} failedMarks=${outcome.failedMarks}`,
   );
   if (outcome.overCeiling) {
     alarm(`${SWEEP_LOG_PREFIX} OVER THE CEILING due=${outcome.due} taken=${outcome.taken} ceiling=${SWEEP_MARK_CEILING}`);

@@ -1701,6 +1701,8 @@
   "remindersLog.reason.missing_provider_config": "fornecedor de envio não configurado",
   "remindersLog.reason.invalid_recipient": "destinatário em falta",
   "remindersLog.reason.claim_held": "lembrete já enviado para esta data e hora",
+  "remindersLog.reason.mark_missed": "passou o prazo para enviar o lembrete",
+  "remindersLog.reason.not_due": "ainda não era a hora deste lembrete",
   "remindersLog.reason.unknown": "motivo não reconhecido ({code})",
   "remindersLog.filterAll": "Todos",
   "remindersLog.filterFailures": "Só falhas",

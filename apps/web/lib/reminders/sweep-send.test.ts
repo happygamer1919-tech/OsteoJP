@@ -81,6 +81,8 @@ describe("one mark, handed to the dispatcher", () => {
     [{ dispatched: false, reason: "unconfirmed" }, "held_back"],
     [{ dispatched: false, reason: "channels_off" }, "held_back"],
     [{ dispatched: false, reason: "not_found" }, "held_back"],
+    [{ dispatched: false, reason: "not_due", dueAt: "2027-02-10T11:00:00.000Z" }, "held_back"],
+    [{ dispatched: false, reason: "mark_missed" }, "too_late"],
     [{ dispatched: false, reason: "claim_held" }, "claim_held"],
   ] as const)("the dispatcher answers %o: %s", async (outcome, word) => {
     const dispatch = vi.fn(async () => outcome as unknown as DispatchOutcome);
@@ -118,7 +120,7 @@ function fakeSweep(dueByTenant: Record<string, number>) {
     // Of what it took: all but two sent, one held back, one failed (when it took that many).
     const failed = taken >= 2 ? 1 : 0;
     const heldBack = taken >= 2 ? 1 : 0;
-    return { due, taken, sent: taken - failed - heldBack, heldBack, claimHeld: 0, failed, overCeiling: due > taken };
+    return { due, taken, sent: taken - failed - heldBack, heldBack, tooLate: 0, claimHeld: 0, failed, overCeiling: due > taken };
   };
   return { calls, sweepTenant: sweepTenant as never };
 }
@@ -148,6 +150,7 @@ describe("one sending pass", () => {
       taken: 4,
       sent: 2,
       heldBack: 1,
+      tooLate: 0,
       claimHeld: 0,
       failedMarks: 1,
       overCeiling: false,
@@ -159,7 +162,7 @@ describe("one sending pass", () => {
       { tenantId: T2, limit: 47, passId: "01JRUNID" },
     ]);
     expect(lines).toEqual([
-      `${SWEEP_LOG_PREFIX} mode=send tenants=2 failed=0 due=4 taken=4 sent=2 heldBack=1 claimHeld=0 failedMarks=1`,
+      `${SWEEP_LOG_PREFIX} mode=send tenants=2 failed=0 due=4 taken=4 sent=2 heldBack=1 tooLate=0 claimHeld=0 failedMarks=1`,
     ]);
     // A mark that failed does not fail the pass.
     expect(alarms).toEqual([]);
@@ -219,7 +222,7 @@ describe("one sending pass", () => {
     const lines: string[] = [];
     const out = await runReminderSweepSend({ listTenantIds: async () => [], log: (l) => lines.push(l), alarm: () => {} });
     expect(out).toMatchObject({ mode: "send", tenants: 0, taken: 0, sent: 0 });
-    expect(lines).toEqual([`${SWEEP_LOG_PREFIX} mode=send tenants=0 failed=0 due=0 taken=0 sent=0 heldBack=0 claimHeld=0 failedMarks=0`]);
+    expect(lines).toEqual([`${SWEEP_LOG_PREFIX} mode=send tenants=0 failed=0 due=0 taken=0 sent=0 heldBack=0 tooLate=0 claimHeld=0 failedMarks=0`]);
   });
 
   it("the fixed words: the heartbeat's mode and the hour between two tries", () => {

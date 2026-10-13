@@ -90,6 +90,12 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
   /** Yesterday at a pinned hour: both marks are past, so a claim taken today is not early. */
   const START = lisbonDateTimeToUtc(addDays(todayInLisbon(), -1), "11:00");
   const OTHER_START = lisbonDateTimeToUtc(addDays(todayInLisbon(), -1), "15:00");
+  /**
+   * The clock the dispatcher is handed: five minutes after the 24 hour mark of
+   * a start. While the sweep is the sender a reminder is sent only inside its
+   * late limit, so "yesterday" has to be asked at yesterday's hour.
+   */
+  const justAfterMarkOf = (start: Date, hours = 24) => ({ now: new Date(start.getTime() - hours * 60 * 60_000 + 5 * 60_000) });
   /** Ten days out: far outside both offsets, so a claim taken today is early. */
   const FAR_START = lisbonDateTimeToUtc(addDays(todayInLisbon(), 10), "11:00");
 
@@ -208,9 +214,9 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
     });
   }
 
-  async function dispatch(appointmentId: string, taker: "run" | "sweep" = "sweep") {
+  async function dispatch(appointmentId: string, taker: "run" | "sweep" = "sweep", start: Date = START) {
     const { dispatchReminder } = await import("./dispatch");
-    return dispatchReminder(tenantA, appointmentId, "24h", "sms", taker);
+    return dispatchReminder(tenantA, appointmentId, "24h", "sms", taker, justAfterMarkOf(start));
   }
 
   beforeAll(async () => {
@@ -469,8 +475,8 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
       h.sendDelayMs = 100;
       const { dispatchReminder } = await import("./dispatch");
       const [sms, email] = await Promise.all([
-        dispatchReminder(tenantA, id, "24h", "sms", "sweep"),
-        dispatchReminder(tenantA, id, "48h", "email", "sweep"),
+        dispatchReminder(tenantA, id, "24h", "sms", "sweep", justAfterMarkOf(START)),
+        dispatchReminder(tenantA, id, "48h", "email", "sweep", justAfterMarkOf(START, 48)),
       ]);
       expect(sms).toMatchObject({ dispatched: true });
       expect(email).toMatchObject({ dispatched: true });
@@ -566,8 +572,8 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
     h.loadReminderData.mockResolvedValue(loaded(id));
     expect(await dispatch(id)).toMatchObject({ dispatched: true });
     h.loadReminderData.mockResolvedValue(loaded(id, { startsAt: OTHER_START }));
-    expect(await dispatch(id)).toMatchObject({ dispatched: true });
-    expect(await dispatch(id)).toEqual({ dispatched: false, reason: "claim_held" });
+    expect(await dispatch(id, "sweep", OTHER_START)).toMatchObject({ dispatched: true });
+    expect(await dispatch(id, "sweep", OTHER_START)).toEqual({ dispatched: false, reason: "claim_held" });
     expect((await claimsOf(id)).map((c) => c.starts_at)).toEqual([START.toISOString(), OTHER_START.toISOString()]);
     expect(h.sends).toEqual(["sms", "sms"]);
   });

@@ -170,6 +170,10 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   // the page; it is here because every reason the dispatcher can answer has
   // one, and a row that ever did carry it must not read as unrecognised.
   claim_held: s["remindersLog.reason.claim_held"],
+  // SWEEP-47. Written only while the sweep is the sender: a reminder whose
+  // time passed too long ago to send, and a call that came before its time.
+  mark_missed: s["remindersLog.reason.mark_missed"],
+  not_due: s["remindersLog.reason.not_due"],
 };
 
 export const KNOWN_SUPPRESSION_REASONS: readonly string[] = Object.keys(REASON_LABEL);

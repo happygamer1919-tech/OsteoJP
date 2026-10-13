@@ -39,7 +39,9 @@ import {
   recordDispatch,
 } from "./dispatch-ledger";
 import {
+  EARLY_CLAIM_MS,
   releaseReminderClaim,
+  reminderMark,
   takeReminderClaim,
   takeReminderClaimClosed,
   type ReminderClaimTaker,
@@ -213,6 +215,21 @@ export type DispatchOutcome =
          */
         | "claim_held"
         /**
+         * Reminders only, and only while the sweep is the sender (SWEEP-47).
+         * THE REMINDER'S TIME PASSED TOO LONG AGO: more than 3 hours for an
+         * SMS, more than 12 for an email (`REMINDER_LATE_LIMIT_MS`). It is
+         * recorded as too late and not sent, and it is final for this start:
+         * the claim taken for it is kept.
+         */
+        | "mark_missed"
+        /**
+         * Reminders only, and only while the sweep is the sender. The call
+         * came over ten minutes BEFORE the reminder's time: a sleeping job
+         * that woke at the old time of a visit since moved later. Nothing is
+         * sent and no claim is taken; `dueAt` says when the reminder is due.
+         */
+        | "not_due"
+        /**
          * Today's confirmation only. Building the reschedule link threw (its
          * base URL or its signing secret is not configured), so neither the
          * email nor the SMS was attempted. The error still propagates; this is
@@ -224,6 +241,8 @@ export type DispatchOutcome =
        * a length and a rule, never a recipient, a patient field or a code.
        */
       detail?: string;
+      /** For `not_due`: the instant the reminder falls due, as ISO text. */
+      dueAt?: string;
     }
   | { dispatched: true; channels: SendResult[] };
 
@@ -474,6 +493,29 @@ export type ReminderHandOver = {
    */
   takenAhead?: boolean;
 };
+
+/**
+ * SWEEP-47. HOW LATE A REMINDER MAY STILL GO OUT, by channel. Owner, answer 8a
+ * of 2026-10-12: an SMS up to 3 hours after its time, an email up to 12; later
+ * than that it is recorded as too late and not sent. Pinned by a test.
+ *
+ * Applied only while the sweep is the sender, to either taker, in the one
+ * place a reminder is sent from (`dispatchReminderClosed`).
+ */
+export const REMINDER_LATE_LIMIT_MS: Readonly<Record<"sms" | "email", number>> = {
+  sms: 3 * 60 * 60_000,
+  email: 12 * 60 * 60_000,
+};
+
+/**
+ * Is a reminder whose time was `mark` too late to send at `now`? More than the
+ * channel's limit after the mark. Exactly the limit is NOT too late.
+ *
+ * Pure: `now` is passed in.
+ */
+export function reminderIsTooLate(mark: Date, channel: "sms" | "email", now: Date): boolean {
+  return now.getTime() - mark.getTime() > REMINDER_LATE_LIMIT_MS[channel];
+}
 
 /**
  * SWEEP-47. How far one closed dispatch got, written by the two places that
@@ -846,10 +888,16 @@ async function dispatchReminderInner(
  * ==========================================================================
  * WHAT BECOMES OF THE CLAIM, FOR EVERY WAY THE CALL CAN END
  * ==========================================================================
+ *   no claim     NOT DUE: the call came over ten minutes before the reminder's
+ *                time (`not_due`). Nothing is taken, so the pass can take it
+ *                when it is due. The day's last pass, which takes a mark up to
+ *                75 minutes ahead on purpose, says so and is let through.
  *   no claim     the claim could not be read or written: `takeReminderClaimClosed`
  *                throws, nothing is sent and nothing is recorded. Fail closed.
  *   held         a live claim of this reminder exists for this start: sent,
  *                being sent, or of unknown outcome. `claim_held`, no row.
+ *   KEPT         TOO LATE: the reminder's time passed longer ago than its
+ *                channel allows (`mark_missed`). Recorded, not sent, and final.
  *   KEPT         a message was handed to the provider. Final for this start:
  *                the claim is never released, so no sender takes it again.
  *   KEPT         the transport threw and its answer is not on the list of
@@ -876,6 +924,13 @@ async function dispatchReminderClosed(
   claimStart: Date,
   handOver: ReminderHandOver,
 ): Promise<DispatchOutcome> {
+  const now = handOver.now ?? new Date();
+  // Null for an offset this build does not know: no time, so neither rule of
+  // time applies, and the gates below refuse it as they always did.
+  const mark = reminderMark(claimStart, offsetId);
+  if (mark !== null && handOver.takenAhead !== true && mark.getTime() - now.getTime() > EARLY_CLAIM_MS) {
+    return { dispatched: false, reason: "not_due", dueAt: mark.toISOString() };
+  }
   const claim = await takeReminderClaimClosed({
     tenantId,
     appointmentId,
@@ -887,6 +942,12 @@ async function dispatchReminderClosed(
     ...(handOver.now ? { now: handOver.now } : {}),
   });
   if (claim.held) return { dispatched: false, reason: "claim_held" };
+  // THE LATE RULE, after the claim and before every gate, so that "too late"
+  // is the claim's last word for this start: it is kept, and no pass and no
+  // sleeping job takes this reminder again.
+  if (mark !== null && reminderIsTooLate(mark, channel as "sms" | "email", now)) {
+    return { dispatched: false, reason: "mark_missed" };
+  }
   const release = () => releaseReminderClaim({ tenantId, appointmentId, offsetId, channel, claimId: claim.claimId });
   const attempt: SendAttempt = { handOverStarted: false };
   let outcome: DispatchOutcome;

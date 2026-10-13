@@ -23,6 +23,14 @@
  *   6. THE SECOND SWITCH: a visit that never had a reminder is taken only
  *      while REMINDERS_SWEEP_NEVER_REMINDED is exactly `on`.
  *   7. THE CEILING, TWO TENANTS, and a mark that fails does not stop the next.
+ *   8. THE LATE RULE. An SMS up to 3 hours after its time and an email up to
+ *      12 are still sent; a minute later each is recorded as too late, once,
+ *      and never sent. A reminder held back until its limit ends the same
+ *      way. The marks that can still go out are taken before the ones that
+ *      are only to be recorded.
+ *   9. THE FLOOR. A pass takes no mark that fell due before the tenant's
+ *      first heartbeat, and a tenant with no heartbeat is not swept at all:
+ *      the pass writes the first one and starts from there.
  *
  * WHY A DATABASE. The selection reads `appointments`, the audit trail and
  * `reminder_claims` under the job's own claims, and "sent once" is the claim's
@@ -248,6 +256,13 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
         values (${t.patient}, ${tenant}, 'Paciente Sweep', '912345678', ${"p-" + t.patient.slice(0, 8) + "@p.test"}, true, true)`);
     }
     h.tenants = [tenantA, tenantB];
+    // THE FLOOR: the sweep has been running for both tenants since long before
+    // any mark an arm seeds. (The last arm removes one tenant's to prove the rule.)
+    for (const tenant of [tenantA, tenantB]) {
+      await sql.execute(raw`insert into reminder_sweep_passes
+        (tenant_id, pass_id, mode, pass_at, due_count, recorded_count, over_ceiling, excluded_count)
+        values (${tenant}, 'floor-seed', 'shadow', '2026-01-05T08:00:00Z', 0, 0, false, 0)`);
+    }
   });
 
   afterAll(async () => {
@@ -356,7 +371,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     const cancelled = await smsVisit(now, { status: "cancelled" });
 
     const first = await pass(tenantA, now, { passId: "sent-once-1" });
-    expect(first).toEqual({ due: 2, taken: 2, sent: 2, heldBack: 0, claimHeld: 0, failed: 0, overCeiling: false });
+    expect(first).toEqual({ due: 2, taken: 2, sent: 2, heldBack: 0, tooLate: 0, claimHeld: 0, failed: 0, overCeiling: false });
     expect([...h.sends].sort()).toEqual([`email:${email.id}`, `sms:${sms.id}`].sort());
     expect(await claimsOf(sms.id)).toEqual([
       { offset_id: "24h", channel: "sms", taker: "sweep", early: false, starts_at: sms.start.toISOString(), released: false },
@@ -380,8 +395,9 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     }
     // The sleeping job wakes after the pass: held, and it leaves nothing.
     const { dispatchReminder } = await import("./dispatch");
-    expect(await dispatchReminder(tenantA, sms.id, "24h", "sms")).toEqual({ dispatched: false, reason: "claim_held" });
-    expect(await dispatchReminder(tenantA, email.id, "48h", "email")).toEqual({ dispatched: false, reason: "claim_held" });
+    const woke = { now: plus(now, 20) };
+    expect(await dispatchReminder(tenantA, sms.id, "24h", "sms", "run", woke)).toEqual({ dispatched: false, reason: "claim_held" });
+    expect(await dispatchReminder(tenantA, email.id, "48h", "email", "run", woke)).toEqual({ dispatched: false, reason: "claim_held" });
     expect(h.sends).toHaveLength(2);
     expect(await claimsOf(sms.id)).toHaveLength(1);
     expect(await ledgerOf(sms.id)).toEqual(["reminder.24h.sms:sent:"]);
@@ -585,6 +601,123 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     expect(h.sends[3]).toBe(`sms:${b1.id}`);
     const [claim] = await rows(raw`select tenant_id::text as tenant_id from reminder_claims where appointment_id = ${b1.id}`);
     expect(claim!.tenant_id).toBe(tenantB);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 8. The late rule                                                  */
+  /* ---------------------------------------------------------------- */
+
+  /** A visit whose only selectable mark is the 24 hour SMS, due `minutesAgo` before `now`. */
+  const smsDue = (now: Date, minutesAgo: number, over: { origin?: string } = {}) => smsVisit(now, { startIn: 24 * H - minutesAgo, ...over });
+  /** A visit whose only DUE mark is the 48 hour email, due `minutesAgo` before `now`. */
+  const emailDue = (now: Date, minutesAgo: number) => visit({ now, startIn: 48 * H - minutesAgo });
+
+  it("THE LATE RULE: 3 hours for an SMS and 12 for an email are still sent; a minute later each is recorded as too late, once, and never sent", async () => {
+    const now = clockOf(7);
+    const v = {
+      smsAtLimit: await smsDue(now, 3 * H),
+      smsLate: await smsDue(now, 3 * H + 1),
+      emailAtLimit: await emailDue(now, 12 * H),
+      emailLate: await emailDue(now, 12 * H + 1),
+    };
+
+    const out = await pass(tenantA, now);
+    expect(out).toEqual({ due: 4, taken: 4, sent: 2, heldBack: 0, tooLate: 2, claimHeld: 0, failed: 0, overCeiling: false });
+    expect([...h.sends].sort()).toEqual([`email:${v.emailAtLimit.id}`, `sms:${v.smsAtLimit.id}`].sort());
+    expect(await ledgerOf(v.smsAtLimit.id)).toEqual(["reminder.24h.sms:sent:"]);
+    expect(await ledgerOf(v.emailAtLimit.id)).toEqual(["reminder.48h.email:sent:"]);
+    // TOO LATE: one row that says so, and a claim that is KEPT, so it is final.
+    expect(await ledgerOf(v.smsLate.id)).toEqual(["reminder.24h.sms:suppressed:mark_missed"]);
+    expect(await ledgerOf(v.emailLate.id)).toEqual(["reminder.48h.email:suppressed:mark_missed"]);
+    expect((await claimsOf(v.smsLate.id)).map((c) => [c.taker, c.released])).toEqual([["sweep", false]]);
+    expect((await claimsOf(v.emailLate.id)).map((c) => [c.taker, c.released])).toEqual([["sweep", false]]);
+
+    // Never again: not by a later pass, not by a sleeping job.
+    for (const later of [15, 61, 5 * H]) {
+      expect(await pass(tenantA, plus(now, later))).toMatchObject({ due: 0, taken: 0 });
+    }
+    const { dispatchReminder } = await import("./dispatch");
+    expect(await dispatchReminder(tenantA, v.smsLate.id, "24h", "sms", "run", { now: plus(now, 20) })).toEqual({
+      dispatched: false,
+      reason: "claim_held",
+    });
+    expect(h.sends).toHaveLength(2);
+    expect(await ledgerOf(v.smsLate.id)).toHaveLength(1);
+  });
+
+  it("a reminder HELD BACK until its limit runs out is then recorded as too late, and putting the visit right afterwards sends nothing", async () => {
+    const now = clockOf(8);
+    // An online request nobody accepted, its SMS due 2 hours 50 minutes ago.
+    const v = await smsDue(now, 2 * H + 50, { origin: "patient_portal" });
+
+    expect(await pass(tenantA, now)).toMatchObject({ taken: 1, heldBack: 1, tooLate: 0 });
+    // 20 minutes on it is 3 hours 10 minutes late.
+    expect(await pass(tenantA, plus(now, 20))).toMatchObject({ taken: 1, heldBack: 0, tooLate: 1 });
+    expect(await ledgerOf(v.id)).toEqual(["reminder.24h.sms:suppressed:unconfirmed", "reminder.24h.sms:suppressed:mark_missed"]);
+    expect((await claimsOf(v.id)).map((c) => c.released)).toEqual([true, false]);
+
+    await sql.execute(raw`update appointments set status = 'confirmed' where id = ${v.id}`);
+    for (const later of [40, 2 * H]) {
+      expect(await pass(tenantA, plus(now, later))).toMatchObject({ due: 0, taken: 0 });
+    }
+    expect(h.sends).toEqual([]);
+  });
+
+  it("under the ceiling the marks that can still go out are taken BEFORE the ones that are only too late, though those are older", async () => {
+    const now = clockOf(9);
+    const late1 = await smsDue(now, 5 * H);
+    const late2 = await smsDue(now, 4 * H);
+    const inTime1 = await smsDue(now, 2 * H);
+    const inTime2 = await smsDue(now, 1 * H);
+
+    const first = await pass(tenantA, now, { limit: 2 });
+    expect(first).toMatchObject({ due: 4, taken: 2, sent: 2, tooLate: 0, overCeiling: true });
+    expect(h.sends).toEqual([`sms:${inTime1.id}`, `sms:${inTime2.id}`]);
+    expect(await ledgerOf(late1.id)).toEqual([]);
+
+    const second = await pass(tenantA, plus(now, 15), { limit: 2 });
+    expect(second).toMatchObject({ due: 2, taken: 2, sent: 0, tooLate: 2, overCeiling: false });
+    expect(await ledgerOf(late1.id)).toEqual(["reminder.24h.sms:suppressed:mark_missed"]);
+    expect(await ledgerOf(late2.id)).toEqual(["reminder.24h.sms:suppressed:mark_missed"]);
+    expect(h.sends).toHaveLength(2);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 9. The floor                                                      */
+  /* ---------------------------------------------------------------- */
+
+  it("THE FLOOR: a tenant with no heartbeat is not swept; its first pass writes one, and only marks due from then on are ever taken", async () => {
+    const now = clockOf(10);
+    // Tenant B as a tenant the sweep has never run for.
+    await sql.execute(raw`delete from reminder_sweep_passes where tenant_id = ${tenantB}`);
+    // Its reminder fell due 30 minutes ago. The sleeping job may have sent it
+    // before claims were written: there is no claim to say either way.
+    const before = await smsVisit(now, { tenant: tenantB });
+
+    const first = await pass(tenantB, now, { passId: "floor-1" });
+    expect(first).toMatchObject({ due: 0, taken: 0, sent: 0 });
+    expect(await heartbeatsOf("floor-1")).toEqual([
+      { tenant_id: tenantB, mode: "send", due_count: 0, recorded_count: 0, over_ceiling: false, excluded_count: 0, pass_at: now.toISOString() },
+    ]);
+
+    // A reminder that falls due 10 minutes AFTER that first heartbeat.
+    const after = await smsVisit(now, { tenant: tenantB, startIn: 24 * H + 10 });
+    // And one that falls due at the very instant of the floor: taken.
+    const atFloor = await smsVisit(now, { tenant: tenantB, startIn: 24 * H });
+
+    const second = await pass(tenantB, plus(now, 15));
+    expect(second).toMatchObject({ due: 2, taken: 2, sent: 2 });
+    expect([...h.sends].sort()).toEqual([`sms:${after.id}`, `sms:${atFloor.id}`].sort());
+    // The one from before the floor is never taken, at any later pass.
+    for (const later of [30, 2 * H]) {
+      expect(await pass(tenantB, plus(now, later))).toMatchObject({ due: 0, taken: 0 });
+    }
+    expect(await claimsOf(before.id)).toEqual([]);
+    expect(await ledgerOf(before.id)).toEqual([]);
+    // CONTROL: tenant A, whose floor is long past, takes the same kind of mark.
+    const control = await smsVisit(now);
+    expect(await pass(tenantA, now)).toMatchObject({ due: 1, taken: 1, sent: 1 });
+    expect(h.sends).toContain(`sms:${control.id}`);
   });
 
   it("nothing a pass writes is in the audit trail: the two tenants hold their booking rows and nothing else", async () => {
