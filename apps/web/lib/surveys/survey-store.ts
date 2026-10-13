@@ -4,18 +4,18 @@ import { tenants } from "@osteojp/db";
 import { withReminderTenantContext } from "@/lib/reminders/context";
 import { hashSurveyCode, isWellFormedSurveyCode } from "./survey-code";
 
-// THE SURVEY PAGE'S DATABASE HALF (SAT-01): the read and the answer.
+// THE SURVEY PAGE'S DATABASE HALF (SAT-01): the read, the answer and the
+// opt-out.
 //
 // ==========================================================================
 // WHO MAY CALL THE DOORS: THE SERVER'S OWN SESSION AND NO OTHER
 // ==========================================================================
 // Migration 0102 revokes its three tables from every application role. The page
 // reaches them only through SECURITY DEFINER doors granted to `authenticated`:
-// `resolve_survey_code` (the read) and `submit_survey_response` (the answer).
-// The third door, `opt_out_survey`, is not called here: the opt-out button is a
-// later pull request.
+// `resolve_survey_code` (the read), `submit_survey_response` (the answer) and
+// `opt_out_survey` (the opt-out, S8).
 //
-// Both doors answer ONLY a session that carries a tenant and neither a user nor
+// The doors answer ONLY a session that carries a tenant and neither a user nor
 // a patient claim. That is what `withReminderTenantContext` makes on the
 // application's own connection, and it is why this file never touches the
 // visitor's session: a visitor who is also signed in as staff, or in the
@@ -120,6 +120,39 @@ export async function submitSurveyResponse(args: {
       sql`select public.submit_survey_response(
             ${codeHash}, ${resolved.tenantId}::uuid, ${nps}::integer, ${rating}::integer,
             ${comment}::text, ${contactConsent}::boolean, ${consentVersion}::text) as recorded`,
+    ),
+  );
+  const first = rowsOf(result)[0] as { recorded?: unknown } | undefined;
+  return first?.recorded === true ? "recorded" : "refused";
+}
+
+/**
+ * Stop the surveys for the patient a code was sent to. `recorded`, or `refused`
+ * with nothing written.
+ *
+ * THE DOOR WRITES, AND NOTHING ELSE HERE DOES. `opt_out_survey` locks the send,
+ * asks the question the read asks, and in one transaction turns that patient's
+ * survey switch off, consumes the send as an opt-out and writes its audit row
+ * (the switch's own audit row is written by the database beside it). This file
+ * never learns who the patient is: the door finds them from the send.
+ *
+ * ONLY THE SURVEY SWITCH MOVES. The two reminder switches are not the door's to
+ * touch, and the page says so (text 20).
+ *
+ * `refused` SAYS NOTHING ABOUT WHY, and IT THROWS on a database error, both as
+ * `submitSurveyResponse` does and for the same reasons.
+ */
+export async function optOutSurvey(args: {
+  code: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<"recorded" | "refused"> {
+  const resolved = await resolveSurveyCode({ code: args.code, env: args.env });
+  if (!resolved) return "refused";
+
+  const codeHash = hashSurveyCode(args.code, args.env ?? process.env);
+  const result = await withReminderTenantContext(resolved.tenantId, async (tx) =>
+    tx.execute(
+      sql`select public.opt_out_survey(${codeHash}, ${resolved.tenantId}::uuid) as recorded`,
     ),
   );
   const first = rowsOf(result)[0] as { recorded?: unknown } | undefined;
