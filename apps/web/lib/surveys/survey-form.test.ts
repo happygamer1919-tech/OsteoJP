@@ -113,6 +113,13 @@ describe("the comment's length is the database's: 1000 characters", () => {
     }
   });
 
+  it("refuses a comment over the raw bound as too long, and still accepts 1000 line breaks sent as CR LF", () => {
+    const huge = parseSurveyForm(form({ comment: "a".repeat(4001) }));
+    expect(huge.ok).toBe(false);
+    if (!huge.ok) expect(huge.state.errors.comment).toBe(true);
+    expect(parseSurveyForm(form({ comment: "\r\n".repeat(1000) })).ok).toBe(true);
+  });
+
   it("counts characters as Postgres does, so 1000 accented or astral characters pass", () => {
     expect(parseSurveyForm(form({ comment: "ã".repeat(1000) })).ok).toBe(true);
     // One code point, two UTF-16 units: `.length` would call this 2000.

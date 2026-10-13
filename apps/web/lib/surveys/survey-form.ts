@@ -74,7 +74,13 @@ export function parseSurveyForm(formData: FormData): ParsedSurveyForm {
     return typeof v === "string" ? v : "";
   };
 
-  const comment = normaliseComment(text("comment"));
+  // A comment over the raw bound is too long whatever it holds, and is not
+  // normalised or counted: an incomplete answer is read before the limiter, so
+  // this is the only bound on the work one post can ask for. 1000 characters
+  // are at most 2000 UTF-16 units, and the bound leaves room for CR LF pairs.
+  const rawComment = text("comment");
+  const commentOverRawBound = rawComment.length > SURVEY_COMMENT_MAX * 4;
+  const comment = commentOverRawBound ? "" : normaliseComment(rawComment);
   const nps = choiceOf(text("nps"), SURVEY_NPS_VALUES);
   const rating = choiceOf(text("rating"), SURVEY_RATING_VALUES);
   const consentVersion = formData.get("consentVersion");
@@ -82,7 +88,7 @@ export function parseSurveyForm(formData: FormData): ParsedSurveyForm {
   const errors: SurveyFormState["errors"] = {};
   if (nps === null) errors.nps = true;
   if (rating === null) errors.rating = true;
-  if (characterCount(comment) > SURVEY_COMMENT_MAX) errors.comment = true;
+  if (commentOverRawBound || characterCount(comment) > SURVEY_COMMENT_MAX) errors.comment = true;
   // A label the page never rendered is not a field the visitor can correct. It
   // is reported as the save that did not happen, and nothing is written.
   if (!isSurveyConsentVersion(consentVersion)) errors.save = true;
