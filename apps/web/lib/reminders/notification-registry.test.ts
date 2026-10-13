@@ -111,8 +111,8 @@ describe("registry contents", () => {
     // -> 16 total, 11 approved (S-1004-A, 2026-10-04): the booking-approved
     // SMS, strategy's copy, again a NEW body arriving approved.
     // -> 18 total, 13 approved (SAT-01): the satisfaction survey's email and
-    // SMS, two NEW bodies arriving approved (JP, 2026-10-02). Nothing sends
-    // them yet, and the unapproved set below is unchanged.
+    // SMS, two NEW bodies arriving approved (JP, 2026-10-02). The unapproved
+    // set below is unchanged.
     expect(REMINDER_TEMPLATES).toHaveLength(18);
     expect(APPROVED_TEMPLATES).toHaveLength(13);
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
@@ -292,8 +292,7 @@ describe("registry contents", () => {
       "reply_ack.cancelled.sms",
       "reply_ack.confirmed.sms",
       "reply_ack.review.sms",
-      // SAT-01: the satisfaction survey, a sixth kind, registered before
-      // anything sends it.
+      // SAT-01: the satisfaction survey, a sixth kind.
       "survey.email",
       "survey.sms",
     ]);

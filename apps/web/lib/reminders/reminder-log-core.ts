@@ -31,6 +31,7 @@ export type ReminderLogKind =
   | "confirmation"
   | "follow_up"
   | "no_show"
+  | "survey"
   | "unknown";
 
 export function kindOf(templateId: string): ReminderLogKind {
@@ -48,6 +49,8 @@ export function kindOf(templateId: string): ReminderLogKind {
   if (/^booking_approved\.(sms|email)$/.test(templateId)) return "confirmation";
   if (/^follow_up\.(sms|email)$/.test(templateId)) return "follow_up";
   if (/^no_show\.(sms|email)$/.test(templateId)) return "no_show";
+  // SAT-01: the satisfaction survey, sent in the follow-up's place.
+  if (/^survey\.(sms|email)$/.test(templateId)) return "survey";
   return "unknown";
 }
 
@@ -65,6 +68,8 @@ export function kindLabel(kind: ReminderLogKind, templateId: string): string {
       return s["remindersLog.kindFollowUp"];
     case "no_show":
       return s["remindersLog.kindNoShow"];
+    case "survey":
+      return s["remindersLog.kindSurvey"];
     case "unknown":
       return s["remindersLog.kindUnknown"].replace("{id}", templateId);
   }
@@ -84,7 +89,10 @@ export function kindLabel(kind: ReminderLogKind, templateId: string): string {
  *
  *   reminder 24h / 48h   appointment start minus the offset (REMINDER_OFFSETS,
  *                        the same table `computeDueReminders` reads)
- *   follow-up            appointment end plus 24 h (sendFollowUpNotification)
+ *   follow-up, survey    appointment end plus 24 h (sendFollowUpNotification).
+ *                        The only survey there is today is the automatic one; a
+ *                        survey sent by staff has no due time, and the change
+ *                        that adds it has to tell the two apart here
  *   confirmation, no-show  sent at once on the event; there is no due time
  *
  * WHAT IT CANNOT KNOW: an appointment rescheduled after its reminder went out
@@ -114,6 +122,7 @@ export function scheduledFor(
     case "reminder_48h":
       return before("48h");
     case "follow_up":
+    case "survey":
       return { kind: "at", at: new Date(appointment.endsAt.getTime() + FOLLOW_UP_DELAY_MS) };
     case "confirmation":
     case "no_show":
@@ -165,6 +174,12 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   template_unapproved: s["remindersLog.reason.template_unapproved"],
   missing_provider_config: s["remindersLog.reason.missing_provider_config"],
   invalid_recipient: s["remindersLog.reason.invalid_recipient"],
+  // SAT-01. The satisfaction survey's own reasons (dispatchSurvey).
+  survey_canary_not_listed: s["remindersLog.reason.survey_canary_not_listed"],
+  survey_cooldown: s["remindersLog.reason.survey_cooldown"],
+  survey_not_eligible: s["remindersLog.reason.survey_not_eligible"],
+  survey_not_allowed: s["remindersLog.reason.survey_not_allowed"],
+  survey_issue_error: s["remindersLog.reason.survey_issue_error"],
 };
 
 export const KNOWN_SUPPRESSION_REASONS: readonly string[] = Object.keys(REASON_LABEL);

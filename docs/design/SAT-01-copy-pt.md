@@ -23,6 +23,15 @@ avaliação de satisfação. Nada está construído.
 * **Textos 82 e 83, novos para a equipa:** escritos a 8 de outubro de 2026, no
   mesmo estilo, para a eliminação definitiva de um paciente (secção L). Não são
   lidos por pacientes.
+* **Alterado a 13 de outubro de 2026 por decisão do proprietário: a data
+  "válida até".** A ligação deixa de funcionar exatamente 14 dias depois do
+  envio, ao minuto, por isso deixa de funcionar a meio de um dia. A data que
+  uma pessoa lê em "válida até" é o dia anterior a esse, contado pelo
+  calendário de Lisboa: o último dia em que a ligação funciona o dia inteiro.
+  Exemplo: envio a 24 de maio, a ligação deixa de funcionar a 7 de junho e a
+  mensagem diz "6 de junho de 2026". Aplica-se a `{{survey_expiry_date}}`
+  (texto 2) e a `{data_fim}` (texto 73). Os textos não mudam, muda só a data
+  que os preenche. O prazo de 14 dias não muda.
 * **Inglês:** a secção "English" no fim deste ficheiro é traduzida dos textos
   em português; não foi revista em separado (S10).
 
@@ -34,10 +43,14 @@ avaliação de satisfação. Nada está construído.
   a data da consulta por extenso (por exemplo "23 de maio de 2026"),
   `{data}` a data curta (por exemplo "23/05"), `{{survey_link}}` a ligação
   pessoal, `{{survey_expiry_date}}` o último dia em que a ligação funciona
-  (14 dias depois do envio) e `{{clinic_phone}}` o telefone da clínica.
+  o dia inteiro e `{{clinic_phone}}` o telefone da clínica. A ligação deixa de
+  funcionar 14 dias depois do envio, ao minuto; `{{survey_expiry_date}}` é o
+  dia anterior a esse, no calendário de Lisboa (decisão do proprietário de 13
+  de outubro de 2026).
   Nos textos da equipa (61 a 81), `{data}`, `{data_envio}` e `{data_fim}` são
   datas no formato 23/05/2026 e `{nome}` é o nome do membro da equipa que
-  enviou.
+  enviou. `{data_fim}` segue a mesma regra de `{{survey_expiry_date}}`: é o
+  dia anterior àquele em que a ligação deixa de funcionar.
 * `[endereço]` é o endereço do site onde a página fica alojada; é o mesmo que já
   aparece na ligação "Confirmar" dos lembretes por SMS.
 * O1 está ligado (S8): o paciente pode recusar novas avaliações na própria
@@ -58,7 +71,10 @@ paciente, pelo mesmo canal (S6). Não está sujeito à regra dos 60 dias. Não e
 se o paciente tiver recusado as avaliações, se não houver canal autorizado, ou
 enquanto uma ligação enviada antes ainda for válida e não tiver resposta.
 
-A ligação funciona uma vez e durante 14 dias depois do envio. Esta mensagem
+A ligação funciona uma vez e durante 14 dias depois do envio. A data "válida
+até" que a mensagem mostra é o último dia inteiro desse prazo, ou seja, o dia
+anterior àquele em que a ligação deixa de funcionar (decisão do proprietário de
+13 de outubro de 2026). Esta mensagem
 substitui a antiga mensagem "Obrigado pela sua visita / Marcar próxima
 consulta", que está desligada desde 4 de setembro.
 
@@ -103,8 +119,10 @@ indique-o na mesma ligação ou contacte a clínica: {{clinic_phone}}".
 questionários, contacte a clínica: {{clinic_phone}}".~~ Já não se aplica: O1
 está ligado (S8).
 
-Exemplo, com dados inventados (envio a 24 de maio, por isso a ligação vale até
-7 de junho):
+Exemplo, com dados inventados (envio a 24 de maio, por isso a ligação deixa de
+funcionar a 7 de junho, à hora do envio, e a mensagem diz 6 de junho, o último
+dia em que funciona o dia inteiro; decisão do proprietário de 13 de outubro de
+2026):
 
 > Olá Ana,
 >
@@ -112,7 +130,7 @@ Exemplo, com dados inventados (envio a 24 de maio, por isso a ligação vale at�
 >
 > Responder: https://[endereço]/s/AB12CD34
 >
-> A ligação é pessoal, só pode ser usada uma vez e é válida até 7 de junho de 2026.
+> A ligação é pessoal, só pode ser usada uma vez e é válida até 6 de junho de 2026.
 >
 > Se não pretender receber estas avaliações, indique-o na mesma ligação ou contacte a clínica: [telefone da clínica]
 >
@@ -573,6 +591,11 @@ Onde: junto do botão 61, que fica desativado. Aparece um motivo de cada vez.
 **73. Ligação ainda válida e sem resposta**
 
 > Indisponível: a avaliação enviada a {data_envio} ainda não foi respondida. A ligação é válida até {data_fim}.
+
+`{data_fim}` é o dia anterior àquele em que a ligação deixa de funcionar, no
+calendário de Lisboa, como no email (decisão do proprietário de 13 de outubro
+de 2026). Exemplo: enviada a 24/05/2026, a ligação deixa de funcionar a
+07/06/2026 e a linha diz 06/06/2026.
 
 ## J. Estado do envio (novo, S5)
 

@@ -116,6 +116,9 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
   "lib/patients/actions.ts#deleteNoteAction#getPatient:write": {
     calls: 1, verdict: "write", why: "Deletes a note.",
   },
+  "lib/patients/survey-switch.ts#setPatientSurveySwitch#getPatient:write": {
+    calls: 1, verdict: "write", why: "SAT-01 (S8): sets the patient's survey switch. A write of the patients row, so the narrow scope; a therapist is not offered the switch at all.",
+  },
   "app/patients/[id]/edit/page.tsx#EditPatientPage#getPatient:write": {
     calls: 1, verdict: "write", why: "The edit form; patients_update (0047) is not widened by 0096 either.",
   },

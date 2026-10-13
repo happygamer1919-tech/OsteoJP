@@ -4,6 +4,21 @@ import { describe, expect, it, vi } from "vitest";
 // test runner (we only assert the declarative supersession config here).
 vi.mock("server-only", () => ({}));
 
+// The follow-up function's handler is driven below. Its dispatch is replaced by
+// a recorder: what the dispatch decides is ../survey-dispatch.test.ts, and what
+// this file holds is which dispatch the step calls, and with what.
+const d = vi.hoisted(() => ({
+  dispatchSurvey: vi.fn(async (): Promise<Record<string, unknown>> => ({ dispatched: false, reason: "status" })),
+  dispatchFollowUp: vi.fn(),
+}));
+vi.mock("../dispatch", () => ({
+  dispatchReminder: vi.fn(),
+  dispatchConfirmation: vi.fn(),
+  dispatchNoShow: vi.fn(),
+  dispatchFollowUp: d.dispatchFollowUp,
+  dispatchSurvey: d.dispatchSurvey,
+}));
+
 import {
   CONFIRMATION_IDEMPOTENCY_KEY,
   CONFIRMATION_TRIGGER_FILTER,
@@ -16,8 +31,14 @@ import {
   scheduleAppointmentReminders,
   sendAppointmentConfirmation,
   sendAppointmentReminder,
+  sendFollowUpNotification,
+  sendNoShowNotification,
 } from "./functions";
-import { EVENT_APPOINTMENT_SCHEDULED, EVENT_REMINDER_DUE } from "./client";
+import {
+  EVENT_APPOINTMENT_COMPLETED,
+  EVENT_APPOINTMENT_SCHEDULED,
+  EVENT_REMINDER_DUE,
+} from "./client";
 
 describe("reminder reschedule supersession config", () => {
   it("cancels the in-flight reminder run on a new appointment/scheduled event", () => {
@@ -203,5 +224,81 @@ describe("a re-save never loses or doubles a reminder (INC 2026-10-07)", () => {
     const withoutSave = (e: { data: Record<string, unknown> }) =>
       `${e.data.appointmentId}:${e.data.offsetId}:${e.data.channel}:${e.data.sendAt}`;
     expect(sent.slice(2).map(withoutSave)).toEqual(sent.slice(0, 2).map(withoutSave));
+  });
+});
+
+/**
+ * SAT-01: THE SURVEY RIDES THE FOLLOW-UP'S FUNCTION, AND INNGEST IS TOLD NOTHING NEW.
+ *
+ * The Inngest app is synced by hand, so a changed option is not live at merge,
+ * and a changed id or key would orphan every run asleep today (an appointment
+ * concluded yesterday is one). The survey therefore changes only what the
+ * existing step calls. Each assertion below is one thing Inngest stores.
+ */
+describe("the 24-hour function is the one Inngest already has (SAT-01)", () => {
+  it("its id and its idempotency key are unchanged", () => {
+    expect(sendFollowUpNotification.id()).toBe("send-follow-up-notification");
+    expect(authoredOptions(sendFollowUpNotification).idempotency).toBe(
+      'event.data.appointmentId + ":follow_up"',
+    );
+  });
+
+  it("it has exactly the three options it had: id, trigger and key", () => {
+    const opts = authoredOptions(sendFollowUpNotification);
+    expect(Object.keys(opts).sort()).toEqual(["id", "idempotency", "triggers"]);
+    expect(opts.triggers).toEqual([{ event: EVENT_APPOINTMENT_COMPLETED }]);
+  });
+
+  it("no function was added, and the other four keep their ids", () => {
+    expect(functions).toHaveLength(5);
+    expect(functions.map((f) => f.id())).toEqual([
+      "schedule-appointment-reminders",
+      "send-appointment-reminder",
+      "send-appointment-confirmation",
+      "send-follow-up-notification",
+      "send-no-show-notification",
+    ]);
+    expect(Object.keys(authoredOptions(sendNoShowNotification)).sort()).toEqual([
+      "id",
+      "idempotency",
+      "triggers",
+    ]);
+  });
+
+  it("the handler sleeps to the same instant under the same step names, then asks the survey dispatch once", async () => {
+    d.dispatchSurvey.mockClear();
+    d.dispatchFollowUp.mockClear();
+    d.dispatchSurvey.mockResolvedValueOnce({ dispatched: true, channels: [] });
+    const steps: string[] = [];
+    const step = {
+      sleepUntil: async (id: string, at: Date) => {
+        steps.push(`sleepUntil:${id}:${at.toISOString()}`);
+      },
+      run: async (id: string, fn: () => Promise<unknown>) => {
+        steps.push(`run:${id}`);
+        return fn();
+      },
+    };
+    const handler = (sendFollowUpNotification as unknown as {
+      fn: (ctx: unknown) => Promise<unknown>;
+    }).fn;
+
+    const result = await handler({
+      event: {
+        id: "evt-1",
+        ts: 1,
+        data: { appointmentId: "appt-1", tenantId: "tenant-1", endsAt: "2031-05-14T14:15:00.000Z" },
+      },
+      step,
+    });
+
+    expect(steps).toEqual([
+      "sleepUntil:wait-24h-after-visit:2031-05-15T14:15:00.000Z",
+      "run:dispatch-follow-up",
+    ]);
+    expect(d.dispatchSurvey.mock.calls).toEqual([["tenant-1", "appt-1"]]);
+    // The follow-up is the survey dispatch's to call, when the switch says so.
+    expect(d.dispatchFollowUp).not.toHaveBeenCalled();
+    expect(result).toEqual({ appointmentId: "appt-1", dispatched: true, channels: [] });
   });
 });
