@@ -654,6 +654,31 @@ d("SAT-01: the survey page against a real database", () => {
     expect(await post(ip, form(s.code))).toBe(`/s/${s.code}?r=answered&l=pt`);
   });
 
+  it("an incomplete answer is not counted, and over the limit it is still given its marked fields", async () => {
+    const s = await liveSurvey();
+    const ip = address();
+
+    // Not counted: no row of any kind, the limiter's included.
+    const before = await snapshot();
+    expect(await post(ip, form(s.code, { nps: null }))).toEqual({ errors: { nps: true } });
+    expect(await snapshot()).toEqual(before);
+
+    // Use the address up with ten complete answers to a code nobody issued.
+    const unknown = codes.generateSurveyCode();
+    for (let i = 1; i <= 10; i++) {
+      expect(await post(ip, form(unknown)), `submit ${i}`).toBe(`/s/${unknown}?r=generic`);
+    }
+    // CONTROL: the address is over its limit. A complete answer to the live
+    // code is turned away and nothing is saved.
+    expect(await post(ip, form(s.code))).toBe(`/s/${s.code}?r=generic`);
+    expect(await answersOf(s.appointmentId)).toEqual([]);
+
+    // Over the limit, the incomplete answer reads exactly as it did under it,
+    // for the live code and for the unknown one.
+    expect(await post(ip, form(s.code, { nps: null }))).toEqual({ errors: { nps: true } });
+    expect(await post(ip, form(unknown, { nps: null }))).toEqual({ errors: { nps: true } });
+  }, 60_000);
+
   it("THE LIMITER: the eleventh submit in a minute is refused before the database is asked, and looks like a bad code", async () => {
     const ip = address();
     const unknown = codes.generateSurveyCode();
@@ -710,6 +735,16 @@ d("SAT-01: the survey page against a real database", () => {
     await post(ip, form(s.code));
     await post(ip, form(s.code));
     await render(s.code);
+
+    // CONTROL: the capture is live and the check below can fail. This path
+    // logs nothing of its own, so without a line the loop would run zero
+    // times and pass on nothing.
+    expect(logged, "the application logged on a path that must be silent").toEqual([]);
+    console.error("[surveys] control line");
+    expect(logged).toEqual(["[surveys] control line"]);
+    expect(() => {
+      for (const line of [...logged, `leak ${s.code}`]) expect(line).not.toContain(s.code);
+    }).toThrow();
 
     for (const line of logged) {
       for (const text of [s.code, s.codeHash, ANSWER.comment, ...personal]) {

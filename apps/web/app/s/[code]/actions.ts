@@ -42,6 +42,14 @@ export async function submitSurveyAction(
   // same address. The ordering /c/[code] and /r/[token] settled on.
   if (!isWellFormedSurveyCode(code)) redirect(genericUrl(code));
 
+  // The fields next, BEFORE the limiter, and by the same rule: an incomplete
+  // answer reaches no query and costs no budget. It is also what keeps the
+  // limiter silent. An incomplete answer is given its marked fields whatever
+  // the code is, so were it counted first, the post that stopped getting them
+  // would show the moment the limit was reached.
+  const parsed = parseSurveyForm(formData);
+  if (!parsed.ok) return parsed.state;
+
   const verdict = await checkDurableRateLimit(
     clientKeyFromHeaders(await headers(), "s-code"),
     RULES.surveySubmit,
@@ -50,12 +58,10 @@ export async function submitSurveyAction(
   if (!verdict.ok) {
     // NOT a 429 and not a sentence of its own (SR-30): a distinguishable "too
     // many attempts" would tell a prober their earlier attempts registered. It
-    // is the page an invalid link gets.
+    // is the page an invalid link gets. Only a complete answer comes this far,
+    // and a complete answer to a bad code is sent to that page as well.
     redirect(genericUrl(code));
   }
-
-  const parsed = parseSurveyForm(formData);
-  if (!parsed.ok) return parsed.state;
 
   let outcome: "recorded" | "refused";
   try {

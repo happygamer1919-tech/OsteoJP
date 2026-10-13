@@ -1,7 +1,7 @@
 /**
  * actions.test.ts: SAT-01. The answer POST behind /s/<code>, in the order the
  * spec gives it (5.2, 9.3): the code's shape, then the limiter, then the
- * fields, then the door.
+ * door. The fields are read between the shape and the limiter.
  *
  * THE ASSERTION THAT MATTERS IS WHAT WAS REACHED, not only where the action
  * redirected: a limiter consulted after the write would redirect just the same.
@@ -9,7 +9,9 @@
  *
  * AND THE REFUSALS ARE ONE: a limited submit, a refused one and a malformed
  * code all go to the page an invalid link gets. A distinguishable "too many
- * attempts" would be a new signal on a surface built to emit none.
+ * attempts" would be a new signal on a surface built to emit none. That holds
+ * for an incomplete answer too: it gets its marked fields under the limit and
+ * over it, so no post shows when the limit was reached.
  *
  * AND NOTHING THE VISITOR TYPED IS WRITTEN DOWN: no answer and no code in a
  * log line, and no answer in a URL.
@@ -235,9 +237,35 @@ describe("an incomplete answer", () => {
     expect(JSON.stringify(result)).not.toContain(COMMENT);
   });
 
-  it("is counted by the limiter, which is asked first", async () => {
+  it("is not counted by the limiter: the fields are read first, and it costs no budget", async () => {
     await run(form({ nps: null }));
-    expect(H.limiterCalls).toHaveLength(1);
+    expect(H.limiterCalls).toHaveLength(0);
+    expect(H.submits).toHaveLength(0);
+  });
+
+  it("gets the same marked fields over the limit as under it, so it cannot show when the limit was reached", async () => {
+    const under = await run(form({ nps: null }));
+    // Every verdict from here on is a refusal.
+    H.verdicts = Array.from({ length: 5 }, () => false);
+    // CONTROL: the limiter really is refusing. A complete answer is turned away.
+    expect(await run(form())).toEqual({ redirect: GENERIC });
+    const over = await run(form({ nps: null }));
+    expect(over).toEqual({ state: { errors: { nps: true } } });
+    expect(over).toEqual(under);
+    // The one redirect is the control's.
+    expect(H.redirects).toEqual([GENERIC]);
+    expect(H.submits).toHaveLength(0);
+  });
+
+  it("with a code nobody issued gets the same marked fields as with a live one", async () => {
+    // The store is not asked, so the action cannot know which code is live:
+    // the store's answer is set both ways and changes nothing.
+    const live = await run(form({ rating: null }));
+    H.store = "refused";
+    const unknown = await run(form({ rating: null, code: "Zz9_yX-1" }));
+    expect(unknown).toEqual(live);
+    expect(H.submits).toHaveLength(0);
+    expect(H.limiterCalls).toHaveLength(0);
   });
 });
 
