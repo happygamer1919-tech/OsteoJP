@@ -293,6 +293,14 @@ const SUITES = [
   // a confirm code are never accepted for each other. Named here so that its
   // ABSENCE is red too.
   { file: "survey-page.db.test.ts", hard: true },
+  // SAT-01, added 2026-10-13. Three more DB-gated suites of the survey, each
+  // the only proof, as the real roles, of what its name says: the automatic
+  // send issues nothing while the switch is off and stores no link or code;
+  // the opt-out turns off one patient's survey switch and nothing else; and
+  // the staff switch is refused to a therapist and to another clinic.
+  { file: "survey-dispatch.db.test.ts", hard: true },
+  { file: "survey-opt-out.db.test.ts", hard: true },
+  { file: "survey-switch.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
