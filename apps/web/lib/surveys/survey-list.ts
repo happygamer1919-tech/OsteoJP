@@ -50,7 +50,15 @@ import { parseSurveyMonth, type SurveyListEntry } from "./survey-list-core";
  *
  * THE CODES TABLE IS NOT READ, HERE OR ANYWHERE A STAFF SCREEN CAN REACH. The
  * list shows that a send exists and its state, never its link (spec A7).
+ *
+ * ONE PATIENT'S SENDS ARE THE SAME READ, NARROWED (spec 7.7, the ficha).
+ * `patientId` adds one condition and changes nothing else: the same session,
+ * the same two policies, the same joins. It narrows within what the viewer may
+ * read and opens nothing, so the ficha and this list cannot disagree about who
+ * reads which send or which answer.
  */
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const SURVEY_LIST_PAGE_SIZE = 50;
 
@@ -64,7 +72,7 @@ export type SurveyListPage = {
 
 export async function listSurveySends(
   ctx: RequestContext,
-  opts: { page?: number; month?: string | null } = {},
+  opts: { page?: number; month?: string | null; patientId?: string | null } = {},
 ): Promise<SurveyListPage> {
   assertCan(ctx.role, "surveys:read");
   // While the survey is switched off there is no list, for anyone (owner,
@@ -73,6 +81,11 @@ export async function listSurveySends(
   if (!surveyVisible()) throw new ForbiddenError(ctx.role, "surveys:read");
 
   const month = parseSurveyMonth(opts.month);
+  const patientId = opts.patientId ?? null;
+  // A patient that is not an id is no patient: nothing, never the whole list.
+  if (patientId !== null && !UUID.test(patientId)) {
+    return { rows: [], total: 0, page: 1, pageSize: SURVEY_LIST_PAGE_SIZE, pageCount: 1 };
+  }
 
   return runScoped(
     ctx,
@@ -86,6 +99,7 @@ export async function listSurveySends(
           sql`${appointmentSurveySends.sentAt} < (${month.until}::timestamp at time zone 'Europe/Lisbon')`,
         );
       }
+      if (patientId !== null) conds.push(eq(appointmentSurveySends.patientId, patientId));
       const where = conds.length ? and(...conds) : undefined;
 
       // The count on the SAME table and predicate as the page. No join can

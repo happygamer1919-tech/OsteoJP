@@ -21,6 +21,12 @@
  *      off, unset and near-miss values. Under canary the list is whole: staff
  *      see the sends of every patient, with no list of patients consulted.
  *   6. THE MONTH FILTER is the Lisbon calendar month of the send.
+ *   7. ONE PATIENT'S SENDS, FOR THE FICHA (S11, spec 7.7). The same read asked
+ *      for one patient (`readPatientSurveyRows`, lib/patients/survey-rows.ts)
+ *      gives each role exactly the rows the list gives them for that patient:
+ *      the same sends, the same answers, the same reserved ones. It narrows
+ *      and opens nothing, in this tenant or the other, and while the survey is
+ *      switched off it gives nobody anything.
  *
  * NEVER ON AN EMPTY FIXTURE. Every "sees nothing" arm stands beside a count of
  * what is there, read on the admin connection, and beside a role that does see
@@ -58,6 +64,7 @@ d("SAT-01: the survey list in Comunicações, as each real role, against a real 
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let listSurveySends: typeof import("./survey-list").listSurveySends;
   let toSurveyListRow: typeof import("./survey-list-core").toSurveyListRow;
+  let readPatientSurveyRows: typeof import("../patients/survey-rows").readPatientSurveyRows;
 
   const tenant = randomUUID();
   const otherTenant = randomUUID();
@@ -174,6 +181,7 @@ d("SAT-01: the survey list in Comunicações, as each real role, against a real 
     db = schema.getDbAdmin();
     ({ listSurveySends } = await import("./survey-list"));
     ({ toSurveyListRow } = await import("./survey-list-core"));
+    ({ readPatientSurveyRows } = await import("../patients/survey-rows"));
     for (const s of sends) keyOf.set(s.id, s.key);
     keyOf.set(otherSend, "OTHER TENANT");
 
@@ -605,5 +613,194 @@ d("SAT-01: the survey list in Comunicações, as each real role, against a real 
     expect((await listed(THERAPIST_1, { month: "2026-07" })).answers).toEqual({ open: "open", shared: "reserved" });
     // A value that is not a month is no filter.
     expect((await listed(OWNER, { month: "2026-13" })).keys).toEqual(NEWEST_FIRST);
+  });
+
+  /* ================================================================== */
+  /* 7. ONE PATIENT'S SENDS, FOR THE FICHA                               */
+  /* ================================================================== */
+
+  /** What a role's ficha holds for one patient: the keys in order, and how each answer reads. */
+  async function onFicha(ctx: Ctx, patientId: string) {
+    const rows = await readPatientSurveyRows(ctx, patientId);
+    if (rows === null) return { rows, keys: null, answers: null, json: "null" };
+    const keys = rows.map((r) => keyOf.get(r.sendId) ?? `UNKNOWN ${r.sendId}`);
+    const answers = Object.fromEntries(rows.map((r) => [keyOf.get(r.sendId) ?? r.sendId, toSurveyListRow(r).answer]));
+    return { rows, keys, answers, json: JSON.stringify(rows) };
+  }
+
+  it("PREMISE: the patient of `own` has two sends, both answered with a comment, and the patient of `elsewhere` one", async () => {
+    expect(
+      await one(raw`
+        select
+          (select count(*)::int from appointment_survey_sends
+            where tenant_id = ${tenant}::uuid and patient_id = ${P1}::uuid) as sends,
+          (select count(*)::int from appointment_survey_responses
+            where tenant_id = ${tenant}::uuid and patient_id = ${P1}::uuid and comment is not null) as answers,
+          (select count(*)::int from appointment_survey_sends
+            where tenant_id = ${tenant}::uuid and patient_id = ${byKey("elsewhere").patient}::uuid) as elsewhere_sends
+      `),
+    ).toEqual({ sends: 2, answers: 2, elsewhere_sends: 1 });
+  });
+
+  it.each([
+    ["the owner", () => OWNER],
+    ["an admin at clinic A", () => ADMIN_A],
+    ["reception at clinic A", () => RECEPTION_A],
+  ] as const)("ficha: %s reads both of the patient's sends, newest first, and both answers", async (_name, who) => {
+    const got = await onFicha(who(), P1);
+    expect(got.keys).toEqual(["shared", "own"]);
+    expect(got.answers).toEqual({ shared: "shown", own: "shown" });
+    expect(got.json).toContain(`COMENTARIO-SHARED-${run}`);
+    expect(got.json).toContain(`COMENTARIO-OWN-${run}`);
+    // ONLY THIS PATIENT'S: no other send of the tenant came with them.
+    for (const key of ["colleague", "elsewhere", "open", "refused", "purged"]) {
+      expect(got.json, key).not.toContain(byKey(key).id);
+    }
+  });
+
+  it("ficha: THERAPIST 1 reads the answer of the visit they attended, and the colleague's visit as reserved", async () => {
+    const got = await onFicha(THERAPIST_1, P1);
+    expect(got.keys).toEqual(["shared", "own"]);
+    expect(got.answers).toEqual({ shared: "reserved", own: "shown" });
+    expect(got.json).toContain(`COMENTARIO-OWN-${run}`);
+    // THE COMMENT OF THE VISIT THEY DID NOT ATTEND NEVER LEFT THE DATABASE.
+    expect(got.json).not.toContain(`COMENTARIO-SHARED-${run}`);
+    const shared = got.rows!.find((r) => r.sendId === byKey("shared").id)!;
+    expect(shared.answer).toBeNull();
+    expect(shared.outcome).toBe("answered");
+    const view = toSurveyListRow(shared);
+    expect(view.answerState).toBe("Com resposta");
+    expect([view.nps, view.rating, view.comment, view.contact, view.answeredAt]).toEqual(["-", "-", "-", "-", "-"]);
+  });
+
+  it("ficha: THERAPIST 2 reads the same two sends the other way round", async () => {
+    const got = await onFicha(THERAPIST_2, P1);
+    expect(got.keys).toEqual(["shared", "own"]);
+    expect(got.answers).toEqual({ shared: "shown", own: "reserved" });
+    expect(got.json).toContain(`COMENTARIO-SHARED-${run}`);
+    expect(got.json).not.toContain(`COMENTARIO-OWN-${run}`);
+  });
+
+  it("ficha: reception at another clinic, and reception with no clinic, read none of the patient's sends", async () => {
+    for (const [name, ctx] of [
+      ["reception B", RECEPTION_B],
+      ["reception with no clinic", RECEPTION_NONE],
+    ] as const) {
+      const got = await onFicha(ctx, P1);
+      // The section is offered (not null) and holds nothing.
+      expect(got.keys, name).toEqual([]);
+    }
+    // CONTROL: the same read, the same patient, as the owner.
+    expect((await onFicha(OWNER, P1)).keys).toEqual(["shared", "own"]);
+  });
+
+  it("ficha: a patient seen at clinic B reads to clinic B and not to clinic A; the therapist who attended elsewhere reads it reserved", async () => {
+    const patient = byKey("elsewhere").patient;
+    expect((await onFicha(RECEPTION_B, patient)).answers).toEqual({ elsewhere: "shown" });
+    expect((await onFicha(OWNER, patient)).answers).toEqual({ elsewhere: "shown" });
+    for (const ctx of [ADMIN_A, RECEPTION_A]) expect((await onFicha(ctx, patient)).keys).toEqual([]);
+    // Therapist 2 attended, at a clinic that is not theirs (S7): the send, no answer.
+    const t2 = await onFicha(THERAPIST_2, patient);
+    expect(t2.answers).toEqual({ elsewhere: "reserved" });
+    expect(t2.json).not.toContain(`COMENTARIO-ELSEWHERE-${run}`);
+    // Therapist 1 does not treat this patient: nothing.
+    expect((await onFicha(THERAPIST_1, patient)).keys).toEqual([]);
+  });
+
+  it("ficha: every role reads for a patient exactly the rows the list gives them for that patient", async () => {
+    let compared = 0;
+    for (const patient of new Set(sends.map((s) => s.patient))) {
+      for (const [name, ctx] of EVERY_ROLE) {
+        const whole = (await listSurveySends(ctx)).rows.filter((r) => r.patientId === patient);
+        const ficha = await readPatientSurveyRows(ctx, patient);
+        expect(ficha, `${name} ${patient}`).toEqual(whole);
+        compared += whole.length;
+      }
+    }
+    // NOT VACUOUS: the sum of every role's list (7 + 6 + 6 + 1 + 0 + 5 + 4).
+    expect(compared).toBe(29);
+  });
+
+  it("ficha: a patient with no send reads as an empty list, for a role that reads the others", async () => {
+    const noSends = randomUUID();
+    await db.execute(
+      raw`insert into patients (id, tenant_id, full_name, primary_location_id)
+          values (${noSends}::uuid, ${tenant}::uuid, ${`Paciente Sem Envios ${run}`}, ${clinicA}::uuid)`,
+    );
+    expect((await onFicha(OWNER, noSends)).keys).toEqual([]);
+    expect((await onFicha(THERAPIST_1, noSends)).keys).toEqual([]);
+    // CONTROL: the owner reads another patient's sends at the same moment.
+    expect((await onFicha(OWNER, P1)).keys).toHaveLength(2);
+  });
+
+  it("ficha: no role's rows carry the patient's email or telephone number", async () => {
+    let rowsSeen = 0;
+    for (const [name, ctx] of EVERY_ROLE) {
+      const got = await onFicha(ctx, P1);
+      rowsSeen += got.rows!.length;
+      expect(got.json, name).not.toContain(EMAIL_MARK);
+      expect(got.json, name).not.toContain(PHONE_MARK);
+      expect(got.json, name).not.toContain("@sat01list-staff.test");
+    }
+    // NOT VACUOUS: owner, admin A, reception A and both therapists read two each.
+    expect(rowsSeen).toBe(10);
+  });
+
+  it("ficha: the other tenant reads nothing of this tenant's patient, and this tenant nothing of theirs", async () => {
+    expect((await onFicha(OTHER_OWNER, P1)).keys).toEqual([]);
+    // This tenant's owner id under the other tenant's claim: still nothing of P1.
+    expect((await onFicha(ctxOf("owner", owner, otherTenant), P1)).keys).toEqual([]);
+    for (const [name, ctx] of EVERY_ROLE) {
+      const got = await onFicha(ctx, otherPatient);
+      expect(got.keys, name).toEqual([]);
+      expect(got.json, name).not.toContain(OTHER_COMMENT);
+    }
+    // CONTROL: the other tenant's owner reads their own patient's send and answer.
+    const theirs = await onFicha(OTHER_OWNER, otherPatient);
+    expect(theirs.keys).toEqual(["OTHER TENANT"]);
+    expect(theirs.json).toContain(OTHER_COMMENT);
+  });
+
+  it("the patient narrows the list and composes with the month; a value that is not an id reads nothing, never the whole list", async () => {
+    const forP1 = await listSurveySends(OWNER, { patientId: P1 });
+    expect(forP1.total).toBe(2);
+    expect(forP1.pageCount).toBe(1);
+    expect(forP1.rows.map((r) => keyOf.get(r.sendId))).toEqual(["shared", "own"]);
+    expect((await listSurveySends(OWNER, { patientId: P1, month: "2026-07" })).rows.map((r) => keyOf.get(r.sendId))).toEqual(["shared"]);
+    expect((await listSurveySends(OWNER, { patientId: P1, month: "2025-03" })).total).toBe(0);
+    for (const bad of ["", "not-an-id", `${P1}' or '1'='1`]) {
+      const got = await listSurveySends(OWNER, { patientId: bad });
+      expect(got.rows, bad).toEqual([]);
+      expect(got.total, bad).toBe(0);
+    }
+    // No patient named: the whole list, as before.
+    expect((await listSurveySends(OWNER, { patientId: null })).total).toBe(7);
+  });
+
+  it.each([undefined, "", "off", "ON", "On", " on", "on ", "Canary", "true"])(
+    "ficha, SURVEY_SEND_MODE=%j: no role is given the patient's sends, and the read itself refuses",
+    async (mode) => {
+      if (mode === undefined) delete process.env.SURVEY_SEND_MODE;
+      else process.env.SURVEY_SEND_MODE = mode;
+      for (const [name, ctx] of [...EVERY_ROLE, ["other owner", OTHER_OWNER] as [string, Ctx]]) {
+        expect(await readPatientSurveyRows(ctx, P1), name).toBeNull();
+        await expect(listSurveySends(ctx, { patientId: P1 }), name).rejects.toMatchObject({ name: "ForbiddenError" });
+      }
+      // CONTROL: the same read with the survey on.
+      process.env.SURVEY_SEND_MODE = "on";
+      expect((await onFicha(OWNER, P1)).keys).toEqual(["shared", "own"]);
+    },
+  );
+
+  it("ficha, under canary: every role reads the patient's sends as under on, whoever is on the canary list", async () => {
+    process.env.SURVEY_SEND_MODE = "canary";
+    delete process.env.SURVEY_CANARY_PATIENT_IDS;
+    expect((await onFicha(OWNER, P1)).answers).toEqual({ shared: "shown", own: "shown" });
+    expect((await onFicha(RECEPTION_A, P1)).answers).toEqual({ shared: "shown", own: "shown" });
+    expect((await onFicha(THERAPIST_1, P1)).answers).toEqual({ shared: "reserved", own: "shown" });
+    // A canary list that names another patient changes nothing staff see of this one.
+    process.env.SURVEY_CANARY_PATIENT_IDS = byKey("open").patient;
+    expect((await onFicha(THERAPIST_1, P1)).answers).toEqual({ shared: "reserved", own: "shown" });
+    expect((await onFicha(RECEPTION_B, P1)).keys).toEqual([]);
   });
 });

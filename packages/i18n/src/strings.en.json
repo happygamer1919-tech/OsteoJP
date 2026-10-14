@@ -211,6 +211,7 @@
   "patients.surveySwitchTitle": "Satisfaction surveys",
   "patients.surveySwitchLabel": "Send a satisfaction survey after appointments",
   "patients.surveySwitchOffNote": "Turning this off does not affect appointment reminders.",
+  "patients.surveyRowsNone": "No satisfaction survey sent.",
   "documents.declaracao.button": "Print Attendance Declaration",
   "documents.declaracao.title": "Attendance Declaration",
   "documents.declaracao.marcacaoLabel": "Appointment",
