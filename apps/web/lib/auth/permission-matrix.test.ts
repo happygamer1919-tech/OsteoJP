@@ -216,6 +216,19 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("therapist", "sms_replies:read")).toBe(false);
   });
 
+  it("SAT-01: every staff role may open the survey list, and the grant carries nothing else", () => {
+    // Strategy S-1002-D S7 (spec 7.3): owner, admin, reception and therapist.
+    // Which rows each reads is migration 0102's policies, not this grant
+    // (survey-list.db.test.ts measures them as each role).
+    for (const role of ROLES) {
+      expect(can(role, "surveys:read"), role).toBe(true);
+    }
+    // It rides nothing and widens nothing a therapist was denied.
+    expect(can("therapist", "reminders:log_read")).toBe(false);
+    expect(can("therapist", "sms_replies:read")).toBe(false);
+    expect(can("reception", "clinical_records:read")).toBe(false);
+  });
+
   it("PL-09 Phase 5: reception manages schedules but holds NO tenant settings", () => {
     // Reception OWNS scheduling for their location (schedule:*), decoupled from
     // settings:* — it must never gain tenant settings by that grant.
