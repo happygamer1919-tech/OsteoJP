@@ -55,7 +55,7 @@ is the lead's call, never the runner's.
 | Must follow | `0104`, body sha256 `eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9`, journal `idx 101`, `when` 1788502500000. Stage 0 finds it by its journal tag and asserts its bytes; the pre-check finds it by hash as production's newest row |
 | Runs from | `origin/main`, when it IS the pull request's merge commit. Stage 0 records the sha in `/tmp/0105-main.sha`; every later stage checks out that recorded sha, and stage 1 HALTS if `origin/main` has moved since |
 | This document | `docs/migration-apply-0105.md`, pinned by `docs/migration-apply-0105.sha256` and asserted by every block; GREEN's dispatch pins its sha256 on its own |
-| Pre-check | `scripts/db/precheck-0105-registo-episode-key.sql`, READ ONLY, 18 verdicts, 20 CARRY rows (verdict 3 prints a carried number too), 9 INFO rows and a SUMMARY row, `-v prev_hash` and `-v prev_when` required; it ends with an error on any profile but `18 OK / 0 VACUOUS / 0 FAIL`, sha256 `7ca66cfeb9d780a1a56b1c92f991438bdc6d817eeb8d02f857dc3322321e2dae` |
+| Pre-check | `scripts/db/precheck-0105-registo-episode-key.sql`, READ ONLY, 18 verdicts, 20 CARRY rows (verdict 3 prints a carried number too), 9 INFO rows and a SUMMARY row, `-v prev_hash` and `-v prev_when` required; it ends with an error on any profile but `18 OK / 0 VACUOUS / 0 FAIL`, sha256 `996708b9b03bb34f9e9e461992b2d1b61651b04da0f0bba91c1e1a2d5c43f979` |
 | Post-check | `scripts/db/postcheck-0105-registo-episode-key.sql`, READ ONLY, 20 verdicts and a SUMMARY row, twenty carries in; it ends with an error on any profile but `20 OK / 0 VACUOUS / 0 FAIL`, sha256 `20d03476216a639a1e2dbab54c5ef91fb0c5f849217262830c02db0c1e892c73` |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`; `packages/db/scripts/read-applied-migrations.mjs` (the closing read), sha256 `825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387`; and the module the last two import, `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c`. The same bytes 0104's document pins; every block that runs one compares it first |
 | The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59` |
@@ -112,7 +112,7 @@ DOCPIN=docs/migration-apply-0105.sha256
 MIG=packages/db/migrations/0105_clinical_records_episode_key.sql
 SHA0105=980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441
 SHAPREV=eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9
-SHAPRE=7ca66cfeb9d780a1a56b1c92f991438bdc6d817eeb8d02f857dc3322321e2dae
+SHAPRE=996708b9b03bb34f9e9e461992b2d1b61651b04da0f0bba91c1e1a2d5c43f979
 SHAPOST=20d03476216a639a1e2dbab54c5ef91fb0c5f849217262830c02db0c1e892c73
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
@@ -201,7 +201,7 @@ set -o pipefail
 MIG=packages/db/migrations/0105_clinical_records_episode_key.sql
 SHA0105=980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441
 SHAPREV=eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9
-SHAPRE=7ca66cfeb9d780a1a56b1c92f991438bdc6d817eeb8d02f857dc3322321e2dae
+SHAPRE=996708b9b03bb34f9e9e461992b2d1b61651b04da0f0bba91c1e1a2d5c43f979
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c

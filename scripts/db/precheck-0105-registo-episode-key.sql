@@ -83,7 +83,10 @@
 --          pinned md5 of 0005's, it is SECURITY DEFINER with search_path empty,
 --          owned by `postgres`, returns jsonb, takes 0005's three parameters, and
 --          EXECUTE is held by `authenticated` and not by `anon`, `patient`,
---          `service_role` or PUBLIC. CONTROL: a planted name resolves to nothing;
+--          `service_role` or PUBLIC, and its ACL holds two items, counted from
+--          the array itself (verdict 16 reads the same ACL item by item, another
+--          way, so an item nobody named fails two verdicts). CONTROL: a planted
+--          name resolves to nothing;
 --   13     secdef_functions_before: 36 SECURITY DEFINER functions in `public`,
 --          every one owned by `postgres`. 0105 adds none, so the post-check wants
 --          the same number and no count GATE-CHANGE follows the apply;
@@ -364,6 +367,7 @@ WITH tabs AS (
             || ', patient ' || has_function_privilege('patient', mp.oid, 'EXECUTE')::text
             || ', service_role ' || has_function_privilege('service_role', mp.oid, 'EXECUTE')::text
             || ', PUBLIC items ' || (SELECT count(*) FROM aclexplode(coalesce(mp.proacl, acldefault('f', mp.proowner))) a WHERE a.grantee = 0)::text
+            || ', ACL items ' || coalesce(array_length(mp.proacl, 1), 0)::text
        FROM mp)                                                                                 AS merge_execute,
     (to_regprocedure('public.no_such_function_0105()') IS NULL)                                 AS planted_fn_absent,
     (SELECT coalesce(string_agg(i.item, ', ' ORDER BY i.item), 'none') FROM mp_items i)         AS merge_acl_items,
@@ -525,9 +529,9 @@ WITH tabs AS (
                AND all_indexes = 9 AND three_column_indexes = 0 THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 12, 'A', '12. merge_patients is the function 0105 replaces: 0005''s body, SECURITY DEFINER, search_path empty, owned by postgres, EXECUTE for authenticated alone (control: a planted name)',
          coalesce(merge_shape, 'absent') || ' ; ' || coalesce(merge_execute, 'absent') || '; control ' || planted_fn_absent::text,
-         '3dbbba9c644eac9c20ee123faefff8f7 DEFINER search_path="" owner postgres returns jsonb (p_source_id uuid, p_target_id uuid, p_actor_id uuid DEFAULT NULL::uuid) ; authenticated true, anon false, patient false, service_role false, PUBLIC items 0; control true',
+         '3dbbba9c644eac9c20ee123faefff8f7 DEFINER search_path="" owner postgres returns jsonb (p_source_id uuid, p_target_id uuid, p_actor_id uuid DEFAULT NULL::uuid) ; authenticated true, anon false, patient false, service_role false, PUBLIC items 0, ACL items 2; control true',
          CASE WHEN merge_shape = '3dbbba9c644eac9c20ee123faefff8f7 DEFINER search_path="" owner postgres returns jsonb (p_source_id uuid, p_target_id uuid, p_actor_id uuid DEFAULT NULL::uuid)'
-               AND merge_execute = 'authenticated true, anon false, patient false, service_role false, PUBLIC items 0'
+               AND merge_execute = 'authenticated true, anon false, patient false, service_role false, PUBLIC items 0, ACL items 2'
                AND planted_fn_absent THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 13, 'A', 'secdef_functions_before', secdef::text || ', ' || secdef_not_postgres::text || ' not owned by postgres',
          '36, 0 not owned by postgres',
