@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**543 cards on the board. 370 shipped, 173 open. Launch readiness 9/9, every launch gate passes.**
+**547 cards on the board. 373 shipped, 174 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,36 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-14
+>
+> **Migration 0103 is applied.** Its sitting ran on Tuesday 2026-10-13, from 21:35
+> to 21:45 Lisbon, and closed clean. Nothing changes on any screen.
+>
+> **The booking confirmation is on.** You switched it on in production on
+> 2026-10-13 at 21:40 Lisbon: a patient whose online request reception approves
+> now gets one confirmation, by email first, by SMS only without an email. One
+> thing is owed to the record: the first real approval's email in Resend Logs,
+> when you see it.
+>
+> **The satisfaction survey is still switched off, and five of its twelve pieces
+> are merged.** Merged on 2026-10-13: its switch and two messages, the page a
+> patient answers on, stopping it (by the patient from that page, by staff per
+> patient), and the automatic send 24 hours after a concluded visit. While it is
+> off, nobody sees or receives anything. Not built: the manual send, the list,
+> the rows on the patient's profile, the switch in the patient portal, the
+> migration for the patient merge, the guide lesson, and the canary before it
+> goes on.
+>
+> **The calendar of sittings strategy set on 2026-10-13:** 0104 on Wednesday
+> 2026-10-14, 0105 on Thursday 2026-10-15, no sitting on Friday, Saturday or
+> Sunday, and the reminder sweep's table (0106) on Monday 2026-10-19 or Tuesday
+> 2026-10-20. The sweep must be live, have run **and be sending before Friday
+> 2026-11-06**. It is still local work and ships switched off. Your choice of A
+> is on its card.
+>
+> **Also closed:** signing, annulling, deleting a draft and the review edits now
+> show the "try again" sentence when two changes to one patient collide.
 
 > ### Where things stand, 2026-10-13
 >
