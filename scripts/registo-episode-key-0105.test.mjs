@@ -802,7 +802,7 @@ test("the migration stands in its one place, promoted with no byte changed: its 
   const fn = mergeStatementOf(migration).split("\n");
   const fn0005 = mergeStatementOf(migration0005).split("\n");
   for (const l of odd) assert.ok(fn.includes(l) && fn0005.includes(l), l.slice(0, 60));
-  assert.equal((migration.match(/[^\x09\x0a\x20-\x7e]/g) ?? []).join(""), "—".repeat(4));
+  assert.equal((migration.match(/[^\x09\x0a\x20-\x7e]/g) ?? []).join(""), String.fromCharCode(0x2014).repeat(4));
 });
 
 test("the migration keeps every rule of its shape, and its function is 0005's plus the added lines", () => {
