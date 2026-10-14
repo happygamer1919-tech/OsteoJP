@@ -18,7 +18,8 @@
  *   - an answer the viewer reads shows its lines; one they may not read shows
  *     the reserved sentence and no line of the answer; a send with no answer
  *     shows neither;
- *   - no send: the approved sentence (copy text 78);
+ *   - no send: the owner reads copy text 78; every other role reads text 88
+ *     (strategy Q-19, 2026-10-14), since only the owner's read is the whole;
  *   - there is no send button;
  *   - it is on Resumo and on no other tab.
  * Which sends and which answers each role is given is the database's, and is
@@ -157,6 +158,8 @@ const ROLES = ["owner", "admin", "reception", "therapist"] as const;
 const SECTION = 'data-testid="ficha-survey-section"';
 const ROW = 'data-testid="ficha-survey-row"';
 const NONE = "Nenhuma avaliação de satisfação enviada.";
+/** Text 88 (strategy, Q-19, 2026-10-14): no send this viewer may read. */
+const NONE_VISIBLE = "Nenhuma avaliação de satisfação visível para si.";
 const RESERVED =
   "Resposta visível apenas para o terapeuta que realizou a consulta, para a receção e os administradores dessa clínica e para o proprietário.";
 /** The labels of copy section G, in the order the section reads. */
@@ -243,6 +246,7 @@ describe("while the survey is switched off, the ficha shows nothing of it", () =
           expect(html, at).not.toContain(ROW);
           expect(html, at).not.toContain(s["patients.surveySwitchTitle"]);
           expect(html, at).not.toContain(NONE);
+          expect(html, at).not.toContain(NONE_VISIBLE);
           expect(html, at).not.toContain(RESERVED);
           expect(html, at).not.toContain("Zzz comentario de teste");
           for (const label of ANSWER_LABELS) expect(html, `${at} ${label}`).not.toContain(label);
@@ -295,7 +299,8 @@ describe.each(["canary", "on"])("SURVEY_SEND_MODE=%s", (mode) => {
     h.mayAct = false;
     h.rows = [];
     const section = sectionOf(await render("therapist"));
-    expect(section).toContain(NONE);
+    expect(section).toContain(NONE_VISIBLE);
+    expect(section).not.toContain(NONE);
     expect(section).not.toContain('role="switch"');
     expect(h.reads).toHaveLength(1);
   });
@@ -358,13 +363,23 @@ describe.each(["canary", "on"])("SURVEY_SEND_MODE=%s", (mode) => {
     expect(rows[2]).not.toContain(RESERVED);
   });
 
-  it("no send: the approved sentence, and no row", async () => {
+  it("no send: the owner reads text 78, every other role text 88, and no row", async () => {
     h.rows = [];
     for (const role of ROLES) {
       const section = sectionOf(await render(role));
-      expect(section, role).toContain(NONE);
-      expect(section, role).toContain('data-testid="ficha-survey-rows-none"');
+      const [said, notSaid] = role === "owner" ? [NONE, NONE_VISIBLE] : [NONE_VISIBLE, NONE];
+      expect(section, role).toContain(`data-testid="ficha-survey-rows-none">${said}</p>`);
+      expect(section, role).not.toContain(notSaid);
       expect(section, role).not.toContain(ROW);
+    }
+  });
+
+  it("a send drawn says neither sentence, for any role", async () => {
+    for (const role of ROLES) {
+      const section = sectionOf(await render(role));
+      expect(section, role).toContain(ROW);
+      expect(section, role).not.toContain(NONE);
+      expect(section, role).not.toContain(NONE_VISIBLE);
     }
   });
 

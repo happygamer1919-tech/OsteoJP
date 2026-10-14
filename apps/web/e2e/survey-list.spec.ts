@@ -20,8 +20,9 @@
  *   ON or CANARY (`SURVEY_SEND_MODE=on node scripts/lane-stack.mjs e2e ...`):
  *   a therapist reaches the list from the sidebar and finds the send of a
  *   patient they treat, with who sent it, its channel and "Sem resposta";
- *   reception with no clinic assignment reaches the same page and is shown
- *   none of it (S7: "at their clinics").
+ *   reception with no clinic assignment reaches the same page, is shown
+ *   none of it (S7: "at their clinics") and reads why (copy text 87). A
+ *   chosen month with no send reads text 86 (both strategy, 2026-10-14).
  *
  * Neither arm is skipped: exactly one of them runs, and each first proves the
  * Comunicações group rendered.
@@ -60,6 +61,9 @@ const SECTIONS = "Secções de Comunicações";
  * badge was still up). Only the navigations that can meet a cold route take it.
  */
 const COLD_ROUTE = { timeout: 60_000 };
+/** Copy texts 86 and 87, written by strategy on 2026-10-14, pending the clinic's final yes. */
+const EMPTY_MONTH = "Nenhuma avaliação enviada neste mês.";
+const NO_CLINIC = "Sem clínica associada. Peça a um administrador para o associar a uma clínica.";
 
 test.describe.configure({ mode: "serial" });
 
@@ -86,6 +90,8 @@ if (!VISIBLE) {
         await expect(page.getByRole("heading", { name: TAB })).toHaveCount(0);
         await expect(page.getByText("Recomendação (0 a 10)")).toHaveCount(0);
         await expect(page.getByLabel("Mês")).toHaveCount(0);
+        await expect(page.getByText(EMPTY_MONTH)).toHaveCount(0);
+        await expect(page.getByText(NO_CLINIC)).toHaveCount(0);
       });
     });
   }
@@ -193,6 +199,9 @@ if (!VISIBLE) {
       await expect(page).toHaveURL(/[?&]mes=2001-01/);
       await expect(page.getByRole("row").filter({ hasText: patientName })).toHaveCount(0);
       await expect(page.getByText("Ainda não foi enviada nenhuma avaliação de satisfação.")).toHaveCount(0);
+      // Text 86 says so; a therapist's reads do not follow a clinic, so never text 87.
+      await expect(page.getByText(EMPTY_MONTH)).toBeVisible();
+      await expect(page.getByText(NO_CLINIC)).toHaveCount(0);
       await month.fill("");
       await expect(page).not.toHaveURL(/mes=/);
       await expect(page.getByRole("row").filter({ hasText: patientName })).toHaveCount(1);
@@ -210,6 +219,14 @@ if (!VISIBLE) {
         page.getByRole("navigation", { name: SECTIONS }).getByRole("link", { name: TAB }),
       ).toBeVisible();
       await expect(page.getByText(patientName)).toHaveCount(0);
+      // Text 87 says why, and not that none was ever sent: one was.
+      await expect(page.getByText(NO_CLINIC)).toBeVisible();
+      await expect(page.getByText("Ainda não foi enviada nenhuma avaliação de satisfação.")).toHaveCount(0);
+      // The same with a month chosen: for them every month is empty for the same reason.
+      await page.getByLabel("Mês").fill("2001-01");
+      await expect(page).toHaveURL(/[?&]mes=2001-01/);
+      await expect(page.getByText(NO_CLINIC)).toBeVisible();
+      await expect(page.getByText(EMPTY_MONTH)).toHaveCount(0);
     });
   });
 }

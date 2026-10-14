@@ -18,21 +18,41 @@ import { s } from '@/lib/i18n'
 // else, so pressing it cannot move either reminder switch.
 //
 // The four texts are the approved ones (docs/design/SAT-01-copy-pt.md, 32 to
-// 35). There is no approved text for a failed save, so a failure puts the
-// switch back where it was, as the reminder switches do, and says nothing.
+// 35). A FAILED SAVE puts the switch back where it was, as the reminder
+// switches do, and says so under it (text 85, strategy 2026-10-14): without the
+// sentence the patient would read the switch's return as their own mistake.
+// The sentence goes at the next press.
 export default function SurveyToggle({ initialEnabled }: { initialEnabled: boolean }) {
   const [enabled, setEnabled] = useState(initialEnabled)
+  const [failed, setFailed] = useState(false)
   const [, startTransition] = useTransition()
 
   function toggle(checked: boolean) {
     // Optimistic update, rolled back when the server refuses.
     setEnabled(checked)
+    setFailed(false)
     startTransition(async () => {
       const result = await updateSurveyPrefAction(checked)
-      if (!result.ok) setEnabled(!checked)
+      if (!result.ok) {
+        setEnabled(!checked)
+        setFailed(true)
+      }
     })
   }
 
+  return <SurveyToggleView enabled={enabled} failed={failed} onToggle={toggle} />
+}
+
+/** What the switch draws, from its two states. Apart so a test can draw each. */
+export function SurveyToggleView({
+  enabled,
+  failed,
+  onToggle,
+}: {
+  enabled: boolean
+  failed: boolean
+  onToggle: (checked: boolean) => void
+}) {
   return (
     <section className="flex flex-col gap-2" data-testid="survey-toggle">
       <h3 className="text-xs font-medium text-text-secondary">{s.account.survey_title}</h3>
@@ -47,11 +67,19 @@ export default function SurveyToggle({ initialEnabled }: { initialEnabled: boole
           <label className="inline-flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center">
             <Switch
               checked={enabled}
-              onChange={(e) => toggle(e.target.checked)}
+              onChange={(e) => onToggle(e.target.checked)}
               aria-label={s.account.survey_switch}
             />
           </label>
         </div>
+
+        {failed && (
+          <div className="px-4 py-2">
+            <p role="alert" className="text-xs text-error" data-testid="survey-toggle-error">
+              {s.account.survey_save_error}
+            </p>
+          </div>
+        )}
 
         {!enabled && (
           <div className="px-4 py-2">
