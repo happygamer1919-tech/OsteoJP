@@ -1,14 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+
+import { describe, expect, it, vi } from "vitest";
 
 import { generateConfirmCode } from "../reminders/confirm-code";
+import { signRescheduleToken } from "../reminders/link-token";
 import { scrubLinkCodesIn } from "./link-codes";
 
 /**
  * OBS-07 - one sweep over generated events, instead of one more hand-picked
  * case per review round.
  *
- * Half the events carry a code the real issuer produced, written in one of the
- * shapes link-codes.ts knows, at a place picked at random: any string in the
+ * Half the events carry a code the real issuer produced, or a reschedule token
+ * the real signer produced (OBS-08), written in one of the shapes link-codes.ts
+ * knows, with the route letters and the field name of that kind of secret, at a place picked at random: any string in the
  * event, an object key, a field named `code`, the router's state as an array,
  * a frame's variables, the name of an inline script's frame. The assertion is
  * on the serialised output: the code is not in it.
@@ -68,55 +72,66 @@ const CLEAN: readonly string[] = [
   "marcar+consulta+amanha",
   "%2Fagenda%3Fdia%3D2026-10-13",
   "pt-PT",
+  "/r/some-token",
+  "/r/[token]?a=confirm",
+  "/reminders",
+  "token=expired",
+  "the token, which was refused",
   "",
 ];
 
-type Shape = [name: string, write: (code: string) => string];
+/** One kind of secret: the two route letters that carry it, and its field name. */
+type Kind = { a: string; b: string; name: string };
+const CODE_KIND: Kind = { a: "c", b: "s", name: "code" };
+const TOKEN_KIND: Kind = { a: "r", b: "r", name: "token" };
 
-const tree = (code: string) => `["",{"children":["c",{"children":[["code","${code}","d"],{"children":["__PAGE__",{}]}]}]}]`;
+type Shape = [name: string, write: (code: string, k: Kind) => string];
+
+const tree = (code: string, k: Kind) =>
+  `["",{"children":["${k.a}",{"children":[["${k.name}","${code}","d"],{"children":["__PAGE__",{}]}]}]}]`;
 
 const SHAPES: readonly Shape[] = [
-  ["path", (c) => `/c/${c}`],
-  ["path with a query", (c) => `/s/${c}?r=generic`],
-  ["absolute", (c) => `${ORIGIN}/c/${c}`],
-  ["absolute with a port", (c) => `http://localhost:3020/s/${c}/`],
-  ["bare host", (c) => `app.example.invalid/c/${c}`],
-  ["then a full stop", (c) => `/c/${c}.`],
-  ["then a colon", (c) => `/c/${c}:12:3`],
-  ["then an exclamation mark", (c) => `/s/${c}!`],
-  ["in square brackets", (c) => `[/c/${c}]`],
-  ["in quotes", (c) => `"/s/${c}"`],
-  ["in round brackets", (c) => `(/c/${c})`],
-  ["behind a locale", (c) => `${ORIGIN}/pt/c/${c}`],
-  ["a data route", (c) => `/_next/data/build/c/${c}.json`],
-  ["a segment prefetch", (c) => `/_next/segments/s/${c}/__PAGE__`],
-  ["upper case letter", (c) => `/C/${c}`],
-  ["doubled slash", (c) => `/c//${c}`],
-  ["encoded", (c) => `next=%2Fc%2F${c}`],
-  ["encoded, lower case", (c) => `%2fs%2f${c}%3Fr%3Dgeneric`],
-  ["encoded twice", (c) => `r=%252Fc%252F${c}`],
-  ["encoded three times", (c) => `r=%25252Fs%25252F${c}`],
-  ["mixed, encoded first", (c) => `%2Fc/${c}`],
-  ["mixed, plain first", (c) => `/s%2F${c}`],
-  ["JSON escaped slashes", (c) => `{"url":"\\/c\\/${c}"}`],
-  ["form body", (c) => `code=${c}&action=confirm`],
-  ["query parameter", (c) => `/x?a=1&code=${c}`],
-  ["query parameter, encoded", (c) => `next=%2Fx%3Fcode%3D${c}`],
-  ["server action field", (c) => `1_code=${c}`],
-  ["JSON field", (c) => `{"code":"${c}"}`],
-  ["JSON field, spaced", (c) => `{"code": "${c}"}`],
-  ["JSON field inside JSON", (c) => `{\\"code\\":\\"${c}\\"}`],
-  ["JSON field, encoded", (c) => encodeURIComponent(`{"code":"${c}"}`)],
-  ["console object", (c) => `{ code: '${c}' }`],
-  ["label and value", (c) => `code: ${c}`],
-  ["router state", tree],
-  ["router state, encoded", (c) => encodeURIComponent(tree(c))],
-  ["router state, encoded twice", (c) => encodeURIComponent(encodeURIComponent(tree(c)))],
-  ["router state inside JSON", (c) => tree(c).replace(/"/g, '\\"')],
-  ["router state, spaced", (c) => `[["code", "${c}", "d"],{}]`],
-  ["route parameter from Vercel", (c) => `/c/x?nxtPcode=${c}`],
-  ["route matches", (c) => `1=${c}&nxtPcode=${c}`],
-  ["route matches, encoded", (c) => encodeURIComponent(`1=${c}&nxtPcode=${c}`)],
+  ["path", (c, k) => `/${k.a}/${c}`],
+  ["path with a query", (c, k) => `/${k.b}/${c}?r=generic`],
+  ["absolute", (c, k) => `${ORIGIN}/${k.a}/${c}`],
+  ["absolute with a port", (c, k) => `http://localhost:3020/${k.b}/${c}/`],
+  ["bare host", (c, k) => `app.example.invalid/${k.a}/${c}`],
+  ["then a full stop", (c, k) => `/${k.a}/${c}.`],
+  ["then a colon", (c, k) => `/${k.a}/${c}:12:3`],
+  ["then an exclamation mark", (c, k) => `/${k.b}/${c}!`],
+  ["in square brackets", (c, k) => `[/${k.a}/${c}]`],
+  ["in quotes", (c, k) => `"/${k.b}/${c}"`],
+  ["in round brackets", (c, k) => `(/${k.a}/${c})`],
+  ["behind a locale", (c, k) => `${ORIGIN}/pt/${k.a}/${c}`],
+  ["a data route", (c, k) => `/_next/data/build/${k.a}/${c}.json`],
+  ["a segment prefetch", (c, k) => `/_next/segments/${k.b}/${c}/__PAGE__`],
+  ["upper case letter", (c, k) => `/${k.a.toUpperCase()}/${c}`],
+  ["doubled slash", (c, k) => `/${k.a}//${c}`],
+  ["encoded", (c, k) => `next=%2F${k.a}%2F${c}`],
+  ["encoded, lower case", (c, k) => `%2f${k.b}%2f${c}%3Fr%3Dgeneric`],
+  ["encoded twice", (c, k) => `r=%252F${k.a}%252F${c}`],
+  ["encoded three times", (c, k) => `r=%25252F${k.b}%25252F${c}`],
+  ["mixed, encoded first", (c, k) => `%2F${k.a}/${c}`],
+  ["mixed, plain first", (c, k) => `/${k.b}%2F${c}`],
+  ["JSON escaped slashes", (c, k) => `{"url":"\\/${k.a}\\/${c}"}`],
+  ["form body", (c, k) => `${k.name}=${c}&action=confirm`],
+  ["query parameter", (c, k) => `/x?a=1&${k.name}=${c}`],
+  ["query parameter, encoded", (c, k) => `next=%2Fx%3F${k.name}%3D${c}`],
+  ["server action field", (c, k) => `1_${k.name}=${c}`],
+  ["JSON field", (c, k) => `{"${k.name}":"${c}"}`],
+  ["JSON field, spaced", (c, k) => `{"${k.name}": "${c}"}`],
+  ["JSON field inside JSON", (c, k) => `{\\"${k.name}\\":\\"${c}\\"}`],
+  ["JSON field, encoded", (c, k) => encodeURIComponent(`{"${k.name}":"${c}"}`)],
+  ["console object", (c, k) => `{ ${k.name}: '${c}' }`],
+  ["label and value", (c, k) => `${k.name}: ${c}`],
+  ["router state", (c, k) => tree(c, k)],
+  ["router state, encoded", (c, k) => encodeURIComponent(tree(c, k))],
+  ["router state, encoded twice", (c, k) => encodeURIComponent(encodeURIComponent(tree(c, k)))],
+  ["router state inside JSON", (c, k) => tree(c, k).replace(/"/g, '\\"')],
+  ["router state, spaced", (c, k) => `[["${k.name}", "${c}", "d"],{}]`],
+  ["route parameter from Vercel", (c, k) => `/${k.a}/x?nxtP${k.name}=${c}`],
+  ["route matches", (c, k) => `1=${c}&nxtP${k.name}=${c}`],
+  ["route matches, encoded", (c, k) => encodeURIComponent(`1=${c}&nxtP${k.name}=${c}`)],
   ["route match alone", (c) => `1=${c}`],
 ];
 
@@ -213,6 +228,21 @@ function objects(root: Json): Array<{ [key: string]: Json }> {
   return found;
 }
 
+/** A reschedule token as the app signs it, under a synthetic secret. */
+function rescheduleToken(): string {
+  vi.stubEnv("REMINDERS_LINK_SECRET", "synthetic-test-secret-for-the-link-code-sweep");
+  try {
+    return signRescheduleToken({
+      tenantId: randomUUID(),
+      appointmentId: randomUUID(),
+      exp: 1_900_000_000,
+      scope: "confirm_cancel",
+    });
+  } finally {
+    vi.unstubAllEnvs();
+  }
+}
+
 describe("a sweep of generated events", () => {
   it(`${EVENTS} events: a planted code never survives, and an event with none comes back untouched`, () => {
     const random = seeded(20261013);
@@ -224,6 +254,7 @@ describe("a sweep of generated events", () => {
       cleanChanged: [] as number[],
       inputMutated: [] as number[],
       bySite: {} as Record<Site, number>,
+      byKind: {} as Record<string, number>,
       byShape: {} as Record<string, number>,
     };
 
@@ -241,12 +272,14 @@ describe("a sweep of generated events", () => {
       }
 
       stats.planted += 1;
-      const code = generateConfirmCode();
+      const kind = n % 4 === 0 ? TOKEN_KIND : CODE_KIND;
+      const code = kind === TOKEN_KIND ? rescheduleToken() : generateConfirmCode();
+      stats.byKind[kind.name] = (stats.byKind[kind.name] ?? 0) + 1;
       const site = pick(SITES);
       const [shapeName, write] = pick(SHAPES);
       // A space on either side, or nothing: glued to a letter, `code=` would be
       // another name and the code nine characters, and neither is a carrier.
-      const carried = `${pick(["", "", `${text()} `])}${write(code)}${pick(["", "", ` ${text()}`])}`;
+      const carried = `${pick(["", "", `${text()} `])}${write(code, kind)}${pick(["", "", ` ${text()}`])}`;
       let label: string = site;
 
       if (site === "a string anywhere") {
@@ -259,17 +292,17 @@ describe("a sweep of generated events", () => {
         label = `${site} / ${shapeName}`;
         stats.byShape[shapeName] = (stats.byShape[shapeName] ?? 0) + 1;
       } else if (site === "a field named code") {
-        pick(objects(event))[pick(["code", "Code", "1_code"])] = code;
+        pick(objects(event))[pick([kind.name, kind.name.toUpperCase(), `1_${kind.name}`])] = code;
       } else if (site === "the state as an array") {
-        pick(objects(event)).tree = ["", { children: [["code", code, "d"], {}] }];
+        pick(objects(event)).tree = ["", { children: [[kind.name, code, "d"], {}] }];
       } else {
         const values = (event.exception as { values: Array<{ stacktrace: { frames: Array<{ [key: string]: Json }> } }> }).values;
         const frame = pick(values[0]?.stacktrace.frames ?? []);
         if (site === "frame variables") {
-          frame.vars = { code, href: carried };
+          frame.vars = { [kind.name]: code, href: carried };
           stats.byShape[shapeName] = (stats.byShape[shapeName] ?? 0) + 1;
         } else {
-          const page = pick([`${ORIGIN}/c/${code}`, `${ORIGIN}/s/${code}?r=generic`, `/c/${code}`]);
+          const page = pick([`${ORIGIN}/${kind.a}/${code}`, `${ORIGIN}/${kind.b}/${code}?r=generic`, `/${kind.a}/${code}`]);
           frame.filename = page;
           frame.abs_path = page;
         }
@@ -299,5 +332,6 @@ describe("a sweep of generated events", () => {
     // Every site and every shape was actually exercised.
     expect(Object.keys(stats.bySite).sort()).toEqual([...SITES].sort());
     expect(Object.keys(stats.byShape)).toHaveLength(SHAPES.length);
+    expect(stats.byKind).toEqual({ code: (EVENTS / 2) * 0.5, token: (EVENTS / 2) * 0.5 });
   });
 });

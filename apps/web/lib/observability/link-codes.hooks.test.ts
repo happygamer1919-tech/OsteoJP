@@ -393,6 +393,35 @@ describe.each(["server", "edge", "client"] as const)("%s config", (name) => {
     expect(configs[name].beforeBreadcrumb?.(crumb, {})).toBe(crumb);
     expect(configs[name].beforeSendSpan?.(span)).toBe(span);
   });
+
+  it("every hook removes the reschedule link's token too (OBS-08)", () => {
+    // Synthetic: the shape `lib/reminders/link-token.ts` signs, under no secret.
+    const signature = `${"q-7_Zt0P".repeat(5)}x9Q`;
+    const token = `eyJ0IjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIn0.${signature}`;
+    const event = {
+      type: undefined,
+      message: `could not redeem /r/${token}`,
+      transaction: `POST /r/${token}`,
+      request: { url: `${ORIGIN}/r/${token}?a=confirm`, headers: { referer: `${ORIGIN}/r/${token}` } },
+      extra: { form: { token, action: "confirm" } },
+      exception: { values: [{ type: "Error", value: "x", stacktrace: { frames: [{ filename: OWN_CHUNK, in_app: true }] } }] },
+    };
+    const crumb = { category: "navigation", data: { from: `/r/${token}`, to: `/r/${token}?r=confirmed` } };
+    const span = { span_id: "r1", description: `POST ${ORIGIN}/r/${token}`, data: { "http.target": `/r/${token}?a=cancel` } };
+
+    const outs = [
+      configs[name].beforeSend?.(event, {}),
+      configs[name].beforeSendTransaction?.({ ...event, type: "transaction" }, {}),
+      configs[name].beforeBreadcrumb?.(crumb, {}),
+      configs[name].beforeSendSpan?.(span),
+    ];
+    for (const out of outs) {
+      expect(out).toBeTruthy();
+      const text = JSON.stringify(out);
+      expect(text).not.toContain(signature.slice(0, 8));
+      expect(text).toContain("/r/[token]");
+    }
+  });
 });
 
 describe.each(["server", "edge", "client"] as const)("%s config, values no hook should have to survive", (name) => {

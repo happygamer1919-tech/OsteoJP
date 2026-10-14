@@ -1,8 +1,32 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
+// ==========================================================================
+// THE THREE PUBLIC LINK PAGES SEND NO REFERER. OBS-08.
+// ==========================================================================
+// `/c/<code>` (the 24h confirm link), `/s/<code>` (the satisfaction survey)
+// and `/r/<token>` (the email reschedule link) are reached by a secret in the
+// path. A browser sends the page's address as the Referer on everything the
+// page loads and every link followed from it, so the secret would travel with
+// each of those requests. `Referrer-Policy: no-referrer` stops that.
+//
+// Scoped to those three paths, and to everything under them: a mistyped
+// `/c/<code>/x` is a 404 page that still has the code in its address. Matched
+// without regard to case, as Next matches every header source here, so
+// `/C/<code>` is covered too. No other path gets it.
+//
+// What it costs: with this policy a browser posts a NATIVE form submission
+// with `Origin: null`, and Next refuses a server action whose Origin does not
+// match the host. A form submitted from JavaScript (every hydrated page, and a
+// tap made before hydration, which React replays) carries the real Origin.
+// lib/observability/link-page-headers.test.ts pins the paths and the value.
+const LINK_PAGE_HEADERS = [{ key: "Referrer-Policy", value: "no-referrer" }];
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@osteojp/ui", "@osteojp/auth", "@osteojp/db", "@osteojp/i18n"],
+  async headers() {
+    return ["/c/:path*", "/s/:path*", "/r/:path*"].map((source) => ({ source, headers: LINK_PAGE_HEADERS }));
+  },
 };
 
 // ==========================================================================
