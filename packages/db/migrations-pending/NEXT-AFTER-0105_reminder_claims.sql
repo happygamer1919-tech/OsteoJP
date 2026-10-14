@@ -42,10 +42,11 @@
 /*   7b a reminder that was held back is tried again while the visit is   */
 /*      still ahead: only a `sent` outcome blocks a second send. THIS     */
 /*      FILE THEREFORE STORES NO OUTCOME AND HAS NO UNIQUE KEY OVER THE   */
-/*      CLAIMS OF ONE REMINDER. A claim says "a sender took it"; whether  */
-/*      it was sent stays in the ledger, and whether a claim blocks is    */
-/*      decided by the code that reads both. Nothing here can make        */
-/*      "held" final.                                                     */
+/*      CLAIMS OF ONE REMINDER, only one over each ATTEMPT (Q-5 below). A */
+/*      claim says "a sender took it"; whether it was sent stays in the   */
+/*      ledger, and whether a claim blocks is decided by the code that    */
+/*      reads both. Nothing here can make "held" final: the next attempt  */
+/*      is always a new number.                                           */
 /*   8a a late reminder may still go out, up to a limit that a later pull */
 /*      request builds. The table only carries what that rule will read:  */
 /*      the instant the reminder was due (due_at) and the instant it was  */
@@ -67,6 +68,14 @@
 /*   W-10 no purge here. A claim is never purged by age alone.            */
 /*   W-11 confirmed as built: `send` is already in the heartbeat's mode   */
 /*        list, one release per claim, due_at and early are stored.       */
+/*                                                                        */
+/* Strategy's rulings of 2026-10-14:                                      */
+/*   Q-5  the TABLE refuses a duplicate claim for the same attempt, not   */
+/*        only the sending code: a stored attempt number on every claim   */
+/*        and the partial unique index reminder_claims_claim_attempt_key. */
+/*        Shadow rows and heartbeats stay free of it (W-7).               */
+/*   Q-4  the post-check reads service_role's privileges on both tables   */
+/*        directly, so W-5 is proven where no seed runs.                  */
 /*                                                                        */
 /* ====================================================================== */
 /* WHO THE "REMINDER JOB'S OWN SESSION" IS, AND HOW IT IS KNOWN (W-1)     */
@@ -174,8 +183,8 @@ SET LOCAL idle_in_transaction_session_timeout = '15s';--> statement-breakpoint
 /* implication, so a row cannot carry a field that means nothing for it). */
 /*                                                                        */
 /*   claim    a sender took this reminder for this start. Its id is the   */
-/*            claim id. Carries the start, the taker, the due time and    */
-/*            whether it was taken early.                                 */
+/*            claim id. Carries the start, the taker, the due time,       */
+/*            whether it was taken early, and its attempt number.         */
 /*   release  the sender of a claim gave it up (it threw before handing   */
 /*            the message over). Carries claim_id, the claim it names,    */
 /*            and no start of its own. A claim is LIVE while no release   */
@@ -214,10 +223,31 @@ SET LOCAL idle_in_transaction_session_timeout = '15s';--> statement-breakpoint
 /* CLAIM, by the partial unique index below: a second release of the same */
 /* claim says nothing new.                                                */
 /*                                                                        */
-/* NO UNIQUE KEY OVER THE CLAIMS OF ONE REMINDER, ON PURPOSE. See 7b in   */
-/* the header: a second claim for the same start is how a held or failed  */
-/* reminder is tried again, and "at most one LIVE claim" cannot be an     */
-/* index while a release is a separate row.                               */
+/* NO UNIQUE KEY OVER THE CLAIMS OF ONE REMINDER, BUT ONE PER ATTEMPT.    */
+/* See 7b in the header: a second claim for the same start is how a held  */
+/* or failed reminder is tried again, and "at most one LIVE claim" cannot */
+/* be an index while a release is a separate row. What the table CAN      */
+/* refuse is two claims of the same attempt (strategy Q-5, 2026-10-14):   */
+/* each claim carries its attempt number, and the partial unique index    */
+/* reminder_claims_claim_attempt_key holds one claim per (appointment,    */
+/* offset, channel, start, attempt).                                      */
+/*                                                                        */
+/* attempt IS STORED, NOT DERIVED: a number the database computed at      */
+/* insert (a count, a sequence) would differ between two racing inserts   */
+/* only if it saw the other's row, which is exactly what it cannot do, so */
+/* it could never collide. The writer computes it under the reminder's    */
+/* lock (one more than the highest attempt of this reminder for this      */
+/* start, any taker, early or not, released or not) and stores it.        */
+/* NO DEFAULT, deliberately: a default of 1 would let a writer that never */
+/* learnt of the column write attempt 1 every time, and a default is the  */
+/* same for every kind, while a shadow row and a release must carry none. */
+/* NOT NULL ON A CLAIM AND NULL ON EVERY OTHER ROW, by the equivalence    */
+/* CHECK reminder_claims_attempt_matches_kind (the ledger's rule: an      */
+/* equivalence, so a claim that forgets it is refused, 23514, rather than */
+/* stored with a NULL the unique index would never compare). The column   */
+/* itself cannot be NOT NULL because two of the three kinds carry none.   */
+/* AT LEAST 1, by reminder_claims_attempt_positive. No upper bound: how   */
+/* many times a reminder may be tried is the sending code's rule.         */
 /*                                                                        */
 /* NO RECIPIENT AND NO PATIENT COLUMN, like the ledger: the patient is    */
 /* one join away through appointment_id, so a patient merge has nothing   */
@@ -245,6 +275,7 @@ CREATE TABLE public.reminder_claims (
   taker              text
     CONSTRAINT reminder_claims_taker_check CHECK (taker IN ('run', 'sweep')),
   early              boolean,
+  attempt            integer,
   claim_id           uuid,
   claim_kind         text GENERATED ALWAYS AS (CASE WHEN kind = 'release' THEN 'claim' END) STORED,
   minutes_after_mark integer,
@@ -266,6 +297,8 @@ CREATE TABLE public.reminder_claims (
   CONSTRAINT reminder_claims_early_matches_kind CHECK (
     CASE kind WHEN 'claim' THEN (early IS NULL) = (due_at IS NULL) ELSE early IS NULL END
   ),
+  CONSTRAINT reminder_claims_attempt_matches_kind CHECK ((attempt IS NOT NULL) = (kind = 'claim')),
+  CONSTRAINT reminder_claims_attempt_positive CHECK (attempt IS NULL OR attempt >= 1),
   CONSTRAINT reminder_claims_claim_matches_kind CHECK ((claim_id IS NOT NULL) = (kind = 'release')),
   CONSTRAINT reminder_claims_release_names_another_row CHECK (claim_id IS NULL OR claim_id <> id),
   CONSTRAINT reminder_claims_minutes_match_kind CHECK ((minutes_after_mark IS NOT NULL) = (kind = 'shadow')),
@@ -290,6 +323,19 @@ CREATE UNIQUE INDEX reminder_claims_release_claim_key
   ON public.reminder_claims (claim_id)
   WHERE claim_id IS NOT NULL;--> statement-breakpoint
 
+/* One claim per attempt of one reminder for one start (strategy Q-5,     */
+/* W-7). PARTIAL: claims only. A shadow row and a release carry no        */
+/* attempt, and W-7 keeps the shadow rows free of any duplicate refusal.  */
+/* No tenant_id: an appointment is of one tenant (W-6), so the key is     */
+/* already narrower than the tenant. starts_at is in it because a visit   */
+/* moved to another time earns a reminder of its own, from attempt 1.     */
+/* A retry after a release, or after a held outcome, takes the next       */
+/* number and is not refused; two takers of the SAME number are, by the   */
+/* table, whatever the code did before the insert.                        */
+CREATE UNIQUE INDEX reminder_claims_claim_attempt_key
+  ON public.reminder_claims (appointment_id, offset_id, channel, starts_at, attempt)
+  WHERE kind = 'claim';--> statement-breakpoint
+
 COMMENT ON TABLE public.reminder_claims IS
   'The reminder sweep''s claim store. Three kinds of row, each about one '
   'reminder (appointment, offset, channel): a claim (a sender took it for this '
@@ -312,8 +358,8 @@ COMMENT ON TABLE public.reminder_claims IS
 /* NOT UNIQUE with the tenant, ON PURPOSE (W-7, while in shadow): a pass  */
 /* the scheduler runs again after losing the first answer is a second     */
 /* fact, and refusing its heartbeat would roll back the whole of that     */
-/* tenant's pass. A duplicate refusal must exist before the sweep's send  */
-/* mode is armed; that is carded, and it is not this file.                */
+/* tenant's pass. The duplicate refusal the send mode needs is on the     */
+/* CLAIM, not here: reminder_claims_claim_attempt_key (Q-5).              */
 /*                                                                        */
 /* mode says whether the pass was the shadow or the sender. `send` is in  */
 /* the list today although nothing writes it (confirmed, W-11): without   */

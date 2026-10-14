@@ -124,6 +124,8 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
   const cancelledAppointment = randomUUID();
   /** Another tenant's appointment. */
   const otherAppointment = randomUUID();
+  /** An appointment of this tenant only the Q-5 arms claim, numbering their attempts from 1. */
+  const attemptAppointment = randomUUID();
 
   /** Seeded on the owner connection, so they persist for the reading arms. */
   const seededClaim = randomUUID();
@@ -132,6 +134,14 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
 
   const START = "2027-02-01T10:00:00Z";
   const DUE_24H = "2027-01-31T10:00:00Z";
+
+  /**
+   * A fresh attempt number for every claim an arm does not number itself, so
+   * the one-claim-per-attempt index (Q-5) answers only in the arms that ask it.
+   * The arms of "Q-5" number their claims by hand, from 1.
+   */
+  let nextAttempt = 1000;
+  const freshAttempt = (): number => nextAttempt++;
 
   /** A claim row, whole. */
   const claimRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -144,6 +154,7 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
     due_at: DUE_24H,
     taker: "run",
     early: false,
+    attempt: freshAttempt(),
     ...over,
   });
   /** A release row naming `claimId`, whole. */
@@ -248,6 +259,7 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
                 (${appointment}, ${tenant}, ${patient}, ${therapist}, ${location}, ${START}, '2027-02-01T10:45:00Z', 'scheduled'),
                 (${appointment2}, ${tenant}, ${patient}, ${therapist}, ${location}, '2027-02-02T10:00:00Z', '2027-02-02T10:45:00Z', 'scheduled'),
                 (${cancelledAppointment}, ${tenant}, ${patient}, ${therapist}, ${location}, '2027-02-03T10:00:00Z', '2027-02-03T10:45:00Z', 'cancelled'),
+                (${attemptAppointment}, ${tenant}, ${patient}, ${therapist}, ${location}, '2027-02-04T10:00:00Z', '2027-02-04T10:45:00Z', 'scheduled'),
                 (${otherAppointment}, ${otherTenant}, ${otherPatient}, ${otherTherapist}, ${otherLocation}, ${START}, '2027-02-01T10:45:00Z', 'scheduled')`;
     // One claim, one shadow row and one heartbeat per tenant, for the reading arms.
     await sql`insert into reminder_claims ${sql(claimRow({ id: seededClaim }))}`;
@@ -491,6 +503,7 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
                 dueAt: new Date(DUE_24H),
                 taker: "run",
                 early: false,
+                attempt: freshAttempt(),
               })
               .returning({ id: reminderClaims.id, claimKind: reminderClaims.claimKind });
             const [release] = await tx
@@ -710,9 +723,20 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
   });
 
   describe("a row cannot carry a field that means nothing for its kind", () => {
-    it("ACCEPTS a second claim for the same reminder and the same start: nothing here makes 'held' final (7b)", async () => {
-      expect(await ownerInsert("reminder_claims", claimRow())).toBeNull();
-      expect(await ownerInsert("reminder_claims", claimRow({ taker: "sweep" }))).toBeNull();
+    it("ACCEPTS a second claim for the same reminder and the same start, with the next attempt: nothing here makes 'held' final (7b)", async () => {
+      const first = freshAttempt();
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: first }))).toBeNull();
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: first + 1, taker: "sweep" }))).toBeNull();
+    });
+
+    it("REFUSES a claim with no attempt number or one below 1, and an attempt on a release or a shadow row (Q-5)", async () => {
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: null }))).toMatch(/attempt_matches_kind/);
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: 0 }))).toMatch(/attempt_positive/);
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: -1 }))).toMatch(/attempt_positive/);
+      expect(await ownerInsert("reminder_claims", releaseRow(seededClaim, { attempt: 1 }))).toMatch(
+        /attempt_matches_kind/,
+      );
+      expect(await ownerInsert("reminder_claims", shadowRow({ attempt: 1 }))).toMatch(/attempt_matches_kind/);
     });
 
     it("ACCEPTS a claim for an offset with no known due time: no due_at and no early, together", async () => {
@@ -829,7 +853,7 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
       expect(
         await ownerInsert(
           "reminder_claims",
-          claimRow({ kind: "sent", starts_at: null, due_at: null, taker: null, early: null }),
+          claimRow({ kind: "sent", starts_at: null, due_at: null, taker: null, early: null, attempt: null }),
         ),
       ).toMatch(/kind_check/);
       expect(await ownerInsert("reminder_claims", claimRow({ channel: "whatsapp" }))).toMatch(/channel_check/);
@@ -1012,8 +1036,149 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
            and attnum > 0 and not attisdropped`) as { name: string }[];
       expect(seq!.n).toBe(0);
       expect(trg!.n).toBe(0);
-      expect(cols.length).toBe(27);
+      expect(cols.length).toBe(28);
       expect(cols.map((c) => c.name).filter((n) => /patient|phone|email|recipient|name/.test(n))).toEqual([]);
+    });
+  });
+
+  describe("Q-5: the TABLE refuses a second claim of the same attempt, as the job, and nothing else", () => {
+    /** Each arm uses its own start, so its attempt numbers begin at 1 and meet no other arm's. */
+    const startOf = (day: number): { starts_at: string; due_at: string } => ({
+      starts_at: `2027-03-${String(day).padStart(2, "0")}T10:00:00Z`,
+      due_at: `2027-03-${String(day - 1).padStart(2, "0")}T10:00:00Z`,
+    });
+    const numbered = (attempt: number, over: Record<string, unknown> = {}) =>
+      claimRow({ appointment_id: attemptAppointment, ...startOf(2), attempt, ...over });
+
+    /** The server's own error, as the job, in one rolled-back transaction: code and constraint, or null when accepted. */
+    const asJob = async (
+      fn: (tx: TransactionSql) => Promise<unknown>,
+    ): Promise<{ code: string; constraint: string } | null> => {
+      try {
+        await sql.begin(async (tx) => {
+          await tx.unsafe("set local role authenticated");
+          await tx`select set_config('request.jwt.claims', ${jobClaims(tenant)}, true)`;
+          await fn(tx);
+          throw new Rollback(null);
+        });
+        throw new Error("unreachable: transaction committed without rollback");
+      } catch (err) {
+        if (err instanceof Rollback) return null;
+        const e = err as { code?: string; constraint_name?: string; message?: string };
+        if (e.code === undefined) throw err;
+        return { code: e.code, constraint: e.constraint_name ?? `(none) ${e.message ?? ""}` };
+      }
+    };
+    const DUPLICATE = { code: "23505", constraint: "reminder_claims_claim_attempt_key" };
+
+    it("REFUSES a second claim of the same attempt with unique_violation 23505, whichever taker asks", async () => {
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+      })).toEqual(DUPLICATE);
+      // The sleeping job's claim and the sweep's claim are one attempt's two takers.
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1, { taker: "run" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { taker: "sweep" }))}`;
+      })).toEqual(DUPLICATE);
+      // An early claim holds its number like any other.
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1, { early: true }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+      })).toEqual(DUPLICATE);
+    });
+
+    it("ACCEPTS the next attempt, and a retry after a RELEASE takes the next number: the release does not free the old one", async () => {
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        await tx`insert into reminder_claims ${tx(numbered(2, { taker: "sweep" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(3))}`;
+      })).toBeNull();
+      // Claim 1, its release, then the retry as attempt 2: accepted.
+      expect(await asJob(async (tx) => {
+        const [c] = (await tx`insert into reminder_claims ${tx(numbered(1))} returning id`) as { id: string }[];
+        await tx`insert into reminder_claims ${tx(releaseRow(c!.id, { appointment_id: attemptAppointment }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(2))}`;
+      })).toBeNull();
+      // The same, with the retry reusing attempt 1: refused, released or not.
+      expect(await asJob(async (tx) => {
+        const [c] = (await tx`insert into reminder_claims ${tx(numbered(1))} returning id`) as { id: string }[];
+        await tx`insert into reminder_claims ${tx(releaseRow(c!.id, { appointment_id: attemptAppointment }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+      })).toEqual(DUPLICATE);
+    });
+
+    it("ACCEPTS attempt 1 again for another START, another CHANNEL, another OFFSET and another APPOINTMENT: the key is the reminder for one start", async () => {
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        // A visit moved to another time earns a reminder of its own, from attempt 1.
+        await tx`insert into reminder_claims ${tx(numbered(1, startOf(3)))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { channel: "email" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { offset_id: "48h", due_at: "2027-02-28T10:00:00Z" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { appointment_id: appointment2 }))}`;
+      })).toBeNull();
+    });
+
+    it("does NOT refuse shadow rows or heartbeats (W-7): the same shadow row twice, the same heartbeat twice, and a shadow row beside a claim", async () => {
+      const shadow = shadowRow({ appointment_id: attemptAppointment, ...startOf(2), pass_id: "pass-q5" });
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(shadow)}`;
+        await tx`insert into reminder_claims ${tx(shadow)}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        await tx`insert into reminder_sweep_passes ${tx(passRow({ pass_id: "pass-q5" }))}`;
+        await tx`insert into reminder_sweep_passes ${tx(passRow({ pass_id: "pass-q5" }))}`;
+      })).toBeNull();
+    });
+
+    it("SEVERAL SESSIONS AT ONCE, each the job claiming attempt 1 of one reminder and committing: exactly one wins, every other reads 23505", async () => {
+      // Six connections, released together by an advisory-lock barrier the
+      // owner connection holds, so the inserts really overlap. No sending
+      // code, no reminder lock: only the table decides. The rows commit (the
+      // winner is real); afterAll removes them with the tenant's other rows.
+      const N = 6;
+      const BARRIER = 106_0514;
+      const row = numbered(1, startOf(9));
+      const sessions = Array.from({ length: N }, () => connect());
+      const gate = connect();
+      try {
+        await gate`select pg_advisory_lock(${BARRIER})`;
+        const runs = sessions.map((s, i) =>
+          s.begin(async (tx) => {
+            await tx`select pg_advisory_xact_lock_shared(${BARRIER})`;
+            await tx.unsafe("set local role authenticated");
+            await tx`select set_config('request.jwt.claims', ${jobClaims(tenant)}, true)`;
+            await tx`insert into reminder_claims ${tx({ ...row, taker: i % 2 === 0 ? "run" : "sweep" })}`;
+          }),
+        );
+        // Every session is waiting at the barrier before it opens.
+        for (let tries = 0; ; tries++) {
+          const [w] = (await gate`
+            select count(*)::int as n from pg_locks
+             where locktype = 'advisory' and objid = ${BARRIER} and not granted`) as { n: number }[];
+          if (w!.n === N) break;
+          if (tries > 200) throw new Error(`only ${w!.n} of ${N} sessions reached the barrier`);
+          await new Promise((r) => setTimeout(r, 25));
+        }
+        await gate`select pg_advisory_unlock(${BARRIER})`;
+        const settled = await Promise.allSettled(runs);
+        const won = settled.filter((r) => r.status === "fulfilled").length;
+        const lost = settled
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => {
+            const e = r.reason as { code?: string; constraint_name?: string };
+            return `${e.code} ${e.constraint_name}`;
+          });
+        expect(won).toBe(1);
+        expect(lost).toEqual(Array(N - 1).fill("23505 reminder_claims_claim_attempt_key"));
+        const [stored] = (await sql`
+          select count(*)::int as n from reminder_claims
+           where appointment_id = ${attemptAppointment} and kind = 'claim' and starts_at = ${row.starts_at as string}`) as {
+          n: number;
+        }[];
+        expect(stored!.n).toBe(1);
+      } finally {
+        await Promise.all([...sessions, gate].map((s) => s.end({ timeout: 5 })));
+      }
     });
   });
 });

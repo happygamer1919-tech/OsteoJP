@@ -2848,6 +2848,16 @@ export const reminderClaims = pgTable("reminder_claims", {
   taker: text("taker"),
   /** Claim only: taken more than the early margin before `dueAt`. NULL exactly when `dueAt` is. */
   early: boolean("early"),
+  /**
+   * Claim only, and REQUIRED on a claim (NULL on every other kind): which try
+   * of this reminder for this start the claim is, from 1. The writer computes
+   * it under the reminder's lock, one more than the highest attempt already
+   * stored for the same appointment, offset, channel and start. The table
+   * refuses a second claim with the same number (unique_violation 23505, index
+   * `reminder_claims_claim_attempt_key`) and a claim without one (CHECK
+   * `reminder_claims_attempt_matches_kind`, 23514). No default, on purpose.
+   */
+  attempt: integer("attempt"),
   /** Release only: the claim it gives up. One release per claim. */
   claimId: uuid("claim_id"),
   /**

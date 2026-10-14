@@ -6,9 +6,9 @@
 --
 -- WHAT THE MIGRATION DOES
 -- (packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql, sha256
--- 23f70c17478a394e9d4dd6faed28a13bdc6299a927c51e6e4eb2a0a97e2197e5,
+-- 2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9,
 -- to be promoted with no byte changed): three SET LOCAL lines, then two CREATE TABLE
--- (public.reminder_claims, public.reminder_sweep_passes), four indexes, two table
+-- (public.reminder_claims, public.reminder_sweep_passes), five indexes, two table
 -- comments, ENABLE ROW LEVEL SECURITY on both, a REVOKE ALL on each from PUBLIC,
 -- anon, authenticated, patient AND service_role, a GRANT SELECT, INSERT on each to
 -- authenticated, three foreign keys to appointments and tenants in two ALTER
@@ -26,7 +26,7 @@
 --   1      the session is `postgres`, which will own both tables. CONTROL:
 --          `authenticated` is no member of the session's role;
 --   2      NOTHING THE MIGRATION CREATES EXISTS YET: no relation named
---          reminder_claims or reminder_sweep_passes or one of its five index
+--          reminder_claims or reminder_sweep_passes or one of its eight index
 --          and key names, in `public`. CONTROL: the same probe finds
 --          reminder_dispatches and its three indexes;
 --   3      THE TWO TABLES THE FOREIGN KEYS NAME EXIST, are owned by `postgres`,
@@ -95,7 +95,7 @@ WITH names(n) AS (
   VALUES ('reminder_claims'), ('reminder_sweep_passes'),
          ('reminder_claims_pkey'), ('reminder_claims_release_target_key'),
          ('reminder_claims_tenant_time_idx'), ('reminder_claims_mark_idx'),
-         ('reminder_claims_release_claim_key'),
+         ('reminder_claims_release_claim_key'), ('reminder_claims_claim_attempt_key'),
          ('reminder_sweep_passes_pkey'), ('reminder_sweep_passes_tenant_time_idx')
 ), control_names(n) AS (
   VALUES ('reminder_dispatches'), ('reminder_dispatches_tenant_time_idx'),
@@ -226,7 +226,7 @@ SELECT '0. this transaction is READ ONLY (the server refuses writes)' AS check,
 UNION ALL SELECT '1. the session is postgres, which will own both tables (control: authenticated is no member of it)',
        me || '; control ' || auth_in_me::text, 'postgres; control false',
        CASE WHEN me = 'postgres' AND NOT auth_in_me THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '2. nothing the migration creates exists yet: none of its nine relation names is taken (control: the ledger and its three indexes are found)',
+UNION ALL SELECT '2. nothing the migration creates exists yet: none of its ten relation names is taken (control: the ledger and its three indexes are found)',
        names_taken::text || '; control ' || control_found::text, '0; control 4',
        CASE WHEN names_taken = 0 AND control_found = 4 THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT '3. appointments and tenants exist, owned by postgres, each with a primary key on id alone',

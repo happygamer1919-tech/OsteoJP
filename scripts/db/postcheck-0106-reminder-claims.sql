@@ -1,22 +1,25 @@
 -- 0106 POST-CHECK: the reminder sweep's two tables. The number is strategy's
 -- ruling of 2026-10-13; the migration is still PENDING. READ ONLY. Every verdict
--- must read OK (22 expected). Run inside the block's own `begin read only`, so
--- the server refuses any write this file could contain. Catalogue facts and two
--- row counts only.
+-- must read OK (24 expected). A verdict reads OK, FAIL or, for 22 and 23 only,
+-- VACUOUS: a read that found nothing to compare (a table or the role missing) is
+-- VACUOUS, never OK, and VACUOUS is a STOP like FAIL. Run inside the block's own
+-- `begin read only`, so the server refuses any write this file could contain.
+-- Catalogue facts and two row counts only.
 --
 -- EVERY CHANGE THE MIGRATION MAKES IS ASSERTED, AND EVERYTHING ELSE IS ASSERTED
 -- UNCHANGED:
 --   0      the transaction is READ ONLY;
 --   1      BOTH TABLES EXIST in `public`, each an ordinary table owned by
 --          `postgres`. CONTROL: the same read finds reminder_dispatches;
---   2      reminder_claims HAS ITS SIXTEEN COLUMNS, in order, each with its
+--   2      reminder_claims HAS ITS SEVENTEEN COLUMNS, in order, each with its
 --          type, its NOT NULL, its default or its generation expression, as
 --          one pinned md5;
 --   3      reminder_sweep_passes HAS ITS ELEVEN COLUMNS, the same way;
 --   4      EVERY CONSTRAINT OF reminder_claims, by name, type and the definition
---          the server prints, validated, as one pinned md5 (19 of them: the
+--          the server prints, validated, as one pinned md5 (21 of them: the
 --          primary key, the six-column unique key a release's foreign key
---          points at, the three foreign keys and fourteen CHECKs);
+--          points at, the three foreign keys and sixteen CHECKs, two of them
+--          the attempt number's, strategy Q-5);
 --   5      EVERY CONSTRAINT OF reminder_sweep_passes, the same way (8 of them);
 --   6      THE FOREIGN KEYS, READ ON THEIR OWN because they are what decides a
 --          delete: reminder_claims to appointments ON DELETE CASCADE, to tenants
@@ -24,8 +27,9 @@
 --          reminder_sweep_passes to tenants NO ACTION. Verdict 4's md5 pins the
 --          six columns of the release's key;
 --   7      THE INDEXES of both tables, as the server prints them, as one pinned
---          md5 (5 on reminder_claims, 2 on reminder_sweep_passes), and every one
---          valid;
+--          md5 (6 on reminder_claims, 2 on reminder_sweep_passes), and every one
+--          valid. The sixth is reminder_claims_claim_attempt_key, one claim per
+--          attempt (strategy Q-5), partial on kind = 'claim';
 --   8      ROW LEVEL SECURITY is ON and not forced on both;
 --   9      THE POLICIES: each table has exactly one SELECT and one INSERT policy,
 --          permissive, TO `authenticated` alone, and NO policy for UPDATE,
@@ -59,6 +63,20 @@
 --          and INSERT, and NOBODY ELSE, with no grant option anywhere. Verdicts
 --          10 and 11 ask named roles; this one asks the list, so a role nobody
 --          named cannot pass unseen.
+--   22     SERVICE_ROLE, READ DIRECTLY, PER PRIVILEGE, ON BOTH TABLES (strategy
+--          Q-4, 2026-10-14, for W-5). Production runs no seed, so the
+--          migration's own REVOKE is the only thing that makes this true there:
+--          has_table_privilege('service_role', table, p) for SELECT, INSERT,
+--          UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, and MAINTAIN where
+--          the server has it (17 and later; on an older server MAINTAIN is not
+--          asked, and the expected cell count says so). Every cell must read
+--          false. VACUOUS, not OK, unless both tables and the role exist and
+--          the cells were read;
+--   23     SERVICE_ROLE HOLDS NO COLUMN PRIVILEGE ON ANY COLUMN of either table:
+--          has_column_privilege for SELECT, INSERT, UPDATE and REFERENCES on
+--          each of the 28 columns, and has_any_column_privilege per table.
+--          VACUOUS, not OK, unless both tables, the role and the columns were
+--          found.
 --
 -- NOT IN THIS DRAFT, ON PURPOSE: the journal verdicts (the journal moved by one,
 -- the migration is the newest row by hash). See the pre-check's header.
@@ -118,7 +136,7 @@
 \endif
 
 \echo ''
-\echo '=== 0106 REMINDER CLAIMS POST-CHECK: every verdict must read OK (22 expected) ==='
+\echo '=== 0106 REMINDER CLAIMS POST-CHECK: every verdict must read OK (24 expected); VACUOUS is a STOP ==='
 
 WITH t AS (
   SELECT c.oid, c.relname, c.relkind::text AS kind, pg_get_userbyid(c.relowner) AS owner,
@@ -175,8 +193,41 @@ WITH t AS (
   SELECT d.defaclrole, d.defaclnamespace, d.defaclobjtype::text AS objtype, a.grantor, a.grantee, a.privilege_type, a.is_grantable
     FROM pg_default_acl d
     CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+), sr_role AS (
+  -- Strategy Q-4: service_role by name. Empty when the role does not exist,
+  -- and then 22 and 23 read VACUOUS, never OK.
+  SELECT oid FROM pg_roles WHERE rolname = 'service_role'
+), sr_verbs AS (
+  -- MAINTAIN is a table privilege from Postgres 17 on. On an older server it is
+  -- not asked at all: has_table_privilege would raise on the word.
+  SELECT v FROM (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER')) x(v)
+  UNION ALL
+  SELECT 'MAINTAIN' WHERE current_setting('server_version_num')::int >= 170000
+), sr_cells AS (
+  SELECT t.relname, s.v AS verb, has_table_privilege(r.oid, t.oid, s.v) AS held
+    FROM t CROSS JOIN sr_role r CROSS JOIN sr_verbs s
+), sr_cols AS (
+  SELECT t.relname, a.attname, v.v AS verb, has_column_privilege(r.oid, t.oid, a.attnum, v.v) AS held
+    FROM t
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum > 0 AND NOT a.attisdropped
+    CROSS JOIN sr_role r
+    CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('REFERENCES')) v(v)
+), sr_any AS (
+  SELECT t.relname, has_any_column_privilege(r.oid, t.oid, 'SELECT, INSERT, UPDATE, REFERENCES') AS held
+    FROM t CROSS JOIN sr_role r
 ), j AS (
   SELECT
+    (SELECT count(*)::int FROM t)                                                                 AS sr_tables,
+    EXISTS (SELECT 1 FROM sr_role)                                                                AS sr_role_exists,
+    (SELECT count(*)::int FROM sr_verbs)                                                          AS sr_verbs_n,
+    (SELECT count(*)::int FROM sr_cells)                                                          AS sr_cells_n,
+    (SELECT count(*)::int FROM sr_cells WHERE held)                                               AS sr_cells_held,
+    (SELECT coalesce(string_agg(relname || ' ' || verb, ', ' ORDER BY relname, verb), 'none') FROM sr_cells WHERE held) AS sr_cells_which,
+    (SELECT count(*)::int FROM sr_cols)                                                           AS sr_col_cells_n,
+    (SELECT count(DISTINCT relname || '.' || attname)::int FROM sr_cols)                          AS sr_cols_n,
+    (SELECT count(*)::int FROM sr_cols WHERE held)                                                AS sr_col_cells_held,
+    (SELECT count(*)::int FROM sr_any)                                                            AS sr_any_n,
+    (SELECT count(*)::int FROM sr_any WHERE held)                                                 AS sr_any_held,
     (SELECT coalesce(string_agg(relname || ':' || kind || ':' || owner, ', ' ORDER BY relname), 'none') FROM t) AS tables_profile,
     (to_regclass('public.reminder_dispatches') IS NOT NULL)                                      AS control_table,
     (SELECT coalesce(string_agg(relname || ' ' || n::text || ' ' || h, ', ' ORDER BY relname), 'none') FROM cols) AS cols_profile,
@@ -257,15 +308,15 @@ UNION ALL SELECT '1. both tables exist, ordinary tables owned by postgres (contr
        tables_profile || '; control ' || control_table::text,
        'reminder_claims:r:postgres, reminder_sweep_passes:r:postgres; control true',
        CASE WHEN tables_profile = 'reminder_claims:r:postgres, reminder_sweep_passes:r:postgres' AND control_table THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '2. reminder_claims has its sixteen columns, as pinned',
-       split_part(cols_profile, ', ', 1), 'reminder_claims 16 53555a4504a1e419cc373438c546c72d',
-       CASE WHEN split_part(cols_profile, ', ', 1) = 'reminder_claims 16 53555a4504a1e419cc373438c546c72d' THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '2. reminder_claims has its seventeen columns, as pinned',
+       split_part(cols_profile, ', ', 1), 'reminder_claims 17 aecad6420ed26fd0fdf427fbf9b91a06',
+       CASE WHEN split_part(cols_profile, ', ', 1) = 'reminder_claims 17 aecad6420ed26fd0fdf427fbf9b91a06' THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT '3. reminder_sweep_passes has its eleven columns, as pinned',
        split_part(cols_profile, ', ', 2), 'reminder_sweep_passes 11 fb762f711b1c3cb456b4b9c88233e981',
        CASE WHEN split_part(cols_profile, ', ', 2) = 'reminder_sweep_passes 11 fb762f711b1c3cb456b4b9c88233e981' THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '4. every constraint of reminder_claims, validated, as pinned (19)',
-       split_part(cons_profile, ', ', 1), 'reminder_claims 19 true dbe506e4f7024b8ddb552a3f58ad8296',
-       CASE WHEN split_part(cons_profile, ', ', 1) = 'reminder_claims 19 true dbe506e4f7024b8ddb552a3f58ad8296' THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '4. every constraint of reminder_claims, validated, as pinned (21)',
+       split_part(cons_profile, ', ', 1), 'reminder_claims 21 true 28e039177325c7244c9128ffcaab1e49',
+       CASE WHEN split_part(cons_profile, ', ', 1) = 'reminder_claims 21 true 28e039177325c7244c9128ffcaab1e49' THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT '5. every constraint of reminder_sweep_passes, validated, as pinned (8)',
        split_part(cons_profile, ', ', 2), 'reminder_sweep_passes 8 true b987b4f5f6685eac17e3eb2f46fc07de',
        CASE WHEN split_part(cons_profile, ', ', 2) = 'reminder_sweep_passes 8 true b987b4f5f6685eac17e3eb2f46fc07de' THEN 'OK' ELSE 'FAIL' END FROM j
@@ -273,9 +324,9 @@ UNION ALL SELECT '6. the foreign keys and what a delete does (c is CASCADE, a is
        fk_profile,
        'reminder_claims.reminder_claims_appointment_id_fkey -> appointments del c upd a; reminder_claims.reminder_claims_claim_fkey -> reminder_claims del c upd a; reminder_claims.reminder_claims_tenant_id_fkey -> tenants del a upd a; reminder_sweep_passes.reminder_sweep_passes_tenant_id_fkey -> tenants del a upd a',
        CASE WHEN fk_profile = 'reminder_claims.reminder_claims_appointment_id_fkey -> appointments del c upd a; reminder_claims.reminder_claims_claim_fkey -> reminder_claims del c upd a; reminder_claims.reminder_claims_tenant_id_fkey -> tenants del a upd a; reminder_sweep_passes.reminder_sweep_passes_tenant_id_fkey -> tenants del a upd a' THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '7. the indexes of both tables, every one valid, as pinned (5 and 2)',
-       idx_profile, '5+2 true 24c345454a6ba2ea6f79ec26f5c5ba3a',
-       CASE WHEN idx_profile = '5+2 true 24c345454a6ba2ea6f79ec26f5c5ba3a' THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '7. the indexes of both tables, every one valid, as pinned (6 and 2)',
+       idx_profile, '6+2 true 6d18e758ddc81deff66f0be58db7d3b7',
+       CASE WHEN idx_profile = '6+2 true 6d18e758ddc81deff66f0be58db7d3b7' THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT '8. row level security is on and not forced, on both',
        rls_profile, 'reminder_claims on true forced false, reminder_sweep_passes on true forced false',
        CASE WHEN rls_profile = 'reminder_claims on true forced false, reminder_sweep_passes on true forced false' THEN 'OK' ELSE 'FAIL' END FROM j
@@ -315,4 +366,20 @@ UNION ALL SELECT '20. every default privilege in the database and every trigger 
 UNION ALL SELECT '21. the WHOLE grantee list of each table: the owner with all eight, authenticated with SELECT and INSERT, nobody else, no grant option',
        whole_acl,
        'reminder_claims authenticated [INSERT,SELECT]; reminder_claims postgres [DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE]; reminder_sweep_passes authenticated [INSERT,SELECT]; reminder_sweep_passes postgres [DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE]',
-       CASE WHEN whole_acl = 'reminder_claims authenticated [INSERT,SELECT]; reminder_claims postgres [DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE]; reminder_sweep_passes authenticated [INSERT,SELECT]; reminder_sweep_passes postgres [DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE]' THEN 'OK' ELSE 'FAIL' END FROM j;
+       CASE WHEN whole_acl = 'reminder_claims authenticated [INSERT,SELECT]; reminder_claims postgres [DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE]; reminder_sweep_passes authenticated [INSERT,SELECT]; reminder_sweep_passes postgres [DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE]' THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '22. service_role, read directly per privilege on both tables, holds none of them (Q-4; MAINTAIN asked only on a server that has it; VACUOUS unless both tables and the role exist)',
+       sr_cells_held::text || ' of ' || sr_cells_n::text || ' held (' || sr_cells_which || ')'
+         || '; MAINTAIN asked ' || (sr_verbs_n = 8)::text
+         || '; tables ' || sr_tables::text || ', role ' || sr_role_exists::text,
+       '0 of ' || (2 * sr_verbs_n)::text || ' held (none); MAINTAIN asked '
+         || (current_setting('server_version_num')::int >= 170000)::text || '; tables 2, role true',
+       CASE WHEN sr_tables <> 2 OR NOT sr_role_exists OR sr_cells_n = 0 THEN 'VACUOUS'
+            WHEN sr_cells_held = 0 AND sr_cells_n = 2 * sr_verbs_n THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '23. service_role holds no column privilege on any column of either table (SELECT, INSERT, UPDATE, REFERENCES per column; any column per table; VACUOUS unless both tables, the role and the columns exist)',
+       sr_col_cells_held::text || ' of ' || sr_col_cells_n::text || ' column cells held, ' || sr_any_held::text || ' of '
+         || sr_any_n::text || ' tables with any; ' || sr_cols_n::text || ' columns; tables ' || sr_tables::text
+         || ', role ' || sr_role_exists::text,
+       '0 of 112 column cells held, 0 of 2 tables with any; 28 columns; tables 2, role true',
+       CASE WHEN sr_tables <> 2 OR NOT sr_role_exists OR sr_cols_n = 0 THEN 'VACUOUS'
+            WHEN sr_col_cells_held = 0 AND sr_any_held = 0 AND sr_any_n = 2 AND sr_cols_n = 28 AND sr_col_cells_n = 112 THEN 'OK'
+            ELSE 'FAIL' END FROM j;

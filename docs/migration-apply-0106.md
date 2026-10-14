@@ -14,13 +14,14 @@ with the proof of each, the design, the locks as measured, the order of pull req
 needs, what each verdict of the two check files must read, the proof per role, the two
 rehearsals' records, the rollback that was run, what was NOT rehearsed, and the open questions.
 
-**Status: AUTHORED, REVISED FOR STRATEGY'S RULINGS OF 2026-10-13, REHEARSED TWICE ON A THROWAWAY
-WITH LIMITS. NOT PROMOTED. THIS REVISION IS NOT REVIEWED. NOT APPLIED ANYWHERE BUT A THROWAWAY,
-AND TAKEN OFF IT AGAIN.** One migration, sha256
-`23f70c17478a394e9d4dd6faed28a13bdc6299a927c51e6e4eb2a0a97e2197e5`, 23 statements. It lives in
-`migrations-pending`, where nothing can apply it. The first draft was sha256 `a78b2c9d...`; its
-reviewer passed it with five minor findings, and the section "Review history" says what became
-of each.
+**Status: AUTHORED, REVISED FOR STRATEGY'S RULINGS OF 2026-10-13 AND 2026-10-14 (Q-4, Q-5,
+S12), REHEARSED THREE TIMES ON A THROWAWAY WITH LIMITS. NOT PROMOTED. THE TWO LATEST REVISIONS
+ARE NOT REVIEWED. NOT APPLIED ANYWHERE BUT A THROWAWAY, AND TAKEN OFF IT AGAIN.** One
+migration, sha256 `2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9`, 24
+statements. It lives in `migrations-pending`, where nothing can apply it. The first draft was
+sha256 `a78b2c9d...`; its reviewer passed it with five minor findings, and the section "Review
+history" says what became of each. The revision of 2026-10-13 was sha256 `23f70c17...2197e5`;
+the revision of 2026-10-14 adds the attempt number and its unique index (Q-5).
 
 **Authored by SOLO. If it is ever run, it is run by GREEN,** a fresh session launched with the
 apply settings, on the owner's dispatch naming the migration by filename (`CLAUDE.md`, "Who
@@ -52,7 +53,7 @@ of the migration.
 1. Merge `main` into the branch (merge, never rebase).
 2. Rename `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql` to
    `packages/db/migrations/0106_reminder_claims.sql`. Its sha256 stays
-   `23f70c17...2197e5`; the file's own header still says "PENDING", stale on purpose.
+   `2f309b8a...92a3d9`; the file's own header still says "PENDING", stale on purpose.
 3. Add its entry to `packages/db/migrations/meta/_journal.json`: the next `idx` after `0105`'s,
    tag `0106_reminder_claims`, a `when` above `0105`'s.
 4. Mirror it into `supabase/migrations` (`scripts/sync-supabase-migrations.mjs`).
@@ -84,19 +85,22 @@ change to any existing table, policy, function or grant.
 - **`public.reminder_sweep_passes`**: the heartbeat. One row per tenant per pass of the sweep,
   with the counts of that pass.
 
-The 23 statements, in order: three `SET LOCAL` lines (lock wait 5 s, statement 60 s, idle in
-transaction 15 s); `CREATE TABLE reminder_claims`; three indexes; its comment; `CREATE TABLE
+The 24 statements, in order: three `SET LOCAL` lines (lock wait 5 s, statement 60 s, idle in
+transaction 15 s); `CREATE TABLE reminder_claims`; four indexes (the fourth is the one claim per
+attempt of Q-5); its comment; `CREATE TABLE
 reminder_sweep_passes`; one index; its comment; `ENABLE ROW LEVEL SECURITY` on both; a `REVOKE
 ALL` on each from `PUBLIC`, `anon`, `authenticated`, `patient` and `service_role`; a `GRANT
 SELECT, INSERT` on each to `authenticated`; two `ALTER TABLE` statements that add the three
 foreign keys to `appointments` and `tenants`; and four `CREATE POLICY` statements, last. The
 INSERT policy of `reminder_claims` reads `public.appointments` in a sub-select.
 
-## 2. Strategy's rulings of 2026-10-13, and the proof of each
+## 2. Strategy's rulings of 2026-10-13 and 2026-10-14, and the proof of each
 
-Every command below ran on the throwaway of the second rehearsal (see "Rehearsal"). "The suite"
-is `pnpm exec vitest run tests/reminder-claims-rls.db.test.ts` in `packages/db`, 52 tests, each
-access arm as the real principal in a transaction that is rolled back.
+Every command below ran on the throwaway of the second rehearsal (see "Rehearsal"), and again on
+the third, which added the rulings of 2026-10-14. "The suite" is `pnpm exec vitest run
+tests/reminder-claims-rls.db.test.ts` in `packages/db`, now 58 tests (52 on 2026-10-13), each
+access arm as the real principal in a transaction that is rolled back, except the concurrency
+arm of Q-5, whose winner commits.
 
 | Ruling | In the file | Proof, and its result line |
 |---|---|---|
@@ -106,17 +110,20 @@ access arm as the real principal in a transaction that is rolled back.
 | **W-4** RLS enabled, not forced | `ENABLE ROW LEVEL SECURITY`, no `FORCE` | Post-check verdict 8: `reminder_claims on true forced false, reminder_sweep_passes on true forced false`, OK |
 | **W-5** `service_role` revoked by name on both tables. Gates: the job's write path still succeeds; PUBLIC holds nothing | `service_role` is in both `REVOKE ALL` lists | See "W-5" below. Post-check verdict 11 `0 cells, 0 PUBLIC items; control 2` and verdict 21 (the whole grantee list), both OK. The suite: `service_role` is refused 10 statements with `permission denied`, and the job writes through the real tenant context and the real Drizzle tables. Mutants: `service_role` left out of either REVOKE, 4 red each |
 | **W-6** the INSERT policy proves the appointment is of the row's tenant | An `EXISTS` sub-select on `appointments` in `reminder_claims_job_insert` | See "W-6" below. The suite, five arms. Mutant: the `EXISTS` dropped, 3 red |
-| **W-7** no duplicate refusal while in shadow | No unique key over shadow rows or heartbeats | The suite: two heartbeats of one tenant for one pass id are accepted. **Carded, not built: a duplicate refusal must exist before the sweep's send mode is armed** |
+| **W-7** no duplicate refusal while in shadow | No unique key over shadow rows or heartbeats; the Q-5 index is partial on `kind = 'claim'` | The suite: two heartbeats of one tenant for one pass id are accepted, and, as the job, the same shadow row twice and the same heartbeat twice in one transaction. **The duplicate refusal the send mode needs is now on the claim: Q-5** |
 | **W-8** the number is `0106` | The file keeps its pending name until `0105` is on `main` | This document, the two check files and the README row |
 | **W-9** merge first, apply from `main`. Gate: a search of `main` proves no code reads either table before the apply | Nothing to build | See "No code on `main` reads either table": 0 lines for the table names; 3 lines for the Drizzle name, all one test's local helper of the same name |
 | **W-10** keep all rows until the ledger's retention is ruled; a 90 day purge of shadow rows and heartbeats as a card; a claim is never purged by age alone | No purge, no retention, and after W-5 no role but the owner can delete | Post-check verdict 21. **Carded, not built** |
 | **W-11** confirmed as built: `send` in the mode list, one release per claim, `due_at` and `early` stored | Unchanged | Post-check verdicts 4 and 5 (the constraints, pinned), OK |
+| **Q-5 (2026-10-14)** the TABLE refuses a duplicate claim for the same attempt, not only the sending code | The stored column `attempt`, two CHECKs, and the partial unique index `reminder_claims_claim_attempt_key` | See "Q-5" below. The suite, as the job: same attempt `23505`, the next attempt and a retry after a release accepted, shadow rows and heartbeats not refused, six concurrent sessions with one winner. Mutation sweep: 8 of 9 killed, the ninth equivalent |
+| **Q-4 (2026-10-14)** the post-check reads `service_role`'s grants on both tables directly | Post-check verdicts 22 and 23 | See "What every verdict must read". 24 OK on lane blue; each shown FAIL in a rolled-back transaction; VACUOUS shown on a scratch copy |
+| **S12 (2026-10-14)** the read-only count runs in the sitting as its own block, for the final S12 ruling | `scripts/db/s12-never-had-a-reminder-count.sql` and step 5 of "The sitting's steps" | Rehearsed on lane blue, in bash and zsh, with two halts shown. Never a STOP condition |
 
 ## 3. The design, in brief
 
 **The shape.**
 
-`reminder_claims` (16 columns):
+`reminder_claims` (17 columns):
 
 | Column | Carried by | Meaning |
 |---|---|---|
@@ -130,6 +137,7 @@ access arm as the real principal in a transaction that is rolled back.
 | `due_at` | claim, shadow | the start minus the offset. Always on a shadow row; NULL on a claim for an offset the application did not know |
 | `taker` | claim | `run` (the sleeping job) or `sweep` |
 | `early` | claim | taken more than the early margin before `due_at`; NULL exactly when `due_at` is |
+| `attempt` | claim | which try of this reminder for this start, from 1; required on a claim, NULL on every other row; one claim per attempt (Q-5) |
 | `claim_id` | release | the claim it gives up; one release per claim |
 | `claim_kind` | release | written by the database, never by the application: `claim` on a release, NULL on every other row |
 | `minutes_after_mark` | shadow | minutes between `due_at` and the pass; may be negative |
@@ -176,6 +184,10 @@ the local sweep branch already writes a release with its claim's offset and chan
 **What is NOT enforced by the table, said plainly.**
 
 - **That at most one claim of a reminder is live.** The dispatcher's advisory lock does that.
+  What the table does refuse, since Q-5, is two claims of the same ATTEMPT: two takers that both
+  read "the next attempt is 3" cannot both store it. That the number a writer stores is really
+  one more than the highest stored is the writer's to compute, under the lock; the table only
+  refuses the collision.
 - **That a claim's appointment is of its tenant, FOR A WRITER THAT BYPASSES ROW LEVEL
   SECURITY.** W-6 puts the test in the INSERT policy, so it binds every session the application
   can make. The table's owner is not bound by a policy, and no key ties the two columns:
@@ -294,6 +306,95 @@ cannot afford.
 
 **The heartbeat is unchanged.** It names no appointment.
 
+## Q-5: the table refuses a second claim of the same attempt (strategy, 2026-10-14)
+
+Strategy's words: "Q-5 yes, add the attempt number column and the unique index to the 0106 draft
+now." Before this, the sending code refused a duplicate in code only: a lock, then a read, then
+its own row. A release was already its own row, and one release per claim already a unique
+index.
+
+**What was added.**
+
+```sql
+attempt            integer,
+CONSTRAINT reminder_claims_attempt_matches_kind CHECK ((attempt IS NOT NULL) = (kind = 'claim')),
+CONSTRAINT reminder_claims_attempt_positive CHECK (attempt IS NULL OR attempt >= 1),
+CREATE UNIQUE INDEX reminder_claims_claim_attempt_key
+  ON public.reminder_claims (appointment_id, offset_id, channel, starts_at, attempt)
+  WHERE kind = 'claim';
+```
+
+**Each choice, and why.**
+
+| Choice | Why |
+|---|---|
+| STORED, not derived | A number the database derived at insert (a count of earlier claims, a sequence) could only collide if it saw the racing row, which an uncommitted row is not. A stored number written by the taker is what two takers can both choose, and what the index can refuse |
+| NO DEFAULT | A default of 1 would let a writer that never learnt of the column write attempt 1 every time, and a default is one value for every kind while a shadow row and a release must carry none |
+| NOT NULL on a claim, NULL on every other row, by an equivalence CHECK, not a column NOT NULL | Two of the three kinds carry no attempt. The equivalence (the ledger's rule, `0075`) refuses a claim without one with `23514`, rather than storing a NULL that the unique index would never compare |
+| At least 1, no upper bound | How many tries a reminder gets is the sending code's rule |
+| PARTIAL on `kind = 'claim'` | Row kinds share the table. W-7: shadow rows and heartbeats are not refused. (Shadow rows and releases hold NULL, which a unique index never compares, so the predicate refuses nothing more; it keeps the index to the claims and says so. Mutant 2 below.) |
+| Key `(appointment_id, offset_id, channel, starts_at, attempt)` | The reminder (appointment, offset, channel) for one START: a visit moved to another time earns a reminder of its own, from attempt 1. No `tenant_id`: an appointment is of one tenant (W-6), so the key is already narrower |
+| A retry after a release is not refused | A release frees no number. The retry takes the next one, and two takers of that next one are refused. Shown both ways below |
+| One number across both takers and early claims | The sleeping job (`run`) and the sweep (`sweep`) claiming the same attempt is exactly the duplicate. An early claim holds its number like any other |
+
+**How a writer computes it.** Under the reminder's advisory lock it already takes
+(`acquireReminderClaimLock`, keyed on tenant, appointment, offset and channel), before the
+insert: one more than the highest `attempt` stored for this appointment, offset, channel and
+start among rows of kind `claim`, any taker, early or not, released or not; 1 when there is none.
+The lock makes the read and the insert one step for every writer that takes it; the index
+refuses the collision for one that does not.
+
+**Proven as the real principal** (the suite's "Q-5" arms, as `authenticated` with the job's
+claims; on lane blue, `Tests 58 passed (58)`):
+
+| Arm | Result |
+|---|---|
+| The same attempt twice; the same attempt by `run` and by `sweep`; an early claim and a claim of the same attempt | each `{ code: "23505", constraint: "reminder_claims_claim_attempt_key" }` |
+| Attempts 1, 2, 3 | accepted |
+| Claim 1, its release, then attempt 2 | accepted |
+| Claim 1, its release, then attempt 1 again | `23505`: the release does not free the number |
+| Attempt 1 again for another start, another channel, another offset, another appointment | accepted |
+| As the job, the same shadow row twice, a claim beside it, and the same heartbeat twice | accepted (W-7) |
+| Six sessions released together by an advisory-lock barrier, each the job inserting attempt 1 of one reminder and committing (three `run`, three `sweep`) | exactly 1 fulfilled, 5 rejected `23505 reminder_claims_claim_attempt_key`, 1 row stored |
+| On the owner connection: a claim with no attempt; attempt 0; attempt -1; a release or a shadow row with an attempt | `attempt_matches_kind`, `attempt_positive`, `attempt_positive`, `attempt_matches_kind` twice |
+
+**EVERY WRITER OF THIS TABLE ON THE TWO SWEEP BRANCHES, and what Q-5 asks of each.** Read on
+2026-10-14 from the worktrees, not edited. Both branches carry their own copy of the pending
+migration and of `schema.ts`, without `attempt`; each needs this branch merged in first.
+
+`reminders/SWEEP-13-on-table` (`914417fe`):
+
+| Writer | Kind | Must set `attempt`? |
+|---|---|---|
+| `apps/web/lib/reminders/reminder-claim.ts:379` `takeReminderClaim` | claim | **YES.** Inside the transaction, after `acquireReminderClaimLock` and `claimIsHeld`, read the highest attempt for (appointment, offset, channel, start) of kind claim and store one more |
+| `apps/web/lib/reminders/reminder-claim.ts:428` `releaseReminderClaim` | release | no (must stay NULL) |
+| `apps/web/lib/reminders/sweep.ts:477` `sweepTenantInShadow` | shadow | no (must stay NULL) |
+| `apps/web/lib/reminders/sweep.ts:484` the heartbeat | `reminder_sweep_passes` | no column |
+| test fixtures that insert a claim: `reminder-claim.db.test.ts:275`, `reminder-log.db.test.ts:799`, `sweep.db.test.ts:205` (all under `apps/web/lib/reminders/`) | claim | **YES**, a distinct number per claim of one reminder and start |
+| test fixtures that insert a shadow row or a release: `reminder-claim.db.test.ts:287` and `:295`, `reminder-log.db.test.ts:793`, `sweep.db.test.ts:179` and `:213` | shadow, release | no |
+
+`reminders/SWEEP-47-sweep-sends` (`7910b586`):
+
+| Writer | Kind | Must set `attempt`? |
+|---|---|---|
+| `apps/web/lib/reminders/reminder-claim.ts:396` `takeReminderClaim` | claim | **YES**, as above |
+| `apps/web/lib/reminders/reminder-claim.ts:445` `releaseReminderClaim` | release | no |
+| `apps/web/lib/reminders/reminder-claim.ts:589` `takeReminderClaimClosed` | claim | **YES.** After `claimIsLive`: the highest attempt of ALL claims of this start, early ones included (`claimIsLive` ignores early claims for "held", but they hold their numbers) |
+| `apps/web/lib/reminders/sweep.ts:477` | shadow | no |
+| `apps/web/lib/reminders/sweep.ts:484`, `apps/web/lib/reminders/sweep-send.ts:607` | heartbeats | no column |
+| test fixtures that insert a claim: `reminder-claim-closed.db.test.ts:194`, `reminder-claim.db.test.ts:275`, `reminder-log.db.test.ts:799`, `sweep-send.db.test.ts:192`, `sweep.db.test.ts:205` | claim | **YES** |
+| test fixtures that insert a shadow row, a release or a heartbeat: `reminder-claim-closed.db.test.ts:203` and `:387`, `reminder-claim.db.test.ts:287` and `:295`, `reminder-log.db.test.ts:793`, `sweep-send.db.test.ts:197`, `:211` and `:536`, `sweep.db.test.ts:179` and `:213` | other | no |
+
+**A consequence the sending code must take on, not decided here.** `takeReminderClaim` catches
+every failure and answers "not held, no claim id" (`reminder-claim.ts:399-405` on SWEEP-47, `:382-388` on SWEEP-13), so
+the caller goes on and sends. Today a `23505` from this index would be such a failure: the
+duplicate the table refused would still be sent by the open path. The closed path
+(`takeReminderClaimClosed`) throws `ReminderClaimStoreError` and sends nothing, which is the safe
+side. Whether the open path should answer `held` on `23505 reminder_claims_claim_attempt_key` is
+an open question below. Until a writer sets `attempt`, every claim insert it makes is refused by
+`reminder_claims_attempt_matches_kind` (`23514`): on the open path that is a logged failure and a
+send without a claim; on the closed path, no send.
+
 ## No code on `main` reads either table (W-9)
 
 Run on 2026-10-13 against `origin/main` at `5d4e8091` (the commit that has `0103`).
@@ -358,14 +459,16 @@ previous one's clean report and merge; this one is aimed at Monday 2026-10-19 or
 ## The locks, measured on the throwaway (2026-10-13, PostgreSQL 17.6)
 
 Read from `pg_locks` for the applying session, at the end of the file, inside a transaction that
-was then rolled back. Measured again for this revision; the strongest lock on each table is
-unchanged from the first draft.
+was then rolled back. Measured again for the revision of 2026-10-13; the strongest lock on each
+table is unchanged from the first draft. **Not measured again for the revision of 2026-10-14:**
+its one new statement is a `CREATE UNIQUE INDEX` on the new table, created empty in the same
+transaction, which names no existing table; the numbers below are shifted by one for it.
 
 | Part of the file | Locks on relations that existed before |
 |---|---|
-| Statements 1 to 17 (the `SET LOCAL` lines, both tables, the indexes, the comments, RLS, the revokes and grants) | **none, in any mode** (measured on the first draft; these statements name no existing table in this revision either) |
-| Statements 18 and 19 (the foreign keys) | SHARE ROW EXCLUSIVE on `public.appointments` and `public.tenants`: writes to them wait, reads do not |
-| Statements 20 to 23 (the policies) | ACCESS EXCLUSIVE on 23 platform tables: 16 in `auth` (`users`, `sessions`, `refresh_tokens`, `identities` and the rest), 5 in `storage`, 2 in `realtime`. The claims INSERT policy also takes ACCESS SHARE on `public.appointments`, weaker than the lock statement 18 already holds |
+| Statements 1 to 18 (the `SET LOCAL` lines, both tables, the indexes, the comments, RLS, the revokes and grants) | **none, in any mode** (measured on the first draft; these statements name no existing table in this revision either) |
+| Statements 19 and 20 (the foreign keys) | SHARE ROW EXCLUSIVE on `public.appointments` and `public.tenants`: writes to them wait, reads do not |
+| Statements 21 to 24 (the policies) | ACCESS EXCLUSIVE on 23 platform tables: 16 in `auth` (`users`, `sessions`, `refresh_tokens`, `identities` and the rest), 5 in `storage`, 2 in `realtime`. The claims INSERT policy also takes ACCESS SHARE on `public.appointments`, weaker than the lock statement 19 already holds |
 
 All are held until the COMMIT. `lock_timeout` read `5s`, `statement_timeout` `1min` and
 `idle_in_transaction_session_timeout` `15s` inside the transaction. Both new tables are empty,
@@ -432,8 +535,9 @@ revision: the revision changes no table name and no foreign key to an existing t
 ## What every verdict must read
 
 **The pre-check, `scripts/db/precheck-0106-reminder-claims.sql`: 10 verdicts OK, 9 CARRY rows, 3
-INFO rows.** READ ONLY. It proves the session is `postgres`; that none of the nine relation
-names the migration creates is taken; that `appointments` and `tenants` exist with a primary key
+INFO rows.** READ ONLY. It proves the session is `postgres`; that none of the ten relation
+names the migration creates is taken (the tenth, since 2026-10-14, is
+`reminder_claims_claim_attempt_key`); that `appointments` and `tenants` exist with a primary key
 on `id`; that the three helpers the policies call exist AND that `authenticated` may execute
 each; that the four roles exist; that the server is Postgres 17; that every SECURITY DEFINER
 function is owned by `postgres`; that `authenticated` reads `appointments` and may execute every
@@ -441,9 +545,11 @@ function its policies there depend on (verdict 8, for W-6); and that the default
 a new table to no role the migration does not revoke by name (verdict 9, for W-5). It carries
 nine values for the post-check.
 
-**The post-check, `scripts/db/postcheck-0106-reminder-claims.sql`: 22 verdicts OK.** READ ONLY.
-It proves both tables exist and are owned by `postgres`; the columns, the constraints, the
-foreign keys with their delete actions, and the indexes, each against a pinned value; RLS on
+**The post-check, `scripts/db/postcheck-0106-reminder-claims.sql`: 24 verdicts OK (22 until
+2026-10-14).** READ ONLY. It proves both tables exist and are owned by `postgres`; the columns
+(17 on `reminder_claims` since Q-5), the constraints (21, two of them the attempt's), the foreign
+keys with their delete actions, and the indexes (6 and 2, the sixth the one claim per attempt),
+each against a pinned value read on lane blue on 2026-10-14; RLS on
 and not forced; exactly one SELECT and one INSERT policy per table, to `authenticated` alone,
 with pinned expressions (the claims INSERT policy's is the one with the sub-select);
 `authenticated` holding exactly SELECT and INSERT of the eight table privileges; `anon`,
@@ -451,15 +557,96 @@ with pinned expressions (the claims INSERT policy's is the one with the sub-sele
 (verdict 21)**; no column grant and no trigger; both tables empty; and that nothing else moved:
 the table count is the pre-check's plus two, and the sequences, the functions, the SECURITY
 DEFINER count, every other policy, every other privilege, the default privileges and the
-triggers are the pre-check's.
+triggers are the pre-check's; and **`service_role`'s privileges read directly, per privilege and
+per column (verdicts 22 and 23, below).**
 
 **Not in either file yet:** the journal verdicts (the migration absent by hash before, the
 newest row after, the journal moved by one). They pin a predecessor that is not on `main`.
 
+**Verdicts 22 and 23 (strategy Q-4, 2026-10-14): `service_role`, read directly on the database
+the sitting applied to.** Production runs no seed, so the migration's own `REVOKE` is the only
+thing that makes W-5 true there, and the suite's proof ran on a seeded test database. Verdict
+22 asks `has_table_privilege('service_role', table, p)` on both tables for SELECT, INSERT,
+UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, and MAINTAIN only where the server has it (17
+and later; an older server is not asked the word, and the expected cell count follows). Verdict
+23 asks `has_column_privilege` for SELECT, INSERT, UPDATE and REFERENCES on each of the 28
+columns, and `has_any_column_privilege` per table. Both read **VACUOUS, never OK,** unless both
+tables and the role exist and the cells were read; VACUOUS is a STOP like FAIL. Expected:
+`0 of 16 held (none); MAINTAIN asked true; tables 2, role true` and `0 of 112 column cells held,
+0 of 2 tables with any; 28 columns; tables 2, role true`. Shown failing on lane blue, each in a
+rolled-back transaction: SELECT on `reminder_claims` granted to `service_role` read 22 `1 of 16
+held (reminder_claims SELECT)` FAIL and 23 `17 of 112` FAIL; MAINTAIN on the heartbeats, 22
+FAIL; a column grant of UPDATE (`pass_id`) or REFERENCES (`id`), 23 FAIL with 22 OK. VACUOUS
+was shown on a scratch copy of the file that names a role that does not exist (both read
+`role false` VACUOUS); the real role cannot be renamed on a local stack ("reserved role, only
+superusers can modify it"). A missing TABLE cannot reach VACUOUS: verdict 14 counts the rows of
+both tables, so the file stops with an error first, which is a STOP too.
+
+## The sitting's steps, and the S12 count
+
+**This document's blocks are not written yet** (they wait for `0105`'s position; see "NOT
+READY"). Until they are, this is the list of the sitting's steps, in order, and the S12 block is
+written out in full because it does not depend on that position.
+
+1. Stage 0: clock, clinic hours (closed only), HEAD CHECK, target guard, the W-9 search. *Not
+   written.*
+2. The pre-check, `scripts/db/precheck-0106-reminder-claims.sql`: 10 OK, 9 CARRY, 3 INFO.
+   *Block not written.*
+3. The apply through `verified-migrate.mjs`. *Block not written.*
+4. The post-check, `scripts/db/postcheck-0106-reminder-claims.sql`: 24 OK, with the nine
+   carries. *Block not written.*
+5. **The S12 count, its own block, AFTER the post-check (below).** Information for strategy's
+   FINAL S12 ruling, never a STOP condition for the sitting.
+6. The closing journal read. *Not written.*
+
+### Step 5: the S12 count (read only, information for strategy, never a STOP condition)
+
+Strategy, 2026-10-14: "S12: provisional ruling = your first definition (history-based). Run
+s12-never-had-a-reminder-count-20261013.sql read-only in the 0106 sitting as its own block; final
+ruling on the counts, before arming." The file is `scripts/db/s12-never-had-a-reminder-count.sql`:
+a header, then the handover file byte for byte (sha256 `334e9e3a...feb00df`). It prints one row
+per tenant: the tenant's id and seven counts. No patient id, name, phone or email.
+
+**WHAT IT IS NOT.** It is no verdict and no gate. Whatever numbers it prints, the sitting's
+result is the post-check's. The block below halts only when the READ itself cannot be trusted
+(the variable is missing, the file is not the reviewed one, the transaction is not read only,
+psql fails); such a halt stops this block and nothing else, because the apply has committed and
+the post-check has already read 24 OK. GREEN pastes the printed table into its report as it
+stands, for strategy.
+
+It runs after the post-check block, in the same session, with `DATABASE_URL_DIRECT` already set
+by the sitting's env step (written with the other blocks). Explicit halts on every command, no
+`set -e`, one subshell with nothing after it.
+
+```bash
+(
+  cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP (S12 block only; the apply and the post-check stand): no apply checkout"; exit 1; }
+  [ -n "${DATABASE_URL_DIRECT:-}" ] || { echo "STOP (S12 block only; the apply and the post-check stand): DATABASE_URL_DIRECT is not set"; exit 1; }
+  S12FILE=scripts/db/s12-never-had-a-reminder-count.sql
+  S12WANT=72762c7533b87239b4f9e540106f38b7a2d91b4a3df298a369a65830872846d2
+  S12SHA=$(shasum -a 256 "${S12FILE}" | cut -d' ' -f1) || { echo "STOP (S12 block only; the apply and the post-check stand): cannot hash ${S12FILE}"; exit 1; }
+  [ "${S12SHA}" = "${S12WANT}" ] || { echo "STOP (S12 block only; the apply and the post-check stand): ${S12FILE} is ${S12SHA}, not the reviewed ${S12WANT}"; exit 1; }
+  psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off \
+       -c "begin read only" -c "select 'read only: ' || current_setting('transaction_read_only') as s12_transaction" \
+       -f "${S12FILE}" -c "rollback" > /tmp/0106-s12-count.txt 2>&1 \
+    || { cat /tmp/0106-s12-count.txt; echo "STOP (S12 block only; the apply and the post-check stand): the S12 count did not complete; nothing was written, it ran read only"; exit 1; }
+  grep -q 'read only: on' /tmp/0106-s12-count.txt || { cat /tmp/0106-s12-count.txt; echo "STOP (S12 block only; the apply and the post-check stand): the transaction did not read as READ ONLY, so the counts are not reported"; exit 1; }
+  cat /tmp/0106-s12-count.txt
+  echo "S12 COUNT PRINTED: information for strategy's final S12 ruling. NOT a verdict and NOT a STOP condition."
+)
+```
+
+**Rehearsed on lane blue, 2026-10-14** (the block extracted from this document by machine, run
+in bash and in zsh with the one substitution named: the `cd` points at this worktree and
+`DATABASE_URL_DIRECT` at lane blue's database, `127.0.0.1:54622`). The record is under
+"Rehearsal", the third one. **NOT REHEARSED:** the block on production's data, where the counts
+are the point; the env step that sets the variable (not written).
+
 ## The proof per role
 
-`packages/db/tests/reminder-claims-rls.db.test.ts`, 52 tests, DB-gated. Every arm about access
-runs as the real principal, in a transaction that is rolled back, and is shown both ways.
+`packages/db/tests/reminder-claims-rls.db.test.ts`, 58 tests (52 until 2026-10-14), DB-gated.
+Every arm about access runs as the real principal, in a transaction that is rolled back (the
+concurrency arm of Q-5 commits its one winner, which `afterAll` removes), and is shown both ways.
 
 | Who | Allowed, shown to succeed | Refused, shown to fail |
 |---|---|---|
@@ -476,14 +663,34 @@ transaction, the job and the tenant's owner still reach zero rows, while the sam
 three (the policies refuse apart from the grants); an owner's hard delete of an appointment
 takes that appointment's claim, release and shadow rows with it and leaves the heartbeats; a
 tenant with a heartbeat cannot be deleted from under it; each CHECK, each foreign key and the
-one-release-per-claim index, by the constraint's own name; and a value written into
-`claim_kind` is refused.
+one-release-per-claim index, by the constraint's own name; a value written into `claim_kind`
+is refused; and the five Q-5 arms of "Q-5" above, as the job. Every claim an arm does not number
+itself takes a fresh attempt number (from 1000), so the Q-5 index answers only where it is asked.
 
-**The suite on a database without the tables: 52 skipped, exit 0.** Until the promotion that is
+**The suite on a database without the tables: 58 skipped, exit 0** (lane blue, after the
+rollback, 2026-10-14). Until the promotion that is
 its answer on CI. From the promotion commit on it throws instead of skipping, and it throws on
 a database that holds one table of the two.
 
 ## Mutation sweeps
+
+**The third sweep, 2026-10-14, once, over the clauses Q-5 added,** on lane blue the same way:
+each rule weakened in a copy, the tables dropped, the copy applied, the suite run; the real file
+applied again at the end (exit 0), and the suite on it read 58 passed.
+
+| # | Weakened | Tests that went red | Killed by |
+|---|---|---|---|
+| 1 | the index `reminder_claims_claim_attempt_key` dropped | 3 | "REFUSES a second claim of the same attempt", "ACCEPTS the next attempt, and a retry after a RELEASE", "SEVERAL SESSIONS AT ONCE" |
+| 2 | the index without its predicate `WHERE kind = 'claim'` | **0, EQUIVALENT** | a shadow row and a release carry a NULL attempt (the CHECK), and a unique index never compares NULLs, so the full index refuses exactly the rows the partial one does. Kept partial: it names the rows it is about and indexes no other |
+| 3 | the key without `starts_at` | 1 | "ACCEPTS attempt 1 again for another START, ..." |
+| 4 | the key without `channel` | 1 | the same arm |
+| 5 | the key without `offset_id` | 1 | the same arm |
+| 6 | the key without `attempt` (one claim per reminder and start) | 9 | the Q-5 arms, 7b, and every arm that claims one reminder twice |
+| 7 | `reminder_claims_attempt_matches_kind` dropped | 1 | "REFUSES a claim with no attempt number or one below 1, and an attempt on a release or a shadow row" |
+| 8 | `reminder_claims_attempt_positive` dropped | 1 | the same arm |
+| 9 | the key without `appointment_id` | 1 | "ACCEPTS attempt 1 again for ... another APPOINTMENT" |
+
+Eight of nine killed; the ninth is equivalent, said above.
 
 **The second sweep, 2026-10-13, once, over the clauses this revision added.** Each rule was
 weakened in a copy of the file, the tables dropped, the copy applied and the suite run; the
@@ -515,8 +722,40 @@ nine went red. Not run again.
 
 ## Rehearsal
 
-Neither is a sitting rehearsal: there are no blocks to rehearse. What ran each time is the
-migration itself, the two check files, the suite and the rollback.
+None is a sitting rehearsal: there are no stage blocks to rehearse. What ran each time is the
+migration itself, the two check files, the suite and the rollback; the third also ran the S12
+block, the one block this document has.
+
+### The third rehearsal, 2026-10-14, on lane blue, on the bytes of Q-5, Q-4 and S12
+
+**The throwaway.** Lane blue (`node scripts/lane-stack.mjs up --lane blue`, database
+`127.0.0.1:54622`), started from this worktree, so built from this branch's
+`supabase/migrations` (`0000` to `0103`) and `supabase/seed.sql` (its guarded block ran with
+the tables absent), then the lane's e2e seed. `up` exited 0. PostgreSQL 17.6. Stopped at the
+end (`down`, then `status` read `NOT RUNNING`). The run began 14:10 Lisbon (WEST).
+
+| Step | Result |
+|---|---|
+| The pre-check | exit 0; 10 OK, 9 CARRY, 3 INFO (`tables_before` 51, `secdef_before` 36) |
+| The apply, `psql -1` | exit 0; 3 SET, 2 CREATE TABLE, 5 CREATE INDEX, 2 COMMENT, 4 ALTER TABLE, 2 REVOKE, 2 GRANT, 4 CREATE POLICY |
+| The apply, a second time | exit 3, `ERROR:  relation "reminder_claims" already exists` |
+| The post-check with the old pins | 21 OK and 3 FAIL, exactly verdicts 2, 4 and 7 (the columns, constraints and indexes Q-5 changed); 22 and 23 OK. The new values were read from the catalogue (`attempt integer`, the two CHECKs, the index definition) and pinned |
+| The post-check with the new pins | exit 0; **24 OK** |
+| 22 and 23 shown failing, four rolled-back grants to `service_role` | see "What every verdict must read" |
+| VACUOUS shown | a scratch copy naming a missing role: 22 and 23 VACUOUS |
+| The suite | exit 0; `Tests 58 passed (58)` |
+| The mutation sweep | "Mutation sweeps", the third; then the real file again and 58 passed |
+| The post-check after the suite | exit 0; 24 OK (the suite left both tables empty) |
+| The S12 block, extracted by machine | bash and `zsh -f`: exit 0, `read only: on`, `(0 rows)` (the lane's upcoming visits all have a history), the closing line. Halts: the variable unset, exit 1; a closed port, exit 1, each with its STOP line. **That run pinned the file's earlier header** (sha256 `08978423...e5dac5`, which said "eight counts"; there are seven). The header was corrected after the lane was stopped and the pin moved to `72762c75...2846d2`; with the new pin the block was run again in bash and `zsh -f` against a closed port, and passed its hash step to reach psql (exit 1 at the connection, its STOP line). The query below the marker is byte for byte the same in both, sha256 `334e9e3a...feb00df` |
+| The S12 count's control | in a rolled-back transaction, two upcoming visits with no history added under seed tenant A (one in 5 days, `confirmed`; one in 30 days, `scheduled`): the file read `2`, `0`, `0`, `0`, `1`, `1`, `0` |
+| The rollback block | exit 0; 2 DROP TABLE, committed |
+| The pre-check again | exit 0; 10 OK; the verdicts and the nine carries identical to the first |
+| The suite on the rolled-back database | exit 0; 58 skipped |
+
+**A zsh run that read the user's shell profile.** The S12 block was first run with `zsh -c`,
+which reads the user's own zsh start-up file; that run's psql went to a local socket and
+failed, and the profile was not read by this lane. Every zsh run recorded above is `zsh -f`
+(no start-up files). The connection went nowhere but the local machine.
 
 ### The second rehearsal, 2026-10-13, on this revision's bytes
 
@@ -600,6 +839,20 @@ journal row, and this draft does not.
 
 ### NOT REHEARSED, said one by one
 
+Added on 2026-10-14:
+
+- **The sending code on the attempt number.** Neither sweep branch sets `attempt` yet (see the
+  writer list in "Q-5"); their DB-gated suites were not run against this revision. Until they
+  are changed, every claim they insert is refused (`23514`).
+- **The S12 count on production's data,** which is its point; and the S12 block with its
+  final pin against a live database (see the third rehearsal).
+- **Verdicts 22 and 23 on a server other than Postgres 17.** The MAINTAIN guard was read only on
+  17.6, where the word is asked; the older-server arm is by construction, not run.
+- **The lock table for the revision of 2026-10-14** (its one new statement names no existing
+  table).
+
+Carried from 2026-10-13:
+
 - **Any block.** There is none: no stage, no clock or clinic check, no HEAD CHECK, no target
   guard, no halt.
 - **The real applier.** The file was applied with `psql -1`, one transaction. `drizzle-kit
@@ -633,8 +886,9 @@ journal row, and this draft does not.
 - It does not move the sweep's code onto the tables.
 - It does not send, and cannot.
 - It builds no late rule, no purge, no retention and no watch.
-- It builds no duplicate refusal for shadow rows or heartbeats (W-7: carded, due before the
-  sweep's send mode is armed).
+- It builds no duplicate refusal for shadow rows or heartbeats (W-7). The one the send mode
+  needs, on the claim, is built: Q-5.
+- It does not compute the attempt number: the writer does, under its lock.
 - It does not change `audit_log`, the ledger, `appointments`, or any existing policy, function
   or grant.
 
@@ -645,6 +899,14 @@ The migration has none. The rollback block above drops two tables this file crea
 ## Open questions
 
 Strategy's rulings of 2026-10-13 closed the nine questions of the first draft. What is open now:
+
+0. **The open claim and a `23505` (the sending code's, raised by Q-5; not this file's).**
+   `takeReminderClaim` answers "not held" on every failure, so a claim the index refuses as a
+   duplicate would still be sent. (a) On `23505` with constraint
+   `reminder_claims_claim_attempt_key`, answer `held`: another taker holds this attempt. (b) Keep
+   the open path fail-open and rely on the lock, which makes the collision unreachable for it.
+   (c) Retry once with the next number. Recommend (a): the table's refusal then means what it
+   says on both paths. The closed path already sends nothing on any failure.
 
 1. **A release tied to its claim's kind, offset and channel, by a generated column (strategy,
    to confirm).** Built, because the brief asked for it if cheap and provable, and it was both.
@@ -675,5 +937,9 @@ five minor findings.** What became of each in this revision:
 | The job of one tenant could name another tenant's appointment, and the insert said whether an id exists | Ruled W-6 and closed |
 | Stale wording (the file and this document called ruled points judgments, and the number provisional) | Rewritten here, in the file's header, in the schema's comment and in the README row |
 
-**This revision: no reviewer has read it.** The changed bytes run against production, so the
+**The revision of 2026-10-14 (Q-5, Q-4, S12): no reviewer has read it either.** It changes
+bytes that run against production (the migration, the post-check, the S12 file and its block),
+so the review-loop rule asks for a round on them before a sitting.
+
+**The revision of 2026-10-13: no reviewer has read it.** The changed bytes run against production, so the
 review-loop rule of 2026-09-27 asks for a round on them before a sitting.
