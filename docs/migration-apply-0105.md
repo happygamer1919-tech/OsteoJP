@@ -2,7 +2,7 @@
 
 **NOT READY. Nothing in this document may be pasted yet.** The migration is promoted to its number, on top of the branch that holds 0104. The four blocks below are 0104's blocks (`docs/migration-apply-0104.md`) with the number, the files, the pins, the journal position, the carries and the verdict profiles changed. Open, in order: 0104 applied to production with a clean report and merged; one R4 round on this document, the two check files and the script test; SOLO's READY line; the pull request, opened held; `main` merged in with CI green; the owner's two clicks; and GREEN's dispatch, which carries the three values this document cannot hold (the merge commit's sha, this document's sha256 and the run window). Until the pull request is merged every block below STOPs at its first file check, because this document is not on `origin/main`. **The sitting is closed hours only** (see "Closed hours, and the locks").
 
-**Status: AUTHORED 2026-10-14. NOT YET REHEARSED AS BLOCKS (the two check files and the applier ran whole on a throwaway on 2026-10-14). NOT APPLIED.** One migration, `packages/db/migrations/0105_clinical_records_episode_key.sql`, sha256 `980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441`.
+**Status: AUTHORED 2026-10-14. REHEARSED WITH LIMITS on 2026-10-14 (every line of the four blocks ran against a throwaway in bash and in zsh except five: the two that load the production environment file and the two that run the target guard, in stages 1 and 2, and the closing read's reader line; see "NOT REHEARSED"). NOT APPLIED.** One migration, `packages/db/migrations/0105_clinical_records_episode_key.sql`, sha256 `980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441`.
 
 **In plain language.** A registo may be filed in an episode, the folder of one treatment of one patient. Today the application checks, before it files a registo, that the episode belongs to the same patient. After this migration the database holds the same rule itself:
 
@@ -39,7 +39,7 @@ is the lead's call, never the runner's.
 
 1. **DONE on this branch, `db/0105-registo-episode-key`, locally:** the branch `db/0104-episode-policy` merged in; the migration promoted to its number with no byte changed (sha256 `980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441` before and after); its journal entry (`idx 102`, tag `0105_clinical_records_episode_key`, `when` 1788502600000); its mirror `supabase/migrations/0105_clinical_records_episode_key.sql`; the pending README's rows; the pre-check and the post-check in their final form; this document, its sidecar and its script test. `node scripts/check-journal.mjs` reads 103 files and 103 entries.
 2. **WAITS FOR 0104:** 0104 is applied to production, GREEN's report on it is clean and its pull request is merged. One migration is in flight at a time, and nothing of 0105 is pushed before that.
-3. **OPEN: the four blocks against a database, each refusal seeded once, and the one mutation sweep.**
+3. **DONE 2026-10-14, WITH LIMITS: the rehearsal on a throwaway with 0103 and 0104 applied (the two check files and the applier by hand, the four blocks in bash and in zsh, each refusal seeded once, the one mutation sweep, the rollback and the removal; see "Rehearsal" and "NOT REHEARSED").**
 4. **OPEN: R4.** The review of the pull request's diff, at most three rounds.
 5. **OPEN: the pull request,** opened by SOLO held (`held-for-apply`, unarmed), only after step 2. `main` then holds 0104 as one squashed commit; this branch holds the same files commit by commit, and `main` is merged into it (no rebase).
 6. **OPEN: `main` merged into the branch and CI green on that head,** before the owner's first click.
@@ -526,17 +526,17 @@ echo "CLOSING READ: the journal reads 103, 0105 is APPLIED, and nothing is pendi
 | An episode holds a NULL id, patient or tenant; a registo holds a NULL patient or tenant | 17 (the rows) and 7 (the columns are NOT NULL) | a registo with a NULL among its three values would slip past the key unchecked |
 | The table holds no episode | 17, VACUOUS | nothing was measured |
 | A relation already carries the index's name, or a constraint the key's | 8 | the migration fails at its first statement, or 0105 is partly there already |
-| The session is not `postgres`, or `postgres` does not own both tables | 4 | the ALTER TABLE and the CREATE INDEX are the owner's: **an unexpected owner is found here, before the apply** |
+| The session is not `postgres`, or `postgres` does not own both tables | 4, and 5 by a count of its own from `pg_tables` | the ALTER TABLE and the CREATE INDEX are the owner's: **an unexpected owner is found here, before the apply,** by two verdicts |
 | The session does not read past row level security | 5 | every count above could be a filtered zero |
 | `merge_patients` is not 0005's body, not SECURITY DEFINER with an empty search_path, not owned by `postgres`, or its EXECUTE is not `authenticated`'s alone | 12 | the replace would change something other than the two statements, or keep an owner nobody pinned |
-| The function's ACL holds an item nobody named: another grantee, or a grant made by another role than `postgres` | 16, every item read | CREATE OR REPLACE keeps the ACL, so that grantee would run the new body. **A second grantor is found here, before the apply** |
+| The function's ACL holds an item nobody named: another grantee, or a grant made by another role than `postgres` | 16, every item read; and 12, which counts the ACL's items its own way | CREATE OR REPLACE keeps the ACL, so that grantee would run the new body. **A second grantor is found here, before the apply,** by two verdicts |
 | The key of 0000, the immutability trigger, the nine indexes, the five key columns | 9, 10, 11, 7 | the tables are not the tables this migration was written for |
 | The journal: 0105 absent by hash, 0104 present once as the newest row at its `when`, 102 rows | 1, 2, 3 | production is not at the position this migration follows |
 | 36 SECURITY DEFINER functions, all owned by `postgres`; Postgres 17; the five roles | 13, 14, 15 | the pins of both files were read on another shape |
 
 **The three counts C1 to C3 are INFO rows and stop nothing.** They count the same kind of pair on three other links (a note and its episode, an attachment and its registo, a registo and the one it supersedes). Strategy ruled them into this file as counts for the record; 0105 touches none of those tables and adds no key on them, so nothing existing is lost or refused by this migration whatever they read. GREEN reports them as printed.
 
-**What the post-check proves:** the index by its shape and its printed definition; the key by its shape and its printed definition, resting on that index; every other constraint and index of the two tables unchanged, ten indexes in all; the function by the md5 of its body, its flags, its owner, its EXECUTE and its ACL; the body as 0005's plus the added lines, read from the catalogue; the SECURITY DEFINER count, every other function, every policy, every relation, column and default privilege, every trigger and the table count unchanged by md5; no row written and no table rewritten (count, md5 and file node of both tables); the rows fit the key, by the pre-check's own query; the key's four internal triggers there and enabled (so the key is enforced, not only declared); and 0105 in the journal once, as the newest row, one more than before.
+**What the post-check proves:** the index by its shape and its printed definition; the key by its shape and its printed definition, resting on that index; every other constraint and index of the two tables unchanged, ten indexes in all; the function by the md5 of its body, its flags, its owner, its EXECUTE and its ACL (by md5 in verdict 5 and item by item in verdict 7); the body as 0005's plus the added lines, read from the catalogue; the SECURITY DEFINER count, every other function, every policy, every relation, column and default privilege, every trigger and the table count unchanged by md5; no row written and no table rewritten (count, md5 and file node of both tables); the rows fit the key, by the pre-check's own query; the key's four internal triggers there and enabled (so the key is enforced, not only declared); and 0105 in the journal once, as the newest row, one more than before.
 
 **The limit of the post-check:** a READ ONLY transaction cannot show a statement being refused. That the key refuses and the merge still moves is proven by the DB-gated suites (see the next section).
 
@@ -588,7 +588,142 @@ Read on this head. A foreign key ignores row level security and is checked for e
 
 ## Rehearsal
 
-Not recorded yet.
+**2026-10-14, 01:44 to 02:29 Lisbon, on a throwaway built by the recipe `docs/migration-apply-0100.md` records. Never a lane, never production.** Every figure below was read on that throwaway.
+
+**The throwaway.** A local Supabase stack, project id `r0105`, Supabase CLI 2.100.0, PostgreSQL 17.6, database on 127.0.0.1:55602, started with CI's exclude list (CLI 2.100.0 does not know the names `analytics`, `storage`, `functions`, `inbucket` and `meta`, so those containers ran too). Built at the position 0105 follows: this branch's `supabase/migrations` minus 0105, so 102 migrations, `0000` to `0104` (**0103 and 0104 applied**; 102 rows in `supabase_migrations.schema_migrations`), then `supabase/seed.sql`; a drizzle journal of 102 rows built from `_journal.json` entries idx 0 to 101, each `hash` the sha256 of its file and each `created_at` its `when`, the newest 0104 (`eb849478f1db3cc725034d7246c11c9398714649f6a599761c4075c9a654dee9`, `when` 1788502500000). The fixture is the one of 0104's rehearsal, in the seed tenant: nine members of staff over the four roles, two active clinics (08:00 to 21:00), four patients, three appointments, one care-team row, five episodes, and two draft registos, each filed in an episode of its own patient. No real name anywhere. Removed at 02:29:34 Lisbon on 2026-10-14: no `r0105` container or volume left, and the other project's stack on this machine untouched.
+
+### The check files and the applier, by hand
+
+| Step | What ran | Result |
+|---|---|---|
+| Pre-check, whole, the real file, the real journal | `psql ... -v prev_hash=<0104> -v prev_when=1788502500000 -f scripts/db/precheck-0105-registo-episode-key.sql` | exit 0, `18 OK / 0 VACUOUS / 0 FAIL`. Verdict 6: `registos 2, naming an episode 2, joined 2; another patient 0, another tenant 0, episode not there 0; the key would refuse 0`. Verdict 16: `authenticated EXECUTE by postgres, postgres EXECUTE by postgres; 2 items`. `registos_the_key_would_refuse` 0 |
+| The locks | the file's statements in one transaction, `pg_locks` read after each, rolled back | the table under "Closed hours, and the locks" |
+| The time on invented rows | 60,005 episodes and 150,002 registos written, the four statements run, all rolled back | index 26 ms, ADD 1 ms, VALIDATE 20 ms, function 2 ms |
+| The post-check BEFORE the apply | the post-check command, on the database the pre-check had just passed | **psql exit 3:** `12 OK / 0 VACUOUS / 8 FAIL`, then the file's own `STOP: the 0105 post-check printed a FAIL verdict`. A post-check on a database without 0105 cannot end with exit 0 |
+| The apply, through the real applier | `node packages/db/scripts/verified-migrate.mjs --tag 0105_clinical_records_episode_key --sha256 980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441 --expect-pending 1`, the database URL pointing at the throwaway | exit 0: `journal    102 -> 103  (delta 1)`, `0105_clinical_records_episode_key present by sha256: yes` |
+| The second apply | the same command again | **a clear refusal, exit 3, nothing run:** `PRECONDITION FAILED: 0105_clinical_records_episode_key's sha256 is ALREADY in drizzle.__drizzle_migrations.` |
+| Post-check, whole, the carries from the pre-check's transcript | `psql ... -v <20 carries> -c "begin read only" -f scripts/db/postcheck-0105-registo-episode-key.sql -c "rollback"` | exit 0, `20 OK / 0 VACUOUS / 0 FAIL` |
+| Negative control: the pre-check on the APPLIED database | the same pre-check command | **psql exit 3:** `12 OK / 0 VACUOUS / 6 FAIL` (verdicts 1, 2, 3, 8, 11, 12), then the file's own STOP |
+| The applier on a database with one misfiled registo, the pre-check left out | the apply command | **exit 4, nothing applied:** the VALIDATE failed, drizzle rolled back, `journal    102 -> 102  (delta 0)`, `present by sha256: NO`; no index, no key, the function's body unchanged |
+| The applier with a wrong sha256 | the apply command, one hex digit changed | exit 3: `PRECONDITION FAILED: 0105_clinical_records_episode_key.sql is on disk but is NOT the approved file.` |
+| The applier while another session holds a write on an episode open | the apply command | **exit 4 after 6 seconds, nothing applied:** `journal    102 -> 102  (delta 0)`. A lock it cannot take in 5 seconds is a clean failure |
+
+### The four blocks against the database, in bash and in zsh
+
+**How each block was run.** From this branch at `cfbd29a5` (`cfbd29a501c357777550476a21090a61605f1d08`), with this document as it stood at that commit, before this record was written into it (sha256 `e031104fe0595e3f54acbdb58291161c9f97883b7bd9b4c081f960a28a4369bb`). **This record changed no byte of any block.** The four blocks were taken out of the document by machine and each ran in GREEN's tool shape, `true && eval '<block>' < /dev/null && echo TOOL-CHAIN-CONTINUED`, under `zsh -f` and under `bash --noprofile --norc`, with an environment of seven names the runner sets itself and nothing inherited (`PATH`, `HOME`, `LANG`, `TERM`, `TMPDIR`, and the throwaway's URL as `DATABASE_URL_DIRECT` and `DATABASE_URL`). The production environment file was never read, sourced or handed to a program.
+
+- **SUBSTITUTIONS, ONLY THESE.** (1) The `cd` to the apply checkout became a rehearsal clone. (2) The `/tmp/0105-` paths became a scratch folder, a new one for each sitting, so the machine's real `/tmp` never held a `0105-` file. (3) The clone's `origin` was a local bare repository whose `main` is this branch's head, fetched from the branch by path; nothing was pushed anywhere, and no block's text changed for it.
+- **LINES NOT RUN, five.** Stage 1 and stage 2: the line that loads the production environment file, and the line that runs the target guard. The closing read: the reader's line. Why: the file is production's secrets and no lane but GREEN reads it; the guard and the reader refuse any target that is not production, and a guard is never passed in a rehearsal.
+- **WRITTEN BY HAND.** The run window record, in place of the dispatch's CLOCK CHECK: the recorded sha, then three Lisbon times.
+- **The real guard and the real reader each ran once on their own,** against the throwaway, in the clone, and refused it: `host: 127.0.0.1`, `port: 55602`, `ref:  postgres`, `REFUSING: project ref is "postgres", not the production project.` (exit 2); and `REFUSED: this script reads drizzle.__drizzle_migrations, which only production uses, and the target's ref is not dfotoodqvmjhbdcxyaxf. ...` (exit 2).
+
+| Block | zsh, Lisbon 2026-10-14, exit | bash, exit | What it printed |
+|---|---|---|---|
+| Stage 0, WHOLE, no line left out | 02:26:39, 0 | 02:26:41, 0 | `origin/main and HEAD: cfbd29a5...`; `docs/migration-apply-0105.md: OK`; `newest journal entry: idx 102, when 1788502600000, tag 0105_clinical_records_episode_key, of 103; before it idx 101, when 1788502500000, tag 0104_clinical_episodes_role_matrix`; check-journal's `103 .sql files match 103 journal entries`; `Lisbon weekday and time 30226 (...; the clock read 30226 WEST): closed by the weekday table`; proofs `yes`, `no`, `no`; `0105 MERGE, NUMBER, FILES AND CLOCK VERIFIED`; `TOOL-CHAIN-CONTINUED` |
+| Stage 1, two lines not run | 02:26:39, 0 | 02:26:41, 0 | the same sha twice; the window line; the pre-check, `18 OK / 0 VACUOUS / 0 FAIL`; `the pre-check profile: 18 OK / 0 VACUOUS / 0 FAIL. REPORT, ...`; `closed`, `the clinics' own rows against the weekday table: inside`; verified-migrate through drizzle-kit: `journal    102 -> 103  (delta 1)`, `0105_clinical_records_episode_key present by sha256: yes`; `0105 APPLIED. Paste stage 2 now.`; `TOOL-CHAIN-CONTINUED` |
+| Stage 2, two lines not run | 02:26:40, 0 | 02:26:42, 0 | `main has not moved since stage 0`; the twenty carries; `the post-check profile this sitting must print: 20 OK / 0 VACUOUS / 0 FAIL, and no other ...`; the post-check, `20 OK / 0 VACUOUS / 0 FAIL`; `journal rows before=102 after=103, 0105 present by hash`; the last three journal rows; `0105 POST-CHECK PASSED. 18/18 pre-check OK, post-check 20 OK / 0 VACUOUS / 0 FAIL, journal 102 to 103; ...`; `TOOL-CHAIN-CONTINUED` |
+| The closing read, the reader's line not run | 02:26:41, 1 | 02:26:42, 1 | the HEAD CHECK, the sidecar, `main has not moved since stage 0`, the pass mark, the window, and `reader: 825b7818..., its target module: e037104d... (at the recorded sha cfbd29a5...)`; then, because the reader did not run and left no output, the block's first check of that output: `STOP: the journal read after the apply does not say 103. ...`. **That STOP is the missing line's, not a finding.** No `TOOL-CHAIN-CONTINUED` |
+
+Between the two shells the throwaway was put back (the three restoring statements and the throwaway's journal row). The same four blocks had run the same way twice before on the two commits before `cfbd29a5` (02:10 and 02:14 Lisbon), with the same lines; between those commits and this one only the pre-check and the post-check changed (verdicts 5 and 12 of the first and verdict 7 of the second each gained a second read; see the sweep).
+
+**EACH REFUSAL, SEEDED ONCE, both shells, on the throwaway before 0105.** Stage 0 ran first each time; stage 1 ran with its two lines not run. After each, the seed was undone, the journal read 102, and at the end the pre-check read `18 OK / 0 VACUOUS / 0 FAIL` again.
+
+| Seed | Stage 1, in both shells | Applied |
+|---|---|---|
+| One registo in an episode of another patient (an episode of the fixture handed to another patient) | exit 1. Verdict 6 FAIL, `another patient 1`; the pre-check's own STOP with `[1]`; then `STOP: the pre-check did not complete, or it ended with its own STOP on a FAIL verdict, a VACUOUS verdict or a count of registos the key would refuse that is not 0 ... Nothing was applied` | nothing, journal 102 |
+| One registo in an episode of another tenant | exit 1. Verdict 6 FAIL, `another tenant 1`; the same two STOPs | nothing, journal 102 |
+| No registo names an episode | exit 1. Verdict 6 VACUOUS; the pre-check's STOP on the profile `[17 OK / 1 VACUOUS / 0 FAIL]`; stage 1's STOP on the pre-check's run | nothing, journal 102 |
+| EXECUTE on `merge_patients` granted to a role nobody named | exit 1. Verdicts 12 and 16 FAIL (`ACL items 3`; `supabase_auth_admin EXECUTE by postgres`); the pre-check's STOP on `[16 OK / 0 VACUOUS / 2 FAIL]`; stage 1's STOP on the pre-check's run | nothing, journal 102 |
+| A second grantor of `authenticated`'s EXECUTE (`service_role`, given the grant option for the seed, grants it too) | exit 1. Verdicts 12 and 16 FAIL (`authenticated EXECUTE by service_role` among the items); the same two STOPs | nothing, journal 102 |
+| An unexpected owner of `clinical_episodes` (a role made for the seed) | exit 1. Verdicts 4 and 5 FAIL (`clinical_episodes rk0105_seed`; `owns 1 of 2`); the same two STOPs | nothing, journal 102 |
+| The registo of the first seed, and a pre-check made blind to it on purpose (verdict 6 unable to FAIL and the file's own STOP removed; a named change of this one run) | exit 1. `STOP: the pre-check counted 1 registos that name an episode of another patient or tenant, or an episode that is not there. ... Nothing was applied. Report the number 1 to SOLO` | nothing, journal 102 |
+| A wrong sha256: stage 1's own `SHA0105` line changed by one hex digit (a named change of this one run) | exit 1. `STOP: 0105 on disk is not the approved file`, before any database was read | nothing |
+| A second apply, the blocks pasted again in the same sitting (run at `90fc8a49`, two commits before, 02:13) | stage 0 and stage 1, exit 1: `STOP: stage 1 has ALREADY APPLIED 0105 in this sitting, or the age of /tmp/0105-applied.ok could not be read. The sitting stops here. Never run stage 0 or 1 again. ...` | nothing more, journal 103 |
+| A second apply, a later sitting (no applied marker) on the database that holds 0105 (at `90fc8a49`, 02:13) | stage 0 passes; stage 1 exit 1: the pre-check reads `12 OK / 0 VACUOUS / 6 FAIL` (verdicts 1, 2, 3, 8, 11, 12), its own STOP, and stage 1's STOP on the pre-check's run | nothing more, journal 103 |
+
+**NOT SEEDED, and why.** A registo naming an episode that is not there: the key of 0000 forbids writing one, and the session is not a superuser. Two episodes sharing the three values, and a NULL in a key column of an episode: the primary key and NOT NULL forbid both. A registo with a NULL patient was seeded in the sweep below (the column made nullable for the seed), where verdict 7 stopped stage 1. A table with no episode at all: not seeded.
+
+### THE MUTATION SWEEP, 2026-10-14, one pass, mechanical
+
+A pin test (a sha256 or an md5 compare) fails on any edit by construction, so no kill below is counted from a pin: the script test's sha256 pins, and the post-check's compare of the function's body by md5, are named apart where they are the only thing that sees a mutant.
+
+*Part 1, the migration's statements: 21 mutants, each the migration's own seven statements with one clause dropped or weakened, applied to the throwaway in one transaction in 0105's place with the journal row a real apply writes. Then four DB-gated suites (`packages/db` `clinical-records-episode-key.db.test.ts` and the two SECURITY DEFINER suites; `apps/web` `records.episode-guard.db.test.ts` and `merge-refusals.db.test.ts`) and the post-check; then the throwaway put back, and the pre-check reading 18 OK again before the next. Run at `5bfed8ca`; the migration and the suites are the same bytes at the final head.*
+
+| Mutants | Count | Killed by |
+|---|---|---|
+| The index not UNIQUE; on (id, patient_id) only; dropped | 3 | the migration itself: the key cannot be created without a unique index on its three columns, the transaction fails and nothing is applied |
+| The key not DEFERRABLE; INITIALLY DEFERRED for everyone; cascading an UPDATE; MATCH FULL | 4 | a named failing test of the packages/db key suite, each (and of an apps/web suite on three of the four) |
+| The VALIDATE dropped; the key dropped whole | 2 | both key suites refuse to measure: the key is half there, or promoted and not carried |
+| The replace of `merge_patients` dropped; the function without its DEFERRED; the IMMEDIATE moved above the UPDATE of the registos | 3 | a named failing test: "the merge moves it with its registos" |
+| **The index and the key without `tenant_id`** | **1** | **no suite.** The post-check's verdicts 1 and 2 (the printed definitions). A patient belongs to one tenant, so a registo and an episode of one patient in two tenants would need a row that is already wrong on its own |
+| **The key cascading a DELETE** | **1** | **no suite.** The post-check's verdicts 2 and 19. Whether any behaviour differs was not measured: the key of 0000 still refuses the delete of an episode that holds registos |
+| **The function without its IMMEDIATE; ALL DEFERRED in place of the key's name; ALL IMMEDIATE in place of the key's name** | **3** | **no suite.** The post-check's verdicts 5 and 6, and the script test's compare of the function with 0005's. Without the IMMEDIATE the key would be checked at the caller's COMMIT instead of inside the function; no DB suite has an arm for "immediate again after a merge" |
+| **The function not SECURITY DEFINER; with search_path = public** | **2** | **no DB suite.** The post-check's verdict 5 (and 7 for the first). At the level of the file: the script test's shape rule, and the required count of SECURITY DEFINER functions |
+| **The `SET LOCAL lock_timeout` line dropped; the `SET LOCAL idle_in_transaction_session_timeout` line dropped** | **2** | **nothing on the database** (the lines last one transaction). The first by the SET LOCAL gate, `scripts/migration-timeouts.test.mjs`; the second by the script test's shape rule only |
+| Control: the migration unchanged | 1 (not counted) | every suite passes; post-check exit 0, 20 OK |
+
+So of 21: 3 cannot be applied at all, 9 are killed by a DB suite, and 9 are not killed by any DB suite. The post-check ends with an error on 7 of those 9; the two SET LOCAL lines leave no trace in a database. **No test was added for the survivors:** the suites are on `main` already and this branch changes no application test. They are listed for the review.
+
+*Part 2, the check files' verdicts and STOPs, and the blocks' own lines: 18 mutants, each run through stage 1 under zsh (and stage 2 where stage 1 applied) on a throwaway seeded for it, at the final check files.*
+
+| Mutant | Seed | Killed by |
+|---|---|---|
+| Verdict 6 unable to FAIL | a misfiled registo | the pre-check's own STOP on the count, exit 3; nothing applied |
+| Verdict 6's count of another patient made 0; its count by the key's own question made 0 | a misfiled registo | the other counts of verdict 6, and the pre-check's own STOP; nothing applied |
+| The pre-check's own STOP on the count removed | a misfiled registo | verdict 6 FAIL and the pre-check's STOP on the profile; nothing applied |
+| The CARRY row no longer stores the count | none | the pre-check's own STOP reads `[no count]`: no sitting passes; nothing applied |
+| The pre-check's STOP on the profile loosened to "ends 0 FAIL" | no registo names an episode | stage 1's own count of VACUOUS verdicts; nothing applied |
+| The pre-check's STOP on the profile removed | a grantee nobody named | stage 1's own count of FAIL verdicts; nothing applied |
+| Verdict 16 always OK | a grantee nobody named | verdict 12's own count of the ACL's items; nothing applied |
+| Verdict 12 accepting any number of ACL items | a grantee nobody named | verdict 16; nothing applied |
+| Verdict 4 no longer reading the tables' owners | an unexpected owner | verdict 5's own count of the tables the session owns; nothing applied |
+| Verdict 17 unable to FAIL | a registo with a NULL patient (the column made nullable for the seed) | verdict 7; nothing applied |
+| Stage 1 without its own line on the carried count | a misfiled registo | the real pre-check; nothing applied |
+| **Verdict 6's VACUOUS arm removed** | **no registo names an episode** | **nothing before the apply: stage 1 applied.** Stage 2 then stopped: the post-check's verdict 16 read VACUOUS and the file ended on the profile `[19 OK / 1 VACUOUS / 0 FAIL]`. Nothing can be misfiled where no registo names an episode, so a sitting that goes on there loses nothing (QUESTIONS 2) |
+| The post-check's STOP on a FAIL verdict removed | EXECUTE granted to `anon` between stage 1 and stage 2 | the post-check's STOP on the profile, exit 3 |
+| Both of the post-check's STOPs removed | the same | stage 2's own count of FAIL verdicts: the state is UNKNOWN |
+| Post-check verdict 15 unable to FAIL | a registo taken out of its episode between the stages | verdict 16's control (registos that name an episode, as the pre-check counted them) |
+| Post-check verdict 5 unable to FAIL | EXECUTE granted to `anon` between the stages | verdict 7's own read of the function's ACL |
+| Post-check verdict 2 unable to FAIL | the key replaced between the stages by one that is not deferrable and not validated | verdict 19 |
+
+Two controls ran with the real files: with nothing seeded, stage 1 applied and stage 2 passed; and with a registo changed between the stages the post-check ended with an error by itself, exit 3, `[18 OK / 0 VACUOUS / 2 FAIL]` (verdicts 15 and 16), which is the false alarm the stage 2 section describes. **On the first pass two more survived everything:** verdict 4 no longer reading the owners (the unexpected owner was then applied over, and stage 2 passed), and post-check verdict 5 unable to FAIL (the grant made between the stages was then not seen). Verdict 5 of the pre-check now counts the tables the session owns, and verdict 7 of the post-check reads the function's ACL item by item; verdict 12 of the pre-check had gained its count of the ACL's items the same way, before the sweep. Part 2 was run again whole on those files, and the table above is that second run.
+
+**NOT SWEPT.** Post-check verdict 19 could not be made to FAIL by a seed of its own kind: disabling a key's internal triggers needs a superuser, which the session is not, locally or on production. It read FAIL only where the key itself was replaced. The halting predicates the blocks share with 0104's (the clock, the window, the pins, the records) were swept with 0103's and 0104's and were not swept again; the script test runs their fault injection in both shells.
+
+### The rollback, and the pre-check repeated
+
+| Step | Result |
+|---|---|
+| The pre-check on the applied throwaway (negative control) | exit 3, `12 OK / 0 VACUOUS / 6 FAIL`: verdicts 1, 2, 3, 8, 11 and 12 |
+| The three restoring statements of "Rollback", one transaction; then the pre-check | exit 3 by design, `15 OK / 0 VACUOUS / 3 FAIL`: the three journal verdicts, because the journal row stays |
+| The throwaway's journal row removed; then the pre-check | exit 0, `18 OK / 0 VACUOUS / 0 FAIL`; every verdict, carry and count identical to the first run's, the file node of both tables included (no table was rewritten by the apply or by the restore) |
+
+That sequence ran first at 01:45 Lisbon and again at 02:29, after every suite below had run on the applied throwaway, with the same three lines.
+
+### The DB-gated suites on the applied throwaway, the way `db-tests.yml` runs them
+
+At the final head, from the rehearsal clone, only the throwaway's URL in the environment:
+
+| Suite | Result |
+|---|---|
+| packages/db, every suite | Test Files 103 passed (103); Tests 1629 passed (1629); 0 skipped |
+| apps/web, every DB-gated suite | Test Files 67 passed (67); Tests 832 passed (832) |
+| apps/api, every DB-gated suite | Test Files 10 passed (10); Tests 96 passed (96) |
+| The SECURITY DEFINER count | `OK: all 36 owned by postgres.` |
+
+Among them, the suites that prove the key as the real principals: `packages/db/tests/clinical-records-episode-key.db.test.ts` 5 of 5 (`THE DATABASE CARRIES clinical_records_episode_patient_tenant_fk`), `apps/web/lib/clinical/records.episode-guard.db.test.ts` 28 of 28, `apps/web/lib/patients/merge-refusals.db.test.ts` 5 of 5, `apps/web/lib/clinical/episodes.create.db.test.ts` 12 of 12, `apps/web/lib/clinical/episodes-role-matrix.db.test.ts` 13 of 13 (0104's), and the importer's (`migration-upsert-idempotency` 14, `migration-batch-import` 4, `migration-reconciliation` 19). The same three suites had passed whole at 01:46 to 01:47 Lisbon, the first time 0105 was applied to the throwaway: 1629, 832 and 96.
+
+### NOT REHEARSED, said one by one
+
+- **Five lines of the four blocks.** In stage 1 and in stage 2: the line that loads the production environment file (`set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport`), because no lane but GREEN reads that file; and the line that runs the target guard, because the guard refuses the throwaway and a guard is never passed. In the closing read: the reader's line (`node --env-file=... ${READER}`), for both reasons. Every other line of every block ran, in order, in both shells. **So no block has run whole with its guard, and the closing read has not run past its reader.**
+- **The target guard and the reader as a pass.** Each ran once for real against the throwaway and refused it, which is what they are for. What either prints on production was not seen.
+- **The closing read's checks of the reader's output** (103 rows, 0105 APPLIED, nothing pending): with the reader's line not run there is no output, so the block stopped at the first of them. They ran only in the script test's harness.
+- **The dispatch's two blocks** (BEFORE YOU START, CLOCK CHECK): the dispatch is not written yet. `/tmp/0105-window.ok` was written by hand for the rehearsal, in the shape this document names.
+- **Production.** Its count of registos the key would refuse; the rows and bytes of its two tables; the function's ACL and body there (the pins were read on Postgres 17.6 local stacks; the pre-check STOPs if production's differ); whether 0104 is applied; and the time the locks are held there.
+- **0104 on production.** This rehearsal ran on a throwaway that holds 0104 as the local branch `db/0104-episode-policy` has it. If 0104 changes before it is applied, 0105's pin of it (`SHAPREV`) and this document move with it.
+- **The race of a merge with a registo being filed for the same patient.** Measured once by hand on 2026-10-08; not run again here.
+- **No Playwright spec ran with 0105 applied.**
+- **The seeds listed under "NOT SEEDED".**
 
 ## QUESTIONS THIS DOCUMENT DOES NOT ANSWER
 
@@ -600,10 +735,10 @@ Not recorded yet.
 
 ## JUDGMENTS, NOT RULINGS, in this document
 
-- **The blocks are 0104's, changed by substitution,** not written afresh: the number, the file names, the pins, the journal position, the pre-check's profile (18), the carries (twenty), the post-check's profile (a fixed 20) and the R9 lines. 0104's blocks were run against a database and swept; these were run and swept as "Rehearsal" records.
+- **The blocks are 0104's, changed by substitution,** not written afresh: the number, the file names, the pins, the journal position, the pre-check's profile (18), the carries (twenty), the post-check's profile (a fixed 20) and the R9 lines. 0104's blocks were run against a database and swept; these were run and swept as "Rehearsal" records, and have had no review of their own yet.
 - **The post-check's profile is fixed.** 0104's depended on a carry (`post_vacuous_expected`); 0105 has no verdict that may read VACUOUS after a passing pre-check, so stage 2 wants `20 OK / 0 VACUOUS / 0 FAIL` and nothing else, and the post-check takes no such carry.
 - **The post-check runs inside the block's own `begin read only`,** as 0104's does, and stops before any read outside one. The draft of 2026-10-08 opened its own transaction.
 - **C1 to C3 are INFO rows.** The draft printed them as a second profile with OK, VACUOUS and FAIL; a FAIL word there would have stopped stage 1 by the block's own count although the file calls them "not this file's STOP".
-- **Verdict 16 pins the function's whole ACL, two items.** It was read on local stacks only. If production's differs the sitting stops in stage 1 with nothing applied, which is the purpose; the cost is one sitting.
+- **Verdicts 12 and 16 pin the function's whole ACL, two items.** It was read on local stacks only. If production's differs the sitting stops in stage 1 with nothing applied, which is the purpose; the cost is one sitting.
 - **R9's three proof lines are still printed,** proof 2 reading `no`, and decide nothing: the clock arm passes in closed hours only, whatever they read.
 - **The STOP sentences that are 0105's own, and not 0104's by substitution:** the pre-check's on the count, stage 1's two lines on the carried count, stage 1's VACUOUS sentence, and stage 2's on a profile.
