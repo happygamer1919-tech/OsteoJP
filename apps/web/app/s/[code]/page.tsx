@@ -165,6 +165,7 @@ export default async function SurveyPage({
           q2Error: s["survey.page.q2Error"],
           commentError: s["survey.page.commentError"],
           saveError: s["survey.page.saveError"],
+          optOutSaveError: s["survey.page.optOutSaveError"],
           optOut: s["survey.page.optOut"],
           optOutNote: s["survey.page.optOutNote"],
         }}

@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { clientSentryDsn } from "./lib/observability/sentry-dsn";
 import { isForeignFrameEvent } from "./lib/observability/extension-noise";
+import { scrubLinkCodesIn } from "./lib/observability/link-codes";
 
 Sentry.init({
   dsn: clientSentryDsn(),
@@ -38,10 +39,22 @@ Sentry.init({
    * anywhere in the stack - returns the event unchanged. Read the file: the
    * reasoning for each is written there, and the direction is deliberate.
    * Losing noise costs an unread issue; losing a real error costs the channel.
+   *
+   * OBS-07 is composed here and not assigned beside it: `beforeSend` takes one
+   * function. The noise filter decides first, on the frames as they arrived;
+   * what is kept then leaves with no one-time link code in it.
    */
   beforeSend(event) {
-    return isForeignFrameEvent(event) ? null : event;
+    return isForeignFrameEvent(event) ? null : scrubLinkCodesIn(event);
   },
+
+  // OBS-07: the browser is where the code is most exposed. The page's own
+  // address IS /c/<code> or /s/<code>, so the event's url, every navigation
+  // and fetch breadcrumb, the pageload transaction's name and the span of the
+  // form's POST all carry it. See lib/observability/link-codes.ts.
+  beforeSendTransaction: (event) => scrubLinkCodesIn(event),
+  beforeSendSpan: (span) => scrubLinkCodesIn(span),
+  beforeBreadcrumb: (breadcrumb) => scrubLinkCodesIn(breadcrumb),
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

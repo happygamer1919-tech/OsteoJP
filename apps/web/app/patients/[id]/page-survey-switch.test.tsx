@@ -10,7 +10,8 @@
  *   - SURVEY_SEND_MODE off, unset, or any near-miss value: no section, no
  *     switch, for any role, and the patient's switch is not even read;
  *   - canary and on: owner, admin and reception see the section with the
- *     switch as the database holds it; a therapist never does;
+ *     switch as the database holds it; a therapist gets the section (S11: the
+ *     patient's sends, page-survey-rows.test.tsx) and never the switch;
  *   - it is on Resumo and on no other tab;
  *   - its error shows for its own code and not for the care team card's.
  * Every "not drawn" arm first proves the tab rendered.
@@ -91,6 +92,12 @@ vi.mock("../../../lib/auth/context", () => ({
         }),
       }),
     }),
+}));
+// S11: the section also lists the patient's sends. That read is the list's own
+// (`listSurveySends`), answered here with none; what it draws is pinned in
+// page-survey-rows.test.tsx.
+vi.mock("../../../lib/surveys/survey-list", () => ({
+  listSurveySends: async () => ({ rows: [], total: 0, page: 1, pageSize: 50, pageCount: 1 }),
 }));
 vi.mock("../../../lib/patients/queries", () => ({
   getPatient: async () => patient,
@@ -195,19 +202,24 @@ describe.each(["canary", "on"])("SURVEY_SEND_MODE=%s", (mode) => {
     expect(h.reads).toBe(2);
   });
 
-  it("a therapist does not, and the switch is not read for them", async () => {
+  it("a therapist gets the section without the switch, and the switch is not read for them", async () => {
     const html = await render("therapist");
     expect(tabRendered(html)).toBe(true);
-    expect(html).not.toContain(SECTION);
+    // S11: the section is theirs too, for the patient's sends.
+    expect(html).toContain(SECTION);
+    expect(html).toContain(s["patients.surveySwitchTitle"]);
     expect(html).not.toContain(s["patients.surveySwitchLabel"]);
+    expect(html).not.toContain(s["patients.surveySwitchOffNote"]);
+    expect(html).not.toContain('role="switch"');
     expect(h.reads).toBe(0);
   });
 
-  it("a patient whose row the viewer cannot read gets no section", async () => {
+  it("a patient whose row the viewer cannot read gets no switch", async () => {
     h.stored = null;
     const html = await render("reception");
     expect(tabRendered(html)).toBe(true);
-    expect(html).not.toContain(SECTION);
+    expect(html).not.toContain(s["patients.surveySwitchLabel"]);
+    expect(html).not.toContain('role="switch"');
     // CONTROL: the read was made, so the absence is the read's answer.
     expect(h.reads).toBe(1);
   });

@@ -80,6 +80,10 @@ import { CareTeamCard } from "./care-team-card";
 // SAT-01 (S8): the patient's survey switch, for the roles that set it.
 import { readPatientSurveySwitch } from "../../../lib/patients/survey-switch";
 import { SurveySwitchCard } from "./survey-switch-card";
+// SAT-01 (S11): this patient's survey sends and answers, as the viewer reads them.
+import { readPatientSurveyRows } from "../../../lib/patients/survey-rows";
+import { toSurveyListRow } from "../../../lib/surveys/survey-list-core";
+import { SurveyRows } from "./survey-rows";
 
 export const dynamic = "force-dynamic";
 
@@ -420,6 +424,20 @@ export default async function PatientProfilePage({
   // null draws nothing. The write asks the same rule again on the server.
   const surveySwitch =
     tab === "resumo" && canActOnPatient ? await readPatientSurveySwitch(ctx, patient.id) : null;
+  // SAT-01 (S11, spec 7.7): this patient's sends and answers, in the same
+  // section. `readPatientSurveyRows` answers null while the survey is switched
+  // off and reads nothing; otherwise it is the Comunicações list's own read for
+  // one patient, in the viewer's session, so migration 0102's policies decide
+  // every send and every answer (a therapist included, who gets no switch).
+  // A READ, so it does not ask `canActOnPatient`: the database decides.
+  const surveyRows = tab === "resumo" ? await readPatientSurveyRows(ctx, patient.id) : null;
+  const surveyRowsView = surveyRows ? (
+    <SurveyRows
+      rows={surveyRows.map(toSurveyListRow)}
+      locale={DEFAULT_LOCALE}
+      viewerIsOwner={ctx.role === "owner"}
+    />
+  ) : null;
   const canManageCareTeam = can(ctx.role, "care_team:manage");
   const therapistCareTeam =
     tab === "resumo" && !canManageCareTeam && ctx.role === "therapist"
@@ -709,14 +727,23 @@ export default async function PatientProfilePage({
             {/* SAT-01 (S8, copy texts 58 to 60): whether this patient receives
                 the satisfaction survey. Beside the contacts, which is where
                 the copy puts it. Not drawn at all while the survey is off. */}
-            {surveySwitch !== null && (
+            {/* SAT-01 (S11, copy sections G and K): under it, this patient's
+                sends and answers. A viewer who is not offered the switch (a
+                therapist) gets the section with the list alone. */}
+            {(surveySwitch !== null || surveyRowsView !== null) && (
               <section className="mt-6" data-testid="ficha-survey-section">
-                <SurveySwitchCard
-                  patientId={id}
-                  locale={DEFAULT_LOCALE}
-                  enabled={surveySwitch}
-                  error={m === "avaliacaoErro"}
-                />
+                {surveySwitch !== null ? (
+                  <SurveySwitchCard
+                    patientId={id}
+                    locale={DEFAULT_LOCALE}
+                    enabled={surveySwitch}
+                    error={m === "avaliacaoErro"}
+                  >
+                    {surveyRowsView}
+                  </SurveySwitchCard>
+                ) : (
+                  <Card title={s["patients.surveySwitchTitle"]}>{surveyRowsView}</Card>
+                )}
               </section>
             )}
           </div>
