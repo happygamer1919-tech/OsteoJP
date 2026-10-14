@@ -50,6 +50,7 @@ export type SurveyFormLabels = {
   q2Error: string;
   commentError: string;
   saveError: string;
+  optOutSaveError: string;
   optOut: string;
   optOutNote: string;
 };
@@ -115,6 +116,32 @@ function Scale({
   );
 }
 
+/**
+ * The one line above the questions. A write that failed comes before a field
+ * left empty, and each write says its own words: an answer, text 25; the
+ * opt-out, which is a request and not an answer, text 84 (strategy,
+ * 2026-10-14). Both in that place, as before. If both have failed, both are
+ * said, each true of a press the visitor made.
+ */
+export function surveyFormSummary({
+  answerFailed,
+  optOutFailed,
+  fieldError,
+  labels,
+}: {
+  answerFailed: boolean;
+  optOutFailed: boolean;
+  fieldError: boolean;
+  labels: Pick<SurveyFormLabels, "saveError" | "optOutSaveError" | "errorSummary">;
+}): string | null {
+  if (answerFailed || optOutFailed) {
+    return [answerFailed ? labels.saveError : null, optOutFailed ? labels.optOutSaveError : null]
+      .filter((line): line is string => line !== null)
+      .join(" ");
+  }
+  return fieldError ? labels.errorSummary : null;
+}
+
 export function SurveyForm({
   code,
   locale,
@@ -133,11 +160,12 @@ export function SurveyForm({
   );
   const { errors } = state;
   const fieldError = Boolean(errors.nps || errors.rating || errors.comment);
-  // An opt-out that could not be saved says so in the same place and the same
-  // words as an answer that could not (text 25): the one sentence this page
-  // has for a write that failed.
-  const saveFailed = Boolean(errors.save || optOutState.errors.save);
-  const summary = saveFailed ? labels.saveError : fieldError ? labels.errorSummary : null;
+  const summary = surveyFormSummary({
+    answerFailed: Boolean(errors.save),
+    optOutFailed: Boolean(optOutState.errors.save),
+    fieldError,
+    labels,
+  });
 
   // The summary sits above the questions and the button below them. On a phone
   // a refused submit would otherwise change nothing the visitor can see.

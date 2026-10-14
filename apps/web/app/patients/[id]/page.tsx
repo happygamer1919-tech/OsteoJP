@@ -432,7 +432,11 @@ export default async function PatientProfilePage({
   // A READ, so it does not ask `canActOnPatient`: the database decides.
   const surveyRows = tab === "resumo" ? await readPatientSurveyRows(ctx, patient.id) : null;
   const surveyRowsView = surveyRows ? (
-    <SurveyRows rows={surveyRows.map(toSurveyListRow)} locale={DEFAULT_LOCALE} />
+    <SurveyRows
+      rows={surveyRows.map(toSurveyListRow)}
+      locale={DEFAULT_LOCALE}
+      viewerIsOwner={ctx.role === "owner"}
+    />
   ) : null;
   const canManageCareTeam = can(ctx.role, "care_team:manage");
   const therapistCareTeam =
