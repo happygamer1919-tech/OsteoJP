@@ -67,9 +67,10 @@
 --          Q-4, 2026-10-14, for W-5). Production runs no seed, so the
 --          migration's own REVOKE is the only thing that makes this true there:
 --          has_table_privilege('service_role', table, p) for SELECT, INSERT,
---          UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, and MAINTAIN where
---          the server has it (17 and later; on an older server MAINTAIN is not
---          asked, and the expected cell count says so). Every cell must read
+--          UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER and MAINTAIN. This
+--          file is Postgres 17 only (pre-check verdict 6 requires 17, and
+--          verdicts 10, 11 and 21 ask MAINTAIN unconditionally, so an older
+--          server errors before this verdict runs). Every cell must read
 --          false. VACUOUS, not OK, unless both tables and the role exist and
 --          the cells were read;
 --   23     SERVICE_ROLE HOLDS NO COLUMN PRIVILEGE ON ANY COLUMN of either table:
@@ -198,8 +199,9 @@ WITH t AS (
   -- and then 22 and 23 read VACUOUS, never OK.
   SELECT oid FROM pg_roles WHERE rolname = 'service_role'
 ), sr_verbs AS (
-  -- MAINTAIN is a table privilege from Postgres 17 on. On an older server it is
-  -- not asked at all: has_table_privilege would raise on the word.
+  -- MAINTAIN is a table privilege from Postgres 17 on. The version test is a
+  -- belt only: this file is 17 only, and verdicts 10, 11 and 21 ask MAINTAIN
+  -- unconditionally, so an older server errors before it reaches this line.
   SELECT v FROM (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER')) x(v)
   UNION ALL
   SELECT 'MAINTAIN' WHERE current_setting('server_version_num')::int >= 170000

@@ -627,9 +627,9 @@ by the sitting's env step (written with the other blocks). Explicit halts on eve
   S12SHA=$(shasum -a 256 "${S12FILE}" | cut -d' ' -f1) || { echo "STOP (S12 block only; the apply and the post-check stand): cannot hash ${S12FILE}"; exit 1; }
   [ "${S12SHA}" = "${S12WANT}" ] || { echo "STOP (S12 block only; the apply and the post-check stand): ${S12FILE} is ${S12SHA}, not the reviewed ${S12WANT}"; exit 1; }
   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off \
-       -c "begin read only" -c "select 'read only: ' || current_setting('transaction_read_only') as s12_transaction" \
+       -c "begin read only" -c "set local statement_timeout = '120s'" -c "select 'read only: ' || current_setting('transaction_read_only') as s12_transaction" \
        -f "${S12FILE}" -c "rollback" > /tmp/0106-s12-count.txt 2>&1 \
-    || { cat /tmp/0106-s12-count.txt; echo "STOP (S12 block only; the apply and the post-check stand): the S12 count did not complete; nothing was written, it ran read only"; exit 1; }
+    || { cat /tmp/0106-s12-count.txt; echo "STOP (S12 block only; the apply and the post-check stand): the S12 count did not complete (an error, or longer than 120 seconds); nothing was written, it ran read only"; exit 1; }
   grep -q 'read only: on' /tmp/0106-s12-count.txt || { cat /tmp/0106-s12-count.txt; echo "STOP (S12 block only; the apply and the post-check stand): the transaction did not read as READ ONLY, so the counts are not reported"; exit 1; }
   cat /tmp/0106-s12-count.txt
   echo "S12 COUNT PRINTED: information for strategy's final S12 ruling. NOT a verdict and NOT a STOP condition."
