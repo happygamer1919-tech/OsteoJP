@@ -49,8 +49,10 @@
 --          is a superuser, or owns the table while row level security is not
 --          FORCED on it. Every count below rests on that; the transaction also
 --          sets row_security = off, so a session that does not bypass it ERRORs
---          on its first read instead of reading a filtered zero. CONTROL: the same
---          test reads false for `authenticated`;
+--          on its first read instead of reading a filtered zero. It also counts,
+--          from pg_tables, how many of the two tables the session owns: 2. Verdict
+--          4 reads the owners another way, so an unexpected owner fails two
+--          verdicts. CONTROL: the same test reads false for `authenticated`;
 --   6      THE ROWS FIT THE KEY. One pass over every registo, joined to its
 --          episode: registos, registos that name an episode, the ones the join
 --          found, and how many of those name ANOTHER PATIENT than their episode,
@@ -377,6 +379,9 @@ WITH tabs AS (
       WHERE n.nspname = 'public' AND p.prosecdef)                                               AS secdef,
     (SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public' AND p.prosecdef AND pg_get_userbyid(p.proowner) <> 'postgres')  AS secdef_not_postgres,
+    (SELECT count(*)::int FROM pg_tables pt
+      WHERE pt.schemaname = 'public' AND pt.tablename IN ('clinical_records', 'clinical_episodes')
+        AND pt.tableowner = current_user)                                                       AS tables_owned_by_me,
     current_setting('server_version_num')::int                                                  AS server_num,
     current_setting('server_version')                                                           AS server_version,
     (SELECT count(*)::int FROM pg_roles
@@ -491,10 +496,10 @@ WITH tabs AS (
          me || '; ' || coalesce(tbl_owners, 'absent') || '; control ' || auth_in_me::text,
          'postgres; clinical_episodes postgres, clinical_records postgres; control false',
          CASE WHEN me = 'postgres' AND tbl_owners = 'clinical_episodes postgres, clinical_records postgres' AND NOT auth_in_me THEN 'OK' ELSE 'FAIL' END FROM j
-  UNION ALL SELECT 5, 'A', '5. this session reads both tables past their policies (control: authenticated does not)',
-         coalesce(me_past_rls::text, 'unreadable') || '; control ' || coalesce(auth_past_rls::text, 'unreadable'),
-         'true; control false',
-         CASE WHEN coalesce(me_past_rls, false) AND auth_past_rls IS NOT DISTINCT FROM false THEN 'OK' ELSE 'FAIL' END FROM j
+  UNION ALL SELECT 5, 'A', '5. this session owns both tables and reads them past their policies (control: authenticated does not)',
+         coalesce(me_past_rls::text, 'unreadable') || ', owns ' || tables_owned_by_me::text || ' of 2; control ' || coalesce(auth_past_rls::text, 'unreadable'),
+         'true, owns 2 of 2; control false',
+         CASE WHEN coalesce(me_past_rls, false) AND tables_owned_by_me = 2 AND auth_past_rls IS NOT DISTINCT FROM false THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 6, 'A', '6. THE ROWS FIT THE KEY: no registo names an episode of another patient or tenant, or one that is not there (control: registos that name an episode, all found by the join; the key''s own count agrees)',
          'registos ' || f.registos_total || ', naming an episode ' || f.with_episode || ', joined ' || f.joined
            || '; another patient ' || f.other_patient || ', another tenant ' || f.other_tenant || ', episode not there ' || f.episode_missing

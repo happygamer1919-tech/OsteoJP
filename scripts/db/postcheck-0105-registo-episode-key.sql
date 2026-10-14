@@ -44,7 +44,10 @@
 --          clinical_records; and with the seven added lines taken out, the body
 --          hashes to the md5 the pre-check pinned for 0005's;
 --   7      the SECURITY DEFINER count equals secdef_before, every one owned by
---          `postgres`: 0105 adds none;
+--          `postgres`: 0105 adds none; and the ACL of merge_patients, read item
+--          by item, holds its owner's EXECUTE and `authenticated`'s, each granted
+--          by `postgres`, and nothing else (verdict 5 reads the same ACL another
+--          way, so a grant made after the pre-check fails two verdicts);
 --   8      every OTHER function in `public` hashes to other_functions_md5;
 --   9      every policy in the database hashes to policies_md5, and there are
 --          policies_before of them: 0105 creates, alters and drops none;
@@ -323,6 +326,10 @@ WITH tabs AS (
     (SELECT count(*)::text || ' enabled ' || count(*) FILTER (WHERE t.tgenabled = 'O')::text
        FROM pg_trigger t JOIN pg_constraint k ON k.oid = t.tgconstraint
       WHERE k.conname = 'clinical_records_episode_id_clinical_episodes_id_fk' AND t.tgisinternal) AS old_key_triggers,
+    (SELECT coalesce(string_agg(x.item, ', ' ORDER BY x.item), 'none')
+       FROM (SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END || ' ' || a.privilege_type
+                    || ' by ' || pg_get_userbyid(a.grantor) AS item
+               FROM mp CROSS JOIN LATERAL aclexplode(coalesce(mp.proacl, acldefault('f', mp.proowner))) a) x) AS merge_acl_items,
     (SELECT count(*)::int FROM pg_constraint k
       WHERE k.conname = 'clinical_records_episode_patient_tenant_fk')                           AS key_named,
     (SELECT k.conrelid::regclass::text || ' ' || k.contype::text || ' validated ' || k.convalidated::text
@@ -465,9 +472,11 @@ WITH tabs AS (
          'DEFERRED 1, IMMEDIATE 1, SET CONSTRAINTS in all 3; order deferred, episodes, registos, immediate; without the added lines 3dbbba9c644eac9c20ee123faefff8f7',
          CASE WHEN body_shape = 'DEFERRED 1, IMMEDIATE 1, SET CONSTRAINTS in all 3; order deferred, episodes, registos, immediate; without the added lines 3dbbba9c644eac9c20ee123faefff8f7'
               THEN 'OK' ELSE 'FAIL' END FROM j
-  UNION ALL SELECT 7, '7. the SECURITY DEFINER count is the pre-check''s, every one owned by postgres',
-         secdef::text || ', ' || secdef_not_postgres::text || ' not owned by postgres', :'secdef_before' || ', 0 not owned by postgres',
-         CASE WHEN secdef::text = :'secdef_before' AND secdef_not_postgres = 0 THEN 'OK' ELSE 'FAIL' END FROM j
+  UNION ALL SELECT 7, '7. the SECURITY DEFINER count is the pre-check''s, every one owned by postgres, and merge_patients may be run by its owner and by authenticated alone, its ACL read item by item',
+         secdef::text || ', ' || secdef_not_postgres::text || ' not owned by postgres; ' || merge_acl_items,
+         :'secdef_before' || ', 0 not owned by postgres; authenticated EXECUTE by postgres, postgres EXECUTE by postgres',
+         CASE WHEN secdef::text = :'secdef_before' AND secdef_not_postgres = 0
+               AND merge_acl_items = 'authenticated EXECUTE by postgres, postgres EXECUTE by postgres' THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 8, '8. every other function in public is as the pre-check read it',
          other_fn_md5, :'other_functions_md5',
          CASE WHEN other_fn_md5 = :'other_functions_md5' THEN 'OK' ELSE 'FAIL' END FROM j
