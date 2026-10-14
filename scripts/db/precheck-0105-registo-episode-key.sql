@@ -2,26 +2,26 @@
 -- READ ONLY. It writes nothing and cannot. Counts and catalogue facts only: no
 -- name, no title, no clinical text and no id of anyone is printed.
 --
--- EVERY VERDICT IS OK, VACUOUS OR FAIL, AND THERE ARE TWO PROFILES, each printed
--- by its own SUMMARY row as  N OK / M VACUOUS / K FAIL :
---   SUMMARY A, THIS FILE'S OWN: sixteen verdicts, 0 to 15. The caller asserts
---     this profile. Every verdict tests FAIL first, then VACUOUS, then OK: a
---     zero comparand may not print OK, and it may never hide a failure. On a
---     database at production's position that holds registos filed in episodes
---     it reads 16 OK / 0 VACUOUS / 0 FAIL. Where no registo names an episode,
---     verdict 6 reads VACUOUS, never OK: 15 OK / 1 VACUOUS / 0 FAIL. A CARRY
---     row that could not be read prints FAIL and is counted in this profile.
---   SUMMARY B, THE COUNTS, ruled into this file by strategy (dispatch
---     S-1008-B): three rows, C1 to C3, read by the same rule. They are counted
---     for the record and are NOT this file's STOP: 0105 touches none of those
---     tables.
--- Twenty CARRY rows feed the post-check, and the INFO rows print a profile and
--- are never counted.
+-- EVERY VERDICT IS OK, VACUOUS OR FAIL, AND THE SUMMARY ROW PRINTS THE PROFILE
+--     N OK / M VACUOUS / K FAIL
+-- Eighteen verdicts, 0 to 17. Every one tests FAIL first, then VACUOUS, then OK: a
+-- zero comparand may not print OK, and it may never hide a failure. A CARRY row
+-- that could not be read prints FAIL and is counted. THIS FILE ENDS WITH AN ERROR
+-- (psql exit 3) ON ANY PROFILE BUT  18 OK / 0 VACUOUS / 0 FAIL , and, with its own
+-- sentence, on any count of registos the key would refuse that is not 0. So a
+-- FAIL, a VACUOUS (verdict 6: no registo names an episode; verdict 17: the table
+-- holds no episode) and a row that does not fit the key each stop the sitting
+-- with nothing applied.
+-- Twenty CARRY rows follow (verdict 3 prints a carried number too, the journal
+-- rows): nineteen of them and verdict 3 feed the post-check, and the twentieth
+-- is the count the stage 1 block reads on its own. The INFO rows
+-- print a profile and are never counted: C1 to C3 among them, ruled into this
+-- file by strategy (dispatch S-1008-B) as counts for the record. 0105 touches
+-- none of those three tables, so they are not this file's STOP.
 --
--- WHAT 0105 DOES (packages/db/migrations-pending/NEXT-AFTER-0104_clinical_records_episode_key.sql,
--- sha256 980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441, to be promoted to
--- packages/db/migrations/0105_clinical_records_episode_key.sql with no byte
--- changed): three SET LOCAL lines; CREATE UNIQUE INDEX
+-- WHAT 0105 DOES (packages/db/migrations/0105_clinical_records_episode_key.sql,
+-- sha256 980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441, promoted from
+-- packages/db/migrations-pending with no byte changed): three SET LOCAL lines; CREATE UNIQUE INDEX
 -- clinical_episodes_id_patient_tenant_uq on clinical_episodes (id, patient_id,
 -- tenant_id); the foreign key clinical_records_episode_patient_tenant_fk from
 -- clinical_records (episode_id, patient_id, tenant_id) to those three columns,
@@ -92,13 +92,26 @@
 --          stack). CONTROL: server_version_num parses;
 --   15     the five roles the checks name exist (`postgres`, `authenticated`,
 --          `anon`, `patient`, `service_role`);
---   C1     COUNT. appointment_notes rows that name an episode, and how many of
+--   16     WHO MAY RUN merge_patients, ITEM BY ITEM: its ACL holds exactly the
+--          owner's own EXECUTE and one EXECUTE for `authenticated`, each granted
+--          by `postgres`, and nothing else. CREATE OR REPLACE keeps the ACL, so
+--          whoever may run the function today may run the body that defers the
+--          new key; verdict 12 asks four roles by name, and this verdict reads
+--          every item, so a grantee or a grantor nobody named is found BEFORE the
+--          apply. CONTROL: the list is not empty;
+--   17     THE INDEX CAN BE BUILT AND NO ROW SLIPS PAST THE KEY, COUNTED FROM THE
+--          ROWS: no two episodes share (id, patient_id, tenant_id); no episode
+--          holds a NULL in one of the three; no registo holds a NULL patient_id
+--          or tenant_id (MATCH SIMPLE would leave such a registo unchecked).
+--          CONTROL: as many distinct ids as episodes. VACUOUS when the table
+--          holds no episode;
+--   INFO   C1. appointment_notes rows that name an episode, and how many of
 --          them name another patient or another tenant than the episode does;
---   C2     COUNT. attachments rows that name a registo, and how many of them name
+--   INFO   C2. attachments rows that name a registo, and how many of them name
 --          another patient or another tenant than the registo does;
---   C3     COUNT. Registos that supersede another registo, and how many of them
+--   INFO   C3. Registos that supersede another registo, and how many of them
 --          name another patient or another tenant than the one they supersede;
---   CARRY  journal_rows_before; secdef_before; tables_before;
+--   CARRY  secdef_before; tables_before (journal_rows_before is verdict 3's row);
 --   CARRY  registos_rows, registos_md5, episodes_rows, episodes_md5: the row count
 --          of each table and one md5 over every row of it. 0105 writes no row, so
 --          the post-check wants all four unchanged. The md5 is printed; no row is;
@@ -121,6 +134,9 @@
 --          An index is a relation, and a new one arrives with its owner's own
 --          privileges; verdict 8 proves no relation has that name yet;
 --   CARRY  triggers_md5: every trigger in `public` that is not an internal one;
+--   CARRY  registos_the_key_would_refuse: the greater of verdict 6's two counts.
+--          0, or this file ends with its own STOP naming the number, and the
+--          stage 1 block reads the same row out of the transcript and stops too;
 --   INFO   the server version;
 --   INFO   THE SIZE OF THE WORK: rows and bytes of the two tables (the heap, and
 --          the total with TOAST and indexes). The index is built over the
@@ -202,7 +218,7 @@ END
 $journal$;
 
 \echo ''
-\echo '=== 0105 REGISTO EPISODE KEY PRE-CHECK: read the two SUMMARY rows last (A: 16 OK / 0 VACUOUS / 0 FAIL where registos are filed in episodes) ==='
+\echo '=== 0105 REGISTO EPISODE KEY PRE-CHECK: read the SUMMARY row last (18 OK / 0 VACUOUS / 0 FAIL, or this file ends with an error) ==='
 
 WITH tabs AS (
   SELECT c.oid, c.relname::text AS relname, c.relowner, c.relforcerowsecurity
@@ -222,6 +238,21 @@ WITH tabs AS (
   SELECT p.oid, p.prosrc, p.prosecdef, p.proconfig, p.proowner, p.proacl, p.prorettype
     FROM pg_proc p
    WHERE p.oid = 'public.merge_patients(uuid, uuid, uuid)'::regprocedure
+), mp_items AS (
+  -- Verdict 16. Every item of the function's ACL, as the server explodes it.
+  SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END || ' ' || a.privilege_type
+         || ' by ' || pg_get_userbyid(a.grantor) || CASE WHEN a.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END AS item
+    FROM mp CROSS JOIN LATERAL aclexplode(coalesce(mp.proacl, acldefault('f', mp.proowner))) a
+), dat AS (
+  -- Verdict 17. Counted from the rows, not from the catalogue.
+  SELECT (SELECT count(*) FROM public.clinical_episodes)                                    AS episodes_total,
+         (SELECT count(DISTINCT e.id) FROM public.clinical_episodes e)                      AS episode_ids,
+         (SELECT count(*) FROM (SELECT 1 FROM public.clinical_episodes e
+                                 GROUP BY e.id, e.patient_id, e.tenant_id HAVING count(*) > 1) d) AS duplicate_triples,
+         (SELECT count(*) FROM public.clinical_episodes e
+           WHERE e.id IS NULL OR e.patient_id IS NULL OR e.tenant_id IS NULL)               AS episode_nulls,
+         (SELECT count(*) FROM public.clinical_records r
+           WHERE r.patient_id IS NULL OR r.tenant_id IS NULL)                               AS registo_nulls
 ), fit AS (
   -- Verdict 6. One pass: every registo, with the episode it names if it names one.
   SELECT count(*)::bigint                                                                  AS registos_total,
@@ -335,6 +366,8 @@ WITH tabs AS (
             || ', PUBLIC items ' || (SELECT count(*) FROM aclexplode(coalesce(mp.proacl, acldefault('f', mp.proowner))) a WHERE a.grantee = 0)::text
        FROM mp)                                                                                 AS merge_execute,
     (to_regprocedure('public.no_such_function_0105()') IS NULL)                                 AS planted_fn_absent,
+    (SELECT coalesce(string_agg(i.item, ', ' ORDER BY i.item), 'none') FROM mp_items i)         AS merge_acl_items,
+    (SELECT count(*)::int FROM mp_items)                                                        AS merge_acl_n,
     (SELECT md5(coalesce(mp.proacl::text, '-')) FROM mp)                                        AS merge_acl_md5,
     (SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public' AND p.prosecdef)                                               AS secdef,
@@ -504,24 +537,17 @@ WITH tabs AS (
          CASE WHEN server_num BETWEEN 170000 AND 179999 THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 15, 'A', '15. the five roles the checks name exist', roles_named::text, '5',
          CASE WHEN roles_named = 5 THEN 'OK' ELSE 'FAIL' END FROM j
-  UNION ALL SELECT 20, 'B', 'C1. COUNT: appointment_notes rows that name an episode, and those naming another patient or tenant than it',
-         'naming an episode ' || c.linked || ', joined ' || c.joined || '; another patient ' || c.other_patient || ', another tenant ' || c.other_tenant,
-         'a count, not this file''s STOP: 0 and 0 over more than 0 reads OK, over 0 reads VACUOUS',
-         CASE WHEN c.other_patient <> 0 OR c.other_tenant <> 0 OR c.joined <> c.linked THEN 'FAIL'
-              WHEN c.linked = 0 THEN 'VACUOUS' ELSE 'OK' END FROM c1 c
-  UNION ALL SELECT 21, 'B', 'C2. COUNT: attachments rows that name a registo, and those naming another patient or tenant than it',
-         'naming a registo ' || c.linked || ', joined ' || c.joined || ', of those naming no patient ' || c.no_patient
-           || '; another patient ' || c.other_patient || ', another tenant ' || c.other_tenant,
-         'a count, not this file''s STOP: 0 and 0 over more than 0 reads OK, over 0 reads VACUOUS',
-         CASE WHEN c.other_patient <> 0 OR c.other_tenant <> 0 OR c.joined <> c.linked THEN 'FAIL'
-              WHEN c.linked = 0 THEN 'VACUOUS' ELSE 'OK' END FROM c2 c
-  UNION ALL SELECT 22, 'B', 'C3. COUNT: registos that supersede another, and those naming another patient or tenant than it',
-         'superseding ' || c.linked || ', joined ' || c.joined || '; another patient ' || c.other_patient || ', another tenant ' || c.other_tenant,
-         'a count, not this file''s STOP: 0 and 0 over more than 0 reads OK, over 0 reads VACUOUS',
-         CASE WHEN c.other_patient <> 0 OR c.other_tenant <> 0 OR c.joined <> c.linked THEN 'FAIL'
-              WHEN c.linked = 0 THEN 'VACUOUS' ELSE 'OK' END FROM c3 c
-  UNION ALL SELECT 30, 'C', 'journal_rows_before', coalesce(journal_rows::text, 'no journal table'), 'a count',
-         CASE WHEN journal_state = 'read' THEN 'CARRY' ELSE 'FAIL' END FROM j
+  UNION ALL SELECT 16, 'A', '16. merge_patients may be run by its owner and by authenticated alone, each by a grant postgres made: its ACL, item by item (control: the list is not empty)',
+         merge_acl_items || '; ' || merge_acl_n::text || ' items',
+         'authenticated EXECUTE by postgres, postgres EXECUTE by postgres; 2 items',
+         CASE WHEN merge_acl_items = 'authenticated EXECUTE by postgres, postgres EXECUTE by postgres' AND merge_acl_n = 2 THEN 'OK' ELSE 'FAIL' END FROM j
+  UNION ALL SELECT 17, 'A', '17. THE INDEX CAN BE BUILT AND NO ROW SLIPS PAST THE KEY: no two episodes share the three values, and no key column holds a NULL, counted from the rows (control: as many distinct ids as episodes)',
+         'episodes ' || d.episodes_total || ', distinct ids ' || d.episode_ids || '; sharing the three values ' || d.duplicate_triples
+           || '; episodes with a NULL among the three ' || d.episode_nulls || '; registos with a NULL patient or tenant ' || d.registo_nulls,
+         'episodes more than 0, distinct ids equal to it; sharing the three values 0; episodes with a NULL among the three 0; registos with a NULL patient or tenant 0. Episodes 0 reads VACUOUS',
+         CASE WHEN d.duplicate_triples <> 0 OR d.episode_nulls <> 0 OR d.registo_nulls <> 0 OR d.episode_ids <> d.episodes_total THEN 'FAIL'
+              WHEN d.episodes_total = 0 THEN 'VACUOUS'
+              ELSE 'OK' END FROM j, dat d
   UNION ALL SELECT 31, 'C', 'secdef_before', secdef::text, 'a count', 'CARRY' FROM j
   UNION ALL SELECT 32, 'C', 'tables_before', n_tables::text, 'a count', 'CARRY' FROM j
   UNION ALL SELECT 33, 'C', 'registos_rows', registos_rows::text, 'a count', 'CARRY' FROM j
@@ -554,6 +580,8 @@ WITH tabs AS (
          CASE WHEN def_md5 ~ '^[0-9a-f]{32}$' THEN 'CARRY' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 49, 'C', 'triggers_md5', trg_md5, '32 hex characters',
          CASE WHEN trg_md5 ~ '^[0-9a-f]{32}$' THEN 'CARRY' ELSE 'FAIL' END FROM j
+  UNION ALL SELECT 50, 'C', 'registos_the_key_would_refuse', set_config('rk0105.misfit', greatest(f.any_of_three, f.key_would_refuse)::text, true),
+         '0 (any other number stops the sitting: verdict 6, this file''s own STOP, and the stage 1 block)', 'CARRY' FROM fit f
   UNION ALL SELECT 60, 'I', 'INFO the server version', server_version, 'a profile', 'INFO' FROM j
   UNION ALL SELECT 61, 'I', 'INFO the size of the work: rows and bytes of the two tables', size_profile, 'a profile', 'INFO' FROM j
   UNION ALL SELECT 62, 'I', 'INFO of the registos that do not fit the key (verdict 6): by status',
@@ -562,21 +590,47 @@ WITH tabs AS (
          other_lockers::text || ' sessions, oldest ' || oldest_locker_seconds, 'a profile, never a verdict', 'INFO' FROM j
   UNION ALL SELECT 64, 'I', 'INFO idle_in_transaction_session_timeout (0 is no limit)', idle_in_tx, 'a profile, never a verdict', 'INFO' FROM j
   UNION ALL SELECT 65, 'I', 'INFO the clock, Lisbon time', lisbon_clock, 'a profile, never a verdict', 'INFO' FROM j
+  UNION ALL SELECT 66, 'I', 'INFO C1, a count for the record: appointment_notes rows that name an episode, and those naming another patient or tenant than it',
+         'naming an episode ' || c.linked || ', joined ' || c.joined || '; another patient ' || c.other_patient || ', another tenant ' || c.other_tenant,
+         'a count, never a verdict: 0105 does not touch this table', 'INFO' FROM c1 c
+  UNION ALL SELECT 67, 'I', 'INFO C2, a count for the record: attachments rows that name a registo, and those naming another patient or tenant than it',
+         'naming a registo ' || c.linked || ', joined ' || c.joined || ', of those naming no patient ' || c.no_patient
+           || '; another patient ' || c.other_patient || ', another tenant ' || c.other_tenant,
+         'a count, never a verdict: 0105 does not touch this table', 'INFO' FROM c2 c
+  UNION ALL SELECT 68, 'I', 'INFO C3, a count for the record: registos that supersede another, and those naming another patient or tenant than it',
+         'superseding ' || c.linked || ', joined ' || c.joined || '; another patient ' || c.other_patient || ', another tenant ' || c.other_tenant,
+         'a count, never a verdict: 0105 adds no key on this column', 'INFO' FROM c3 c
 ), s AS (
   SELECT n, "check", observed, expected, verdict FROM r
   UNION ALL
-  SELECT 98, 'SUMMARY A. this file''s own verdicts, 0 to 15, and any carry that could not be read',
+  SELECT 99, 'SUMMARY. the verdict profile this run printed',
+         set_config('rk0105.profile',
          (SELECT count(*) FROM r WHERE grp = 'A' AND verdict = 'OK')::text      || ' OK / ' ||
          (SELECT count(*) FROM r WHERE grp = 'A' AND verdict = 'VACUOUS')::text || ' VACUOUS / ' ||
-         (SELECT count(*) FROM r WHERE grp IN ('A', 'C') AND verdict = 'FAIL')::text || ' FAIL',
-         '16 OK / 0 VACUOUS / 0 FAIL; or 15 OK / 1 VACUOUS / 0 FAIL where no registo names an episode', 'SUMMARY'
-  UNION ALL
-  SELECT 99, 'SUMMARY B. the counts C1 to C3, for the record (not this file''s STOP)',
-         (SELECT count(*) FROM r WHERE grp = 'B' AND verdict = 'OK')::text      || ' OK / ' ||
-         (SELECT count(*) FROM r WHERE grp = 'B' AND verdict = 'VACUOUS')::text || ' VACUOUS / ' ||
-         (SELECT count(*) FROM r WHERE grp = 'B' AND verdict = 'FAIL')::text    || ' FAIL',
-         'three verdicts, whatever they read', 'SUMMARY'
+         (SELECT count(*) FROM r WHERE grp IN ('A', 'C') AND verdict = 'FAIL')::text || ' FAIL', true),
+         '18 OK / 0 VACUOUS / 0 FAIL, and nothing else: a VACUOUS (6: no registo names an episode; 17: the table holds no episode) or a FAIL ends this file with an error', 'SUMMARY'
 )
 SELECT "check", observed, expected, verdict FROM s ORDER BY n;
+
+-- A REGISTO THE KEY WOULD REFUSE IS AN ERROR WITH ITS OWN SENTENCE. The CARRY row
+-- stored the count it printed (set_config, transaction-local, allowed in a READ
+-- ONLY transaction). Any value but 0 raises, and psql exits 3.
+SELECT coalesce(current_setting('rk0105.misfit', true), '') = '0' AS rk0105_none_misfit \gset
+\if :rk0105_none_misfit
+\else
+  DO $misfit$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0105 pre-check counted [%] registos that name an episode of another patient or tenant, or an episode that is not there, and the sitting stops on any number but 0. The migration would fail on them at its VALIDATE statement with nothing applied, and it repairs no row: a repair is its own ruled operation. This file wrote nothing, and the block that ran it applies nothing after this STOP. The number goes to SOLO.', coalesce(nullif(current_setting('rk0105.misfit', true), ''), 'no count');
+  END $misfit$;
+\endif
+
+-- ANY OTHER PROFILE IS AN ERROR. The SUMMARY row stored the profile it printed.
+-- Anything but exactly "18 OK / 0 VACUOUS / 0 FAIL" raises, and psql exits 3.
+SELECT coalesce(current_setting('rk0105.profile', true), '') = '18 OK / 0 VACUOUS / 0 FAIL' AS rk0105_profile_ok \gset
+\if :rk0105_profile_ok
+\else
+  DO $fail$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0105 pre-check printed a FAIL or a VACUOUS verdict, or its profile could not be read back [%]; it must read 18 OK / 0 VACUOUS / 0 FAIL. Read the rows above.', coalesce(current_setting('rk0105.profile', true), 'no profile');
+  END $fail$;
+\endif
 
 ROLLBACK;

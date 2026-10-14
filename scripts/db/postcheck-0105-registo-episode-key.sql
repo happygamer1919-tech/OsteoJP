@@ -1,13 +1,16 @@
 -- 0105 POST-CHECK: a registo and the episode it is filed in name one patient, in one tenant.
--- READ ONLY. It writes nothing and cannot. Counts and catalogue facts only: no
--- name, no title, no clinical text and no id of anyone is printed.
+-- READ ONLY. Run inside the block's own `begin read only`, so the server refuses
+-- a write: this file opens no transaction of its own and ends none. Counts and
+-- catalogue facts only: no name, no title, no clinical text and no id of anyone
+-- is printed.
 --
 -- EVERY VERDICT IS OK, VACUOUS OR FAIL, and the SUMMARY row prints the profile:
 --     N OK / M VACUOUS / K FAIL
--- Nineteen verdicts, 0 to 18. Every one tests FAIL first, then VACUOUS, then OK.
--- On a database that holds registos filed in episodes it reads
--- 19 OK / 0 VACUOUS / 0 FAIL. Where no registo names an episode, verdict 16 reads
--- VACUOUS, never OK: 18 OK / 1 VACUOUS / 0 FAIL.
+-- Twenty verdicts, 0 to 19. Every one tests FAIL first, then VACUOUS, then OK.
+-- THIS FILE ENDS WITH AN ERROR (psql exit 3) ON ANY PROFILE BUT
+-- 20 OK / 0 VACUOUS / 0 FAIL. Verdict 16 reads VACUOUS, never OK, where no
+-- registo names an episode; the pre-check stops the sitting on such a database
+-- before anything is applied, so a VACUOUS here is not a pass either.
 --
 -- EVERY CHANGE 0105 MAKES IS ASSERTED, AND EVERYTHING ELSE IS ASSERTED UNCHANGED:
 --   0      the transaction is READ ONLY;
@@ -68,6 +71,11 @@
 --   18     0105's sha256 is in the journal exactly once, as the newest row.
 --          The journal is read by a DO block: on a database with no drizzle
 --          journal, verdicts 17 and 18 read FAIL with "no journal table";
+--   19     THE KEY IS ENFORCED, NOT ONLY DECLARED: the constraint's own four
+--          internal triggers are there, two on each table, every one enabled,
+--          deferrable and not initially deferred. A key whose triggers were
+--          disabled would read as a key in verdict 2 and refuse nothing.
+--          CONTROL: the key of 0000 carries its own four, enabled;
 --   INFO   the server version;
 --   INFO   the size of the new index, in bytes.
 --
@@ -94,7 +102,7 @@
 --        -v other_functions_md5=<md5> -v merge_acl_md5=<md5>
 --        -v policies_before=<n> -v policies_md5=<md5> -v relation_acl_md5=<md5>
 --        -v column_acl_md5=<md5> -v default_acl_md5=<md5> -v triggers_md5=<md5>
---        -f scripts/db/postcheck-0105-registo-episode-key.sql
+--        -c "begin read only" -f scripts/db/postcheck-0105-registo-episode-key.sql -c "rollback"
 
 \pset pager off
 \timing off
@@ -181,7 +189,16 @@
   DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v triggers_md5 is missing. This file refuses to guess.'; END $missing$;
 \endif
 
-BEGIN READ ONLY;
+-- THIS FILE RUNS ONLY INSIDE THE BLOCK'S OWN "begin read only". Outside one it
+-- stops before any read, so no verdict is ever printed by a session that could
+-- write.
+SELECT current_setting('transaction_read_only') = 'on' AS rk0105_read_only \gset
+\if :rk0105_read_only
+\else
+  DO $notro$ BEGIN
+    RAISE EXCEPTION 'STOP: this file runs only inside the block''s own "begin read only". Nothing was checked.';
+  END $notro$;
+\endif
 -- A session that does not bypass row level security ERRORs on its first read
 -- of an RLS table here, instead of reading a filtered zero.
 SET LOCAL row_security = off;
@@ -217,7 +234,7 @@ END
 $journal$;
 
 \echo ''
-\echo '=== 0105 REGISTO EPISODE KEY POST-CHECK: read the SUMMARY row last (19 OK / 0 VACUOUS / 0 FAIL where registos are filed in episodes) ==='
+\echo '=== 0105 REGISTO EPISODE KEY POST-CHECK: read the SUMMARY row last (20 OK / 0 VACUOUS / 0 FAIL, or this file ends with an error) ==='
 
 WITH tabs AS (
   SELECT c.oid, c.relname::text AS relname
@@ -296,6 +313,16 @@ WITH tabs AS (
       WHERE i.indexrelid = to_regclass('public.clinical_episodes_id_patient_tenant_uq'))        AS index_shape,
     (SELECT i.indisunique::text || '/' || i.indisvalid::text FROM pg_index i
       WHERE i.indexrelid = 'public.clinical_episodes_pkey'::regclass)                           AS index_control,
+    (SELECT coalesce(string_agg(x.line, ', ' ORDER BY x.line), 'none')
+       FROM (SELECT t.tgrelid::regclass::text || ' ' || count(*)::text || ' enabled ' || count(*) FILTER (WHERE t.tgenabled = 'O')::text
+                    || ' deferrable ' || count(*) FILTER (WHERE t.tgdeferrable)::text
+                    || ' initially deferred ' || count(*) FILTER (WHERE t.tginitdeferred)::text AS line
+               FROM pg_trigger t JOIN pg_constraint k ON k.oid = t.tgconstraint
+              WHERE k.conname = 'clinical_records_episode_patient_tenant_fk' AND t.tgisinternal
+              GROUP BY t.tgrelid) x)                                                             AS key_triggers,
+    (SELECT count(*)::text || ' enabled ' || count(*) FILTER (WHERE t.tgenabled = 'O')::text
+       FROM pg_trigger t JOIN pg_constraint k ON k.oid = t.tgconstraint
+      WHERE k.conname = 'clinical_records_episode_id_clinical_episodes_id_fk' AND t.tgisinternal) AS old_key_triggers,
     (SELECT count(*)::int FROM pg_constraint k
       WHERE k.conname = 'clinical_records_episode_patient_tenant_fk')                           AS key_named,
     (SELECT k.conrelid::regclass::text || ' ' || k.contype::text || ' validated ' || k.convalidated::text
@@ -491,17 +518,43 @@ WITH tabs AS (
               ELSE 'no journal table (' || journal_state || ')' END,
          '1 row, newest is 0105: true',
          CASE WHEN journal_state = 'read' AND has_0105 = '1' AND newest_is_0105 = 'true' THEN 'OK' ELSE 'FAIL' END FROM j
+  UNION ALL SELECT 19, '19. THE KEY IS ENFORCED: its four internal triggers are there, two on each table, enabled, deferrable, not initially deferred (control: the key of 0000 carries four, enabled)',
+         coalesce(key_triggers, 'none') || '; control ' || coalesce(old_key_triggers, 'none'),
+         'clinical_episodes 2 enabled 2 deferrable 2 initially deferred 0, clinical_records 2 enabled 2 deferrable 2 initially deferred 0; control 4 enabled 4',
+         CASE WHEN key_triggers = 'clinical_episodes 2 enabled 2 deferrable 2 initially deferred 0, clinical_records 2 enabled 2 deferrable 2 initially deferred 0'
+               AND old_key_triggers = '4 enabled 4' THEN 'OK' ELSE 'FAIL' END FROM j
   UNION ALL SELECT 60, 'INFO the server version', server_version, 'a profile', 'INFO' FROM j
   UNION ALL SELECT 61, 'INFO the size of the new index, in bytes', new_index_bytes, 'a profile', 'INFO' FROM j
 ), s AS (
   SELECT n, "check", observed, expected, verdict FROM r
   UNION ALL
   SELECT 99, 'SUMMARY. the verdict profile this run printed',
+         set_config('rk0105.profile',
          (SELECT count(*) FROM r WHERE verdict = 'OK')::text      || ' OK / ' ||
          (SELECT count(*) FROM r WHERE verdict = 'VACUOUS')::text || ' VACUOUS / ' ||
-         (SELECT count(*) FROM r WHERE verdict = 'FAIL')::text    || ' FAIL',
-         '19 OK / 0 VACUOUS / 0 FAIL; or 18 OK / 1 VACUOUS / 0 FAIL where no registo names an episode', 'SUMMARY'
+         (SELECT count(*) FROM r WHERE verdict = 'FAIL')::text    || ' FAIL', true),
+         '20 OK / 0 VACUOUS / 0 FAIL, and nothing else: a FAIL or a VACUOUS ends this file with an error', 'SUMMARY'
 )
 SELECT "check", observed, expected, verdict FROM s ORDER BY n;
 
-ROLLBACK;
+-- A FAIL VERDICT IS AN ERROR. The SUMMARY row stored the profile it printed
+-- (set_config, transaction-local, allowed in a READ ONLY transaction). Anything
+-- but a profile ending "/ 0 FAIL" raises, and psql exits 3.
+SELECT coalesce(current_setting('rk0105.profile', true), '') ~ '^[0-9]+ OK / [0-9]+ VACUOUS / 0 FAIL$' AS rk0105_no_fail \gset
+\if :rk0105_no_fail
+\else
+  DO $fail$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0105 post-check printed a FAIL verdict, or its profile could not be read back [%]. Read the rows above.', coalesce(current_setting('rk0105.profile', true), 'no profile');
+  END $fail$;
+\endif
+
+-- A PROFILE THAT IS NOT THE EXPECTED ONE IS AN ERROR TOO: every one of the twenty
+-- verdicts must read OK. A VACUOUS verdict is not a pass, and a verdict that is
+-- missing prints no FAIL.
+SELECT coalesce(current_setting('rk0105.profile', true), '') = '20 OK / 0 VACUOUS / 0 FAIL' AS rk0105_profile_ok \gset
+\if :rk0105_profile_ok
+\else
+  DO $profile$ BEGIN
+    RAISE EXCEPTION 'STOP: the 0105 post-check printed no FAIL verdict, but its profile [%] is not [20 OK / 0 VACUOUS / 0 FAIL]. A VACUOUS verdict is not a pass. Read the rows above.', coalesce(current_setting('rk0105.profile', true), 'no profile');
+  END $profile$;
+\endif
