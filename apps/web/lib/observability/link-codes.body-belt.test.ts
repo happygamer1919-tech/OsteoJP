@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { SESSION_COOKIE, postLinkForm, reportWire, watchEvents, type Seen } from "./link-codes.post-harness";
+import { SESSION_COOKIE, postLinkForm, reportWire, watchEvents, type Seen } from "./link-codes.test.post-harness";
 
 /**
  * OBS-07 - the hooks alone. The second of two independent layers, proven with
