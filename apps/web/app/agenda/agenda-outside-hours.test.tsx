@@ -158,10 +158,17 @@ describe("an 08:00 booking under a 09:00 opening", () => {
   }
 
   // The regression, stated as the old behaviour: with the window NOT widened,
-  // the two groups collapse onto one offset. This is what production looked like.
+  // the two starts collapse onto one offset. This is what production looked like.
+  // AGENDA-STACK-01: they were two groups drawn over each other; a start outside
+  // the window now joins the group at the edge it is drawn on, so it is one
+  // group, at the 09:00 offset, with both names in it and room for both.
   it("WITHOUT the widened window the two rows collapse onto the same offset", () => {
-    const tops = groupTops(render("day", [EARLY, ON_TIME], false));
-    expect(tops[String(8 * 60)]).toBe(tops[String(9 * 60)]);
+    const html = render("day", [EARLY, ON_TIME], false);
+    const tops = groupTops(html);
+    expect(Object.keys(tops)).toEqual([String(9 * 60)]);
+    expect(parseFloat(tops[String(9 * 60)]!)).toBe(0);
+    expect(html).toContain("Ana Cedo");
+    expect(html).toContain("Bruno Certo");
   });
 });
 

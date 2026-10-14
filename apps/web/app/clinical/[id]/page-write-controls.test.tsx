@@ -251,6 +251,13 @@ describe("the record page names a refused sign or new version", () => {
     expect(html).not.toContain(text(pt["clinical.error"]));
   });
 
+  it("M-4, M-4b err:concurrent_change (a new version or a sign rolled back as a deadlock victim): the retry sentence, not the generic one", async () => {
+    const html = await pageWith("err:concurrent_change");
+    expect(pt["errors.concurrentChange"]).toBeTruthy();
+    expect(html).toContain(text(pt["errors.concurrentChange"]));
+    expect(html).not.toContain(text(pt["clinical.error"]));
+  });
+
   it("CONTROL err:stale keeps its own message, and err:not_found (a refused Nova versao) the generic one", async () => {
     const stale = await pageWith("err:stale");
     expect(stale).toContain(text(pt["clinical.signStale"]));

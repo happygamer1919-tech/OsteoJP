@@ -27,6 +27,16 @@ Where this document still reads `0101` for SAT-01 it is a quotation of a ruling
 or of an earlier revision, marked superseded; every statement in the present
 tense reads `0102`.
 
+**Amended 2026-10-13** by SOLO to an owner ruling of that day, on the "valid
+until" date a person reads. A link dies exactly 14 days after its send, to the
+minute, so it stops working part of the way through a day. The printed date is
+therefore ONE DAY EARLIER than the Lisbon calendar date of the expiry instant:
+the last day the link works from start to end. Sent 24 May, the link dies on 7
+June and the message reads "6 de junho de 2026". This binds the email's
+`survey_expiry_date` (7.1) and the staff line's `{data_fim}` (copy text 73,
+5.4). The expiry itself, `sent_at + interval '14 days'`, does not change, and
+no migration follows from this.
+
 **The name (S1).** In every Portuguese string the feature is the "Avaliação de
 satisfação" (plural "Avaliações de satisfação", never bare "Avaliações", which on
 this platform means the clinical evaluations). This English document keeps
@@ -313,7 +323,7 @@ written yet: no application code is in the migration's pull request.**
 | A1 | The public page `/s/<code>` and its actions call the three doors through `withReminderTenantContext` (tenant, role `authenticated`, no user, no patient claim), as `confirm-code-store.ts` calls 0074's doors. They never use the visitor's own session, so a visitor who is also signed in as staff or in the portal still gets the page. A test with a staff session and a portal session in the browser. | The doors refuse any other session. A page that passed the visitor's session would show "link not valid" to every signed-in visitor. | 7.2, 9.3 |
 | A2 | **MUST LAND BEFORE THE LIVE-SEND FLAG LEAVES `off`.** The manual send records its hand-over to the channel in `reminder_dispatches` (or the ledger the send path uses), in the same request as `issue_survey_manual`, and the Comunicações list shows a send with no hand-over as not sent. | The database cannot tell the application's manual send from a staff member's direct call of `issue_survey_manual`. Such a call is attributable (`sent_by`, the `survey.sent` audit row) and can attach only to a patient that member may send to, but it records a send with no message leaving, blocks the button for 14 days (`open_link`) and consumes the patient's 60-day window for the automatic send. The hand-over record is the only thing that shows the difference. | 7.6, 9.2; a condition of 7.5's flag leaving `off`, with A7 and A8 |
 | A3 | **Merge.** `merge_patients` (0005) does not know the three tables. After a merge the appointment is the survivor's and its send and answer still name the merged-away patient: the live link stops resolving, the survivor can be sent a second survey for the same visit, and the answer is missing from the survivor's file. The merge must either re-point `appointment_survey_sends.patient_id` and `appointment_survey_responses.patient_id` to the survivor in the same transaction, or refuse a merge whose source has survey rows. A ruling is needed on which (O13). It is a change to a SECURITY DEFINER function: its own migration and review. | Recorded as a gap by one arm of the DB-gated suite, which changes when this lands. | new; before the live-send flag leaves `off` |
-| A4 | **Hard delete.** `hardDeletePatient` (`apps/web/lib/patients/actions.ts`) counts the patient's rows in the two tables in its reference guard, so it answers `has_references`. | Without it the delete of a merged-away patient with survey rows fails at the foreign key and the screen shows the generic error. A patient who was never merged is already stopped by the appointment the send belongs to. | 7.7 or its own small pull request |
+| A4 | **Hard delete. Delivered 2026-10-08, no longer owed.** `hardDeletePatient` (`apps/web/lib/patients/actions.ts`) counts the patient's rows in the two tables in its reference guard, so it answers `has_references`. The danger zone names both classes with their counts (copy texts 82 and 83). | ~~Without it the delete of a merged-away patient with survey rows fails at the foreign key and the screen shows the generic error.~~ *Superseded 2026-10-08:* the foreign key's refusal has answered `has_references` since DEL-02 (#1569), and the count now shows which rows hold the patient. An admin of another clinic than the send's reads zero and is still answered `has_references`, by the database. A patient who was never merged is already stopped by the appointment the send belongs to. | ~~7.7 or~~ its own small pull request; proved by `apps/web/lib/patients/hard-delete-survey.db.test.ts` |
 | A5 | The consent label list (7.2) refuses a label longer than 64 characters, in its test. | The CHECK. | 7.2 |
 | A6 | An erasure request (RGPD, a patient asking for their answers to be deleted) has no path: the purge nulls comments after 24 months and nothing deletes an answer. | The foreign keys make that explicit. Out of scope in v1 unless ruled otherwise (O14). | 8 |
 | A7 | **The survey link is never stored and never shown to staff.** The application keeps only the code's HMAC (as `confirm-code-store.ts` does); the link is built in the send path, handed to the provider and dropped. No staff screen, log line, audit row, dispatch record or error message carries the link or the code; the Comunicações list shows that a send exists and its status, never its link. A test that greps the rendered staff pages and the dispatch ledger for the code. | The page's doors answer the server's own session for whoever presents a live code. The code is therefore the whole of the patient's authority: a staff member who can read it can answer as the patient through the page itself, which no database rule can tell from the patient. | 7.1, 7.3, 7.6, 9.2 |
@@ -425,8 +435,9 @@ Gaps that SAT-01 inherits and does not fix in v1:
 5. The SMS line is `Responder: <host>/s/<8 characters>`, bare host, the host
    read from the same variable the confirm link uses (`confirm-code.ts:68`,
    `REMINDERS_RESCHEDULE_BASE_URL`). The email carries the full link. The
-   system refuses an SMS that does not fit one message (S6): the render throws
-   and nothing is issued.
+   system refuses an SMS that does not fit one message (S6): the render
+   returns a refusal (a value, not a throw, `survey-body.ts`), the caller stops
+   on it, and nothing is issued.
 
 ### 5.2 The page `/s/<code>`
 
@@ -438,7 +449,9 @@ Built on `apps/web/app/c/[code]/` and keeping its rules:
   page** (SR-30). The page does not say which it was.
 * **A code lives 14 days from its send** and works once (the build order's
   "single-use 14-day token"; 3.2 row 6). ~~14 days after the visit~~
-  *(superseded 2026-10-02 by S-1002-D S4).*
+  *(superseded 2026-10-02 by S-1002-D S4).* The page prints no expiry date.
+  Wherever a person reads a "valid until" date, it is the day before the Lisbon
+  day the code dies on (owner ruling, 2026-10-13).
 * **The visit date only.** No therapist, no service, no time, no clinical
   content, no patient name. Text 7 tells the patient that the answers carry
   their identity and who reads them (S7, S9).
@@ -499,15 +512,16 @@ depends on the sender (`reply-capability.ts`), which SAT-01 does not change.
   concluded appointment; the patient opted out (S8); no permitted channel
   exists (the same channel rule as 5.1, S6); or a send to this patient is
   unanswered and its link is still valid (sent less than 14 days ago, not
-  consumed).
+  consumed). The date text 73 prints as `{data_fim}` is the day before the
+  Lisbon day that link dies on (owner ruling, 2026-10-13), not the day it dies.
 * **Not blocked by the 60-day rule (S4).** A manual send does count toward the
   next automatic one (S3).
 * **The dialog (S6)** names the channel before anything is sent: copy text 63
   for email; for SMS, copy text 64 says it goes by SMS and text 65 that SMS has
   a cost. The patient's address is not shown in the dialog.
 * **The SMS that does not fit one message is still refused (S6)**, in the same
-  order as 5.1 step 4: the render throws, no send is issued, and the dialog
-  shows copy text 69.
+  order as 5.1 step 4: the render returns a refusal, no send is issued, and the
+  dialog shows copy text 69.
 * **The flag governs it too:** while the SAT live-send flag is off, a manual
   send reaches no patient, except the canary of 7.5.
 * **The server works out the button's state, and the door decides.** The
@@ -818,9 +832,13 @@ live-send flag is off (the build order). Section 10 gives the order.
 * The code module reuses `confirm-code.ts`'s alphabet, length (8) and HMAC.
   Recommended: the same key with a `survey:` domain prefix on the HMAC input,
   so no new secret is needed (O7).
-* New render tokens: `survey_link`, `survey_expiry_date` (the send date plus 14
-  days, long form). ~~Visit date plus 14 days.~~ *Superseded 2026-10-02 by
-  S-1002-D S4 (3.2 row 6).*
+* New render tokens: `survey_link`, `survey_expiry_date` (the day BEFORE the
+  Lisbon calendar date of the expiry instant, long form: sent 24 May, the link
+  dies on 7 June and the token reads 6 June; owner ruling, 2026-10-13).
+  ~~The send date plus 14 days, long form.~~ *Superseded 2026-10-13 by that
+  ruling: the link dies to the minute, so its last calendar day is not a whole
+  day.* ~~Visit date plus 14 days.~~ *Superseded 2026-10-02 by S-1002-D S4
+  (3.2 row 6).*
 * The SAT live-send flag is introduced here, off by default.
 
 ### 7.2 The guest page (Tier B: auth-adjacent guest write)
@@ -1001,8 +1019,13 @@ Taken out of this list 2026-10-02:
 ### 9.2 The send path
 
 * The pt SMS renders as one GSM-7 segment of at most 160 characters for the
-  longest date and a host of 32 characters, and throws beyond 160; the copy has
-  no accents and no dash characters. The en SMS likewise.
+  longest date and a host of 43 characters, and is refused beyond 160; the copy
+  has no accents and no dash characters. The en SMS likewise, with a host of 47.
+  ~~A host of 32 characters.~~ *Corrected 2026-10-13, measured in
+  `apps/web/lib/reminders/survey-body.test.ts`: 32 was the room left by the
+  wording before S1 ("questionario", 115 fixed characters). The approved text
+  has 104 fixed characters with `/s/`, and the copy file's 43 is right. The
+  refusal is a value the sender records, not a throw.*
 * Email: no unfilled placeholder; plain text.
 * The registry holds `survey.*` with `approvedBy` and `approvedAt` set (S9a,
   S10) and no longer holds `follow_up.*`; a test fails if a survey entry is
@@ -1114,7 +1137,9 @@ English translation (S10). Texts 1 to 60 are JP's approved texts of 2026-10-02,
 with the S1 renames and the changes S9 required shown against the approved
 wording; text 7 is the ruled sentence, approved by JP on 2026-10-02 (S9a).
 Texts 61 to 81 are new staff strings for the button, the dialog, the disabled
-reasons, the status line and the list (S9). ~~No app pull request opens before
+reasons, the status line and the list (S9). Texts 82 and 83, added 2026-10-08,
+are the two staff labels the patient hard delete shows for survey sends and
+answers (A4). ~~No app pull request opens before
 JP's review comes back.~~ *Superseded 2026-10-02 by S-1002-D S9a: the review is
 done.* The file JP reviewed is in the owner's handover folder as
 `SAT-01-copy-pt-for-JP.md`.

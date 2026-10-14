@@ -18,14 +18,15 @@ vi.mock("@/lib/clinical/records", () => ({
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
-import { hardDeleteClinicalRecord } from "@/lib/clinical/records";
+import { annulRecord, hardDeleteClinicalRecord } from "@/lib/clinical/records";
 import { ClinicalError } from "@/lib/clinical/errors";
-import { hardDeleteRecordAction } from "./actions";
+import { annulRecordAction, hardDeleteRecordAction } from "./actions";
 import type { RequestContext } from "@osteojp/auth";
 
 const mockCtx = vi.mocked(requireRequestContext);
 const mockVerify = vi.mocked(verifyDeletePassword);
 const mockHardDelete = vi.mocked(hardDeleteClinicalRecord);
+const mockAnnul = vi.mocked(annulRecord);
 
 const therapist: RequestContext = { tenantId: "tenant-A", role: "therapist", userId: "thera-1" };
 const s = getStrings(DEFAULT_LOCALE);
@@ -34,6 +35,7 @@ beforeEach(() => {
   mockCtx.mockReset();
   mockVerify.mockReset();
   mockHardDelete.mockReset();
+  mockAnnul.mockReset();
   mockCtx.mockResolvedValue(therapist);
 });
 
@@ -64,6 +66,41 @@ describe("hardDeleteRecordAction: distinct outcome codes (W6-01a)", () => {
     mockHardDelete.mockResolvedValue(undefined);
     const r = await hardDeleteRecordAction("rec-1", "pat-1", "1234");
     expect(r).toEqual({ ok: true });
+  });
+});
+
+// M-4b: a delete or an annulment that Postgres rolled back as a deadlock victim
+// is `concurrent_change` from the writer (records.single-row-deadlock.test.ts).
+// Each action hands the code on as it hands every other named refusal, and the
+// dialog has the retry sentence for it (clinical/[id]/concurrent-change-text.test.ts).
+describe("a delete or an annulment rolled back as a deadlock victim (M-4b)", () => {
+  it("hardDeleteRecordAction: { error: 'concurrent_change' }, and nothing is retried", async () => {
+    mockVerify.mockResolvedValue(true);
+    mockHardDelete.mockRejectedValue(new ClinicalError("concurrent_change"));
+    expect(await hardDeleteRecordAction("rec-1", "pat-1", "1234")).toEqual({ ok: false, error: "concurrent_change" });
+    expect(mockHardDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it("annulRecordAction: { error: 'concurrent_change' }, and nothing is retried", async () => {
+    mockVerify.mockResolvedValue(true);
+    mockAnnul.mockRejectedValue(new ClinicalError("concurrent_change"));
+    expect(await annulRecordAction("rec-1", "pat-1", "1234", null)).toEqual({ ok: false, error: "concurrent_change" });
+    expect(mockAnnul).toHaveBeenCalledTimes(1);
+  });
+
+  it("CONTROL annulRecordAction: another refusal keeps its code, an unknown error is 'error', a success is ok", async () => {
+    mockVerify.mockResolvedValue(true);
+    mockAnnul.mockRejectedValue(new ClinicalError("already_annulled"));
+    expect(await annulRecordAction("rec-1", "pat-1", "1234", null)).toEqual({ ok: false, error: "already_annulled" });
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      mockAnnul.mockRejectedValue(new Error("connection reset"));
+      expect(await annulRecordAction("rec-1", "pat-1", "1234", null)).toEqual({ ok: false, error: "error" });
+    } finally {
+      quiet.mockRestore();
+    }
+    mockAnnul.mockResolvedValue(undefined);
+    expect(await annulRecordAction("rec-1", "pat-1", "1234", null)).toEqual({ ok: true });
   });
 });
 

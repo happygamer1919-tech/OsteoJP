@@ -44,6 +44,10 @@ export default async function NewRecordPage({
       {m === "episodeClosed" && (
         <p role="alert" className="text-sm text-error">{s["clinical.episodeClosedRefused"]}</p>
       )}
+      {/* M-4: the create was rolled back as a deadlock victim. */}
+      {m === "concurrentChange" && (
+        <p role="alert" className="text-sm text-error">{s["errors.concurrentChange"]}</p>
+      )}
 
       <form action={createRecordAction} className="space-y-3">
         {/* W5-02 + W5-04: Paciente is an async search Combobox; the Episódio

@@ -49,12 +49,15 @@ const RECORD_TONE: Record<RecordStatus, StatusTone> = {
  * the same way). Only `err:finalized` had a message before; every other code
  * showed nothing, so a refused sign looked like a page that did not react.
  * `err:not_author`: the draft has another author (zeroRowRefusal, records.ts).
+ * `err:concurrent_change` (M-4, M-4b): a new version, or a sign, was rolled
+ * back as a deadlock victim (namingDeadlock, records.ts).
  */
 function signErrorText(m: string | undefined): string | null {
   if (!m || !m.startsWith("err")) return null;
   if (m === "err:finalized") return s["clinical.finalized"];
   if (m === "err:stale") return s["clinical.signStale"];
   if (m === "err:not_author") return s["clinical.notAuthor"];
+  if (m === "err:concurrent_change") return s["errors.concurrentChange"];
   return s["clinical.error"];
 }
 
@@ -160,9 +163,23 @@ export default async function RecordDetailPage({
     </StatusChip>
   );
 
+  // EXPORT-01: "Transferir PDF" is shown where the export answers: a finalized
+  // record that is not under AI review (the engine's own gate), for a viewer
+  // this page opened the record for (downloadReportUrlAction reads it the same
+  // way). A draft never shows it.
+  const canExport = canDownloadReport(record.status, record.aiReviewState);
+  // A record drawn without a form has no form toolbar to carry the button, so
+  // the same button sits above its stored content. The PDF prints that content
+  // as this page lists it: the same field names, the same read-only notice.
+  const storedContentExport = canExport ? (
+    <div className="mb-4 flex justify-end" data-testid="record-export">
+      <DownloadReportButton recordId={id} />
+    </div>
+  ) : null;
+
   const extraActions = (
     <>
-      {canDownloadReport(record.status) && <DownloadReportButton recordId={id} />}
+      {canExport && <DownloadReportButton recordId={id} />}
       {canVersion && (
         <form action={versionRecordAction.bind(null, id)}>
           <Button type="submit" variant="secondary">{s["clinical.newVersion"]}</Button>
@@ -285,6 +302,7 @@ export default async function RecordDetailPage({
                originals, read-only. Every Fisiozero document landed at patient
                level, so without this the ficha could not open its source. */
             <>
+              {storedContentExport}
               <ImportedRecordPreview data={record.data} />
               <ImportedPatientDocuments items={importedDocuments} />
             </>
@@ -312,14 +330,17 @@ export default async function RecordDetailPage({
                record, an AI record finalized with no template). The stored
                content, under the same rules as the imported preview, with a
                heading that claims no origin. */
-            <StoredRecordContent
-              data={record.data}
-              title={s["clinical.recordContentTitle"]}
-              help={s["clinical.recordContentHelp"]}
-              emptyText={s["clinical.recordNoContent"]}
-              testId="record-content"
-              emptyTestId="record-content-empty"
-            />
+            <>
+              {storedContentExport}
+              <StoredRecordContent
+                data={record.data}
+                title={s["clinical.recordContentTitle"]}
+                help={s["clinical.recordContentHelp"]}
+                emptyText={s["clinical.recordNoContent"]}
+                testId="record-content"
+                emptyTestId="record-content-empty"
+              />
+            </>
           )}
 
           <div className="mt-6">

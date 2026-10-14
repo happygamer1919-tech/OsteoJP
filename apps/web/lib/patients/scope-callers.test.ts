@@ -57,6 +57,9 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
   "lib/clinical/report/episode-export.ts#readEpisodeExportRows#therapistPatientReadScope": {
     calls: 1, verdict: "read", why: "EPI-01b piece 3: which registos an episode's PDF holds. The Registos tab's own reach (listFichaRecords), narrowed to one episode; each registo is then loaded by the per-record report engine under the caller's claims. It writes no registo.",
   },
+  "lib/clinical/report/generate.ts#registoReadScope#therapistPatientReadScope": {
+    calls: 1, verdict: "read", why: "EXPORT-01: the registo's PDF (\"Transferir PDF\"). The reach getRecordDetail opens the registo page with, so the export answers exactly where the page does. It reads one registo and writes none.",
+  },
   "lib/clinical/records.ts#getRecordDetail#therapistPatientReadScope": {
     calls: 1, verdict: "read", why: "Opening a registo. Its edit, sign and version actions are refused by clinical_records' write policies, which 0096 does not touch.",
   },
@@ -113,6 +116,9 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
   "lib/patients/actions.ts#deleteNoteAction#getPatient:write": {
     calls: 1, verdict: "write", why: "Deletes a note.",
   },
+  "lib/patients/survey-switch.ts#setPatientSurveySwitch#getPatient:write": {
+    calls: 1, verdict: "write", why: "SAT-01 (S8): sets the patient's survey switch. A write of the patients row, so the narrow scope; a therapist is not offered the switch at all.",
+  },
   "app/patients/[id]/edit/page.tsx#EditPatientPage#getPatient:write": {
     calls: 1, verdict: "write", why: "The edit form; patients_update (0047) is not widened by 0096 either.",
   },
@@ -123,7 +129,7 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
     calls: 1, verdict: "write", why: "canActOnPatient: whether the ficha shows its write controls (Editar, Nova nota, uploads, + Episodio) to this viewer.",
   },
   "lib/clinical/episodes.ts#createEpisode#therapistPatientScope": {
-    calls: 1, verdict: "write", why: "Opens an episode. clinical_episodes is tenant-only, so this is the whole patient gate; added by CARE-02a.",
+    calls: 1, verdict: "write", why: "Opens an episode. The narrow scope is the application's patient gate for it, asked before the insert; added by CARE-02a.",
   },
   "lib/clinical/episodes.ts#listOpenAppEpisodes#therapistPatientScope": {
     calls: 1, verdict: "picker", why: "EPI-01b piece 2: the Registos tab's open app episodes, read only to feed '+ Avaliação' and '+ Episódio'. The same narrow reach as the writes it feeds.",

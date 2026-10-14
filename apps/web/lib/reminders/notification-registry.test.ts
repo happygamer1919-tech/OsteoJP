@@ -97,7 +97,7 @@ const APPROVER: Record<string, string> = {
 };
 
 describe("registry contents", () => {
-  it("registers 16 patient-facing bodies: 11 approved, 5 unapproved", () => {
+  it("registers 18 patient-facing bodies: 13 approved, 5 unapproved", () => {
     // 10 -> 11 (W13-05, the fee line) -> 14 (W14-04, the three acks, all
     // unapproved) -> 13 approved (WF-18, JP approved the three acks on
     // 2026-09-01) -> 9 approved (owner ruling B, 2026-09-04: the two follow-up
@@ -110,8 +110,11 @@ describe("registry contents", () => {
     // below is unchanged.
     // -> 16 total, 11 approved (S-1004-A, 2026-10-04): the booking-approved
     // SMS, strategy's copy, again a NEW body arriving approved.
-    expect(REMINDER_TEMPLATES).toHaveLength(16);
-    expect(APPROVED_TEMPLATES).toHaveLength(11);
+    // -> 18 total, 13 approved (SAT-01): the satisfaction survey's email and
+    // SMS, two NEW bodies arriving approved (JP, 2026-10-02). The unapproved
+    // set below is unchanged.
+    expect(REMINDER_TEMPLATES).toHaveLength(18);
+    expect(APPROVED_TEMPLATES).toHaveLength(13);
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
   });
 
@@ -161,7 +164,7 @@ describe("registry contents", () => {
   // The reconciliation is kept rather than deleted with the entries it counted:
   // its value was never the number, it is that a body cannot appear in either
   // app without this count changing and someone noticing.
-  it("totals 16 entries over 16 bodies across both apps", async () => {
+  it("totals 18 entries over 18 bodies across both apps", async () => {
     const { API_TEMPLATES } = await import("../../../../apps/api/lib/notify/registry");
 
     // W13-05 moved this from 10 to 11. The reconciliation's value was never the
@@ -169,15 +172,16 @@ describe("registry contents", () => {
     // changing and someone noticing. It just noticed.
     // BOOK-CONFIRM moved it from 14 to 15, and it noticed again.
     // ...and from 15 to 16 with the booking-approved SMS (S-1004-A).
-    expect(REMINDER_TEMPLATES).toHaveLength(16);
+    // ...and from 16 to 18 with the satisfaction survey's pair (SAT-01).
+    expect(REMINDER_TEMPLATES).toHaveLength(18);
     expect(API_TEMPLATES).toHaveLength(0);
-    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(16);
+    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(18);
 
     // One body per entry. The fee-notice entry is a DISTINCT body (the 24h body
     // plus the fee line), not a duplicate of the approved one - which is exactly
     // why it needs its own id and its own approval.
     const bodies = new Set(REMINDER_TEMPLATES.map((t) => t.body));
-    expect(bodies.size).toBe(16);
+    expect(bodies.size).toBe(18);
   });
 
   it("apps/api can send nothing at all, which is the fail-closed state", async () => {
@@ -244,6 +248,9 @@ describe("registry contents", () => {
       "booking_approved.email": "2026-10-03",
       // S-1004-A: strategy's SMS copy, the day after.
       "booking_approved.sms": "2026-10-04",
+      // SAT-01: JP's approval of the survey's texts, recorded in the copy file.
+      "survey.email": "2026-10-02",
+      "survey.sms": "2026-10-02",
     };
     for (const t of APPROVED_TEMPLATES) {
       expect(t.approvedAt, t.id).toBe(DATED[t.id] ?? "2026-08-03");
@@ -266,7 +273,7 @@ describe("registry contents", () => {
     expect(t24?.body).not.toContain("Para confirmar");
   });
 
-  it("covers both channels for all five notification kinds", () => {
+  it("covers both channels for every notification kind", () => {
     expect([...REMINDER_TEMPLATES].map((t) => t.id).sort()).toEqual([
       // BOOK-CONFIRM: the email, and since S-1004-A its own SMS.
       "booking_approved.email",
@@ -285,6 +292,9 @@ describe("registry contents", () => {
       "reply_ack.cancelled.sms",
       "reply_ack.confirmed.sms",
       "reply_ack.review.sms",
+      // SAT-01: the satisfaction survey, a sixth kind.
+      "survey.email",
+      "survey.sms",
     ]);
   });
 
@@ -302,7 +312,7 @@ describe("registry contents", () => {
 });
 
 describe("the approval gate now passes, and the kill switch still holds", () => {
-  it("passes all 11 approved bodies through when live send is armed", async () => {
+  it("passes all 13 approved bodies through when live send is armed", async () => {
     const { notifier, sink } = harness(LIVE);
 
     const outcomes = await Promise.all(
@@ -327,8 +337,11 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
     // TEN since BOOK-CONFIRM (2026-10-03) registered the booking-approved email
     // approved. The refused five below are unchanged.
     // ELEVEN since S-1004-A registered the booking-approved SMS approved.
-    expect(outcomes.filter((o) => o.sent)).toHaveLength(11);
-    expect(sink.records).toHaveLength(11);
+    // THIRTEEN since SAT-01 registered the survey's pair approved. That this
+    // gate passes them is the point to keep in view: the survey's own switch
+    // (survey-mode.ts) is what holds a survey back, not this registry.
+    expect(outcomes.filter((o) => o.sent)).toHaveLength(13);
+    expect(sink.records).toHaveLength(13);
     // FIVE refused since owner ruling B, and they are refused for the same
     // MECHANISM but two different REASONS in the human sense: the fee line has
     // never been approved, and the four darkened bodies were approved and then
@@ -348,7 +361,7 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
   // THE LOAD-BEARING TEST NOW. Approval removed one of the two gates; this is the
   // other, and it is the only thing standing between an approved body and a real
   // patient's phone. It must fail loudly if the kill switch ever stops holding.
-  it("sends NOTHING with live send off, even though all 11 are approved", async () => {
+  it("sends NOTHING with live send off, even though all 13 are approved", async () => {
     const { notifier, sink } = harness({});
 
     const outcomes = await Promise.all(
@@ -378,7 +391,8 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
     // TEN since BOOK-CONFIRM: the booking-approved email is approved, so with
     // live send off it is refused by the FLAG, like the other nine.
     // ELEVEN since S-1004-A: the booking-approved SMS is refused by the flag too.
-    expect(refused).toHaveLength(11);
+    // THIRTEEN since SAT-01: the survey's pair is refused by the flag too.
+    expect(refused).toHaveLength(13);
     expect(sink.records).toHaveLength(0);
   });
 

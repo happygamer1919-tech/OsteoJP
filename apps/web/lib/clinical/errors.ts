@@ -18,6 +18,8 @@ export type ClinicalErrorCode =
   // --- EPI-01b (S-1002-D P2.2), Q9's app half ---
   | "episode_mismatch" // the episode is not this patient's, in this tenant: nothing written
   | "episode_closed" // a NEW registo is filed only in an open episode (never an imported one): nothing written
+  // --- M-4, the deadlock named ---
+  | "concurrent_change" // Postgres rolled this write back as a deadlock victim (40P01): nothing written, the same request can be sent again
   // --- W5-30 delete / annul ---
   | "not_draft" // hard delete is draft / AI-pending only (locked/signed blocked by trigger)
   | "not_signed" // Anular applies only to a signed record
@@ -27,7 +29,7 @@ export type ClinicalErrorCode =
   | "reason_required" // blank or missing reason
   | "reason_too_long" // reason over DOCUMENT_DELETE_REASON_MAX after trimming
   // --- R45, the Declaração de Presença ---
-  | "no_stamp"; // the declaration's location has no carimbo asset: nothing rendered
+  | "no_stamp"; // the declaration's location has no carimbo asset and no physical-stamp mark: nothing rendered
 
 export class ClinicalError extends Error {
   override readonly name = "ClinicalError";

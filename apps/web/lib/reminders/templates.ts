@@ -638,8 +638,34 @@ export type FollowUpContext = {
   appointmentDateLong: string;
   /** Terse dd/mm for SMS. */
   appointmentDateShort: string;
+  /** `locations.name` of the appointment's own location. EMAIL only (MN-03). */
+  clinicLocation: string;
   clinicPhone: string;
 };
+
+// MN-03 (owner, 2026-10-12: "Yes, in the two emails only."). The follow-up and
+// the no-show EMAIL say which clinic wrote, on a line of its own above the
+// contact lines, with the label the confirmation email uses. It is the only
+// line added: every other sentence of the two bodies is as it was. The two SMS
+// do not carry it.
+//
+// The column is required, so a blank name cannot come from the database. If
+// one ever does, the email is sent without the line and never refused for it:
+// LOCATION_LINE is that line as the four bodies below spell it. The same holds
+// for a name that is not a string, and for a name carrying a word in braces,
+// which the fill would substitute or assertNoUnfilledPlaceholders would refuse.
+const LOCATION_LINE: Record<Locale, string> = {
+  pt: "Local: {{clinic_location}}\n",
+  en: "Location: {{clinic_location}}\n",
+};
+
+function withoutLocationLineIfBlank(body: string, locale: Locale, clinicLocation: string): string {
+  const printable =
+    typeof clinicLocation === "string" &&
+    clinicLocation.trim() !== "" &&
+    !/\{\{?[a-z_]+\}?\}/i.test(clinicLocation);
+  return printable ? body : body.split(LOCATION_LINE[locale]).join("");
+}
 
 export const FOLLOW_UP_EMAIL: Record<Locale, EmailTemplate> = {
   pt: {
@@ -648,6 +674,7 @@ export const FOLLOW_UP_EMAIL: Record<Locale, EmailTemplate> = {
 
 Obrigado pela visita de {{appointment_date}}. Ficamos ao dispor para qualquer questão.
 
+Local: {{clinic_location}}
 Para marcar a próxima consulta contacte: {{clinic_phone}}
 
 — OsteoJP`,
@@ -658,6 +685,7 @@ Para marcar a próxima consulta contacte: {{clinic_phone}}
 
 Thank you for your visit on {{appointment_date}}. We remain available for any questions.
 
+Location: {{clinic_location}}
 To book your next appointment contact us: {{clinic_phone}}
 
 — OsteoJP`,
@@ -665,7 +693,7 @@ To book your next appointment contact us: {{clinic_phone}}
 };
 
 // PT: "proxima" = próxima (no tilde/accent). Multi-line layout mirrors the other
-// SMS (owner ruling 2026-07-11, Option A); the post-visit context has no clinic
+// SMS (owner ruling 2026-07-11, Option A); the post-visit SMS prints no clinic
 // or time, so it uses a visit line + rebooking CTA rather than the 4-line form.
 export const FOLLOW_UP_SMS: Record<Locale, string> = {
   pt: "OsteoJP - Obrigado pela sua visita\nVisita: {date}\nMarcar proxima consulta: {phone}",
@@ -677,10 +705,11 @@ export function renderFollowUpEmail(locale: Locale, ctx: FollowUpContext): Rende
   const tokens = {
     patient_first_name: ctx.patientFirstName,
     appointment_date: ctx.appointmentDateLong,
+    clinic_location: ctx.clinicLocation,
     clinic_phone: ctx.clinicPhone,
   };
   const subject = fill(tpl.subject, tokens);
-  const body = fill(tpl.body, tokens);
+  const body = fill(withoutLocationLineIfBlank(tpl.body, locale, ctx.clinicLocation), tokens);
   assertNoUnfilledPlaceholders("email/follow_up", subject);
   assertNoUnfilledPlaceholders("email/follow_up", body);
   return { subject, body };
@@ -709,6 +738,8 @@ export type NoShowContext = {
   appointmentDateLong: string;
   appointmentDateShort: string;
   appointmentTime: string;
+  /** `locations.name` of the appointment's own location. EMAIL only (MN-03). */
+  clinicLocation: string;
   clinicPhone: string;
   rescheduleLink: string;
 };
@@ -720,6 +751,7 @@ export const NO_SHOW_EMAIL: Record<Locale, EmailTemplate> = {
 
 A sua consulta de {{appointment_date}} às {{appointment_time}} ficou por realizar.
 
+Local: {{clinic_location}}
 Para remarcar: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
 
@@ -731,6 +763,7 @@ Ou contacte: {{clinic_phone}}
 
 Your appointment on {{appointment_date}} at {{appointment_time}} was not attended.
 
+Location: {{clinic_location}}
 To rebook: {{reschedule_link}}
 Or contact us: {{clinic_phone}}
 
@@ -739,7 +772,7 @@ Or contact us: {{clinic_phone}}
 };
 
 // PT: "nao" = não, "as" = às. No accents in SMS. Multi-line layout mirrors the
-// other SMS (owner ruling 2026-07-11, Option A); the no-show context has no
+// other SMS (owner ruling 2026-07-11, Option A); the no-show SMS prints no
 // clinic location, so it drops the "Local:" line.
 export const NO_SHOW_SMS: Record<Locale, string> = {
   pt: "OsteoJP - Consulta nao realizada\nConsulta: {date} as {time}\nRemarcar: {phone}",
@@ -752,11 +785,12 @@ export function renderNoShowEmail(locale: Locale, ctx: NoShowContext): RenderedE
     patient_first_name: ctx.patientFirstName,
     appointment_date: ctx.appointmentDateLong,
     appointment_time: ctx.appointmentTime,
+    clinic_location: ctx.clinicLocation,
     clinic_phone: ctx.clinicPhone,
     reschedule_link: ctx.rescheduleLink,
   };
   const subject = fill(tpl.subject, tokens);
-  const body = fill(tpl.body, tokens);
+  const body = fill(withoutLocationLineIfBlank(tpl.body, locale, ctx.clinicLocation), tokens);
   assertNoUnfilledPlaceholders("email/no_show", subject);
   assertNoUnfilledPlaceholders("email/no_show", body);
   return { subject, body };
@@ -770,5 +804,117 @@ export function renderNoShowSms(locale: Locale, ctx: NoShowContext): string {
   });
   assertNoUnfilledPlaceholders("sms/no_show", message);
   assertSmsCompliant(message);
+  return message;
+}
+
+/* ================================================================== */
+/* Satisfaction survey: 24 h after a concluded visit, or sent by staff */
+/* ================================================================== */
+//
+// SAT-01. The pt-PT texts are texts 1, 2 and 3 of docs/design/SAT-01-copy-pt.md,
+// character for character; the copy file records their approval (S9a). The
+// English is the copy file's own English section (S10). Blank lines between
+// the email's paragraphs, no dash before the signature, as the copy has them.
+//
+// ONE message per send: the email, or the SMS when there is no permitted
+// email. Never both. Which one, and whether any goes at all, is the sender's
+// to decide (lib/reminders/survey-mode.ts is the switch); nothing here sends.
+//
+// The link is handed in already built. lib/reminders/survey-body.ts builds it
+// from the deployed origin and answers whether the SMS fits one segment.
+
+export type SurveyEmailContext = {
+  patientFirstName: string;
+  /** Localised long date of the visit, e.g. "23 de maio de 2026". */
+  appointmentDateLong: string;
+  /** The whole link, scheme included. */
+  surveyLink: string;
+  /**
+   * The last day the link works from start to end, long form: the day before
+   * the Lisbon day it dies on (survey-body.ts, `surveyValidUntilDateLong`).
+   */
+  surveyExpiryDateLong: string;
+  clinicPhone: string;
+};
+
+/** The SMS prints the date and the link, and nothing else. */
+export type SurveySmsContext = {
+  /** Terse dd/mm, as every SMS here prints the date. */
+  appointmentDateShort: string;
+  /** `<host>/s/<code>`, bare host, as the confirm line prints its own. */
+  surveyLinkBare: string;
+};
+
+export const SURVEY_EMAIL: Record<Locale, EmailTemplate> = {
+  pt: {
+    subject: "Avaliação da sua consulta de {{appointment_date}}",
+    body: `Olá {{patient_first_name}},
+
+Pedimos a sua avaliação da consulta de {{appointment_date}}. A avaliação tem três perguntas e a resposta é facultativa.
+
+Responder: {{survey_link}}
+
+A ligação é pessoal, só pode ser usada uma vez e é válida até {{survey_expiry_date}}.
+
+Se não pretender receber estas avaliações, indique-o na mesma ligação ou contacte a clínica: {{clinic_phone}}
+
+OsteoJP`,
+  },
+  en: {
+    subject: "Satisfaction survey for your appointment on {{appointment_date}}",
+    body: `Dear {{patient_first_name}},
+
+We would like your rating of your appointment on {{appointment_date}}. The survey has three questions and answering is optional.
+
+Answer: {{survey_link}}
+
+The link is personal, can be used only once and is valid until {{survey_expiry_date}}.
+
+If you do not wish to receive these surveys, say so using the same link or contact the clinic: {{clinic_phone}}
+
+OsteoJP`,
+  },
+};
+
+// PT: no accents (GSM-7). "avaliacao" = avaliação, "nao" = não, "ligacao" =
+// ligação. `{data}` is the copy file's own placeholder; `{ligacao}` stands
+// where the copy writes "[endereço]/s/AB12CD34". Three lines, as approved.
+//
+// The fixed text is 101 characters with its two line breaks. With the date (5)
+// and "/s/" plus the code (11) that leaves 43 for the host in pt and 47 in en.
+// survey-body.test.ts measures both, at the limit and one past it.
+export const SURVEY_SMS: Record<Locale, string> = {
+  pt: "OsteoJP: avaliacao da consulta de {data}\nResponder: {ligacao}\nPara nao receber mais avaliacoes, use a mesma ligacao.",
+  en: "OsteoJP: survey about your appointment on {data}\nAnswer: {ligacao}\nTo stop receiving surveys, use the same link.",
+};
+
+export function renderSurveyEmail(locale: Locale, ctx: SurveyEmailContext): RenderedEmail {
+  const tpl = SURVEY_EMAIL[locale];
+  const tokens = {
+    patient_first_name: ctx.patientFirstName,
+    appointment_date: ctx.appointmentDateLong,
+    survey_link: ctx.surveyLink,
+    survey_expiry_date: ctx.surveyExpiryDateLong,
+    clinic_phone: ctx.clinicPhone,
+  };
+  const subject = fill(tpl.subject, tokens);
+  const body = fill(tpl.body, tokens);
+  assertNoUnfilledPlaceholders("email/survey", subject);
+  assertNoUnfilledPlaceholders("email/survey", body);
+  return { subject, body };
+}
+
+/**
+ * The survey SMS, assembled WITHOUT the carrier verdict, as `assembleSms` is.
+ * The verdict is `smsCompliance`, and survey-body.ts returns it as a value: its
+ * host comes from configuration, so a body that does not fit is an operating
+ * condition and not a bug. An unfilled placeholder is a bug and still throws.
+ */
+export function assembleSurveySms(locale: Locale, ctx: SurveySmsContext): string {
+  const message = fill(SURVEY_SMS[locale], {
+    data: ctx.appointmentDateShort,
+    ligacao: ctx.surveyLinkBare,
+  });
+  assertNoUnfilledPlaceholders("sms/survey", message);
   return message;
 }

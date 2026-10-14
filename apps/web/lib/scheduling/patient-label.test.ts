@@ -47,14 +47,20 @@ describe("the name on a conflict line", () => {
   });
 
   it("every surface that renders a conflict line goes through it", () => {
-    // Six lines in four files render a conflict's patient. A seventh written
+    // Six lines render a conflict's patient. A seventh written
     // as `c.patientName` would print a bare time for a booking whose patient
-    // the caller does not read, so the four files are read and pinned.
+    // the caller does not read, so the files are read and pinned. The agenda
+    // drawer and the ficha's Terapeuta field (MARC-THERAPIST-01) draw one
+    // shared warning, whose words are lib/scheduling/conflict-lines.ts; the
+    // drawer and the banner stay on the list so a line written back into
+    // either is still read.
     const surfaces = [
       "app/agenda/appointment-drawer.tsx",
+      "app/agenda/conflict-banner.tsx",
       "app/agenda/schedule-again-drawer.tsx",
       "app/notificacoes/pending-requests.tsx",
       "app/patients/[id]/appointments-list.tsx",
+      "lib/scheduling/conflict-lines.ts",
     ];
     let uses = 0;
     for (const rel of surfaces) {
@@ -62,7 +68,7 @@ describe("the name on a conflict line", () => {
       expect(src, `${rel} reads c.patientName directly`).not.toMatch(/\bc\.patientName\b/);
       uses += src.split("conflictPatientLabel(c)").length - 1;
     }
-    // appointment-drawer 1, schedule-again-drawer 1, pending-requests 1,
+    // conflict-lines 1, schedule-again-drawer 1, pending-requests 1,
     // appointments-list 3 banners x 2 reads. A zero here would mean the
     // regex above passed over files that render nothing.
     expect(uses).toBe(9);

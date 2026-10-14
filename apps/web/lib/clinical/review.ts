@@ -12,7 +12,7 @@ import { runScoped } from "@/lib/auth/context";
 import { therapistPatientScope, therapistRegistoWriteScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
-import { assertTherapistMayFileFor, recordDataHash, zeroRowRefusal } from "./records";
+import { assertTherapistMayFileFor, namingDeadlock, recordDataHash, zeroRowRefusal } from "./records";
 import {
   parseTemplateSchema,
   validateRecordData,
@@ -172,6 +172,13 @@ export async function listReviewQueue(ctx: RequestContext): Promise<ReviewQueueI
  * draft clinical_record (narrative-only auto-fill from the payload — coded +
  * safety fields stay blank for manual entry) and links it. Idempotent: a
  * re-claim of an already-claimed item returns the same record id.
+ *
+ * M-4: the claim of a patient submission INSERTS a registo for that patient,
+ * as createDraftRecord does, so a claim rolled back as a deadlock victim is
+ * `concurrent_change` (namingDeadlock, records.ts). The mapping sits around the
+ * one transaction both sources share. M-4b: the other writers of this file,
+ * which only update a registo that exists (editReviewNarrative,
+ * saveReviewFicha, finalizeReview), carry the same mapping.
  */
 export async function claimReviewItem(
   ctx: RequestContext,
@@ -179,7 +186,7 @@ export async function claimReviewItem(
 ): Promise<{ recordId: string }> {
   assertCan(ctx.role, "clinical_records:review");
   const ip = await clientIp();
-  return runScoped(ctx, async (tx) => {
+  return namingDeadlock(runScoped(ctx, async (tx) => {
     if (ref.source === "ai") {
       const rows = await tx
         .select({
@@ -352,7 +359,7 @@ export async function claimReviewItem(
       ip,
     });
     return { recordId };
-  });
+  }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -371,7 +378,7 @@ export async function editReviewNarrative(
 ): Promise<{ dataHash: string }> {
   assertCan(ctx.role, "clinical_records:review");
   const ip = await clientIp();
-  return runScoped(ctx, async (tx) => {
+  return namingDeadlock(runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -427,7 +434,7 @@ export async function editReviewNarrative(
       ip,
     });
     return { dataHash: stored.dataHash };
-  });
+  }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -460,7 +467,7 @@ export async function saveReviewFicha(
 ): Promise<{ dataHash: string }> {
   assertCan(ctx.role, "clinical_records:review");
   const ip = await clientIp();
-  return runScoped(ctx, async (tx) => {
+  return namingDeadlock(runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -532,7 +539,7 @@ export async function saveReviewFicha(
       ip,
     });
     return { dataHash: stored.dataHash };
-  });
+  }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -554,7 +561,7 @@ export async function finalizeReview(
   assertCan(ctx.role, "clinical_records:review");
   assertCan(ctx.role, "clinical_records:sign");
   const ip = await clientIp();
-  await runScoped(ctx, async (tx) => {
+  await namingDeadlock(runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
         status: clinicalRecords.status,
@@ -657,7 +664,7 @@ export async function finalizeReview(
       metadata: { source: row.source, reviewState: FINALIZED_REVIEW_STATE, signedAt: signedAt.toISOString() },
       ip,
     });
-  });
+  }));
 }
 
 /* ------------------------------------------------------------------ */

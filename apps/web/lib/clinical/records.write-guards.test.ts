@@ -47,6 +47,7 @@ import { runScoped } from "@/lib/auth/context";
 import { writeClinicalAudit } from "./audit";
 import { specialtyEpisodeLock } from "./episodes";
 import { isClinicalError } from "./errors";
+import { EPISODE_PATIENT_TENANT_KEY } from "./episode-key-refusal";
 import {
   assertEpisodeIsThePatients,
   createAddendum,
@@ -77,9 +78,10 @@ const HASH = "0123456789abcdef0123456789abcdef";
  * recorded in `ops`, in order. A chain answers at `.limit()`, at `.orderBy()`
  * or when awaited at `.where()`. `execute(...)` (the R31 advisory lock) answers
  * nothing and is recorded in `executed`, with how many selects had started
- * before it.
+ * before it. `registoInsertFails`, when given, is what the INSERT into
+ * clinical_records rejects with (the insert is still recorded in `ops`).
  */
-function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
+function fakeTx(opts: { selects: unknown[][]; written?: unknown[]; registoInsertFails?: unknown }) {
   const selects = [...opts.selects];
   const read: unknown[] = [];
   const ops: string[] = [];
@@ -119,6 +121,7 @@ function fakeTx(opts: { selects: unknown[][]; written?: unknown[] }) {
       values: (v: unknown) => ({
         returning: async () => {
           ops.push(table === clinicalRecords ? "insert:clinical_records" : "insert:other");
+          if (table === clinicalRecords && opts.registoInsertFails !== undefined) throw opts.registoInsertFails;
           inserted.push(v);
           return [{ id: "66666666-6666-4666-8666-666666666666" }];
         },
@@ -775,5 +778,104 @@ describe("assertEpisodeIsThePatients: the guard on its own", () => {
     expect(await codeOf(run([{ tenantId: TENANT, patientId: RECORD }]).p)).toBe("episode_mismatch");
     expect(await codeOf(run([{ tenantId: RECORD, patientId: PATIENT }]).p)).toBe("episode_mismatch");
     expect(await codeOf(run([]).p)).toBe("episode_mismatch");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REG-03: the same rule, when it is the DATABASE that refuses. Where the
+// database carries the key `episode-key-refusal.ts` names, the registo INSERT
+// itself can be refused with a foreign-key violation naming it. The two writers
+// that file a registo in an episode answer that refusal with the one the
+// application already returns, `episode_mismatch`: no audit row, one log line
+// with no identifier. Every other error leaves the writer exactly as the
+// database raised it.
+//
+// The fake transaction passes every read (the patient test and the episode
+// guard both answer yes) and rejects the INSERT with the error an arm gives it,
+// in the shape Drizzle raises: its own error, the driver's at `.cause`. Which
+// errors are the key's refusal is pinned value by value in
+// episode-key-refusal.test.ts; the wrapped shape, against the real driver, in
+// records.episode-guard.db.test.ts.
+// ---------------------------------------------------------------------------
+describe("REG-03: the registo INSERT refused by the database's episode key is episode_mismatch", () => {
+  const EPISODE = "77777777-7777-4777-8777-777777777771";
+  const TEMPLATE = "77777777-7777-4777-8777-777777777777";
+  const input = { patientId: PATIENT, formTemplateId: TEMPLATE, episodeId: EPISODE };
+  const mine = { tenantId: TENANT, patientId: PATIENT, status: "open" };
+  const SOURCE = { patientId: PATIENT, episodeId: EPISODE, formTemplateId: TEMPLATE, appointmentId: null, data: {}, version: 1 };
+  const driverError = (code: string, constraintName: string) =>
+    Object.assign(new Error("a driver message that is never read"), { code, constraint_name: constraintName });
+  const wrapped = (cause: unknown) => new Error("Failed query: insert into clinical_records", { cause });
+  const keyRefusal = () => wrapped(driverError("23503", EPISODE_PATIENT_TENANT_KEY));
+  /** The two writers, each with the reads it makes before its INSERT. */
+  const writers = [
+    ["createDraftRecord", [[{ id: PATIENT }], [mine]], () => createDraftRecord(therapist, input)],
+    ["createAddendum", [[SOURCE], [{ id: PATIENT }], [mine]], () => createAddendum(therapist, RECORD)],
+  ] as const;
+  const quietly = async <T>(fn: (warn: ReturnType<typeof vi.spyOn>) => Promise<T>): Promise<T> => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      return await fn(warn);
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
+  for (const [name, selects, call] of writers) {
+    it(`${name}: the key's refusal, wrapped as Drizzle raises it, is episode_mismatch; no audit row`, async () => {
+      await quietly(async () => {
+        const { ops } = fakeTx({ selects: selects.map((r) => [...r]), registoInsertFails: keyRefusal() });
+        expect(await codeOf(call())).toBe("episode_mismatch");
+        // The INSERT was reached (the application's own guard had passed), and nothing follows it.
+        expect(ops).toEqual(["insert:clinical_records"]);
+        expect(mockAudit).not.toHaveBeenCalled();
+      });
+    });
+
+    it(`${name}: the refusal logs one line, and the line carries no identifier (rule 7)`, async () => {
+      await quietly(async (warn) => {
+        fakeTx({ selects: selects.map((r) => [...r]), registoInsertFails: keyRefusal() });
+        await codeOf(call());
+        expect(warn).toHaveBeenCalledTimes(1);
+        const line = String(warn.mock.calls[0]![0]);
+        expect(line).toContain("episode_mismatch");
+        for (const id of [EPISODE, PATIENT, TENANT, THERAPIST_ID, RECORD, TEMPLATE]) expect(line).not.toContain(id);
+      });
+    });
+
+    it(`${name}: a foreign-key violation naming ANOTHER key reaches the caller as it was raised, unmapped`, async () => {
+      const other = wrapped(driverError("23503", "clinical_records_form_template_id_form_templates_id_fk"));
+      fakeTx({ selects: selects.map((r) => [...r]), registoInsertFails: other });
+      await expect(call()).rejects.toBe(other);
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: ANOTHER SQLSTATE naming the key reaches the caller as it was raised, unmapped`, async () => {
+      const other = wrapped(driverError("23514", EPISODE_PATIENT_TENANT_KEY));
+      fakeTx({ selects: selects.map((r) => [...r]), registoInsertFails: other });
+      await expect(call()).rejects.toBe(other);
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    it(`${name} CONTROL: the same reads with an INSERT that succeeds file the registo and audit it`, async () => {
+      const { ops } = fakeTx({ selects: selects.map((r) => [...r]) });
+      expect(await codeOf(call())).toBe("resolved");
+      expect(ops).toEqual(["insert:clinical_records"]);
+      expect(mockAudit).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it("'+ Avaliação' that opened an episode for the registo: the key's refusal is still episode_mismatch, and only the episode's own audit row was written before it", async () => {
+    await quietly(async () => {
+      // The patient test, then no open episode of the specialty: the writer opens one, then files in it.
+      const { ops } = fakeTx({ selects: [[{ id: PATIENT }], []], registoInsertFails: keyRefusal() });
+      const osteo = { patientId: PATIENT, formTemplateId: TEMPLATE, newEpisodeSpecialty: "Osteopatia" };
+      expect(await codeOf(createDraftRecord(therapist, osteo))).toBe("episode_mismatch");
+      expect(ops).toEqual(["insert:other", "insert:clinical_records"]);
+      // The episode insert audits itself; the registo's audit row is never reached. The
+      // refusal throws, so the writer's transaction rolls both back (proved on real rows
+      // in records.episode-guard.db.test.ts, "one transaction").
+      expect(mockAudit.mock.calls.map((c) => c[1].action)).toEqual(["clinical_episode.create"]);
+    });
   });
 });

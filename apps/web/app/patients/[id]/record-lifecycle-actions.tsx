@@ -23,6 +23,9 @@ export const ERROR_TEXT: Partial<Record<RecordActionError, string>> = {
   not_author: s["clinical.notAuthor"],
   not_signed: s["clinical.recordAnnulNotSigned"],
   already_annulled: s["clinical.recordAlreadyAnnulled"],
+  // M-4b: the delete or the annulment was rolled back as a deadlock victim
+  // (namingDeadlock, records.ts). Nothing was written.
+  concurrent_change: s["errors.concurrentChange"],
   error: s["clinical.recordActionServerError"],
 };
 

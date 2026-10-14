@@ -29,7 +29,7 @@ describe("setTenantSecret (W3-05)", () => {
     const existing = { contacts: { email: "c@x.pt" }, secrets: { other: "keep" } };
     const captured: { set?: { settings?: Record<string, unknown> } } = {};
     const tx = {
-      select: () => ({ from: async () => [{ settings: existing }] }),
+      select: () => ({ from: () => ({ for: async () => [{ settings: existing }] }) }),
       update: () => ({ set: async (v: { settings?: Record<string, unknown> }) => { captured.set = v; } }),
     };
     mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
