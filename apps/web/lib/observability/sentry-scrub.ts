@@ -1,5 +1,7 @@
 import type { ErrorEvent } from "@sentry/nextjs";
 
+import { scrubLinkCodesIn } from "./link-codes";
+
 /**
  * Strip local-variable captures from every stack frame of every exception on an
  * outbound Sentry event.
@@ -76,12 +78,17 @@ export function downgradeValidationError(event: ErrorEvent): ErrorEvent {
 }
 
 /**
- * The single `beforeSend` the server config installs. Both layers, in order.
+ * The single `beforeSend` the server config installs. All three layers, in
+ * order.
  *
  * The scrub runs FIRST and unconditionally, because it is the one that carries
  * a rule-7 obligation: no frame leaves this process with captured locals, and
  * that must not depend on what kind of error it turned out to be.
+ *
+ * OBS-07 runs LAST, over whatever the first two left: a one-time link code
+ * (/c/<code>, /s/<code>) is removed from every string of the event. Last, so
+ * it also covers anything an earlier layer wrote. See link-codes.ts.
  */
 export function scrubEvent(event: ErrorEvent): ErrorEvent {
-  return downgradeValidationError(stripFrameVars(event));
+  return scrubLinkCodesIn(downgradeValidationError(stripFrameVars(event)));
 }
