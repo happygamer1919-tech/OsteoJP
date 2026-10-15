@@ -425,14 +425,16 @@ export function sendingPassIncludesNeverReminded(env: Record<string, string | un
  *               (`mark_missed`), or the visit has begun (`start_passed`), by
  *               the dispatcher's clock when it came to send. Recorded in the
  *               ledger, not sent. Final.
- *   claim_held  another sender holds this reminder, or already sent it, or
+ *   claim_held  another sender holds this reminder, or already sent it. No row.
+ *   held_by_duplicate
  *               the table refused this claim's attempt as another taker's
- *               (`claim_held_by_duplicate`). No row.
+ *               (`claim_held_by_duplicate`, strategy Q-A of 2026-10-15). No
+ *               row; counted on its own, so the pass's line records it.
  *   failed      the call threw: the claim could not be taken, or the provider
  *               refused. Logged with ids only. Whether it is taken again is the
  *               claim's to say (./dispatch.ts).
  */
-export type SweepMarkResult = "sent" | "held_back" | "too_late" | "claim_held" | "failed";
+export type SweepMarkResult = "sent" | "held_back" | "too_late" | "claim_held" | "held_by_duplicate" | "failed";
 
 type Dispatch = typeof dispatchReminder;
 
@@ -463,9 +465,8 @@ export async function handOverMark(args: {
       ...(mark.mark.getTime() > args.now.getTime() ? { takenAhead: true } : {}),
     });
     if (reminderWasHandedOver(outcome)) return "sent";
-    if (!outcome.dispatched && (outcome.reason === "claim_held" || outcome.reason === "claim_held_by_duplicate")) {
-      return "claim_held";
-    }
+    if (!outcome.dispatched && outcome.reason === "claim_held") return "claim_held";
+    if (!outcome.dispatched && outcome.reason === "claim_held_by_duplicate") return "held_by_duplicate";
     if (!outcome.dispatched && (outcome.reason === "mark_missed" || outcome.reason === "start_passed")) return "too_late";
     return "held_back";
   } catch (e) {
@@ -492,6 +493,8 @@ export type SweepSendTenantOutcome = {
   /** Recorded as too late, not sent. */
   tooLate: number;
   claimHeld: number;
+  /** Held because the table refused the claim's attempt as another taker's (Q-A). */
+  heldByDuplicate: number;
   failed: number;
   /** More was due than the pass was allowed to take. */
   overCeiling: boolean;
@@ -584,6 +587,7 @@ export async function sweepTenantSending(args: {
     heldBack: 0,
     tooLate: 0,
     claimHeld: 0,
+    heldByDuplicate: 0,
     failed: 0,
     overCeiling: selection.due > selection.marks.length,
     unsettledClaims: selection.unsettled.count,
@@ -603,6 +607,7 @@ export async function sweepTenantSending(args: {
     else if (result === "held_back") outcome.heldBack += 1;
     else if (result === "too_late") outcome.tooLate += 1;
     else if (result === "claim_held") outcome.claimHeld += 1;
+    else if (result === "held_by_duplicate") outcome.heldByDuplicate += 1;
     else outcome.failed += 1;
   }
 
@@ -642,6 +647,7 @@ export type SweepSendPassOutcome = {
   heldBack: number;
   tooLate: number;
   claimHeld: number;
+  heldByDuplicate: number;
   failedMarks: number;
   overCeiling: boolean;
   /** Live claims with no ledger row after them, over every tenant swept. */
@@ -695,6 +701,7 @@ export async function runReminderSweepSend(deps: SweepSendDeps): Promise<SweepSe
     heldBack: 0,
     tooLate: 0,
     claimHeld: 0,
+    heldByDuplicate: 0,
     failedMarks: 0,
     overCeiling: false,
     unsettledClaims: 0,
@@ -710,6 +717,7 @@ export async function runReminderSweepSend(deps: SweepSendDeps): Promise<SweepSe
       outcome.heldBack += swept.heldBack;
       outcome.tooLate += swept.tooLate;
       outcome.claimHeld += swept.claimHeld;
+      outcome.heldByDuplicate += swept.heldByDuplicate;
       outcome.failedMarks += swept.failed;
       outcome.overCeiling = outcome.overCeiling || swept.overCeiling;
       outcome.unsettledClaims += swept.unsettledClaims;
@@ -722,8 +730,8 @@ export async function runReminderSweepSend(deps: SweepSendDeps): Promise<SweepSe
   log(
     `${SWEEP_LOG_PREFIX} mode=${outcome.mode} tenants=${outcome.tenants} failed=${outcome.failedTenants} ` +
       `due=${outcome.due} taken=${outcome.taken} sent=${outcome.sent} heldBack=${outcome.heldBack} ` +
-      `tooLate=${outcome.tooLate} claimHeld=${outcome.claimHeld} failedMarks=${outcome.failedMarks} ` +
-      `unsettledClaims=${outcome.unsettledClaims}`,
+      `tooLate=${outcome.tooLate} claimHeld=${outcome.claimHeld} heldByDuplicate=${outcome.heldByDuplicate} ` +
+      `failedMarks=${outcome.failedMarks} unsettledClaims=${outcome.unsettledClaims}`,
   );
   if (outcome.overCeiling) {
     alarm(`${SWEEP_LOG_PREFIX} OVER THE CEILING due=${outcome.due} taken=${outcome.taken} ceiling=${SWEEP_MARK_CEILING}`);

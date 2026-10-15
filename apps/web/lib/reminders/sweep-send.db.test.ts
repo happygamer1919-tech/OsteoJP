@@ -428,7 +428,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     const cancelled = await smsVisit(now, { status: "cancelled" });
 
     const first = await pass(tenantA, now, { passId: "sent-once-1" });
-    expect(first).toEqual({ due: 2, taken: 2, sent: 2, heldBack: 0, tooLate: 0, claimHeld: 0, failed: 0, overCeiling: false, unsettledClaims: 0 });
+    expect(first).toEqual({ due: 2, taken: 2, sent: 2, heldBack: 0, tooLate: 0, claimHeld: 0, heldByDuplicate: 0, failed: 0, overCeiling: false, unsettledClaims: 0 });
     expect([...h.sends].sort()).toEqual([`email:${email.id}`, `sms:${sms.id}`].sort());
     expect(await claimsOf(sms.id)).toEqual([
       { offset_id: "24h", channel: "sms", taker: "sweep", early: false, starts_at: sms.start.toISOString(), released: false },
@@ -562,7 +562,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     expect(a.sent + b.sent).toBe(3);
     expect(a.failed + b.failed).toBe(0);
     // Whatever one pass did not send, the claim held it for the other.
-    expect(a.sent + a.claimHeld + b.sent + b.claimHeld).toBe(a.taken + b.taken);
+    expect(a.sent + a.claimHeld + a.heldByDuplicate + b.sent + b.claimHeld + b.heldByDuplicate).toBe(a.taken + b.taken);
     expect([...h.sends].sort()).toEqual([`sms:${visits[0]!.id}`, `sms:${visits[1]!.id}`, `email:${visits[2]!.id}`].sort());
     for (const v of visits) {
       expect(await claimsOf(v.id)).toHaveLength(1);
@@ -679,7 +679,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     };
 
     const out = await pass(tenantA, now, { passId: "late-rule-1" });
-    expect(out).toEqual({ due: 4, taken: 4, sent: 2, heldBack: 0, tooLate: 2, claimHeld: 0, failed: 0, overCeiling: false, unsettledClaims: 0 });
+    expect(out).toEqual({ due: 4, taken: 4, sent: 2, heldBack: 0, tooLate: 2, claimHeld: 0, heldByDuplicate: 0, failed: 0, overCeiling: false, unsettledClaims: 0 });
     // The heartbeat counts the marks handed to the dispatcher, the two it did not send included.
     expect((await heartbeatsOf("late-rule-1"))[0]).toMatchObject({ mode: "send", due_count: 4, recorded_count: 4 });
     expect([...h.sends].sort()).toEqual([`email:${v.emailAtLimit.id}`, `sms:${v.smsAtLimit.id}`].sort());

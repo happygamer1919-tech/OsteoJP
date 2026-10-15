@@ -11,7 +11,7 @@
  *      the closed one, and today's is never called.
  *   2. FAIL CLOSED. A closed claim that throws stops everything: no send, no
  *      ledger row, no release, and the same error goes on.
- *   3. HELD STOPS EVERYTHING, as today.
+ *   3. HELD STOPS EVERYTHING, as today. Held by a duplicate is one log line.
  *   4. A MESSAGE HANDED OVER KEEPS ITS CLAIM. No release: it is final.
  *   5. NOTHING HANDED OVER GIVES THE CLAIM UP. Every gate that holds a
  *      reminder back, a number that cannot take an SMS and a message the gate
@@ -19,7 +19,8 @@
  *      the ledger row are the ones the dispatcher always produced.
  *   6. A THROW gives the claim up before any transport was called and after a
  *      provider answer that is on the pinned list, and KEEPS it after any
- *      other answer, because the message may have gone out.
+ *      other answer, because the message may have gone out. A refusal of our
+ *      sender or our body raises an alert, with the switch off too.
  *   7. THE CLOCK OF THE SEND. Too late, and a visit that has begun, are judged
  *      on the dispatcher's own clock at the moment it sends, and once more at
  *      the transport's door. The clock a caller hands in decides "too early"
@@ -279,6 +280,73 @@ describe("the send switch decides which claim the dispatcher asks", () => {
   });
 });
 
+/**
+ * Q-C (c) HOLDS ON EVERY SEND PATH. With the switch off, today's dispatcher
+ * releases its claim on every throw, as it always did, and a refusal of our
+ * sender (21606) or our body (21617) then raises the same alert as the closed
+ * path does: after the release, never in place of the provider's error.
+ */
+describe("with the send switch off: the alert of Q-C", () => {
+  const TODAY_RELEASE = "release:55555555-5555-5555-5555-555555555555";
+
+  it.each([
+    [undefined, "21606"],
+    [undefined, "21617"],
+    ["shadow", "21606"],
+    ["shadow", "21617"],
+  ])("REMINDERS_SWEEP_MODE=%j, Twilio code %s: released, ONE alert of code and channel only, and the error goes on", async (value, code) => {
+    setSwitch(value);
+    const refusal = Object.assign(new Error("refused +351912345678 Paciente Ficticio"), { code: Number(code) });
+    h.transport = { throws: refusal };
+    h.loadReminderData.mockResolvedValue(fixture());
+    await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).rejects.toBe(refusal);
+    expect(h.events).toEqual(["claim:today", "send:sms", `ledger:reminder.24h.sms:provider_error:${code}`, TODAY_RELEASE, "alert"]);
+    expect(h.closedClaims).toEqual([]);
+    expect(h.alerts).toEqual([
+      {
+        title: "reminders/dispatch: the provider refused our sender or our message body",
+        context: { level: "warning", tags: { code, channel: "sms" } },
+      },
+    ]);
+    const reported = JSON.stringify(h.alerts);
+    for (const absent of [TENANT_ID, APPOINTMENT_ID, PATIENT_ID, "55555555", "912", "+351", "Paciente", "Clinica", "Terapeuta", "example.pt", "refused +351"]) {
+      expect(reported).not.toContain(absent);
+    }
+  });
+
+  it.each(["21211", "20429"])("CONTROL: Twilio code %s is released, as every throw is, and raises no alert", async (code) => {
+    setSwitch(undefined);
+    const refusal = Object.assign(new Error("refused"), { code: Number(code) });
+    h.transport = { throws: refusal };
+    h.loadReminderData.mockResolvedValue(fixture());
+    await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).rejects.toBe(refusal);
+    expect(h.events).toEqual(["claim:today", "send:sms", `ledger:reminder.24h.sms:provider_error:${code}`, TODAY_RELEASE]);
+    expect(h.alerts).toEqual([]);
+  });
+
+  it("CONTROL: a send that does not throw raises no alert", async () => {
+    setSwitch(undefined);
+    h.loadReminderData.mockResolvedValue(fixture());
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).toMatchObject({ dispatched: true });
+    expect(h.alerts).toEqual([]);
+  });
+
+  it("the alert cannot replace the provider's error: a report that fails is printed, the claim is released, and the same error goes on", async () => {
+    setSwitch(undefined);
+    const Sentry = await import("@sentry/nextjs");
+    vi.mocked(Sentry.captureMessage).mockImplementationOnce(() => {
+      throw new Error("report failed");
+    });
+    const refusal = Object.assign(new Error("refused"), { code: 21617 });
+    h.transport = { throws: refusal };
+    h.loadReminderData.mockResolvedValue(fixture());
+    await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).rejects.toBe(refusal);
+    expect(h.events).toEqual(["claim:today", "send:sms", "ledger:reminder.24h.sms:provider_error:21617", TODAY_RELEASE]);
+    const printed = vi.mocked(console.error).mock.calls.flat().join(" ");
+    expect(printed).toContain("could not report a sender or body refusal code=21617 channel=sms");
+  });
+});
+
 describe("while the sweep is the sender", () => {
   beforeEach(() => setSwitch("send"));
 
@@ -305,6 +373,24 @@ describe("while the sweep is the sender", () => {
       reason: "claim_held_by_duplicate",
     });
     expect(h.events).toEqual(["claim:closed"]);
+  });
+
+  it("HELD BY A DUPLICATE is recorded as ONE log line of reason, offset and channel, and nothing that names the visit", async () => {
+    h.closedAnswer = { held: true, duplicate: true };
+    h.loadReminderData.mockResolvedValue(fixture());
+    await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h", "email", "sweep", justAfter("48h"));
+    const lines = vi.mocked(console.warn).mock.calls.map((c) => c.join(" "));
+    expect(lines).toEqual(["[reminders] reminder skipped: claim_held_by_duplicate offsetId=48h channel=email"]);
+    for (const absent of [TENANT_ID, APPOINTMENT_ID, PATIENT_ID, CLAIM_ID, "912", "Paciente", "example.pt"]) {
+      expect(lines.join("\n")).not.toContain(absent);
+    }
+  });
+
+  it("CONTROL: a plain held logs no such line", async () => {
+    h.closedAnswer = { held: true };
+    h.loadReminderData.mockResolvedValue(fixture());
+    await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h", "email", "sweep", justAfter("48h"));
+    expect(vi.mocked(console.warn).mock.calls.flat().join(" ")).not.toContain("claim_held_by_duplicate");
   });
 
   it.each([

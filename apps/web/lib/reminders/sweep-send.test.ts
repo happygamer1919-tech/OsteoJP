@@ -3,7 +3,8 @@
  *
  *   1. ONE MARK: what the pass hands the dispatcher, the word it gives each
  *      answer, and that a throw is caught, counted and logged with ids only.
- *   2. THE PASS: the ceiling over every tenant, a tenant that fails, the log.
+ *   2. THE PASS: the ceiling over every tenant, a tenant that fails, the log,
+ *      and one tenant's tally of what became of each mark.
  *   3. THE SECOND SWITCH: which values make a sending pass take the visits
  *      that never had a reminder.
  *
@@ -24,6 +25,7 @@ const {
   handOverMark,
   runReminderSweepSend,
   sendingPassIncludesNeverReminded,
+  sweepTenantSending,
 } = await import("./sweep-send");
 const { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER } = await import("./reminder-population");
 type SweepSendTenantOutcome = import("./sweep-send").SweepSendTenantOutcome;
@@ -88,8 +90,9 @@ describe("one mark, handed to the dispatcher", () => {
     // The visit had begun when the dispatcher came to send: final in the same way.
     [{ dispatched: false, reason: "start_passed" }, "too_late"],
     [{ dispatched: false, reason: "claim_held" }, "claim_held"],
-    // Q-A: another taker holds this attempt. Held, never held back: no row, no release.
-    [{ dispatched: false, reason: "claim_held_by_duplicate" }, "claim_held"],
+    // Q-A: another taker holds this attempt. Held, never held back: no row, no
+    // release. Its own word, so the pass counts it apart from claim_held.
+    [{ dispatched: false, reason: "claim_held_by_duplicate" }, "held_by_duplicate"],
   ] as const)("the dispatcher answers %o: %s", async (outcome, word) => {
     const dispatch = vi.fn(async () => outcome as unknown as DispatchOutcome);
     expect(await handOverMark({ tenantId: T1, mark: mark(-5), now: NOW, dispatch: dispatch as never })).toBe(word);
@@ -115,6 +118,55 @@ describe("one mark, handed to the dispatcher", () => {
   });
 });
 
+/**
+ * ONE TENANT'S TALLY. The selection and the heartbeat are the database's, so
+ * the step hands back a stored selection for the first and runs nothing for
+ * the second; each mark's own step runs, against the dispatcher it is given.
+ */
+describe("one tenant's pass counts each mark under its own word", () => {
+  it("Q-A: held by a duplicate is its own count, and a plain held is still claimHeld", async () => {
+    const answers: DispatchOutcome[] = [
+      { dispatched: false, reason: "claim_held" },
+      { dispatched: false, reason: "claim_held_by_duplicate" },
+      { dispatched: false, reason: "claim_held_by_duplicate" },
+      { dispatched: true, channels: [{ channel: "sms", sandbox: false, id: "SM1" }] },
+    ];
+    const marks = answers.map((_, i) => ({
+      appointmentId: `bbbbbbbb-0000-4000-8000-00000000001${i}`,
+      offsetId: "24h" as const,
+      channel: "sms" as const,
+      startsAt: new Date(NOW.getTime() + 24 * 60 * MIN).toISOString(),
+      mark: new Date(NOW.getTime() - 5 * MIN).toISOString(),
+    }));
+    const selection = { at: NOW.toISOString(), due: marks.length, leftOut: 0, unsettled: { count: 0, appointmentIds: [] }, marks };
+    const ran: string[] = [];
+    const step = async (id: string, fn: () => Promise<unknown>) => {
+      ran.push(id.replace(/-[0-9a-f-]{36}.*$/, ""));
+      if (id.startsWith("sweep-select-")) return selection;
+      if (id.startsWith("sweep-heartbeat-")) return true;
+      return fn();
+    };
+    let next = 0;
+    const dispatch = vi.fn(async () => answers[next++]!);
+    const out = await sweepTenantSending({ tenantId: T1, limit: 50, step: step as never, dispatch: dispatch as never, alarm: () => {} });
+    expect(out).toEqual({
+      due: 4,
+      taken: 4,
+      sent: 1,
+      heldBack: 0,
+      tooLate: 0,
+      claimHeld: 1,
+      heldByDuplicate: 2,
+      failed: 0,
+      overCeiling: false,
+      unsettledClaims: 0,
+    });
+    // Positive control: every mark reached the dispatcher, between the selection and the heartbeat.
+    expect(dispatch).toHaveBeenCalledTimes(4);
+    expect(ran).toEqual(["sweep-select", "sweep-send", "sweep-send", "sweep-send", "sweep-send", "sweep-heartbeat"]);
+  });
+});
+
 /** A tenant's sending pass that takes what it is allowed of what it has due. */
 function fakeSweep(dueByTenant: Record<string, number>) {
   const calls: { tenantId: string; limit: number; passId?: string }[] = [];
@@ -127,7 +179,18 @@ function fakeSweep(dueByTenant: Record<string, number>) {
     const failed = taken >= 2 ? 1 : 0;
     const heldBack = taken >= 2 ? 1 : 0;
     // And one claim with nothing after it, for every tenant that had anything due.
-    return { due, taken, sent: taken - failed - heldBack, heldBack, tooLate: 0, claimHeld: 0, failed, overCeiling: due > taken, unsettledClaims: due > 0 ? 1 : 0 };
+    return {
+      due,
+      taken,
+      sent: taken - failed - heldBack,
+      heldBack,
+      tooLate: 0,
+      claimHeld: 0,
+      heldByDuplicate: 0,
+      failed,
+      overCeiling: due > taken,
+      unsettledClaims: due > 0 ? 1 : 0,
+    };
   };
   return { calls, sweepTenant: sweepTenant as never };
 }
@@ -159,6 +222,7 @@ describe("one sending pass", () => {
       heldBack: 1,
       tooLate: 0,
       claimHeld: 0,
+      heldByDuplicate: 0,
       failedMarks: 1,
       overCeiling: false,
       // Counted over both tenants, and on the pass's own line below.
@@ -171,10 +235,41 @@ describe("one sending pass", () => {
       { tenantId: T2, limit: 47, passId: "01JRUNID" },
     ]);
     expect(lines).toEqual([
-      `${SWEEP_LOG_PREFIX} mode=send tenants=2 failed=0 due=4 taken=4 sent=2 heldBack=1 tooLate=0 claimHeld=0 failedMarks=1 unsettledClaims=2`,
+      `${SWEEP_LOG_PREFIX} mode=send tenants=2 failed=0 due=4 taken=4 sent=2 heldBack=1 tooLate=0 claimHeld=0 heldByDuplicate=0 failedMarks=1 unsettledClaims=2`,
     ]);
     // A mark that failed does not fail the pass.
     expect(alarms).toEqual([]);
+  });
+
+  it("Q-A: held by a duplicate is summed over the tenants and logged on its own, never folded into claimHeld", async () => {
+    const swept: Record<string, Partial<SweepSendTenantOutcome>> = {
+      [T1]: { due: 3, taken: 3, sent: 0, claimHeld: 1, heldByDuplicate: 2 },
+      [T2]: { due: 1, taken: 1, sent: 0, claimHeld: 0, heldByDuplicate: 1 },
+    };
+    const sweepTenant = async (args: { tenantId: string }): Promise<SweepSendTenantOutcome> => ({
+      due: 0,
+      taken: 0,
+      sent: 0,
+      heldBack: 0,
+      tooLate: 0,
+      claimHeld: 0,
+      heldByDuplicate: 0,
+      failed: 0,
+      overCeiling: false,
+      unsettledClaims: 0,
+      ...swept[args.tenantId],
+    });
+    const lines: string[] = [];
+    const out = await runReminderSweepSend({
+      listTenantIds: async () => [T1, T2],
+      sweepTenant: sweepTenant as never,
+      log: (l) => lines.push(l),
+      alarm: () => {},
+    });
+    expect(out).toMatchObject({ taken: 4, claimHeld: 1, heldByDuplicate: 3 });
+    expect(lines).toEqual([
+      `${SWEEP_LOG_PREFIX} mode=send tenants=2 failed=0 due=4 taken=4 sent=0 heldBack=0 tooLate=0 claimHeld=1 heldByDuplicate=3 failedMarks=0 unsettledClaims=0`,
+    ]);
   });
 
   it("never takes more than the ceiling over all tenants, and says so when more was due", async () => {
@@ -231,7 +326,7 @@ describe("one sending pass", () => {
     const lines: string[] = [];
     const out = await runReminderSweepSend({ listTenantIds: async () => [], log: (l) => lines.push(l), alarm: () => {} });
     expect(out).toMatchObject({ mode: "send", tenants: 0, taken: 0, sent: 0 });
-    expect(lines).toEqual([`${SWEEP_LOG_PREFIX} mode=send tenants=0 failed=0 due=0 taken=0 sent=0 heldBack=0 tooLate=0 claimHeld=0 failedMarks=0 unsettledClaims=0`]);
+    expect(lines).toEqual([`${SWEEP_LOG_PREFIX} mode=send tenants=0 failed=0 due=0 taken=0 sent=0 heldBack=0 tooLate=0 claimHeld=0 heldByDuplicate=0 failedMarks=0 unsettledClaims=0`]);
   });
 
   it("the fixed words: the heartbeat's mode and the hour between two tries", () => {

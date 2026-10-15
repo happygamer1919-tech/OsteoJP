@@ -373,7 +373,7 @@ async function sendPatientSms(args: {
   phone: string;
   body: string;
   templateId: string;
-  /** SWEEP-47: passed by the closed reminder dispatch only. */
+  /** SWEEP-47: passed by the reminder dispatch only. */
   attempt?: SendAttempt;
 }): Promise<SendResult | SmsSkip> {
   // ONE VERDICT, SHARED. `smsNumberVerdict` is the two questions this function
@@ -483,7 +483,7 @@ function tenantPhone(settings: unknown): string {
 async function sendRecordingProviderError(
   row: { tenantId: string; appointmentId: string; channel: "sms" | "email"; templateId: string },
   send: () => Promise<SendResult>,
-  /** The closed dispatch's note of how far this call got. Absent for every other caller. */
+  /** The reminder dispatch's note of how far this call got. Absent for every other caller. */
   attempt?: SendAttempt,
 ): Promise<SendResult> {
   try {
@@ -598,9 +598,11 @@ export function reminderIsTakenAhead(mark: Date, now: Date): boolean {
 }
 
 /**
- * SWEEP-47. How far one closed dispatch got, written by the two places that
- * call a transport and read by the one place that decides what becomes of the
- * claim (`dispatchReminderClosed`). Nothing else reads or writes it.
+ * SWEEP-47. How far one reminder dispatch got, written by the two places that
+ * call a transport. Read by the closed dispatch, which decides from it what
+ * becomes of the claim (`dispatchReminderClosed`), and with the switch off by
+ * `dispatchReminderInner`, which reads its `refusal` for the alert alone and
+ * whose `refusedByTheClock` always answers null. Nothing else reads or writes it.
  */
 type SendAttempt = {
   /** A transport was called. From here on the message may have left. */
@@ -620,7 +622,8 @@ type SendAttempt = {
  * SWEEP-47. THE LAST THING BEFORE A TRANSPORT IS CALLED, in the closed
  * dispatch only: ask the clock once more. Between the claim and this line a
  * reminder is rendered and rows are written, and each of those is a wait. Null
- * for every other caller, and whenever the reminder may still go out.
+ * for every other caller, for the dispatch with the switch off (its clock
+ * refuses nothing), and whenever the reminder may still go out.
  */
 function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | null {
   const reason = attempt?.refusedByTheClock() ?? null;
@@ -631,25 +634,35 @@ function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | n
 
 /**
  * THE PROVIDER ANSWERS AFTER WHICH A CLAIM IS GIVEN UP, so the reminder can be
- * taken again. ONE LIST PER CHANNEL, PINNED BY A TEST. Each name is an answer
- * that says the message was NOT accepted. ANYTHING ELSE IS AN UNKNOWN OUTCOME:
- * an answer that is not here, an error with no code, a call that never came
- * back. The claim then stays live and the reminder is never sent again, because
- * the message may have gone out.
+ * taken again. ONE LIST PER CHANNEL, PINNED BY A TEST. Each name is here as an
+ * answer that says the message was NOT accepted. ANYTHING ELSE IS AN UNKNOWN
+ * OUTCOME: an answer that is not here, an error with no code, a call that never
+ * came back. The claim then stays live and the reminder is never sent again,
+ * because the message may have gone out.
+ *
+ * READ ONLY WHILE THE SWEEP IS THE SENDER (the switch on, `dispatchReminderClosed`).
+ * With the switch off this list is not read: every throw releases its claim,
+ * as before.
  *
  * EMAIL: Resend's own error names (`ProviderSendError.code`, ./clients.ts).
  * `application_error` is NOT here: the SDK uses that name for a request whose
  * answer it could not read, and such a request may have been accepted.
  *
- * SMS: Twilio's numeric codes for a request it refused outright, at create,
- * so a second try cannot be a second copy. CHECKED AGAINST TWILIO'S OWN ERROR
- * PAGES ON 2026-10-14, ONE PAGE PER CODE, AND RULED BY STRATEGY ON 2026-10-15
- * (Q-C):
+ * SMS: Twilio's numeric codes, each taken as a refusal of the send itself,
+ * before Twilio accepted the message, so a second try cannot be a second copy.
+ * Ruled by strategy on 2026-10-15 (Q-C), after a check on 2026-10-14 that read
+ * Twilio's own error page for each code:
  *
  *   20003  not authenticated            21606  our sender cannot send messages
  *   20429  too many requests            21611  our sender's queue is full
  *   21408  destination region disabled 21612  this sender cannot reach this number
  *                                       21617  our message body is too long
+ *
+ * WHAT THAT CHECK ESTABLISHED, AND WHAT IT DID NOT. Only 20429's page says
+ * outright that the request was not processed. The other pages do not say that
+ * the error is given by the send call itself rather than later: that is how
+ * Twilio's REST errors are known to behave, not what those pages were found to
+ * say, and for 21612 the check marked the point UNCLEAR.
  *
  * KEPT, NOT RELEASED, by the same ruling: 21211 (the number is not valid),
  * 21610 (the patient opted out) and 21614 (the number is not a mobile). Each is
@@ -660,7 +673,8 @@ function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | n
  * the message; they reach the status webhook, never this list, and a resend
  * after one could be a second copy.
  *
- * 21606 and 21617 also raise an alert (`SENDER_OR_BODY_REFUSAL_CODES`).
+ * 21606 and 21617 also raise an alert (`SENDER_OR_BODY_REFUSAL_CODES`), on
+ * either path, the switch off included.
  *
  * A code missing from this list costs a reminder that is not retried; a code
  * wrongly on it could cost a second copy.
@@ -683,9 +697,9 @@ export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", re
 /**
  * THE REFUSALS THAT ARE OURS, NOT THE PATIENT'S: our sender (21606) or our
  * message body (21617) is wrong, so every patient's SMS is refused the same
- * way. Each also raises an alert (`alertSenderOrBodyRefusal`), besides giving
- * the claim up. Strategy, Q-C of 2026-10-15. Pinned by a test, and every code
- * here is on the list above.
+ * way. Each also raises an alert (`alertSenderOrBodyRefusal`), on every send
+ * path, the switch off included, besides giving the claim up. Strategy, Q-C of
+ * 2026-10-15. Pinned by a test, and every code here is on the list above.
  */
 export const SENDER_OR_BODY_REFUSAL_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
   email: [],
@@ -1023,7 +1037,7 @@ async function dispatchReminderInner(
   // SWEEP-47. WHILE THE SWEEP IS THE SENDER THE CLAIM IS CLOSED: a live claim
   // blocks at any age and a claim that cannot be written stops the send. With
   // the switch off (./sweep-mode.ts) this line is the only thing that ran, and
-  // everything below it is the dispatcher as it was.
+  // everything below it is the dispatcher as it was, save the alert of Q-C.
   if (sweepSends()) {
     return dispatchReminderClosed(tenantId, appointmentId, offsetId, channel, taker, gate, claimStart, handOver);
   }
@@ -1034,8 +1048,12 @@ async function dispatchReminderInner(
   // written included, goes on exactly as before there were claims.
   if (claim.held && claim.duplicate) return { dispatched: false, reason: "claim_held_by_duplicate" };
   if (claim.held) return { dispatched: false, reason: "claim_held" };
+  // The note of the provider's answer, read here for the alert alone. Its
+  // clock refuses nothing: with the switch off no rule of time exists, so the
+  // transport's door never shuts on this path.
+  const attempt: SendAttempt = { handOverStarted: false, refusedByTheClock: () => null };
   try {
-    return await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate);
+    return await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate, attempt);
   } catch (e) {
     // EVERY THROW RELEASES ITS CLAIM, and the error goes on unchanged: the run
     // must still fail, because the scheduler's retry is the delivery
@@ -1044,6 +1062,9 @@ async function dispatchReminderInner(
     if (claim.claimId !== null) {
       await releaseReminderClaim({ tenantId, appointmentId, offsetId, channel, claimId: claim.claimId });
     }
+    // Q-C: our sender or our body refused raises the alert on this path too,
+    // after the release. `alertSenderOrBodyRefusal` never throws either.
+    if (attempt.refusal) await alertSenderOrBodyRefusal(attempt.refusal);
     throw e;
   }
 }
@@ -1184,7 +1205,7 @@ async function dispatchClaimedReminder(
   offsetId: ReminderOffsetId,
   channel: Channel,
   gate: Dispatchable,
-  /** SWEEP-47: the closed dispatch's note of how far the call got. */
+  /** SWEEP-47: the reminder dispatch's note of how far the call got. */
   attempt?: SendAttempt,
 ): Promise<DispatchOutcome> {
   if (!gate.ok) return gate.outcome;
