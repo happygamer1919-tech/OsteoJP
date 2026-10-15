@@ -5479,7 +5479,7 @@
                 "strong": "Terapeuta"
               },
               {
-                "text": ", escolha o novo nome. A lista mostra os terapeutas associados à clínica dessa marcação."
+                "text": ", escolha o novo nome. A lista mostra quem pode ser marcado na clínica dessa marcação, e o terapeuta atual."
               }
             ],
             [
@@ -5527,12 +5527,12 @@
           "items": [
             [
               {
-                "text": "o terapeuta não trabalha a essa hora: a mensagem por baixo do campo mostra o horário desse terapeuta nesse dia;"
+                "text": "o terapeuta tem horário nessa clínica e não trabalha a essa hora: a mensagem por baixo do campo mostra o horário desse terapeuta nesse dia;"
               }
             ],
             [
               {
-                "text": "o terapeuta já tem outra marcação ou uma ausência nesse período: aparece o aviso da agenda, por exemplo "
+                "text": "outra marcação ou uma ausência choca com esta (do terapeuta, da sala ou do segundo terapeuta): aparece o aviso da agenda, por exemplo "
               },
               {
                 "strong": "Conflito de terapeuta"
@@ -5595,7 +5595,7 @@
       "see": [],
       "shots": null,
       "title": "Alterar o terapeuta de uma marcação na ficha",
-      "words": 156
+      "words": 171
     },
     {
       "answers": [],

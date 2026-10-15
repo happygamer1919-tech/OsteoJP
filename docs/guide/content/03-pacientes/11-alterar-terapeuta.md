@@ -11,15 +11,15 @@ screens: ficha-paciente
 
 1. Na ficha do paciente, abra o separador **Marcações**.
 2. Numa marcação **Agendada** ou **Confirmada**, clique em **Gerir marcação**.
-3. Em **Terapeuta**, escolha o novo nome. A lista mostra os terapeutas associados à clínica dessa marcação.
+3. Em **Terapeuta**, escolha o novo nome. A lista mostra quem pode ser marcado na clínica dessa marcação, e o terapeuta atual.
 4. Clique em **Alterar terapeuta**. Quando a alteração fica guardada, aparece **Terapeuta alterado.**
 
 A hora, a clínica e o pacote da marcação não mudam. A alteração fica no registo de auditoria.
 
 A plataforma faz as mesmas verificações que a **Agenda** e recusa a alteração quando:
 
-* o terapeuta não trabalha a essa hora: a mensagem por baixo do campo mostra o horário desse terapeuta nesse dia;
-* o terapeuta já tem outra marcação ou uma ausência nesse período: aparece o aviso da agenda, por exemplo **Conflito de terapeuta**, com a hora em causa;
+* o terapeuta tem horário nessa clínica e não trabalha a essa hora: a mensagem por baixo do campo mostra o horário desse terapeuta nesse dia;
+* outra marcação ou uma ausência choca com esta (do terapeuta, da sala ou do segundo terapeuta): aparece o aviso da agenda, por exemplo **Conflito de terapeuta**, com a hora em causa;
 * a clínica está fechada a essa hora.
 
 Aqui não há **Guardar mesmo assim**: um conflito recusa a alteração. Para mudar também a hora, use **Reagendar**.
