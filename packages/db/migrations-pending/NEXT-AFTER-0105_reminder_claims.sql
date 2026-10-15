@@ -2,9 +2,10 @@
 /* The reminder sweep's own tables: reminder_claims and                   */
 /* reminder_sweep_passes.                                                 */
 /* ====================================================================== */
-/* PENDING, AND A DRAFT FOR STRATEGY. This file must follow 0105. It      */
-/* carries no number of its own, so a promotion is a rename and changes   */
-/* no byte. It is applied nowhere but a local throwaway database.         */
+/* PENDING. This file must follow 0105. Its file name carries no number,  */
+/* so a promotion is a rename and changes no byte. Strategy ruled its     */
+/* number on 2026-10-13: 0106. Until it is promoted it is applied nowhere */
+/* but a local throwaway database.                                        */
 /*                                                                        */
 /* WHAT THIS IS ABOUT. A reminder is "claimed" by the sender that takes   */
 /* it, so that a second sender of the same reminder can find the first.   */
@@ -27,8 +28,9 @@
 /* carries the START.                                                     */
 /*                                                                        */
 /* ====================================================================== */
-/* THE RULINGS THIS FILE IMPLEMENTS (brief of 2026-10-13)                 */
+/* THE RULINGS THIS FILE IMPLEMENTS                                       */
 /* ====================================================================== */
+/* The brief of 2026-10-13 (after strategy's S-1012-A):                   */
 /*   W  WRITERS: only the reminder job's own session, in the tenant       */
 /*      context it already uses. A staff session reads the rows of its    */
 /*      own tenant and never inserts, updates or deletes one. anon gets   */
@@ -40,18 +42,43 @@
 /*   7b a reminder that was held back is tried again while the visit is   */
 /*      still ahead: only a `sent` outcome blocks a second send. THIS     */
 /*      FILE THEREFORE STORES NO OUTCOME AND HAS NO UNIQUE KEY OVER THE   */
-/*      CLAIMS OF ONE REMINDER. A claim says "a sender took it"; whether  */
-/*      it was sent stays in the ledger, and whether a claim blocks is    */
-/*      decided by the code that reads both. Nothing here can make        */
-/*      "held" final.                                                     */
+/*      CLAIMS OF ONE REMINDER, only one over each ATTEMPT (Q-5 below). A */
+/*      claim says "a sender took it"; whether it was sent stays in the   */
+/*      ledger, and whether a claim blocks is decided by the code that    */
+/*      reads both. Nothing here can make "held" final: the next attempt  */
+/*      is always a new number.                                           */
 /*   8a a late reminder may still go out, up to a limit that a later pull */
 /*      request builds. The table only carries what that rule will read:  */
 /*      the instant the reminder was due (due_at) and the instant it was  */
 /*      taken (created_at). The late rule itself is not here.             */
 /*   The sweep ships switched off. Nothing in this file sends anything.   */
 /*                                                                        */
+/* Strategy's rulings of 2026-10-13 on the first draft of this file:      */
+/*   W-1  the writer is the userless `authenticated` session, as 0102.    */
+/*   W-2  the heartbeat keeps its own table.                              */
+/*   W-3  the rows of an appointment go with it (ON DELETE CASCADE).      */
+/*   W-4  row level security ENABLED, NOT FORCED. No first FORCE in the   */
+/*        schema.                                                         */
+/*   W-5  service_role is REVOKED BY NAME on both tables.                 */
+/*   W-6  the INSERT policy of reminder_claims proves that the            */
+/*        appointment belongs to the row's tenant.                        */
+/*   W-7  no duplicate refusal for shadow rows and heartbeats while the   */
+/*        sweep is in shadow.                                             */
+/*   W-8  the number is 0106.                                             */
+/*   W-10 no purge here. A claim is never purged by age alone.            */
+/*   W-11 confirmed as built: `send` is already in the heartbeat's mode   */
+/*        list, one release per claim, due_at and early are stored.       */
+/*                                                                        */
+/* Strategy's rulings of 2026-10-14:                                      */
+/*   Q-5  the TABLE refuses a duplicate claim for the same attempt, not   */
+/*        only the sending code: a stored attempt number on every claim   */
+/*        and the partial unique index reminder_claims_claim_attempt_key. */
+/*        Shadow rows and heartbeats stay free of it (W-7).               */
+/*   Q-4  the post-check reads service_role's privileges on both tables   */
+/*        directly, so W-5 is proven where no seed runs.                  */
+/*                                                                        */
 /* ====================================================================== */
-/* WHO THE "REMINDER JOB'S OWN SESSION" IS, AND HOW THE DATABASE KNOWS    */
+/* WHO THE "REMINDER JOB'S OWN SESSION" IS, AND HOW IT IS KNOWN (W-1)     */
 /* ====================================================================== */
 /* The reminder job has no database role of its own. It runs as           */
 /* `authenticated`, like a staff session, with claims it sets itself      */
@@ -78,13 +105,10 @@
 /* application makes on its own database connection ... and nothing else  */
 /* can make one, because a JWT that Supabase Auth signs always names its  */
 /* user, the anon key's role is `anon` and the service key's is           */
-/* `service_role`". A JUDGMENT, NOT A RULING: the brief says "the         */
-/* reminder job's own database principal", and there is no such role      */
-/* today. A role of its own is the other reading; it is a question in     */
-/* the report, not something this file decides.                           */
+/* `service_role`". Strategy ruled it for this file too (W-1).            */
 /*                                                                        */
 /* ====================================================================== */
-/* ONE TABLE OR TWO. A JUDGMENT, NOT A RULING.                            */
+/* ONE TABLE OR TWO: TWO (W-2)                                            */
 /* ====================================================================== */
 /* TWO. A claim, a release and a shadow row are each about ONE REMINDER   */
 /* OF ONE APPOINTMENT: they share the key (appointment, offset, channel)  */
@@ -102,16 +126,21 @@
 /* By two things, and deliberately not by a trigger:                      */
 /*   1. GRANTS. `authenticated` holds SELECT and INSERT on each table     */
 /*      and nothing else. No UPDATE, no DELETE, no TRUNCATE. anon,        */
-/*      patient and PUBLIC hold nothing.                                  */
+/*      patient, service_role and PUBLIC hold nothing.                    */
 /*   2. POLICIES. Row level security is on, and each table has one SELECT */
 /*      and one INSERT policy. With no UPDATE and no DELETE policy, a     */
 /*      session that somehow held the privilege would still reach no row. */
 /* NO TRIGGER, because an appointment's hard delete must still take its   */
 /* claims with it (ON DELETE CASCADE, as the ledger does), and a trigger  */
 /* that refuses every DELETE refuses that one too.                        */
-/* service_role is left as the platform default makes it, as 0075 and     */
-/* 0102 left it: a BYPASSRLS administrative role the application never    */
-/* drops to. Who may purge old rows is not decided here (the report).     */
+/* service_role HOLDS NOTHING (W-5). The platform's default privileges    */
+/* hand it every table privilege at CREATE TABLE, and it bypasses row     */
+/* level security, so left alone it could rewrite or remove any row.      */
+/* Section 4 revokes it by name. These are the first tables of the schema */
+/* where it holds nothing; 0075 and 0102 left it as they found it. The    */
+/* reminder job never runs as it, so the job's writes do not notice.      */
+/* After this file only the table's owner can update or delete a row,     */
+/* and no purge is built (W-10).                                          */
 /*                                                                        */
 /* ====================================================================== */
 /* NO SEQUENCE                                                            */
@@ -132,7 +161,10 @@
 /* Section 6 is the four CREATE POLICY statements, LAST, because each     */
 /* takes ACCESS EXCLUSIVE on the platform tables the supautils setting    */
 /* names and holds it to the COMMIT (measured for 0102). So this file is  */
-/* closed hours only, like every migration that creates a policy.         */
+/* closed hours only, like every migration that creates a policy. The     */
+/* INSERT policy of reminder_claims names appointments in a sub-select    */
+/* (W-6): parsing it takes ACCESS SHARE there, which waits for nobody     */
+/* but a session holding ACCESS EXCLUSIVE.                                */
 /* ====================================================================== */
 
 /* The two SET LOCAL lines every migration from 0100 on must start with   */
@@ -151,8 +183,8 @@ SET LOCAL idle_in_transaction_session_timeout = '15s';--> statement-breakpoint
 /* implication, so a row cannot carry a field that means nothing for it). */
 /*                                                                        */
 /*   claim    a sender took this reminder for this start. Its id is the   */
-/*            claim id. Carries the start, the taker, the due time and    */
-/*            whether it was taken early.                                 */
+/*            claim id. Carries the start, the taker, the due time,       */
+/*            whether it was taken early, and its attempt number.         */
 /*   release  the sender of a claim gave it up (it threw before handing   */
 /*            the message over). Carries claim_id, the claim it names,    */
 /*            and no start of its own. A claim is LIVE while no release   */
@@ -176,21 +208,55 @@ SET LOCAL idle_in_transaction_session_timeout = '15s';--> statement-breakpoint
 /* minutes_after_mark MAY BE NEGATIVE: the day's last pass takes          */
 /* reminders that fall due before the next morning's first pass.          */
 /*                                                                        */
-/* A RELEASE NAMES A ROW OF THE SAME TENANT AND THE SAME APPOINTMENT. The */
-/* three-column key to this table's own (tenant_id, appointment_id, id)   */
-/* makes a release that names another tenant's or another appointment's   */
-/* row impossible. It does NOT prove the row named is of kind `claim`;    */
-/* the reader asks for that. ONE RELEASE PER CLAIM, by the partial unique */
-/* index below: a second release of the same claim says nothing new.      */
+/* A RELEASE NAMES A CLAIM OF THE SAME REMINDER, AND THE TABLE PROVES IT. */
+/* The foreign key reminder_claims_claim_fkey has six columns: the        */
+/* release's tenant, appointment, offset, channel, claim_kind and         */
+/* claim_id must be the tenant, appointment, offset, channel, kind and id */
+/* of ONE existing row. claim_kind is a generated column that reads       */
+/* `claim` on a release and NULL on every other row, so the row a release */
+/* names is of kind `claim`: never a shadow row, never another release.   */
+/* A release that names a row of another tenant, another appointment,     */
+/* another offset or another channel is refused the same way. A claim and */
+/* a shadow row carry no claim_id and no claim_kind, so the key asks      */
+/* nothing of them (MATCH SIMPLE). The first draft tied tenant and        */
+/* appointment only; its reviewer asked for the rest. ONE RELEASE PER     */
+/* CLAIM, by the partial unique index below: a second release of the same */
+/* claim says nothing new.                                                */
 /*                                                                        */
-/* NO UNIQUE KEY OVER THE CLAIMS OF ONE REMINDER, ON PURPOSE. See 7b in   */
-/* the header: a second claim for the same start is how a held or failed  */
-/* reminder is tried again, and "at most one LIVE claim" cannot be an     */
-/* index while a release is a separate row.                               */
+/* NO UNIQUE KEY OVER THE CLAIMS OF ONE REMINDER, BUT ONE PER ATTEMPT.    */
+/* See 7b in the header: a second claim for the same start is how a held  */
+/* or failed reminder is tried again, and "at most one LIVE claim" cannot */
+/* be an index while a release is a separate row. What the table CAN      */
+/* refuse is two claims of the same attempt (strategy Q-5, 2026-10-14):   */
+/* each claim carries its attempt number, and the partial unique index    */
+/* reminder_claims_claim_attempt_key holds one claim per (appointment,    */
+/* offset, channel, start, attempt).                                      */
+/*                                                                        */
+/* attempt IS STORED, NOT DERIVED: a number the database computed at      */
+/* insert (a count, a sequence) would differ between two racing inserts   */
+/* only if it saw the other's row, which is exactly what it cannot do, so */
+/* it could never collide. The writer computes it under the reminder's    */
+/* lock (one more than the highest attempt of this reminder for this      */
+/* start, any taker, early or not, released or not) and stores it.        */
+/* NO DEFAULT, deliberately: a default of 1 would let a writer that never */
+/* learnt of the column write attempt 1 every time, and a default is the  */
+/* same for every kind, while a shadow row and a release must carry none. */
+/* NOT NULL ON A CLAIM AND NULL ON EVERY OTHER ROW, by the equivalence    */
+/* CHECK reminder_claims_attempt_matches_kind (the ledger's rule: an      */
+/* equivalence, so a claim that forgets it is refused, 23514, rather than */
+/* stored with a NULL the unique index would never compare). The column   */
+/* itself cannot be NOT NULL because two of the three kinds carry none.   */
+/* AT LEAST 1, by reminder_claims_attempt_positive. No upper bound: how   */
+/* many times a reminder may be tried is the sending code's rule.         */
 /*                                                                        */
 /* NO RECIPIENT AND NO PATIENT COLUMN, like the ledger: the patient is    */
 /* one join away through appointment_id, so a patient merge has nothing   */
 /* to re-point here.                                                      */
+/*                                                                        */
+/* THE APPOINTMENT IS OF THE ROW'S TENANT, BY THE INSERT POLICY (W-6),    */
+/* not by a key: appointments has no unique key over (tenant_id, id) for  */
+/* a foreign key to point at, and this file changes no existing table.    */
+/* Section 6 has the policy and what it rests on.                         */
 /*                                                                        */
 /* THE TWO FOREIGN KEYS TO tenants AND appointments ARE NOT WRITTEN HERE. */
 /* Section 5 adds them, under the names the inline form would give them.  */
@@ -209,15 +275,19 @@ CREATE TABLE public.reminder_claims (
   taker              text
     CONSTRAINT reminder_claims_taker_check CHECK (taker IN ('run', 'sweep')),
   early              boolean,
+  attempt            integer,
   claim_id           uuid,
+  claim_kind         text GENERATED ALWAYS AS (CASE WHEN kind = 'release' THEN 'claim' END) STORED,
   minutes_after_mark integer,
   saved_after_mark   boolean,
   pass_id            text
     CONSTRAINT reminder_claims_pass_id_not_blank CHECK (pass_id IS NULL OR btrim(pass_id) <> ''),
   created_at         timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT reminder_claims_tenant_appointment_id_key UNIQUE (tenant_id, appointment_id, id),
-  CONSTRAINT reminder_claims_claim_fkey FOREIGN KEY (tenant_id, appointment_id, claim_id)
-    REFERENCES public.reminder_claims (tenant_id, appointment_id, id) ON DELETE CASCADE,
+  CONSTRAINT reminder_claims_release_target_key
+    UNIQUE (tenant_id, appointment_id, offset_id, channel, kind, id),
+  CONSTRAINT reminder_claims_claim_fkey
+    FOREIGN KEY (tenant_id, appointment_id, offset_id, channel, claim_kind, claim_id)
+    REFERENCES public.reminder_claims (tenant_id, appointment_id, offset_id, channel, kind, id) ON DELETE CASCADE,
   CONSTRAINT reminder_claims_start_matches_kind CHECK ((starts_at IS NOT NULL) = (kind IN ('claim', 'shadow'))),
   CONSTRAINT reminder_claims_due_matches_kind CHECK (
     CASE kind WHEN 'release' THEN due_at IS NULL WHEN 'shadow' THEN due_at IS NOT NULL ELSE true END
@@ -227,6 +297,8 @@ CREATE TABLE public.reminder_claims (
   CONSTRAINT reminder_claims_early_matches_kind CHECK (
     CASE kind WHEN 'claim' THEN (early IS NULL) = (due_at IS NULL) ELSE early IS NULL END
   ),
+  CONSTRAINT reminder_claims_attempt_matches_kind CHECK ((attempt IS NOT NULL) = (kind = 'claim')),
+  CONSTRAINT reminder_claims_attempt_positive CHECK (attempt IS NULL OR attempt >= 1),
   CONSTRAINT reminder_claims_claim_matches_kind CHECK ((claim_id IS NOT NULL) = (kind = 'release')),
   CONSTRAINT reminder_claims_release_names_another_row CHECK (claim_id IS NULL OR claim_id <> id),
   CONSTRAINT reminder_claims_minutes_match_kind CHECK ((minutes_after_mark IS NOT NULL) = (kind = 'shadow')),
@@ -251,6 +323,19 @@ CREATE UNIQUE INDEX reminder_claims_release_claim_key
   ON public.reminder_claims (claim_id)
   WHERE claim_id IS NOT NULL;--> statement-breakpoint
 
+/* One claim per attempt of one reminder for one start (strategy Q-5,     */
+/* W-7). PARTIAL: claims only. A shadow row and a release carry no        */
+/* attempt, and W-7 keeps the shadow rows free of any duplicate refusal.  */
+/* No tenant_id: an appointment is of one tenant (W-6), so the key is     */
+/* already narrower than the tenant. starts_at is in it because a visit   */
+/* moved to another time earns a reminder of its own, from attempt 1.     */
+/* A retry after a release, or after a held outcome, takes the next       */
+/* number and is not refused; two takers of the SAME number are, by the   */
+/* table, whatever the code did before the insert.                        */
+CREATE UNIQUE INDEX reminder_claims_claim_attempt_key
+  ON public.reminder_claims (appointment_id, offset_id, channel, starts_at, attempt)
+  WHERE kind = 'claim';--> statement-breakpoint
+
 COMMENT ON TABLE public.reminder_claims IS
   'The reminder sweep''s claim store. Three kinds of row, each about one '
   'reminder (appointment, offset, channel): a claim (a sender took it for this '
@@ -270,14 +355,16 @@ COMMENT ON TABLE public.reminder_claims IS
 /*                                                                        */
 /* pass_id is the scheduler's id for the run, so the rows of one pass can */
 /* be read together across tenants. NULL when the caller has none.        */
-/* NOT UNIQUE with the tenant, ON PURPOSE: a pass the scheduler runs      */
-/* again after losing the first answer is a second fact, and refusing its */
-/* heartbeat would roll back the whole of that tenant's pass.             */
+/* NOT UNIQUE with the tenant, ON PURPOSE (W-7, while in shadow): a pass  */
+/* the scheduler runs again after losing the first answer is a second     */
+/* fact, and refusing its heartbeat would roll back the whole of that     */
+/* tenant's pass. The duplicate refusal the send mode needs is on the     */
+/* CLAIM, not here: reminder_claims_claim_attempt_key (Q-5).              */
 /*                                                                        */
 /* mode says whether the pass was the shadow or the sender. `send` is in  */
-/* the list today although nothing writes it. A JUDGMENT, NOT A RULING:   */
-/* without it, the pull request that turns the sweep on would need a      */
-/* migration sitting for one word. A word in a CHECK sends nothing.       */
+/* the list today although nothing writes it (confirmed, W-11): without   */
+/* it, the pull request that turns the sweep on would need a migration    */
+/* sitting for one word. A word in a CHECK sends nothing.                 */
 /*                                                                        */
 /* pass_at is the pass's own clock, the instant every comparison of that  */
 /* pass was made against; created_at is when the row was written.         */
@@ -323,9 +410,9 @@ COMMENT ON TABLE public.reminder_sweep_passes IS
 /* ====================================================================== */
 /* 3. ROW LEVEL SECURITY ON                                               */
 /* ====================================================================== */
-/* ENABLE, not FORCE, as on every table of this schema (0075 included).   */
-/* Until section 6 runs, each table has RLS on and no policy, which       */
-/* admits no application role: the safe side, and inside this one         */
+/* ENABLE, not FORCE (W-4), as on every table of this schema (0075        */
+/* included). Until section 6 runs, each table has RLS on and no policy,  */
+/* which admits no application role: the safe side, and inside this one   */
 /* transaction nobody else sees it.                                       */
 ALTER TABLE public.reminder_claims ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE public.reminder_sweep_passes ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -333,14 +420,22 @@ ALTER TABLE public.reminder_sweep_passes ENABLE ROW LEVEL SECURITY;--> statement
 /* ====================================================================== */
 /* 4. THE TABLE GATES                                                     */
 /* ====================================================================== */
-/* REVOKE ALL from every application role BY NAME, because the platform's */
-/* default privileges hand `authenticated` its table privileges at CREATE */
-/* TABLE, and a REVOKE from PUBLIC does not touch a role granted by name  */
-/* (0075, 0102). Then exactly SELECT and INSERT to `authenticated`: the   */
-/* job's session inserts and reads, a staff session reads. No UPDATE, no  */
-/* DELETE, no TRUNCATE, to anyone the application runs as.                */
-REVOKE ALL ON TABLE public.reminder_claims FROM PUBLIC, anon, authenticated, patient;--> statement-breakpoint
-REVOKE ALL ON TABLE public.reminder_sweep_passes FROM PUBLIC, anon, authenticated, patient;--> statement-breakpoint
+/* REVOKE ALL from every role BY NAME, because the platform's default     */
+/* privileges hand `authenticated` and `service_role` their table         */
+/* privileges at CREATE TABLE, and a REVOKE from PUBLIC does not touch a  */
+/* role granted by name (0075, 0102). service_role is in the list by      */
+/* strategy's ruling W-5: it bypasses row level security, so its table    */
+/* privileges were the one way left to rewrite a row without owning the   */
+/* table. Then exactly SELECT and INSERT to `authenticated`: the job's    */
+/* session inserts and reads, a staff session reads. No UPDATE, no        */
+/* DELETE, no TRUNCATE, to anyone but the table's owner.                  */
+/*                                                                        */
+/* A ROLE THE DEFAULTS NAME AND THIS LIST DOES NOT would keep what it was */
+/* handed. The pre-check reads the defaults and refuses the apply if they */
+/* name any other role, and the post-check pins the whole grantee list of */
+/* both tables.                                                           */
+REVOKE ALL ON TABLE public.reminder_claims FROM PUBLIC, anon, authenticated, patient, service_role;--> statement-breakpoint
+REVOKE ALL ON TABLE public.reminder_sweep_passes FROM PUBLIC, anon, authenticated, patient, service_role;--> statement-breakpoint
 
 GRANT SELECT, INSERT ON TABLE public.reminder_claims TO authenticated;--> statement-breakpoint
 GRANT SELECT, INSERT ON TABLE public.reminder_sweep_passes TO authenticated;--> statement-breakpoint
@@ -353,7 +448,7 @@ GRANT SELECT, INSERT ON TABLE public.reminder_sweep_passes TO authenticated;--> 
 /* two wait; reads do not. Both new tables are empty, so each key is      */
 /* validated at once.                                                     */
 /*                                                                        */
-/* TO THE APPOINTMENT: ON DELETE CASCADE, as reminder_dispatches (0075)   */
+/* TO THE APPOINTMENT: ON DELETE CASCADE (W-3), as the ledger (0075)      */
 /* and appointment_confirm_codes do it. A claim is bookkeeping about a    */
 /* reminder, with no reason to outlive the appointment it is about, and a */
 /* hard delete of an appointment is not refused because a reminder was    */
@@ -391,6 +486,34 @@ ALTER TABLE public.reminder_sweep_passes
 /* WHO WRITES: the reminder job's own session, as the header defines it.  */
 /* The tenant on the row must be the session's, so a job running for one  */
 /* tenant cannot write a row of another.                                  */
+/*                                                                        */
+/* THE APPOINTMENT MUST BE OF THE ROW'S TENANT (W-6), on reminder_claims. */
+/* The EXISTS below finds the appointment the row names, with the row's   */
+/* tenant. Without it the job of one tenant could write a row with its    */
+/* own tenant_id that names ANOTHER tenant's appointment, and the plain   */
+/* foreign key would answer whether an appointment id exists anywhere.    */
+/* With it, another tenant's appointment and an id that does not exist    */
+/* are refused alike, by this policy, before the foreign key is asked.    */
+/*                                                                        */
+/* WHAT IT RESTS ON. A sub-select in a policy runs as the caller, so it   */
+/* reads appointments THROUGH THE POLICIES OF appointments, as the job's  */
+/* session. That session (a tenant, the role admin, no user) reads every  */
+/* appointment of its tenant: the admin arm of appointments_rls (0086),   */
+/* with no location assignment because there is no user. The pre-check    */
+/* reads that `authenticated` holds SELECT on appointments and may        */
+/* execute every function those policies call, and the DB-gated suite     */
+/* inserts as the job. A LATER CHANGE THAT NARROWS WHAT AN ADMIN SESSION  */
+/* READS IN appointments NARROWS WHAT THE JOB CAN CLAIM, silently: the    */
+/* suite's "the job sees the appointments it must claim" arm is the       */
+/* tripwire. The a.tenant_id test repeats what those policies already     */
+/* hold, on purpose: it is the part that does not depend on them.         */
+/*                                                                        */
+/* THE COLUMNS OF THE NEW ROW ARE WRITTEN WITH THE TABLE'S NAME. Inside   */
+/* the sub-select a bare tenant_id would be the appointment's own.        */
+/*                                                                        */
+/* WHAT IT COSTS: one primary-key lookup in appointments for each row     */
+/* inserted (the apply document has the measured plan). The heartbeat     */
+/* names no appointment, so its policy is unchanged.                      */
 CREATE POLICY reminder_claims_staff_select ON public.reminder_claims
   AS PERMISSIVE
   FOR SELECT
@@ -408,6 +531,12 @@ CREATE POLICY reminder_claims_job_insert ON public.reminder_claims
     tenant_id = (SELECT public.jwt_tenant_id())
     AND (SELECT public.jwt_role()) IN ('owner', 'admin')
     AND (SELECT auth.uid()) IS NULL
+    AND EXISTS (
+      SELECT 1
+        FROM public.appointments a
+       WHERE a.id = reminder_claims.appointment_id
+         AND a.tenant_id = reminder_claims.tenant_id
+    )
   );--> statement-breakpoint
 
 CREATE POLICY reminder_sweep_passes_staff_select ON public.reminder_sweep_passes
@@ -436,10 +565,10 @@ CREATE POLICY reminder_sweep_passes_job_insert ON public.reminder_sweep_passes
 /* creates no function and no sequence. It moves no claim, release,       */
 /* shadow row or heartbeat out of audit_log: none has been written in     */
 /* production, because the pull requests that would write them were never */
-/* merged. It builds no late rule, no purge and no retention: how long    */
-/* these rows are kept, and who may remove them, is carded and not        */
-/* decided by whoever happened to be authoring the table (0075's ruling 3 */
-/* reasoning). It gives no application role an UPDATE or a DELETE.        */
+/* merged. It builds no late rule and no purge (W-10): every row is kept  */
+/* until the ledger's retention is ruled, a purge of old shadow rows and  */
+/* heartbeats is carded, and a claim is never purged by age alone. It     */
+/* gives no role but the table's owner an UPDATE or a DELETE.             */
 /* The one DELETE that reaches reminder_claims is an existing one: an     */
 /* appointment's hard delete cascades to that appointment's rows.         */
 /* ====================================================================== */

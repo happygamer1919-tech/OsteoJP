@@ -806,3 +806,112 @@ export function renderNoShowSms(locale: Locale, ctx: NoShowContext): string {
   assertSmsCompliant(message);
   return message;
 }
+
+/* ================================================================== */
+/* Satisfaction survey: 24 h after a concluded visit, or sent by staff */
+/* ================================================================== */
+//
+// SAT-01. The pt-PT texts are texts 1, 2 and 3 of docs/design/SAT-01-copy-pt.md,
+// character for character; the copy file records their approval (S9a). The
+// English is the copy file's own English section (S10). Blank lines between
+// the email's paragraphs, no dash before the signature, as the copy has them.
+//
+// ONE message per send: the email, or the SMS when there is no permitted
+// email. Never both. Which one, and whether any goes at all, is the sender's
+// to decide (lib/reminders/survey-mode.ts is the switch); nothing here sends.
+//
+// The link is handed in already built. lib/reminders/survey-body.ts builds it
+// from the deployed origin and answers whether the SMS fits one segment.
+
+export type SurveyEmailContext = {
+  patientFirstName: string;
+  /** Localised long date of the visit, e.g. "23 de maio de 2026". */
+  appointmentDateLong: string;
+  /** The whole link, scheme included. */
+  surveyLink: string;
+  /** Last day the link works, long form: the send date plus 14 days. */
+  surveyExpiryDateLong: string;
+  clinicPhone: string;
+};
+
+/** The SMS prints the date and the link, and nothing else. */
+export type SurveySmsContext = {
+  /** Terse dd/mm, as every SMS here prints the date. */
+  appointmentDateShort: string;
+  /** `<host>/s/<code>`, bare host, as the confirm line prints its own. */
+  surveyLinkBare: string;
+};
+
+export const SURVEY_EMAIL: Record<Locale, EmailTemplate> = {
+  pt: {
+    subject: "Avaliação da sua consulta de {{appointment_date}}",
+    body: `Olá {{patient_first_name}},
+
+Pedimos a sua avaliação da consulta de {{appointment_date}}. A avaliação tem três perguntas e a resposta é facultativa.
+
+Responder: {{survey_link}}
+
+A ligação é pessoal, só pode ser usada uma vez e é válida até {{survey_expiry_date}}.
+
+Se não pretender receber estas avaliações, indique-o na mesma ligação ou contacte a clínica: {{clinic_phone}}
+
+OsteoJP`,
+  },
+  en: {
+    subject: "Satisfaction survey for your appointment on {{appointment_date}}",
+    body: `Dear {{patient_first_name}},
+
+We would like your rating of your appointment on {{appointment_date}}. The survey has three questions and answering is optional.
+
+Answer: {{survey_link}}
+
+The link is personal, can be used only once and is valid until {{survey_expiry_date}}.
+
+If you do not wish to receive these surveys, say so using the same link or contact the clinic: {{clinic_phone}}
+
+OsteoJP`,
+  },
+};
+
+// PT: no accents (GSM-7). "avaliacao" = avaliação, "nao" = não, "ligacao" =
+// ligação. `{data}` is the copy file's own placeholder; `{ligacao}` stands
+// where the copy writes "[endereço]/s/AB12CD34". Three lines, as approved.
+//
+// The fixed text is 101 characters with its two line breaks. With the date (5)
+// and "/s/" plus the code (11) that leaves 43 for the host in pt and 47 in en.
+// survey-body.test.ts measures both, at the limit and one past it.
+export const SURVEY_SMS: Record<Locale, string> = {
+  pt: "OsteoJP: avaliacao da consulta de {data}\nResponder: {ligacao}\nPara nao receber mais avaliacoes, use a mesma ligacao.",
+  en: "OsteoJP: survey about your appointment on {data}\nAnswer: {ligacao}\nTo stop receiving surveys, use the same link.",
+};
+
+export function renderSurveyEmail(locale: Locale, ctx: SurveyEmailContext): RenderedEmail {
+  const tpl = SURVEY_EMAIL[locale];
+  const tokens = {
+    patient_first_name: ctx.patientFirstName,
+    appointment_date: ctx.appointmentDateLong,
+    survey_link: ctx.surveyLink,
+    survey_expiry_date: ctx.surveyExpiryDateLong,
+    clinic_phone: ctx.clinicPhone,
+  };
+  const subject = fill(tpl.subject, tokens);
+  const body = fill(tpl.body, tokens);
+  assertNoUnfilledPlaceholders("email/survey", subject);
+  assertNoUnfilledPlaceholders("email/survey", body);
+  return { subject, body };
+}
+
+/**
+ * The survey SMS, assembled WITHOUT the carrier verdict, as `assembleSms` is.
+ * The verdict is `smsCompliance`, and survey-body.ts returns it as a value: its
+ * host comes from configuration, so a body that does not fit is an operating
+ * condition and not a bug. An unfilled placeholder is a bug and still throws.
+ */
+export function assembleSurveySms(locale: Locale, ctx: SurveySmsContext): string {
+  const message = fill(SURVEY_SMS[locale], {
+    data: ctx.appointmentDateShort,
+    ligacao: ctx.surveyLinkBare,
+  });
+  assertNoUnfilledPlaceholders("sms/survey", message);
+  return message;
+}

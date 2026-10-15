@@ -425,8 +425,9 @@ Gaps that SAT-01 inherits and does not fix in v1:
 5. The SMS line is `Responder: <host>/s/<8 characters>`, bare host, the host
    read from the same variable the confirm link uses (`confirm-code.ts:68`,
    `REMINDERS_RESCHEDULE_BASE_URL`). The email carries the full link. The
-   system refuses an SMS that does not fit one message (S6): the render throws
-   and nothing is issued.
+   system refuses an SMS that does not fit one message (S6): the render
+   returns a refusal (a value, not a throw, `survey-body.ts`), the caller stops
+   on it, and nothing is issued.
 
 ### 5.2 The page `/s/<code>`
 
@@ -506,8 +507,8 @@ depends on the sender (`reply-capability.ts`), which SAT-01 does not change.
   for email; for SMS, copy text 64 says it goes by SMS and text 65 that SMS has
   a cost. The patient's address is not shown in the dialog.
 * **The SMS that does not fit one message is still refused (S6)**, in the same
-  order as 5.1 step 4: the render throws, no send is issued, and the dialog
-  shows copy text 69.
+  order as 5.1 step 4: the render returns a refusal, no send is issued, and the
+  dialog shows copy text 69.
 * **The flag governs it too:** while the SAT live-send flag is off, a manual
   send reaches no patient, except the canary of 7.5.
 * **The server works out the button's state, and the door decides.** The
@@ -1001,8 +1002,13 @@ Taken out of this list 2026-10-02:
 ### 9.2 The send path
 
 * The pt SMS renders as one GSM-7 segment of at most 160 characters for the
-  longest date and a host of 32 characters, and throws beyond 160; the copy has
-  no accents and no dash characters. The en SMS likewise.
+  longest date and a host of 43 characters, and is refused beyond 160; the copy
+  has no accents and no dash characters. The en SMS likewise, with a host of 47.
+  ~~A host of 32 characters.~~ *Corrected 2026-10-13, measured in
+  `apps/web/lib/reminders/survey-body.test.ts`: 32 was the room left by the
+  wording before S1 ("questionario", 115 fixed characters). The approved text
+  has 104 fixed characters with `/s/`, and the copy file's 43 is right. The
+  refusal is a value the sender records, not a throw.*
 * Email: no unfilled placeholder; plain text.
 * The registry holds `survey.*` with `approvedBy` and `approvedAt` set (S9a,
   S10) and no longer holds `follow_up.*`; a test fails if a survey entry is

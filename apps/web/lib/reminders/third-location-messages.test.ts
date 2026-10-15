@@ -153,7 +153,14 @@ import {
 } from "./reminder-copy";
 import { FEE_NOTICE_TEMPLATE_ID } from "./fee-notice";
 import { smsPlaceName } from "./sms-body";
-import { FOLLOW_UP_SMS, NO_SHOW_SMS, SMS_SEGMENT_LIMIT } from "./templates";
+import {
+  FOLLOW_UP_SMS,
+  NO_SHOW_SMS,
+  SMS_SEGMENT_LIMIT,
+  SURVEY_EMAIL,
+  SURVEY_SMS,
+  renderSurveyEmail,
+} from "./templates";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const APPT = "22222222-2222-4222-8222-222222222222";
@@ -918,6 +925,39 @@ describe("the reply acknowledgements name no clinic at all", () => {
   });
 });
 
+describe("the satisfaction survey names no clinic, and nothing sends it yet (SAT-01)", () => {
+  // The two survey bodies are registered and no dispatch sends them, so there
+  // is no message to collect for a third location. What can be proved today is
+  // proved here, on the texts. WHAT IS OWED: the email prints one phone, the
+  // one its sender hands it. When the pull request that adds the send lands,
+  // it sends the survey for this file's appointment, shows that phone is the
+  // location's and not the tenant's, and takes the two ids out of the
+  // `notSentHere` list below.
+  it.each(["pt", "en"] as const)("%s: neither text names a clinic or a place", (locale) => {
+    for (const text of [SURVEY_EMAIL[locale].subject, SURVEY_EMAIL[locale].body, SURVEY_SMS[locale]]) {
+      expectNoOtherClinic(text, `survey (${locale})`);
+      expect(text).not.toContain("Montemor");
+      expect(text).not.toContain("clinic_location");
+    }
+  });
+
+  it("the SMS prints no phone, and the email prints the one it is handed, once", () => {
+    expect(SURVEY_SMS.pt).not.toMatch(/phone|telefone/);
+    expect(SURVEY_EMAIL.pt.body.split("{{clinic_phone}}")).toHaveLength(2);
+
+    const { subject, body } = renderSurveyEmail("pt", {
+      patientFirstName: "Madalena",
+      appointmentDateLong: "14 de maio de 2026",
+      surveyLink: "https://app.clinica-teste.invalid/s/Ab3-Xy_9",
+      surveyExpiryDateLong: "29 de maio de 2026",
+      clinicPhone: PHONE,
+    });
+    expect(body.split(PHONE)).toHaveLength(2);
+    expectNoOtherClinic(subject, "survey email subject");
+    expectNoOtherClinic(body, "survey email body");
+  });
+});
+
 describe("every registered appointment message is one this file sent", () => {
   it("the registry holds no patient message this proof did not look at", async () => {
     // Send them all, once, and compare with the registry: a template added
@@ -959,6 +999,11 @@ describe("every registered appointment message is one this file sent", () => {
       FEE_NOTICE_TEMPLATE_ID,
       // fixed sentences, asserted above.
       ...Object.values(REPLY_ACK_TEMPLATE_IDS),
+      // SAT-01: registered, and no dispatch sends them yet. Their texts are
+      // asserted above; the send's own proof is owed by the pull request that
+      // adds the send, which removes these two lines.
+      "survey.email",
+      "survey.sms",
     ]);
 
     const registered = REMINDER_TEMPLATES.map((t) => t.id);

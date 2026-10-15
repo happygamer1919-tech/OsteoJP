@@ -172,6 +172,9 @@ export default defineConfig({
         // no scheduled cross-browser job - see the header. The exclusion stays,
         // because it is about what a MANUAL firefox/webkit run would do.)
         "**/confirm-code.spec.ts",
+        // SAT-01: survey-page WRITES concluded appointments, survey sends and
+        // an answer into that same shared database. Chromium-only, as above.
+        "**/survey-page.spec.ts",
       ],
     },
     {
@@ -209,6 +212,9 @@ export default defineConfig({
         // no scheduled cross-browser job - see the header. The exclusion stays,
         // because it is about what a MANUAL firefox/webkit run would do.)
         "**/confirm-code.spec.ts",
+        // SAT-01: survey-page WRITES concluded appointments, survey sends and
+        // an answer into that same shared database. Chromium-only, as above.
+        "**/survey-page.spec.ts",
       ],
     },
   ],

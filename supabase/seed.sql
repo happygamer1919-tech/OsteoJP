@@ -76,3 +76,33 @@ grant select, insert, update, delete
 grant usage, select
   on all sequences in schema public
   to service_role;
+
+/* ================================================================== */
+/* The reminder sweep's two tables: service_role holds NOTHING        */
+/* ================================================================== */
+--
+-- WHY THIS EXISTS (added 2026-10-13, with the reminder sweep's table draft)
+--   The migration that creates public.reminder_claims and
+--   public.reminder_sweep_passes revokes service_role BY NAME on both
+--   (strategy, 2026-10-13). They are the first tables in the schema where
+--   service_role holds nothing. The blanket grant above runs AFTER every
+--   migration on each `supabase db reset`, so on a local, lane or CI database
+--   it would hand service_role its SELECT, INSERT, UPDATE and DELETE back, and
+--   the DB-gated suite that proves the revoke would read a state production
+--   does not have. Production runs no seed: there the migration's own REVOKE
+--   is the last word, and the post-check pins the whole grantee list.
+--
+--   GUARDED, so the file is valid on both sides of the promotion: on a
+--   database without the tables this block does nothing. A table added to the
+--   list here must be one whose own migration revokes service_role.
+do $seed_revoke$
+declare
+  t text;
+begin
+  foreach t in array array['public.reminder_claims', 'public.reminder_sweep_passes'] loop
+    if to_regclass(t) is not null then
+      execute format('revoke all on table %s from service_role', t);
+    end if;
+  end loop;
+end
+$seed_revoke$;

@@ -1,6 +1,7 @@
 /**
  * reminder-claims-rls.db.test.ts: the reminder sweep's two tables,
- * reminder_claims and reminder_sweep_passes (pending, held for a number).
+ * reminder_claims and reminder_sweep_passes (pending; strategy ruled the
+ * number 0106 on 2026-10-13).
  *
  * The migration is packages/db/migrations-pending/NEXT-AFTER-0105_reminder_
  * claims.sql until it is promoted. So this file ASKS THE DATABASE WHICH SIDE IT
@@ -28,6 +29,16 @@
  *      grants AND, separately, by the policies;
  *   7b nothing in the table makes "held" final: a second claim for the same
  *      reminder and the same start is accepted.
+ * AND STRATEGY'S RULINGS OF 2026-10-13 ON THE FIRST DRAFT:
+ *   W-1 the writer is the userless `authenticated` session: a logged-in owner,
+ *       admin, reception and therapist are EACH refused an insert on BOTH
+ *       tables;
+ *   W-5 `service_role` is revoked by name on both tables: it is refused every
+ *       statement, the reminder job's write path still succeeds, and PUBLIC
+ *       holds nothing;
+ *   W-6 the claims INSERT policy proves the appointment is of the row's
+ *       tenant: the job's own appointment is accepted, another tenant's is
+ *       refused, and the job's session sees the appointments it must claim.
  *
  * The owner connection seeds, cleans and tests the CHECK constraints (it
  * bypasses RLS, which is what makes those arms a test of the constraints and
@@ -36,9 +47,12 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { sql as drizzleSql } from "drizzle-orm";
 import type { Sql, TransactionSql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { withTenantContext } from "../index";
+import { reminderClaims, reminderSweepPasses } from "../src/schema";
 import { type AppRole, Rollback, asRole, claimsFor, connect, live, patientClaims } from "./rls-harness";
 
 /** The statement only this migration holds. */
@@ -106,8 +120,12 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
   const appointment = randomUUID();
   /** A second appointment of the same tenant: the cross-appointment release, and the delete. */
   const appointment2 = randomUUID();
+  /** A CANCELLED appointment of the same tenant: a claim's release may come after the visit was cancelled. */
+  const cancelledAppointment = randomUUID();
   /** Another tenant's appointment. */
   const otherAppointment = randomUUID();
+  /** An appointment of this tenant only the Q-5 arms claim, numbering their attempts from 1. */
+  const attemptAppointment = randomUUID();
 
   /** Seeded on the owner connection, so they persist for the reading arms. */
   const seededClaim = randomUUID();
@@ -116,6 +134,14 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
 
   const START = "2027-02-01T10:00:00Z";
   const DUE_24H = "2027-01-31T10:00:00Z";
+
+  /**
+   * A fresh attempt number for every claim an arm does not number itself, so
+   * the one-claim-per-attempt index (Q-5) answers only in the arms that ask it.
+   * The arms of "Q-5" number their claims by hand, from 1.
+   */
+  let nextAttempt = 1000;
+  const freshAttempt = (): number => nextAttempt++;
 
   /** A claim row, whole. */
   const claimRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -128,6 +154,7 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
     due_at: DUE_24H,
     taker: "run",
     early: false,
+    attempt: freshAttempt(),
     ...over,
   });
   /** A release row naming `claimId`, whole. */
@@ -231,6 +258,8 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
     await sql`insert into appointments (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status) values
                 (${appointment}, ${tenant}, ${patient}, ${therapist}, ${location}, ${START}, '2027-02-01T10:45:00Z', 'scheduled'),
                 (${appointment2}, ${tenant}, ${patient}, ${therapist}, ${location}, '2027-02-02T10:00:00Z', '2027-02-02T10:45:00Z', 'scheduled'),
+                (${cancelledAppointment}, ${tenant}, ${patient}, ${therapist}, ${location}, '2027-02-03T10:00:00Z', '2027-02-03T10:45:00Z', 'cancelled'),
+                (${attemptAppointment}, ${tenant}, ${patient}, ${therapist}, ${location}, '2027-02-04T10:00:00Z', '2027-02-04T10:45:00Z', 'scheduled'),
                 (${otherAppointment}, ${otherTenant}, ${otherPatient}, ${otherTherapist}, ${otherLocation}, ${START}, '2027-02-01T10:45:00Z', 'scheduled')`;
     // One claim, one shadow row and one heartbeat per tenant, for the reading arms.
     await sql`insert into reminder_claims ${sql(claimRow({ id: seededClaim }))}`;
@@ -330,7 +359,213 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
           await attempt("authenticated", claims, (tx) => tx`insert into reminder_claims ${tx(claimRow())}`),
           role,
         ).toMatch(/row-level security/);
+        expect(
+          await attempt("authenticated", claims, (tx) => tx`insert into reminder_sweep_passes ${tx(passRow())}`),
+          role,
+        ).toMatch(/row-level security/);
       }
+    });
+  });
+
+  describe("W-6: a claim's appointment is of the row's tenant, proven as the job", () => {
+    it("the job's session SEES the appointments it must claim: every one of its tenant, whatever its status, and none of another's", async () => {
+      // The INSERT policy's sub-select reads appointments as the caller, through
+      // the appointments policies. This arm is the tripwire: if a later change
+      // narrows what an admin session with no user reads there, it goes red
+      // before the job's claims start being refused in production.
+      const ids = [appointment, appointment2, cancelledAppointment, otherAppointment];
+      const mine = await asRole(sql, "authenticated", jobClaims(tenant), async (tx) => {
+        const rows = (await tx`select id from appointments where id in ${tx(ids)}`) as { id: string }[];
+        return rows.map((r) => r.id).sort();
+      });
+      expect(mine).toEqual([appointment, appointment2, cancelledAppointment].sort());
+      const theirs = await asRole(sql, "authenticated", jobClaims(otherTenant), async (tx) => {
+        const rows = (await tx`select id from appointments where id in ${tx(ids)}`) as { id: string }[];
+        return rows.map((r) => r.id);
+      });
+      expect(theirs).toEqual([otherAppointment]);
+    });
+
+    it("ACCEPTS a claim, a release and a shadow row for the job's own tenant's appointment, a cancelled one included", async () => {
+      const out = await attempt("authenticated", jobClaims(tenant), async (tx) => {
+        const cancelled = { appointment_id: cancelledAppointment, starts_at: "2027-02-03T10:00:00Z", due_at: "2027-02-02T10:00:00Z" };
+        const made = (await tx`insert into reminder_claims ${tx(claimRow(cancelled))} returning id`) as { id: string }[];
+        await tx`insert into reminder_claims ${tx(releaseRow(made[0]!.id, { appointment_id: cancelledAppointment }))}`;
+        await tx`insert into reminder_claims ${tx(shadowRow(cancelled))}`;
+        await tx`insert into reminder_claims ${tx(claimRow())}`;
+      });
+      expect(out).toBeNull();
+    });
+
+    it("is REFUSED a row with its OWN tenant that names ANOTHER tenant's appointment, of every kind", async () => {
+      // The first draft accepted this: the tenant on the row was the session's
+      // and the appointment existed, and nothing tied the two.
+      const theirs = { appointment_id: otherAppointment };
+      for (const [kind, row] of [
+        ["claim", claimRow(theirs)],
+        ["release", releaseRow(otherTenantClaim, theirs)],
+        ["shadow", shadowRow(theirs)],
+      ] as const) {
+        expect(
+          await attempt("authenticated", jobClaims(tenant), (tx) => tx`insert into reminder_claims ${tx(row)}`),
+          kind,
+        ).toMatch(/row-level security/);
+      }
+      // The control: the same three rows, with the appointment the job's own, are accepted in the arm above.
+    });
+
+    it("is REFUSED an appointment that does not exist by the SAME error: the insert no longer says whether an id exists", async () => {
+      const nowhere = await attempt("authenticated", jobClaims(tenant), (tx) =>
+        tx`insert into reminder_claims ${tx(claimRow({ appointment_id: randomUUID() }))}`,
+      );
+      const elsewhere = await attempt("authenticated", jobClaims(tenant), (tx) =>
+        tx`insert into reminder_claims ${tx(claimRow({ appointment_id: otherAppointment }))}`,
+      );
+      expect(nowhere).toMatch(/row-level security/);
+      expect(nowhere).toBe(elsewhere);
+    });
+
+    it("the other tenant's job claims its own appointment and is REFUSED this tenant's", async () => {
+      const theirRow = (appointmentId: string) => claimRow({ tenant_id: otherTenant, appointment_id: appointmentId });
+      expect(
+        await attempt("authenticated", jobClaims(otherTenant), (tx) =>
+          tx`insert into reminder_claims ${tx(theirRow(otherAppointment))}`,
+        ),
+      ).toBeNull();
+      expect(
+        await attempt("authenticated", jobClaims(otherTenant), (tx) =>
+          tx`insert into reminder_claims ${tx(theirRow(appointment))}`,
+        ),
+      ).toMatch(/row-level security/);
+    });
+  });
+
+  describe("W-5: service_role holds nothing, and the reminder job's write path does not notice", () => {
+    const STATEMENTS = [
+      "select 1 from reminder_claims limit 1",
+      `update reminder_claims set pass_id = 'x' where id = '${seededClaim}'`,
+      `delete from reminder_claims where id = '${seededClaim}'`,
+      "truncate reminder_claims",
+      "select 1 from reminder_sweep_passes limit 1",
+      "update reminder_sweep_passes set pass_id = 'x'",
+      "delete from reminder_sweep_passes",
+      "truncate reminder_sweep_passes",
+    ];
+
+    it("service_role is REFUSED every read, insert, update, delete and truncate on both tables", async () => {
+      // service_role bypasses row level security, so the table privilege is the
+      // only gate it meets. The control is the ledger, which it still reads.
+      const refused = async (fn: (tx: TransactionSql) => Promise<unknown>): Promise<string | null> => {
+        try {
+          await asRole(sql, "service_role", null, fn);
+          return null;
+        } catch (e) {
+          return String((e as { message?: string }).message ?? e);
+        }
+      };
+      for (const statement of STATEMENTS) {
+        // `statement` is a literal of this file and the id is a uuid this file made.
+        expect(await refused((tx) => tx.unsafe(statement)), statement).toMatch(/permission denied/);
+      }
+      expect(await refused((tx) => tx`insert into reminder_claims ${tx(claimRow())}`)).toMatch(/permission denied/);
+      expect(await refused((tx) => tx`insert into reminder_sweep_passes ${tx(passRow())}`)).toMatch(
+        /permission denied/,
+      );
+      expect(await refused((tx) => tx`select 1 from reminder_dispatches limit 1`)).toBeNull();
+    });
+
+    it("THE JOB'S WRITE PATH STILL SUCCEEDS: the real tenant context and the real Drizzle tables, with service_role holding nothing", async () => {
+      // withTenantContext is the seam withReminderTenantContext calls with
+      // exactly these claims (apps/web/lib/reminders/context.ts). The rows are
+      // written through the Drizzle tables the application will use, which
+      // also shows that the generated column claim_kind is never sent.
+      class Undo {
+        constructor(readonly value: Record<string, unknown>) {}
+      }
+      const out = await (async () => {
+        try {
+          await withTenantContext({ tenant_id: tenant, user_role: "admin" }, async (tx) => {
+            const [held] = (await tx.execute(
+              drizzleSql`select has_table_privilege('service_role', 'public.reminder_claims', 'SELECT')
+                      or has_table_privilege('service_role', 'public.reminder_claims', 'INSERT')
+                      or has_table_privilege('service_role', 'public.reminder_sweep_passes', 'SELECT')
+                      or has_table_privilege('service_role', 'public.reminder_sweep_passes', 'INSERT') as held`,
+            )) as unknown as { held: boolean }[];
+            const [claim] = await tx
+              .insert(reminderClaims)
+              .values({
+                tenantId: tenant,
+                appointmentId: appointment,
+                kind: "claim",
+                offsetId: "24h",
+                channel: "sms",
+                startsAt: new Date(START),
+                dueAt: new Date(DUE_24H),
+                taker: "run",
+                early: false,
+                attempt: freshAttempt(),
+              })
+              .returning({ id: reminderClaims.id, claimKind: reminderClaims.claimKind });
+            const [release] = await tx
+              .insert(reminderClaims)
+              .values({
+                tenantId: tenant,
+                appointmentId: appointment,
+                kind: "release",
+                offsetId: "24h",
+                channel: "sms",
+                claimId: claim!.id,
+              })
+              .returning({ claimKind: reminderClaims.claimKind });
+            const [shadow] = await tx
+              .insert(reminderClaims)
+              .values({
+                tenantId: tenant,
+                appointmentId: appointment,
+                kind: "shadow",
+                offsetId: "24h",
+                channel: "sms",
+                startsAt: new Date(START),
+                dueAt: new Date(DUE_24H),
+                minutesAfterMark: 7,
+                savedAfterMark: false,
+                passId: "pass-test-seam",
+              })
+              .returning({ kind: reminderClaims.kind });
+            const [pass] = await tx
+              .insert(reminderSweepPasses)
+              .values({
+                tenantId: tenant,
+                passId: "pass-test-seam",
+                mode: "shadow",
+                passAt: new Date("2027-01-31T10:15:00Z"),
+                dueCount: 1,
+                recordedCount: 1,
+                overCeiling: false,
+                excludedCount: 0,
+              })
+              .returning({ mode: reminderSweepPasses.mode });
+            throw new Undo({
+              serviceRoleHoldsAnything: held!.held,
+              claimKindOnClaim: claim!.claimKind,
+              claimKindOnRelease: release!.claimKind,
+              shadow: shadow!.kind,
+              pass: pass!.mode,
+            });
+          });
+          throw new Error("unreachable: transaction committed without rollback");
+        } catch (err) {
+          if (err instanceof Undo) return err.value;
+          throw err;
+        }
+      })();
+      expect(out).toEqual({
+        serviceRoleHoldsAnything: false,
+        claimKindOnClaim: null,
+        claimKindOnRelease: "claim",
+        shadow: "shadow",
+        pass: "shadow",
+      });
     });
   });
 
@@ -488,9 +723,20 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
   });
 
   describe("a row cannot carry a field that means nothing for its kind", () => {
-    it("ACCEPTS a second claim for the same reminder and the same start: nothing here makes 'held' final (7b)", async () => {
-      expect(await ownerInsert("reminder_claims", claimRow())).toBeNull();
-      expect(await ownerInsert("reminder_claims", claimRow({ taker: "sweep" }))).toBeNull();
+    it("ACCEPTS a second claim for the same reminder and the same start, with the next attempt: nothing here makes 'held' final (7b)", async () => {
+      const first = freshAttempt();
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: first }))).toBeNull();
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: first + 1, taker: "sweep" }))).toBeNull();
+    });
+
+    it("REFUSES a claim with no attempt number or one below 1, and an attempt on a release or a shadow row (Q-5)", async () => {
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: null }))).toMatch(/attempt_matches_kind/);
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: 0 }))).toMatch(/attempt_positive/);
+      expect(await ownerInsert("reminder_claims", claimRow({ attempt: -1 }))).toMatch(/attempt_positive/);
+      expect(await ownerInsert("reminder_claims", releaseRow(seededClaim, { attempt: 1 }))).toMatch(
+        /attempt_matches_kind/,
+      );
+      expect(await ownerInsert("reminder_claims", shadowRow({ attempt: 1 }))).toMatch(/attempt_matches_kind/);
     });
 
     it("ACCEPTS a claim for an offset with no known due time: no due_at and no early, together", async () => {
@@ -547,6 +793,38 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
       expect(await ownerInsert("reminder_claims", releaseRow(randomUUID()))).toMatch(/reminder_claims_claim_fkey/);
     });
 
+    it("REFUSES a release whose offset or channel is not its claim's, and ACCEPTS the one that matches", async () => {
+      // seededClaim is 24h by sms, of `appointment`. Each refused row differs from it in ONE field.
+      expect(await ownerInsert("reminder_claims", releaseRow(seededClaim, { offset_id: "48h" }))).toMatch(
+        /reminder_claims_claim_fkey/,
+      );
+      expect(await ownerInsert("reminder_claims", releaseRow(seededClaim, { channel: "email" }))).toMatch(
+        /reminder_claims_claim_fkey/,
+      );
+      // The control, on a claim of its own so that one-release-per-claim is not what answers.
+      const claim = randomUUID();
+      expect(await ownerInsert("reminder_claims", claimRow({ id: claim, offset_id: "48h", channel: "email" }))).toBeNull();
+      expect(await ownerInsert("reminder_claims", releaseRow(claim, { offset_id: "48h", channel: "email" }))).toBeNull();
+    });
+
+    it("REFUSES a release that names a SHADOW row or ANOTHER RELEASE: the row named is of kind claim", async () => {
+      const shadow = randomUUID();
+      const claim = randomUUID();
+      const release = randomUUID();
+      expect(await ownerInsert("reminder_claims", shadowRow({ id: shadow }))).toBeNull();
+      expect(await ownerInsert("reminder_claims", claimRow({ id: claim }))).toBeNull();
+      expect(await ownerInsert("reminder_claims", releaseRow(claim, { id: release }))).toBeNull();
+      // Same tenant, appointment, offset and channel as the row named: only the kind is wrong.
+      expect(await ownerInsert("reminder_claims", releaseRow(shadow))).toMatch(/reminder_claims_claim_fkey/);
+      expect(await ownerInsert("reminder_claims", releaseRow(release))).toMatch(/reminder_claims_claim_fkey/);
+    });
+
+    it("REFUSES a value written into claim_kind: the database alone derives it", async () => {
+      expect(await ownerInsert("reminder_claims", claimRow({ claim_kind: "claim" }))).toMatch(
+        /non-DEFAULT value into column "claim_kind"/,
+      );
+    });
+
     it("ACCEPTS one release per claim and REFUSES a second", async () => {
       const claim = randomUUID();
       expect(await ownerInsert("reminder_claims", claimRow({ id: claim }))).toBeNull();
@@ -575,7 +853,7 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
       expect(
         await ownerInsert(
           "reminder_claims",
-          claimRow({ kind: "sent", starts_at: null, due_at: null, taker: null, early: null }),
+          claimRow({ kind: "sent", starts_at: null, due_at: null, taker: null, early: null, attempt: null }),
         ),
       ).toMatch(/kind_check/);
       expect(await ownerInsert("reminder_claims", claimRow({ channel: "whatsapp" }))).toMatch(/channel_check/);
@@ -678,12 +956,12 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
   });
 
   describe("the catalogue, as the cross-check", () => {
-    it("authenticated holds exactly SELECT and INSERT; anon, patient and PUBLIC hold nothing", async () => {
+    it("authenticated holds exactly SELECT and INSERT; anon, patient, service_role and PUBLIC hold nothing", async () => {
       const rows = (await sql`
         select c.relname::text as rel, r.rolname::text as role,
                coalesce(string_agg(v.verb, ',' order by v.verb) filter (where has_table_privilege(r.oid, c.oid, v.verb)), '') as held
           from pg_class c
-          cross join (select oid, rolname from pg_roles where rolname in ('authenticated', 'anon', 'patient')) r
+          cross join (select oid, rolname from pg_roles where rolname in ('authenticated', 'anon', 'patient', 'service_role')) r
           cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER'), ('MAINTAIN')) v(verb)
          where c.oid in ('public.reminder_claims'::regclass, 'public.reminder_sweep_passes'::regclass)
          group by 1, 2 order by 1, 2`) as { rel: string; role: string; held: string }[];
@@ -691,9 +969,11 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
         "reminder_claims anon []",
         "reminder_claims authenticated [INSERT,SELECT]",
         "reminder_claims patient []",
+        "reminder_claims service_role []",
         "reminder_sweep_passes anon []",
         "reminder_sweep_passes authenticated [INSERT,SELECT]",
         "reminder_sweep_passes patient []",
+        "reminder_sweep_passes service_role []",
       ]);
       const [pub] = (await sql`
         select count(*)::int as n
@@ -701,6 +981,26 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
          where c.oid in ('public.reminder_claims'::regclass, 'public.reminder_sweep_passes'::regclass)
            and a.grantee = 0`) as { n: number }[];
       expect(pub!.n).toBe(0);
+    });
+
+    it("THE WHOLE GRANTEE LIST of each table is the owner and authenticated, and nobody else", async () => {
+      // Not "these named roles hold nothing" but "nobody we did not name holds
+      // anything": every entry of the ACL, PUBLIC included.
+      const rows = (await sql`
+        select c.relname::text as rel,
+               case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee)::text end as grantee,
+               string_agg(a.privilege_type, ',' order by a.privilege_type) as held
+          from pg_class c
+          cross join lateral aclexplode(coalesce(c.relacl, acldefault('r'::"char", c.relowner))) a
+         where c.oid in ('public.reminder_claims'::regclass, 'public.reminder_sweep_passes'::regclass)
+         group by 1, 2 order by 1, 2`) as { rel: string; grantee: string; held: string }[];
+      const ALL = "DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE";
+      expect(rows.map((r) => `${r.rel} ${r.grantee} [${r.held}]`)).toEqual([
+        "reminder_claims authenticated [INSERT,SELECT]",
+        `reminder_claims postgres [${ALL}]`,
+        "reminder_sweep_passes authenticated [INSERT,SELECT]",
+        `reminder_sweep_passes postgres [${ALL}]`,
+      ]);
     });
 
     it("RLS is on, and each table has one SELECT and one INSERT policy and no other", async () => {
@@ -736,7 +1036,149 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
            and attnum > 0 and not attisdropped`) as { name: string }[];
       expect(seq!.n).toBe(0);
       expect(trg!.n).toBe(0);
+      expect(cols.length).toBe(28);
       expect(cols.map((c) => c.name).filter((n) => /patient|phone|email|recipient|name/.test(n))).toEqual([]);
+    });
+  });
+
+  describe("Q-5: the TABLE refuses a second claim of the same attempt, as the job, and nothing else", () => {
+    /** Each arm uses its own start, so its attempt numbers begin at 1 and meet no other arm's. */
+    const startOf = (day: number): { starts_at: string; due_at: string } => ({
+      starts_at: `2027-03-${String(day).padStart(2, "0")}T10:00:00Z`,
+      due_at: `2027-03-${String(day - 1).padStart(2, "0")}T10:00:00Z`,
+    });
+    const numbered = (attempt: number, over: Record<string, unknown> = {}) =>
+      claimRow({ appointment_id: attemptAppointment, ...startOf(2), attempt, ...over });
+
+    /** The server's own error, as the job, in one rolled-back transaction: code and constraint, or null when accepted. */
+    const asJob = async (
+      fn: (tx: TransactionSql) => Promise<unknown>,
+    ): Promise<{ code: string; constraint: string } | null> => {
+      try {
+        await sql.begin(async (tx) => {
+          await tx.unsafe("set local role authenticated");
+          await tx`select set_config('request.jwt.claims', ${jobClaims(tenant)}, true)`;
+          await fn(tx);
+          throw new Rollback(null);
+        });
+        throw new Error("unreachable: transaction committed without rollback");
+      } catch (err) {
+        if (err instanceof Rollback) return null;
+        const e = err as { code?: string; constraint_name?: string; message?: string };
+        if (e.code === undefined) throw err;
+        return { code: e.code, constraint: e.constraint_name ?? `(none) ${e.message ?? ""}` };
+      }
+    };
+    const DUPLICATE = { code: "23505", constraint: "reminder_claims_claim_attempt_key" };
+
+    it("REFUSES a second claim of the same attempt with unique_violation 23505, whichever taker asks", async () => {
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+      })).toEqual(DUPLICATE);
+      // The sleeping job's claim and the sweep's claim are one attempt's two takers.
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1, { taker: "run" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { taker: "sweep" }))}`;
+      })).toEqual(DUPLICATE);
+      // An early claim holds its number like any other.
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1, { early: true }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+      })).toEqual(DUPLICATE);
+    });
+
+    it("ACCEPTS the next attempt, and a retry after a RELEASE takes the next number: the release does not free the old one", async () => {
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        await tx`insert into reminder_claims ${tx(numbered(2, { taker: "sweep" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(3))}`;
+      })).toBeNull();
+      // Claim 1, its release, then the retry as attempt 2: accepted.
+      expect(await asJob(async (tx) => {
+        const [c] = (await tx`insert into reminder_claims ${tx(numbered(1))} returning id`) as { id: string }[];
+        await tx`insert into reminder_claims ${tx(releaseRow(c!.id, { appointment_id: attemptAppointment }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(2))}`;
+      })).toBeNull();
+      // The same, with the retry reusing attempt 1: refused, released or not.
+      expect(await asJob(async (tx) => {
+        const [c] = (await tx`insert into reminder_claims ${tx(numbered(1))} returning id`) as { id: string }[];
+        await tx`insert into reminder_claims ${tx(releaseRow(c!.id, { appointment_id: attemptAppointment }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+      })).toEqual(DUPLICATE);
+    });
+
+    it("ACCEPTS attempt 1 again for another START, another CHANNEL, another OFFSET and another APPOINTMENT: the key is the reminder for one start", async () => {
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        // A visit moved to another time earns a reminder of its own, from attempt 1.
+        await tx`insert into reminder_claims ${tx(numbered(1, startOf(3)))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { channel: "email" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { offset_id: "48h", due_at: "2027-02-28T10:00:00Z" }))}`;
+        await tx`insert into reminder_claims ${tx(numbered(1, { appointment_id: appointment2 }))}`;
+      })).toBeNull();
+    });
+
+    it("does NOT refuse shadow rows or heartbeats (W-7): the same shadow row twice, the same heartbeat twice, and a shadow row beside a claim", async () => {
+      const shadow = shadowRow({ appointment_id: attemptAppointment, ...startOf(2), pass_id: "pass-q5" });
+      expect(await asJob(async (tx) => {
+        await tx`insert into reminder_claims ${tx(shadow)}`;
+        await tx`insert into reminder_claims ${tx(shadow)}`;
+        await tx`insert into reminder_claims ${tx(numbered(1))}`;
+        await tx`insert into reminder_sweep_passes ${tx(passRow({ pass_id: "pass-q5" }))}`;
+        await tx`insert into reminder_sweep_passes ${tx(passRow({ pass_id: "pass-q5" }))}`;
+      })).toBeNull();
+    });
+
+    it("SEVERAL SESSIONS AT ONCE, each the job claiming attempt 1 of one reminder and committing: exactly one wins, every other reads 23505", async () => {
+      // Six connections, released together by an advisory-lock barrier the
+      // owner connection holds, so the inserts really overlap. No sending
+      // code, no reminder lock: only the table decides. The rows commit (the
+      // winner is real); afterAll removes them with the tenant's other rows.
+      const N = 6;
+      const BARRIER = 106_0514;
+      const row = numbered(1, startOf(9));
+      const sessions = Array.from({ length: N }, () => connect());
+      const gate = connect();
+      try {
+        await gate`select pg_advisory_lock(${BARRIER})`;
+        const runs = sessions.map((s, i) =>
+          s.begin(async (tx) => {
+            await tx`select pg_advisory_xact_lock_shared(${BARRIER})`;
+            await tx.unsafe("set local role authenticated");
+            await tx`select set_config('request.jwt.claims', ${jobClaims(tenant)}, true)`;
+            await tx`insert into reminder_claims ${tx({ ...row, taker: i % 2 === 0 ? "run" : "sweep" })}`;
+          }),
+        );
+        // Every session is waiting at the barrier before it opens.
+        for (let tries = 0; ; tries++) {
+          const [w] = (await gate`
+            select count(*)::int as n from pg_locks
+             where locktype = 'advisory' and objid = ${BARRIER} and not granted`) as { n: number }[];
+          if (w!.n === N) break;
+          if (tries > 200) throw new Error(`only ${w!.n} of ${N} sessions reached the barrier`);
+          await new Promise((r) => setTimeout(r, 25));
+        }
+        await gate`select pg_advisory_unlock(${BARRIER})`;
+        const settled = await Promise.allSettled(runs);
+        const won = settled.filter((r) => r.status === "fulfilled").length;
+        const lost = settled
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => {
+            const e = r.reason as { code?: string; constraint_name?: string };
+            return `${e.code} ${e.constraint_name}`;
+          });
+        expect(won).toBe(1);
+        expect(lost).toEqual(Array(N - 1).fill("23505 reminder_claims_claim_attempt_key"));
+        const [stored] = (await sql`
+          select count(*)::int as n from reminder_claims
+           where appointment_id = ${attemptAppointment} and kind = 'claim' and starts_at = ${row.starts_at as string}`) as {
+          n: number;
+        }[];
+        expect(stored!.n).toBe(1);
+      } finally {
+        await Promise.all([...sessions, gate].map((s) => s.end({ timeout: 5 })));
+      }
     });
   });
 });
