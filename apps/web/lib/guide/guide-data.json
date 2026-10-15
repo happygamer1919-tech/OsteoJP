@@ -11038,7 +11038,7 @@
         {
           "spans": [
             {
-              "text": "Quando um pedido de marcação do portal é confirmado, ou quando marca um pedido de novo cliente a partir de "
+              "text": "Quando confirma um pedido do portal, ou marca um pedido de novo cliente com "
             },
             {
               "strong": "Criar paciente e marcar"
@@ -11075,7 +11075,7 @@
         {
           "spans": [
             {
-              "text": "Nunca recebe as duas. A mesma marcação, à mesma hora, só recebe uma confirmação."
+              "text": "Confirmar o mesmo pedido outra vez, para a mesma hora, não envia segunda confirmação."
             }
           ],
           "type": "para"
@@ -11083,7 +11083,7 @@
         {
           "spans": [
             {
-              "text": "Quando nenhuma mensagem pode seguir, quem confirmou vê um aviso: em "
+              "text": "Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir, quem confirmou vê um aviso: em "
             },
             {
               "strong": "Notificações"
@@ -11095,13 +11095,13 @@
               "strong": "Respostas SMS"
             },
             {
-              "text": ", por cima da lista, com o nome do paciente e a hora; na "
+              "text": ", por cima da lista; na "
             },
             {
               "strong": "Agenda"
             },
             {
-              "text": " e na ficha, numa mensagem breve. Nesse caso, ligue ao paciente."
+              "text": " e na ficha, numa mensagem breve."
             }
           ],
           "type": "para"
@@ -11113,7 +11113,7 @@
                 "strong": "Paciente sem email: avise por telefone"
               },
               {
-                "text": ": não há email, e não há um telemóvel português válido ou os SMS estão desligados para a clínica ou para o paciente."
+                "text": ": sem email, e sem telemóvel português válido ou com os SMS desligados para a clínica ou para o paciente."
               }
             ],
             [
@@ -11133,6 +11133,14 @@
           "kind": "ul",
           "start": 1,
           "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Uma falha no envio não mostra aviso: sem aviso, a mensagem pode não ter chegado."
+            }
+          ],
+          "type": "para"
         }
       ],
       "capability": "appointments:write",
@@ -11158,7 +11166,7 @@
       "see": [],
       "shots": null,
       "title": "A confirmação que o paciente recebe",
-      "words": 199
+      "words": 198
     },
     {
       "answers": [],

@@ -613,7 +613,14 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
       for (const notice of notices) expect(html, `${role} ${notice}`).toContain(`<strong class="font-semibold">${notice}</strong>`);
       expect(html, role).toContain(`<strong class="font-semibold">${pt["guest.convert"]}</strong>`);
       expect(html, role).toContain("uma única mensagem");
-      expect(html, role).toContain("Nunca recebe as duas.");
+      expect(html, role).toContain("Confirmar o mesmo pedido outra vez, para a mesma hora, não envia segunda confirmação.");
+      expect(html, role).toContain("Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir");
+      expect(html, role).toContain("Uma falha no envio não mostra aviso: sem aviso, a mensagem pode não ter chegado.");
+      // A later change to the appointment can send another confirmation, and a send-time
+      // failure shows no notice: neither absolute claim may come back.
+      expect(html, role).not.toContain("Nunca recebe as duas");
+      expect(html, role).not.toContain("só recebe uma confirmação");
+      expect(html, role).not.toContain("Quando nenhuma mensagem pode seguir");
       expect(html, role).toContain("por SMS, só quando a ficha não tem email");
       expect(html, role).toContain("data-guide-no-image");
     }
