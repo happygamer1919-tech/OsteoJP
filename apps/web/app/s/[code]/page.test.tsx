@@ -10,6 +10,8 @@
  *   4. NOT INDEXED, and never cached.
  *   5. THE OPT-OUT (S8): on the form of a valid link and nowhere else, as a
  *      form of its own that carries no answer; and its outcome page.
+ *   6. EACH FAILED WRITE SAYS ITS OWN WORDS: an answer text 25, the opt-out
+ *      text 84 (strategy, 2026-10-14).
  *
  * The same properties against a real database, as the real role, are in
  * lib/surveys/survey-page.db.test.ts.
@@ -56,6 +58,7 @@ vi.mock("@/lib/surveys/survey-store", () => ({
 
 import { CURRENT_SURVEY_CONSENT_VERSION, getStrings } from "@osteojp/i18n";
 import SurveyPage, { dynamic, metadata } from "./page";
+import { surveyFormSummary } from "./survey-form";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const APPOINTMENT = "22222222-2222-4222-8222-222222222222";
@@ -114,6 +117,7 @@ describe("a live code", () => {
       "survey.page.q2Error",
       "survey.page.commentError",
       "survey.page.saveError",
+      "survey.page.optOutSaveError",
     ] as const) {
       expect(html, key).not.toContain(pt[key]);
     }
@@ -331,5 +335,44 @@ describe("the route's own settings", () => {
   it("is never indexed and never cached", () => {
     expect(metadata.robots).toEqual({ index: false, follow: false });
     expect(dynamic).toBe("force-dynamic");
+  });
+});
+
+describe("the line above the questions when something failed (texts 21, 25 and 84)", () => {
+  const labels = {
+    saveError: pt["survey.page.saveError"],
+    optOutSaveError: pt["survey.page.optOutSaveError"],
+    errorSummary: pt["survey.page.errorSummary"],
+  };
+  const OPT_OUT_FAILED = "Não foi possível registar o pedido. Tente novamente dentro de alguns minutos.";
+  const ANSWER_FAILED = "Não foi possível registar a resposta. Tente novamente dentro de alguns minutos.";
+
+  it("an opt-out that was not saved says a request was not registered, and nothing about an answer", () => {
+    expect(labels.optOutSaveError).toBe(OPT_OUT_FAILED);
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: true, fieldError: false, labels })).toBe(OPT_OUT_FAILED);
+    // A field the visitor left empty in the other form does not take its place.
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: true, fieldError: true, labels })).toBe(OPT_OUT_FAILED);
+  });
+
+  it("an answer that was not saved still says text 25, as before", () => {
+    expect(surveyFormSummary({ answerFailed: true, optOutFailed: false, fieldError: false, labels })).toBe(ANSWER_FAILED);
+  });
+
+  it("both failed: both are said, the answer's first", () => {
+    expect(surveyFormSummary({ answerFailed: true, optOutFailed: true, fieldError: false, labels })).toBe(
+      `${ANSWER_FAILED} ${OPT_OUT_FAILED}`,
+    );
+  });
+
+  it("CONTROL: a field left empty is text 21, and nothing failed is no line", () => {
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: false, fieldError: true, labels })).toBe(
+      pt["survey.page.errorSummary"],
+    );
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: false, fieldError: false, labels })).toBeNull();
+  });
+
+  it("the English page has its own sentence for each", () => {
+    expect(en["survey.page.optOutSaveError"]).toBe("Your request could not be saved. Please try again in a few minutes.");
+    expect(en["survey.page.optOutSaveError"]).not.toBe(en["survey.page.saveError"]);
   });
 });

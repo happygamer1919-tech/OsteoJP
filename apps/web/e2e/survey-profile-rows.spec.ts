@@ -22,8 +22,11 @@
  *   a therapist opens the ficha of a patient they treat and finds the send in
  *   the section, with who sent it, the clinic and "Sem resposta", no switch
  *   and no send button; an admin with no clinic assignment opens the same
- *   ficha, has the switch, and is shown none of that send (S7: "at their
- *   clinics").
+ *   ficha, has the switch, is shown none of that send (S7: "at their
+ *   clinics"), and reads that none is visible to them (copy text 88, strategy
+ *   Q-19, 2026-10-14), not that none was sent. The owner, the one role told
+ *   text 78, has no signed-in state in this suite; that half is measured in
+ *   app/patients/[id]/page-survey-rows.test.tsx.
  *
  * Neither arm is skipped: exactly one of them runs, and each first proves the
  * Resumo tab rendered.
@@ -54,7 +57,10 @@ const VISIBLE = MODE === "on" || MODE === "canary";
 
 const SECTION_TITLE = "Avaliações de satisfação";
 const SWITCH_LABEL = "Enviar avaliação de satisfação depois das consultas";
+/** Copy text 78: said to the owner alone. */
 const NONE = "Nenhuma avaliação de satisfação enviada.";
+/** Copy text 88 (strategy, Q-19, 2026-10-14): said to every other viewer. */
+const NONE_VISIBLE = "Nenhuma avaliação de satisfação visível para si.";
 /**
  * The first visit to a route, run alone on a dev server, waits for that route
  * to compile (survey-list.spec.ts measured it). Only the first assertion after
@@ -153,6 +159,7 @@ if (!VISIBLE) {
           await expect(page.getByTestId("ficha-survey-row"), address).toHaveCount(0);
           await expect(page.getByText(SECTION_TITLE), address).toHaveCount(0);
           await expect(page.getByText(NONE), address).toHaveCount(0);
+          await expect(page.getByText(NONE_VISIBLE), address).toHaveCount(0);
           await expect(page.getByText("Sem resposta"), address).toHaveCount(0);
           await expect(page.getByRole("switch"), address).toHaveCount(0);
         }
@@ -183,6 +190,7 @@ if (!VISIBLE) {
       await expect(section.getByTestId("ficha-survey-answer-reserved")).toHaveCount(0);
       await expect(section.getByText("Recomendação (0 a 10)")).toHaveCount(0);
       await expect(section.getByText(NONE)).toHaveCount(0);
+      await expect(section.getByText(NONE_VISIBLE)).toHaveCount(0);
 
       // A therapist is not offered the switch, and nobody has a send button yet.
       await expect(page.getByRole("switch")).toHaveCount(0);
@@ -199,7 +207,7 @@ if (!VISIBLE) {
   test.describe(`SURVEY_SEND_MODE=${JSON.stringify(MODE)}, an admin with no clinic assignment`, () => {
     test.use({ storageState: STORAGE.admin });
 
-    test("the section opens with the switch and shows none of that send (S7: at their clinics)", async ({ page }) => {
+    test("the section opens with the switch, shows none of that send (S7: at their clinics) and says none is visible to them", async ({ page }) => {
       await page.goto(`/patients/${patientId}`);
       const resumo = page.locator("#tabpanel-resumo");
       await expect(resumo.getByText("Dados pessoais")).toBeVisible(COLD_ROUTE);
@@ -210,6 +218,9 @@ if (!VISIBLE) {
       await expect(section.getByRole("switch", { name: SWITCH_LABEL })).toHaveAttribute("aria-checked", "true");
       await expect(section.getByTestId("ficha-survey-row")).toHaveCount(0);
       await expect(section.getByText(", por ")).toHaveCount(0);
+      // Not "none was sent": one was. Text 88, by its own element.
+      await expect(section.getByTestId("ficha-survey-rows-none")).toHaveText(NONE_VISIBLE);
+      await expect(section.getByText(NONE)).toHaveCount(0);
     });
   });
 }

@@ -126,6 +126,12 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
 // all and nothing is left for a WITH CHECK to reject. Its re-homing case is the
 // separate test after this loop: the UPDATE affects 0 rows and the row is still
 // in tenant A.
+//
+// clinical_episodes runs under an OWNER JWT, like clinical_records and for the
+// same reason: with 0104 (held) its UPDATE policy admits the owner and a
+// therapist of the patient, so only the owner's UPDATE reaches the WITH CHECK
+// that rejects the tenant move. The owner's arm is every episode of the tenant
+// on either side of 0104, so the case asserts the same thing on both.
 const REHOME_TARGETS: { table: string; ownRowId: string; role?: AppRole }[] = [
   { table: "users", ownRowId: A.user },
   { table: "locations", ownRowId: A.location },
@@ -133,7 +139,7 @@ const REHOME_TARGETS: { table: string; ownRowId: string; role?: AppRole }[] = [
   { table: "patients", ownRowId: A.patient },
   { table: "appointments", ownRowId: A.appointment },
   { table: "form_templates", ownRowId: A.formTemplate },
-  { table: "clinical_episodes", ownRowId: A.episode },
+  { table: "clinical_episodes", ownRowId: A.episode, role: "owner" },
   { table: "clinical_records", ownRowId: A.record, role: "owner" },
   { table: "attachments", ownRowId: A.attachment },
   { table: "invoices", ownRowId: A.invoice },

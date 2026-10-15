@@ -22,10 +22,13 @@ import type { SurveyListRowView } from "@/lib/surveys/survey-list-core";
 export function SurveyListTable({
   rows,
   filtered,
+  noClinic = false,
 }: {
   rows: SurveyListRowView[];
   /** A month is chosen, so an empty table means "none that month", not "none ever". */
   filtered: boolean;
+  /** Admin or reception with no clinic assignment: the database gives them no send to read. */
+  noClinic?: boolean;
 }) {
   const columns: Array<TableColumn<SurveyListRowView>> = [
     {
@@ -93,11 +96,20 @@ export function SurveyListTable({
     },
   ];
 
-  // NO SENTENCE FOR "NONE THIS MONTH". The approved empty text (54) says no
-  // survey has been sent yet, which is false when a month is chosen and other
-  // months have sends. Until a text for that case is approved, a filtered list
-  // with no rows shows its headings and nothing under them.
-  const empty = rows.length === 0 && !filtered;
+  // AN EMPTY LIST SAYS WHY, AND NEVER MORE THAN IS TRUE (strategy, 2026-10-14).
+  // Text 54 says no survey has ever been sent, so it is said only when nothing
+  // narrows the read: not for a chosen month (text 86: none that month), and
+  // not to admin or reception with no clinic, whose reads the database narrows
+  // to nothing (text 87: the reason, and what to do). No clinic comes first:
+  // for them every month is empty for the same reason.
+  const empty =
+    rows.length > 0 ? null : noClinic ? (
+      <EmptyState icon={ClipboardList} title={s["surveyList.noClinic"]} />
+    ) : filtered ? (
+      <EmptyState icon={ClipboardList} title={s["surveyList.emptyMonth"]} />
+    ) : (
+      <EmptyState icon={ClipboardList} title={s["surveyList.empty"]} description={s["surveyList.emptyHint"]} />
+    );
 
   return (
     <Table
@@ -106,9 +118,7 @@ export function SurveyListTable({
       rowKey={(r) => r.id}
       caption={s["surveyList.title"]}
       state={empty ? "empty" : "ready"}
-      empty={
-        <EmptyState icon={ClipboardList} title={s["surveyList.empty"]} description={s["surveyList.emptyHint"]} />
-      }
+      empty={empty}
     />
   );
 }

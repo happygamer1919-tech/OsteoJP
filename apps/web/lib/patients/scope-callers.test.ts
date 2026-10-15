@@ -129,7 +129,7 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
     calls: 1, verdict: "write", why: "canActOnPatient: whether the ficha shows its write controls (Editar, Nova nota, uploads, + Episodio) to this viewer.",
   },
   "lib/clinical/episodes.ts#createEpisode#therapistPatientScope": {
-    calls: 1, verdict: "write", why: "Opens an episode. clinical_episodes is tenant-only, so this is the whole patient gate; added by CARE-02a.",
+    calls: 1, verdict: "write", why: "Opens an episode. The narrow scope is the application's patient gate for it, asked before the insert; added by CARE-02a.",
   },
   "lib/clinical/episodes.ts#listOpenAppEpisodes#therapistPatientScope": {
     calls: 1, verdict: "picker", why: "EPI-01b piece 2: the Registos tab's open app episodes, read only to feed '+ Avaliação' and '+ Episódio'. The same narrow reach as the writes it feeds.",

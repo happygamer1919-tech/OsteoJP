@@ -12,8 +12,9 @@
  *   - canary and on: the title, the subtitle, the month filter, the table and
  *     the tab, for every staff role; no send button;
  *   - an answer the viewer may not read draws the reserved sentence;
- *   - no sends: the approved empty text; no sends in a chosen month: no false
- *     "none was ever sent".
+ *   - no sends: the approved empty text; no sends in a chosen month: text 86,
+ *     not a false "none was ever sent"; admin or reception with no clinic
+ *     assignment: text 87, and nobody else is ever told it.
  * Which rows each role is given is the database's, and is measured in
  * `lib/surveys/survey-list.db.test.ts`.
  */
@@ -33,6 +34,9 @@ const h = vi.hoisted(() => ({
   rows: [] as unknown[],
   sessionAsked: 0,
   reads: [] as Array<{ page?: number; month?: string | null }>,
+  /** The viewer's own clinic assignments (staff_locations). */
+  locations: ["33333333-3333-4333-8333-333333333333"] as string[],
+  locationsAsked: 0,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -52,6 +56,12 @@ vi.mock("@/lib/auth/context", () => ({
     return h.ctx;
   },
 }));
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  resolveViewerLocationIds: async () => {
+    h.locationsAsked += 1;
+    return h.locations;
+  },
+}));
 vi.mock("@/lib/surveys/survey-list", () => ({
   listSurveySends: async (_ctx: unknown, opts: { page?: number; month?: string | null }) => {
     h.reads.push(opts);
@@ -67,6 +77,9 @@ const SUBTITLE =
 const EMPTY = "Ainda não foi enviada nenhuma avaliação de satisfação.";
 const EMPTY_HINT =
   "A avaliação de satisfação é enviada 24 horas depois de uma consulta concluída, se o paciente o permitir.";
+/** Texts 86 and 87, written by strategy on 2026-10-14, pending the clinic's final yes. */
+const EMPTY_MONTH = "Nenhuma avaliação enviada neste mês.";
+const NO_CLINIC = "Sem clínica associada. Peça a um administrador para o associar a uma clínica.";
 const RESERVED =
   "Resposta visível apenas para o terapeuta que realizou a consulta, para a receção e os administradores dessa clínica e para o proprietário.";
 
@@ -107,6 +120,8 @@ beforeEach(() => {
   h.rows = [entry()];
   h.sessionAsked = 0;
   h.reads = [];
+  h.locations = ["33333333-3333-4333-8333-333333333333"];
+  h.locationsAsked = 0;
   process.env.SURVEY_SEND_MODE = "on";
 });
 afterEach(() => {
@@ -130,6 +145,7 @@ describe("while the survey is switched off the address is not there", () => {
       expect(await outcome()).toBe("NOT_FOUND");
       expect(h.sessionAsked).toBe(0);
       expect(h.reads).toEqual([]);
+      expect(h.locationsAsked).toBe(0);
 
       // CONTROL: the same request with the survey on renders.
       process.env.SURVEY_SEND_MODE = "on";
@@ -200,19 +216,73 @@ describe.each(["canary", "on"])("SURVEY_SEND_MODE=%s", (mode) => {
     expect(html).not.toContain(RESERVED);
   });
 
-  it("no sends at all: the approved empty text and its hint", async () => {
-    h.rows = [];
-    const html = await render();
-    expect(html).toContain(EMPTY);
-    expect(html).toContain(EMPTY_HINT);
-  });
+  it.each(["owner", "admin", "reception", "therapist"])(
+    "no sends at all, %s with a clinic: the approved empty text and its hint, and no other sentence",
+    async (role) => {
+      h.ctx = { ...h.ctx!, role };
+      h.rows = [];
+      const html = await render();
+      expect(html).toContain(EMPTY);
+      expect(html).toContain(EMPTY_HINT);
+      expect(html).not.toContain(EMPTY_MONTH);
+      expect(html).not.toContain(NO_CLINIC);
+    },
+  );
 
-  it("no sends in a chosen month: the headings, and NOT the sentence that none was ever sent", async () => {
-    h.rows = [];
-    const html = await render({ mes: "2026-05" });
+  it.each(["owner", "admin", "reception", "therapist"])(
+    "no sends in a chosen month, %s with a clinic: text 86, the headings, and NOT the sentence that none was ever sent",
+    async (role) => {
+      h.ctx = { ...h.ctx!, role };
+      h.rows = [];
+      const html = await render({ mes: "2026-05" });
+      expect(html).toContain(EMPTY_MONTH);
+      expect(html).not.toContain(EMPTY);
+      expect(html).not.toContain(EMPTY_HINT);
+      expect(html).not.toContain(NO_CLINIC);
+      expect(html).toContain(">Consulta</th>");
+      expect(html).toContain('value="2026-05"');
+    },
+  );
+
+  it.each(["admin", "reception"])(
+    "%s with no clinic assignment: text 87, with or without a month, and neither 54 nor 86",
+    async (role) => {
+      h.ctx = { ...h.ctx!, role };
+      h.rows = [];
+      h.locations = [];
+      for (const query of [{}, { mes: "2026-05" }] as Array<Record<string, string>>) {
+        const html = await render(query);
+        const at = JSON.stringify(query);
+        expect(html, at).toContain(NO_CLINIC);
+        expect(html, at).not.toContain(EMPTY);
+        expect(html, at).not.toContain(EMPTY_HINT);
+        expect(html, at).not.toContain(EMPTY_MONTH);
+      }
+    },
+  );
+
+  it.each(["owner", "therapist"])(
+    "%s with no clinic assignment is never told text 87: their reads do not follow a clinic",
+    async (role) => {
+      h.ctx = { ...h.ctx!, role };
+      h.rows = [];
+      h.locations = [];
+      expect(await render()).toContain(EMPTY);
+      expect(await render({ mes: "2026-05" })).toContain(EMPTY_MONTH);
+      const html = (await render()) + (await render({ mes: "2026-05" }));
+      expect(html).not.toContain(NO_CLINIC);
+      expect(h.locationsAsked).toBe(0);
+    },
+  );
+
+  it("rows are drawn whatever the assignments say, and the assignments are asked only for an empty list", async () => {
+    h.ctx = { ...h.ctx!, role: "reception" };
+    h.locations = [];
+    const html = await render();
+    expect(html).toContain("Zzz Paciente Lista Teste");
+    expect(html).not.toContain(NO_CLINIC);
     expect(html).not.toContain(EMPTY);
-    expect(html).toContain(">Consulta</th>");
-    expect(html).toContain('value="2026-05"');
+    expect(h.locationsAsked).toBe(0);
   });
 
   it("the month and the page of the address reach the read; a value that is not a month does not", async () => {

@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { can } from "@osteojp/auth";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { resolveViewerLocationIds } from "@/lib/auth/viewer-locations";
 import { s } from "@/lib/i18n";
 import { SURVEY_LIST_HREF, commsSectionsForRole } from "@/lib/nav/comms-sections";
 import { surveyVisible } from "@/lib/reminders/survey-mode";
@@ -55,6 +56,15 @@ export default async function AvaliacoesDeSatisfacaoPage({
 
   const list = await listSurveySends(ctx, { page: requestedPage, month: month?.value ?? null });
   const rows = list.rows.map(toSurveyListRow);
+  // Admin and reception read the sends of their own clinics (0102's policy), so
+  // with no clinic assignment the list is empty whatever was sent, and the page
+  // says why (copy text 87). Asked only when there is nothing to show. A
+  // therapist's reads follow the patients they treat, not a clinic, and the
+  // owner reads everything: neither is ever told this.
+  const noClinic =
+    rows.length === 0 &&
+    (ctx.role === "admin" || ctx.role === "reception") &&
+    (await resolveViewerLocationIds(ctx)).length === 0;
 
   const commsSections = commsSectionsForRole(ctx.role);
 
@@ -76,7 +86,7 @@ export default async function AvaliacoesDeSatisfacaoPage({
           <SurveyListMonthFilter initialMonth={month?.value ?? ""} />
         </div>
 
-        <SurveyListTable rows={rows} filtered={month !== null} />
+        <SurveyListTable rows={rows} filtered={month !== null} noClinic={noClinic} />
 
         <Pager
           basePath={SURVEY_LIST_HREF}

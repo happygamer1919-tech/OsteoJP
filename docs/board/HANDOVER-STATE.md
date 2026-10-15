@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**547 cards on the board. 373 shipped, 174 open. Launch readiness 9/9, every launch gate passes.**
+**551 cards on the board. 375 shipped, 176 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,28 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-15
+>
+> **Migration 0104 is applied.** Its sitting ran on Thursday 2026-10-15, from
+> 00:40 to 00:45 Lisbon, and closed clean. What changes from 08:00: the episode
+> list on a patient's ficha follows the role. The owner still sees every
+> episode; an admin and reception see the episodes of their clinics' patients,
+> and no longer open or change one; a therapist sees the episodes of the
+> patients they treat, registered or are on the care team of, and opens or
+> changes one only for a patient they treat or registered. No member of staff
+> can delete an episode any more. Registos are unchanged.
+>
+> **The satisfaction survey is still switched off.** Since the last block its
+> list in Comunicações, the switch in the patient portal, the rows on the
+> patient's ficha and the staff sentences strategy wrote are merged. While it is
+> off, nobody sees any of them. Not built: the manual send, the migration for
+> the patient merge, the guide lesson, and the canary before it goes on.
+>
+> **Monitoring keeps less of each request** since 2026-10-14 (OBS-07). Two small
+> follow-ups have their own cards (OBS-08, OBS-09).
+>
+> **Next:** 0105 on Thursday night 2026-10-15, after your publish word.
 
 > ### Where things stand, 2026-10-14
 >

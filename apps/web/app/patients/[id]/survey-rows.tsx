@@ -21,16 +21,31 @@ import type { SurveyListRowView } from "../../../lib/surveys/survey-list-core";
  * A RESERVED ANSWER (copy text 81) takes the place of the answer's lines. A
  * send with no answer has no answer lines at all: "Sem resposta" says it.
  *
+ * NO ROWS, TWO SENTENCES (strategy, Q-19, 2026-10-14). Only the owner reads
+ * every send of the tenant (0102's policy), so only to the owner does an empty
+ * read mean that none was sent (copy text 78). Anyone else is told that none
+ * is visible to them (text 88): the app cannot tell "none exists" from "none
+ * you may read" without asking the database something it does not answer.
+ *
  * NO SEND BUTTON HERE YET. The spec puts "Enviar avaliação" and its status
  * line in this section (7.6); they arrive with the manual send, its own piece.
  */
-export function SurveyRows({ rows, locale }: { rows: SurveyListRowView[]; locale: Locale }) {
+export function SurveyRows({
+  rows,
+  locale,
+  viewerIsOwner,
+}: {
+  rows: SurveyListRowView[];
+  locale: Locale;
+  /** The viewer's role is `owner`: the one role whose read is not narrowed. */
+  viewerIsOwner: boolean;
+}) {
   const s = getStrings(locale);
 
   if (rows.length === 0) {
     return (
       <p className="text-sm text-text-secondary" data-testid="ficha-survey-rows-none">
-        {s["patients.surveyRowsNone"]}
+        {viewerIsOwner ? s["patients.surveyRowsNone"] : s["patients.surveyRowsNoneVisible"]}
       </p>
     );
   }

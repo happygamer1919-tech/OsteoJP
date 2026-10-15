@@ -43,6 +43,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, refresh:
 vi.mock('@/lib/supabase/client', () => ({ createBrowserClient: () => ({ auth: { signOut: async () => {} } }) }))
 
 import { AccountView } from './AccountView'
+import { SurveyToggleView } from '@/components/account/SurveyToggle'
 
 /** The approved texts, 32 to 35, as the copy document has them. */
 const TITLE = 'Avaliações de satisfação'
@@ -50,6 +51,8 @@ const SWITCH = 'Receber avaliações de satisfação'
 const HINT =
   'Enviada por email ou SMS 24 horas depois de uma consulta, no máximo uma vez a cada 60 dias. A equipa da clínica também a pode enviar.'
 const OFF_NOTE = 'Desligar não afeta os lembretes de consulta.'
+/** Text 85, written by strategy on 2026-10-14, pending the clinic's final yes. */
+const SAVE_ERROR = 'Não foi possível guardar a alteração. Tente novamente dentro de alguns minutos.'
 
 const PROFILE: PatientProfile = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -90,6 +93,8 @@ describe('the account screen and the survey switch', () => {
       'Sent by email or SMS 24 hours after an appointment, at most once every 60 days. The clinic team can also send it.',
     )
     expect(en.account.survey_off_note).toBe('Turning this off does not affect appointment reminders.')
+    expect(pt.account.survey_save_error).toBe(SAVE_ERROR)
+    expect(en.account.survey_save_error).toBe('The change could not be saved. Please try again in a few minutes.')
   })
 
   it('NO KEY (the survey is switched off, or this patient is not on the canary list): nothing of the survey', () => {
@@ -99,7 +104,7 @@ describe('the account screen and the survey switch', () => {
       expect(switches(html)).toHaveLength(2)
       expect(named(html, 'SMS')).toHaveLength(1)
       expect(named(html, 'Email')).toHaveLength(1)
-      for (const text of [TITLE, SWITCH, HINT, OFF_NOTE, 'avaliaç', 'Avaliaç', 'satisfação']) {
+      for (const text of [TITLE, SWITCH, HINT, OFF_NOTE, SAVE_ERROR, 'avaliaç', 'Avaliaç', 'satisfação']) {
         expect(html, text).not.toContain(text)
       }
       expect(html).not.toContain('survey-toggle')
@@ -124,6 +129,9 @@ describe('the account screen and the survey switch', () => {
     expect(html).toContain(`>${SWITCH}</p>`)
     expect(html).toContain(`>${HINT}</p>`)
     expect(html).not.toContain(OFF_NOTE)
+    // Nothing has failed on a page just drawn.
+    expect(html).not.toContain(SAVE_ERROR)
+    expect(html).not.toContain('survey-toggle-error')
     // Below the reminder switches, above the sign-out button.
     const at = (needle: string) => html.indexOf(needle)
     expect(at('aria-label="Email"')).toBeGreaterThan(-1)
@@ -145,6 +153,30 @@ describe('the account screen and the survey switch', () => {
       const html = render({ ...PROFILE, reminderSmsEnabled: false, reminderEmailEnabled: true, surveyEnabled })
       expect(named(html, 'SMS')[0]).not.toContain('checked=""')
       expect(named(html, 'Email')[0]).toContain('checked=""')
+    }
+  })
+})
+
+describe('a change of the survey switch that was not saved (text 85)', () => {
+  const draw = (enabled: boolean, failed: boolean) =>
+    renderToStaticMarkup(<SurveyToggleView enabled={enabled} failed={failed} onToggle={() => {}} />)
+
+  it('says so under the switch, as an alert, whichever way the switch went back', () => {
+    for (const enabled of [true, false]) {
+      const html = draw(enabled, true)
+      expect(html, String(enabled)).toContain(`<p role="alert" class="text-xs text-error" data-testid="survey-toggle-error">${SAVE_ERROR}</p>`)
+      // Under the switch, and above the off note when there is one.
+      expect(html.indexOf(SAVE_ERROR)).toBeGreaterThan(html.indexOf('role="switch"'))
+      if (!enabled) expect(html.indexOf(OFF_NOTE)).toBeGreaterThan(html.indexOf(SAVE_ERROR))
+    }
+  })
+
+  it('CONTROL: nothing failed, no sentence', () => {
+    for (const enabled of [true, false]) {
+      const html = draw(enabled, false)
+      expect(html).toContain('role="switch"')
+      expect(html).not.toContain(SAVE_ERROR)
+      expect(html).not.toContain('role="alert"')
     }
   })
 })
