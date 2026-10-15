@@ -1,6 +1,7 @@
-import type { ErrorEvent } from "@sentry/nextjs";
+import type { ErrorEvent, EventHint } from "@sentry/nextjs";
 
 import { scrubLinkCodesIn } from "./link-codes";
+import { scrubQueryErrorsIn } from "./query-errors";
 
 /**
  * Strip local-variable captures from every stack frame of every exception on an
@@ -78,17 +79,23 @@ export function downgradeValidationError(event: ErrorEvent): ErrorEvent {
 }
 
 /**
- * The single `beforeSend` the server config installs. All three layers, in
+ * The single `beforeSend` the server config installs. All four layers, in
  * order.
  *
  * The scrub runs FIRST and unconditionally, because it is the one that carries
  * a rule-7 obligation: no frame leaves this process with captured locals, and
  * that must not depend on what kind of error it turned out to be.
  *
- * OBS-07 runs LAST, over whatever the first two left: a one-time link code
+ * OBS-09 runs third: a failed query keeps its SQL, its code and its
+ * constraint, and loses its parameters and the driver's message. It is the one
+ * layer that reads the HINT, which is the error as it was thrown, so this
+ * function takes the hook's second argument and passes it on, and the config
+ * assigns it bare. See query-errors.ts.
+ *
+ * OBS-07 runs LAST, over whatever the first three left: a one-time link code
  * (/c/<code>, /s/<code>) is removed from every string of the event. Last, so
  * it also covers anything an earlier layer wrote. See link-codes.ts.
  */
-export function scrubEvent(event: ErrorEvent): ErrorEvent {
-  return scrubLinkCodesIn(downgradeValidationError(stripFrameVars(event)));
+export function scrubEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent {
+  return scrubLinkCodesIn(scrubQueryErrorsIn(downgradeValidationError(stripFrameVars(event)), hint));
 }
