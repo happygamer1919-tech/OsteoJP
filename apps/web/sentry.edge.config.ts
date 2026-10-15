@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 
 import { scrubLinkCodesIn } from "./lib/observability/link-codes";
+import { scrubQueryErrorsIn } from "./lib/observability/query-errors";
 import { serverSentryDsn } from "./lib/observability/sentry-dsn";
 
 Sentry.init({
@@ -19,8 +20,14 @@ Sentry.init({
   // sees the code as surely as the server does. Four hooks, because an error,
   // a transaction, a span and a breadcrumb each take their own way out. See
   // lib/observability/link-codes.ts.
-  beforeSend: (event) => scrubLinkCodesIn(event),
-  beforeSendTransaction: (event) => scrubLinkCodesIn(event),
-  beforeSendSpan: (span) => scrubLinkCodesIn(span),
-  beforeBreadcrumb: (breadcrumb) => scrubLinkCodesIn(breadcrumb),
+  //
+  // OBS-09: and no failed query leaves with its parameters. This runtime opens
+  // no database connection today; the hooks are here so that one opened later
+  // is covered without anyone remembering this file. The query scrub first,
+  // the link-code scrub last, and the hint handed to the first: see
+  // lib/observability/query-errors.ts.
+  beforeSend: (event, hint) => scrubLinkCodesIn(scrubQueryErrorsIn(event, hint)),
+  beforeSendTransaction: (event) => scrubLinkCodesIn(scrubQueryErrorsIn(event)),
+  beforeSendSpan: (span) => scrubLinkCodesIn(scrubQueryErrorsIn(span)),
+  beforeBreadcrumb: (breadcrumb, hint) => scrubLinkCodesIn(scrubQueryErrorsIn(breadcrumb, hint)),
 });
