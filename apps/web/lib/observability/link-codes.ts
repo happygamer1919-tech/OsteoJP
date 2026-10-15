@@ -126,8 +126,9 @@
  *   - A failed database query. The query layer puts the parameters of a
  *     failed query in the error's message, as `params: <code>`: a bare code,
  *     no marker. If the lookup of a code ever throws, the code is in that
- *     message. Not closed here: the same line carries every other parameter
- *     of every failed query, which is a wider question than these pages.
+ *     message. Not closed here but in ./query-errors.ts (OBS-09), for every
+ *     parameter of every failed query, which is a wider question than these
+ *     pages.
  *   - Inside `stacktrace.frames[]` the fields `function`, `context_line`,
  *     `pre_context`, `post_context` and `module` are never read. The SDK puts
  *     source text there, not a url.
