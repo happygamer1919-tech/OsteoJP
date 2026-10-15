@@ -7,7 +7,7 @@
  * in lib/guide/guide-roles.test.ts, against the helper. This file proves the
  * PAGES draw exactly that list: every lesson link on the index, in order, is
  * the helper's list for that role, the counts are the ruled ones (reception
- * 37, therapist 38, admin 49, owner 58), the section order per role is written
+ * 39, therapist 38, admin 51, owner 60), the section order per role is written
  * out by hand below, and the named cases the owner's spec asks for are
  * asserted by id.
  *
@@ -176,10 +176,10 @@ beforeEach(() => {
 });
 
 describe("the index lists exactly the viewer's lessons, in the viewer's order (G1-3, one test per role)", () => {
-  it("reception: its 37 lessons in order, and nothing from Registos", async () => {
+  it("reception: its 39 lessons in order, and nothing from Registos", async () => {
     const html = await indexHtml("reception");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("reception")));
-    expect(lessonLinks(html)).toHaveLength(37);
+    expect(lessonLinks(html)).toHaveLength(39);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -220,12 +220,16 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     // Neither half of P4 is written for the Terapeuta guide.
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atualizar-dados");
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
+    // MARC-THERAPIST-01: the ficha offers a therapist no Terapeuta field.
+    absentButPublished(lessonLinks(html), "/ajuda/pacientes/alterar-terapeuta");
+    // BOOK-CONFIRM: the lesson sits beside Confirmar um pedido, which is not the therapist's either.
+    absentButPublished(lessonLinks(html), "/ajuda/portal/confirmacao-ao-paciente");
   });
 
-  it("admin: the 49 Proprietário lessons whose capability the admin role holds, and of Registos only the PDF export", async () => {
+  it("admin: the 51 Proprietário lessons whose capability the admin role holds, and of Registos only the PDF export", async () => {
     const html = await indexHtml("admin");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("admin")));
-    expect(lessonLinks(html)).toHaveLength(49);
+    expect(lessonLinks(html)).toHaveLength(51);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -249,10 +253,10 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
   });
 
-  it("owner: every published lesson (58), in the Proprietário order, and not the held one", async () => {
+  it("owner: every published lesson (60), in the Proprietário order, and not the held one", async () => {
     const html = await indexHtml("owner");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("owner")));
-    expect(lessonLinks(html)).toHaveLength(58);
+    expect(lessonLinks(html)).toHaveLength(60);
     expect([...lessonLinks(html)].sort()).toEqual(hrefs(GUIDE_DATA.lessons).sort());
     expect(sectionLinks(html)).toEqual([
       "inicio",
@@ -461,7 +465,7 @@ describe("Perguntas frequentes (G1-2): the seven base tasks first, for the viewe
 
   it("an unknown ?tab= opens the guide", async () => {
     const html = await indexHtml("owner", "outra");
-    expect(lessonLinks(html)).toHaveLength(58);
+    expect(lessonLinks(html)).toHaveLength(60);
     expect(faqEntries(html)).toEqual([]);
   });
 });
@@ -538,6 +542,82 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
       expect(html, role).toContain("data-guide-no-image");
       expect(html, role).not.toContain("<img");
     }
+  });
+
+  // MARC-THERAPIST-01. The lesson quotes the field and its button by the labels
+  // the ficha draws (the same i18n keys), on the two rows that offer them, and
+  // the refusal the agenda's conflict warning names. A therapist is not handed
+  // the field (offersTherapistChange), so it has no lesson on it.
+  it("Alterar o terapeuta de uma marcação na ficha: reception, an administrator and the owner read it, a therapist does not", async () => {
+    const lesson = lessonById("pacientes.alterar-terapeuta");
+    expect(lesson.roles).toEqual(["rececao", "proprietario"]);
+    expect(lesson.images).toBeNull();
+    const labels = [
+      pt["patients.tabAppointments"],
+      pt["appointment.status.scheduled"],
+      pt["appointment.status.confirmed"],
+      pt["patients.appointmentManage"],
+      pt["appointment.therapist"],
+      pt["appointment.changeTherapist"],
+      pt["appointment.therapistChanged"],
+      pt["agenda.conflictTherapist"],
+      pt["appointment.saveAnyway"],
+    ];
+    expect(labels).toEqual([
+      "Marcações",
+      "Agendada",
+      "Confirmada",
+      "Gerir marcação",
+      "Terapeuta",
+      "Alterar terapeuta",
+      "Terapeuta alterado.",
+      "Conflito de terapeuta",
+      "Guardar mesmo assim",
+    ]);
+    for (const role of ["reception", "admin", "owner"] as const) {
+      const html = await lessonHtml(role, "pacientes", "alterar-terapeuta");
+      expect(html, role).toContain(`${lesson.title}</h1>`);
+      for (const label of labels) expect(html, `${role} ${label}`).toContain(`<strong class="font-semibold">${label}</strong>`);
+      expect(html, role).toContain("A hora, a clínica e o pacote da marcação não mudam.");
+      expect(html, role).toContain("o horário desse terapeuta nesse dia");
+      expect(html, role).toContain("data-guide-no-image");
+    }
+    await refusedButReal("therapist", "pacientes", "alterar-terapeuta");
+    // The lesson the paragraph moved out of now names this one, for the roles that read both.
+    const ficha = await lessonHtml("reception", "pacientes", "marcacoes-na-ficha");
+    expect(ficha).toContain(`como explica a lição ${lesson.title}.`);
+    expect(ficha).not.toContain("o motivo aparece por baixo do campo");
+  });
+
+  // BOOK-CONFIRM. The lesson names the three notices by the sentences the
+  // approver's screens draw (requests.notice.*, approval-notices.tsx), and the
+  // one rule a reader must not get wrong: one message, email first.
+  it("A confirmação que o paciente recebe: reception, an administrator and the owner read it, with the three notices", async () => {
+    const lesson = lessonById("portal.confirmacao-ao-paciente");
+    expect(lesson.capability).toBe("appointments:write");
+    expect(lesson.roles).toEqual(["rececao", "proprietario"]);
+    expect(lesson.images).toBeNull();
+    const notices = [
+      pt["requests.notice.patientNoEmail"],
+      pt["requests.notice.locationContactMissing"],
+      pt["requests.notice.serviceMissing"],
+    ];
+    expect(notices).toEqual([
+      "Paciente sem email: avise por telefone",
+      "Confirmação não enviada: o local não tem morada ou telefone. Avise o paciente por telefone.",
+      "Confirmação não enviada: a marcação não tem serviço. Avise o paciente por telefone.",
+    ]);
+    for (const role of ["reception", "admin", "owner"] as const) {
+      const html = await lessonHtml(role, "portal", "confirmacao-ao-paciente");
+      expect(html, role).toContain(`${lesson.title}</h1>`);
+      for (const notice of notices) expect(html, `${role} ${notice}`).toContain(`<strong class="font-semibold">${notice}</strong>`);
+      expect(html, role).toContain(`<strong class="font-semibold">${pt["guest.convert"]}</strong>`);
+      expect(html, role).toContain("uma única mensagem");
+      expect(html, role).toContain("Nunca recebe as duas.");
+      expect(html, role).toContain("por SMS, só quando a ficha não tem email");
+      expect(html, role).toContain("data-guide-no-image");
+    }
+    await refusedButReal("therapist", "portal", "confirmacao-ao-paciente");
   });
 
   it("a therapist opening F1 (faturas de um período) is not found, and F2 renders", async () => {

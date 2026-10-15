@@ -27,7 +27,7 @@ Só pode cancelar marcações em que é **Terapeuta** ou **Terapeuta 2**.
 :::
 
 ::: rececao proprietario
-Para passar uma marcação **Agendada** ou **Confirmada** para outro terapeuta, em **Gerir marcação** escolha o nome em **Terapeuta** e clique em **Alterar terapeuta**. A hora, a clínica e o pacote não mudam. Se esse terapeuta não trabalhar a essa hora, ou já tiver outra marcação, a alteração é recusada e o motivo aparece por baixo do campo.
+Para passar uma marcação para outro terapeuta, use **Alterar terapeuta**, como explica a lição Alterar o terapeuta de uma marcação na ficha.
 
 Se uma consulta ficou com o estado final errado (por exemplo **Falta** em vez de **Concluída**), em **Gerir marcação** escolha o estado certo em **Corrigir estado** e clique em **Corrigir**. A correção fica no registo de auditoria.
 :::

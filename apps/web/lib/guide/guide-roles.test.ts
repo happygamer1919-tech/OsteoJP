@@ -43,7 +43,7 @@ const ids = (role: Role) => guideLessonsFor(role).map((lesson) => lesson.id);
 const sectionIds = (role: Role) => guideSectionsFor(role).map((entry) => entry.section.id);
 
 // Receção: Início, Agenda, Pacientes, Pacotes, Marcação online, Portal do
-// paciente, Faturação, Equipa e Horários. 38 lessons, M1 held: 37.
+// paciente, Faturação, Equipa e Horários. 40 lessons, M1 held: 39.
 const RECEPTION = [
   "inicio.resumo-do-dia",
   "inicio.ver-outro-dia",
@@ -66,6 +66,7 @@ const RECEPTION = [
   "pacientes.declaracao-e-documentos",
   "pacientes.recuperacao",
   "pacientes.ficha-do-paciente",
+  "pacientes.alterar-terapeuta",
   "pacotes.atribuir-pacote",
   "pacotes.marcar-com-pacote",
   "pacotes.saldo-de-sessoes",
@@ -76,6 +77,7 @@ const RECEPTION = [
   "portal.lembretes-sms",
   "portal.pacientes-sem-sms",
   "portal.o-que-o-paciente-ve",
+  "portal.confirmacao-ao-paciente",
   "faturacao.faturas-de-um-periodo",
   "faturacao.faturas-de-um-paciente",
   "equipa-e-horarios.registar-ausencia",
@@ -128,8 +130,8 @@ const THERAPIST = [
 ];
 
 // Proprietário: Início, Agenda, Pacientes, Equipa e Horários, Faturação,
-// Pacotes, Portal do paciente, Marcação online, Registos. 59 lessons, M1
-// held: 58, which is every published lesson.
+// Pacotes, Portal do paciente, Marcação online, Registos. 61 lessons, M1
+// held: 60, which is every published lesson.
 const OWNER = [
   "inicio.resumo-do-dia",
   "inicio.ver-outro-dia",
@@ -154,6 +156,7 @@ const OWNER = [
   "pacientes.recuperacao",
   "pacientes.juntar-ficha-duplicada",
   "pacientes.pacientes-eliminados",
+  "pacientes.alterar-terapeuta",
   "equipa-e-horarios.inspetor-de-horarios",
   "equipa-e-horarios.horario-semanal",
   "equipa-e-horarios.semanas-alternadas-e-dia-a-dia",
@@ -180,6 +183,7 @@ const OWNER = [
   "portal.pacientes-sem-sms",
   "portal.servicos-no-portal",
   "portal.mensagem-de-teste",
+  "portal.confirmacao-ao-paciente",
   "marcacao-online.tratar-pedido-novo-cliente",
   "marcacao-online.horarios-do-portal",
   "registos.revisao-consulta",
@@ -196,7 +200,7 @@ const OWNER = [
 // Recuperar um paciente eliminado (patients:recover), the Registos lessons
 // on writing (clinical_records:author, :sign, :review) and Enviar uma mensagem
 // de teste (roles:manage; the page is owner only, see "a lesson's gate is its
-// page's gate" below). 49 lessons. E-25: of Registos an administrator reads
+// page's gate" below). 51 lessons. E-25: of Registos an administrator reads
 // one lesson, Exportar registos em PDF, because it holds clinical_records:read
 // and the three export buttons ask for nothing else.
 const ADMIN = [
@@ -221,6 +225,7 @@ const ADMIN = [
   "pacientes.declaracao-e-documentos",
   "pacientes.recuperacao",
   "pacientes.juntar-ficha-duplicada",
+  "pacientes.alterar-terapeuta",
   "equipa-e-horarios.inspetor-de-horarios",
   "equipa-e-horarios.horario-semanal",
   "equipa-e-horarios.semanas-alternadas-e-dia-a-dia",
@@ -246,13 +251,14 @@ const ADMIN = [
   "portal.lembretes-sms",
   "portal.pacientes-sem-sms",
   "portal.servicos-no-portal",
+  "portal.confirmacao-ao-paciente",
   "marcacao-online.tratar-pedido-novo-cliente",
   "marcacao-online.horarios-do-portal",
   "registos.exportar-pdf",
 ];
 
 describe("each role sees exactly its own lessons, in its own order (G1-3)", () => {
-  it("reception: the 37 Receção lessons, and no Registos lesson", () => {
+  it("reception: the 39 Receção lessons, and no Registos lesson", () => {
     expect(ids("reception")).toEqual(RECEPTION);
     expect(ids("reception").filter((id) => id.startsWith("registos."))).toEqual([]);
     expect(sectionIds("reception")).not.toContain("registos");
@@ -265,7 +271,7 @@ describe("each role sees exactly its own lessons, in its own order (G1-3)", () =
     expect(ids("therapist").filter((id) => id.startsWith("marcacao-online."))).toEqual([]);
   });
 
-  it("admin: the 49 Proprietário lessons whose capability the admin role holds, with Atualizar os dados and without Atribuir terapeutas", () => {
+  it("admin: the 51 Proprietário lessons whose capability the admin role holds, with Atualizar os dados and without Atribuir terapeutas", () => {
     expect(ids("admin")).toEqual(ADMIN);
     // The same list, derived: the owner's lessons filtered by can("admin", capability).
     const derived = guideLessonsFor("owner")
@@ -278,7 +284,7 @@ describe("each role sees exactly its own lessons, in its own order (G1-3)", () =
     expect(ids("admin")).not.toContain("pacientes.atribuir-terapeutas");
   });
 
-  it("owner: the 58 Proprietário lessons, which are every published lesson", () => {
+  it("owner: the 60 Proprietário lessons, which are every published lesson", () => {
     expect(ids("owner")).toEqual(OWNER);
     expect([...ids("owner")].sort()).toEqual(GUIDE_DATA.lessons.map((lesson) => lesson.id).sort());
   });
@@ -342,8 +348,8 @@ describe("a lesson is only ever written for a role that can open its screen", ()
 
   it("the source loads without errors", () => {
     expect(guide.errors).toEqual([]);
-    // 59 lessons and the seven FAQ entries: an entry is held to the same rule.
-    expect(all.length).toBe(66);
+    // 61 lessons and the seven FAQ entries: an entry is held to the same rule.
+    expect(all.length).toBe(68);
   });
 
   it("every capability named is a packages/auth capability", () => {
@@ -842,6 +848,12 @@ describe("each role reads only the FAQ role blocks written for it (G1-3)", () =>
 //     once (the episode and the imported group; the report and the RGPD
 //     form), so `times` pins how many copies each file has: a door that came
 //     to ask for more, in any one copy, would fail here.
+//   * Alterar o terapeuta de uma marcação na ficha (MARC-THERAPIST-01): the
+//     field is offered by `offersTherapistChange`, which asks for
+//     appointments:write and refuses a therapist, who holds it. The lesson's
+//     appointments:delete stands in for that pair, because owner, admin and
+//     reception hold it and a therapist does not; this row fails the day a
+//     therapist is granted it, or the day the field's rule changes.
 const PAGE_GATES: { lesson: string; page: string; check: string; times?: number; admits: (role: Role) => boolean }[] = [
   {
     lesson: "faturacao.faturas-de-um-periodo",
@@ -860,6 +872,12 @@ const PAGE_GATES: { lesson: string; page: string; check: string; times?: number;
     page: "apps/web/app/patients/[id]/page.tsx",
     check: 'const canManageCareTeam = can(ctx.role, "care_team:manage");',
     admits: (role) => can(role, "care_team:manage"),
+  },
+  {
+    lesson: "pacientes.alterar-terapeuta",
+    page: "apps/web/lib/scheduling/therapist-change.ts",
+    check: 'return canEditAppointments && role !== "therapist";',
+    admits: (role) => can(role, "appointments:write") && role !== "therapist",
   },
   ...([
     ["apps/web/app/patients/[id]/page.tsx", 'const canReadClinical = can(ctx.role, "clinical_records:read");', 1],
@@ -905,5 +923,11 @@ describe("a lesson's gate is its page's gate", () => {
     const messaging = PAGE_GATES.find((gate) => gate.lesson === "portal.mensagem-de-teste")!;
     expect(refusedHolders("settings:manage", messaging.admits)).toEqual(["admin"]);
     expect(refusedHolders("roles:manage", messaging.admits)).toEqual([]);
+  });
+
+  it("seeded: the field's own capability, appointments:write, admits a therapist the field refuses, so appointments:delete stands in for it", () => {
+    const therapistChange = PAGE_GATES.find((gate) => gate.lesson === "pacientes.alterar-terapeuta")!;
+    expect(refusedHolders("appointments:write", therapistChange.admits)).toEqual(["therapist"]);
+    expect(refusedHolders("appointments:delete", therapistChange.admits)).toEqual([]);
   });
 });

@@ -53,16 +53,16 @@ describe("guide-data.json is regenerated from the lesson source (G1-4 for /ajuda
   });
 
   // An empty or unread source would regenerate to an empty file that could
-  // match an empty committed one. The source is the 59 lessons of nine
+  // match an empty committed one. The source is the 61 lessons of nine
   // sections and the seven FAQ entries of 00-perguntas.
-  it("the regeneration reads the real source: nine sections, 59 lessons (one held), seven FAQ entries", () => {
+  it("the regeneration reads the real source: nine sections, 61 lessons (one held), seven FAQ entries", () => {
     const guide = loadGuide();
     expect(guide.errors).toEqual([]);
     expect(guide.sections).toHaveLength(9);
-    expect(guide.lessons).toHaveLength(59);
+    expect(guide.lessons).toHaveLength(61);
     expect(guide.faq).toHaveLength(7);
     const data = JSON.parse(committed) as Data;
-    expect(data.lessons).toHaveLength(58);
+    expect(data.lessons).toHaveLength(60);
     expect(data.faq).toHaveLength(7);
     expect(data.held.map((item) => item.id)).toEqual(["marcacao-online.pedido-de-cliente-novo"]);
   });
