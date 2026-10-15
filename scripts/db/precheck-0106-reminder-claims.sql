@@ -1,16 +1,19 @@
--- 0106 (PROVISIONAL NUMBER) PRE-CHECK: the reminder sweep's two tables.
--- A DRAFT, like the migration it reads for. READ ONLY. Every verdict must read OK
--- (8 expected); nine CARRY rows feed the post-check, and three INFO rows print a
--- profile and are never counted. Catalogue facts only: no row of any table is read.
+-- 0106 PRE-CHECK: the reminder sweep's two tables. The number is strategy's ruling
+-- of 2026-10-13; the migration is still PENDING, because 0104 and 0105 are not on
+-- main. READ ONLY. Every verdict must read OK (10 expected); nine CARRY rows feed
+-- the post-check, and three INFO rows print a profile and are never counted.
+-- Catalogue facts only: no row of any table is read.
 --
 -- WHAT THE MIGRATION DOES
 -- (packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql, sha256
--- a78b2c9dc92d9184b2977cb588f657751d94387e216185ecc206d202bfa50cf2,
+-- 2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9,
 -- to be promoted with no byte changed): three SET LOCAL lines, then two CREATE TABLE
--- (public.reminder_claims, public.reminder_sweep_passes), four indexes, two table
--- comments, ENABLE ROW LEVEL SECURITY on both, a REVOKE ALL and a GRANT SELECT,
--- INSERT on each, three foreign keys to appointments and tenants in two ALTER
--- TABLE statements, and four CREATE POLICY statements, last. No function, no
+-- (public.reminder_claims, public.reminder_sweep_passes), five indexes, two table
+-- comments, ENABLE ROW LEVEL SECURITY on both, a REVOKE ALL on each from PUBLIC,
+-- anon, authenticated, patient AND service_role, a GRANT SELECT, INSERT on each to
+-- authenticated, three foreign keys to appointments and tenants in two ALTER
+-- TABLE statements, and four CREATE POLICY statements, last. The INSERT policy
+-- of reminder_claims reads public.appointments in a sub-select. No function, no
 -- sequence, no trigger, no row.
 --
 -- NOT IN THIS DRAFT, ON PURPOSE: the journal verdicts (the migration absent by
@@ -23,7 +26,7 @@
 --   1      the session is `postgres`, which will own both tables. CONTROL:
 --          `authenticated` is no member of the session's role;
 --   2      NOTHING THE MIGRATION CREATES EXISTS YET: no relation named
---          reminder_claims or reminder_sweep_passes or one of its five index
+--          reminder_claims or reminder_sweep_passes or one of its eight index
 --          and key names, in `public`. CONTROL: the same probe finds
 --          reminder_dispatches and its three indexes;
 --   3      THE TWO TABLES THE FOREIGN KEYS NAME EXIST, are owned by `postgres`,
@@ -42,6 +45,22 @@
 --   7      the SECURITY DEFINER count in `public`, every one owned by
 --          `postgres`. The migration creates no function, so the post-check
 --          wants the same number: no count GATE-CHANGE follows this apply;
+--   8      WHAT THE CLAIMS INSERT POLICY RESTS ON (strategy W-6). Its sub-select
+--          reads public.appointments as the caller, through the policies of
+--          appointments. So `authenticated` must hold SELECT on appointments,
+--          and must be able to execute EVERY function a policy on appointments
+--          that applies to it depends on (read from pg_depend, not from a
+--          list). CONTROLS: at least three such functions are found, and the
+--          same read finds that `authenticated` may NOT execute a function a
+--          policy for `patient` depends on, so "all executable" is not a
+--          reading of an empty set;
+--   9      THE DEFAULT PRIVILEGES HAND A NEW TABLE TO NO ROLE THE MIGRATION DOES
+--          NOT REVOKE BY NAME (strategy W-5). The migration revokes PUBLIC,
+--          anon, authenticated, patient and service_role. A role outside that
+--          list that `postgres`'s defaults name, for tables in `public` or
+--          everywhere, would keep its grant, and the post-check would then FAIL
+--          AFTER the commit. This reads it before. CONTROL: the defaults name
+--          at least one role, so the reading is not of an empty list;
 --   CARRY  tables_before: ordinary and partitioned tables in `public`;
 --   CARRY  sequences_before: sequences in `public`. The migration creates none,
 --          and the post-check proves it by reading the count again;
@@ -56,8 +75,7 @@
 --          `public`, one md5;
 --   INFO   the server version;
 --   INFO   what `postgres` hands out by default on a new table in `public`, by
---          role. The migration revokes by name whatever this is, so it is a
---          profile and not a premise;
+--          role: the profile behind verdict 9;
 --   INFO   how many rows appointments and tenants hold. The foreign keys are
 --          validated against the NEW tables, which are empty, so these counts
 --          cost nothing; they are the size of what waits behind the two locks.
@@ -71,13 +89,13 @@
 \set ON_ERROR_STOP on
 
 \echo ''
-\echo '=== 0106 (PROVISIONAL) REMINDER CLAIMS PRE-CHECK: every verdict must read OK (8 expected) ==='
+\echo '=== 0106 REMINDER CLAIMS PRE-CHECK: every verdict must read OK (10 expected) ==='
 
 WITH names(n) AS (
   VALUES ('reminder_claims'), ('reminder_sweep_passes'),
-         ('reminder_claims_pkey'), ('reminder_claims_tenant_appointment_id_key'),
+         ('reminder_claims_pkey'), ('reminder_claims_release_target_key'),
          ('reminder_claims_tenant_time_idx'), ('reminder_claims_mark_idx'),
-         ('reminder_claims_release_claim_key'),
+         ('reminder_claims_release_claim_key'), ('reminder_claims_claim_attempt_key'),
          ('reminder_sweep_passes_pkey'), ('reminder_sweep_passes_tenant_time_idx')
 ), control_names(n) AS (
   VALUES ('reminder_dispatches'), ('reminder_dispatches_tenant_time_idx'),
@@ -92,8 +110,33 @@ WITH names(n) AS (
   SELECT d.defaclrole, d.defaclnamespace, d.defaclobjtype::text AS objtype, a.grantor, a.grantee, a.privilege_type, a.is_grantable
     FROM pg_default_acl d
     CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+), appt_fns AS (
+  -- Every function a policy on public.appointments depends on, with whether the
+  -- policy applies to `authenticated` (it names the role, or it names PUBLIC).
+  SELECT DISTINCT dep.refobjid AS fn,
+         (p.polroles @> ARRAY['authenticated'::regrole::oid] OR p.polroles @> ARRAY[0::oid]) AS for_auth
+    FROM pg_policy p
+    JOIN pg_depend dep ON dep.classid = 'pg_policy'::regclass AND dep.objid = p.oid
+                      AND dep.refclassid = 'pg_proc'::regclass
+   WHERE p.polrelid = 'public.appointments'::regclass
+), new_table_grantees AS (
+  -- Who the session's defaults hand a privilege to on a new table in `public`.
+  SELECT DISTINCT CASE WHEN grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(grantee)::text END AS grantee
+    FROM def_items
+   WHERE defaclrole = current_user::regrole AND objtype = 'r'
+     AND defaclnamespace IN (0, 'public'::regnamespace)
 ), j AS (
   SELECT
+    has_table_privilege('authenticated', 'public.appointments', 'SELECT')                         AS auth_reads_appts,
+    (SELECT count(*)::int FROM appt_fns WHERE for_auth)                                           AS appt_fns_n,
+    (SELECT count(*)::int FROM appt_fns WHERE for_auth
+        AND NOT has_function_privilege('authenticated', fn, 'EXECUTE'))                           AS appt_fns_refused,
+    (SELECT count(*)::int FROM appt_fns WHERE NOT for_auth
+        AND fn NOT IN (SELECT fn FROM appt_fns WHERE for_auth)
+        AND NOT has_function_privilege('authenticated', fn, 'EXECUTE'))                           AS appt_fns_control,
+    (SELECT count(*)::int FROM new_table_grantees)                                                AS default_grantees_n,
+    (SELECT coalesce(string_agg(grantee, ', ' ORDER BY grantee), 'none') FROM new_table_grantees
+      WHERE grantee NOT IN ('PUBLIC', 'anon', 'authenticated', 'patient', 'service_role', current_user::text)) AS default_unnamed,
     current_user::text                                                                          AS me,
     pg_has_role('authenticated', current_user, 'MEMBER')                                         AS auth_in_me,
     (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -183,7 +226,7 @@ SELECT '0. this transaction is READ ONLY (the server refuses writes)' AS check,
 UNION ALL SELECT '1. the session is postgres, which will own both tables (control: authenticated is no member of it)',
        me || '; control ' || auth_in_me::text, 'postgres; control false',
        CASE WHEN me = 'postgres' AND NOT auth_in_me THEN 'OK' ELSE 'FAIL' END FROM j
-UNION ALL SELECT '2. nothing the migration creates exists yet: none of its nine relation names is taken (control: the ledger and its three indexes are found)',
+UNION ALL SELECT '2. nothing the migration creates exists yet: none of its ten relation names is taken (control: the ledger and its three indexes are found)',
        names_taken::text || '; control ' || control_found::text, '0; control 4',
        CASE WHEN names_taken = 0 AND control_found = 4 THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT '3. appointments and tenants exist, owned by postgres, each with a primary key on id alone',
@@ -200,6 +243,14 @@ UNION ALL SELECT '7. the SECURITY DEFINER functions in public are all owned by p
        secdef::text || ' functions, ' || secdef_not_postgres::text || ' not owned by postgres',
        'more than 0 functions, 0 not owned by postgres',
        CASE WHEN secdef > 0 AND secdef_not_postgres = 0 THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '8. what the claims INSERT policy rests on: authenticated reads appointments and may execute every function its policies there depend on (controls: at least 3 are found; one for patient alone reads not executable)',
+       auth_reads_appts::text || '; ' || appt_fns_refused::text || ' refused of ' || CASE WHEN appt_fns_n >= 3 THEN 'at least 3' ELSE appt_fns_n::text END
+         || '; control ' || (appt_fns_control > 0)::text,
+       'true; 0 refused of at least 3; control true',
+       CASE WHEN auth_reads_appts AND appt_fns_refused = 0 AND appt_fns_n >= 3 AND appt_fns_control > 0 THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '9. the default privileges hand a new table to no role the migration does not revoke by name (control: they name at least one role)',
+       default_unnamed || '; control ' || (default_grantees_n > 0)::text, 'none; control true',
+       CASE WHEN default_unnamed = 'none' AND default_grantees_n > 0 THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT 'tables_before', n_tables::text, 'a count', 'CARRY' FROM j
 UNION ALL SELECT 'sequences_before', n_sequences::text, 'a count', 'CARRY' FROM j
 UNION ALL SELECT 'secdef_before', secdef::text, 'a count', 'CARRY' FROM j

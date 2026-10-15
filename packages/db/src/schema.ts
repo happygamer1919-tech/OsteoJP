@@ -2791,31 +2791,34 @@ export const appointmentSurveyResponses = pgTable("appointment_survey_responses"
 });
 
 /* ================================================================== */
-/* THE REMINDER SWEEP'S OWN TABLES (pending, held for a number).      */
+/* THE REMINDER SWEEP'S OWN TABLES (pending; ruled number 0106).      */
 /* ================================================================== */
 
 /**
  * `reminder_claims` and `reminder_sweep_passes`: the reminder sweep's claim
  * store and its heartbeat, ruled off `audit_log` by strategy on 2026-10-12.
  *
- * TYPES ONLY, AND THE TABLES ARE NOT IN ANY DATABASE YET. Their migration is
- * `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql`, a
- * draft: nothing applies a pending file, so a database built from this branch
- * does not have them, and neither does production. Nothing in the application
- * queries them in this commit; the reminder code that will is on its own
- * branches and is moved onto these tables by a later change.
+ * TYPES ONLY, AND UNTIL THE MIGRATION IS PROMOTED AND APPLIED THE TABLES ARE
+ * IN NO DATABASE. Their migration is
+ * `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql`
+ * (strategy ruled its number on 2026-10-13: 0106). Nothing applies a pending
+ * file, so a database built from the numbered migrations does not have them.
+ * Code that queries them must not reach production before the apply.
  *
  * APPEND ONLY, AND ONLY THE REMINDER JOB WRITES. `authenticated` holds SELECT
- * and INSERT and nothing else, and the INSERT policy admits only a session
- * with a tenant and no user, which is what `withReminderTenantContext` makes.
- * A release is a NEW ROW of kind `release` naming its claim: never add an
- * update or a delete helper for either table.
+ * and INSERT and nothing else, `service_role` holds nothing, and the INSERT
+ * policy admits only a session with a tenant and no user, which is what
+ * `withReminderTenantContext` makes. On `reminder_claims` it also asks that
+ * the appointment is of the row's tenant, read as that session. A release is
+ * a NEW ROW of kind `release` naming its claim: never add an update or a
+ * delete helper for either table.
  *
  * NO INDEXES, NO CHECKS AND NO COMPOSITE KEYS DECLARED HERE, for
  * `patientCareTeam`'s reason: the migration is the source of truth for DDL,
  * and drizzle is used in this repo to query the schema, never to generate it.
- * So `claimId` carries no reference below, although the table ties it to a row
- * of the same tenant and the same appointment.
+ * So `claimId` carries no reference below, although the table ties a release
+ * to a row of kind `claim` with the same tenant, appointment, offset and
+ * channel.
  */
 export const reminderClaims = pgTable("reminder_claims", {
   /** For a row of kind `claim`, this is the claim id a release names. */
@@ -2845,8 +2848,24 @@ export const reminderClaims = pgTable("reminder_claims", {
   taker: text("taker"),
   /** Claim only: taken more than the early margin before `dueAt`. NULL exactly when `dueAt` is. */
   early: boolean("early"),
+  /**
+   * Claim only, and REQUIRED on a claim (NULL on every other kind): which try
+   * of this reminder for this start the claim is, from 1. The writer computes
+   * it under the reminder's lock, one more than the highest attempt already
+   * stored for the same appointment, offset, channel and start. The table
+   * refuses a second claim with the same number (unique_violation 23505, index
+   * `reminder_claims_claim_attempt_key`) and a claim without one (CHECK
+   * `reminder_claims_attempt_matches_kind`, 23514). No default, on purpose.
+   */
+  attempt: integer("attempt"),
   /** Release only: the claim it gives up. One release per claim. */
   claimId: uuid("claim_id"),
+  /**
+   * Written by the database, never by the application: `claim` on a release,
+   * NULL on every other row. It is the column through which the table proves
+   * that the row a release names is of kind `claim`.
+   */
+  claimKind: text("claim_kind").generatedAlwaysAs(sql`CASE WHEN kind = 'release' THEN 'claim' END`),
   /** Shadow only: minutes between `dueAt` and the pass. Negative on the day's last pass. */
   minutesAfterMark: integer("minutes_after_mark"),
   /** Shadow only: the visit was saved after `dueAt`. */
