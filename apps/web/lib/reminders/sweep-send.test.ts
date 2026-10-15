@@ -88,6 +88,8 @@ describe("one mark, handed to the dispatcher", () => {
     // The visit had begun when the dispatcher came to send: final in the same way.
     [{ dispatched: false, reason: "start_passed" }, "too_late"],
     [{ dispatched: false, reason: "claim_held" }, "claim_held"],
+    // Q-A: another taker holds this attempt. Held, never held back: no row, no release.
+    [{ dispatched: false, reason: "claim_held_by_duplicate" }, "claim_held"],
   ] as const)("the dispatcher answers %o: %s", async (outcome, word) => {
     const dispatch = vi.fn(async () => outcome as unknown as DispatchOutcome);
     expect(await handOverMark({ tenantId: T1, mark: mark(-5), now: NOW, dispatch: dispatch as never })).toBe(word);

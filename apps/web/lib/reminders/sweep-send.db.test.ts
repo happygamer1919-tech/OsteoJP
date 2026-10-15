@@ -189,10 +189,15 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
   ): Promise<string> {
     const id = randomUUID();
     const tenant = over.tenant ?? tenantA;
+    // The attempt as the writer numbers it (0106): the next one for this
+    // reminder and start.
     await sql.execute(raw`insert into reminder_claims
-      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early)
+      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt)
       values (${id}, ${tenant}, ${appointmentId}, 'claim', '24h', 'sms', ${start.toISOString()},
-              ${plus(start, -24 * H).toISOString()}, ${over.taker ?? "run"}, ${over.early ?? false}::boolean)`);
+              ${plus(start, -24 * H).toISOString()}, ${over.taker ?? "run"}, ${over.early ?? false}::boolean,
+              (select coalesce(max(attempt), 0) + 1 from reminder_claims
+                where appointment_id = ${appointmentId} and kind = 'claim' and offset_id = '24h' and channel = 'sms'
+                  and starts_at = ${start.toISOString()}::timestamptz))`);
     if (over.released) {
       await sql.execute(raw`insert into reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id)
         values (${tenant}, ${appointmentId}, 'release', '24h', 'sms', ${id})`);

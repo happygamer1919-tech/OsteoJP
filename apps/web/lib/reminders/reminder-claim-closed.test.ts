@@ -51,10 +51,19 @@ const h = vi.hoisted(() => ({
   duringTheGates: null as null | (() => void),
   /** Run as the confirm code is issued: the last row written before the SMS transport. */
   asTheCodeIsIssued: null as null | (() => void),
+  /** Every alert raised, as the replaced Sentry received it. */
+  alerts: [] as { title: string; context: unknown }[],
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("./data", () => ({ loadReminderData: h.loadReminderData }));
+// Replaced, so an alert is seen and nothing is reported anywhere.
+vi.mock("@sentry/nextjs", () => ({
+  captureMessage: vi.fn((title: string, context: unknown) => {
+    h.alerts.push({ title, context });
+    h.events.push("alert");
+  }),
+}));
 vi.mock("./reminder-claim", async (importOriginal) => ({
   // The two pure pieces the dispatcher's rules of time read: the real ones.
   EARLY_CLAIM_MS: (await importOriginal<typeof import("./reminder-claim")>()).EARLY_CLAIM_MS,
@@ -124,6 +133,7 @@ import { ProviderSendError } from "./clients";
 import {
   CLAIM_RELEASING_PROVIDER_CODES,
   REMINDER_LATE_LIMIT_MS,
+  SENDER_OR_BODY_REFUSAL_CODES,
   claimIsGivenUpAfterThrow,
   dispatchReminder,
   reminderIsTakenAhead,
@@ -198,6 +208,7 @@ beforeEach(() => {
   h.throwBeforeHandOver = null;
   h.duringTheGates = null;
   h.asTheCodeIsIssued = null;
+  h.alerts.length = 0;
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -283,6 +294,16 @@ describe("while the sweep is the sender", () => {
     h.closedAnswer = { held: true };
     h.loadReminderData.mockResolvedValue(fixture());
     expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).toEqual({ dispatched: false, reason: "claim_held" });
+    expect(h.events).toEqual(["claim:closed"]);
+  });
+
+  it("HELD BY A DUPLICATE (Q-A, 2026-10-15): the table refused this claim's attempt; nothing is sent and nothing is written", async () => {
+    h.closedAnswer = { held: true, duplicate: true };
+    h.loadReminderData.mockResolvedValue(fixture());
+    expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).toEqual({
+      dispatched: false,
+      reason: "claim_held_by_duplicate",
+    });
     expect(h.events).toEqual(["claim:closed"]);
   });
 
@@ -386,7 +407,69 @@ describe("while the sweep is the sender", () => {
       h.transport = { throws: refusal };
       h.loadReminderData.mockResolvedValue(fixture());
       await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).rejects.toBe(refusal);
-      expect(h.events).toEqual(["claim:closed", "send:sms", `ledger:reminder.24h.sms:provider_error:${code}`, RELEASE]);
+      const alerted = SENDER_OR_BODY_REFUSAL_CODES.sms.includes(code) ? ["alert"] : [];
+      expect(h.events).toEqual(["claim:closed", "send:sms", `ledger:reminder.24h.sms:provider_error:${code}`, RELEASE, ...alerted]);
+    });
+
+    /**
+     * Q-C (strategy, 2026-10-15). Three answers about the patient's own
+     * number are KEPT: the claim stays live, nothing is tried again, and no
+     * alert is raised.
+     */
+    it.each(["21211", "21610", "21614"])("SMS, Twilio code %s (the patient's number): the claim is KEPT, and the error goes on", async (code) => {
+      const refusal = Object.assign(new Error("refused"), { code: Number(code) });
+      h.transport = { throws: refusal };
+      h.loadReminderData.mockResolvedValue(fixture());
+      await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).rejects.toBe(refusal);
+      expect(h.events).toEqual(["claim:closed", "send:sms", `ledger:reminder.24h.sms:provider_error:${code}`]);
+      expect(h.alerts).toEqual([]);
+    });
+
+    /**
+     * Q-C (c). Our sender (21606) or our body (21617) is wrong for every
+     * patient: given up AND an alert, with a fixed title, the code and the
+     * channel, and nothing about the patient, the number or the visit.
+     */
+    it.each(["21606", "21617"])("SMS, Twilio code %s (ours, for every patient): given up, ONE alert of code and channel only, and the error goes on", async (code) => {
+      const refusal = Object.assign(new Error("refused +351912345678 Paciente Ficticio"), { code: Number(code) });
+      h.transport = { throws: refusal };
+      h.loadReminderData.mockResolvedValue(fixture());
+      await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).rejects.toBe(refusal);
+      expect(h.events).toEqual(["claim:closed", "send:sms", `ledger:reminder.24h.sms:provider_error:${code}`, RELEASE, "alert"]);
+      expect(h.alerts).toEqual([
+        {
+          title: "reminders/dispatch: the provider refused our sender or our message body",
+          context: { level: "warning", tags: { code, channel: "sms" } },
+        },
+      ]);
+      const reported = JSON.stringify(h.alerts);
+      for (const absent of [TENANT_ID, APPOINTMENT_ID, PATIENT_ID, "912", "Paciente", "refused +351"]) {
+        expect(reported).not.toContain(absent);
+      }
+    });
+
+    it("CONTROL: a released code that is not ours (20429) raises no alert, and neither does a kept one", async () => {
+      for (const code of ["20429", "21211"]) {
+        h.transport = { throws: Object.assign(new Error("refused"), { code: Number(code) }) };
+        h.loadReminderData.mockResolvedValue(fixture());
+        await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).rejects.toThrow();
+      }
+      expect(h.alerts).toEqual([]);
+      expect(h.events.filter((x) => x === RELEASE)).toHaveLength(1);
+    });
+
+    it("the alert cannot replace the provider's error: a report that fails is printed, and the same error goes on", async () => {
+      const Sentry = await import("@sentry/nextjs");
+      vi.mocked(Sentry.captureMessage).mockImplementationOnce(() => {
+        throw new Error("report failed");
+      });
+      const refusal = Object.assign(new Error("refused"), { code: 21606 });
+      h.transport = { throws: refusal };
+      h.loadReminderData.mockResolvedValue(fixture());
+      await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms", "sweep", justAfter("24h"))).rejects.toBe(refusal);
+      expect(h.events).toContain(RELEASE);
+      const printed = vi.mocked(console.error).mock.calls.flat().join(" ");
+      expect(printed).toContain("could not report a sender or body refusal code=21606 channel=sms");
     });
 
     it.each(CLAIM_RELEASING_PROVIDER_CODES.email)("email, Resend name %s (not accepted): given up, and the error goes on", async (name) => {
@@ -753,18 +836,31 @@ describe("the two rules, on their own", () => {
         "restricted_api_key",
         "invalid_api_key",
       ],
-      sms: ["20003", "20429", "21211", "21408", "21610", "21611", "21614"],
+      // Checked against Twilio's error pages on 2026-10-14, ruled 2026-10-15 (Q-C).
+      sms: ["20003", "20429", "21408", "21606", "21611", "21612", "21617"],
     });
     // The one name the email list must never hold: an answer the SDK could not read.
     expect(CLAIM_RELEASING_PROVIDER_CODES.email).not.toContain("application_error");
+    // Q-C: the patient's own number is kept, never released.
+    for (const kept of ["21211", "21610", "21614"]) expect(CLAIM_RELEASING_PROVIDER_CODES.sms).not.toContain(kept);
+    // Q-C (d): no delivery answer, ever. A 30xxx code comes after Twilio accepted the message.
+    expect(CLAIM_RELEASING_PROVIDER_CODES.sms.filter((c) => c.startsWith("30"))).toEqual([]);
+    expect(CLAIM_RELEASING_PROVIDER_CODES.sms.length).toBeGreaterThan(0);
+  });
+
+  it("THE ALERT LIST IS PINNED, and every code on it gives its claim up", () => {
+    expect(SENDER_OR_BODY_REFUSAL_CODES).toEqual({ email: [], sms: ["21606", "21617"] });
+    for (const code of SENDER_OR_BODY_REFUSAL_CODES.sms) expect(CLAIM_RELEASING_PROVIDER_CODES.sms).toContain(code);
   });
 
   it("claimIsGivenUpAfterThrow: before a hand-over yes; after it only for a listed answer of that channel", () => {
     expect(claimIsGivenUpAfterThrow({ handOverStarted: false })).toBe(true);
     expect(claimIsGivenUpAfterThrow({ handOverStarted: true })).toBe(false);
     expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "sms", code: null } })).toBe(false);
-    expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "sms", code: "21211" } })).toBe(true);
-    expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "email", code: "21211" } })).toBe(false);
+    expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "sms", code: "21612" } })).toBe(true);
+    expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "email", code: "21612" } })).toBe(false);
+    // Q-C: kept.
+    expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "sms", code: "21211" } })).toBe(false);
     expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "email", code: "validation_error" } })).toBe(true);
     expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "sms", code: "validation_error" } })).toBe(false);
     expect(claimIsGivenUpAfterThrow({ handOverStarted: true, refusal: { channel: "email", code: "application_error" } })).toBe(false);

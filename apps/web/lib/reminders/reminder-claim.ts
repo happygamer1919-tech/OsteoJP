@@ -603,11 +603,12 @@ export async function claimIsLive(
 
 /**
  * What the closed claim answers. `held`: a live claim of this reminder for
- * this start exists, and the caller sends nothing. Not held: the row was
- * written, and `claimId` is never null, because a claim that could not be
- * written is a throw here and not an answer.
+ * this start exists, and the caller sends nothing; `duplicate` when it is the
+ * table that said so, refusing this claim's attempt (`isDuplicateClaimAttempt`).
+ * Not held: the row was written, and `claimId` is never null, because a claim
+ * that could not be written is a throw here and not an answer.
  */
-export type ClosedReminderClaimAnswer = { held: true } | { held: false; claimId: string };
+export type ClosedReminderClaimAnswer = { held: true; duplicate?: true } | { held: false; claimId: string };
 
 /**
  * TAKE THE CLAIM WHILE THE SWEEP IS THE SENDER. The same transaction as
@@ -616,15 +617,19 @@ export type ClosedReminderClaimAnswer = { held: true } | { held: false; claimId:
  *
  *   - it reads `claimIsLive`, so a live claim blocks whatever followed it;
  *   - IT THROWS `ReminderClaimStoreError` when anything fails, a wait that ran
- *     out included, and the caller sends nothing;
+ *     out included, and the caller sends nothing. One refusal is an answer
+ *     instead: the table's 23505 on the attempt key is held, by a duplicate
+ *     (Q-A, 2026-10-15), as on the open claim;
  *   - a claim the day's last pass takes ahead of its mark (`takenAhead`) is
  *     NOT recorded as early. An early claim blocks nobody, and this one must
  *     block the morning's first pass.
  *
  * THIS IS THE DUPLICATE REFUSAL. Two takers of one reminder queue on the lock;
  * the first commits its row before the second reads; the second answers held.
- * The table itself refuses nothing here: it has no unique key over the claims
- * of one reminder.
+ * Behind it the table refuses a second claim of the same attempt (0106): the
+ * number is read under the same lock, after `claimIsLive`, over every claim
+ * of this start, early ones included, which `claimIsLive` passes over for
+ * "held" but which hold their numbers all the same.
  */
 export async function takeReminderClaimClosed(args: {
   tenantId: string;
@@ -659,11 +664,16 @@ export async function takeReminderClaimClosed(args: {
         acquireReminderClaimLock(args.tenantId, args.appointmentId, args.offsetId, args.channel),
       );
       if (await claimIsLive(tx, args)) return { held: true };
-      const [written] = await tx.insert(reminderClaims).values(row).returning({ id: reminderClaims.id });
+      const attempt = await nextReminderClaimAttempt(tx, args);
+      const [written] = await tx
+        .insert(reminderClaims)
+        .values({ ...row, attempt })
+        .returning({ id: reminderClaims.id });
       if (!written?.id) throw new Error("the claim row came back without its id");
       return { held: false, claimId: written.id };
     });
   } catch (e) {
+    if (isDuplicateClaimAttempt(e)) return { held: true, duplicate: true };
     throw new ReminderClaimStoreError(
       args.tenantId,
       args.appointmentId,

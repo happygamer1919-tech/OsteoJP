@@ -113,6 +113,7 @@ const {
   reminderClaimLockPayload,
   reminderMark,
   takeReminderClaim,
+  takeReminderClaimClosed,
 } = await import("./reminder-claim");
 
 const TENANT = "22222222-2222-2222-2222-222222222222";
@@ -415,6 +416,50 @@ describe("the reminder claim: a duplicate attempt is held", () => {
     expect(isDuplicateClaimAttempt({ ...duplicate, code: 23505 })).toBe(false);
     expect(isDuplicateClaimAttempt(null)).toBe(false);
     expect(isDuplicateClaimAttempt("23505 reminder_claims_claim_attempt_key")).toBe(false);
+  });
+});
+
+/**
+ * THE CLOSED CLAIM (SWEEP-47) numbers its claim the same way, and holds a
+ * duplicate attempt the same way; every other failure is its throw.
+ */
+describe("the closed claim: the attempt number, and a duplicate attempt", () => {
+  const duplicate = { code: "23505", constraint_name: "reminder_claims_claim_attempt_key" };
+
+  it("bounds, lock, live read, attempt read, row: the next attempt is stored", async () => {
+    lastAttempt = 2;
+    await expect(takeReminderClaimClosed(base)).resolves.toEqual({ held: false, claimId: CLAIM_ID });
+    expect(ran.map((r) => r.kind)).toEqual(["execute", "execute", "read", "attempt", "insert"]);
+    expect(insertedRow().attempt).toBe(3);
+  });
+
+  it("a live claim is held, and no number is read", async () => {
+    heldRows = [{ id: "55555555-5555-5555-5555-555555555555" }];
+    await expect(takeReminderClaimClosed(base)).resolves.toEqual({ held: true });
+    expect(ran.filter((r) => r.kind === "attempt")).toHaveLength(0);
+  });
+
+  it("the table's 23505 on the attempt key, bare or as the cause, is held by a duplicate: not a throw", async () => {
+    failAt = "insert";
+    insertError = Object.assign(new Error("duplicate key value"), duplicate);
+    await expect(takeReminderClaimClosed(base)).resolves.toEqual({ held: true, duplicate: true });
+    insertError = Object.assign(new Error("Failed query"), { cause: Object.assign(new Error("duplicate key value"), duplicate) });
+    await expect(takeReminderClaimClosed(base)).resolves.toEqual({ held: true, duplicate: true });
+  });
+
+  it.each([
+    ["a 23505 on another unique index", { code: "23505", constraint_name: "reminder_claims_pkey" }],
+    ["another code on the attempt key's name", { code: "23514", constraint_name: "reminder_claims_claim_attempt_key" }],
+  ])("CONTROL: %s keeps today's handling, the store error, and sends nothing", async (_name, fields) => {
+    failAt = "insert";
+    insertError = Object.assign(new Error("refused"), fields);
+    await expect(takeReminderClaimClosed(base)).rejects.toMatchObject({ name: "ReminderClaimStoreError" });
+  });
+
+  it("CONTROL: a failed attempt read is the store error too", async () => {
+    failAt = "attempt";
+    await expect(takeReminderClaimClosed(base)).rejects.toMatchObject({ name: "ReminderClaimStoreError" });
+    expect(ran.filter((r) => r.kind === "insert")).toHaveLength(0);
   });
 });
 

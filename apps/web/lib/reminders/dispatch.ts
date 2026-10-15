@@ -641,12 +641,29 @@ function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | n
  * `application_error` is NOT here: the SDK uses that name for a request whose
  * answer it could not read, and such a request may have been accepted.
  *
- * SMS: Twilio's numeric codes for a request it refused outright: not
- * authenticated, too many requests, a number it will not send to, a full
- * queue. WRITTEN FROM TWILIO'S PUBLISHED ERROR REFERENCE AS THE BUILDER KNOWS
- * IT, AND NOT RE-READ AGAINST THE VENDOR'S PAGE: it is to be checked there
- * before the send switch is turned on. A code missing from this list costs a
- * reminder that is not retried; a code wrongly on it could cost a second copy.
+ * SMS: Twilio's numeric codes for a request it refused outright, at create,
+ * so a second try cannot be a second copy. CHECKED AGAINST TWILIO'S OWN ERROR
+ * PAGES ON 2026-10-14, ONE PAGE PER CODE, AND RULED BY STRATEGY ON 2026-10-15
+ * (Q-C):
+ *
+ *   20003  not authenticated            21606  our sender cannot send messages
+ *   20429  too many requests            21611  our sender's queue is full
+ *   21408  destination region disabled 21612  this sender cannot reach this number
+ *                                       21617  our message body is too long
+ *
+ * KEPT, NOT RELEASED, by the same ruling: 21211 (the number is not valid),
+ * 21610 (the patient opted out) and 21614 (the number is not a mobile). Each is
+ * about the patient's own number, and a retry fails the same way, so the claim
+ * stays live and the reminder is not tried again.
+ *
+ * NO 30xxx CODE, EVER. Those are delivery answers, given after Twilio accepted
+ * the message; they reach the status webhook, never this list, and a resend
+ * after one could be a second copy.
+ *
+ * 21606 and 21617 also raise an alert (`SENDER_OR_BODY_REFUSAL_CODES`).
+ *
+ * A code missing from this list costs a reminder that is not retried; a code
+ * wrongly on it could cost a second copy.
  */
 export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
   email: [
@@ -660,8 +677,48 @@ export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", re
     "restricted_api_key",
     "invalid_api_key",
   ],
-  sms: ["20003", "20429", "21211", "21408", "21610", "21611", "21614"],
+  sms: ["20003", "20429", "21408", "21606", "21611", "21612", "21617"],
 };
+
+/**
+ * THE REFUSALS THAT ARE OURS, NOT THE PATIENT'S: our sender (21606) or our
+ * message body (21617) is wrong, so every patient's SMS is refused the same
+ * way. Each also raises an alert (`alertSenderOrBodyRefusal`), besides giving
+ * the claim up. Strategy, Q-C of 2026-10-15. Pinned by a test, and every code
+ * here is on the list above.
+ */
+export const SENDER_OR_BODY_REFUSAL_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
+  email: [],
+  sms: ["21606", "21617"],
+};
+
+/**
+ * Raise the alert for a refusal on `SENDER_OR_BODY_REFUSAL_CODES`. A fixed
+ * title, tagged with the code and the channel and nothing else: no number, no
+ * body, no patient and no appointment.
+ *
+ * Sentry is imported LAZILY, inside the one branch that needs it, as
+ * lib/auth/context.ts and ./inbound-config.ts do. A warning, as the
+ * comparable configuration refusal in ./inbound-config.ts is.
+ *
+ * IT NEVER THROWS: the provider's error on its way out is the one the
+ * scheduler must see. A report that cannot be sent is printed instead.
+ */
+async function alertSenderOrBodyRefusal(refusal: { channel: "sms" | "email"; code: string | null }): Promise<void> {
+  if (refusal.code === null || !SENDER_OR_BODY_REFUSAL_CODES[refusal.channel].includes(refusal.code)) return;
+  try {
+    const Sentry = await import("@sentry/nextjs");
+    Sentry.captureMessage("reminders/dispatch: the provider refused our sender or our message body", {
+      level: "warning",
+      tags: { code: refusal.code, channel: refusal.channel },
+    });
+  } catch (cause) {
+    console.error(
+      `[reminders] could not report a sender or body refusal code=${refusal.code} channel=${refusal.channel}: ` +
+        `${cause instanceof Error ? cause.name : "unknown"}`,
+    );
+  }
+}
 
 /**
  * After a throw: is the claim given up? Yes when no transport was called (the
@@ -1003,6 +1060,8 @@ async function dispatchReminderInner(
  *                throws, nothing is sent and nothing is recorded. Fail closed.
  *   held         a live claim of this reminder exists for this start: sent,
  *                being sent, or of unknown outcome. `claim_held`, no row.
+ *   held         the table refused this claim's attempt, which another taker
+ *                holds (Q-A, 2026-10-15). `claim_held_by_duplicate`, no row.
  *   KEPT         THE CLOCK REFUSED: the visit has begun (`start_passed`), or
  *                the reminder's time passed longer ago than its channel allows
  *                (`mark_missed`). Recorded, not sent, and final. A visit that
@@ -1020,7 +1079,9 @@ async function dispatchReminderInner(
  *                released, and the reminder is tried again while it may still
  *                go out.
  *   GIVEN UP     a throw before any transport was called, or a provider answer
- *                that is on the list. Released; the same error goes on.
+ *                that is on the list. Released; the same error goes on. An
+ *                answer that says our sender or our body is wrong
+ *                (`SENDER_OR_BODY_REFUSAL_CODES`) also raises an alert.
  *
  * A release that cannot be written leaves the claim live, and the reminder is
  * then not tried again: the same side as every other failure here.
@@ -1075,6 +1136,7 @@ async function dispatchReminderClosed(
     ...(takenAhead ? { takenAhead: true } : {}),
     ...(handOver.now ? { now: handOver.now } : {}),
   });
+  if (claim.held && claim.duplicate) return { dispatched: false, reason: "claim_held_by_duplicate" };
   if (claim.held) return { dispatched: false, reason: "claim_held" };
   // THE CLOCK OF THE SEND, read now and handed in by nobody. After the claim
   // and before every gate, so that a refusal is the claim's last word for
@@ -1097,6 +1159,7 @@ async function dispatchReminderClosed(
     outcome = await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate, attempt);
   } catch (e) {
     if (claimIsGivenUpAfterThrow(attempt)) await release();
+    if (attempt.refusal) await alertSenderOrBodyRefusal(attempt.refusal);
     throw e;
   }
   // Refused at the transport's door is the clock's refusal too: final, kept.

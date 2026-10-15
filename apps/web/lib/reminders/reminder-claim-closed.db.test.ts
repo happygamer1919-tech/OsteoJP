@@ -49,7 +49,7 @@ const h = vi.hoisted(() => ({
   /** Every hand-over to a (replaced) transport, in order. */
   sends: [] as string[],
   /** What the transport does next. */
-  transport: "sent" as "sent" | "sandbox" | "refuse_listed" | "refuse_unknown",
+  transport: "sent" as "sent" | "sandbox" | "refuse_listed" | "refuse_kept" | "refuse_unknown",
   /** How long the transport takes, so senders overlap. */
   sendDelayMs: 0,
   sendCount: 0,
@@ -65,9 +65,11 @@ vi.mock("./clients", async (importOriginal) => {
       h.sends.push(channel);
       h.onHandOver?.(channel);
       if (h.sendDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, h.sendDelayMs));
-      // The Twilio SDK's shape: a numeric `code` on the error. 21211 is on the
-      // pinned list of answers that give a claim up; 20500 is not.
-      if (h.transport === "refuse_listed") throw Object.assign(new Error("provider refused"), { code: 21211 });
+      // The Twilio SDK's shape: a numeric `code` on the error. 21612 is on the
+      // pinned list of answers that give a claim up; 21211 is kept by ruling
+      // (Q-C, 2026-10-15); 20500 is not on it either.
+      if (h.transport === "refuse_listed") throw Object.assign(new Error("provider refused"), { code: 21612 });
+      if (h.transport === "refuse_kept") throw Object.assign(new Error("provider refused"), { code: 21211 });
       if (h.transport === "refuse_unknown") throw Object.assign(new Error("provider unknown"), { code: 20500 });
       h.sendCount += 1;
       return { channel, sandbox: h.transport === "sandbox", id: `closed-${process.pid}-${Date.now()}-${h.sendCount}` };
@@ -184,6 +186,8 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
       taker?: "run" | "sweep";
       /** Days before now the claim was taken. */
       daysAgo?: number;
+      /** The attempt number, when it must not be the next one. */
+      attempt?: number;
     } = {},
   ): Promise<string> {
     const id = randomUUID();
@@ -191,11 +195,16 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
     const early = over.early === undefined ? false : over.early;
     const due =
       early === null ? null : new Date(startsAt.getTime() - ((over.offsetId ?? "24h") === "24h" ? 24 : 48) * 60 * 60_000).toISOString();
+    // The attempt as the writer numbers it (0106): the next one for this
+    // reminder and start, unless the arm names one.
     await sql.execute(raw`insert into reminder_claims
-      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, created_at)
+      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, created_at, attempt)
       values (${id}, ${over.tenant ?? tenantA}, ${appointmentId}, 'claim', ${over.offsetId ?? "24h"}, ${over.channel ?? "sms"},
               ${startsAt.toISOString()}, ${due}::timestamptz, ${over.taker ?? "run"}, ${early}::boolean,
-              now() - make_interval(days => ${over.daysAgo ?? 0}::int) - interval '1 minute')`);
+              now() - make_interval(days => ${over.daysAgo ?? 0}::int) - interval '1 minute',
+              coalesce(${over.attempt ?? null}::int, (select coalesce(max(attempt), 0) + 1 from reminder_claims
+                where appointment_id = ${appointmentId} and kind = 'claim' and offset_id = ${over.offsetId ?? "24h"}
+                  and channel = ${over.channel ?? "sms"} and starts_at = ${startsAt.toISOString()}::timestamptz)))`);
     return id;
   }
 
@@ -377,8 +386,11 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
     it("another tenant's claim that names this very appointment does not hold it", async () => {
       const id = await fresh();
       // On the owning connection only: the table's own key would refuse a
-      // release, not a claim, that names another tenant's appointment.
-      await seedClaim(id, { tenant: tenantB });
+      // release, not a claim, that names another tenant's appointment. It
+      // takes attempt 1000: the attempt key (0106) has no tenant, because the
+      // job's own policy keeps a claim to its tenant's appointments (W-6), so
+      // only this superuser row could ever meet the job's attempt 1 there.
+      await seedClaim(id, { tenant: tenantB, attempt: 1000 });
       expect((await take(id)).held).toBe(false);
     });
 
@@ -586,7 +598,100 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
     expect(await dispatch(id)).toMatchObject({ dispatched: true });
     expect(await dispatch(id)).toEqual({ dispatched: false, reason: "claim_held" });
     expect(h.sends).toEqual(["sms", "sms"]);
-    expect(await ledgerOf(id)).toEqual(["reminder.24h.sms:provider_error:21211", "reminder.24h.sms:sent:"]);
+    expect(await ledgerOf(id)).toEqual(["reminder.24h.sms:provider_error:21612", "reminder.24h.sms:sent:"]);
+    // The retry took the next attempt: a release frees no number.
+    expect(await attemptsOf(id)).toEqual([1, 2]);
+  });
+
+  it("Q-C: A REFUSAL ABOUT THE PATIENT'S NUMBER (21211) KEEPS the claim: the next attempt is held, and nothing is sent again", async () => {
+    const id = await fresh();
+    h.loadReminderData.mockResolvedValue(loaded(id));
+    h.transport = "refuse_kept";
+    await expect(dispatch(id)).rejects.toThrow("provider refused");
+    expect((await claimsOf(id)).map((c) => c.released)).toEqual([false]);
+
+    h.transport = "sent";
+    expect(await dispatch(id)).toEqual({ dispatched: false, reason: "claim_held" });
+    expect(h.sends).toEqual(["sms"]);
+    expect(await ledgerOf(id)).toEqual(["reminder.24h.sms:provider_error:21211"]);
+  });
+
+  /** The attempt numbers of one appointment's 24 h SMS claims for START, oldest first. */
+  async function attemptsOf(appointmentId: string): Promise<number[]> {
+    const r = await rows(raw`select attempt from reminder_claims
+      where appointment_id = ${appointmentId} and kind = 'claim' and offset_id = '24h' and channel = 'sms'
+        and starts_at = ${START.toISOString()}::timestamptz
+      order by created_at, id`);
+    return r.map((x) => Number(x.attempt));
+  }
+
+  it("Q-A: TWO TAKERS OF THE SAME ATTEMPT. The second sends nothing, writes nothing, and answers claim_held_by_duplicate", async () => {
+    const id = await fresh();
+    h.loadReminderData.mockResolvedValue(loaded(id));
+
+    // The first taker holds attempt 1 of this reminder and start: written in
+    // its own transaction and not yet committed, so the second cannot read it
+    // and numbers its own claim 1 as well. It did not queue on the reminder's
+    // lock, which is the one way two takers reach the same number.
+    let letGo!: () => void;
+    const untilLetGo = new Promise<void>((resolve) => (letGo = resolve));
+    let written!: (pid: number) => void;
+    const untilWritten = new Promise<number>((resolve) => (written = resolve));
+    const firstTaker = sql.transaction(async (tx) => {
+      const [me] = (await tx.execute(raw`select pg_backend_pid() as pid`)) as unknown as { pid: number }[];
+      await tx.execute(raw`insert into reminder_claims
+        (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt)
+        values (${tenantA}, ${id}, 'claim', '24h', 'sms', ${START.toISOString()},
+                ${new Date(START.getTime() - 24 * 60 * 60_000).toISOString()}, 'run', false, 1)`);
+      written(Number(me!.pid));
+      await untilLetGo;
+    });
+    const firstPid = await untilWritten;
+
+    // The second taker, the pass, through the dispatcher. Its row waits on
+    // the first's under the unique index; once it is seen waiting, the first
+    // commits.
+    const second = dispatch(id);
+    for (let i = 0; i < 150; i += 1) {
+      const [w] = await rows(raw`select count(*)::int as n from pg_stat_activity
+        where ${firstPid}::int = any(pg_blocking_pids(pid))`);
+      if (Number(w!.n) > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    letGo();
+    await firstTaker;
+
+    expect(await second).toEqual({ dispatched: false, reason: "claim_held_by_duplicate" });
+    expect(h.sends).toEqual([]);
+    expect(await ledgerOf(id)).toEqual([]);
+    // Only the first taker's claim, live: nothing was released.
+    expect(await claimsOf(id)).toMatchObject([{ taker: "run", released: false }]);
+    expect(await attemptsOf(id)).toEqual([1]);
+  });
+
+  it("CONTROL for Q-A: a different failure is not a duplicate. A claim whose lock wait ran out stops the send, as a store error", async () => {
+    const id = await fresh();
+    h.loadReminderData.mockResolvedValue(loaded(id));
+    const { reminderClaimLockPayload } = await import("./reminder-claim");
+    const payload = reminderClaimLockPayload(tenantA, id, "24h", "sms");
+    let letGo!: () => void;
+    const untilLetGo = new Promise<void>((resolve) => (letGo = resolve));
+    let held!: () => void;
+    const untilHeld = new Promise<void>((resolve) => (held = resolve));
+    const holder = sql.transaction(async (tx) => {
+      await tx.execute(raw`select pg_advisory_xact_lock(hashtextextended(${payload}, 0))`);
+      held();
+      await untilLetGo;
+    });
+    await untilHeld;
+    try {
+      await expect(dispatch(id)).rejects.toMatchObject({ name: "ReminderClaimStoreError" });
+    } finally {
+      letGo();
+      await holder;
+    }
+    expect(h.sends).toEqual([]);
+    expect(await attemptsOf(id)).toEqual([]);
   });
 
   it("a visit moved to another start earns a reminder of its own: the claim of the old start does not hold it", async () => {

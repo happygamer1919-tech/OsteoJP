@@ -425,7 +425,9 @@ export function sendingPassIncludesNeverReminded(env: Record<string, string | un
  *               (`mark_missed`), or the visit has begun (`start_passed`), by
  *               the dispatcher's clock when it came to send. Recorded in the
  *               ledger, not sent. Final.
- *   claim_held  another sender holds this reminder, or already sent it. No row.
+ *   claim_held  another sender holds this reminder, or already sent it, or
+ *               the table refused this claim's attempt as another taker's
+ *               (`claim_held_by_duplicate`). No row.
  *   failed      the call threw: the claim could not be taken, or the provider
  *               refused. Logged with ids only. Whether it is taken again is the
  *               claim's to say (./dispatch.ts).
@@ -461,7 +463,9 @@ export async function handOverMark(args: {
       ...(mark.mark.getTime() > args.now.getTime() ? { takenAhead: true } : {}),
     });
     if (reminderWasHandedOver(outcome)) return "sent";
-    if (!outcome.dispatched && outcome.reason === "claim_held") return "claim_held";
+    if (!outcome.dispatched && (outcome.reason === "claim_held" || outcome.reason === "claim_held_by_duplicate")) {
+      return "claim_held";
+    }
     if (!outcome.dispatched && (outcome.reason === "mark_missed" || outcome.reason === "start_passed")) return "too_late";
     return "held_back";
   } catch (e) {
