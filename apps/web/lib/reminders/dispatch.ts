@@ -673,7 +673,10 @@ async function loadDispatchable(
  * the sender that got there first. A row here would be a second record of one
  * reminder, filed after that sender's claim as if it had tried twice.
  * `claim_held_by_duplicate` is the same exception for the same reason: the
- * taker that holds the attempt records what became of it.
+ * taker that holds the attempt records what became of it. With no row, its
+ * record is one log line here, which names the reason, the offset and the
+ * channel and nothing else: no appointment, patient or tenant, no number, no
+ * body (strategy, Q-A of 2026-10-15).
  */
 export async function dispatchReminder(
   tenantId: string,
@@ -685,6 +688,9 @@ export async function dispatchReminder(
   taker: ReminderClaimTaker = "run",
 ): Promise<DispatchOutcome> {
   const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel, taker);
+  if (!outcome.dispatched && outcome.reason === "claim_held_by_duplicate") {
+    console.warn(`[reminders] reminder skipped: claim_held_by_duplicate offsetId=${offsetId} channel=${channel}`);
+  }
   if (!outcome.dispatched && outcome.reason !== "claim_held" && outcome.reason !== "claim_held_by_duplicate") {
     await recordDispatch({
       tenantId,

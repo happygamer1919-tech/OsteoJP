@@ -171,6 +171,7 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   // one, and a row that ever did carry it must not read as unrecognised.
   claim_held: s["remindersLog.reason.claim_held"],
   // Q-A, 2026-10-15. Another taker held the same attempt; no row either.
+  // Kept: the guard in reminder-log-core.test.ts asks a sentence of every reason dispatch.ts answers.
   claim_held_by_duplicate: s["remindersLog.reason.claim_held_by_duplicate"],
 };
 
