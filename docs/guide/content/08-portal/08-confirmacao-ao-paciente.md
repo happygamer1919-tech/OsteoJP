@@ -14,8 +14,6 @@ Quando confirma um pedido do portal, ou marca um pedido de novo cliente com **Cr
 * por email, se a ficha tiver **Email**: a data, a hora, o serviço, o terapeuta, o local, a morada e o telefone do local;
 * por SMS, só quando a ficha não tem email: a data, a hora, o local e o telefone do local.
 
-Confirmar o mesmo pedido outra vez, para a mesma hora, não envia segunda confirmação.
-
 Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir, quem confirmou vê um aviso: em **Notificações** e em **Respostas SMS**, por cima da lista; na **Agenda** e na ficha, numa mensagem breve.
 
 * **Paciente sem email: avise por telefone**: sem email, e sem telemóvel português válido ou com os SMS desligados para a clínica ou para o paciente.

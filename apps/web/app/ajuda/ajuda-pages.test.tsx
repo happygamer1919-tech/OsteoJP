@@ -580,6 +580,10 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
       for (const label of labels) expect(html, `${role} ${label}`).toContain(`<strong class="font-semibold">${label}</strong>`);
       expect(html, role).toContain("A hora, a clínica e o pacote da marcação não mudam.");
       expect(html, role).toContain("o horário desse terapeuta nesse dia");
+      expect(html, role).toContain("o paciente pode receber de novo a confirmação");
+      expect(html, role).toContain("a última hora de início é uma hora antes do fecho");
+      // A person in Terapeuta 2 holds no slot, so the lesson must not say their bookings refuse it.
+      expect(html, role).not.toContain("do segundo terapeuta");
       expect(html, role).toContain("data-guide-no-image");
     }
     await refusedButReal("therapist", "pacientes", "alterar-terapeuta");
@@ -613,7 +617,8 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
       for (const notice of notices) expect(html, `${role} ${notice}`).toContain(`<strong class="font-semibold">${notice}</strong>`);
       expect(html, role).toContain(`<strong class="font-semibold">${pt["guest.convert"]}</strong>`);
       expect(html, role).toContain("uma única mensagem");
-      expect(html, role).toContain("Confirmar o mesmo pedido outra vez, para a mesma hora, não envia segunda confirmação.");
+      // A cancelled row brought back to Confirmada sends today's confirmation again: no "no second confirmation" claim.
+      expect(html, role).not.toContain("não envia segunda confirmação");
       expect(html, role).toContain("Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir");
       expect(html, role).toContain("Uma falha no envio não mostra aviso: sem aviso, a mensagem pode não ter chegado.");
       // A later change to the appointment can send another confirmation, and a send-time

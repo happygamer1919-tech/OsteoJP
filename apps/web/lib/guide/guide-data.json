@@ -5504,7 +5504,7 @@
         {
           "spans": [
             {
-              "text": "A hora, a clínica e o pacote da marcação não mudam. A alteração fica no registo de auditoria."
+              "text": "A hora, a clínica e o pacote da marcação não mudam. A alteração fica no registo de auditoria. Numa marcação feita no portal, o paciente pode receber de novo a confirmação."
             }
           ],
           "type": "para"
@@ -5532,7 +5532,7 @@
             ],
             [
               {
-                "text": "outra marcação ou uma ausência choca com esta (do terapeuta, da sala ou do segundo terapeuta): aparece o aviso da agenda, por exemplo "
+                "text": "outra marcação do terapeuta ou da sala, ou uma ausência do terapeuta, choca com esta: aparece o aviso da agenda, por exemplo "
               },
               {
                 "strong": "Conflito de terapeuta"
@@ -5543,7 +5543,7 @@
             ],
             [
               {
-                "text": "a clínica está fechada a essa hora."
+                "text": "a hora fica fora do horário de marcação da clínica (a última hora de início é uma hora antes do fecho)."
               }
             ]
           ],
@@ -5595,7 +5595,7 @@
       "see": [],
       "shots": null,
       "title": "Alterar o terapeuta de uma marcação na ficha",
-      "words": 171
+      "words": 197
     },
     {
       "answers": [],
@@ -11075,14 +11075,6 @@
         {
           "spans": [
             {
-              "text": "Confirmar o mesmo pedido outra vez, para a mesma hora, não envia segunda confirmação."
-            }
-          ],
-          "type": "para"
-        },
-        {
-          "spans": [
-            {
               "text": "Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir, quem confirmou vê um aviso: em "
             },
             {
@@ -11166,7 +11158,7 @@
       "see": [],
       "shots": null,
       "title": "A confirmação que o paciente recebe",
-      "words": 198
+      "words": 184
     },
     {
       "answers": [],
