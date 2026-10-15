@@ -32,6 +32,12 @@ avaliação de satisfação. Nada está construído.
   mensagem diz "6 de junho de 2026". Aplica-se a `{{survey_expiry_date}}`
   (texto 2) e a `{data_fim}` (texto 73). Os textos não mudam, muda só a data
   que os preenche. O prazo de 14 dias não muda.
+* **Textos 84 a 88, novos, escritos pela estratégia a 14 de outubro de 2026**
+  (secção M). Os textos 84 e 85 são lidos por pacientes e os textos 86 e 87
+  pela equipa: os quatro aguardam o sim final do JP e já estão em uso. O texto
+  88 é um texto da equipa da estratégia e não precisa do JP. Por isso, "todos
+  os textos para o paciente estão aprovados" vale para os textos 1 a 35; os
+  textos 84 e 85 ainda não.
 * **Inglês:** a secção "English" no fim deste ficheiro é traduzida dos textos
   em português; não foi revista em separado (S10).
 
@@ -289,6 +295,9 @@ Onde: topo do formulário, se a gravação falhar ou houver demasiadas tentativa
 
 > Não foi possível registar a resposta. Tente novamente dentro de alguns minutos.
 
+Se o que falhou foi o pedido do botão 19, o texto é o 84 (14 de outubro de
+2026).
+
 ## D. Páginas de resultado
 
 **26. Título depois de responder**
@@ -358,6 +367,9 @@ no máximo uma vez a cada 60 dias."
 Onde: por baixo do interruptor 33, quando está desligado.
 
 > Desligar não afeta os lembretes de consulta.
+
+Se a alteração do interruptor 33 não ficar guardada, o texto é o 85 (14 de
+outubro de 2026).
 
 ## F. Lista de respostas (equipa: o terapeuta que realizou a consulta, a receção e os administradores dessa clínica, e o proprietário)
 
@@ -475,6 +487,9 @@ Onde: no lugar da tabela, quando não há envios.
 
 Antes (S5: a lista passa a mostrar os envios, não só as respostas): "Ainda não
 há respostas."
+
+Não aparece quando está escolhido um mês (texto 86) nem para um membro da
+receção ou um administrador sem clínica associada (texto 87).
 
 **55. Indicação da lista vazia**
 Onde: por baixo do texto 54.
@@ -631,6 +646,9 @@ envio.
 
 > Nenhuma avaliação de satisfação enviada.
 
+Na lista da ficha, só o proprietário lê este texto. Qualquer outra pessoa lê o
+texto 88 (14 de outubro de 2026).
+
 ## K. Lista de envios: colunas novas (novo, S5, S7 e S11)
 
 Onde: lista do separador 36 e lista da ficha (secção 58).
@@ -669,6 +687,53 @@ Exemplo: "Avaliações de satisfação (envios): 1"
 **83. Respostas de avaliação**
 
 > Avaliações de satisfação (respostas)
+
+## M. Textos novos de 14 de outubro de 2026
+
+Escritos pela estratégia a 14 de outubro de 2026. Os textos 84 a 87 aguardam o
+sim final do JP; o texto 88 é um texto da equipa, sem JP.
+
+**84. Erro ao registar o pedido (paciente)**
+Onde: página da avaliação, no lugar do texto 25, quando o pedido do botão 19
+("Não quero receber mais avaliações") não fica registado. Antes aparecia o texto
+25, que fala de "resposta".
+Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+
+> Não foi possível registar o pedido. Tente novamente dentro de alguns minutos.
+
+**85. Erro ao guardar o interruptor (paciente)**
+Onde: área de paciente, página da conta, por baixo do interruptor 33, quando a
+alteração não fica guardada. O interruptor volta à posição anterior. Antes não
+aparecia nenhuma frase. Sai ao carregar de novo no interruptor.
+Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+
+> Não foi possível guardar a alteração. Tente novamente dentro de alguns minutos.
+
+**86. Nenhum envio no mês escolhido (equipa)**
+Onde: lista do separador 36, no lugar da tabela, quando está escolhido um mês
+sem nenhum envio. Antes a lista ficava só com os cabeçalhos.
+Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+
+> Nenhuma avaliação enviada neste mês.
+
+**87. Sem clínica associada (equipa)**
+Onde: lista do separador 36, no lugar da tabela, para um membro da receção ou
+um administrador sem nenhuma clínica associada, com ou sem mês escolhido. Estas
+pessoas só leem os envios das suas clínicas, por isso a lista está sempre
+vazia. Antes liam o texto 54, que pode não ser verdade. Não aparece ao
+terapeuta nem ao proprietário.
+Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+
+> Sem clínica associada. Peça a um administrador para o associar a uma clínica.
+
+**88. Nenhum envio visível (equipa)**
+Onde: ficha do paciente, secção 58, no lugar da lista dos envios, quando não há
+nenhum envio que a pessoa possa ler. Para todos exceto o proprietário, que
+continua a ler o texto 78. Só o proprietário lê todos os envios; para os
+outros, uma lista vazia não quer dizer que nunca houve envio.
+Escrito pela estratégia a 14 de outubro de 2026, texto da equipa.
+
+> Nenhuma avaliação de satisfação visível para si.
 
 ## Perguntas para o JP, com as respostas de 2 de outubro de 2026
 
@@ -788,6 +853,11 @@ avaliações, and "review" is already Review Consultation.
 | 81 | Answer visible only to the therapist who carried out the appointment, to reception and the administrators of that clinic, and to the owner. |
 | 82 | Satisfaction surveys (sends) |
 | 83 | Satisfaction surveys (answers) |
+| 84 | Your request could not be saved. Please try again in a few minutes. |
+| 85 | The change could not be saved. Please try again in a few minutes. |
+| 86 | No survey sent this month. |
+| 87 | No clinic assigned. Ask an administrator to assign you to a clinic. |
+| 88 | No satisfaction survey visible to you. |
 
 The English SMS (3) is ASCII only, as the house rule asks of every SMS. Its
 fixed text is 100 characters, plus the date (5), the code (8) and the

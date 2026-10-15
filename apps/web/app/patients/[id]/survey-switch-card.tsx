@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Card } from "@osteojp/ui";
 import { getStrings, type Locale } from "@osteojp/i18n";
 
@@ -17,12 +18,16 @@ import { setSurveySwitchAction } from "./survey-switch-actions";
  * NO CLIENT JAVASCRIPT, like the care team card beside it. The switch is a
  * submit button with `role="switch"`: it posts the value it would change to,
  * and the action revalidates and redirects.
+ *
+ * `children` is the rest of the section (S11: this patient's sends and
+ * answers, survey-rows.tsx), drawn under the switch in the same card.
  */
 export function SurveySwitchCard({
   patientId,
   locale,
   enabled,
   error,
+  children,
 }: {
   patientId: string;
   locale: Locale;
@@ -30,6 +35,7 @@ export function SurveySwitchCard({
   enabled: boolean;
   /** The last change was not saved. */
   error?: boolean;
+  children?: ReactNode;
 }) {
   const s = getStrings(locale);
 
@@ -74,6 +80,8 @@ export function SurveySwitchCard({
           {s["patients.surveySwitchOffNote"]}
         </p>
       )}
+
+      {children ? <div className="mt-4 border-t border-border pt-4">{children}</div> : null}
     </Card>
   );
 }

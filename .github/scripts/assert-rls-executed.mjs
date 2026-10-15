@@ -301,6 +301,19 @@ const SUITES = [
   { file: "survey-dispatch.db.test.ts", hard: true },
   { file: "survey-opt-out.db.test.ts", hard: true },
   { file: "survey-switch.db.test.ts", hard: true },
+  // SAT-01, added 2026-10-14. Two more DB-gated suites of the survey: the list
+  // in Comunicações read as each real staff role and by a second tenant, and
+  // the patient's own switch read and set as the real patient role, only when
+  // it is offered and never another patient's. Named here so that the ABSENCE
+  // of either is red too.
+  { file: "survey-list.db.test.ts", hard: true },
+  { file: "profile-survey.db.test.ts", hard: true },
+  // 0104, added 2026-10-15 after its apply. The two DB-gated suites of the
+  // clinical_episodes policies, read as the real roles: what each role reads
+  // and writes, and that no session reaches another tenant's episode. Named
+  // here so that the ABSENCE of either is red too.
+  { file: "clinical-episodes-role-matrix.db.test.ts", hard: true },
+  { file: "episodes-role-matrix.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.

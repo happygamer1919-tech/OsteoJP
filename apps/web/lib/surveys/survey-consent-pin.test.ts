@@ -219,7 +219,11 @@ describe("the page's strings are the approved copy, character for character", ()
   it("no em or en dash in any survey string", () => {
     for (const locale of ["pt", "en"] as const) {
       const s = getStrings(locale);
-      for (const key of [...Object.values(KEY_OF_TEXT), ...Object.values(STAFF_KEY_OF_TEXT)]) {
+      for (const key of [
+        ...Object.values(KEY_OF_TEXT),
+        ...Object.values(STAFF_KEY_OF_TEXT),
+        ...Object.values(NEW_KEY_OF_TEXT),
+      ]) {
         expect(s[key], key).not.toMatch(/[\u2013\u2014]/);
       }
     }
@@ -231,6 +235,8 @@ describe("the page's strings are the approved copy, character for character", ()
     const pinned = SURVEY_CONSENT_TEXT_KEYS as readonly string[];
     expect(pinned).not.toContain("survey.page.optOut");
     expect(pinned).not.toContain("survey.page.optOutNote");
+    // Nor is its failure sentence (text 84, 2026-10-14).
+    expect(pinned).not.toContain("survey.page.optOutSaveError");
   });
 });
 
@@ -250,5 +256,49 @@ describe("the ficha's survey switch strings are the copy file's, character for c
     expect(en.length, "the reader found a text").toBeGreaterThan(5);
     expect(getStrings("pt")[key]).toBe(pt);
     expect(getStrings("en")[key]).toBe(en);
+  });
+});
+
+/**
+ * Copy section M, written by strategy on 2026-10-14: the opt-out's failure
+ * (84, patient), a month with no sends (86) and no clinic (87) in the list,
+ * and the ficha's empty list for anyone but the owner (88). Text 85 is the
+ * portal's and is pinned with the portal's own strings
+ * (apps/portal/app/portal/account/AccountView.render.test.tsx).
+ */
+const NEW_KEY_OF_TEXT: Record<number, StringKey> = {
+  84: "survey.page.optOutSaveError",
+  86: "surveyList.emptyMonth",
+  87: "surveyList.noClinic",
+  88: "patients.surveyRowsNoneVisible",
+};
+
+describe("the texts of 2026-10-14 are the copy file's, character for character", () => {
+  it.each(Object.keys(NEW_KEY_OF_TEXT).map(Number))("text %i, in Portuguese and in English", (n) => {
+    const key = NEW_KEY_OF_TEXT[n]!;
+    const pt = approvedPt(n);
+    const en = publishedEn(n);
+    expect(pt.length, "the reader found a text").toBeGreaterThan(5);
+    expect(en.length, "the reader found a text").toBeGreaterThan(5);
+    expect(getStrings("pt")[key]).toBe(pt);
+    expect(getStrings("en")[key]).toBe(en);
+  });
+
+  it("text 85 is the portal's own string, in Portuguese and in English", () => {
+    const portal = (locale: "pt" | "en"): { account: Record<string, string> } =>
+      JSON.parse(
+        readFileSync(
+          join(HERE, "..", "..", "..", "..", "packages", "i18n", "src", "portal", `strings.${locale}.json`),
+          "utf8",
+        ),
+      );
+    expect(approvedPt(85).length).toBeGreaterThan(5);
+    expect(portal("pt").account.survey_save_error).toBe(approvedPt(85));
+    expect(portal("en").account.survey_save_error).toBe(publishedEn(85));
+  });
+
+  it("CONTROL: the reader reads section M", () => {
+    expect(approvedPt(88)).toBe("Nenhuma avaliação de satisfação visível para si.");
+    expect(publishedEn(86)).toBe("No survey sent this month.");
   });
 });
