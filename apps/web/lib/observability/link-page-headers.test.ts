@@ -2,7 +2,8 @@ import { getPathMatch } from "next/dist/shared/lib/router/utils/path-match";
 import { describe, expect, it, vi } from "vitest";
 
 /**
- * OBS-08. The three public link pages send no Referer, and no other path is
+ * OBS-08. The three public link pages send only their origin as Referer
+ * (`strict-origin`, never the path that carries the code), and no other path is
  * touched.
  *
  * Reads the headers the exported config really returns (after the Sentry
@@ -51,8 +52,8 @@ describe("Referrer-Policy on the link pages", () => {
     `/R/${TOKEN}`,
   ];
 
-  it.each(linkPages)("%s is served with Referrer-Policy: no-referrer", async (pathname) => {
-    expect(await headersFor(pathname)).toEqual({ "referrer-policy": "no-referrer" });
+  it.each(linkPages)("%s is served with Referrer-Policy: strict-origin", async (pathname) => {
+    expect(await headersFor(pathname)).toEqual({ "referrer-policy": "strict-origin" });
   });
 
   const otherPaths = [
@@ -78,7 +79,7 @@ describe("Referrer-Policy on the link pages", () => {
     const rules = await configuredRules();
     expect(rules.map((rule) => rule.source)).toEqual(["/c/:path*", "/s/:path*", "/r/:path*"]);
     for (const rule of rules) {
-      expect(rule.headers).toEqual([{ key: "Referrer-Policy", value: "no-referrer" }]);
+      expect(rule.headers).toEqual([{ key: "Referrer-Policy", value: "strict-origin" }]);
     }
   });
 });
