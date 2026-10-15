@@ -123,8 +123,8 @@ describe("the committed guide PDFs are the lesson source, printed (G1-4, the PDF
     expect(live.manifest).toEqual([]);
     expect(manifest.pdfs.map((entry) => [entry.file, entry.profile])).toEqual([["guia-plataforma-osteojp.pdf", null]]);
     expect(manifest.pdfs[0].pages).toBeGreaterThan(2);
-    // The published source: 58 lessons (one of 59 held) and seven FAQ entries.
-    expect(manifest.source).toMatchObject({ sections: 9, lessons: 58, faq: 7 });
+    // The published source: 60 lessons (one of 61 held) and seven FAQ entries.
+    expect(manifest.source).toMatchObject({ sections: 9, lessons: 60, faq: 7 });
   });
 });
 

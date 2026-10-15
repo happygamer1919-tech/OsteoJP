@@ -4601,37 +4601,13 @@
             {
               "spans": [
                 {
-                  "text": "Para passar uma marcação "
-                },
-                {
-                  "strong": "Agendada"
-                },
-                {
-                  "text": " ou "
-                },
-                {
-                  "strong": "Confirmada"
-                },
-                {
-                  "text": " para outro terapeuta, em "
-                },
-                {
-                  "strong": "Gerir marcação"
-                },
-                {
-                  "text": " escolha o nome em "
-                },
-                {
-                  "strong": "Terapeuta"
-                },
-                {
-                  "text": " e clique em "
+                  "text": "Para passar uma marcação para outro terapeuta, use "
                 },
                 {
                   "strong": "Alterar terapeuta"
                 },
                 {
-                  "text": ". A hora, a clínica e o pacote não mudam. Se esse terapeuta não trabalhar a essa hora, ou já tiver outra marcação, a alteração é recusada e o motivo aparece por baixo do campo."
+                  "text": ", como explica a lição Alterar o terapeuta de uma marcação na ficha."
                 }
               ],
               "type": "para"
@@ -4719,7 +4695,7 @@
       "see": [],
       "shots": "pacientes.marcacoes-na-ficha",
       "title": "Marcar, cancelar ou corrigir um estado a partir da ficha",
-      "words": 195
+      "words": 160
     },
     {
       "answers": [],
@@ -5455,6 +5431,171 @@
       "shots": null,
       "title": "Recuperar um paciente eliminado",
       "words": 135
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Na ficha do paciente, abra o separador "
+              },
+              {
+                "strong": "Marcações"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Numa marcação "
+              },
+              {
+                "strong": "Agendada"
+              },
+              {
+                "text": " ou "
+              },
+              {
+                "strong": "Confirmada"
+              },
+              {
+                "text": ", clique em "
+              },
+              {
+                "strong": "Gerir marcação"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Em "
+              },
+              {
+                "strong": "Terapeuta"
+              },
+              {
+                "text": ", escolha o novo nome. A lista mostra quem pode ser marcado na clínica dessa marcação, e o terapeuta atual."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Alterar terapeuta"
+              },
+              {
+                "text": ". Guardada a alteração, aparece "
+              },
+              {
+                "strong": "Terapeuta alterado."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "A hora, a clínica e o pacote da marcação não mudam. A alteração fica no registo de auditoria. Numa marcação do portal já confirmada, o paciente pode receber outra mensagem de confirmação."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "A plataforma faz as mesmas verificações que a "
+            },
+            {
+              "strong": "Agenda"
+            },
+            {
+              "text": " e recusa a alteração quando:"
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "text": "o terapeuta tem horário nessa clínica e não trabalha a essa hora: por baixo do campo aparece o horário desse terapeuta nesse dia;"
+              }
+            ],
+            [
+              {
+                "text": "outra marcação do terapeuta ou da sala, ou uma ausência do terapeuta, choca com esta: aparece o aviso da agenda, por exemplo "
+              },
+              {
+                "strong": "Conflito de terapeuta"
+              },
+              {
+                "text": ", com a hora em causa;"
+              }
+            ],
+            [
+              {
+                "text": "a hora fica fora do horário de marcação da clínica (o último início é uma hora antes do fecho) ou dentro do fecho ao almoço."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Aqui não há "
+            },
+            {
+              "strong": "Guardar mesmo assim"
+            },
+            {
+              "text": ": um conflito recusa a alteração. Para mudar também a hora, use "
+            },
+            {
+              "strong": "Reagendar"
+            },
+            {
+              "text": "."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "appointments:delete",
+      "faq": [],
+      "file": "03-pacientes/11-alterar-terapeuta.md",
+      "goal": "Passar uma marcação para outro terapeuta sem mudar a hora.",
+      "id": "pacientes.alterar-terapeuta",
+      "images": null,
+      "order": {
+        "proprietario": 11,
+        "rececao": 9
+      },
+      "question": null,
+      "review": null,
+      "roles": [
+        "rececao",
+        "proprietario"
+      ],
+      "screens": [
+        "ficha-paciente"
+      ],
+      "section": "pacientes",
+      "see": [],
+      "shots": null,
+      "title": "Alterar o terapeuta de uma marcação na ficha",
+      "words": 198
     },
     {
       "answers": [],
@@ -10895,6 +11036,134 @@
       "answers": [],
       "blocks": [
         {
+          "spans": [
+            {
+              "text": "Quando confirma um pedido do portal, ou marca um pedido de novo cliente com "
+            },
+            {
+              "strong": "Criar paciente e marcar"
+            },
+            {
+              "text": ", o paciente recebe uma única mensagem:"
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "text": "por email, se a ficha tiver "
+              },
+              {
+                "strong": "Email"
+              },
+              {
+                "text": ": a data, a hora, o serviço, o terapeuta, o local, a morada e o telefone do local;"
+              }
+            ],
+            [
+              {
+                "text": "por SMS, só quando a ficha não tem email: a data, a hora, o local e o telefone do local."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir, quem confirmou vê um aviso: em "
+            },
+            {
+              "strong": "Notificações"
+            },
+            {
+              "text": " e em "
+            },
+            {
+              "strong": "Respostas SMS"
+            },
+            {
+              "text": ", por cima da lista; na "
+            },
+            {
+              "strong": "Agenda"
+            },
+            {
+              "text": " e na ficha, numa mensagem breve."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "strong": "Paciente sem email: avise por telefone"
+              },
+              {
+                "text": ": sem email, e sem telemóvel português válido ou com os SMS desligados para a clínica ou para o paciente."
+              }
+            ],
+            [
+              {
+                "strong": "Confirmação não enviada: o local não tem morada ou telefone. Avise o paciente por telefone."
+              }
+            ],
+            [
+              {
+                "strong": "Confirmação não enviada: a marcação não tem serviço. Avise o paciente por telefone."
+              },
+              {
+                "text": " Só acontece quando a mensagem seguiria por email."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Uma falha no envio não mostra aviso: sem aviso, a mensagem pode não ter chegado."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "appointments:write",
+      "faq": [],
+      "file": "08-portal/08-confirmacao-ao-paciente.md",
+      "goal": "Saber que mensagem segue quando um pedido é confirmado, e o que fazer quando nenhuma pode seguir.",
+      "id": "portal.confirmacao-ao-paciente",
+      "images": null,
+      "order": {
+        "proprietario": 8,
+        "rececao": 6
+      },
+      "question": null,
+      "review": null,
+      "roles": [
+        "rececao",
+        "proprietario"
+      ],
+      "screens": [
+        "notificacoes"
+      ],
+      "section": "portal",
+      "see": [],
+      "shots": null,
+      "title": "A confirmação que o paciente recebe",
+      "words": 184
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
           "items": [
             [
               {
@@ -11183,6 +11452,7 @@
         "pacientes.recuperacao",
         "pacientes.juntar-ficha-duplicada",
         "pacientes.pacientes-eliminados",
+        "pacientes.alterar-terapeuta",
         "equipa-e-horarios.inspetor-de-horarios",
         "equipa-e-horarios.horario-semanal",
         "equipa-e-horarios.semanas-alternadas-e-dia-a-dia",
@@ -11209,6 +11479,7 @@
         "portal.pacientes-sem-sms",
         "portal.servicos-no-portal",
         "portal.mensagem-de-teste",
+        "portal.confirmacao-ao-paciente",
         "marcacao-online.tratar-pedido-novo-cliente",
         "marcacao-online.horarios-do-portal",
         "registos.revisao-consulta",
@@ -11262,6 +11533,7 @@
         "pacientes.declaracao-e-documentos",
         "pacientes.recuperacao",
         "pacientes.ficha-do-paciente",
+        "pacientes.alterar-terapeuta",
         "pacotes.atribuir-pacote",
         "pacotes.marcar-com-pacote",
         "pacotes.saldo-de-sessoes",
@@ -11272,6 +11544,7 @@
         "portal.lembretes-sms",
         "portal.pacientes-sem-sms",
         "portal.o-que-o-paciente-ve",
+        "portal.confirmacao-ao-paciente",
         "faturacao.faturas-de-um-periodo",
         "faturacao.faturas-de-um-paciente",
         "equipa-e-horarios.registar-ausencia",
