@@ -33,11 +33,13 @@ avaliação de satisfação. Nada está construído.
   (texto 2) e a `{data_fim}` (texto 73). Os textos não mudam, muda só a data
   que os preenche. O prazo de 14 dias não muda.
 * **Textos 84 a 88, novos, escritos pela estratégia a 14 de outubro de 2026**
-  (secção M). Os textos 84 e 85 são lidos por pacientes e os textos 86 e 87
-  pela equipa: os quatro aguardam o sim final do JP e já estão em uso. O texto
-  88 é um texto da equipa da estratégia e não precisa do JP. Por isso, "todos
-  os textos para o paciente estão aprovados" vale para os textos 1 a 35; os
-  textos 84 e 85 ainda não.
+  (secção M). Os textos 84 e 85 são lidos por pacientes e os textos 86 a 88
+  pela equipa.
+* **Aprovado pelo JP a 15 de outubro de 2026: todos os textos da avaliação, tal
+  como estão construídos, e as frases a) a d) tal como escritas (textos 84 a
+  88).** Transmitido pela estratégia. Não é precisa uma segunda ronda do JP.
+  "Todos os textos para o paciente estão aprovados" vale agora também para os
+  textos 84 e 85.
 * **Inglês:** a secção "English" no fim deste ficheiro é traduzida dos textos
   em português; não foi revista em separado (S10).
 
@@ -690,14 +692,14 @@ Exemplo: "Avaliações de satisfação (envios): 1"
 
 ## M. Textos novos de 14 de outubro de 2026
 
-Escritos pela estratégia a 14 de outubro de 2026. Os textos 84 a 87 aguardam o
-sim final do JP; o texto 88 é um texto da equipa, sem JP.
+Escritos pela estratégia a 14 de outubro de 2026. Aprovados pelo JP a 15 de
+outubro de 2026, tal como escritos (textos 84 a 88).
 
 **84. Erro ao registar o pedido (paciente)**
 Onde: página da avaliação, no lugar do texto 25, quando o pedido do botão 19
 ("Não quero receber mais avaliações") não fica registado. Antes aparecia o texto
 25, que fala de "resposta".
-Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
 
 > Não foi possível registar o pedido. Tente novamente dentro de alguns minutos.
 
@@ -705,14 +707,14 @@ Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
 Onde: área de paciente, página da conta, por baixo do interruptor 33, quando a
 alteração não fica guardada. O interruptor volta à posição anterior. Antes não
 aparecia nenhuma frase. Sai ao carregar de novo no interruptor.
-Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
 
 > Não foi possível guardar a alteração. Tente novamente dentro de alguns minutos.
 
 **86. Nenhum envio no mês escolhido (equipa)**
 Onde: lista do separador 36, no lugar da tabela, quando está escolhido um mês
 sem nenhum envio. Antes a lista ficava só com os cabeçalhos.
-Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
 
 > Nenhuma avaliação enviada neste mês.
 
@@ -722,7 +724,7 @@ um administrador sem nenhuma clínica associada, com ou sem mês escolhido. Esta
 pessoas só leem os envios das suas clínicas, por isso a lista está sempre
 vazia. Antes liam o texto 54, que pode não ser verdade. Não aparece ao
 terapeuta nem ao proprietário.
-Escrito pela estratégia a 14 de outubro de 2026, aguarda o sim final do JP.
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
 
 > Sem clínica associada. Peça a um administrador para o associar a uma clínica.
 
@@ -731,7 +733,7 @@ Onde: ficha do paciente, secção 58, no lugar da lista dos envios, quando não 
 nenhum envio que a pessoa possa ler. Para todos exceto o proprietário, que
 continua a ler o texto 78. Só o proprietário lê todos os envios; para os
 outros, uma lista vazia não quer dizer que nunca houve envio.
-Escrito pela estratégia a 14 de outubro de 2026, texto da equipa.
+Escrito pela estratégia a 14 de outubro de 2026, texto da equipa, aprovado pelo JP a 15 de outubro de 2026.
 
 > Nenhuma avaliação de satisfação visível para si.
 
