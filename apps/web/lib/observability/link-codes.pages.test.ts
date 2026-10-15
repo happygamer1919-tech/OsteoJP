@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
  * OBS-07 - the two things outside link-codes.ts that the scrub depends on,
  * pinned where they are written.
  *
- * 1. BOTH PAGES POST FormData, AND NOTHING ELSE. A server action called with a
+ * 1. ALL THREE PAGES POST FormData, AND NOTHING ELSE (`/r` since OBS-08). A server action called with a
  *    plain argument, `action(code)` or `action.bind(null, code)`, puts that
  *    argument in the request as a bare `["<code>"]`: a code with no marker in
  *    front of it, which link-codes.ts cannot recognise wherever else the
@@ -40,7 +40,9 @@ function sources(dir: string): string[] {
   return out;
 }
 
-const ACTIONS = ["confirmCodeAction", "submitSurveyAction", "optOutSurveyAction"] as const;
+const ACTIONS = ["confirmCodeAction", "submitSurveyAction", "optOutSurveyAction", "redeemAction"] as const;
+/** By whole name: `redeemActionToken` is the redemption itself, not the page's action. */
+const MENTIONS = ACTIONS.map((name) => new RegExp(`\\b${name}\\b`));
 
 /** Each line that may mention one of the actions, by file. Trimmed, whole. */
 const ALLOWED: Record<string, readonly string[]> = {
@@ -57,9 +59,14 @@ const ALLOWED: Record<string, readonly string[]> = {
     // The opt-out's useActionState call, which spans lines: its first argument.
     "optOutSurveyAction,",
   ],
+  "app/r/[token]/actions.ts": ["export async function redeemAction(formData: FormData): Promise<void> {"],
+  "app/r/[token]/page.tsx": [
+    'import { redeemAction } from "./actions";',
+    '<form action={redeemAction} className="space-y-3">',
+  ],
 };
 
-describe("both link pages hand their code to the server as a form field, never as a bare argument", () => {
+describe("the link pages hand their code or token to the server as a form field, never as a bare argument", () => {
   const mentions: Array<{ file: string; line: string }> = [];
   const roots = ["app", "components", "lib"].map((dir) => path.join(web, dir));
   const files = roots.flatMap(sources);
@@ -69,11 +76,11 @@ describe("both link pages hand their code to the server as a form field, never a
       const line = raw.trim();
       // A comment may say the name; a comment posts nothing.
       if (line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")) continue;
-      if (ACTIONS.some((name) => line.includes(name))) mentions.push({ file, line });
+      if (MENTIONS.some((name) => name.test(line))) mentions.push({ file, line });
     }
   }
 
-  it("the walk did read the application: both pages and both action files are in it", () => {
+  it("the walk did read the application: the three pages and their action files are in it", () => {
     const read = files.map((full) => path.relative(web, full).split(path.sep).join("/"));
     for (const file of Object.keys(ALLOWED)) expect(read).toContain(file);
     expect(read.length).toBeGreaterThan(100);
@@ -139,17 +146,33 @@ describe("both link pages hand their code to the server as a form field, never a
     ]);
   });
 
-  it("neither page binds an argument to an action", () => {
-    for (const file of ["app/c/[code]/page.tsx", "app/c/[code]/actions.ts", "app/s/[code]/page.tsx", "app/s/[code]/survey-form.tsx", "app/s/[code]/actions.ts"]) {
+  it("the reschedule page's action takes the form and nothing else", () => {
+    const actions = readFileSync(path.join(web, "app/r/[token]/actions.ts"), "utf8");
+    expect(actions).toContain('const token = String(formData.get("token") ?? "");');
+    const page = readFileSync(path.join(web, "app/r/[token]/page.tsx"), "utf8");
+    expect(page).toContain('<input type="hidden" name="token" value={token} />');
+  });
+
+  it("no page binds an argument to an action", () => {
+    for (const file of [
+      "app/c/[code]/page.tsx",
+      "app/c/[code]/actions.ts",
+      "app/s/[code]/page.tsx",
+      "app/s/[code]/survey-form.tsx",
+      "app/s/[code]/actions.ts",
+      "app/r/[token]/page.tsx",
+      "app/r/[token]/actions.ts",
+    ]) {
       const text = readFileSync(path.join(web, file), "utf8");
       expect(text.includes(".bind("), file).toBe(false);
     }
   });
 
-  it("the two action files export only the actions above", () => {
+  it("the three action files export only the actions above", () => {
     for (const [file, names] of [
       ["app/c/[code]/actions.ts", ["confirmCodeAction"]],
       ["app/s/[code]/actions.ts", ["submitSurveyAction", "optOutSurveyAction"]],
+      ["app/r/[token]/actions.ts", ["redeemAction"]],
     ] as const) {
       const exported = readFileSync(path.join(web, file), "utf8")
         .split("\n")
