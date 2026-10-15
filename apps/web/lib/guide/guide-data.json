@@ -5490,7 +5490,7 @@
                 "strong": "Alterar terapeuta"
               },
               {
-                "text": ". Quando a alteração fica guardada, aparece "
+                "text": ". Guardada a alteração, aparece "
               },
               {
                 "strong": "Terapeuta alterado."
@@ -5504,7 +5504,7 @@
         {
           "spans": [
             {
-              "text": "A hora, a clínica e o pacote da marcação não mudam. A alteração fica no registo de auditoria. Numa marcação feita no portal, o paciente pode receber de novo a confirmação."
+              "text": "A hora, a clínica e o pacote da marcação não mudam. A alteração fica no registo de auditoria. Numa marcação do portal já confirmada, o paciente pode receber outra mensagem de confirmação."
             }
           ],
           "type": "para"
@@ -5527,7 +5527,7 @@
           "items": [
             [
               {
-                "text": "o terapeuta tem horário nessa clínica e não trabalha a essa hora: a mensagem por baixo do campo mostra o horário desse terapeuta nesse dia;"
+                "text": "o terapeuta tem horário nessa clínica e não trabalha a essa hora: por baixo do campo aparece o horário desse terapeuta nesse dia;"
               }
             ],
             [
@@ -5543,7 +5543,7 @@
             ],
             [
               {
-                "text": "a hora fica fora do horário de marcação da clínica (a última hora de início é uma hora antes do fecho)."
+                "text": "a hora fica fora do horário de marcação da clínica (o último início é uma hora antes do fecho) ou dentro do fecho ao almoço."
               }
             ]
           ],
@@ -5595,7 +5595,7 @@
       "see": [],
       "shots": null,
       "title": "Alterar o terapeuta de uma marcação na ficha",
-      "words": 197
+      "words": 198
     },
     {
       "answers": [],
