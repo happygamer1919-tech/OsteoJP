@@ -2,14 +2,21 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { randomUUID } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { CONFIRM_CODE_LENGTH, generateConfirmCode } from "../reminders/confirm-code";
+import { signRescheduleToken, verifyRescheduleToken } from "../reminders/link-token";
 import { SURVEY_CODE_LENGTH, generateSurveyCode } from "../surveys/survey-code";
 import {
   LINK_CODE_LENGTH,
   LINK_CODE_PATTERNS,
   LINK_CODE_PLACEHOLDER,
+  LINK_TOKEN_PAYLOAD_MAX,
+  LINK_TOKEN_PAYLOAD_MIN,
+  LINK_TOKEN_PLACEHOLDER,
+  LINK_TOKEN_SIGNATURE_LENGTH,
   MAX_DEPTH,
   ACCESSOR_MARK,
   MAX_NODES,
@@ -36,6 +43,29 @@ const CODE_2 = "q-7_Zt0P";
 const ORIGIN = "https://app.example.invalid";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * OBS-08. A token of the reschedule link's shape that no secret signed: the
+ * payload is base64url of the JSON the signer writes, with synthetic ids, and
+ * the signature is 43 base64url characters with `-` and `_` in them.
+ */
+const PAYLOAD = Buffer.from(
+  JSON.stringify({
+    t: "00000000-0000-4000-8000-000000000001",
+    a: "00000000-0000-4000-8000-000000000002",
+    exp: 1893456000,
+    s: "confirm_cancel",
+  }),
+  "utf8",
+).toString("base64url");
+const SIGNATURE = `${"q-7_Zt0P".repeat(5)}x9Q`;
+const TOKEN = `${PAYLOAD}.${SIGNATURE}`;
+
+/** The token is gone when neither half of it is left: the start of the signature, the end of the payload. */
+function expectNoToken(text: string): void {
+  expect(text).not.toContain(SIGNATURE.slice(0, 8));
+  expect(text).not.toContain(PAYLOAD.slice(-12));
+}
 
 /** The router state Next sends in a header, as JSON text. */
 const TREE = `["",{"children":["c",{"children":[["code","${CODE}","d"],{"children":["__PAGE__",{}]}]}]}]`;
@@ -199,6 +229,188 @@ describe("scrubLinkCodes - what is not exactly a code behind a marker is left ex
   });
 });
 
+describe("scrubLinkCodes - the reschedule token, in every shape a code is recognised in", () => {
+  const routeTree = `["",{"children":["r",{"children":[["token","${TOKEN}","d"],{"children":["__PAGE__",{}]}]}]}]`;
+  const cases: Array<[name: string, input: string, want: string]> = [
+    // The route, and what the page and its action put after it.
+    ["the page", `/r/${TOKEN}`, "/r/[token]"],
+    ["the confirmation screen", `/r/${TOKEN}?a=confirm`, "/r/[token]?a=confirm"],
+    ["an outcome", `/r/${TOKEN}?r=refused`, "/r/[token]?r=refused"],
+    ["with a trailing slash", `/r/${TOKEN}/`, "/r/[token]/"],
+    ["with a fragment", `/r/${TOKEN}#top`, "/r/[token]#top"],
+    ["absolute", `${ORIGIN}/r/${TOKEN}?a=cancel`, `${ORIGIN}/r/[token]?a=cancel`],
+    ["absolute with a port", `http://localhost:3020/r/${TOKEN}`, "http://localhost:3020/r/[token]"],
+    ["a transaction name", `POST /r/${TOKEN}`, "POST /r/[token]"],
+    ["the redirect the action throws", `NEXT_REDIRECT;replace;/r/${TOKEN}?r=confirmed;307;`, "NEXT_REDIRECT;replace;/r/[token]?r=confirmed;307;"],
+    ["the wrong case of the route letter", `/R/${TOKEN}`, "/R/[token]"],
+    ["a doubled slash", `/r//${TOKEN}`, "/r//[token]"],
+    ["then a full stop", `/r/${TOKEN}.`, "/r/[token]."],
+    ["then a closing quote", `"/r/${TOKEN}"`, '"/r/[token]"'],
+    ["beside a code", `from /c/${CODE} to /r/${TOKEN}`, "from /c/[code] to /r/[token]"],
+    // The slash and the dot, every way they travel.
+    ["url-encoded, as a next= value", `/login?next=%2Fr%2F${TOKEN}`, "/login?next=%2Fr%2F%5Btoken%5D"],
+    ["encoded twice", `r=%252Fr%252F${TOKEN}`, "r=%252Fr%252F%5Btoken%5D"],
+    ["the whole url encoded", encodeURIComponent(`${ORIGIN}/r/${TOKEN}?a=confirm`), encodeURIComponent(`${ORIGIN}/r/`) + "%5Btoken%5D%3Fa%3Dconfirm"],
+    ["the dot encoded", `/r/${PAYLOAD}%2E${SIGNATURE}`, "/r/[token]"],
+    ["the dot encoded twice, lower case", `/r/${PAYLOAD}%252e${SIGNATURE}`, "/r/[token]"],
+    ["JSON with escaped slashes", `{"url":"\\/r\\/${TOKEN}"}`, '{"url":"\\/r\\/[token]"}'],
+    // The name: the page posts the token in a field named token.
+    ["a form body", `token=${TOKEN}&action=confirm`, "token=[token]&action=confirm"],
+    ["a server action's field name", `1_token=${TOKEN}`, "1_token=[token]"],
+    ["a query parameter, encoded", `next=%2Fx%3Ftoken%3D${TOKEN}`, "next=%2Fx%3Ftoken%3D%5Btoken%5D"],
+    ["JSON", `{"token":"${TOKEN}"}`, '{"token":"[token]"}'],
+    ["JSON inside JSON", `{\\"token\\":\\"${TOKEN}\\"}`, '{\\"token\\":\\"[token]\\"}'],
+    ["an object as the console prints it", `params { token: '${TOKEN}' }`, "params { token: '[token]' }"],
+    ["upper case name", `Token: ${TOKEN}`, "Token: [token]"],
+    // The router state, and the route parameter as Vercel hands it on.
+    ["the router state tree", routeTree, routeTree.replace(TOKEN, "[token]")],
+    [
+      "the router state tree, url-encoded",
+      encodeURIComponent(`[["token","${TOKEN}","d"],{}]`),
+      "%5B%5B%22token%22%2C%22%5Btoken%5D%22%2C%22d%22%5D%2C%7B%7D%5D",
+    ],
+    ["the route matches", `1=${TOKEN}&nxtPtoken=${TOKEN}`, "1=[token]&nxtPtoken=[token]"],
+    ["the route matches, encoded", `1%3D${TOKEN}%26nxtPtoken%3D${TOKEN}`, "1%3D%5Btoken%5D%26nxtPtoken%3D%5Btoken%5D"],
+  ];
+
+  it.each(cases)("%s", (_name, input, want) => {
+    const out = scrubLinkCodes(input);
+    expect(out).toBe(want);
+    expectNoToken(out);
+    expect(out).not.toContain(CODE);
+  });
+
+  it("is idempotent: a scrubbed string comes back unchanged", () => {
+    for (const [, input] of cases) {
+      const once = scrubLinkCodes(input);
+      expect(scrubLinkCodes(once)).toBe(once);
+    }
+  });
+
+  it("the placeholder is the name Next gives the segment", () => {
+    expect(LINK_TOKEN_PLACEHOLDER).toBe("[token]");
+  });
+
+  const untouched: Array<[name: string, input: string]> = [
+    ["the route name itself", "/r/[token]"],
+    ["the bare route", "/r/"],
+    ["a word, not a token", "/r/some-token"],
+    ["routes that start with r", "/reminders/settings"],
+    ["another", "/recuperacao?tab=lista"],
+    ["a source path", "apps/web/app/r/[token]/page.tsx"],
+    ["a browser chunk", `${ORIGIN}/_next/static/chunks/app/r/%5Btoken%5D/page-1a2b3c.js`],
+    ["the payload alone, no signature", `/r/${PAYLOAD}`],
+    ["a signature one character short", `/r/${PAYLOAD}.${SIGNATURE.slice(1)}`],
+    ["a signature one character long", `/r/${TOKEN}x`],
+    ["a payload shorter than the bound", `/r/${PAYLOAD.slice(0, LINK_TOKEN_PAYLOAD_MIN - 1)}.${SIGNATURE}`],
+    ["a payload longer than the bound", `/r/${"A".repeat(LINK_TOKEN_PAYLOAD_MAX + 1)}.${SIGNATURE}`],
+    ["a short value", "token=expired"],
+    ["a hex value", "?token=0a1b2c3d4e5f60718293a4b5c6d7e8f9"],
+    ["a longer name that ends in token", `access_token=${TOKEN}`],
+    ["the name in a sentence", "the token, which was refused"],
+    ["a third party path", "https://www.example.invalid/r/news/comments"],
+  ];
+
+  it.each(untouched)("left alone: %s", (_name, input) => {
+    expect(scrubLinkCodes(input)).toBe(input);
+  });
+
+  it("the page posts the token in a field named token, which is the name this looks for", () => {
+    const page = readFileSync(path.join(here, "../../app/r/[token]/page.tsx"), "utf8");
+    expect(page).toContain('<input type="hidden" name="token" value={token} />');
+    const actions = readFileSync(path.join(here, "../../app/r/[token]/actions.ts"), "utf8");
+    expect(actions).toContain('const token = String(formData.get("token") ?? "");');
+  });
+
+  it("every token the signer produces has the shape, is removed in each kind of marker, and the bounds hold", () => {
+    vi.stubEnv("REMINDERS_LINK_SECRET", "synthetic-test-secret-for-the-link-code-scrub");
+    try {
+      for (let i = 0; i < 300; i += 1) {
+        const token = signRescheduleToken({
+          tenantId: randomUUID(),
+          appointmentId: randomUUID(),
+          // Any time from now to the far end of what ten digits hold.
+          exp: 1_700_000_000 + Math.floor(Math.random() * 8_000_000_000),
+          scope: i % 2 === 0 ? "confirm" : "confirm_cancel",
+        });
+        // A real token, by the real verifier: the test is about the shape the app issues.
+        expect(verifyRescheduleToken(token, new Date(0))).not.toBeNull();
+        const [payload = "", signature = ""] = token.split(".");
+        expect(signature).toHaveLength(LINK_TOKEN_SIGNATURE_LENGTH);
+        expect(payload.length).toBeGreaterThanOrEqual(LINK_TOKEN_PAYLOAD_MIN);
+        // Room to spare: a field added to the payload must not take it past the bound.
+        expect(payload.length).toBeLessThanOrEqual(LINK_TOKEN_PAYLOAD_MAX / 2);
+
+        expect(scrubLinkCodes(`${ORIGIN}/r/${encodeURIComponent(token)}?a=confirm`)).toBe(`${ORIGIN}/r/[token]?a=confirm`);
+        expect(scrubLinkCodes(`next=%2Fr%2F${token}`)).toBe("next=%2Fr%2F%5Btoken%5D");
+        expect(scrubLinkCodes(`token=${token}&action=confirm`)).toBe("token=[token]&action=confirm");
+        expect(scrubLinkCodes(`[["token","${token}","d"],{}]`)).toBe('[["token","[token]","d"],{}]');
+        expect(scrubLinkCodes(`1=${token}&nxtPtoken=${token}`)).toBe("1=[token]&nxtPtoken=[token]");
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("the longest match there can be is shorter than the run a cut drops", () => {
+    // Every marker piece at its longest, the payload at its bound, the dot encoded three times.
+    const p = "%252525";
+    const longest = `${p}20nxtP123_token${p}22${p}20${p}20${p}3A${p}20${p}20${p}22${"A".repeat(LINK_TOKEN_PAYLOAD_MAX)}${p}2E${SIGNATURE}`;
+    expect(scrubLinkCodes(longest)).toBe(`${p}20nxtP123_token${p}22${p}20${p}20${p}3A${p}20${p}20${p}22%5Btoken%5D`);
+    expect(longest.length).toBeLessThan(700);
+  });
+});
+
+describe("scrubLinkCodesIn - the reschedule token in values that are not text", () => {
+  it("a field named token, the router state as an array, and an object key", () => {
+    const out = scrubLinkCodesIn({
+      extra: {
+        form: { token: TOKEN, action: "confirm" },
+        action: { "1_token": TOKEN },
+        params: { Token: TOKEN, nxtPtoken: TOKEN },
+        tree: ["", { children: [["token", TOKEN, "d"], {}] }],
+        seen: { [`/r/${TOKEN}`]: 1 },
+      },
+    });
+    expect(out).toEqual({
+      extra: {
+        form: { token: "[token]", action: "confirm" },
+        action: { "1_token": "[token]" },
+        params: { Token: "[token]", nxtPtoken: "[token]" },
+        tree: ["", { children: [["token", "[token]", "d"], {}] }],
+        seen: { "/r/[token]": 1 },
+      },
+    });
+  });
+
+  it("a key named token keeps a value that is not a token, and a token after another name stays (the name decides)", () => {
+    const event = { auth: { token: "expired" }, list: ["node", TOKEN], other: { code: TOKEN } };
+    expect(scrubLinkCodesIn(event)).toBe(event);
+  });
+
+  it("an inline script's frame named after the page loses the token; a chunk of the route keeps its name", () => {
+    const chunk = `${ORIGIN}/_next/static/chunks/app/r/%5Btoken%5D/page.js`;
+    const event = {
+      exception: {
+        values: [
+          {
+            stacktrace: {
+              frames: [
+                { filename: `${ORIGIN}/r/${TOKEN}?a=confirm`, abs_path: `/r/${TOKEN}`, function: "?" },
+                { filename: chunk, abs_path: chunk, function: "x" },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const out = scrubLinkCodesIn(event);
+    const frames = out.exception.values[0]?.stacktrace.frames ?? [];
+    expect(frames[0]).toEqual({ filename: `${ORIGIN}/r/[token]?a=confirm`, abs_path: "/r/[token]", function: "?" });
+    expect(frames[1]).toBe(event.exception.values[0]?.stacktrace.frames[1]);
+  });
+});
+
 describe("the limits of a rule that goes by shape, pinned so nobody has to rediscover them", () => {
   it("a bare code with no marker in front of it is not recognised", () => {
     expect(scrubLinkCodes(CODE)).toBe(CODE);
@@ -257,7 +469,8 @@ describe("the rule is tied to what the app issues and to how the app is configur
 
 describe("the cost of reading a string is not the sender's to choose", () => {
   it("no pattern has an unbounded quantifier", () => {
-    expect(LINK_CODE_PATTERNS).toHaveLength(4);
+    // Four markers for a code, the same four for a reschedule token.
+    expect(LINK_CODE_PATTERNS).toHaveLength(8);
     for (const pattern of LINK_CODE_PATTERNS) {
       // The sources write a literal plus sign as \x2B and have no literal
       // asterisk, so the bare characters can only be quantifiers.
@@ -293,6 +506,13 @@ describe("the cost of reading a string is not the sender's to choose", () => {
     ["the field name of a server action", "1_code"],
     ["a scheme", "http:"],
     ["a real code, over and over", `/c/${CODE}`],
+    ["the token route marker", "/r/"],
+    ["the token route marker and a payload at the bound", `/r/${"A".repeat(512)}`],
+    ["the token route marker and a payload one past the bound", `/r/${"A".repeat(513)}`],
+    ["a payload and a dot, no signature", `/r/${PAYLOAD}.`],
+    ["the token's name", "token="],
+    ["the token's name and a quote", '"token","'],
+    ["a real token, over and over", `/r/${TOKEN}`],
     ["a long word", "c"],
   ];
   // Generous: each of these takes a few milliseconds. A quadratic pattern takes
@@ -306,6 +526,7 @@ describe("the cost of reading a string is not the sender's to choose", () => {
     const took = performance.now() - started;
     expect(took).toBeLessThan(CEILING_MS);
     expect(out).not.toContain(CODE);
+    expect(out).not.toContain(SIGNATURE);
   });
 
   it.each(hostile)("1 MB of %s through the bounded function and through the walk", (_name, unit) => {
@@ -323,6 +544,7 @@ describe("the cost of reading a string is not the sender's to choose", () => {
     expect(out.length).toBeLessThanOrEqual(MAX_TEXT_LENGTH);
     expect(out.endsWith(TEXT_CUT_MARK)).toBe(true);
     expect(out).not.toContain(CODE);
+    expect(out).not.toContain(SIGNATURE);
     // What was cut once is within the limit, and is not cut again.
     expect(scrubLinkCodes(out)).toBe(out);
   });
@@ -357,14 +579,22 @@ describe("a string longer than the limit is cut, and the cut leaves no half of a
   });
 
   it("one character more and it is cut and says so", () => {
-    const out = scrubLinkCodes(`${".".repeat(MAX_TEXT_LENGTH)}y`);
-    expect(out).toBe(".".repeat(ROOM) + TEXT_CUT_MARK);
+    // A character that cannot stand in a match, so the cut falls exactly at the room.
+    const out = scrubLinkCodes(`${";".repeat(MAX_TEXT_LENGTH)}y`);
+    expect(out).toBe(";".repeat(ROOM) + TEXT_CUT_MARK);
     expect(out.length).toBe(MAX_TEXT_LENGTH);
   });
 
-  it("at the cut, the run of characters that could be half a match goes too, up to 160 of them", () => {
+  it("at the cut, the run of characters that could be half a match goes too, up to 700 of them", () => {
     const out = scrubLinkCodes("x".repeat(MAX_TEXT_LENGTH + 1));
-    expect(out).toBe("x".repeat(ROOM - 160) + TEXT_CUT_MARK);
+    expect(out).toBe("x".repeat(ROOM - 700) + TEXT_CUT_MARK);
+  });
+
+  it("past the room, 700 characters more are read, and the run at the end of those goes", () => {
+    // Read: the room and 700 more. Dropped from that end: the 700 that could be
+    // half a match lying across it. Left: exactly the room.
+    const out = scrubLinkCodes("x".repeat(2 * MAX_TEXT_LENGTH));
+    expect(out).toBe("x".repeat(ROOM) + TEXT_CUT_MARK);
   });
 
   it("many encoded placeholders, each longer than its code, still fit within the limit", () => {
@@ -386,6 +616,9 @@ describe("a string longer than the limit is cut, and the cut leaves no half of a
     ["an encoded path", `%252Fs%252F${CODE}`],
     ["a form field", `code=${CODE}`],
     ["the encoded tree", encodeURIComponent(encodeURIComponent(`"code", "${CODE}"`))],
+    ["the reschedule page", `/r/${TOKEN}?a=confirm`],
+    ["the token as a form field", `token=${TOKEN}`],
+    ["the token, encoded twice", `%252Fr%252F${PAYLOAD}%252E${SIGNATURE}`],
   ];
 
   it.each(carriers)("%s lying across the cut, at every offset, leaves not even four characters of the code", (_name, carrier) => {
@@ -398,8 +631,28 @@ describe("a string longer than the limit is cut, and the cut leaves no half of a
       expect(out.endsWith(TEXT_CUT_MARK)).toBe(true);
       expect(out).not.toContain(CODE);
       expect(out).not.toContain(CODE.slice(0, 4));
+      expectNoToken(out);
     }
   });
+
+  it.each(carriers)(
+    "%s further back than the run a cut drops, with only match characters after it, is still read whole",
+    (_name, carrier) => {
+      // The secret ends a little before the cut's floor, and every character
+      // after it could belong to a match: the run back from the cut stops at
+      // its bound, which falls inside the secret. Read before it is cut, the
+      // secret is replaced first.
+      for (let back = 690; back <= 720; back += 1) {
+        const text = `${". ".repeat(MAX_TEXT_LENGTH).slice(0, ROOM - back - carrier.length + 4)}${carrier} ${"x".repeat(back + 200)}`;
+        expect(text.length).toBeGreaterThan(MAX_TEXT_LENGTH);
+        const out = scrubLinkCodes(text);
+        expect(out.endsWith(TEXT_CUT_MARK)).toBe(true);
+        expect(out).not.toContain(CODE.slice(0, 4));
+        expectNoToken(out);
+        expect(scrubLinkCodes(out)).toBe(out);
+      }
+    },
+  );
 });
 
 describe("scrubLinkCodesIn - only what stands behind a marker is touched", () => {

@@ -4,15 +4,29 @@
  * ==========================================================================
  * WHAT THIS IS FOR
  * ==========================================================================
- * Two public pages are reached by a secret in the path: `/c/<code>` (the 24h
- * confirm link) and `/s/<code>` (the satisfaction survey). The code IS the
- * credential: whoever holds it can confirm, ask to reschedule, or answer. An
- * error report or a trace that carries the page's url carries the credential
- * to a third party, and it does so from the one surface built to say nothing.
+ * Three public pages are reached by a secret in the path: `/c/<code>` (the 24h
+ * confirm link), `/s/<code>` (the satisfaction survey) and `/r/<token>` (the
+ * email reschedule link, OBS-08). The code or the token IS the credential:
+ * whoever holds it can confirm, cancel, ask to reschedule, or answer. An error
+ * report or a trace that carries the page's url carries the credential to a
+ * third party, and it does so from the one surface built to say nothing.
  *
  * The route stays recognisable. `/c/Ab3xK9Qz?r=generic` leaves as
- * `/c/[code]?r=generic`, which is also the name Next gives the route, so an
- * issue still groups by page.
+ * `/c/[code]?r=generic`, and `/r/<token>?a=confirm` as `/r/[token]?a=confirm`,
+ * which are also the names Next gives the routes, so an issue still groups by
+ * page.
+ *
+ * ==========================================================================
+ * TWO SHAPES, ONE SET OF MARKERS
+ * ==========================================================================
+ * A code is the eight character shape below. A reschedule token is the shape
+ * `lib/reminders/link-token.ts` signs: base64url of a JSON payload, a dot, and
+ * the base64url of its HMAC-SHA256, which is exactly 43 characters. The payload
+ * is held to 32 to 512 characters (a real one is about 160). Everything said
+ * below about a code is said of a token too, with `/r/` for the route, `token`
+ * for the name and `[token]` for what stands in its place. The dot between the
+ * halves may also travel as `%2E`. Every pattern is written once and built for
+ * each shape, so the two cannot drift apart.
  *
  * ==========================================================================
  * IT WALKS THE WHOLE EVENT, AND THAT IS DELIBERATE
@@ -74,7 +88,7 @@
  * ==========================================================================
  * NO REQUEST BODY LEAVES, AND NOTHING HERE TRIES TO READ ONE
  * ==========================================================================
- * Both pages post the code as a form field, and a form post is
+ * All three pages post the secret as a form field, and a form post is
  * multipart/form-data: `name="1_code"`, a blank line, the code. That is one
  * shape of many a body can take, and a rule that recognises shapes is always
  * one shape short. So a body is not read at all. It is removed, whatever its
@@ -104,16 +118,16 @@
  * ==========================================================================
  * LIMITS, EACH ONE KNOWN AND NOT CLOSED HERE
  * ==========================================================================
- *   - BOTH PAGES MUST KEEP POSTING FormData. A server action called with a
- *     plain argument, `action(code)` or `action.bind(null, code)`, posts the
+ *   - ALL THREE PAGES MUST KEEP POSTING FormData. A server action called with
+ *     a plain argument, `action(code)` or `action.bind(null, code)`, posts the
  *     body `["<code>"]`: a bare code. The body is removed in the two places
  *     above, but the same argument also reaches places that are not a body.
- *     link-codes.pages.test.ts reads the two pages and fails on such a call.
+ *     link-codes.pages.test.ts reads the three pages and fails on such a call.
  *   - A failed database query. The query layer puts the parameters of a
  *     failed query in the error's message, as `params: <code>`: a bare code,
  *     no marker. If the lookup of a code ever throws, the code is in that
  *     message. Not closed here: the same line carries every other parameter
- *     of every failed query, which is a wider question than these two pages.
+ *     of every failed query, which is a wider question than these pages.
  *   - Inside `stacktrace.frames[]` the fields `function`, `context_line`,
  *     `pre_context`, `post_context` and `module` are never read. The SDK puts
  *     source text there, not a url.
@@ -125,6 +139,11 @@
  *     written with backslashes only, a bare list `["<code>"]`.
  *   - Marker 4 takes any eight characters behind a name of one or two
  *     digits: `a=1&2=settings` loses the word.
+ *   - A token's dot is matched plain and url-encoded up to four times
+ *     (`%2E` to `%2525252E`); written as any other escape (a JavaScript
+ *     unicode escape, an HTML entity) it is not, and the token stays. A token whose
+ *     signature half is followed by another dot and more text (the first two
+ *     thirds of a JWT, say) loses the part that has the token's shape.
  *
  * ==========================================================================
  * EVERY PATTERN IS LINEAR, AND A LONG STRING IS CUT
@@ -136,9 +155,10 @@
  * file reads the pattern sources and fails on an unbounded quantifier.
  *
  * And a second bound that does not depend on anybody reasoning correctly about
- * a pattern: a string longer than MAX_TEXT_LENGTH is cut to fit within that
- * length before it is read, and says so at its end. Nothing Sentry can use is
- * that long.
+ * a pattern: of a string longer than MAX_TEXT_LENGTH only the first
+ * MAX_TEXT_LENGTH characters and the length of one match more are read, and
+ * what comes back is cut to fit within MAX_TEXT_LENGTH and says so at its
+ * end. Nothing Sentry can use is that long.
  *
  * ==========================================================================
  * A STACK FRAME IS SOURCE CODE, NOT A REQUEST
@@ -150,9 +170,9 @@
  * only `vars` is walked, and inside `debug_meta.images[]` nothing is.
  *
  * ONE EXCEPTION, AND IT IS NOT A SOURCE FILE. A frame of an inline script is
- * named after the PAGE it sits in, so on these two pages `filename` is the
- * address with the code in it. A `filename` or `abs_path` that is, as a whole,
- * the address of one of the two pages is rewritten. No chunk and no source
+ * named after the PAGE it sits in, so on these three pages `filename` is the
+ * address with the secret in it. A `filename` or `abs_path` that is, as a
+ * whole, the address of one of the three pages is rewritten. No chunk and no source
  * file has that shape, so no source map is ever matched by it.
  *
  * ==========================================================================
@@ -185,7 +205,8 @@
 
 /** What stands where a code stood. Also Next's own name for the segment. */
 export const LINK_CODE_PLACEHOLDER = "[code]";
-const ENCODED_PLACEHOLDER = "%5Bcode%5D";
+/** What stands where a reschedule token stood. Next's name for that segment. */
+export const LINK_TOKEN_PLACEHOLDER = "[token]";
 
 /**
  * The length of a real code. A literal and not an import, because
@@ -195,7 +216,17 @@ const ENCODED_PLACEHOLDER = "%5Bcode%5D";
  */
 export const LINK_CODE_LENGTH = 8;
 
-/** A string longer than this is cut to fit within it before it is read. */
+/**
+ * The reschedule token's two halves. The signature is an HMAC-SHA256 in
+ * base64url with no padding: 32 bytes, 43 characters. The payload's bounds are
+ * wide on purpose; link-codes.test.ts signs real tokens with
+ * `lib/reminders/link-token.ts` and fails if one falls outside them.
+ */
+export const LINK_TOKEN_SIGNATURE_LENGTH = 43;
+export const LINK_TOKEN_PAYLOAD_MIN = 32;
+export const LINK_TOKEN_PAYLOAD_MAX = 512;
+
+/** A string longer than this is read only to about this length, and cut to fit within it. */
 export const MAX_TEXT_LENGTH = 65_536;
 export const TEXT_CUT_MARK = "[cut: longer than the link-code scrub reads]";
 
@@ -210,8 +241,7 @@ export const ACCESSOR_MARK = "[accessor: removed by the link-code scrub]";
 // that way so that no `+` appears in any source, and the test that looks for
 // an unbounded quantifier can look for the bare character.
 const ALPHABET = "A-Za-z0-9_-";
-const CODE = `[${ALPHABET}]{${LINK_CODE_LENGTH}}`;
-/** The code ends here: the next character cannot continue one. */
+/** The secret ends here: the next character cannot continue one. */
 const CODE_END = `(?![${ALPHABET}])`;
 /** A percent sign, itself url-encoded up to three more times. */
 const PERCENT = "%(?:25){0,3}";
@@ -225,51 +255,85 @@ const NAME_START = `(?:^|[^${ALPHABET}]|${PERCENT}[0-9A-Fa-f]{2})`;
  * `nxtPcode` is how Vercel names the route parameter `code` when it hands the
  * match on (`nxtI` for an intercepted route): next/dist/lib/constants.js.
  */
-const NAME = "(?:nxt[PI])?(?:[0-9]{1,3}_)?[cC][oO][dD][eE]";
+const NAME_PREFIX = "(?:nxt[PI])?(?:[0-9]{1,3}_)?";
 const EQUALS = `(?:=|${PERCENT}3[Dd])`;
+/** The dot between a token's two halves, plain or url-encoded. */
+const DOT = `(?:\\.|${PERCENT}2[Ee])`;
 
 /**
- * Marker 1. Group 1 is the route as written, group 2 the code.
+ * One kind of secret: what it looks like, the route letters that put it in a
+ * path, the name it is given as a field, and what stands in its place.
+ */
+type Secret = {
+  shape: string;
+  route: string;
+  name: string;
+  placeholder: string;
+  encoded: string;
+};
+
+const CODE_SECRET: Secret = {
+  shape: `[${ALPHABET}]{${LINK_CODE_LENGTH}}`,
+  route: "[cCsS]",
+  name: "[cC][oO][dD][eE]",
+  placeholder: LINK_CODE_PLACEHOLDER,
+  encoded: "%5Bcode%5D",
+};
+
+const TOKEN_SECRET: Secret = {
+  shape: `[${ALPHABET}]{${LINK_TOKEN_PAYLOAD_MIN},${LINK_TOKEN_PAYLOAD_MAX}}${DOT}[${ALPHABET}]{${LINK_TOKEN_SIGNATURE_LENGTH}}`,
+  route: "[rR]",
+  name: "[tT][oO][kK][eE][nN]",
+  placeholder: LINK_TOKEN_PLACEHOLDER,
+  encoded: "%5Btoken%5D",
+};
+
+/**
+ * The four markers for one kind of secret.
  *
+ * Marker 1, the route. Group 1 is the route as written, group 2 the secret.
  * Either case of the letter: `/C/<code>` is a 404, and the 404 still carries
  * the code. One slash or two after the letter: `/c//<code>` is the same page
  * to whoever typed it.
+ *
+ * Marker 2, the name. Group 1 is everything up to the secret, group 2 the
+ * secret.
+ *
+ * Marker 3, the tree. A comma, so both quotes are required: "the code,
+ * password" is a sentence and `"code","Ab3xK9Qz"` is the router's state.
+ *
+ * Marker 4, the match. `1=<code>`: what Vercel writes in `x-now-route-matches`
+ * beside `nxtPcode=<code>`, which marker 2 takes. The name is the digits and
+ * nothing else: `v1=` and `123=` are other names.
  */
-const ROUTE = new RegExp(`(${SLASH}[cCsS]${SLASH}{1,2})(${CODE})${CODE_END}`, "g");
+function markersFor(secret: Secret): RegExp[] {
+  const name = `${NAME_PREFIX}${secret.name}`;
+  const value = `(${secret.shape})${CODE_END}`;
+  return [
+    new RegExp(`(${SLASH}${secret.route}${SLASH}{1,2})${value}`, "g"),
+    new RegExp(`(${NAME_START}${name}${QUOTE}?${GAP}(?:[=:]|${PERCENT}3[AaDd])${GAP}${QUOTE}?)${value}`, "g"),
+    new RegExp(`(${NAME_START}${name}${QUOTE}${GAP}(?:,|${PERCENT}2[Cc])${GAP}${QUOTE})${value}`, "g"),
+    new RegExp(`(${NAME_START}[0-9]{1,2}${EQUALS})${value}`, "g"),
+  ];
+}
 
-/** Marker 2. Group 1 is everything up to the code, group 2 the code. */
-const NAMED = new RegExp(
-  `(${NAME_START}${NAME}${QUOTE}?${GAP}(?:[=:]|${PERCENT}3[AaDd])${GAP}${QUOTE}?)(${CODE})${CODE_END}`,
-  "g",
-);
-
-/**
- * Marker 3. A comma, so both quotes are required: "the code, password" is a
- * sentence and `"code","Ab3xK9Qz"` is the router's state.
- */
-const TREE = new RegExp(
-  `(${NAME_START}${NAME}${QUOTE}${GAP}(?:,|${PERCENT}2[Cc])${GAP}${QUOTE})(${CODE})${CODE_END}`,
-  "g",
-);
-
-/**
- * Marker 4. `1=<code>`: what Vercel writes in `x-now-route-matches` beside
- * `nxtPcode=<code>`, which marker 2 takes. The name is the digits and nothing
- * else: `v1=` and `123=` are other names.
- */
-const MATCHED = new RegExp(`(${NAME_START}[0-9]{1,2}${EQUALS})(${CODE})${CODE_END}`, "g");
+const CODE_MARKERS = markersFor(CODE_SECRET);
+const TOKEN_MARKERS = markersFor(TOKEN_SECRET);
 
 /** Every pattern a hostile string is run through. The test reads the sources. */
-export const LINK_CODE_PATTERNS: readonly RegExp[] = [ROUTE, NAMED, TREE, MATCHED];
+export const LINK_CODE_PATTERNS: readonly RegExp[] = [...CODE_MARKERS, ...TOKEN_MARKERS];
 
 /**
  * The longest stretch of text one match can cover, rounded up. Used only where
- * a long string is cut: see `cutTo`.
+ * a long string is cut: see `cutTo`. The longest marker in front of a secret is
+ * under 90 characters, and the longest token is 512, a dot of up to 9 and 43.
  */
-const LONGEST_MATCH = 160;
+const LONGEST_MATCH = 700;
 
-const EXACT_CODE = new RegExp(`^${CODE}$`);
-const NAME_ONLY = new RegExp(`^${NAME}$`);
+const EXACT_CODE = new RegExp(`^${CODE_SECRET.shape}$`);
+const NAME_ONLY = new RegExp(`^${NAME_PREFIX}${CODE_SECRET.name}$`);
+const EXACT_TOKEN = new RegExp(`^${TOKEN_SECRET.shape}$`);
+const TOKEN_NAME_ONLY = new RegExp(`^${NAME_PREFIX}${TOKEN_SECRET.name}$`);
 
 /**
  * Function replacers throughout, never a replacement STRING: in a replacement
@@ -280,21 +344,25 @@ const NAME_ONLY = new RegExp(`^${NAME}$`);
  * ends in a percent escape (`%2F`, `%22`, `%3D`) the last character is a hex
  * digit, and the placeholder is encoded too.
  */
-function withPlaceholder(_match: string, before: string): string {
-  const last = before.charCodeAt(before.length - 1);
-  const hex = (last >= 48 && last <= 57) || (last >= 65 && last <= 70) || (last >= 97 && last <= 102);
-  return before + (hex ? ENCODED_PLACEHOLDER : LINK_CODE_PLACEHOLDER);
+function placeholderFor(secret: Secret): (match: string, before: string) => string {
+  return (_match, before) => {
+    const last = before.charCodeAt(before.length - 1);
+    const hex = (last >= 48 && last <= 57) || (last >= 65 && last <= 70) || (last >= 97 && last <= 102);
+    return before + (hex ? secret.encoded : secret.placeholder);
+  };
 }
 
-/** The four markers, with no bound on the length. Exported for the timing test. */
+const CODE_REPLACER = placeholderFor(CODE_SECRET);
+const TOKEN_REPLACER = placeholderFor(TOKEN_SECRET);
+
+/** The four markers for each secret, with no bound on the length. Exported for the timing test. */
 export function scrubLinkCodesUnbounded(text: string): string {
   // The shortest thing that can match is `1=` and a code.
   if (text.length < LINK_CODE_LENGTH + 2) return text;
-  return text
-    .replace(ROUTE, withPlaceholder)
-    .replace(NAMED, withPlaceholder)
-    .replace(TREE, withPlaceholder)
-    .replace(MATCHED, withPlaceholder);
+  let out = text;
+  for (const pattern of TOKEN_MARKERS) out = out.replace(pattern, TOKEN_REPLACER);
+  for (const pattern of CODE_MARKERS) out = out.replace(pattern, CODE_REPLACER);
+  return out;
 }
 
 /** Can this character stand inside a match, after the first character of one? */
@@ -313,29 +381,37 @@ function inAMatch(ch: number): boolean {
     ch === 61 || // =
     ch === 58 || // :
     ch === 44 || // ,
+    ch === 46 || // . between a token's two halves
     ch === 43 || // plus
     ch <= 32 // space and the control characters \s covers
   );
 }
 
 /**
- * Cut a long string so that no half of a code is left at the edge.
- *
- * A plain cut could fall between a marker and the end of its code, and leave
- * `/c/Ab3x` standing: half a credential, and no longer a match. So after the
- * cut, the run of characters at the edge that could belong to a match is
- * dropped as well, up to the longest a match can be.
+ * Drop the run of characters at the end of `text[0, limit)` that could belong
+ * to a match, up to the longest a match can be, and cut there.
  */
 function cutTo(text: string, limit: number): string {
-  let end = limit;
+  let end = Math.min(limit, text.length);
   const floor = end - LONGEST_MATCH;
   while (end > floor && inAMatch(text.charCodeAt(end - 1))) end -= 1;
   return text.slice(0, end);
 }
 
 /**
- * One string, the four markers. Pure, and idempotent: a string already
- * scrubbed comes back unchanged.
+ * One string, the four markers for each secret. Pure, and idempotent: a string
+ * already scrubbed comes back unchanged.
+ *
+ * A LONG STRING IS READ A LITTLE PAST THE CUT, AND CUT AFTER IT IS READ. A cut
+ * made first could fall inside a secret and leave most of it standing, no
+ * longer a match: `/c/Ab3xK9Q`, or a token short of one character of its
+ * signature. So the first room-plus-one-match characters are scrubbed, and
+ * every secret that lies across the cut is read whole and replaced. What can
+ * be left is a secret that lies across the end of what was read; the run of
+ * characters at that end that could be part of a match goes, which removes it
+ * all, since it is shorter than the run that is dropped. Only then is the
+ * result cut to the room, the same way, and everything left of the cut has
+ * been read.
  */
 export function scrubLinkCodes(text: string): string {
   if (text.length <= MAX_TEXT_LENGTH) return scrubLinkCodesUnbounded(text);
@@ -343,21 +419,24 @@ export function scrubLinkCodes(text: string): string {
   // whole the next time: a breadcrumb passes here twice, once on its own and
   // once inside its event.
   const room = MAX_TEXT_LENGTH - TEXT_CUT_MARK.length;
-  let out = scrubLinkCodesUnbounded(cutTo(text, room));
-  // An encoded placeholder is two characters longer than the code it replaced.
+  const head = text.slice(0, room + LONGEST_MATCH);
+  let out = scrubLinkCodesUnbounded(head);
+  if (head.length < text.length) out = cutTo(out, out.length);
+  // An encoded placeholder is two characters longer than the code it replaced
+  // (a token's is shorter than the token), so the result can still be too long.
   if (out.length > room) out = cutTo(out, room);
   return out + TEXT_CUT_MARK;
 }
 
 /**
  * A frame's `filename` or `abs_path` that is, whole, the address of one of the
- * two pages: nothing or an origin, then `/c/<code>` or `/s/<code>`, then the
- * end, a query or a fragment (a trailing slash allowed). A file under a
+ * three pages: nothing or an origin, then `/c/<code>`, `/s/<code>` or
+ * `/r/<token>`, then the end, a query or a fragment (a trailing slash allowed). A file under a
  * directory of that name has more path after it and is not this. Anchored at
  * the start, every repetition bounded.
  */
 const PAGE_ADDRESS = new RegExp(
-  `^(?:[A-Za-z][A-Za-z0-9.\\x2B-]{0,15}://[^/?#\\s]{1,255})?/[cCsS]/${CODE}/?(?:$|[?#])`,
+  `^(?:[A-Za-z][A-Za-z0-9.\\x2B-]{0,15}://[^/?#\\s]{1,255})?/(?:[cCsS]/${CODE_SECRET.shape}|[rR]/${TOKEN_SECRET.shape})/?(?:$|[?#])`,
 );
 
 /** Deep enough for any event the SDK builds; a bound, so a strange value ends. */
@@ -524,6 +603,9 @@ function rewrite(value: unknown, walk: Walk, depth: number, place: Place): unkno
         if (i > 0 && typeof item === "string" && value[i - 1] === "code" && EXACT_CODE.test(item)) {
           // The router's state as a real array: ["code", "<code>", "d"].
           next = replaced(walk, LINK_CODE_PLACEHOLDER);
+        } else if (i > 0 && typeof item === "string" && value[i - 1] === "token" && EXACT_TOKEN.test(item)) {
+          // The same for the reschedule page: ["token", "<token>", "d"].
+          next = replaced(walk, LINK_TOKEN_PLACEHOLDER);
         } else {
           next = rewrite(item, walk, depth + 1, itemPlace);
         }
@@ -582,6 +664,9 @@ function rewrite(value: unknown, walk: Walk, depth: number, place: Place): unkno
       if (typeof item === "string" && NAME_ONLY.test(key) && EXACT_CODE.test(item)) {
         // A form field, a route parameter, a logged object: { code: "<code>" }.
         next = replaced(walk, LINK_CODE_PLACEHOLDER);
+      } else if (typeof item === "string" && TOKEN_NAME_ONLY.test(key) && EXACT_TOKEN.test(item)) {
+        // The same for the reschedule page: { token: "<token>" }.
+        next = replaced(walk, LINK_TOKEN_PLACEHOLDER);
       } else {
         next = rewrite(item, walk, depth + 1, placeOfProperty(place, key));
       }

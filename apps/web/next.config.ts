@@ -1,8 +1,34 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
+// ==========================================================================
+// THE THREE PUBLIC LINK PAGES SEND ONLY THEIR ORIGIN AS REFERER. OBS-08.
+// ==========================================================================
+// `/c/<code>` (the 24h confirm link), `/s/<code>` (the satisfaction survey)
+// and `/r/<token>` (the email reschedule link) are reached by a secret in the
+// path. A browser sends the page's address as the Referer on everything the
+// page loads and every link followed from it, so the secret would travel with
+// each of those requests. `Referrer-Policy: strict-origin` sends the bare
+// origin (`https://host/`) and never the path, and nothing at all from https
+// to plain http.
+//
+// Scoped to those three paths, and to everything under them: a mistyped
+// `/c/<code>/x` is a 404 page that still has the code in its address. Matched
+// without regard to case, as Next matches every header source here, so
+// `/C/<code>` is covered too. No other path gets it.
+//
+// Why not `no-referrer`: with it a browser posts a NATIVE form submission
+// (JavaScript off) with `Origin: null`, and Next refuses a server action whose
+// Origin does not match the host. `strict-origin` keeps the real Origin on
+// that post. Ruled by strategy 2026-10-15 (Q-B).
+// lib/observability/link-page-headers.test.ts pins the paths and the value.
+const LINK_PAGE_HEADERS = [{ key: "Referrer-Policy", value: "strict-origin" }];
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@osteojp/ui", "@osteojp/auth", "@osteojp/db", "@osteojp/i18n"],
+  async headers() {
+    return ["/c/:path*", "/s/:path*", "/r/:path*"].map((source) => ({ source, headers: LINK_PAGE_HEADERS }));
+  },
 };
 
 // ==========================================================================
