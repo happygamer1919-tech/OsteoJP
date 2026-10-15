@@ -796,10 +796,15 @@ d("SWEEP-01: the two counts on Lembretes SMS, both channels, as the viewer", () 
                 ${due.toISOString()}, 0, false, ${c.created.toISOString()})`);
       return;
     }
+    // The attempt as the writer numbers it (0106): the next one for this
+    // reminder and start.
     await sql.execute(raw`insert into reminder_claims
-      (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, created_at)
+      (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, created_at, attempt)
       values (${c.tenant ?? tenantA}, ${c.appointment}, 'claim', ${c.offset}, ${channel}, ${c.start.toISOString()},
-              ${due.toISOString()}, 'run', ${c.early ?? false}, ${c.created.toISOString()})`);
+              ${due.toISOString()}, 'run', ${c.early ?? false}, ${c.created.toISOString()},
+              (select coalesce(max(attempt), 0) + 1 from reminder_claims
+                where appointment_id = ${c.appointment} and kind = 'claim' and offset_id = ${c.offset}
+                  and channel = ${channel} and starts_at = ${c.start.toISOString()}::timestamptz))`);
   }
 
   async function ledger(l: {

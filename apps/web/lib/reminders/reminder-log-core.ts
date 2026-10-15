@@ -170,6 +170,8 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   // the page; it is here because every reason the dispatcher can answer has
   // one, and a row that ever did carry it must not read as unrecognised.
   claim_held: s["remindersLog.reason.claim_held"],
+  // Q-A, 2026-10-15. Another taker held the same attempt; no row either.
+  claim_held_by_duplicate: s["remindersLog.reason.claim_held_by_duplicate"],
 };
 
 export const KNOWN_SUPPRESSION_REASONS: readonly string[] = Object.keys(REASON_LABEL);

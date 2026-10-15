@@ -203,6 +203,15 @@ export type DispatchOutcome =
          */
         | "claim_held"
         /**
+         * Reminders only. HELD BY A DUPLICATE: the table refused this call's
+         * claim because another taker holds the same attempt of this reminder
+         * for this start (0106, `reminder_claims_claim_attempt_key`). Nothing
+         * is sent, and, as for `claim_held`, NO LEDGER ROW IS WRITTEN: the
+         * taker that holds the attempt writes the row for it. Strategy, Q-A
+         * of 2026-10-15.
+         */
+        | "claim_held_by_duplicate"
+        /**
          * Today's confirmation only. Building the reschedule link threw (its
          * base URL or its signing secret is not configured), so neither the
          * email nor the SMS was attempted. The error still propagates; this is
@@ -663,6 +672,8 @@ async function loadDispatchable(
  * reminder's `sent` row is ALREADY in the ledger for this start, written by
  * the sender that got there first. A row here would be a second record of one
  * reminder, filed after that sender's claim as if it had tried twice.
+ * `claim_held_by_duplicate` is the same exception for the same reason: the
+ * taker that holds the attempt records what became of it.
  */
 export async function dispatchReminder(
   tenantId: string,
@@ -674,7 +685,7 @@ export async function dispatchReminder(
   taker: ReminderClaimTaker = "run",
 ): Promise<DispatchOutcome> {
   const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel, taker);
-  if (!outcome.dispatched && outcome.reason !== "claim_held") {
+  if (!outcome.dispatched && outcome.reason !== "claim_held" && outcome.reason !== "claim_held_by_duplicate") {
     await recordDispatch({
       tenantId,
       appointmentId,
@@ -704,9 +715,11 @@ async function dispatchReminderInner(
   const claimStart = gate.ok ? gate.data.startsAt : gate.startsAt;
   if (!claimStart) return dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate);
   const claim = await takeReminderClaim({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
-  // THE ONE ANSWER THAT STOPS A SEND: this reminder was already sent for this
-  // start. Every other answer, a claim that could not be read or written
-  // included, goes on exactly as before there were claims.
+  // THE ONE ANSWER THAT STOPS A SEND: held. This reminder was already sent for
+  // this start, or the table refused this claim's attempt because another
+  // taker holds it. Every other answer, a claim that could not be read or
+  // written included, goes on exactly as before there were claims.
+  if (claim.held && claim.duplicate) return { dispatched: false, reason: "claim_held_by_duplicate" };
   if (claim.held) return { dispatched: false, reason: "claim_held" };
   try {
     return await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate);

@@ -1701,6 +1701,7 @@
   "remindersLog.reason.missing_provider_config": "sending provider not configured",
   "remindersLog.reason.invalid_recipient": "recipient missing",
   "remindersLog.reason.claim_held": "reminder already sent for this date and time",
+  "remindersLog.reason.claim_held_by_duplicate": "reminder already taken by another sender at the same moment",
   "remindersLog.reason.unknown": "unrecognised reason ({code})",
   "remindersLog.filterAll": "All",
   "remindersLog.filterFailures": "Failures only",
