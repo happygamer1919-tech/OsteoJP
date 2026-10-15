@@ -674,7 +674,8 @@ function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | n
  * after one could be a second copy.
  *
  * 21606 and 21617 also raise an alert (`SENDER_OR_BODY_REFUSAL_CODES`), on
- * either path, the switch off included.
+ * either REMINDER path, the switch off included. The other SMS senders in this
+ * file (confirmation, booking approved, follow-up, no-show) raise none.
  *
  * A code missing from this list costs a reminder that is not retried; a code
  * wrongly on it could cost a second copy.
@@ -697,8 +698,8 @@ export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", re
 /**
  * THE REFUSALS THAT ARE OURS, NOT THE PATIENT'S: our sender (21606) or our
  * message body (21617) is wrong, so every patient's SMS is refused the same
- * way. Each also raises an alert (`alertSenderOrBodyRefusal`), on every send
- * path, the switch off included, besides giving the claim up. Strategy, Q-C of
+ * way. Each also raises an alert (`alertSenderOrBodyRefusal`), on both
+ * reminder paths, the switch off included, besides giving the claim up. Strategy, Q-C of
  * 2026-10-15. Pinned by a test, and every code here is on the list above.
  */
 export const SENDER_OR_BODY_REFUSAL_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
