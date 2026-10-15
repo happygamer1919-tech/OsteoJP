@@ -202,16 +202,30 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     const offsetId = over.offsetId ?? SMS.offsetId;
     const early = over.early === undefined ? false : over.early;
     const due = early === null ? null : plus(start, -hoursOf(offsetId) * 60).toISOString();
+    // The attempt as the writer numbers it (0106): the next one for this
+    // reminder and start.
     await sql.execute(raw`insert into reminder_claims
-      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early)
+      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt)
       values (${id}, ${over.tenant ?? tenantA}, ${appointmentId}, 'claim', ${offsetId}, ${over.channel ?? SMS.channel},
-              ${start.toISOString()}, ${due}::timestamptz, ${over.taker ?? "sweep"}, ${early}::boolean)`);
+              ${start.toISOString()}, ${due}::timestamptz, ${over.taker ?? "sweep"}, ${early}::boolean,
+              (select coalesce(max(attempt), 0) + 1 from reminder_claims
+                where appointment_id = ${appointmentId} and kind = 'claim' and offset_id = ${offsetId}
+                  and channel = ${over.channel ?? SMS.channel} and starts_at = ${start.toISOString()}::timestamptz))`);
     return id;
   }
 
-  async function seedRelease(appointmentId: string, claimId: string, over: { tenant?: string } = {}): Promise<void> {
+  /**
+   * A release row. Since 0106 a release carries its claim's offset and
+   * channel, so the release of another reminder's claim names that reminder.
+   */
+  async function seedRelease(
+    appointmentId: string,
+    claimId: string,
+    over: { tenant?: string; offsetId?: "24h" | "48h"; channel?: string } = {},
+  ): Promise<void> {
     await sql.execute(raw`insert into reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id)
-      values (${over.tenant ?? tenantA}, ${appointmentId}, 'release', ${SMS.offsetId}, ${SMS.channel}, ${claimId})`);
+      values (${over.tenant ?? tenantA}, ${appointmentId}, 'release', ${over.offsetId ?? SMS.offsetId},
+              ${over.channel ?? SMS.channel}, ${claimId})`);
   }
 
   /**
@@ -704,7 +718,10 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     // A release that names ANOTHER claim of the visit (its other reminder's) frees nothing.
     const otherRelease = await fresh();
     await seedClaim(otherRelease.id, otherRelease.start);
-    await seedRelease(otherRelease.id, await seedClaim(otherRelease.id, otherRelease.start, { offsetId: "48h", channel: "email" }));
+    await seedRelease(otherRelease.id, await seedClaim(otherRelease.id, otherRelease.start, { offsetId: "48h", channel: "email" }), {
+      offsetId: "48h",
+      channel: "email",
+    });
     expect(await selects(now, otherRelease.id)).toBe(false);
     // WHAT THE TABLE REFUSES, so the selection never has to tell it apart: a
     // release another tenant wrote, a release filed under another visit, and

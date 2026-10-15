@@ -7,8 +7,9 @@
  * a second release of one claim) is in reminder-log.db.test.ts and
  * reminder-claim.db.test.ts.
  * Pinned here is everything around it: the row's shape, the ten minute edge,
- * the order of the statements, and the property the send path leans on, that
- * taking a claim can never throw and answers "not held" whenever it fails.
+ * the order of the statements, the attempt number, and the property the send
+ * path leans on, that taking a claim can never throw and answers "not held"
+ * whenever it fails, except when the table refuses a duplicate attempt.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTableName } from "drizzle-orm";
@@ -20,11 +21,16 @@ vi.mock("server-only", () => ({}));
 const ran: (
   | { kind: "execute"; sql: string; params: unknown[] }
   | { kind: "read" }
+  | { kind: "attempt" }
   | { kind: "insert"; table: string; values: Record<string, unknown> }
 )[] = [];
-let failAt: "context" | "bounds" | "lock" | "read" | "insert" | null = null;
+let failAt: "context" | "bounds" | "lock" | "read" | "attempt" | "insert" | null = null;
 /** What the "is it held" read finds. A row means held. */
 let heldRows: { id: string }[] = [];
+/** What the attempt read finds: the highest attempt stored, null when none is. */
+let lastAttempt: number | null = null;
+/** What the insert throws when `failAt` is "insert". */
+let insertError: unknown = new Error("insert refused");
 /** The id Postgres gives the row the claim inserts. */
 const CLAIM_ID = "44444444-4444-4444-4444-444444444444";
 
@@ -61,8 +67,14 @@ vi.mock("./context", () => ({
         if (failAt === "lock" && isLock) throw new Error("lock wait timed out");
         ran.push({ kind: "execute", sql: built.sql, params: built.params });
       },
-      select: () =>
+      // The attempt read is the one select that asks for `attempt`.
+      select: (fields?: Record<string, unknown>) =>
         selectChain(async () => {
+          if (fields !== undefined && "attempt" in fields) {
+            if (failAt === "attempt") throw new Error("attempt read refused");
+            ran.push({ kind: "attempt" });
+            return [{ attempt: lastAttempt }];
+          }
           if (failAt === "read") throw new Error("read refused");
           ran.push({ kind: "read" });
           return heldRows;
@@ -70,7 +82,7 @@ vi.mock("./context", () => ({
       insert: (table: Parameters<typeof getTableName>[0]) => ({
         values: (v: Record<string, unknown>) => {
           const write = async () => {
-            if (failAt === "insert") throw new Error("insert refused");
+            if (failAt === "insert") throw insertError;
             // The table by its database name: a claim must never land in `audit_log`.
             ran.push({ kind: "insert", table: getTableName(table), values: v });
             return [{ id: CLAIM_ID }];
@@ -92,8 +104,10 @@ const {
   CLAIM_LOCK_TIMEOUT,
   CLAIM_STATEMENT_TIMEOUT,
   EARLY_CLAIM_MS,
+  REMINDER_CLAIM_ATTEMPT_KEY,
   REMINDER_CLAIM_KIND,
   REMINDER_CLAIM_RELEASE_KIND,
+  isDuplicateClaimAttempt,
   isEarlyClaim,
   releaseReminderClaim,
   reminderClaimLockPayload,
@@ -121,6 +135,8 @@ beforeEach(() => {
   ran.length = 0;
   failAt = null;
   heldRows = [];
+  lastAttempt = null;
+  insertError = new Error("insert refused");
 });
 
 /** The one row the claim inserted. */
@@ -148,6 +164,7 @@ describe("the reminder claim: the row", () => {
           dueAt: MARK_24H,
           taker: "run",
           early: false,
+          attempt: 1,
         },
       },
     ]);
@@ -158,6 +175,7 @@ describe("the reminder claim: the row", () => {
     await takeReminderClaim(base);
     expect(Object.keys(insertedRow()).sort()).toEqual([
       "appointmentId",
+      "attempt",
       "channel",
       "dueAt",
       "early",
@@ -187,10 +205,10 @@ describe("the reminder claim: the row", () => {
 
   it("then takes the advisory lock, BEFORE the read and the row, in the same transaction, keyed on tenant, appointment, offset and channel", async () => {
     await takeReminderClaim(base);
-    // Bounds, lock, read, row. A lock taken before the bounds would wait
-    // unbounded, and a read taken before the lock could be answered twice
+    // Bounds, lock, read, attempt, row. A lock taken before the bounds would
+    // wait unbounded, and a read taken before the lock could be answered twice
     // before either taker had written.
-    expect(ran.map((r) => r.kind)).toEqual(["execute", "execute", "read", "insert"]);
+    expect(ran.map((r) => r.kind)).toEqual(["execute", "execute", "read", "attempt", "insert"]);
     const lock = ran[1] as { sql: string; params: unknown[] };
     // The transaction-scoped variant, so it cannot outlive the claim.
     expect(lock.sql).toBe("select pg_advisory_xact_lock(hashtextextended($1, 0))");
@@ -261,7 +279,7 @@ describe("the reminder claim: held or not", () => {
   it("an offset this build does not know is never held: it is not even asked, and its claim is still written", async () => {
     heldRows = [{ id: "55555555-5555-5555-5555-555555555555" }];
     await expect(takeReminderClaim({ ...base, offsetId: "72h" })).resolves.toEqual({ held: false, claimId: CLAIM_ID });
-    expect(ran.map((r) => r.kind)).toEqual(["execute", "execute", "insert"]);
+    expect(ran.map((r) => r.kind)).toEqual(["execute", "execute", "attempt", "insert"]);
   });
 
   it("ONE outcome makes a claim block: sent. A suppression and a provider refusal do not", () => {
@@ -282,21 +300,22 @@ describe("the reminder claim: it can never stop a send by failing", () => {
   // `lock` is also the shape of a WAIT that ran out: Postgres ends it with an
   // error at that statement. The wait itself is proven against a real lock in
   // reminder-log.db.test.ts.
-  for (const where of ["context", "bounds", "lock", "read", "insert"] as const) {
+  for (const where of ["context", "bounds", "lock", "read", "attempt", "insert"] as const) {
     it(`a failure at the ${where} answers not held, and is logged with ids and the error's name only`, async () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
       failAt = where;
       // Even with a row there that would hold it: a trail that cannot be read
-      // costs at most a repeat, never the message. (The insert is only
-      // reached when the read found nothing, so that arm has no such row.)
-      if (where !== "insert") heldRows = [{ id: "55555555-5555-5555-5555-555555555555" }];
+      // costs at most a repeat, never the message. (The attempt read and the
+      // insert are only reached when the read found nothing, so those arms
+      // have no such row.)
+      if (where !== "insert" && where !== "attempt") heldRows = [{ id: "55555555-5555-5555-5555-555555555555" }];
       await expect(takeReminderClaim(base)).resolves.toEqual({ held: false, claimId: null });
       expect(ran.filter((r) => r.kind === "insert")).toHaveLength(0);
       const logged = spy.mock.calls.flat().join(" ");
       expect(logged).toContain("reminder claim write FAILED");
       expect(logged).toContain(`appointmentId=${APPOINTMENT}`);
       // The error NAME, never its message.
-      expect(logged).not.toMatch(/db down|bounds refused|lock wait timed out|read refused|insert refused/);
+      expect(logged).not.toMatch(/db down|bounds refused|lock wait timed out|read refused|attempt read refused|insert refused/);
       spy.mockRestore();
     });
   }
@@ -319,6 +338,84 @@ describe("the reminder claim: it can never stop a send by failing", () => {
     spy.mockRestore();
   });
 
+});
+
+/**
+ * THE ATTEMPT NUMBER (0106). Which rows the read counts is a question for a
+ * real Postgres (reminder-claim.db.test.ts); pinned here is what is done with
+ * its answer, and when it is asked.
+ */
+describe("the reminder claim: the attempt number", () => {
+  it("is one more than the highest attempt stored, and 1 when none is", async () => {
+    lastAttempt = 3;
+    await takeReminderClaim(base);
+    expect(insertedRow().attempt).toBe(4);
+    ran.length = 0;
+    lastAttempt = null;
+    await takeReminderClaim(base);
+    expect(insertedRow().attempt).toBe(1);
+  });
+
+  it("is not asked for a reminder that is held: no number is spent on a row that is not written", async () => {
+    heldRows = [{ id: "55555555-5555-5555-5555-555555555555" }];
+    await takeReminderClaim(base);
+    expect(ran.filter((r) => r.kind === "attempt")).toHaveLength(0);
+  });
+
+  it("the release carries none: the table holds a number to claims only", async () => {
+    await releaseReminderClaim({ ...base, claimId: CLAIM_ID });
+    const inserts = ran.filter((r) => r.kind === "insert") as { values: Record<string, unknown> }[];
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.values).not.toHaveProperty("attempt");
+  });
+});
+
+/**
+ * Q-A (strategy, 2026-10-15). THE TABLE REFUSES THE SAME ATTEMPT TWICE, and
+ * that refusal is HELD, BY A DUPLICATE: the dispatcher sends nothing. Only a
+ * 23505 that names the attempt key; every other refusal still fails open.
+ */
+describe("the reminder claim: a duplicate attempt is held", () => {
+  const duplicate = { code: "23505", constraint_name: "reminder_claims_claim_attempt_key" };
+
+  it("the driver's 23505 on the attempt key answers held, by a duplicate, and logs no failure", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failAt = "insert";
+    insertError = Object.assign(new Error("duplicate key value"), duplicate);
+    await expect(takeReminderClaim(base)).resolves.toEqual({ held: true, duplicate: true });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+    expect(REMINDER_CLAIM_ATTEMPT_KEY).toBe("reminder_claims_claim_attempt_key");
+  });
+
+  it("the same refusal wrapped by the query builder, as its cause, answers the same", async () => {
+    failAt = "insert";
+    insertError = Object.assign(new Error("Failed query"), { cause: Object.assign(new Error("duplicate key value"), duplicate) });
+    await expect(takeReminderClaim(base)).resolves.toEqual({ held: true, duplicate: true });
+  });
+
+  it.each([
+    ["a 23505 on another unique index", { code: "23505", constraint_name: "reminder_claims_pkey" }],
+    ["a 23505 that names no index", { code: "23505" }],
+    ["another code on the attempt key's name", { code: "23514", constraint_name: "reminder_claims_claim_attempt_key" }],
+    ["the CHECK a claim with no attempt meets", { code: "23514", constraint_name: "reminder_claims_attempt_matches_kind" }],
+  ])("CONTROL: %s is not a duplicate: not held, no id, logged, as any failure", async (_name, fields) => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failAt = "insert";
+    insertError = Object.assign(new Error("refused"), fields);
+    await expect(takeReminderClaim(base)).resolves.toEqual({ held: false, claimId: null });
+    expect(spy.mock.calls.flat().join(" ")).toContain("reminder claim write FAILED");
+    spy.mockRestore();
+  });
+
+  it("isDuplicateClaimAttempt reads the error and its cause, and nothing that is not an object", () => {
+    expect(isDuplicateClaimAttempt(duplicate)).toBe(true);
+    expect(isDuplicateClaimAttempt({ cause: duplicate })).toBe(true);
+    expect(isDuplicateClaimAttempt({ cause: { cause: duplicate } })).toBe(false);
+    expect(isDuplicateClaimAttempt({ ...duplicate, code: 23505 })).toBe(false);
+    expect(isDuplicateClaimAttempt(null)).toBe(false);
+    expect(isDuplicateClaimAttempt("23505 reminder_claims_claim_attempt_key")).toBe(false);
+  });
 });
 
 /**

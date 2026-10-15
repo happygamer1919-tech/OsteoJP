@@ -185,6 +185,13 @@ describe("statusOf - Estado in pt-PT", () => {
     expect(dispatchSrc).toContain('outcome.reason !== "claim_held"');
     expect(reasonLabel("claim_held")).toBe("lembrete já enviado para esta data e hora");
   });
+
+  it("claim_held_by_duplicate has its own sentence, and no row either (Q-A, 2026-10-15)", () => {
+    expect(dispatchSrc).toContain('reason: "claim_held_by_duplicate"');
+    expect(dispatchSrc).toContain('outcome.reason !== "claim_held_by_duplicate"');
+    expect(reasonLabel("claim_held_by_duplicate")).toBe("lembrete já tomado por outro envio no mesmo momento");
+    expect(reasonLabel("claim_held_by_duplicate")).not.toBe(reasonLabel("claim_held"));
+  });
 });
 
 describe("isFailure - the Só falhas filter", () => {

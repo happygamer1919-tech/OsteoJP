@@ -25,6 +25,11 @@
  *      a release that names no row, and a second release of one claim.
  *   7. NOTHING OF IT IS IN THE AUDIT TRAIL. After every arm above, `audit_log`
  *      holds no row of either tenant.
+ *   8. THE ATTEMPT NUMBER (0106), and Q-A of 2026-10-15: each claim of a
+ *      reminder and start takes the next number, a release frees none, and
+ *      when the table refuses a claim because another taker holds its attempt
+ *      the dispatcher sends nothing and answers `claim_held_by_duplicate`. A
+ *      different failure (a lock wait that ran out) still fails open.
  *
  * WHY A DATABASE. "Held" is one read of `reminder_claims` and
  * `reminder_dispatches` made under the reminder job's own role and tenant
@@ -265,6 +270,8 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
       startsAt?: Date;
       early?: boolean | null;
       at?: string;
+      /** The attempt number, when it must not be the next one. */
+      attempt?: number;
     } = {},
   ): Promise<string> {
     const id = randomUUID();
@@ -272,10 +279,15 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     const early = over.early === undefined ? false : over.early;
     const due =
       early === null ? null : new Date(startsAt.getTime() - ((over.offsetId ?? "24h") === "24h" ? 24 : 48) * 60 * 60_000).toISOString();
+    // The attempt as the writer numbers it (0106): the next one for this
+    // reminder and start, unless the arm names one.
     await sql.execute(raw`insert into reminder_claims
-      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, created_at)
+      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, created_at, attempt)
       values (${id}, ${over.tenant ?? tenantA}, ${appointmentId}, 'claim', ${over.offsetId ?? "24h"}, ${over.channel ?? "sms"},
-              ${startsAt.toISOString()}, ${due}::timestamptz, 'run', ${early}::boolean, ${over.at ?? at(0)})`);
+              ${startsAt.toISOString()}, ${due}::timestamptz, 'run', ${early}::boolean, ${over.at ?? at(0)},
+              coalesce(${over.attempt ?? null}::int, (select coalesce(max(attempt), 0) + 1 from reminder_claims
+                where appointment_id = ${appointmentId} and kind = 'claim' and offset_id = ${over.offsetId ?? "24h"}
+                  and channel = ${over.channel ?? "sms"} and starts_at = ${startsAt.toISOString()}::timestamptz)))`);
     return id;
   }
 
@@ -290,10 +302,19 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
               ${new Date(START.getTime() - 24 * 60 * 60_000).toISOString()}, 0, false, ${over.at ?? at(0)})`);
   }
 
-  /** A release row written straight to the table, on the owning connection. */
-  async function seedRelease(appointmentId: string, claimId: string, over: { tenant?: string; at?: string } = {}) {
+  /**
+   * A release row written straight to the table, on the owning connection.
+   * Since 0106 a release carries its claim's offset and channel, so the
+   * release of another reminder's claim names that reminder.
+   */
+  async function seedRelease(
+    appointmentId: string,
+    claimId: string,
+    over: { tenant?: string; at?: string; offsetId?: "24h" | "48h"; channel?: string } = {},
+  ) {
     await sql.execute(raw`insert into reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id, created_at)
-      values (${over.tenant ?? tenantA}, ${appointmentId}, 'release', '24h', 'sms', ${claimId}, ${over.at ?? at(5)})`);
+      values (${over.tenant ?? tenantA}, ${appointmentId}, 'release', ${over.offsetId ?? "24h"}, ${over.channel ?? "sms"},
+              ${claimId}, ${over.at ?? at(5)})`);
   }
 
   /**
@@ -915,7 +936,7 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
         await seedClaim(appt);
         const otherReminder = await seedClaim(appt, { offsetId: "48h", channel: "email" });
         await seedLedger(appt);
-        await seedRelease(appt, otherReminder);
+        await seedRelease(appt, otherReminder, { offsetId: "48h", channel: "email" });
       },
     },
     {
@@ -973,7 +994,7 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
         await seedClaim(appt);
         await seedClaim(appt, { startsAt: OTHER_START, at: at(ROW_AT - 20) });
         const otherReminder = await seedClaim(appt, { offsetId: "48h", channel: "email", at: at(ROW_AT - 25) });
-        await seedRelease(appt, otherReminder, { at: at(ROW_AT - 10) });
+        await seedRelease(appt, otherReminder, { at: at(ROW_AT - 10), offsetId: "48h", channel: "email" });
         await seedLedger(appt);
       },
     },
@@ -1048,8 +1069,11 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     const apptB = await fresh("B");
 
     // Tenant A's rows, pointing at tenant B's appointment. Only a superuser
-    // can write these; the job reads as tenant B and must not see them.
-    await seedClaim(apptB, { tenant: tenantA });
+    // can write these; the job reads as tenant B and must not see them. The
+    // claim takes attempt 1000: the attempt key (0106) has no tenant, because
+    // the job's own policy keeps a claim to its tenant's appointments (W-6),
+    // so only this superuser row could ever meet the job's attempt 1 there.
+    await seedClaim(apptB, { tenant: tenantA, attempt: 1000 });
     await seedLedger(apptB, { tenant: tenantA });
     expect(await claimsOf(apptB)).toHaveLength(1);
 
@@ -1198,6 +1222,97 @@ d("SWEEP-02: a reminder already sent is held for a second sender, and every thro
     await expect(releaseReminderClaim({ ...release, claimId: "not an id" })).resolves.toBeUndefined();
     expect(spy.mock.calls.filter((c) => String(c[0]).includes("reminder claim release FAILED"))).toHaveLength(3);
     expect(await releasesOf(appt)).toHaveLength(1);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* 8. The attempt number, and a duplicate attempt (Q-A)              */
+  /* ---------------------------------------------------------------- */
+
+  /** The attempt numbers of one appointment's claims, oldest first. */
+  async function attemptsOf(appointmentId: string, startsAt: Date = START): Promise<number[]> {
+    const r = await rows(raw`select attempt from reminder_claims
+      where appointment_id = ${appointmentId} and kind = 'claim' and offset_id = '24h' and channel = 'sms'
+        and starts_at = ${startsAt.toISOString()}::timestamptz
+      order by created_at, id`);
+    return r.map((x) => Number(x.attempt));
+  }
+
+  it("THE ATTEMPT NUMBER: each claim of a reminder and start takes the next one, a release frees none, and another start begins at 1", async () => {
+    const { releaseReminderClaim } = await import("./reminder-claim");
+    const appt = await fresh();
+    const first = await take(appt);
+    if (first.held || first.claimId === null) throw new Error("the claim was not written: nothing here was measured");
+    await releaseReminderClaim({ tenantId: tenantA, appointmentId: appt, offsetId: "24h", channel: "sms", claimId: first.claimId });
+    expect(await take(appt)).toMatchObject({ held: false });
+    expect(await take(appt)).toMatchObject({ held: false });
+    expect(await attemptsOf(appt)).toEqual([1, 2, 3]);
+    // The same visit, moved: a reminder of its own, from 1.
+    expect(await take(appt, { startsAt: OTHER_START })).toMatchObject({ held: false });
+    expect(await attemptsOf(appt, OTHER_START)).toEqual([1]);
+  });
+
+  it("Q-A: TWO TAKERS OF THE SAME ATTEMPT. The second sends nothing, writes nothing, and answers claim_held_by_duplicate", async () => {
+    const { dispatchReminder } = await import("./dispatch");
+    const appt = await fresh();
+    h.loadReminderData.mockResolvedValue(loaded(appt));
+
+    // The first taker holds attempt 1 of this reminder and start: written in
+    // its own transaction and not yet committed, so the second cannot read it
+    // and numbers its own claim 1 as well. It did not queue on the reminder's
+    // lock, which is the one way two takers reach the same number.
+    let letGo!: () => void;
+    const untilLetGo = new Promise<void>((resolve) => (letGo = resolve));
+    let written!: (pid: number) => void;
+    const untilWritten = new Promise<number>((resolve) => (written = resolve));
+    const firstTaker = sql.transaction(async (tx) => {
+      const [me] = (await tx.execute(raw`select pg_backend_pid() as pid`)) as unknown as { pid: number }[];
+      await tx.execute(raw`insert into reminder_claims
+        (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt)
+        values (${tenantA}, ${appt}, 'claim', '24h', 'sms', ${START.toISOString()},
+                ${new Date(START.getTime() - 24 * 60 * 60_000).toISOString()}, 'sweep', false, 1)`);
+      written(Number(me!.pid));
+      await untilLetGo;
+    });
+    const firstPid = await untilWritten;
+
+    // The second taker, through the dispatcher. Its row waits on the first's
+    // under the unique index; once it is seen waiting, the first commits.
+    const second = dispatchReminder(tenantA, appt, "24h", "sms");
+    for (let i = 0; i < 150; i += 1) {
+      const [w] = await rows(raw`select count(*)::int as n from pg_stat_activity
+        where ${firstPid}::int = any(pg_blocking_pids(pid))`);
+      if (Number(w!.n) > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    letGo();
+    await firstTaker;
+
+    expect(await second).toEqual({ dispatched: false, reason: "claim_held_by_duplicate" });
+    expect(h.sends).toEqual([]);
+    expect(await ledgerOf(appt)).toEqual([]);
+    expect(await releasesOf(appt)).toEqual([]);
+    // Only the first taker's claim is stored.
+    expect(await attemptsOf(appt)).toEqual([1]);
+    expect((await claimsOf(appt)).map((c) => c.taker)).toEqual(["sweep"]);
+  });
+
+  it("CONTROL for Q-A: a different failure is not a duplicate. A claim whose lock wait ran out still fails open and sends", async () => {
+    const { dispatchReminder } = await import("./dispatch");
+    const appt = await fresh();
+    h.loadReminderData.mockResolvedValue(loaded(appt));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const letGo = await holdLock(tenantA, appt, "24h", "sms");
+    try {
+      const outcome = await dispatchReminder(tenantA, appt, "24h", "sms");
+      expect(outcome).toMatchObject({ dispatched: true });
+      expect(outcome).not.toEqual({ dispatched: false, reason: "claim_held_by_duplicate" });
+    } finally {
+      await letGo();
+    }
+    expect(h.sends).toEqual(["sms"]);
+    expect(spy.mock.calls.filter((c) => String(c[0]).includes("reminder claim write FAILED"))).toHaveLength(1);
+    // No claim was written: the wait ran out before the row.
+    expect(await attemptsOf(appt)).toEqual([]);
   });
 
   /* ---------------------------------------------------------------- */

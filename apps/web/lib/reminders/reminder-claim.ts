@@ -1,7 +1,7 @@
 import "server-only";
 import { reminderClaims, reminderDispatches, type DbTx } from "@osteojp/db";
 import type { Channel } from "@osteojp/notify";
-import { and, eq, exists, gt, gte, inArray, like, lte, notExists, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, gt, gte, inArray, like, lte, max, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 
 import { withReminderTenantContext } from "./context";
@@ -73,6 +73,14 @@ import { REMINDER_OFFSETS } from "./offsets";
  * the holder sat there. The claim's transaction therefore bounds its own waits
  * first (`boundReminderClaimWaits`): Postgres ends the wait, the catch below
  * logs it, and the reminder goes out without its claim.
+ *
+ * ONE REFUSAL IS AN ANSWER, NOT A FAILURE: THE SAME ATTEMPT TWICE. Every claim
+ * carries its attempt number (`nextReminderClaimAttempt`), and the table takes
+ * one claim per attempt of a reminder and start (0106,
+ * `reminder_claims_claim_attempt_key`). When the table refuses this claim on
+ * that key, another taker holds this attempt, and the answer is HELD, BY A
+ * DUPLICATE: nothing is sent (strategy, Q-A of 2026-10-15). Only a 23505 on
+ * that key; every other refusal fails open as above.
  *
  * ==========================================================================
  * WHILE THE SWEEP IS THE SENDER, THE CLAIM IS CLOSED INSTEAD (SWEEP-47)
@@ -212,6 +220,64 @@ export function boundReminderClaimWaits(): SQL {
   return sql`select set_config('lock_timeout', ${CLAIM_LOCK_TIMEOUT}, true), set_config('statement_timeout', ${CLAIM_STATEMENT_TIMEOUT}, true)`;
 }
 
+/**
+ * The unique index that takes one claim per attempt of a reminder and start
+ * (0106): appointment, offset, channel, start and attempt, over claims only.
+ */
+export const REMINDER_CLAIM_ATTEMPT_KEY = "reminder_claims_claim_attempt_key";
+
+/** Postgres's unique_violation. */
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * Did the table refuse this claim because another taker holds the same
+ * attempt? A 23505 that names `REMINDER_CLAIM_ATTEMPT_KEY`, and nothing else:
+ * another unique index, or another code on this one, is not. Drizzle wraps
+ * the driver's error, so the error and its cause are both read.
+ *
+ * Exported for direct testing.
+ */
+export function isDuplicateClaimAttempt(e: unknown): boolean {
+  const cause = typeof e === "object" && e !== null ? (e as { cause?: unknown }).cause : undefined;
+  return [e, cause].some((err) => {
+    if (typeof err !== "object" || err === null) return false;
+    const pg = err as { code?: unknown; constraint_name?: unknown };
+    return pg.code === UNIQUE_VIOLATION && pg.constraint_name === REMINDER_CLAIM_ATTEMPT_KEY;
+  });
+}
+
+/**
+ * THE ATTEMPT NUMBER A NEW CLAIM CARRIES (0106): one more than the highest
+ * attempt stored for this appointment, offset, channel and START among the
+ * claims, any taker, early or not, released or not; 1 when there is none. A
+ * release frees no number.
+ *
+ * Read under the reminder's lock, after the "is it held" read and before the
+ * row, so for every taker that takes the lock the read and the write are one
+ * step. The table refuses the collision for one that does not.
+ *
+ * IT THROWS when the read fails; the claim's own catch decides what that means.
+ */
+export async function nextReminderClaimAttempt(
+  tx: DbTx,
+  args: { tenantId: string; appointmentId: string; offsetId: string; channel: Channel; startsAt: Date },
+): Promise<number> {
+  const [last] = await tx
+    .select({ attempt: max(reminderClaims.attempt) })
+    .from(reminderClaims)
+    .where(
+      and(
+        eq(reminderClaims.tenantId, args.tenantId),
+        eq(reminderClaims.appointmentId, args.appointmentId),
+        eq(reminderClaims.kind, REMINDER_CLAIM_KIND),
+        eq(reminderClaims.offsetId, args.offsetId),
+        eq(reminderClaims.channel, args.channel),
+        eq(reminderClaims.startsAt, args.startsAt),
+      ),
+    );
+  return (last?.attempt ?? 0) + 1;
+}
+
 /** The `reminder_claims` columns a row of one reminder is recognised by, under any alias. */
 type ClaimColumns = Record<"tenantId" | "appointmentId" | "kind" | "offsetId" | "channel" | "claimId", PgColumn>;
 
@@ -341,20 +407,22 @@ export async function claimIsHeld(
  * What taking a claim answers.
  *
  * `held`: this reminder was already sent for this start. No row was written,
- * and the caller sends nothing.
+ * and the caller sends nothing. `duplicate`: held because the table refused
+ * this claim's attempt, which another taker holds (`isDuplicateClaimAttempt`).
  *
  * Not held: the caller goes on. `claimId` is the row just written, for the
  * release a throw owes it; null when the claim could not be read or written,
  * where there is nothing to release.
  */
-export type ReminderClaimAnswer = { held: true } | { held: false; claimId: string | null };
+export type ReminderClaimAnswer = { held: true; duplicate?: true } | { held: false; claimId: string | null };
 
 /**
  * Take the claim for one reminder, or learn that it is held. One tenant
- * transaction: bound the waits, take the lock, read (`claimIsHeld`), and write
- * the row unless it is held.
+ * transaction: bound the waits, take the lock, read (`claimIsHeld`), and
+ * unless it is held, read the next attempt number and write the row.
  *
- * It never throws, and every failure answers "not held": see the header.
+ * It never throws, and every failure answers "not held", except the table's
+ * refusal of a duplicate attempt, which answers held: see the header.
  *
  * The start is stored as the instant itself (`starts_at`), with the mark it
  * was due at (`due_at`), so a reader compares instants and never text.
@@ -393,10 +461,15 @@ export async function takeReminderClaim(args: {
         acquireReminderClaimLock(args.tenantId, args.appointmentId, args.offsetId, args.channel),
       );
       if (await claimIsHeld(tx, args)) return { held: true };
-      const [written] = await tx.insert(reminderClaims).values(row).returning({ id: reminderClaims.id });
+      const attempt = await nextReminderClaimAttempt(tx, args);
+      const [written] = await tx
+        .insert(reminderClaims)
+        .values({ ...row, attempt })
+        .returning({ id: reminderClaims.id });
       return { held: false, claimId: written?.id ?? null };
     });
   } catch (e) {
+    if (isDuplicateClaimAttempt(e)) return { held: true, duplicate: true };
     console.error(
       `[reminders] reminder claim write FAILED tenantId=${args.tenantId} ` +
         `appointmentId=${args.appointmentId} offsetId=${args.offsetId} channel=${args.channel}: ` +

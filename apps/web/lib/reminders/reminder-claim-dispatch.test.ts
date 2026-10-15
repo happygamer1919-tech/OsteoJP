@@ -300,6 +300,21 @@ describe("dispatchReminder takes a reminder claim", () => {
       });
     }
 
+    /**
+     * Q-A (strategy, 2026-10-15). The table refused this call's claim because
+     * another taker holds the same attempt. Held, by a duplicate: its own
+     * reason, and the same silence as `claim_held`.
+     */
+    for (const e of ENDINGS.filter((x) => x.claims === 1)) {
+      it(`HELD BY A DUPLICATE: ${e.name}`, async () => {
+        h.claimAnswer = { held: true, duplicate: true };
+        h.loadReminderData.mockResolvedValue(e.data);
+        const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, e.offset, e.channel);
+        expect(outcome).toEqual({ dispatched: false, reason: "claim_held_by_duplicate" });
+        expect(h.events).toEqual(["claim", "claim:answered"]);
+      });
+    }
+
     it("not_found is never held: no claim is asked for, and it keeps its own answer and its ledger row", async () => {
       h.claimAnswer = { held: true };
       h.loadReminderData.mockResolvedValue(null);

@@ -613,6 +613,7 @@ describe("the sweep can send nothing", () => {
         "like",
         "lt",
         "lte",
+        "max",
         "not",
         "notExists",
         "or",
