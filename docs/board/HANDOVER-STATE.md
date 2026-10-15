@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**551 cards on the board. 375 shipped, 176 open. Launch readiness 9/9, every launch gate passes.**
+**554 cards on the board. 380 shipped, 174 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,28 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-15, after 0105
+>
+> **Migration 0105 is applied.** Its sitting ran on Thursday 2026-10-15, from
+> 21:30 to 21:32 Lisbon, and closed clean. A registo can now only be filed in an
+> episode of the same patient. Nothing on any screen changes, and not one
+> existing registo was refused. Two of the three sittings strategy set are done;
+> the reminder sweep's table (0106) is next, on Monday 2026-10-19 or Tuesday
+> 2026-10-20.
+>
+> **The guide has two new lessons:** changing a visit's therapist from the
+> patient's ficha, and the confirmation a patient gets when an online request
+> is approved.
+>
+> **The survey texts are approved by JP**, all of them. The survey is still
+> switched off; a one-patient test is proposed for Monday 2026-10-19.
+>
+> **Monitoring** now drops the values a failed database query carried, and the
+> public link pages send less to other sites (OBS-08, OBS-09).
+>
+> **Next:** Montemor opens on Saturday 2026-10-17. No sitting from Friday to
+> Sunday.
 
 > ### Where things stand, 2026-10-15
 >
