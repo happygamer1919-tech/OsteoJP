@@ -315,6 +315,34 @@ describe("dispatchReminder takes a reminder claim", () => {
       });
     }
 
+    /**
+     * Q-A: with no ledger row, HELD BY A DUPLICATE is recorded as one log
+     * line, of the reason, the offset and the channel only.
+     */
+    it.each([
+      ["24h", "sms"],
+      ["48h", "email"],
+    ] as const)("HELD BY A DUPLICATE, %s %s: ONE log line of reason, offset and channel, and nothing that names the visit", async (offset, channel) => {
+      h.claimAnswer = { held: true, duplicate: true };
+      h.loadReminderData.mockResolvedValue(fixture());
+      await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset, channel);
+      const lines = vi.mocked(console.warn).mock.calls.map((c) => c.join(" "));
+      expect(lines).toEqual([`[reminders] reminder skipped: claim_held_by_duplicate offsetId=${offset} channel=${channel}`]);
+      for (const absent of [TENANT_ID, APPOINTMENT_ID, PATIENT_ID, CLAIM_ID, "912", "Paciente", "example.pt"]) {
+        expect(lines.join("\n")).not.toContain(absent);
+      }
+    });
+
+    it("CONTROL: a plain held, and a call that sends, log no such line", async () => {
+      h.claimAnswer = { held: true };
+      h.loadReminderData.mockResolvedValue(fixture());
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).toEqual({ dispatched: false, reason: "claim_held" });
+      h.claimAnswer = NOT_HELD;
+      expect(await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms")).toMatchObject({ dispatched: true });
+      const lines = vi.mocked(console.warn).mock.calls.map((c) => c.join(" "));
+      expect(lines.filter((l) => l.includes("claim_held_by_duplicate"))).toEqual([]);
+    });
+
     it("not_found is never held: no claim is asked for, and it keeps its own answer and its ledger row", async () => {
       h.claimAnswer = { held: true };
       h.loadReminderData.mockResolvedValue(null);
