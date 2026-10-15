@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import { serverSentryDsn } from "./lib/observability/sentry-dsn";
 
 import { scrubLinkCodesIn } from "./lib/observability/link-codes";
+import { scrubQueryErrorsIn } from "./lib/observability/query-errors";
 import { scrubEvent } from "./lib/observability/sentry-scrub";
 
 Sentry.init({
@@ -68,7 +69,13 @@ Sentry.init({
   // process sends. A trace is a transaction and its spans, and neither passes
   // through `beforeSend`. Each hook is wrapped in an arrow because the SDK
   // hands hooks a second argument and `scrubLinkCodesIn` takes exactly one.
-  beforeSendTransaction: (event) => scrubLinkCodesIn(event),
-  beforeSendSpan: (span) => scrubLinkCodesIn(span),
-  beforeBreadcrumb: (breadcrumb) => scrubLinkCodesIn(breadcrumb),
+  //
+  // OBS-09: and no failed query leaves with its parameters, through any of the
+  // four. `scrubQueryErrorsIn` runs first and the link-code scrub last, as in
+  // `scrubEvent`. The breadcrumb's hint IS handed on: for a console line it
+  // holds the logged error itself, which is how the driver's message is known.
+  // See lib/observability/query-errors.ts.
+  beforeSendTransaction: (event) => scrubLinkCodesIn(scrubQueryErrorsIn(event)),
+  beforeSendSpan: (span) => scrubLinkCodesIn(scrubQueryErrorsIn(span)),
+  beforeBreadcrumb: (breadcrumb, hint) => scrubLinkCodesIn(scrubQueryErrorsIn(breadcrumb, hint)),
 });
