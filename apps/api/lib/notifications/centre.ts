@@ -33,7 +33,7 @@ import type {
   PatientChangeEvent,
 } from "./patient-change";
 
-/** The role slug whose holders all receive every patient-initiated change. */
+/** The role slug whose holders receive patient-initiated changes at the clinics they can see. */
 const RECEPTION_ROLE_SLUG = "reception";
 
 /**
@@ -159,8 +159,8 @@ export const persistingConsumer: PatientChangeConsumer = async (
 
   if (recipients.length === 0) {
     // Loud, and greppable. Reaching nobody is a real condition worth seeing: it
-    // means the tenant has no active reception user AND the assigned
-    // practitioners did not resolve.
+    // means no active reception user can see this appointment's clinic AND
+    // the assigned practitioners did not resolve.
     console.warn(
       `[notifications] patient-change resolved ZERO recipients ` +
         `kind=${e.kind} tenant=${e.tenantId} appointment=${e.appointmentId} ` +
