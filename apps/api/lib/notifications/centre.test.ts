@@ -22,27 +22,30 @@ const H = vi.hoisted(() => ({
   practitionerRows: [] as { id: string }[],
   /** Every row handed to insert().values(). */
   inserted: [] as Record<string, unknown>[],
-  /** Which select() call we are on: 1 = reception join, 2 = practitioners. */
+  /** Which AWAITED select we are on: 1 = reception join, 2 = practitioners.
+   *  Counted on await, not on select(): the reception query builds two
+   *  staff_locations sub-queries (the clinic rule) that are never awaited. */
   selectCalls: 0,
 }));
 
 vi.mock("@osteojp/db", () => {
-  const chain = (rows: unknown[]) => {
-    const p = Promise.resolve(rows);
+  const take = () => {
+    H.selectCalls += 1;
+    return Promise.resolve(H.selectCalls === 1 ? H.receptionRows : H.practitionerRows);
+  };
+  const chain = () => {
+    const lazy = { then: (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) => take().then(ok, ko) };
     const self: Record<string, unknown> = {
       from: () => self,
       innerJoin: () => self,
-      where: () => p,
-      then: p.then.bind(p),
+      where: () => lazy,
+      then: lazy.then,
     };
     return self;
   };
   return {
     getDbAdmin: () => ({
-      select: () => {
-        H.selectCalls += 1;
-        return chain(H.selectCalls === 1 ? H.receptionRows : H.practitionerRows);
-      },
+      select: () => chain(),
       insert: () => ({
         values: (rows: Record<string, unknown>[]) => {
           H.inserted.push(...rows);
@@ -52,6 +55,8 @@ vi.mock("@osteojp/db", () => {
     }),
     users: { id: "id", tenantId: "tenant_id", isActive: "is_active", roleId: "role_id" },
     roles: { id: "id", slug: "slug" },
+    appointments: { id: "id", tenantId: "tenant_id", locationId: "location_id" },
+    staffLocations: { userId: "user_id", tenantId: "tenant_id", locationId: "location_id" },
     staffNotifications: {},
   };
 });
@@ -60,6 +65,10 @@ vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => a,
   eq: (a: unknown, b: unknown) => [a, b],
   inArray: (a: unknown, b: unknown) => [a, b],
+  or: (...a: unknown[]) => a,
+  exists: (a: unknown) => a,
+  notExists: (a: unknown) => a,
+  sql: () => "sql",
 }));
 
 import { persistingConsumer, resolveRecipients } from "./centre";

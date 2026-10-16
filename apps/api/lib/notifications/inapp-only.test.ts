@@ -63,6 +63,8 @@ vi.mock("@osteojp/db", () => {
     }),
     users: { id: "id", tenantId: "tenant_id", isActive: "is_active", roleId: "role_id" },
     roles: { id: "id", slug: "slug" },
+    appointments: { id: "id", tenantId: "tenant_id", locationId: "location_id" },
+    staffLocations: { userId: "user_id", tenantId: "tenant_id", locationId: "location_id" },
     staffNotifications: {},
   };
 });
@@ -71,6 +73,12 @@ vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => a,
   eq: (a: unknown, b: unknown) => [a, b],
   inArray: (a: unknown, b: unknown) => [a, b],
+  // The reception query's clinic rule (2026-10-16). Shapes only: this file
+  // asserts the transports, not the recipients.
+  or: (...a: unknown[]) => a,
+  exists: (a: unknown) => a,
+  notExists: (a: unknown) => a,
+  sql: () => "sql",
 }));
 
 // THE TRANSPORTS. If the fan-out ever reaches one, these record it.
