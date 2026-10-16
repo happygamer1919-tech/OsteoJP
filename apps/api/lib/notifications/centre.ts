@@ -17,8 +17,15 @@
 // states — and the service name is excluded outright because several service
 // names identify a treatment type.
 
-import { and, eq, inArray } from "drizzle-orm";
-import { getDbAdmin, roles, staffNotifications, users } from "@osteojp/db";
+import { and, eq, exists, inArray, notExists, or, sql } from "drizzle-orm";
+import {
+  appointments,
+  getDbAdmin,
+  roles,
+  staffLocations,
+  staffNotifications,
+  users,
+} from "@osteojp/db";
 
 import type {
   ConsumerResult,
@@ -34,10 +41,16 @@ const RECEPTION_ROLE_SLUG = "reception";
  *
  * TWO SOURCES, UNIONED AND DEDUPLICATED:
  *
- *   1. Every ACTIVE reception user of the tenant. Reception is a role, not a
- *      person (the event contract says so), so this is a query and not an id
- *      carried in the payload — a reception user hired today receives changes
- *      from today, and a deactivated one receives nothing.
+ *   1. Every ACTIVE reception user of the tenant WHO CAN SEE THE APPOINTMENT'S
+ *      CLINIC. Reception is a role, not a person (the event contract says so),
+ *      so this is a query and not an id carried in the payload — a reception
+ *      user hired today receives changes from today, and a deactivated one
+ *      receives nothing. "Can see the clinic" is the test the reads use (0073):
+ *      no staff_locations row sees every clinic, rows see only those clinics.
+ *      Until 2026-10-16 every reception user got every change, so a
+ *      receptionist at one clinic saw another clinic's patient changes as
+ *      "Paciente não identificado" (the staff app's half of the same defect
+ *      is apps/web/lib/notifications/centre.ts).
  *   2. The assigned practitioners, by id, from the event's audience. Plural
  *      since WF-05: a dual-participant service (Massagem 4 Maos, Sessao
  *      Familia) has two, and both are notified.
@@ -65,6 +78,36 @@ export async function resolveRecipients(e: PatientChangeEvent): Promise<string[]
         eq(users.tenantId, e.tenantId),
         eq(users.isActive, true),
         eq(roles.slug, RECEPTION_ROLE_SLUG),
+        // Only reception who can see this appointment's clinic.
+        or(
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(staffLocations)
+              .where(
+                and(eq(staffLocations.userId, users.id), eq(staffLocations.tenantId, e.tenantId)),
+              ),
+          ),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(staffLocations)
+              .innerJoin(
+                appointments,
+                and(
+                  eq(appointments.locationId, staffLocations.locationId),
+                  eq(appointments.tenantId, staffLocations.tenantId),
+                ),
+              )
+              .where(
+                and(
+                  eq(staffLocations.userId, users.id),
+                  eq(staffLocations.tenantId, e.tenantId),
+                  eq(appointments.id, e.appointmentId),
+                ),
+              ),
+          ),
+        ),
       ),
     );
 
