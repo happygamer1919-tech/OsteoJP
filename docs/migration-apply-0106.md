@@ -364,11 +364,12 @@ claims; on lane blue, `Tests 58 passed (58)`):
 **CORRECTED 2026-10-19: BOTH BRANCHES NOW SET THE ATTEMPT NUMBER.** The tables below are the
 2026-10-14 survey of what had to change, kept as the record. Since 2026-10-15 both branches carry
 this branch merged in (`d62027ee`, a merge, no rebase), and every claim writer sets `attempt` to
-one more than the highest attempt of that reminder's claims for the same start, read inside the claim's transaction
-after its lock (`nextReminderClaimAttempt` in `apps/web/lib/reminders/reminder-claim.ts`, called
-from `takeReminderClaim` and, on SWEEP-47, from `takeReminderClaimClosed`). The release, shadow and
-heartbeat writers set none, as the CHECK requires. The test fixtures that insert a claim set a
-distinct number per claim. Heads checked on 2026-10-19: `reminders/SWEEP-13-on-table` `13d496e4`,
+one more than the highest attempt of that reminder's claims for the same start, read inside the
+claim's transaction after its lock (`nextReminderClaimAttempt` in `apps/web/lib/reminders/reminder-claim.ts`, called
+from `takeReminderClaim` and, on SWEEP-47, from `takeReminderClaimClosed`). The release and shadow
+writers set none, as the CHECK requires; the heartbeats write `reminder_sweep_passes`, which has no
+attempt column. The test fixtures that insert a claim set a distinct number per claim, except the
+arms that provoke the collision on purpose. Heads checked on 2026-10-19: `reminders/SWEEP-13-on-table` `13d496e4`,
 `reminders/SWEEP-47-sweep-sends` `83d48e7b`. Both branches are local; none of it is on `main`.
 
 `reminders/SWEEP-13-on-table` (`914417fe`):
@@ -929,8 +930,10 @@ Strategy's rulings of 2026-10-13 closed the nine questions of the first draft. W
 3. **CLOSED 2026-10-19: neither `0104` nor `0105` touches `appointments`' policies.** `0104`
    changed only `clinical_episodes`' policies and its DELETE grant; `0105` added a unique index
    on `clinical_episodes` and a foreign key on `clinical_records`, and replaced `merge_patients`
-   (whose body still updates `appointments` as `0005`'s did). Both are applied (journal idx 102,
-   103 entries), and their post-checks proved every other policy unchanged by hash.
+   (whose body still updates `appointments` as `0005`'s did). Both are on `main` (journal: `0104`
+   idx 101, `0105` idx 102, 103 entries) and applied by GREEN on 2026-10-15 (`0104` 00:40 to
+   00:45 Lisbon, `0105` 21:30 to 21:32), whose post-checks read every other policy unchanged by
+   hash (`0104` verdict 7, `0105` verdict 9, both OK in GREEN's reports).
 
 4. **ACCEPTED BY STRATEGY 2026-10-18 (Q-I): the attempt key has no tenant column.**
    `reminder_claims_claim_attempt_key` is unique on the reminder's appointment, offset, channel,
