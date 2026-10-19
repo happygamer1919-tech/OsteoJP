@@ -16,6 +16,11 @@
  * owner opens it), so renaming or splitting X in the lesson source turns the
  * assertion red instead of leaving it true of nothing.
  *
+ * THE SURVEY IS SWITCHED OFF HERE (SURVEY_SEND_MODE stubbed to "off"), as
+ * production runs it today, so the survey lesson (feature: survey) is in no
+ * role's guide and every count above leaves it out. lib/guide/
+ * guide-features.test.ts renders it for canary and on.
+ *
  * NOT FOUND IS A THROW. notFound() and redirect() throw in Next, and they are
  * stubbed to throw here too, so a page that went on to render after them
  * would fail the "rejects" assertions.
@@ -33,7 +38,7 @@ import { join } from "node:path";
 import type { Role } from "@osteojp/auth";
 import { getStrings } from "@osteojp/i18n";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   ctx: null as null | { tenantId: string; role: string; userId: string },
@@ -167,7 +172,12 @@ function headingProblems(html: string): string[] {
   return out;
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 beforeEach(() => {
+  vi.stubEnv("SURVEY_SEND_MODE", "off");
   as(null);
   h.authDown = false;
   vi.mocked(redirect).mockClear();
@@ -257,7 +267,8 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     const html = await indexHtml("owner");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("owner")));
     expect(lessonLinks(html)).toHaveLength(60);
-    expect([...lessonLinks(html)].sort()).toEqual(hrefs(GUIDE_DATA.lessons).sort());
+    // Every published lesson that waits on no feature: the survey is off here.
+    expect([...lessonLinks(html)].sort()).toEqual(hrefs(GUIDE_DATA.lessons.filter((l) => l.feature === null)).sort());
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -869,4 +880,42 @@ describe("the lesson renderer (seeded lessons, invented text)", () => {
       expect(html).not.toContain("Só para alguns.");
     }
   });
+});
+
+// Q-J (a): THE SURVEY LESSON ON THE PAGES. lib/guide/guide-features.test.ts
+// proves the helpers; this proves what the three pages draw. With the survey
+// off the lesson is on no index, on no Portal section page, and its address is
+// not found for every role, the owner included; with canary or on it is linked
+// and opens.
+describe("the survey lesson follows the survey's switch on the pages (feature: survey)", () => {
+  const HREF = "/ajuda/portal/avaliacao-de-satisfacao";
+
+  it("is a published lesson, so every absence below is about the switch", () => {
+    expect(PUBLISHED.has(HREF)).toBe(true);
+    expect(lessonById("portal.avaliacao-de-satisfacao").feature).toBe("survey");
+  });
+
+  for (const value of ["off", undefined]) {
+    for (const role of ROLES) {
+      it(`SURVEY_SEND_MODE=${JSON.stringify(value)}, ${role}: not on the index, not on the Portal page, and its address is not found`, async () => {
+        vi.stubEnv("SURVEY_SEND_MODE", value);
+        expect(lessonLinks(await indexHtml(role))).not.toContain(HREF);
+        expect(lessonLinks(await sectionHtml(role, "portal"))).not.toContain(HREF);
+        await expect(lessonHtml(role, "portal", "avaliacao-de-satisfacao")).rejects.toThrow("NOT_FOUND");
+      });
+    }
+  }
+
+  for (const value of ["canary", "on"]) {
+    for (const role of ROLES) {
+      it(`SURVEY_SEND_MODE=${value}, ${role}: on the index and the Portal page, and its page opens with its title`, async () => {
+        vi.stubEnv("SURVEY_SEND_MODE", value);
+        expect(lessonLinks(await indexHtml(role))).toContain(HREF);
+        expect(lessonLinks(await sectionHtml(role, "portal"))).toContain(HREF);
+        const html = await lessonHtml(role, "portal", "avaliacao-de-satisfacao");
+        expect(html).toMatch(/<h1[^>]*>Avaliação de satisfação<\/h1>/);
+        expect(headingProblems(html)).toEqual([]);
+      });
+    }
+  }
 });

@@ -17,12 +17,17 @@
 // which it does not. As one lesson gated on care_team:manage, an administrator
 // had no lesson on correcting a patient's data. Both halves keep P4's place
 // and P4's roles: pacientes.atualizar-dados, then pacientes.atribuir-terapeutas.
+//
+// THE LISTS ARE THE GUIDE WITH THE SURVEY SWITCHED OFF, as production runs it
+// today: SURVEY_SEND_MODE is stubbed to "off" for every test here. The survey
+// lesson (feature: survey) is then in no role's guide; guide-features.test.ts
+// proves it appears for canary and on.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { PERMISSIONS, ROLES, can, type Capability, type Role } from "@osteojp/auth";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadGuide, PROFILES, REPO_ROOT } from "../../../../docs/guide/build/guide-model.mjs";
 
@@ -38,6 +43,16 @@ import {
   type GuideData,
   type GuideSpan,
 } from "./guide";
+
+beforeEach(() => {
+  vi.stubEnv("SURVEY_SEND_MODE", "off");
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+/** The published lessons that wait on a feature: hidden while their switch is off. */
+const FEATURE_LESSONS = new Set(GUIDE_DATA.lessons.filter((lesson) => lesson.feature !== null).map((lesson) => lesson.id));
 
 const ids = (role: Role) => guideLessonsFor(role).map((lesson) => lesson.id);
 const sectionIds = (role: Role) => guideSectionsFor(role).map((entry) => entry.section.id);
@@ -284,9 +299,11 @@ describe("each role sees exactly its own lessons, in its own order (G1-3)", () =
     expect(ids("admin")).not.toContain("pacientes.atribuir-terapeutas");
   });
 
-  it("owner: the 60 Proprietário lessons, which are every published lesson", () => {
+  it("owner: the 60 Proprietário lessons, which are every published lesson that waits on no feature", () => {
     expect(ids("owner")).toEqual(OWNER);
-    expect([...ids("owner")].sort()).toEqual(GUIDE_DATA.lessons.map((lesson) => lesson.id).sort());
+    expect([...ids("owner")].sort()).toEqual(
+      GUIDE_DATA.lessons.filter((lesson) => lesson.feature === null).map((lesson) => lesson.id).sort(),
+    );
   });
 });
 
@@ -328,10 +345,11 @@ describe("the lists above are the ruled orders", () => {
   });
 
   it("the helper's order is the model's order for every profile (the JSON orders come from guide-model.mjs)", () => {
+    // With the survey off, the model's order less the lessons that wait on a feature.
     for (const profile of PROFILES) {
       const role = (Object.keys(PROFILE_OF_ROLE) as Role[]).find((r) => PROFILE_OF_ROLE[r] === profile && r !== "admin");
       expect(role, `no role reads the ${profile} guide`).toBeDefined();
-      expect(ids(role as Role)).toEqual(GUIDE_DATA.orders[profile].lessons);
+      expect(ids(role as Role)).toEqual(GUIDE_DATA.orders[profile].lessons.filter((id) => !FEATURE_LESSONS.has(id)));
     }
   });
 
@@ -348,8 +366,8 @@ describe("a lesson is only ever written for a role that can open its screen", ()
 
   it("the source loads without errors", () => {
     expect(guide.errors).toEqual([]);
-    // 61 lessons and the seven FAQ entries: an entry is held to the same rule.
-    expect(all.length).toBe(68);
+    // 62 lessons and the seven FAQ entries: an entry is held to the same rule.
+    expect(all.length).toBe(69);
   });
 
   it("every capability named is a packages/auth capability", () => {

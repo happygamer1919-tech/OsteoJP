@@ -76,6 +76,8 @@ const ALLOWED_OUTSIDE: Readonly<Record<string, string>> = {
   "lib/auth/context":
     "Reads the viewer's session to learn the role (requireRequestContext), as every staff page does; it keeps nothing about the guide, and reports to Sentry only an Auth outage.",
   "lib/i18n": "The interface strings.",
+  "lib/reminders/survey-mode":
+    "The survey's switch (surveyVisible), a pure function of one deployment variable: no DB, no SDK, nothing written. lib/guide/guide.ts asks it whether a survey lesson is shown.",
   "components/app-shell": "The staff shell every staff section renders (the layout); it is the same on every page and knows nothing of /ajuda.",
 };
 

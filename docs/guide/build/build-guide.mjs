@@ -24,8 +24,10 @@
 // Each has a cover, an index, "Perguntas frequentes" first, then the sections.
 // Each lesson prints its capture pair side by side (phone and desktop,
 // captioned by their alt text) or a small "Sem imagem" note, never a broken
-// image. A held lesson (hold: GUEST-05) is never printed, and admin is not a
-// PDF profile. The colours are packages/ui/theme.css tokens.
+// image. A held lesson (hold: GUEST-05) is never printed, nor is a lesson or
+// FAQ entry with a "feature" key (feature: survey), whatever its switch reads:
+// a committed PDF cannot read a switch (printableGuide in guide-model.mjs).
+// Admin is not a PDF profile. The colours are packages/ui/theme.css tokens.
 //
 // Next to the full guide it writes guide-pdf.manifest.json: the SOURCE hash
 // (guideSourceHash in guide-model.mjs: the published lessons, FAQ entries and
@@ -80,6 +82,7 @@ import {
   lintLine,
   loadGuide,
   parseBlocks,
+  printableGuide,
   sectionsFor,
   serializeGuideData,
 } from './guide-model.mjs';
@@ -882,10 +885,12 @@ async function buildChapters(opts) {
 }
 
 async function buildLessons(opts) {
-  const guide = loadGuide();
-  if (guide.errors.length > 0) {
-    throw new BuildError(`The lesson source is not ready to print (${guide.errors.length} problem(s)):\n  ${guide.errors.join('\n  ')}`);
+  const loaded = loadGuide();
+  if (loaded.errors.length > 0) {
+    throw new BuildError(`The lesson source is not ready to print (${loaded.errors.length} problem(s)):\n  ${loaded.errors.join('\n  ')}`);
   }
+  // Everything below prints, counts and hashes this guide, never `loaded`.
+  const guide = printableGuide(loaded);
   const sourceHash = guideSourceHash(guide);
   const tokens = readTokens();
   const style = css(tokens);
