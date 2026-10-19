@@ -313,7 +313,9 @@ d("the reception reply queue against a real database", () => {
 
       expect(await resolve(item.id, "confirmed")).toEqual({ ok: true, applied: true });
 
-      const stored = await rows(raw`select starts_at from appointments where id = ${appointmentId}`);
+      const stored = await rows(
+        raw`select starts_at, practitioner_id::text as practitioner_id from appointments where id = ${appointmentId}`,
+      );
       expect(enqueueSpy).toHaveBeenCalledTimes(1);
       const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
       expect(tenantArg).toBe(tenantId);
@@ -323,6 +325,7 @@ d("the reception reply queue against a real database", () => {
         {
           appointmentId,
           startsAt: new Date(stored[0]!.starts_at as string | Date),
+          practitionerId: stored[0]!.practitioner_id,
           acceptedPedido: true,
         },
       ]);

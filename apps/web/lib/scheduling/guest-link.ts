@@ -174,8 +174,9 @@ export async function linkGuestRequestTx(
 export function acceptedGuestRequestTarget(
   appointmentId: string,
   startsAt: Date,
+  practitionerId: string,
 ): ReminderEnqueueTarget {
-  return { appointmentId, startsAt, acceptedGuestRequest: true };
+  return { appointmentId, startsAt, practitionerId, acceptedGuestRequest: true };
 }
 
 /**

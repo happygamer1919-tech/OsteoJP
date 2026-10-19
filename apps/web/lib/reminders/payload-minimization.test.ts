@@ -80,6 +80,14 @@ describe("Inngest event payloads carry identifiers only", () => {
       // Inngest generated for an event; it names nobody and is derived from
       // nothing about a person. It is what gives each save its own reminder run.
       "scheduledBy",
+      // Q-K, added deliberately: the appointment's Terapeuta, a STAFF user id.
+      // It is part of the confirmation's duplicate key (appointment + start +
+      // therapist). It names a member of staff, never the patient.
+      "practitionerId",
+      // Q-K, added deliberately: a literal `true` saying "this save changed
+      // the Terapeuta and kept the start". A flag about the EVENT; it names
+      // nobody and carries no value but `true`.
+      "therapistChangeOnly",
     ]);
 
     const blocks = src.match(/=\s*\{[^}]*\}/g) ?? [];

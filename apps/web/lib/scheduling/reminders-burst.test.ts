@@ -46,6 +46,7 @@ function series(n: number): ReminderEnqueueTarget[] {
   return Array.from({ length: n }, (_, i) => ({
     appointmentId: `appt-${i}`,
     startsAt: new Date(BASE + i * 7 * 24 * 3600_000),
+    practitionerId: "therapist-1",
   }));
 }
 
@@ -86,6 +87,53 @@ describe("recurring series emits exactly one confirmation", () => {
 
   it("confirmationEligibleIndex returns -1 for an empty list", () => {
     expect(confirmationEligibleIndex([])).toBe(-1);
+  });
+});
+
+/**
+ * Q-K: a MOVE marks each target with what it owes the confirmation
+ * (./move-confirmation.ts). The burst guard still picks ONE occurrence, but
+ * never one that owes nothing, and a start change before a therapist change.
+ */
+describe("Q-K: which occurrence of a move carries the confirmation", () => {
+  const at = (i: number) => new Date(BASE + i * 7 * 24 * 3600_000);
+  const target = (i: number, confirmation?: "therapist_only" | "none"): ReminderEnqueueTarget => ({
+    appointmentId: `appt-${i}`,
+    startsAt: at(i),
+    practitionerId: "therapist-1",
+    ...(confirmation ? { confirmation } : {}),
+  });
+
+  it("an identical re-save of a whole series: every event goes out, none carries the confirmation", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(0, "none"), target(1, "none"), target(2, "none")]);
+    expect(sent).toHaveLength(3);
+    expect(sent.filter((e) => e.data.confirmationEligible === true)).toEqual([]);
+    expect(confirmationEligibleIndex([target(0, "none")])).toBe(-1);
+  });
+
+  it("a therapist change on a series: ONE confirmation, the earliest, marked therapist-only", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(2, "therapist_only"), target(0, "therapist_only")]);
+    const eligible = sent.filter((e) => e.data.confirmationEligible === true);
+    expect(eligible).toHaveLength(1);
+    expect(eligible[0]!.data).toMatchObject({ appointmentId: "appt-0", therapistChangeOnly: true });
+  });
+
+  it("a start change beats an EARLIER therapist-only change: the patient hears about the new hour, both legs", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(0, "therapist_only"), target(1)]);
+    const eligible = sent.filter((e) => e.data.confirmationEligible === true);
+    expect(eligible).toHaveLength(1);
+    expect(eligible[0]!.data.appointmentId).toBe("appt-1");
+    expect("therapistChangeOnly" in eligible[0]!.data).toBe(false);
+  });
+
+  it("a row that owes nothing never takes the confirmation from one that does", () => {
+    expect(confirmationEligibleIndex([target(0, "none"), target(1, "therapist_only")])).toBe(1);
+    expect(confirmationEligibleIndex([target(0, "none"), target(1)])).toBe(1);
+  });
+
+  it("every event carries the therapist, the confirmation key's second half", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(0), target(1, "none")]);
+    expect(sent.map((e) => e.data.practitionerId)).toEqual(["therapist-1", "therapist-1"]);
   });
 });
 

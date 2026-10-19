@@ -252,7 +252,7 @@ describe("SCHED-15 rule 1 — the clone emits reminders", () => {
     expect(r.ok).toBe(true);
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
     expect(mockEnqueue.mock.calls[0][1]).toEqual([
-      { appointmentId: "new-appt-1", startsAt: new Date(INSIDE) },
+      { appointmentId: "new-appt-1", startsAt: new Date(INSIDE), practitionerId: "therapist-1" },
     ]);
   });
 

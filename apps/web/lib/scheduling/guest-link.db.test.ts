@@ -365,6 +365,7 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
       appointmentId: booked.id,
       tenantId,
       startsAt: booked.start.toISOString(),
+      practitionerId: therapistId,
       confirmationEligible: true,
       acceptedGuestRequest: true,
     });

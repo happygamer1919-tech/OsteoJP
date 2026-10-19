@@ -361,10 +361,11 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
     // The care team holds the new therapist, once, beside the first.
     expect((await team(p)).sort()).toEqual([tFirst, tFree].sort());
 
-    // One reminder event asked for, at the start the appointment already had.
+    // One reminder event asked for, at the start the appointment already had,
+    // with the new therapist and (Q-K rule 2) marked as a therapist-only change.
     expect(h.enqueueRemindersAfterCommit).toHaveBeenCalledTimes(1);
     expect(h.enqueueRemindersAfterCommit).toHaveBeenCalledWith(tenantId, [
-      { appointmentId: id, startsAt: at(WED, 15) },
+      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tFree, confirmation: "therapist_only" },
     ]);
   });
 

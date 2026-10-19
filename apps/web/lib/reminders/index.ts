@@ -49,6 +49,9 @@ export async function enqueueAppointmentReminders(args: {
   appointmentId: string;
   tenantId: string;
   startsAt: Date;
+  /** Q-K: the appointment's Terapeuta after the save. Part of the
+   *  confirmation's duplicate key, so no default: every event carries it. */
+  practitionerId: string;
   /** No default: every caller must state which occurrence carries the
    *  confirmation, so a new call site cannot silently reintroduce the burst. */
   confirmationEligible: boolean;
@@ -56,6 +59,8 @@ export async function enqueueAppointmentReminders(args: {
   acceptedPedido?: boolean;
   /** BOOK-CONFIRM: true only for the occurrence a guest request was linked to. */
   acceptedGuestRequest?: boolean;
+  /** Q-K: true only when the save changed the Terapeuta and kept the start. */
+  therapistChangeOnly?: boolean;
 }): Promise<void> {
   await inngest.send({
     name: EVENT_APPOINTMENT_SCHEDULED,
@@ -63,11 +68,14 @@ export async function enqueueAppointmentReminders(args: {
       appointmentId: args.appointmentId,
       tenantId: args.tenantId,
       startsAt: args.startsAt.toISOString(),
+      practitionerId: args.practitionerId,
       confirmationEligible: args.confirmationEligible,
       // The key is ABSENT unless this is an acceptance, so every other event
       // keeps the exact payload it had before the marker existed.
       ...(args.acceptedPedido === true ? { acceptedPedido: true as const } : {}),
       ...(args.acceptedGuestRequest === true ? { acceptedGuestRequest: true as const } : {}),
+      // Q-K: the same rule, for a save that changed the Terapeuta only.
+      ...(args.therapistChangeOnly === true ? { therapistChangeOnly: true as const } : {}),
     } satisfies AppointmentScheduledData,
   });
 }

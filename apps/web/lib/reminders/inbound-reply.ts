@@ -432,7 +432,7 @@ export async function applyInboundReply(args: {
       outcome: "confirmed",
       reason: null,
     });
-    if (pedido) accepted = [acceptedPedidoTarget(appt.id, appt.startsAt)];
+    if (pedido) accepted = [acceptedPedidoTarget(appt.id, appt.startsAt, appt.practitionerId)];
     return { outcome: "confirmed", appointmentId: appt.id, patientId } as const;
   }).catch(async (err: unknown) => {
     if (err instanceof DoubleConfirmedRefusal) {

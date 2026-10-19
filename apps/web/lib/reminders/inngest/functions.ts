@@ -217,8 +217,26 @@ export const sendAppointmentReminder = inngest.createFunction(
 // Idempotency includes startsAt so a reschedule (new time → new event with
 // different startsAt) sends a fresh confirmation while duplicate delivery of
 // the same event still dedupes.
+//
+// Q-K (strategy's ruling): THE KEY ALSO CARRIES THE THERAPIST. Before it, a
+// change of Terapeuta at the same start inside 24 hours of the last
+// confirmation reused the key and was dropped, so the patient was never told.
+// `practitionerId` is on every appointment/scheduled event
+// (lib/reminders/index.ts writes it unconditionally), so the key never reads a
+// missing field.
+//
+// THE KEY IS NOT WHAT STOPS AN IDENTICAL RE-SAVE. Inngest forgets a key after 24
+// hours, which is how a re-save a day later sent "Marcação confirmada" again.
+// The save itself decides: lib/scheduling/move-confirmation.ts makes
+// a save that kept the start AND the therapist carry no confirmation at all.
+// This key stops a duplicate DELIVERY of one event, and nothing more.
+//
+// THIS IS A SETTING, NOT CODE: it is live only after the owner presses Resync
+// on the Inngest app (Apps, osteojp-reminders, Resync). Until then the key
+// stays appointment + start, and a therapist change within 24 hours of the
+// last confirmation is still dropped.
 export const CONFIRMATION_IDEMPOTENCY_KEY =
-  'event.data.appointmentId + ":confirmation:" + event.data.startsAt';
+  'event.data.appointmentId + ":confirmation:" + event.data.startsAt + ":" + event.data.practitionerId';
 
 /**
  * Series burst guard. A 10-session recurring booking emits 10
@@ -242,7 +260,7 @@ export const sendAppointmentConfirmation = inngest.createFunction(
     idempotency: CONFIRMATION_IDEMPOTENCY_KEY,
   },
   async ({ event, step }) => {
-    const { appointmentId, tenantId, acceptedPedido, acceptedGuestRequest } =
+    const { appointmentId, tenantId, acceptedPedido, acceptedGuestRequest, therapistChangeOnly } =
       event.data as AppointmentScheduledData;
     const outcome = await step.run("dispatch-confirmation", () =>
       // BOOK-CONFIRM: the acceptance marker travels from the event to the
@@ -251,6 +269,9 @@ export const sendAppointmentConfirmation = inngest.createFunction(
       dispatchConfirmation(tenantId, appointmentId, {
         acceptedPedido: acceptedPedido === true,
         acceptedGuestRequest: acceptedGuestRequest === true,
+        // Q-K: the same rule for the therapist-only marker, which narrows the
+        // channels and never widens them.
+        therapistChangeOnly: therapistChangeOnly === true,
       }),
     );
     return { appointmentId, ...outcome };

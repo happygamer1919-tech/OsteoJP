@@ -191,7 +191,7 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
     // Accepted through the Estado door.
     expect((await actions.updateAppointment(id, { status: "confirmed" })).ok).toBe(true);
     expect(await statusOf(id)).toBe("confirmed");
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D3, acceptedPedido: true }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D3, practitionerId, acceptedPedido: true }]);
   });
 
   it("moved, then accepted from the PEDIDOS QUEUE: the same, through the other door", async () => {
@@ -200,7 +200,7 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
     expect(emitted()).toEqual([]);
 
     expect((await actions.confirmAppointmentRequest(id)).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, acceptedPedido: true }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, practitionerId, acceptedPedido: true }]);
   });
 
   it("an ACCEPTED request moved: emits its new start, unmarked, exactly as before", async () => {
@@ -208,7 +208,7 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
     expect(await isPedido(id)).toBe(false);
 
     expect((await move(id, D2)).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2 }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, practitionerId }]);
   });
 
   it("a STAFF booking that is still Agendada, moved: emits, because it is not a pedido", async () => {
@@ -216,7 +216,7 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
     expect(await isPedido(id)).toBe(false);
 
     expect((await move(id, D2)).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2 }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, practitionerId }]);
   });
 
   it("a LEGACY pedido (staff origin, a request notification) moved: nothing, by the database's own definition", async () => {
@@ -245,19 +245,19 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
     const id = await seed({ status: "cancelled", origin: "patient_portal" });
     expect((await actions.updateAppointment(id, { status: "scheduled" })).ok).toBe(true);
     expect((await actions.updateAppointment(id, { status: "confirmed" })).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, acceptedPedido: true }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, practitionerId, acceptedPedido: true }]);
   });
 
   it("an online request brought back straight to CONFIRMADA emits, unmarked, as before", async () => {
     const id = await seed({ status: "cancelled", origin: "patient_portal" });
     expect((await actions.updateAppointment(id, { status: "confirmed" })).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1 }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, practitionerId }]);
   });
 
   it("a STAFF booking brought back to Agendada emits, so its reminders exist again", async () => {
     const id = await seed({ status: "cancelled", origin: "staff" });
     expect((await actions.updateAppointment(id, { status: "scheduled" })).ok).toBe(true);
     expect(await isPedido(id)).toBe(false);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1 }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, practitionerId }]);
   });
 });

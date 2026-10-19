@@ -270,9 +270,10 @@ describe("the linked occurrence and its target", () => {
 
   it("the target carries the guest marker and not the pedido one", () => {
     const start = d("2031-05-14T10:00:00Z");
-    expect(acceptedGuestRequestTarget(APPT, start)).toEqual({
+    expect(acceptedGuestRequestTarget(APPT, start, "therapist-1")).toEqual({
       appointmentId: APPT,
       startsAt: start,
+      practitionerId: "therapist-1",
       acceptedGuestRequest: true,
     });
   });

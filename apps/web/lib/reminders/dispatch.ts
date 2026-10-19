@@ -983,7 +983,46 @@ export type ConfirmationDispatchOptions = {
    * alone, the link row is read first.
    */
   acceptedGuestRequest?: boolean;
+  /**
+   * Q-K (strategy's ruling). The marker a save puts on the event when it
+   * changed the Terapeuta and KEPT the start (lib/scheduling/move-confirmation.ts,
+   * `moveConfirmation`). Today's confirmation then goes by email alone, and by
+   * SMS only to a patient with no email on file. It only ever narrows the
+   * channels, so a stray `true` can cost an SMS, never add a message.
+   */
+  therapistChangeOnly?: boolean;
 };
+
+/**
+ * Which legs of TODAY'S confirmation go. Pure, exported for direct testing.
+ *
+ * Every leg sits behind the tenant's and the patient's switch, as it always
+ * has, and needs the contact it sends to.
+ *
+ * Q-K: A CHANGE OF THERAPIST AT THE SAME START sends the email only; the SMS
+ * goes only when there is NO EMAIL ON FILE. "On file" is the address, not the
+ * switch: a patient with an address whose email is switched off gets neither,
+ * because the ruling sends an SMS for a missing address and for nothing else.
+ * Every other confirmation (a new booking, a change of start, a visit brought
+ * back to Confirmada) sends both legs, exactly as before.
+ */
+export function planConfirmationChannels(args: {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  tenantEmailEnabled: boolean;
+  tenantSmsEnabled: boolean;
+  patientEmailEnabled: boolean;
+  patientSmsEnabled: boolean;
+  therapistChangeOnly: boolean;
+}): { email: boolean; sms: boolean } {
+  const email = args.tenantEmailEnabled && args.patientEmailEnabled && args.hasEmail;
+  const sms =
+    args.tenantSmsEnabled &&
+    args.patientSmsEnabled &&
+    args.hasPhone &&
+    !(args.therapistChangeOnly && args.hasEmail);
+  return { email, sms };
+}
 
 export async function dispatchConfirmation(
   tenantId: string,
@@ -1078,7 +1117,9 @@ export async function dispatchConfirmation(
   // confirmation as a whole and the table needs one channel; `email` keeps
   // these rows (one per staff booking, for `origin`) off reception's Lembretes
   // SMS screen, which lists the `sms` channel only.
-  const outcome = await dispatchTodaysConfirmation(tenantId, appointmentId, data);
+  const outcome = await dispatchTodaysConfirmation(tenantId, appointmentId, data, {
+    therapistChangeOnly: opts.therapistChangeOnly === true,
+  });
   if (!outcome.dispatched) {
     await recordDispatch({
       tenantId,
@@ -1097,12 +1138,14 @@ export async function dispatchConfirmation(
  * patient's switch. What a reschedule of a portal appointment sends, and what an
  * acceptance sends while BOOK_CONFIRM_MODE does not apply to the patient. The
  * messages are the ones it has always sent; what is new is that each channel
- * tried leaves a ledger row.
+ * tried leaves a ledger row. Q-K: a change of therapist at the same start sends
+ * the email alone (`planConfirmationChannels`).
  */
 async function dispatchTodaysConfirmation(
   tenantId: string,
   appointmentId: string,
   data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>>,
+  opts: { therapistChangeOnly: boolean },
 ): Promise<DispatchOutcome> {
   if (!CONFIRMABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
@@ -1149,8 +1192,15 @@ async function dispatchTodaysConfirmation(
   }
 
   const { reminders } = parseTenantConfig(data.tenantSettings);
-  const email = reminders.emailEnabled && data.patientReminderEmailEnabled && !!data.patientEmail;
-  const sms = reminders.smsEnabled && data.patientReminderSmsEnabled && !!data.patientPhone;
+  const { email, sms } = planConfirmationChannels({
+    hasEmail: !!data.patientEmail,
+    hasPhone: !!data.patientPhone,
+    tenantEmailEnabled: reminders.emailEnabled,
+    tenantSmsEnabled: reminders.smsEnabled,
+    patientEmailEnabled: data.patientReminderEmailEnabled,
+    patientSmsEnabled: data.patientReminderSmsEnabled,
+    therapistChangeOnly: opts.therapistChangeOnly,
+  });
   if (!email && !sms) return { dispatched: false, reason: "channels_off" };
 
   const locale = resolveLocale(data.tenantSettings);

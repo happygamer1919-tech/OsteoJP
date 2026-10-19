@@ -56,6 +56,7 @@ const TENANT = "11111111-1111-4111-8111-111111111111";
 const APPT = "22222222-2222-4222-8222-222222222222";
 const OTHER = "33333333-3333-4333-8333-333333333333";
 const STARTS_AT = new Date("2031-05-14T13:30:00.000Z");
+const PRAC = "44444444-4444-4444-8444-444444444444";
 
 beforeEach(() => {
   h.sent.length = 0;
@@ -77,21 +78,23 @@ async function runConfirmation(data: Record<string, unknown>) {
 
 describe("the acceptance target carries the marker, and only it does", () => {
   it("acceptedPedidoTarget marks the target", () => {
-    expect(acceptedPedidoTarget(APPT, STARTS_AT)).toEqual({
+    expect(acceptedPedidoTarget(APPT, STARTS_AT, PRAC)).toEqual({
       appointmentId: APPT,
       startsAt: STARTS_AT,
+      practitionerId: PRAC,
       acceptedPedido: true,
     });
   });
 
   it("an ACCEPTANCE emits appointment/scheduled with acceptedPedido: true", async () => {
-    await enqueueRemindersAfterCommit(TENANT, [acceptedPedidoTarget(APPT, STARTS_AT)]);
+    await enqueueRemindersAfterCommit(TENANT, [acceptedPedidoTarget(APPT, STARTS_AT, PRAC)]);
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0]!.name).toBe("appointment/scheduled");
     expect(h.sent[0]!.data).toEqual({
       appointmentId: APPT,
       tenantId: TENANT,
       startsAt: STARTS_AT.toISOString(),
+      practitionerId: PRAC,
       confirmationEligible: true,
       acceptedPedido: true,
     });
@@ -99,22 +102,24 @@ describe("the acceptance target carries the marker, and only it does", () => {
 
   it("a RESCHEDULE emits the payload it always has: the key is absent, not false", async () => {
     // What rescheduleAppointment, createAppointment and the uncancel build.
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: STARTS_AT }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: STARTS_AT, practitionerId: PRAC }]);
     expect(h.sent[0]!.data).toEqual({
       appointmentId: APPT,
       tenantId: TENANT,
       startsAt: STARTS_AT.toISOString(),
+      practitionerId: PRAC,
       confirmationEligible: true,
     });
     expect("acceptedPedido" in h.sent[0]!.data).toBe(false);
   });
 
   it("a GUEST-LINKED booking emits appointment/scheduled with acceptedGuestRequest: true, and no pedido marker", async () => {
-    await enqueueRemindersAfterCommit(TENANT, [acceptedGuestRequestTarget(APPT, STARTS_AT)]);
+    await enqueueRemindersAfterCommit(TENANT, [acceptedGuestRequestTarget(APPT, STARTS_AT, PRAC)]);
     expect(h.sent[0]!.data).toEqual({
       appointmentId: APPT,
       tenantId: TENANT,
       startsAt: STARTS_AT.toISOString(),
+      practitionerId: PRAC,
       confirmationEligible: true,
       acceptedGuestRequest: true,
     });
@@ -123,8 +128,8 @@ describe("the acceptance target carries the marker, and only it does", () => {
   it("a series booked for a guest marks ONE occurrence, the earliest, which is also the one that confirms", async () => {
     const later = new Date(STARTS_AT.getTime() + 7 * 24 * 3600_000);
     await enqueueRemindersAfterCommit(TENANT, [
-      { appointmentId: OTHER, startsAt: later },
-      acceptedGuestRequestTarget(APPT, STARTS_AT),
+      { appointmentId: OTHER, startsAt: later, practitionerId: PRAC },
+      acceptedGuestRequestTarget(APPT, STARTS_AT, PRAC),
     ]);
     const byId = new Map(h.sent.map((e) => [e.data.appointmentId, e.data]));
     expect(byId.get(APPT)).toMatchObject({ confirmationEligible: true, acceptedGuestRequest: true });
@@ -135,8 +140,8 @@ describe("the acceptance target carries the marker, and only it does", () => {
   it("the marker is PER TARGET: an acceptance and an uncancel in one list stay distinct", async () => {
     const later = new Date(STARTS_AT.getTime() + 60 * 60_000);
     await enqueueRemindersAfterCommit(TENANT, [
-      acceptedPedidoTarget(APPT, STARTS_AT),
-      { appointmentId: OTHER, startsAt: later },
+      acceptedPedidoTarget(APPT, STARTS_AT, PRAC),
+      { appointmentId: OTHER, startsAt: later, practitionerId: PRAC },
     ]);
     const byId = new Map(h.sent.map((e) => [e.data.appointmentId, e.data]));
     expect(byId.get(APPT)!.acceptedPedido).toBe(true);
@@ -150,6 +155,7 @@ describe("send-appointment-confirmation hands the marker to the dispatch", () =>
     expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
       acceptedPedido: true,
       acceptedGuestRequest: false,
+      therapistChangeOnly: false,
     });
   });
 
@@ -158,6 +164,7 @@ describe("send-appointment-confirmation hands the marker to the dispatch", () =>
     expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
       acceptedPedido: false,
       acceptedGuestRequest: true,
+      therapistChangeOnly: false,
     });
   });
 
@@ -166,6 +173,7 @@ describe("send-appointment-confirmation hands the marker to the dispatch", () =>
     expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
       acceptedPedido: false,
       acceptedGuestRequest: false,
+      therapistChangeOnly: false,
     });
   });
 
@@ -179,6 +187,7 @@ describe("send-appointment-confirmation hands the marker to the dispatch", () =>
     expect(h.dispatchConfirmation).toHaveBeenCalledWith(TENANT, APPT, {
       acceptedPedido: false,
       acceptedGuestRequest: false,
+      therapistChangeOnly: false,
     });
   });
 
@@ -186,8 +195,9 @@ describe("send-appointment-confirmation hands the marker to the dispatch", () =>
     // BOOK-CONFIRM keeps both. The key does not read the marker, so a duplicate
     // acceptance event for the same appointment and start is still one run.
     expect(CONFIRMATION_TRIGGER_FILTER).toBe("event.data.confirmationEligible == true");
+    // Q-K added the therapist to the key; it still does not read either marker.
     expect(CONFIRMATION_IDEMPOTENCY_KEY).toBe(
-      'event.data.appointmentId + ":confirmation:" + event.data.startsAt',
+      'event.data.appointmentId + ":confirmation:" + event.data.startsAt + ":" + event.data.practitionerId',
     );
   });
 });
@@ -210,10 +220,10 @@ function body(relFile: string, fn: string): string {
 
 describe("the four doors that can accept a pedido build their target with the marker", () => {
   it.each([
-    ["lib/scheduling/actions.ts", "confirmAppointmentRequest", "acceptedPedidoTarget(pedido.id, pedido.startsAt)"],
-    ["lib/scheduling/actions.ts", "updateAppointment", "acceptedPedidos.map((a) => acceptedPedidoTarget(a.id, a.startsAt))"],
-    ["lib/reminders/inbound-store.ts", "resolveReviewItem", "acceptedPedidoTarget(updated[0]!.id, updated[0]!.startsAt)"],
-    ["lib/reminders/inbound-reply.ts", "applyInboundReply", "acceptedPedidoTarget(appt.id, appt.startsAt)"],
+    ["lib/scheduling/actions.ts", "confirmAppointmentRequest", "acceptedPedidoTarget(pedido.id, pedido.startsAt, pedido.practitionerId)"],
+    ["lib/scheduling/actions.ts", "updateAppointment", "acceptedPedidos.map((a) => acceptedPedidoTarget(a.id, a.startsAt, a.practitionerId))"],
+    ["lib/reminders/inbound-store.ts", "resolveReviewItem", "acceptedPedidoTarget(updated[0]!.id, updated[0]!.startsAt, updated[0]!.practitionerId)"],
+    ["lib/reminders/inbound-reply.ts", "applyInboundReply", "acceptedPedidoTarget(appt.id, appt.startsAt, appt.practitionerId)"],
   ])("%s %s", (file, fn, call) => {
     const b = body(file, fn);
     expect(b.length).toBeGreaterThan(500); // the extractor found the function
@@ -223,7 +233,7 @@ describe("the four doors that can accept a pedido build their target with the ma
   it("updateAppointment does NOT mark the rows it brings back from Cancelada", () => {
     const b = body("lib/scheduling/actions.ts", "updateAppointment");
     const uncancel = b.slice(b.indexOf("...uncancelling"), b.indexOf("return { ok: true, data: { id } };"));
-    expect(uncancel).toContain("appointmentId: a.id, startsAt: a.startsAt");
+    expect(uncancel).toContain("appointmentId: a.id, startsAt: a.startsAt, practitionerId: a.practitionerId");
     expect(uncancel).not.toContain("acceptedPedido");
   });
 
@@ -241,9 +251,9 @@ describe("the four doors that can accept a pedido build their target with the ma
   it("the two BOOKING actions build the guest-linked target with its marker, and only they do", () => {
     const create = body("lib/scheduling/actions.ts", "createAppointment");
     const batch = body("lib/scheduling/actions.ts", "batchScheduleAppointments");
-    expect(create).toContain("acceptedGuestRequestTarget(c.id, c.startsAt)");
+    expect(create).toContain("acceptedGuestRequestTarget(c.id, c.startsAt, input.practitionerId)");
     expect(create).toContain("c.id === guestLinked.appointmentId");
-    expect(batch).toContain("acceptedGuestRequestTarget(b.appointmentId, new Date(b.startsAt))");
+    expect(batch).toContain("acceptedGuestRequestTarget(b.appointmentId, new Date(b.startsAt), input.practitionerId)");
     expect(batch).toContain("b.appointmentId === guestLink.linkedAppointmentId");
     for (const fn of ["cloneAppointment", "rescheduleAppointment", "updateAppointment", "confirmAppointmentRequest"]) {
       const b = body("lib/scheduling/actions.ts", fn);

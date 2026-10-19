@@ -1,5 +1,6 @@
 import { enqueueAppointmentReminders, enqueueFollowUp, enqueueNoShow } from "@/lib/reminders";
 import { MAX_OCCURRENCES } from "./recurrence";
+import type { MoveConfirmation } from "./move-confirmation";
 
 // Bridge from a committed appointment mutation (Stream B) to the reminder
 // pipeline (Stream E). Kept out of the server action's DB transaction on purpose:
@@ -15,6 +16,25 @@ export type ReminderEnqueueTarget = {
   appointmentId: string;
   /** The appointment's CURRENT start instant (post-create / post-reschedule). */
   startsAt: Date;
+  /**
+   * Q-K. The appointment's CURRENT Terapeuta (post-create / post-reschedule).
+   * Required: it rides every appointment/scheduled event, because the
+   * confirmation's duplicate key is appointment + start + therapist
+   * (lib/reminders/inngest/functions.ts).
+   */
+  practitionerId: string;
+  /**
+   * Q-K. What this save means for the patient's confirmation, set by a MOVE
+   * (`rescheduleAppointment`) from `moveConfirmation` (./move-confirmation.ts)
+   * and by nobody else.
+   * Absent: today's confirmation, email and SMS (a booking, an acceptance, a
+   * visit brought back to Confirmada, a change of start).
+   *   "therapist_only"  the Terapeuta changed and the start did not: the email
+   *                     alone, the SMS only when there is no email on file.
+   *   "none"            neither changed: no confirmation at all. The event is
+   *                     still emitted, for the reminders.
+   */
+  confirmation?: MoveConfirmation;
   /**
    * BOOK-CONFIRM. True only for the acceptance of an online booking request;
    * built by `acceptedPedidoTarget` in ./pedido-acceptance.ts and nowhere else.
@@ -66,6 +86,8 @@ export class ReminderBurstError extends Error {
  *   visit brought back from Cancelada) starts a fresh run too, since
  *   2026-10-07: before that its replacement was dropped as a duplicate key and
  *   the reminder was lost (lib/reminders/inngest/functions.ts).
+ *   Q-K: what such a re-save owes the CONFIRMATION is the target's
+ *   `confirmation` field; the reminders are emitted either way.
  *
  * Best-effort by design: the appointment is already persisted, so a failed
  * enqueue is logged (sanitized — no PII; ids are uuids) and swallowed rather than
@@ -98,9 +120,11 @@ export async function enqueueRemindersAfterCommit(
         appointmentId: t.appointmentId,
         tenantId,
         startsAt: t.startsAt,
+        practitionerId: t.practitionerId,
         confirmationEligible: i === eligibleIndex,
         ...(t.acceptedPedido === true ? { acceptedPedido: true } : {}),
         ...(t.acceptedGuestRequest === true ? { acceptedGuestRequest: true } : {}),
+        ...(t.confirmation === "therapist_only" ? { therapistChangeOnly: true } : {}),
       });
     } catch (e) {
       console.error(
@@ -118,12 +142,28 @@ export async function enqueueRemindersAfterCommit(
  * sort, so keying on the array position alone would make the patient's
  * confirmation depend on row order. Returns -1 for an empty list.
  *
+ * Q-K: a target whose save owes no confirmation (`confirmation: "none"`) is
+ * never chosen, so a list of those returns -1 and the action sends none. And
+ * a FULL confirmation (no `confirmation` field) wins over a therapist-only one
+ * before the start is compared: in a series move where some occurrences
+ * changed start and others only changed Terapeuta, the start change is the one
+ * the patient must hear about (rule 1), with both legs. Without a Q-K field
+ * on any target this is the earliest start, exactly as before.
+ *
  * Exported for direct testing.
  */
 export function confirmationEligibleIndex(targets: readonly ReminderEnqueueTarget[]): number {
+  const rank = (t: ReminderEnqueueTarget) => (t.confirmation === "therapist_only" ? 1 : 0);
   let best = -1;
   for (let i = 0; i < targets.length; i++) {
-    if (best === -1 || targets[i]!.startsAt.getTime() < targets[best]!.startsAt.getTime()) {
+    const t = targets[i]!;
+    if (t.confirmation === "none") continue;
+    if (best === -1) {
+      best = i;
+      continue;
+    }
+    const b = targets[best]!;
+    if (rank(t) < rank(b) || (rank(t) === rank(b) && t.startsAt.getTime() < b.startsAt.getTime())) {
       best = i;
     }
   }
