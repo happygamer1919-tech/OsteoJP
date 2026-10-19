@@ -232,6 +232,10 @@ const ROLES = ['rececao', 'terapeuta', 'proprietario'];
 const FRONT_MATTER_KEYS = [
   ...['id', 'title', 'goal', 'roles', 'order', 'capability', 'screens'],
   ...['shots', 'faq', 'question', 'answers', 'see', 'review', 'hold'],
+  // `feature`: a lesson shown only while a feature is switched on (the survey,
+  // Q-J of 2026-10-18). The app and the PDF builder decide what it hides; this
+  // list only admits the key. Dropped with the key once the survey is on for good.
+  ...['feature'],
 ];
 const SLUG = '[a-z0-9]+(?:-[a-z0-9]+)*';
 const TREE_FOLDER = new RegExp(`^\\d\\d-${SLUG}$`);
