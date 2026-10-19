@@ -181,14 +181,31 @@ export function acceptedGuestRequestTarget(
 
 /**
  * Which occurrence of a booking is the one a guest request links to: the
- * EARLIEST start, the same occurrence `confirmationEligibleIndex` gives the
- * confirmation to. A series booked for a guest is one answer to one request,
- * so one occurrence is linked and confirmed. Null for an empty list.
+ * EARLIEST start AFTER `nowMs`, the same occurrence `confirmationEligibleIndex`
+ * (./reminders.ts) gives the confirmation to, since Q-K made that function
+ * pass over an occurrence that has already started. A series booked for a
+ * guest is one answer to one request, so one occurrence is linked and
+ * confirmed. Null for an empty list.
+ *
+ * NO OCCURRENCE AHEAD (a booking entirely in the past): the earliest is linked,
+ * as before Q-K, so the request still leaves reception's queue. Nothing is
+ * sent for it: `confirmationEligibleIndex` finds no occurrence ahead, so no
+ * event carries the confirmation and no booking-approved message goes.
+ *
+ * `nowMs` is read inside the booking's transaction and the enqueue reads its
+ * own a moment later; only an occurrence starting in that gap of milliseconds
+ * could tell them apart.
  */
-export function guestLinkOccurrence<T extends { startsAt: Date }>(created: readonly T[]): T | null {
-  let best: T | null = null;
-  for (const c of created) {
-    if (best === null || c.startsAt.getTime() < best.startsAt.getTime()) best = c;
-  }
-  return best;
+export function guestLinkOccurrence<T extends { startsAt: Date }>(
+  created: readonly T[],
+  nowMs: number = Date.now(),
+): T | null {
+  const earliest = (list: readonly T[]): T | null => {
+    let best: T | null = null;
+    for (const c of list) {
+      if (best === null || c.startsAt.getTime() < best.startsAt.getTime()) best = c;
+    }
+    return best;
+  };
+  return earliest(created.filter((c) => c.startsAt.getTime() > nowMs)) ?? earliest(created);
 }

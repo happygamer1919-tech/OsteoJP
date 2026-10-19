@@ -59,7 +59,7 @@ export async function enqueueAppointmentReminders(args: {
   acceptedPedido?: boolean;
   /** BOOK-CONFIRM: true only for the occurrence a guest request was linked to. */
   acceptedGuestRequest?: boolean;
-  /** Q-K: true only when the save changed the Terapeuta and kept the start. */
+  /** Q-K: true only when the save changed the Terapeuta and kept the start and the clinic. */
   therapistChangeOnly?: boolean;
 }): Promise<void> {
   await inngest.send({

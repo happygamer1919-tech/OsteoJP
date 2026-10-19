@@ -85,8 +85,8 @@ describe("Inngest event payloads carry identifiers only", () => {
       // therapist). It names a member of staff, never the patient.
       "practitionerId",
       // Q-K, added deliberately: a literal `true` saying "this save changed
-      // the Terapeuta and kept the start". A flag about the EVENT; it names
-      // nobody and carries no value but `true`.
+      // the Terapeuta and kept the start and the clinic". A flag about the
+      // EVENT; it names nobody and carries no value but `true`.
       "therapistChangeOnly",
     ]);
 

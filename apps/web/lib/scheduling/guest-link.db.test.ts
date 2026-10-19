@@ -677,6 +677,39 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
     expect(h.sms).toHaveLength(1);
   });
 
+  it("a SERIES whose first slot is already PAST: the first occurrence still ahead is linked, confirmed and sent", async () => {
+    const { requestId, patientId } = await converted();
+    // The last WEDNESDAY before today (the therapist works Wednesdays) at 10:00
+    // UTC: the first weekly occurrence has passed and at least the third is
+    // ahead, whatever day this runs.
+    const now = new Date();
+    const daysBack = (now.getUTCDay() - 3 + 7) % 7 || 7;
+    const start = new Date(now.getTime() - daysBack * 24 * 3600_000);
+    start.setUTCHours(10, 0, 0, 0);
+    const booked = await book({ patientId, guestRequestId: requestId, start, recurrence: { freq: "weekly", count: 3 } });
+
+    expect(h.events).toHaveLength(3);
+    const byStart = [...h.events].sort((a, b) =>
+      String(a.data.startsAt).localeCompare(String(b.data.startsAt)),
+    );
+    expect(byStart[0]!.data.appointmentId).toBe(booked.id); // the past one is the parent
+    const firstAhead = byStart.find((e) => new Date(String(e.data.startsAt)).getTime() > Date.now())!;
+    expect(firstAhead.data.appointmentId).not.toBe(booked.id);
+
+    // The link, the guest marker and the confirmation all land on that row.
+    expect((await requestRow(requestId)).converted_appointment_id).toBe(firstAhead.data.appointmentId);
+    expect(h.events.filter((e) => e.data.acceptedGuestRequest === true).map((e) => e.data.appointmentId)).toEqual([
+      firstAhead.data.appointmentId,
+    ]);
+    expect(h.events.filter((e) => e.data.confirmationEligible === true).map((e) => e.data.appointmentId)).toEqual([
+      firstAhead.data.appointmentId,
+    ]);
+
+    // And the booking-approved message goes, once.
+    expect(await deliver()).toEqual([expect.objectContaining({ dispatched: true })]);
+    expect(h.sms).toHaveLength(1);
+  });
+
   it("AGENDAR LOTE for a guest: the earliest booked slot is linked, and only it", async () => {
     const { requestId, patientId } = await converted();
     const first = at(WED + 28, 9);

@@ -18,6 +18,7 @@ import {
   guestLinkOccurrence,
   linkGuestRequestTx,
 } from "./guest-link";
+import { confirmationEligibleIndex } from "./reminders";
 
 const actor: RequestContext = { tenantId: "tenant-A", role: "reception", userId: "user-1" };
 const REQUEST = "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f";
@@ -266,6 +267,33 @@ describe("the linked occurrence and its target", () => {
 
   it("an empty list links nothing", () => {
     expect(guestLinkOccurrence([])).toBeNull();
+  });
+
+  it("a series whose first slot is already PAST links the first occurrence still ahead", () => {
+    const past = { id: "past", startsAt: d("2031-05-14T10:00:00Z") };
+    const next = { id: "next", startsAt: d("2031-05-21T10:00:00Z") };
+    const later = { id: "later", startsAt: d("2031-05-28T10:00:00Z") };
+    const now = d("2031-05-17T12:00:00Z").getTime();
+    expect(guestLinkOccurrence([later, past, next], now)).toBe(next);
+    // A slot starting exactly now has started: it is not ahead.
+    expect(guestLinkOccurrence([past, next], past.startsAt.getTime())).toBe(next);
+  });
+
+  it("it is the SAME occurrence confirmationEligibleIndex gives the confirmation to", () => {
+    const list = [
+      { appointmentId: "past", startsAt: d("2031-05-14T10:00:00Z"), practitionerId: "t" },
+      { appointmentId: "next", startsAt: d("2031-05-21T10:00:00Z"), practitionerId: "t" },
+    ];
+    const now = d("2031-05-17T12:00:00Z").getTime();
+    expect(guestLinkOccurrence(list, now)).toBe(list[confirmationEligibleIndex(list, now)]);
+  });
+
+  it("nothing ahead: the earliest is linked as before, and no occurrence carries the confirmation", () => {
+    const first = { appointmentId: "first", startsAt: d("2031-05-14T10:00:00Z"), practitionerId: "t" };
+    const second = { appointmentId: "second", startsAt: d("2031-05-21T10:00:00Z"), practitionerId: "t" };
+    const now = d("2031-06-01T00:00:00Z").getTime();
+    expect(guestLinkOccurrence([second, first], now)).toBe(first);
+    expect(confirmationEligibleIndex([second, first], now)).toBe(-1);
   });
 
   it("the target carries the guest marker and not the pedido one", () => {

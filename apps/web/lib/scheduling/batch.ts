@@ -337,7 +337,8 @@ export async function batchSchedule(
       );
 
       // BOOK-CONFIRM: a batch booked from a converted guest request's deep
-      // link. ONE occurrence is linked, the earliest, in this transaction. It
+      // link. ONE occurrence is linked, the earliest still ahead (the one that
+      // carries the confirmation; guest-link.ts), in this transaction. It
       // never fails the batch (guest-link.ts confines itself to a savepoint).
       if (guestLink?.guestRequestId) {
         const first = guestLinkOccurrence(
