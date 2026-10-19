@@ -364,7 +364,7 @@ claims; on lane blue, `Tests 58 passed (58)`):
 **CORRECTED 2026-10-19: BOTH BRANCHES NOW SET THE ATTEMPT NUMBER.** The tables below are the
 2026-10-14 survey of what had to change, kept as the record. Since 2026-10-15 both branches carry
 this branch merged in (`d62027ee`, a merge, no rebase), and every claim writer sets `attempt` to
-one more than the highest attempt of that reminder's claims, read inside the claim's transaction
+one more than the highest attempt of that reminder's claims for the same start, read inside the claim's transaction
 after its lock (`nextReminderClaimAttempt` in `apps/web/lib/reminders/reminder-claim.ts`, called
 from `takeReminderClaim` and, on SWEEP-47, from `takeReminderClaimClosed`). The release, shadow and
 heartbeat writers set none, as the CHECK requires. The test fixtures that insert a claim set a
@@ -396,12 +396,14 @@ distinct number per claim. Heads checked on 2026-10-19: `reminders/SWEEP-13-on-t
 
 **The `23505` from this index, RULED AND BUILT (strategy Q-A (a), 2026-10-15; corrected
 2026-10-19).** Until then `takeReminderClaim` caught every failure and answered "not held, no
-claim id", so the open path would have sent a duplicate the table refused. Now, on both branches
-and on both paths, a `23505` naming `reminder_claims_claim_attempt_key` is HELD: nothing is sent,
-the outcome is `claim_held_by_duplicate`, the sweep pass counts it apart (`heldByDuplicate`), and
-one log line carries only the reason, the offset and the channel. No ledger row is written, the
-same as an ordinary held claim. Any other error keeps its earlier handling: the closed path
-(`takeReminderClaimClosed`) still throws `ReminderClaimStoreError` and sends nothing.
+claim id", so the open path would have sent a duplicate the table refused. Now, on both branches,
+the open path (`takeReminderClaim`) answers HELD on a `23505` naming
+`reminder_claims_claim_attempt_key`: nothing is sent, the outcome is `claim_held_by_duplicate`,
+and one log line carries only the reason, the offset and the channel. No ledger row is written,
+the same as an ordinary held claim. On SWEEP-47 the closed path (`takeReminderClaimClosed`)
+answers the same, and the sending pass counts it apart (`heldByDuplicate`); any other error there
+still throws `ReminderClaimStoreError` and sends nothing. SWEEP-13 has no closed path and no
+sending pass (its sweep is shadow only).
 
 ## No code on `main` reads either table (W-9)
 
@@ -924,10 +926,11 @@ Strategy's rulings of 2026-10-13 closed the nine questions of the first draft. W
    (c) Drop the blanket grant and grant `service_role` table by table in a migration, which the
    seed's own comment names as the durable path; a larger change with its own sitting.
    Recommend (a) now.
-3. **CLOSED 2026-10-19: neither `0104` nor `0105` touches `appointments`.** `0104` changed only
-   `clinical_episodes`' policies; `0105` added a unique index on `clinical_episodes` and a
-   foreign key on `clinical_records`, and replaced `merge_patients`. Both are applied (journal
-   103), and their post-checks proved every other policy unchanged by hash.
+3. **CLOSED 2026-10-19: neither `0104` nor `0105` touches `appointments`' policies.** `0104`
+   changed only `clinical_episodes`' policies and its DELETE grant; `0105` added a unique index
+   on `clinical_episodes` and a foreign key on `clinical_records`, and replaced `merge_patients`
+   (whose body still updates `appointments` as `0005`'s did). Both are applied (journal idx 102,
+   103 entries), and their post-checks proved every other policy unchanged by hash.
 
 4. **ACCEPTED BY STRATEGY 2026-10-18 (Q-I): the attempt key has no tenant column.**
    `reminder_claims_claim_attempt_key` is unique on the reminder's appointment, offset, channel,
@@ -935,7 +938,8 @@ Strategy's rulings of 2026-10-13 closed the nine questions of the first draft. W
    appointment would take that reminder's attempt number and hold it for good. The job's INSERT
    policy makes such a row impossible for every role that row security binds (W-6: a row's
    appointment must belong to the row's tenant, checked against `appointments`), so only a role
-   that bypasses row security (the table's owner, a superuser) could write it. Strategy accepted this as is; nothing in the migration changes for it.
+   that bypasses row security (the table's owner, a superuser) could write it. Strategy accepted
+   this as is; nothing in the migration changes for it.
 
 ## Review history
 
