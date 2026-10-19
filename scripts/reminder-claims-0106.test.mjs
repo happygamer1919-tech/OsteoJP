@@ -853,8 +853,8 @@ test("THE HALT RULE stands in the document word for word, with its one exception
     "no closing read and no journal read. Whether and when a halted sitting starts again",
     "is the lead's call, never the runner's. The one exception: a STOP line that begins",
     '"STOP: the S12 count\'s block only:" ends that block alone, because the S12 count\'s',
-    "own query failed inside a transaction that read as READ ONLY; the closing read is",
-    "pasted next.",
+    "own query failed inside a transaction that read as READ ONLY; that line and its",
+    "non-zero exit end that block alone, and the closing read is pasted next.",
   ].join("\n");
   assert.ok(doc.includes(`${rule}\n\n`), "the halt rule, with its one exception inside its own text, is not in the document word for word");
   assert.match(doc, /THE ONE EXCEPTION IS NARROW\.\*\* Strategy's words, "never a STOP condition" \(2026-10-14\), are about the S12 count's values/);

@@ -18,8 +18,8 @@ step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit
 no closing read and no journal read. Whether and when a halted sitting starts again
 is the lead's call, never the runner's. The one exception: a STOP line that begins
 "STOP: the S12 count's block only:" ends that block alone, because the S12 count's
-own query failed inside a transaction that read as READ ONLY; the closing read is
-pasted next.
+own query failed inside a transaction that read as READ ONLY; that line and its
+non-zero exit end that block alone, and the closing read is pasted next.
 
 **That is the halt rule of `docs/migration-apply-0094.md`, word for word, with the number changed and its last sentence, the one exception, added; GREEN's dispatch carries it in the same words.** This document has no stage 3, so where the rule names stages 2 and 3, read stage 2, the S12 count's block and the closing read. **A VACUOUS verdict is not a pass and not a FAIL: the blocks count it, and stop on any.** **THE ONE EXCEPTION IS NARROW.** Strategy's words, "never a STOP condition" (2026-10-14), are about the S12 count's values: whatever it counts, the sitting goes on. They do not cover a read that cannot be trusted. So exactly one STOP line in this document is the exception, the S12 block's line on its own query: psql ended with an error or ran past its 120 seconds after the transaction had read as READ ONLY. Every other STOP of the S12 block (no applied marker, no pass mark from stage 2, the head, a pinned file, the window, the environment, the target guard's refusal, a transaction that is not read only, psql that never reached the query) is a full STOP of the halt rule, worded as every other block's are.
 
@@ -674,7 +674,7 @@ echo "0106 POST-CHECK PASSED. 13/13 pre-check OK, post-check ${OKS} OK / ${VACS}
 
 **A FAIL IN VERDICT 14 THAT IS NOT THE MIGRATION'S.** Verdict 14 wants both tables empty, because 0106 writes no row. Nothing writes them until the sweep's code merges after the apply, so a row there is a writer nobody expected: stage 2 STOPs saying the state is UNKNOWN, and the lead reads the other twenty-five verdicts.
 
-## THE S12 COUNT: read only, information for strategy, never a STOP condition for the sitting
+## THE S12 COUNT: read only, information for strategy; its counts never stop the sitting
 
 Strategy, 2026-10-14: "S12: provisional ruling = your first definition (history-based). Run s12-never-had-a-reminder-count-20261013.sql read-only in the 0106 sitting as its own block; final ruling on the counts, before arming." The file is `scripts/db/s12-never-had-a-reminder-count.sql`: a header, then the handover file byte for byte (sha256 `334e9e3a...feb00df`). It prints one row per tenant: the tenant's id and seven counts. No patient id, name, phone or email.
 
