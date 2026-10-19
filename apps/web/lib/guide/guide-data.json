@@ -11237,7 +11237,13 @@
               "strong": "Concluída"
             },
             {
-              "text": ", o paciente recebe uma avaliação de satisfação 24 horas depois do fim da consulta, ou logo, se a consulta for marcada mais tarde. Segue por email ou, se não houver email autorizado, por SMS."
+              "text": " em "
+            },
+            {
+              "strong": "Estado"
+            },
+            {
+              "text": ", o paciente pode receber uma avaliação 24 horas depois do fim da consulta, ou logo, se for marcada como Concluída mais tarde. Corrigir o estado para Concluída não envia avaliação. Enquanto a avaliação está em teste, só alguns pacientes a recebem."
             }
           ],
           "type": "para"
@@ -11289,13 +11295,7 @@
               "strong": "Sem resposta"
             },
             {
-              "text": "). Filtre por "
-            },
-            {
-              "strong": "Mês"
-            },
-            {
-              "text": ". Cada resposta é visível para o terapeuta que realizou a consulta, para a receção e os administradores da clínica onde decorreu e para o proprietário."
+              "text": "). Cada resposta é visível para o terapeuta que realizou a consulta, se decorreu numa das suas clínicas, para a receção e os administradores dessa clínica e para o proprietário."
             }
           ],
           "type": "para"
@@ -11368,7 +11368,7 @@
       "see": [],
       "shots": null,
       "title": "Avaliação de satisfação",
-      "words": 185
+      "words": 195
     },
     {
       "answers": [],
